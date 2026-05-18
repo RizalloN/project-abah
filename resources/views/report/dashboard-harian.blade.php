@@ -1464,6 +1464,7 @@
                             <col style="width: var(--daily-delta-width);" class="numeric-col">
                             <col style="width: var(--daily-delta-width);" class="numeric-col">
                             <col style="width: var(--daily-delta-width);" class="numeric-col">
+                            <col style="width: var(--daily-delta-width);" class="numeric-col">
                             <col style="width: var(--daily-rka-width);" class="numeric-col">
                             <col style="width: var(--daily-rka-width);" class="numeric-col">
                             <col style="width: var(--daily-rka-width);" class="numeric-col">
@@ -1476,7 +1477,7 @@
                                 <th class="sticky-no group-no" rowspan="3">No</th>
                                 <th class="sticky-label group-label" rowspan="3">Keterangan</th>
                                 <th class="group-position" colspan="7" data-position-group-colspan>Posisi</th>
-                                <th class="group-delta" colspan="4">Delta Terhadap</th>
+                                <th class="group-delta" colspan="5">Delta Terhadap</th>
                                 <th class="group-rka" colspan="6">Perbandingan RKA</th>
                             </tr>
                             <tr class="column-row text-center">
@@ -1506,6 +1507,9 @@
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
                                     <span class="column-heading"><span class="main" data-label-delta-ytd>-</span><span class="header-subnote text-white-50">YtD</span></span>
+                                </th>
+                                <th class="value-col delta-col" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-delta-mtm>-</span><span class="header-subnote text-white-50">MtM</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
                                     <span class="column-heading"><span class="main" data-label-delta-mtd>-</span><span class="header-subnote text-white-50">MtD</span></span>
@@ -1542,7 +1546,7 @@
                             </tr>
                         </thead>
                         <tbody id="daily-dashboard-body">
-                            <tr><td colspan="19" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
+                            <tr><td colspan="20" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1631,6 +1635,7 @@
             rkaDec: document.querySelector('[data-label-rka-dec-period]'),
             deltaYoy: document.querySelector('[data-label-delta-yoy]'),
             deltaYtd: document.querySelector('[data-label-delta-ytd]'),
+            deltaMtm: document.querySelector('[data-label-delta-mtm]'),
             deltaMtd: document.querySelector('[data-label-delta-mtd]'),
             deltaDtd: document.querySelector('[data-label-delta-dtd]'),
         };
@@ -2458,6 +2463,7 @@
                 rowCells.push('<td class="value-col position-col metric-value font-weight-bold bg-light"><span class="cell-text text-primary">' + formatValue(value.current, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.yoy) + '"><span class="cell-text">' + formatValue(delta.yoy, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.ytd) + '"><span class="cell-text">' + formatValue(delta.ytd, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.mtm) + '"><span class="cell-text">' + formatValue(delta.mtm, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.mtd) + '"><span class="cell-text">' + formatValue(delta.mtd, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.dtd) + '"><span class="cell-text">' + formatValue(delta.dtd, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka, row.type) + '</span></td>');
@@ -2520,6 +2526,7 @@
             setTextContent(headerLabels.rkaDec, periods.rka_dec ? 'RKA ' + String(formatMonthYear(periods.rka_dec.period)).toUpperCase() : 'RKA Des');
             setTextContent(headerLabels.deltaYoy, periods.yoy ? formatDateShort(periods.yoy.period) : '-');
             setTextContent(headerLabels.deltaYtd, periods.ytd ? formatDateShort(periods.ytd.period) : '-');
+            setTextContent(headerLabels.deltaMtm, periods.mtm ? formatDateShort(periods.mtm.period) : '-');
             setTextContent(headerLabels.deltaMtd, periods.mtd ? formatDateShort(periods.mtd.period) : '-');
             setTextContent(headerLabels.deltaDtd, hasH1 ? formatDateShort(periods.h1.period) : '-');
 
@@ -2567,7 +2574,7 @@
                 .catch(function (error) {
                     console.error('Gagal memuat data dashboard harian.', error);
                     const hidden = positionH1Header && positionH1Header.classList.contains('position-col-hidden');
-                    body.innerHTML = '<tr><td colspan="' + (hidden ? 18 : 19) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
+                    body.innerHTML = '<tr><td colspan="' + (hidden ? 19 : 20) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
                 .finally(function () {
                     tableRegion.classList.remove('daily-loading');

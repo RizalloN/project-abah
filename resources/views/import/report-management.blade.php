@@ -440,19 +440,38 @@
                 throw new Error(payload.message || 'Gagal menjadwalkan rebuild.');
             }
 
-            await Swal.fire({
-                icon: payload.status === 'warning' ? 'warning' : 'success',
-                title: payload.status === 'warning' ? 'Dalam Antrean' : 'Berhasil',
-                text: payload.message || 'Rebuild snapshot sudah dijadwalkan.',
+            if (!payload.rebuild_id) {
+                await Swal.fire({
+                    icon: payload.status === 'warning' ? 'warning' : 'success',
+                    title: payload.status === 'warning' ? 'Dalam Antrean' : 'Berhasil',
+                    text: payload.message || 'Rebuild snapshot sudah dijadwalkan.',
+                });
+                await refreshCurrentGrid();
+                return;
+            }
+
+            Swal.fire({
+                title: 'Rebuild Snapshot Berjalan',
+                html: `<div class="mb-2">${escapeHtmlSafe(payload.message || 'Rebuild snapshot diantrekan...')}</div><div class="progress" style="height: 12px;"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%;"></div></div><div class="mt-2 text-muted" style="font-size: 0.85rem;">0% selesai</div>`,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
             });
 
-            if (payload.rebuild_id) {
-                const statusUrl = templateUrl(reportManagementCard.dataset.rebuildStatusUrlTemplate, payload.rebuild_id);
-                const finalState = await pollRebuildStatus(statusUrl);
-                if (finalState?.status === 'error') {
-                    throw new Error(finalState.message || 'Progress rebuild gagal dipantau.');
-                }
+            const statusUrl = templateUrl(reportManagementCard.dataset.rebuildStatusUrlTemplate, payload.rebuild_id);
+            const finalState = await pollRebuildStatus(statusUrl);
+            Swal.close();
+
+            const finalStatus = String(finalState?.status || '').toLowerCase();
+            if (finalStatus === 'error') {
+                throw new Error(finalState.message || 'Progress rebuild gagal dipantau.');
             }
+
+            await Swal.fire({
+                icon: finalStatus === 'completed' ? 'success' : (finalStatus === 'failed' ? 'error' : 'warning'),
+                title: finalStatus === 'completed' ? 'Rebuild Selesai' : (finalStatus === 'failed' ? 'Rebuild Gagal' : 'Rebuild Belum Selesai'),
+                text: finalState?.message || 'Rebuild snapshot selesai diproses.',
+            });
 
             await refreshCurrentGrid();
         }
@@ -718,25 +737,68 @@
                 return null;
             }
 
-            for (let attempt = 0; attempt < 120; attempt++) {
-                const response = await fetch(statusUrl, {
-                    headers: {
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
-                });
+            // Rebuild snapshot bisa berjalan 5-30 menit untuk dataset besar. Kita poll
+            // sampai 30 menit (1800s) dengan backoff yang ramah server, dan tetap
+            // tampilkan progress kepada user supaya tidak terasa hang.
+            const maxRuntimeMs = 30 * 60 * 1000;
+            const baseDelayMs = 1500;
+            const maxDelayMs = 5000;
+            const maxConsecutiveErrors = 3;
 
-                const state = await response.json().catch(() => ({}));
-                const status = String(state.status || '').toLowerCase();
+            const startedAt = Date.now();
+            let consecutiveErrors = 0;
+            let lastShownPercent = -1;
 
-                if (['completed', 'failed', 'warning', 'error'].includes(status)) {
-                    return state;
+            while (Date.now() - startedAt < maxRuntimeMs) {
+                try {
+                    const response = await fetch(statusUrl, {
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        signal: AbortSignal.timeout(10000),
+                    });
+
+                    if (!response.ok) {
+                        consecutiveErrors++;
+                        if (consecutiveErrors >= maxConsecutiveErrors) {
+                            return { status: 'error', message: `Polling status rebuild gagal (HTTP ${response.status}). Cek status di Monitoring Antrean Job.` };
+                        }
+                    } else {
+                        consecutiveErrors = 0;
+                        const state = await response.json().catch(() => ({}));
+                        const status = String(state.status || '').toLowerCase();
+                        const percent = Math.max(0, Math.min(100, Number(state.progress_percent || 0)));
+                        if (percent !== lastShownPercent && typeof Swal !== 'undefined' && Swal.isVisible()) {
+                            lastShownPercent = percent;
+                            Swal.update({
+                                title: 'Rebuild Snapshot Berjalan',
+                                html: `<div class="mb-2">${escapeHtmlSafe(state.message || 'Memproses snapshot...')}</div><div class="progress" style="height: 12px;"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width: ${percent}%;"></div></div><div class="mt-2 text-muted" style="font-size: 0.85rem;">${percent}% selesai${state.current_report_label ? ' — ' + escapeHtmlSafe(state.current_report_label) : ''}</div>`,
+                            });
+                        }
+                        if (['completed', 'failed', 'warning', 'error'].includes(status)) {
+                            return state;
+                        }
+                    }
+                } catch (error) {
+                    consecutiveErrors++;
+                    if (consecutiveErrors >= maxConsecutiveErrors) {
+                        return { status: 'error', message: 'Polling status rebuild putus koneksi. Cek status di Monitoring Antrean Job.' };
+                    }
                 }
 
-                await new Promise((resolve) => setTimeout(resolve, 1500));
+                const elapsedRatio = (Date.now() - startedAt) / maxRuntimeMs;
+                const delayMs = Math.min(baseDelayMs + Math.floor(elapsedRatio * (maxDelayMs - baseDelayMs)), maxDelayMs);
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
             }
 
-            return { status: 'warning', message: 'Rebuild snapshot masih berjalan di background.' };
+            return { status: 'warning', message: 'Rebuild snapshot masih berjalan di background setelah 30 menit polling. Cek status di Monitoring Antrean Job.' };
+        }
+
+        function escapeHtmlSafe(value) {
+            return String(value ?? '').replace(/[&<>"']/g, function (ch) {
+                return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+            });
         }
 
         async function pollForceSyncStatus(statusUrl) {
@@ -759,52 +821,75 @@
                 }
             });
 
-            for (let attempt = 0; attempt < 240; attempt++) {
+            // Force-sync untuk periode bisa berjalan 5-30 menit. Poll sampai 30 menit
+            // dengan adaptive backoff dan tolerance error sementara.
+            const maxRuntimeMs = 30 * 60 * 1000;
+            const baseDelayMs = 1500;
+            const maxDelayMs = 5000;
+            const maxConsecutiveErrors = 3;
+
+            const startedAt = Date.now();
+            let consecutiveErrors = 0;
+
+            while (Date.now() - startedAt < maxRuntimeMs) {
                 try {
                     const response = await fetch(statusUrl, {
                         headers: {
                             'Accept': 'application/json',
                             'X-Requested-With': 'XMLHttpRequest',
                         },
+                        signal: AbortSignal.timeout(10000),
                     });
 
-                    const state = await response.json().catch(() => ({}));
-                    const status = String(state.status || '').toLowerCase();
-                    const percent = Math.max(0, Math.min(100, Number(state.progress || 0)));
-                    
-                    const pBar = document.getElementById('force-sync-progress-bar');
-                    if (pBar) {
-                        pBar.style.width = percent + '%';
-                        if (['completed', 'failed', 'error'].includes(status)) {
-                            pBar.classList.remove('progress-bar-animated');
-                            pBar.classList.remove('progress-bar-striped');
-                            if (status === 'completed') pBar.classList.add('bg-success');
-                            if (['failed', 'error'].includes(status)) pBar.classList.add('bg-danger');
+                    if (!response.ok) {
+                        consecutiveErrors++;
+                        if (consecutiveErrors >= maxConsecutiveErrors) {
+                            return { status: 'error', message: `Polling sync gagal (HTTP ${response.status}).` };
+                        }
+                    } else {
+                        consecutiveErrors = 0;
+                        const state = await response.json().catch(() => ({}));
+                        const status = String(state.status || '').toLowerCase();
+                        const percent = Math.max(0, Math.min(100, Number(state.progress || 0)));
+
+                        const pBar = document.getElementById('force-sync-progress-bar');
+                        if (pBar) {
+                            pBar.style.width = percent + '%';
+                            if (['completed', 'failed', 'error'].includes(status)) {
+                                pBar.classList.remove('progress-bar-animated');
+                                pBar.classList.remove('progress-bar-striped');
+                                if (status === 'completed') pBar.classList.add('bg-success');
+                                if (['failed', 'error'].includes(status)) pBar.classList.add('bg-danger');
+                            }
+                        }
+
+                        const pText = document.getElementById('force-sync-status-text');
+                        if (pText && state.message) {
+                            pText.innerText = state.message;
+                        }
+
+                        const pMeta = document.getElementById('force-sync-progress-meta');
+                        if (pMeta) {
+                            pMeta.innerText = `${percent}% (${state.completed_tables || 0}/${state.total_tables || 6} tabel selesai)`;
+                        }
+
+                        if (['completed', 'failed', 'warning', 'error'].includes(status)) {
+                            return state;
                         }
                     }
-
-                    const pText = document.getElementById('force-sync-status-text');
-                    if (pText && state.message) {
-                        pText.innerText = state.message;
-                    }
-
-                    const pMeta = document.getElementById('force-sync-progress-meta');
-                    if (pMeta) {
-                        pMeta.innerText = `${percent}% (${state.completed_tables || 0}/${state.total_tables || 6} tabel selesai)`;
-                    }
-
-                    if (['completed', 'failed', 'warning', 'error'].includes(status)) {
-                        return state;
-                    }
-
                 } catch (e) {
-                    console.error('Polling force sync status failed:', e);
+                    consecutiveErrors++;
+                    if (consecutiveErrors >= maxConsecutiveErrors) {
+                        return { status: 'error', message: 'Polling sync putus koneksi.' };
+                    }
                 }
 
-                await new Promise((resolve) => setTimeout(resolve, 1500));
+                const elapsedRatio = (Date.now() - startedAt) / maxRuntimeMs;
+                const delayMs = Math.min(baseDelayMs + Math.floor(elapsedRatio * (maxDelayMs - baseDelayMs)), maxDelayMs);
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
             }
 
-            return { status: 'warning', message: 'Sync masih berjalan di background setelah waktu tunggu habis.' };
+            return { status: 'warning', message: 'Sync masih berjalan di background setelah 30 menit polling. Cek Monitoring Antrean Job.' };
         }
 
         async function handleForceSync() {

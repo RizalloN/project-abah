@@ -4,6 +4,7 @@ namespace App\Support;
 
 use Carbon\Carbon;
 use App\Models\NamaReport;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -15,6 +16,84 @@ class ManagedReportManagementService
     private const MANAGEMENT_HEAVY_TABLE_ROW_LIMIT = 1000000;
     private const MANAGEMENT_HEAVY_PERIODS_PER_PAGE = 1;
     private const LW325_BLANK_CREATED_AT_FALLBACK_MODE = 'lw325_blank_created_at';
+
+    private const SCOPE_COLUMN_CACHE_TTL = 86400;
+    private const AGGREGATE_CACHE_TTL = 120;
+    private const ESTIMATE_ROWS_CACHE_TTL = 300;
+
+    /** @var array<string, int> */
+    private array $estimateRowsMemo = [];
+
+    /** @var array<string, int> */
+    private array $columnPopulationMemo = [];
+
+    /** @var array<string, bool> */
+    private array $columnIsStringMemo = [];
+
+    public static function cacheTagForTable(string $tableName): string
+    {
+        return 'report_management:' . $tableName;
+    }
+
+    private static function versionKey(string $tableName): string
+    {
+        return 'report_management:version:' . $tableName;
+    }
+
+    private static function currentVersion(string $tableName): string
+    {
+        $key = self::versionKey($tableName);
+
+        try {
+            $value = Cache::get($key);
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+
+            $seed = (string) (microtime(true) * 1000);
+            Cache::forever($key, $seed);
+            return $seed;
+        } catch (\Throwable) {
+            return 'runtime';
+        }
+    }
+
+    public static function invalidateTableCache(string $tableName): void
+    {
+        try {
+            $tag = self::cacheTagForTable($tableName);
+            $store = Cache::getStore();
+            if (method_exists($store, 'tags')) {
+                Cache::tags([$tag])->flush();
+            }
+        } catch (\Throwable) {
+        }
+
+        try {
+            Cache::forever(self::versionKey($tableName), (string) (microtime(true) * 1000));
+        } catch (\Throwable) {
+        }
+    }
+
+    private function rememberCached(string $tableName, string $key, int $ttl, \Closure $callback): mixed
+    {
+        $version = self::currentVersion($tableName);
+        $versionedKey = $key . ':v=' . $version;
+
+        try {
+            $store = Cache::getStore();
+            if (method_exists($store, 'tags')) {
+                return Cache::tags([self::cacheTagForTable($tableName)])->remember($versionedKey, $ttl, $callback);
+            }
+        } catch (\Throwable) {
+        }
+
+        try {
+            return Cache::remember($versionedKey, $ttl, $callback);
+        } catch (\Throwable) {
+            return $callback();
+        }
+    }
 
     private const PERIOD_COLUMN_CANDIDATES = [
         'periode',
@@ -282,57 +361,70 @@ class ManagedReportManagementService
 
     public function resolveManagementScopeColumns(string $tableName, array $tableColumns): array
     {
-        $periodCandidates = $this->resolveCandidateColumns($tableColumns, self::PERIOD_COLUMN_CANDIDATES);
-        $periodColumn = $this->resolveMostPopulatedColumn($tableName, $periodCandidates);
-        if ($periodColumn === null) {
-            $semanticPeriodColumn = $this->resolveSemanticPeriodColumn($tableColumns);
-            $periodColumn = $semanticPeriodColumn !== null
-                ? $this->resolveMostPopulatedColumn($tableName, [$semanticPeriodColumn])
-                : null;
-        }
+        $schemaSignature = md5(implode('|', $tableColumns));
+        $cacheKey = 'report_management:scope_cols:' . $tableName . ':' . $schemaSignature;
 
-        $kancaCandidates = $this->resolveCandidateColumns($tableColumns, self::KANCA_COLUMN_CANDIDATES);
-        $kancaColumn = $this->resolveMostPopulatedColumn($tableName, $kancaCandidates);
-        if ($kancaColumn === null) {
-            $semanticKancaColumn = $this->resolveSemanticKancaColumn($tableColumns);
-            $kancaColumn = $semanticKancaColumn !== null
-                ? $this->resolveMostPopulatedColumn($tableName, [$semanticKancaColumn])
-                : null;
-        }
+        $resolved = $this->rememberCached($tableName, $cacheKey, self::SCOPE_COLUMN_CACHE_TTL, function () use ($tableName, $tableColumns) {
+            return $this->computeManagementScopeColumns($tableName, $tableColumns);
+        });
 
+        return is_array($resolved) ? $resolved : [null, null];
+    }
+
+    private function computeManagementScopeColumns(string $tableName, array $tableColumns): array
+    {
         $override = self::MANAGEMENT_SCOPE_COLUMN_OVERRIDES[$tableName] ?? null;
-        if (!is_array($override)) {
-            return [$periodColumn, $kancaColumn];
-        }
+        $periodColumn = null;
+        $kancaColumn = null;
 
-        $priorityPeriodColumn = $this->resolveMostPopulatedColumn(
-            $tableName,
-            $this->resolveCandidateColumns($tableColumns, (array) ($override['period_priority'] ?? []))
-        );
-        if ($priorityPeriodColumn !== null) {
-            $periodColumn = $priorityPeriodColumn;
-        }
+        if (is_array($override)) {
+            $priorityPeriod = $this->resolveCandidateColumns($tableColumns, (array) ($override['period_priority'] ?? []));
+            if ($priorityPeriod !== []) {
+                $periodColumn = $this->resolveMostPopulatedColumn($tableName, $priorityPeriod);
+            }
 
-        $priorityKancaColumn = $this->resolveMostPopulatedColumn(
-            $tableName,
-            $this->resolveCandidateColumns($tableColumns, (array) ($override['kanca_priority'] ?? []))
-        );
-        if ($priorityKancaColumn !== null) {
-            $kancaColumn = $priorityKancaColumn;
+            $priorityKanca = $this->resolveCandidateColumns($tableColumns, (array) ($override['kanca_priority'] ?? []));
+            if ($priorityKanca !== []) {
+                $kancaColumn = $this->resolveMostPopulatedColumn($tableName, $priorityKanca);
+            }
         }
 
         if ($periodColumn === null) {
-            $periodColumn = $this->resolveMostPopulatedColumn(
-                $tableName,
-                $this->resolveCandidateColumns($tableColumns, (array) ($override['period'] ?? []))
-            );
+            $periodCandidates = $this->resolveCandidateColumns($tableColumns, self::PERIOD_COLUMN_CANDIDATES);
+            $periodColumn = $this->resolveMostPopulatedColumn($tableName, $periodCandidates);
+            if ($periodColumn === null) {
+                $semanticPeriodColumn = $this->resolveSemanticPeriodColumn($tableColumns);
+                $periodColumn = $semanticPeriodColumn !== null
+                    ? $this->resolveMostPopulatedColumn($tableName, [$semanticPeriodColumn])
+                    : null;
+            }
         }
 
         if ($kancaColumn === null) {
-            $kancaColumn = $this->resolveMostPopulatedColumn(
-                $tableName,
-                $this->resolveCandidateColumns($tableColumns, (array) ($override['kanca'] ?? []))
-            );
+            $kancaCandidates = $this->resolveCandidateColumns($tableColumns, self::KANCA_COLUMN_CANDIDATES);
+            $kancaColumn = $this->resolveMostPopulatedColumn($tableName, $kancaCandidates);
+            if ($kancaColumn === null) {
+                $semanticKancaColumn = $this->resolveSemanticKancaColumn($tableColumns);
+                $kancaColumn = $semanticKancaColumn !== null
+                    ? $this->resolveMostPopulatedColumn($tableName, [$semanticKancaColumn])
+                    : null;
+            }
+        }
+
+        if (is_array($override)) {
+            if ($periodColumn === null) {
+                $periodColumn = $this->resolveMostPopulatedColumn(
+                    $tableName,
+                    $this->resolveCandidateColumns($tableColumns, (array) ($override['period'] ?? []))
+                );
+            }
+
+            if ($kancaColumn === null) {
+                $kancaColumn = $this->resolveMostPopulatedColumn(
+                    $tableName,
+                    $this->resolveCandidateColumns($tableColumns, (array) ($override['kanca'] ?? []))
+                );
+            }
         }
 
         return [$periodColumn, $kancaColumn];
@@ -388,18 +480,32 @@ class ManagedReportManagementService
 
     private function countNonNullColumnValues(string $tableName, string $column): int
     {
+        $memoKey = $tableName . '|' . $column;
+        if (array_key_exists($memoKey, $this->columnPopulationMemo)) {
+            return $this->columnPopulationMemo[$memoKey];
+        }
+
         $safeColumn = str_replace('`', '``', $column);
 
         try {
-            return (int) DB::table($tableName)
-                ->whereNotNull($column)
-                ->whereRaw("CAST(`{$safeColumn}` AS CHAR) <> ''")
-                ->count();
+            $sample = DB::selectOne(
+                "SELECT SUM(CASE WHEN `{$safeColumn}` IS NOT NULL AND CAST(`{$safeColumn}` AS CHAR) <> '' THEN 1 ELSE 0 END) AS populated"
+                . " FROM (SELECT `{$safeColumn}` FROM `{$tableName}` LIMIT 10000) AS sample"
+            );
+            $populated = $sample !== null ? (int) ($sample->populated ?? 0) : 0;
         } catch (\Throwable) {
-            return (int) DB::table($tableName)
-                ->whereNotNull($column)
-                ->count();
+            try {
+                $sample = DB::selectOne(
+                    "SELECT SUM(CASE WHEN `{$safeColumn}` IS NOT NULL THEN 1 ELSE 0 END) AS populated"
+                    . " FROM (SELECT `{$safeColumn}` FROM `{$tableName}` LIMIT 10000) AS sample"
+                );
+                $populated = $sample !== null ? (int) ($sample->populated ?? 0) : 0;
+            } catch (\Throwable) {
+                $populated = 0;
+            }
         }
+
+        return $this->columnPopulationMemo[$memoKey] = $populated;
     }
 
     private function resolveMostPopulatedColumn(string $tableName, array $columns): ?string
@@ -674,31 +780,45 @@ class ManagedReportManagementService
         string $pageTarget = ''
     ): array {
         $safePeriod = str_replace('`', '``', $periodColumn);
-        $periodBaseQuery = DB::table($tableName)
-            ->selectRaw("`{$safePeriod}` as period_value")
-            ->groupBy($periodColumn);
-
         $estimatedSourceRows = $this->estimateTableRows($tableName);
         $perPage = $this->resolveEffectiveManagementPerPage($perPage, $estimatedSourceRows);
-        
+
         $useExactPeriodCount = $pageTarget === 'last' || $estimatedSourceRows <= self::MANAGEMENT_EXACT_PERIOD_COUNT_ROW_LIMIT;
+        $requestedPage = max(1, $page);
+        $currentPage = $requestedPage;
+        $offset = ($requestedPage - 1) * $perPage;
         $totalPeriods = null;
 
-        if ($useExactPeriodCount) {
-            $totalPeriods = $this->countManagementPeriods($tableName, $periodColumn, $periodBaseQuery);
+        $periodListCacheKey = 'report_management:period_list:' . md5(implode('|', [
+            $tableName,
+            $periodColumn,
+            $requestedPage,
+            $pageTarget,
+            $useExactPeriodCount ? $perPage : ($perPage + 1),
+        ]));
+
+        $periodRowsRaw = $this->rememberCached($tableName, $periodListCacheKey, self::AGGREGATE_CACHE_TTL, function () use ($tableName, $periodColumn, $safePeriod, $offset, $useExactPeriodCount, $perPage, $pageTarget) {
+            if ($useExactPeriodCount) {
+                return $this->fetchExactPeriodPageRows($tableName, $periodColumn, $safePeriod, $offset, $perPage, $pageTarget);
+            }
+
+            return DB::table($tableName)
+                ->selectRaw("`{$safePeriod}` as period_value")
+                ->groupBy($periodColumn)
+                ->orderByDesc($periodColumn)
+                ->offset($offset)
+                ->limit($perPage + 1)
+                ->get()
+                ->all();
+        });
+
+        $periodRows = collect(is_array($periodRowsRaw) ? $periodRowsRaw : []);
+        if ($useExactPeriodCount && $periodRows->isNotEmpty()) {
+            $totalPeriods = (int) ($periodRows->first()->total_periods ?? 0);
+            $totalPages = max(1, (int) ceil($totalPeriods / $perPage));
+            $currentPage = $pageTarget === 'last' ? $totalPages : min($requestedPage, $totalPages);
         }
 
-        $totalPages = $useExactPeriodCount ? max(1, (int) ceil((int) $totalPeriods / $perPage)) : null;
-        $currentPage = $useExactPeriodCount
-            ? ($pageTarget === 'last' ? $totalPages : min(max(1, $page), $totalPages))
-            : max(1, $page);
-        $offset = ($currentPage - 1) * $perPage;
-
-        $periodRows = $periodBaseQuery
-            ->orderByDesc($periodColumn)
-            ->offset($offset)
-            ->limit($useExactPeriodCount ? $perPage : ($perPage + 1))
-            ->get();
         $hasNext = !$useExactPeriodCount && $periodRows->count() > $perPage;
         if ($hasNext) {
             $periodRows = $periodRows->take($perPage);
@@ -772,10 +892,25 @@ class ManagedReportManagementService
             $selects[] = "MIN(`{$safeFallback}`) as kanca_label_fallback_value";
         }
 
-        $result = $query
-            ->selectRaw(implode(', ', $selects))
-            ->limit($maxRows + 1)
-            ->get();
+        $aggregateCacheKey = 'report_management:agg:' . md5(implode('|', [
+            $tableName,
+            $periodColumn,
+            $kancaColumn ?? '',
+            implode(',', array_map('strval', $extraScopeColumns)),
+            $kancaLabelFallbackColumn ?? '',
+            $maxRows,
+            $hasBlankPeriod ? '1' : '0',
+            implode(',', array_map('strval', array_values($nonBlankPeriods))),
+        ]));
+
+        $resultRaw = $this->rememberCached($tableName, $aggregateCacheKey, self::AGGREGATE_CACHE_TTL, function () use ($query, $selects, $maxRows) {
+            return $query
+                ->selectRaw(implode(', ', $selects))
+                ->limit($maxRows + 1)
+                ->get()
+                ->all();
+        });
+        $result = collect(is_array($resultRaw) ? $resultRaw : []);
 
         $truncated = $result->count() > $maxRows;
         if ($truncated) {
@@ -811,6 +946,44 @@ class ManagedReportManagementService
         ];
     }
 
+    private function fetchExactPeriodPageRows(
+        string $tableName,
+        string $periodColumn,
+        string $safePeriod,
+        int $offset,
+        int $perPage,
+        string $pageTarget
+    ): array {
+        $groupedPeriods = DB::table($tableName)
+            ->selectRaw("`{$safePeriod}` as period_value")
+            ->groupBy($periodColumn);
+
+        $rankedPeriods = DB::query()
+            ->fromSub($groupedPeriods, 'management_periods')
+            ->selectRaw('period_value, ROW_NUMBER() OVER (ORDER BY period_value DESC) as row_number, COUNT(*) OVER () as total_periods');
+
+        $pagedPeriods = DB::query()->fromSub($rankedPeriods, 'ranked_management_periods');
+
+        if ($pageTarget === 'last') {
+            $pagedPeriods->whereRaw('row_number >= total_periods - ((total_periods - 1) % ?) ', [$perPage]);
+        } else {
+            $pagedPeriods->where(function ($query) use ($offset, $perPage) {
+                $query
+                    ->whereBetween('row_number', [$offset + 1, $offset + $perPage])
+                    ->orWhere(function ($lastPageQuery) use ($offset, $perPage) {
+                        $lastPageQuery
+                            ->whereRaw('? > total_periods', [$offset + 1])
+                            ->whereRaw('row_number >= total_periods - ((total_periods - 1) % ?) ', [$perPage]);
+                    });
+            });
+        }
+
+        return $pagedPeriods
+            ->orderByDesc('period_value')
+            ->get()
+            ->all();
+    }
+
     private function resolveEffectiveManagementPerPage(int $requestedPerPage, int $estimatedSourceRows): int
     {
         $requestedPerPage = max(1, $requestedPerPage);
@@ -819,17 +992,6 @@ class ManagedReportManagementService
         }
 
         return $requestedPerPage;
-    }
-
-    private function countManagementPeriods(string $tableName, string $periodColumn, $periodBaseQuery): int
-    {
-        $cacheKey = 'management_total_periods:' . md5($tableName . '|' . $periodColumn);
-
-        return (int) \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($periodBaseQuery): int {
-            return (int) DB::query()
-                ->fromSub(clone $periodBaseQuery, 'management_periods')
-                ->count();
-        });
     }
 
     private function buildManagementPagination(
@@ -1053,20 +1215,29 @@ class ManagedReportManagementService
 
     private function estimateTableRows(string $tableName): int
     {
-        try {
-            if (DB::connection()->getDriverName() === 'mysql') {
-                $row = DB::selectOne(
-                    'SELECT TABLE_ROWS AS table_rows FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
-                    [$tableName]
-                );
-                if ($row !== null && $row->table_rows !== null) {
-                    return max(0, (int) $row->table_rows);
-                }
-            }
-        } catch (\Throwable) {
+        if (array_key_exists($tableName, $this->estimateRowsMemo)) {
+            return $this->estimateRowsMemo[$tableName];
         }
 
-        return (int) DB::table($tableName)->count();
+        $cacheKey = 'report_management:estimate:' . $tableName;
+        $value = $this->rememberCached($tableName, $cacheKey, self::ESTIMATE_ROWS_CACHE_TTL, function () use ($tableName): int {
+            try {
+                if (DB::connection()->getDriverName() === 'mysql') {
+                    $row = DB::selectOne(
+                        'SELECT TABLE_ROWS AS table_rows FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+                        [$tableName]
+                    );
+                    if ($row !== null && $row->table_rows !== null) {
+                        return max(0, (int) $row->table_rows);
+                    }
+                }
+            } catch (\Throwable) {
+            }
+
+            return (int) DB::table($tableName)->count();
+        });
+
+        return $this->estimateRowsMemo[$tableName] = (int) $value;
     }
 
     private function buildManagementRows(
@@ -1122,10 +1293,23 @@ class ManagedReportManagementService
             $selects[] = "MIN(`{$safeFallback}`) as kanca_label_fallback_value";
         }
 
-        $result = $query
-            ->selectRaw(implode(', ', $selects))
-            ->limit($maxRows + 1)
-            ->get();
+        $aggregateCacheKey = 'report_management:agg_full:' . md5(implode('|', [
+            $tableName,
+            $periodColumn ?? '',
+            $kancaColumn ?? '',
+            implode(',', array_map('strval', $extraScopeColumns)),
+            $kancaLabelFallbackColumn ?? '',
+            $maxRows,
+        ]));
+
+        $resultRaw = $this->rememberCached($tableName, $aggregateCacheKey, self::AGGREGATE_CACHE_TTL, function () use ($query, $selects, $maxRows) {
+            return $query
+                ->selectRaw(implode(', ', $selects))
+                ->limit($maxRows + 1)
+                ->get()
+                ->all();
+        });
+        $result = collect(is_array($resultRaw) ? $resultRaw : []);
 
         $truncated = $result->count() > $maxRows;
         if ($truncated) {
@@ -1166,10 +1350,22 @@ class ManagedReportManagementService
             $regularSelects[] = "MIN(`{$safeFallback}`) as kanca_label_fallback_value";
         }
 
-        $regularRows = $regularQuery
-            ->selectRaw(implode(', ', $regularSelects))
-            ->limit($remainingLimit)
-            ->get();
+        $regularCacheKey = 'report_management:lw325_regular:' . md5(implode('|', [
+            $tableName,
+            $periodColumn,
+            $kancaColumn,
+            $kancaLabelFallbackColumn ?? '',
+            $remainingLimit,
+        ]));
+
+        $regularRowsRaw = $this->rememberCached($tableName, $regularCacheKey, self::AGGREGATE_CACHE_TTL, function () use ($regularQuery, $regularSelects, $remainingLimit) {
+            return $regularQuery
+                ->selectRaw(implode(', ', $regularSelects))
+                ->limit($remainingLimit)
+                ->get()
+                ->all();
+        });
+        $regularRows = collect(is_array($regularRowsRaw) ? $regularRowsRaw : []);
 
         foreach ($regularRows as $item) {
             $periodRaw = $item->period_value ?? null;
@@ -1218,19 +1414,30 @@ class ManagedReportManagementService
             }
         }
 
-        $specialRows = DB::table($tableName)
-            ->selectRaw('COUNT(*) as row_count, `created_at` as fallback_created_at')
-            ->where(function ($query) use ($periodColumn) {
-                $this->applyBlankValueConstraint($query, $periodColumn);
-            })
-            ->where(function ($query) use ($kancaColumn) {
-                $this->applyBlankValueConstraint($query, $kancaColumn);
-            })
-            ->whereNotNull('created_at')
-            ->groupBy('created_at')
-            ->orderByDesc('created_at')
-            ->limit($remainingLimit)
-            ->get();
+        $specialCacheKey = 'report_management:lw325_special:' . md5(implode('|', [
+            $tableName,
+            $periodColumn,
+            $kancaColumn,
+            $remainingLimit,
+        ]));
+
+        $specialRowsRaw = $this->rememberCached($tableName, $specialCacheKey, self::AGGREGATE_CACHE_TTL, function () use ($tableName, $periodColumn, $kancaColumn, $remainingLimit) {
+            return DB::table($tableName)
+                ->selectRaw('COUNT(*) as row_count, `created_at` as fallback_created_at')
+                ->where(function ($query) use ($periodColumn) {
+                    $this->applyBlankValueConstraint($query, $periodColumn);
+                })
+                ->where(function ($query) use ($kancaColumn) {
+                    $this->applyBlankValueConstraint($query, $kancaColumn);
+                })
+                ->whereNotNull('created_at')
+                ->groupBy('created_at')
+                ->orderByDesc('created_at')
+                ->limit($remainingLimit)
+                ->get()
+                ->all();
+        });
+        $specialRows = collect(is_array($specialRowsRaw) ? $specialRowsRaw : []);
 
         foreach ($specialRows as $item) {
             $createdAtRaw = $item->fallback_created_at ?? null;
@@ -1265,16 +1472,26 @@ class ManagedReportManagementService
             ];
         }
 
-        $residualBlankRows = DB::table($tableName)
-            ->selectRaw('COUNT(*) as row_count')
-            ->where(function ($query) use ($periodColumn) {
-                $this->applyBlankValueConstraint($query, $periodColumn);
-            })
-            ->where(function ($query) use ($kancaColumn) {
-                $this->applyBlankValueConstraint($query, $kancaColumn);
-            })
-            ->whereNull('created_at')
-            ->first();
+        $residualCacheKey = 'report_management:lw325_residual:' . md5(implode('|', [
+            $tableName,
+            $periodColumn,
+            $kancaColumn,
+        ]));
+
+        $residualRaw = $this->rememberCached($tableName, $residualCacheKey, self::AGGREGATE_CACHE_TTL, function () use ($tableName, $periodColumn, $kancaColumn) {
+            $row = DB::table($tableName)
+                ->selectRaw('COUNT(*) as row_count')
+                ->where(function ($query) use ($periodColumn) {
+                    $this->applyBlankValueConstraint($query, $periodColumn);
+                })
+                ->where(function ($query) use ($kancaColumn) {
+                    $this->applyBlankValueConstraint($query, $kancaColumn);
+                })
+                ->whereNull('created_at')
+                ->first();
+            return ['row_count' => (int) ($row->row_count ?? 0)];
+        });
+        $residualBlankRows = (object) (is_array($residualRaw) ? $residualRaw : ['row_count' => 0]);
 
         if (((int) ($residualBlankRows->row_count ?? 0)) > 0) {
             $aggregateKey = json_encode(['residual_blank_blank_created_at_null']);
@@ -1452,30 +1669,96 @@ class ManagedReportManagementService
 
     private function applyNotBlankIntersectionConstraint($query, string $periodColumn, string $kancaColumn): void
     {
-        $query->where(function ($innerQuery) use ($periodColumn, $kancaColumn) {
-            $innerQuery->where(function ($periodFilledQuery) use ($periodColumn) {
-                $safeColumn = str_replace('`', '``', $periodColumn);
-                $periodFilledQuery
-                    ->whereNotNull($periodColumn)
-                    ->whereRaw("TRIM(CAST(`{$safeColumn}` AS CHAR)) <> ''");
-            })->orWhere(function ($kancaFilledQuery) use ($kancaColumn) {
-                $safeColumn = str_replace('`', '``', $kancaColumn);
-                $kancaFilledQuery
-                    ->whereNotNull($kancaColumn)
-                    ->whereRaw("TRIM(CAST(`{$safeColumn}` AS CHAR)) <> ''");
+        $tableName = $this->resolveQueryTableName($query);
+
+        $query->where(function ($innerQuery) use ($tableName, $periodColumn, $kancaColumn) {
+            $innerQuery->where(function ($periodFilledQuery) use ($tableName, $periodColumn) {
+                $this->applyNotBlankColumnPredicate($periodFilledQuery, $tableName, $periodColumn);
+            })->orWhere(function ($kancaFilledQuery) use ($tableName, $kancaColumn) {
+                $this->applyNotBlankColumnPredicate($kancaFilledQuery, $tableName, $kancaColumn);
             });
         });
     }
 
     private function applyBlankValueConstraint($query, string $column): void
     {
+        $tableName = $this->resolveQueryTableName($query);
         $safeColumn = str_replace('`', '``', $column);
+        $isStringLike = $this->isStringLikeColumn($tableName, $column);
 
-        $query->where(function ($innerQuery) use ($column, $safeColumn) {
-            $innerQuery
-                ->whereNull($column)
-                ->orWhereRaw("TRIM(CAST(`{$safeColumn}` AS CHAR)) = ''");
+        $query->where(function ($innerQuery) use ($column, $safeColumn, $isStringLike) {
+            $innerQuery->whereNull($column);
+            if ($isStringLike) {
+                $innerQuery->orWhereRaw("`{$safeColumn}` = ''");
+            }
         });
+    }
+
+    private function applyNotBlankColumnPredicate($query, ?string $tableName, string $column): void
+    {
+        $safeColumn = str_replace('`', '``', $column);
+        $query->whereNotNull($column);
+        if ($this->isStringLikeColumn($tableName, $column)) {
+            $query->whereRaw("`{$safeColumn}` <> ''");
+        }
+    }
+
+    private function resolveQueryTableName($query): ?string
+    {
+        try {
+            $from = is_object($query) && property_exists($query, 'from') ? $query->from : null;
+            if (!is_string($from) || $from === '') {
+                return null;
+            }
+            $segments = preg_split('/\s+as\s+|\s+/i', trim($from));
+            $candidate = is_array($segments) && $segments !== [] ? trim((string) $segments[0]) : trim((string) $from);
+            return $candidate !== '' ? trim($candidate, '`') : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function isStringLikeColumn(?string $tableName, string $column): bool
+    {
+        if ($tableName === null || $tableName === '') {
+            return true;
+        }
+
+        $memoKey = $tableName . '|' . $column;
+        if (array_key_exists($memoKey, $this->columnIsStringMemo)) {
+            return $this->columnIsStringMemo[$memoKey];
+        }
+
+        $stringLike = true;
+        try {
+            $type = Schema::getColumnType($tableName, $column);
+            $normalizedType = strtolower((string) $type);
+            $stringLike = in_array($normalizedType, [
+                'string',
+                'varchar',
+                'char',
+                'text',
+                'tinytext',
+                'mediumtext',
+                'longtext',
+                'guid',
+                'uuid',
+                'json',
+                'enum',
+                'set',
+            ], true);
+
+            if (
+                !$stringLike
+                && DB::connection()->getDriverName() === 'sqlite'
+                && in_array($normalizedType, ['date', 'datetime', 'timestamp'], true)
+            ) {
+                $stringLike = true;
+            }
+        } catch (\Throwable) {
+        }
+
+        return $this->columnIsStringMemo[$memoKey] = $stringLike;
     }
 
     private function normalizeManagementKancaFilter(string $tableName, string $kancaRaw): string

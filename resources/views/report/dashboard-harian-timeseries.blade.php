@@ -708,6 +708,7 @@
                     <label class="filter-label">Kategori Metrik</label>
                     <div class="category-selector" id="categorySelector">
                         <button class="category-btn {{ $dashboardPage['selected']['category'] === 'simpanan' ? 'active' : '' }}" data-value="simpanan">Simpanan</button>
+                        <button class="category-btn {{ $dashboardPage['selected']['category'] === 'simpanan_casa' ? 'active' : '' }}" data-value="simpanan_casa">Simpanan CASA</button>
                         <button class="category-btn {{ $dashboardPage['selected']['category'] === 'pinjaman' ? 'active' : '' }}" data-value="pinjaman">Pinjaman</button>
                         <button class="category-btn {{ $dashboardPage['selected']['category'] === 'sml' ? 'active' : '' }}" data-value="sml">SML</button>
                         <button class="category-btn {{ $dashboardPage['selected']['category'] === 'npl' ? 'active' : '' }}" data-value="npl">NPL</button>
@@ -1654,8 +1655,9 @@
                 };
             }
 
-            function createChartConfig(title, months, datasets, isSummary = false) {
+            function createChartConfig(title, months, datasets, isSummary = false, valueType = 'currency') {
                 const yAxisBounds = resolveYAxisBounds(datasets, isSummary);
+                const isPercent = valueType === 'percent';
 
                 return {
                     type: 'line',
@@ -1711,7 +1713,9 @@
                                         let label = context.dataset.label || '';
                                         if (label) { label += ': '; }
                                         if (context.parsed.y !== null) {
-                                            label += new Intl.NumberFormat('id-ID').format(context.parsed.y) + ' Rp M';
+                                            label += new Intl.NumberFormat('id-ID', {
+                                                maximumFractionDigits: isPercent ? 2 : 0
+                                            }).format(context.parsed.y) + (isPercent ? '%' : ' Rp M');
                                         }
                                         return label;
                                     }
@@ -1731,7 +1735,7 @@
                                 },
                                 title: {
                                     display: true,
-                                    text: 'Value (Rp Miliar)',
+                                    text: isPercent ? 'Persentase (%)' : 'Value (Rp Miliar)',
                                     font: { weight: 'bold', size: 10 }
                                 },
                                 grid: {
@@ -1795,6 +1799,7 @@
             function renderCharts(data, selectedCount) {
                 Object.values(charts).forEach(c => { try { c.destroy(); } catch(e) {} });
                 charts = {};
+                const valueType = data.value_type || 'currency';
 
                 const summaryContainer = document.getElementById('summaryChartContainer');
                 if (summaryContainer && summaryContainer.style.display !== 'none') {
@@ -1806,7 +1811,7 @@
                         label: getMonthName(month),
                         data: data.area_total[month] || new Array(31).fill(null)
                     }));
-                    charts['summary'] = new Chart(summaryCtx, createChartConfig('Total Area', data.months, summaryDatasets, true));
+                    charts['summary'] = new Chart(summaryCtx, createChartConfig('Total Area', data.months, summaryDatasets, true, valueType));
                     
                     const badge = document.getElementById('summaryChartBadge');
                     if (badge) {
@@ -1857,7 +1862,7 @@
                             label: getMonthName(month),
                             data: (data.series[branch] && data.series[branch][month]) ? data.series[branch][month] : new Array(31).fill(null)
                         }));
-                        charts[branch] = new Chart(ctx, createChartConfig(branch, data.months, datasets));
+                        charts[branch] = new Chart(ctx, createChartConfig(branch, data.months, datasets, false, valueType));
                     });
                 }
             }

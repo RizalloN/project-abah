@@ -25,7 +25,7 @@ class ReportSnapshotBuilderDashboardBucketTest extends TestCase
 
         $this->originalDefaultConnection = config('database.default');
 
-        if (!filter_var(env('ALLOW_LIVE_DATABASE_TESTS', false), FILTER_VALIDATE_BOOLEAN)) {
+        if (! filter_var(env('ALLOW_LIVE_DATABASE_TESTS', false), FILTER_VALIDATE_BOOLEAN)) {
             $this->markTestSkipped('Live MySQL snapshot test is opt-in. Set ALLOW_LIVE_DATABASE_TESTS=true to run it.');
         }
 
@@ -43,7 +43,7 @@ class ReportSnapshotBuilderDashboardBucketTest extends TestCase
     protected function tearDown(): void
     {
         try {
-            if (config('database.default') === 'mysql' && !empty($this->sourceIds)) {
+            if (config('database.default') === 'mysql' && ! empty($this->sourceIds)) {
                 DB::table('dashboard_pinjaman_snapshots')
                     ->where('periode', $this->testPeriod)
                     ->whereIn('account_number', $this->accountNumbers)
@@ -64,23 +64,23 @@ class ReportSnapshotBuilderDashboardBucketTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_dashboard_snapshot_rebuild_matches_kolek_detail_crosschecked_by_age(): void
+    public function test_dashboard_snapshot_rebuild_matches_kolek_crosschecked_by_age(): void
     {
         $this->sourceIds = [
-            'test-dashboard-bucket-detail1-' . uniqid(),
-            'test-dashboard-bucket-detail2-' . uniqid(),
-            'test-dashboard-bucket-detail3-' . uniqid(),
-            'test-dashboard-bucket-detail4-' . uniqid(),
-            'test-dashboard-bucket-detail5-' . uniqid(),
-            'test-dashboard-bucket-detail6-' . uniqid(),
+            'test-dashboard-bucket-detail1-'.uniqid(),
+            'test-dashboard-bucket-detail2-'.uniqid(),
+            'test-dashboard-bucket-detail3-'.uniqid(),
+            'test-dashboard-bucket-detail4-'.uniqid(),
+            'test-dashboard-bucket-detail5-'.uniqid(),
+            'test-dashboard-bucket-detail6-'.uniqid(),
         ];
         $this->accountNumbers = [
-            'UT-DETAIL1-' . uniqid(),
-            'UT-DETAIL2-' . uniqid(),
-            'UT-DETAIL3-' . uniqid(),
-            'UT-DETAIL4-' . uniqid(),
-            'UT-DETAIL5-' . uniqid(),
-            'UT-DETAIL6-' . uniqid(),
+            'UT-DETAIL1-'.uniqid(),
+            'UT-DETAIL2-'.uniqid(),
+            'UT-DETAIL3-'.uniqid(),
+            'UT-DETAIL4-'.uniqid(),
+            'UT-DETAIL5-'.uniqid(),
+            'UT-DETAIL6-'.uniqid(),
         ];
 
         DB::table('daily_loan_dinamis')->insert([
@@ -165,7 +165,7 @@ class ReportSnapshotBuilderDashboardBucketTest extends TestCase
                 'nomor_rekening1' => $this->accountNumbers[5],
                 'baki_debet1' => 6000,
                 'kolek_detail' => '0',
-                'umur_tunggakan' => null,
+                'umur_tunggakan' => 170,
                 'flag_restruk' => null,
                 'kol_adk1' => '4',
                 'kolek' => '4',
@@ -191,10 +191,10 @@ class ReportSnapshotBuilderDashboardBucketTest extends TestCase
         $expectedBuckets = [
             $this->accountNumbers[0] => 'DPK 1',
             $this->accountNumbers[1] => 'LR',
-            $this->accountNumbers[2] => 'L',
-            $this->accountNumbers[3] => 'KL',
-            $this->accountNumbers[4] => 'Pay',
-            $this->accountNumbers[5] => 'Unknown',
+            $this->accountNumbers[2] => 'LR',
+            $this->accountNumbers[3] => 'L',
+            $this->accountNumbers[4] => 'KL',
+            $this->accountNumbers[5] => 'D2',
         ];
 
         ksort($expectedBuckets);
@@ -206,11 +206,11 @@ class ReportSnapshotBuilderDashboardBucketTest extends TestCase
     public function test_force_dashboard_snapshot_rebuild_replaces_period_without_antijoin_cleanup(): void
     {
         $this->sourceIds = [
-            'test-dashboard-force-source-' . uniqid(),
+            'test-dashboard-force-source-'.uniqid(),
         ];
         $this->accountNumbers = [
-            'UT-FORCE-' . uniqid(),
-            'UT-FORCE-STALE-' . uniqid(),
+            'UT-FORCE-'.uniqid(),
+            'UT-FORCE-STALE-'.uniqid(),
         ];
 
         DB::table('daily_loan_dinamis')->insert([
@@ -232,7 +232,7 @@ class ReportSnapshotBuilderDashboardBucketTest extends TestCase
         ]);
 
         DB::table('dashboard_pinjaman_snapshots')->insert([
-            'uniqueid_dps' => 'test-dashboard-force-stale-' . uniqid(),
+            'uniqueid_dps' => 'test-dashboard-force-stale-'.uniqid(),
             'periode' => $this->testPeriod,
             'account_number' => $this->accountNumbers[1],
             'loan_balance' => 999,
@@ -291,20 +291,20 @@ class ReportSnapshotBuilderDashboardBucketTest extends TestCase
             DB::purge('mysql');
             DB::reconnect('mysql')->getPdo();
         } catch (Throwable $e) {
-            $this->markTestSkipped('MySQL connection is unavailable for snapshot test: ' . $e->getMessage());
+            $this->markTestSkipped('MySQL connection is unavailable for snapshot test: '.$e->getMessage());
         }
     }
 
     private function ensureSnapshotTablesExistOrSkip(): void
     {
-        if (!Schema::hasTable('daily_loan_dinamis') || !Schema::hasTable('dashboard_pinjaman_snapshots')) {
+        if (! Schema::hasTable('daily_loan_dinamis') || ! Schema::hasTable('dashboard_pinjaman_snapshots')) {
             $this->markTestSkipped('MySQL snapshot tables are unavailable for snapshot test.');
         }
     }
 
     private function readDotEnv(string $path): array
     {
-        if (!is_file($path)) {
+        if (! is_file($path)) {
             return [];
         }
 
@@ -312,7 +312,7 @@ class ReportSnapshotBuilderDashboardBucketTest extends TestCase
         foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
             $trimmed = trim($line);
 
-            if ($trimmed === '' || str_starts_with($trimmed, '#') || !str_contains($trimmed, '=')) {
+            if ($trimmed === '' || str_starts_with($trimmed, '#') || ! str_contains($trimmed, '=')) {
                 continue;
             }
 

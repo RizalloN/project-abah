@@ -823,6 +823,7 @@ class DashboardHarianSnapshotService
                 'deltas' => [
                     'yoy' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($yoyMetrics[$metricKey] ?? 0),
                     'ytd' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($ytdMetrics[$metricKey] ?? 0),
+                    'mtm' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($mtmMetrics[$metricKey] ?? 0),
                     'mtd' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($mtdMetrics[$metricKey] ?? 0),
                     'dtd' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($h1Metrics[$metricKey] ?? 0),
                 ],
@@ -1708,6 +1709,11 @@ class DashboardHarianSnapshotService
 
     private function fetchL1133MicroLoanAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
     {
+        $resolvedPeriod = $this->resolvePreviousL1133Period($period);
+        if ($resolvedPeriod === null) {
+            return collect();
+        }
+
         $unitMap = $this->dlyKapUnitScopeMap($period);
         if ($unitMap->isEmpty()) {
             return collect();
@@ -1720,7 +1726,7 @@ class DashboardHarianSnapshotService
         $kurKpp = "{$jenis} = 'KPR'";
 
         $rows = DB::table(self::L1133_TABLE . ' as l')
-            ->where('l.periode', $period)
+            ->where('l.periode', $resolvedPeriod)
             ->selectRaw("CAST(TRIM(COALESCE(l.kode_uker, '')) AS UNSIGNED) as unit_code")
             ->selectRaw("MAX(TRIM(COALESCE(l.nama_kanca, ''))) as raw_cabang")
             ->selectRaw("MAX(TRIM(COALESCE(l.nama_uker, ''))) as raw_unit")
@@ -1783,7 +1789,24 @@ class DashboardHarianSnapshotService
     private function l1133Available(string $period): bool
     {
         return Schema::hasTable(self::L1133_TABLE)
-            && DB::table(self::L1133_TABLE)->where('periode', $period)->exists();
+            && $this->resolvePreviousL1133Period($period) !== null;
+    }
+
+    private function resolvePreviousL1133Period(string $period): ?string
+    {
+        if (!Schema::hasTable(self::L1133_TABLE)) {
+            return null;
+        }
+
+        $normalizedPeriod = $this->normalizeDate($period);
+        if ($normalizedPeriod === null) {
+            return null;
+        }
+
+        return DB::table(self::L1133_TABLE)
+            ->where('periode', '<=', $normalizedPeriod)
+            ->orderByDesc('periode')
+            ->value('periode');
     }
 
     private function l1133MicroMetricKeys(): array
@@ -2136,24 +2159,24 @@ class DashboardHarianSnapshotService
             'giro_mikro' => ['mata_anggaran' => ['Giro Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
             'deposito_mikro' => ['mata_anggaran' => ['Deposito Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
             'tabungan_mikro' => ['mata_anggaran' => ['Tabungan Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
-            'simpanan_wholesale' => ['mata_anggaran' => ['A.2.a. Giro Korporasi']],
+            'simpanan_wholesale' => ['mata_anggaran' => ['A.2. DPK Korporasi']],
             'giro_wholesale' => ['mata_anggaran' => ['A.2.a. Giro Korporasi']],
-            'deposito_wholesale' => ['mata_anggaran' => []],
+            'deposito_wholesale' => ['mata_anggaran' => ['A.2.b. Deposito Korporasi']],
             'tabungan_wholesale' => ['mata_anggaran' => []],
             'total_os' => ['mata_anggaran' => ['B. KREDIT TOTAL']],
-            'kecil_non_cashcoll_os' => ['mata_anggaran' => ['B.2.a. Kredit Kecil Non Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
-            'cashcoll_os' => ['mata_anggaran' => ['B.2.b. Kredit Kecil Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
+            'kecil_non_cashcoll_os' => ['mata_anggaran' => ['B.2.a. Kredit Kecil Non Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+            'cashcoll_os' => ['mata_anggaran' => ['B.2.b. Kredit Kecil Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
             'medium_os' => ['mata_anggaran' => ['B.3. MEDIUM']],
-            'briguna_konsumer_os' => ['mata_anggaran' => ['B.5.a. Briguna'], 'uker_contains_any' => ['KC', 'KCP']],
-            'kpr_os' => ['mata_anggaran' => ['B.5.b. KPR'], 'uker_contains_any' => ['KC', 'KCP']],
-            'kkb_os' => ['mata_anggaran' => ['B.5.c. KKB'], 'uker_contains_any' => ['KC', 'KCP']],
+            'briguna_konsumer_os' => ['mata_anggaran' => ['B.5.a. Briguna'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+            'kpr_os' => ['mata_anggaran' => ['B.5.b. KPR'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+            'kkb_os' => ['mata_anggaran' => ['B.5.c. KKB'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
             'micro_os' => ['mata_anggaran' => ['B.1. MIKRO']],
             'briguna_mikro_os' => ['mata_anggaran' => ['B.1.b. Briguna Mikro']],
             'kupedes_os' => ['mata_anggaran' => ['B.1.a. Kupedes Komersial']],
             'kur_mikro_os' => ['mata_anggaran' => ['B.1.c. KUR Mikro']],
             'kur_kecil_os' => ['mata_anggaran' => ['B.1.d. KUR Kecil']],
             'kur_kpp_os' => ['mata_anggaran' => ['B.1.e. KPP']],
-            'total_sml_pct_non_commercial' => ['mata_anggaran' => ['DPK % Total']],
+            'total_sml_pct_non_commercial' => ['mata_anggaran' => []],
             'kecil_non_cashcoll_sml' => ['mata_anggaran' => ['DPK Rp Kecil Non Cash Collateral']],
             'cashcoll_sml' => ['mata_anggaran' => ['DPK Rp Kecil Cash Collateral']],
             'medium_sml' => ['mata_anggaran' => ['DPK Rp Medium']],
@@ -2166,7 +2189,7 @@ class DashboardHarianSnapshotService
             'kur_mikro_sml' => ['mata_anggaran' => ['DPK Rp KUR Mikro']],
             'kur_kecil_sml' => ['mata_anggaran' => ['DPK Rp KUR Kecil']],
             'kur_kpp_sml' => ['mata_anggaran' => ['DPK Rp KPP']],
-            'total_npl_pct_non_commercial' => ['mata_anggaran' => ['NPL % Total']],
+            'total_npl_pct_non_commercial' => ['mata_anggaran' => []],
             'kecil_non_cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Non Cash Collateral']],
             'cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Cash Collateral']],
             'medium_npl' => ['mata_anggaran' => ['NPL Rp Medium']],
@@ -2203,23 +2226,25 @@ class DashboardHarianSnapshotService
         $final['kecil_os'] = $final['kecil_non_cashcoll_os'] + $final['cashcoll_os'];
         $final['sme_os'] = $final['kecil_os'];
         $final['consumer_os'] = $final['briguna_konsumer_os'] + $final['kpr_os'] + $final['kkb_os'];
-        $final['total_os_non_commercial'] = $final['kecil_os'] + $final['medium_os'] + $final['consumer_os'] + $final['micro_os'];
+        $final['total_os_non_commercial'] = $final['kecil_os'] + $final['consumer_os'] + $final['micro_os'];
         if ((float) ($final['total_os'] ?? 0) <= 0) {
             $final['total_os'] = $final['commercial_os'] + $final['total_os_non_commercial'];
         }
         $final['kecil_sml'] = $final['kecil_non_cashcoll_sml'] + $final['cashcoll_sml'];
         $final['sme_sml'] = $final['kecil_sml'];
         $final['consumer_sml'] = $final['briguna_konsumer_sml'] + $final['kpr_sml'] + $final['kkb_sml'];
-        $final['total_sml_abs_non_commercial'] = $final['kecil_sml'] + $final['medium_sml'] + $final['consumer_sml'] + $final['micro_sml'];
+        $final['total_sml_abs_non_commercial'] = $final['kecil_sml'] + $final['consumer_sml'] + $final['micro_sml'];
         $final['kecil_npl'] = $final['kecil_non_cashcoll_npl'] + $final['cashcoll_npl'];
         $final['sme_npl'] = $final['kecil_npl'];
         $final['consumer_npl'] = $final['briguna_konsumer_npl'] + $final['kpr_npl'] + $final['kkb_npl'];
         $final['total_npl_abs_non_commercial'] = $final['sme_npl'] + $final['consumer_npl'] + $final['micro_npl'];
+        $final['total_sml_pct_non_commercial'] = $this->safePercent($final['total_sml_abs_non_commercial'], $final['total_os_non_commercial']);
+        $final['total_npl_pct_non_commercial'] = $this->safePercent($final['total_npl_abs_non_commercial'], $final['total_os_non_commercial']);
         $final['simpanan_ritel'] = $final['giro_ritel'] + $final['deposito_ritel'] + $final['tabungan_ritel'];
         $final['simpanan_mikro'] = $final['giro_mikro'] + $final['deposito_mikro'] + $final['tabungan_mikro'];
         $final['simpanan_wholesale'] = $final['giro_wholesale'] + $final['deposito_wholesale'] + $final['tabungan_wholesale'];
         $computedTotalSimpanan = $final['simpanan_ritel'] + $final['simpanan_mikro'] + $final['simpanan_wholesale'];
-        if ((float) ($final['total_simpanan'] ?? 0) <= 0) {
+        if ($computedTotalSimpanan > (float) ($final['total_simpanan'] ?? 0)) {
             $final['total_simpanan'] = $computedTotalSimpanan;
         }
         $final['casa_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'];
@@ -2930,6 +2955,7 @@ class DashboardHarianSnapshotService
         }
 
         try {
+            $normalizedPeriod = $this->normalizeDate($period) ?? $period;
             $loanState = $this->sourceAggregateState(
                 self::LOAN_TABLE,
                 $this->sourcePeriodColumn(self::LOAN_TABLE),
@@ -2945,12 +2971,15 @@ class DashboardHarianSnapshotService
                     $this->sourcePeriodRawCandidates(self::DLY_KAP_TABLE, $period),
                     ['tl_rp', 'dpk_rp', 'npl_rp']
                 );
-            $l1133State = $this->sourceAggregateState(
-                self::L1133_TABLE,
-                $this->sourcePeriodColumn(self::L1133_TABLE),
-                $this->sourcePeriodRawCandidates(self::L1133_TABLE, $period),
-                ['outstanding', 'dpk', 'npl']
-            );
+            $l1133Period = $this->resolvePreviousL1133Period($normalizedPeriod);
+            $l1133State = $l1133Period === null
+                ? ['row_count' => 0]
+                : $this->sourceAggregateState(
+                    self::L1133_TABLE,
+                    $this->sourcePeriodColumn(self::L1133_TABLE),
+                    $this->sourcePeriodRawCandidates(self::L1133_TABLE, $l1133Period),
+                    ['outstanding', 'dpk', 'npl']
+                );
 
             $savingsTable = $this->savingsSourceTableForPeriod($period);
             $savingsState = $this->sourceAggregateState(
@@ -2961,8 +2990,6 @@ class DashboardHarianSnapshotService
             );
 
             [$recoverySource, $recoveryPeriod, $recoveryState] = $this->sourceRecoveryState($period);
-
-            $normalizedPeriod = $this->normalizeDate($period) ?? $period;
 
             $signaturePayload = [
                 'version' => self::SOURCE_SIGNATURE_VERSION,
@@ -3603,19 +3630,20 @@ class DashboardHarianSnapshotService
 
         $columnMap = [
             'simpanan' => 'total_simpanan',
+            'simpanan_casa' => 'total_casa',
             'pinjaman' => 'total_os_non_commercial',
-            'sml' => 'total_sml_abs_non_commercial',
+            'sml' => 'total_sml_pct_non_commercial',
             'npl' => 'total_npl_abs_non_commercial',
         ];
 
         $metric = $columnMap[$category] ?? 'total_simpanan';
+        $valueType = $category === 'sml' ? 'percent' : 'currency';
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
 
         $query = DB::table(self::SNAPSHOT_TABLE)
             ->selectRaw('snapshot_period')
             ->selectRaw('kanca_label')
-            ->selectRaw("SUM({$metric}) as value")
             ->where(function ($q) use ($months) {
                 foreach ($months as $month) {
                     $start = "{$month}-01";
@@ -3623,6 +3651,14 @@ class DashboardHarianSnapshotService
                     $q->orWhereBetween('snapshot_period', [$start, $end]);
                 }
             });
+
+        if ($valueType === 'percent') {
+            $query->selectRaw('SUM(total_sml_abs_non_commercial) as numerator')
+                ->selectRaw('SUM(total_os_non_commercial) as denominator')
+                ->selectRaw('CASE WHEN SUM(total_os_non_commercial) > 0 THEN (SUM(total_sml_abs_non_commercial) * 100.0) / SUM(total_os_non_commercial) ELSE 0 END as value');
+        } else {
+            $query->selectRaw("SUM({$metric}) as value");
+        }
 
         if ($normalizedUnit !== []) {
             // Filter by specific units
@@ -3642,6 +3678,8 @@ class DashboardHarianSnapshotService
 
         $series = [];
         $areaTotal = [];
+        $areaNumerator = [];
+        $areaDenominator = [];
 
         foreach ($results as $row) {
             $month = substr($row->snapshot_period, 0, 7);
@@ -3656,14 +3694,28 @@ class DashboardHarianSnapshotService
             if (!isset($series[$kanca][$month])) {
                 $series[$kanca][$month] = array_fill(1, 31, null);
             }
-            // Scale to Billions (Rp M)
-            $scaledValue = (float) $row->value / 1000000000;
+            $scaledValue = $valueType === 'percent'
+                ? (float) $row->value
+                : (float) $row->value / 1000000000;
             $series[$kanca][$month][$day] = $scaledValue;
 
             if (!isset($areaTotal[$month])) {
                 $areaTotal[$month] = array_fill(1, 31, null);
             }
-            $areaTotal[$month][$day] = ($areaTotal[$month][$day] ?? 0) + $scaledValue;
+            if ($valueType === 'percent') {
+                if (!isset($areaNumerator[$month])) {
+                    $areaNumerator[$month] = array_fill(1, 31, 0.0);
+                    $areaDenominator[$month] = array_fill(1, 31, 0.0);
+                }
+
+                $areaNumerator[$month][$day] += (float) ($row->numerator ?? 0);
+                $areaDenominator[$month][$day] += (float) ($row->denominator ?? 0);
+                $areaTotal[$month][$day] = $areaDenominator[$month][$day] > 0
+                    ? ($areaNumerator[$month][$day] / $areaDenominator[$month][$day]) * 100
+                    : null;
+            } else {
+                $areaTotal[$month][$day] = ($areaTotal[$month][$day] ?? 0) + $scaledValue;
+            }
         }
 
         // Convert series to flat 0-indexed arrays [0...30] for Chart.js
@@ -3683,6 +3735,7 @@ class DashboardHarianSnapshotService
         return [
             'series' => $finalSeries,
             'area_total' => $finalAreaTotal,
+            'value_type' => $valueType,
         ];
     }
 }

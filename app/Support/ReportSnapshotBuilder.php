@@ -1842,7 +1842,7 @@ class ReportSnapshotBuilder
 
     private function buildDashboardBucketExpression(): string
     {
-        return LoanQualityBucketMapper::buildSqlExpression();
+        return LoanQualityBucketMapper::buildSqlExpression('d');
     }
 
     private function buildLoanBranchExpression(string $loanBranchColumn): string
@@ -2298,13 +2298,23 @@ class ReportSnapshotBuilder
             ? "
             LEFT JOIN (
                 SELECT
-                    current_accounts.cabang,
-                    current_accounts.unit,
-                    current_accounts.branch_code,
-                    current_accounts.rm,
-                    current_accounts.produk,
-                    COUNT(*) as surplus_deb,
-                    SUM(current_accounts.current_plafon - previous_accounts.previous_plafon) as surplus_os
+                    current_groups.cabang,
+                    current_groups.unit,
+                    current_groups.branch_code,
+                    current_groups.rm,
+                    current_groups.produk,
+                    CASE
+                        WHEN previous_groups.previous_plafon > 0
+                            AND current_groups.current_plafon > previous_groups.previous_plafon
+                        THEN current_groups.current_deb
+                        ELSE 0
+                    END as surplus_deb,
+                    CASE
+                        WHEN previous_groups.previous_plafon > 0
+                            AND current_groups.current_plafon > previous_groups.previous_plafon
+                        THEN current_groups.current_plafon - previous_groups.previous_plafon
+                        ELSE 0
+                    END as surplus_os
                 FROM (
                     SELECT
                         COALESCE(cabang_normalized, '') as cabang,
@@ -2312,8 +2322,8 @@ class ReportSnapshotBuilder
                         COALESCE(branch_normalized, '') as branch_code,
                         COALESCE(rm_normalized, '') as rm,
                         {$canonicalProductSql} as produk,
-                        nomor_rekening1,
-                        MAX(COALESCE(plafon, 0)) as current_plafon
+                        COUNT(DISTINCT nomor_rekening1) as current_deb,
+                        SUM(COALESCE(plafon, 0)) as current_plafon
                     FROM daily_loan_dinamis d
                     WHERE periode = ?
                         AND ({$ruleSql})
@@ -2326,28 +2336,35 @@ class ReportSnapshotBuilder
                         COALESCE(unit_normalized, ''),
                         COALESCE(branch_normalized, ''),
                         COALESCE(rm_normalized, ''),
-                        {$canonicalProductSql},
-                        nomor_rekening1
-                ) current_accounts
-                INNER JOIN (
+                        {$canonicalProductSql}
+                ) current_groups
+                LEFT JOIN (
                     SELECT
-                        nomor_rekening1,
-                        MAX(COALESCE(plafon, 0)) as previous_plafon
-                    FROM daily_loan_dinamis
+                        COALESCE(cabang_normalized, '') as cabang,
+                        COALESCE(unit_normalized, '') as unit,
+                        COALESCE(branch_normalized, '') as branch_code,
+                        COALESCE(rm_normalized, '') as rm,
+                        {$canonicalProductSql} as produk,
+                        SUM(COALESCE(plafon, 0)) as previous_plafon
+                    FROM daily_loan_dinamis d
                     WHERE periode = ?
                         AND segmen_kinerja = 'CONSUMER'
                         AND produk_kinerja IN ('BRIGUNAKONSUMER', 'KPR')
+                        AND pn_pengelola1 IS NOT NULL
+                        AND pn_pengelola1 <> ''
                         AND nomor_rekening1 IS NOT NULL
                         AND nomor_rekening1 <> ''
-                    GROUP BY nomor_rekening1
-                ) previous_accounts ON previous_accounts.nomor_rekening1 = current_accounts.nomor_rekening1
-                WHERE current_accounts.current_plafon > previous_accounts.previous_plafon
-                GROUP BY
-                    current_accounts.cabang,
-                    current_accounts.unit,
-                    current_accounts.branch_code,
-                    current_accounts.rm,
-                    current_accounts.produk
+                    GROUP BY
+                        COALESCE(cabang_normalized, ''),
+                        COALESCE(unit_normalized, ''),
+                        COALESCE(branch_normalized, ''),
+                        COALESCE(rm_normalized, ''),
+                        {$canonicalProductSql}
+                ) previous_groups ON previous_groups.cabang = current_groups.cabang
+                    AND previous_groups.unit = current_groups.unit
+                    AND previous_groups.branch_code = current_groups.branch_code
+                    AND previous_groups.rm = current_groups.rm
+                    AND previous_groups.produk = current_groups.produk
             ) consumer_surplus ON consumer_surplus.cabang = COALESCE(d.cabang_normalized, '')
                 AND consumer_surplus.unit = COALESCE(d.unit_normalized, '')
                 AND consumer_surplus.branch_code = COALESCE(d.branch_normalized, '')
@@ -2415,18 +2432,18 @@ class ReportSnapshotBuilder
             "{$canonicalProductSql} as produk",
             'SUM(COALESCE(d.plafon, 0)) as plafon',
             "SUM(CASE WHEN d.segmen_kinerja = 'MICRO' AND d.produk_kinerja = 'KURMIKRO' AND {$kurRitelDescriptionSql} = ? THEN COALESCE(d.plafon, 0) ELSE COALESCE(d.baki_debet1, 0) END) as loan_os",
-            'SUM(CASE WHEN d.kol_adk1 = 1 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as lancar_os',
-            'SUM(CASE WHEN d.kol_adk1 = 2 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as sml_os',
-            'SUM(CASE WHEN d.kol_adk1 > 2 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as npl_os',
-            "SUM(CASE WHEN d.kol_adk1 = 1 AND COALESCE(d.flag_restruk, '') = 'Y' THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as restruk_os",
+            'SUM(CASE WHEN d.kolek = 1 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as lancar_os',
+            'SUM(CASE WHEN d.kolek = 2 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as sml_os',
+            'SUM(CASE WHEN d.kolek > 2 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as npl_os',
+            "SUM(CASE WHEN d.kolek = 1 AND COALESCE(d.flag_restruk, '') = 'Y' THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as restruk_os",
             'COUNT(DISTINCT d.nomor_rekening1) as total_deb'
         );
         array_push($bindings, $segment, $kurRitelDescriptionToken);
 
         $metricSelects = [
-            'lancar_deb' => 'COUNT(DISTINCT CASE WHEN d.kol_adk1 = 1 THEN d.nomor_rekening1 END) as lancar_deb',
-            'sml_deb' => 'COUNT(DISTINCT CASE WHEN d.kol_adk1 = 2 THEN d.nomor_rekening1 END) as sml_deb',
-            'npl_deb' => 'COUNT(DISTINCT CASE WHEN d.kol_adk1 > 2 THEN d.nomor_rekening1 END) as npl_deb',
+            'lancar_deb' => 'COUNT(DISTINCT CASE WHEN d.kolek = 1 THEN d.nomor_rekening1 END) as lancar_deb',
+            'sml_deb' => 'COUNT(DISTINCT CASE WHEN d.kolek = 2 THEN d.nomor_rekening1 END) as sml_deb',
+            'npl_deb' => 'COUNT(DISTINCT CASE WHEN d.kolek > 2 THEN d.nomor_rekening1 END) as npl_deb',
             'realisasi_deb' => $segment === 'CONSUMER'
                 ? ($hasConsumerSurplusBase ? 'COALESCE(MAX(consumer_surplus.surplus_deb), 0) as realisasi_deb' : '0 as realisasi_deb')
                 : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as realisasi_deb",
@@ -3138,13 +3155,13 @@ class ReportSnapshotBuilder
                 "SUM(CASE WHEN segmen_kinerja = ? AND produk_kinerja = ? AND {$kurRitelDescriptionSql} = ? THEN COALESCE(plafon, 0) ELSE COALESCE(baki_debet1, 0) END) as loan_os",
                 ['MICRO', 'KURMIKRO', $kurRitelDescriptionToken]
             )
-            ->selectRaw("SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN kol_adk1 = 1 THEN nomor_rekening1 END) as lancar_deb")
-            ->selectRaw("SUM(CASE WHEN kol_adk1 = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN kol_adk1 = 2 THEN nomor_rekening1 END) as sml_deb")
-            ->selectRaw("SUM(CASE WHEN kol_adk1 > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN kol_adk1 > 2 THEN nomor_rekening1 END) as npl_deb")
-            ->selectRaw("SUM(CASE WHEN kol_adk1 = 1 AND COALESCE(flag_restruk, '') = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
+            ->selectRaw("SUM(CASE WHEN kolek = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN kolek = 1 THEN nomor_rekening1 END) as lancar_deb")
+            ->selectRaw("SUM(CASE WHEN kolek = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN kolek = 2 THEN nomor_rekening1 END) as sml_deb")
+            ->selectRaw("SUM(CASE WHEN kolek > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN kolek > 2 THEN nomor_rekening1 END) as npl_deb")
+            ->selectRaw("SUM(CASE WHEN kolek = 1 AND COALESCE(flag_restruk, '') = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
             ->selectRaw("COUNT(DISTINCT nomor_rekening1) as total_deb")
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as realisasi_deb", [$periodStart, $period])
             ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os", [$periodStart, $period])
@@ -3214,21 +3231,33 @@ class ReportSnapshotBuilder
             return $rows;
         }
 
-        $previousPlafon = DB::table('daily_loan_dinamis')
+        $productSql = "CASE WHEN produk_kinerja = 'BRIGUNAKONSUMER' THEN 'BRIGUNA-KONSUMER' ELSE produk_kinerja END";
+
+        $previousPlafonByGroup = DB::table('daily_loan_dinamis')
             ->where('periode', $previousPeriod)
             ->where('segmen_kinerja', 'CONSUMER')
             ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->whereNotNull('nomor_rekening1')
-            ->where('nomor_rekening1', '<>', '')
-            ->selectRaw('nomor_rekening1, MAX(COALESCE(plafon, 0)) as plafon')
-            ->groupBy('nomor_rekening1')
-            ->pluck('plafon', 'nomor_rekening1');
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '')
+            ->selectRaw("COALESCE(cabang_normalized, '') as cabang")
+            ->selectRaw("COALESCE(unit_normalized, '') as unit")
+            ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
+            ->selectRaw("COALESCE(rm_normalized, '') as rm")
+            ->selectRaw("{$productSql} as produk")
+            ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
+            ->groupByRaw("COALESCE(cabang_normalized, ''), COALESCE(unit_normalized, ''), COALESCE(branch_normalized, ''), COALESCE(rm_normalized, ''), {$productSql}")
+            ->get()
+            ->mapWithKeys(fn ($row): array => [
+                $this->consumerSurplusGroupKey([
+                    'cabang' => $row->cabang,
+                    'unit' => $row->unit,
+                    'branch_code' => $row->branch_code,
+                    'rm' => $row->rm,
+                    'produk' => $row->produk,
+                ]) => (float) $row->plafon,
+            ]);
 
-        if ($previousPlafon->isEmpty()) {
-            return $rows;
-        }
-
-        $accountPlafonByGroup = [];
+        $currentPlafonByGroup = [];
         DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->where('segmen_kinerja', 'CONSUMER')
@@ -3247,7 +3276,7 @@ class ReportSnapshotBuilder
                 'plafon',
             ])
             ->orderBy('nomor_rekening1')
-            ->chunk(1000, function ($sourceRows) use (&$accountPlafonByGroup): void {
+            ->chunk(1000, function ($sourceRows) use (&$currentPlafonByGroup): void {
                 foreach ($sourceRows as $sourceRow) {
                     $groupKey = $this->consumerSurplusGroupKey([
                         'cabang' => $sourceRow->cabang_normalized,
@@ -3259,31 +3288,30 @@ class ReportSnapshotBuilder
                     $account = (string) $sourceRow->nomor_rekening1;
                     $currentPlafon = (float) ($sourceRow->plafon ?? 0);
 
-                    if (!isset($accountPlafonByGroup[$groupKey][$account]) || $currentPlafon > $accountPlafonByGroup[$groupKey][$account]) {
-                        $accountPlafonByGroup[$groupKey][$account] = $currentPlafon;
+                    if (!isset($currentPlafonByGroup[$groupKey])) {
+                        $currentPlafonByGroup[$groupKey] = ['debitur' => [], 'plafon' => 0.0];
                     }
+
+                    $currentPlafonByGroup[$groupKey]['debitur'][$account] = true;
+                    $currentPlafonByGroup[$groupKey]['plafon'] += $currentPlafon;
                 }
             });
 
         $surplusByGroup = [];
-        foreach ($accountPlafonByGroup as $groupKey => $accounts) {
-            foreach ($accounts as $account => $currentPlafon) {
-                if (!$previousPlafon->has($account)) {
-                    continue;
-                }
-
-                $surplus = $currentPlafon - (float) $previousPlafon->get($account);
-                if ($surplus <= 0) {
-                    continue;
-                }
-
-                if (!isset($surplusByGroup[$groupKey])) {
-                    $surplusByGroup[$groupKey] = ['debitur' => 0, 'os' => 0.0];
-                }
-
-                $surplusByGroup[$groupKey]['debitur']++;
-                $surplusByGroup[$groupKey]['os'] += $surplus;
+        foreach ($currentPlafonByGroup as $groupKey => $metric) {
+            if (!isset($previousPlafonByGroup[$groupKey]) || (float) $previousPlafonByGroup[$groupKey] <= 0) {
+                continue;
             }
+
+            $surplus = (float) $metric['plafon'] - (float) $previousPlafonByGroup[$groupKey];
+            if ($surplus <= 0) {
+                continue;
+            }
+
+            $surplusByGroup[$groupKey] = [
+                'debitur' => count($metric['debitur']),
+                'os' => $surplus,
+            ];
         }
 
         foreach ($rows as &$row) {

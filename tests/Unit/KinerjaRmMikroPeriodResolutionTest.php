@@ -44,6 +44,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             $table->decimal('plafon', 20, 2)->nullable();
             $table->decimal('baki_debet1', 20, 2)->nullable();
             $table->integer('kol_adk1')->nullable();
+            $table->integer('kolek')->nullable();
             $table->date('tgl_realisasi')->nullable();
             $table->string('pn_pemutus_normalized')->nullable();
         });
@@ -161,6 +162,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             'plafon' => 100000000,
             'baki_debet1' => 90000000,
             'kol_adk1' => 1,
+            'kolek' => 1,
             'tgl_realisasi' => '2026-05-06',
             'pn_pemutus_normalized' => null,
         ], $overrides));

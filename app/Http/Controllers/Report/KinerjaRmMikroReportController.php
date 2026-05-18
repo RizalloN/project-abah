@@ -729,7 +729,7 @@ class KinerjaRmMikroReportController extends Controller
             ->selectRaw("COALESCE(NULLIF(d.cabang_normalized, ''), UPPER(TRIM(COALESCE(d.cabang1, '')))) as cabang")
             ->selectRaw("COALESCE(NULLIF(d.rm_normalized, ''), UPPER(TRIM(COALESCE(d.pn_pengelola1, '')))) as pn_pengelola")
             ->selectRaw("COALESCE(NULLIF(d.nomor_rekening1, ''), CONCAT(COALESCE(d.branch1, ''), '-', COALESCE(d.pn_pengelola1, ''), '-', COALESCE(d.plafon, ''), '-', COALESCE(d.tgl_realisasi, ''))) as rekening")
-            ->selectRaw('d.plafon, d.baki_debet1, d.kol_adk1, d.tgl_realisasi')
+            ->selectRaw('d.plafon, d.baki_debet1, d.kolek, d.tgl_realisasi')
             ->selectRaw("{$actualSql} as actual_level")
             ->selectRaw("{$expectedSql} as expected_level");
     }

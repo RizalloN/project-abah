@@ -2,12 +2,15 @@
 
 namespace App\Providers;
 
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\CommandStarting;
+use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobQueued;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\View;
@@ -38,6 +41,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->registerSecurityRateLimiters();
         $this->registerQueueWorkerAutoEnsure();
 
         // 🔥 PROTECT FROM ACCIDENTAL DATA LOSS
@@ -80,6 +84,28 @@ class AppServiceProvider extends ServiceProvider
 
             $view->with('activeImportJobCount', $activeImportJobCount);
         });
+    }
+
+    private function registerSecurityRateLimiters(): void
+    {
+        RateLimiter::for('admin-sensitive', function (Request $request): Limit {
+            return Limit::perMinute((int) env('SECURITY_ADMIN_SENSITIVE_LIMIT_PER_MINUTE', 30))
+                ->by($this->securityRateLimitKey($request));
+        });
+
+        RateLimiter::for('auth-sensitive', function (Request $request): Limit {
+            return Limit::perMinute((int) env('SECURITY_AUTH_SENSITIVE_LIMIT_PER_MINUTE', 12))
+                ->by($this->securityRateLimitKey($request));
+        });
+    }
+
+    private function securityRateLimitKey(Request $request): string
+    {
+        $user = $request->user();
+        $identity = $user ? 'user:' . $user->getAuthIdentifier() : 'guest';
+        $route = $request->route()?->getName() ?? $request->path();
+
+        return sha1($identity . '|' . $request->ip() . '|' . $route);
     }
 
     private function registerQueueWorkerAutoEnsure(): void

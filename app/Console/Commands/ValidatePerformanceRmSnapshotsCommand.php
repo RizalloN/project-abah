@@ -80,15 +80,10 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
                 'discrepancies' => [],
             ];
 
+            $sourceRows = $this->fetchSourceRowsForPeriod($period);
+
             foreach ($segmentSnapshots as $snapshot) {
-                $sourceData = $this->fetchSourceData(
-                    $period,
-                    $snapshot->cabang,
-                    $snapshot->unit,
-                    $snapshot->rm,
-                    $snapshot->produk,
-                    $segment
-                );
+                $sourceData = $sourceRows[$this->snapshotKey($snapshot)] ?? null;
 
                 $checks = $this->compareValues($snapshot, $sourceData, $period);
                 $segmentResults['value_checks'][] = $checks;
@@ -113,6 +108,262 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
         }
 
         return $results;
+    }
+
+    /**
+     * @return array<string, object>
+     */
+    private function fetchSourceRowsForPeriod(string $period): array
+    {
+        $realisasiDateColumn = Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi1') ? 'tgl_realisasi1' : 'tgl_realisasi';
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+        $descriptionSql = $this->normalizedSql('description');
+        $segmentSql = "CASE WHEN segmen_kinerja = 'CONSUMER' THEN 'CONSUMER' WHEN segmen_kinerja = 'SMALL' THEN 'SMALL' WHEN segmen_kinerja = 'MICRO' THEN 'MICRO' ELSE UPPER(TRIM(COALESCE(segmen_kinerja, ''))) END";
+        $productSql = "CASE
+            WHEN segmen_kinerja = 'CONSUMER' AND produk_kinerja = 'BRIGUNAKONSUMER' THEN 'BRIGUNA-KONSUMER'
+            WHEN segmen_kinerja = 'CONSUMER' AND produk_kinerja = 'KPR' THEN 'KPR'
+            WHEN segmen_kinerja = 'SMALL' AND produk_kinerja IN ('COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL', 'SMALL') THEN 'SMALL'
+            WHEN segmen_kinerja = 'MICRO' AND produk_kinerja = 'BRIGUNAMIKRO' THEN 'BRIGUNA-MIKRO'
+            WHEN segmen_kinerja = 'MICRO' AND produk_kinerja = 'KUPEDES' THEN 'KUPEDES'
+            WHEN segmen_kinerja = 'MICRO' AND produk_kinerja = 'KURMIKRO' THEN 'KUR-MIKRO'
+            WHEN segmen_kinerja = 'MICRO' AND produk_kinerja IN ('CASHCOLLATERAL', 'CASHCOLL') THEN 'CASHCOLLATERAL'
+            WHEN segmen_kinerja = 'MICRO' AND produk_kinerja = 'KPR' THEN 'KPR'
+            WHEN segmen_kinerja = 'MICRO' AND produk_kinerja = 'KURSMALL' THEN 'KUR-SMALL'
+            ELSE UPPER(TRIM(COALESCE(produk_kinerja, '')))
+        END";
+
+        $rows = DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '')
+            ->where(function ($query) use ($descriptionSql): void {
+                $query
+                    ->where(function ($rule): void {
+                        $rule->where('segmen_kinerja', 'CONSUMER')
+                            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR']);
+                    })
+                    ->orWhere(function ($rule): void {
+                        $rule->where('segmen_kinerja', 'SMALL')
+                            ->whereIn('produk_kinerja', ['COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL']);
+                    })
+                    ->orWhere(function ($rule): void {
+                        $rule->where('segmen_kinerja', 'MICRO')
+                            ->whereIn('produk_kinerja', ['BRIGUNAMIKRO', 'KUPEDES', 'CASHCOLLATERAL', 'KPR']);
+                    })
+                    ->orWhere(function ($rule) use ($descriptionSql): void {
+                        $rule->where('segmen_kinerja', 'MICRO')
+                            ->where('produk_kinerja', 'KURMIKRO')
+                            ->whereRaw("{$descriptionSql} = ?", ['KREDITMIKROKURRITEL2015']);
+                    });
+            })
+            ->selectRaw("COALESCE(cabang_normalized, '') as cabang")
+            ->selectRaw("COALESCE(unit_normalized, '') as unit")
+            ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
+            ->selectRaw("COALESCE(rm_normalized, '') as rm")
+            ->selectRaw("{$segmentSql} as segmen")
+            ->selectRaw("{$productSql} as produk")
+            ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
+            ->selectRaw(
+                "SUM(CASE WHEN segmen_kinerja = 'MICRO' AND produk_kinerja = 'KURMIKRO' AND {$descriptionSql} = ? THEN COALESCE(plafon, 0) ELSE COALESCE(baki_debet1, 0) END) as loan_os",
+                ['KREDITMIKROKURRITEL2015']
+            )
+            ->selectRaw('SUM(CASE WHEN kolek = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
+            ->selectRaw('SUM(CASE WHEN kolek = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os')
+            ->selectRaw('SUM(CASE WHEN kolek > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os')
+            ->selectRaw("SUM(CASE WHEN kolek = 1 AND COALESCE(flag_restruk, '') = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
+            ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
+            ->selectRaw("COUNT(DISTINCT CASE WHEN segmen_kinerja <> 'CONSUMER' AND {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as realisasi_deb", [$periodStart, $period])
+            ->selectRaw("SUM(CASE WHEN segmen_kinerja <> 'CONSUMER' AND {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os", [$periodStart, $period])
+            ->groupBy(
+                'cabang_normalized',
+                'unit_normalized',
+                'branch_normalized',
+                'rm_normalized',
+                'segmen_kinerja',
+                'produk_kinerja',
+                DB::raw($segmentSql),
+                DB::raw($productSql)
+            )
+            ->get();
+
+        $sourceRows = [];
+        foreach ($rows as $row) {
+            $key = $this->sourceKey((array) $row);
+            if (!isset($sourceRows[$key])) {
+                $sourceRows[$key] = $row;
+                continue;
+            }
+
+            foreach (['plafon', 'loan_os', 'lancar_os', 'sml_os', 'npl_os', 'restruk_os', 'realisasi_os'] as $field) {
+                $sourceRows[$key]->{$field} = (float) ($sourceRows[$key]->{$field} ?? 0) + (float) ($row->{$field} ?? 0);
+            }
+
+            foreach (['total_deb', 'realisasi_deb'] as $field) {
+                $sourceRows[$key]->{$field} = (int) ($sourceRows[$key]->{$field} ?? 0) + (int) ($row->{$field} ?? 0);
+            }
+        }
+
+        $this->applyConsumerSurplusForPeriod($period, $sourceRows);
+
+        return $sourceRows;
+    }
+
+    /**
+     * @param array<string, object> $sourceRows
+     */
+    private function applyConsumerSurplusForPeriod(string $period, array &$sourceRows): void
+    {
+        $previousPeriod = $this->resolvePreviousMonthDailyLoanPeriod($period);
+        if ($previousPeriod === null) {
+            return;
+        }
+
+        $productSql = "CASE WHEN produk_kinerja = 'BRIGUNAKONSUMER' THEN 'BRIGUNA-KONSUMER' ELSE produk_kinerja END";
+
+        $previousPlafonByGroup = DB::table('daily_loan_dinamis')
+            ->where('periode', $previousPeriod)
+            ->where('segmen_kinerja', 'CONSUMER')
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '')
+            ->selectRaw("COALESCE(cabang_normalized, '') as cabang")
+            ->selectRaw("COALESCE(unit_normalized, '') as unit")
+            ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
+            ->selectRaw("COALESCE(rm_normalized, '') as rm")
+            ->selectRaw("{$productSql} as produk")
+            ->selectRaw('SUM(COALESCE(plafon, 0)) as previous_plafon')
+            ->groupByRaw("COALESCE(cabang_normalized, ''), COALESCE(unit_normalized, ''), COALESCE(branch_normalized, ''), COALESCE(rm_normalized, ''), {$productSql}")
+            ->get()
+            ->mapWithKeys(fn ($row): array => [
+                $this->sourceKey([
+                    'cabang' => (string) ($row->cabang ?? ''),
+                    'unit' => (string) ($row->unit ?? ''),
+                    'branch_code' => (string) ($row->branch_code ?? ''),
+                    'rm' => (string) ($row->rm ?? ''),
+                    'segmen' => 'CONSUMER',
+                    'produk' => $this->canonicalProduct('CONSUMER', (string) ($row->produk ?? '')),
+                ]) => (float) $row->previous_plafon,
+            ]);
+
+        $currentPlafonByGroup = [];
+        DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->where('segmen_kinerja', 'CONSUMER')
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '')
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->select([
+                'cabang_normalized',
+                'unit_normalized',
+                'branch_normalized',
+                'rm_normalized',
+                'produk_kinerja',
+                'nomor_rekening1',
+                'plafon',
+            ])
+            ->orderBy('nomor_rekening1')
+            ->chunk(1000, function ($rows) use (&$currentPlafonByGroup): void {
+                foreach ($rows as $row) {
+                    $groupKey = $this->sourceKey([
+                        'cabang' => (string) ($row->cabang_normalized ?? ''),
+                        'unit' => (string) ($row->unit_normalized ?? ''),
+                        'branch_code' => (string) ($row->branch_normalized ?? ''),
+                        'rm' => (string) ($row->rm_normalized ?? ''),
+                        'segmen' => 'CONSUMER',
+                        'produk' => $this->canonicalProduct('CONSUMER', (string) ($row->produk_kinerja ?? '')),
+                    ]);
+                    $account = (string) $row->nomor_rekening1;
+                    $currentPlafon = (float) ($row->plafon ?? 0);
+
+                    if (!isset($currentPlafonByGroup[$groupKey])) {
+                        $currentPlafonByGroup[$groupKey] = ['debitur' => [], 'plafon' => 0.0];
+                    }
+
+                    $currentPlafonByGroup[$groupKey]['debitur'][$account] = true;
+                    $currentPlafonByGroup[$groupKey]['plafon'] += $currentPlafon;
+                }
+            });
+
+        foreach ($currentPlafonByGroup as $groupKey => $metric) {
+            if (!isset($sourceRows[$groupKey])) {
+                continue;
+            }
+
+            if (!isset($previousPlafonByGroup[$groupKey]) || (float) $previousPlafonByGroup[$groupKey] <= 0) {
+                $sourceRows[$groupKey]->realisasi_deb = 0;
+                $sourceRows[$groupKey]->realisasi_os = 0.0;
+                continue;
+            }
+
+            $os = (float) $metric['plafon'] - (float) $previousPlafonByGroup[$groupKey];
+            if ($os <= 0) {
+                $sourceRows[$groupKey]->realisasi_deb = 0;
+                $sourceRows[$groupKey]->realisasi_os = 0.0;
+                continue;
+            }
+
+            $sourceRows[$groupKey]->realisasi_deb = count($metric['debitur']);
+            $sourceRows[$groupKey]->realisasi_os = $os;
+        }
+    }
+
+    private function snapshotKey(object $snapshot): string
+    {
+        return $this->sourceKey([
+            'cabang' => (string) ($snapshot->cabang ?? ''),
+            'unit' => (string) ($snapshot->unit ?? ''),
+            'branch_code' => (string) ($snapshot->branch_code ?? ''),
+            'rm' => (string) ($snapshot->rm ?? ''),
+            'segmen' => (string) ($snapshot->segmen ?? ''),
+            'produk' => (string) ($snapshot->produk ?? ''),
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function sourceKey(array $row): string
+    {
+        return implode('|', [
+            (string) ($row['cabang'] ?? ''),
+            (string) ($row['unit'] ?? ''),
+            (string) ($row['branch_code'] ?? ''),
+            (string) ($row['rm'] ?? ''),
+            strtoupper(trim((string) ($row['segmen'] ?? ''))),
+            strtoupper(trim((string) ($row['produk'] ?? ''))),
+        ]);
+    }
+
+    private function normalizedSql(string $column): string
+    {
+        return "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE({$column}, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))";
+    }
+
+    private function canonicalProduct(string $segment, string $product): string
+    {
+        $segment = strtoupper(trim($segment));
+        $product = strtoupper(str_replace([' ', '-', '_', '/', '.'], '', trim($product)));
+
+        return match ($segment) {
+            'CONSUMER' => match ($product) {
+                'BRIGUNAKONSUMER' => 'BRIGUNA-KONSUMER',
+                'KPR' => 'KPR',
+                default => $product,
+            },
+            'SMALL' => in_array($product, ['COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL', 'SMALL'], true) ? 'SMALL' : $product,
+            'MICRO' => match ($product) {
+                'BRIGUNAMIKRO' => 'BRIGUNA-MIKRO',
+                'KUPEDES' => 'KUPEDES',
+                'KURMIKRO' => 'KUR-MIKRO',
+                'CASHCOLLATERAL', 'CASHCOLL' => 'CASHCOLLATERAL',
+                'KPR' => 'KPR',
+                'KURSMALL' => 'KUR-SMALL',
+                default => $product,
+            },
+            default => $product,
+        };
     }
 
     private function fetchSourceData(
@@ -143,10 +394,10 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             ->whereRaw("UPPER(TRIM(pn_pengelola1)) = ?", [strtoupper(trim($rm))])
             ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
             ->selectRaw($isMicroKur ? 'SUM(COALESCE(plafon, 0)) as loan_os' : 'SUM(COALESCE(baki_debet1, 0)) as loan_os')
-            ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
-            ->selectRaw('SUM(CASE WHEN kol_adk1 = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os')
-            ->selectRaw('SUM(CASE WHEN kol_adk1 > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os')
-            ->selectRaw("SUM(CASE WHEN kol_adk1 = 1 AND UPPER(TRIM(COALESCE(flag_restruk, ''))) = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
+            ->selectRaw('SUM(CASE WHEN kolek = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
+            ->selectRaw('SUM(CASE WHEN kolek = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os')
+            ->selectRaw('SUM(CASE WHEN kolek > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os')
+            ->selectRaw("SUM(CASE WHEN kolek = 1 AND UPPER(TRIM(COALESCE(flag_restruk, ''))) = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
             ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
             ->when($segment !== 'CONSUMER', function ($query) use ($realisasiDateColumn, $period): void {
                 $query->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN DATE_FORMAT(?, \"%Y-%m-01\") AND ? THEN nomor_rekening1 END) as realisasi_deb", [
@@ -354,24 +605,32 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             ->where('pn_pengelola1', '<>', '')
             ->whereNotNull('nomor_rekening1')
             ->where('nomor_rekening1', '<>', '')
-            ->selectRaw('nomor_rekening1, MAX(COALESCE(plafon, 0)) as current_plafon')
-            ->groupBy('nomor_rekening1');
+            ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb, SUM(COALESCE(plafon, 0)) as current_plafon')
+            ->first();
 
         $previous = DB::table('daily_loan_dinamis')
             ->where('periode', $previousPeriod)
             ->where('segmen_kinerja', 'CONSUMER')
-            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->whereNotNull('nomor_rekening1')
-            ->where('nomor_rekening1', '<>', '')
-            ->selectRaw('nomor_rekening1, MAX(COALESCE(plafon, 0)) as previous_plafon')
-            ->groupBy('nomor_rekening1');
+            ->whereIn('produk_kinerja', $this->getSourceProducts($produk))
+            ->whereRaw("COALESCE(NULLIF(cabang_normalized, ''), UPPER(TRIM(cabang1))) = ?", [strtoupper(trim($cabang))])
+            ->whereRaw("COALESCE(NULLIF(unit_normalized, ''), UPPER(TRIM(unit1))) = ?", [strtoupper(trim($unit))])
+            ->whereRaw("COALESCE(NULLIF(rm_normalized, ''), UPPER(TRIM(pn_pengelola1))) = ?", [strtoupper(trim($rm))])
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '')
+            ->selectRaw('SUM(COALESCE(plafon, 0)) as previous_plafon')
+            ->first();
 
-        return DB::query()
-            ->fromSub($current, 'cur')
-            ->joinSub($previous, 'prev', fn ($join) => $join->on('prev.nomor_rekening1', '=', 'cur.nomor_rekening1'))
-            ->whereColumn('cur.current_plafon', '>', 'prev.previous_plafon')
-            ->selectRaw('COUNT(*) as total_deb, SUM(cur.current_plafon - prev.previous_plafon) as total_real')
-            ->first() ?? (object) ['total_deb' => 0, 'total_real' => 0];
+        $previousPlafon = (float) ($previous->previous_plafon ?? 0);
+        if ($previousPlafon <= 0) {
+            return (object) ['total_deb' => 0, 'total_real' => 0];
+        }
+
+        $net = (float) ($current->current_plafon ?? 0) - $previousPlafon;
+
+        return (object) [
+            'total_deb' => $net > 0 ? (int) ($current->total_deb ?? 0) : 0,
+            'total_real' => max($net, 0.0),
+        ];
     }
 
     private function resolvePreviousMonthDailyLoanPeriod(string $period): ?string

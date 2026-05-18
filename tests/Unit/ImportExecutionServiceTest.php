@@ -3,7 +3,9 @@
 namespace Tests\Unit;
 
 use App\Jobs\RunImportJob;
+use App\Http\Controllers\Import\ImportExcelController;
 use App\Http\Controllers\Import\ImportReportPhController;
+use App\Jobs\SyncImportedReportJob;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use Illuminate\Support\Facades\Cache;
@@ -187,6 +189,142 @@ class ImportExecutionServiceTest extends TestCase
         });
     }
 
+    public function test_dispatch_recovers_zero_progress_stale_processing_job_before_queueing(): void
+    {
+        Bus::fake();
+        Cache::flush();
+
+        $jobId = 144;
+        $staleProcessingJob = (object) [
+            'id' => $jobId,
+            'id_report' => 8,
+            'status' => 'processing',
+            'updated_at' => Carbon::now()->subMinutes(20)->toDateTimeString(),
+            'total_success' => 0,
+            'total_failed' => 0,
+            'total_files' => 125,
+        ];
+        $queuedJob = (object) [
+            'id' => $jobId,
+            'id_report' => 8,
+            'status' => 'queued',
+            'updated_at' => Carbon::now()->toDateTimeString(),
+            'total_success' => 0,
+            'total_failed' => 0,
+            'total_files' => 125,
+        ];
+
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $progressService->shouldReceive('findJob')
+            ->times(3)
+            ->with($jobId)
+            ->andReturn($staleProcessingJob, $queuedJob, $queuedJob);
+        $progressService->shouldReceive('getCachedProgress')
+            ->once()
+            ->with($jobId)
+            ->andReturn([
+                'updated_at' => Carbon::now()->subMinutes(20)->toIso8601String(),
+            ]);
+        $progressService->shouldReceive('updateJob')
+            ->once()
+            ->with(
+                $jobId,
+                Mockery::on(static fn (array $attributes): bool => ($attributes['status'] ?? null) === 'queued'
+                    && ($attributes['total_success'] ?? null) === 0
+                    && ($attributes['total_failed'] ?? null) === 0),
+                Mockery::on(static fn (array $payload): bool => ($payload['status'] ?? null) === 'queued'
+                    && str_contains((string) ($payload['message'] ?? ''), 'melanjutkan ulang otomatis'))
+            );
+        $progressService->shouldReceive('getJobState')
+            ->once()
+            ->with($jobId)
+            ->andReturn([
+                'params' => [
+                    'table_name' => 'daily_loan_dinamis',
+                ],
+            ]);
+        $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with($jobId);
+        $progressService->shouldReceive('markQueued')->once();
+
+        $service = new ImportExecutionService($progressService);
+
+        $result = $service->dispatch($jobId);
+
+        $this->assertTrue($result);
+        Bus::assertDispatched(RunImportJob::class, function (RunImportJob $job) use ($jobId): bool {
+            return $job->jobId === $jobId
+                && $job->connection === 'database'
+                && $job->queue === 'imports-high';
+        });
+    }
+
+    public function test_dispatch_recovers_zero_progress_stale_ssa_simpanan_job_before_queueing(): void
+    {
+        Bus::fake();
+        Cache::flush();
+
+        $jobId = 146;
+        $staleProcessingJob = (object) [
+            'id' => $jobId,
+            'id_report' => 17,
+            'status' => 'processing',
+            'updated_at' => Carbon::now()->subMinutes(20)->toDateTimeString(),
+            'total_success' => 0,
+            'total_failed' => 0,
+            'total_files' => 1067,
+        ];
+        $queuedJob = (object) [
+            'id' => $jobId,
+            'id_report' => 17,
+            'status' => 'queued',
+            'updated_at' => Carbon::now()->toDateTimeString(),
+            'total_success' => 0,
+            'total_failed' => 0,
+            'total_files' => 1067,
+        ];
+
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $progressService->shouldReceive('findJob')
+            ->times(3)
+            ->with($jobId)
+            ->andReturn($staleProcessingJob, $queuedJob, $queuedJob);
+        $progressService->shouldReceive('getCachedProgress')
+            ->once()
+            ->with($jobId)
+            ->andReturn([
+                'updated_at' => Carbon::now()->subMinutes(20)->toIso8601String(),
+            ]);
+        $progressService->shouldReceive('updateJob')
+            ->once()
+            ->with(
+                $jobId,
+                Mockery::on(static fn (array $attributes): bool => ($attributes['status'] ?? null) === 'queued'),
+                Mockery::on(static fn (array $payload): bool => ($payload['status'] ?? null) === 'queued'
+                    && ($payload['total_rows'] ?? null) === 1067)
+            );
+        $progressService->shouldReceive('getJobState')
+            ->twice()
+            ->with($jobId)
+            ->andReturn([
+                'params' => [
+                    'table_name' => 'ssa_simpanan',
+                ],
+            ]);
+        $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with($jobId);
+        $progressService->shouldReceive('markQueued')->once();
+
+        $service = new ImportExecutionService($progressService);
+
+        $result = $service->dispatch($jobId);
+
+        $this->assertTrue($result);
+        Bus::assertDispatched(RunImportJob::class, function (RunImportJob $job) use ($jobId): bool {
+            return $job->jobId === $jobId
+                && $job->connection === 'database'
+                && $job->queue === 'imports-high';
+        });
+    }
+
     public function test_run_marks_stale_queued_job_failed_when_execution_lock_is_unavailable(): void
     {
         Cache::flush();
@@ -240,6 +378,87 @@ class ImportExecutionServiceTest extends TestCase
 
         $service = new ImportExecutionService($progressService);
         $service->run(99);
+    }
+
+    public function test_run_recovers_zero_progress_stale_processing_job_and_executes_import(): void
+    {
+        Bus::fake();
+        Cache::flush();
+
+        $jobId = 145;
+        $staleProcessingJob = (object) [
+            'id' => $jobId,
+            'id_report' => 8,
+            'status' => 'processing',
+            'updated_at' => Carbon::now()->subMinutes(20)->toDateTimeString(),
+            'total_success' => 0,
+            'total_failed' => 0,
+            'total_files' => 10,
+        ];
+        $queuedJob = (object) [
+            'id' => $jobId,
+            'id_report' => 8,
+            'status' => 'queued',
+            'updated_at' => Carbon::now()->toDateTimeString(),
+            'total_success' => 0,
+            'total_failed' => 0,
+            'total_files' => 10,
+        ];
+
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $progressService->shouldReceive('purgeStaleProcessingJobs')->once()->andReturn(0);
+        $progressService->shouldReceive('isTerminationRequested')->zeroOrMoreTimes()->with($jobId)->andReturnFalse();
+        $progressService->shouldReceive('findJob')
+            ->times(4)
+            ->with($jobId)
+            ->andReturn($staleProcessingJob, $queuedJob, $queuedJob, $queuedJob);
+        $progressService->shouldReceive('getCachedProgress')
+            ->once()
+            ->with($jobId)
+            ->andReturn([
+                'updated_at' => Carbon::now()->subMinutes(20)->toIso8601String(),
+            ]);
+        $progressService->shouldReceive('updateJob')->once();
+        $progressService->shouldReceive('getJobState')
+            ->once()
+            ->with($jobId)
+            ->andReturn([
+                'params' => [
+                    'job_id' => $jobId,
+                    'file_path' => 'excel_imports/daily.csv',
+                    'table_name' => 'daily_loan_dinamis',
+                    'header_index' => 0,
+                    'total_rows' => 10,
+                ],
+                'headers' => ['PERIODE', 'NOMOR_REKENING1', 'BAKI_DEBET1'],
+            ]);
+        $progressService->shouldReceive('markProcessing')->once();
+        $progressService->shouldReceive('markCompleted')
+            ->once()
+            ->with(
+                $jobId,
+                10,
+                0,
+                10,
+                Mockery::on(static fn (array $payload): bool => ($payload['status'] ?? null) === 'completed'
+                    && ($payload['percent'] ?? null) === 100)
+            );
+
+        $controller = Mockery::mock(ImportExcelController::class);
+        $controller->shouldReceive('executeQueuedImport')
+            ->once()
+            ->andReturn([
+                'status' => 'completed',
+                'total_success' => 10,
+                'total_failed' => 0,
+                'total_rows' => 10,
+            ]);
+        $this->app->instance(ImportExcelController::class, $controller);
+
+        $service = new ImportExecutionService($progressService);
+        $service->run($jobId);
+
+        Bus::assertDispatched(SyncImportedReportJob::class);
     }
 
     public function test_stream_status_aborts_stale_queued_job_even_when_payload_does_not_change(): void

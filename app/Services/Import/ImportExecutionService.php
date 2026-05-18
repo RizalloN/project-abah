@@ -22,6 +22,14 @@ class ImportExecutionService
     private const DISPATCHED_TTL_HOURS = 6;
     private const STALE_QUEUED_MINUTES = 10;
     private const TERMINATION_EXCEPTION_PREFIX = 'import_job_terminated_by_request:';
+    private const ZERO_PROGRESS_RECOVERABLE_TABLES = [
+        'daily_loan_dinamis',
+        'ssa_simpanan',
+        'ssa_pinjaman',
+        'simpanan_multipn',
+        'hourly_dpk',
+        'lw325_ph',
+    ];
 
     public function __construct(
         private readonly ImportProgressService $progressService,
@@ -35,6 +43,10 @@ class ImportExecutionService
         }
 
         $job = $this->progressService->findJob($jobId);
+        if ($job && strtolower((string) ($job->status ?? '')) === 'processing') {
+            $job = $this->recoverZeroProgressProcessingJob($jobId, $job);
+        }
+
         if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial', 'terminated'], true)) {
             $this->releaseDispatchMarker($jobId);
             return false;
@@ -50,6 +62,10 @@ class ImportExecutionService
 
             // Re-fetch inside lock to guard against concurrent dispatch races
             $job = $this->progressService->findJob($jobId);
+            if ($job && strtolower((string) ($job->status ?? '')) === 'processing') {
+                $job = $this->recoverZeroProgressProcessingJob($jobId, $job);
+            }
+
             if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial', 'terminated'], true)) {
                 $this->releaseDispatchMarker($jobId);
                 return false;
@@ -298,8 +314,11 @@ class ImportExecutionService
             return;
         }
 
-        if ($job->status === 'processing') {
-            return;
+        if (strtolower((string) ($job->status ?? '')) === 'processing') {
+            $job = $this->recoverZeroProgressProcessingJob($jobId, $job);
+            if (!$job || strtolower((string) ($job->status ?? '')) === 'processing') {
+                return;
+            }
         }
 
         $state = $this->progressService->getJobState($jobId);
@@ -671,6 +690,125 @@ class ImportExecutionService
         }
 
         return $store !== '' ? Cache::store($store) : Cache::store();
+    }
+
+    private function recoverZeroProgressProcessingJob(int $jobId, object $job): ?object
+    {
+        if (!$this->isRecoverableZeroProgressProcessingJob($jobId, $job)) {
+            return $job;
+        }
+
+        if ($this->hasRecentProcessingPulse($jobId, $job)) {
+            return $job;
+        }
+
+        $this->forceReleaseImportRuntimeLocks($jobId);
+
+        $message = 'Import sebelumnya berhenti sebelum ada baris masuk. Worker melanjutkan ulang otomatis.';
+        $this->progressService->updateJob($jobId, [
+            'status' => 'queued',
+            'total_success' => 0,
+            'total_failed' => 0,
+        ], [
+            'status' => 'queued',
+            'phase' => 'polars',
+            'mode' => 'polars',
+            'percent' => 5,
+            'message' => $message,
+            'processed_rows' => 0,
+            'total_rows' => (int) ($job->total_files ?? 0),
+            'total_success' => 0,
+            'total_failed' => 0,
+        ]);
+
+        Log::warning('Recovered stale zero-progress import job.', [
+            'job_id' => $jobId,
+            'previous_status' => $job->status ?? null,
+            'updated_at' => $job->updated_at ?? null,
+        ]);
+
+        return $this->progressService->findJob($jobId);
+    }
+
+    private function isRecoverableZeroProgressProcessingJob(int $jobId, object $job): bool
+    {
+        if (!$this->isRecoverableZeroProgressImportJob($jobId, $job)) {
+            return false;
+        }
+
+        if (strtolower((string) ($job->status ?? '')) !== 'processing') {
+            return false;
+        }
+
+        if ((int) ($job->total_success ?? 0) > 0 || (int) ($job->total_failed ?? 0) > 0) {
+            return false;
+        }
+
+        $updatedAt = $job->updated_at ?? null;
+        if ($updatedAt === null || $updatedAt === '') {
+            return true;
+        }
+
+        try {
+            return Carbon::parse($updatedAt)->lt(now()->subMinutes($this->zeroProgressRecoveryMinutes()));
+        } catch (\Throwable) {
+            return true;
+        }
+    }
+
+    private function isRecoverableZeroProgressImportJob(int $jobId, object $job): bool
+    {
+        if ((int) ($job->id_report ?? 0) === self::DAILY_LOAN_REPORT_ID) {
+            return true;
+        }
+
+        $tableName = $this->resolveExpectedTableName($job);
+        if ($tableName === '') {
+            $state = $this->progressService->getJobState($jobId);
+            $tableName = strtolower(trim((string) ($state['params']['table_name'] ?? '')));
+        }
+
+        return in_array($tableName, self::ZERO_PROGRESS_RECOVERABLE_TABLES, true);
+    }
+
+    private function zeroProgressRecoveryMinutes(): int
+    {
+        return max(2, (int) config('import.queue.zero_progress_recovery_minutes', 5));
+    }
+
+    private function hasRecentProcessingPulse(int $jobId, object $job): bool
+    {
+        $progress = $this->progressService->getCachedProgress($jobId);
+        $updatedAt = $progress['updated_at'] ?? $job->updated_at ?? null;
+        if ($updatedAt === null || $updatedAt === '') {
+            return false;
+        }
+
+        try {
+            return Carbon::parse($updatedAt)->gte(now()->subMinutes(2));
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function forceReleaseImportRuntimeLocks(int $jobId): void
+    {
+        $cache = $this->importCache();
+
+        foreach ([
+            'import_excel_execute_job_',
+            'import_excel_dispatch_job_',
+            'import_file_stream_job_',
+        ] as $prefix) {
+            try {
+                $cache->lock($prefix . $jobId, 1)->forceRelease();
+            } catch (\Throwable $e) {
+                Log::warning('Failed to release stale import runtime lock: ' . $e->getMessage(), [
+                    'job_id' => $jobId,
+                    'lock' => $prefix . $jobId,
+                ]);
+            }
+        }
     }
 
     private function shouldRedispatchQueuedJob(object $job): bool

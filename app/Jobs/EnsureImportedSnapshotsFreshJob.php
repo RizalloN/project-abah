@@ -27,7 +27,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $tries = 2;
+    public $tries = 35;
     public $timeout = 2400;
     public $backoff = [60, 300];
 

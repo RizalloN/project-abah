@@ -33,6 +33,9 @@ class KinerjaRmFormattingTest extends TestCase
     {
         $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
 
+        $this->assertSame('CONSUMER', $this->invokePrivateMethod($controller, 'normalizeProductLabel', ['Briguna Konsumer', 'CONSUMER']));
+        $this->assertSame('CONSUMER', $this->invokePrivateMethod($controller, 'normalizeProductLabel', ['kpr', 'CONSUMER']));
+
         $this->assertSame('CASHCALL', $this->invokePrivateMethod($controller, 'normalizeProductLabel', ['cashcall', 'SMALL']));
         $this->assertNull($this->invokePrivateMethod($controller, 'normalizeProductLabel', ['cashcoll', 'SMALL']));
 
@@ -114,13 +117,15 @@ class KinerjaRmFormattingTest extends TestCase
         ])->render();
 
         $this->assertStringContainsString('1.600,0', $html);
-        $this->assertStringContainsString('Surplesi Ratas', $html);
+        $this->assertStringContainsString('Plafon Net', $html);
         $this->assertStringNotContainsString('Kuadran 2', $html);
         $this->assertStringNotContainsString('quadrant-badge q2', $html);
         $this->assertStringNotContainsString('% LAR</th>', $html);
         $this->assertStringContainsString('31 Mar 26', $html);
         $this->assertStringContainsString('31 Des 25', $html);
         $this->assertStringContainsString('23 Apr 26', $html);
+        $this->assertStringContainsString('Delta', $html);
+        $this->assertStringNotContainsString('Gap vs Posisi', $html);
     }
 
     public function test_kinerjarm_history_modal_renders_million_format_for_realisasi_os(): void

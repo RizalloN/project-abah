@@ -633,6 +633,11 @@ class ImportExcelController extends Controller
         return $expression;
     }
 
+    private function normalizeImportTextValue($value): string
+    {
+        return trim((string) $value);
+    }
+
     private function normalizeValueForDatabaseColumn(string $dbColumn, $value, array $context)
     {
         if ($value === null) {
@@ -6270,8 +6275,12 @@ class ImportExcelController extends Controller
         return $tempPath;
     }
 
-    private function buildDirectLoadTextExpression(string $columnExpression): string
+    private function buildDirectLoadTextExpression(string $columnExpression, bool $preserveText = false): string
     {
+        if ($preserveText) {
+            return "NULLIF(NULLIF({$columnExpression}, ''), '\\\\N')";
+        }
+
         $normalizedWhitespace = "REPLACE(REPLACE(REPLACE(COALESCE({$columnExpression}, ''), CHAR(13), ''), CHAR(10), ''), CHAR(9), ' ')";
         $trimmed = "TRIM({$normalizedWhitespace})";
 
@@ -6408,7 +6417,7 @@ class ImportExcelController extends Controller
                 : $this->buildDirectLoadIntegerExpression($columnExpression);
         }
 
-        return $this->buildDirectLoadTextExpression($columnExpression);
+        return $this->buildDirectLoadTextExpression($columnExpression, true);
     }
 
     private function resolveDirectLoadDecimalScale(?string $dbColumn, array $context): int
@@ -6523,6 +6532,7 @@ class ImportExcelController extends Controller
         $normalizedHeaders = $this->canonicalizeDailyLoanSourceHeaders($normalizedHeaders);
 
         $context = $this->buildImportContext('daily_loan_dinamis', $normalizedHeaders, [], $importOptions);
+        $this->assertDailyLoanRateColumnSupportsSixDecimals($context);
         $fieldVariables = [];
         $setClauses = [
             "`created_at` = NOW()",
@@ -7141,7 +7151,23 @@ class ImportExcelController extends Controller
 
     private function buildDailyLoanBulkImportSqlParts(array $context, string $stagingTable): array
     {
+        $this->assertDailyLoanRateColumnSupportsSixDecimals($context);
+
         return $this->buildGenericFastPathBulkImportSqlParts($context, 'daily_loan_dinamis');
+    }
+
+    private function assertDailyLoanRateColumnSupportsSixDecimals(array $context): void
+    {
+        $rateMeta = $context['table_column_meta_by_lower']['rate'] ?? null;
+        $scale = is_array($rateMeta) ? ($rateMeta['scale'] ?? null) : null;
+
+        if (is_int($scale) && $scale >= 6) {
+            return;
+        }
+
+        throw new \RuntimeException(
+            'Import Daily Loan Dinamis dibatalkan: kolom `rate` harus DECIMAL dengan 6 digit desimal agar nilai sumber seperti 0.082500 tidak dibulatkan.'
+        );
     }
 
     private function buildGenericFastPathBulkImportSqlParts(array $context, string $tableName): array
@@ -9502,7 +9528,7 @@ class ImportExcelController extends Controller
             return $result;
         }
 
-        $value = trim($this->normalizeQuotedCsvCellValue($value));
+        $value = $this->normalizeImportTextValue($this->normalizeQuotedCsvCellValue($value));
         if ($value === '') {
             $this->decimalValueCache[$valueKey] = null;
             return null;
@@ -9511,7 +9537,7 @@ class ImportExcelController extends Controller
         $isNegative = false;
 
         if (preg_match('/^\((.*)\)$/', $value, $matches) === 1) {
-            $value = trim((string) ($matches[1] ?? ''));
+            $value = $this->normalizeImportTextValue((string) ($matches[1] ?? ''));
             $isNegative = true;
         }
 
@@ -9594,7 +9620,7 @@ class ImportExcelController extends Controller
             return (int) round($value);
         }
 
-        $value = trim((string) $value);
+        $value = $this->normalizeImportTextValue($value);
         if ($value === '') {
             return null;
         }
@@ -9631,7 +9657,8 @@ class ImportExcelController extends Controller
         }
 
         $normalizedHeader = $this->normalizedHeaderNameCache[$headerName];
-        $value = ($value === null) ? '' : trim($this->normalizeQuotedCsvCellValue($value));
+        $rawValue = ($value === null) ? '' : $this->normalizeQuotedCsvCellValue($value);
+        $value = $this->normalizeImportTextValue($rawValue);
 
         if ($value === '') return null;
 
@@ -9672,7 +9699,7 @@ class ImportExcelController extends Controller
             return $formatted === '' ? '0' : $formatted;
         }
 
-        return $value;
+        return $rawValue;
     }
 
     private function getExcelDateColumnsLookup(): array

@@ -174,6 +174,56 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(['2026-04-20', '2026-03-31', '2025-12-31'], $periods->all());
     }
 
+    public function test_kinerja_rm_history_modal_includes_previous_and_current_year_until_selected_period(): void
+    {
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2024-12-31', 1000000000, 1, 100000000, [
+                'cabang' => 'KC DES 2024',
+                'segmen' => 'SMALL',
+                'produk' => 'COMMERCIAL',
+            ]),
+            $this->snapshotRow('2025-07-31', 1000000000, 1, 200000000, [
+                'cabang' => 'KC JUL 2025',
+                'segmen' => 'SMALL',
+                'produk' => 'COMMERCIAL',
+                'sml_os' => 10000000,
+            ]),
+            $this->snapshotRow('2026-01-31', 1000000000, 1, 300000000, [
+                'cabang' => 'KC JAN 2026',
+                'segmen' => 'SMALL',
+                'produk' => 'COMMERCIAL',
+                'npl_os' => 10000000,
+            ]),
+            $this->snapshotRow('2026-08-31', 1000000000, 1, 400000000, [
+                'cabang' => 'KC AUG 2026',
+                'segmen' => 'SMALL',
+                'produk' => 'COMMERCIAL',
+                'npl_os' => 10000000,
+            ]),
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $view = $controller->historyDetails(\Illuminate\Http\Request::create(
+            '/report/dashboard-pinjaman/kinerjarm/history',
+            'GET',
+            ['rm' => 'RM A', 'segmen' => 'SMALL', 'periode' => '2026-05-18']
+        ));
+
+        $html = $view->render();
+
+        $this->assertStringContainsString('Tahun', $html);
+        $this->assertStringContainsString('KC JUL 2025', $html);
+        $this->assertStringContainsString('KC JAN 2026', $html);
+        $this->assertStringContainsString('2025', $html);
+        $this->assertStringContainsString('2026', $html);
+        $this->assertStringContainsString('2026 (tahun berjalan)', $html);
+        $this->assertStringContainsString('2025 (tahun lalu)', $html);
+        $this->assertStringContainsString('TOTAL 2026', $html);
+        $this->assertStringContainsString('TOTAL 2025', $html);
+        $this->assertStringNotContainsString('KC DES 2024', $html);
+        $this->assertStringNotContainsString('KC AUG 2026', $html);
+    }
+
     public function test_kinerja_rm_main_page_no_longer_accepts_micro_segment(): void
     {
         $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));

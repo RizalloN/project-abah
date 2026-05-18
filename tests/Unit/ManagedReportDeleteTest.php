@@ -31,6 +31,7 @@ class ManagedReportDeleteTest extends TestCase
         Config::set('database.connections.sqlite.database', ':memory:');
         Config::set('cache.default', 'array');
         Queue::fake();
+        Cache::flush();
 
         DB::purge('sqlite');
         DB::reconnect('sqlite');
@@ -95,6 +96,12 @@ class ManagedReportDeleteTest extends TestCase
         }
         DB::table('large_report_fixture')->insert($rows);
 
+        Cache::flush();
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
         $controller = app(ImportIndexController::class);
         $request = Request::create('/import/report-management/data', 'POST', [
             'id_report' => 500,
@@ -117,6 +124,20 @@ class ManagedReportDeleteTest extends TestCase
             ['2026-04-08', '2026-04-08', '2026-04-07', '2026-04-07'],
             array_column($payload['rows'], 'period')
         );
+
+        $periodWindowQueries = array_values(array_filter($queries, static function (string $sql): bool {
+            $normalized = strtolower($sql);
+
+            return str_contains($normalized, 'large_report_fixture')
+                && str_contains($normalized, 'management_periods')
+                && str_contains($normalized, 'count(*) over');
+        }));
+        $countDistinctQueries = array_values(array_filter($queries, static function (string $sql): bool {
+            return str_contains(strtolower($sql), 'count(distinct');
+        }));
+
+        $this->assertCount(1, $periodWindowQueries);
+        $this->assertCount(0, $countDistinctQueries);
     }
 
     public function test_report_management_data_can_jump_to_last_period_page(): void

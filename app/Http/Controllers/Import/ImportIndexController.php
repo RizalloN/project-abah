@@ -275,8 +275,14 @@ class ImportIndexController extends Controller
 
     public function getQueueStatus()
     {
+        $cacheKey = 'import:queue_status_payload';
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return response()->json($cached);
+        }
+
         $connection = config('queue.default');
-        
+
         $defaultCount = 0;
         $importsHighCount = 0;
         $failedCount = 0;
@@ -337,7 +343,7 @@ class ImportIndexController extends Controller
             $isWorkerStale = (time() - $latestActivity) > 300;
         }
 
-        return response()->json([
+        $payload = [
             'status' => 'success',
             'connection' => $connection,
             'queues' => [
@@ -356,8 +362,12 @@ class ImportIndexController extends Controller
             'worker_status' => [
                 'is_active' => !$isWorkerStale || ($defaultCount === 0 && $importsHighCount === 0),
                 'latest_activity' => $latestActivity > 0 ? date('Y-m-d H:i:s', $latestActivity) : null,
-            ]
-        ]);
+            ],
+        ];
+
+        Cache::put($cacheKey, $payload, 4);
+
+        return response()->json($payload);
     }
 
     private function parseJobName(?string $payload): string
@@ -2457,6 +2467,8 @@ class ImportIndexController extends Controller
                 $state['last_batch_finished_at'] = now()->toIso8601String();
                 $state['updated_at'] = now()->toIso8601String();
 
+                ManagedReportManagementService::invalidateTableCache($tableName);
+
                 if (($state['remaining_rows'] ?? 0) <= 0) {
                     $state['stage'] = 'cleanup';
                     $state['message'] = 'Delete sumber selesai, membersihkan snapshot dan artefak turunan...';
@@ -3231,42 +3243,55 @@ class ImportIndexController extends Controller
     private function managedDatabaseBackupOptions(): array
     {
         $directories = $this->managedDatabaseBackupDirectories();
-        $files = collect();
 
+        // Cache key includes per-directory mtime so cache otomatis stale ketika
+        // ada file backup baru ditambahkan / dihapus tanpa restart aplikasi.
+        $signatureParts = [];
         foreach ($directories as $directory) {
-            if (!is_dir($directory)) {
-                continue;
+            $signatureParts[] = is_dir($directory)
+                ? $directory . ':' . (int) @filemtime($directory)
+                : $directory . ':missing';
+        }
+        $cacheKey = 'import:backup_options:' . md5(implode('|', $signatureParts));
+
+        return Cache::remember($cacheKey, 30, function () use ($directories): array {
+            $files = collect();
+
+            foreach ($directories as $directory) {
+                if (!is_dir($directory)) {
+                    continue;
+                }
+
+                $files = $files->concat(
+                    collect(File::files($directory))
+                        ->filter(static fn ($file): bool => in_array(strtolower($file->getExtension()), ['sql', 'gz'], true))
+                );
             }
 
-            $files = $files->concat(
-                collect(File::files($directory))
-                    ->filter(static fn ($file): bool => in_array(strtolower($file->getExtension()), ['sql', 'gz'], true))
-            );
-        }
+            return $files
+                ->unique(static fn ($file): string => strtolower(str_replace('\\', '/', $file->getPathname())))
+                ->sortByDesc(static fn ($file): int => (int) $file->getMTime())
+                ->values()
+                ->map(static function ($file): array {
+                    $absolutePath = $file->getPathname();
+                    $storageBase = str_replace('\\', '/', storage_path('app'));
+                    $normalizedPath = str_replace('\\', '/', $absolutePath);
+                    $relativePath = str_starts_with($normalizedPath, rtrim($storageBase, '/') . '/')
+                        ? substr($normalizedPath, strlen(rtrim($storageBase, '/')) + 1)
+                        : $normalizedPath;
 
-        return $files
-            ->unique(static fn ($file): string => strtolower(str_replace('\\', '/', $file->getPathname())))
-            ->sortByDesc(static fn ($file): int => (int) $file->getMTime())
-            ->values()
-            ->map(static function ($file): array {
-                $absolutePath = $file->getPathname();
-                $storageBase = str_replace('\\', '/', storage_path('app'));
-                $normalizedPath = str_replace('\\', '/', $absolutePath);
-                $relativePath = str_starts_with($normalizedPath, rtrim($storageBase, '/') . '/')
-                    ? substr($normalizedPath, strlen(rtrim($storageBase, '/')) + 1)
-                    : $normalizedPath;
+                    $size = (int) $file->getSize();
 
-                $size = (int) $file->getSize();
-
-                return [
-                    'name' => $file->getFilename(),
-                    'path' => $relativePath,
-                    'size' => $size,
-                    'size_human' => number_format($size / 1024 / 1024, 2, ',', '.') . ' MB',
-                    'modified_at' => date('d M Y H:i', (int) $file->getMTime()),
-                ];
-            })
-            ->all();
+                    return [
+                        'name' => $file->getFilename(),
+                        'path' => $relativePath,
+                        'size' => $size,
+                        'size_human' => number_format($size / 1024 / 1024, 2, ',', '.') . ' MB',
+                        'modified_at' => date('d M Y H:i', (int) $file->getMTime()),
+                    ];
+                })
+                ->all();
+        });
     }
 
     private function managedDatabaseBackupDirectories(): array

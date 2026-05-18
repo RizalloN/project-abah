@@ -1,0 +1,22 @@
+
+  [41;1m Illuminate\Database\QueryException [49;22m
+
+[39;1m  SQLSTATE[70100]: <[39;22m[39;1m<Unknown error>[39;22m[39;1m>: 1317 Query execution was interrupted (Connection: mysql, Host: 127.0.0.1, Port: 3306, Database: project_abah, SQL: select COUNT(DISTINCT p.account_number) cnt from (select DISTINCT account_number, cabang1 from `dashboard_pinjaman_snapshots` where `periode` = 2026-04-30 and `cabang1` in (KC MADIUN, KC MAGETAN, KC NGAWI, KC PONOROGO)) as `p` left join `dashboard_pinjaman_snapshots` as `cAny` on `cAny`.`account_number` = `p`.`account_number` and `cAny`.`periode` = 2026-05-14 where `cAny`.`account_number` is null limit 1)[39;22m
+
+  at [32mvendor\laravel\framework\src\Illuminate\Database\Connection.php[39m:[32m838[39m
+    834▕             $exceptionType = $this->isUniqueConstraintError($e)
+    835▕                 ? UniqueConstraintViolationException::class
+    836▕                 : QueryException::class;
+    837▕ 
+  ➜ 838▕             throw new $exceptionType(
+    839▕                 $this->getNameWithReadWriteType(),
+    840▕                 $query,
+    841▕                 $this->prepareBindings($bindings),
+    842▕                 $e,
+
+  [33m1   [39m[39;1mvendor\laravel\framework\src\Illuminate\Database\Connection.php[39;22m:[39;1m425[39;22m
+  [90m    PDOException::("SQLSTATE[70100]: <[39m[90m<Unknown error>[39m[90m>: 1317 Query execution was interrupted")[39m
+
+  [33m2   [39m[39;1mvendor\laravel\framework\src\Illuminate\Database\Connection.php[39;22m:[39;1m425[39;22m
+  [90m    PDOStatement::execute()[39m
+

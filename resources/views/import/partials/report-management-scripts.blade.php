@@ -501,7 +501,12 @@
             const endPage = Math.min(totalPages, currentPage + 2);
             const lastButtonTarget = totalPeriodsExact ? '' : ' data-page-target="last"';
             const canGoLast = currentPage < totalPages || (!totalPeriodsExact && pagination.has_next);
-            
+            const jumpInputMax = totalPeriodsExact ? totalPages : Math.max(totalPages, currentPage + 1);
+            const previousJumpValue = managementPagination.querySelector('.report-management-jump-input')?.value;
+            const jumpInputValue = (previousJumpValue !== undefined && previousJumpValue !== '' && Number(previousJumpValue) >= 1)
+                ? previousJumpValue
+                : String(currentPage);
+
             buttons.push(`<button type="button" class="report-management-page-btn" data-page="1" ${currentPage > 1 ? '' : 'disabled'} title="Halaman Pertama"><i class="fas fa-angle-double-left"></i></button>`);
             buttons.push(`<button type="button" class="report-management-page-btn" data-page="${currentPage - 1}" ${pagination.has_prev ? '' : 'disabled'} title="Halaman Sebelumnya"><i class="fas fa-chevron-left"></i></button>`);
             for (let page = startPage; page <= endPage; page++) {
@@ -509,17 +514,21 @@
             }
             buttons.push(`<button type="button" class="report-management-page-btn" data-page="${currentPage + 1}" ${pagination.has_next ? '' : 'disabled'} title="Halaman Selanjutnya"><i class="fas fa-chevron-right"></i></button>`);
             buttons.push(`<button type="button" class="report-management-page-btn" data-page="${totalPages}"${lastButtonTarget} ${canGoLast ? '' : 'disabled'} title="Halaman Terakhir"><i class="fas fa-angle-double-right"></i></button>`);
-            
+
+            const jumpMaxAttr = totalPeriodsExact ? ` max="${jumpInputMax}"` : '';
+            const jumpHint = totalPeriodsExact
+                ? `1-${formatNumber(jumpInputMax)}`
+                : `min. 1 (total belum pasti)`;
             buttons.push(`
                 <div class="report-management-page-jump ml-3 d-inline-flex align-items-center">
                     <span class="mr-2 text-muted" style="font-size: 0.75rem; font-weight: 700;">Loncat ke:</span>
-                    <input type="number" min="1" max="${totalPages}" class="form-control form-control-sm text-center report-management-jump-input" style="width: 60px; height: 32px; border-radius: 6px; padding: 0.2rem;" value="${currentPage}">
+                    <input type="number" min="1"${jumpMaxAttr} class="form-control form-control-sm text-center report-management-jump-input" style="width: 64px; height: 32px; border-radius: 6px; padding: 0.2rem;" value="${jumpInputValue}" title="${jumpHint}" aria-label="Nomor halaman (${jumpHint})">
                     <button type="button" class="btn btn-sm btn-primary ml-1 report-management-jump-btn" style="height: 32px; border-radius: 6px; padding: 0 0.6rem;"><i class="fas fa-share"></i> Go</button>
                 </div>
             `);
-            
+
             managementPagination.classList.remove('d-none');
-            managementPagination.innerHTML = `<div class="report-management-pagination__meta">Menampilkan periode ${formatNumber(pagination.from_period || 0)}-${formatNumber(pagination.to_period || 0)} dari ${formatNumber(pagination.total_periods || 0)} periode</div><div class="report-management-pagination__actions">${buttons.join('')}</div>`;
+            managementPagination.innerHTML = `<div class="report-management-pagination__meta">Menampilkan periode ${formatNumber(pagination.from_period || 0)}-${formatNumber(pagination.to_period || 0)} dari ${formatNumber(pagination.total_periods || 0)} periode${totalPeriodsExact ? '' : ' (estimasi)'}</div><div class="report-management-pagination__actions">${buttons.join('')}</div>`;
         }
 
         function renderManagementRows(periods, meta = {}) {
@@ -836,18 +845,40 @@
             const jumpBtn = event.target.closest('.report-management-jump-btn');
             if (jumpBtn) {
                 const input = managementPagination.querySelector('.report-management-jump-input');
-                let targetPage = Number(input?.value || 1);
-                const maxPage = Number(input?.max || 1);
-                if (targetPage < 1) targetPage = 1;
-                if (targetPage > maxPage) targetPage = maxPage;
-                if (targetPage === managementState.currentPage) return;
-                
+                const rawValue = String(input?.value ?? '').trim();
+                if (rawValue === '' || !/^\d+$/.test(rawValue)) {
+                    input?.classList.add('is-invalid');
+                    input?.focus();
+                    themedSwal({ icon: 'warning', title: 'Nomor Halaman Kosong', text: 'Masukkan nomor halaman yang valid sebelum klik Go.' });
+                    return;
+                }
+                let targetPage = Number(rawValue);
+                const declaredMax = Number(input?.max || 0);
+                const minPage = 1;
+                if (targetPage < minPage) targetPage = minPage;
+                if (declaredMax > 0 && targetPage > declaredMax) targetPage = declaredMax;
+                if (input) {
+                    input.value = String(targetPage);
+                    input.classList.remove('is-invalid');
+                }
+                if (targetPage === managementState.currentPage) {
+                    themedSwal({ icon: 'info', title: 'Sudah di Halaman Ini', text: `Anda sedang di halaman ${targetPage}. Ketik nomor lain lalu klik Go.`, timer: 2500, showConfirmButton: false });
+                    return;
+                }
+
+                const previousLabel = jumpBtn.innerHTML;
+                jumpBtn.disabled = true;
+                jumpBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
                 try {
                     await fetchManagementData(targetPage);
                 } catch (error) {
                     themedSwal({ icon: 'error', title: 'Gagal Memuat Halaman', text: error.message || 'Terjadi kesalahan saat memuat halaman data.' });
                 } finally {
                     setManagementLoadingState(false);
+                    if (jumpBtn.isConnected) {
+                        jumpBtn.disabled = false;
+                        jumpBtn.innerHTML = previousLabel;
+                    }
                 }
                 return;
             }
@@ -863,6 +894,13 @@
                 themedSwal({ icon: 'error', title: 'Gagal Memuat Halaman', text: error.message || 'Terjadi kesalahan saat memuat halaman data.' });
             } finally {
                 setManagementLoadingState(false);
+            }
+        });
+
+        managementPagination?.addEventListener('input', function (event) {
+            const target = event.target;
+            if (target?.classList?.contains('report-management-jump-input')) {
+                target.classList.remove('is-invalid');
             }
         });
 

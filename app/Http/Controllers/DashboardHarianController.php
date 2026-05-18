@@ -162,7 +162,7 @@ class DashboardHarianController extends Controller
     private function payload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit): array
     {
         $cacheKey = 'dashboard_harian:payload:' . md5(json_encode([
-            'schema' => 'penc-pct-v15-rka-a1-ritel-kc-wholesale-giro',
+            'schema' => 'penc-pct-v19-rka-savings-wholesale-total',
             'version' => $this->reportCacheVersion(),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,
@@ -186,6 +186,7 @@ class DashboardHarianController extends Controller
         $resolvedMonth = $this->resolveTimeseriesMonth($selectedMonth, $monthOptions);
 
         $cacheKey = 'dashboard_harian:timeseries:' . md5(json_encode([
+            'schema' => 'v2-sml-percent',
             'version' => $this->reportCacheVersion(),
             'category' => $category,
             'kanca' => $selectedKanca,
@@ -199,6 +200,7 @@ class DashboardHarianController extends Controller
                 'series' => [],
                 'labels' => range(1, 31),
                 'area_total' => [],
+                'value_type' => $category === 'sml' ? 'percent' : 'currency',
                 'source' => DashboardHarianSnapshotService::SNAPSHOT_TABLE,
                 'selected_month' => $resolvedMonth,
                 'available_months' => $monthOptions,
@@ -221,6 +223,7 @@ class DashboardHarianController extends Controller
                 'series' => $data['series'],
                 'labels' => range(1, 31),
                 'area_total' => $data['area_total'],
+                'value_type' => $data['value_type'] ?? ($category === 'sml' ? 'percent' : 'currency'),
                 'source' => DashboardHarianSnapshotService::SNAPSHOT_TABLE,
                 'selected_month' => $resolvedMonth,
                 'available_months' => $monthOptions,
@@ -389,6 +392,7 @@ class DashboardHarianController extends Controller
                 $this->dashboardHarianExportValue($values['current'] ?? 0, $type),
                 $this->dashboardHarianExportValue($deltas['yoy'] ?? 0, $type),
                 $this->dashboardHarianExportValue($deltas['ytd'] ?? 0, $type),
+                $this->dashboardHarianExportValue($deltas['mtm'] ?? 0, $type),
                 $this->dashboardHarianExportValue($deltas['mtd'] ?? 0, $type),
                 $this->dashboardHarianExportValue($deltas['dtd'] ?? 0, $type),
                 $this->dashboardHarianExportValue($values['rka'] ?? 0, $type),
@@ -425,8 +429,8 @@ class DashboardHarianController extends Controller
         ]);
         $sheet->getStyle("C7:{$lastColumn}{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
         $sheet->getStyle("A7:A{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        $sheet->getStyle("P7:P{$lastRow}")->getNumberFormat()->setFormatCode('#,##0.00');
-        $sheet->getStyle("S7:S{$lastRow}")->getNumberFormat()->setFormatCode('#,##0.00');
+        $sheet->getStyle("Q7:Q{$lastRow}")->getNumberFormat()->setFormatCode('#,##0.00');
+        $sheet->getStyle("T7:T{$lastRow}")->getNumberFormat()->setFormatCode('#,##0.00');
         $this->applyDashboardHarianExportConditionalFormatting($sheet, $lastRow);
 
         foreach (range(1, count($headers)) as $columnIndex) {
@@ -443,14 +447,14 @@ class DashboardHarianController extends Controller
         $downStyle = $this->dashboardHarianConditionalStyle('B91C1C', 'FEE2E2');
         $upStyle = $this->dashboardHarianConditionalStyle('15803D', 'DCFCE7');
 
-        foreach (['J7:M' . $lastRow, 'O7:O' . $lastRow, 'R7:R' . $lastRow] as $range) {
+        foreach (['J7:N' . $lastRow, 'P7:P' . $lastRow, 'S7:S' . $lastRow] as $range) {
             $sheet->getStyle($range)->setConditionalStyles([
                 $downStyle(Conditional::OPERATOR_LESSTHAN, '0'),
                 $upStyle(Conditional::OPERATOR_GREATERTHAN, '0'),
             ]);
         }
 
-        foreach (['P7:P' . $lastRow, 'S7:S' . $lastRow] as $range) {
+        foreach (['Q7:Q' . $lastRow, 'T7:T' . $lastRow] as $range) {
             $sheet->getStyle($range)->setConditionalStyles([
                 $downStyle(Conditional::OPERATOR_LESSTHAN, '100'),
                 $upStyle(Conditional::OPERATOR_GREATERTHANOREQUAL, '100'),
@@ -490,6 +494,7 @@ class DashboardHarianController extends Controller
             $this->formatExportDate($payload['selected_period'] ?? null) . ' (Posisi)',
             'Delta YoY',
             'Delta YtD',
+            'Delta MtM',
             'Delta MtD',
             'Delta DtD',
             'RKA ' . $this->formatExportMonth($periods['rka']['period'] ?? null),

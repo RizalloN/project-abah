@@ -61,18 +61,23 @@ class DashboardHarianSnapshotServiceTest extends TestCase
 
         $definitions = $reflection->invoke($service);
 
-        $this->assertSame(['NPL % Total'], $definitions['total_npl_pct_non_commercial']['mata_anggaran']);
+        $this->assertSame([], $definitions['total_sml_pct_non_commercial']['mata_anggaran']);
+        $this->assertSame([], $definitions['total_npl_pct_non_commercial']['mata_anggaran']);
         $this->assertSame(['A.1. DPK Retail Funding Total'], $definitions['total_simpanan']['mata_anggaran']);
         $this->assertSame(['KC', 'KCP'], $definitions['simpanan_ritel']['uker_contains_any']);
         $this->assertTrue($definitions['simpanan_ritel']['include_kanca_summary']);
         $this->assertTrue($definitions['giro_ritel']['include_kanca_summary']);
         $this->assertSame(['UNIT'], $definitions['simpanan_mikro']['uker_contains_any']);
-        $this->assertSame(['A.2.a. Giro Korporasi'], $definitions['simpanan_wholesale']['mata_anggaran']);
-        $this->assertSame([], $definitions['deposito_wholesale']['mata_anggaran']);
+        $this->assertSame(['A.2. DPK Korporasi'], $definitions['simpanan_wholesale']['mata_anggaran']);
+        $this->assertSame(['A.2.b. Deposito Korporasi'], $definitions['deposito_wholesale']['mata_anggaran']);
         $this->assertSame(['KC', 'KCP'], $definitions['kecil_non_cashcoll_os']['uker_contains_any']);
+        $this->assertTrue($definitions['kecil_non_cashcoll_os']['include_kanca_summary']);
         $this->assertSame(['KC', 'KCP'], $definitions['briguna_konsumer_os']['uker_contains_any']);
+        $this->assertTrue($definitions['briguna_konsumer_os']['include_kanca_summary']);
         $this->assertSame(['KC', 'KCP'], $definitions['kpr_os']['uker_contains_any']);
+        $this->assertTrue($definitions['kpr_os']['include_kanca_summary']);
         $this->assertSame(['KC', 'KCP'], $definitions['kkb_os']['uker_contains_any']);
+        $this->assertTrue($definitions['kkb_os']['include_kanca_summary']);
         $this->assertArrayNotHasKey('uker_contains_any', $definitions['micro_os']);
         $this->assertArrayNotHasKey('uker_contains_any', $definitions['kur_kecil_os']);
         $this->assertSame(['NPL Rp Kecil Non Cash Collateral'], $definitions['kecil_non_cashcoll_npl']['mata_anggaran']);
@@ -108,10 +113,19 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             'kpr_os' => 5.0,
             'kkb_os' => 5.0,
             'micro_os' => 20.0,
+            'kecil_non_cashcoll_sml' => 8.0,
+            'cashcoll_sml' => 2.0,
+            'medium_sml' => 99.0,
+            'briguna_konsumer_sml' => 3.0,
+            'kpr_sml' => 4.0,
+            'kkb_sml' => 5.0,
+            'micro_sml' => 6.0,
             'giro_ritel' => 300.0,
             'tabungan_ritel' => 200.0,
             'giro_mikro' => 180.0,
             'tabungan_mikro' => 120.0,
+            'giro_wholesale' => 40.0,
+            'deposito_wholesale' => 10.0,
             'kecil_non_cashcoll_npl' => 11.0,
             'cashcoll_npl' => 4.0,
             'medium_npl' => 100.0,
@@ -122,9 +136,10 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         ]);
 
         $this->assertSame(12345.0, $result['total_os']);
-        $this->assertSame(215.0, $result['total_os_non_commercial']);
-        $this->assertSame(12.5, $result['total_sml_pct_non_commercial']);
-        $this->assertSame(3.5, $result['total_npl_pct_non_commercial']);
+        $this->assertSame(190.0, $result['total_os_non_commercial']);
+        $this->assertEqualsWithDelta(14.7368421053, $result['total_sml_pct_non_commercial'], 0.0001);
+        $this->assertSame(28.0, $result['total_sml_abs_non_commercial']);
+        $this->assertEqualsWithDelta(24.7368421053, $result['total_npl_pct_non_commercial'], 0.0001);
         $this->assertSame(15.0, $result['sme_npl']);
         $this->assertSame(12.0, $result['consumer_npl']);
         $this->assertSame(47.0, $result['total_npl_abs_non_commercial']);
@@ -136,6 +151,26 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(617.25, $result['ldr_non_commercial']);
         $this->assertSame(34.0, $result['ldr_ritel_non_commercial']);
         $this->assertEqualsWithDelta(6.6666666667, $result['ldr_mikro_non_commercial'], 0.0001);
+    }
+
+    public function test_finalize_rka_metrics_adds_wholesale_to_total_simpanan_when_retail_total_excludes_it(): void
+    {
+        $service = new DashboardHarianSnapshotService();
+
+        $reflection = new \ReflectionMethod($service, 'finalizeRkaMetrics');
+        $reflection->setAccessible(true);
+
+        $result = $reflection->invoke($service, [
+            'total_simpanan' => 1_000.0,
+            'giro_ritel' => 200.0,
+            'deposito_ritel' => 300.0,
+            'tabungan_ritel' => 500.0,
+            'giro_wholesale' => 40.0,
+            'deposito_wholesale' => 10.0,
+        ]);
+
+        $this->assertSame(1_050.0, $result['total_simpanan']);
+        $this->assertSame(50.0, $result['simpanan_wholesale']);
     }
 
     public function test_unit_normalization_preserves_kc_and_kcp_detail_labels(): void
@@ -219,6 +254,60 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame([['value' => 'all', 'label' => 'Semua Unit Kerja']], $area6Filters['unit_kerja']);
         $this->assertContains('unit-a', array_column($madiunFilters['unit_kerja'], 'value'));
         $this->assertNotContains('kc-ngawi', array_column($madiunFilters['unit_kerja'], 'value'));
+    }
+
+    public function test_timeseries_sml_uses_percentage_metric_without_currency_scaling(): void
+    {
+        $this->createSourceMetadataTables();
+
+        Schema::table('dashboard_harian_snapshots', function (Blueprint $table): void {
+            $table->decimal('total_sml_pct_non_commercial', 12, 4)->default(0);
+            $table->decimal('total_sml_abs_non_commercial', 20, 2)->default(0);
+            $table->decimal('total_os_non_commercial', 20, 2)->default(0);
+        });
+
+        DB::table('dashboard_harian_snapshots')->insert([
+            [
+                'uniqueid_dhs' => 'madiun-summary-2026-05-01',
+                'snapshot_period' => '2026-05-01',
+                'kanca_key' => 'kc-madiun',
+                'kanca_label' => 'KC Madiun',
+                'unit_key' => 'kc-madiun',
+                'unit_label' => 'KC Madiun',
+                'source_row_count' => 1,
+                'total_sml_pct_non_commercial' => 7.25,
+                'total_sml_abs_non_commercial' => 725,
+                'total_os_non_commercial' => 10000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'uniqueid_dhs' => 'ngawi-summary-2026-05-01',
+                'snapshot_period' => '2026-05-01',
+                'kanca_key' => 'kc-ngawi',
+                'kanca_label' => 'KC Ngawi',
+                'unit_key' => 'kc-ngawi',
+                'unit_label' => 'KC Ngawi',
+                'source_row_count' => 1,
+                'total_sml_pct_non_commercial' => 3.0,
+                'total_sml_abs_non_commercial' => 300,
+                'total_os_non_commercial' => 10000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $canUseSnapshotMetrics = new \ReflectionProperty($service, 'canUseSnapshotMetricsCache');
+        $canUseSnapshotMetrics->setAccessible(true);
+        $canUseSnapshotMetrics->setValue($service, true);
+
+        $payload = $service->fetchTimeseriesTrend(['2026-05'], 'sml', ['KC Madiun', 'KC Ngawi'], null);
+
+        $this->assertSame('percent', $payload['value_type']);
+        $this->assertSame(5.125, $payload['area_total']['2026-05'][0]);
+        $this->assertSame(7.25, $payload['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(3.0, $payload['series']['KC Ngawi']['2026-05'][0]);
     }
 
     public function test_source_metadata_signature_changes_when_source_values_change(): void

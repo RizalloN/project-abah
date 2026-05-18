@@ -485,8 +485,9 @@
         position: relative;
         max-height: 70vh;
         overflow: auto;
-        border-radius: 12px;
-        border: 1px solid var(--loan-border);
+        border-radius: 0px !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: none !important;
     }
 
     .kinerja-quality-intro {
@@ -527,15 +528,19 @@
         gap: 1rem;
     }
 
+    /* Consolidated Excel-style Table */
     .kinerja-konsumer-table {
         width: 100%;
-        min-width: 1400px;
-        border-collapse: separate;
-        border-spacing: 0;
+        min-width: 1750px !important;
+        border-collapse: separate !important;
+        border-spacing: 0 !important;
+        background: #ffffff !important;
+        border-left: 1px solid #cbd5e1 !important;
+        border-top: 1px solid #cbd5e1 !important;
     }
 
     .kinerja-konsumer-table--compact {
-        min-width: 1180px;
+        min-width: 1550px !important;
     }
 
     .kinerja-konsumer-table thead {
@@ -551,28 +556,29 @@
         top: 0;
         z-index: 50;
         background-color: #005baa !important;
-        background-image: linear-gradient(180deg, #0072ce 0%, #005baa 55%, #003f7d 100%) !important;
-        background-clip: padding-box;
+        background-image: none !important;
         color: #ffffff !important;
-        padding: 0.2rem 0.15rem !important;
-        font-size: 0.6rem;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 0.02rem;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.24) !important;
-        border-right: 1px solid rgba(255, 255, 255, 0.14) !important;
-        box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.22);
+        padding: 2px 4px !important;
+        font-size: 0.65rem !important;
+        font-weight: bold !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0 !important;
+        border-bottom: 1px solid #004580 !important;
+        border-right: 1px solid #004580 !important;
         text-align: center !important;
         vertical-align: middle !important;
         white-space: nowrap;
-        height: 28px;
+        height: 24px !important;
+        box-shadow: none !important;
     }
 
     .kinerja-konsumer-table thead th.sticky-col {
         z-index: 60;
         background-color: #004c97 !important;
-        background-image: linear-gradient(180deg, #0067bd 0%, #004c97 100%) !important;
+        background-image: none !important;
         color: #ffffff !important;
+        border-bottom: 1px solid #00366b !important;
+        border-right: 1px solid #00366b !important;
     }
 
     .kinerja-konsumer-table td.sticky-col {
@@ -580,48 +586,56 @@
         left: 0;
         background: #ffffff !important;
         z-index: 10;
-        border-right: 1px solid rgba(0, 0, 0, 0.05) !important;
+        border-right: 1px solid #cbd5e1 !important;
     }
 
     .kinerja-konsumer-table thead tr:nth-child(2) th {
-        top: 28px; /* Must match Row 1 height */
-        height: 26px;
+        top: 24px; /* Must match Row 1 height */
+        height: 24px !important;
     }
 
     .kinerja-konsumer-table th.sub-head {
         background-color: #004c97 !important;
-        background-image: linear-gradient(180deg, #0067bd 0%, #004c97 100%) !important;
+        background-image: none !important;
         color: #ffffff !important;
+        border-bottom: 1px solid #00366b !important;
+        border-right: 1px solid #00366b !important;
     }
 
     .kinerja-konsumer-table th.accent-head {
-        background-color: #008bd2 !important;
-        background-image: linear-gradient(180deg, #18a8e8 0%, #008bd2 100%) !important;
+        background-color: #005baa !important;
+        background-image: none !important;
         color: #ffffff !important;
+        border-bottom: 1px solid #004580 !important;
+        border-right: 1px solid #004580 !important;
     }
 
     .kinerja-konsumer-table td {
-        padding: 0.1rem 0.2rem;
-        font-size: 0.68rem;
+        padding: 2px 4px !important;
+        font-size: 0.68rem !important;
         font-weight: 700;
-        color: #334155;
-        border-bottom: 1px solid #f1f5f9;
+        color: #000000 !important;
+        border-right: 1px solid #cbd5e1 !important;
+        border-bottom: 1px solid #cbd5e1 !important;
         vertical-align: middle;
         text-align: right;
+        height: 20px !important;
+        line-height: 1.1 !important;
+        white-space: nowrap !important; /* Enforce nowrap to prevent stacked/wrapped data in cells */
     }
 
     .kinerja-konsumer-table td.merged-branch-cell {
-        border-left: 3px solid var(--loan-blue) !important;
-        color: var(--loan-blue-ink) !important;
+        border-left: 1px solid #cbd5e1 !important;
+        color: #0f2f66 !important;
         font-weight: 800 !important;
         text-transform: uppercase;
         text-align: center !important;
         font-size: 0.6rem !important;
-        padding: 0.2rem 0.3rem !important;
+        padding: 2px 4px !important;
         position: sticky !important;
         left: 32px; /* After No column */
         z-index: 20;
-        border-right: 1px solid rgba(0, 0, 0, 0.05) !important;
+        border-right: 1px solid #cbd5e1 !important;
     }
 
     .kinerja-konsumer-table tr:not(.loan-branch-subtotal):not(.row-grand-total) td.merged-branch-cell {
@@ -629,16 +643,16 @@
     }
 
     .kinerja-konsumer-table td.merged-rm-cell {
-        color: #475569 !important;
+        color: #000000 !important;
         text-align: left !important;
         font-size: 0.68rem !important;
         font-weight: 800 !important;
-        padding: 0.2rem 0.4rem !important;
+        padding: 2px 4px !important;
         position: sticky !important;
-        left: 132px; /* 32 + 100 */
+        left: 126px; /* Match left setting in Blade */
         z-index: 20;
-        border-right: 1px solid rgba(0, 0, 0, 0.05) !important;
-        box-shadow: 5px 0 10px -5px rgba(15, 23, 42, 0.1);
+        border-right: 1px solid #cbd5e1 !important;
+        box-shadow: none !important;
     }
 
     .kinerja-konsumer-table tr:not(.loan-branch-subtotal):not(.row-grand-total) td.merged-rm-cell {
@@ -647,72 +661,82 @@
 
     /* Current Position Highlight Class */
     .highlight-curr {
-        background: var(--loan-blue-soft) !important;
-        color: var(--loan-blue) !important;
-        font-weight: 800 !important;
+        background: #f2f2f2 !important; /* standard light grey for current excel highlighting */
+        color: #000000 !important;
+        font-weight: bold !important;
     }
 
     .loan-branch-subtotal .highlight-curr {
-        background: #38bdf8 !important;
-        color: #ffffff !important;
+        background: #b4c6e7 !important;
+        color: #000000 !important;
     }
 
+    /* Branch Subtotal Row Styling - Excel Ice Blue */
     .loan-branch-subtotal {
-        background: #0f2f66 !important;
+        background: #d9e1f2 !important;
     }
 
     .loan-branch-subtotal td {
-        background: #0f2f66 !important;
-        color: #ffffff !important;
-        font-weight: 800 !important;
-        border-top: 1px solid #334155 !important;
-        border-bottom: 1px solid #334155 !important;
-        padding-top: 0.3rem !important;
-        padding-bottom: 0.3rem !important;
+        background: #d9e1f2 !important;
+        color: #000000 !important;
+        font-weight: bold !important;
+        border-top: 1px solid #8faadc !important;
+        border-bottom: 1px solid #8faadc !important;
+        padding: 2px 4px !important;
+        height: 20px !important;
     }
 
     .loan-branch-subtotal td.sticky-col,
     .loan-branch-subtotal td.merged-branch-cell {
-        background: #0f2f66 !important;
-        color: #ffffff !important;
-        border-left-color: #38bdf8 !important;
+        background: #d9e1f2 !important;
+        color: #000000 !important;
     }
 
     .loan-branch-subtotal td[colspan] {
-        background: #0b3f86 !important;
-        color: #e0f2fe !important;
+        background: #d9e1f2 !important;
+        color: #000000 !important;
     }
 
+    /* Grand Total Row Styling - Excel Blue Highlight */
     .row-grand-total {
-        background: #0b1f44 !important;
-        border-top: 2px solid var(--loan-blue) !important;
+        background: #b4c6e7 !important;
+        border-top: 1px solid #8faadc !important;
         position: sticky;
         bottom: 0;
         z-index: 40;
     }
 
     .row-grand-total td {
-        background: #0b1f44 !important;
-        color: #ffffff !important;
+        background: #b4c6e7 !important;
+        color: #000000 !important;
         font-weight: 900 !important;
-        font-size: 0.72rem !important;
-        border: none !important;
-        padding: 0.4rem 0.3rem !important;
+        font-size: 0.7rem !important;
+        border-top: 1px solid #8faadc !important;
+        border-bottom: 3px double #000000 !important; /* double underline grand total */
+        padding: 4px !important;
     }
 
     .row-grand-total td.sticky-col {
-        background: #0b1f44 !important;
-        color: #ffffff !important;
-        box-shadow: 6px 0 12px -8px rgba(0, 0, 0, 0.45);
+        background: #b4c6e7 !important;
+        color: #000000 !important;
+        box-shadow: none !important;
     }
 
     .row-grand-total td.highlight-curr {
-        background: transparent !important;
-        color: #ffffff !important;
+        background: #b4c6e7 !important;
+        color: #000000 !important;
     }
 
-    .row-grand-total .delta-indicator.pos { color: #4ade80 !important; }
-    .row-grand-total .delta-indicator.neg { color: #fca5a5 !important; }
+    .row-grand-total .delta-indicator.pos,
+    .loan-branch-subtotal .delta-indicator.pos {
+        background-color: #c6efce !important;
+        color: #000000 !important;
+    }
+    .row-grand-total .delta-indicator.neg,
+    .loan-branch-subtotal .delta-indicator.neg {
+        background-color: #dc2626 !important;
+        color: #ffffff !important;
+    }
 
     .legend-box {
         display: inline-flex;
@@ -721,7 +745,7 @@
         padding: 0.45rem 1.15rem;
         background: #f8fafc;
         border: 1px solid var(--loan-border);
-        border-radius: 10px;
+        border-radius: 0px !important;
         font-size: 0.75rem;
         font-weight: 700;
         color: #64748b;
@@ -733,76 +757,86 @@
         align-items: center;
         justify-content: center;
         padding: 0.25rem 0.6rem;
-        border-radius: 8px;
+        border-radius: 0px !important;
         font-weight: 800;
         font-size: 0.65rem;
         min-width: 65px;
         text-align: center;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
 
-    .pct-good { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
-    .pct-mid { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
-    .pct-bad { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+    .pct-good { background: #c6efce; color: #000000; border: 1px solid #9cda9c; }
+    .pct-mid { background: #fde047; color: #000000; border: 1px solid #eab308; }
+    .pct-bad { background: #ffc7ce; color: #000000; border: 1px solid #fecaca; }
 
     .quadrant-badge {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        padding: 0.35rem 0.85rem;
-        border-radius: 8px;
-        min-width: 90px;
+        padding: 2px 6px;
+        border-radius: 0px !important;
+        min-width: 80px;
         font-weight: 850;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        font-size: 0.65rem;
-        border-width: 2px;
-        border-style: solid;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        letter-spacing: 0.02em;
+        font-size: 0.62rem;
+        border: 1px solid #cbd5e1;
     }
 
     /* Q1: Dark Green */
     .quadrant-badge.q1 {
-        background: #064e3b !important;
-        color: #ffffff !important;
-        border-color: #065f46 !important;
+        background: #c6efce !important;
+        color: #000000 !important;
+        border-color: #9cda9c !important;
     }
     
     /* Q2: Light Green */
     .quadrant-badge.q2 {
-        background: #4ade80 !important;
-        color: #064e3b !important;
-        border-color: #22c55e !important;
+        background: #e2efda !important;
+        color: #000000 !important;
+        border-color: #c5dfb8 !important;
     }
     
     /* Q3: Yellow */
     .quadrant-badge.q3 {
-        background: #fde047 !important;
-        color: #854d0e !important;
-        border-color: #eab308 !important;
+        background: #fff2cc !important;
+        color: #000000 !important;
+        border-color: #ffd966 !important;
     }
     
     /* Q4: Dark Red */
     .quadrant-badge.q4 {
-        background: #7f1d1d !important;
-        color: #ffffff !important;
-        border-color: #991b1b !important;
+        background: #ffc7ce !important;
+        color: #9c0006 !important;
+        border-color: #ffb3b8 !important;
     }
 
     .quadrant-label {
-        font-size: 0.65rem;
+        font-size: 0.62rem;
         font-weight: 900;
-        text-shadow: 0 1px 2px rgba(0,0,0,0.1);
     }
 
+    /* Excel-style Positive / Negative Filling Indicators */
     .delta-indicator {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.25rem;
-        font-weight: 800;
+        display: inline-block;
+        padding: 2px 4px !important;
+        font-weight: bold !important;
+        font-size: 0.64rem !important;
+        text-align: right;
+        min-width: 52px;
+        width: 100%;
+        box-sizing: border-box;
+        border-radius: 0px !important;
     }
-    .delta-indicator.pos { color: #10b981; }
-    .delta-indicator.neg { color: #ef4444; }
+    .delta-indicator.pos {
+        background-color: #c6efce !important; /* soft green filling */
+        color: #000000 !important;             /* black text */
+        border: 1px solid #c6efce !important;
+    }
+    .delta-indicator.neg {
+        background-color: #dc2626 !important; /* solid red filling */
+        color: #ffffff !important;             /* white text */
+        border: 1px solid #dc2626 !important;
+    }
 
     .tampilkan-button {
         background: linear-gradient(135deg, var(--loan-blue), #307fe2);
@@ -885,99 +919,20 @@
     }
 
     .kinerja-report-card {
-        border-radius: 10px;
+        border-radius: 0px !important;
         border: 1px solid #cbd5e1;
-        box-shadow: 0 10px 24px -20px rgba(15, 23, 42, 0.35);
+        box-shadow: none !important;
     }
 
     .kinerja-report-card__header {
-        padding: 0.7rem 0.9rem;
+        padding: 0.5rem 0.75rem;
         background: #ffffff;
+        border-bottom: 1px solid #cbd5e1;
     }
 
     .kinerja-table-container {
-        border-radius: 0 0 10px 10px;
-        border-color: #b7c4d4;
-    }
-
-    .kinerja-konsumer-table {
-        min-width: 1320px;
-        border-collapse: separate;
-        border-spacing: 0;
-        background: #ffffff;
-    }
-
-    .kinerja-konsumer-table--compact {
-        min-width: 1120px;
-    }
-
-    .kinerja-konsumer-table thead th {
-        height: 24px;
-        padding: 0.16rem 0.18rem !important;
-        font-size: 0.56rem;
-        letter-spacing: 0;
-        border-right: 1px solid rgba(255, 255, 255, 0.28) !important;
-    }
-
-    .kinerja-konsumer-table thead tr:nth-child(2) th {
-        top: 24px;
-        height: 28px;
-    }
-
-    .kinerja-period-head span,
-    .kinerja-period-head small {
-        display: block;
-        line-height: 1.05;
-    }
-
-    .kinerja-period-head small {
-        margin-top: 0.12rem;
-        font-size: 0.52rem;
-        font-weight: 700;
-        opacity: 0.82;
-        text-transform: none;
-    }
-
-    .kinerja-konsumer-table td {
-        padding: 0.08rem 0.18rem;
-        font-size: 0.64rem;
-        line-height: 1.15;
-        border-right: 1px solid #e2e8f0;
-        border-bottom: 1px solid #e2e8f0;
-        height: 21px;
-    }
-
-    .kinerja-konsumer-table tbody tr:hover td {
-        background: #f8fbff;
-    }
-
-    .kinerja-konsumer-table td.merged-branch-cell {
-        width: 94px;
-        font-size: 0.58rem !important;
-        line-height: 1.15;
-    }
-
-    .kinerja-konsumer-table td.merged-rm-cell {
-        width: 164px;
-        font-size: 0.62rem !important;
-        line-height: 1.15;
-    }
-
-    .loan-branch-subtotal td {
-        border-top: 1px solid #94a3b8;
-        border-bottom: 1px solid #94a3b8;
-    }
-
-    .row-grand-total td {
-        border-top: 2px solid #0f2f66;
-    }
-
-    .delta-indicator {
-        display: inline-flex;
-        align-items: center;
-        justify-content: flex-end;
-        min-width: 48px;
-        font-weight: 800;
+        border-radius: 0px !important;
+        border-color: #cbd5e1 !important;
     }
 
     #rmDetailModal .modal-content {
@@ -1375,10 +1330,10 @@ document.addEventListener('DOMContentLoaded', function() {
         
         content.html(`
             <div class="modal-body text-center py-5">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">Loading...</span>
+                <div class="premium-loader my-4">
+                    <div class="premium-loader-spinner"></div>
+                    <div class="premium-loader-text">Mengambil data rincian RM: ${rm}...</div>
                 </div>
-                <p class="mt-2 text-muted">Mengambil data rincian RM: ${rm}...</p>
             </div>
         `);
         

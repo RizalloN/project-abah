@@ -216,6 +216,9 @@ class ExcelStagingService
         $buffer = '';
         $donePayload = null;
         $pythonError = null;
+        $stderrBuffer = '';
+        $lastOutputAt = microtime(true);
+        $idleTimeoutSeconds = max(60, (int) config('import.excel_stage_idle_timeout_seconds', 300));
 
         $processLine = static function (string $line) use ($send, &$donePayload, &$pythonError): void {
             $line = trim($line);
@@ -262,12 +265,35 @@ class ExcelStagingService
 
             $chunk = fread($pipes[1], 65536);
             if ($chunk !== false && $chunk !== '') {
+                $lastOutputAt = microtime(true);
                 $buffer .= $chunk;
                 while (($pos = strpos($buffer, "\n")) !== false) {
                     $line = substr($buffer, 0, $pos);
                     $buffer = substr($buffer, $pos + 1);
                     $processLine($line);
                 }
+            }
+
+            $errorChunk = fread($pipes[2], 65536);
+            if ($errorChunk !== false && $errorChunk !== '') {
+                $lastOutputAt = microtime(true);
+                $stderrBuffer .= $errorChunk;
+                if (strlen($stderrBuffer) > 8192) {
+                    $stderrBuffer = substr($stderrBuffer, -8192);
+                }
+            }
+
+            if ((microtime(true) - $lastOutputAt) > $idleTimeoutSeconds) {
+                $this->terminateProcess($process, $pipes);
+                @unlink($configFile);
+                @unlink($stagedCsvPath);
+                return $this->stageExcelToCsvViaNativeXlsx(
+                    $send,
+                    $sourcePath,
+                    $headerIndex,
+                    $normalizedHeaders,
+                    $stagedCsvPath
+                );
             }
 
             if (!$status['running']) {
@@ -285,12 +311,24 @@ class ExcelStagingService
             }
         }
 
+        $remainingError = stream_get_contents($pipes[2]);
+        if ($remainingError !== false && $remainingError !== '') {
+            $stderrBuffer .= $remainingError;
+            if (strlen($stderrBuffer) > 8192) {
+                $stderrBuffer = substr($stderrBuffer, -8192);
+            }
+        }
+
         fclose($pipes[1]);
         fclose($pipes[2]);
         proc_close($process);
         @unlink($configFile);
 
         if ($pythonError !== null || !$donePayload || !file_exists($stagedCsvPath)) {
+            if ($pythonError === null && trim($stderrBuffer) !== '') {
+                $pythonError = trim($stderrBuffer);
+            }
+
             @unlink($stagedCsvPath);
             return $this->stageExcelToCsvViaNativeXlsx(
                 $send,

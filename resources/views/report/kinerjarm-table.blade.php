@@ -65,7 +65,7 @@
                         'rows' => $rows,
                         'total' => $total,
                         'showTargets' => true,
-                        'showTargetColumns' => $selectedSegmen !== 'SMALL',
+                        'showTargetColumns' => !in_array($selectedSegmen, ['CONSUMER', 'SMALL']),
                         'showAchievementColumns' => true,
                         'showLarColumn' => $selectedSegmen !== 'CONSUMER',
                         'compact' => false,
@@ -78,19 +78,19 @@
                     <div class="kinerja-quality-intro">
                         <div>
                             <p class="kinerja-quality-intro__title">Kinerja Kualitas per RM</p>
-                            <p class="kinerja-quality-intro__desc">Dua tabel berikut memisahkan kualitas berdasarkan <code>kol_adk1</code>.</p>
+                            <p class="kinerja-quality-intro__desc">Dua tabel berikut memisahkan kualitas berdasarkan <code>kolek</code>.</p>
                         </div>
                         <div class="kinerja-quality-intro__chips">
-                            <span class="kinerja-report-chip">SML = kol_adk1 = 2</span>
-                            <span class="kinerja-report-chip">NPL = kol_adk1 &gt; 2</span>
+                            <span class="kinerja-report-chip">SML = kolek = 2</span>
+                            <span class="kinerja-report-chip">NPL = kolek &gt; 2</span>
                         </div>
                     </div>
 
                     <div class="kinerja-quality-stack">
                         @include('report.kinerjarm-table-section', [
                             'sectionTitle' => 'SML',
-                            'sectionSubtitle' => 'Filter kualitas: kol_adk1 = 2.',
-                            'sectionMeta' => 'Filter: kol_adk1 = 2',
+                            'sectionSubtitle' => 'Filter kualitas: kolek = 2.',
+                            'sectionMeta' => 'Filter: kolek = 2',
                         'comparisonColumns' => $comparisonColumns,
                         'rows' => $qualityRowsSml,
                         'total' => $qualityTotalSml,
@@ -105,8 +105,8 @@
 
                         @include('report.kinerjarm-table-section', [
                             'sectionTitle' => 'NPL',
-                            'sectionSubtitle' => 'Filter kualitas: kol_adk1 > 2.',
-                            'sectionMeta' => 'Filter: kol_adk1 > 2',
+                            'sectionSubtitle' => 'Filter kualitas: kolek > 2.',
+                            'sectionMeta' => 'Filter: kolek > 2',
                         'comparisonColumns' => $comparisonColumns,
                         'rows' => $qualityRowsNpl,
                         'total' => $qualityTotalNpl,

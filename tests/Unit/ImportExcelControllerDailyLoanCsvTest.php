@@ -478,6 +478,96 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
             (array) ($plan['set_clauses'] ?? []),
             static fn (string $clause): bool => str_contains(strtolower($clause), '`plafon`') && str_contains($clause, 'DECIMAL(24,2)')
         ));
+
+        $descriptionClauses = array_values(array_filter(
+            (array) ($plan['set_clauses'] ?? []),
+            static fn (string $clause): bool => str_contains(strtolower($clause), '`description`')
+        ));
+        $this->assertNotEmpty($descriptionClauses);
+        $this->assertStringContainsString('NULLIF(NULLIF', $descriptionClauses[0]);
+        $this->assertStringNotContainsString('TRIM', strtoupper($descriptionClauses[0]));
+    }
+
+    public function test_daily_loan_import_preserves_nbsp_text_and_sql_direct_load_text(): void
+    {
+        $this->assertSame(
+            "Kredit Mikro - KUR Ritel 2015\xC2\xA0",
+            $this->invokeMethod('normalizeExcelValue', ['DESCRIPTION', "Kredit Mikro - KUR Ritel 2015\xC2\xA0"])
+        );
+
+        $expression = $this->invokeMethod('buildDirectLoadTextExpression', ['@csv_col_71', true]);
+
+        $this->assertStringNotContainsString('TRIM', $expression);
+        $this->assertStringContainsString('@csv_col_71', $expression);
+    }
+
+    public function test_daily_loan_direct_load_rejects_rate_schema_that_cannot_store_six_decimals(): void
+    {
+        $schemaService = Mockery::mock(SchemaIntrospectionService::class);
+        $schemaService->shouldReceive('hasTable')->with('daily_loan_dinamis')->andReturnTrue();
+        $schemaService->shouldReceive('getColumnListing')->with('daily_loan_dinamis')->andReturn($this->dailyLoanHeaders());
+        $schemaService->shouldReceive('hasColumn')->andReturnTrue();
+        $metadata = array_fill_keys(
+            array_map('strtolower', $this->dailyLoanHeaders()),
+            [
+                'type' => 'varchar(255)',
+                'base_type' => 'varchar',
+                'max_length' => 255,
+                'precision' => null,
+                'scale' => null,
+                'is_textual' => true,
+                'is_decimal' => false,
+            ]
+        );
+        $metadata['rate'] = [
+            'type' => 'decimal(20,2)',
+            'base_type' => 'decimal',
+            'max_length' => null,
+            'precision' => 20,
+            'scale' => 2,
+            'is_textual' => false,
+            'is_decimal' => true,
+        ];
+        $schemaService->shouldReceive('getColumnMetadata')->with('daily_loan_dinamis')->andReturn($metadata);
+        app()->instance(SchemaIntrospectionService::class, $schemaService);
+
+        $csvPath = storage_path('framework/testing/daily_loan_rate_precision_guard.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, 'BROKEN,CONTENT,SHOULD,NOT,BE,READ');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('kolom `rate` harus DECIMAL dengan 6 digit desimal');
+
+        try {
+            $this->invokeMethod('buildDirectDailyLoanCsvLoadPlan', [
+                $csvPath,
+                $this->dailyLoanHeaders(),
+                [
+                    'prepared_source' => [
+                        'path' => $csvPath,
+                        'cleanup' => false,
+                        'normalized' => false,
+                        'source_pre_normalized' => false,
+                        'backend' => 'raw',
+                        'headers' => $this->dailyLoanHeaders(),
+                        'skipped_rows' => [],
+                        'skipped_count' => 0,
+                        'written_rows' => 1,
+                        'period_hints' => ['2026-04-04'],
+                    ],
+                    'delimiter' => ',',
+                    'source_backend' => 'raw',
+                    'source_pre_normalized' => false,
+                    'replace_existing_periods' => true,
+                    'replace_periods' => ['2026-04-04'],
+                ],
+            ]);
+        } finally {
+            @unlink($csvPath);
+        }
     }
 
     public function test_estimate_csv_import_total_rows_ignores_malformed_daily_loan_rows(): void

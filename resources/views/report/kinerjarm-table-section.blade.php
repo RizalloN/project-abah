@@ -14,11 +14,11 @@
     $emptyMessage = $emptyMessage ?? 'Silakan pilih parameter filter yang berbeda.';
     $tableClass = 'kinerja-konsumer-table' . ($compact ? ' kinerja-konsumer-table--compact' : '');
     $comparisonColumns = collect($comparisonColumns ?? [
-        ['key' => 'ytd', 'label' => 'YTD', 'short_label' => $ytdShortLabel ?? 'YTD'],
-        ['key' => 'm4', 'label' => 'M-4', 'short_label' => $yoyShortLabel ?? 'M-4'],
-        ['key' => 'm3', 'label' => 'M-3', 'short_label' => '-'],
-        ['key' => 'm2', 'label' => 'M-2', 'short_label' => '-'],
-        ['key' => 'm1', 'label' => 'M-1', 'short_label' => $mtdShortLabel ?? 'M-1'],
+        ['key' => 'ytd', 'label' => $ytdShortLabel ?? '-', 'short_label' => $ytdShortLabel ?? '-'],
+        ['key' => 'm4', 'label' => $yoyShortLabel ?? '-', 'short_label' => $yoyShortLabel ?? '-'],
+        ['key' => 'm3', 'label' => '-', 'short_label' => '-'],
+        ['key' => 'm2', 'label' => '-', 'short_label' => '-'],
+        ['key' => 'm1', 'label' => $mtdShortLabel ?? '-', 'short_label' => $mtdShortLabel ?? '-'],
     ])->values();
     $comparisonCount = max(1, $comparisonColumns->count());
     $baseColspan = 5 + $comparisonCount + 1 + $comparisonCount;
@@ -59,7 +59,7 @@
     $formatPercent = $formatPercent ?? fn ($value, int $decimals = 1) => number_format((float) $value, $decimals, ',', '.') . '%';
     $quadrantLabel = $quadrantLabel ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'Kuadran ' . (int) $quadrant : '-';
     $quadrantClass = $quadrantClass ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'q' . (int) $quadrant : '';
-    $achievementHeader = ($selectedSegmen ?? '') === 'CONSUMER' ? 'Surplesi Ratas' : 'Realisasi JG';
+    $achievementHeader = ($selectedSegmen ?? '') === 'CONSUMER' ? 'Plafon Net' : 'Realisasi JG';
     $selectedHeaderLabel = $selectedPeriodShortLabel ?? 'POSISI';
     $valueFor = fn (array $row, string $key): float => (float) data_get($row, "comparison_values.{$key}", data_get($row, $key, 0));
     $deltaFor = fn (array $row, string $key): float => (float) data_get($row, "comparison_deltas.{$key}", (float) ($row['curr'] ?? 0) - $valueFor($row, $key));
@@ -94,7 +94,7 @@
                     <th rowspan="2" style="width: 92px;">Produk</th>
                     <th rowspan="2" style="width: 58px;">Kuadran</th>
                     <th colspan="{{ $comparisonCount + 1 }}" class="sub-head">Performance</th>
-                    <th colspan="{{ $comparisonCount }}" class="accent-head">Gap vs Posisi</th>
+                    <th colspan="{{ $comparisonCount }}" class="accent-head">Delta</th>
                     @if($showTargetColumns)
                         <th colspan="2" class="sub-head">Target JG</th>
                     @endif
@@ -107,14 +107,12 @@
                 </tr>
                 <tr>
                     @foreach($comparisonColumns as $column)
-                        <th class="sub-head kinerja-period-head" style="width: 70px;">
-                            <span>{{ $column['label'] }}</span>
-                            <small>{{ $column['short_label'] ?? '-' }}</small>
+                        <th class="sub-head kinerja-period-head" style="width: 80px; white-space: nowrap;">
+                            <span>{{ $column['short_label'] ?? '-' }}</span>
                         </th>
                     @endforeach
-                    <th class="sub-head kinerja-period-head" style="width: 76px;">
-                        <span>Posisi</span>
-                        <small>{{ $selectedHeaderLabel }}</small>
+                    <th class="sub-head kinerja-period-head" style="width: 86px; white-space: nowrap;">
+                        <span>{{ $selectedHeaderLabel }}</span>
                     </th>
 
                     @foreach($comparisonColumns as $column)
@@ -136,9 +134,9 @@
                 @php $no = 1; @endphp
                 @forelse($rows as $branch)
                     <tr class="loan-branch-subtotal">
-                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="text-center-important sticky-col" style="font-weight: 800; left: 0; border-right: 1px solid var(--loan-border-strong); background: #0f2f66 !important; color: #ffffff !important;">{{ $no++ }}</td>
+                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="text-center-important sticky-col" style="font-weight: 800; left: 0; border-right: 1px solid #cbd5e1; background: #d9e1f2 !important; color: #000000 !important;">{{ $no++ }}</td>
                         <td rowspan="{{ $branch['branch_rowspan'] }}" class="merged-branch-cell sticky-col" style="left: 32px;">{{ $branch['cabang'] }}</td>
-                        <td colspan="3" class="text-center-important sticky-col" style="letter-spacing: 0.03em; font-weight: 900; background: #0b3f86 !important; color: #e0f2fe !important; left: 126px; z-index: 20;">
+                        <td colspan="3" class="text-center-important sticky-col" style="letter-spacing: 0.03em; font-weight: 900; background: #d9e1f2 !important; color: #000000 !important; left: 126px; z-index: 20; border-right: 1px solid #cbd5e1;">
                             TOTAL {{ $branch['cabang'] }}
                         </td>
                         @foreach($comparisonColumns as $column)
@@ -247,7 +245,7 @@
 
                 @if(!empty($rows))
                     <tr class="row-grand-total">
-                        <td colspan="5" class="text-center-important sticky-col" style="font-weight: 900; text-transform: uppercase; background: #0b1f44 !important; color: #ffffff !important; left: 0; z-index: 50;">
+                        <td colspan="5" class="text-center-important sticky-col" style="font-weight: 900; text-transform: uppercase; background: #b4c6e7 !important; color: #000000 !important; left: 0; z-index: 50; border-top: 1px solid #8faadc !important; border-bottom: 3px double #000000 !important; border-right: 1px solid #cbd5e1;">
                             {{ $grandTotalLabel }}
                         </td>
                         @foreach($comparisonColumns as $column)

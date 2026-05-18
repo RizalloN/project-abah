@@ -100,6 +100,39 @@ class DashboardSimpananController extends Controller
         $loanPreviousSummary = $loanPreviousPeriod ? $this->buildLoanSummary($loanPreviousPeriod) : $this->emptyLoanSummary();
         $loanYoySummary = $loanYoyPeriod ? $this->buildLoanSummary($loanYoyPeriod) : $this->emptyLoanSummary();
 
+        try {
+            $harianService = app(\App\Support\DashboardHarianSnapshotService::class);
+            $keragaanData = $harianService->buildDashboardPayload($currentPeriod);
+            
+            $simpRow = collect($keragaanData['rows'] ?? [])->firstWhere('key', 'total_simpanan');
+            if ($simpRow) {
+                $currentSummary['total_balance'] = (float) ($simpRow['values']['current'] ?? $currentSummary['total_balance']);
+                $previousSummary['total_balance'] = (float) ($simpRow['values']['mtd'] ?? $previousSummary['total_balance']);
+                $yoySummary['total_balance'] = (float) ($simpRow['values']['yoy'] ?? $yoySummary['total_balance']);
+            }
+            
+            $tabungan = collect($keragaanData['rows'] ?? [])->firstWhere('key', 'tabungan_ritel')['values']['current'] ?? 0;
+            $tabungan += collect($keragaanData['rows'] ?? [])->firstWhere('key', 'tabungan_mikro')['values']['current'] ?? 0;
+            $tabungan += collect($keragaanData['rows'] ?? [])->firstWhere('key', 'tabungan_wholesale')['values']['current'] ?? 0;
+            if ($tabungan > 0) $currentSummary['tabungan_balance'] = $tabungan;
+            
+            $giro = collect($keragaanData['rows'] ?? [])->firstWhere('key', 'giro_ritel')['values']['current'] ?? 0;
+            $giro += collect($keragaanData['rows'] ?? [])->firstWhere('key', 'giro_mikro')['values']['current'] ?? 0;
+            $giro += collect($keragaanData['rows'] ?? [])->firstWhere('key', 'giro_wholesale')['values']['current'] ?? 0;
+            if ($giro > 0) $currentSummary['giro_balance'] = $giro;
+            
+            $currentSummary['other_balance'] = max(0, $currentSummary['total_balance'] - $currentSummary['tabungan_balance'] - $currentSummary['giro_balance']);
+
+            $pinjRow = collect($keragaanData['rows'] ?? [])->firstWhere('key', 'total_os_non_commercial');
+            if ($pinjRow) {
+                $loanCurrentSummary['total_balance'] = (float) ($pinjRow['values']['current'] ?? $loanCurrentSummary['total_balance']);
+                $loanPreviousSummary['total_balance'] = (float) ($pinjRow['values']['mtd'] ?? $loanPreviousSummary['total_balance']);
+                $loanYoySummary['total_balance'] = (float) ($pinjRow['values']['yoy'] ?? $loanYoySummary['total_balance']);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Failed injecting keragaan data for landing page: ' . $e->getMessage());
+        }
+
         $topBranches = $this->fetchTopBranches($currentPeriod);
         $loanTopBranches = $loanCurrentPeriod ? $this->fetchLoanTopBranches($loanCurrentPeriod) : collect();
         $composition = $this->buildComposition($currentSummary);
@@ -110,11 +143,11 @@ class DashboardSimpananController extends Controller
         $loanTopBranchDisplay = data_get($loanTopBranches->first(), 'display', '-');
         $savingsMoM = $this->percentChange($currentSummary['total_balance'], $previousSummary['total_balance']);
         $loanMoM = $this->percentChange($loanCurrentSummary['total_balance'], $loanPreviousSummary['total_balance']);
-        $coverageNow = $this->formatRatio($currentSummary['total_balance'], $loanCurrentSummary['total_balance']);
-        $coveragePrev = $this->formatRatio($previousSummary['total_balance'], $loanPreviousSummary['total_balance']);
+        $coverageNow = $this->formatRatio($loanCurrentSummary['total_balance'], $currentSummary['total_balance']);
+        $coveragePrev = $this->formatRatio($loanPreviousSummary['total_balance'], $previousSummary['total_balance']);
         $coverageChange = $this->percentChange(
-            $loanCurrentSummary['total_balance'] > 0 ? $currentSummary['total_balance'] / $loanCurrentSummary['total_balance'] : 0,
-            $loanPreviousSummary['total_balance'] > 0 ? $previousSummary['total_balance'] / $loanPreviousSummary['total_balance'] : 0
+            $currentSummary['total_balance'] > 0 ? $loanCurrentSummary['total_balance'] / $currentSummary['total_balance'] : 0,
+            $previousSummary['total_balance'] > 0 ? $loanPreviousSummary['total_balance'] / $previousSummary['total_balance'] : 0
         );
         $latestCombinedLabel = trim(sprintf(
             'Simpanan %s | Pinjaman %s',
@@ -122,6 +155,7 @@ class DashboardSimpananController extends Controller
             $loanCurrentPeriod ? $this->formatPeriodLabel($loanCurrentPeriod) : 'Belum ada data'
         ));
         $digitalPerformance = $this->buildDigitalPerformance();
+        $timeseries = $this->buildTimeseriesPayload($currentPeriod, $loanCurrentPeriod);
 
         return [
             'period' => $currentPeriod,
@@ -207,15 +241,15 @@ class DashboardSimpananController extends Controller
                 ],
                 [
                     'key' => 'portfolio',
-                    'title' => 'Coverage Portfolio',
+                    'title' => 'LDR (Loan to Deposit Ratio)',
                     'eyebrow' => 'Cross report',
-                    'value' => $this->formatRatio($currentSummary['total_balance'], $loanCurrentSummary['total_balance']),
+                    'value' => $this->formatRatio($loanCurrentSummary['total_balance'], $currentSummary['total_balance']),
                     'trend' => $this->formatSignedPercent($coverageChange),
                     'trend_class' => $this->deltaClass($coverageChange),
-                    'meta' => 'Gap simpanan vs pinjaman ' . $this->formatCurrencyCompact($currentSummary['total_balance'] - $loanCurrentSummary['total_balance']),
-                    'detail' => 'Coverage periode saat ini ' . $coverageNow . ' vs ' . $coveragePrev,
+                    'meta' => 'Gap pinjaman vs simpanan ' . $this->formatCurrencyCompact($loanCurrentSummary['total_balance'] - $currentSummary['total_balance']),
+                    'detail' => 'LDR periode saat ini ' . $coverageNow . ' vs ' . $coveragePrev,
                     'updated' => $latestCombinedLabel,
-                    'badge' => 'Portfolio',
+                    'badge' => 'LDR',
                     'badge_class' => 'badge-success',
                     'icon' => 'fas fa-layer-group',
                     'icon_bg' => 'rgba(40, 167, 69, 0.12)',
@@ -225,6 +259,7 @@ class DashboardSimpananController extends Controller
                 ],
             ],
             'digital_performance' => $digitalPerformance,
+            'timeseries' => $timeseries,
             'metrics' => [
                 [
                     'label' => 'Total Simpanan',
@@ -590,7 +625,7 @@ class DashboardSimpananController extends Controller
             'live_reports' => [
                 ['key' => 'simpanan', 'title' => 'Simpanan Realtime', 'eyebrow' => 'Snapshot aktif', 'value' => 'Rp0', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => '0 rekening | 0 CIF', 'detail' => 'Top cabang belum tersedia', 'updated' => 'Belum ada data', 'badge' => 'Simpanan', 'badge_class' => 'badge-primary', 'icon' => 'fas fa-piggy-bank', 'icon_bg' => 'rgba(13, 110, 253, 0.12)', 'tone' => 'primary', 'link' => route('dashboard'), 'link_label' => 'Buka report simpanan'],
                 ['key' => 'pinjaman', 'title' => 'Pinjaman Realtime', 'eyebrow' => 'Outstanding aktif', 'value' => 'Rp0', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => '0 rekening | 0 cabang', 'detail' => 'Top cabang belum tersedia', 'updated' => 'Belum ada data', 'badge' => 'Pinjaman', 'badge_class' => 'badge-info', 'icon' => 'fas fa-hand-holding-usd', 'icon_bg' => 'rgba(23, 162, 184, 0.12)', 'tone' => 'info', 'link' => route('report.dashboard-pinjaman'), 'link_label' => 'Buka report pinjaman'],
-                ['key' => 'portfolio', 'title' => 'Coverage Portfolio', 'eyebrow' => 'Cross report', 'value' => '0,00x', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => 'Gap simpanan vs pinjaman Rp0', 'detail' => 'Coverage periode saat ini 0,00x vs 0,00x', 'updated' => 'Belum ada data', 'badge' => 'Portfolio', 'badge_class' => 'badge-success', 'icon' => 'fas fa-layer-group', 'icon_bg' => 'rgba(40, 167, 69, 0.12)', 'tone' => 'success', 'link' => route('dashboard.harian'), 'link_label' => 'Lihat portfolio harian'],
+                ['key' => 'portfolio', 'title' => 'LDR (Loan to Deposit Ratio)', 'eyebrow' => 'Cross report', 'value' => '0,00x', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => 'Gap pinjaman vs simpanan Rp0', 'detail' => 'LDR periode saat ini 0,00x vs 0,00x', 'updated' => 'Belum ada data', 'badge' => 'LDR', 'badge_class' => 'badge-success', 'icon' => 'fas fa-layer-group', 'icon_bg' => 'rgba(40, 167, 69, 0.12)', 'tone' => 'success', 'link' => route('dashboard.harian'), 'link_label' => 'Lihat portfolio harian'],
             ],
         ];
     }
@@ -942,8 +977,11 @@ class DashboardSimpananController extends Controller
             $cards = array_values(array_filter([
                 $this->buildEdcPerformanceCard(),
                 $this->buildQrisPerformanceCard(),
+                $this->buildQlolaPerformanceCard(),
                 $this->buildBrimoPerformanceCard(),
                 $this->buildBrilinkPerformanceCard(),
+                $this->buildCasaDebiturKpiCard(),
+                $this->buildRekeningDormantKpiCard(),
                 $this->buildPayrollPerformanceCard(),
             ]));
 
@@ -962,7 +1000,7 @@ class DashboardSimpananController extends Controller
 
             return [
                 'title' => 'Performance Digital Area 6',
-                'subtitle' => 'Snapshot realtime untuk EDC, QRIS, BRIMO, BRILink, dan payroll agar pemantauan channel digital tetap cepat terbaca.',
+                'subtitle' => 'Snapshot realtime untuk 8 strategi: EDC, QRIS, QLola, BRIMO, BRILink, Casa Debitur, Rekening Dormant, dan Payroll.',
                 'updated_at' => $latestSource
                     ? Carbon::createFromTimestamp($latestSource)->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d M Y H:i')
                     : null,
@@ -1381,6 +1419,374 @@ class DashboardSimpananController extends Controller
 
             return null;
         }
+    }
+
+    private function buildQlolaPerformanceCard(): ?array
+    {
+        try {
+            // Coba beberapa nama tabel QLola yang mungkin ada
+            $tableName = null;
+            foreach (['qlola_detail', 'qlola_report', 'qlola_summary'] as $tbl) {
+                if (Schema::hasTable($tbl)) {
+                    $tableName = $tbl;
+                    break;
+                }
+            }
+
+            if (!$tableName) {
+                // Return stub card jika tabel tidak ada
+                return [
+                    'key' => 'qlola',
+                    'title' => 'Performance QLola',
+                    'subtitle' => 'Platform cash management QLola untuk monitoring likuiditas nasabah korporasi.',
+                    'badge' => 'QLOLA',
+                    'badge_class' => 'badge-warning',
+                    'tone' => 'digital-qlola',
+                    'icon' => 'fas fa-university',
+                    'link' => route('report.qlola'),
+                    'link_label' => 'Buka report QLola',
+                    'current_value' => '-',
+                    'current_label' => 'Nasabah Aktif',
+                    'secondary_value' => '-',
+                    'secondary_label' => 'Volume',
+                    'trend' => '0,0%',
+                    'trend_class' => 'text-muted',
+                    'trend_value' => 0,
+                    'trend_reference' => 'Data belum tersedia',
+                    'chart' => ['points' => [], 'path' => '', 'area_path' => ''],
+                    'series' => [],
+                    'series_labels' => [],
+                    'stats' => [
+                        ['label' => 'Status', 'value' => 'Menunggu Data'],
+                        ['label' => 'Periode', 'value' => '-'],
+                        ['label' => 'Link', 'value' => 'Lihat Detail'],
+                    ],
+                    'source_updated_at' => null,
+                    'is_stub' => true,
+                ];
+            }
+
+            $latestPeriod = DB::table($tableName)->max('posisi') ?? DB::table($tableName)->max('periode');
+            if (!$latestPeriod) {
+                return null;
+            }
+
+            $periods = $this->buildTrendDatePeriods($latestPeriod);
+            $branches = $this->dashboardBranchNames();
+            $timeline = [];
+
+            foreach ($periods as $period) {
+                $row = DB::table($tableName)
+                    ->whereDate(Schema::hasColumn($tableName, 'posisi') ? 'posisi' : 'periode', $period)
+                    ->whereIn(DB::raw('UPPER(TRIM(' . (Schema::hasColumn($tableName, 'kanca') ? 'kanca' : 'cabang') . '))'), $branches)
+                    ->selectRaw('COUNT(DISTINCT ' . (Schema::hasColumn($tableName, 'cif') ? 'cif' : 'id') . ') as nasabah_count')
+                    ->selectRaw('COALESCE(SUM(COALESCE(' . (Schema::hasColumn($tableName, 'nominal') ? 'nominal' : '0') . ', 0)), 0) as volume')
+                    ->first();
+
+                $timeline[] = [
+                    'label' => Carbon::parse($period)->translatedFormat('d M'),
+                    'nasabah_count' => (int) ($row->nasabah_count ?? 0),
+                    'volume' => (float) ($row->volume ?? 0),
+                    'source_updated_at' => $period,
+                ];
+            }
+
+            $current = $timeline[array_key_last($timeline)] ?? ['nasabah_count' => 0, 'volume' => 0];
+            $previous = $timeline[count($timeline) - 2] ?? $current;
+
+            return $this->buildDigitalCard([
+                'key' => 'qlola',
+                'title' => 'Performance QLola',
+                'subtitle' => 'Platform cash management QLola untuk monitoring likuiditas nasabah korporasi.',
+                'badge' => 'QLOLA',
+                'badge_class' => 'badge-warning',
+                'tone' => 'digital-qlola',
+                'icon' => 'fas fa-university',
+                'link' => route('report.qlola'),
+                'link_label' => 'Buka report QLola',
+                'current_value' => $this->formatInteger((int) $current['nasabah_count']),
+                'current_label' => 'Nasabah Aktif',
+                'secondary_value' => $this->formatCurrencyCompact((float) $current['volume']),
+                'secondary_label' => 'Volume',
+                'trend_reference' => $this->formatInteger((int) $previous['nasabah_count']) . ' nasabah sebelumnya',
+                'trend_direction' => $this->percentChange((float) $current['nasabah_count'], (float) $previous['nasabah_count']),
+                'series' => array_column($timeline, 'nasabah_count'),
+                'series_labels' => array_column($timeline, 'label'),
+                'stats' => [
+                    ['label' => 'Nasabah', 'value' => $this->formatInteger((int) $current['nasabah_count'])],
+                    ['label' => 'Volume', 'value' => $this->formatCurrencyCompact((float) $current['volume'])],
+                    ['label' => 'Periode', 'value' => Carbon::parse($latestPeriod)->translatedFormat('d M Y')],
+                ],
+                'source_updated_at' => $latestPeriod,
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('Dashboard digital QLola gagal disusun: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    private function buildCasaDebiturKpiCard(): ?array
+    {
+        try {
+            // Coba tabel rasio casa debitur
+            $tableName = null;
+            foreach (['rasio_casa_debitur', 'casa_debitur_summary', 'rekening_transaksi_debitur'] as $tbl) {
+                if (Schema::hasTable($tbl)) {
+                    $tableName = $tbl;
+                    break;
+                }
+            }
+
+            if (!$tableName) {
+                return [
+                    'key' => 'casa',
+                    'title' => 'Rasio Casa Debitur',
+                    'subtitle' => 'Rasio kepemilikan rekening tabungan oleh debitur aktif Area 6.',
+                    'badge' => 'CASA',
+                    'badge_class' => 'badge-info',
+                    'tone' => 'digital-casa',
+                    'icon' => 'fas fa-percentage',
+                    'link' => route('report.rasiocasa.debitur'),
+                    'link_label' => 'Buka report Casa',
+                    'current_value' => '-',
+                    'current_label' => 'Rasio Casa',
+                    'secondary_value' => '-',
+                    'secondary_label' => 'Debitur Aktif',
+                    'trend' => '0,0%',
+                    'trend_class' => 'text-muted',
+                    'trend_value' => 0,
+                    'trend_reference' => 'Data belum tersedia',
+                    'chart' => ['points' => [], 'path' => '', 'area_path' => ''],
+                    'series' => [],
+                    'series_labels' => [],
+                    'stats' => [
+                        ['label' => 'Status', 'value' => 'Menunggu Data'],
+                        ['label' => 'Periode', 'value' => '-'],
+                        ['label' => 'Link', 'value' => 'Lihat Detail'],
+                    ],
+                    'source_updated_at' => null,
+                    'is_stub' => true,
+                ];
+            }
+
+            // Cari kolom periode
+            $periodCol = Schema::hasColumn($tableName, 'posisi') ? 'posisi'
+                : (Schema::hasColumn($tableName, 'periode') ? 'periode' : 'created_at');
+            $latestPeriod = DB::table($tableName)->max($periodCol);
+            if (!$latestPeriod) {
+                return null;
+            }
+
+            $row = DB::table($tableName)
+                ->where($periodCol, $latestPeriod)
+                ->selectRaw('COUNT(*) as total_debitur')
+                ->selectRaw('SUM(CASE WHEN COALESCE(flag_casa, 0) = 1 THEN 1 ELSE 0 END) as casa_count')
+                ->first();
+
+            $totalDebitur = (int) ($row->total_debitur ?? 0);
+            $casaCount = (int) ($row->casa_count ?? 0);
+            $rasio = $totalDebitur > 0 ? ($casaCount / $totalDebitur) * 100 : 0;
+
+            return $this->buildDigitalCard([
+                'key' => 'casa',
+                'title' => 'Rasio Casa Debitur',
+                'subtitle' => 'Rasio kepemilikan rekening tabungan oleh debitur aktif Area 6.',
+                'badge' => 'CASA',
+                'badge_class' => 'badge-info',
+                'tone' => 'digital-casa',
+                'icon' => 'fas fa-percentage',
+                'link' => route('report.rasiocasa.debitur'),
+                'link_label' => 'Buka report Casa',
+                'current_value' => $this->formatPercent($rasio),
+                'current_label' => 'Rasio Casa',
+                'secondary_value' => $this->formatInteger($totalDebitur),
+                'secondary_label' => 'Total Debitur',
+                'trend_reference' => $this->formatInteger($casaCount) . ' debitur punya CASA',
+                'trend_direction' => $rasio - 50,
+                'series' => [$rasio],
+                'series_labels' => [Carbon::parse($latestPeriod)->translatedFormat('d M')],
+                'stats' => [
+                    ['label' => 'Debitur CASA', 'value' => $this->formatInteger($casaCount)],
+                    ['label' => 'Total Debitur', 'value' => $this->formatInteger($totalDebitur)],
+                    ['label' => 'Rasio', 'value' => $this->formatPercent($rasio)],
+                ],
+                'source_updated_at' => $latestPeriod,
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('Dashboard digital Casa Debitur gagal disusun: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    private function buildRekeningDormantKpiCard(): ?array
+    {
+        try {
+            $tableName = null;
+            foreach (['rekening_dormant', 'rekening_dormant_detail', 'dormant_summary'] as $tbl) {
+                if (Schema::hasTable($tbl)) {
+                    $tableName = $tbl;
+                    break;
+                }
+            }
+
+            if (!$tableName) {
+                return [
+                    'key' => 'dormant',
+                    'title' => 'Rekening Dormant',
+                    'subtitle' => 'Monitoring rekening tidak aktif untuk menjaga kualitas DPK Area 6.',
+                    'badge' => 'DORMANT',
+                    'badge_class' => 'badge-danger',
+                    'tone' => 'digital-dormant',
+                    'icon' => 'fas fa-bed',
+                    'link' => route('report.rekening-dormant'),
+                    'link_label' => 'Buka report Dormant',
+                    'current_value' => '-',
+                    'current_label' => 'Rekening Dormant',
+                    'secondary_value' => '-',
+                    'secondary_label' => 'Saldo Tertahan',
+                    'trend' => '0,0%',
+                    'trend_class' => 'text-muted',
+                    'trend_value' => 0,
+                    'trend_reference' => 'Data belum tersedia',
+                    'chart' => ['points' => [], 'path' => '', 'area_path' => ''],
+                    'series' => [],
+                    'series_labels' => [],
+                    'stats' => [
+                        ['label' => 'Status', 'value' => 'Menunggu Data'],
+                        ['label' => 'Periode', 'value' => '-'],
+                        ['label' => 'Link', 'value' => 'Lihat Detail'],
+                    ],
+                    'source_updated_at' => null,
+                    'is_stub' => true,
+                ];
+            }
+
+            $periodCol = Schema::hasColumn($tableName, 'posisi') ? 'posisi'
+                : (Schema::hasColumn($tableName, 'periode') ? 'periode' : 'created_at');
+            $latestPeriod = DB::table($tableName)->max($periodCol);
+            if (!$latestPeriod) {
+                return null;
+            }
+
+            $periods = $this->buildTrendDatePeriods($latestPeriod);
+            $branches = $this->dashboardBranchNames();
+            $branchCol = Schema::hasColumn($tableName, 'kanca') ? 'kanca'
+                : (Schema::hasColumn($tableName, 'cabang') ? 'cabang' : 'kantor_cabang');
+            $saldoCol = Schema::hasColumn($tableName, 'saldo_idr') ? 'saldo_idr'
+                : (Schema::hasColumn($tableName, 'saldo') ? 'saldo' : '0');
+            $timeline = [];
+
+            foreach ($periods as $period) {
+                $row = DB::table($tableName)
+                    ->whereDate($periodCol, $period)
+                    ->whereIn(DB::raw('UPPER(TRIM(' . $branchCol . '))'), $branches)
+                    ->selectRaw('COUNT(*) as dormant_count')
+                    ->selectRaw('COALESCE(SUM(COALESCE(' . $saldoCol . ', 0)), 0) as saldo')
+                    ->first();
+
+                $timeline[] = [
+                    'label' => Carbon::parse($period)->translatedFormat('d M'),
+                    'dormant_count' => (int) ($row->dormant_count ?? 0),
+                    'saldo' => (float) ($row->saldo ?? 0),
+                    'source_updated_at' => $period,
+                ];
+            }
+
+            $current = $timeline[array_key_last($timeline)] ?? ['dormant_count' => 0, 'saldo' => 0];
+            $previous = $timeline[count($timeline) - 2] ?? $current;
+
+            return $this->buildDigitalCard([
+                'key' => 'dormant',
+                'title' => 'Rekening Dormant',
+                'subtitle' => 'Monitoring rekening tidak aktif untuk menjaga kualitas DPK Area 6.',
+                'badge' => 'DORMANT',
+                'badge_class' => 'badge-danger',
+                'tone' => 'digital-dormant',
+                'icon' => 'fas fa-bed',
+                'link' => route('report.rekening-dormant'),
+                'link_label' => 'Buka report Dormant',
+                'current_value' => $this->formatInteger((int) $current['dormant_count']),
+                'current_label' => 'Rekening Dormant',
+                'secondary_value' => $this->formatCurrencyCompact((float) $current['saldo']),
+                'secondary_label' => 'Saldo Tertahan',
+                'trend_reference' => $this->formatInteger((int) $previous['dormant_count']) . ' rek. periode sebelumnya',
+                'trend_direction' => -$this->percentChange((float) $current['dormant_count'], (float) $previous['dormant_count']),
+                'series' => array_column($timeline, 'dormant_count'),
+                'series_labels' => array_column($timeline, 'label'),
+                'stats' => [
+                    ['label' => 'Rekening', 'value' => $this->formatInteger((int) $current['dormant_count'])],
+                    ['label' => 'Saldo', 'value' => $this->formatCurrencyCompact((float) $current['saldo'])],
+                    ['label' => 'Periode', 'value' => Carbon::parse($latestPeriod)->translatedFormat('d M Y')],
+                ],
+                'source_updated_at' => $latestPeriod,
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('Dashboard digital Rekening Dormant gagal disusun: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    private function buildTimeseriesPayload(?string $simpananPeriod, ?string $loanPeriod): array
+    {
+        $cacheKey = 'dashboard_simpanan:timeseries:v' . $this->reportCacheVersion() . ':' . ($simpananPeriod ?? 'null') . ':' . ($loanPeriod ?? 'null');
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($simpananPeriod, $loanPeriod) {
+            $points = 6;
+            $simpananTimeline = [];
+            $loanTimeline = [];
+            $labels = [];
+
+            // Build simpanan timeseries
+            if ($simpananPeriod && Schema::hasTable('simpanan_multipn')) {
+                $current = Carbon::parse($simpananPeriod)->startOfDay();
+                for ($offset = $points - 1; $offset >= 0; $offset--) {
+                    $p = $offset === 0
+                        ? $current->toDateString()
+                        : $current->copy()->subMonthsNoOverflow($offset)->endOfMonth()->toDateString();
+
+                    $actualPeriod = DB::table('simpanan_multipn')->where('posisi', '<=', $p)->max('posisi');
+                    if ($actualPeriod) {
+                        $sum = $this->buildPeriodSummary($actualPeriod);
+                        $simpananTimeline[] = round((float) ($sum['total_balance'] ?? 0) / 1e12, 3);
+                        $labels[] = Carbon::parse($actualPeriod)->translatedFormat('M y');
+                    } else {
+                        $simpananTimeline[] = 0;
+                        $labels[] = Carbon::parse($p)->translatedFormat('M y');
+                    }
+                }
+            } else {
+                $simpananTimeline = array_fill(0, $points, 0);
+                $labels = array_fill(0, $points, '-');
+            }
+
+            // Build loan timeseries aligned to same labels
+            if ($loanPeriod && (Schema::hasTable('daily_loan_dinamis') || Schema::hasTable(self::LOAN_SNAPSHOT_TABLE))) {
+                $current = Carbon::parse($loanPeriod)->startOfDay();
+                for ($offset = $points - 1; $offset >= 0; $offset--) {
+                    $p = $offset === 0
+                        ? $current->toDateString()
+                        : $current->copy()->subMonthsNoOverflow($offset)->endOfMonth()->toDateString();
+
+                    $table = Schema::hasTable(self::LOAN_SNAPSHOT_TABLE) ? self::LOAN_SNAPSHOT_TABLE : 'daily_loan_dinamis';
+                    $periodeCol = Schema::hasTable(self::LOAN_SNAPSHOT_TABLE) ? 'periode' : 'periode';
+                    $actualPeriod = DB::table($table)->where($periodeCol, '<=', $p)->max($periodeCol);
+                    if ($actualPeriod) {
+                        $sum = $this->buildLoanSummary($actualPeriod);
+                        $loanTimeline[] = round((float) ($sum['total_balance'] ?? 0) / 1e12, 3);
+                    } else {
+                        $loanTimeline[] = 0;
+                    }
+                }
+            } else {
+                $loanTimeline = array_fill(0, $points, 0);
+            }
+
+            return [
+                'labels' => $labels,
+                'simpanan' => $simpananTimeline,
+                'pinjaman' => $loanTimeline,
+            ];
+        });
     }
 
     private function buildDigitalCard(array $card): array

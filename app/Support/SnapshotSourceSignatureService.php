@@ -13,7 +13,7 @@ class SnapshotSourceSignatureService
     private const SIGNATURE_VERSION = 'snapshot-source-v1';
     private const BUCKET_SIGNATURE_VERSION = 'snapshot-source-v2-buckets';
     private const SNAPSHOT_FORMULA_VERSIONS = [
-        'performance_rm_snapshots' => 'performance-rm-v2-consumer-plafon-net',
+        'performance_rm_snapshots' => 'performance-rm-v5-valid-consumer-plafon-basis',
     ];
 
     private const NUMERIC_COLUMNS = [

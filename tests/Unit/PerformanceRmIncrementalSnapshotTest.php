@@ -78,7 +78,6 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
 
         $this->insertDailyLoanRow('R1', 'BRIGUNAKONSUMER', 330000000, 270000000, '123', '2026-05-10');
         $this->insertDailyLoanRow('R1', 'BRIGUNAKONSUMER', 350000000, 290000000, '123', '2026-05-15');
-        $this->insertDailyLoanRow('R1', 'BRIGUNAKONSUMER', 348000000, 289000000, '123', '2026-05-15');
         $this->insertDailyLoanRow('R2', 'KPR', 180000000, 170000000, '456', '2026-05-15');
         $this->insertDailyLoanRow('R4', 'KPR', 125000000, 100000000, '999', '2026-05-15');
 
@@ -103,8 +102,74 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $this->assertSame(0.0, (float) $briguna->w1_realisasi_os);
 
         $this->assertNotNull($kpr);
+        $this->assertSame(2, (int) $kpr->realisasi_deb);
+        $this->assertSame(5000000.0, (float) $kpr->realisasi_os);
+    }
+
+    public function test_consumer_realisasi_ignores_current_plafon_when_previous_group_has_no_valid_basis(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        $this->insertDailyLoanRow('R1', 'BRIGUNAKONSUMER', 300000000, 250000000, '123', '2026-04-30');
+
+        $this->insertDailyLoanRow('R3', 'KPR', 125000000, 100000000, '999', '2026-05-15');
+        $this->insertDailyLoanRow('R4', 'BRIGUNAKONSUMER', 275000000, 225000000, '789', '2026-05-15');
+
+        $builder->rebuildPerformanceRm('2026-05-15', true);
+
+        $briguna = DB::table('performance_rm_snapshots')
+            ->where('periode', '2026-05-15')
+            ->where('segmen', 'CONSUMER')
+            ->where('produk', 'BRIGUNA-KONSUMER')
+            ->first();
+
+        $kpr = DB::table('performance_rm_snapshots')
+            ->where('periode', '2026-05-15')
+            ->where('segmen', 'CONSUMER')
+            ->where('produk', 'KPR')
+            ->first();
+
+        $this->assertNotNull($briguna);
+        $this->assertSame(0, (int) $briguna->realisasi_deb);
+        $this->assertSame(0.0, (float) $briguna->realisasi_os);
+
+        $this->assertNotNull($kpr);
         $this->assertSame(0, (int) $kpr->realisasi_deb);
         $this->assertSame(0.0, (float) $kpr->realisasi_os);
+    }
+
+    public function test_performance_rm_quality_uses_kolek_instead_of_kol_adk1(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        $this->insertDailyLoanRow(
+            'SMALL-1',
+            'COMMERCIAL',
+            100000000,
+            90000000,
+            'S001',
+            '2026-05-06',
+            'SMALL',
+            1,
+            4,
+            'Y'
+        );
+
+        $builder->rebuildPerformanceRm('2026-05-06', true);
+
+        $snapshot = DB::table('performance_rm_snapshots')
+            ->where('periode', '2026-05-06')
+            ->where('segmen', 'SMALL')
+            ->where('produk', 'SMALL')
+            ->first();
+
+        $this->assertNotNull($snapshot);
+        $this->assertSame(0.0, (float) $snapshot->lancar_os);
+        $this->assertSame(0.0, (float) $snapshot->restruk_os);
+        $this->assertSame(0.0, (float) $snapshot->sml_os);
+        $this->assertSame(90000000.0, (float) $snapshot->npl_os);
+        $this->assertSame(0, (int) $snapshot->lancar_deb);
+        $this->assertSame(1, (int) $snapshot->npl_deb);
     }
 
     private function createTables(): void
@@ -122,6 +187,7 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
             $table->decimal('plafon', 20, 2)->nullable();
             $table->decimal('baki_debet1', 20, 2)->nullable();
             $table->integer('kol_adk1')->nullable();
+            $table->integer('kolek')->nullable();
             $table->string('flag_restruk')->nullable();
             $table->string('nomor_rekening1')->nullable();
             $table->string('pn_pengelola1')->nullable();
@@ -199,12 +265,16 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         int $plafon,
         int $bakiDebet,
         string $cif,
-        string $period = '2026-05-06'
+        string $period = '2026-05-06',
+        string $segment = 'CONSUMER',
+        int $kolAdk = 1,
+        int $kolek = 1,
+        string $flagRestruk = ''
     ): void
     {
         DB::table('daily_loan_dinamis')->insert([
             'periode' => $period,
-            'segmen_kinerja' => 'CONSUMER',
+            'segmen_kinerja' => $segment,
             'produk_kinerja' => $product,
             'description' => '',
             'cabang_normalized' => 'KC MADIUN',
@@ -213,8 +283,9 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
             'rm_normalized' => 'RM A',
             'plafon' => $plafon,
             'baki_debet1' => $bakiDebet,
-            'kol_adk1' => 1,
-            'flag_restruk' => '',
+            'kol_adk1' => $kolAdk,
+            'kolek' => $kolek,
+            'flag_restruk' => $flagRestruk,
             'nomor_rekening1' => $account,
             'pn_pengelola1' => 'RM A',
             'cifno_clean' => $cif,

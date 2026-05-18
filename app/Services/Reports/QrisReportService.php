@@ -3,6 +3,7 @@
 namespace App\Services\Reports;
 
 use App\Support\RkaLookupService;
+use App\Support\ReportCacheVersion;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -129,6 +130,7 @@ class QrisReportService
     private function handleQris(array $ctx): JsonResponse
     {
         $cacheKey = 'qris_report:qris:' . sha1(json_encode([
+            'cacheVersion' => ReportCacheVersion::get(),
             'dateCurr' => $ctx['dateCurr'],
             'dateMtD' => $ctx['dateMtD'],
             'dateYtD' => $ctx['dateYtD'],
@@ -220,6 +222,7 @@ class QrisReportService
     private function handleQrisMom(array $ctx): JsonResponse
     {
         $cacheKey = 'qris_report:qris_mom:' . sha1(json_encode([
+            'cacheVersion' => ReportCacheVersion::get(),
             'dateCurr' => $ctx['dateCurr'],
             'datePrevMoM' => $ctx['datePrevMoM'],
             'branches' => $ctx['upperBranches'],

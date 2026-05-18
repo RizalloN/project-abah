@@ -152,6 +152,7 @@ class ReportDataSyncService
         $this->refreshTableStatistics($normalizedTable, $periodHint, $jobId, $source);
         $effectiveImportSource = $source ?? static::class . '::syncImportedTable';
         $this->markSnapshotDirtyAfterSourceMutation($normalizedTable, $periodHint, $effectiveImportSource);
+        ManagedReportManagementService::invalidateTableCache($normalizedTable);
         // Composite snapshots (dashboard_harian) are built from multiple sources;
         // a single source import must mark the composite period dirty so the
         // drain pipeline rebuilds the shared dashboard for that period too.
@@ -876,6 +877,7 @@ class ReportDataSyncService
         // not fire for delete chunks. Mark the affected period dirty here as a
         // fallback so the drain pipeline can rebuild downstream dashboards.
         $this->markSnapshotDirtyAfterSourceMutation($normalizedTable, $periodHint, $effectiveSource);
+        ManagedReportManagementService::invalidateTableCache($normalizedTable);
 
         // For snapshot source tables, mutating one source may invalidate
         // dashboard_harian_snapshots which is built from a composite of sources.

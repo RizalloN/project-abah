@@ -496,16 +496,16 @@
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-mid-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
-                                <th colspan="8" class="bg-mid-dark">Jumlah MID</th>
-                                <th colspan="8" class="bg-prod-dark">EDC Merchant Produktif <br><small>SV >= 15 Juta/Bulan</small></th>
-                                <th colspan="6" class="bg-sv-dark">SV Merchant EDC Akumulasi <br><small>(Rp Milyar)</small></th>
+                                <th colspan="6" class="bg-mid-dark">Jumlah MID</th>
+                                <th colspan="7" class="bg-prod-dark">EDC Merchant Produktif <br><small>SV >= 15 Juta/Bulan</small></th>
+                                <th colspan="5" class="bg-sv-dark">SV Merchant EDC Akumulasi <br><small>(Rp Milyar)</small></th>
                             </tr>
                             <tr class="bg-header-sub">
-                                <th class="lbl-yoy">YoY</th> <th class="lbl-ytd">YtD</th> <th class="lbl-mtd">MtD</th> <th class="lbl-curr">Curr</th>
-                                <th>MtD</th> <th>MtD(%)</th> <th>YtD</th> <th>YoY</th>
+                                <!-- <th class="lbl-yoy">YoY</th> --> <th class="lbl-ytd">YtD</th> <th class="lbl-mtd">MtD</th> <th class="lbl-curr">Curr</th>
+                                <th>MtD</th> <th>MtD(%)</th> <th>YtD</th> <!-- <th>YoY</th> -->
                                 <th class="lbl-curr">Curr</th> <th style="background: #e1e9f5;">% TID Prod.</th> <th>MtD</th> <th>MtD(%)</th>
-                                <th>YtD</th> <th>YoY</th> <th>RKA</th> <th>Penc(%)</th>
-                                <th class="lbl-curr">Curr</th> <th>MtD</th> <th>MtD(%)</th> <th>YoY</th> <th>RKA</th> <th>Penc(%)</th>
+                                <th>YtD</th> <!-- <th>YoY</th> --> <th>RKA</th> <th>Penc(%)</th>
+                                <th class="lbl-curr">Curr</th> <th>MtD</th> <th>MtD(%)</th> <!-- <th>YoY</th> --> <th>RKA</th> <th>Penc(%)</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-edc"></tbody>
@@ -519,15 +519,15 @@
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-tab2-dark align-middle col-group-label" data-default-label="REGIONAL / BRANCH OFFICE" data-filtered-label="UKER">REGIONAL / BRANCH OFFICE</th>
-                                <th colspan="8" class="bg-tab2-dark">Jumlah MID</th>
-                                <th colspan="10" class="bg-tab2-light">Jumlah TID</th>
+                                <th colspan="6" class="bg-tab2-dark">Jumlah MID</th>
+                                <th colspan="8" class="bg-tab2-light">Jumlah TID</th>
                             </tr>
                             <tr>
-                                <th class="bg-tab2-light lbl-yoy">YoY</th> <th class="bg-tab2-light lbl-ytd">YtD</th> <th class="bg-tab2-light lbl-mtd">MtD</th> <th class="bg-tab2-light lbl-curr">Curr</th>
-                                <th class="bg-tab2-light">MtD</th> <th class="bg-tab2-light">MtD(%)</th> <th class="bg-tab2-light">YtD</th> <th class="bg-tab2-light">YoY</th>
+                                <!-- <th class="bg-tab2-light lbl-yoy">YoY</th> --> <th class="bg-tab2-light lbl-ytd">YtD</th> <th class="bg-tab2-light lbl-mtd">MtD</th> <th class="bg-tab2-light lbl-curr">Curr</th>
+                                <th class="bg-tab2-light">MtD</th> <th class="bg-tab2-light">MtD(%)</th> <th class="bg-tab2-light">YtD</th> <!-- <th class="bg-tab2-light">YoY</th> -->
                                 
-                                <th class="bg-tab2-sublight lbl-yoy">YoY</th> <th class="bg-tab2-sublight lbl-ytd">YtD</th> <th class="bg-tab2-sublight lbl-mtd">MtD</th> <th class="bg-tab2-sublight lbl-curr">Curr</th>
-                                <th class="bg-tab2-sublight">MtD</th> <th class="bg-tab2-sublight">MtD(%)</th> <th class="bg-tab2-sublight">YtD</th> <th class="bg-tab2-sublight">YoY</th> 
+                                <!-- <th class="bg-tab2-sublight lbl-yoy">YoY</th> --> <th class="bg-tab2-sublight lbl-ytd">YtD</th> <th class="bg-tab2-sublight lbl-mtd">MtD</th> <th class="bg-tab2-sublight lbl-curr">Curr</th>
+                                <th class="bg-tab2-sublight">MtD</th> <th class="bg-tab2-sublight">MtD(%)</th> <th class="bg-tab2-sublight">YtD</th> <!-- <th class="bg-tab2-sublight">YoY</th> --> 
                                 <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc (%)</th>
                             </tr>
                         </thead>
@@ -542,10 +542,10 @@
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-mid-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
-                                <th colspan="11" class="bg-prod-dark">Performance EDC Merchant Produktif <br><small>SV &gt;= 15 Juta/Bulan</small></th>
+                                <th colspan="9" class="bg-prod-dark">Performance EDC Merchant Produktif <br><small>SV &gt;= 15 Juta/Bulan</small></th>
                             </tr>
                             <tr class="bg-header-sub">
-                                <th class="merchant-label" id="merchant_feb_prev">Feb'25</th>
+                                <!-- <th class="merchant-label" id="merchant_feb_prev">Feb'25</th> -->
                                 <th class="merchant-label" id="merchant_dec_prev">Des'25</th>
                                 <th class="merchant-label" id="merchant_jan_prev">Jan'26</th>
                                 <th class="merchant-label" id="merchant_curr">28 Feb 26</th>
@@ -553,7 +553,7 @@
                                 <th>MtD</th>
                                 <th>MtD(%)</th>
                                 <th>YtD</th>
-                                <th>YoY</th>
+                                <!-- <th>YoY</th> -->
                                 <th class="rka-col text-dark merchant-label" id="merchant_rka">RKA Feb'26</th>
                                 <th class="rka-col text-dark">Penc(%)</th>
                             </tr>
@@ -569,16 +569,16 @@
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-mid-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
-                                <th colspan="9" class="bg-prod-dark">SV Merchant EDC Akumulasi <br><small>(Rp Milyar)</small></th>
+                                <th colspan="7" class="bg-prod-dark">SV Merchant EDC Akumulasi <br><small>(Rp Milyar)</small></th>
                             </tr>
                             <tr class="bg-header-sub">
-                                <th class="sv-label" id="sv_feb_prev">Feb'25</th>
+                                <!-- <th class="sv-label" id="sv_feb_prev">Feb'25</th> -->
                                 <th class="sv-label" id="sv_dec_prev">Des'25</th>
                                 <th class="sv-label" id="sv_jan_prev">Jan'26</th>
                                 <th class="sv-label" id="sv_curr">28 Feb 26</th>
                                 <th>MtD</th>
                                 <th>MtD(%)</th>
-                                <th>YoY</th>
+                                <!-- <th>YoY</th> -->
                                 <th class="rka-col text-dark sv-label" id="sv_rka">RKA Feb'26</th>
                                 <th class="rka-col text-dark">Penc(%)</th>
                             </tr>
@@ -797,15 +797,15 @@ document.addEventListener('DOMContentLoaded', function () {
                         res.data.forEach((row) => {
                             html += `<tr>
                                 <td class="text-left font-weight-bold text-dark">${row.branch}</td>
-                                <td>${formatNum(row.mid.yoy)}</td> <td>${formatNum(row.mid.ytd)}</td> <td>${formatNum(row.mid.mtd)}</td> <td class="font-weight-bold">${formatNum(row.mid.curr)}</td>
-                                <td>${formatGrowth(row.mid.mtd_val)}</td> <td>${formatGrowth(row.mid.mtd_pct, true)}</td> <td>${formatGrowth(row.mid.ytd_val)}</td> <td>${formatGrowth(row.mid.yoy_val)}</td>
+                                <!-- <td>${formatNum(row.mid.yoy)}</td> --> <td>${formatNum(row.mid.ytd)}</td> <td>${formatNum(row.mid.mtd)}</td> <td class="font-weight-bold">${formatNum(row.mid.curr)}</td>
+                                <td>${formatGrowth(row.mid.mtd_val)}</td> <td>${formatGrowth(row.mid.mtd_pct, true)}</td> <td>${formatGrowth(row.mid.ytd_val)}</td> <!-- <td>${formatGrowth(row.mid.yoy_val)}</td> -->
                                 
                                 <td class="font-weight-bold" style="background: #f4f8ff;">${formatNum(row.prod.curr)}</td> <td class="font-weight-bold text-primary" style="background: #e1e9f5;">${formatNum(row.prod.pct_tid)}%</td>
-                                <td>${formatGrowth(row.prod.mtd_val)}</td> <td>${formatGrowth(row.prod.mtd_pct, true)}</td> <td>${formatGrowth(row.prod.ytd_val)}</td> <td>${formatGrowth(row.prod.yoy_val)}</td>
+                                <td>${formatGrowth(row.prod.mtd_val)}</td> <td>${formatGrowth(row.prod.mtd_pct, true)}</td> <td>${formatGrowth(row.prod.ytd_val)}</td> <!-- <td>${formatGrowth(row.prod.yoy_val)}</td> -->
                                 <td class="rka-col">${formatRka(row.prod.rka)}</td> <td class="rka-col">${formatNum(row.prod.penc_pct)}%</td>
 
                                 <td class="font-weight-bold" style="background: #f8f9fa;">${formatNum(row.sv.curr)}</td>
-                                <td>${formatGrowth(row.sv.mtd_val)}</td> <td>${formatGrowth(row.sv.mtd_pct, true)}</td> <td>${formatGrowth(row.sv.yoy_val)}</td>
+                                <td>${formatGrowth(row.sv.mtd_val)}</td> <td>${formatGrowth(row.sv.mtd_pct, true)}</td> <!-- <td>${formatGrowth(row.sv.yoy_val)}</td> -->
                                 <td class="rka-col">${formatRka(row.sv.rka)}</td> <td class="rka-col">${formatNum(row.sv.penc_pct)}%</td>
                             </tr>`;
                         });
@@ -813,15 +813,15 @@ document.addEventListener('DOMContentLoaded', function () {
                         let total = res.total;
                         html += `<tr class="row-total">
                             <td class="text-left">${total.branch}</td>
-                            <td>${formatNum(total.mid.yoy)}</td> <td>${formatNum(total.mid.ytd)}</td> <td>${formatNum(total.mid.mtd)}</td> <td>${formatNum(total.mid.curr)}</td>
-                            <td>${formatGrowth(total.mid.mtd_val)}</td> <td>${formatGrowth(total.mid.mtd_pct, true)}</td> <td>${formatGrowth(total.mid.ytd_val)}</td> <td>${formatGrowth(total.mid.yoy_val)}</td>
+                            <!-- <td>${formatNum(total.mid.yoy)}</td> --> <td>${formatNum(total.mid.ytd)}</td> <td>${formatNum(total.mid.mtd)}</td> <td>${formatNum(total.mid.curr)}</td>
+                            <td>${formatGrowth(total.mid.mtd_val)}</td> <td>${formatGrowth(total.mid.mtd_pct, true)}</td> <td>${formatGrowth(total.mid.ytd_val)}</td> <!-- <td>${formatGrowth(total.mid.yoy_val)}</td> -->
                             
                             <td>${formatNum(total.prod.curr)}</td> <td>${formatNum(total.prod.pct_tid)}%</td>
-                            <td>${formatGrowth(total.prod.mtd_val)}</td> <td>${formatGrowth(total.prod.mtd_pct, true)}</td> <td>${formatGrowth(total.prod.ytd_val)}</td> <td>${formatGrowth(total.prod.yoy_val)}</td>
+                            <td>${formatGrowth(total.prod.mtd_val)}</td> <td>${formatGrowth(total.prod.mtd_pct, true)}</td> <td>${formatGrowth(total.prod.ytd_val)}</td> <!-- <td>${formatGrowth(total.prod.yoy_val)}</td> -->
                             <td class="rka-col text-dark">${formatRka(total.prod.rka)}</td> <td class="rka-col text-dark">${formatNum(total.prod.penc_pct)}%</td>
 
                             <td>${formatNum(total.sv.curr)}</td>
-                            <td>${formatGrowth(total.sv.mtd_val)}</td> <td>${formatGrowth(total.sv.mtd_pct, true)}</td> <td>${formatGrowth(total.sv.yoy_val)}</td>
+                            <td>${formatGrowth(total.sv.mtd_val)}</td> <td>${formatGrowth(total.sv.mtd_pct, true)}</td> <!-- <td>${formatGrowth(total.sv.yoy_val)}</td> -->
                             <td class="rka-col text-dark">${formatRka(total.sv.rka)}</td> <td class="rka-col text-dark">${formatNum(total.sv.penc_pct)}%</td>
                         </tr>`;
                         $('#tbody-edc').html(html);
@@ -831,11 +831,11 @@ document.addEventListener('DOMContentLoaded', function () {
                         res.data.forEach((row) => {
                             html += `<tr>
                                 <td class="text-left font-weight-bold text-dark">${row.branch}</td>
-                                <td>${formatNum(row.mid.yoy)}</td> <td>${formatNum(row.mid.ytd)}</td> <td>${formatNum(row.mid.mtd)}</td> <td class="font-weight-bold">${formatNum(row.mid.curr)}</td>
-                                <td>${formatGrowth(row.mid.mtd_val)}</td> <td>${formatGrowth(row.mid.mtd_pct, true)}</td> <td>${formatGrowth(row.mid.ytd_val)}</td> <td>${formatGrowth(row.mid.yoy_val)}</td>
+                                <!-- <td>${formatNum(row.mid.yoy)}</td> --> <td>${formatNum(row.mid.ytd)}</td> <td>${formatNum(row.mid.mtd)}</td> <td class="font-weight-bold">${formatNum(row.mid.curr)}</td>
+                                <td>${formatGrowth(row.mid.mtd_val)}</td> <td>${formatGrowth(row.mid.mtd_pct, true)}</td> <td>${formatGrowth(row.mid.ytd_val)}</td> <!-- <td>${formatGrowth(row.mid.yoy_val)}</td> -->
                                 
-                                <td>${formatNum(row.tid.yoy)}</td> <td>${formatNum(row.tid.ytd)}</td> <td>${formatNum(row.tid.mtd)}</td> <td class="font-weight-bold">${formatNum(row.tid.curr)}</td>
-                                <td>${formatGrowth(row.tid.mtd_val)}</td> <td>${formatGrowth(row.tid.mtd_pct, true)}</td> <td>${formatGrowth(row.tid.ytd_val)}</td> <td>${formatGrowth(row.tid.yoy_val)}</td>
+                                <!-- <td>${formatNum(row.tid.yoy)}</td> --> <td>${formatNum(row.tid.ytd)}</td> <td>${formatNum(row.tid.mtd)}</td> <td class="font-weight-bold">${formatNum(row.tid.curr)}</td>
+                                <td>${formatGrowth(row.tid.mtd_val)}</td> <td>${formatGrowth(row.tid.mtd_pct, true)}</td> <td>${formatGrowth(row.tid.ytd_val)}</td> <!-- <td>${formatGrowth(row.tid.yoy_val)}</td> -->
                                 <td class="rka-col">${formatRka(row.tid.rka)}</td> <td class="rka-col font-weight-bold" style="color:#d99900;">${formatNum(row.tid.penc_pct)}%</td>
                             </tr>`;
                         });
@@ -843,11 +843,11 @@ document.addEventListener('DOMContentLoaded', function () {
                         let total = res.total;
                         html += `<tr class="row-total">
                             <td class="text-left">${total.branch}</td>
-                            <td>${formatNum(total.mid.yoy)}</td> <td>${formatNum(total.mid.ytd)}</td> <td>${formatNum(total.mid.mtd)}</td> <td>${formatNum(total.mid.curr)}</td>
-                            <td>${formatGrowth(total.mid.mtd_val)}</td> <td>${formatGrowth(total.mid.mtd_pct, true)}</td> <td>${formatGrowth(total.mid.ytd_val)}</td> <td>${formatGrowth(total.mid.yoy_val)}</td>
+                            <!-- <td>${formatNum(total.mid.yoy)}</td> --> <td>${formatNum(total.mid.ytd)}</td> <td>${formatNum(total.mid.mtd)}</td> <td>${formatNum(total.mid.curr)}</td>
+                            <td>${formatGrowth(total.mid.mtd_val)}</td> <td>${formatGrowth(total.mid.mtd_pct, true)}</td> <td>${formatGrowth(total.mid.ytd_val)}</td> <!-- <td>${formatGrowth(total.mid.yoy_val)}</td> -->
                             
-                            <td>${formatNum(total.tid.yoy)}</td> <td>${formatNum(total.tid.ytd)}</td> <td>${formatNum(total.tid.mtd)}</td> <td>${formatNum(total.tid.curr)}</td>
-                            <td>${formatGrowth(total.tid.mtd_val)}</td> <td>${formatGrowth(total.tid.mtd_pct, true)}</td> <td>${formatGrowth(total.tid.ytd_val)}</td> <td>${formatGrowth(total.tid.yoy_val)}</td>
+                            <!-- <td>${formatNum(total.tid.yoy)}</td> --> <td>${formatNum(total.tid.ytd)}</td> <td>${formatNum(total.tid.mtd)}</td> <td>${formatNum(total.tid.curr)}</td>
+                            <td>${formatGrowth(total.tid.mtd_val)}</td> <td>${formatGrowth(total.tid.mtd_pct, true)}</td> <td>${formatGrowth(total.tid.ytd_val)}</td> <!-- <td>${formatGrowth(total.tid.yoy_val)}</td> -->
                             <td class="rka-col text-dark">${formatRka(total.tid.rka)}</td> <td class="rka-col text-dark">${formatNum(total.tid.penc_pct)}%</td>
                         </tr>`;
                         $('#tbody-mid').html(html);
@@ -857,7 +857,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             const prod = row.prod || {};
                             html += `<tr>
                                 <td class="text-left font-weight-bold text-dark">${row.branch}</td>
-                                <td>${formatNum(prod.feb_prev)}</td>
+                                <!-- <td>${formatNum(prod.feb_prev)}</td> -->
                                 <td>${formatNum(prod.dec_prev)}</td>
                                 <td>${formatNum(prod.jan_prev)}</td>
                                 <td class="font-weight-bold">${formatNum(prod.curr)}</td>
@@ -865,7 +865,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <td>${formatGrowthParen(prod.mtd_val)}</td>
                                 <td>${formatGrowthParen(prod.mtd_pct, true)}</td>
                                 <td>${formatGrowthParen(prod.ytd_val)}</td>
-                                <td>${formatGrowthParen(prod.yoy_val)}</td>
+                                <!-- <td>${formatGrowthParen(prod.yoy_val)}</td> -->
                                 <td class="rka-col">${formatRka(prod.rka)}</td>
                                 <td class="rka-col">${formatNum(prod.penc_pct)}%</td>
                             </tr>`;
@@ -875,7 +875,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         let prod = total.prod || {};
                         html += `<tr class="row-total">
                             <td class="text-left">${total.branch}</td>
-                            <td>${formatNum(prod.feb_prev)}</td>
+                            <!-- <td>${formatNum(prod.feb_prev)}</td> -->
                             <td>${formatNum(prod.dec_prev)}</td>
                             <td>${formatNum(prod.jan_prev)}</td>
                             <td>${formatNum(prod.curr)}</td>
@@ -883,7 +883,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${formatGrowthParen(prod.mtd_val)}</td>
                             <td>${formatGrowthParen(prod.mtd_pct, true)}</td>
                             <td>${formatGrowthParen(prod.ytd_val)}</td>
-                            <td>${formatGrowthParen(prod.yoy_val)}</td>
+                            <!-- <td>${formatGrowthParen(prod.yoy_val)}</td> -->
                             <td class="rka-col text-dark">${formatRka(prod.rka)}</td>
                             <td class="rka-col text-dark">${formatNum(prod.penc_pct)}%</td>
                         </tr>`;
@@ -894,13 +894,13 @@ document.addEventListener('DOMContentLoaded', function () {
                             const sv = row.sv || {};
                             html += `<tr>
                                 <td class="text-left font-weight-bold text-dark">${row.branch}</td>
-                                <td>${formatNum(sv.feb_prev)}</td>
+                                <!-- <td>${formatNum(sv.feb_prev)}</td> -->
                                 <td>${formatNum(sv.dec_prev)}</td>
                                 <td>${formatNum(sv.jan_prev)}</td>
                                 <td class="font-weight-bold">${formatNum(sv.curr)}</td>
                                 <td>${formatGrowthParen(sv.mtd_val)}</td>
                                 <td>${formatGrowthParen(sv.mtd_pct, true)}</td>
-                                <td>${formatGrowthParen(sv.yoy_val)}</td>
+                                <!-- <td>${formatGrowthParen(sv.yoy_val)}</td> -->
                                 <td class="rka-col">${formatRka(sv.rka)}</td>
                                 <td class="rka-col">${formatNum(sv.penc_pct)}%</td>
                             </tr>`;
@@ -910,13 +910,13 @@ document.addEventListener('DOMContentLoaded', function () {
                         let sv = total.sv || {};
                         html += `<tr class="row-total">
                             <td class="text-left">${total.branch}</td>
-                            <td>${formatNum(sv.feb_prev)}</td>
+                            <!-- <td>${formatNum(sv.feb_prev)}</td> -->
                             <td>${formatNum(sv.dec_prev)}</td>
                             <td>${formatNum(sv.jan_prev)}</td>
                             <td>${formatNum(sv.curr)}</td>
                             <td>${formatGrowthParen(sv.mtd_val)}</td>
                             <td>${formatGrowthParen(sv.mtd_pct, true)}</td>
-                            <td>${formatGrowthParen(sv.yoy_val)}</td>
+                            <!-- <td>${formatGrowthParen(sv.yoy_val)}</td> -->
                             <td class="rka-col text-dark">${formatRka(sv.rka)}</td>
                             <td class="rka-col text-dark">${formatNum(sv.penc_pct)}%</td>
                         </tr>`;
