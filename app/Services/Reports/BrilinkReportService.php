@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\DB;
  */
 class BrilinkReportService
 {
+    private const ACTIVE_USER_NOMINAL_THRESHOLD = 50000;
+
     public function __construct(
         private readonly RkaLookupService $rkaLookup,
         private readonly ReportFilterService $filterService
@@ -67,6 +69,10 @@ class BrilinkReportService
         $periodePrev = $prevMonth->format('F Y');
         $periodeYoY  = $lastYearSameMonth->format('F Y');
         $periodeYtD  = $lastYearEnd->format('F Y');
+        $activeUserDateCurr = $current->copy()->endOfMonth();
+        $activeUserDatePrev = $prevMonth->copy()->endOfMonth();
+        $activeUserDateYoY  = $lastYearSameMonth->copy()->endOfMonth();
+        $activeUserDateYtD  = $lastYearEnd->copy()->endOfMonth();
 
         $brilinkFilterOptions = $this->filterService->buildBrilinkFilterOptions();
         $brilinkBranchUkerMap = $brilinkFilterOptions['branchUkerMap'] ?? collect();
@@ -149,6 +155,7 @@ class BrilinkReportService
             ->selectRaw("UPPER(TRIM($displayColumn)) as branch")
             ->addSelect('periode')
             ->selectRaw('COUNT(*) as agen')
+            ->selectRaw('SUM(CASE WHEN COALESCE(total_nominal, 0) >= ? THEN 1 ELSE 0 END) as active_user', [self::ACTIVE_USER_NOMINAL_THRESHOLD])
             ->selectRaw('SUM(CASE WHEN COALESCE(total_fee, 0) >= 750000 THEN 1 ELSE 0 END) as juragan')
             ->selectRaw('SUM(CASE WHEN COALESCE(total_fee, 0) >= 150000 THEN 1 ELSE 0 END) as bep')
             ->selectRaw('COALESCE(SUM(COALESCE(total_transaksi, 0)), 0) as trx')
@@ -164,22 +171,24 @@ class BrilinkReportService
             $period   = (string) ($row->periode ?? '');
             $branchKey = $this->resolveCanonicalBranchKey($branchAliasMap, strtoupper(trim((string) ($row->branch ?? ''))));
             $brilinkMap[$period][$branchKey] = [
-                'agen'    => (int) ($row->agen ?? 0),
-                'juragan' => (int) ($row->juragan ?? 0),
-                'bep'     => (int) ($row->bep ?? 0),
-                'trx'     => (float) ($row->trx ?? 0),
-                'volume'  => (float) ($row->volume ?? 0),
+                'agen'        => (int) ($row->agen ?? 0),
+                'active_user' => (int) ($row->active_user ?? 0),
+                'juragan'     => (int) ($row->juragan ?? 0),
+                'bep'         => (int) ($row->bep ?? 0),
+                'trx'         => (float) ($row->trx ?? 0),
+                'volume'      => (float) ($row->volume ?? 0),
             ];
         }
 
         $data   = [];
         $totals = [
-            'agen'    => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
-            'juragan' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
-            'bep'     => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
-            'trx'     => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
-            'volume'  => ['curr' => 0, 'mtd' => 0, 'yoy' => 0],
-            'casa'    => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
+            'agen'        => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
+            'active_user' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
+            'juragan'     => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
+            'bep'         => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
+            'trx'         => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
+            'volume'      => ['curr' => 0, 'mtd' => 0, 'yoy' => 0],
+            'casa'        => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
         ];
 
         foreach ($displayItems as $branch) {
@@ -191,6 +200,7 @@ class BrilinkReportService
             $hasCurrData = $currData !== null;
 
             $agen_curr = (int) ($currData['agen'] ?? 0); $agen_prev = (int) ($prevData['agen'] ?? 0); $agen_yoy = (int) ($yoyData['agen'] ?? 0); $agen_ytd = (int) ($ytdData['agen'] ?? 0);
+            $active_curr = (int) ($currData['active_user'] ?? 0); $active_prev = (int) ($prevData['active_user'] ?? 0); $active_yoy = (int) ($yoyData['active_user'] ?? 0); $active_ytd = (int) ($ytdData['active_user'] ?? 0);
             $juragan_curr = (int) ($currData['juragan'] ?? 0); $juragan_prev = (int) ($prevData['juragan'] ?? 0); $juragan_yoy = (int) ($yoyData['juragan'] ?? 0); $juragan_ytd = (int) ($ytdData['juragan'] ?? 0);
             $bep_curr = (int) ($currData['bep'] ?? 0); $bep_prev = (int) ($prevData['bep'] ?? 0); $bep_yoy = (int) ($yoyData['bep'] ?? 0); $bep_ytd = (int) ($ytdData['bep'] ?? 0);
             $trx_curr = (float) ($currData['trx'] ?? 0); $trx_prev = (float) ($prevData['trx'] ?? 0); $trx_yoy = (float) ($yoyData['trx'] ?? 0); $trx_ytd = (float) ($ytdData['trx'] ?? 0);
@@ -209,6 +219,7 @@ class BrilinkReportService
             $data[] = [
                 'branch'  => $branch,
                 'agen'    => ['curr' => $agen_curr, 'mtd' => $hasCurrData ? ($agen_curr - $agen_prev) : 0, 'ytd' => $hasCurrData ? ($agen_curr - $agen_ytd) : 0, 'yoy' => $hasCurrData ? ($agen_curr - $agen_yoy) : 0, 'rka' => $agenRka, 'penc_pct' => $agenRka > 0 ? round(($agen_curr / $agenRka) * 100, 2) : 0],
+                'active_user' => ['curr' => $active_curr, 'mtd' => $hasCurrData ? ($active_curr - $active_prev) : 0, 'ytd' => $hasCurrData ? ($active_curr - $active_ytd) : 0, 'yoy' => $hasCurrData ? ($active_curr - $active_yoy) : 0],
                 'juragan' => ['curr' => $juragan_curr, 'mtd' => $hasCurrData ? ($juragan_curr - $juragan_prev) : 0, 'ytd' => $hasCurrData ? ($juragan_curr - $juragan_ytd) : 0, 'yoy' => $hasCurrData ? ($juragan_curr - $juragan_yoy) : 0, 'rka' => $juraganRka, 'penc_pct' => $juraganRka > 0 ? round(($juragan_curr / $juraganRka) * 100, 2) : 0],
                 'bep'     => ['curr' => $bep_curr, 'mtd' => $hasCurrData ? ($bep_curr - $bep_prev) : 0, 'ytd' => $hasCurrData ? ($bep_curr - $bep_ytd) : 0, 'yoy' => $hasCurrData ? ($bep_curr - $bep_yoy) : 0, 'rka' => $bepRka, 'penc_pct' => $bepRka > 0 ? round(($bep_curr / $bepRka) * 100, 2) : 0],
                 'trx'     => ['curr' => $trx_curr, 'mtd' => $hasCurrData ? ($trx_curr - $trx_prev) : 0, 'ytd' => $hasCurrData ? ($trx_curr - $trx_ytd) : 0, 'yoy' => $hasCurrData ? ($trx_curr - $trx_yoy) : 0],
@@ -217,6 +228,7 @@ class BrilinkReportService
             ];
 
             $totals['agen']['curr']    += $agen_curr;    $totals['agen']['mtd']    += ($hasCurrData ? $agen_curr - $agen_prev : 0);    $totals['agen']['ytd']    += ($hasCurrData ? $agen_curr - $agen_ytd : 0);    $totals['agen']['yoy']    += ($hasCurrData ? $agen_curr - $agen_yoy : 0);
+            $totals['active_user']['curr'] += $active_curr; $totals['active_user']['mtd'] += ($hasCurrData ? $active_curr - $active_prev : 0); $totals['active_user']['ytd'] += ($hasCurrData ? $active_curr - $active_ytd : 0); $totals['active_user']['yoy'] += ($hasCurrData ? $active_curr - $active_yoy : 0);
             $totals['juragan']['curr'] += $juragan_curr; $totals['juragan']['mtd'] += ($hasCurrData ? $juragan_curr - $juragan_prev : 0); $totals['juragan']['ytd'] += ($hasCurrData ? $juragan_curr - $juragan_ytd : 0); $totals['juragan']['yoy'] += ($hasCurrData ? $juragan_curr - $juragan_yoy : 0);
             $totals['bep']['curr']     += $bep_curr;     $totals['bep']['mtd']     += ($hasCurrData ? $bep_curr - $bep_prev : 0);       $totals['bep']['ytd']     += ($hasCurrData ? $bep_curr - $bep_ytd : 0);       $totals['bep']['yoy']     += ($hasCurrData ? $bep_curr - $bep_yoy : 0);
             $totals['trx']['curr']     += $trx_curr;     $totals['trx']['mtd']     += ($hasCurrData ? $trx_curr - $trx_prev : 0);       $totals['trx']['ytd']     += ($hasCurrData ? $trx_curr - $trx_ytd : 0);       $totals['trx']['yoy']     += ($hasCurrData ? $trx_curr - $trx_yoy : 0);
@@ -246,15 +258,26 @@ class BrilinkReportService
                 'casa_dec'  => $casaYtdDate->translatedFormat("M'y"),
                 'casa_prev' => $casaPrevDate->translatedFormat('d-M'),
                 'casa_end'  => $effectiveCasaDate->translatedFormat('d-M'),
+                'active_user_yoy'  => $activeUserDateYoY->format('d M y'),
+                'active_user_ytd'  => $activeUserDateYtD->format('d M y'),
+                'active_user_mtd'  => $activeUserDatePrev->format('d M y'),
+                'active_user_curr' => $activeUserDateCurr->format('d M y'),
+            ],
+            'active_user_summary' => [
+                'count'     => (int) $totals['active_user']['curr'],
+                'threshold' => self::ACTIVE_USER_NOMINAL_THRESHOLD,
+                'period'    => $periodeCurr,
+                'scope'     => !empty($selectedUkers) ? 'Unit terpilih' : ($isBranchFiltered ? 'Cabang terpilih' : 'Area 6'),
             ],
             'total' => [
-                'branch'  => 'TOTAL AREA 6',
-                'agen'    => $totals['agen'],
-                'juragan' => $totals['juragan'],
-                'bep'     => $totals['bep'],
-                'trx'     => $totals['trx'],
-                'volume'  => $totals['volume'],
-                'casa'    => ['curr' => round($totals['casa']['curr'], 2), 'mtd' => round($totals['casa']['mtd'], 2), 'ytd' => round($totals['casa']['ytd'], 2), 'yoy' => round($totals['casa']['yoy'], 2)],
+                'branch'      => 'TOTAL AREA 6',
+                'agen'        => $totals['agen'],
+                'active_user' => $totals['active_user'],
+                'juragan'     => $totals['juragan'],
+                'bep'         => $totals['bep'],
+                'trx'         => $totals['trx'],
+                'volume'      => $totals['volume'],
+                'casa'        => ['curr' => round($totals['casa']['curr'], 2), 'mtd' => round($totals['casa']['mtd'], 2), 'ytd' => round($totals['casa']['ytd'], 2), 'yoy' => round($totals['casa']['yoy'], 2)],
             ],
         ]);
     }

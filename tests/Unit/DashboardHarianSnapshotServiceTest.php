@@ -148,7 +148,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(300.0, $result['casa_mikro']);
         $this->assertSame(800.0, $result['total_casa']);
         $this->assertSame(40.0, $result['casa_pct']);
-        $this->assertSame(617.25, $result['ldr_non_commercial']);
+        $this->assertSame(9.5, $result['ldr_non_commercial']);
         $this->assertSame(34.0, $result['ldr_ritel_non_commercial']);
         $this->assertEqualsWithDelta(6.6666666667, $result['ldr_mikro_non_commercial'], 0.0001);
     }
@@ -778,6 +778,22 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             $baseRow + ['jenis' => 'KUPEDES GBT', 'outstanding' => 400, 'dpk' => 40, 'npl' => 4],
             $baseRow + ['jenis' => 'KUR MIKRO BARU', 'outstanding' => 500, 'dpk' => 50, 'npl' => 5],
             $baseRow + ['jenis' => 'KPR', 'outstanding' => 600, 'dpk' => 60, 'npl' => 6],
+            array_merge($baseRow, [
+                'kode_uker' => '00045',
+                'nama_uker' => '00045 -- KC Madiun',
+                'jenis' => 'KPR',
+                'outstanding' => 900,
+                'dpk' => 90,
+                'npl' => 9,
+            ]),
+            array_merge($baseRow, [
+                'kode_uker' => '00046',
+                'nama_uker' => '00046 -- KCP Madiun',
+                'jenis' => 'KPR',
+                'outstanding' => 700,
+                'dpk' => 70,
+                'npl' => 7,
+            ]),
         ]);
 
         $service = new DashboardHarianSnapshotService();
@@ -785,6 +801,26 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $scopeCache->setAccessible(true);
         $scopeCache->setValue($service, [
             '2026-05-03' => collect([
+                '70' => [
+                    'raw_cabang' => 'KC Madiun',
+                    'raw_unit' => '00070 -- UNIT A',
+                    'kanca_label' => 'KC Madiun',
+                    'unit_key' => 'unit-a',
+                ],
+                '45' => [
+                    'raw_cabang' => 'KC Madiun',
+                    'raw_unit' => '00045 -- KC Madiun',
+                    'kanca_label' => 'KC Madiun',
+                    'unit_key' => 'kc-madiun-detail',
+                ],
+                '46' => [
+                    'raw_cabang' => 'KC Madiun',
+                    'raw_unit' => '00046 -- KCP Madiun',
+                    'kanca_label' => 'KC Madiun',
+                    'unit_key' => 'kcp-madiun',
+                ],
+            ]),
+            '2026-05-04' => collect([
                 '70' => [
                     'raw_cabang' => 'KC Madiun',
                     'raw_unit' => '00070 -- UNIT A',
@@ -807,6 +843,13 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(400.0, (float) $row->briguna_mikro_os);
         $this->assertSame(500.0, (float) $row->kur_mikro_os);
         $this->assertSame(600.0, (float) $row->kur_kpp_os);
+
+        $nextDayRows = $reflection->invoke($service, '2026-05-04');
+        $nextDayRow = $nextDayRows->first();
+
+        $this->assertCount(1, $nextDayRows);
+        $this->assertSame(600.0, (float) $nextDayRow->kupedes_os);
+        $this->assertSame(400.0, (float) $nextDayRow->briguna_mikro_os);
     }
 
     public function test_lw325_recovery_source_uses_exact_snapshot_ph_and_previous_month_end_comparison(): void

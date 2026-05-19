@@ -128,9 +128,9 @@ final class LoanQualityBucketMapper
         $detailBucketExpression = "
             CASE
                 WHEN {$normalizedDetail} IN ('', '0', '-') THEN NULL
-                WHEN {$normalizedDetail} IN ('DPK1', 'SML1') THEN 'DPK 1'
-                WHEN {$normalizedDetail} IN ('DPK2', 'SML2') THEN 'DPK 2'
-                WHEN {$normalizedDetail} IN ('DPK3', 'SML3') THEN 'DPK 3'
+                WHEN {$normalizedDetail} IN ('DPK1', 'DPK 1', 'SML1', 'SML 1') THEN 'DPK 1'
+                WHEN {$normalizedDetail} IN ('DPK2', 'DPK 2', 'SML2', 'SML 2') THEN 'DPK 2'
+                WHEN {$normalizedDetail} IN ('DPK3', 'DPK 3', 'SML3', 'SML 3') THEN 'DPK 3'
                 WHEN {$normalizedDetail} = 'NPL' THEN 'M'
                 WHEN {$normalizedDetail} IN ('PAY', 'LUNAS') THEN 'Pay'
                 ELSE {$normalizedDetail}
@@ -246,9 +246,9 @@ final class LoanQualityBucketMapper
 
         return match ($normalizedDetail) {
             '', '0', '-' => null,
-            'DPK1', 'SML1' => 'DPK 1',
-            'DPK2', 'SML2' => 'DPK 2',
-            'DPK3', 'SML3' => 'DPK 3',
+            'DPK1', 'DPK 1', 'SML1', 'SML 1' => 'DPK 1',
+            'DPK2', 'DPK 2', 'SML2', 'SML 2' => 'DPK 2',
+            'DPK3', 'DPK 3', 'SML3', 'SML 3' => 'DPK 3',
             'NPL' => 'M',
             'PAY', 'LUNAS' => 'Pay',
             'L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M', 'PAY' => $normalizedDetail,

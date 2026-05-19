@@ -50,6 +50,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 @keyframes pulse-live { 0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,.45)} 70%{box-shadow:0 0 0 8px rgba(74,222,128,0)} }
 .kpi-card .kc-link { position:absolute; bottom:.5rem; right:.7rem; font-size:.6rem; font-weight:700; color:rgba(255,255,255,.8); text-decoration:none; display:inline-flex; align-items:center; gap:.25rem; }
 .kpi-card .kc-link:hover { color:#fff; }
+.kpi-card button.kc-link { border:0; background:transparent; padding:0; cursor:pointer; }
 
 /* ── CHART + DIGITAL GRID ── */
 .main-grid { display:grid; grid-template-columns:1fr 2.4fr; gap:.65rem; }
@@ -67,7 +68,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .dp-title { font-size:.72rem; font-weight:800; color:#0f172a; }
 .dp-updated { font-size:.58rem; color:#94a3b8; }
 .dp-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:.5rem; }
-.dc { border-radius:12px; padding:.65rem .6rem .55rem; color:#fff; position:relative; overflow:hidden; cursor:pointer; text-decoration:none; display:flex; flex-direction:column; transition:transform .16s,box-shadow .16s; }
+.dc { border-radius:12px; padding:.65rem .6rem .55rem; color:#fff; position:relative; overflow:hidden; cursor:pointer; text-decoration:none; display:flex; flex-direction:column; transition:transform .16s,box-shadow .16s; border:0; text-align:left; width:100%; min-height:0; font:inherit; appearance:none; }
 .dc:hover { transform:translateY(-2px); box-shadow:0 12px 28px -16px rgba(4,42,95,.5); color:#fff; }
 .dc::before { content:''; position:absolute; inset:-40% -30% auto auto; width:120px; height:120px; border-radius:999px; background:rgba(255,255,255,.1); pointer-events:none; }
 .dc-edc { background:linear-gradient(145deg,#0a3ea1,#1d87ff); }
@@ -86,6 +87,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .dc-foot { display:flex; justify-content:space-between; align-items:center; margin-top:.3rem; }
 .dc-link { font-size:.58rem; font-weight:700; color:rgba(255,255,255,.85); display:inline-flex; align-items:center; gap:.22rem; }
 .dc-link:hover { color:#fff; }
+.dc:focus-visible, .kpi-card button.kc-link:focus-visible { outline:2px solid rgba(255,255,255,.8); outline-offset:2px; }
 .dc-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:.25rem; margin-top:.4rem; }
 .dc-stat { background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.1); border-radius:7px; padding:.25rem .3rem; }
 .dc-stat-lbl { font-size:.52rem; color:rgba(255,255,255,.65); }
@@ -108,6 +110,14 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .pos { color:#059669; background:#ecfdf5; }
 .neg { color:#dc2626; background:#fef2f2; }
 .neu { color:#64748b; background:#f1f5f9; }
+.source-modal-meta { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.55rem; margin-bottom:.75rem; }
+.source-modal-chip { border:1px solid var(--c-border); border-radius:10px; padding:.55rem .65rem; background:#f8fbff; }
+.source-modal-chip span { display:block; font-size:.58rem; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:.06em; }
+.source-modal-chip strong { display:block; margin-top:.15rem; font-size:.74rem; color:#0f172a; word-break:break-word; }
+.source-modal-note { font-size:.72rem; color:#475569; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:.6rem .7rem; margin-bottom:.7rem; }
+.source-modal-table th { font-size:.68rem; text-transform:uppercase; color:#64748b; letter-spacing:.04em; border-top:0; }
+.source-modal-table td { font-size:.78rem; vertical-align:middle; }
+@media (max-width: 575.98px) { .source-modal-meta { grid-template-columns:1fr; } }
 </style>
 
 <div class="db-shell pt-2">
@@ -144,7 +154,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
         <i class="fas {{ $sm>=0?'fa-arrow-up':'fa-arrow-down' }}"></i>
         {{ data_get($simpananReport,'trend','0%') }} MoM
       </span>
-      <a href="{{ data_get($simpananReport,'link','#') }}" class="kc-link">Buka <i class="fas fa-arrow-right"></i></a>
+      <button type="button" class="kc-link dashboard-detail-trigger" data-detail='@json(data_get($simpananReport,"detail_payload",[]))' data-link="{{ data_get($simpananReport,'link','#') }}" data-link-label="{{ data_get($simpananReport,'link_label','Buka report') }}">Detail <i class="fas fa-table"></i></button>
     </div>
 
     {{-- PINJAMAN --}}
@@ -158,7 +168,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
         <i class="fas {{ $pm>=0?'fa-arrow-up':'fa-arrow-down' }}"></i>
         {{ data_get($pinjamanReport,'trend','0%') }} MoM
       </span>
-      <a href="{{ data_get($pinjamanReport,'link','#') }}" class="kc-link">Buka <i class="fas fa-arrow-right"></i></a>
+      <button type="button" class="kc-link dashboard-detail-trigger" data-detail='@json(data_get($pinjamanReport,"detail_payload",[]))' data-link="{{ data_get($pinjamanReport,'link','#') }}" data-link-label="{{ data_get($pinjamanReport,'link_label','Buka report') }}">Detail <i class="fas fa-table"></i></button>
     </div>
 
     {{-- PORTFOLIO --}}
@@ -166,7 +176,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
       <div class="kc-label"><i class="fas fa-layer-group mr-1"></i>LDR (Loan to Deposit Ratio)</div>
       <div class="kc-val">{{ data_get($portfolioReport,'value','–') }}</div>
       <div class="kc-sub" style="max-width:150px;white-space:normal;font-size:.58rem;">{{ data_get($portfolioReport,'meta','–') }}</div>
-      <a href="{{ data_get($portfolioReport,'link','#') }}" class="kc-link">Detail <i class="fas fa-arrow-right"></i></a>
+      <button type="button" class="kc-link dashboard-detail-trigger" data-detail='@json(data_get($portfolioReport,"detail_payload",[]))' data-link="{{ data_get($portfolioReport,'link','#') }}" data-link-label="{{ data_get($portfolioReport,'link_label','Lihat report') }}">Detail <i class="fas fa-table"></i></button>
     </div>
 
     {{-- 3 METRIC CARDS --}}
@@ -223,7 +233,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
           $isStub = data_get($dc,'is_stub',false);
           $tv = (float)data_get($dc,'trend_value',0);
         @endphp
-        <a href="{{ data_get($dc,'link','#') }}" class="dc {{ $tone }} {{ $isStub?'dc-stub':'' }}">
+        <button type="button" class="dc dashboard-detail-trigger {{ $tone }} {{ $isStub?'dc-stub':'' }}" data-detail='@json(data_get($dc,"detail_payload",[]))' data-link="{{ data_get($dc,'link','#') }}" data-link-label="{{ data_get($dc,'link_label','Buka report') }}">
           <div class="dc-badge"><i class="fas {{ $icon }}"></i> {{ data_get($dc,'badge','–') }}</div>
           <div class="dc-label">{{ data_get($dc,'current_label','–') }}</div>
           <div class="dc-val">{{ data_get($dc,'current_value','–') }}</div>
@@ -243,10 +253,52 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
             </span>
             <span class="dc-link">{{ data_get($dc,'link_label','Detail') }} <i class="fas fa-arrow-right"></i></span>
           </div>
-        </a>
+        </button>
         @empty
         <div class="col-12 text-muted small">Data performance digital belum tersedia.</div>
         @endforelse
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="dashboardSourceModal" tabindex="-1" role="dialog" aria-labelledby="dashboardSourceModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title mb-1" id="dashboardSourceModalTitle">Detail sumber data</h5>
+            <div class="text-muted small">Angka ditampilkan apa adanya dari payload landing page.</div>
+          </div>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Tutup">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="source-modal-meta">
+            <div class="source-modal-chip"><span>Periode</span><strong id="sourceModalPeriod">-</strong></div>
+            <div class="source-modal-chip"><span>Tabel sumber</span><strong id="sourceModalTable">-</strong></div>
+            <div class="source-modal-chip"><span>Report</span><strong id="sourceModalReport">-</strong></div>
+          </div>
+          <div class="source-modal-note" id="sourceModalNote">-</div>
+          <div class="table-responsive">
+            <table class="table table-sm source-modal-table mb-0">
+              <thead>
+                <tr>
+                  <th>Metrik</th>
+                  <th>Nilai tampil</th>
+                  <th>Sumber</th>
+                </tr>
+              </thead>
+              <tbody id="sourceModalRows">
+                <tr><td colspan="3" class="text-muted">Detail belum tersedia.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <a href="#" class="btn btn-sm btn-primary" id="sourceModalLink">Buka report</a>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-dismiss="modal">Tutup</button>
+        </div>
       </div>
     </div>
   </div>
@@ -347,6 +399,50 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }
+
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[char]));
+
+  document.querySelectorAll('.dashboard-detail-trigger').forEach(trigger => {
+    trigger.addEventListener('click', function(event) {
+      event.preventDefault();
+
+      let detail = {};
+      try {
+        detail = JSON.parse(this.getAttribute('data-detail') || '{}') || {};
+      } catch (error) {
+        detail = {};
+      }
+
+      const title = detail.title || 'Detail sumber data';
+      const rows = Array.isArray(detail.rows) ? detail.rows : [];
+      document.getElementById('dashboardSourceModalTitle').textContent = title;
+      document.getElementById('sourceModalReport').textContent = title;
+      document.getElementById('sourceModalPeriod').textContent = detail.period || '-';
+      document.getElementById('sourceModalTable').textContent = detail.source_table || '-';
+      document.getElementById('sourceModalNote').textContent = detail.note || 'Detail sumber belum tersedia.';
+
+      const tbody = document.getElementById('sourceModalRows');
+      tbody.innerHTML = rows.length
+        ? rows.map(row => `
+            <tr>
+              <td>${escapeHtml(row.label || '-')}</td>
+              <td class="font-weight-bold">${escapeHtml(row.value || '-')}</td>
+              <td><code>${escapeHtml(row.source || detail.source_table || '-')}</code></td>
+            </tr>
+          `).join('')
+        : '<tr><td colspan="3" class="text-muted">Detail belum tersedia.</td></tr>';
+
+      const link = document.getElementById('sourceModalLink');
+      link.href = this.getAttribute('data-link') || '#';
+      link.textContent = this.getAttribute('data-link-label') || 'Buka report';
+
+      if (window.jQuery && typeof window.jQuery.fn.modal === 'function') {
+        window.jQuery('#dashboardSourceModal').modal('show');
+      }
+    });
+  });
 });
 </script>
 @endsection

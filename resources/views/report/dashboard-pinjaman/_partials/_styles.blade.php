@@ -293,7 +293,11 @@
     .matrix-empty { color: rgba(15, 23, 42, 0.08) !important; }
 
     .loan-matrix tbody tr.loan-drill-row {
-        cursor: pointer;
+        cursor: default;
+    }
+
+    .loan-matrix tbody td.loan-drill-cell {
+        cursor: zoom-in;
     }
 
     .loan-matrix tbody tr.loan-drill-row.is-selected th,
@@ -301,6 +305,12 @@
         outline: 2px solid rgba(8, 87, 195, 0.3);
         outline-offset: -2px;
         background-color: #eff6ff !important;
+    }
+
+    .loan-matrix tbody td.loan-drill-cell.is-selected {
+        outline: 2px solid rgba(8, 87, 195, 0.55);
+        outline-offset: -2px;
+        background-color: #dbeafe !important;
     }
 
     .loan-drill-modal .modal-dialog {

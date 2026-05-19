@@ -100,39 +100,6 @@ class DashboardSimpananController extends Controller
         $loanPreviousSummary = $loanPreviousPeriod ? $this->buildLoanSummary($loanPreviousPeriod) : $this->emptyLoanSummary();
         $loanYoySummary = $loanYoyPeriod ? $this->buildLoanSummary($loanYoyPeriod) : $this->emptyLoanSummary();
 
-        try {
-            $harianService = app(\App\Support\DashboardHarianSnapshotService::class);
-            $keragaanData = $harianService->buildDashboardPayload($currentPeriod);
-            
-            $simpRow = collect($keragaanData['rows'] ?? [])->firstWhere('key', 'total_simpanan');
-            if ($simpRow) {
-                $currentSummary['total_balance'] = (float) ($simpRow['values']['current'] ?? $currentSummary['total_balance']);
-                $previousSummary['total_balance'] = (float) ($simpRow['values']['mtd'] ?? $previousSummary['total_balance']);
-                $yoySummary['total_balance'] = (float) ($simpRow['values']['yoy'] ?? $yoySummary['total_balance']);
-            }
-            
-            $tabungan = collect($keragaanData['rows'] ?? [])->firstWhere('key', 'tabungan_ritel')['values']['current'] ?? 0;
-            $tabungan += collect($keragaanData['rows'] ?? [])->firstWhere('key', 'tabungan_mikro')['values']['current'] ?? 0;
-            $tabungan += collect($keragaanData['rows'] ?? [])->firstWhere('key', 'tabungan_wholesale')['values']['current'] ?? 0;
-            if ($tabungan > 0) $currentSummary['tabungan_balance'] = $tabungan;
-            
-            $giro = collect($keragaanData['rows'] ?? [])->firstWhere('key', 'giro_ritel')['values']['current'] ?? 0;
-            $giro += collect($keragaanData['rows'] ?? [])->firstWhere('key', 'giro_mikro')['values']['current'] ?? 0;
-            $giro += collect($keragaanData['rows'] ?? [])->firstWhere('key', 'giro_wholesale')['values']['current'] ?? 0;
-            if ($giro > 0) $currentSummary['giro_balance'] = $giro;
-            
-            $currentSummary['other_balance'] = max(0, $currentSummary['total_balance'] - $currentSummary['tabungan_balance'] - $currentSummary['giro_balance']);
-
-            $pinjRow = collect($keragaanData['rows'] ?? [])->firstWhere('key', 'total_os_non_commercial');
-            if ($pinjRow) {
-                $loanCurrentSummary['total_balance'] = (float) ($pinjRow['values']['current'] ?? $loanCurrentSummary['total_balance']);
-                $loanPreviousSummary['total_balance'] = (float) ($pinjRow['values']['mtd'] ?? $loanPreviousSummary['total_balance']);
-                $loanYoySummary['total_balance'] = (float) ($pinjRow['values']['yoy'] ?? $loanYoySummary['total_balance']);
-            }
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('Failed injecting keragaan data for landing page: ' . $e->getMessage());
-        }
-
         $topBranches = $this->fetchTopBranches($currentPeriod);
         $loanTopBranches = $loanCurrentPeriod ? $this->fetchLoanTopBranches($loanCurrentPeriod) : collect();
         $composition = $this->buildComposition($currentSummary);
@@ -156,6 +123,42 @@ class DashboardSimpananController extends Controller
         ));
         $digitalPerformance = $this->buildDigitalPerformance();
         $timeseries = $this->buildTimeseriesPayload($currentPeriod, $loanCurrentPeriod);
+        $simpananSourceDetail = $this->buildLandingSourceDetail(
+            'Simpanan Realtime',
+            $currentPeriod,
+            $currentSummary['source_table'] ?? 'simpanan_multipn',
+            [
+                ['label' => 'Total saldo', 'value' => $this->formatCurrencyFull($currentSummary['total_balance']), 'source' => $currentSummary['source_table'] ?? 'simpanan_multipn'],
+                ['label' => 'Rekening', 'value' => $this->formatInteger($currentSummary['account_count']), 'source' => $currentSummary['source_table'] ?? 'simpanan_multipn'],
+                ['label' => 'CIF', 'value' => $this->formatInteger($currentSummary['cif_count']), 'source' => $currentSummary['source_table'] ?? 'simpanan_multipn'],
+                ['label' => 'Top cabang', 'value' => $topBranchLabel . ' - ' . $topBranchDisplay, 'source' => $currentSummary['branch_source_table'] ?? $currentSummary['source_table'] ?? 'simpanan_multipn'],
+            ],
+            $currentSummary['source_note'] ?? 'Snapshot dashboard simpanan; fallback hanya ke simpanan_multipn jika snapshot belum tersedia.'
+        );
+        $pinjamanSourceDetail = $this->buildLandingSourceDetail(
+            'Pinjaman Realtime',
+            $loanCurrentPeriod,
+            $loanCurrentSummary['source_table'] ?? 'daily_loan_dinamis',
+            [
+                ['label' => 'Total outstanding', 'value' => $this->formatCurrencyFull($loanCurrentSummary['total_balance']), 'source' => $loanCurrentSummary['source_table'] ?? 'daily_loan_dinamis'],
+                ['label' => 'Rekening', 'value' => $this->formatInteger($loanCurrentSummary['account_count']), 'source' => $loanCurrentSummary['source_table'] ?? 'daily_loan_dinamis'],
+                ['label' => 'Cabang', 'value' => $this->formatInteger($loanCurrentSummary['branch_count']), 'source' => $loanCurrentSummary['source_table'] ?? 'daily_loan_dinamis'],
+                ['label' => 'Top cabang', 'value' => $loanTopBranchLabel . ' - ' . $loanTopBranchDisplay, 'source' => $loanCurrentSummary['branch_source_table'] ?? $loanCurrentSummary['source_table'] ?? 'daily_loan_dinamis'],
+            ],
+            $loanCurrentSummary['source_note'] ?? 'Snapshot dashboard pinjaman; fallback hanya ke daily_loan_dinamis jika snapshot belum tersedia.'
+        );
+        $portfolioSourceDetail = $this->buildLandingSourceDetail(
+            'LDR (Loan to Deposit Ratio)',
+            $latestCombinedLabel,
+            ($loanCurrentSummary['source_table'] ?? 'daily_loan_dinamis') . ' + ' . ($currentSummary['source_table'] ?? 'simpanan_multipn'),
+            [
+                ['label' => 'Total OS pinjaman', 'value' => $this->formatCurrencyFull($loanCurrentSummary['total_balance']), 'source' => $loanCurrentSummary['source_table'] ?? 'daily_loan_dinamis'],
+                ['label' => 'Total dana simpanan', 'value' => $this->formatCurrencyFull($currentSummary['total_balance']), 'source' => $currentSummary['source_table'] ?? 'simpanan_multipn'],
+                ['label' => 'LDR', 'value' => $coverageNow, 'source' => 'Hasil bagi OS pinjaman / dana simpanan'],
+                ['label' => 'LDR pembanding', 'value' => $coveragePrev, 'source' => 'Periode sebelumnya'],
+            ],
+            'Tidak memakai angka sisipan dari dashboard lain; dihitung dari dua ringkasan sumber yang tampil di kartu ini.'
+        );
 
         return [
             'period' => $currentPeriod,
@@ -220,6 +223,7 @@ class DashboardSimpananController extends Controller
                     'tone' => 'primary',
                     'link' => route('dashboard'),
                     'link_label' => 'Buka report simpanan',
+                    'detail_payload' => $simpananSourceDetail,
                 ],
                 [
                     'key' => 'pinjaman',
@@ -238,6 +242,7 @@ class DashboardSimpananController extends Controller
                     'tone' => 'info',
                     'link' => route('report.dashboard-pinjaman'),
                     'link_label' => 'Buka report pinjaman',
+                    'detail_payload' => $pinjamanSourceDetail,
                 ],
                 [
                     'key' => 'portfolio',
@@ -256,6 +261,7 @@ class DashboardSimpananController extends Controller
                     'tone' => 'success',
                     'link' => route('dashboard.harian'),
                     'link_label' => 'Lihat portfolio harian',
+                    'detail_payload' => $portfolioSourceDetail,
                 ],
             ],
             'digital_performance' => $digitalPerformance,
@@ -459,6 +465,9 @@ class DashboardSimpananController extends Controller
             'other_balance' => max(0, $totalBalance - (float) ($summary->tabungan_balance ?? 0) - (float) ($summary->giro_balance ?? 0)),
             'avg_balance_per_cif' => $cifCount > 0 ? $totalBalance / $cifCount : 0,
             'source_updated_at' => $summary->source_updated_at ?? null,
+            'source_table' => 'simpanan_multipn',
+            'branch_source_table' => 'simpanan_multipn',
+            'source_note' => 'Agregasi langsung dari simpanan_multipn untuk posisi yang sama.',
             'snapshot_completeness' => 'complete',
             'partial_branches' => [],
         ];
@@ -514,6 +523,30 @@ class DashboardSimpananController extends Controller
             'badge' => $knownRatio >= 75 ? 'Healthy' : 'Check',
             'badge_class' => $knownRatio >= 75 ? 'badge-success' : 'badge-warning',
         ];
+    }
+
+    private function buildLandingSourceDetail(string $title, ?string $period, string $sourceTable, array $rows, string $note): array
+    {
+        return [
+            'title' => $title,
+            'period' => $this->formatSourcePeriodLabel($period),
+            'source_table' => $sourceTable,
+            'note' => $note,
+            'rows' => array_values($rows),
+        ];
+    }
+
+    private function formatSourcePeriodLabel(?string $period): string
+    {
+        if (!$period) {
+            return 'Belum ada data';
+        }
+
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $period)) {
+            return $period;
+        }
+
+        return $this->formatPeriodLabel($period);
     }
 
     private function buildActivities(
@@ -623,9 +656,9 @@ class DashboardSimpananController extends Controller
             'loan_top_branches' => [],
             'digital_performance' => $this->buildDigitalPerformance(),
             'live_reports' => [
-                ['key' => 'simpanan', 'title' => 'Simpanan Realtime', 'eyebrow' => 'Snapshot aktif', 'value' => 'Rp0', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => '0 rekening | 0 CIF', 'detail' => 'Top cabang belum tersedia', 'updated' => 'Belum ada data', 'badge' => 'Simpanan', 'badge_class' => 'badge-primary', 'icon' => 'fas fa-piggy-bank', 'icon_bg' => 'rgba(13, 110, 253, 0.12)', 'tone' => 'primary', 'link' => route('dashboard'), 'link_label' => 'Buka report simpanan'],
-                ['key' => 'pinjaman', 'title' => 'Pinjaman Realtime', 'eyebrow' => 'Outstanding aktif', 'value' => 'Rp0', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => '0 rekening | 0 cabang', 'detail' => 'Top cabang belum tersedia', 'updated' => 'Belum ada data', 'badge' => 'Pinjaman', 'badge_class' => 'badge-info', 'icon' => 'fas fa-hand-holding-usd', 'icon_bg' => 'rgba(23, 162, 184, 0.12)', 'tone' => 'info', 'link' => route('report.dashboard-pinjaman'), 'link_label' => 'Buka report pinjaman'],
-                ['key' => 'portfolio', 'title' => 'LDR (Loan to Deposit Ratio)', 'eyebrow' => 'Cross report', 'value' => '0,00x', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => 'Gap pinjaman vs simpanan Rp0', 'detail' => 'LDR periode saat ini 0,00x vs 0,00x', 'updated' => 'Belum ada data', 'badge' => 'LDR', 'badge_class' => 'badge-success', 'icon' => 'fas fa-layer-group', 'icon_bg' => 'rgba(40, 167, 69, 0.12)', 'tone' => 'success', 'link' => route('dashboard.harian'), 'link_label' => 'Lihat portfolio harian'],
+                ['key' => 'simpanan', 'title' => 'Simpanan Realtime', 'eyebrow' => 'Snapshot aktif', 'value' => 'Rp0', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => '0 rekening | 0 CIF', 'detail' => 'Top cabang belum tersedia', 'updated' => 'Belum ada data', 'badge' => 'Simpanan', 'badge_class' => 'badge-primary', 'icon' => 'fas fa-piggy-bank', 'icon_bg' => 'rgba(13, 110, 253, 0.12)', 'tone' => 'primary', 'link' => route('dashboard'), 'link_label' => 'Buka report simpanan', 'detail_payload' => $this->buildLandingSourceDetail('Simpanan Realtime', null, 'simpanan_multipn', [['label' => 'Status', 'value' => 'Belum ada data', 'source' => 'simpanan_multipn']], 'Tabel sumber belum memiliki posisi yang bisa ditampilkan.')],
+                ['key' => 'pinjaman', 'title' => 'Pinjaman Realtime', 'eyebrow' => 'Outstanding aktif', 'value' => 'Rp0', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => '0 rekening | 0 cabang', 'detail' => 'Top cabang belum tersedia', 'updated' => 'Belum ada data', 'badge' => 'Pinjaman', 'badge_class' => 'badge-info', 'icon' => 'fas fa-hand-holding-usd', 'icon_bg' => 'rgba(23, 162, 184, 0.12)', 'tone' => 'info', 'link' => route('report.dashboard-pinjaman'), 'link_label' => 'Buka report pinjaman', 'detail_payload' => $this->buildLandingSourceDetail('Pinjaman Realtime', null, 'daily_loan_dinamis', [['label' => 'Status', 'value' => 'Belum ada data', 'source' => 'daily_loan_dinamis']], 'Tabel sumber belum memiliki periode yang bisa ditampilkan.')],
+                ['key' => 'portfolio', 'title' => 'LDR (Loan to Deposit Ratio)', 'eyebrow' => 'Cross report', 'value' => '0,00x', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => 'Gap pinjaman vs simpanan Rp0', 'detail' => 'LDR periode saat ini 0,00x vs 0,00x', 'updated' => 'Belum ada data', 'badge' => 'LDR', 'badge_class' => 'badge-success', 'icon' => 'fas fa-layer-group', 'icon_bg' => 'rgba(40, 167, 69, 0.12)', 'tone' => 'success', 'link' => route('dashboard.harian'), 'link_label' => 'Lihat portfolio harian', 'detail_payload' => $this->buildLandingSourceDetail('LDR (Loan to Deposit Ratio)', null, 'daily_loan_dinamis + simpanan_multipn', [['label' => 'Status', 'value' => 'Belum ada data', 'source' => 'Sumber pinjaman dan simpanan']], 'LDR kosong karena salah satu sumber belum tersedia.')],
             ],
         ];
     }
@@ -643,6 +676,9 @@ class DashboardSimpananController extends Controller
             'other_balance' => 0,
             'avg_balance_per_cif' => 0,
             'source_updated_at' => null,
+            'source_table' => 'simpanan_multipn',
+            'branch_source_table' => 'simpanan_multipn',
+            'source_note' => 'Belum ada data simpanan untuk periode ini.',
         ];
     }
 
@@ -654,6 +690,9 @@ class DashboardSimpananController extends Controller
             'branch_count' => 0,
             'unit_count' => 0,
             'source_updated_at' => null,
+            'source_table' => 'daily_loan_dinamis',
+            'branch_source_table' => 'daily_loan_dinamis',
+            'source_note' => 'Belum ada data pinjaman untuk periode ini.',
         ];
     }
 
@@ -713,6 +752,9 @@ class DashboardSimpananController extends Controller
             'branch_count' => (int) ($summary->branch_count ?? 0),
             'unit_count' => (int) ($summary->unit_count ?? 0),
             'source_updated_at' => $summary->source_updated_at ?? null,
+            'source_table' => 'daily_loan_dinamis',
+            'branch_source_table' => 'daily_loan_dinamis',
+            'source_note' => 'Agregasi langsung dari daily_loan_dinamis untuk periode yang sama.',
         ];
     }
 
@@ -741,6 +783,9 @@ class DashboardSimpananController extends Controller
             'branch_count' => (int) ($row->branch_count ?? 0),
             'unit_count' => (int) ($row->unit_count ?? 0),
             'source_updated_at' => $row->source_updated_at ?? null,
+            'source_table' => self::LOAN_SNAPSHOT_TABLE,
+            'branch_source_table' => self::LOAN_SNAPSHOT_TABLE,
+            'source_note' => 'Agregasi dari snapshot dashboard pinjaman untuk periode yang sama.',
         ];
     }
 
@@ -815,6 +860,9 @@ class DashboardSimpananController extends Controller
             'other_balance' => $otherBalance,
             'avg_balance_per_cif' => $cifCount > 0 ? $totalBalance / $cifCount : 0,
             'source_updated_at' => $row->source_updated_at ?? null,
+            'source_table' => self::SNAPSHOT_SUMMARY_TABLE,
+            'branch_source_table' => self::SNAPSHOT_BRANCH_TABLE,
+            'source_note' => 'Agregasi dari snapshot dashboard simpanan untuk posisi yang sama.',
             'snapshot_completeness' => (string) ($row->snapshot_completeness ?? 'complete'),
             'partial_branches' => $this->decodePartialBranches($row->partial_branches ?? null),
         ];
@@ -1463,6 +1511,7 @@ class DashboardSimpananController extends Controller
                     ],
                     'source_updated_at' => null,
                     'is_stub' => true,
+                    'detail_payload' => $this->buildLandingSourceDetail('Performance QLola', null, 'qlola_detail / qlola_report / qlola_summary', [['label' => 'Status', 'value' => 'Tabel sumber belum tersedia', 'source' => 'Schema check']], 'Landing page tidak membuat angka pengganti saat tabel QLola belum ada.'),
                 ];
             }
 
@@ -1518,6 +1567,7 @@ class DashboardSimpananController extends Controller
                     ['label' => 'Periode', 'value' => Carbon::parse($latestPeriod)->translatedFormat('d M Y')],
                 ],
                 'source_updated_at' => $latestPeriod,
+                'source_table' => $tableName,
             ]);
         } catch (Throwable $e) {
             Log::warning('Dashboard digital QLola gagal disusun: ' . $e->getMessage());
@@ -1566,6 +1616,7 @@ class DashboardSimpananController extends Controller
                     ],
                     'source_updated_at' => null,
                     'is_stub' => true,
+                    'detail_payload' => $this->buildLandingSourceDetail('Rasio Casa Debitur', null, 'rasio_casa_debitur / casa_debitur_summary / rekening_transaksi_debitur', [['label' => 'Status', 'value' => 'Tabel sumber belum tersedia', 'source' => 'Schema check']], 'Landing page tidak membuat angka pengganti saat tabel CASA belum ada.'),
                 ];
             }
 
@@ -1611,6 +1662,7 @@ class DashboardSimpananController extends Controller
                     ['label' => 'Rasio', 'value' => $this->formatPercent($rasio)],
                 ],
                 'source_updated_at' => $latestPeriod,
+                'source_table' => $tableName,
             ]);
         } catch (Throwable $e) {
             Log::warning('Dashboard digital Casa Debitur gagal disusun: ' . $e->getMessage());
@@ -1658,6 +1710,7 @@ class DashboardSimpananController extends Controller
                     ],
                     'source_updated_at' => null,
                     'is_stub' => true,
+                    'detail_payload' => $this->buildLandingSourceDetail('Rekening Dormant', null, 'rekening_dormant / rekening_dormant_detail / dormant_summary', [['label' => 'Status', 'value' => 'Tabel sumber belum tersedia', 'source' => 'Schema check']], 'Landing page tidak membuat angka pengganti saat tabel dormant belum ada.'),
                 ];
             }
 
@@ -1719,6 +1772,7 @@ class DashboardSimpananController extends Controller
                     ['label' => 'Periode', 'value' => Carbon::parse($latestPeriod)->translatedFormat('d M Y')],
                 ],
                 'source_updated_at' => $latestPeriod,
+                'source_table' => $tableName,
             ]);
         } catch (Throwable $e) {
             Log::warning('Dashboard digital Rekening Dormant gagal disusun: ' . $e->getMessage());
@@ -1800,6 +1854,7 @@ class DashboardSimpananController extends Controller
         $currentSeriesValue = !empty($series) ? (float) $series[array_key_last($series)] : 0;
         $previousSeriesValue = count($series) > 1 ? (float) $series[count($series) - 2] : 0;
         $trend = $this->percentChange($currentSeriesValue, $previousSeriesValue);
+        $detailPayload = $card['detail_payload'] ?? $this->buildDigitalCardDetail($card);
 
         return array_merge($card, [
             'trend' => $this->formatSignedPercent($trend),
@@ -1807,7 +1862,49 @@ class DashboardSimpananController extends Controller
             'trend_value' => $trend,
             'chart' => $chart,
             'series' => $series,
+            'detail_payload' => $detailPayload,
         ]);
+    }
+
+    private function buildDigitalCardDetail(array $card): array
+    {
+        $sourceTable = (string) ($card['source_table'] ?? $this->defaultDigitalSourceTable((string) ($card['key'] ?? '')));
+        $rows = [
+            ['label' => (string) ($card['current_label'] ?? 'Nilai utama'), 'value' => (string) ($card['current_value'] ?? '-'), 'source' => $sourceTable],
+            ['label' => (string) ($card['secondary_label'] ?? 'Nilai pembanding'), 'value' => (string) ($card['secondary_value'] ?? '-'), 'source' => $sourceTable],
+            ['label' => 'Trend', 'value' => (string) ($card['trend_reference'] ?? '-'), 'source' => $sourceTable],
+        ];
+
+        foreach (array_slice((array) ($card['stats'] ?? []), 0, 5) as $stat) {
+            $rows[] = [
+                'label' => (string) data_get($stat, 'label', '-'),
+                'value' => (string) data_get($stat, 'value', '-'),
+                'source' => $sourceTable,
+            ];
+        }
+
+        return $this->buildLandingSourceDetail(
+            (string) ($card['title'] ?? $card['badge'] ?? 'Detail'),
+            (string) ($card['source_updated_at'] ?? ''),
+            $sourceTable,
+            $rows,
+            (string) ($card['source_note'] ?? 'Angka diambil dari agregasi tabel sumber dengan filter cabang Area 6 bila tersedia.')
+        );
+    }
+
+    private function defaultDigitalSourceTable(string $key): string
+    {
+        return match ($key) {
+            'edc' => 'jumlah_merchant_detail',
+            'qris' => 'jumlah_merchant_qris_detail',
+            'brimo' => 'user_brimo_rpt_v2 + user_brimo_fin',
+            'brilink' => 'brilink_web_laporan_summary_transaksi_brilink_web',
+            'payroll' => 'performance_pis_per_produk',
+            'qlola' => 'qlola_detail / qlola_report / qlola_summary',
+            'casa' => 'rasio_casa_debitur / casa_debitur_summary / rekening_transaksi_debitur',
+            'dormant' => 'rekening_dormant / rekening_dormant_detail / dormant_summary',
+            default => 'Sumber belum dipetakan',
+        };
     }
 
     private function buildTrendDatePeriods(string $latestPeriod, int $points = 4): array

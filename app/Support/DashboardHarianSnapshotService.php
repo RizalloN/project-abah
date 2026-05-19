@@ -1720,10 +1720,12 @@ class DashboardHarianSnapshotService
         }
 
         $jenis = "UPPER(TRIM(COALESCE(l.jenis, '')))";
-        $brigunaMikro = "{$jenis} = 'KUPEDES GBT'";
-        $kupedes = "{$jenis} IN ('KUPEDES KOMERSIAL', 'KUPEDES RAKYAT', 'RITEL KOMERSIAL FULLY CASH COLLATERAL')";
-        $kurMikro = "{$jenis} = 'KUR MIKRO BARU'";
-        $kurKpp = "{$jenis} = 'KPR'";
+        $ukerName = "UPPER(TRIM(COALESCE(l.nama_uker, '')))";
+        $microUker = "{$ukerName} LIKE '%UNIT%'";
+        $brigunaMikro = "{$microUker} AND {$jenis} = 'KUPEDES GBT'";
+        $kupedes = "{$microUker} AND {$jenis} IN ('KUPEDES KOMERSIAL', 'KUPEDES RAKYAT', 'RITEL KOMERSIAL FULLY CASH COLLATERAL')";
+        $kurMikro = "{$microUker} AND {$jenis} = 'KUR MIKRO BARU'";
+        $kurKpp = "{$microUker} AND {$jenis} = 'KPR'";
 
         $rows = DB::table(self::L1133_TABLE . ' as l')
             ->where('l.periode', $resolvedPeriod)
@@ -1743,7 +1745,17 @@ class DashboardHarianSnapshotService
             ->selectRaw("SUM(CASE WHEN {$kurKpp} THEN COALESCE(l.dpk, 0) ELSE 0 END) as kur_kpp_sml")
             ->selectRaw("SUM(CASE WHEN {$kurKpp} THEN COALESCE(l.npl, 0) ELSE 0 END) as kur_kpp_npl")
             ->groupBy('unit_code')
-            ->get();
+            ->get()
+            ->filter(function ($row): bool {
+                foreach ($this->l1133MicroMetricKeys() as $metric) {
+                    if ((float) ($row->{$metric} ?? 0) != 0.0) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })
+            ->values();
 
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
@@ -2253,7 +2265,7 @@ class DashboardHarianSnapshotService
         $final['commercial_os'] = 0.0;
         $final['casa_pct'] = $this->safePercent($final['total_casa'], $final['total_simpanan']);
         // RKA LDR follows loan / savings, consistent with the live snapshot metrics.
-        $final['ldr_non_commercial'] = $this->safePercent($final['total_os'], $final['total_simpanan']);
+        $final['ldr_non_commercial'] = $this->safePercent($final['total_os_non_commercial'], $final['total_simpanan']);
         $final['ldr_ritel_non_commercial'] = $this->safePercent($final['sme_os'] + $final['consumer_os'], $final['simpanan_ritel']);
         $final['ldr_mikro_non_commercial'] = $this->safePercent($final['micro_os'], $final['simpanan_mikro']);
         

@@ -984,14 +984,17 @@
                         data: Array.isArray(dataset.data) ? dataset.data.slice() : dataset.data,
                         borderColor: dataset.borderColor,
                         backgroundColor: dataset.backgroundColor,
-                        borderWidth: isCompact ? (isLatest ? 4 : 3) : (isLatest ? 7 : 5),
-                        pointRadius: isCompact ? (isLatest ? 4 : 2) : (isLatest ? 8 : 4),
-                        pointHoverRadius: isCompact ? (isLatest ? 4 : 2) : (isLatest ? 8 : 4),
-                        tension: dataset.tension ?? 0.4,
+                        borderWidth: isCompact ? (isLatest ? 2 : 1.25) : (isLatest ? 2.75 : 1.75),
+                        pointRadius: isCompact ? (isLatest ? 2 : 0) : (isLatest ? 3 : 0),
+                        pointHoverRadius: isCompact ? (isLatest ? 4 : 2) : (isLatest ? 5 : 3),
+                        pointBorderWidth: dataset.pointBorderWidth ?? (isLatest ? 1.5 : 0),
+                        tension: dataset.tension ?? 0.32,
                         fill: dataset.fill,
                         clip: false,
                         spanGaps: dataset.spanGaps ?? false,
                         borderDash: dataset.borderDash || [],
+                        borderCapStyle: 'round',
+                        borderJoinStyle: 'round',
                     };
                 });
             }
@@ -1020,9 +1023,11 @@
                             labels: {
                                 usePointStyle: true,
                                 padding: isCompact ? 12 : 30,
-                                boxWidth: isCompact ? 12 : 18,
-                                boxHeight: isCompact ? 12 : 18,
-                                font: { weight: 'bold', size: Math.round(25 * fontScale) }
+                                pointStyle: 'line',
+                                boxWidth: isCompact ? 20 : 28,
+                                boxHeight: isCompact ? 8 : 10,
+                                color: '#475569',
+                                font: { weight: '600', size: Math.round(23 * fontScale) }
                             }
                         },
                         tooltip: {
@@ -1047,10 +1052,10 @@
                                 display: true,
                                 text: 'Value (Rp Miliar)',
                                 color: '#334155',
-                                font: { weight: 'bold', size: Math.round(24 * fontScale) }
+                                font: { weight: '600', size: Math.round(23 * fontScale) }
                             },
                             grid: {
-                                color: 'rgba(15, 23, 42, 0.08)',
+                                color: 'rgba(15, 23, 42, 0.06)',
                                 drawTicks: true
                             },
                             ticks: {
@@ -1058,7 +1063,7 @@
                                 padding: isCompact ? 8 : 18,
                                 display: true,
                                 color: '#475569',
-                                font: { size: Math.round(23 * fontScale), weight: '600' },
+                                font: { size: Math.round(22 * fontScale), weight: '500' },
                                 callback: yTicksCallback
                             }
                         },
@@ -1076,7 +1081,7 @@
                                 display: true,
                                 padding: isCompact ? 8 : 18,
                                 color: '#475569',
-                                font: { size: Math.round(23 * fontScale), weight: '600' },
+                                font: { size: Math.round(22 * fontScale), weight: '500' },
                                 autoSkip: true,
                                 maxTicksLimit: isCompact ? 8 : 16
                             },
@@ -1085,7 +1090,7 @@
                                 text: 'Tanggal',
                                 color: '#64748b',
                                 padding: { top: 16 },
-                                font: { size: Math.round(23 * fontScale), weight: 'bold' }
+                                font: { size: Math.round(22 * fontScale), weight: '600' }
                             }
                         }
                     }
@@ -1618,10 +1623,10 @@
             }
 
             const monthColors = [
-                { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.05)' },
-                { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.05)' },
-                { border: '#10b981', bg: 'rgba(16, 185, 129, 0.05)' },
-                { border: '#0857c3', bg: 'rgba(8, 87, 195, 0.1)' },
+                { border: '#7c3aed', bg: 'rgba(124, 58, 237, 0.035)' },
+                { border: '#d97706', bg: 'rgba(217, 119, 6, 0.035)' },
+                { border: '#059669', bg: 'rgba(5, 150, 105, 0.035)' },
+                { border: '#0857c3', bg: 'rgba(8, 87, 195, 0.055)' },
             ];
 
             function resolveYAxisBounds(datasets, isSummary = false) {
@@ -1670,14 +1675,19 @@
                                 data: d.data,
                                 borderColor: monthColors[i % monthColors.length].border,
                                 backgroundColor: monthColors[i % monthColors.length].bg,
-                                borderWidth: isLatest ? 4 : 2.5,
-                                pointRadius: isLatest ? 4.5 : 2,
-                                pointHoverRadius: 8,
-                                tension: 0.4,
+                                borderWidth: isLatest ? 2.25 : 1.35,
+                                pointRadius: isLatest ? 2.25 : 0,
+                                pointHoverRadius: isLatest ? 5 : 3,
+                                pointBorderWidth: isLatest ? 1.5 : 0,
+                                pointBackgroundColor: '#ffffff',
+                                pointBorderColor: monthColors[i % monthColors.length].border,
+                                tension: 0.32,
                                 fill: isLatest,
                                 clip: false,
                                 spanGaps: false,
-                                borderDash: isLatest ? [] : [5, 3]
+                                borderDash: isLatest ? [] : [4, 4],
+                                borderCapStyle: 'round',
+                                borderJoinStyle: 'round'
                             };
                         })
                     },
@@ -1699,8 +1709,12 @@
                                 position: 'top',
                                 labels: {
                                     usePointStyle: true,
-                                    padding: 15,
-                                    font: { weight: 'bold', size: 10 }
+                                    pointStyle: 'line',
+                                    boxWidth: 28,
+                                    boxHeight: 8,
+                                    color: '#475569',
+                                    padding: 14,
+                                    font: { weight: '600', size: 10 }
                                 }
                             },
                             tooltip: {
@@ -1736,17 +1750,19 @@
                                 title: {
                                     display: true,
                                     text: isPercent ? 'Persentase (%)' : 'Value (Rp Miliar)',
-                                    font: { weight: 'bold', size: 10 }
+                                    color: '#475569',
+                                    font: { weight: '600', size: 10 }
                                 },
                                 grid: {
-                                    color: 'rgba(15, 23, 42, 0.07)',
+                                    color: 'rgba(15, 23, 42, 0.055)',
                                     drawTicks: true
                                 },
                                 ticks: {
                                     maxTicksLimit: isSummary ? 7 : 6,
                                     padding: 10,
                                     display: true,
-                                    font: { size: 10 },
+                                    color: '#64748b',
+                                    font: { size: 10, weight: '500' },
                                     callback: function(value) {
                                         const scale = this.chart.scales.y;
                                         const spread = Math.abs(scale.max - scale.min);
@@ -1774,7 +1790,8 @@
                                 ticks: {
                                     display: true,
                                     padding: 10,
-                                    font: { size: 10 },
+                                    color: '#64748b',
+                                    font: { size: 10, weight: '500' },
                                     autoSkip: true,
                                     maxTicksLimit: isSummary ? 16 : 12
                                 },
@@ -1783,7 +1800,7 @@
                                     text: 'Tanggal',
                                     color: '#64748b',
                                     padding: { top: 10 },
-                                    font: { size: 10, weight: 'bold' }
+                                    font: { size: 10, weight: '600' }
                                 }
                             }
                         }

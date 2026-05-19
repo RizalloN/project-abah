@@ -178,7 +178,7 @@ class KinerjaRmReportController extends Controller
                 || abs((float) $detail['realisasi_os']) > 0
                 || abs((float) $detail['pct_lar']) > 0;
         })->sortBy([
-            ['sort_date', 'desc'],
+            ['sort_date', 'asc'],
             ['cabang', 'asc'],
         ])->values();
         
@@ -230,7 +230,7 @@ class KinerjaRmReportController extends Controller
         }
 
         $details = collect();
-        foreach (array_reverse(array_values($latestByMonth)) as $period) {
+        foreach (array_values($latestByMonth) as $period) {
             $previousPeriod = $this->resolvePreviousMonthSourcePeriod($period);
             if ($previousPeriod === null) {
                 continue;
@@ -239,7 +239,10 @@ class KinerjaRmReportController extends Controller
             $details = $details->merge($this->fetchConsumerSurplusAccountDetails($rmKeys, $period, $previousPeriod));
         }
 
-        return $details->values();
+        return $details->sortBy([
+            ['periode_raw', 'asc'],
+            ['surplus_plafon', 'desc']
+        ])->values();
     }
 
     private function resolvePreviousMonthSourcePeriod(string $period): ?string

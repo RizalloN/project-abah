@@ -613,7 +613,7 @@
     .kinerja-konsumer-table td {
         padding: 2px 4px !important;
         font-size: 0.68rem !important;
-        font-weight: 700;
+        font-weight: 500;
         color: #000000 !important;
         border-right: 1px solid #cbd5e1 !important;
         border-bottom: 1px solid #cbd5e1 !important;
@@ -627,7 +627,7 @@
     .kinerja-konsumer-table td.merged-branch-cell {
         border-left: 1px solid #cbd5e1 !important;
         color: #0f2f66 !important;
-        font-weight: 800 !important;
+        font-weight: 600 !important;
         text-transform: uppercase;
         text-align: center !important;
         font-size: 0.6rem !important;
@@ -646,7 +646,7 @@
         color: #000000 !important;
         text-align: left !important;
         font-size: 0.68rem !important;
-        font-weight: 800 !important;
+        font-weight: 500 !important;
         padding: 2px 4px !important;
         position: sticky !important;
         left: 126px; /* Match left setting in Blade */
@@ -1048,7 +1048,79 @@
     .kinerja-rm-modal__footer {
         background: #ffffff;
         border-top: 1px solid #e2e8f0;
-        padding: 0.75rem 1rem;
+        padding: 0.85rem 1.15rem;
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    /* Premium Segmented Controls (nav-pills) */
+    .kinerja-rm-modal__body .nav-pills {
+        background: #f1f5f9;
+        padding: 0.35rem;
+        border-radius: 14px;
+        display: inline-flex;
+        border: 1px solid #cbd5e1;
+        width: 100%;
+        max-width: 480px;
+        margin-bottom: 1.15rem !important;
+    }
+
+    .kinerja-rm-modal__body .nav-pills .nav-item {
+        flex: 1;
+    }
+
+    .kinerja-rm-modal__body .nav-pills .nav-link {
+        width: 100%;
+        display: block;
+        text-align: center;
+        background: transparent;
+        color: #475569;
+        font-weight: 800;
+        font-size: 0.8rem;
+        padding: 0.6rem 1rem;
+        border-radius: 10px;
+        border: none !important;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    .kinerja-rm-modal__body .nav-pills .nav-link:hover {
+        color: #0f172a;
+        background: rgba(255, 255, 255, 0.5);
+    }
+
+    .kinerja-rm-modal__body .nav-pills .nav-link.active,
+    .kinerja-rm-modal__body .nav-pills .nav-link.active:focus {
+        background: linear-gradient(135deg, #0f2f66, #005baa) !important;
+        color: #ffffff !important;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+    }
+
+    .kinerja-rm-modal__footer .btn-primary {
+        background: linear-gradient(135deg, #0f2f66, #005baa);
+        color: #ffffff;
+        border: none;
+        border-radius: 12px;
+        padding: 0.65rem 1.75rem;
+        font-size: 0.8rem;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .kinerja-rm-modal__footer .btn-primary:hover {
+        background: #1e293b;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.25);
+        color: #ffffff;
+    }
+
+    .kinerja-rm-modal__footer .btn-primary:active {
+        transform: translateY(0);
+        box-shadow: 0 4px 8px rgba(15, 23, 42, 0.1);
     }
 
     @media (max-width: 768px) {
@@ -1359,6 +1431,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             `);
         });
+    });
+
+    $(document).on('click', '#rmDetailModalContent [data-bs-toggle="pill"]', function(event) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const targetSelector = $(this).attr('data-bs-target');
+        if (!targetSelector) {
+            return;
+        }
+
+        const modalContent = $('#rmDetailModalContent');
+        const targetPanel = modalContent.find(targetSelector);
+        if (!targetPanel.length) {
+            return;
+        }
+
+        const tabList = $(this).closest('[role="tablist"]');
+        tabList.find('[role="tab"]').removeClass('active').attr('aria-selected', 'false');
+        $(this).addClass('active').attr('aria-selected', 'true');
+
+        modalContent.find('.tab-pane').removeClass('show active').attr('hidden', true).hide();
+        targetPanel.addClass('show active').removeAttr('hidden').show();
     });
 
     restoreKinerjaTabState();

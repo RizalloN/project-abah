@@ -63,7 +63,7 @@ class KinerjaPtpReportController extends Controller
             $selectedPeriod,
             $dimensions,
             $request->input('metric'),
-            (int) $request->input('limit', 25),
+            (int) $request->input('limit', 0),
             (int) $request->input('offset', 0)
         );
 

@@ -516,10 +516,29 @@ class ReportSnapshotBuilder
         $base = $this->loanBalanceRoundingBase();
 
         if ($base <= 1) {
-            return "COALESCE({$column}, 0)";
+            return $this->buildExcelSnapshotOsHelperExpression($column);
         }
 
         return "FLOOR(COALESCE({$column}, 0) / {$base}) * {$base}";
+    }
+
+    private function buildExcelSnapshotOsHelperExpression(string $column): string
+    {
+        $wholeRupiah = "TRUNCATE(COALESCE({$column}, 0), 0)";
+
+        return "
+            CASE
+                WHEN ABS({$wholeRupiah}) >= 1000
+                    AND ABS({$wholeRupiah}) < 1000000
+                    AND MOD(ABS({$wholeRupiah}), 10) = 0
+                    THEN SIGN({$wholeRupiah}) * CASE
+                        WHEN MOD(ABS({$wholeRupiah}), 1000) = 0 THEN ABS({$wholeRupiah}) / 1000
+                        WHEN MOD(ABS({$wholeRupiah}), 100) = 0 THEN ABS({$wholeRupiah}) / 100
+                        ELSE ABS({$wholeRupiah}) / 10
+                    END
+                ELSE {$wholeRupiah}
+            END
+        ";
     }
 
     private function loanBalanceRoundingBase(): int

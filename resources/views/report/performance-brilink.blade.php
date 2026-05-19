@@ -115,6 +115,37 @@
     
     .val-up { color: #28a745; margin-left: 3px; font-weight: bold; }
     .val-down { color: #dc3545; margin-left: 3px; font-weight: bold; }
+
+    .brilink-active-card {
+        border: 1px solid #dbeafe !important;
+        border-radius: 14px;
+        box-shadow: 0 0.5rem 1rem rgba(15, 23, 42, 0.06) !important;
+    }
+    .brilink-active-icon {
+        width: 46px;
+        height: 46px;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #eaf4ff;
+        color: #00509e;
+        flex: 0 0 auto;
+    }
+    .brilink-active-value {
+        color: #003366;
+        font-size: 1.7rem;
+        line-height: 1.1;
+    }
+    .brilink-active-badge {
+        border: 1px solid #bfdbfe;
+        border-radius: 999px;
+        color: #00509e;
+        background: #f8fbff;
+        font-weight: 700;
+        padding: 0.35rem 0.7rem;
+        white-space: nowrap;
+    }
     
     .rka-col { background-color: #fff3cd !important; color: #856404 !important; font-weight: 600; border-color: #f6e3a6 !important; }
     .row-total .rka-col { background-color: #003366 !important; color: #ffffff !important; }
@@ -216,6 +247,29 @@
                     <label class="text-muted text-sm mb-1">Posisi RKA</label>
                     <input type="text" id="filter_posisi_rka" class="form-control" disabled value="--------">
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 mb-4 brilink-active-card">
+    <div class="card-body py-3">
+        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between">
+            <div class="d-flex align-items-center mb-3 mb-md-0">
+                <span class="brilink-active-icon mr-3">
+                    <i class="fas fa-user-check"></i>
+                </span>
+                <div>
+                    <div class="text-muted text-sm font-weight-bold text-uppercase mb-1">User BRILink Aktif</div>
+                    <div class="d-flex align-items-baseline">
+                        <span id="brilink_active_user_value" class="font-weight-bold brilink-active-value">-</span>
+                        <span class="text-muted ml-2">merchant</span>
+                    </div>
+                    <div id="brilink_active_user_meta" class="text-muted small mt-1">Memuat data...</div>
+                </div>
+            </div>
+            <div id="brilink_active_user_threshold" class="brilink-active-badge">
+                Transaksi >= Rp50 rb/bln
             </div>
         </div>
     </div>
@@ -471,6 +525,23 @@ document.addEventListener('DOMContentLoaded', function () {
     function safeNum(num) {
         let val = parseFloat(num);
         return isNaN(val) ? 0 : val;
+    }
+
+    function updateActiveUserCard(summary) {
+        if (!summary) {
+            $('#brilink_active_user_value').text('-');
+            $('#brilink_active_user_meta').text('Data belum tersedia');
+            $('#brilink_active_user_threshold').text('Transaksi >= Rp50 rb/bln');
+            return;
+        }
+
+        const threshold = safeNum(summary.threshold || 50000);
+        const thresholdText = threshold >= 1000
+            ? `Rp${formatNum(threshold / 1000)} rb/bln`
+            : `Rp${formatNum(threshold)}/bln`;
+        $('#brilink_active_user_value').text(formatNum(summary.count));
+        $('#brilink_active_user_meta').text(`${summary.scope || 'Area 6'} - ${summary.period || 'periode aktif'}`);
+        $('#brilink_active_user_threshold').text(`Transaksi >= ${thresholdText}`);
     }
 
     function calcPrev(curr, diff) {
@@ -738,6 +809,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         }
                     }
                     updateGroupLabel(res.group_label);
+                    updateActiveUserCard(res.active_user_summary);
 
                     let html = '';
                     let htmlAgenUser = '';
@@ -872,6 +944,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     $('#tbody-bep-detail').html(`<tr><td colspan="13" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                     $('#tbody-transaksi').html(`<tr><td colspan="6" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                     $('#tbody-casa').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
+                    updateActiveUserCard(null);
                 }
             },
             error: function(err) {
@@ -884,6 +957,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 $('#tbody-bep-detail').html('<tr><td colspan="13" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
                 $('#tbody-transaksi').html('<tr><td colspan="6" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
                 $('#tbody-casa').html('<tr><td colspan="11" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
+                updateActiveUserCard(null);
             },
             complete: function() {
                 // Memindahkan fadeOut ke blok complete agar tetap tereksekusi baik sukses maupun gagal

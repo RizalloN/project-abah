@@ -47,7 +47,7 @@ class DashboardPinjamanReportController extends Controller
     private const OUTPUT_COLUMNS = ['Turunan Pokok', 'Suplesi', 'PH', 'Lunas'];
 
     private array $lw325RecoveryPeriodQuality = [];
-    private const KOLEK_MISMATCH_RULE_LABEL = 'kolek_vs_umur_tunggakan_v2';
+    private const KOLEK_MISMATCH_RULE_LABEL = 'kolek_vs_umur_tunggakan_v3';
     private const MATRIX_MODAL_COLUMNS = [
         'pivot_before_bucket',
         'pivot_after_bucket',
@@ -578,7 +578,7 @@ class DashboardPinjamanReportController extends Controller
 
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
 
-        $cacheKey = 'dashboard_pinjaman_matrix_direct:v2:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_matrix_direct:v4-excel-os-helper:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'comparison' => $comparisonPeriod,
@@ -595,9 +595,6 @@ class DashboardPinjamanReportController extends Controller
             fn () => [[], [], 0.0]
         );
 
-        $usesSnapshot = $this->shouldUseSnapshot($selectedPeriod, $filters)
-            && (!$comparisonPeriod || $this->shouldUseSnapshot($comparisonPeriod, $filters));
-
         return response()->json([
             'selected_period' => $selectedPeriod,
             'comparison_period' => $comparisonPeriod,
@@ -606,7 +603,7 @@ class DashboardPinjamanReportController extends Controller
             'matrix_rows' => $matrixRows,
             'grand_totals' => $grandTotals,
             'grand_total_value' => $grandTotalValue,
-            'data_source' => $usesSnapshot ? self::SNAPSHOT_TABLE : 'daily_loan_dinamis',
+            'data_source' => 'daily_loan_dinamis',
         ]);
     }
 
@@ -619,10 +616,17 @@ class DashboardPinjamanReportController extends Controller
         $selectedPeriod = $this->resolveRecoveryReportPeriod($request->input('periode'));
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
         $beforeBucket = trim((string) $request->input('before_bucket', ''));
+        $afterBucket = trim((string) $request->input('after_bucket', ''));
         $limit = max(10, min(50, (int) $request->input('limit', 25)));
         $offset = max(0, (int) $request->input('offset', 0));
 
-        abort_if(!$selectedPeriod || !in_array($beforeBucket, self::BEFORE_ROWS, true), 422, 'Periode dan bucket pivot wajib valid.');
+        abort_if(
+            !$selectedPeriod
+                || !in_array($beforeBucket, self::BEFORE_ROWS, true)
+                || !in_array($afterBucket, self::QUALITY_BUCKETS, true),
+            422,
+            'Periode dan bucket pivot wajib valid.'
+        );
 
         $filters = [
             'segmen' => $this->normalizeFilterValues($request->input('segmen_dashboard')),
@@ -632,7 +636,7 @@ class DashboardPinjamanReportController extends Controller
         ];
 
         $columns = $this->collectMatrixModalColumns();
-        $rows = $this->buildMatrixDrilldownQuery($selectedPeriod, $comparisonPeriod, $filters, $beforeBucket, $columns)
+        $rows = $this->buildMatrixDrilldownQuery($selectedPeriod, $comparisonPeriod, $filters, $beforeBucket, $columns, $afterBucket)
             ->offset($offset)
             ->limit($limit + 1)
             ->get();
@@ -644,6 +648,7 @@ class DashboardPinjamanReportController extends Controller
             'selected_period' => $selectedPeriod,
             'comparison_period' => $comparisonPeriod,
             'before_bucket' => $beforeBucket,
+            'after_bucket' => $afterBucket,
             'columns' => $columns,
             'rows' => $rows,
             'limit' => $limit,
@@ -662,8 +667,10 @@ class DashboardPinjamanReportController extends Controller
         $selectedPeriod = $this->resolveRecoveryReportPeriod($request->input('periode'));
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
         $beforeBucket = trim((string) $request->input('before_bucket', ''));
+        $afterBucket = trim((string) $request->input('after_bucket', ''));
 
         abort_if(!$selectedPeriod || !in_array($beforeBucket, self::BEFORE_ROWS, true), 422, 'Periode dan bucket pivot wajib valid.');
+        abort_if($afterBucket !== '' && !in_array($afterBucket, self::QUALITY_BUCKETS, true), 422, 'Bucket tujuan pivot wajib valid.');
 
         $filters = [
             'segmen' => $this->normalizeFilterValues($request->input('segmen_dashboard')),
@@ -673,11 +680,12 @@ class DashboardPinjamanReportController extends Controller
         ];
 
         $exportColumns = $this->collectMatrixDetailColumns();
-        $query = $this->buildMatrixDrilldownQuery($selectedPeriod, $comparisonPeriod, $filters, $beforeBucket, $exportColumns);
+        $query = $this->buildMatrixDrilldownQuery($selectedPeriod, $comparisonPeriod, $filters, $beforeBucket, $exportColumns, $afterBucket ?: null);
         $filename = sprintf(
-            'matrix-pergeseran-kolek_%s_%s.xlsx',
+            'matrix-pergeseran-kolek_%s_%s%s.xlsx',
             str_replace('-', '', $selectedPeriod),
-            $this->sanitizeExportToken($beforeBucket)
+            $this->sanitizeExportToken($beforeBucket),
+            $afterBucket !== '' ? '_' . $this->sanitizeExportToken($afterBucket) : ''
         );
 
         return response()->streamDownload(function () use ($query, $exportColumns) {
@@ -786,7 +794,7 @@ class DashboardPinjamanReportController extends Controller
             ]);
         }
 
-        $cacheKey = 'dashboard_pinjaman_kolek_mismatch_data:v8:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_kolek_mismatch_data:v9:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'cabang1' => $selectedBranches,
@@ -909,8 +917,8 @@ class DashboardPinjamanReportController extends Controller
 
         $startedAt = microtime(true);
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
-        $useCurrentSnapshot = $this->shouldUseSnapshot($selectedPeriod, $filters);
-        $useComparisonSnapshot = $comparisonPeriod ? $this->shouldUseSnapshot($comparisonPeriod, $filters) : false;
+        $useCurrentSnapshot = false;
+        $useComparisonSnapshot = false;
         $useLw325RecoveryMetrics = $this->shouldUseLw325RecoveryMetrics($selectedPeriod);
 
         // Ensure both periods use the same source to avoid account_number format mismatches
@@ -1037,7 +1045,7 @@ class DashboardPinjamanReportController extends Controller
         return [$matrixRows, $grandTotals, $grandTotalCents > 0 ? $this->centsToAmount($grandTotalCents) : null];
     }
 
-    private function buildMatrixDrilldownQuery(string $selectedPeriod, ?string $comparisonPeriod, array $filters, string $beforeBucket, array $columns): Builder
+    private function buildMatrixDrilldownQuery(string $selectedPeriod, ?string $comparisonPeriod, array $filters, string $beforeBucket, array $columns, ?string $afterBucket = null): Builder
     {
         $currentAlias = 'curr_detail';
         $previousAlias = 'prev_detail';
@@ -1090,6 +1098,10 @@ class DashboardPinjamanReportController extends Controller
             })
             ->where("{$currentAlias}.periode", $selectedPeriod)
             ->whereIn(DB::raw($currentBucketExpression), self::QUALITY_BUCKETS);
+
+        if ($afterBucket !== null) {
+            $query->whereRaw("({$currentBucketExpression}) = ?", [$afterBucket]);
+        }
 
         if (!empty($pivotSelects)) {
             $query->selectRaw(implode(",\n", $pivotSelects));
@@ -1382,6 +1394,7 @@ class DashboardPinjamanReportController extends Controller
     {
         $alias = 'anon';
         $bucketExpression = $this->buildQualityBucketExpression($alias);
+        $balanceExpression = $this->buildExcelSnapshotOsHelperExpression("{$alias}.baki_debet1");
 
         $rowQuery = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
             ->where("{$alias}.periode", $period)
@@ -1391,7 +1404,7 @@ class DashboardPinjamanReportController extends Controller
             })
             ->selectRaw("
                 {$bucketExpression} as after_bucket,
-                COALESCE({$alias}.baki_debet1, 0) as loan_balance
+                {$balanceExpression} as loan_balance
             ");
 
         $this->applyFilterConstraint($rowQuery, "{$alias}.segmen_dashboard", $filters['segmen']);
@@ -1446,6 +1459,7 @@ class DashboardPinjamanReportController extends Controller
         }
 
         $bucketExpression = $this->buildQualityBucketExpression($alias);
+        $balanceExpression = $this->buildExcelSnapshotOsHelperExpression("{$alias}.baki_debet1");
 
         $query = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
             ->where("{$alias}.periode", $period)
@@ -1453,7 +1467,7 @@ class DashboardPinjamanReportController extends Controller
             ->where("{$alias}.nomor_rekening1", '<>', '')
             ->selectRaw("
                 TRIM({$alias}.nomor_rekening1) as account_number,
-                COALESCE({$alias}.baki_debet1, 0) as " . ($alias === 'curr' ? 'current_balance' : 'previous_balance') . ",
+                {$balanceExpression} as " . ($alias === 'curr' ? 'current_balance' : 'previous_balance') . ",
                 {$bucketExpression} as " . ($alias === 'curr' ? 'after_bucket' : 'before_bucket')
             );
 
@@ -1463,6 +1477,27 @@ class DashboardPinjamanReportController extends Controller
         $this->applyFilterConstraint($query, "{$alias}.unit1", $filters['unit']);
 
         return $query;
+    }
+
+    private function buildExcelSnapshotOsHelperExpression(string $column): string
+    {
+        $wholeRupiah = "TRUNCATE(COALESCE({$column}, 0), 0)";
+
+        // Mirrors the Excel snapshot helper "OS BARU/OS LAMA" without storing
+        // helper columns in daily_loan_dinamis.
+        return "
+            CASE
+                WHEN ABS({$wholeRupiah}) >= 1000
+                    AND ABS({$wholeRupiah}) < 1000000
+                    AND MOD(ABS({$wholeRupiah}), 10) = 0
+                    THEN SIGN({$wholeRupiah}) * CASE
+                        WHEN MOD(ABS({$wholeRupiah}), 1000) = 0 THEN ABS({$wholeRupiah}) / 1000
+                        WHEN MOD(ABS({$wholeRupiah}), 100) = 0 THEN ABS({$wholeRupiah}) / 100
+                        ELSE ABS({$wholeRupiah}) / 10
+                    END
+                ELSE {$wholeRupiah}
+            END
+        ";
     }
 
     private function buildNormalizedLoanBalanceExpression(string $column): string
@@ -2586,6 +2621,8 @@ class DashboardPinjamanReportController extends Controller
         $query = DB::table('daily_loan_dinamis')
             ->where('periode', $selectedPeriod)
             ->whereIn('cabang1', $selectedBranches)
+            ->whereIn(DB::raw('TRIM(status_rekening1)'), ['1', '3'])
+            ->where('baki_debet1', '>', 0)
             ->orderBy('unit1')
             ->orderBy($orderingColumn);
 

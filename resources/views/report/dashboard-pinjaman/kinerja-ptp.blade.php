@@ -66,10 +66,12 @@
 
     .ptp-table-wrap {
         width: 100%;
+        max-height: calc(100vh - 210px);
         overflow: auto;
         border: 1px solid #dbe3ef;
         border-radius: 8px;
         background: #f8fafc;
+        scrollbar-gutter: stable;
     }
 
     .ptp-table {
@@ -90,11 +92,28 @@
     }
 
     .ptp-table th {
+        position: sticky;
         text-align: center;
         color: #ffffff;
         font-size: .68rem;
         font-weight: 800;
         text-transform: uppercase;
+        box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .16), 0 1px 0 rgba(15, 23, 42, .16);
+    }
+
+    .ptp-table thead tr:nth-child(1) th {
+        top: 0;
+        z-index: 4;
+    }
+
+    .ptp-table thead tr:nth-child(2) th {
+        top: 29px;
+        z-index: 4;
+    }
+
+    .ptp-table thead tr:nth-child(3) th {
+        top: 58px;
+        z-index: 4;
     }
 
     .ptp-table td {
@@ -206,6 +225,15 @@
         box-shadow: 0 24px 60px -24px rgba(15, 23, 42, .45);
     }
 
+    .ptp-drill-modal .modal-header {
+        border-bottom: 1px solid #e2e8f0;
+        background: #f8fafc;
+    }
+
+    .ptp-drill-modal .modal-body {
+        background: #ffffff;
+    }
+
     .ptp-drill-toolbar {
         display: flex;
         flex-wrap: wrap;
@@ -244,6 +272,8 @@
         overflow: auto;
         border: 1px solid #dbe3ef;
         border-radius: 8px;
+        background: #ffffff;
+        scrollbar-gutter: stable;
     }
 
     .ptp-drill-table {
@@ -258,26 +288,34 @@
     .ptp-drill-table td {
         border-right: 1px solid #e2e8f0;
         border-bottom: 1px solid #e2e8f0;
-        padding: .38rem .5rem;
+        padding: .42rem .55rem;
+        vertical-align: middle;
     }
 
     .ptp-drill-table th {
         position: sticky;
         top: 0;
         z-index: 1;
-        background: #0f3c86;
+        background: #123b70;
         color: #ffffff;
         font-size: .68rem;
+        font-weight: 800;
         text-transform: uppercase;
+        box-shadow: 0 1px 0 rgba(15, 23, 42, .18);
     }
 
     .ptp-drill-table td {
         background: #ffffff;
         color: #0f172a;
+        font-variant-numeric: tabular-nums;
     }
 
     .ptp-drill-table tbody tr:nth-child(even) td {
-        background: #fbfdff;
+        background: #f8fafc;
+    }
+
+    .ptp-drill-table tbody tr:hover td {
+        background: #eef6ff;
     }
 
     .ptp-drill-footer-note {
@@ -679,7 +717,7 @@
             params.set('periode', document.getElementById('periode')?.value || @json($selectedPeriod));
             params.set('metric', metricCell?.dataset.ptpMetric || 'total_rek');
             params.set('offset', offset);
-            params.set('limit', 25);
+            params.set('limit', 0);
 
             dimensionKeys.forEach(key => {
                 params.set(key, row.dataset[`ptp${key.charAt(0).toUpperCase()}${key.slice(1)}`] || '-');
@@ -810,7 +848,7 @@
             drillState.classList.add('d-none');
             drillTableWrap.classList.remove('d-none');
             drillFooterNote.classList.remove('d-none');
-            drillFooterNote.textContent = 'Nominatif dimuat langsung dari tabel sumber per 25 baris agar halaman tetap ringan.';
+            drillFooterNote.textContent = 'Nominatif dimuat langsung dari tabel sumber untuk metrik yang dipilih.';
         }
 
         if (tableBody && detailModal) {

@@ -4,6 +4,7 @@ namespace App\Services\Import;
 
 use App\Http\Controllers\Import\ImportExcelController;
 use App\Http\Controllers\Import\ImportReportPhController;
+use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Jobs\RunImportJob;
 use App\Jobs\SyncImportedReportJob;
 use Illuminate\Http\Request;
@@ -72,6 +73,17 @@ class ImportExecutionService
             }
 
             if ($cache->has($this->dispatchedKey($jobId)) && !$this->shouldRedispatchQueuedJob($job)) {
+                return false;
+            }
+
+            if ($this->isSimpananMultiPnCsvStreamJob($jobId, $job)) {
+                $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
+                $this->releaseDispatchMarker($jobId);
+
+                Log::info('Simpanan MultiPN CSV import kept on dedicated stream executor; generic queue dispatch skipped.', [
+                    'job_id' => $jobId,
+                ]);
+
                 return false;
             }
 
@@ -340,6 +352,18 @@ class ImportExecutionService
             return;
         }
 
+        if ($this->isSimpananMultiPnCsvStreamJob($jobId, $job, $params)) {
+            $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
+            $this->releaseDispatchMarker($jobId);
+
+            Log::warning('Generic import worker skipped Simpanan MultiPN CSV job because it must run through the dedicated stream executor.', [
+                'job_id' => $jobId,
+                'table_name' => $tableName,
+            ]);
+
+            return;
+        }
+
         $requiresPreparedStaging = in_array($tableName, ['lw321_npd', 'lw321_npdd'], true)
             && empty($params['staged_csv_path']);
 
@@ -568,7 +592,12 @@ class ImportExecutionService
             return false;
         }
 
-        if (($payload['status'] ?? '') !== 'queued') {
+        $status = (string) ($payload['status'] ?? '');
+        if ($status === 'processing') {
+            return $this->shouldRunInlineFallbackForStaleProcessing($payload);
+        }
+
+        if ($status !== 'queued') {
             return false;
         }
 
@@ -577,14 +606,53 @@ class ImportExecutionService
         }
 
         $jobId = (int) ($payload['job_id'] ?? 0);
-        if ($jobId > 0) {
-            $state = $this->progressService->getJobState($jobId);
-            if ((bool) (($state['params']['disable_inline_fallback'] ?? false))) {
-                return false;
-            }
+        if ($this->inlineFallbackDisabledForJob($jobId)) {
+            return false;
         }
 
         return true;
+    }
+
+    private function shouldRunInlineFallbackForStaleProcessing(array $payload): bool
+    {
+        $jobId = (int) ($payload['job_id'] ?? 0);
+        if ($jobId <= 0 || $this->inlineFallbackDisabledForJob($jobId)) {
+            return false;
+        }
+
+        if ((int) ($payload['processed_rows'] ?? 0) > 0
+            || (int) ($payload['total_success'] ?? 0) > 0
+            || (int) ($payload['total_failed'] ?? 0) > 0
+        ) {
+            return false;
+        }
+
+        if ((int) ($payload['percent'] ?? 0) > 8) {
+            return false;
+        }
+
+        if ($this->hasQueuedImportJobRow($jobId)) {
+            return false;
+        }
+
+        $job = $this->progressService->findJob($jobId);
+        if (!$job || !$this->isRecoverableZeroProgressImportJob($jobId, $job)) {
+            return false;
+        }
+
+        return !$this->hasRecentProcessingPulse($jobId, $job);
+    }
+
+    private function inlineFallbackDisabledForJob(int $jobId): bool
+    {
+        if ($jobId <= 0) {
+            return false;
+        }
+
+        $state = $this->progressService->getJobState($jobId);
+
+        return (bool) (($state['params']['disable_inline_fallback'] ?? false))
+            || $this->isSimpananMultiPnCsvStreamJob($jobId, null, (array) ($state['params'] ?? []));
     }
 
     private function inlineFallbackGraceSeconds(): int
@@ -625,8 +693,17 @@ class ImportExecutionService
             return true;
         }
 
+        return $this->hasQueuedImportJobRow($jobId);
+    }
+
+    private function hasQueuedImportJobRow(int $jobId): bool
+    {
+        if ($jobId <= 0) {
+            return false;
+        }
+
         try {
-            return \Illuminate\Support\Facades\DB::table('jobs')
+            return DB::table('jobs')
                 ->whereIn('queue', [self::DAILY_LOAN_IMPORT_QUEUE, self::IMPORT_QUEUE])
                 ->where('payload', 'like', '%' . str_replace('\\', '\\\\', RunImportJob::class) . '%')
                 ->where('payload', 'like', '%jobId%')
@@ -774,6 +851,58 @@ class ImportExecutionService
     private function zeroProgressRecoveryMinutes(): int
     {
         return max(2, (int) config('import.queue.zero_progress_recovery_minutes', 5));
+    }
+
+    private function isSimpananMultiPnCsvStreamJob(int $jobId, ?object $job = null, array $params = []): bool
+    {
+        if ($jobId <= 0) {
+            return false;
+        }
+
+        $jobContext = $this->decodeJobContext($job);
+
+        $tableName = strtolower(trim((string) ($params['table_name'] ?? $jobContext['table_name'] ?? '')));
+        if ($tableName === '' && $job !== null) {
+            $tableName = $this->resolveExpectedTableName($job);
+        }
+
+        $controller = ltrim((string) ($params['controller'] ?? $jobContext['controller'] ?? ''), '\\');
+
+        if ($tableName === '' && $job !== null && (int) ($job->id_report ?? 0) !== 9) {
+            return false;
+        }
+
+        if (($tableName === '' || ($tableName === 'simpanan_multipn' && $controller === '')) && $params === []) {
+            $state = $this->progressService->getJobState($jobId);
+            $params = (array) ($state['params'] ?? []);
+            $tableName = strtolower(trim((string) ($params['table_name'] ?? $tableName)));
+            $controller = ltrim((string) ($params['controller'] ?? $controller), '\\');
+        }
+
+        if ($tableName !== 'simpanan_multipn') {
+            return false;
+        }
+
+        if ($controller === '' && $job !== null) {
+            $controller = ltrim($this->resolveControllerClass($job), '\\');
+        }
+
+        return $controller === ImportSimpananMultiPnCsvController::class;
+    }
+
+    private function decodeJobContext(?object $job): array
+    {
+        if (!$job) {
+            return [];
+        }
+
+        $jobContext = $job->job_context ?? null;
+        if (is_string($jobContext) && $jobContext !== '') {
+            $decoded = json_decode($jobContext, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return is_array($jobContext) ? $jobContext : [];
     }
 
     private function hasRecentProcessingPulse(int $jobId, object $job): bool

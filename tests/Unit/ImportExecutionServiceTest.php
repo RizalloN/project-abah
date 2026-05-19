@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Jobs\RunImportJob;
 use App\Http\Controllers\Import\ImportExcelController;
 use App\Http\Controllers\Import\ImportReportPhController;
+use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Jobs\SyncImportedReportJob;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
@@ -187,6 +188,60 @@ class ImportExecutionServiceTest extends TestCase
                 && $job->connection === 'database'
                 && $job->queue === 'imports-high';
         });
+    }
+
+    public function test_dispatch_skips_generic_queue_for_simpanan_multipn_csv_stream_jobs(): void
+    {
+        Bus::fake();
+        Cache::flush();
+
+        $jobId = 209;
+
+        $lock = Mockery::mock();
+        $lock->shouldReceive('get')->once()->andReturn(true);
+        $lock->shouldReceive('release')->once();
+        Cache::shouldReceive('lock')
+            ->once()
+            ->with('import_excel_dispatch_job_' . $jobId, 30)
+            ->andReturn($lock);
+        Cache::shouldReceive('has')
+            ->once()
+            ->with('import_excel_dispatched_job_' . $jobId)
+            ->andReturn(false);
+        Cache::shouldReceive('put')->never();
+        Cache::shouldReceive('forget')
+            ->once()
+            ->with('import_excel_dispatched_job_' . $jobId);
+
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $progressService->shouldReceive('findJob')
+            ->twice()
+            ->with($jobId)
+            ->andReturn((object) [
+                'id' => $jobId,
+                'id_report' => 9,
+                'status' => 'queued',
+                'updated_at' => now()->toDateTimeString(),
+                'total_success' => 0,
+                'total_failed' => 0,
+                'total_files' => 100,
+            ]);
+        $progressService->shouldReceive('getJobState')
+            ->once()
+            ->with($jobId)
+            ->andReturn([
+                'params' => [
+                    'table_name' => 'simpanan_multipn',
+                    'controller' => ImportSimpananMultiPnCsvController::class,
+                ],
+            ]);
+        $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with($jobId);
+        $progressService->shouldReceive('markQueued')->never();
+
+        $service = new ImportExecutionService($progressService);
+
+        $this->assertFalse($service->dispatch($jobId));
+        Bus::assertNotDispatched(RunImportJob::class);
     }
 
     public function test_dispatch_recovers_zero_progress_stale_processing_job_before_queueing(): void
@@ -380,6 +435,52 @@ class ImportExecutionServiceTest extends TestCase
         $service->run(99);
     }
 
+    public function test_run_skips_generic_execution_for_simpanan_multipn_csv_stream_jobs(): void
+    {
+        Cache::flush();
+
+        $jobId = 210;
+
+        Cache::shouldReceive('lock')->never();
+        Cache::shouldReceive('forget')
+            ->once()
+            ->with('import_excel_dispatched_job_' . $jobId);
+
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $progressService->shouldReceive('purgeStaleProcessingJobs')->once()->andReturn(0);
+        $progressService->shouldReceive('isTerminationRequested')->once()->with($jobId)->andReturnFalse();
+        $progressService->shouldReceive('findJob')
+            ->once()
+            ->with($jobId)
+            ->andReturn((object) [
+                'id' => $jobId,
+                'id_report' => 0,
+                'status' => 'queued',
+                'updated_at' => now()->toDateTimeString(),
+                'total_success' => 0,
+                'total_failed' => 0,
+                'total_files' => 100,
+            ]);
+        $progressService->shouldReceive('getJobState')
+            ->once()
+            ->with($jobId)
+            ->andReturn([
+                'params' => [
+                    'job_id' => $jobId,
+                    'file_path' => 'excel_imports/simpanan.csv',
+                    'table_name' => 'simpanan_multipn',
+                    'controller' => ImportSimpananMultiPnCsvController::class,
+                ],
+                'headers' => ['POSISI', 'KANTOR_CABANG', 'NO_REKENING'],
+            ]);
+        $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with($jobId);
+        $progressService->shouldReceive('markProcessing')->never();
+        $progressService->shouldReceive('markFailed')->never();
+
+        $service = new ImportExecutionService($progressService);
+        $service->run($jobId);
+    }
+
     public function test_run_recovers_zero_progress_stale_processing_job_and_executes_import(): void
     {
         Bus::fake();
@@ -525,6 +626,59 @@ class ImportExecutionServiceTest extends TestCase
         );
 
         $this->assertSame('Menyiapkan sanitasi CSV Daily Loan...', $message);
+    }
+
+    public function test_processing_zero_progress_ssa_simpanan_job_can_use_inline_fallback_after_stale_window(): void
+    {
+        Cache::flush();
+
+        $jobId = 147;
+        $staleTimestamp = Carbon::now()->subMinutes(10);
+
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $progressService->shouldReceive('getJobState')
+            ->twice()
+            ->with($jobId)
+            ->andReturn([
+                'params' => [
+                    'table_name' => 'ssa_simpanan',
+                ],
+            ]);
+        $progressService->shouldReceive('findJob')
+            ->once()
+            ->with($jobId)
+            ->andReturn((object) [
+                'id' => $jobId,
+                'id_report' => 17,
+                'status' => 'processing',
+                'updated_at' => $staleTimestamp->toDateTimeString(),
+                'total_success' => 0,
+                'total_failed' => 0,
+                'total_files' => 0,
+            ]);
+        $progressService->shouldReceive('getCachedProgress')
+            ->once()
+            ->with($jobId)
+            ->andReturn([
+                'updated_at' => $staleTimestamp->toIso8601String(),
+            ]);
+
+        $service = new ImportExecutionService($progressService);
+        $method = new \ReflectionMethod($service, 'shouldRunInlineFallback');
+        $method->setAccessible(true);
+
+        $shouldFallback = $method->invoke($service, [
+            'status' => 'processing',
+            'job_id' => $jobId,
+            'report_id' => 17,
+            'percent' => 8,
+            'processed_rows' => 0,
+            'total_success' => 0,
+            'total_failed' => 0,
+            'updated_at' => $staleTimestamp->toIso8601String(),
+        ], time(), false);
+
+        $this->assertTrue($shouldFallback);
     }
 
     public function test_lw325_jobs_never_fall_back_to_generic_import_controller(): void

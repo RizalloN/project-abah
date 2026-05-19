@@ -162,7 +162,7 @@ class DashboardHarianController extends Controller
     private function payload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit): array
     {
         $cacheKey = 'dashboard_harian:payload:' . md5(json_encode([
-            'schema' => 'penc-pct-v19-rka-savings-wholesale-total',
+            'schema' => 'penc-pct-v20-rka-ldr-noncommercial-denominator',
             'version' => $this->reportCacheVersion(),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,
@@ -186,7 +186,7 @@ class DashboardHarianController extends Controller
         $resolvedMonth = $this->resolveTimeseriesMonth($selectedMonth, $monthOptions);
 
         $cacheKey = 'dashboard_harian:timeseries:' . md5(json_encode([
-            'schema' => 'v2-sml-percent',
+            'schema' => 'v3-sml-percent-loan-overlay-refresh',
             'version' => $this->reportCacheVersion(),
             'category' => $category,
             'kanca' => $selectedKanca,

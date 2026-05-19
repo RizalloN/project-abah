@@ -17,6 +17,15 @@
             return $period;
         }
     };
+
+    $formatMatrixBucket = function (?string $bucket): string {
+        return match ($bucket) {
+            'DPK 1' => 'SML 1',
+            'DPK 2' => 'SML 2',
+            'DPK 3' => 'SML 3',
+            default => $bucket ?: '-',
+        };
+    };
 @endphp
 
 <style>
@@ -419,7 +428,7 @@
                                 <tr>
                                     <th class="matrix-before">Bucket</th>
                                     @foreach($matrixColumns as $col)
-                                        <th class="matrix-subhead">{{ $col }}</th>
+                                        <th class="matrix-subhead">{{ $formatMatrixBucket($col) }}</th>
                                     @endforeach
                                     <th>Turunan Pokok</th>
                                     <th>Suplesi</th>
@@ -542,6 +551,7 @@
         let activeDrillController = null;
         let activeDrillRequestId = 0;
         let activeDrillBucket = null;
+        let activeDrillAfterBucket = null;
         let activeDrillNextOffset = null;
         let activeDrillRenderedCount = 0;
         let rowClickTimer = null;
@@ -617,9 +627,18 @@
             }[char]));
         }
 
-        function buildDrillParams(beforeBucket, offset = 0) {
+        function displayBucketLabel(bucket) {
+            return {
+                'DPK 1': 'SML 1',
+                'DPK 2': 'SML 2',
+                'DPK 3': 'SML 3',
+            }[bucket] || bucket || '-';
+        }
+
+        function buildDrillParams(beforeBucket, afterBucket, offset = 0) {
             const params = new URLSearchParams(new FormData(form));
             params.set('before_bucket', beforeBucket);
+            if (afterBucket) params.set('after_bucket', afterBucket);
             params.set('offset', offset);
             params.set('limit', 25);
             return params;
@@ -663,21 +682,29 @@
             document.body.style.removeProperty('padding-right');
         }
 
-        function setSelectedDrillRow(beforeBucket) {
+        function setSelectedDrillCell(beforeBucket, afterBucket) {
             body.querySelectorAll('tr.loan-drill-row').forEach(row => {
                 row.classList.toggle('is-selected', row.dataset.beforeBucket === beforeBucket);
             });
+            body.querySelectorAll('td.loan-drill-cell').forEach(cell => {
+                cell.classList.toggle(
+                    'is-selected',
+                    cell.dataset.beforeBucket === beforeBucket && cell.dataset.afterBucket === afterBucket
+                );
+            });
         }
 
-        async function openDrilldown(beforeBucket, offset = 0, append = false) {
+        async function openDrilldown(beforeBucket, afterBucket, offset = 0, append = false) {
+            if (!beforeBucket || !afterBucket) return;
             if (activeDrillController) activeDrillController.abort();
             activeDrillController = new AbortController();
             const requestId = ++activeDrillRequestId;
             activeDrillBucket = beforeBucket;
-            setSelectedDrillRow(beforeBucket);
+            activeDrillAfterBucket = afterBucket;
+            setSelectedDrillCell(beforeBucket, afterBucket);
 
             if (!append) {
-                drillSubtitle.textContent = `Bucket pivot: ${beforeBucket}`;
+                drillSubtitle.textContent = `Pergeseran: ${displayBucketLabel(beforeBucket)} -> ${displayBucketLabel(afterBucket)}`;
                 drillMeta.innerHTML = '';
                 drillHead.innerHTML = '';
                 drillBody.innerHTML = '';
@@ -692,7 +719,7 @@
             }
 
             drillLoadMoreButton.disabled = true;
-            const params = buildDrillParams(beforeBucket, offset);
+            const params = buildDrillParams(beforeBucket, afterBucket, offset);
 
             try {
                 const response = await fetch(`${detailUrl}?${params.toString()}`, { signal: activeDrillController.signal });
@@ -724,7 +751,8 @@
             drillMeta.innerHTML = `
                 <span>Posisi: ${escapeHtml(formatMatrixPeriodDate(payload.selected_period))}</span>
                 <span>Delta MTD: ${escapeHtml(formatMatrixPeriodDate(payload.comparison_period))}</span>
-                <span>Bucket: ${escapeHtml(payload.before_bucket)}</span>
+                <span>Dari: ${escapeHtml(displayBucketLabel(payload.before_bucket))}</span>
+                <span>Ke: ${escapeHtml(displayBucketLabel(payload.after_bucket))}</span>
                 <span>Ditampilkan: ${formatNumber(activeDrillRenderedCount + rows.length)}</span>
             `;
 
@@ -739,10 +767,10 @@
                 return;
             }
 
-            drillState.classList.add('d-none');
-            drillTableWrap.classList.remove('d-none');
-            drillFooterNote.classList.remove('d-none');
-            drillFooterNote.textContent = 'Detail dimuat bertahap per 25 baris agar halaman tetap ringan. Gunakan Excel untuk mengambil seluruh hasil filter pivot.';
+                drillState.classList.add('d-none');
+                drillTableWrap.classList.remove('d-none');
+                drillFooterNote.classList.remove('d-none');
+            drillFooterNote.textContent = 'Detail nominatif mengikuti tepat sel pergeseran yang dipilih. Gunakan Excel untuk mengambil seluruh hasil sel ini.';
             renderDrillRowsChunked(columns, rows, append);
         }
 
@@ -760,7 +788,7 @@
 
                 for (let i = index; i < end; i++) {
                     const tr = document.createElement('tr');
-                    tr.innerHTML = columns.map(column => `<td>${escapeHtml(rows[i][column] ?? '')}</td>`).join('');
+                    tr.innerHTML = columns.map(column => `<td>${escapeHtml(formatDrillCellValue(column, rows[i][column]))}</td>`).join('');
                     fragment.appendChild(tr);
                 }
 
@@ -779,9 +807,17 @@
             requestAnimationFrame(renderChunk);
         }
 
-        function exportDrilldown(beforeBucket) {
+        function formatDrillCellValue(column, value) {
+            if (column === 'pivot_before_bucket' || column === 'pivot_after_bucket') {
+                return displayBucketLabel(value);
+            }
+
+            return value ?? '';
+        }
+
+        function exportDrilldown(beforeBucket, afterBucket) {
             if (!beforeBucket) return;
-            const params = buildDrillParams(beforeBucket, 0);
+            const params = buildDrillParams(beforeBucket, afterBucket, 0);
             params.delete('offset');
             params.delete('limit');
             window.location.href = `${exportUrl}?${params.toString()}`;
@@ -893,12 +929,15 @@
         function buildRowHtml(row) {
             const rowRank = qualityRanks[row.label];
             const isNewAccount = row.label === 'New Account';
-            let html = `<tr class="loan-drill-row" data-before-bucket="${escapeHtml(row.label)}"><th>${escapeHtml(row.label)}</th>`;
+            let html = `<tr class="loan-drill-row" data-before-bucket="${escapeHtml(row.label)}"><th>${escapeHtml(displayBucketLabel(row.label))}</th>`;
             
             for (let idx = 0; idx < row.values.length; idx++) {
                 const val = row.values[idx];
+                const afterBucket = qualityColumns[idx];
                 const cls = isNewAccount ? 'matrix-new-account' : (rowRank === idx ? 'matrix-stagnant' : (rowRank > idx ? 'matrix-up' : 'matrix-down'));
-                html += `<td class="${val ? cls : 'matrix-empty'}">${formatNumber(val)}</td>`;
+                const cellClass = val ? `${cls} loan-drill-cell` : 'matrix-empty';
+                const cellAttrs = val ? ` data-before-bucket="${escapeHtml(row.label)}" data-after-bucket="${escapeHtml(afterBucket)}"` : '';
+                html += `<td class="${cellClass}"${cellAttrs}>${formatNumber(val)}</td>`;
             }
             
             html += `<td class="matrix-total-col">${formatNumber(row.total)}</td>`;
@@ -979,26 +1018,18 @@
                 }
             }, 300);
         });
-        body.addEventListener('click', event => {
-            const row = event.target.closest('tr.loan-drill-row');
-            if (!row) return;
-            window.clearTimeout(rowClickTimer);
-            rowClickTimer = window.setTimeout(() => openDrilldown(row.dataset.beforeBucket), 220);
-        });
         body.addEventListener('dblclick', event => {
-            const row = event.target.closest('tr.loan-drill-row');
-            if (!row) return;
+            const cell = event.target.closest('td.loan-drill-cell');
+            if (!cell) return;
             window.clearTimeout(rowClickTimer);
-            activeDrillBucket = row.dataset.beforeBucket;
-            setSelectedDrillRow(activeDrillBucket);
-            exportDrilldown(activeDrillBucket);
+            openDrilldown(cell.dataset.beforeBucket, cell.dataset.afterBucket);
         });
         drillLoadMoreButton.addEventListener('click', () => {
             if (activeDrillBucket && activeDrillNextOffset !== null) {
-                openDrilldown(activeDrillBucket, activeDrillNextOffset, true);
+                openDrilldown(activeDrillBucket, activeDrillAfterBucket, activeDrillNextOffset, true);
             }
         });
-        drillExportButton.addEventListener('click', () => exportDrilldown(activeDrillBucket));
+        drillExportButton.addEventListener('click', () => exportDrilldown(activeDrillBucket, activeDrillAfterBucket));
         drillModal.querySelectorAll('[data-dismiss="modal"]').forEach(button => {
             button.addEventListener('click', () => cleanupDrillModalBackdrop());
         });

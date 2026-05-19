@@ -51,7 +51,6 @@ class KinerjaPtpReportService
     ];
 
     private const DETAIL_COLUMNS = [
-        'uniqueid_namareport',
         'periode',
         'billing',
         'kanca',
@@ -188,7 +187,8 @@ class KinerjaPtpReportService
         $config = $this->reportConfig($reportType);
         $table = $config['table'];
         $metric = $this->normalizeMetric($metric);
-        $limit = max(10, min(50, $limit));
+        $fetchAll = $limit <= 0;
+        $limit = $fetchAll ? 0 : max(10, min(50, $limit));
         $offset = max(0, $offset);
 
         if ($period === null || !Schema::hasTable($table)) {
@@ -205,16 +205,18 @@ class KinerjaPtpReportService
         }
 
         $columns = $this->detailColumns($table);
-        $rows = $this->detailQuery($table, $level, $period, $dimensions, $metric, $columns)
-            ->offset($offset)
-            ->limit($limit + 1)
-            ->get();
+        $query = $this->detailQuery($table, $level, $period, $dimensions, $metric, $columns);
 
-        $hasMore = $rows->count() > $limit;
+        if (! $fetchAll) {
+            $query->offset($offset)->limit($limit + 1);
+        }
+
+        $rows = $query->get();
+        $hasMore = ! $fetchAll && $rows->count() > $limit;
 
         return [
             'columns' => $columns,
-            'rows' => $rows->take($limit)->map(fn (object $row): array => (array) $row)->values(),
+            'rows' => ($fetchAll ? $rows : $rows->take($limit))->map(fn (object $row): array => (array) $row)->values(),
             'metric' => $metric,
             'metric_label' => self::METRIC_LABELS[$metric],
             'has_more' => $hasMore,

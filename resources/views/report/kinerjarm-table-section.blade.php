@@ -190,7 +190,7 @@
                                     @php $isFirstRmRow = false; @endphp
                                 @endif
 
-                                <td class="text-start-important" style="font-weight: 700; color: var(--loan-muted); padding-left: 0.45rem;">
+                                <td class="text-start-important" style="font-weight: 500; color: var(--loan-muted); padding-left: 0.45rem;">
                                     {{ $item['product'] }}
                                 </td>
                                 @if($isFirstRmRowForQuad)

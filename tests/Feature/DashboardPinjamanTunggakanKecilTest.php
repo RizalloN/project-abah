@@ -31,6 +31,10 @@ beforeEach(function () {
         $table->string('cabang1')->nullable();
         $table->string('unit1')->nullable();
         $table->string('nomor_rekening1')->nullable();
+        $table->string('status_rekening1')->nullable();
+        $table->decimal('baki_debet1', 20, 2)->nullable();
+        $table->integer('kolek')->nullable();
+        $table->integer('umur_tunggakan')->nullable();
         $table->decimal('tunggakan_pokok', 20, 2)->nullable();
         $table->decimal('tunggakan_bunga', 20, 2)->nullable();
         $table->decimal('tunggakan_penalti', 20, 2)->nullable();
@@ -289,6 +293,87 @@ it('excludes zero arrears and includes exactly one hundred thousand', function (
     $response->assertJsonPath('rows.0.total_tunggakan', 180000);
     $response->assertJsonPath('total.current', 2);
     $response->assertJsonPath('total.total_tunggakan', 180000);
+});
+
+it('counts kolek mismatch only for status one or three with positive baki debet', function () {
+    DB::table('daily_loan_dinamis')->insert([
+        [
+            'uniqueid_namareport' => 'mismatch-status-1-positive',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Ponorogo',
+            'unit1' => 'Unit Ponorogo',
+            'nomor_rekening1' => 'KTS-001',
+            'status_rekening1' => '1',
+            'baki_debet1' => 100,
+            'kolek' => 3,
+            'umur_tunggakan' => 10,
+        ],
+        [
+            'uniqueid_namareport' => 'mismatch-status-3-positive',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Ponorogo',
+            'unit1' => 'Unit Ponorogo',
+            'nomor_rekening1' => 'KTS-002',
+            'status_rekening1' => '3',
+            'baki_debet1' => 200,
+            'kolek' => 4,
+            'umur_tunggakan' => 10,
+        ],
+        [
+            'uniqueid_namareport' => 'excluded-status-2-positive',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Ponorogo',
+            'unit1' => 'Unit Ponorogo',
+            'nomor_rekening1' => 'KTS-003',
+            'status_rekening1' => '2',
+            'baki_debet1' => 300,
+            'kolek' => 5,
+            'umur_tunggakan' => 10,
+        ],
+        [
+            'uniqueid_namareport' => 'excluded-status-1-zero-baki',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Ponorogo',
+            'unit1' => 'Unit Ponorogo',
+            'nomor_rekening1' => 'KTS-004',
+            'status_rekening1' => '1',
+            'baki_debet1' => 0,
+            'kolek' => 5,
+            'umur_tunggakan' => 10,
+        ],
+        [
+            'uniqueid_namareport' => 'matched-status-1-positive',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Ponorogo',
+            'unit1' => 'Unit Ponorogo',
+            'nomor_rekening1' => 'KTS-005',
+            'status_rekening1' => '1',
+            'baki_debet1' => 400,
+            'kolek' => 2,
+            'umur_tunggakan' => 10,
+        ],
+    ]);
+
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/data?' . http_build_query([
+            'periode' => '2026-04-22',
+            'cabang1' => ['KC Ponorogo'],
+            'refresh' => true,
+        ]));
+
+    $response->assertOk();
+    $response->assertJsonPath('audit.rule', 'kolek_vs_umur_tunggakan_v3');
+    $response->assertJsonPath('audit.scanned_rows', 3);
+    $response->assertJsonPath('audit.matched_rows', 1);
+    $response->assertJsonPath('audit.mismatch_rows', 2);
+    $response->assertJsonPath('audit.total_outstanding_balance', 300);
+    $response->assertJsonPath('summary_rows.0.label', 'Unit Ponorogo');
+    $response->assertJsonPath('summary_rows.0.mismatch_count', 2);
+    $response->assertJsonPath('summary_rows.0.kolek_membaik_count', 2);
+    $response->assertJsonPath('summary_rows.0.outstanding_balance', 300);
 });
 
 it('keeps user selected period and returns zero totals when no data exists on that date', function () {
