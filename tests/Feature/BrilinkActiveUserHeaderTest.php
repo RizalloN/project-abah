@@ -46,7 +46,7 @@ beforeEach(function (): void {
     });
 });
 
-it('returns active brilink user summary from merchants with monthly nominal at least fifty thousand', function (): void {
+it('returns active brilink user table data from merchants with monthly nominal at least fifty thousand', function (): void {
     DB::table('brilink_web_laporan_summary_transaksi_brilink_web')->insert([
         [
             'cabang' => 'KC MADIUN',
@@ -100,6 +100,12 @@ it('returns active brilink user summary from merchants with monthly nominal at l
             'threshold' => 50000,
             'period' => 'May 2026',
             'scope' => 'Cabang terpilih',
+        ])
+        ->and($payload['labels'])->toMatchArray([
+            'active_user_yoy' => '31 May 25',
+            'active_user_ytd' => '31 Dec 25',
+            'active_user_mtd' => '30 Apr 26',
+            'active_user_curr' => '31 May 26',
         ])
         ->and($payload['total']['agen']['curr'])->toBe(3)
         ->and($payload['total']['active_user']['curr'])->toBe(2)

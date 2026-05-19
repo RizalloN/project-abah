@@ -116,37 +116,6 @@
     .val-up { color: #28a745; margin-left: 3px; font-weight: bold; }
     .val-down { color: #dc3545; margin-left: 3px; font-weight: bold; }
 
-    .brilink-active-card {
-        border: 1px solid #dbeafe !important;
-        border-radius: 14px;
-        box-shadow: 0 0.5rem 1rem rgba(15, 23, 42, 0.06) !important;
-    }
-    .brilink-active-icon {
-        width: 46px;
-        height: 46px;
-        border-radius: 12px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: #eaf4ff;
-        color: #00509e;
-        flex: 0 0 auto;
-    }
-    .brilink-active-value {
-        color: #003366;
-        font-size: 1.7rem;
-        line-height: 1.1;
-    }
-    .brilink-active-badge {
-        border: 1px solid #bfdbfe;
-        border-radius: 999px;
-        color: #00509e;
-        background: #f8fbff;
-        font-weight: 700;
-        padding: 0.35rem 0.7rem;
-        white-space: nowrap;
-    }
-    
     .rka-col { background-color: #fff3cd !important; color: #856404 !important; font-weight: 600; border-color: #f6e3a6 !important; }
     .row-total .rka-col { background-color: #003366 !important; color: #ffffff !important; }
     
@@ -252,29 +221,6 @@
     </div>
 </div>
 
-<div class="card border-0 mb-4 brilink-active-card">
-    <div class="card-body py-3">
-        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between">
-            <div class="d-flex align-items-center mb-3 mb-md-0">
-                <span class="brilink-active-icon mr-3">
-                    <i class="fas fa-user-check"></i>
-                </span>
-                <div>
-                    <div class="text-muted text-sm font-weight-bold text-uppercase mb-1">User BRILink Aktif</div>
-                    <div class="d-flex align-items-baseline">
-                        <span id="brilink_active_user_value" class="font-weight-bold brilink-active-value">-</span>
-                        <span class="text-muted ml-2">merchant</span>
-                    </div>
-                    <div id="brilink_active_user_meta" class="text-muted small mt-1">Memuat data...</div>
-                </div>
-            </div>
-            <div id="brilink_active_user_threshold" class="brilink-active-badge">
-                Transaksi >= Rp50 rb/bln
-            </div>
-        </div>
-    </div>
-</div>
-
 <div class="card shadow-sm border-0 mb-4 report-data-card">
     <div class="card-header bg-white p-0 border-bottom-0">
         <ul class="nav nav-tabs report-tabs px-3 pt-2" role="tablist">
@@ -301,6 +247,11 @@
             <li class="nav-item">
                 <a class="nav-link" data-toggle="tab" href="#tab-transaksi" role="tab">
                     <i class="fas fa-exchange-alt mr-1"></i> Transaksi Agen Brilink
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-active-user" role="tab">
+                    <i class="fas fa-user-check mr-1"></i> User BRILink Aktif
                 </a>
             </li>
             <li class="nav-item">
@@ -453,6 +404,28 @@
                 </div>
             </div>
 
+            <div class="tab-pane fade" id="tab-active-user" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-report brilink-no-hover m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
+                                <th colspan="4" class="bg-brilink-mid">User BRILink Aktif <br><small>Transaksi &gt;= Rp50 rb/bulan</small></th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th class="lbl-active-yoy">YoY</th>
+                                <th class="lbl-active-ytd">YtD</th>
+                                <th class="lbl-active-mtd">MtD</th>
+                                <th class="lbl-active-curr text-primary">Periode Terpilih</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-active-user">
+                            <tr><td colspan="5" class="text-center py-5 text-muted">Memuat data User BRILink Aktif...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="tab-pane fade" id="tab-casa" role="tabpanel">
                 <div class="table-container">
                     <table class="table table-report brilink-no-hover m-0">
@@ -527,23 +500,6 @@ document.addEventListener('DOMContentLoaded', function () {
         return isNaN(val) ? 0 : val;
     }
 
-    function updateActiveUserCard(summary) {
-        if (!summary) {
-            $('#brilink_active_user_value').text('-');
-            $('#brilink_active_user_meta').text('Data belum tersedia');
-            $('#brilink_active_user_threshold').text('Transaksi >= Rp50 rb/bln');
-            return;
-        }
-
-        const threshold = safeNum(summary.threshold || 50000);
-        const thresholdText = threshold >= 1000
-            ? `Rp${formatNum(threshold / 1000)} rb/bln`
-            : `Rp${formatNum(threshold)}/bln`;
-        $('#brilink_active_user_value').text(formatNum(summary.count));
-        $('#brilink_active_user_meta').text(`${summary.scope || 'Area 6'} - ${summary.period || 'periode aktif'}`);
-        $('#brilink_active_user_threshold').text(`Transaksi >= ${thresholdText}`);
-    }
-
     function calcPrev(curr, diff) {
         return safeNum(curr) - safeNum(diff);
     }
@@ -552,6 +508,23 @@ document.addEventListener('DOMContentLoaded', function () {
         base = safeNum(base);
         if (base === 0) return null;
         return (safeNum(diff) / base) * 100;
+    }
+
+    function renderActiveUserRow(label, metric, isTotal = false) {
+        const curr = safeNum(metric.curr);
+        const prev = calcPrev(metric.curr, metric.mtd);
+        const dec = calcPrev(metric.curr, metric.ytd);
+        const yoyPrev = calcPrev(metric.curr, metric.yoy);
+        const rowClass = isTotal ? ' class="row-total"' : '';
+        const labelClass = isTotal ? 'text-left' : 'text-left font-weight-bold text-dark';
+
+        return `<tr${rowClass}>
+            <td class="${labelClass}">${label}</td>
+            <td>${formatNum(yoyPrev)}</td>
+            <td>${formatNum(dec)}</td>
+            <td>${formatNum(prev)}</td>
+            <td class="font-weight-bold">${formatNum(curr)}</td>
+        </tr>`;
     }
 
     function renderMetricRow(label, metric, isMilyar = false, includeRka = false) {
@@ -803,25 +776,30 @@ document.addEventListener('DOMContentLoaded', function () {
                         $('.lbl-casa-dec').text(res.labels.casa_dec);
                         $('.lbl-casa-prev').text(res.labels.casa_prev);
                         $('.lbl-casa-end').text(res.labels.casa_end);
+                        $('.lbl-active-yoy').text(res.labels.active_user_yoy || 'YoY');
+                        $('.lbl-active-ytd').text(res.labels.active_user_ytd || 'YtD');
+                        $('.lbl-active-mtd').text(res.labels.active_user_mtd || 'MtD');
+                        $('.lbl-active-curr').text(res.labels.active_user_curr || 'Periode Terpilih');
 
                         if (filterPosisiRka) {
                             filterPosisiRka.value = res.labels.rka || '--------';
                         }
                     }
                     updateGroupLabel(res.group_label);
-                    updateActiveUserCard(res.active_user_summary);
 
                     let html = '';
                     let htmlAgenUser = '';
                     let htmlJuragan = '';
                     let htmlBep = '';
                     let htmlTrx = '';
+                    let htmlActiveUser = '';
                     let htmlCasa = '';
 
                     res.data.forEach((row) => {
                         htmlAgenUser += renderMetricRow(row.branch, row.agen);
                         htmlJuragan += renderMetricRow(row.branch, row.juragan, false, true);
                         htmlBep += renderMetricRow(row.branch, row.bep, false, true);
+                        htmlActiveUser += renderActiveUserRow(row.branch, row.active_user || { curr: 0, mtd: 0, ytd: 0, yoy: 0 });
                         htmlCasa += renderCasaRow(row.branch, row.casa || { curr: 0, mtd: 0, ytd: 0, yoy: 0 });
 
                         const trxDec = calcPrev(row.trx.curr, row.trx.ytd);
@@ -877,6 +855,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         htmlAgenUser += renderMetricTotalRow(total.branch, total.agen);
                         htmlJuragan += renderMetricTotalRow(total.branch, total.juragan, false, true);
                         htmlBep += renderMetricTotalRow(total.branch, total.bep, false, true);
+                        htmlActiveUser += renderActiveUserRow(total.branch, total.active_user || { curr: 0, mtd: 0, ytd: 0, yoy: 0 }, true);
                         htmlCasa += renderCasaTotalRow(total.branch, total.casa || { curr: 0, mtd: 0, ytd: 0, yoy: 0 });
 
                         const totalTrxDec = calcPrev(total.trx.curr, total.trx.ytd);
@@ -932,6 +911,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     $('#tbody-juragan').html(htmlJuragan);
                     $('#tbody-bep-detail').html(htmlBep);
                     $('#tbody-transaksi').html(htmlTrx);
+                    $('#tbody-active-user').html(htmlActiveUser);
                     $('#tbody-casa').html(htmlCasa);
                     $('.lbl-casa-curr').text(res.labels?.casa_curr || res.labels?.curr || 'Curr');
                     $('.lbl-casa-dec').text(res.labels?.casa_dec || "Des'25");
@@ -943,8 +923,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     $('#tbody-juragan').html(`<tr><td colspan="13" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                     $('#tbody-bep-detail').html(`<tr><td colspan="13" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                     $('#tbody-transaksi').html(`<tr><td colspan="6" class="text-center text-danger py-5">${res.msg}</td></tr>`);
+                    $('#tbody-active-user').html(`<tr><td colspan="5" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                     $('#tbody-casa').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
-                    updateActiveUserCard(null);
                 }
             },
             error: function(err) {
@@ -956,8 +936,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 $('#tbody-juragan').html('<tr><td colspan="13" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
                 $('#tbody-bep-detail').html('<tr><td colspan="13" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
                 $('#tbody-transaksi').html('<tr><td colspan="6" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
+                $('#tbody-active-user').html('<tr><td colspan="5" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
                 $('#tbody-casa').html('<tr><td colspan="11" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
-                updateActiveUserCard(null);
             },
             complete: function() {
                 // Memindahkan fadeOut ke blok complete agar tetap tereksekusi baik sukses maupun gagal

@@ -1437,7 +1437,10 @@
             refreshImportTimeInfo();
         }
 
+        let importSubmitInProgress = false;
+
         function resetImportButton() {
+            importSubmitInProgress = false;
             const submitBtn = document.getElementById('btnSubmitImport');
             if (submitBtn) {
                 submitBtn.disabled = false;
@@ -1466,11 +1469,18 @@
         document.getElementById('importForm').addEventListener('submit', async function (e) {
             e.preventDefault();
 
+            if (importSubmitInProgress) {
+                return;
+            }
+
+            importSubmitInProgress = true;
+
             const form = this;
             const submitBtn = document.getElementById('btnSubmitImport');
             const csrfToken = document.querySelector('input[name="_token"]').value;
             const initUrl = form.dataset.initUrl;
             const streamUrlBase = form.dataset.streamUrl;
+            const allowForceStart = !String(streamUrlBase || '').includes('/import-csv/simpanan-multipn/stream');
 
             if (submitBtn) {
                 submitBtn.disabled = true;
@@ -1823,6 +1833,10 @@
                 };
 
                 const shouldForceStartQueuedJob = function (statusPayload) {
+                    if (!allowForceStart) {
+                        return false;
+                    }
+
                     if (!statusPayload || String(statusPayload.status || '') !== 'queued') {
                         return false;
                     }

@@ -639,67 +639,14 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $absolutePath = (string) ($eligibility['absolute_path'] ?? '');
         $totalRows = (int) ($eligibility['total_rows'] ?? 0);
 
-        // Calculate file fingerprint using centralized duplicate guard service
-        $guard = app(ImportDuplicateGuardService::class);
-        $contentHash = '';
-        try {
-            $contentHash = $guard->fingerprint($absolutePath);
-            Log::debug('Simpanan MultiPN: Content fingerprint calculated', [
-                'job_id' => $jobId,
-                'content_hash' => $contentHash,
-                'file_size' => @filesize($absolutePath),
-            ]);
-        } catch (\Throwable $e) {
-            Log::warning('Simpanan MultiPN: Fingerprint calculation failed (continuing): ' . $e->getMessage(), [
-                'job_id' => $jobId,
-                'file' => basename($absolutePath),
-            ]);
-        }
-
-        // Layer A: cross-report duplicate file check + process-safe MySQL advisory lock
-        $advisoryLockName = null;
-        if ($contentHash !== '') {
-            try {
-                $this->storeSimpananMultiPnJobMetadata($jobId, [
-                    'content_hash' => $contentHash,
-                    'table_name' => 'simpanan_multipn',
-                ]);
-                $guard->assertFileNotImportedAnywhere($contentHash, $jobId > 0 ? $jobId : 0);
-                $advisoryLockName = $guard->acquireAdvisoryLock('simpanan_multipn', ['content' => $contentHash]);
-                Log::info('Simpanan MultiPN: Advisory lock acquired', [
-                    'job_id' => $jobId,
-                    'content_hash' => $contentHash,
-                ]);
-            } catch (\RuntimeException $e) {
-                return response()->stream(function () use ($jobId, $e) {
-                    echo "event: error\n";
-                    echo 'data: ' . json_encode(['message' => $e->getMessage()]) . "\n\n";
-                    if (ob_get_level() > 0) {
-                        ob_flush();
-                    }
-                    flush();
-                    if ($jobId > 0) {
-                        $this->updateImportJobStatusSafely($jobId, [
-                            'status' => 'failed',
-                            'updated_at' => now(),
-                        ]);
-                        $this->progressService()->markFailed($jobId, $e->getMessage());
-                    }
-                }, 200, [
-                    'Content-Type' => 'text/event-stream',
-                    'Cache-Control' => 'no-cache, no-store',
-                    'X-Accel-Buffering' => 'no',
-                    'Connection' => 'keep-alive',
-                ]);
-            }
-        }
-
         request()->session()->save();
 
-        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns, $activeFilters, $params, $contentHash, $advisoryLockName) {
+        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns, $activeFilters, $params) {
             $streamLock = null;
             $slotLockNames = [];
             $cleanupPaths = [];
+            $contentHash = '';
+            $advisoryLockName = null;
             $usePolarsStage = !empty($activeFilters);
             $send = function (string $event, array $data) use ($jobId, $totalRows) {
                 if ($jobId > 0 && $event === 'progress' && !$this->isImportTerminationRequested($jobId)) {
@@ -818,6 +765,49 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 if (!file_exists($absolutePath)) {
                     $send('error', ['message' => 'File CSV Simpanan MultiPN tidak ditemukan di server.']);
                     return;
+                }
+
+                // Layer A runs after the per-job stream lock, so duplicate SSE
+                // connections for the same job only attach to progress polling.
+                $guard = app(ImportDuplicateGuardService::class);
+                try {
+                    $contentHash = $guard->fingerprint($absolutePath);
+                    Log::debug('Simpanan MultiPN: Content fingerprint calculated', [
+                        'job_id' => $jobId,
+                        'content_hash' => $contentHash,
+                        'file_size' => @filesize($absolutePath),
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::warning('Simpanan MultiPN: Fingerprint calculation failed (continuing): ' . $e->getMessage(), [
+                        'job_id' => $jobId,
+                        'file' => basename($absolutePath),
+                    ]);
+                }
+
+                if ($contentHash !== '') {
+                    try {
+                        $this->storeSimpananMultiPnJobMetadata($jobId, [
+                            'content_hash' => $contentHash,
+                            'table_name' => 'simpanan_multipn',
+                        ]);
+                        $guard->assertFileNotImportedAnywhere($contentHash, $jobId > 0 ? $jobId : 0);
+                        $advisoryLockName = $guard->acquireAdvisoryLock('simpanan_multipn', ['content' => $contentHash]);
+                        Log::info('Simpanan MultiPN: Advisory lock acquired', [
+                            'job_id' => $jobId,
+                            'content_hash' => $contentHash,
+                        ]);
+                    } catch (\RuntimeException $e) {
+                        if ($jobId > 0) {
+                            $this->updateImportJobStatusSafely($jobId, [
+                                'status' => 'failed',
+                                'updated_at' => now(),
+                            ]);
+                            $this->progressService()->markFailed($jobId, $e->getMessage());
+                        }
+
+                        $send('error', ['message' => $e->getMessage()]);
+                        return;
+                    }
                 }
 
                 try {
