@@ -5,11 +5,13 @@ namespace App\Support;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 class DashboardDanaService
 {
     private const TABLE = 'ssa_simpanan';
+    private const HARIAN_SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
     private const AREA_6_BRANCHES = [
         'KC Madiun',
         'KC Magetan',
@@ -31,6 +33,11 @@ class DashboardDanaService
         }
 
         $periods = $this->calculatePeriodReferences($selectedPeriod);
+        $snapshotData = $this->getDashboardDataFromHarianSnapshot($selectedPeriod, $category, $rkaPeriod, $periods);
+        if ($snapshotData !== null) {
+            return $snapshotData;
+        }
+
         $allPeriodValues = array_filter($periods);
         
         // Fetch data for all required periods in one go
@@ -135,6 +142,180 @@ class DashboardDanaService
         ];
     }
 
+    protected function getDashboardDataFromHarianSnapshot(?string $selectedPeriod, ?string $category, ?string $rkaPeriod = null, ?array $periods = null): ?array
+    {
+        if (!$selectedPeriod || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return null;
+        }
+
+        $periods ??= $this->calculatePeriodReferences($selectedPeriod);
+        $periodValues = array_values(array_unique(array_filter($periods)));
+        if ($periodValues === []) {
+            return null;
+        }
+
+        $availableCount = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->whereIn('snapshot_period', $periodValues)
+            ->whereIn('kanca_label', self::AREA_6_BRANCHES)
+            ->whereColumn('kanca_key', 'unit_key')
+            ->distinct()
+            ->count('snapshot_period');
+
+        if ($availableCount < count($periodValues)) {
+            return null;
+        }
+
+        $records = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->whereIn('snapshot_period', $periodValues)
+            ->whereIn('kanca_label', self::AREA_6_BRANCHES)
+            ->whereColumn('kanca_key', 'unit_key')
+            ->orderBy('snapshot_period')
+            ->get();
+
+        $dataMatrix = [];
+        $branches = [];
+        $normalizedCategory = $this->normalizeDanaCategory($category);
+
+        foreach ($records as $record) {
+            $branch = (string) $record->kanca_label;
+            $period = (string) $record->snapshot_period;
+
+            $dataMatrix[$branch][$period] = $this->mapHarianSnapshotSavingsValues($record, $normalizedCategory);
+            if (!in_array($branch, $branches, true)) {
+                $branches[] = $branch;
+            }
+        }
+
+        $branches = array_values(array_filter(
+            self::AREA_6_BRANCHES,
+            fn (string $branch): bool => in_array($branch, $branches, true)
+        ));
+
+        return $this->buildDashboardResponseFromMatrix(
+            $dataMatrix,
+            $branches,
+            $periods,
+            $rkaPeriod ?? $selectedPeriod,
+            $category
+        );
+    }
+
+    protected function buildDashboardResponseFromMatrix(
+        array $dataMatrix,
+        array $branches,
+        array $periods,
+        string $rkaPeriod,
+        ?string $category
+    ): array {
+        $rkaData = $this->loadRkaData($rkaPeriod, $category);
+        $formattedRows = [];
+        $no = 1;
+
+        foreach ($branches as $branch) {
+            $normalizedBranch = $this->normalizeBranchName($branch);
+
+            $branchTotalRow = [
+                'no' => $no++,
+                'nama_cabang' => $normalizedBranch,
+                'kategori' => 'TOTAL CABANG',
+                'is_total' => true,
+            ];
+
+            foreach ($periods as $pKey => $pDate) {
+                $branchTotalRow[$pKey] = $this->getVal($dataMatrix, $branch, $pDate, 'TOTAL');
+            }
+
+            $branchTotalRow['delta_ytd'] = $branchTotalRow['selected'] - ($branchTotalRow['ytd'] ?? 0);
+            $branchTotalRow['delta_mtd'] = $branchTotalRow['selected'] - ($branchTotalRow['mtd'] ?? 0);
+
+            $rkaTotal = $this->getRkaVal($rkaData, $branch, 'Giro')
+                + $this->getRkaVal($rkaData, $branch, 'Tabungan')
+                + $this->getRkaVal($rkaData, $branch, 'Deposito');
+
+            $branchTotalRow['rka_rp'] = $branchTotalRow['selected'] - $rkaTotal;
+            $branchTotalRow['rka_pct'] = $rkaTotal > 0 ? ($branchTotalRow['selected'] / $rkaTotal) * 100 : 0;
+
+            $formattedRows[] = $branchTotalRow;
+
+            foreach (['Giro', 'Tabungan', 'Deposito', 'CASA'] as $kategori) {
+                $row = [
+                    'no' => '',
+                    'nama_cabang' => $normalizedBranch,
+                    'kategori' => $kategori,
+                    'is_total' => false,
+                ];
+
+                foreach ($periods as $pKey => $pDate) {
+                    $row[$pKey] = $this->getVal($dataMatrix, $branch, $pDate, $kategori);
+                }
+
+                $selectedVal = $row['selected'] ?? 0;
+                $row['delta_ytd'] = $selectedVal - ($row['ytd'] ?? 0);
+                $row['delta_mtd'] = $selectedVal - ($row['mtd'] ?? 0);
+
+                $rkaVal = $this->getRkaVal($rkaData, $branch, $kategori);
+                $row['rka_rp'] = $selectedVal - $rkaVal;
+                $row['rka_pct'] = $rkaVal > 0 ? ($selectedVal / $rkaVal) * 100 : 0;
+
+                $formattedRows[] = $row;
+            }
+        }
+
+        return [
+            'rows' => $formattedRows,
+            'total' => $this->calculateGrandTotals($formattedRows),
+            'header_dates' => [
+                'selected' => $this->formatDateLabel($periods['selected']),
+                'ytd' => $this->formatDateLabel($periods['ytd']),
+                'mtd' => $this->formatDateLabel($periods['mtd']),
+            ],
+            'source_table' => self::HARIAN_SNAPSHOT_TABLE,
+        ];
+    }
+
+    private function mapHarianSnapshotSavingsValues(object $record, ?string $category): array
+    {
+        $suffixes = $category ? [$category] : ['ritel', 'mikro', 'wholesale'];
+
+        $sum = function (string $prefix) use ($record, $suffixes): float {
+            $total = 0.0;
+            foreach ($suffixes as $suffix) {
+                $column = "{$prefix}_{$suffix}";
+                $total += (float) ($record->{$column} ?? 0);
+            }
+            return $total;
+        };
+
+        $giro = $sum('giro');
+        $tabungan = $sum('tabungan');
+        $deposito = $sum('deposito');
+        $componentTotal = $giro + $tabungan + $deposito;
+
+        $total = $category
+            ? $componentTotal
+            : max((float) ($record->total_simpanan ?? 0), $componentTotal);
+
+        return [
+            'TOTAL' => $total,
+            'Giro' => $giro,
+            'Tabungan' => $tabungan,
+            'Deposito' => $deposito,
+            'CASA' => $giro + $tabungan,
+        ];
+    }
+
+    private function normalizeDanaCategory(?string $category): ?string
+    {
+        $normalized = strtolower(trim((string) $category));
+
+        return match ($normalized) {
+            'ritel' => 'ritel',
+            'mikro', 'micro' => 'mikro',
+            'wholesale' => 'wholesale',
+            default => null,
+        };
+    }
+
     protected function normalizeBranchName(string $name): string
     {
         $normalized = strtoupper(trim($name));
@@ -156,6 +337,10 @@ class DashboardDanaService
     {
         if (!$period || !isset($matrix[$branch][$period])) return 0;
 
+        if ($kategori === 'TOTAL') {
+            return $matrix[$branch][$period]['TOTAL'] ?? 0;
+        }
+
         if ($kategori === 'CASA') {
             return ($matrix[$branch][$period]['Giro'] ?? 0) + ($matrix[$branch][$period]['Tabungan'] ?? 0);
         }
@@ -172,15 +357,11 @@ class DashboardDanaService
             $ytdTarget = $selectedDate->copy()->subYear()->endOfYear()->format('Y-m-d');
             $mtdTarget = $selectedDate->copy()->subMonth()->endOfMonth()->format('Y-m-d');
             
-            // Dashboard Dana reads balances from ssa_simpanan, so comparison
-            // dates must exist in that same source table.
-            $ytdSimpanan = DB::table('ssa_simpanan')
-                ->where('Month_Day_Year_of_Posisi', '<=', $ytdTarget)
-                ->max('Month_Day_Year_of_Posisi');
-                
-            $mtdSimpanan = DB::table('ssa_simpanan')
-                ->where('Month_Day_Year_of_Posisi', '<=', $mtdTarget)
-                ->max('Month_Day_Year_of_Posisi');
+            $ytdSimpanan = $this->resolveHarianSnapshotPeriodOnOrBefore($ytdTarget)
+                ?? DB::table('ssa_simpanan')->where('Month_Day_Year_of_Posisi', '<=', $ytdTarget)->max('Month_Day_Year_of_Posisi');
+
+            $mtdSimpanan = $this->resolveHarianSnapshotPeriodOnOrBefore($mtdTarget)
+                ?? DB::table('ssa_simpanan')->where('Month_Day_Year_of_Posisi', '<=', $mtdTarget)->max('Month_Day_Year_of_Posisi');
 
             return [
                 'selected' => $selectedPeriod,
@@ -190,6 +371,21 @@ class DashboardDanaService
         } catch (Throwable) {
             return ['selected' => $selectedPeriod, 'mtd' => null, 'ytd' => null];
         }
+    }
+
+    private function resolveHarianSnapshotPeriodOnOrBefore(string $targetPeriod): ?string
+    {
+        if (!Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return null;
+        }
+
+        $period = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->where('snapshot_period', '<=', $targetPeriod)
+            ->whereIn('kanca_label', self::AREA_6_BRANCHES)
+            ->whereColumn('kanca_key', 'unit_key')
+            ->max('snapshot_period');
+
+        return $period ? Carbon::parse($period)->toDateString() : null;
     }
 
     protected function formatDateLabel(?string $date): string
@@ -204,6 +400,14 @@ class DashboardDanaService
 
     protected function loadRkaData(string $period, ?string $category): array
     {
+        if (!Schema::hasTable('rka')) {
+            return [
+                'Giro' => [],
+                'Tabungan' => [],
+                'Deposito' => [],
+            ];
+        }
+
         $service = app(RkaLookupService::class);
 
         // Parse the RKA period - could be "2026" (year) or "2026-04" (year-month) or a date string
@@ -223,8 +427,16 @@ class DashboardDanaService
             }
         }
 
-        // Verify year is available
-        $availableYears = $service->availableYears();
+        try {
+            $availableYears = $service->availableYears();
+        } catch (Throwable) {
+            return [
+                'Giro' => [],
+                'Tabungan' => [],
+                'Deposito' => [],
+            ];
+        }
+
         if (!in_array($year, $availableYears)) {
             $year = !empty($availableYears) ? max($availableYears) : null;
         }
@@ -341,9 +553,7 @@ class DashboardDanaService
         ];
 
         foreach ($rows as $row) {
-            // Only aggregate individual categories (not CASA and not branch totals) 
-            // to avoid double/triple counting for the final grand total
-            if ($row['is_total'] === false && !in_array($row['kategori'], ['CASA', 'TOTAL CABANG'])) {
+            if ($row['is_total'] === true) {
                 $grandTotal['selected'] += $row['selected'];
                 $grandTotal['ytd'] += $row['ytd'];
                 $grandTotal['mtd'] += $row['mtd'];
@@ -362,6 +572,21 @@ class DashboardDanaService
 
     public function fetchPeriods(): Collection
     {
+        if (Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            $periods = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+                ->whereIn('kanca_label', self::AREA_6_BRANCHES)
+                ->whereColumn('kanca_key', 'unit_key')
+                ->select('snapshot_period')
+                ->distinct()
+                ->orderByDesc('snapshot_period')
+                ->pluck('snapshot_period')
+                ->map(fn ($period) => Carbon::parse($period)->toDateString());
+
+            if ($periods->isNotEmpty()) {
+                return $periods;
+            }
+        }
+
         return DB::table(self::TABLE)
             ->select('Month_Day_Year_of_Posisi')
             ->distinct()
@@ -371,6 +596,10 @@ class DashboardDanaService
 
     public function fetchCategories(): array
     {
+        if (Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return ['Ritel', 'Mikro', 'Wholesale'];
+        }
+
         return DB::table(self::TABLE)
             ->select('segmentasi')
             ->distinct()

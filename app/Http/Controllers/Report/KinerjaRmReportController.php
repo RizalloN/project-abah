@@ -367,9 +367,12 @@ class KinerjaRmReportController extends Controller
         $cacheKey = 'kinerja_rm_periods_v4:' . $this->reportCacheVersion();
 
         return Cache::remember($cacheKey, 600, function () {
-            return $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode')
+            $periods = $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode')
                 ->merge($this->fetchPeriodList(self::SOURCE_TABLE, 'periode'))
                 ->unique()
+                ->values();
+
+            return $this->latestPeriodPerMonth($periods)
                 ->sortDesc()
                 ->values();
         });
@@ -415,13 +418,31 @@ class KinerjaRmReportController extends Controller
         $target = $this->normalizeDate($requestedPeriod);
 
         if ($target !== null) {
-            $match = $this->resolveClosestPeriod($periods, Carbon::parse($target));
+            $targetDate = Carbon::parse($target);
+            $match = $this->resolveClosestPeriodInMonth($periods, $targetDate)
+                ?? $this->resolveClosestPeriod($periods, $targetDate);
             if ($match !== null) {
                 return $match;
             }
         }
 
         return $periods->first();
+    }
+
+    private function latestPeriodPerMonth(Collection $periods): Collection
+    {
+        $latestByMonth = $periods
+            ->map(fn ($period) => $this->normalizeDate((string) $period))
+            ->filter()
+            ->sort()
+            ->values()
+            ->reduce(function (array $latestByMonth, string $period): array {
+                $latestByMonth[substr($period, 0, 7)] = $period;
+
+                return $latestByMonth;
+            }, []);
+
+        return collect($latestByMonth)->values();
     }
 
     private function resolveSelectedSegmen(?string $requestedSegmen): string

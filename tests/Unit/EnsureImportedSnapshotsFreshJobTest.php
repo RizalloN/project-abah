@@ -153,6 +153,64 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         ));
     }
 
+    public function test_daily_loan_freshness_rebuilds_fresh_snapshot_when_duplicate_identity_exists(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-05-06',
+            'baki_debet1' => 1000,
+            'created_at' => '2026-05-08 10:00:00',
+            'updated_at' => '2026-05-08 10:00:00',
+        ]);
+
+        DB::table('dashboard_pinjaman_snapshots')->insert([
+            $this->snapshotRow('periode', '2026-05-06', '2026-05-08 11:00:00') + [
+                'account_number' => 'LOAN-1',
+                'segmen_dashboard' => 'SMALL',
+                'produk_dashboard' => 'KUPEDES',
+                'cabang1' => 'KC PONOROGO',
+                'unit1' => 'UNIT 1',
+            ],
+            $this->snapshotRow('periode', '2026-05-06', '2026-05-08 11:00:00') + [
+                'account_number' => 'LOAN-1',
+                'segmen_dashboard' => 'SMALL',
+                'produk_dashboard' => 'KUPEDES',
+                'cabang1' => 'KC PONOROGO',
+                'unit1' => 'UNIT 1',
+            ],
+        ]);
+        DB::table('dashboard_pinjaman_chart_periodik_snapshots')->insert($this->snapshotRow('periode', '2026-05-06', '2026-05-08 11:00:00'));
+        DB::table('performance_rm_snapshots')->insert($this->snapshotRow('periode', '2026-05-06', '2026-05-08 11:00:00'));
+        DB::table('rasio_casa_debitur_snapshots')->insert($this->snapshotRow('loan_period', '2026-05-06', '2026-05-08 11:00:00'));
+
+        $metadata = $this->sourceSignatures->capture('daily_loan_dinamis', 'periode', '2026-05-06');
+        $this->markFresh('daily_loan_dinamis', 'dashboard_pinjaman_snapshots', '2026-05-06', $metadata);
+        $this->markFresh('daily_loan_dinamis', 'dashboard_pinjaman_chart_periodik_snapshots', '2026-05-06', $metadata);
+        $this->markFresh('daily_loan_dinamis', 'performance_rm_snapshots', '2026-05-06', $metadata);
+        $this->markFresh('daily_loan_dinamis', 'rasio_casa_debitur_snapshots', '2026-05-06', $metadata);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $builder->shouldReceive('rebuildDashboard')
+            ->once()
+            ->with('2026-05-06', false)
+            ->andReturn(['2026-05-06' => 2]);
+        $builder->shouldNotReceive('rebuildChartPeriodik');
+        $builder->shouldNotReceive('rebuildPerformanceRm');
+        $builder->shouldNotReceive('rebuildRasioCasa');
+
+        $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
+        $dashboardHarian->shouldNotReceive('rebuild');
+
+        (new EnsureImportedSnapshotsFreshJob('daily_loan_dinamis', '2026-05-06', 'unit-test'))
+            ->handle($builder, $dashboardHarian, $this->sourceSignatures);
+
+        $this->assertTrue($this->sourceSignatures->isFresh(
+            'daily_loan_dinamis',
+            'dashboard_pinjaman_snapshots',
+            '2026-05-06',
+            $metadata
+        ));
+    }
+
     public function test_simpanan_existing_snapshots_rebuild_when_source_signature_changes(): void
     {
         $this->insertReadySimpananRows('2026-05-06', 1000);
@@ -297,6 +355,62 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         ));
     }
 
+    public function test_l1133_import_checks_affected_dashboard_harian_periods(): void
+    {
+        DB::table('l1133')->insert([
+            'periode' => '2026-05-12',
+            'outstanding' => 1000,
+            'created_at' => '2026-05-12 10:00:00',
+            'updated_at' => '2026-05-12 10:00:00',
+        ]);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
+        $dashboardHarian->shouldReceive('resolveAffectedSnapshotPeriodsForLoanFallback')
+            ->once()
+            ->with('l1133', '2026-05-12')
+            ->andReturn(['2026-05-12', '2026-05-13', '2026-05-16']);
+        $dashboardHarian->shouldReceive('syncDuePeriods')
+            ->once()
+            ->with(['2026-05-12', '2026-05-13', '2026-05-16'])
+            ->andReturn(['built' => 2, 'failed' => 0, 'missing' => [], 'stale' => ['2026-05-13'], 'checked' => 3]);
+
+        Cache::put('report_cache_version:pinjaman', 3, now()->addHours(24));
+
+        (new EnsureImportedSnapshotsFreshJob('l1133', '2026-05-12', 'unit-test'))
+            ->handle($builder, $dashboardHarian, $this->sourceSignatures);
+
+        $this->assertSame(4, (int) Cache::get('report_cache_version:pinjaman'));
+    }
+
+    public function test_dly_kap_import_checks_exact_dashboard_harian_period(): void
+    {
+        DB::table('dly_kap_resegmentasi')->insert([
+            'periode' => '2026-05-16',
+            'tl_rp' => 1000,
+            'created_at' => '2026-05-16 10:00:00',
+            'updated_at' => '2026-05-16 10:00:00',
+        ]);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
+        $dashboardHarian->shouldReceive('resolveAffectedSnapshotPeriodsForLoanFallback')
+            ->once()
+            ->with('dly_kap_resegmentasi', '2026-05-16')
+            ->andReturn(['2026-05-16']);
+        $dashboardHarian->shouldReceive('syncDuePeriods')
+            ->once()
+            ->with(['2026-05-16'])
+            ->andReturn(['built' => 1, 'failed' => 0, 'missing' => [], 'stale' => ['2026-05-16'], 'checked' => 1]);
+
+        Cache::put('report_cache_version:pinjaman', 7, now()->addHours(24));
+
+        (new EnsureImportedSnapshotsFreshJob('dly_kap_resegmentasi', '2026-05-16', 'unit-test'))
+            ->handle($builder, $dashboardHarian, $this->sourceSignatures);
+
+        $this->assertSame(8, (int) Cache::get('report_cache_version:pinjaman'));
+    }
+
     private function createTables(): void
     {
         Schema::create('snapshot_source_signatures', function (Blueprint $table) {
@@ -349,6 +463,20 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('dly_kap_resegmentasi', function (Blueprint $table) {
+            $table->id();
+            $table->date('periode');
+            $table->decimal('tl_rp', 20, 2)->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('l1133', function (Blueprint $table) {
+            $table->id();
+            $table->date('periode');
+            $table->decimal('outstanding', 20, 2)->nullable();
+            $table->timestamps();
+        });
+
         foreach ([
             'dashboard_pinjaman_snapshots' => 'periode',
             'dashboard_pinjaman_chart_periodik_snapshots' => 'periode',
@@ -371,6 +499,14 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
                 $table->date('casa_period')->nullable();
             });
         }
+
+        Schema::table('dashboard_pinjaman_snapshots', function (Blueprint $table) {
+            $table->string('account_number')->nullable();
+            $table->string('segmen_dashboard')->nullable();
+            $table->string('produk_dashboard')->nullable();
+            $table->string('cabang1')->nullable();
+            $table->string('unit1')->nullable();
+        });
     }
 
     private function insertReadySimpananRows(string $period, int $saldo): void

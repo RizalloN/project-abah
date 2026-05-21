@@ -28,6 +28,12 @@ class DashboardPinjamanReportController extends Controller
 {
     private const PH_TABLE = 'lw325_ph';
     private const SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
+    private const KREDIT_AREA_6_BRANCHES = [
+        'KC Madiun',
+        'KC Magetan',
+        'KC Ngawi',
+        'KC Ponorogo',
+    ];
     private const LOAN_REKENING_INDEX = 'idx_dld_periode_rekening';
     private const LOAN_FILTER_INDEX = 'idx_dld_periode_segmen_produk_cabang_unit';
     private const LOAN_CABANG_UNIT_INDEX = 'idx_dld_periode_cabang_unit';
@@ -112,11 +118,14 @@ class DashboardPinjamanReportController extends Controller
         $periods = $this->fetchKreditPeriods();
         $selectedPeriod = $this->resolveKreditEffectivePeriod($request->input('periode'));
         $selectedCategory = $request->input('kategori', 'SME');
+        $selectedKanca = $this->resolveKreditBranch($request->input('kanca'));
 
         return view('report.dashboard-pinjaman.kredit', [
             'periods' => $periods,
             'selectedPeriod' => $selectedPeriod,
             'selectedCategory' => $selectedCategory,
+            'selectedKanca' => $selectedKanca,
+            'kancaOptions' => $this->kreditBranchOptions(),
             'categories' => ['SME', 'Consumer', 'Mikro'],
         ]);
     }
@@ -127,28 +136,39 @@ class DashboardPinjamanReportController extends Controller
 
         $selectedPeriod = $this->resolveKreditEffectivePeriod($request->input('periode'));
         $selectedCategory = $request->input('kategori', 'SME');
+        $selectedKanca = $this->resolveKreditBranch($request->input('kanca'));
         $forceRefresh = $request->boolean('refresh');
 
         if (!$selectedPeriod) {
             return response()->json([
                 'selected_period' => null,
                 'category' => $selectedCategory,
+                'kanca' => $selectedKanca,
                 'os' => [],
                 'sml' => [],
                 'npl' => [],
             ]);
         }
 
-        $cacheKey = 'dashboard_pinjaman_kredit_unified:v4-rka-kanca-summary-fallback:' . md5(json_encode([
-            'cache_version' => $this->reportCacheVersion(),
+        $kreditService = app(DashboardPinjamanKreditService::class);
+        $periodReferences = $kreditService->calculatePeriodReferences($selectedPeriod);
+
+        $cacheKey = 'dashboard_pinjaman_kredit_unified:v12-quality-rka-direction:' . md5(json_encode([
+            'cache_version' => $this->kreditCacheVersion(),
+            'snapshot_signature' => $this->kreditSnapshotSignature($periodReferences, $selectedKanca),
             'periode' => $selectedPeriod,
             'kategori' => $selectedCategory,
+            'kanca' => $selectedKanca,
         ]));
 
         $data = $this->rememberPayload(
             $cacheKey,
             now()->addMinutes(10),
-            fn () => app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData($selectedPeriod, $selectedCategory),
+            fn () => $kreditService->getUnifiedSegmentData(
+                $selectedPeriod,
+                $selectedCategory,
+                $selectedKanca === 'all' ? null : $selectedKanca
+            ),
             $forceRefresh,
             fn () => [
                 'status' => 'warming',
@@ -161,6 +181,8 @@ class DashboardPinjamanReportController extends Controller
         return response()->json(array_merge([
             'selected_period' => $selectedPeriod,
             'category' => $selectedCategory,
+            'kanca' => $selectedKanca,
+            'kanca_label' => $selectedKanca === 'all' ? 'Area 6' : $selectedKanca,
         ], $data));
     }
 
@@ -432,7 +454,7 @@ class DashboardPinjamanReportController extends Controller
 
     private function fetchKreditPeriods(): Collection
     {
-        $cacheKey = 'dashboard_pinjaman_kredit_periods:v2' . $this->reportCacheVersion();
+        $cacheKey = 'dashboard_pinjaman_kredit_periods:v3:' . $this->kreditCacheVersion();
 
         return Cache::remember($cacheKey, now()->addMinutes(30), function () {
             return DB::table('dashboard_harian_snapshots')
@@ -458,6 +480,87 @@ class DashboardPinjamanReportController extends Controller
 
         $periods = $this->fetchKreditPeriods();
         return $periods->first() ?? null;
+    }
+
+    private function kreditCacheVersion(): int
+    {
+        return ReportCacheVersion::composite(['harian', 'pinjaman', 'simpanan']);
+    }
+
+    private function kreditSnapshotSignature(array $periods, string $selectedKanca): string
+    {
+        if (!Schema::hasTable('dashboard_harian_snapshots')) {
+            return 'missing-table';
+        }
+
+        $periodValues = array_values(array_unique(array_filter(
+            array_map(static fn ($period): string => trim((string) $period), $periods),
+            static fn (string $period): bool => $period !== ''
+        )));
+
+        if ($periodValues === []) {
+            return 'empty-periods';
+        }
+
+        $branches = $selectedKanca === 'all'
+            ? self::KREDIT_AREA_6_BRANCHES
+            : [$selectedKanca];
+
+        $columns = ['snapshot_period', 'kanca_label'];
+        foreach (['kanca_key', 'unit_key', 'source_signature', 'updated_at'] as $column) {
+            if (Schema::hasColumn('dashboard_harian_snapshots', $column)) {
+                $columns[] = $column;
+            }
+        }
+
+        $query = DB::table('dashboard_harian_snapshots')
+            ->whereIn('snapshot_period', $periodValues)
+            ->whereIn('kanca_label', $branches);
+
+        if (
+            Schema::hasColumn('dashboard_harian_snapshots', 'kanca_key')
+            && Schema::hasColumn('dashboard_harian_snapshots', 'unit_key')
+        ) {
+            $query->whereColumn('kanca_key', 'unit_key');
+        }
+
+        $rows = $query
+            ->orderBy('snapshot_period')
+            ->orderBy('kanca_label')
+            ->get($columns)
+            ->map(static fn ($row): array => (array) $row)
+            ->all();
+
+        return sha1(json_encode([
+            'periods' => $periodValues,
+            'branches' => $branches,
+            'rows' => $rows,
+        ]));
+    }
+
+    /**
+     * @return array<int, array{value: string, label: string}>
+     */
+    private function kreditBranchOptions(): array
+    {
+        return array_merge(
+            [['value' => 'all', 'label' => 'Area 6']],
+            array_map(
+                fn (string $branch): array => ['value' => $branch, 'label' => $branch],
+                self::KREDIT_AREA_6_BRANCHES
+            )
+        );
+    }
+
+    private function resolveKreditBranch(mixed $requestedBranch): string
+    {
+        $branch = trim((string) $requestedBranch);
+
+        if ($branch === '' || strtolower($branch) === 'all') {
+            return 'all';
+        }
+
+        return in_array($branch, self::KREDIT_AREA_6_BRANCHES, true) ? $branch : 'all';
     }
 
     private function renderIndex(Request $request, string $mode)

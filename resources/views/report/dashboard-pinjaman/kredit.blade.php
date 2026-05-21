@@ -8,9 +8,10 @@
 <style>
     .loan-filter-modern {
         display: grid;
-        grid-template-columns: repeat(2, 1fr) auto;
+        grid-template-columns: repeat(3, 1fr) auto;
         gap: 1.5rem;
         background: rgba(255, 255, 255, 0.85);
+        -webkit-backdrop-filter: blur(25px);
         backdrop-filter: blur(25px);
         padding: 1.5rem;
         border-radius: 2rem;
@@ -37,8 +38,9 @@
     }
 
     /* Descending z-index for items */
-    .loan-filter-item:nth-child(1) { z-index: 20; }
-    .loan-filter-item:nth-child(2) { z-index: 10; }
+    .loan-filter-item:nth-child(1) { z-index: 30; }
+    .loan-filter-item:nth-child(2) { z-index: 20; }
+    .loan-filter-item:nth-child(3) { z-index: 10; }
 
     .loan-filter-modern .loan-filter-label {
         font-size: 0.75rem;
@@ -103,6 +105,7 @@
         width: 100%;
         min-width: 340px;
         background: rgba(255, 255, 255, 0.98);
+        -webkit-backdrop-filter: blur(25px);
         backdrop-filter: blur(25px);
         border: 1px solid rgba(226, 232, 240, 0.9);
         border-radius: 1.75rem;
@@ -224,7 +227,329 @@
     .select2-container--bootstrap4, .loan-filter-control {
         display: none !important;
     }
-</style>
+
+    #loanDashboardCaptureArea .loan-summary-table-wrap {
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    #loanDashboardCaptureArea .loan-table-container {
+        min-width: 1420px;
+    }
+
+    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+        .loan-filter-modern,
+        .loan-dropdown-menu {
+            background: #ffffff;
+        }
+    }
+
+    @media (max-width: 991.98px) {
+        .loan-filter-modern {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            padding: 1rem;
+            border-radius: 14px;
+        }
+
+        .btn-loan-modern-submit {
+            min-width: 0;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .loan-dashboard {
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+
+        .loan-dropdown-toggle {
+            height: 52px;
+            padding-right: 1rem;
+            font-size: 0.85rem;
+        }
+
+        .loan-dropdown-menu {
+            min-width: 0;
+            border-radius: 14px;
+        }
+
+        .loan-section-header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .loan-section-header .legend-box {
+            margin-left: 0 !important;
+            flex-wrap: wrap;
+        }
+    }
+
+    /* ==========================================
+       EXCEL TABLE AESTHETICS OVERRIDES
+       ========================================== */
+
+    /* Force Zero Border Radius & Remove shadows globally for an authentic Excel sheet look */
+    .loan-shell, 
+    .loan-table-shell, 
+    .loan-summary-table-wrap, 
+    .loan-summary-table, 
+    .loan-summary-table th, 
+    .loan-summary-table td,
+    .loan-filter-modern,
+    .loan-dropdown-toggle,
+    .loan-dropdown-menu,
+    .loan-dropdown-option,
+    .btn-loan-modern-submit,
+    .pct-data-bar-wrap,
+    .pct-data-bar,
+    .btn-capture-all,
+    .btn-snapshot,
+    .loan-section-header {
+        border-radius: 0 !important;
+        box-shadow: none !important;
+    }
+
+    /* Remove top decorative linear gradient line for flat sheet look */
+    .loan-shell::before, 
+    .loan-table-shell::before {
+        display: none !important;
+    }
+
+    /* Crisp Grid Container & Excel Tables */
+    .loan-summary-table-wrap {
+        border: 1px solid #94a3b8 !important;
+        margin-bottom: 2rem !important;
+        background-color: #ffffff !important;
+        overflow-x: auto !important;
+    }
+
+    .loan-summary-table {
+        border-collapse: collapse !important;
+        border: 1px solid #94a3b8 !important;
+        width: 100% !important;
+    }
+
+    /* Excel Corporate Header Styling */
+    .loan-summary-table thead th {
+        background-color: #475569 !important; /* Premium corporate slate gray */
+        color: #ffffff !important;
+        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        font-weight: 700 !important;
+        font-size: 0.76rem !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+        padding: 8px 10px !important;
+        border: 1px solid #334155 !important;
+        text-align: center !important;
+        vertical-align: middle !important;
+    }
+
+    .loan-summary-table thead th.sub-head {
+        background-color: #334155 !important; /* Deep corporate dark slate */
+        border: 1px solid #1e293b !important;
+    }
+
+    .loan-summary-table thead th.accent-head {
+        background-color: #1e293b !important; /* Accent dark slate for delta metrics */
+        border: 1px solid #0f172a !important;
+    }
+
+    /* Grid Cells with Excel Grid Lines */
+    .loan-summary-table td {
+        border: 1px solid #cbd5e1 !important; /* Muted crisp excel inner gridlines */
+        padding: 6px 12px !important; /* Perfect accounting cell padding */
+        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        font-size: 0.82rem !important;
+        font-weight: 500 !important;
+        color: #1e293b !important;
+        vertical-align: middle !important;
+        text-align: right !important; /* Right aligned numbers */
+        font-variant-numeric: tabular-nums !important; /* Perfect alignment of digits */
+    }
+
+    /* Text & Label Alignments */
+    .loan-summary-table td.text-start-important,
+    .loan-summary-table td.merged-branch-cell {
+        text-align: left !important;
+        font-weight: 600 !important;
+        color: #334155 !important;
+    }
+
+    .loan-summary-table td.text-center-important {
+        text-align: center !important;
+        font-weight: 600 !important;
+    }
+
+    /* Excel-Style Soft Subtotal Highlight (Removes harsh solid dark navy bg) */
+    .loan-branch-subtotal,
+    .loan-branch-subtotal td {
+        background-color: #e2e8f0 !important; /* Soft, readable gray-blue subtotal row */
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        border-top: 1px solid #64748b !important;
+        border-bottom: 2px solid #64748b !important;
+    }
+
+    /* Table Column Rowspan Side-Labels remain crisp and white */
+    .loan-summary-table td[rowspan] {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        border-bottom: 2px solid #94a3b8 !important;
+        border-right: 1px solid #cbd5e1 !important;
+    }
+
+    /* Subtle Zebra Striping for detail data rows only (Subtotals and totals are excluded) */
+    .loan-summary-table tbody tr:nth-child(even) {
+        background-color: #f8fafc;
+    }
+
+    .loan-summary-table tbody tr.loan-branch-subtotal,
+    .loan-summary-table tbody tr:last-child {
+        background-color: transparent;
+    }
+
+    /* Accounting Double-Underline Excel Grand Total Styling (Removes dark blackout bg) */
+    .loan-summary-table tbody tr:last-child,
+    .loan-summary-table tbody tr:last-child td {
+        background-color: #cbd5e1 !important; /* Excel total row solid steel color */
+        color: #0f172a !important;
+        font-weight: 800 !important;
+        font-size: 0.85rem !important;
+        border-top: 2px solid #334155 !important;
+        border-bottom: 4px double #000000 !important; /* Classic Excel double underline */
+    }
+
+    /* Excel Conditional Formatting Color Palette (Soft & Premium Contrast) */
+    .achieve-positive {
+        color: #16a34a !important; /* Deep premium green */
+        font-weight: 700 !important;
+    }
+    
+    .achieve-negative {
+        color: #dc2626 !important; /* Rich premium red */
+        font-weight: 700 !important;
+    }
+    
+    .achieve-neutral {
+        color: #d97706 !important; /* Distinct premium amber */
+        font-weight: 700 !important;
+    }
+
+    /* Excel-Style Conditional formatting pastel data bars */
+    .pct-data-bar-wrap {
+        height: 18px !important;
+        background-color: #f1f5f9 !important;
+        border: 1px solid #cbd5e1 !important;
+    }
+
+    .pct-data-bar {
+        opacity: 0.45 !important; /* Soft Excel color overlay */
+    }
+
+    .pct-data-bar.bar-success {
+        background-color: #86efac !important; /* Pastel Green */
+    }
+
+    .pct-data-bar.bar-warning {
+        background-color: #fef08a !important; /* Pastel Yellow */
+    }
+
+    .pct-data-bar.bar-danger {
+        background-color: #fca5a5 !important; /* Pastel Red */
+    }
+
+    .pct-data-label {
+        color: #1e293b !important;
+        font-weight: 800 !important;
+        font-size: 0.72rem !important;
+        line-height: 16px !important;
+    }
+
+    /* Premium Modernized Filters without rounded corners */
+    .loan-filter-modern {
+        background-color: #ffffff !important;
+        border: 2px solid #e2e8f0 !important;
+        padding: 1.25rem !important;
+        margin-bottom: 2rem !important;
+    }
+
+    .loan-dropdown-toggle {
+        height: 48px !important;
+        border: 2px solid #cbd5e1 !important;
+        padding: 0 1.25rem 0 2.5rem !important;
+        font-size: 0.9rem !important;
+        font-weight: 600 !important;
+        color: #1e293b !important;
+    }
+
+    .loan-dropdown-toggle:hover {
+        border-color: #475569 !important;
+        transform: none !important;
+    }
+
+    .loan-dropdown-icon {
+        left: 1rem !important;
+        color: #475569 !important;
+    }
+
+    .loan-dropdown-menu {
+        border: 2px solid #94a3b8 !important;
+        padding: 0.5rem !important;
+        margin-top: 2px !important;
+    }
+
+    .loan-dropdown-option {
+        padding: 0.6rem 1rem !important;
+        font-weight: 600 !important;
+    }
+
+    .btn-loan-modern-submit {
+        height: 48px !important;
+        background: #334155 !important; /* Dark corporate steel button */
+        border: none !important;
+        font-weight: 700 !important;
+        transition: background 0.15s ease !important;
+    }
+
+    .btn-loan-modern-submit:hover {
+        background: #1e293b !important;
+        transform: none !important;
+    }
+
+    .loan-page-title {
+        font-weight: 800 !important;
+        letter-spacing: -0.02em !important;
+        color: #0f172a !important;
+        text-transform: uppercase !important;
+    }
+
+    /* Sticky / Frozen Column for Kantor Cabang */
+    .loan-summary-table thead th.sticky-cabang-header {
+        position: sticky !important;
+        left: 0 !important;
+        z-index: 20 !important;
+        background-color: #475569 !important;
+        border-right: 2px solid #1e293b !important;
+    }
+
+    .loan-summary-table td.sticky-cabang-cell {
+        position: sticky !important;
+        left: 0 !important;
+        z-index: 10 !important;
+        background-color: #ffffff !important;
+        border-right: 2px solid #94a3b8 !important;
+    }
+
+    .loan-summary-table tr.loan-branch-subtotal td.sticky-cabang-cell {
+        background-color: #e2e8f0 !important;
+    }
+
+    .loan-summary-table tbody tr:last-child td.sticky-cabang-cell {
+        background-color: #cbd5e1 !important;
+    }
 </style>
 
 <div class="loan-dashboard pt-4 px-3" id="loanDashboardCaptureArea">
@@ -243,6 +568,30 @@
     <div class="card loan-shell mb-4 animate-reveal">
         <div class="card-body p-4">
             <div class="loan-filter-modern">
+                <div class="loan-filter-item">
+                    <label class="loan-filter-label">Kanca</label>
+                    <div class="loan-dropdown" data-loan-dropdown="kanca">
+                        <i class="fas fa-building loan-dropdown-icon"></i>
+                        <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="kanca">
+                            <span class="loan-dropdown-text">{{ $selectedKanca === 'all' ? 'Area 6' : $selectedKanca }}</span>
+                            <i class="fas fa-chevron-down small opacity-50"></i>
+                        </button>
+                        <div class="loan-dropdown-menu" data-loan-dropdown-menu="kanca">
+                            @foreach($kancaOptions as $option)
+                                <div class="loan-dropdown-option {{ $option['value'] === $selectedKanca ? 'is-active' : '' }}" data-value="{{ $option['value'] }}">
+                                    <div class="loan-dropdown-check"><i class="fas fa-check"></i></div>
+                                    <span>{{ $option['label'] }}</span>
+                                </div>
+                            @endforeach
+                        </div>
+                        <select id="kancaSelector" class="d-none">
+                            @foreach($kancaOptions as $option)
+                                <option value="{{ $option['value'] }}" @selected($option['value'] === $selectedKanca)>{{ $option['label'] }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+
                 <div class="loan-filter-item">
                     <label class="loan-filter-label">Periode Terakhir</label>
                     <div class="loan-dropdown" data-loan-dropdown="periode">
@@ -301,12 +650,8 @@
     </div>
 
     <!-- Meta Information -->
-    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
-        <div class="loan-loading-chip">
-            <span class="loan-loading-dot"></span>
-            <span id="dashboardMeta">Menyiapkan dashboard kredit harian.</span>
-        </div>
-        <div class="text-muted small">Data diambil dari snapshot harian per cabang.</div>
+    <div class="d-none">
+        <span id="dashboardMeta">Menyiapkan dashboard kredit harian.</span>
     </div>
 
     <!-- Dashboard Content -->
@@ -449,6 +794,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let requestAbortController = null;
 
     // Select2 elements
+    const $kancaSel = $('#kancaSelector');
     const $periodeSel = $('#periodeSelector');
     const $kategoriSel = $('#kategoriSelector');
 
@@ -471,50 +817,71 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function formatPctBadge(value, type) {
         const num = parseFloat(value) || 0;
-        const typeUpper = (type || '').toUpperCase();
-        const isReversed = typeUpper.includes('SML') || typeUpper.includes('NPL');
         let barClass = '';
         let textClass = '';
         
         if (num > 100) {
-            barClass = isReversed ? 'bar-danger' : 'bar-success';
-            textClass = isReversed ? 'achieve-negative' : 'achieve-positive';
+            barClass = 'bar-success';
+            textClass = 'achieve-positive';
         } else if (num >= 90) {
             barClass = 'bar-warning';
             textClass = 'achieve-neutral';
         } else {
-            barClass = isReversed ? 'bar-success' : 'bar-danger';
-            textClass = isReversed ? 'achieve-positive' : 'achieve-negative';
+            barClass = 'bar-danger';
+            textClass = 'achieve-negative';
         }
         
         const clampedPct = Math.min(100, Math.max(0, Math.abs(num)));
+        const decimals = isQualityType(type) ? 2 : 1;
         return `
             <div class="pct-data-bar-wrap">
                 <div class="pct-data-bar ${barClass}" style="width: ${clampedPct}%"></div>
-                <span class="pct-data-label ${textClass}">${num.toFixed(1)}%</span>
+                <span class="pct-data-label ${textClass}">${num.toFixed(decimals)}%</span>
             </div>
         `;
     }
 
-    function getConditionalClass(value, type) {
-        const num = parseFloat(value) || 0;
+    function isQualityType(type) {
         const typeUpper = (type || '').toUpperCase();
-        const isReversed = typeUpper.includes('SML') || typeUpper.includes('NPL');
-        
+        return typeUpper.includes('SML') || typeUpper.includes('NPL');
+    }
+
+    function getConditionalClass(value, type, isRka = false) {
+        const num = parseFloat(value) || 0;
+
         if (num === 0) return 'achieve-neutral';
-        
-        // For OS: > 0 is good (green), < 0 is bad (red)
-        // For SML/NPL: > 0 is bad (red), < 0 is good (green)
+
+        if (isRka) {
+            if (isQualityType(type)) {
+                return num < 0 ? 'achieve-positive' : 'achieve-negative';
+            }
+
+            return num > 0 ? 'achieve-positive' : 'achieve-negative';
+        }
+
+        const isReversed = isQualityType(type);
+
         if (num > 0) {
             return isReversed ? 'achieve-negative' : 'achieve-positive';
         }
         return isReversed ? 'achieve-positive' : 'achieve-negative';
     }
 
+    function calculateRkaPercentage(selected, rka, type) {
+        const selectedNum = parseFloat(selected) || 0;
+        const rkaNum = parseFloat(rka) || 0;
+
+        if (isQualityType(type)) {
+            return selectedNum > 0 ? (rkaNum / selectedNum) * 100 : 100;
+        }
+
+        return rkaNum > 0 ? (selectedNum / rkaNum) * 100 : 0;
+    }
+
     function formatRkaGapCell(gapValue, pctValue, type) {
         return `
             <div class="rka-gap-stack">
-                <div class="rka-gap-stack__amount ${getConditionalClass(gapValue, type)}">${formatCurrency(gapValue)}</div>
+                <div class="rka-gap-stack__amount ${getConditionalClass(gapValue, type, true)}">${formatCurrency(gapValue)}</div>
                 ${formatPctBadge(pctValue, type)}
             </div>
         `;
@@ -695,11 +1062,12 @@ document.addEventListener('DOMContentLoaded', function () {
     function buildConsolidationTable(osData, smlData, nplData, headerDates, segmentName, rkaLabels) {
         if (!osData || !smlData || !nplData) return '';
 
-        const dates = { 
-            ytd: formatDate(headerDates.ytd), 
-            m2: formatDate(headerDates.m2), 
-            mtm: formatDate(headerDates.mtm), 
-            selected: formatDate(headerDates.selected) 
+        const dates = {
+            ytd: formatDate(headerDates.ytd),
+            m2: formatDate(headerDates.m2),
+            mtm: formatDate(headerDates.mtm),
+            mtd: formatDate(headerDates.mtd),
+            selected: formatDate(headerDates.selected)
         };
 
         const osTotal = osData.find(r => r.is_total);
@@ -707,13 +1075,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const nplTotal = nplData.find(r => r.is_total);
 
         // Helper to consolidate categories
-        const getCategoryConsolidation = (rows) => {
+        const getCategoryConsolidation = (rows, type) => {
             const categories = {};
             rows.filter(r => !r.is_total).forEach(r => {
                 if (!categories[r.category]) {
-                    categories[r.category] = { 
-                        label: r.category, ytd: 0, m2: 0, mtm: 0, selected: 0, 
-                        delta_ytd: 0, delta_mtd: 0, delta_dtd: 0,
+                    categories[r.category] = {
+                        label: r.category, ytd: 0, m2: 0, mtm: 0, mtd: 0, selected: 0,
+                        delta_ytd: 0, delta_mom: 0, delta_mtd: 0,
                         rka_m1: 0, rka_current: 0, penc_m1_rp: 0, penc_cur_rp: 0,
                         penc_m1_pct: 0, penc_cur_pct: 0
                     };
@@ -722,10 +1090,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 c.ytd += parseFloat(r.ytd || 0);
                 c.m2 += parseFloat(r.m2 || 0);
                 c.mtm += parseFloat(r.mtm || 0);
+                c.mtd += parseFloat(r.mtd || 0);
                 c.selected += parseFloat(r.selected || 0);
                 c.delta_ytd += parseFloat(r.delta_ytd || 0);
+                c.delta_mom += parseFloat(r.delta_mom || 0);
                 c.delta_mtd += parseFloat(r.delta_mtd || 0);
-                c.delta_dtd += parseFloat(r.delta_dtd || 0);
                 c.rka_m1 += parseFloat(r.rka_m1 || 0);
                 c.rka_current += parseFloat(r.rka_current || 0);
                 c.penc_m1_rp += parseFloat(r.penc_m1_rp || 0);
@@ -733,41 +1102,43 @@ document.addEventListener('DOMContentLoaded', function () {
             });
             // Recalculate percentages
             Object.values(categories).forEach(c => {
-                c.penc_m1_pct = c.rka_m1 > 0 ? (c.selected / c.rka_m1) * 100 : 0;
-                c.penc_cur_pct = c.rka_current > 0 ? (c.selected / c.rka_current) * 100 : 0;
+                c.penc_m1_pct = calculateRkaPercentage(c.selected, c.rka_m1, type);
+                c.penc_cur_pct = calculateRkaPercentage(c.selected, c.rka_current, type);
             });
             return Object.values(categories);
         };
 
-        const renderRow = (label, d, type, no, isBold = false, isSubRow = false) => {
+        const renderRow = (label, d, type, isBold = false, isSubRow = false) => {
             if (!d) return '';
             const labelStyle = isBold ? 'font-weight: 800; color: #0857c3;' : (isSubRow ? 'font-weight: 600; padding-left: 2rem; font-style: italic; color: #64748b; font-size: 0.75rem;' : 'font-weight: 600;');
             const rowStyle = isBold ? 'background: rgba(8, 87, 195, 0.03);' : '';
             return `<tr style="${rowStyle}">
-                <td class="text-center-important">${no}</td>
                 <td class="text-start-important" style="${labelStyle}">${label}</td>
                 <td>${formatCurrency(d.ytd)}</td>
                 <td>${formatCurrency(d.m2)}</td>
                 <td>${formatCurrency(d.mtm)}</td>
+                <td>${formatCurrency(d.mtd)}</td>
                 <td style="background: ${isBold ? 'rgba(224, 242, 254, 0.3)' : '#f0f7ff'}; color: #003d7c; font-weight: 800;">${formatCurrency(d.selected)}</td>
                 <td class="${getConditionalClass(d.delta_ytd, type)}">${formatCurrency(d.delta_ytd)}</td>
+                <td class="${getConditionalClass(d.delta_mom, type)}">${formatCurrency(d.delta_mom)}</td>
                 <td class="${getConditionalClass(d.delta_mtd, type)}">${formatCurrency(d.delta_mtd)}</td>
-                <td class="${getConditionalClass(d.delta_dtd, type)}">${formatCurrency(d.delta_dtd)}</td>
-                <td>${formatCurrency(d.rka_m1)}</td>
                 <td>${formatCurrency(d.rka_current)}</td>
-                <td class="${getConditionalClass(d.penc_m1_rp, type)}">${formatCurrency(d.penc_m1_rp)}</td>
-                <td>${formatPctBadge(d.penc_m1_pct, type)}</td>
-                <td class="${getConditionalClass(d.penc_cur_rp, type)}">${formatCurrency(d.penc_cur_rp)}</td>
+                <td>${formatCurrency(d.rka_m1)}</td>
+                <td class="${getConditionalClass(d.penc_cur_rp, type, true)}">${formatCurrency(d.penc_cur_rp)}</td>
                 <td>${formatPctBadge(d.penc_cur_pct, type)}</td>
+                <td class="${getConditionalClass(d.penc_m1_rp, type, true)}">${formatCurrency(d.penc_m1_rp)}</td>
+                <td>${formatPctBadge(d.penc_m1_pct, type)}</td>
             </tr>`;
         };
+
+        const rkaM1Label = rkaLabels && rkaLabels.m1 ? rkaLabels.m1 : '';
+        const rkaCurrentLabel = rkaLabels && rkaLabels.current ? rkaLabels.current : '';
 
         let html = `<table class="loan-summary-table">
             <thead>
                 <tr>
-                    <th rowspan="2" style="width: 40px;">NO</th>
                     <th rowspan="2" style="width: 250px;">URAIAN KONSOLIDASI AREA 6</th>
-                    <th colspan="4" class="sub-head">PERIODE</th>
+                    <th colspan="5" class="sub-head">PERIODE</th>
                     <th colspan="3" class="accent-head">DELTA (Δ) PERIODE</th>
                     <th colspan="2" class="sub-head">RKA-KP</th>
                     <th colspan="4" class="accent-head">PENCAPAIAN RKA</th>
@@ -775,45 +1146,46 @@ document.addEventListener('DOMContentLoaded', function () {
                 <tr>
                     <th class="sub-head" style="width: 85px;">${dates.ytd}<br><small>(YtD)</small></th>
                     <th class="sub-head" style="width: 85px;">${dates.m2}<br><small>(M-2)</small></th>
-                    <th class="sub-head" style="width: 85px;">${dates.mtm}<br><small>(MtM)</small></th>
+                    <th class="sub-head" style="width: 85px;">${dates.mtm}<br><small>MoM</small></th>
+                    <th class="sub-head" style="width: 85px;">${dates.mtd}<br><small>MTD</small></th>
                     <th class="sub-head" style="background: #004280; width: 90px;">${dates.selected}<br><small>(HARI INI)</small></th>
                     <th class="accent-head" style="width: 80px;">YtD</th>
+                    <th class="accent-head" style="width: 80px;">MoM</th>
                     <th class="accent-head" style="width: 80px;">MtD</th>
-                    <th class="accent-head" style="width: 80px;">DtD</th>
-                    <th class="sub-head" style="width: 85px;">${rkaLabels?.m1 || ''}</th>
-                    <th class="sub-head" style="width: 85px;">${rkaLabels?.current || ''}</th>
-                    <th class="accent-head" style="width: 90px;">${rkaLabels?.m1 || ''} Δ</th>
+                    <th class="sub-head" style="width: 85px;">${rkaCurrentLabel}</th>
+                    <th class="sub-head" style="width: 85px;">${rkaM1Label}</th>
+                    <th class="accent-head" style="width: 90px;">${rkaCurrentLabel} Δ</th>
                     <th class="accent-head" style="width: 70px;">%</th>
-                    <th class="accent-head" style="width: 90px;">${rkaLabels?.current || ''} Δ</th>
+                    <th class="accent-head" style="width: 90px;">${rkaM1Label} Δ</th>
                     <th class="accent-head" style="width: 70px;">%</th>
                 </tr>
             </thead>
             <tbody>`;
 
         // A. Outstanding
-        html += renderRow('A. OUTSTANDING (OS)', osTotal, 'Outstanding', '1', true);
+        html += renderRow('A. OUTSTANDING (OS)', osTotal, 'Outstanding', true);
         if (segmentName === 'Mikro') {
-            const osCats = getCategoryConsolidation(osData);
+            const osCats = getCategoryConsolidation(osData, 'Outstanding').filter(c => c.label !== 'Micro');
             osCats.forEach(c => {
-                html += renderRow(c.label, c, 'Outstanding', '', false, true);
+                html += renderRow(c.label, c, 'Outstanding', false, true);
             });
         }
 
         // B. SML
-        html += renderRow('B. SPECIAL MENTION LOAN (SML)', smlTotal, 'SML', '2', true);
+        html += renderRow('B. SPECIAL MENTION LOAN (SML)', smlTotal, 'SML', true);
         if (segmentName === 'Mikro') {
-            const smlCats = getCategoryConsolidation(smlData);
+            const smlCats = getCategoryConsolidation(smlData, 'SML').filter(c => c.label !== 'Micro');
             smlCats.forEach(c => {
-                html += renderRow(c.label, c, 'SML', '', false, true);
+                html += renderRow(c.label, c, 'SML', false, true);
             });
         }
 
         // C. NPL
-        html += renderRow('C. NON-PERFORMING LOAN (NPL)', nplTotal, 'NPL', '3', true);
+        html += renderRow('C. NON-PERFORMING LOAN (NPL)', nplTotal, 'NPL', true);
         if (segmentName === 'Mikro') {
-            const nplCats = getCategoryConsolidation(nplData);
+            const nplCats = getCategoryConsolidation(nplData, 'NPL').filter(c => c.label !== 'Micro');
             nplCats.forEach(c => {
-                html += renderRow(c.label, c, 'NPL', '', false, true);
+                html += renderRow(c.label, c, 'NPL', false, true);
             });
         }
 
@@ -826,20 +1198,23 @@ document.addEventListener('DOMContentLoaded', function () {
             return '<div class="text-center py-5 text-muted">Tidak ada data untuk filter ini.</div>';
         }
 
-        const dates = { 
-            ytd: formatDate(headerDates.ytd), 
-            m2: formatDate(headerDates.m2), 
-            mtm: formatDate(headerDates.mtm), 
-            selected: formatDate(headerDates.selected) 
+        const dates = {
+            ytd: formatDate(headerDates.ytd),
+            m2: formatDate(headerDates.m2),
+            mtm: formatDate(headerDates.mtm),
+            mtd: formatDate(headerDates.mtd),
+            selected: formatDate(headerDates.selected)
         };
         const typePrefix = typeLabel.toUpperCase();
+        const rkaM1Label = rkaLabels && rkaLabels.m1 ? rkaLabels.m1 : '';
+        const rkaCurrentLabel = rkaLabels && rkaLabels.current ? rkaLabels.current : '';
+
         let html = `<table class="loan-summary-table">
             <thead>
                 <tr>
-                    <th rowspan="2" style="width: 40px;">NO</th>
-                    <th rowspan="2" style="width: 120px;">KANTOR CABANG</th>
+                    <th rowspan="2" class="sticky-cabang-header" style="width: 140px;">KANTOR CABANG</th>
                     <th rowspan="2" style="width: 150px;">KATEGORI ${segmentName}</th>
-                    <th colspan="4" class="sub-head">${typePrefix} PERIODE</th>
+                    <th colspan="5" class="sub-head">${typePrefix} PERIODE</th>
                     <th colspan="3" class="accent-head">DELTA (Δ) PERIODE</th>
                     <th colspan="2" class="sub-head">RKA-KP</th>
                     <th colspan="4" class="accent-head">PENCAPAIAN RKA</th>
@@ -847,16 +1222,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 <tr>
                     <th class="sub-head" style="width: 85px;">${dates.ytd}<br><small>(YtD)</small></th>
                     <th class="sub-head" style="width: 85px;">${dates.m2}<br><small>(M-2)</small></th>
-                    <th class="sub-head" style="width: 85px;">${dates.mtm}<br><small>(MtM)</small></th>
+                    <th class="sub-head" style="width: 85px;">${dates.mtm}<br><small>MoM</small></th>
+                    <th class="sub-head" style="width: 85px;">${dates.mtd}<br><small>MTD</small></th>
                     <th class="sub-head" style="background: #004280; width: 90px;">${dates.selected}<br><small>(HARI INI)</small></th>
                     <th class="accent-head" style="width: 80px;">YtD</th>
+                    <th class="accent-head" style="width: 80px;">MoM</th>
                     <th class="accent-head" style="width: 80px;">MtD</th>
-                    <th class="accent-head" style="width: 80px;">DtD</th>
-                    <th class="sub-head" style="width: 85px;">${rkaLabels?.m1 || ''}</th>
-                    <th class="sub-head" style="width: 85px;">${rkaLabels?.current || ''}</th>
-                    <th class="accent-head" style="width: 90px;">${rkaLabels?.m1 || ''} Δ</th>
+                    <th class="sub-head" style="width: 85px;">${rkaCurrentLabel}</th>
+                    <th class="sub-head" style="width: 85px;">${rkaM1Label}</th>
+                    <th class="accent-head" style="width: 90px;">${rkaCurrentLabel} Δ</th>
                     <th class="accent-head" style="width: 70px;">%</th>
-                    <th class="accent-head" style="width: 90px;">${rkaLabels?.current || ''} Δ</th>
+                    <th class="accent-head" style="width: 90px;">${rkaM1Label} Δ</th>
                     <th class="accent-head" style="width: 70px;">%</th>
                 </tr>
             </thead>
@@ -865,56 +1241,67 @@ document.addEventListener('DOMContentLoaded', function () {
         const totalRow = data.find(row => row.is_total);
         const dataRows = data.filter(row => !row.is_total);
         const groups = {};
-        dataRows.forEach(row => { 
-            const branch = row.branch || 'Unknown'; 
-            if (!groups[branch]) groups[branch] = []; 
-            groups[branch].push(row); 
+        dataRows.forEach(row => {
+            const branch = row.branch || 'Unknown';
+            if (!groups[branch]) groups[branch] = [];
+            groups[branch].push(row);
         });
 
         let rowIndex = 1;
         Object.keys(groups).forEach(branchName => {
             const groupRows = groups[branchName];
-            const subtotal = { 
-                ytd: 0, m2: 0, mtm: 0, selected: 0, 
-                d_ytd: 0, d_mtd: 0, d_dtd: 0, 
-                rka_m1: 0, rka_current: 0, 
-                penc_m1_rp: 0, penc_cur_rp: 0 
+            const subtotal = {
+                ytd: 0, m2: 0, mtm: 0, mtd: 0, selected: 0,
+                d_ytd: 0, d_mom: 0, d_mtd: 0,
+                rka_m1: 0, rka_current: 0,
+                penc_m1_rp: 0, penc_cur_rp: 0
             };
-            groupRows.forEach(row => { 
-                subtotal.ytd += parseFloat(row.ytd || 0); 
-                subtotal.m2 += parseFloat(row.m2 || 0); 
-                subtotal.mtm += parseFloat(row.mtm || 0); 
-                subtotal.selected += parseFloat(row.selected || 0); 
-                subtotal.d_ytd += parseFloat(row.delta_ytd || 0); 
-                subtotal.d_mtd += parseFloat(row.delta_mtd || 0); 
-                subtotal.d_dtd += parseFloat(row.delta_dtd || 0); 
-                subtotal.rka_m1 += parseFloat(row.rka_m1 || 0); 
-                subtotal.rka_current += parseFloat(row.rka_current || 0); 
-                subtotal.penc_m1_rp += parseFloat(row.penc_m1_rp || 0); 
-                subtotal.penc_cur_rp += parseFloat(row.penc_cur_rp || 0); 
+            const hasMicroCategory = groupRows.some(row => row.category === 'Micro');
+            groupRows.forEach(row => {
+                let shouldAdd = true;
+                if (segmentName === 'Mikro') {
+                    if (hasMicroCategory) {
+                        shouldAdd = (row.category !== 'Micro');
+                    }
+                }
+                
+                if (shouldAdd) {
+                    subtotal.ytd += parseFloat(row.ytd || 0);
+                    subtotal.m2 += parseFloat(row.m2 || 0);
+                    subtotal.mtm += parseFloat(row.mtm || 0);
+                    subtotal.mtd += parseFloat(row.mtd || 0);
+                    subtotal.selected += parseFloat(row.selected || 0);
+                    subtotal.d_ytd += parseFloat(row.delta_ytd || 0);
+                    subtotal.d_mom += parseFloat(row.delta_mom || 0);
+                    subtotal.d_mtd += parseFloat(row.delta_mtd || 0);
+                    subtotal.rka_m1 += parseFloat(row.rka_m1 || 0);
+                    subtotal.rka_current += parseFloat(row.rka_current || 0);
+                    subtotal.penc_m1_rp += parseFloat(row.penc_m1_rp || 0);
+                    subtotal.penc_cur_rp += parseFloat(row.penc_cur_rp || 0);
+                }
             });
             
             const shortBranchName = branchName.replace(/KC Madiun/gi, 'KC MDN').replace(/KC Magetan/gi, 'KC MGT').replace(/KC Ngawi/gi, 'KC NGWI').replace(/KC Ponorogo/gi, 'KC PNRG');
-            const sub_m1_pct = subtotal.rka_m1 > 0 ? (subtotal.selected / subtotal.rka_m1) * 100 : 0;
-            const sub_cur_pct = subtotal.rka_current > 0 ? (subtotal.selected / subtotal.rka_current) * 100 : 0;
+            const sub_m1_pct = calculateRkaPercentage(subtotal.selected, subtotal.rka_m1, typeLabel);
+            const sub_cur_pct = calculateRkaPercentage(subtotal.selected, subtotal.rka_current, typeLabel);
             
             html += `<tr class="loan-branch-subtotal">
-                <td rowspan="${groupRows.length + 1}" class="text-center-v text-center-important" style="background: #f8fbff; font-weight: 700; border-bottom: 2px solid #cbd5e1; color: #1e293b !important;">${rowIndex++}</td>
-                <td rowspan="${groupRows.length + 1}" class="text-center-v text-start-important merged-branch-cell" style="border-bottom: 2px solid #cbd5e1;">${branchName}</td>
+                <td rowspan="${groupRows.length + 1}" class="text-center-v text-start-important merged-branch-cell sticky-cabang-cell" style="border-bottom: 2px solid #cbd5e1;">${branchName}</td>
                 <td class="text-center-v text-center-important" style="font-size: 0.68rem; letter-spacing: 0.05em; background: rgba(255,255,255,0.05); font-weight: 900; border-right: 1px solid rgba(255,255,255,0.1);">TOTAL ${shortBranchName.toUpperCase()}</td>
                 <td>${formatCurrency(subtotal.ytd)}</td>
                 <td>${formatCurrency(subtotal.m2)}</td>
                 <td>${formatCurrency(subtotal.mtm)}</td>
+                <td>${formatCurrency(subtotal.mtd)}</td>
                 <td style="background: rgba(224, 242, 254, 0.15); color: #7dd3fc;">${formatCurrency(subtotal.selected)}</td>
                 <td class="${getConditionalClass(subtotal.d_ytd, typeLabel)}">${formatCurrency(subtotal.d_ytd)}</td>
+                <td class="${getConditionalClass(subtotal.d_mom, typeLabel)}">${formatCurrency(subtotal.d_mom)}</td>
                 <td class="${getConditionalClass(subtotal.d_mtd, typeLabel)}">${formatCurrency(subtotal.d_mtd)}</td>
-                <td class="${getConditionalClass(subtotal.d_dtd, typeLabel)}">${formatCurrency(subtotal.d_dtd)}</td>
-                <td>${formatCurrency(subtotal.rka_m1)}</td>
                 <td>${formatCurrency(subtotal.rka_current)}</td>
-                <td class="${getConditionalClass(subtotal.penc_m1_rp, typeLabel)}">${formatCurrency(subtotal.penc_m1_rp)}</td>
-                <td>${formatPctBadge(sub_m1_pct, typeLabel)}</td>
-                <td class="${getConditionalClass(subtotal.penc_cur_rp, typeLabel)}">${formatCurrency(subtotal.penc_cur_rp)}</td>
+                <td>${formatCurrency(subtotal.rka_m1)}</td>
+                <td class="${getConditionalClass(subtotal.penc_cur_rp, typeLabel, true)}">${formatCurrency(subtotal.penc_cur_rp)}</td>
                 <td>${formatPctBadge(sub_cur_pct, typeLabel)}</td>
+                <td class="${getConditionalClass(subtotal.penc_m1_rp, typeLabel, true)}">${formatCurrency(subtotal.penc_m1_rp)}</td>
+                <td>${formatPctBadge(sub_m1_pct, typeLabel)}</td>
             </tr>`;
             
             groupRows.forEach(row => { 
@@ -923,36 +1310,38 @@ document.addEventListener('DOMContentLoaded', function () {
                     <td>${formatCurrency(row.ytd)}</td>
                     <td>${formatCurrency(row.m2)}</td>
                     <td>${formatCurrency(row.mtm)}</td>
+                    <td>${formatCurrency(row.mtd)}</td>
                     <td style="background: #f0f7ff; color: #003d7c; font-weight: 800;">${formatCurrency(row.selected)}</td>
                     <td class="${getConditionalClass(row.delta_ytd, typeLabel)}">${formatCurrency(row.delta_ytd)}</td>
+                    <td class="${getConditionalClass(row.delta_mom, typeLabel)}">${formatCurrency(row.delta_mom)}</td>
                     <td class="${getConditionalClass(row.delta_mtd, typeLabel)}">${formatCurrency(row.delta_mtd)}</td>
-                    <td class="${getConditionalClass(row.delta_dtd, typeLabel)}">${formatCurrency(row.delta_dtd)}</td>
-                    <td>${formatCurrency(row.rka_m1)}</td>
                     <td>${formatCurrency(row.rka_current)}</td>
-                    <td class="${getConditionalClass(row.penc_m1_rp, typeLabel)}">${formatCurrency(row.penc_m1_rp)}</td>
-                    <td>${formatPctBadge(row.penc_m1_pct, typeLabel)}</td>
-                    <td class="${getConditionalClass(row.penc_cur_rp, typeLabel)}">${formatCurrency(row.penc_cur_rp)}</td>
+                    <td>${formatCurrency(row.rka_m1)}</td>
+                    <td class="${getConditionalClass(row.penc_cur_rp, typeLabel, true)}">${formatCurrency(row.penc_cur_rp)}</td>
                     <td>${formatPctBadge(row.penc_cur_pct, typeLabel)}</td>
+                    <td class="${getConditionalClass(row.penc_m1_rp, typeLabel, true)}">${formatCurrency(row.penc_m1_rp)}</td>
+                    <td>${formatPctBadge(row.penc_m1_pct, typeLabel)}</td>
                 </tr>`; 
             });
         });
 
         if (totalRow) {
             html += `<tr style="background: #1e293b; color: #ffffff; font-weight: 900;">
-                <td colspan="3" class="text-center-important" style="letter-spacing: 0.1em; color: #ffffff; border-right: 1px solid rgba(255,255,255,0.2);">GRAND TOTAL</td>
+                <td colspan="2" class="text-center-important sticky-cabang-cell" style="letter-spacing: 0.1em; color: #ffffff; border-right: 1px solid rgba(255,255,255,0.2); font-weight: 800;">GRAND TOTAL</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.ytd)}</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.m2)}</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.mtm)}</td>
+                <td style="color: #ffffff;">${formatCurrency(totalRow.mtd)}</td>
                 <td style="background: #0f172a; color: #ffffff;">${formatCurrency(totalRow.selected)}</td>
                 <td class="${getConditionalClass(totalRow.delta_ytd, typeLabel)}">${formatCurrency(totalRow.delta_ytd)}</td>
+                <td class="${getConditionalClass(totalRow.delta_mom, typeLabel)}">${formatCurrency(totalRow.delta_mom)}</td>
                 <td class="${getConditionalClass(totalRow.delta_mtd, typeLabel)}">${formatCurrency(totalRow.delta_mtd)}</td>
-                <td class="${getConditionalClass(totalRow.delta_dtd, typeLabel)}">${formatCurrency(totalRow.delta_dtd)}</td>
-                <td style="color: #ffffff;">${formatCurrency(totalRow.rka_m1)}</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.rka_current)}</td>
-                <td class="${getConditionalClass(totalRow.penc_m1_rp, typeLabel)}">${formatCurrency(totalRow.penc_m1_rp)}</td>
-                <td>${formatPctBadge(totalRow.penc_m1_pct, typeLabel)}</td>
-                <td class="${getConditionalClass(totalRow.penc_cur_rp, typeLabel)}">${formatCurrency(totalRow.penc_cur_rp)}</td>
+                <td style="color: #ffffff;">${formatCurrency(totalRow.rka_m1)}</td>
+                <td class="${getConditionalClass(totalRow.penc_cur_rp, typeLabel, true)}">${formatCurrency(totalRow.penc_cur_rp)}</td>
                 <td>${formatPctBadge(totalRow.penc_cur_pct, typeLabel)}</td>
+                <td class="${getConditionalClass(totalRow.penc_m1_rp, typeLabel, true)}">${formatCurrency(totalRow.penc_m1_rp)}</td>
+                <td>${formatPctBadge(totalRow.penc_m1_pct, typeLabel)}</td>
             </tr>`;
         }
 
@@ -968,7 +1357,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function showErrorMessage(message) {
-        const errorHtml = `<div class="alert alert-danger alert-dismissible fade show" role="alert"><strong>Gagal memuat data</strong><br>${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`;
+        const errorHtml = `<div class="alert alert-danger alert-dismissible fade show" role="alert"><strong>Gagal memuat data</strong><br>${message}<button type="button" class="close" data-dismiss="alert" aria-label="Tutup"><span aria-hidden="true">&times;</span></button></div>`;
         osTableContainer.innerHTML = errorHtml; 
         smlTableContainer.innerHTML = errorHtml; 
         nplTableContainer.innerHTML = errorHtml;
@@ -978,27 +1367,34 @@ document.addEventListener('DOMContentLoaded', function () {
     function loadDashboardData() {
         const periode = $periodeSel.val();
         const kategori = $kategoriSel.val();
+        const kanca = $kancaSel.val();
+        const kancaLabel = $kancaSel.find('option:selected').text();
         if (!periode) return;
 
         showSpinners(kategori);
-        dashboardMeta.textContent = `Memuat data dashboard untuk periode ${formatDate(periode)}...`;
+        dashboardMeta.textContent = `Memuat data dashboard ${kancaLabel} untuk periode ${formatDate(periode)}...`;
         btnLoadData.disabled = true;
 
-        if (requestAbortController) requestAbortController.abort();
-        requestAbortController = new AbortController();
+        const canAbortRequest = typeof window.AbortController === 'function';
+        if (requestAbortController && canAbortRequest) requestAbortController.abort();
+        requestAbortController = canAbortRequest ? new AbortController() : null;
         const controller = requestAbortController;
-        const timeoutId = setTimeout(() => { if (controller === requestAbortController) controller.abort(); }, REQUEST_TIMEOUT);
+        const timeoutId = canAbortRequest
+            ? setTimeout(() => { if (controller === requestAbortController) controller.abort(); }, REQUEST_TIMEOUT)
+            : null;
 
-        const url = '{{ route("report.dashboard-pinjaman.kredit.data") }}?' + new URLSearchParams({ periode: periode, kategori: kategori });
+        const url = '{{ route("report.dashboard-pinjaman.kredit.data") }}?periode=' + encodeURIComponent(periode) + '&kategori=' + encodeURIComponent(kategori) + '&kanca=' + encodeURIComponent(kanca);
+        const fetchOptions = controller ? { signal: controller.signal } : {};
         
-        fetch(url, { signal: controller.signal })
-            .then(response => { 
-                clearTimeout(timeoutId); 
-                if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`); 
-                return response.json(); 
+        fetch(url, fetchOptions)
+            .then(response => {
+                if (timeoutId) clearTimeout(timeoutId);
+                if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                return response.json();
             })
             .then(data => {
-                dashboardMeta.textContent = `Menampilkan dashboard kredit ${kategori} per ${formatDate(periode)}.`;
+                const payloadKancaLabel = data.kanca_label || kancaLabel;
+                dashboardMeta.textContent = `Menampilkan dashboard kredit ${kategori} - ${payloadKancaLabel} per ${formatDate(periode)}.`;
                 
                 // Consolidation Table (Shown for all, but specifically requested for Mikro)
                 const osTotal = data.os.find(r => r.is_total);
@@ -1019,16 +1415,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 document.getElementById('nplTitle').innerText = `C. NON-PERFORMING LOAN (NPL) - ${kategori}`;
                 nplTableContainer.innerHTML = buildTable(data.npl, data.header_dates, 'NPL', kategori, data.rka_labels);
             })
-            .catch(error => { 
-                clearTimeout(timeoutId); 
-                console.error('Error:', error); 
-                let errorMsg = 'Periksa koneksi atau snapshot data.'; 
-                if (error.name === 'AbortError') errorMsg = 'Permintaan timeout. Coba lagi.'; 
-                else if (error.message.includes('HTTP')) errorMsg = error.message; 
-                showErrorMessage(errorMsg); 
+            .catch(error => {
+                if (timeoutId) clearTimeout(timeoutId);
+                console.error('Error:', error);
+                let errorMsg = 'Periksa koneksi atau snapshot data.';
+                if (error.name === 'AbortError') errorMsg = 'Permintaan timeout. Coba lagi.';
+                else if (error.message.includes('HTTP')) errorMsg = error.message;
+                showErrorMessage(errorMsg);
             })
-            .finally(() => { 
-                btnLoadData.disabled = false; 
+            .finally(() => {
+                btnLoadData.disabled = false;
             });
     }
 

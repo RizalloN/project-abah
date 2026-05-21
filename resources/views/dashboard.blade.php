@@ -7,6 +7,11 @@ $metrics = data_get($dashboard ?? [], 'metrics', []);
 $liveReports = is_array(data_get($dashboard ?? [], 'live_reports')) ? data_get($dashboard ?? [], 'live_reports') : [];
 $digitalCards = is_array(data_get($dashboard ?? [], 'digital_performance.cards')) ? data_get($dashboard ?? [], 'digital_performance.cards') : [];
 $timeseries = data_get($dashboard ?? [], 'timeseries', ['labels'=>[],'simpanan'=>[],'pinjaman'=>[]]);
+$area6Portfolio = data_get($dashboard ?? [], 'area6_portfolio', []);
+$area6Cards = is_array(data_get($area6Portfolio, 'cards')) ? data_get($area6Portfolio, 'cards') : [];
+$area6Rankings = is_array(data_get($area6Portfolio, 'rankings')) ? data_get($area6Portfolio, 'rankings') : [];
+$area6RankingModes = is_array(data_get($area6Portfolio, 'ranking_modes')) ? data_get($area6Portfolio, 'ranking_modes') : [];
+$area6DefaultScope = data_get($area6Portfolio, 'default_scope', 'ritel');
 $digitalUpdatedAt = data_get($dashboard ?? [], 'digital_performance.updated_at');
 $simpananReport = collect($liveReports)->firstWhere('key', 'simpanan') ?? [];
 $pinjamanReport = collect($liveReports)->firstWhere('key', 'pinjaman') ?? [];
@@ -30,8 +35,8 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .db-shell { font-family:'Inter',sans-serif; padding:0 0 1rem; }
 
 /* ── KPI STRIP ── */
-.kpi-strip { display:grid; grid-template-columns:repeat(3,1fr) 1.6fr repeat(2,1fr); gap:.65rem; margin-bottom:.65rem; }
-.kpi-card { border-radius:var(--r); padding:.7rem .85rem .6rem; position:relative; overflow:hidden; border:1px solid var(--c-border); background:#fff; transition:transform .18s,box-shadow .18s; }
+.kpi-strip { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:.8rem; margin-bottom:.8rem; }
+.kpi-card { border-radius:var(--r); padding:.86rem 1rem .78rem; min-height:104px; position:relative; overflow:hidden; border:1px solid var(--c-border); background:#fff; transition:transform .18s,box-shadow .18s; }
 .kpi-card:hover { transform:translateY(-2px); box-shadow:var(--shadow); }
 .kpi-card .kc-label { font-size:.6rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#64748b; margin-bottom:.18rem; }
 .kpi-card .kc-val { font-size:1.32rem; font-weight:800; line-height:1.05; color:#0f172a; }
@@ -53,22 +58,72 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .kpi-card button.kc-link { border:0; background:transparent; padding:0; cursor:pointer; }
 
 /* ── CHART + DIGITAL GRID ── */
-.main-grid { display:grid; grid-template-columns:1fr 2.4fr; gap:.65rem; }
-.chart-panel { border-radius:var(--r); background:#fff; border:1px solid var(--c-border); padding:.85rem; }
+.area6-panel { margin:.8rem 0; border-radius:16px; background:#fff; border:1px solid var(--c-border); box-shadow:0 18px 42px -30px rgba(4,42,95,.4); overflow:hidden; }
+.area6-head { display:flex; align-items:center; justify-content:space-between; gap:1.1rem; padding:1.12rem 1.2rem; background:linear-gradient(135deg,#f8fbff 0%,#eaf3ff 100%); border-bottom:1px solid var(--c-border); }
+.area6-title { font-size:1.12rem; font-weight:900; color:#0f172a; letter-spacing:0; }
+.area6-sub { margin-top:.2rem; font-size:.74rem; color:#64748b; }
+.area6-head-actions { display:flex; flex-direction:column; align-items:flex-end; gap:.5rem; }
+.area6-periods { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.38rem; }
+.area6-pill { display:inline-flex; align-items:center; gap:.34rem; padding:.36rem .72rem; border-radius:999px; background:#fff; border:1px solid rgba(8,87,195,.14); color:#2563eb; font-size:.68rem; font-weight:850; white-space:nowrap; }
+.area6-scope-toggle { display:inline-flex; gap:.25rem; padding:.22rem; border-radius:999px; background:#eaf2ff; border:1px solid rgba(37,99,235,.14); }
+.area6-scope-btn { border:0; border-radius:999px; padding:.42rem .82rem; background:transparent; color:#475569; font-size:.7rem; font-weight:900; cursor:pointer; }
+.area6-scope-btn.active { background:#fff; color:#0f4aa4; box-shadow:0 6px 16px -12px rgba(15,23,42,.5); }
+.area6-card-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.84rem; padding:1rem; }
+.area6-card { border:0; appearance:none; width:100%; min-height:150px; border-radius:14px; padding:1rem .95rem .9rem; text-align:left; color:#fff; position:relative; overflow:hidden; display:flex; flex-direction:column; cursor:pointer; transition:transform .16s, box-shadow .16s; }
+.area6-card:hover { transform:translateY(-3px); box-shadow:0 18px 34px -22px rgba(15,23,42,.6); }
+.area6-card::after { content:''; position:absolute; top:-38px; right:-32px; width:108px; height:108px; border-radius:999px; background:rgba(255,255,255,.13); pointer-events:none; }
+.area6-card .ac-icon { width:38px; height:38px; display:flex; align-items:center; justify-content:center; border-radius:10px; background:rgba(255,255,255,.17); margin-bottom:.66rem; font-size:1rem; }
+.area6-card .ac-label { font-size:.72rem; color:rgba(255,255,255,.78); line-height:1.25; min-height:1.55rem; }
+.area6-card .ac-value { font-size:1.5rem; font-weight:900; line-height:1.08; margin-top:.2rem; word-break:break-word; }
+.area6-card .ac-meta { margin-top:auto; padding-top:.56rem; font-size:.67rem; color:rgba(255,255,255,.72); line-height:1.35; }
+.area6-card.tone-blue { background:linear-gradient(145deg,#064c9d,#1d87ff); }
+.area6-card.tone-red { background:linear-gradient(145deg,#991b1b,#ef4444); }
+.area6-card.tone-green { background:linear-gradient(145deg,#166534,#22c55e); }
+.area6-card.tone-amber { background:linear-gradient(145deg,#92400e,#f59e0b); }
+.area6-card.tone-purple { background:linear-gradient(145deg,#5b21b6,#8b5cf6); }
+.area6-card.tone-orange { background:linear-gradient(145deg,#9a3412,#f97316); }
+.area6-card.tone-teal { background:linear-gradient(145deg,#115e59,#14b8a6); }
+.area6-ranking-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.72rem; padding:0 1rem 1rem; }
+.rank-card { border:1px solid #dbe7f5; border-radius:14px; background:#fff; overflow:hidden; min-width:0; box-shadow:0 10px 28px -26px rgba(15,23,42,.35); }
+.rank-card-head { padding:.82rem .9rem .62rem; border-bottom:1px solid #edf2f7; background:#fbfdff; }
+.rank-card-title { display:flex; align-items:center; justify-content:space-between; gap:.5rem; font-size:.84rem; font-weight:900; color:#0f172a; }
+.rank-card-title span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rank-card-hint { font-size:.64rem; color:#64748b; margin-top:.14rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rank-badge { flex:0 0 auto; width:8px; height:8px; border-radius:999px; background:#3b82f6; }
+.rank-card.tone-red .rank-badge { background:#ef4444; }
+.rank-card.tone-amber .rank-badge { background:#f59e0b; }
+.rank-card.tone-orange .rank-badge { background:#f97316; }
+.rank-card.tone-teal .rank-badge { background:#14b8a6; }
+.rank-card.tone-slate .rank-badge { background:#64748b; }
+.rank-list { padding:.5rem .66rem .62rem; }
+.rank-row { display:grid; grid-template-columns:30px minmax(0,1fr) auto; gap:.58rem; align-items:center; padding:.58rem .26rem; border-bottom:1px solid #f1f5f9; }
+.rank-row:last-child { border-bottom:0; }
+.rank-no { width:25px; height:25px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:#eff6ff; color:#1d4ed8; font-size:.66rem; font-weight:900; }
+.rank-main { min-width:0; }
+.rank-name { font-size:.76rem; font-weight:850; color:#0f172a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rank-meta { font-size:.62rem; color:#64748b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:.06rem; }
+.rank-val { text-align:right; font-size:.74rem; font-weight:900; color:#0f172a; white-space:nowrap; }
+.rank-sub { font-size:.6rem; color:#64748b; margin-top:.06rem; }
+.rank-empty { padding:.9rem .7rem; font-size:.62rem; color:#94a3b8; text-align:center; }
+.main-grid { display:grid; grid-template-columns:minmax(280px,.95fr) minmax(0,2.05fr); gap:.8rem; align-items:start; }
+.chart-panel { border-radius:16px; background:#fff; border:1px solid var(--c-border); padding:1.05rem; min-height:380px; position:relative; box-shadow:0 12px 30px -28px rgba(15,23,42,.35); }
 .chart-panel .cp-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:.6rem; }
-.chart-panel .cp-title { font-size:.75rem; font-weight:800; color:#0f172a; }
+.chart-panel .cp-title { font-size:.86rem; font-weight:850; color:#0f172a; }
 .chart-panel .cp-legend { display:flex; gap:.85rem; }
 .chart-panel .cp-leg-item { display:flex; align-items:center; gap:.35rem; font-size:.6rem; font-weight:600; color:#64748b; }
 .chart-panel .cp-leg-dot { width:8px; height:8px; border-radius:999px; }
-.chart-panel canvas { width:100% !important; height:160px !important; }
+.chart-panel canvas { width:100% !important; height:300px !important; }
+.chart-empty { display:none; position:absolute; left:1rem; right:1rem; top:5.2rem; bottom:1rem; align-items:center; justify-content:center; text-align:center; color:#64748b; border:1px dashed #dbe7f5; border-radius:12px; background:#f8fbff; font-size:.74rem; font-weight:700; }
+.chart-panel.is-empty .chart-empty { display:flex; }
+.chart-panel.is-empty canvas { opacity:0; }
 
 /* ── DIGITAL GRID ── */
-.digital-panel { border-radius:var(--r); background:#fff; border:1px solid var(--c-border); padding:.7rem; }
+.digital-panel { border-radius:16px; background:#fff; border:1px solid var(--c-border); padding:.86rem; box-shadow:0 12px 30px -28px rgba(15,23,42,.35); }
 .dp-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:.55rem; }
-.dp-title { font-size:.72rem; font-weight:800; color:#0f172a; }
+.dp-title { font-size:.86rem; font-weight:850; color:#0f172a; }
 .dp-updated { font-size:.58rem; color:#94a3b8; }
-.dp-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:.5rem; }
-.dc { border-radius:12px; padding:.65rem .6rem .55rem; color:#fff; position:relative; overflow:hidden; cursor:pointer; text-decoration:none; display:flex; flex-direction:column; transition:transform .16s,box-shadow .16s; border:0; text-align:left; width:100%; min-height:0; font:inherit; appearance:none; }
+.dp-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.66rem; }
+.dc { border-radius:14px; padding:.96rem .9rem .82rem; color:#fff; position:relative; overflow:hidden; cursor:pointer; text-decoration:none; display:flex; flex-direction:column; transition:transform .16s,box-shadow .16s; border:0; text-align:left; width:100%; min-height:192px; font:inherit; appearance:none; }
 .dc:hover { transform:translateY(-2px); box-shadow:0 12px 28px -16px rgba(4,42,95,.5); color:#fff; }
 .dc::before { content:''; position:absolute; inset:-40% -30% auto auto; width:120px; height:120px; border-radius:999px; background:rgba(255,255,255,.1); pointer-events:none; }
 .dc-edc { background:linear-gradient(145deg,#0a3ea1,#1d87ff); }
@@ -80,9 +135,9 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .dc-dormant { background:linear-gradient(145deg,#991b1b,#ef4444); }
 .dc-payroll { background:linear-gradient(145deg,#374151,#6b7280); }
 .dc-badge { display:inline-flex; align-items:center; gap:.28rem; padding:.2rem .45rem; border-radius:999px; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.18); font-size:.55rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; margin-bottom:.35rem; width:fit-content; }
-.dc-val { font-size:1.05rem; font-weight:800; line-height:1.05; }
-.dc-label { font-size:.58rem; color:rgba(255,255,255,.72); margin-bottom:.2rem; }
-.dc-sub { font-size:.58rem; color:rgba(255,255,255,.65); }
+.dc-val { font-size:1.42rem; font-weight:900; line-height:1.05; }
+.dc-label { font-size:.7rem; color:rgba(255,255,255,.73); margin-bottom:.24rem; }
+.dc-sub { font-size:.68rem; color:rgba(255,255,255,.7); }
 .dc-trend { display:inline-flex; align-items:center; gap:.22rem; font-size:.58rem; font-weight:700; padding:.16rem .4rem; border-radius:999px; background:rgba(255,255,255,.14); margin-top:auto; margin-bottom:.1rem; }
 .dc-foot { display:flex; justify-content:space-between; align-items:center; margin-top:.3rem; }
 .dc-link { font-size:.58rem; font-weight:700; color:rgba(255,255,255,.85); display:inline-flex; align-items:center; gap:.22rem; }
@@ -90,8 +145,8 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .dc:focus-visible, .kpi-card button.kc-link:focus-visible { outline:2px solid rgba(255,255,255,.8); outline-offset:2px; }
 .dc-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:.25rem; margin-top:.4rem; }
 .dc-stat { background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.1); border-radius:7px; padding:.25rem .3rem; }
-.dc-stat-lbl { font-size:.52rem; color:rgba(255,255,255,.65); }
-.dc-stat-val { font-size:.65rem; font-weight:700; }
+.dc-stat-lbl { font-size:.57rem; color:rgba(255,255,255,.65); }
+.dc-stat-val { font-size:.7rem; font-weight:700; }
 .dc-stub { opacity:.72; filter:grayscale(.3); }
 .dc-stub::after { content:'–'; }
 
@@ -117,7 +172,46 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .source-modal-note { font-size:.72rem; color:#475569; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:.6rem .7rem; margin-bottom:.7rem; }
 .source-modal-table th { font-size:.68rem; text-transform:uppercase; color:#64748b; letter-spacing:.04em; border-top:0; }
 .source-modal-table td { font-size:.78rem; vertical-align:middle; }
-@media (max-width: 575.98px) { .source-modal-meta { grid-template-columns:1fr; } }
+.dashboard-source-modal { z-index:2070; }
+.modal-backdrop.dashboard-source-backdrop { z-index:2060; background:#0f172a; }
+.modal-backdrop.dashboard-source-backdrop.show { opacity:.36; }
+.dashboard-source-modal .modal-content { border:0; border-radius:14px; box-shadow:0 24px 70px -36px rgba(15,23,42,.75); }
+.dashboard-source-modal .modal-header,
+.dashboard-source-modal .modal-footer { border-color:#e5eef8; }
+.dashboard-source-modal .modal-title { font-size:1rem; font-weight:850; color:#0f172a; }
+.dashboard-source-modal .btn { border-radius:8px; font-weight:800; }
+@media (max-width: 1199.98px) {
+  .kpi-strip { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .main-grid { grid-template-columns:1fr; }
+  .dp-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+}
+@media (max-width: 1199.98px) {
+  .area6-card-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .area6-ranking-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 767.98px) {
+  .db-header { align-items:flex-start; flex-direction:column; gap:.55rem; }
+  .db-meta { flex-wrap:wrap; gap:.42rem; }
+  .kpi-strip { grid-template-columns:1fr; }
+  .kpi-card .kc-sub { white-space:normal; }
+  .area6-head { align-items:flex-start; flex-direction:column; }
+  .area6-head-actions { align-items:flex-start; }
+  .area6-periods { justify-content:flex-start; }
+  .area6-card-grid, .area6-ranking-grid { grid-template-columns:1fr; }
+  .dp-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .dc { min-height:174px; }
+  .chart-panel { min-height:330px; }
+  .chart-panel canvas { height:250px !important; }
+  .source-modal-meta { grid-template-columns:1fr; }
+}
+@media (max-width: 575.98px) {
+  .db-shell { padding-bottom:.25rem; }
+  .area6-panel, .chart-panel, .digital-panel { border-radius:12px; }
+  .dp-grid { grid-template-columns:1fr; }
+  .dc { min-height:0; }
+  .dc-foot { gap:.5rem; }
+  .dashboard-source-modal .modal-dialog { margin:.65rem; }
+}
 </style>
 
 <div class="db-shell pt-2">
@@ -189,6 +283,125 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
     @endforeach
   </div>
 
+  {{-- AREA 6 PORTFOLIO SUMMARY --}}
+  <section class="area6-panel">
+    <div class="area6-head">
+      <div>
+        <div class="area6-title">{{ data_get($area6Portfolio, 'title', 'Ringkasan Area 6') }}</div>
+        <div class="area6-sub">{{ data_get($area6Portfolio, 'subtitle', 'Ringkasan lintas report Area 6.') }}</div>
+      </div>
+      <div class="area6-head-actions">
+        @if(!empty($area6RankingModes))
+        <div class="area6-scope-toggle" role="group" aria-label="Pilihan level ranking Area 6">
+          @foreach($area6RankingModes as $scopeKey => $scopePayload)
+          <button type="button"
+                  class="area6-scope-btn {{ $scopeKey === $area6DefaultScope ? 'active' : '' }}"
+                  data-area6-scope="{{ $scopeKey }}">
+            {{ data_get($scopePayload, 'label', strtoupper($scopeKey)) }}
+          </button>
+          @endforeach
+        </div>
+        @endif
+        <div class="area6-periods">
+          <span class="area6-pill"><i class="fas fa-calendar-day"></i> Harian: {{ data_get($area6Portfolio, 'period_label', 'Belum ada data') }}</span>
+          <span class="area6-pill"><i class="fas fa-chart-line"></i> Pinjaman: {{ data_get($area6Portfolio, 'loan_period_label', 'Belum ada data') }}</span>
+          <span class="area6-pill"><i class="fas fa-database"></i> Detail: {{ data_get($area6Portfolio, 'loan_detail_period_label', data_get($area6Portfolio, 'loan_period_label', 'Belum ada data')) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="area6-card-grid">
+      @forelse($area6Cards as $card)
+      <button type="button"
+              class="area6-card tone-{{ data_get($card, 'tone', 'blue') }} dashboard-detail-trigger"
+              data-detail='@json(data_get($card, "detail_payload", []))'
+              data-link="{{ data_get($card, 'link', '#') }}"
+              data-link-label="{{ data_get($card, 'link_label', 'Lihat detail') }}">
+        <div class="ac-icon"><i class="{{ data_get($card, 'icon', 'fas fa-chart-bar') }}"></i></div>
+        <div class="ac-label">{{ data_get($card, 'label', '-') }}</div>
+        <div class="ac-value">{{ data_get($card, 'value', '-') }}</div>
+        <div class="ac-meta">{{ data_get($card, 'meta', '-') }}</div>
+      </button>
+      @empty
+      <div class="rank-empty">Ringkasan Area 6 belum tersedia.</div>
+      @endforelse
+    </div>
+
+    @if(!empty($area6RankingModes))
+      @foreach($area6RankingModes as $scopeKey => $scopePayload)
+      <div class="area6-ranking-grid area6-ranking-mode {{ $scopeKey === $area6DefaultScope ? '' : 'd-none' }}" data-area6-ranking-scope="{{ $scopeKey }}">
+        @forelse(data_get($scopePayload, 'rankings', []) as $group)
+        <div class="rank-card tone-{{ data_get($group, 'tone', 'blue') }}">
+          <div class="rank-card-head">
+            <div class="rank-card-title">
+              <span>{{ data_get($group, 'title', 'Ranking') }}</span>
+              <i class="rank-badge"></i>
+            </div>
+            <div class="rank-card-hint">{{ data_get($group, 'hint', 'Area 6') }}</div>
+          </div>
+          <div class="rank-list">
+            @forelse(data_get($group, 'rows', []) as $row)
+            <div class="rank-row">
+              <div class="rank-no">{{ data_get($row, 'rank', $loop->iteration) }}</div>
+              <div class="rank-main">
+                <div class="rank-name" title="{{ data_get($row, 'label', '-') }}">{{ data_get($row, 'label', '-') }}</div>
+                <div class="rank-meta" title="{{ data_get($row, 'meta', '-') }}">{{ data_get($row, 'meta', '-') }}</div>
+              </div>
+              <div class="rank-val">
+                {{ data_get($row, 'value', '-') }}
+                @if(data_get($row, 'sub'))
+                <div class="rank-sub">{{ data_get($row, 'sub') }}</div>
+                @endif
+              </div>
+            </div>
+            @empty
+            <div class="rank-empty">Data ranking belum tersedia.</div>
+            @endforelse
+          </div>
+        </div>
+        @empty
+        <div class="rank-empty">Ranking {{ data_get($scopePayload, 'label', strtoupper($scopeKey)) }} belum tersedia.</div>
+        @endforelse
+      </div>
+      @endforeach
+    @else
+      <div class="area6-ranking-grid">
+      @forelse($area6Rankings as $group)
+      <div class="rank-card tone-{{ data_get($group, 'tone', 'blue') }}">
+        <div class="rank-card-head">
+          <div class="rank-card-title">
+            <span>{{ data_get($group, 'title', 'Ranking') }}</span>
+            <i class="rank-badge"></i>
+          </div>
+          <div class="rank-card-hint">{{ data_get($group, 'hint', 'Area 6') }}</div>
+        </div>
+        <div class="rank-list">
+          @forelse(data_get($group, 'rows', []) as $row)
+          <div class="rank-row">
+            <div class="rank-no">{{ data_get($row, 'rank', $loop->iteration) }}</div>
+            <div class="rank-main">
+              <div class="rank-name" title="{{ data_get($row, 'label', '-') }}">{{ data_get($row, 'label', '-') }}</div>
+              <div class="rank-meta" title="{{ data_get($row, 'meta', '-') }}">{{ data_get($row, 'meta', '-') }}</div>
+            </div>
+            <div class="rank-val">
+              {{ data_get($row, 'value', '-') }}
+              @if(data_get($row, 'sub'))
+              <div class="rank-sub">{{ data_get($row, 'sub') }}</div>
+              @endif
+            </div>
+          </div>
+          @empty
+          <div class="rank-empty">Belum ada data ranking.</div>
+          @endforelse
+        </div>
+      </div>
+      @empty
+      <div class="rank-empty">Ranking Area 6 belum tersedia.</div>
+      @endforelse
+      </div>
+    @endif
+  </section>
+
   {{-- MAIN GRID: Chart + Digital --}}
   <div class="main-grid">
     {{-- TIMESERIES CHART --}}
@@ -204,12 +417,13 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
         </div>
       </div>
       <canvas id="timeseriesChart"></canvas>
+      <div class="chart-empty" id="timeseriesChartEmpty">Grafik belum tersedia.</div>
     </div>
 
     {{-- 8 DIGITAL CARDS --}}
     <div class="digital-panel">
       <div class="dp-header">
-        <div class="dp-title"><i class="fas fa-bolt mr-1" style="color:#f59e0b;"></i>8 Strategi Performance Digital Area 6</div>
+        <div class="dp-title"><i class="fas fa-bolt mr-1" style="color:#f59e0b;"></i>8 Fokus Kinerja Digital Area 6</div>
         @if($digitalUpdatedAt)
         <div class="dp-updated"><i class="fas fa-sync-alt mr-1"></i>{{ $digitalUpdatedAt }} WIB</div>
         @endif
@@ -261,13 +475,12 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
     </div>
   </div>
 
-  <div class="modal fade" id="dashboardSourceModal" tabindex="-1" role="dialog" aria-labelledby="dashboardSourceModalTitle" aria-hidden="true">
+  <div class="modal fade dashboard-source-modal" id="dashboardSourceModal" tabindex="-1" role="dialog" aria-labelledby="dashboardSourceModalTitle" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
       <div class="modal-content">
         <div class="modal-header">
           <div>
-            <h5 class="modal-title mb-1" id="dashboardSourceModalTitle">Detail sumber data</h5>
-            <div class="text-muted small">Angka ditampilkan apa adanya dari payload landing page.</div>
+            <h5 class="modal-title mb-0" id="dashboardSourceModalTitle">Detail sumber data</h5>
           </div>
           <button type="button" class="close" data-dismiss="modal" aria-label="Tutup">
             <span aria-hidden="true">&times;</span>
@@ -306,7 +519,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 @endsection
 
 @section('scripts')
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="{{ asset('vendor/chartjs/chart.min.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   // Clock
@@ -318,87 +531,156 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Timeseries Chart
   const labels = @json(data_get($timeseries,'labels',[]));
-  const simp   = @json(data_get($timeseries,'simpanan',[]));
-  const pinj   = @json(data_get($timeseries,'pinjaman',[]));
+  const normalizeChartValue = value => {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    const normalized = String(value ?? '0')
+      .replace(/\s/g, '')
+      .replace(',', '.');
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const simp = @json(data_get($timeseries,'simpanan',[])).map(normalizeChartValue);
+  const pinj = @json(data_get($timeseries,'pinjaman',[])).map(normalizeChartValue);
 
   const ctx = document.getElementById('timeseriesChart');
-  if (ctx && labels.length) {
-    new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [
-          {
-            label: 'Simpanan (Rp T)',
-            data: simp,
-            borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59,130,246,.12)',
-            borderWidth: 2.5,
-            pointRadius: 4,
-            pointHoverRadius: 6,
-            pointBackgroundColor: '#fff',
-            pointBorderColor: '#3b82f6',
-            pointBorderWidth: 2,
-            fill: true,
-            tension: .38,
-            yAxisID: 'y',
-          },
-          {
-            label: 'Pinjaman (Rp T)',
-            data: pinj,
-            borderColor: '#ef4444',
-            backgroundColor: 'rgba(239,68,68,.08)',
-            borderWidth: 2.5,
-            pointRadius: 4,
-            pointHoverRadius: 6,
-            pointBackgroundColor: '#fff',
-            pointBorderColor: '#ef4444',
-            pointBorderWidth: 2,
-            fill: true,
-            tension: .38,
-            yAxisID: 'y2',
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode:'index', intersect:false },
-        plugins: {
-          legend: { display:false },
-          tooltip: {
-            backgroundColor:'rgba(15,23,42,.92)',
-            titleFont:{ size:11, weight:'700' },
-            bodyFont:{ size:10.5 },
-            padding:10,
-            cornerRadius:10,
-            callbacks: {
-              label: ctx => {
-                const v = ctx.parsed.y;
-                return ' ' + ctx.dataset.label + ': Rp' + (v ? v.toLocaleString('id-ID',{minimumFractionDigits:2,maximumFractionDigits:3}) : '0') + ' T';
+  const chartPanel = ctx ? ctx.closest('.chart-panel') : null;
+  const hasChartData = labels.length && (simp.some(value => value > 0) || pinj.some(value => value > 0));
+  const markChartEmpty = () => {
+    if (chartPanel) {
+      chartPanel.classList.add('is-empty');
+    }
+  };
+  const renderTimeseriesChart = () => {
+    if (!ctx || !window.Chart || !hasChartData) {
+      markChartEmpty();
+      return;
+    }
+
+    try {
+      const chart = new Chart(ctx.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Simpanan (Rp T)',
+              data: simp,
+              borderColor: '#3b82f6',
+              backgroundColor: 'rgba(59,130,246,.12)',
+              borderWidth: 2.5,
+              pointRadius: 4,
+              pointHoverRadius: 6,
+              pointBackgroundColor: '#fff',
+              pointBorderColor: '#3b82f6',
+              pointBorderWidth: 2,
+              fill: true,
+              tension: .38,
+              yAxisID: 'y',
+            },
+            {
+              label: 'Pinjaman (Rp T)',
+              data: pinj,
+              borderColor: '#ef4444',
+              backgroundColor: 'rgba(239,68,68,.08)',
+              borderWidth: 2.5,
+              pointRadius: 4,
+              pointHoverRadius: 6,
+              pointBackgroundColor: '#fff',
+              pointBorderColor: '#ef4444',
+              pointBorderWidth: 2,
+              fill: true,
+              tension: .38,
+              yAxisID: 'y2',
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode:'index', intersect:false },
+          plugins: {
+            legend: { display:false },
+            tooltip: {
+              backgroundColor:'rgba(15,23,42,.92)',
+              titleFont:{ size:11, weight:'700' },
+              bodyFont:{ size:10.5 },
+              padding:10,
+              cornerRadius:10,
+              callbacks: {
+                label: item => {
+                  const value = item.parsed.y;
+                  return ' ' + item.dataset.label + ': Rp' + (value ? value.toLocaleString('id-ID',{minimumFractionDigits:2,maximumFractionDigits:3}) : '0') + ' T';
+                }
               }
             }
-          }
-        },
-        scales: {
-          x: {
-            grid:{ color:'rgba(148,163,184,.12)' },
-            ticks:{ font:{size:10,weight:'600'}, color:'#64748b' }
           },
-          y: {
-            position:'left',
-            grid:{ color:'rgba(148,163,184,.12)' },
-            ticks:{ font:{size:10}, color:'#3b82f6', callback: v => 'Rp'+v.toFixed(1)+'T' }
-          },
-          y2: {
-            position:'right',
-            grid:{ drawOnChartArea:false },
-            ticks:{ font:{size:10}, color:'#ef4444', callback: v => 'Rp'+v.toFixed(1)+'T' }
+          scales: {
+            x: {
+              grid:{ color:'rgba(148,163,184,.12)' },
+              ticks:{ font:{size:10,weight:'600'}, color:'#64748b' }
+            },
+            y: {
+              position:'left',
+              grid:{ color:'rgba(148,163,184,.12)' },
+              ticks:{ font:{size:10}, color:'#3b82f6', callback: value => 'Rp'+Number(value).toFixed(1)+'T' }
+            },
+            y2: {
+              position:'right',
+              grid:{ drawOnChartArea:false },
+              ticks:{ font:{size:10}, color:'#ef4444', callback: value => 'Rp'+Number(value).toFixed(1)+'T' }
+            }
           }
         }
-      }
-    });
+      });
+
+      chartPanel?.classList.remove('is-empty');
+      window.setTimeout(() => chart.resize(), 120);
+    } catch (error) {
+      markChartEmpty();
+    }
+  };
+
+  window.requestAnimationFrame(renderTimeseriesChart);
+
+  const sourceModal = document.getElementById('dashboardSourceModal');
+  if (sourceModal && sourceModal.parentElement !== document.body) {
+    document.body.appendChild(sourceModal);
   }
+
+  const clearSourceModalState = () => {
+    document.querySelectorAll('.modal-backdrop.dashboard-source-backdrop').forEach(backdrop => backdrop.remove());
+    if (!document.querySelector('.modal.show')) {
+      document.body.classList.remove('modal-open');
+      document.body.style.removeProperty('padding-right');
+    }
+  };
+
+  if (window.jQuery && sourceModal && typeof window.jQuery.fn.modal === 'function') {
+    const $sourceModal = window.jQuery(sourceModal);
+    $sourceModal.on('shown.bs.modal', function () {
+      window.jQuery('.modal-backdrop').last().addClass('dashboard-source-backdrop');
+    });
+    $sourceModal.on('hidden.bs.modal', clearSourceModalState);
+    window.jQuery(window).on('pagehide', clearSourceModalState);
+  }
+
+  document.querySelectorAll('.area6-scope-btn').forEach(button => {
+    button.addEventListener('click', function() {
+      const scope = this.getAttribute('data-area6-scope');
+
+      document.querySelectorAll('.area6-scope-btn').forEach(item => {
+        item.classList.toggle('active', item === this);
+      });
+
+      document.querySelectorAll('.area6-ranking-mode').forEach(panel => {
+        panel.classList.toggle('d-none', panel.getAttribute('data-area6-ranking-scope') !== scope);
+      });
+    });
+  });
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
@@ -438,8 +720,14 @@ document.addEventListener('DOMContentLoaded', function() {
       link.href = this.getAttribute('data-link') || '#';
       link.textContent = this.getAttribute('data-link-label') || 'Buka report';
 
-      if (window.jQuery && typeof window.jQuery.fn.modal === 'function') {
-        window.jQuery('#dashboardSourceModal').modal('show');
+      if (window.jQuery && sourceModal && typeof window.jQuery.fn.modal === 'function') {
+        clearSourceModalState();
+        window.jQuery(sourceModal).modal({
+          backdrop: true,
+          keyboard: true,
+          focus: true,
+          show: true,
+        });
       }
     });
   });

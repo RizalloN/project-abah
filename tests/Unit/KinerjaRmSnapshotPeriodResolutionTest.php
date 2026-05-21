@@ -77,7 +77,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
 
         $resolvedAll = $this->invokePrivateMethod($builder, 'resolvePerformanceRmPeriods', [null]);
 
-        $this->assertSame(['2026-04-04', '2026-04-17'], $resolvedAll);
+        $this->assertSame(['2026-04-17'], $resolvedAll);
     }
 
     public function test_kinerja_rm_cache_keys_refresh_after_scoped_report_cache_version_bump(): void
@@ -134,13 +134,14 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         Cache::put('report_cache_version:pinjaman', 2);
 
         $periodsRefreshed = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', []);
-        $this->assertSame(['2026-04-18', '2026-04-17'], $periodsRefreshed->all());
+        $this->assertSame(['2026-04-18'], $periodsRefreshed->all());
     }
 
     public function test_kinerja_rm_period_options_include_daily_loan_source_periods(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             ['periode' => '2026-04-20'],
+            ['periode' => '2026-04-10'],
             ['periode' => '2026-03-31'],
             ['periode' => '2025-12-31'],
         ]);
@@ -172,6 +173,24 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $periods = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', []);
 
         $this->assertSame(['2026-04-20', '2026-03-31', '2025-12-31'], $periods->all());
+    }
+
+    public function test_kinerja_rm_requested_mid_month_uses_latest_period_in_that_month(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['periode' => '2026-05-15'],
+            ['periode' => '2026-05-17'],
+            ['periode' => '2026-04-30'],
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $periods = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', []);
+
+        $this->assertSame(['2026-05-17', '2026-04-30'], $periods->all());
+        $this->assertSame('2026-05-17', $this->invokePrivateMethod($controller, 'resolveSelectedPeriod', [
+            $periods,
+            '2026-05-15',
+        ]));
     }
 
     public function test_kinerja_rm_history_modal_includes_previous_and_current_year_until_selected_period(): void

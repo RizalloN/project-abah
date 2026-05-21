@@ -325,7 +325,7 @@
 
     .dana-table {
         width: 100%;
-        border-collapse: separate;
+        border-collapse: collapse;
         border-spacing: 0;
     }
 
@@ -513,6 +513,55 @@
         background: rgba(255, 255, 255, 0.25);
         transform: translateY(-2px);
         box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    }
+
+    .dana-dashboard .dana-card,
+    .dana-dashboard .dana-filter-bar,
+    .dana-dashboard .dana-dropdown-toggle,
+    .dana-dashboard .dana-dropdown-menu,
+    .dana-dashboard .dana-dropdown-option,
+    .dana-dashboard .btn-dana-refresh,
+    .dana-dashboard .btn-capture-all,
+    .dana-dashboard .perf-badge,
+    .capture-status-modal .modal-content,
+    .capture-status-modal .btn {
+        border-radius: 0 !important;
+    }
+
+    .dana-dashboard .dana-card,
+    .dana-dashboard .dana-filter-bar {
+        box-shadow: none !important;
+        border: 1px solid #b7c9dc;
+        backdrop-filter: none;
+    }
+
+    .dana-dashboard .dana-table thead th,
+    .dana-dashboard .dana-table thead .group-position,
+    .dana-dashboard .dana-table thead .group-delta,
+    .dana-dashboard .dana-table thead .group-rka {
+        background: #1f4e78 !important;
+        border: 1px solid #9fb8d3 !important;
+    }
+
+    .dana-dashboard .dana-table tbody td {
+        border: 1px solid #d9e2f3 !important;
+        background-clip: padding-box;
+    }
+
+    .dana-dashboard .subtotal-row,
+    .dana-dashboard .subtotal-row td {
+        background: #ddebf7 !important;
+        color: #1f4e78 !important;
+    }
+
+    .dana-dashboard .grandtotal-row,
+    .dana-dashboard .grandtotal-row td {
+        background: #1f4e78 !important;
+    }
+
+    .dana-dashboard .sticky-col,
+    .dana-dashboard .branch-cell {
+        border-color: #b7c9dc !important;
     }
 
 </style>

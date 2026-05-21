@@ -68,6 +68,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
     {
         DB::table('daily_loan_dinamis')->insert([
             ['periode' => '2026-05-06', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO'],
+            ['periode' => '2026-05-04', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO'],
             ['periode' => '2026-05-05', 'segmen_kinerja' => 'CONSUMER', 'produk_kinerja' => 'KPR'],
         ]);
         DB::table('performance_rm_snapshots')->insert([
@@ -77,6 +78,21 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $periods = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'fetchAvailablePeriods');
 
         $this->assertSame(['2026-05-06', '2026-04-30'], $periods->all());
+    }
+
+    public function test_requested_mid_month_uses_latest_micro_kur_period_in_that_month(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['periode' => '2026-05-15', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO'],
+            ['periode' => '2026-05-17', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO'],
+            ['periode' => '2026-04-30', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO'],
+        ]);
+
+        $controller = new KinerjaRmMikroReportController();
+        $periods = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods');
+
+        $this->assertSame(['2026-05-17', '2026-04-30'], $periods->all());
+        $this->assertSame('2026-05-17', $this->invokePrivateMethod($controller, 'resolveSelectedPeriod', $periods, '2026-05-15'));
     }
 
     public function test_mantri_payload_excludes_kur_ritel_but_includes_kur_mikro_baru(): void

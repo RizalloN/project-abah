@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\SnapshotIntegrityGuard;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -9,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
 
 class ValidateSnapshotDataIntegrityCommand extends Command
 {
-    protected $signature = 'snapshot:validate-integrity {--period= : Validate specific period} {--segment= : Validate specific segment} {--report= : Validate specific report (performance_rm|ssa_simpanan|dashboard_simpanan|dashboard_harian|dormant_account)} {--sample : Sample-based validation (faster)}';
+    protected $signature = 'snapshot:validate-integrity {--period= : Validate specific period} {--segment= : Validate specific segment} {--report= : Validate specific report (all_snapshots|snapshot_guard|performance_rm|ssa_simpanan|dashboard_simpanan|dashboard_harian|dormant_account)} {--sample : Sample-based validation (faster)}';
 
     protected $description = 'Validate snapshot data integrity across all materialized snapshot tables';
 
@@ -23,15 +24,22 @@ class ValidateSnapshotDataIntegrityCommand extends Command
 
             $this->info('Starting snapshot data integrity validation...');
 
-            if ($report === 'ssa_simpanan') {
+            if (in_array($report, ['all_snapshots', 'snapshot_guard'], true)) {
+                $this->validateSnapshotGuard($period, $useSample, null);
+            } elseif ($report === 'ssa_simpanan') {
+                $this->validateSnapshotGuard($period, $useSample, $report);
                 $this->validateSsaSimpanan($period, $useSample);
             } elseif ($report === 'dashboard_simpanan') {
+                $this->validateSnapshotGuard($period, $useSample, $report);
                 $this->validateDashboardSimpanan($period, $useSample);
             } elseif ($report === 'dashboard_harian') {
+                $this->validateSnapshotGuard($period, $useSample, $report);
                 $this->validateDashboardHarian($period, $useSample);
             } elseif ($report === 'dormant_account') {
+                $this->validateSnapshotGuard($period, $useSample, $report);
                 $this->validateDormantAccount($period, $useSample);
             } else {
+                $this->validateSnapshotGuard($period, $useSample, $report ?: 'performance_rm');
                 // Default: validate performance_rm
                 if ($useSample) {
                     $this->validateWithSampling($period, $segment);
@@ -44,6 +52,51 @@ class ValidateSnapshotDataIntegrityCommand extends Command
         } catch (\Throwable $e) {
             $this->error('Validation failed: ' . $e->getMessage());
             return self::FAILURE;
+        }
+    }
+
+    private function validateSnapshotGuard(?string $period, bool $useSample, ?string $report): void
+    {
+        $this->line('<fg=cyan>== SNAPSHOT GUARD VALIDATION ==</>');
+
+        $guard = app(SnapshotIntegrityGuard::class);
+        $reportTables = [
+            'dashboard_harian' => ['dashboard_harian_snapshots'],
+            'dashboard_simpanan' => ['dashboard_simpanan_snapshots', 'dashboard_simpanan_branch_snapshots'],
+            'ssa_simpanan' => ['ssa_simpanan_snapshots'],
+            'dormant_account' => ['rekening_dormant_snapshots'],
+            'performance_rm' => ['performance_rm_snapshots', 'performance_rm_cabang_snapshots'],
+        ];
+
+        $tables = $report && isset($reportTables[$report])
+            ? $reportTables[$report]
+            : $guard->snapshotTables();
+        $limit = $useSample ? 3 : 10;
+
+        foreach ($tables as $table) {
+            foreach ($guard->inspectTable($table, $period, $limit) as $result) {
+                $status = (string) ($result['status'] ?? 'skipped');
+                $line = sprintf(
+                    '  %s | period=%s | rows=%d | duplicate_groups=%d | status=%s',
+                    (string) ($result['snapshot_table'] ?? $table),
+                    (string) (($result['period'] ?? '') ?: '-'),
+                    (int) ($result['row_count'] ?? 0),
+                    (int) ($result['duplicate_group_count'] ?? 0),
+                    $status
+                );
+
+                if (!empty($result['reason'])) {
+                    $line .= ' | reason=' . (string) $result['reason'];
+                }
+
+                if ($status === 'anomaly' || $status === 'error') {
+                    $this->warn($line);
+                } elseif ($status === 'skipped') {
+                    $this->line('<fg=yellow>' . $line . '</>');
+                } else {
+                    $this->line('<fg=green>' . $line . '</>');
+                }
+            }
         }
     }
 

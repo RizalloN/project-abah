@@ -97,6 +97,47 @@ class ImportPerformancePisPerProdukControllerTest extends TestCase
         }
     }
 
+    public function test_build_csv_context_skips_posisi_metadata_before_header(): void
+    {
+        $controller = new ImportPerformancePisPerProdukController();
+        $csvPath = tempnam(sys_get_temp_dir(), 'pnps_posisi_meta_') . '.csv';
+        file_put_contents($csvPath, implode("\n", [
+            'posisi',
+            '15 May 2026',
+            '',
+            'no,kode_kanwil,kanwil,kode_kanca,kanca,kode_uker,uker,corporate_code,nama_perusahaan,jenis_mitra,jenis_perusahaan,tipe_produk,nomor_rekening,nama_rekening,saldo_britama_kerjasama,tanggal_pembuatan_rekening,pn_rm_dana_brinets,pn_rm_dana_pis2,nomor_hp,email,flag_briguna,flag_cc',
+            '1,R,KANWIL MALANG,7,KC Banyuwangi,7,KC Banyuwangi,0000039,TNI AD - Pusat Pendidikan Polisi Militer,,,TN,701104113505,ZANU AGUS LESTARI,"6,321,767.00",9/7/2021 12:00:00 AM,,,081000000000,,Y,N',
+        ]) . "\n");
+
+        try {
+            $context = $this->invokeMethod($controller, 'buildCsvContext', [
+                $csvPath,
+                '2026-05-15',
+                1,
+            ]);
+
+            $rows = [];
+            $this->invokeMethod($controller, 'iterateDataRows', [
+                $csvPath,
+                $context,
+                function (array $row) use (&$rows) {
+                    $rows[] = $row;
+                    return true;
+                },
+            ]);
+
+            $this->assertSame(4, $context['header_line']);
+            $this->assertSame(4, $context['source_indexes']['kanca']);
+            $this->assertCount(1, $rows);
+            $this->assertSame('2026-05-15', $rows[0][0]);
+            $this->assertSame('KC Banyuwangi', $rows[0][4]);
+            $this->assertSame('TNI AD - Pusat Pendidikan Polisi Militer', $rows[0][8]);
+            $this->assertSame('6321767.00', $rows[0][14]);
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
     public function test_map_csv_row_injects_posisi_and_keeps_branch_values(): void
     {
         $controller = new ImportPerformancePisPerProdukController();
@@ -193,6 +234,46 @@ class ImportPerformancePisPerProdukControllerTest extends TestCase
             $this->assertSame('39177.06', $rows[0][14]);
             $this->assertSame('2020-11-06', $rows[0][15]);
             $this->assertSame('81259533952', $rows[0][18]);
+            $this->assertSame('Y', $rows[0][20]);
+            $this->assertSame('N', $rows[0][21]);
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
+    public function test_iterate_csv_data_rows_expands_quoted_comma_rows_with_trailing_semicolon(): void
+    {
+        $controller = new ImportPerformancePisPerProdukController();
+        $csvPath = tempnam(sys_get_temp_dir(), 'pnps_wrapped_csv_') . '.csv';
+        file_put_contents($csvPath, implode("\r\n", [
+            'no,kode_kanwil,kanwil,kode_kanca,kanca,kode_uker,uker,corporate_code,nama_perusahaan,jenis_mitra,jenis_perusahaan,tipe_produk,nomor_rekening,nama_rekening,saldo_britama_kerjasama,tanggal_pembuatan_rekening,pn_rm_dana_brinets,pn_rm_dana_pis2,nomor_hp,email,flag_briguna,flag_cc;',
+            '"1,R,KANWIL MALANG,7,KC Banyuwangi,7,KC Banyuwangi,0000039,TNI AD - Pusat Pendidikan Polisi Militer,,,TN,701104113505,ZANU AGUS LESTARI,""6,321,767.00"",9/7/2021 12:00:00 AM,,,081000000000,,Y,N";',
+        ]) . "\r\n");
+
+        try {
+            $context = $this->invokeMethod($controller, 'buildCsvContext', [
+                $csvPath,
+                '2026-05-17',
+                1,
+            ]);
+
+            $rows = [];
+            $this->invokeMethod($controller, 'iterateDataRows', [
+                $csvPath,
+                $context,
+                function (array $row) use (&$rows) {
+                    $rows[] = $row;
+                    return true;
+                },
+            ]);
+
+            $this->assertCount(1, $rows);
+            $this->assertSame('2026-05-17', $rows[0][0]);
+            $this->assertSame('KC Banyuwangi', $rows[0][4]);
+            $this->assertSame('TNI AD - Pusat Pendidikan Polisi Militer', $rows[0][8]);
+            $this->assertSame('701104113505', $rows[0][12]);
+            $this->assertSame('6321767.00', $rows[0][14]);
+            $this->assertSame('081000000000', $rows[0][18]);
             $this->assertSame('Y', $rows[0][20]);
             $this->assertSame('N', $rows[0][21]);
         } finally {

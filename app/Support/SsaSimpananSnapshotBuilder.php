@@ -37,6 +37,8 @@ class SsaSimpananSnapshotBuilder
         }
 
         try {
+            $force = $force || $this->purgeSnapshotPeriodIfAnomalous($period);
+
             if ($force) {
                 $this->deleteExistingSnapshot($period);
             }
@@ -45,6 +47,7 @@ class SsaSimpananSnapshotBuilder
             $inserted = $force
                 ? $this->insertSnapshot($period, $aggregatedData)
                 : $this->upsertSnapshot($period, $aggregatedData);
+            $this->logSnapshotPeriodIfAnomalous($period);
 
             $elapsed = (microtime(true) - $startTime);
             Log::info("SsaSimpananSnapshotBuilder: Rebuilt snapshot for period {$period}", [
@@ -217,6 +220,29 @@ class SsaSimpananSnapshotBuilder
         DB::table(self::SNAPSHOT_TABLE)
             ->where('periode', $period)
             ->delete();
+    }
+
+    private function purgeSnapshotPeriodIfAnomalous(string $period): bool
+    {
+        try {
+            return app(SnapshotIntegrityGuard::class)->purgePeriodIfAnomalous(self::SNAPSHOT_TABLE, $period, [
+                'builder' => static::class,
+            ]);
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private function logSnapshotPeriodIfAnomalous(string $period): void
+    {
+        try {
+            app(SnapshotIntegrityGuard::class)->logIfAnomalous(self::SNAPSHOT_TABLE, $period, [
+                'builder' => static::class,
+                'phase' => 'post_rebuild',
+            ]);
+        } catch (\Throwable $e) {
+            // Keep rebuild result driven by the official builder path.
+        }
     }
 
     /**

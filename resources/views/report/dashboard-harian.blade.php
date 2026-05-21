@@ -216,13 +216,14 @@
 
     .daily-filter-shell {
         position: relative;
-        z-index: 25;
-        margin-bottom: 0.75rem;
-        padding: 1rem 1.1rem 0.95rem;
+        z-index: 80;
+        margin-bottom: 1rem;
+        padding: 1rem 1.1rem 1.05rem;
         background:
             linear-gradient(180deg, rgba(236, 243, 255, 0.98) 0%, rgba(255, 255, 255, 0.98) 72%),
             #ffffff;
         border-bottom: 1px solid rgba(219, 229, 239, 0.9);
+        overflow: visible;
     }
 
     .daily-filter-shell::before {
@@ -236,6 +237,12 @@
     .daily-filter-grid {
         position: relative;
         z-index: 1;
+        overflow: visible;
+    }
+
+    .daily-filter-grid > div:has(.daily-dropdown.is-open), .daily-filter-card:has(.daily-dropdown.is-open) {
+        z-index: 9999 !important;
+        position: relative;
     }
 
     .daily-filter-card {
@@ -553,17 +560,17 @@
 
     .daily-dropdown-menu {
         position: absolute;
-        top: calc(100% + 0.45rem);
+        top: calc(100% + 0.35rem);
         left: 0;
         right: 0;
-        z-index: 60;
+        z-index: 10050;
         background: rgba(255, 255, 255, 0.98);
         border: 1px solid rgba(219, 229, 239, 0.95);
-        border-radius: 14px;
+        border-radius: 10px;
         box-shadow: 0 20px 34px -28px rgba(0, 70, 133, 0.22);
         padding: 0.45rem;
         display: none;
-        max-height: 260px;
+        max-height: min(46vh, 320px);
         overflow-y: auto;
         backdrop-filter: blur(10px);
     }
@@ -735,9 +742,9 @@
         height: auto;
         overflow-x: auto; 
         overflow-y: auto; /* Enable native vertical scrolling inside the box */
-        border: 1px solid var(--border-color);
-        border-radius: 18px;
-        box-shadow: 0 10px 24px -12px rgba(15, 23, 42, 0.08);
+        border: 1px solid #b7c3d0;
+        border-radius: 0;
+        box-shadow: none;
         position: sticky;
         top: var(--daily-table-sticky-top);
         background: #ffffff;
@@ -750,7 +757,6 @@
     }
     .daily-table-wrap::-webkit-scrollbar-track {
         background: #f8fafc;
-        border-radius: 0 0 18px 18px;
     }
     .daily-table-wrap::-webkit-scrollbar-thumb {
         background-color: #cbd5e1;
@@ -764,24 +770,18 @@
     .daily-table {
         width: max-content;
         min-width: 100%;
-        border-collapse: separate;
+        border-collapse: collapse;
         border-spacing: 0;
         margin: 0;
         background: #ffffff;
+        font-size: 0.8rem;
     }
 
     .daily-table th, .daily-table td {
-        padding: 0.18rem 0.35rem;
+        padding: 0.2rem 0.36rem;
         vertical-align: middle;
         white-space: nowrap;
-        border-bottom: 1px solid var(--border-color);
-        border-right: 1px solid var(--border-color);
-    }
-    .daily-table th:last-child, .daily-table td:last-child {
-        border-right: none;
-    }
-    .daily-table tbody tr:last-child td {
-        border-bottom: none;
+        border: 1px solid #cfd8e3;
     }
 
     /* Table Headers */
@@ -791,50 +791,47 @@
         z-index: 25;
     }
     .daily-table thead th {
-        background: var(--table-header-bg);
+        background: #1f4e79;
         color: var(--table-header-text);
-        font-weight: 600;
+        font-weight: 700;
         text-transform: uppercase;
-        font-size: 0.76rem;
-        letter-spacing: 0.02em;
+        font-size: 0.72rem;
+        letter-spacing: 0;
         text-align: center;
-        border-bottom: 2px solid rgba(0,0,0,0.1);
-        border-right: 1px solid rgba(255,255,255,0.1);
+        border: 1px solid #173f63;
     }
     .daily-table thead tr.column-row th {
-        background: #274bba; /* Slightly lighter for sub-headers */
-        font-size: 0.72rem;
+        background: #245a86;
+        color: #ffffff;
+        font-size: 0.68rem;
+        border-color: #173f63;
     }
     .daily-table thead th.rka-period-cell {
-        background: var(--table-header-bg);
+        background: #1f4e79;
         color: #ffffff;
-        font-size: 0.86rem;
+        font-size: 0.78rem;
         font-weight: 800;
-        letter-spacing: 0.04em;
-        border-right: 1px solid rgba(255, 255, 255, 0.1);
-        border-bottom: 2px solid rgba(0, 0, 0, 0.1);
-    }
-    .daily-table thead th.rka-period-cell:last-child {
-        border-right: none;
+        letter-spacing: 0;
+        border: 1px solid #173f63;
     }
     .daily-table thead tr.rka-sub-row th {
-        background: #274bba;
-        color: #ffffff;
-        font-size: 0.72rem;
+        background: #eaf3f8;
+        color: #0f172a;
+        font-size: 0.68rem;
         font-weight: 800;
-        letter-spacing: 0.06em;
-        border-right: 1px solid rgba(255, 255, 255, 0.1);
+        letter-spacing: 0;
+        border-color: #9fb6cc;
     }
     .daily-table thead .group-position {
-        background: linear-gradient(180deg, #005bb7 0%, #004685 100%) !important;
+        background: #1f4e79 !important;
         color: #ffffff;
     }
     .daily-table thead .group-delta {
-        background: linear-gradient(180deg, #475569 0%, #334155 100%) !important;
+        background: #42526b !important;
         color: #ffffff;
     }
     .daily-table thead .group-rka {
-        background: linear-gradient(180deg, #16a34a 0%, #15803d 100%) !important;
+        background: #548235 !important;
         color: #ffffff;
     }
     .daily-table thead .rka-period-label {
@@ -898,21 +895,21 @@
         width: var(--daily-delta-width);
         min-width: var(--daily-delta-width);
         background-color: rgba(71, 85, 105, 0.02);
-        border-left: 1px solid rgba(0, 0, 0, 0.05);
+        border-left: 1px solid #b7c3d0;
     }
     .daily-table .rka-col {
         width: var(--daily-rka-width);
         min-width: var(--daily-rka-width);
         background-color: rgba(22, 163, 74, 0.02);
-        border-left: 1px solid rgba(0, 0, 0, 0.05);
+        border-left: 1px solid #b7c3d0;
     }
     
     /* Stronger group dividers */
     .daily-table .group-delta, .daily-table .delta-col:first-of-type {
-        border-left: 2px solid rgba(0,0,0,0.12) !important;
+        border-left: 2px solid #8fa3b8 !important;
     }
     .daily-table .group-rka, .daily-table .rka-col:first-of-type {
-        border-left: 2px solid rgba(0,0,0,0.12) !important;
+        border-left: 2px solid #8fa3b8 !important;
     }
 
     .daily-rka-subnote {
@@ -930,42 +927,42 @@
         left: 0;
         z-index: 10;
         background: #ffffff;
-        box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+        box-shadow: none;
     }
     .daily-table .sticky-label {
         position: sticky;
         left: var(--daily-no-width);
         z-index: 10;
         background: #ffffff;
-        box-shadow: 5px 0 10px -9px rgba(15, 23, 42, 0.62);
+        box-shadow: none;
     }
     
     .daily-table thead .sticky-no, 
     .daily-table thead .sticky-label,
     .daily-table thead .group-label {
         z-index: 15;
-        background: var(--table-header-bg);
+        background: #1f4e79;
         box-shadow: none;
         text-align: center !important;
     }
 
     /* Row Hover and Striping */
     .daily-table tbody tr {
-        transition: background-color 0.15s ease;
+        transition: none;
     }
     .daily-table tbody tr:nth-child(even) > td {
-        background-color: #f8fafc; /* slate-50 */
+        background-color: #fbfdff;
     }
     .daily-table tbody tr:nth-child(even) > .sticky-no,
     .daily-table tbody tr:nth-child(even) > .sticky-label {
-        background-color: #f8fafc;
+        background-color: #fbfdff;
     }
     .daily-table tbody tr:hover {
-        background-color: #f1f5f9;
+        background-color: #fff7cc;
     }
     .daily-table tbody tr:hover .sticky-no,
     .daily-table tbody tr:hover .sticky-label {
-        background-color: #f1f5f9 !important;
+        background-color: #fff7cc !important;
     }
 
     /* Hierarchical Rows Styling */
@@ -1038,7 +1035,7 @@
     .section-wholesale td, 
     .section-consumer td, 
     .section-commercial td {
-        background: linear-gradient(90deg, #fdfdff 0%, #f0f7ff 100%) !important;
+        background: #eaf3f8 !important;
         border-top: 1px solid #cbd5e1 !important;
         border-bottom: 1px solid #cbd5e1 !important;
     }
@@ -1048,7 +1045,7 @@
     .section-wholesale .sticky-label, 
     .section-consumer .sticky-label, 
     .section-commercial .sticky-label {
-        background: linear-gradient(90deg, #f0f7ff 0%, #ffffff 100%) !important;
+        background: #eaf3f8 !important;
         border-left: 5px solid var(--primary-blue-main) !important;
         color: var(--primary-blue-dark) !important;
         font-weight: 800 !important;
@@ -1170,13 +1167,13 @@
             pointer-events: none;
             z-index: 30;
             background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(15, 23, 42, 0.08));
-            border-radius: 0 14px 14px 0;
+            border-radius: 0;
         }
 
         .daily-table-wrap {
             max-height: min(72vh, 640px);
-            border-radius: 14px;
-            box-shadow: 0 12px 22px -18px rgba(15, 23, 42, 0.32);
+            border-radius: 0;
+            box-shadow: none;
         }
 
         .daily-table-wrap::-webkit-scrollbar {
@@ -1740,8 +1737,14 @@
             return new Intl.DateTimeFormat('id-ID', { month: 'short', year: 'numeric' }).format(date);
         };
 
-        const formatValue = function (value, type) {
-            return type === 'percent' ? formatPercent(value) : formatCurrency(value);
+        const formatValue = function (value, type, key) {
+            if (type === 'percent') {
+                if (key === 'total_sml_pct_non_commercial' || key === 'total_npl_pct_non_commercial') {
+                    return rkaPercentFormatter.format(Number(value || 0)) + '%';
+                }
+                return formatPercent(value);
+            }
+            return formatCurrency(value);
         };
 
         const setTextContent = function (node, value) {
@@ -2366,6 +2369,12 @@
                     rowsByKey.ldr_non_commercial[group][metricName] = safePercent(rowsByKey.total_os_non_commercial[group][metricName], rowsByKey.total_simpanan[group][metricName]);
                     rowsByKey.ldr_ritel_non_commercial[group][metricName] = safePercent(rowsByKey.sme_os[group][metricName] + rowsByKey.consumer_os[group][metricName], rowsByKey.simpanan_ritel[group][metricName]);
                     rowsByKey.ldr_mikro_non_commercial[group][metricName] = safePercent(rowsByKey.micro_os[group][metricName], rowsByKey.simpanan_mikro[group][metricName]);
+                    if (rowsByKey.total_sml_pct_non_commercial) {
+                        rowsByKey.total_sml_pct_non_commercial[group][metricName] = safePercent(rowsByKey.total_sml_abs_non_commercial[group][metricName], rowsByKey.total_os_non_commercial[group][metricName]);
+                    }
+                    if (rowsByKey.total_npl_pct_non_commercial) {
+                        rowsByKey.total_npl_pct_non_commercial[group][metricName] = safePercent(rowsByKey.total_npl_abs_non_commercial[group][metricName], rowsByKey.total_os_non_commercial[group][metricName]);
+                    }
                 });
             });
 
@@ -2450,27 +2459,27 @@
                 const rowNumber = numberedKeys[row.key] || '';
                 rowCells.push('<td class="sticky-no font-weight-bold text-center">' + rowNumber + '</td>');
                 rowCells.push('<td class="sticky-label"><span class="metric-label" title="' + escapeHtml(row.label) + '">' + escapeHtml(row.label) + '</span></td>');
-                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.yoy, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.ytd, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.m2, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtm, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtd, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.yoy, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.ytd, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.m2, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtm, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtd, row.type, row.key) + '</span></td>');
 
                 if (hasH1) {
-                    rowCells.push('<td class="value-col position-col position-col-h1" data-position-col="h1"><span class="cell-text">' + formatValue(value.h1, row.type) + '</span></td>');
+                    rowCells.push('<td class="value-col position-col position-col-h1" data-position-col="h1"><span class="cell-text">' + formatValue(value.h1, row.type, row.key) + '</span></td>');
                 }
 
-                rowCells.push('<td class="value-col position-col metric-value font-weight-bold bg-light"><span class="cell-text text-primary">' + formatValue(value.current, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.yoy) + '"><span class="cell-text">' + formatValue(delta.yoy, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.ytd) + '"><span class="cell-text">' + formatValue(delta.ytd, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.mtm) + '"><span class="cell-text">' + formatValue(delta.mtm, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.mtd) + '"><span class="cell-text">' + formatValue(delta.mtd, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.dtd) + '"><span class="cell-text">' + formatValue(delta.dtd, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rka.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rka.delta, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col position-col metric-value font-weight-bold bg-light"><span class="cell-text text-primary">' + formatValue(value.current, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.yoy) + '"><span class="cell-text">' + formatValue(delta.yoy, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.ytd) + '"><span class="cell-text">' + formatValue(delta.ytd, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.mtm) + '"><span class="cell-text">' + formatValue(delta.mtm, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.mtd) + '"><span class="cell-text">' + formatValue(delta.mtd, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.dtd) + '"><span class="cell-text">' + formatValue(delta.dtd, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rka.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rka.delta, row.type, row.key) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rka.delta) + '"><span class="cell-text">' + formatAchievement(rkaComparison.rka.achievement) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka_dec, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rkaDec.delta, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka_dec, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rkaDec.delta, row.type, row.key) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + formatAchievement(rkaComparison.rkaDec.achievement) + '</span></td>');
 
                 const rowClasses = ['row-depth-' + row.depth];
@@ -2775,9 +2784,34 @@
 
                 // 2. Pre-render each block's segments
                 const originalTable = document.querySelector('.daily-table');
-                const colgroupHtml = originalTable.querySelector('colgroup').outerHTML;
+                
+                // Get precise computed widths of all columns from a fully-rendered row in the original table
+                let originalColWidths = [];
+                const tbodyRows = Array.from(document.querySelectorAll('#daily-dashboard-body tr'));
+                for (const row of tbodyRows) {
+                    if (row.cells.length === 20 && !row.classList.contains('row-hidden-by-scope')) {
+                        originalColWidths = Array.from(row.cells).map(cell => cell.getBoundingClientRect().width);
+                        break;
+                    }
+                }
+                if (originalColWidths.length === 0) {
+                    // Fallback to the first row of tbody if no matching non-hidden rows found with 20 columns
+                    const firstRow = document.querySelector('#daily-dashboard-body tr');
+                    if (firstRow && firstRow.cells.length === 20) {
+                        originalColWidths = Array.from(firstRow.cells).map(cell => cell.getBoundingClientRect().width);
+                    }
+                }
+
                 const theadHtml = originalTable.querySelector('thead').outerHTML;
-                const tableRealWidth = Math.ceil(Math.max(originalTable.scrollWidth, originalTable.getBoundingClientRect().width)) + 80;
+                let colgroupHtml = '';
+                let tableRealWidth = 0;
+                if (originalColWidths.length === 20) {
+                    colgroupHtml = '<colgroup>' + originalColWidths.map(w => `<col style="width: ${w}px; min-width: ${w}px; max-width: ${w}px;">`).join('') + '</colgroup>';
+                    tableRealWidth = originalColWidths.reduce((a, b) => a + b, 0);
+                } else {
+                    colgroupHtml = originalTable.querySelector('colgroup').outerHTML;
+                    tableRealWidth = Math.ceil(Math.max(originalTable.scrollWidth, originalTable.getBoundingClientRect().width));
+                }
 
                 for (let b = 0; b < blockSegments.length; b++) {
                     const block = blockSegments[b];
@@ -2794,7 +2828,7 @@
                         const rows = subGroups[s];
                         const tempWrap = document.createElement('div');
                         tempWrap.className = 'daily-capture-temp-wrap';
-                        tempWrap.style.cssText = `position: absolute; left: -9999px; top: 0; width: ${tableRealWidth}px; background: #ffffff; padding: 2px;`;
+                        tempWrap.style.cssText = `position: absolute; left: -9999px; top: 0; width: ${tableRealWidth + 40}px; background: #ffffff; padding: 0; margin: 0; box-sizing: border-box; overflow: visible;`;
                         
                         const tempStyle = document.createElement('style');
                         tempStyle.textContent = `
@@ -2803,7 +2837,7 @@
                                 min-width: ${tableRealWidth}px !important;
                                 border-collapse: separate !important;
                                 border-spacing: 0 !important;
-                                table-layout: auto !important;
+                                table-layout: fixed !important;
                                 margin: 0 !important;
                                 background: #ffffff !important;
                             }
@@ -2847,7 +2881,12 @@
                         `;
                         tempWrap.appendChild(tempStyle);
 
-                        const tableHtml = `<table class="daily-table" style="width: ${tableRealWidth}px;">${colgroupHtml}${theadHtml}<tbody>${rows.map(r => {
+                        // Capture wrapper container to add safe padding and prevent outer border cutoffs
+                        const captureContainer = document.createElement('div');
+                        captureContainer.className = 'capture-container';
+                        captureContainer.style.cssText = `background: #ffffff; padding: 16px; box-sizing: border-box; display: inline-block; width: ${tableRealWidth + 32}px; overflow: visible;`;
+
+                        const tableHtml = `<table class="daily-table" style="width: ${tableRealWidth}px; table-layout: fixed;">${colgroupHtml}${theadHtml}<tbody>${rows.map(r => {
                             const clone = r.cloneNode(true);
                             clone.querySelectorAll('.sticky-no, .sticky-label, td, th').forEach(cell => {
                                 cell.style.position = 'static';
@@ -2859,16 +2898,15 @@
                             return clone.outerHTML;
                         }).join('')}</tbody></table>`;
                         
-                        const tableContainer = document.createElement('div');
-                        tableContainer.innerHTML = tableHtml;
-                        tempWrap.appendChild(tableContainer);
+                        captureContainer.innerHTML = tableHtml;
+                        tempWrap.appendChild(captureContainer);
                         document.body.appendChild(tempWrap);
                         
                         await waitFrame();
-                        const captureTable = tempWrap.querySelector('table');
-                        const captureWidth = Math.ceil(Math.max(captureTable.scrollWidth, captureTable.getBoundingClientRect().width)) + 8;
-                        const captureHeight = Math.ceil(Math.max(captureTable.scrollHeight, captureTable.getBoundingClientRect().height)) + 8;
-                        const segmentCanvas = await html2canvas(tempWrap.querySelector('table'), {
+                        const captureWidth = Math.ceil(captureContainer.getBoundingClientRect().width);
+                        const captureHeight = Math.ceil(captureContainer.getBoundingClientRect().height);
+                        
+                        const segmentCanvas = await html2canvas(captureContainer, {
                             scale: 4.0,
                             useCORS: true,
                             backgroundColor: '#ffffff',

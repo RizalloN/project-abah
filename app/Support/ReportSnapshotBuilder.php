@@ -306,11 +306,35 @@ class ReportSnapshotBuilder
         ]);
     }
 
+    private function purgeSnapshotPeriodIfAnomalous(string $snapshotTable, string $period): bool
+    {
+        try {
+            return app(SnapshotIntegrityGuard::class)->purgePeriodIfAnomalous($snapshotTable, $period, [
+                'builder' => static::class,
+            ]);
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+
+    private function logSnapshotPeriodIfAnomalous(string $snapshotTable, string $period): void
+    {
+        try {
+            app(SnapshotIntegrityGuard::class)->logIfAnomalous($snapshotTable, $period, [
+                'builder' => static::class,
+                'phase' => 'post_rebuild',
+            ]);
+        } catch (Throwable $e) {
+            // Snapshot rebuild must not fail because the audit query failed.
+        }
+    }
+
     private function buildDashboardPeriodSnapshot(string $period, bool $force): int
     {
         $bucketExpression = $this->buildDashboardBucketExpression();
         $normalizedLoanBalanceExpression = $this->buildNormalizedLoanBalanceExpression('d.baki_debet1');
         $snapshotTable = self::DASHBOARD_SNAPSHOT_TABLE;
+        $force = $force || $this->purgeSnapshotPeriodIfAnomalous($snapshotTable, $period);
 
         if ($force) {
             DB::table($snapshotTable)->where('periode', $period)->delete();
@@ -365,7 +389,10 @@ class ReportSnapshotBuilder
             ", [$period, $period, $period]));
         }
 
-        return (int) DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->where('periode', $period)->count();
+        $rowCount = (int) DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->where('periode', $period)->count();
+        $this->logSnapshotPeriodIfAnomalous($snapshotTable, $period);
+
+        return $rowCount;
     }
 
     private function buildChartPeriodikPeriodSnapshot(string $period, bool $force): int
@@ -373,6 +400,8 @@ class ReportSnapshotBuilder
         if (!Schema::hasTable(self::CHART_PERIODIK_SNAPSHOT_TABLE) || !Schema::hasTable('daily_loan_dinamis') || !Schema::hasTable('loan_type')) {
             return 0;
         }
+
+        $force = $force || $this->purgeSnapshotPeriodIfAnomalous(self::CHART_PERIODIK_SNAPSHOT_TABLE, $period);
 
         if (DB::getDriverName() !== 'mysql') {
             return $this->buildChartPeriodikPeriodSnapshotPortable($period);
@@ -445,7 +474,10 @@ class ReportSnapshotBuilder
             ", [$period, $period, $period]);
         }
 
-        return (int) DB::table(self::CHART_PERIODIK_SNAPSHOT_TABLE)->where('periode', $period)->count();
+        $rowCount = (int) DB::table(self::CHART_PERIODIK_SNAPSHOT_TABLE)->where('periode', $period)->count();
+        $this->logSnapshotPeriodIfAnomalous($snapshotTable, $period);
+
+        return $rowCount;
     }
 
     private function buildChartPeriodikPeriodSnapshotPortable(string $period): int
@@ -508,6 +540,8 @@ class ReportSnapshotBuilder
             }
         }
 
+        $this->logSnapshotPeriodIfAnomalous(self::CHART_PERIODIK_SNAPSHOT_TABLE, $period);
+
         return count($rows);
     }
 
@@ -550,6 +584,8 @@ class ReportSnapshotBuilder
 
     private function buildRasioPeriodSnapshot(string $loanPeriod, bool $force): int
     {
+        $force = $force || $this->purgeSnapshotPeriodIfAnomalous(self::RASIO_SNAPSHOT_TABLE, $loanPeriod);
+
         $casaDate = $this->resolveAvailableCasaPeriod($loanPeriod);
 
         if ($casaDate === null) {
@@ -565,7 +601,10 @@ class ReportSnapshotBuilder
         }
 
         if (DB::getDriverName() === 'mysql') {
-            return $this->buildRasioPeriodSnapshotSqlFirst($loanPeriod);
+            $rowCount = $this->buildRasioPeriodSnapshotSqlFirst($loanPeriod);
+            $this->logSnapshotPeriodIfAnomalous(self::RASIO_SNAPSHOT_TABLE, $loanPeriod);
+
+            return $rowCount;
         }
 
         $snapshot = $this->computeRasioSummary($loanPeriod);
@@ -599,6 +638,8 @@ class ReportSnapshotBuilder
             }
         }
 
+        $this->logSnapshotPeriodIfAnomalous(self::RASIO_SNAPSHOT_TABLE, $loanPeriod);
+
         return count($rows);
     }
 
@@ -607,6 +648,8 @@ class ReportSnapshotBuilder
         if (!Schema::hasTable(self::RASIO_UKER_SNAPSHOT_TABLE)) {
             return 0;
         }
+
+        $force = $force || $this->purgeSnapshotPeriodIfAnomalous(self::RASIO_UKER_SNAPSHOT_TABLE, $loanPeriod);
 
         $casaDate = $this->resolveAvailableCasaPeriod($loanPeriod);
 
@@ -619,7 +662,14 @@ class ReportSnapshotBuilder
         }
 
         if (DB::getDriverName() === 'mysql') {
-            return $this->buildRasioUkerPeriodSnapshotSqlFirst($loanPeriod);
+            if ($force) {
+                DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->delete();
+            }
+
+            $rowCount = $this->buildRasioUkerPeriodSnapshotSqlFirst($loanPeriod);
+            $this->logSnapshotPeriodIfAnomalous(self::RASIO_UKER_SNAPSHOT_TABLE, $loanPeriod);
+
+            return $rowCount;
         }
 
         $rows = $this->computeRasioUkerSnapshotRows($loanPeriod);
@@ -637,6 +687,8 @@ class ReportSnapshotBuilder
                 );
             }
         }
+
+        $this->logSnapshotPeriodIfAnomalous(self::RASIO_UKER_SNAPSHOT_TABLE, $loanPeriod);
 
         return count($rows);
     }
@@ -891,6 +943,10 @@ class ReportSnapshotBuilder
             return 0;
         }
 
+        $force = $force
+            || $this->purgeSnapshotPeriodIfAnomalous(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE, $period)
+            || $this->purgeSnapshotPeriodIfAnomalous(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE, $period);
+
         if ($force) {
             DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
 
@@ -916,6 +972,9 @@ class ReportSnapshotBuilder
                 ->first();
 
             if ($this->dashboardSimpananSnapshotIsFresh($existingSnapshot, $sourceMetadata)) {
+                $this->logSnapshotPeriodIfAnomalous(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE, $period);
+                $this->logSnapshotPeriodIfAnomalous(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE, $period);
+
                 return (int) ($existingSnapshot->source_row_count ?? 0);
             }
         }
@@ -1045,6 +1104,9 @@ class ReportSnapshotBuilder
             }
         }
 
+        $this->logSnapshotPeriodIfAnomalous(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE, $period);
+        $this->logSnapshotPeriodIfAnomalous(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE, $period);
+
         return $sourceRowCount;
     }
 
@@ -1095,6 +1157,7 @@ class ReportSnapshotBuilder
 
         $snapshotTable = self::DORMANT_SNAPSHOT_TABLE;
         $branchLabelExpression = $this->buildDormantBranchLabelSqlExpression('base.raw_branch');
+        $force = $force || $this->purgeSnapshotPeriodIfAnomalous($snapshotTable, $period);
 
         if ($force) {
             DB::table($snapshotTable)
@@ -1186,10 +1249,13 @@ class ReportSnapshotBuilder
             ", [$period, $period, $period, self::DORMANT_SNAPSHOT_VERSION]);
         }
 
-        return (int) DB::table(self::DORMANT_SNAPSHOT_TABLE)
+        $rowCount = (int) DB::table(self::DORMANT_SNAPSHOT_TABLE)
             ->where('posisi', $period)
             ->where('snapshot_version', self::DORMANT_SNAPSHOT_VERSION)
             ->count();
+        $this->logSnapshotPeriodIfAnomalous($snapshotTable, $period);
+
+        return $rowCount;
     }
 
     private function buildNewPayrollPeriodSnapshot(string $snapshotPosisi, bool $force): int
@@ -1197,6 +1263,8 @@ class ReportSnapshotBuilder
         if (!Schema::hasTable(self::NEW_PAYROLL_SNAPSHOT_TABLE) || !Schema::hasTable('performance_pis_per_produk')) {
             return 0;
         }
+
+        $force = $force || $this->purgeSnapshotPeriodIfAnomalous(self::NEW_PAYROLL_SNAPSHOT_TABLE, $snapshotPosisi);
 
         $snapshotDate = Carbon::parse($snapshotPosisi);
         $currStart = $snapshotDate->copy()->startOfMonth()->toDateString();
@@ -1271,6 +1339,8 @@ class ReportSnapshotBuilder
                 ->whereNotIn('branch', self::NEW_PAYROLL_BRANCHES)
                 ->delete();
         }
+
+        $this->logSnapshotPeriodIfAnomalous(self::NEW_PAYROLL_SNAPSHOT_TABLE, $snapshotPosisi);
 
         return count(self::NEW_PAYROLL_BRANCHES);
     }
@@ -1713,7 +1783,28 @@ class ReportSnapshotBuilder
             return $closest !== null ? [$closest] : [];
         }
 
-        return $sourcePeriods;
+        return $this->latestPerformanceRmPeriodPerMonth($sourcePeriods);
+    }
+
+    /**
+     * @param array<int, string> $periods
+     * @return array<int, string>
+     */
+    private function latestPerformanceRmPeriodPerMonth(array $periods): array
+    {
+        sort($periods);
+
+        $latestByMonth = [];
+        foreach ($periods as $period) {
+            $normalized = $this->normalizePeriodInput($period);
+            if ($normalized === null) {
+                continue;
+            }
+
+            $latestByMonth[substr($normalized, 0, 7)] = $normalized;
+        }
+
+        return array_values($latestByMonth);
     }
 
     private function resolveAvailablePeriod(string $table, string $column, ?string $targetDate): ?string
@@ -2174,12 +2265,17 @@ class ReportSnapshotBuilder
             return 0;
         }
 
+        $force = $force
+            || $this->purgeSnapshotPeriodIfAnomalous(self::PERFORMANCE_RM_SNAPSHOT_TABLE, $period)
+            || $this->purgeSnapshotPeriodIfAnomalous(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE, $period);
+
         if (!$force) {
             $rowCount = DB::getDriverName() === 'mysql'
                 ? $this->buildPerformanceRmPeriodSnapshotSqlFirstIncremental($period)
                 : $this->buildPerformanceRmPeriodSnapshotPortableIncremental($period);
 
             $this->buildPerformanceRmCabangSnapshot($period, false);
+            $this->logSnapshotPeriodIfAnomalous(self::PERFORMANCE_RM_SNAPSHOT_TABLE, $period);
 
             return $rowCount;
         }
@@ -2204,6 +2300,7 @@ class ReportSnapshotBuilder
 
         // Build cabang-level summary snapshots after RM data is loaded
         $this->buildPerformanceRmCabangSnapshot($period, $force);
+        $this->logSnapshotPeriodIfAnomalous(self::PERFORMANCE_RM_SNAPSHOT_TABLE, $period);
 
         return $rowCount;
     }
@@ -2813,6 +2910,8 @@ class ReportSnapshotBuilder
             return 0;
         }
 
+        $force = $force || $this->purgeSnapshotPeriodIfAnomalous(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE, $period);
+
         if (DB::getDriverName() !== 'mysql') {
             return $this->buildPerformanceRmCabangSnapshotPortable($period, $force);
         }
@@ -2898,9 +2997,12 @@ class ReportSnapshotBuilder
             ", [$period, $period]);
         }
 
-        return (int) DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)
+        $rowCount = (int) DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)
             ->where('periode', $period)
             ->count();
+        $this->logSnapshotPeriodIfAnomalous(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE, $period);
+
+        return $rowCount;
     }
 
     private function buildPerformanceRmCabangSnapshotPortable(string $period, bool $force): int

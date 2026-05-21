@@ -1146,6 +1146,7 @@ class ImportPerformancePisPerProdukController extends Controller
         $headerLine = null;
         $sourceHeaders = [];
         $delimiter = self::COLUMN_DELIMITER;
+        $bestScore = 0;
 
         try {
             $lineNumber = 0;
@@ -1156,8 +1157,25 @@ class ImportPerformancePisPerProdukController extends Controller
                     continue;
                 }
 
-                $headerLine = $lineNumber;
-                $delimiter = $this->detectCsvDelimiterFromLine($line);
+                $candidateDelimiter = $this->detectCsvDelimiterFromLine($line);
+                $candidateHeaders = array_values(array_filter(array_map(
+                    fn ($value) => $this->normalizeHeader($value),
+                    str_getcsv($line, $candidateDelimiter)
+                ), fn ($value) => $value !== ''));
+                $score = $this->scoreHeaderCandidate($candidateHeaders);
+
+                if ($score > $bestScore) {
+                    $bestScore = $score;
+                    $headerLine = $lineNumber;
+                    $delimiter = $candidateDelimiter;
+                }
+
+                if ($score >= 10000 || $lineNumber >= 50) {
+                    break;
+                }
+            }
+
+            if ($headerLine !== null) {
                 rewind($handle);
                 $consumedLines = 0;
                 while ($consumedLines < $headerLine) {
@@ -1174,7 +1192,6 @@ class ImportPerformancePisPerProdukController extends Controller
                         );
                     }
                 }
-                break;
             }
         } finally {
             fclose($handle);
@@ -1245,6 +1262,7 @@ class ImportPerformancePisPerProdukController extends Controller
 
     private function mapCsvRow(array $context, array $data): ?array
     {
+        $data = $this->expandWrappedCsvDataRow($context, $data);
         $data = $this->alignDataRowWithHeaders($context['source_headers'] ?? [], $data);
         if ($data === null || $this->isEmptyCsvRow($data)) {
             return null;
@@ -1262,6 +1280,30 @@ class ImportPerformancePisPerProdukController extends Controller
         }
 
         return $row;
+    }
+
+    private function expandWrappedCsvDataRow(array $context, array $data): array
+    {
+        $expectedCount = count((array) ($context['source_headers'] ?? []));
+        if ($expectedCount <= 1 || count($data) !== 1) {
+            return $data;
+        }
+
+        $value = trim((string) ($data[0] ?? ''));
+        if ($value === '' || !str_contains($value, self::COLUMN_DELIMITER)) {
+            return $data;
+        }
+
+        if (str_ends_with($value, ';')) {
+            $value = substr($value, 0, -1);
+        }
+
+        $parsed = str_getcsv($value, self::COLUMN_DELIMITER);
+        if (!is_array($parsed) || count($parsed) < $expectedCount) {
+            return $data;
+        }
+
+        return array_map(static fn ($item) => $item === null ? null : (string) $item, $parsed);
     }
 
     private function alignDataRowWithHeaders(array $sourceHeaders, array $data): ?array

@@ -280,8 +280,15 @@ class DashboardHarianSnapshotService
                 }
 
                 $sourceMetadata = $this->buildSourceMetadata($period);
-                if (!$this->snapshotSourceIsFresh($period, $sourceMetadata)) {
+                $hasDuplicateKeys = $this->snapshotPeriodHasDuplicateKeys($period);
+                if ($hasDuplicateKeys || !$this->snapshotSourceIsFresh($period, $sourceMetadata)) {
                     $stalePeriods[] = $period;
+
+                    if ($hasDuplicateKeys) {
+                        Log::warning('Dashboard Harian snapshot duplicate keys detected; scheduling rebuild.', [
+                            'period' => $period,
+                        ]);
+                    }
                 }
             }
 
@@ -351,6 +358,31 @@ class DashboardHarianSnapshotService
         ));
     }
 
+    public function resolveAffectedSnapshotPeriodsForLoanFallback(string $sourceTable, ?string $sourcePeriod = null): array
+    {
+        $sharedPeriods = $this->resolveSharedPeriods();
+        if ($sharedPeriods === []) {
+            return [];
+        }
+
+        $normalizedSourcePeriod = $this->normalizeDate($sourcePeriod);
+        if ($normalizedSourcePeriod === null) {
+            return $sharedPeriods;
+        }
+
+        $sharedPeriodsAsc = $sharedPeriods;
+        sort($sharedPeriodsAsc);
+
+        return match ($sourceTable) {
+            self::DLY_KAP_TABLE => array_values(array_filter(
+                $sharedPeriodsAsc,
+                fn (string $period): bool => $period === $normalizedSourcePeriod
+            )),
+            self::L1133_TABLE => $this->resolveAffectedSnapshotPeriodsForL1133($normalizedSourcePeriod, $sharedPeriodsAsc),
+            default => [],
+        };
+    }
+
     public function rebuildAffectedByPhPeriod(?string $phPeriod = null, bool $force = false): array
     {
         $results = [];
@@ -392,11 +424,18 @@ class DashboardHarianSnapshotService
     private function buildPeriodSnapshotUnlocked(string $period, bool $force = false): int
     {
         $sourceMetadata = $this->buildSourceMetadata($period);
+        $hasDuplicateKeys = $this->snapshotPeriodHasDuplicateKeys($period);
 
         if (!$force && $this->snapshotPeriodHasData($period)) {
-            if ($this->snapshotSourceIsFresh($period, $sourceMetadata)) {
+            if (!$hasDuplicateKeys && $this->snapshotSourceIsFresh($period, $sourceMetadata)) {
                 // Snapshot exists and source has not changed; skip rebuild.
                 return (int) DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->count();
+            }
+
+            if ($hasDuplicateKeys) {
+                Log::warning('Dashboard Harian snapshot duplicate keys detected; rebuilding period.', [
+                    'period' => $period,
+                ]);
             }
         }
 
@@ -1821,6 +1860,36 @@ class DashboardHarianSnapshotService
             ->value('periode');
     }
 
+    /**
+     * L1133 is carried forward by resolvePreviousL1133Period(). When a new L1133
+     * period is imported, every later shared snapshot period uses it until the
+     * next L1133 period starts.
+     *
+     * @param array<int, string> $sharedPeriodsAsc
+     * @return array<int, string>
+     */
+    private function resolveAffectedSnapshotPeriodsForL1133(string $sourcePeriod, array $sharedPeriodsAsc): array
+    {
+        $nextL1133Period = null;
+
+        if (Schema::hasTable(self::L1133_TABLE)) {
+            $nextL1133Period = DB::table(self::L1133_TABLE)
+                ->where('periode', '>', $sourcePeriod)
+                ->orderBy('periode')
+                ->value('periode');
+
+            $nextL1133Period = $nextL1133Period !== null
+                ? $this->normalizeDate((string) $nextL1133Period)
+                : null;
+        }
+
+        return array_values(array_filter(
+            $sharedPeriodsAsc,
+            fn (string $period): bool => $period >= $sourcePeriod
+                && ($nextL1133Period === null || $period < $nextL1133Period)
+        ));
+    }
+
     private function l1133MicroMetricKeys(): array
     {
         return [
@@ -2756,11 +2825,15 @@ class DashboardHarianSnapshotService
         }
 
         foreach ($this->resolveRecentSourcePeriods(self::DLY_KAP_TABLE, $this->sourcePeriodColumn(self::DLY_KAP_TABLE)) as $period) {
-            $candidates[] = $period;
+            foreach ($this->resolveAffectedSnapshotPeriodsForLoanFallback(self::DLY_KAP_TABLE, $period) as $snapshotPeriod) {
+                $candidates[] = $snapshotPeriod;
+            }
         }
 
         foreach ($this->resolveRecentSourcePeriods(self::L1133_TABLE, $this->sourcePeriodColumn(self::L1133_TABLE)) as $period) {
-            $candidates[] = $period;
+            foreach ($this->resolveAffectedSnapshotPeriodsForLoanFallback(self::L1133_TABLE, $period) as $snapshotPeriod) {
+                $candidates[] = $snapshotPeriod;
+            }
         }
 
         foreach ($this->resolveRecentSourcePeriods(self::SAVINGS_TABLE, $this->sourcePeriodColumn(self::SAVINGS_TABLE)) as $period) {
@@ -3135,6 +3208,11 @@ class DashboardHarianSnapshotService
             && (string) $signatures[0] === (string) ($sourceMetadata['source_signature'] ?? '');
     }
 
+    private function snapshotPeriodHasDuplicateKeys(string $period): bool
+    {
+        return app(SnapshotIntegrityGuard::class)->periodHasDuplicateKeys(self::SNAPSHOT_TABLE, $period);
+    }
+
     private function bumpReportCacheVersion(): void
     {
         try {
@@ -3471,7 +3549,7 @@ class DashboardHarianSnapshotService
                 "{$segment} = 'MEDIUM' AND {$segmen_2025} = 'COMMERCIAL'"
             ],
             // NOTE: 'consumer' is computed in finalizeMetrics from subsegments, not queried
-            'briguna_konsumer' => "{$segment} = 'CONSUMER' AND {$productDashboard} = 'BRIGUNA-KONSUMER'",
+            'briguna_konsumer' => "{$segment} = 'CONSUMER' AND {$productDashboard} IN ('BRIGUNA-KONSUMER', 'BRIGUNA-MIKRO')",
             'kpr' => "{$segment} = 'CONSUMER' AND {$productDashboard} = 'KPR'",
             'kkb' => "{$segment} = 'CONSUMER' AND {$productDashboard} = 'KKB'",
             // NOTE: 'micro' is computed in finalizeMetrics from subsegments, not queried

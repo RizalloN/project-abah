@@ -32,11 +32,14 @@ class DashboardPinjamanKreditServiceTest extends TestCase
             $table->string('mata_anggaran')->nullable();
             $table->decimal('apr', 22, 2)->default(0);
             $table->decimal('may', 22, 2)->default(0);
+            $table->decimal('dec', 22, 2)->default(0);
             $table->timestamp('created_at')->nullable();
         });
 
         Schema::create('dashboard_harian_snapshots', function (Blueprint $table): void {
             $table->date('snapshot_period')->nullable();
+            $table->string('kanca_key')->nullable();
+            $table->string('unit_key')->nullable();
             $table->string('kanca_label')->nullable();
             $table->string('unit_label')->nullable();
 
@@ -46,7 +49,7 @@ class DashboardPinjamanKreditServiceTest extends TestCase
         });
     }
 
-    public function test_sme_rka_uses_kcp_detail_then_falls_back_to_kanca_summary_when_detail_is_zero(): void
+    public function test_sme_rka_uses_dashboard_harian_kanca_scope(): void
     {
         DB::table('dashboard_harian_snapshots')->insert([
             $this->snapshotRow('2026-05-15', 'KC Madiun', 500_000_000),
@@ -60,6 +63,7 @@ class DashboardPinjamanKreditServiceTest extends TestCase
                 'mata_anggaran' => 'B.2.a. Kredit Kecil Non Cash Collateral',
                 'apr' => 900_000_000,
                 'may' => 900_000_000,
+                'dec' => 1_200_000_000,
                 'created_at' => '2026-01-01 00:00:00',
             ],
             [
@@ -68,6 +72,7 @@ class DashboardPinjamanKreditServiceTest extends TestCase
                 'mata_anggaran' => 'B.2.a. Kredit Kecil Non Cash Collateral',
                 'apr' => 100_000_000,
                 'may' => 110_000_000,
+                'dec' => 120_000_000,
                 'created_at' => '2026-01-01 00:00:00',
             ],
             [
@@ -76,6 +81,7 @@ class DashboardPinjamanKreditServiceTest extends TestCase
                 'mata_anggaran' => 'B.2.a. Kredit Kecil Non Cash Collateral',
                 'apr' => 300_000_000,
                 'may' => 310_000_000,
+                'dec' => 330_000_000,
                 'created_at' => '2026-01-01 00:00:00',
             ],
         ]);
@@ -88,16 +94,189 @@ class DashboardPinjamanKreditServiceTest extends TestCase
 
         $this->assertNotNull($madiun);
         $this->assertNotNull($magetan);
-        $this->assertEqualsWithDelta(100_000_000, $madiun['rka_m1'], 0.01);
-        $this->assertEqualsWithDelta(110_000_000, $madiun['rka_current'], 0.01);
-        $this->assertEqualsWithDelta(300_000_000, $magetan['rka_m1'], 0.01);
+        $this->assertEqualsWithDelta(1_320_000_000, $madiun['rka_m1'], 0.01);
+        $this->assertEqualsWithDelta(1_010_000_000, $madiun['rka_current'], 0.01);
+        $this->assertEqualsWithDelta(330_000_000, $magetan['rka_m1'], 0.01);
         $this->assertEqualsWithDelta(310_000_000, $magetan['rka_current'], 0.01);
     }
 
-    private function snapshotRow(string $period, string $branch, int $os): array
+    public function test_rka_labels_use_december_and_current_month(): void
     {
+        DB::table('dashboard_harian_snapshots')->insert([
+            $this->snapshotRow('2026-05-15', 'KC Madiun', 500_000_000),
+        ]);
+
+        $payload = app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData('2026-05-15', 'SME', 'KC Madiun');
+
+        $this->assertSame('Des-26', $payload['rka_labels']['m1']);
+        $this->assertSame('Mei-26', $payload['rka_labels']['current']);
+    }
+
+    public function test_sml_and_npl_rka_achievement_use_quality_metric_direction(): void
+    {
+        $snapshot = $this->snapshotRow('2026-05-15', 'KC Madiun', 150_000_000);
+        $snapshot['kecil_non_cashcoll_sml'] = 120_000_000;
+        $snapshot['kecil_non_cashcoll_npl'] = 80_000_000;
+
+        DB::table('dashboard_harian_snapshots')->insert([$snapshot]);
+
+        DB::table('rka')->insert([
+            [
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '552-KCP Caruban',
+                'mata_anggaran' => 'B.2.a. Kredit Kecil Non Cash Collateral',
+                'apr' => 90_000_000,
+                'may' => 100_000_000,
+                'created_at' => '2026-01-01 00:00:00',
+            ],
+            [
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '552-KCP Caruban',
+                'mata_anggaran' => 'DPK Rp Kecil Non Cash Collateral',
+                'apr' => 90_000_000,
+                'may' => 100_000_000,
+                'created_at' => '2026-01-01 00:00:00',
+            ],
+            [
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '552-KCP Caruban',
+                'mata_anggaran' => 'NPL Rp Kecil Non Cash Collateral',
+                'apr' => 90_000_000,
+                'may' => 100_000_000,
+                'created_at' => '2026-01-01 00:00:00',
+            ],
+        ]);
+
+        $payload = app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData('2026-05-15', 'SME', 'KC Madiun');
+
+        $os = collect($payload['os'])->first(fn (array $row): bool => ($row['category'] ?? '') === 'Kecil non Cashcoll');
+        $sml = collect($payload['sml'])->first(fn (array $row): bool => ($row['category'] ?? '') === 'Kecil non Cashcoll');
+        $npl = collect($payload['npl'])->first(fn (array $row): bool => ($row['category'] ?? '') === 'Kecil non Cashcoll');
+
+        $this->assertNotNull($os);
+        $this->assertNotNull($sml);
+        $this->assertNotNull($npl);
+
+        $this->assertEqualsWithDelta(50_000_000, $os['penc_cur_rp'], 0.01);
+        $this->assertEqualsWithDelta(150, $os['penc_cur_pct'], 0.01);
+
+        $this->assertEqualsWithDelta(20_000_000, $sml['penc_cur_rp'], 0.01);
+        $this->assertEqualsWithDelta(83.333333, $sml['penc_cur_pct'], 0.01);
+
+        $this->assertEqualsWithDelta(-20_000_000, $npl['penc_cur_rp'], 0.01);
+        $this->assertEqualsWithDelta(125, $npl['penc_cur_pct'], 0.01);
+    }
+
+    public function test_consumer_breakdown_includes_kkb_like_dashboard_harian(): void
+    {
+        $row = $this->snapshotRow('2026-05-15', 'KC Madiun', 0);
+        $row['briguna_konsumer_os'] = 100_000_000;
+        $row['kpr_os'] = 50_000_000;
+        $row['kkb_os'] = 25_000_000;
+
+        DB::table('dashboard_harian_snapshots')->insert([$row]);
+
+        DB::table('rka')->insert([
+            [
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '552-KCP Caruban',
+                'mata_anggaran' => 'B.5.c. KKB',
+                'apr' => 20_000_000,
+                'may' => 22_000_000,
+                'created_at' => '2026-01-01 00:00:00',
+            ],
+        ]);
+
+        $payload = app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData('2026-05-15', 'Consumer', 'KC Madiun');
+        $osRows = collect($payload['os']);
+        $kkb = $osRows->first(fn (array $item): bool => ($item['category'] ?? '') === 'KKB');
+        $total = $osRows->firstWhere('is_total', true);
+
+        $this->assertNotNull($kkb);
+        $this->assertEqualsWithDelta(25_000_000, $kkb['selected'], 0.01);
+        $this->assertEqualsWithDelta(22_000_000, $kkb['rka_current'], 0.01);
+        $this->assertEqualsWithDelta(175_000_000, $total['selected'], 0.01);
+    }
+
+    public function test_branch_scope_limits_kredit_totals_to_selected_kanca(): void
+    {
+        DB::table('dashboard_harian_snapshots')->insert([
+            $this->snapshotRow('2026-05-15', 'KC Madiun', 500_000_000, 25_000_000),
+            $this->snapshotRow('2026-05-15', 'KC Magetan', 350_000_000, 15_000_000),
+        ]);
+
+        $payload = app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData('2026-05-15', 'SME', 'KC Madiun');
+        $osRows = collect($payload['os']);
+        $total = $osRows->firstWhere('is_total', true);
+
+        $this->assertCount(3, $payload['os']);
+        $this->assertSame(['KC Madiun'], $osRows->where('is_total', null)->pluck('branch')->unique()->values()->all());
+        $this->assertEqualsWithDelta(525_000_000, $total['selected'], 0.01);
+    }
+
+    public function test_kredit_uses_summary_key_scope_when_unit_label_matches_kanca_label(): void
+    {
+        DB::table('dashboard_harian_snapshots')->insert([
+            $this->snapshotRow('2026-05-15', 'KC Madiun', 700_000_000, 20_000_000),
+            $this->snapshotRow('2026-05-15', 'KC Madiun', 400_000_000, 10_000_000, 'kc-madiun-detail'),
+        ]);
+
+        $payload = app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData('2026-05-15', 'SME', 'KC Madiun');
+        $total = collect($payload['os'])->firstWhere('is_total', true);
+
+        $this->assertEqualsWithDelta(720_000_000, $total['selected'], 0.01);
+    }
+
+    public function test_period_references_include_mom_and_previous_month_end_mtd(): void
+    {
+        $periods = app(DashboardPinjamanKreditService::class)->calculatePeriodReferences('2026-05-18');
+
+        $this->assertSame('2025-12-31', $periods['ytd']);
+        $this->assertSame('2026-03-31', $periods['m2']);
+        $this->assertSame('2026-04-18', $periods['mtm']);
+        $this->assertSame('2026-04-30', $periods['mtd']);
+        $this->assertSame('2026-05-18', $periods['selected']);
+    }
+
+    public function test_kredit_payload_uses_mtd_for_previous_month_end_delta(): void
+    {
+        DB::table('dashboard_harian_snapshots')->insert([
+            $this->snapshotRow('2025-12-31', 'KC Madiun', 80_000_000),
+            $this->snapshotRow('2026-03-31', 'KC Madiun', 60_000_000),
+            $this->snapshotRow('2026-04-18', 'KC Madiun', 70_000_000),
+            $this->snapshotRow('2026-04-30', 'KC Madiun', 90_000_000),
+            $this->snapshotRow('2026-05-18', 'KC Madiun', 100_000_000),
+        ]);
+
+        $payload = app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData('2026-05-18', 'SME', 'KC Madiun');
+        $row = collect($payload['os'])->first(fn (array $item): bool => ($item['category'] ?? '') === 'Kecil non Cashcoll');
+
+        $this->assertEqualsWithDelta(70_000_000, $row['mtm'], 0.01);
+        $this->assertEqualsWithDelta(90_000_000, $row['mtd'], 0.01);
+        $this->assertEqualsWithDelta(30_000_000, $row['delta_mom'], 0.01);
+        $this->assertEqualsWithDelta(10_000_000, $row['delta_mtd'], 0.01);
+    }
+
+    public function test_mikro_total_does_not_double_count_micro_parent_row(): void
+    {
+        DB::table('dashboard_harian_snapshots')->insert([
+            $this->microSnapshotRow('2026-05-15', 'KC Madiun'),
+        ]);
+
+        $payload = app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData('2026-05-15', 'Mikro', 'KC Madiun');
+        $total = collect($payload['os'])->firstWhere('is_total', true);
+
+        $this->assertEqualsWithDelta(100_000_000, $total['selected'], 0.01);
+    }
+
+    private function snapshotRow(string $period, string $branch, int $os, int $cashcollOs = 0, ?string $unitKey = null): array
+    {
+        $kancaKey = strtolower(str_replace(' ', '-', $branch));
+
         $row = [
             'snapshot_period' => $period,
+            'kanca_key' => $kancaKey,
+            'unit_key' => $unitKey ?? $kancaKey,
             'kanca_label' => $branch,
             'unit_label' => $branch,
         ];
@@ -107,6 +286,21 @@ class DashboardPinjamanKreditServiceTest extends TestCase
         }
 
         $row['kecil_non_cashcoll_os'] = $os;
+        $row['cashcoll_os'] = $cashcollOs;
+
+        return $row;
+    }
+
+    private function microSnapshotRow(string $period, string $branch): array
+    {
+        $row = $this->snapshotRow($period, $branch, 0);
+
+        $row['micro_os'] = 100_000_000;
+        $row['briguna_mikro_os'] = 10_000_000;
+        $row['kupedes_os'] = 20_000_000;
+        $row['kur_mikro_os'] = 30_000_000;
+        $row['kur_kecil_os'] = 25_000_000;
+        $row['kur_kpp_os'] = 15_000_000;
 
         return $row;
     }
@@ -129,6 +323,9 @@ class DashboardPinjamanKreditServiceTest extends TestCase
             'kpr_os',
             'kpr_sml',
             'kpr_npl',
+            'kkb_os',
+            'kkb_sml',
+            'kkb_npl',
             'micro_os',
             'briguna_mikro_os',
             'kupedes_os',

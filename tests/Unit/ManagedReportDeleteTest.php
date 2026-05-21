@@ -1359,6 +1359,30 @@ class ManagedReportDeleteTest extends TestCase
 
         $this->assertTrue($hasWhereClause);
         $this->assertSame(2, (int) $scopeQuery->count());
+
+        $deleteMethod = new \ReflectionMethod($controller, 'deleteScopedRows');
+        $deleteMethod->setAccessible(true);
+        $deletedRows = $deleteMethod->invoke(
+            $controller,
+            'brilink_web_laporan_summary_transaksi_brilink_web',
+            $scopeQuery,
+            'uniqueid_namareport',
+            10000,
+            'periode',
+            'cabang',
+            [
+                'period_filter' => '2026-04',
+                'kanca_filter' => 'KC Madiun',
+                'period_is_null' => false,
+                'kanca_is_null' => false,
+            ]
+        );
+
+        $this->assertSame(2, $deletedRows);
+        $this->assertSame(2, DB::table('brilink_web_laporan_summary_transaksi_brilink_web')->count());
+        $this->assertSame(0, DB::table('brilink_web_laporan_summary_transaksi_brilink_web')->where('periode', 'April 2026')->where('cabang', 'KC Madiun')->count());
+        $this->assertSame(1, DB::table('brilink_web_laporan_summary_transaksi_brilink_web')->where('periode', 'April 2026')->where('cabang', 'KC Magetan')->count());
+        $this->assertSame(1, DB::table('brilink_web_laporan_summary_transaksi_brilink_web')->where('periode', 'March 2026')->where('cabang', 'KC Madiun')->count());
     }
 
     public function test_delete_management_accepts_period_and_kanca_filters_from_scopes_payload(): void

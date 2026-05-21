@@ -4759,13 +4759,27 @@ class ImportIndexController extends Controller
 
             $filter = $meta['filter'];
             if ($filter !== null && $filter !== '') {
-                $constraints[] = [
-                    'column' => $column,
-                    'mode' => $dimension === 'period' && $this->shouldUseMonthPrefixDeleteConstraint($column, (string) $filter)
-                        ? 'month_prefix'
-                        : 'equal',
-                    'value' => (string) $filter,
-                ];
+                if ($dimension === 'period' && $this->shouldUseMonthPrefixDeleteConstraint($column, (string) $filter)) {
+                    $constraints[] = [
+                        'column' => $column,
+                        'mode' => 'month_prefix',
+                        'value' => (string) $filter,
+                    ];
+
+                    foreach ($this->buildManagedMonthPeriodVariants((string) $filter) as $periodVariant) {
+                        $constraints[] = [
+                            'column' => $column,
+                            'mode' => 'equal',
+                            'value' => $periodVariant,
+                        ];
+                    }
+                } else {
+                    $constraints[] = [
+                        'column' => $column,
+                        'mode' => 'equal',
+                        'value' => (string) $filter,
+                    ];
+                }
             }
 
             if (!empty($constraints)) {

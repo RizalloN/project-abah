@@ -35,6 +35,10 @@ class OptimizedDashboardDanaService extends DashboardDanaService
         }
 
         $periods = $this->calculatePeriodReferences($selectedPeriod);
+        $snapshotData = $this->getDashboardDataFromHarianSnapshot($selectedPeriod, $category, $rkaPeriod, $periods);
+        if ($snapshotData !== null) {
+            return $snapshotData;
+        }
 
         // Use snapshot if available, otherwise fallback to raw table
         if ($this->hasSnapshotsForPeriods($periods)) {

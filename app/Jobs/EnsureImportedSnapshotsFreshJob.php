@@ -7,6 +7,7 @@ use App\Support\DashboardHarianSnapshotService;
 use App\Support\ReportCacheVersion;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
+use App\Support\SnapshotIntegrityGuard;
 use App\Support\SnapshotSourceSignatureService;
 use App\Support\SimpananMultiPnSnapshotGate;
 use App\Support\SsaSimpananSnapshotBuilder;
@@ -67,6 +68,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             'ssa_pinjaman' => $this->ensureSsaSnapshots($dashboardHarian, $sourceSignatures, false),
             'hourly_dpk' => $this->ensureHourlyDpkSnapshots($dashboardHarian, $sourceSignatures),
             'lw325_ph' => $this->ensureReportPhSnapshots($dashboardHarian, $sourceSignatures),
+            'dly_kap_resegmentasi' => $this->ensureFallbackLoanSnapshots($dashboardHarian, 'dly_kap_resegmentasi'),
+            'l1133' => $this->ensureFallbackLoanSnapshots($dashboardHarian, 'l1133'),
             default => null,
         };
     }
@@ -116,7 +119,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         foreach ($checks as $snapshotTable => $definition) {
             $periodColumn = (string) $definition['period_column'];
             $before = $this->snapshotRowCount($snapshotTable, $periodColumn, $period);
-            $isStale = $before > 0 && !$sourceSignatures->isFresh('daily_loan_dinamis', $snapshotTable, $period, $sourceMetadata);
+            $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly($snapshotTable, $period);
+            $isStale = $hasAnomaly || ($before > 0 && !$sourceSignatures->isFresh('daily_loan_dinamis', $snapshotTable, $period, $sourceMetadata));
 
             if ($before > 0 && !$isStale) {
                 continue;
@@ -149,6 +153,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
                     'rows_before' => $before,
                     'rows_after' => $after,
                     'stale' => $isStale,
+                    'snapshot_anomaly' => $hasAnomaly,
                     'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                     'source' => $this->source,
                 ]);
@@ -311,7 +316,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         foreach ($checks as $snapshotTable => $definition) {
             $periodColumn = (string) $definition['period_column'];
             $before = $this->snapshotRowCount($snapshotTable, $periodColumn, $period);
-            $isStale = $before > 0 && !$sourceSignatures->isFresh('simpanan_multipn', $snapshotTable, $period, $sourceMetadata);
+            $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly($snapshotTable, $period);
+            $isStale = $hasAnomaly || ($before > 0 && !$sourceSignatures->isFresh('simpanan_multipn', $snapshotTable, $period, $sourceMetadata));
 
             if ($before > 0 && !$isStale) {
                 continue;
@@ -343,6 +349,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
                     'rows_before' => $before,
                     'rows_after' => $after,
                     'stale' => $isStale,
+                    'snapshot_anomaly' => $hasAnomaly,
                     'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                     'source' => $this->source,
                 ]);
@@ -382,7 +389,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
 
         if ($includeSimpananSnapshot) {
             $before = $this->snapshotRowCount('ssa_simpanan_snapshots', 'periode', $period);
-            $isStale = $before > 0 && !$sourceSignatures->isFresh('ssa_simpanan', 'ssa_simpanan_snapshots', $period, $sourceMetadata);
+            $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly('ssa_simpanan_snapshots', $period);
+            $isStale = $hasAnomaly || ($before > 0 && !$sourceSignatures->isFresh('ssa_simpanan', 'ssa_simpanan_snapshots', $period, $sourceMetadata));
             if ($before <= 0 || $isStale) {
                 app(SsaSimpananSnapshotBuilder::class)->rebuild($period, false);
                 $after = $this->snapshotRowCount('ssa_simpanan_snapshots', 'periode', $period);
@@ -417,7 +425,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         }
 
         $before = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $period);
-        $isStale = $before > 0 && !$sourceSignatures->isFresh($table, 'dashboard_harian_snapshots', $period, $sourceMetadata);
+        $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly('dashboard_harian_snapshots', $period);
+        $isStale = $hasAnomaly || ($before > 0 && !$sourceSignatures->isFresh($table, 'dashboard_harian_snapshots', $period, $sourceMetadata));
         if ($before > 0 && !$isStale) {
             if ($rebuiltAny) {
                 $this->bumpReportCacheVersion($includeSimpananSnapshot ? 'simpanan' : 'harian');
@@ -445,6 +454,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             'rows_before' => $before,
             'rows_after' => $after,
             'stale' => $isStale,
+            'snapshot_anomaly' => $hasAnomaly,
             'source' => $this->source,
         ]);
 
@@ -469,7 +479,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
 
         foreach ($affectedPeriods as $snapshotPeriod) {
             $before = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $snapshotPeriod);
-            $isStale = $before > 0 && !$sourceSignatures->isFresh('lw325_ph', 'dashboard_harian_snapshots', $snapshotPeriod, $sourceMetadata);
+            $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly('dashboard_harian_snapshots', $snapshotPeriod);
+            $isStale = $hasAnomaly || ($before > 0 && !$sourceSignatures->isFresh('lw325_ph', 'dashboard_harian_snapshots', $snapshotPeriod, $sourceMetadata));
             if ($before > 0 && !$isStale) {
                 continue;
             }
@@ -495,6 +506,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
                 'rows_before' => $before,
                 'rows_after' => $after,
                 'stale' => $isStale,
+                'snapshot_anomaly' => $hasAnomaly,
                 'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                 'source' => $this->source,
             ]);
@@ -503,6 +515,40 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         if ($rebuiltAny) {
             $this->bumpReportCacheVersion('pinjaman');
         }
+    }
+
+    private function ensureFallbackLoanSnapshots(DashboardHarianSnapshotService $dashboardHarian, string $sourceTable): void
+    {
+        $period = $this->resolvePeriod($sourceTable, 'periode');
+        if ($period === null || !$this->sourceHasRows($sourceTable, 'periode', $period)) {
+            return;
+        }
+
+        $affectedPeriods = $dashboardHarian->resolveAffectedSnapshotPeriodsForLoanFallback($sourceTable, $period);
+        if ($affectedPeriods === []) {
+            return;
+        }
+
+        $startedAt = microtime(true);
+        $result = $dashboardHarian->syncDuePeriods($affectedPeriods);
+        $rebuilt = (int) ($result['built'] ?? 0);
+
+        if ($rebuilt > 0) {
+            ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
+            $this->bumpReportCacheVersion('pinjaman');
+        }
+
+        Log::warning('Auto-checked Dashboard Harian snapshots after fallback loan import.', [
+            'source_table' => $sourceTable,
+            'source_period' => $period,
+            'affected_periods' => $affectedPeriods,
+            'built' => $rebuilt,
+            'failed' => (int) ($result['failed'] ?? 0),
+            'stale' => $result['stale'] ?? [],
+            'missing' => $result['missing'] ?? [],
+            'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+            'source' => $this->source,
+        ]);
     }
 
     private function ensureHourlyDpkSnapshots(
@@ -530,7 +576,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
 
         $sourceMetadata = $sourceSignatures->capture('hourly_dpk', 'posisi', $period);
         $before = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $period);
-        $isStale = $before > 0 && !$sourceSignatures->isFresh('hourly_dpk', 'dashboard_harian_snapshots', $period, $sourceMetadata);
+        $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly('dashboard_harian_snapshots', $period);
+        $isStale = $hasAnomaly || ($before > 0 && !$sourceSignatures->isFresh('hourly_dpk', 'dashboard_harian_snapshots', $period, $sourceMetadata));
         if ($before > 0 && !$isStale) {
             return;
         }
@@ -554,6 +601,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             'rows_before' => $before,
             'rows_after' => $after,
             'stale' => $isStale,
+            'snapshot_anomaly' => $hasAnomaly,
             'source' => $this->source,
         ]);
     }
@@ -588,6 +636,19 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         }
 
         return (int) DB::table($table)->where($periodColumn, $period)->count();
+    }
+
+    private function snapshotHasAnomaly(string $snapshotTable, string $period): bool
+    {
+        try {
+            return app(SnapshotIntegrityGuard::class)->logIfAnomalous($snapshotTable, $period, [
+                'job' => static::class,
+                'source_table' => $this->tableName,
+                'source' => $this->source,
+            ]);
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     private function snapshotIsOlderThanDailyLoanSource(string $snapshotTable, string $periodColumn, string $period): bool

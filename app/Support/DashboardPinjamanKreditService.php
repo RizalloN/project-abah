@@ -35,16 +35,18 @@ class DashboardPinjamanKreditService
      */
     public function getUnifiedSegmentData(
         ?string $selectedPeriod,
-        string $segment = 'SME'
+        string $segment = 'SME',
+        array|string|null $selectedBranches = null
     ): array {
         if (!$selectedPeriod) {
             return ['os' => [], 'sml' => [], 'npl' => [], 'header_dates' => [], 'rka_labels' => []];
         }
 
+        $segment = $this->normalizeSegment($segment);
         $periods = $this->calculatePeriodReferences($selectedPeriod);
 
         // Find all branches across these periods
-        $branches = $this->getDynamicBranches(array_filter($periods));
+        $branches = $this->getDynamicBranches(array_filter($periods), $selectedBranches);
 
         // Load ALL data for ALL periods, ALL branches, and ALL types in ONE query
         $this->loadBulkSnapshotData(array_filter($periods), $branches);
@@ -88,8 +90,8 @@ class DashboardPinjamanKreditService
                 // Deltas
                 $selected = $row['selected'] ?? 0;
                 $row['delta_ytd'] = $selected - ($row['ytd'] ?? 0);
-                $row['delta_mtd'] = $selected - ($row['m2'] ?? 0);
-                $row['delta_dtd'] = $selected - ($row['mtm'] ?? 0);
+                $row['delta_mom'] = $selected - ($row['mtm'] ?? 0);
+                $row['delta_mtd'] = $selected - ($row['mtd'] ?? 0);
 
                 // RKA fields
                 $branchKey = $this->normalizeBranchForRka($branch);
@@ -98,16 +100,44 @@ class DashboardPinjamanKreditService
 
                 $row['rka_m1'] = $rka_m1;
                 $row['rka_current'] = $rka_current;
-                $row['penc_m1_rp'] = $selected - $rka_m1;
-                $row['penc_m1_pct'] = $rka_m1 > 0 ? ($selected / $rka_m1) * 100 : 0;
-                $row['penc_cur_rp'] = $selected - $rka_current;
-                $row['penc_cur_pct'] = $rka_current > 0 ? ($selected / $rka_current) * 100 : 0;
+                $row['penc_m1_rp'] = $this->calculateRkaDelta((float) $selected, (float) $rka_m1, $type);
+                $row['penc_m1_pct'] = $this->calculateRkaPercentage((float) $selected, (float) $rka_m1, $type);
+                $row['penc_cur_rp'] = $this->calculateRkaDelta((float) $selected, (float) $rka_current, $type);
+                $row['penc_cur_pct'] = $this->calculateRkaPercentage((float) $selected, (float) $rka_current, $type);
 
                 $data[] = $row;
             }
         }
 
-        return $this->appendTotalRow($data);
+        return $this->appendTotalRow($data, $segment, $type);
+    }
+
+    private function calculateRkaDelta(float $selected, float $rka, string $type): float
+    {
+        return $selected - $rka;
+    }
+
+    private function calculateRkaPercentage(float $selected, float $rka, string $type): float
+    {
+        if ($this->isQualityType($type)) {
+            return $selected > 0 ? ($rka / $selected) * 100 : 100;
+        }
+
+        return $rka > 0 ? ($selected / $rka) * 100 : 0;
+    }
+
+    private function isQualityType(string $type): bool
+    {
+        return in_array(strtolower($type), ['sml', 'npl'], true);
+    }
+
+    private function normalizeSegment(string $segment): string
+    {
+        return match (strtoupper(trim($segment))) {
+            'CONSUMER' => 'Consumer',
+            'MIKRO', 'MICRO' => 'Mikro',
+            default => 'SME',
+        };
     }
 
     /**
@@ -117,7 +147,7 @@ class DashboardPinjamanKreditService
     {
         return match (strtoupper($segment)) {
             'SME' => ['Kecil non Cashcoll', 'Cashcoll'],
-            'CONSUMER' => ['Briguna Konsumer', 'KPR'],
+            'CONSUMER' => ['Briguna Konsumer', 'KPR', 'KKB'],
             'MIKRO' => ['Micro', 'Briguna Mikro', 'Kupedes', 'KUR Mikro', 'KUR Kecil', 'KUR KPP'],
             default => ['SME'],
         };
@@ -126,19 +156,44 @@ class DashboardPinjamanKreditService
     /**
      * Get branches found in the snapshot table for the given periods
      */
-    private function getDynamicBranches(array $periods): array
+    private function getDynamicBranches(array $periods, array|string|null $selectedBranches = null): array
     {
+        $branchScope = $this->resolveBranchScope($selectedBranches);
+
         $availableBranches = DB::table(self::SNAPSHOT_TABLE)
             ->whereIn('snapshot_period', $periods)
-            ->whereIn('kanca_label', self::AREA_6_BRANCHES)
+            ->whereIn('kanca_label', $branchScope)
+            ->whereColumn('kanca_key', 'unit_key')
             ->whereNotNull('kanca_label')
             ->distinct()
             ->pluck('kanca_label')
             ->toArray();
 
         return array_values(array_filter(
-            self::AREA_6_BRANCHES,
+            $branchScope,
             fn (string $branch) => in_array($branch, $availableBranches, true)
+        ));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolveBranchScope(array|string|null $selectedBranches): array
+    {
+        $values = is_array($selectedBranches) ? $selectedBranches : [$selectedBranches];
+        $normalized = collect($values)
+            ->map(fn ($branch): string => trim((string) $branch))
+            ->filter(fn (string $branch): bool => $branch !== '' && strtolower($branch) !== 'all')
+            ->values()
+            ->all();
+
+        if ($normalized === []) {
+            return self::AREA_6_BRANCHES;
+        }
+
+        return array_values(array_filter(
+            self::AREA_6_BRANCHES,
+            fn (string $branch): bool => in_array($branch, $normalized, true)
         ));
     }
 
@@ -167,6 +222,9 @@ class DashboardPinjamanKreditService
             'kpr_os',
             'kpr_sml',
             'kpr_npl',
+            'kkb_os',
+            'kkb_sml',
+            'kkb_npl',
             'micro_os',
             'briguna_mikro_os',
             'kupedes_os',
@@ -191,7 +249,7 @@ class DashboardPinjamanKreditService
             ->select($requiredColumns)
             ->whereIn('snapshot_period', $periods)
             ->whereIn('kanca_label', $branches)
-            ->whereRaw('unit_label = kanca_label') // Only aggregate rows
+            ->whereColumn('kanca_key', 'unit_key') // Only aggregate rows
             ->orderBy('snapshot_period');
 
         if (in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
@@ -252,7 +310,7 @@ class DashboardPinjamanKreditService
         return 'Area 6';
     }
 
-    private function appendTotalRow(array $rows): array
+    private function appendTotalRow(array $rows, string $segment, string $type): array
     {
         if (empty($rows)) return [];
 
@@ -264,10 +322,11 @@ class DashboardPinjamanKreditService
             'ytd' => 0,
             'm2' => 0,
             'mtm' => 0,
+            'mtd' => 0,
             'selected' => 0,
             'delta_ytd' => 0,
+            'delta_mom' => 0,
             'delta_mtd' => 0,
-            'delta_dtd' => 0,
             'rka_m1' => 0,
             'rka_current' => 0,
             'penc_m1_rp' => 0,
@@ -278,30 +337,44 @@ class DashboardPinjamanKreditService
         ];
 
         foreach ($rows as $row) {
+            if (!$this->shouldIncludeInGrandTotal($segment, (string) ($row['category'] ?? ''))) {
+                continue;
+            }
+
             $totalRow['ytd'] += $row['ytd'];
             $totalRow['m2'] += $row['m2'];
             $totalRow['mtm'] += $row['mtm'];
+            $totalRow['mtd'] += $row['mtd'];
             $totalRow['selected'] += $row['selected'];
             $totalRow['delta_ytd'] += $row['delta_ytd'];
+            $totalRow['delta_mom'] += $row['delta_mom'];
             $totalRow['delta_mtd'] += $row['delta_mtd'];
-            $totalRow['delta_dtd'] += $row['delta_dtd'];
             $totalRow['rka_m1'] += $row['rka_m1'];
             $totalRow['rka_current'] += $row['rka_current'];
         }
 
         // Calculate total RKA percentages based on grand totals
-        $totalRow['penc_m1_rp'] = $totalRow['selected'] - $totalRow['rka_m1'];
-        $totalRow['penc_m1_pct'] = $totalRow['rka_m1'] > 0 ? ($totalRow['selected'] / $totalRow['rka_m1']) * 100 : 0;
-        $totalRow['penc_cur_rp'] = $totalRow['selected'] - $totalRow['rka_current'];
-        $totalRow['penc_cur_pct'] = $totalRow['rka_current'] > 0 ? ($totalRow['selected'] / $totalRow['rka_current']) * 100 : 0;
+        $totalRow['penc_m1_rp'] = $this->calculateRkaDelta((float) $totalRow['selected'], (float) $totalRow['rka_m1'], $type);
+        $totalRow['penc_m1_pct'] = $this->calculateRkaPercentage((float) $totalRow['selected'], (float) $totalRow['rka_m1'], $type);
+        $totalRow['penc_cur_rp'] = $this->calculateRkaDelta((float) $totalRow['selected'], (float) $totalRow['rka_current'], $type);
+        $totalRow['penc_cur_pct'] = $this->calculateRkaPercentage((float) $totalRow['selected'], (float) $totalRow['rka_current'], $type);
 
         $rows[] = $totalRow;
         return $rows;
     }
 
+    private function shouldIncludeInGrandTotal(string $segment, string $category): bool
+    {
+        if (strtoupper($segment) === 'MIKRO' && $category === 'Micro') {
+            return false;
+        }
+
+        return true;
+    }
+
     public function calculatePeriodReferences(?string $selectedPeriod): array
     {
-        if (!$selectedPeriod) return ['selected' => null, 'ytd' => null, 'm2' => null, 'mtm' => null];
+        if (!$selectedPeriod) return ['selected' => null, 'ytd' => null, 'm2' => null, 'mtm' => null, 'mtd' => null];
 
         try {
             $selected = Carbon::parse($selectedPeriod);
@@ -310,9 +383,10 @@ class DashboardPinjamanKreditService
                 'ytd' => $selected->copy()->subYear()->endOfYear()->format('Y-m-d'),
                 'm2' => $selected->copy()->subMonths(2)->endOfMonth()->format('Y-m-d'),
                 'mtm' => $selected->copy()->subMonth()->format('Y-m-d'),
+                'mtd' => $selected->copy()->subMonthNoOverflow()->endOfMonth()->format('Y-m-d'),
             ];
         } catch (Throwable) {
-            return ['selected' => $selectedPeriod, 'ytd' => null, 'm2' => null, 'mtm' => null];
+            return ['selected' => $selectedPeriod, 'ytd' => null, 'm2' => null, 'mtm' => null, 'mtd' => null];
         }
     }
 
@@ -323,7 +397,7 @@ class DashboardPinjamanKreditService
      */
     private function loadRkaForSegment(string $selectedPeriod, string $segment, array $branches): array
     {
-        $cacheKey = 'sme_segment_rka_v5_kanca_summary_fallback:' . md5($selectedPeriod . '|' . $segment . '|' . implode(',', $branches));
+        $cacheKey = 'sme_segment_rka_v9_harian_scope_december_rka:' . md5($selectedPeriod . '|' . $segment . '|' . implode(',', $branches));
 
         // Check local cache first
         if (isset($this->rkaCache[$cacheKey])) {
@@ -339,12 +413,12 @@ class DashboardPinjamanKreditService
 
         try {
             $selectedDate = Carbon::parse($selectedPeriod);
-            $m1Date = $selectedDate->copy()->subMonthNoOverflow();
+            $decemberDate = $selectedDate->copy()->month(12)->startOfMonth();
             $currentDate = $selectedDate;
 
-            $m1Month = $this->getRkaLookupService()->resolveMonthColumn($m1Date);
+            $decemberMonth = $this->getRkaLookupService()->resolveMonthColumn($decemberDate);
             $currentMonth = $this->getRkaLookupService()->resolveMonthColumn($currentDate);
-            $m1Year = (int) $m1Date->format('Y');
+            $decemberYear = (int) $decemberDate->format('Y');
             $currentYear = (int) $currentDate->format('Y');
 
             $categories = $this->getCategoriesForSegment($segment);
@@ -374,63 +448,38 @@ class DashboardPinjamanKreditService
                 $rkaData[$type] = [];
 
                 if (!empty($kancaFilters)) {
-                    $rkaM1 = $this->getRkaLookupService()->aggregateByGroup(
-                        $definitions,
-                        $m1Month,
-                        array_values($kancaFilters),
-                        [],
-                        'kanca',
-                        $m1Year
-                    );
-
-                    $rkaCurrent = $this->getRkaLookupService()->aggregateByGroup(
-                        $definitions,
-                        $currentMonth,
-                        array_values($kancaFilters),
-                        [],
-                        'kanca',
-                        $currentYear
-                    );
-
-                    // Some SME branches keep the loan KPI only on the KC summary
-                    // row, while others have KCP detail rows. Use detail first and
-                    // only fall back to the KC summary when the detail result is 0.
-                    $rkaM1Summary = $this->getRkaLookupService()->aggregateByGroup(
-                        $definitions,
-                        $m1Month,
-                        array_values($kancaFilters),
-                        array_values($kancaFilters),
-                        'kanca',
-                        $m1Year
-                    );
-
-                    $rkaCurrentSummary = $this->getRkaLookupService()->aggregateByGroup(
-                        $definitions,
-                        $currentMonth,
-                        array_values($kancaFilters),
-                        array_values($kancaFilters),
-                        'kanca',
-                        $currentYear
-                    );
-
                     foreach ($categories as $category) {
                         $rkaData[$type][$category] = $rkaData[$type][$category] ?? [];
-                        foreach ($kancaFilters as $branchKey) {
+                    }
+
+                    foreach ($branches as $branch) {
+                        $branchKey = $this->normalizeBranchForRka($branch);
+                        if ($branchKey === '') {
+                            continue;
+                        }
+
+                        $rkaM1 = $this->getRkaLookupService()->aggregateForScope(
+                            $definitions,
+                            $decemberMonth,
+                            $branch,
+                            null,
+                            $decemberYear
+                        );
+
+                        $rkaCurrent = $this->getRkaLookupService()->aggregateForScope(
+                            $definitions,
+                            $currentMonth,
+                            $branch,
+                            null,
+                            $currentYear
+                        );
+
+                        foreach ($categories as $category) {
                             $definitionKey = $this->getCategoryToDefinitionKey($segment, $category, $type);
-                            $m1Value = (float) ($rkaM1[$definitionKey][$branchKey] ?? 0);
-                            $currentValue = (float) ($rkaCurrent[$definitionKey][$branchKey] ?? 0);
-
-                            if (abs($m1Value) <= 0.00001) {
-                                $m1Value = (float) ($rkaM1Summary[$definitionKey][$branchKey] ?? 0);
-                            }
-
-                            if (abs($currentValue) <= 0.00001) {
-                                $currentValue = (float) ($rkaCurrentSummary[$definitionKey][$branchKey] ?? 0);
-                            }
 
                             $rkaData[$type][$category][$branchKey] = [
-                                'm1' => $m1Value,
-                                'current' => $currentValue,
+                                'm1' => (float) ($rkaM1[$definitionKey] ?? 0),
+                                'current' => (float) ($rkaCurrent[$definitionKey] ?? 0),
                             ];
                         }
                     }
@@ -481,18 +530,18 @@ class DashboardPinjamanKreditService
     {
         if ($type === 'os') {
             return [
-                'kecil_non_cashcoll_os' => ['mata_anggaran' => ['B.2.a. Kredit Kecil Non Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
-                'cashcoll_os' => ['mata_anggaran' => ['B.2.b. Kredit Kecil Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
+                'kecil_non_cashcoll_os' => ['mata_anggaran' => ['B.2.a. Kredit Kecil Non Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+                'cashcoll_os' => ['mata_anggaran' => ['B.2.b. Kredit Kecil Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
             ];
         } elseif ($type === 'sml') {
             return [
-                'kecil_non_cashcoll_sml' => ['mata_anggaran' => ['DPK Rp Kecil Non Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
-                'cashcoll_sml' => ['mata_anggaran' => ['DPK Rp Kecil Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
+                'kecil_non_cashcoll_sml' => ['mata_anggaran' => ['DPK Rp Kecil Non Cash Collateral']],
+                'cashcoll_sml' => ['mata_anggaran' => ['DPK Rp Kecil Cash Collateral']],
             ];
         } elseif ($type === 'npl') {
             return [
-                'kecil_non_cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Non Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
-                'cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
+                'kecil_non_cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Non Cash Collateral']],
+                'cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Cash Collateral']],
             ];
         }
 
@@ -503,18 +552,21 @@ class DashboardPinjamanKreditService
     {
         if ($type === 'os') {
             return [
-                'briguna_konsumer_os' => ['mata_anggaran' => ['B.5.a. Briguna'], 'uker_contains_any' => ['KC', 'KCP']],
-                'kpr_os' => ['mata_anggaran' => ['B.5.b. KPR'], 'uker_contains_any' => ['KC', 'KCP']],
+                'briguna_konsumer_os' => ['mata_anggaran' => ['B.5.a. Briguna'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+                'kpr_os' => ['mata_anggaran' => ['B.5.b. KPR'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+                'kkb_os' => ['mata_anggaran' => ['B.5.c. KKB'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
             ];
         } elseif ($type === 'sml') {
             return [
-                'briguna_konsumer_sml' => ['mata_anggaran' => ['DPK Rp Briguna'], 'uker_contains_any' => ['KC', 'KCP']],
-                'kpr_sml' => ['mata_anggaran' => ['DPK Rp KPR'], 'uker_contains_any' => ['KC', 'KCP']],
+                'briguna_konsumer_sml' => ['mata_anggaran' => ['DPK Rp Briguna']],
+                'kpr_sml' => ['mata_anggaran' => ['DPK Rp KPR']],
+                'kkb_sml' => ['mata_anggaran' => ['DPK Rp KKB']],
             ];
         } elseif ($type === 'npl') {
             return [
-                'briguna_konsumer_npl' => ['mata_anggaran' => ['NPL Rp Briguna'], 'uker_contains_any' => ['KC', 'KCP']],
-                'kpr_npl' => ['mata_anggaran' => ['NPL Rp KPR'], 'uker_contains_any' => ['KC', 'KCP']],
+                'briguna_konsumer_npl' => ['mata_anggaran' => ['NPL Rp Briguna']],
+                'kpr_npl' => ['mata_anggaran' => ['NPL Rp KPR']],
+                'kkb_npl' => ['mata_anggaran' => ['NPL Rp KKB']],
             ];
         }
 
@@ -569,6 +621,7 @@ class DashboardPinjamanKreditService
             $categoryMap = [
                 'Briguna Konsumer' => 'briguna_konsumer',
                 'KPR' => 'kpr',
+                'KKB' => 'kkb',
             ];
         } elseif ($segment === 'Mikro') {
             $categoryMap = [
@@ -644,17 +697,17 @@ class DashboardPinjamanKreditService
     }
 
     /**
-     * Get RKA label for two months (m-1 and current)
+     * Get RKA label for two months (December and current)
      */
     private function calculateRkaLabels(string $selectedPeriod): array
     {
         try {
             $selectedDate = Carbon::parse($selectedPeriod);
-            $m1Date = $selectedDate->copy()->subMonthNoOverflow();
+            $decemberDate = $selectedDate->copy()->month(12)->startOfMonth();
 
             return [
-                'm1' => $m1Date->format('M-y'),
-                'current' => $selectedDate->format('M-y'),
+                'm1' => $decemberDate->locale('id')->translatedFormat('M-y'),
+                'current' => $selectedDate->locale('id')->translatedFormat('M-y'),
             ];
         } catch (Throwable) {
             return ['m1' => '', 'current' => ''];

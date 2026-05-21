@@ -346,13 +346,16 @@ class KinerjaRmMikroReportController extends Controller
     private function fetchAvailablePeriods(): Collection
     {
         return Cache::remember('kinerja_rm_mikro_periods_v1:' . $this->reportCacheVersion(), 600, function () {
-            return $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode', function ($query): void {
+            $periods = $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode', function ($query): void {
                     $query->where('segmen', 'MICRO')->where('produk', 'KUR-MIKRO');
                 })
                 ->merge($this->fetchPeriodList(self::SOURCE_TABLE, 'periode', function ($query): void {
                     $query->where('segmen_kinerja', 'MICRO')->where('produk_kinerja', 'KURMIKRO');
                 }))
                 ->unique()
+                ->values();
+
+            return $this->latestPeriodPerMonth($periods)
                 ->sortDesc()
                 ->values();
         });
@@ -405,13 +408,37 @@ class KinerjaRmMikroReportController extends Controller
         }
 
         if ($requestedDate !== null) {
-            $match = $periods->first(fn ($period) => $period <= $requestedDate);
+            $requestedMonth = Carbon::parse($requestedDate)->format('Y-m');
+            $match = $periods->first(fn ($period) => str_starts_with((string) $period, $requestedMonth))
+                ?? $periods->first(fn ($period) => $period <= $requestedDate);
             if ($match !== null) {
                 return $match;
             }
         }
 
         return $periods->first();
+    }
+
+    private function latestPeriodPerMonth(Collection $periods): Collection
+    {
+        $latestByMonth = $periods
+            ->map(function ($value) {
+                try {
+                    return Carbon::parse($value)->toDateString();
+                } catch (\Throwable) {
+                    return null;
+                }
+            })
+            ->filter()
+            ->sort()
+            ->values()
+            ->reduce(function (array $latestByMonth, string $period): array {
+                $latestByMonth[substr($period, 0, 7)] = $period;
+
+                return $latestByMonth;
+            }, []);
+
+        return collect($latestByMonth)->values();
     }
 
     private function snapshotGroupExpressions(array $group): array
