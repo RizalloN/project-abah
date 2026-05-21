@@ -1,5 +1,9 @@
 <?php
 
-test('profile management scaffold is not enabled for this app', function () {
-    expect(true)->toBeTrue();
-})->skip('Profile routes and email-based profile fields are not part of the current PN-only app.');
+use Illuminate\Support\Facades\Route;
+
+test('profile management scaffold routes stay disabled', function () {
+    expect(Route::has('profile.edit'))->toBeFalse();
+    expect(Route::has('profile.update'))->toBeFalse();
+    expect(Route::has('profile.destroy'))->toBeFalse();
+});

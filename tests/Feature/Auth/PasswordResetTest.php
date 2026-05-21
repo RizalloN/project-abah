@@ -1,5 +1,10 @@
 <?php
 
-test('password reset flow is not enabled for the current PN-only auth model', function () {
-    expect(true)->toBeTrue();
-})->skip('Password reset relies on email-based auth state that this app does not use.');
+use Illuminate\Support\Facades\Route;
+
+test('password reset routes are registered for guest users', function () {
+    expect(Route::has('password.request'))->toBeTrue();
+    expect(Route::has('password.email'))->toBeTrue();
+    expect(Route::has('password.reset'))->toBeTrue();
+    expect(Route::has('password.store'))->toBeTrue();
+});

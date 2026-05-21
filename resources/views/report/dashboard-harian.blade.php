@@ -18,11 +18,19 @@
         --table-header-bg: var(--bri-blue-dark);
         --table-header-text: #ffffff;
         
-        --daily-no-width: 35px;
-        --daily-label-width: 190px;
-        --daily-position-width: 82px;
-        --daily-delta-width: 72px;
-        --daily-rka-width: 82px;
+        --daily-label-width: 230px;
+        --daily-position-width: 86px;
+        --daily-delta-width: 86px;
+        --daily-rka-width: 86px;
+        --daily-header-group-height: 30px;
+        --daily-header-column-height: 48px;
+        --daily-header-rka-height: 28px;
+        --daily-table-blue: #0070c0;
+        --daily-table-blue-dark: #003b70;
+        --daily-table-blue-mid: #005b9f;
+        --daily-table-cyan: #00a6d6;
+        --daily-table-rka: #002060;
+        --daily-table-rka-sub: #7f7f7f;
     }
 
     .daily-dashboard {
@@ -770,68 +778,101 @@
     .daily-table {
         width: max-content;
         min-width: 100%;
-        border-collapse: collapse;
+        border-collapse: separate;
         border-spacing: 0;
         margin: 0;
         background: #ffffff;
-        font-size: 0.8rem;
+        color: #002060;
+        font-size: 0.74rem;
     }
 
     .daily-table th, .daily-table td {
-        padding: 0.2rem 0.36rem;
+        padding: 0.28rem 0.4rem;
         vertical-align: middle;
         white-space: nowrap;
-        border: 1px solid #cfd8e3;
+        border: 1px solid #d9e1ec;
     }
 
-    /* Table Headers */
+    /* Table Headers — thead sticks as ONE UNIT so all row gaps are covered */
     .daily-table thead {
         position: sticky;
         top: 0;
-        z-index: 25;
+        z-index: 100;  /* definitively above all tbody content (max tbody z-index is 10) */
     }
+    /* Solid backgrounds on tr elements prevent any bleed-through in cell gaps */
+    .daily-table thead tr.group-row  { background-color: var(--daily-table-blue); }
+    .daily-table thead tr.column-row { background-color: var(--daily-table-blue-mid); }
+    .daily-table thead tr.rka-sub-row { background-color: var(--daily-table-rka-sub); }
+
     .daily-table thead th {
-        background: #1f4e79;
+        position: sticky;
+        top: 0;
+        z-index: 120;
+        background: var(--daily-table-blue);
         color: var(--table-header-text);
         font-weight: 700;
         text-transform: uppercase;
         font-size: 0.72rem;
         letter-spacing: 0;
         text-align: center;
-        border: 1px solid #173f63;
+        border: 1px solid #ffffff;
+    }
+    .daily-table thead tr.group-row th {
+        top: 0;
+        height: var(--daily-header-group-height);
+        z-index: 140;
     }
     .daily-table thead tr.column-row th {
-        background: #245a86;
+        top: var(--daily-header-group-height);
+        height: var(--daily-header-column-height);
+        z-index: 130;
+        background: var(--daily-table-blue-mid);
         color: #ffffff;
         font-size: 0.68rem;
-        border-color: #173f63;
+        border-color: #ffffff;
+    }
+    .daily-table thead tr.column-row th.delta-col {
+        background: var(--daily-table-cyan);
+    }
+    .daily-table thead tr.rka-sub-row th {
+        top: calc(var(--daily-header-group-height) + var(--daily-header-column-height));
+        height: var(--daily-header-rka-height);
+        z-index: 125;
+    }
+    .daily-table thead th[rowspan="3"] {
+        top: 0;
+        z-index: 150 !important;
+    }
+    .daily-table thead th[rowspan="2"] {
+        top: var(--daily-header-group-height);
+        z-index: 135;
     }
     .daily-table thead th.rka-period-cell {
-        background: #1f4e79;
+        background: var(--daily-table-rka);
         color: #ffffff;
         font-size: 0.78rem;
         font-weight: 800;
         letter-spacing: 0;
-        border: 1px solid #173f63;
+        border: 1px solid #ffffff;
     }
     .daily-table thead tr.rka-sub-row th {
-        background: #eaf3f8;
-        color: #0f172a;
+        background: var(--daily-table-rka-sub);
+        color: #ffffff;
         font-size: 0.68rem;
-        font-weight: 800;
+        font-weight: 700;
         letter-spacing: 0;
-        border-color: #9fb6cc;
+        border-color: #ffffff;
     }
     .daily-table thead .group-position {
-        background: #1f4e79 !important;
+        background: var(--daily-table-blue) !important;
         color: #ffffff;
     }
     .daily-table thead .group-delta {
-        background: #42526b !important;
+        background: var(--daily-table-cyan) !important;
         color: #ffffff;
     }
     .daily-table thead .group-rka {
-        background: #548235 !important;
+        background: var(--daily-table-rka-sub) !important;
         color: #ffffff;
     }
     .daily-table thead .rka-period-label {
@@ -863,21 +904,16 @@
 
     /* Table Cells */
     .daily-table tbody td {
-        font-size: 0.82rem;
-        line-height: 1.15;
-        padding-top: 0.12rem;
-        padding-bottom: 0.12rem;
-        color: var(--text-main);
+        font-size: 0.72rem;
+        line-height: 1.18;
+        padding-top: 0.2rem;
+        padding-bottom: 0.2rem;
+        color: #002060;
         text-align: right; /* Numeric columns usually right aligned */
         font-variant-numeric: tabular-nums;
     }
 
     /* Specific Column Alignments */
-    .daily-table .sticky-no, .daily-table .group-no {
-        text-align: center !important;
-        width: var(--daily-no-width);
-        min-width: var(--daily-no-width);
-    }
     .daily-table .sticky-label, .daily-table .group-label {
         text-align: left !important;
         width: var(--daily-label-width);
@@ -889,19 +925,24 @@
     .daily-table .position-col {
         width: var(--daily-position-width);
         min-width: var(--daily-position-width);
-        background-color: rgba(0, 82, 156, 0.02);
+        background-color: #f7fbff;
     }
     .daily-table .delta-col {
         width: var(--daily-delta-width);
         min-width: var(--daily-delta-width);
-        background-color: rgba(71, 85, 105, 0.02);
-        border-left: 1px solid #b7c3d0;
+        background-color: #f7fcff;
+        border-left: 1px solid #c9d7e7;
     }
     .daily-table .rka-col {
         width: var(--daily-rka-width);
         min-width: var(--daily-rka-width);
-        background-color: rgba(22, 163, 74, 0.02);
-        border-left: 1px solid #b7c3d0;
+        background-color: #f8f8f8;
+        border-left: 1px solid #d0d0d0;
+    }
+    /* Current/posisi column data cells: light blue like Image 1 */
+    .daily-table tbody td.metric-value {
+        background-color: #eaf4ff !important;
+        color: #0070c0 !important;
     }
     
     /* Stronger group dividers */
@@ -922,26 +963,18 @@
     }
 
     /* Sticky Columns */
-    .daily-table .sticky-no {
+    .daily-table .sticky-label {
         position: sticky;
         left: 0;
         z-index: 10;
         background: #ffffff;
         box-shadow: none;
     }
-    .daily-table .sticky-label {
-        position: sticky;
-        left: var(--daily-no-width);
-        z-index: 10;
-        background: #ffffff;
-        box-shadow: none;
-    }
     
-    .daily-table thead .sticky-no, 
     .daily-table thead .sticky-label,
     .daily-table thead .group-label {
-        z-index: 15;
-        background: #1f4e79;
+        z-index: 160 !important; /* Corner cells: both h & v sticky — must be above regular header cells */
+        background: var(--daily-table-blue);
         box-shadow: none;
         text-align: center !important;
     }
@@ -951,16 +984,14 @@
         transition: none;
     }
     .daily-table tbody tr:nth-child(even) > td {
-        background-color: #fbfdff;
+        background-color: #f5f7fa;
     }
-    .daily-table tbody tr:nth-child(even) > .sticky-no,
     .daily-table tbody tr:nth-child(even) > .sticky-label {
         background-color: #fbfdff;
     }
     .daily-table tbody tr:hover {
-        background-color: #fff7cc;
+        background-color: #eaf5ff;
     }
-    .daily-table tbody tr:hover .sticky-no,
     .daily-table tbody tr:hover .sticky-label {
         background-color: #fff7cc !important;
     }
@@ -973,25 +1004,35 @@
     .daily-table .metric-block-casa td,
     .daily-table .metric-block-ldr td,
     .daily-table .metric-block-recdh td {
-        background-color: #e0e7ff; /* blue-100 for parent rows */
+        background-color: #f2f2f2; /* flatter total rows like the reference table */
         font-weight: 700;
-        color: var(--primary-blue-dark);
+        color: #002060;
     }
-    .daily-table .metric-block-simpanan .sticky-no,
     .daily-table .metric-block-simpanan .sticky-label,
-    .daily-table .metric-block-os .sticky-no,
     .daily-table .metric-block-os .sticky-label,
-    .daily-table .metric-block-sml .sticky-no,
     .daily-table .metric-block-sml .sticky-label,
-    .daily-table .metric-block-npl .sticky-no,
     .daily-table .metric-block-npl .sticky-label,
-    .daily-table .metric-block-casa .sticky-no,
     .daily-table .metric-block-casa .sticky-label,
-    .daily-table .metric-block-ldr .sticky-no,
     .daily-table .metric-block-ldr .sticky-label,
-    .daily-table .metric-block-recdh .sticky-no,
     .daily-table .metric-block-recdh .sticky-label {
-        background-color: #e0e7ff;
+        background-color: #f2f2f2;
+    }
+
+    /* Conditional format for % achievement cells */
+    .pct-achieve-good {
+        background-color: #c6efce !important;
+        color: #276221 !important;
+        font-weight: 700;
+    }
+    .pct-achieve-warn {
+        background-color: #ffeb9c !important;
+        color: #7d5a00 !important;
+        font-weight: 700;
+    }
+    .pct-achieve-bad {
+        background-color: #ffc7ce !important;
+        color: #9c0006 !important;
+        font-weight: 700;
     }
 
     .daily-table tbody tr.metric-block-simpanan:hover td,
@@ -1001,23 +1042,16 @@
     .daily-table tbody tr.metric-block-casa:hover td,
     .daily-table tbody tr.metric-block-ldr:hover td,
     .daily-table tbody tr.metric-block-recdh:hover td {
-        background-color: #dbeafe; /* blue-200 */
+        background-color: #e3f1ff;
     }
-    .daily-table tbody tr.metric-block-simpanan:hover .sticky-no,
     .daily-table tbody tr.metric-block-simpanan:hover .sticky-label,
-    .daily-table tbody tr.metric-block-os:hover .sticky-no,
     .daily-table tbody tr.metric-block-os:hover .sticky-label,
-    .daily-table tbody tr.metric-block-sml:hover .sticky-no,
     .daily-table tbody tr.metric-block-sml:hover .sticky-label,
-    .daily-table tbody tr.metric-block-npl:hover .sticky-no,
     .daily-table tbody tr.metric-block-npl:hover .sticky-label,
-    .daily-table tbody tr.metric-block-casa:hover .sticky-no,
     .daily-table tbody tr.metric-block-casa:hover .sticky-label,
-    .daily-table tbody tr.metric-block-ldr:hover .sticky-no,
     .daily-table tbody tr.metric-block-ldr:hover .sticky-label,
-    .daily-table tbody tr.metric-block-recdh:hover .sticky-no,
     .daily-table tbody tr.metric-block-recdh:hover .sticky-label {
-        background-color: #dbeafe;
+        background-color: #e3f1ff;
     }
 
     .daily-table .metric-label,
@@ -1025,9 +1059,9 @@
         line-height: 1.15;
     }
 
-    .daily-table .row-depth-1 .metric-label { padding-left: 0.5rem; font-weight: 600; color: var(--text-main); }
-    .daily-table .row-depth-2 .metric-label { padding-left: 1.25rem; color: var(--text-muted); font-weight: 500;}
-    .daily-table .row-depth-3 .metric-label { padding-left: 2rem; color: #94a3b8; font-size: 0.7rem; }
+    .daily-table .row-depth-1 .metric-label { padding-left: 0.2rem; font-weight: 700; color: #002060; }
+    .daily-table .row-depth-2 .metric-label { padding-left: 0.75rem; color: #002060; font-weight: 500;}
+    .daily-table .row-depth-3 .metric-label { padding-left: 1.3rem; color: #5f6f85; font-size: 0.68rem; }
 
     /* Sub-Segment Highlights (Contrast but pleasant) */
     .section-ritel td, 
@@ -1035,7 +1069,7 @@
     .section-wholesale td, 
     .section-consumer td, 
     .section-commercial td {
-        background: #eaf3f8 !important;
+        background: #eaf6ff !important;
         border-top: 1px solid #cbd5e1 !important;
         border-bottom: 1px solid #cbd5e1 !important;
     }
@@ -1045,9 +1079,9 @@
     .section-wholesale .sticky-label, 
     .section-consumer .sticky-label, 
     .section-commercial .sticky-label {
-        background: #eaf3f8 !important;
-        border-left: 5px solid var(--primary-blue-main) !important;
-        color: var(--primary-blue-dark) !important;
+        background: #eaf6ff !important;
+        border-left: 4px solid var(--daily-table-blue) !important;
+        color: #002060 !important;
         font-weight: 800 !important;
         text-transform: uppercase;
     }
@@ -1058,13 +1092,16 @@
     .section-consumer .metric-label, 
     .section-commercial .metric-label {
         font-weight: 800 !important;
-        color: var(--primary-blue-dark) !important;
+        color: #002060 !important;
         letter-spacing: 0.01em;
     }
 
     /* Row Hover and Striping */
-    .delta-positive { color: #16a34a !important; font-weight: 700; } /* green-600 */
-    .delta-negative { color: #dc2626 !important; font-weight: 700; } /* red-600 */
+    .delta-positive { color: #0f172a !important; font-weight: 600; } /* dark/black like Image 1 */
+    .delta-negative { color: #dc2626 !important; font-weight: 700; } /* red-600 for negatives in parentheses */
+    /* Quality metrics (SML/NPL): reversed — negative = good (green), positive = bad (red) */
+    .delta-quality-good { color: #16a34a !important; font-weight: 700; } /* green: quality improved (value went down) */
+    .delta-quality-bad  { color: #dc2626 !important; font-weight: 700; } /* red: quality worsened (value went up) */
     
     .daily-empty {
         padding: 3rem;
@@ -1116,8 +1153,7 @@
 
     @media (max-width: 575.98px) {
         .daily-dashboard {
-            --daily-no-width: 32px;
-            --daily-label-width: 142px;
+            --daily-label-width: 164px;
             --daily-position-width: 80px;
             --daily-delta-width: 78px;
             --daily-rka-width: 78px;
@@ -1210,11 +1246,6 @@
             line-height: 1.15;
         }
 
-        .daily-table .sticky-no,
-        .daily-table .group-no {
-            font-size: 0.68rem;
-        }
-
         .daily-table .sticky-label,
         .daily-table .group-label {
             padding-left: 0.42rem;
@@ -1280,21 +1311,14 @@
         .daily-table .metric-block-casa td,
         .daily-table .metric-block-ldr td,
         .daily-table .metric-block-recdh td,
-        .daily-table .metric-block-simpanan .sticky-no,
         .daily-table .metric-block-simpanan .sticky-label,
-        .daily-table .metric-block-os .sticky-no,
         .daily-table .metric-block-os .sticky-label,
-        .daily-table .metric-block-sml .sticky-no,
         .daily-table .metric-block-sml .sticky-label,
-        .daily-table .metric-block-npl .sticky-no,
         .daily-table .metric-block-npl .sticky-label,
-        .daily-table .metric-block-casa .sticky-no,
         .daily-table .metric-block-casa .sticky-label,
-        .daily-table .metric-block-ldr .sticky-no,
         .daily-table .metric-block-ldr .sticky-label,
-        .daily-table .metric-block-recdh .sticky-no,
         .daily-table .metric-block-recdh .sticky-label {
-            background-color: #dbeafe !important;
+            background-color: #f2f2f2 !important;
         }
 
         .daily-kpi-grid {
@@ -1437,7 +1461,6 @@
             <div class="daily-table-wrap">
                     <table class="table table-hover daily-table">
                         <colgroup>
-                            <col style="width: var(--daily-no-width);">
                             <col style="width: var(--daily-label-width);">
                             <col style="width: var(--daily-position-width);" class="numeric-col">
                             <col style="width: var(--daily-position-width);" class="numeric-col">
@@ -1461,7 +1484,6 @@
                         </colgroup>
                         <thead>
                             <tr class="group-row text-center">
-                                <th class="sticky-no group-no" rowspan="3">No</th>
                                 <th class="sticky-label group-label" rowspan="3">Keterangan</th>
                                 <th class="group-position" colspan="7" data-position-group-colspan>Posisi</th>
                                 <th class="group-delta" colspan="5">Delta Terhadap</th>
@@ -1469,40 +1491,40 @@
                             </tr>
                             <tr class="column-row text-center">
                                 <th class="value-col position-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-yoy>-</span><span class="header-subnote text-white-50">M-12 (YoY)</span></span>
+                                    <span class="column-heading"><span class="main" data-label-yoy>-</span></span>
                                 </th>
                                 <th class="value-col position-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-ytd>-</span><span class="header-subnote text-white-50">Des (YtD)</span></span>
+                                    <span class="column-heading"><span class="main" data-label-ytd>-</span></span>
                                 </th>
                                 <th class="value-col position-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-m2>-</span><span class="header-subnote text-white-50">M-2</span></span>
+                                    <span class="column-heading"><span class="main" data-label-m2>-</span></span>
                                 </th>
                                 <th class="value-col position-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-mtm>-</span><span class="header-subnote text-white-50">MtM</span></span>
+                                    <span class="column-heading"><span class="main" data-label-mtm>-</span></span>
                                 </th>
                                 <th class="value-col position-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-mtd>-</span><span class="header-subnote text-white-50">M-1 (MtD)</span></span>
+                                    <span class="column-heading"><span class="main" data-label-mtd>-</span></span>
                                 </th>
                                 <th class="value-col position-col position-col-h1" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-h1>-</span><span class="header-subnote text-white-50">h-1 (DtD)</span></span>
+                                    <span class="column-heading"><span class="main" data-label-h1>-</span></span>
                                 </th>
                                 <th class="value-col position-col" rowspan="2" style="background-color: var(--primary-blue-light);">
-                                    <span class="column-heading"><span class="main text-white" data-label-current>-</span><span class="header-subnote text-white-50">Posisi</span></span>
+                                    <span class="column-heading"><span class="main text-white" data-label-current>-</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-delta-yoy>-</span><span class="header-subnote text-white-50">YoY</span></span>
+                                    <span class="column-heading"><span class="main" data-label-delta-yoy>-</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-delta-ytd>-</span><span class="header-subnote text-white-50">YtD</span></span>
+                                    <span class="column-heading"><span class="main" data-label-delta-ytd>-</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-delta-mtm>-</span><span class="header-subnote text-white-50">MtM</span></span>
+                                    <span class="column-heading"><span class="main" data-label-delta-mtm>-</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-delta-mtd>-</span><span class="header-subnote text-white-50">MtD</span></span>
+                                    <span class="column-heading"><span class="main" data-label-delta-mtd>-</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-delta-dtd>-</span><span class="header-subnote text-white-50">DtD</span></span>
+                                    <span class="column-heading"><span class="main" data-label-delta-dtd>-</span></span>
                                 </th>
                                 <th class="value-col rka-col rka-period-cell" colspan="3">
                                     <span class="rka-period-label" data-label-rka-period>RKA</span>
@@ -1533,7 +1555,7 @@
                             </tr>
                         </thead>
                         <tbody id="daily-dashboard-body">
-                            <tr><td colspan="20" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
+                            <tr><td colspan="19" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -2424,30 +2446,50 @@
                 const value = row.values || {};
                 const delta = row.deltas || {};
                 const rowCells = [];
+                const rkaComparison = computeRkaComparison(row);
+                const isReverse = isQualityTargetMetric(row.key);
+
+                /* Display-only: format negative values as (X) for normal metrics.
+                   For quality (SML/NPL): positive shows normally; negative is green and wrapped. */
+                const formatParens = function (val, type, key) {
+                    const num = Number(val || 0);
+                    if (num < 0) {
+                        return '(' + formatValue(Math.abs(num), type, key).trim() + ')';
+                    }
+                    return formatValue(val, type, key);
+                };
+
+                /* For quality metrics: keep positive plain; wrap negative values in parentheses. */
+                const formatParensQuality = function (val, type, key) {
+                    const num = Number(val || 0);
+                    if (num < 0) {
+                        return '(' + formatValue(Math.abs(num), type, key).trim() + ')';
+                    }
+                    return formatValue(num, type, key);
+                };
+
+                /* deltaClass for normal metrics: positive = black, negative = red */
                 const deltaClass = function (amount) {
-                    if (Number(amount) > 0) {
-                        return 'delta-positive';
-                    }
-
-                    if (Number(amount) < 0) {
-                        return 'delta-negative';
-                    }
-
+                    if (Number(amount) > 0) { return 'delta-positive'; }
+                    if (Number(amount) < 0) { return 'delta-negative'; }
                     return 'text-muted';
                 };
-                const rkaComparison = computeRkaComparison(row);
 
-                const numberedKeys = {
-                    total_simpanan: '1',
-                    total_os: '2',
-                    total_sml_pct_non_commercial: '3',
-                    total_npl_pct_non_commercial: '4',
-                    casa_pct: '5',
-                    ldr_non_commercial: '6',
-                    rec_dh_total: '7'
+                /* deltaClassQuality for SML/NPL: negative = green (good), positive = red (bad) */
+                const deltaClassQuality = function (amount) {
+                    if (Number(amount) < 0) { return 'delta-quality-good'; }
+                    if (Number(amount) > 0) { return 'delta-quality-bad';  }
+                    return 'text-muted';
                 };
-                const rowNumber = numberedKeys[row.key] || '';
-                rowCells.push('<td class="sticky-no font-weight-bold text-center">' + rowNumber + '</td>');
+
+                const dcFn    = isReverse ? deltaClassQuality : deltaClass;
+                const fmtDelta = isReverse ? formatParensQuality : formatParens;
+
+                const pctAchieveClass = function (achievement) {
+                    const pct = Number(achievement || 0);
+                    return pct >= 100 ? 'pct-achieve-good' : pct >= 90 ? 'pct-achieve-warn' : 'pct-achieve-bad';
+                };
+
                 rowCells.push('<td class="sticky-label"><span class="metric-label" title="' + escapeHtml(row.label) + '">' + escapeHtml(row.label) + '</span></td>');
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.yoy, row.type, row.key) + '</span></td>');
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.ytd, row.type, row.key) + '</span></td>');
@@ -2460,17 +2502,17 @@
                 }
 
                 rowCells.push('<td class="value-col position-col metric-value font-weight-bold bg-light"><span class="cell-text text-primary">' + formatValue(value.current, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.yoy) + '"><span class="cell-text">' + formatValue(delta.yoy, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.ytd) + '"><span class="cell-text">' + formatValue(delta.ytd, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.mtm) + '"><span class="cell-text">' + formatValue(delta.mtm, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.mtd) + '"><span class="cell-text">' + formatValue(delta.mtd, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.dtd) + '"><span class="cell-text">' + formatValue(delta.dtd, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.yoy) + '"><span class="cell-text">' + fmtDelta(delta.yoy, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.ytd) + '"><span class="cell-text">' + fmtDelta(delta.ytd, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.mtm) + '"><span class="cell-text">' + fmtDelta(delta.mtm, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.mtd) + '"><span class="cell-text">' + fmtDelta(delta.mtd, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.dtd) + '"><span class="cell-text">' + fmtDelta(delta.dtd, row.type, row.key) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rka.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rka.delta, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rka.delta) + '"><span class="cell-text">' + formatAchievement(rkaComparison.rka.achievement) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + dcFn(rkaComparison.rka.delta) + '"><span class="cell-text">' + fmtDelta(rkaComparison.rka.delta, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + pctAchieveClass(rkaComparison.rka.achievement) + '"><span class="cell-text">' + formatAchievement(rkaComparison.rka.achievement) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka_dec, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rkaDec.delta, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + formatAchievement(rkaComparison.rkaDec.achievement) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + dcFn(rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + fmtDelta(rkaComparison.rkaDec.delta, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + pctAchieveClass(rkaComparison.rkaDec.achievement) + '"><span class="cell-text">' + formatAchievement(rkaComparison.rkaDec.achievement) + '</span></td>');
 
                 const rowClasses = ['row-depth-' + row.depth];
                 if (blockClassMap[row.key]) {
@@ -2573,7 +2615,7 @@
                 .catch(function (error) {
                     console.error('Gagal memuat data dashboard harian.', error);
                     const hidden = positionH1Header && positionH1Header.classList.contains('position-col-hidden');
-                    body.innerHTML = '<tr><td colspan="' + (hidden ? 19 : 20) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
+                    body.innerHTML = '<tr><td colspan="' + (hidden ? 18 : 19) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
                 .finally(function () {
                     tableRegion.classList.remove('daily-loading');
@@ -2777,16 +2819,17 @@
                 
                 // Get precise computed widths of all columns from a fully-rendered row in the original table
                 let originalColWidths = [];
+                const expectedColCount = positionH1Header && positionH1Header.classList.contains('position-col-hidden') ? 18 : 19;
                 for (const row of tbodyRows) {
-                    if (row.cells.length === 20 && !row.classList.contains('row-hidden-by-scope')) {
+                    if (row.cells.length === expectedColCount && !row.classList.contains('row-hidden-by-scope')) {
                         originalColWidths = Array.from(row.cells).map(cell => cell.getBoundingClientRect().width);
                         break;
                     }
                 }
                 if (originalColWidths.length === 0) {
-                    // Fallback to the first row of tbody if no matching non-hidden rows found with 20 columns
+                    // Fallback to the first row of tbody if no matching non-hidden rows found with the visible column count
                     const firstRow = document.querySelector('#daily-dashboard-body tr');
-                    if (firstRow && firstRow.cells.length === 20) {
+                    if (firstRow && firstRow.cells.length === expectedColCount) {
                         originalColWidths = Array.from(firstRow.cells).map(cell => cell.getBoundingClientRect().width);
                     }
                 }
@@ -2794,7 +2837,7 @@
                 const theadHtml = originalTable.querySelector('thead').outerHTML;
                 let colgroupHtml = '';
                 let tableRealWidth = 0;
-                if (originalColWidths.length === 20) {
+                if (originalColWidths.length === expectedColCount) {
                     colgroupHtml = '<colgroup>' + originalColWidths.map(w => `<col style="width: ${w}px; min-width: ${w}px; max-width: ${w}px;">`).join('') + '</colgroup>';
                     tableRealWidth = originalColWidths.reduce((a, b) => a + b, 0);
                 } else {
@@ -2850,9 +2893,7 @@
                                 text-overflow: clip !important;
                                 white-space: nowrap !important;
                             }
-                            .daily-table .sticky-no,
                             .daily-table .sticky-label,
-                            .daily-table .group-no,
                             .daily-table .group-label {
                                 position: static !important;
                                 left: auto !important;
@@ -2877,7 +2918,7 @@
 
                         const tableHtml = `<table class="daily-table" style="width: ${tableRealWidth}px; table-layout: fixed;">${colgroupHtml}${theadHtml}<tbody>${rows.map(r => {
                             const clone = r.cloneNode(true);
-                            clone.querySelectorAll('.sticky-no, .sticky-label, td, th').forEach(cell => {
+                            clone.querySelectorAll('.sticky-label, td, th').forEach(cell => {
                                 cell.style.position = 'static';
                                 cell.style.backgroundColor = window.getComputedStyle(cell).backgroundColor;
                                 cell.style.color = window.getComputedStyle(cell).color;

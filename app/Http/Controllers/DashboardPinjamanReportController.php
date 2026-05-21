@@ -34,10 +34,10 @@ class DashboardPinjamanReportController extends Controller
         'KC Ngawi',
         'KC Ponorogo',
     ];
-    private const LOAN_REKENING_INDEX = 'idx_dld_periode_rekening';
-    private const LOAN_FILTER_INDEX = 'idx_dld_periode_segmen_produk_cabang_unit';
-    private const LOAN_CABANG_UNIT_INDEX = 'idx_dld_periode_cabang_unit';
-    private const PH_LOOKUP_INDEX = 'idx_lw325ph_periode_acctno_pokok';
+    private const LOAN_REKENING_INDEX = 'idx_loan_periode_rek';
+    private const LOAN_FILTER_INDEX = 'idx_loan_periode_segmen';
+    private const LOAN_CABANG_UNIT_INDEX = 'idx_daily_loan_report_filter_covering';
+    private const PH_LOOKUP_INDEX = 'idx_lw325ph_period_acct_kanca_unit';
     private const RAW_QUALITY_BUCKETS = ['L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M', 'NPL', 'PH', 'Pay'];
     private const PH_RECOVERY_MIN_ACCOUNT_DISTINCT_RATIO = 0.95;
 

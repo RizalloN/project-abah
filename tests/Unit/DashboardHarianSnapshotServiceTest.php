@@ -430,6 +430,35 @@ class DashboardHarianSnapshotServiceTest extends TestCase
 
         $this->assertFalse($reflection->invoke($service, '2026-04-20', ['source_signature' => 'new']));
         $this->assertTrue($reflection->invoke($service, '2026-04-20', ['source_signature' => 'old']));
+
+        DB::table('dashboard_harian_snapshots')
+            ->where('uniqueid_dhs', 'legacy')
+            ->update([
+                'source_loan_row_count' => 999,
+                'source_savings_row_count' => 1,
+                'source_recovery_row_count' => 0,
+                'source_recovery_period' => null,
+            ]);
+
+        $this->assertFalse($reflection->invoke($service, '2026-04-20', [
+            'source_signature' => 'old',
+            'source_loan_row_count' => 1,
+            'source_savings_row_count' => 1,
+            'source_recovery_row_count' => 0,
+            'source_recovery_period' => null,
+        ]));
+
+        DB::table('dashboard_harian_snapshots')
+            ->where('uniqueid_dhs', 'legacy')
+            ->update(['source_loan_row_count' => 1]);
+
+        $this->assertTrue($reflection->invoke($service, '2026-04-20', [
+            'source_signature' => 'old',
+            'source_loan_row_count' => 1,
+            'source_savings_row_count' => 1,
+            'source_recovery_row_count' => 0,
+            'source_recovery_period' => null,
+        ]));
     }
 
     public function test_sync_due_periods_rebuilds_existing_snapshot_when_lw325_changes_recovery_source(): void
@@ -1031,6 +1060,65 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(400.0, (float) $nextDayRow->briguna_mikro_os);
     }
 
+    public function test_ssa_pinjaman_stays_primary_when_l1133_fallback_is_available(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_pinjaman')->insert([
+            'month_day_year_of_periode' => '2026-05-20',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '06340 -- UNIT DAGANGAN MADIUN',
+            'segmen_dashboard' => 'MIKRO',
+            'produk_dashboard' => 'KUR-MIKRO',
+            'produk' => 'KUR MIKRO',
+            'kolektabilitas_one_obligor' => '1',
+            'baki_debet' => 1000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('l1133')->insert([
+            'periode' => '2026-05-19',
+            'kode_kanca' => '00045',
+            'nama_kanca' => 'KC Madiun',
+            'kode_uker' => '06340',
+            'nama_uker' => '06340 -- UNIT DAGANGAN MADIUN',
+            'jenis' => 'KUR MIKRO BARU',
+            'outstanding' => 9000,
+            'dpk' => 900,
+            'npl' => 90,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $scopeCache = new \ReflectionProperty($service, 'unitScopeMapCache');
+        $scopeCache->setAccessible(true);
+        $scopeCache->setValue($service, [
+            '2026-05-20' => collect([
+                '6340' => [
+                    'raw_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+                    'raw_unit' => '06340 -- UNIT DAGANGAN MADIUN',
+                    'kanca_label' => 'KC Madiun',
+                    'unit_key' => 'unit-dagangan-madiun',
+                ],
+            ]),
+        ]);
+
+        $aggregateBuilder = new \ReflectionMethod($service, 'fetchLoanAggregates');
+        $aggregateBuilder->setAccessible(true);
+        $rows = $aggregateBuilder->invoke($service, '2026-05-20');
+
+        $metadataBuilder = new \ReflectionMethod($service, 'buildSourceMetadata');
+        $metadataBuilder->setAccessible(true);
+        $metadata = $metadataBuilder->invoke($service, '2026-05-20');
+
+        $this->assertCount(1, $rows);
+        $this->assertSame(1000.0, (float) $rows->first()->kur_mikro_os);
+        $this->assertSame(0.0, (float) $rows->first()->kur_mikro_sml);
+        $this->assertSame(0.0, (float) $rows->first()->kur_mikro_npl);
+        $this->assertSame(1, $metadata['source_loan_row_count']);
+    }
+
     public function test_lw325_recovery_source_uses_exact_snapshot_ph_and_previous_month_end_comparison(): void
     {
         $this->createSourceMetadataTables();
@@ -1312,6 +1400,108 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         ]]);
     }
 
+    public function test_dashboard_harian_snapshot_guard_blocks_micro_that_does_not_match_ssa_source(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_pinjaman')->insert([
+            'month_day_year_of_periode' => '2026-05-20',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '06340 -- UNIT DAGANGAN MADIUN',
+            'segmen_dashboard' => 'Micro',
+            'produk_dashboard' => 'KUR-Mikro',
+            'produk' => 'KUR Mikro',
+            'segmen_2025' => 'Micro',
+            'kolektabilitas_one_obligor' => '1',
+            'baki_debet' => 1_000_000_000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $guard = new \ReflectionMethod($service, 'guardLoanSnapshotAgainstSsaSource');
+        $guard->setAccessible(true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('blocked SSA loan mismatch');
+
+        $guard->invoke($service, '2026-05-20', [[
+            'snapshot_period' => '2026-05-20',
+            'kanca_key' => 'kc-madiun',
+            'kanca_label' => 'KC Madiun',
+            'unit_key' => 'kc-madiun',
+            'unit_label' => 'KC Madiun',
+            'kur_mikro_os' => 9_000_000_000,
+            'micro_os' => 9_000_000_000,
+            'total_os_non_commercial' => 9_000_000_000,
+            'total_os' => 9_000_000_000,
+        ]]);
+    }
+
+    public function test_dashboard_harian_snapshot_guard_blocks_unexpected_loan_branch_not_in_ssa_source(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_pinjaman')->insert([
+            'month_day_year_of_periode' => '2026-05-20',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '06340 -- UNIT DAGANGAN MADIUN',
+            'segmen_dashboard' => 'Micro',
+            'produk_dashboard' => 'KUR-Mikro',
+            'produk' => 'KUR Mikro',
+            'segmen_2025' => 'Micro',
+            'kolektabilitas_one_obligor' => '1',
+            'baki_debet' => 1_000_000_000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $guard = new \ReflectionMethod($service, 'guardLoanSnapshotAgainstSsaSource');
+        $guard->setAccessible(true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('blocked unexpected SSA loan value');
+
+        $guard->invoke($service, '2026-05-20', [[
+            'snapshot_period' => '2026-05-20',
+            'kanca_key' => 'kc-magetan',
+            'kanca_label' => 'KC Magetan',
+            'unit_key' => 'kc-magetan',
+            'unit_label' => 'KC Magetan',
+            'kur_mikro_os' => 1_000_000_000,
+            'micro_os' => 1_000_000_000,
+        ]]);
+    }
+
+    public function test_dashboard_harian_snapshot_guard_blocks_missing_loan_summary_row_from_ssa_source(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_pinjaman')->insert([
+            'month_day_year_of_periode' => '2026-05-20',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '06340 -- UNIT DAGANGAN MADIUN',
+            'segmen_dashboard' => 'Micro',
+            'produk_dashboard' => 'KUR-Mikro',
+            'produk' => 'KUR Mikro',
+            'segmen_2025' => 'Micro',
+            'kolektabilitas_one_obligor' => '1',
+            'baki_debet' => 1_000_000_000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $guard = new \ReflectionMethod($service, 'guardLoanSnapshotAgainstSsaSource');
+        $guard->setAccessible(true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('blocked missing SSA loan summary row');
+
+        $guard->invoke($service, '2026-05-20', []);
+    }
+
     public function test_dashboard_harian_snapshot_guard_blocks_savings_that_do_not_match_source(): void
     {
         $this->createSourceMetadataTables();
@@ -1344,6 +1534,94 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             'simpanan_wholesale' => 247_792_000_000,
             'total_simpanan' => 247_792_000_000,
         ]]);
+    }
+
+    public function test_dashboard_harian_snapshot_guard_blocks_unexpected_savings_branch_not_in_source(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_simpanan')->insert([
+            'Month_Day_Year_of_Posisi' => '2026-05-19',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '00045 -- KC Madiun',
+            'segmentasi' => 'Wholesale',
+            'produk' => 'Giro',
+            'saldo' => 18_360_000_000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $guard = new \ReflectionMethod($service, 'guardSavingsSnapshotAgainstSource');
+        $guard->setAccessible(true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('blocked unexpected savings value');
+
+        $guard->invoke($service, '2026-05-19', [[
+            'snapshot_period' => '2026-05-19',
+            'kanca_key' => 'kc-magetan',
+            'kanca_label' => 'KC Magetan',
+            'unit_key' => 'kc-magetan',
+            'unit_label' => 'KC Magetan',
+            'giro_wholesale' => 18_360_000_000,
+            'simpanan_wholesale' => 18_360_000_000,
+            'total_simpanan' => 18_360_000_000,
+        ]]);
+    }
+
+    public function test_dashboard_harian_snapshot_guard_blocks_missing_savings_summary_row_from_source(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_simpanan')->insert([
+            'Month_Day_Year_of_Posisi' => '2026-05-19',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '00045 -- KC Madiun',
+            'segmentasi' => 'Wholesale',
+            'produk' => 'Giro',
+            'saldo' => 18_360_000_000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $guard = new \ReflectionMethod($service, 'guardSavingsSnapshotAgainstSource');
+        $guard->setAccessible(true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('blocked missing savings summary row');
+
+        $guard->invoke($service, '2026-05-19', []);
+    }
+
+    public function test_dashboard_harian_snapshot_guard_exception_is_not_swallowed_by_rebuild_wrapper(): void
+    {
+        $this->createSourceMetadataTables();
+        $cacheManager = app('cache');
+
+        $lock = new class {
+            public function block(int $seconds, callable $callback): int
+            {
+                throw new \RuntimeException('Dashboard Harian snapshot guard blocked simulated corrupt payload.');
+            }
+        };
+
+        Cache::shouldReceive('lock')
+            ->once()
+            ->with('snapshot:dashboard_harian:build:2026-05-20', 600)
+            ->andReturn($lock);
+
+        try {
+            (new DashboardHarianSnapshotService())->buildPeriodSnapshot('2026-05-20', true);
+            $this->fail('Snapshot guard exception was swallowed by the rebuild wrapper.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('snapshot guard blocked', $e->getMessage());
+        } finally {
+            app()->instance('cache', $cacheManager);
+            \Illuminate\Support\Facades\Facade::clearResolvedInstance('cache');
+            Cache::swap($cacheManager);
+        }
     }
 
     private function createSourceMetadataTables(): void

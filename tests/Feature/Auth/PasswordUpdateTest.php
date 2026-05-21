@@ -1,5 +1,12 @@
 <?php
 
-test('password update scaffold is not enabled as a standalone profile flow in this app', function () {
-    expect(true)->toBeTrue();
-})->skip('Password update testing in the default scaffold depends on profile routes that this app does not expose.');
+use Illuminate\Support\Facades\Route;
+
+test('password update route is registered behind auth middleware', function () {
+    expect(Route::has('password.update'))->toBeTrue();
+
+    $route = Route::getRoutes()->getByName('password.update');
+
+    expect($route)->not->toBeNull();
+    expect($route->gatherMiddleware())->toContain('auth');
+});

@@ -340,6 +340,7 @@ class DashboardHarianController extends Controller
     {
         $summary = $payload['summary'] ?? [];
         $periods = $payload['comparison_periods'] ?? [];
+        $hasH1 = !empty($periods['h1']['period']);
         $headers = $this->dashboardHarianExportHeaders($payload);
         $lastColumn = Coordinate::stringFromColumnIndex(count($headers));
 
@@ -363,16 +364,6 @@ class DashboardHarianController extends Controller
             $sheet->setCellValue(Coordinate::stringFromColumnIndex($index + 1) . $headerRow, $header);
         }
 
-        $numberedKeys = [
-            'total_simpanan' => '1',
-            'total_os' => '2',
-            'total_sml_pct_non_commercial' => '3',
-            'total_npl_pct_non_commercial' => '4',
-            'casa_pct' => '5',
-            'ldr_non_commercial' => '6',
-            'rec_dh_total' => '7',
-        ];
-
         $rowIndex = $headerRow + 1;
         foreach (($payload['rows'] ?? []) as $row) {
             $values = $row['values'] ?? [];
@@ -381,14 +372,19 @@ class DashboardHarianController extends Controller
             $type = $row['type'] ?? 'currency';
 
             $rowValues = [
-                $numberedKeys[$row['key'] ?? ''] ?? '',
                 $row['label'] ?? '',
                 $this->dashboardHarianExportValue($values['yoy'] ?? 0, $type),
                 $this->dashboardHarianExportValue($values['ytd'] ?? 0, $type),
                 $this->dashboardHarianExportValue($values['m2'] ?? 0, $type),
                 $this->dashboardHarianExportValue($values['mtm'] ?? 0, $type),
                 $this->dashboardHarianExportValue($values['mtd'] ?? 0, $type),
-                $this->dashboardHarianExportValue($values['h1'] ?? 0, $type),
+            ];
+
+            if ($hasH1) {
+                $rowValues[] = $this->dashboardHarianExportValue($values['h1'] ?? 0, $type);
+            }
+
+            $rowValues = array_merge($rowValues, [
                 $this->dashboardHarianExportValue($values['current'] ?? 0, $type),
                 $this->dashboardHarianExportValue($deltas['yoy'] ?? 0, $type),
                 $this->dashboardHarianExportValue($deltas['ytd'] ?? 0, $type),
@@ -401,19 +397,19 @@ class DashboardHarianController extends Controller
                 $this->dashboardHarianExportValue($values['rka_dec'] ?? 0, $type),
                 $this->dashboardHarianExportValue($rkaComparison['rka_dec']['delta'], $type),
                 $rkaComparison['rka_dec']['achievement'],
-            ];
+            ]);
 
             foreach ($rowValues as $columnIndex => $value) {
                 $sheet->setCellValue(Coordinate::stringFromColumnIndex($columnIndex + 1) . $rowIndex, $value);
             }
 
             $numberFormat = ($row['type'] ?? 'currency') === 'percent' ? '#,##0.00' : '#,##0';
-            $sheet->getStyle("C{$rowIndex}:S{$rowIndex}")->getNumberFormat()->setFormatCode($numberFormat);
+            $sheet->getStyle("B{$rowIndex}:{$lastColumn}{$rowIndex}")->getNumberFormat()->setFormatCode($numberFormat);
             $rowIndex++;
         }
 
         $lastRow = max($rowIndex - 1, $headerRow);
-        $sheet->freezePane('C7');
+        $sheet->freezePane('B7');
         $sheet->getStyle("A1:{$lastColumn}1")->applyFromArray([
             'font' => ['bold' => true, 'size' => 14, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '004685']],
@@ -427,18 +423,16 @@ class DashboardHarianController extends Controller
         $sheet->getStyle("A{$headerRow}:{$lastColumn}{$lastRow}")->applyFromArray([
             'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D9E2EC']]],
         ]);
-        $sheet->getStyle("C7:{$lastColumn}{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-        $sheet->getStyle("A7:A{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        $sheet->getStyle("Q7:Q{$lastRow}")->getNumberFormat()->setFormatCode('#,##0.00');
-        $sheet->getStyle("T7:T{$lastRow}")->getNumberFormat()->setFormatCode('#,##0.00');
-        $this->applyDashboardHarianExportConditionalFormatting($sheet, $lastRow);
+        $sheet->getStyle("A7:A{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle("B7:{$lastColumn}{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $this->applyDashboardHarianExportConditionalFormatting($sheet, $lastRow, $hasH1);
 
         foreach (range(1, count($headers)) as $columnIndex) {
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($columnIndex))->setAutoSize(true);
         }
     }
 
-    private function applyDashboardHarianExportConditionalFormatting(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $lastRow): void
+    private function applyDashboardHarianExportConditionalFormatting(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $lastRow, bool $hasH1): void
     {
         if ($lastRow < 7) {
             return;
@@ -446,15 +440,29 @@ class DashboardHarianController extends Controller
 
         $downStyle = $this->dashboardHarianConditionalStyle('B91C1C', 'FEE2E2');
         $upStyle = $this->dashboardHarianConditionalStyle('15803D', 'DCFCE7');
+        $deltaStart = $hasH1 ? 9 : 8;
+        $deltaEnd = $deltaStart + 4;
+        $rkaDelta = $deltaEnd + 2;
+        $rkaAchievement = $deltaEnd + 3;
+        $rkaDecDelta = $deltaEnd + 5;
+        $rkaDecAchievement = $deltaEnd + 6;
 
-        foreach (['J7:N' . $lastRow, 'P7:P' . $lastRow, 'S7:S' . $lastRow] as $range) {
+        foreach ([
+            Coordinate::stringFromColumnIndex($deltaStart) . '7:' . Coordinate::stringFromColumnIndex($deltaEnd) . $lastRow,
+            Coordinate::stringFromColumnIndex($rkaDelta) . '7:' . Coordinate::stringFromColumnIndex($rkaDelta) . $lastRow,
+            Coordinate::stringFromColumnIndex($rkaDecDelta) . '7:' . Coordinate::stringFromColumnIndex($rkaDecDelta) . $lastRow,
+        ] as $range) {
             $sheet->getStyle($range)->setConditionalStyles([
                 $downStyle(Conditional::OPERATOR_LESSTHAN, '0'),
                 $upStyle(Conditional::OPERATOR_GREATERTHAN, '0'),
             ]);
         }
 
-        foreach (['Q7:Q' . $lastRow, 'T7:T' . $lastRow] as $range) {
+        foreach ([
+            Coordinate::stringFromColumnIndex($rkaAchievement) . '7:' . Coordinate::stringFromColumnIndex($rkaAchievement) . $lastRow,
+            Coordinate::stringFromColumnIndex($rkaDecAchievement) . '7:' . Coordinate::stringFromColumnIndex($rkaDecAchievement) . $lastRow,
+        ] as $range) {
+            $sheet->getStyle($range)->getNumberFormat()->setFormatCode('#,##0.00');
             $sheet->getStyle($range)->setConditionalStyles([
                 $downStyle(Conditional::OPERATOR_LESSTHAN, '100'),
                 $upStyle(Conditional::OPERATOR_GREATERTHANOREQUAL, '100'),
@@ -481,16 +489,20 @@ class DashboardHarianController extends Controller
     private function dashboardHarianExportHeaders(array $payload): array
     {
         $periods = $payload['comparison_periods'] ?? [];
-
-        return [
-            'No',
+        $headers = [
             'Keterangan',
             $this->formatExportDate($periods['yoy']['period'] ?? null) . ' (YoY)',
             $this->formatExportDate($periods['ytd']['period'] ?? null) . ' (YtD)',
             $this->formatExportDate($periods['m2']['period'] ?? null) . ' (M-2)',
             $this->formatExportDate($periods['mtm']['period'] ?? null) . ' (MtM)',
             $this->formatExportDate($periods['mtd']['period'] ?? null) . ' (MtD)',
-            $this->formatExportDate($periods['h1']['period'] ?? null) . ' (DtD)',
+        ];
+
+        if (!empty($periods['h1']['period'])) {
+            $headers[] = $this->formatExportDate($periods['h1']['period']) . ' (DtD)';
+        }
+
+        return array_merge($headers, [
             $this->formatExportDate($payload['selected_period'] ?? null) . ' (Posisi)',
             'Delta YoY',
             'Delta YtD',
@@ -503,7 +515,7 @@ class DashboardHarianController extends Controller
             'RKA ' . $this->formatExportMonth($periods['rka_dec']['period'] ?? null),
             'Delta RKA Des',
             'Penc RKA Des (%)',
-        ];
+        ]);
     }
 
     private function dashboardHarianExportValue(mixed $value, string $type): float

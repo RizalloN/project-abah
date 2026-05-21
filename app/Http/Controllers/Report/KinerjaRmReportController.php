@@ -130,6 +130,22 @@ class KinerjaRmReportController extends Controller
             ]);
         }
 
+        if (strtoupper(trim((string) $segmen)) === 'SMALL') {
+            $smallDetails = $this->fetchSmallHistoryDetails((string) $rm, (string) $selectedPeriod);
+
+            if ($smallDetails->isNotEmpty()) {
+                return view('report.kinerjarm-detail-modal', [
+                    'rm' => $rm,
+                    'segmen' => $segmen,
+                    'details' => $smallDetails,
+                    'historyRangeLabel' => $historyRangeLabel,
+                    'selectedHistoryYear' => $selectedHistoryYear,
+                    'formatAmount' => fn ($value, int $decimals = 0) => $this->formatAmountInJuta($value, $decimals),
+                    'formatPercent' => fn ($value, int $decimals = 2) => $this->formatPercent($value, $decimals),
+                ]);
+            }
+        }
+
         $history = DB::table('performance_rm_snapshots')
             ->where('rm', $rm)
             ->where('segmen', $segmen)
@@ -201,6 +217,106 @@ class KinerjaRmReportController extends Controller
             $selectedDate->copy()->subYearNoOverflow()->startOfYear()->toDateString(),
             $selectedDate->toDateString(),
         ];
+    }
+
+    private function fetchSmallHistoryDetails(string $rm, string $selectedPeriod): Collection
+    {
+        if (!Schema::hasTable(self::SOURCE_TABLE)) {
+            return collect();
+        }
+
+        [$historyStart, $periodEnd] = $this->resolveHistoryDateRange($selectedPeriod);
+        $rmKeys = $this->smallRmLookupKeys($rm);
+
+        $periods = DB::table(self::SOURCE_TABLE)
+            ->whereBetween('periode', [$historyStart, $periodEnd])
+            ->where('segmen_kinerja', 'SMALL')
+            ->whereIn('produk_kinerja', ['COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL', 'SMALL'])
+            ->whereIn('rm_normalized', $rmKeys)
+            ->select('periode')
+            ->distinct()
+            ->orderBy('periode')
+            ->pluck('periode')
+            ->map(fn ($period) => (string) $period)
+            ->all();
+
+        $latestByMonth = [];
+        foreach ($periods as $period) {
+            $latestByMonth[substr($period, 0, 7)] = $period;
+        }
+
+        $targetPeriods = array_values($latestByMonth);
+        if (empty($targetPeriods)) {
+            return collect();
+        }
+
+        $realisasiDateColumn = Schema::hasColumn(self::SOURCE_TABLE, 'tgl_realisasi1')
+            ? 'tgl_realisasi1'
+            : 'tgl_realisasi';
+
+        $dbRows = DB::table(self::SOURCE_TABLE)
+            ->whereIn('periode', $targetPeriods)
+            ->where('segmen_kinerja', 'SMALL')
+            ->whereIn('produk_kinerja', ['COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL', 'SMALL'])
+            ->whereIn('rm_normalized', $rmKeys)
+            ->selectRaw('periode')
+            ->selectRaw("COALESCE(cabang_normalized, UPPER(TRIM(cabang1)), '') as cabang")
+            ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as loan_os')
+            ->selectRaw('SUM(CASE WHEN kolek = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os')
+            ->selectRaw('SUM(CASE WHEN kolek > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os')
+            ->selectRaw("SUM(CASE WHEN kolek = 1 AND UPPER(TRIM(COALESCE(flag_restruk, ''))) = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
+            ->selectRaw(
+                "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN DATE_FORMAT(periode, \"%Y-%m-01\") AND periode THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os"
+            )
+            ->groupBy('periode', 'cabang')
+            ->get();
+
+        return $dbRows->map(function ($row) {
+            $loanOs = (float) $row->loan_os;
+            $smlOs = (float) $row->sml_os;
+            $nplOs = (float) $row->npl_os;
+            $restrukOs = (float) $row->restruk_os;
+            $realisasiOs = (float) $row->realisasi_os;
+
+            $lar = $restrukOs + $smlOs + $nplOs;
+            $pctLar = $loanOs > 0 ? ($lar / $loanOs) * 100 : 0;
+
+            $isRealizA = ($realisasiOs / 1000000) >= 1600;
+            $isLarA = $pctLar < 17.5;
+
+            return [
+                'periode' => Carbon::parse($row->periode)->translatedFormat('M Y'),
+                'periode_raw' => $row->periode,
+                'year' => Carbon::parse($row->periode)->year,
+                'cabang' => $row->cabang,
+                'loan_os' => $loanOs,
+                'lar_value' => $lar,
+                'realisasi_os' => $realisasiOs,
+                'penc_realisasi' => $isRealizA ? 'A' : 'B',
+                'pct_lar' => $pctLar,
+                'penc_lar' => $isLarA ? 'A' : 'B',
+                'sort_date' => $row->periode
+            ];
+        })->filter(function (array $detail) {
+            return abs((float) $detail['lar_value']) > 0
+                || abs((float) $detail['realisasi_os']) > 0
+                || abs((float) $detail['pct_lar']) > 0;
+        })->sortBy([
+            ['sort_date', 'asc'],
+            ['cabang', 'asc'],
+        ])->values();
+    }
+
+    private function smallRmLookupKeys(string $rm): array
+    {
+        $normalized = strtoupper(trim($rm));
+        $keys = [$normalized];
+
+        if (str_starts_with($normalized, '00385844 - GLAGAH')) {
+            $keys[] = '00385844 -';
+        }
+
+        return array_values(array_unique(array_filter($keys)));
     }
 
     private function fetchConsumerSurplusHistoryDetails(string $rm, string $selectedPeriod): Collection

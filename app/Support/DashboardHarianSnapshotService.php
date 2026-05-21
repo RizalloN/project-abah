@@ -20,7 +20,7 @@ class DashboardHarianSnapshotService
     private const L1133_TABLE = 'l1133';
     private const SAVINGS_TABLE = 'ssa_simpanan';
     private const HOURLY_DPK_TABLE = 'hourly_dpk';
-    private const SOURCE_SIGNATURE_VERSION = 'ssa-loan-l1133-micro-overlay-v4-kur-kpp-guard';
+    private const SOURCE_SIGNATURE_VERSION = 'ssa-loan-primary-v1-kur-kpp-guard';
     private const AUTO_SYNC_RECENT_SOURCE_HOURS = 6;
     private const AREA_6_LABEL = 'Area 6';
     private const ALL_UNIT_LABEL = 'Semua Unit Kerja';
@@ -410,6 +410,10 @@ class DashboardHarianSnapshotService
             // Another worker is building this period; return existence state (1 = has data, 0 = empty).
             return $this->snapshotPeriodHasData($period) ? 1 : 0;
         } catch (Throwable $e) {
+            if ($this->isSnapshotGuardException($e)) {
+                throw $e;
+            }
+
             Log::warning('Dashboard Harian snapshot build skipped because snapshot lock is unavailable.', [
                 'period' => $period,
                 'force' => $force,
@@ -419,6 +423,11 @@ class DashboardHarianSnapshotService
 
             return $this->snapshotPeriodHasData($period) ? 1 : 0;
         }
+    }
+
+    private function isSnapshotGuardException(Throwable $e): bool
+    {
+        return str_starts_with($e->getMessage(), 'Dashboard Harian snapshot guard blocked');
     }
 
     private function buildPeriodSnapshotUnlocked(string $period, bool $force = false): int
@@ -470,6 +479,7 @@ class DashboardHarianSnapshotService
             return 0;
         }
 
+        $this->guardLoanSnapshotAgainstSsaSource($period, $payload);
         $this->guardKurKppSnapshotAgainstSsaSource($period, $payload);
         $this->guardSavingsSnapshotAgainstSource($period, $payload);
 
@@ -1318,6 +1328,137 @@ class DashboardHarianSnapshotService
         }
     }
 
+    private function guardLoanSnapshotAgainstSsaSource(string $period, array $payload): void
+    {
+        $normalizedPeriod = $this->normalizeDate($period) ?? $period;
+
+        if (!$this->loanSourcePeriodExists($normalizedPeriod)) {
+            return;
+        }
+
+        $rawByKanca = $this->loanSourceMetricsByKanca($normalizedPeriod);
+        if ($rawByKanca === []) {
+            return;
+        }
+
+        $columns = $this->loanSourceGuardColumns();
+        $seenKanca = [];
+
+        foreach ($payload as $row) {
+            if (!$this->isSummaryScopeRow($row)) {
+                continue;
+            }
+
+            $kancaLabel = (string) ($row['kanca_label'] ?? '');
+            if ($kancaLabel === '') {
+                continue;
+            }
+
+            $rawMetrics = $rawByKanca[$kancaLabel] ?? null;
+            if ($rawMetrics === null) {
+                foreach ($columns as $column) {
+                    $snapshotValue = (float) ($row[$column] ?? 0);
+                    if (abs($snapshotValue) > $this->loanSourceGuardTolerance(0.0)) {
+                        throw new \RuntimeException(sprintf(
+                            'Dashboard Harian snapshot guard blocked unexpected SSA loan value for %s / %s / %s: snapshot %.2f has no matching raw source.',
+                            $normalizedPeriod,
+                            $kancaLabel,
+                            $column,
+                            $snapshotValue
+                        ));
+                    }
+                }
+
+                continue;
+            }
+
+            $seenKanca[$kancaLabel] = true;
+
+            foreach ($columns as $column) {
+                $rawValue = (float) ($rawMetrics[$column] ?? 0);
+                $snapshotValue = (float) ($row[$column] ?? 0);
+                $tolerance = $this->loanSourceGuardTolerance($rawValue);
+
+                if (abs($snapshotValue - $rawValue) > $tolerance) {
+                    throw new \RuntimeException(sprintf(
+                        'Dashboard Harian snapshot guard blocked SSA loan mismatch for %s / %s / %s: snapshot %.2f differs from raw source %.2f.',
+                        $normalizedPeriod,
+                        $kancaLabel,
+                        $column,
+                        $snapshotValue,
+                        $rawValue
+                    ));
+                }
+            }
+        }
+
+        foreach ($rawByKanca as $kancaLabel => $rawMetrics) {
+            if (isset($seenKanca[$kancaLabel])) {
+                continue;
+            }
+
+            foreach ($columns as $column) {
+                $rawValue = (float) ($rawMetrics[$column] ?? 0);
+                if (abs($rawValue) > $this->loanSourceGuardTolerance($rawValue)) {
+                    throw new \RuntimeException(sprintf(
+                        'Dashboard Harian snapshot guard blocked missing SSA loan summary row for %s / %s / %s: raw source %.2f has no snapshot row.',
+                        $normalizedPeriod,
+                        $kancaLabel,
+                        $column,
+                        $rawValue
+                    ));
+                }
+            }
+        }
+    }
+
+    private function loanSourceMetricsByKanca(string $period): array
+    {
+        $segment = "UPPER(TRIM(COALESCE(sp.segmen_dashboard, '')))";
+        $productDashboard = "UPPER(TRIM(COALESCE(sp.produk_dashboard, '')))";
+        $product = "UPPER(TRIM(COALESCE(sp.produk, '')))";
+        $segmen_2025 = "UPPER(TRIM(COALESCE(sp.segmen_2025, '')))";
+        $balance = 'COALESCE(sp.baki_debet, 0)';
+        $kol = "CAST(NULLIF(TRIM(COALESCE(sp.kolektabilitas_one_obligor, '')), '') AS UNSIGNED)";
+
+        $query = DB::table(self::LOAN_TABLE . ' as sp')
+            ->whereIn('sp.month_day_year_of_periode', $this->sourcePeriodRawCandidates(self::LOAN_TABLE, $period))
+            ->selectRaw("TRIM(COALESCE(sp.nama_cabang, '')) as raw_cabang");
+
+        foreach ($this->loanMetricDefinitions($segment, $productDashboard, $product, $segmen_2025) as $alias => $condition) {
+            $combinedCondition = is_array($condition)
+                ? '(' . implode(' OR ', $condition) . ')'
+                : $condition;
+
+            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} THEN {$balance} ELSE 0 END) as {$alias}_os");
+            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} = 2 THEN {$balance} ELSE 0 END) as {$alias}_sml");
+            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} > 2 THEN {$balance} ELSE 0 END) as {$alias}_npl");
+        }
+
+        return $query
+            ->groupBy('raw_cabang')
+            ->get()
+            ->mapWithKeys(function ($row): array {
+                $label = $this->normalizeKancaLabel($row->raw_cabang ?? null);
+                if ($label === '') {
+                    return [];
+                }
+
+                return [$label => $this->finalizeMetrics((array) $row)];
+            })
+            ->all();
+    }
+
+    private function loanSourceGuardColumns(): array
+    {
+        return $this->loanMetricKeys();
+    }
+
+    private function loanSourceGuardTolerance(float $rawValue): float
+    {
+        return max(100.0, abs($rawValue) * 0.000000001);
+    }
+
     private function guardSavingsSnapshotAgainstSource(string $period, array $payload): void
     {
         $normalizedPeriod = $this->normalizeDate($period) ?? $period;
@@ -1375,20 +1516,43 @@ class DashboardHarianSnapshotService
             return;
         }
 
+        $columns = $this->savingsSourceGuardColumns();
+        $seenKanca = [];
+
         foreach ($payload as $row) {
             if (!$this->isSummaryScopeRow($row)) {
                 continue;
             }
 
             $kancaLabel = (string) ($row['kanca_label'] ?? '');
-            if ($kancaLabel === '' || !array_key_exists($kancaLabel, $rawByKanca)) {
+            if ($kancaLabel === '') {
                 continue;
             }
 
-            foreach ($this->savingsSourceGuardColumns() as $column) {
+            $rawMetrics = $rawByKanca[$kancaLabel] ?? null;
+            if ($rawMetrics === null) {
+                foreach ($columns as $column) {
+                    $snapshotValue = (float) ($row[$column] ?? 0);
+                    if (abs($snapshotValue) > $this->savingsSourceGuardTolerance(0.0)) {
+                        throw new \RuntimeException(sprintf(
+                            'Dashboard Harian snapshot guard blocked unexpected savings value for %s / %s / %s: snapshot %.2f has no matching raw source.',
+                            $normalizedPeriod,
+                            $kancaLabel,
+                            $column,
+                            $snapshotValue
+                        ));
+                    }
+                }
+
+                continue;
+            }
+
+            $seenKanca[$kancaLabel] = true;
+
+            foreach ($columns as $column) {
                 $rawValue = (float) ($rawByKanca[$kancaLabel][$column] ?? 0);
                 $snapshotValue = (float) ($row[$column] ?? 0);
-                $tolerance = max(1.0, abs($rawValue) * 0.000001);
+                $tolerance = $this->savingsSourceGuardTolerance($rawValue);
 
                 if (abs($snapshotValue - $rawValue) > $tolerance) {
                     throw new \RuntimeException(sprintf(
@@ -1397,6 +1561,25 @@ class DashboardHarianSnapshotService
                         $kancaLabel,
                         $column,
                         $snapshotValue,
+                        $rawValue
+                    ));
+                }
+            }
+        }
+
+        foreach ($rawByKanca as $kancaLabel => $rawMetrics) {
+            if (isset($seenKanca[$kancaLabel])) {
+                continue;
+            }
+
+            foreach ($columns as $column) {
+                $rawValue = (float) ($rawMetrics[$column] ?? 0);
+                if (abs($rawValue) > $this->savingsSourceGuardTolerance($rawValue)) {
+                    throw new \RuntimeException(sprintf(
+                        'Dashboard Harian snapshot guard blocked missing savings summary row for %s / %s / %s: raw source %.2f has no snapshot row.',
+                        $normalizedPeriod,
+                        $kancaLabel,
+                        $column,
                         $rawValue
                     ));
                 }
@@ -1421,6 +1604,11 @@ class DashboardHarianSnapshotService
             'simpanan_wholesale',
             'total_simpanan',
         ];
+    }
+
+    private function savingsSourceGuardTolerance(float $rawValue): float
+    {
+        return max(1.0, abs($rawValue) * 0.000001);
     }
 
     private function isSummaryScopeRow(array $row): bool
@@ -1566,7 +1754,7 @@ class DashboardHarianSnapshotService
             ->get();
 
         if ($rows->isNotEmpty()) {
-            return $this->overlayL1133MicroLoanAggregates($period, $rows, $kancaKey, $unitKey);
+            return $rows;
         }
 
         $normalizedPeriod = $this->normalizeDate($period) ?? $period;
@@ -3227,14 +3415,16 @@ class DashboardHarianSnapshotService
                     ['tl_rp', 'dpk_rp', 'npl_rp']
                 );
             $l1133Period = $this->resolvePreviousL1133Period($normalizedPeriod);
-            $l1133State = $l1133Period === null
-                ? ['row_count' => 0]
-                : $this->sourceAggregateState(
-                    self::L1133_TABLE,
-                    $this->sourcePeriodColumn(self::L1133_TABLE),
-                    $this->sourcePeriodRawCandidates(self::L1133_TABLE, $l1133Period),
-                    ['outstanding', 'dpk', 'npl']
-                );
+            $l1133State = $hasSsaLoan
+                ? ['row_count' => 0, 'inactive_because' => 'ssa_pinjaman_available']
+                : ($l1133Period === null
+                    ? ['row_count' => 0]
+                    : $this->sourceAggregateState(
+                        self::L1133_TABLE,
+                        $this->sourcePeriodColumn(self::L1133_TABLE),
+                        $this->sourcePeriodRawCandidates(self::L1133_TABLE, $l1133Period),
+                        ['outstanding', 'dpk', 'npl']
+                    ));
 
             $savingsTable = $this->savingsSourceTableForPeriod($period);
             $savingsState = $this->sourceAggregateState(
@@ -3361,21 +3551,47 @@ class DashboardHarianSnapshotService
             return true;
         }
 
-        $signatures = DB::table(self::SNAPSHOT_TABLE)
-            ->where('snapshot_period', $period)
-            ->select('source_signature')
-            ->distinct()
-            ->pluck('source_signature')
-            ->filter(fn ($value) => trim((string) $value) !== '')
-            ->values()
-            ->all();
+        foreach ($this->availableSourceMetadataColumns() as $column) {
+            if (!array_key_exists($column, $sourceMetadata)) {
+                continue;
+            }
 
-        if ($signatures === []) {
-            return false;
+            $values = DB::table(self::SNAPSHOT_TABLE)
+                ->where('snapshot_period', $period)
+                ->select($column)
+                ->distinct()
+                ->pluck($column)
+                ->map(fn ($value) => $this->normalizeSourceMetadataValue($column, $value))
+                ->values()
+                ->all();
+
+            if (count($values) !== 1) {
+                return false;
+            }
+
+            if ((string) $values[0] !== $this->normalizeSourceMetadataValue($column, $sourceMetadata[$column])) {
+                return false;
+            }
         }
 
-        return count($signatures) === 1
-            && (string) $signatures[0] === (string) ($sourceMetadata['source_signature'] ?? '');
+        return true;
+    }
+
+    private function normalizeSourceMetadataValue(string $column, mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        if ($column === 'source_recovery_period') {
+            return $this->normalizeDate((string) $value) ?? (string) $value;
+        }
+
+        if (in_array($column, ['source_loan_row_count', 'source_savings_row_count', 'source_recovery_row_count'], true)) {
+            return (string) (int) $value;
+        }
+
+        return (string) $value;
     }
 
     private function snapshotPeriodHasDuplicateKeys(string $period): bool

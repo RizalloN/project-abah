@@ -346,8 +346,21 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
             });
         }
 
-        if (!Schema::hasColumn('import_jobs', 'job_content_hash')) {
-            $this->markTestSkipped('import_jobs.job_content_hash column is not available in this fixture.');
+        $requiredColumns = [
+            'id_report' => fn ($table) => $table->integer('id_report')->nullable(),
+            'status' => fn ($table) => $table->string('status')->nullable(),
+            'job_content_hash' => fn ($table) => $table->string('job_content_hash')->nullable(),
+            'job_context' => fn ($table) => $table->text('job_context')->nullable(),
+            'created_at' => fn ($table) => $table->timestamp('created_at')->nullable(),
+            'updated_at' => fn ($table) => $table->timestamp('updated_at')->nullable(),
+        ];
+
+        foreach ($requiredColumns as $column => $definition) {
+            if (!Schema::hasColumn('import_jobs', $column)) {
+                Schema::table('import_jobs', function ($table) use ($definition): void {
+                    $definition($table);
+                });
+            }
         }
 
         $jobId = DB::table('import_jobs')->insertGetId([
