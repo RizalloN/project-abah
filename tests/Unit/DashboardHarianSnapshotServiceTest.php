@@ -1312,6 +1312,40 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         ]]);
     }
 
+    public function test_dashboard_harian_snapshot_guard_blocks_savings_that_do_not_match_source(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_simpanan')->insert([
+            'Month_Day_Year_of_Posisi' => '2026-05-19',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '00045 -- KC Madiun',
+            'segmentasi' => 'Wholesale',
+            'produk' => 'Giro',
+            'saldo' => 18_360_000_000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $guard = new \ReflectionMethod($service, 'guardSavingsSnapshotAgainstSource');
+        $guard->setAccessible(true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('blocked savings source mismatch');
+
+        $guard->invoke($service, '2026-05-19', [[
+            'snapshot_period' => '2026-05-19',
+            'kanca_key' => 'kc-madiun',
+            'kanca_label' => 'KC Madiun',
+            'unit_key' => 'kc-madiun',
+            'unit_label' => 'KC Madiun',
+            'giro_wholesale' => 247_792_000_000,
+            'simpanan_wholesale' => 247_792_000_000,
+            'total_simpanan' => 247_792_000_000,
+        ]]);
+    }
+
     private function createSourceMetadataTables(): void
     {
         foreach (['dashboard_harian_snapshots', 'ssa_pinjaman', 'ssa_simpanan', 'hourly_dpk', 'dly_kap_resegmentasi', 'l1133', 'cognos_recovery', 'lw325_ph'] as $table) {

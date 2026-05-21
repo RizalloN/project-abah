@@ -5,18 +5,18 @@
 @section('content')
 <style>
     :root {
-        --primary-blue: #1e40af;
-        --primary-blue-light: #3b82f6;
-        --primary-blue-dark: #1e3a8a;
+        --primary-blue: #0857C3;
+        --primary-blue-light: #1A73E8;
+        --primary-blue-dark: #002F6C;
         --surface-color: #ffffff;
         --bg-color: #f8fafc;
-        --border-color: #e2e8f0;
+        --border-color: #cbd5e1;
         --text-main: #0f172a;
         --text-muted: #64748b;
-        --table-header-bg: var(--primary-blue-dark);
+        --table-header-bg: #002F6C;
         --table-header-text: #ffffff;
         --accent-color: #f59e0b;
-        --loan-blue-soft: #eaf2ff;
+        --loan-blue-soft: #eff6ff;
     }
 
     .kejar-laba-wrapper {
@@ -28,23 +28,23 @@
 
     .kejar-laba-card {
         background: var(--surface-color);
-        border: 1px solid var(--border-color);
-        border-radius: 16px;
-        overflow: visible; /* Changed from hidden to allow dropdowns to pop out */
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+        border: 1px solid var(--border-color) !important;
+        border-radius: 0px !important;
+        overflow: visible;
+        box-shadow: none !important;
         margin-bottom: 1.5rem;
     }
 
     .kejar-laba-card-header {
         padding: 1.5rem 1.75rem;
-        background: linear-gradient(to right, #f8fafc, #ffffff);
+        background: #ffffff;
         border-bottom: 1px solid var(--border-color);
     }
 
     .kejar-laba-hero {
         position: relative;
         padding: 1.25rem 1.75rem;
-        border-radius: 16px 16px 0 0;
+        border-radius: 0px !important;
         background: var(--surface-color);
         border-bottom: 1px solid var(--border-color);
         color: var(--text-main);
@@ -60,14 +60,14 @@
         display: inline-block;
         margin-bottom: 0.5rem;
         padding: 0.25rem 0.75rem;
-        border-radius: 6px;
+        border-radius: 0px !important;
         background: var(--loan-blue-soft);
-        color: var(--primary-blue-dark);
+        color: var(--primary-blue);
         font-size: 0.75rem;
-        font-weight: 600;
+        font-weight: 700;
         letter-spacing: 0.05em;
         text-transform: uppercase;
-        border: 1px solid rgba(30, 64, 175, 0.1);
+        border: 1px solid rgba(8, 87, 195, 0.2);
     }
 
     .kejar-laba-title {
@@ -82,16 +82,14 @@
     .kejar-laba-title::after {
         content: '';
         display: block;
-        width: min(130px, 38vw);
+        width: 100px;
         height: 3px;
-        margin: 0.7rem auto 0;
-        border-radius: 999px;
-        background: linear-gradient(90deg, #ff671f, #f9b233, rgba(255, 255, 255, 0.9));
-        box-shadow: 0 8px 18px rgba(255, 103, 31, 0.28);
+        margin: 0.5rem 0 0 0;
+        background: var(--primary-blue);
     }
 
     .kejar-laba-subtitle {
-        margin: 0.65rem auto 0;
+        margin: 0.5rem 0 0 0;
         color: var(--text-muted);
         font-size: 0.78rem;
         line-height: 1.6;
@@ -100,24 +98,27 @@
 
     .kejar-laba-date-badge {
         position: absolute;
-        right: 1.25rem;
-        top: 1.25rem;
-        border-radius: 999px;
-        font-weight: 800;
-        background: rgba(30, 64, 175, 0.08);
-        color: var(--primary-blue-dark);
-        border: 1px solid rgba(30, 64, 175, 0.15);
+        right: 1.75rem;
+        top: 1.75rem;
+        border-radius: 0px !important;
+        font-weight: 700;
+        font-size: 0.8rem;
+        background: var(--loan-blue-soft) !important;
+        color: var(--primary-blue) !important;
+        border: 1px solid rgba(8, 87, 195, 0.2) !important;
+        padding: 0.5rem 1rem !important;
     }
 
     @media (max-width: 767.98px) {
         .kejar-laba-date-badge {
             position: static;
             margin-top: 1rem;
+            display: inline-block;
         }
     }
 
     .filter-section {
-        padding: 1.75rem 1.5rem;
+        padding: 1.25rem 1.5rem;
         background: #ffffff;
         border-bottom: 1px solid var(--border-color);
         display: flex;
@@ -127,23 +128,21 @@
         z-index: 50;
     }
 
-    /* ── Premium Modern Selectors ── */
+    /* ── Compact Flat Selectors ── */
     .loan-filter-modern {
         display: grid;
         grid-template-columns: repeat(4, 1fr) auto;
-        gap: 1rem;
-        background: rgba(255, 255, 255, 0.85);
-        backdrop-filter: blur(25px);
-        padding: 1.5rem;
-        border-radius: 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.9);
-        box-shadow: 
-            0 10px 15px -3px rgba(0, 0, 0, 0.05),
-            0 30px 60px -20px rgba(8, 87, 195, 0.2);
-        margin-bottom: 2.5rem;
+        gap: 0.75rem;
+        background: #ffffff;
+        padding: 1rem;
+        border-radius: 0px !important;
+        border: 1px solid var(--border-color) !important;
+        box-shadow: none !important;
+        margin-bottom: 1.5rem;
         position: relative;
         z-index: 1000;
         align-items: flex-end;
+        width: 100%;
     }
 
     .kejar-laba-card, .filter-section {
@@ -153,7 +152,7 @@
     .loan-filter-item {
         display: flex;
         flex-direction: column;
-        gap: 0.6rem;
+        gap: 0.4rem;
         position: relative;
     }
 
@@ -168,8 +167,8 @@
         font-weight: 800;
         color: #475569;
         text-transform: uppercase;
-        letter-spacing: 0.1em;
-        margin-left: 0.65rem;
+        letter-spacing: 0.05em;
+        margin-left: 0.25rem;
     }
 
     .loan-dropdown {
@@ -179,64 +178,62 @@
 
     .loan-dropdown-icon {
         position: absolute;
-        left: 1rem;
+        left: 0.75rem;
         top: 50%;
         transform: translateY(-50%);
         z-index: 10;
         color: var(--primary-blue);
-        font-size: 0.95rem;
+        font-size: 0.85rem;
         pointer-events: none;
         opacity: 0.8;
     }
 
     .loan-dropdown-toggle {
         width: 100%;
-        height: 52px;
+        height: 40px;
         background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 14px;
-        padding: 0 1rem 0 2.75rem;
+        border: 1px solid var(--border-color);
+        border-radius: 0px !important;
+        padding: 0 0.75rem 0 2.25rem;
         display: flex;
         align-items: center;
         justify-content: space-between;
         font-weight: 700;
-        font-size: 0.88rem;
+        font-size: 0.82rem;
         color: #1e293b;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: all 0.2s ease;
         text-align: left;
     }
 
     .loan-dropdown-toggle:hover {
         border-color: var(--primary-blue-light);
         background: #f8fafc;
-        transform: translateY(-1px);
     }
 
     .loan-dropdown.is-open { z-index: 3100 !important; }
     .loan-dropdown.is-open .loan-dropdown-toggle {
         border-color: var(--primary-blue);
-        box-shadow: 0 0 0 4px rgba(30, 64, 175, 0.1);
+        box-shadow: none !important;
     }
 
     .loan-dropdown-menu {
         position: absolute;
-        top: calc(100% + 8px);
+        top: calc(100% + 4px);
         left: 0;
         width: 100%;
-        min-width: 280px;
-        background: rgba(255, 255, 255, 0.98);
-        backdrop-filter: blur(25px);
-        border: 1px solid rgba(226, 232, 240, 0.9);
-        border-radius: 1.25rem;
-        box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15);
+        min-width: 260px;
+        background: #ffffff;
+        border: 1px solid var(--border-color);
+        border-radius: 0px !important;
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
         z-index: 3000;
         opacity: 0;
         visibility: hidden;
-        transform: translateY(12px);
-        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-        max-height: 400px;
+        transform: translateY(4px);
+        transition: all 0.2s ease;
+        max-height: 350px;
         overflow-y: auto;
-        padding: 0.65rem;
+        padding: 0.4rem;
     }
 
     .loan-dropdown.is-open .loan-dropdown-menu {
@@ -247,34 +244,34 @@
 
     .loan-dropdown-option {
         width: 100%;
-        padding: 0.72rem 1rem;
+        padding: 0.55rem 0.75rem;
         border: none;
         background: transparent;
-        border-radius: 10px;
+        border-radius: 0px !important;
         display: flex;
         align-items: center;
-        gap: 0.85rem;
+        gap: 0.75rem;
         font-weight: 700;
-        font-size: 0.85rem;
+        font-size: 0.82rem;
         color: #475569;
-        transition: all 0.2s;
+        transition: all 0.15s;
         text-align: left;
         margin-bottom: 2px;
     }
 
     .loan-dropdown-option:hover { background: #f1f5f9; color: var(--primary-blue); }
-    .loan-dropdown-option.is-active { background: rgba(30, 64, 175, 0.06); color: var(--primary-blue); }
+    .loan-dropdown-option.is-active { background: rgba(8, 87, 195, 0.08); color: var(--primary-blue); }
 
     .loan-dropdown-check {
-        width: 1.2rem;
-        height: 1.2rem;
+        width: 1rem;
+        height: 1rem;
         display: flex;
         align-items: center;
         justify-content: center;
-        border: 2px solid #e2e8f0;
-        border-radius: 6px;
-        transition: all 0.2s;
-        font-size: 0.75rem;
+        border: 2px solid #cbd5e1;
+        border-radius: 0px !important;
+        transition: all 0.15s;
+        font-size: 0.65rem;
         color: white;
         flex-shrink: 0;
     }
@@ -285,47 +282,46 @@
     }
 
     .btn-loan-modern-submit {
-        height: 52px;
-        min-width: 160px;
-        padding: 0 1.5rem;
-        border-radius: 14px;
-        background: linear-gradient(135deg, var(--primary-blue) 0%, #1e3a8a 100%);
+        height: 40px;
+        min-width: 140px;
+        padding: 0 1.25rem;
+        border-radius: 0px !important;
+        background: var(--primary-blue) !important;
         color: white;
         border: none;
         font-weight: 800;
-        font-size: 0.9rem;
+        font-size: 0.82rem;
         letter-spacing: 0.05em;
         text-transform: uppercase;
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 0.65rem;
-        transition: all 0.3s;
-        box-shadow: 0 8px 16px rgba(30, 64, 175, 0.25);
+        gap: 0.5rem;
+        transition: all 0.2s ease;
+        box-shadow: none !important;
     }
 
     .btn-loan-modern-submit:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 24px rgba(30, 64, 175, 0.35);
+        background: var(--primary-blue-dark) !important;
     }
 
     .loan-dropdown-search {
-        padding: 0.5rem;
+        padding: 0.4rem;
         position: sticky;
-        top: -0.65rem;
+        top: -0.4rem;
         background: white;
         z-index: 10;
         border-bottom: 1px solid #f1f5f9;
-        margin-bottom: 0.5rem;
-        border-radius: 1rem 1rem 0 0;
+        margin-bottom: 0.4rem;
+        border-radius: 0px !important;
     }
 
     .loan-dropdown-search input {
         width: 100%;
-        padding: 0.5rem 0.75rem;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        font-size: 0.82rem;
+        padding: 0.4rem 0.6rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 0px !important;
+        font-size: 0.78rem;
         background: #f8fafc;
     }
 
@@ -355,7 +351,7 @@
     }
 
     .select-custom {
-        border-radius: 10px;
+        border-radius: 0px !important;
         border: 1px solid var(--border-color);
         padding: 0.6rem 1rem;
         font-size: 0.88rem;
@@ -370,11 +366,11 @@
 
     .select-custom:focus {
         border-color: var(--primary-blue);
-        box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+        box-shadow: none !important;
         outline: none;
     }
 
-    /* Multi-select Dropdown Style (from Dashboard Harian) */
+    /* Multi-select Dropdown Style */
     .daily-dropdown {
         position: relative;
         width: 100%;
@@ -382,17 +378,17 @@
 
     .daily-dropdown-toggle {
         width: 100%;
-        min-height: 42px;
+        min-height: 40px;
         border: 1px solid var(--border-color);
-        border-radius: 10px;
+        border-radius: 0px !important;
         background: #f9fafb;
         color: var(--text-main);
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0.6rem 1rem;
+        padding: 0.5rem 0.75rem;
         font-weight: 700;
-        font-size: 0.88rem;
+        font-size: 0.82rem;
         cursor: pointer;
         transition: all 0.2s;
     }
@@ -417,15 +413,15 @@
 
     .daily-dropdown-menu {
         position: absolute;
-        top: calc(100% + 5px);
+        top: calc(100% + 4px);
         left: 0;
         right: 0;
         background: #ffffff;
         border: 1px solid var(--border-color);
-        border-radius: 12px;
-        box-shadow: 0 15px 30px -10px rgba(0,0,0,0.1);
+        border-radius: 0px !important;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
         z-index: 100;
-        padding: 0.5rem;
+        padding: 0.4rem;
         display: none;
         max-height: 300px;
         overflow-y: auto;
@@ -449,8 +445,8 @@
     .daily-dropdown-option {
         display: flex;
         align-items: center;
-        padding: 0.6rem 0.75rem;
-        border-radius: 8px;
+        padding: 0.55rem 0.75rem;
+        border-radius: 0px !important;
         cursor: pointer;
         transition: background 0.15s;
         gap: 0.75rem;
@@ -471,10 +467,10 @@
     }
 
     .daily-dropdown-check {
-        width: 18px;
-        height: 18px;
+        width: 16px;
+        height: 16px;
         border: 2px solid #cbd5e1;
-        border-radius: 4px;
+        border-radius: 0px !important;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -489,7 +485,7 @@
 
     .daily-dropdown-check i {
         color: white;
-        font-size: 10px;
+        font-size: 8px;
         display: none;
     }
 
@@ -501,29 +497,27 @@
         background: var(--primary-blue);
         color: white;
         border: none;
-        border-radius: 10px;
-        padding: 0.78rem 1.75rem;
+        border-radius: 0px !important;
+        padding: 0.5rem 1.5rem;
         font-weight: 700;
-        font-size: 0.95rem;
+        font-size: 0.85rem;
         transition: all 0.2s;
-        box-shadow: 0 4px 6px -1px rgba(30, 64, 175, 0.2);
+        box-shadow: none !important;
         cursor: pointer;
     }
 
     .btn-apply:hover {
         background: var(--primary-blue-dark);
-        transform: translateY(-1px);
     }
 
     /* Searchable Dropdown Extensions */
     .daily-search-shell {
-        padding: 0.5rem 0.75rem 0.45rem;
+        padding: 0.4rem 0.6rem;
         background: #ffffff;
         border-bottom: 1px solid #f1f5f9;
         position: sticky;
         top: 0;
         z-index: 10;
-        backdrop-filter: blur(8px);
     }
 
     .daily-search-inner {
@@ -532,7 +526,7 @@
 
     .daily-search-inner i {
         position: absolute;
-        left: 0.65rem;
+        left: 0.5rem;
         top: 50%;
         transform: translateY(-50%);
         color: var(--text-muted);
@@ -541,9 +535,9 @@
 
     .daily-search-input {
         width: 100%;
-        padding: 0.45rem 0.65rem 0.45rem 1.85rem;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
+        padding: 0.4rem 0.5rem 0.4rem 1.65rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 0px !important;
         font-size: 0.78rem;
         font-weight: 500;
         background: #f8fafc;
@@ -554,7 +548,7 @@
         background: #ffffff;
         border-color: var(--primary-blue-light);
         outline: none;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        box-shadow: none !important;
     }
 
     .daily-dropdown-options-list {
@@ -568,8 +562,8 @@
     }
 
     .daily-dropdown-options-list::-webkit-scrollbar-thumb {
-        background: #e2e8f0;
-        border-radius: 10px;
+        background: #cbd5e1;
+        border-radius: 0px !important;
     }
 
     /* Table Wrapper with Sticky Viewport */
@@ -577,9 +571,10 @@
         position: relative;
         width: 100%;
         background: #ffffff;
-        border: 1px solid var(--border-color);
-        border-radius: 12px;
+        border: 1px solid var(--border-color) !important;
+        border-radius: 0px !important;
         z-index: 10;
+        box-shadow: none !important;
     }
 
     /* Integration with report.partials.sticky-table-viewport-style */
@@ -590,10 +585,12 @@
 
     .kejar-laba-table {
         width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
+        border-collapse: separate !important;
+        border-spacing: 0 !important;
         table-layout: auto;
         background: #ffffff;
+        border-top: 1px solid var(--border-color) !important;
+        border-left: 1px solid var(--border-color) !important;
     }
 
     .kejar-laba-table thead th {
@@ -601,64 +598,87 @@
         color: var(--table-header-text);
         text-transform: uppercase;
         font-size: 0.72rem;
-        padding: 0.85rem 1.1rem;
+        padding: 0.65rem 0.85rem;
         font-weight: 800;
         z-index: 30;
-        border-right: 1px solid rgba(255,255,255,0.08);
-        border-bottom: 2px solid rgba(0, 0, 0, 0.05);
+        border-right: 1px solid rgba(255, 255, 255, 0.25) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.25) !important;
         white-space: nowrap;
     }
 
+    .kejar-laba-table thead tr:first-child th {
+        background-color: var(--primary-blue-dark) !important;
+    }
+
+    .kejar-laba-table thead tr:first-child th[rowspan="2"] {
+        background-color: var(--primary-blue-dark) !important;
+    }
+
     .kejar-laba-table thead tr:nth-child(2) th {
-        background: #274bba !important;
-        padding: 0.55rem 0.75rem;
+        background: var(--primary-blue) !important;
+        padding: 0.45rem 0.75rem;
     }
 
     .kejar-laba-table tbody td {
         font-size: 0.82rem;
         background: #ffffff;
         font-variant-numeric: tabular-nums;
-        padding: 0.85rem 1.1rem;
-        border-right: 1px solid var(--border-color);
-        border-bottom: 1px solid var(--border-color);
+        padding: 0.55rem 0.85rem;
+        border-right: 1px solid var(--border-color) !important;
+        border-bottom: 1px solid var(--border-color) !important;
     }
 
-    .kejar-laba-table tbody tr:nth-child(even) td {
-        background: #fafbfd;
+    /* Thicker dividing border below each branch group */
+    .kejar-laba-table tbody td[rowspan="4"],
+    .kejar-laba-table tbody tr.total-row td {
+        border-bottom: 2px solid #94a3b8 !important;
+    }
+
+    /* Force background for total rows and bold style */
+    .kejar-laba-table tbody tr.total-row td {
+        background-color: #eff6ff !important;
+        color: var(--primary-blue-dark) !important;
+        font-weight: 700 !important;
     }
 
     .kejar-laba-table tbody tr:hover td {
-        background: #f1f5f9;
+        background: #f1f5f9 !important;
+    }
+
+    .kejar-laba-table tbody tr.total-row:hover td {
+        background: #dbeafe !important;
     }
 
     /* Fixed Headers and Columns Color Fix */
     .kejar-laba-table th.sticky-col {
-        background-color: var(--table-header-bg) !important;
-        z-index: 40 !important; /* Above regular sticky headers */
+        background-color: var(--primary-blue-dark) !important;
+        z-index: 40 !important;
     }
     
     .kejar-laba-table td.sticky-col {
         background-color: #ffffff !important;
-        z-index: 20; /* Above regular cells, below headers */
+        z-index: 20;
     }
     
-    .kejar-laba-table tr:nth-child(even) td.sticky-col {
-        background: #fafbfd !important;
-    }
-
     .sticky-col {
         position: sticky;
         left: 0;
-        box-shadow: 4px 0 8px -4px rgba(0, 0, 0, 0.1);
+        box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
+    }
+
+    /* Thicker border separating frozen pane */
+    .kejar-laba-table th.sticky-col:nth-child(2),
+    .kejar-laba-table td.sticky-col:nth-child(2) {
+        border-right: 2.5px solid #94a3b8 !important;
     }
 
     .text-right { text-align: right; }
     .text-center { text-align: center; }
     .font-weight-bold { font-weight: 700; }
     
-    .negative-value { color: #dc2626; font-weight: 700; }
-    .positive-value { color: #15803d; font-weight: 700; }
-    .zero-value { color: var(--text-muted); opacity: 0.5; }
+    .negative-value { color: #b91c1c !important; font-weight: 700; }
+    .positive-value { color: #15803d !important; font-weight: 700; }
+    .zero-value { color: var(--text-muted); opacity: 0.6; }
 
     .currency-symbol { font-size: 0.65rem; margin-right: 2px; color: var(--text-muted); font-weight: normal; }
 </style>
@@ -701,7 +721,7 @@
                                 @foreach($availablePeriods as $period)
                                     <div class="loan-dropdown-option {{ $selectedPeriod === $period ? 'is-active' : '' }}" data-value="{{ $period }}">
                                         <div class="loan-dropdown-check"><i class="fas fa-check"></i></div>
-                                        <span>{{ \Carbon\Carbon::parse($period)->translatedFormat('d M Y') }}</span>
+                                        <span>{{ \Carbon\Carbon::parse($period)->translatedFormat('d M y') }}</span>
                                     </div>
                                 @endforeach
                             </div>
@@ -941,10 +961,15 @@
                         </div>
                     `;
 
+                    let currentUnitStillValid = (unitInput.value === 'all');
+
                     if (!disableUnit) {
                         allUnitsData.forEach(unit => {
                             if (unit.value === 'all') return;
                             if (selected.includes(unit.kanca_value)) {
+                                if (unit.value === unitInput.value) {
+                                    currentUnitStillValid = true;
+                                }
                                 const opt = document.createElement('div');
                                 opt.className = `loan-dropdown-option ${unit.value === unitInput.value ? 'is-active' : ''}`;
                                 opt.dataset.value = unit.value;
@@ -969,8 +994,17 @@
                         updateKancaUI();
                     });
 
-                    if (disableUnit) {
+                    if (disableUnit || !currentUnitStillValid) {
                         unitInput.value = 'all';
+                        unitLabel.textContent = 'Semua Unit Kerja';
+                        const allOpt = unitOptionsContainer.querySelector('[data-value="all"]');
+                        if (allOpt) allOpt.classList.add('is-active');
+                    } else if (unitInput.value !== 'all') {
+                        const matchedUnit = allUnitsData.find(u => u.value === unitInput.value);
+                        if (matchedUnit) {
+                            unitLabel.textContent = matchedUnit.label;
+                        }
+                    } else {
                         unitLabel.textContent = 'Semua Unit Kerja';
                     }
                 }
@@ -980,59 +1014,253 @@
             <table class="kejar-laba-table">
                 <thead>
                     <tr>
-                        <th rowspan="2" class="sticky-col">No</th>
-                        <th rowspan="2" class="sticky-col" style="left: 64px;">Kanca</th>
-                        <th rowspan="2">BUC</th>
-                        <th rowspan="2">{{ $isArea6AllSelected ? 'BRANCH OFFICE' : 'Unit' }}</th>
-                        <th colspan="4" class="text-center">Recovery (M-1)</th>
-                        <th colspan="4" class="text-center">Recovery ({{ \Carbon\Carbon::parse($selectedPeriod)->translatedFormat('d M Y') }})</th>
-                        <th colspan="4" class="text-center">RKA (Target)</th>
-                        <th colspan="4" class="text-center">Delta (MtD vs RKA)</th>
+                        <th rowspan="2" class="sticky-col" style="z-index: 50 !important;">No</th>
+                        <th rowspan="2" class="sticky-col" style="left: 64px; z-index: 50 !important;">{{ $isArea6AllSelected ? 'Kantor Cabang' : 'Unit Kerja' }}</th>
+                        <th rowspan="2" style="z-index: 30 !important;">Segmen</th>
+                        <th colspan="4" class="text-center">POSISI RECOVERY</th>
+                        <th colspan="3" class="text-center">DELTA PERBANDINGAN</th>
                     </tr>
                     <tr>
-                        <!-- Recovery M-1 -->
-                        <th>Micro</th><th>Small</th><th>Consumer</th><th>Total</th>
-                        <!-- Recovery Curr -->
-                        <th>Micro</th><th>Small</th><th>Consumer</th><th>Total</th>
-                        <!-- RKA -->
-                        <th>Micro</th><th>Small</th><th>Consumer</th><th>Total</th>
-                        <!-- Delta -->
-                        <th>Micro</th><th>Small</th><th>Consumer</th><th>Total</th>
+                        <!-- POSISI RECOVERY -->
+                        <th class="text-center">{{ strtoupper($yoyPeriodLabel) }}</th>
+                        <th class="text-center">{{ strtoupper($ytdPeriodLabel) }}</th>
+                        <th class="text-center">{{ strtoupper($m1PeriodLabel) }}</th>
+                        <th class="text-center">{{ strtoupper($selectedPeriodLabel) }}</th>
+                        <!-- DELTA PERBANDINGAN -->
+                        <th class="text-center">YoY</th>
+                        <th class="text-center">YTD</th>
+                        <th class="text-center">M-1</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse($rows as $row)
-                        <tr>
-                            <td class="text-center sticky-col">{{ $row['no'] }}</td>
-                            <td class="sticky-col" style="left: 64px; font-weight: 700; color: var(--primary-blue-dark);">{{ $row['kanca'] }}</td>
-                            <td class="text-center" style="font-weight: 600;">{{ $row['buc'] }}</td>
-                            <td style="min-width: 250px; font-weight: 600;">
-                                {{ $isArea6AllSelected ? ($row['branch_office'] ?? $row['unit']) : $row['unit'] }}
+                    @forelse($rows as $branchIndex => $row)
+                        @php
+                            $blockBg = $branchIndex % 2 === 0 ? '#ffffff' : '#f8fafc';
+                        @endphp
+                        {{-- MICRO --}}
+                        <tr style="background-color: {{ $blockBg }};">
+                            <td rowspan="4" class="text-center sticky-col font-weight-bold" style="background-color: {{ $blockBg }} !important; z-index: 20;">
+                                {{ $row['no'] }}
+                            </td>
+                            <td rowspan="4" class="sticky-col font-weight-bold" style="left: 64px; background-color: {{ $blockBg }} !important; color: var(--primary-blue-dark); z-index: 20;">
+                                {{ $isArea6AllSelected ? $row['kanca'] : $row['unit'] }}
+                            </td>
+                            <td class="font-weight-bold text-uppercase" style="background-color: {{ $blockBg }}; color: #475569;">
+                                MICRO
                             </td>
                             
-                            {{-- Recovery M-1 --}}
-                            @include('report.partials.kejar-laba-metrics', ['metrics' => $row['recovery_m1']])
+                            {{-- POSISI YoY --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['recovery_yoy']['micro'] != 0 ? number_format($row['recovery_yoy']['micro'], 0, ',', '.') : '-' }}
+                            </td>
                             
-                            {{-- Recovery Current --}}
-                            @include('report.partials.kejar-laba-metrics', ['metrics' => $row['recovery_curr']])
+                            {{-- POSISI YTD --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['recovery_ytd']['micro'] != 0 ? number_format($row['recovery_ytd']['micro'], 0, ',', '.') : '-' }}
+                            </td>
                             
-                            {{-- RKA --}}
-                            @include('report.partials.kejar-laba-metrics', ['metrics' => $row['rka']])
+                            {{-- POSISI M-1 --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['recovery_m1']['micro'] != 0 ? number_format($row['recovery_m1']['micro'], 0, ',', '.') : '-' }}
+                            </td>
                             
-                            {{-- Delta --}}
-                            @foreach(['micro', 'small', 'consumer', 'total'] as $seg)
-                                <td class="text-right {{ $row['delta'][$seg] < 0 ? 'negative-value' : ($row['delta'][$seg] > 0 ? 'positive-value' : 'zero-value') }}">
-                                    @if($row['delta'][$seg] != 0)
-                                        <span class="currency-symbol">Rp</span>{{ number_format($row['delta'][$seg], 0, ',', '.') }}
-                                    @else
-                                        -
-                                    @endif
-                                </td>
-                            @endforeach
+                            {{-- POSISI M Terakhir --}}
+                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
+                                {{ $row['recovery_curr']['micro'] != 0 ? number_format($row['recovery_curr']['micro'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- DELTA YoY --}}
+                            <td class="text-right {{ $row['delta_yoy']['micro'] < 0 ? 'negative-value' : ($row['delta_yoy']['micro'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_yoy']['micro'] != 0)
+                                    {{ $row['delta_yoy']['micro'] > 0 ? '+' : '' }}{{ number_format($row['delta_yoy']['micro'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                            
+                            {{-- DELTA YTD --}}
+                            <td class="text-right {{ $row['delta_ytd']['micro'] < 0 ? 'negative-value' : ($row['delta_ytd']['micro'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_ytd']['micro'] != 0)
+                                    {{ $row['delta_ytd']['micro'] > 0 ? '+' : '' }}{{ number_format($row['delta_ytd']['micro'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                            
+                            {{-- DELTA M-1 --}}
+                            <td class="text-right {{ $row['delta_m1']['micro'] < 0 ? 'negative-value' : ($row['delta_m1']['micro'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_m1']['micro'] != 0)
+                                    {{ $row['delta_m1']['micro'] > 0 ? '+' : '' }}{{ number_format($row['delta_m1']['micro'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                        </tr>
+
+                        {{-- SMALL --}}
+                        <tr style="background-color: {{ $blockBg }};">
+                            <td class="font-weight-bold text-uppercase" style="background-color: {{ $blockBg }}; color: #475569;">
+                                SMALL
+                            </td>
+                            
+                            {{-- POSISI YoY --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['recovery_yoy']['small'] != 0 ? number_format($row['recovery_yoy']['small'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- POSISI YTD --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['recovery_ytd']['small'] != 0 ? number_format($row['recovery_ytd']['small'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- POSISI M-1 --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['recovery_m1']['small'] != 0 ? number_format($row['recovery_m1']['small'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- POSISI M Terakhir --}}
+                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
+                                {{ $row['recovery_curr']['small'] != 0 ? number_format($row['recovery_curr']['small'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- DELTA YoY --}}
+                            <td class="text-right {{ $row['delta_yoy']['small'] < 0 ? 'negative-value' : ($row['delta_yoy']['small'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_yoy']['small'] != 0)
+                                    {{ $row['delta_yoy']['small'] > 0 ? '+' : '' }}{{ number_format($row['delta_yoy']['small'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                            
+                            {{-- DELTA YTD --}}
+                            <td class="text-right {{ $row['delta_ytd']['small'] < 0 ? 'negative-value' : ($row['delta_ytd']['small'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_ytd']['small'] != 0)
+                                    {{ $row['delta_ytd']['small'] > 0 ? '+' : '' }}{{ number_format($row['delta_ytd']['small'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                            
+                            {{-- DELTA M-1 --}}
+                            <td class="text-right {{ $row['delta_m1']['small'] < 0 ? 'negative-value' : ($row['delta_m1']['small'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_m1']['small'] != 0)
+                                    {{ $row['delta_m1']['small'] > 0 ? '+' : '' }}{{ number_format($row['delta_m1']['small'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                        </tr>
+
+                        {{-- CONSUMER --}}
+                        <tr style="background-color: {{ $blockBg }};">
+                            <td class="font-weight-bold text-uppercase" style="background-color: {{ $blockBg }}; color: #475569;">
+                                CONSUMER
+                            </td>
+                            
+                            {{-- POSISI YoY --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['recovery_yoy']['consumer'] != 0 ? number_format($row['recovery_yoy']['consumer'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- POSISI YTD --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['recovery_ytd']['consumer'] != 0 ? number_format($row['recovery_ytd']['consumer'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- POSISI M-1 --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['recovery_m1']['consumer'] != 0 ? number_format($row['recovery_m1']['consumer'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- POSISI M Terakhir --}}
+                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
+                                {{ $row['recovery_curr']['consumer'] != 0 ? number_format($row['recovery_curr']['consumer'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- DELTA YoY --}}
+                            <td class="text-right {{ $row['delta_yoy']['consumer'] < 0 ? 'negative-value' : ($row['delta_yoy']['consumer'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_yoy']['consumer'] != 0)
+                                    {{ $row['delta_yoy']['consumer'] > 0 ? '+' : '' }}{{ number_format($row['delta_yoy']['consumer'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                            
+                            {{-- DELTA YTD --}}
+                            <td class="text-right {{ $row['delta_ytd']['consumer'] < 0 ? 'negative-value' : ($row['delta_ytd']['consumer'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_ytd']['consumer'] != 0)
+                                    {{ $row['delta_ytd']['consumer'] > 0 ? '+' : '' }}{{ number_format($row['delta_ytd']['consumer'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                            
+                            {{-- DELTA M-1 --}}
+                            <td class="text-right {{ $row['delta_m1']['consumer'] < 0 ? 'negative-value' : ($row['delta_m1']['consumer'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_m1']['consumer'] != 0)
+                                    {{ $row['delta_m1']['consumer'] > 0 ? '+' : '' }}{{ number_format($row['delta_m1']['consumer'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                        </tr>
+
+                        {{-- TOTAL --}}
+                        <tr class="total-row" style="background-color: #eff6ff; font-weight: bold;">
+                            <td class="font-weight-bold text-uppercase" style="background-color: #eff6ff; color: #1e3a8a;">
+                                TOTAL
+                            </td>
+                            
+                            {{-- POSISI YoY --}}
+                            <td class="text-right" style="background-color: #eff6ff; color: #1e3a8a;">
+                                {{ $row['recovery_yoy']['total'] != 0 ? number_format($row['recovery_yoy']['total'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- POSISI YTD --}}
+                            <td class="text-right" style="background-color: #eff6ff; color: #1e3a8a;">
+                                {{ $row['recovery_ytd']['total'] != 0 ? number_format($row['recovery_ytd']['total'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- POSISI M-1 --}}
+                            <td class="text-right" style="background-color: #eff6ff; color: #1e3a8a;">
+                                {{ $row['recovery_m1']['total'] != 0 ? number_format($row['recovery_m1']['total'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- POSISI M Terakhir --}}
+                            <td class="text-right font-weight-bold" style="background-color: #dbeafe; color: #1e3a8a;">
+                                {{ $row['recovery_curr']['total'] != 0 ? number_format($row['recovery_curr']['total'], 0, ',', '.') : '-' }}
+                            </td>
+                            
+                            {{-- DELTA YoY --}}
+                            <td class="text-right {{ $row['delta_yoy']['total'] < 0 ? 'negative-value' : ($row['delta_yoy']['total'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: #eff6ff;">
+                                @if($row['delta_yoy']['total'] != 0)
+                                    {{ $row['delta_yoy']['total'] > 0 ? '+' : '' }}{{ number_format($row['delta_yoy']['total'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                            
+                            {{-- DELTA YTD --}}
+                            <td class="text-right {{ $row['delta_ytd']['total'] < 0 ? 'negative-value' : ($row['delta_ytd']['total'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: #eff6ff;">
+                                @if($row['delta_ytd']['total'] != 0)
+                                    {{ $row['delta_ytd']['total'] > 0 ? '+' : '' }}{{ number_format($row['delta_ytd']['total'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                            
+                            {{-- DELTA M-1 --}}
+                            <td class="text-right {{ $row['delta_m1']['total'] < 0 ? 'negative-value' : ($row['delta_m1']['total'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: #eff6ff;">
+                                @if($row['delta_m1']['total'] != 0)
+                                    {{ $row['delta_m1']['total'] > 0 ? '+' : '' }}{{ number_format($row['delta_m1']['total'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="20" class="text-center py-5 text-muted">
+                            <td colspan="10" class="text-center py-5 text-muted">
                                 <i class="fas fa-info-circle mr-2"></i> Tidak ada data untuk periode yang dipilih.
                             </td>
                         </tr>

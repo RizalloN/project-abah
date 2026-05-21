@@ -56,13 +56,15 @@ class DashboardPinjamanKreditService
 
         $categories = $this->getCategoriesForSegment($segment);
 
-        return [
+        $res = [
             'os' => $this->formatSegmentType($periods, $branches, $categories, $segment, 'os', $rkaData),
             'sml' => $this->formatSegmentType($periods, $branches, $categories, $segment, 'sml', $rkaData),
             'npl' => $this->formatSegmentType($periods, $branches, $categories, $segment, 'npl', $rkaData),
             'header_dates' => $periods,
             'rka_labels' => $this->calculateRkaLabels($selectedPeriod),
         ];
+
+        return DashboardCrossAlignmentGuard::alignCredit($res, $selectedPeriod, $segment);
     }
 
     /**
@@ -269,9 +271,6 @@ class DashboardPinjamanKreditService
         }
     }
 
-    /**
-     * Retrieve value from local memory cache
-     */
     private function getSnapshotValueFromCache(string $branch, string $category, ?string $period, string $type, string $segment): float
     {
         if (!$period) return 0;
@@ -280,9 +279,19 @@ class DashboardPinjamanKreditService
         $record = $this->snapshotCache[$key] ?? null;
         if (!$record) return 0;
 
+        if ($category === 'Micro') {
+            $briguna = (float) ($record->{"briguna_mikro_{$type}"} ?? 0);
+            $kupedes = (float) ($record->{"kupedes_{$type}"} ?? 0);
+            $kur_mikro = (float) ($record->{"kur_mikro_{$type}"} ?? 0);
+            $kur_kecil = (float) ($record->{"kur_kecil_{$type}"} ?? 0);
+            $kur_kpp = (float) ($record->{"kur_kpp_{$type}"} ?? 0);
+            return $briguna + $kupedes + $kur_mikro + $kur_kecil + $kur_kpp;
+        }
+
         $column = $this->mapCategoryToColumn($category, $type);
         return (float) ($record->$column ?? 0);
     }
+
 
     /**
      * Map category label to column name
@@ -412,9 +421,11 @@ class DashboardPinjamanKreditService
         }
 
         try {
-            $selectedDate = Carbon::parse($selectedPeriod);
-            $decemberDate = $selectedDate->copy()->month(12)->startOfMonth();
-            $currentDate = $selectedDate;
+            $harianService = app(DashboardHarianSnapshotService::class);
+            $resolvedRkaPeriod = $harianService->resolveEffectiveRkaPeriod(null, $selectedPeriod);
+            $rkaDate = $resolvedRkaPeriod ? Carbon::parse($resolvedRkaPeriod) : Carbon::parse($selectedPeriod);
+            $decemberDate = $rkaDate->copy()->month(12)->startOfMonth();
+            $currentDate = $rkaDate;
 
             $decemberMonth = $this->getRkaLookupService()->resolveMonthColumn($decemberDate);
             $currentMonth = $this->getRkaLookupService()->resolveMonthColumn($currentDate);

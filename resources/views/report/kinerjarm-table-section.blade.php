@@ -21,7 +21,7 @@
         ['key' => 'm1', 'label' => $mtdShortLabel ?? '-', 'short_label' => $mtdShortLabel ?? '-'],
     ])->values();
     $comparisonCount = max(1, $comparisonColumns->count());
-    $baseColspan = 5 + $comparisonCount + 1 + $comparisonCount;
+    $baseColspan = 4 + $comparisonCount + 1 + $comparisonCount;
     $emptyColspan = $baseColspan
         + ($showTargetColumns ? 2 : 0)
         + ($showAchievementColumns ? 2 : 0)
@@ -88,9 +88,8 @@
         <table class="{{ $tableClass }}">
             <thead>
                 <tr>
-                    <th rowspan="2" class="sticky-col" style="width: 32px; left: 0;">No.</th>
-                    <th rowspan="2" class="sticky-col" style="width: 94px; left: 32px;">Cabang</th>
-                    <th rowspan="2" class="sticky-col" style="width: 164px; left: 126px;">RM / Pengelola</th>
+                    <th rowspan="2" class="sticky-col" style="width: 94px; left: 0;">Cabang</th>
+                    <th rowspan="2" class="sticky-col" style="width: 164px; left: 94px;">RM / Pengelola</th>
                     <th rowspan="2" style="width: 92px;">Produk</th>
                     <th rowspan="2" style="width: 58px;">Kuadran</th>
                     <th colspan="{{ $comparisonCount + 1 }}" class="sub-head">Performance</th>
@@ -131,12 +130,10 @@
                 </tr>
             </thead>
             <tbody>
-                @php $no = 1; @endphp
                 @forelse($rows as $branch)
                     <tr class="loan-branch-subtotal">
-                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="text-center-important sticky-col" style="font-weight: 800; left: 0; border-right: 1px solid #cbd5e1; background: #d9e1f2 !important; color: #000000 !important;">{{ $no++ }}</td>
-                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="merged-branch-cell sticky-col" style="left: 32px;">{{ $branch['cabang'] }}</td>
-                        <td colspan="3" class="text-center-important sticky-col" style="letter-spacing: 0.03em; font-weight: 900; background: #d9e1f2 !important; color: #000000 !important; left: 126px; z-index: 20; border-right: 1px solid #cbd5e1;">
+                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="merged-branch-cell sticky-col" style="left: 0;">{{ $branch['cabang'] }}</td>
+                        <td colspan="3" class="text-center-important sticky-col" style="letter-spacing: 0.03em; font-weight: 900; left: 94px; z-index: 20; border-right: 1px solid #cbd5e1;">
                             TOTAL {{ $branch['cabang'] }}
                         </td>
                         @foreach($comparisonColumns as $column)
@@ -144,7 +141,11 @@
                         @endforeach
                         <td class="highlight-curr">{{ $formatAmount($branch['subtotal']['curr']) }}</td>
                         @foreach($comparisonColumns as $column)
-                            <td>{!! $formatSignedAmount($deltaFor($branch['subtotal'], $column['key'])) !!}</td>
+                            @php
+                                $dVal = $deltaFor($branch['subtotal'], $column['key']);
+                                $dCls = $dVal > 0 ? 'cell-pos' : ($dVal < 0 ? 'cell-neg' : '');
+                            @endphp
+                            <td class="{{ $dCls }}">{!! $formatSignedAmount($dVal) !!}</td>
                         @endforeach
                         @if($showTargetColumns)
                             <td class="text-center-important">{{ $branch['subtotal']['target_jg_deb'] ?: '-' }}</td>
@@ -181,7 +182,7 @@
                                         data-segment="{{ $selectedSegmen }}"
                                         data-period="{{ $selectedPeriod }}"
                                         title="Klik untuk detail rincian"
-                                        style="cursor: pointer; transition: all 0.2s; position: relative; left: 126px;">
+                                        style="cursor: pointer; transition: all 0.2s; position: relative; left: 94px;">
                                         <div class="d-flex align-items-center">
                                             <i class="fas fa-info-circle me-1 text-primary" style="font-size: 0.65rem; opacity: 0.6;"></i>
                                             {{ $rmName }}
@@ -194,12 +195,16 @@
                                     {{ $item['product'] }}
                                 </td>
                                 @if($isFirstRmRowForQuad)
-                                    <td rowspan="{{ $rmData['rm_rowspan'] }}" class="text-center-important">
-                                        @if(($selectedSegmen ?? '') !== 'CONSUMER' && !empty($rmData['quadrant']))
-                                            <div class="quadrant-badge {{ $quadrantClass($rmData['quadrant']) }}">
-                                                <span class="quadrant-label">{{ $quadrantLabel($rmData['quadrant']) }}</span>
-                                            </div>
-                                        @elseif(($selectedSegmen ?? '') !== 'CONSUMER')
+                                    @php
+                                        $qClass = '';
+                                        if (($selectedSegmen ?? '') !== 'CONSUMER' && !empty($rmData['quadrant'])) {
+                                            $qClass = $quadrantClass($rmData['quadrant']);
+                                        }
+                                    @endphp
+                                    <td rowspan="{{ $rmData['rm_rowspan'] }}" class="text-center-important cell-quadrant {{ $qClass }}">
+                                        @if (($selectedSegmen ?? '') !== 'CONSUMER' && !empty($rmData['quadrant']))
+                                            <span class="quadrant-label">{{ $quadrantLabel($rmData['quadrant']) }}</span>
+                                        @elseif (($selectedSegmen ?? '') !== 'CONSUMER')
                                             <span class="text-muted small">-</span>
                                         @else
                                             <span class="text-muted small"></span>
@@ -212,7 +217,11 @@
                                 @endforeach
                                 <td class="highlight-curr">{{ $formatAmount($item['curr']) }}</td>
                                 @foreach($comparisonColumns as $column)
-                                    <td>{!! $formatSignedAmount($deltaFor($item, $column['key'])) !!}</td>
+                                    @php
+                                        $dVal = $deltaFor($item, $column['key']);
+                                        $dCls = $dVal > 0 ? 'cell-pos' : ($dVal < 0 ? 'cell-neg' : '');
+                                    @endphp
+                                    <td class="{{ $dCls }}">{!! $formatSignedAmount($dVal) !!}</td>
                                 @endforeach
                                 @if($showTargetColumns)
                                     <td class="text-center-important" style="background: rgba(8, 87, 195, 0.02); font-size: 0.7rem;">{{ $item['target_jg_deb'] ?: '' }}</td>
@@ -245,7 +254,7 @@
 
                 @if(!empty($rows))
                     <tr class="row-grand-total">
-                        <td colspan="5" class="text-center-important sticky-col" style="font-weight: 900; text-transform: uppercase; background: #b4c6e7 !important; color: #000000 !important; left: 0; z-index: 50; border-top: 1px solid #8faadc !important; border-bottom: 3px double #000000 !important; border-right: 1px solid #cbd5e1;">
+                        <td colspan="4" class="text-center-important sticky-col" style="text-transform: uppercase; left: 0; z-index: 50; border-right: 1px solid #cbd5e1;">
                             {{ $grandTotalLabel }}
                         </td>
                         @foreach($comparisonColumns as $column)
@@ -253,7 +262,11 @@
                         @endforeach
                         <td class="highlight-curr">{{ $formatAmount($total['curr']) }}</td>
                         @foreach($comparisonColumns as $column)
-                            <td>{!! $formatSignedAmount($deltaFor($total, $column['key']), false) !!}</td>
+                            @php
+                                $dVal = $deltaFor($total, $column['key']);
+                                $dCls = $dVal > 0 ? 'cell-pos' : ($dVal < 0 ? 'cell-neg' : '');
+                            @endphp
+                            <td class="{{ $dCls }}">{!! $formatSignedAmount($dVal, false) !!}</td>
                         @endforeach
                         @if($showTargetColumns)
                             <td class="text-center-important">{{ $total['target_jg_deb'] ?: '-' }}</td>

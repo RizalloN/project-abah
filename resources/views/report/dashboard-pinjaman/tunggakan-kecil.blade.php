@@ -122,35 +122,230 @@
         white-space: nowrap;
     }
 
+    /* Modern Corporate Flat Aesthetic (Excel-Inspired) Overrides */
+    .loan-dashboard .card.loan-shell,
+    .loan-dashboard .card.loan-table-shell {
+        border-radius: 0px !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03) !important;
+    }
+
+    .loan-dashboard .card.loan-shell::before,
+    .loan-dashboard .card.loan-table-shell::before {
+        height: 3px !important;
+        background: var(--loan-blue) !important; /* Pristine solid corporate blue line */
+    }
+
+    .loan-filter-grid .form-group {
+        border-radius: 0px !important;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        min-height: 84px;
+        padding: 0.65rem 0.85rem;
+    }
+
+    .loan-filter-grid .form-group:focus-within {
+        border-color: var(--loan-blue) !important;
+        background: #ffffff;
+        box-shadow: none !important;
+    }
+
+    .small-arrears-filter-dropdown {
+        margin-bottom: 0px !important;
+    }
+
+    .small-arrears-dropdown-toggle {
+        border-radius: 0px !important;
+        border: 1px solid #cbd5e1;
+        box-shadow: none !important;
+        min-height: 40px !important;
+        height: 40px !important;
+        padding: 0.35rem 0.75rem !important;
+        font-size: 0.82rem !important;
+        font-weight: 700 !important;
+    }
+
+    .small-arrears-dropdown-toggle:hover,
+    .small-arrears-dropdown-toggle:focus {
+        border-color: var(--loan-blue) !important;
+        box-shadow: none !important;
+    }
+
+    .small-arrears-dropdown-menu {
+        border-radius: 0px !important;
+        border: 1px solid #cbd5e1;
+        box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08) !important;
+    }
+
+    .loan-filter-control {
+        border-radius: 0px !important;
+        min-height: 40px !important;
+        height: 40px !important;
+        border: 1px solid #cbd5e1 !important;
+        font-size: 0.82rem !important;
+        padding: 0.35rem 0.75rem !important;
+    }
+
+    .btn-flat-primary {
+        border-radius: 0px !important;
+        min-height: 40px !important;
+        height: 40px !important;
+        padding: 0 1.25rem !important;
+        background-color: var(--loan-blue) !important;
+        border-color: var(--loan-blue) !important;
+        color: #ffffff !important;
+        font-size: 0.82rem !important;
+        font-weight: 700 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0.5rem !important;
+        transition: all 0.15s ease !important;
+        border: 1px solid var(--loan-blue) !important;
+    }
+
+    .btn-flat-primary:hover,
+    .btn-flat-primary:focus {
+        background-color: var(--loan-blue-deep) !important;
+        border-color: var(--loan-blue-deep) !important;
+        box-shadow: none !important;
+    }
+
+    .btn-flat-primary:disabled {
+        background-color: #cbd5e1 !important;
+        border-color: #cbd5e1 !important;
+        color: #94a3b8 !important;
+        cursor: not-allowed !important;
+    }
+
+    .btn-flat-secondary {
+        border-radius: 0px !important;
+        min-height: 40px !important;
+        height: 40px !important;
+        padding: 0 1.25rem !important;
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        color: #475569 !important;
+        font-size: 0.82rem !important;
+        font-weight: 700 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        transition: all 0.15s ease !important;
+    }
+
+    .btn-flat-secondary:hover,
+    .btn-flat-secondary:focus {
+        background-color: #f8fafc !important;
+        color: #1e293b !important;
+        border-color: #94a3b8 !important;
+        text-decoration: none !important;
+    }
+
+    .loan-filter-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 0.75rem;
+        width: 100%;
+    }
+
+    .loan-filter-item {
+        flex: 1 1 240px;
+        max-width: 320px;
+    }
+
+    .loan-filter-item.item-period {
+        flex: 1 1 160px;
+        max-width: 200px;
+    }
+
+    .loan-filter-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex: 0 0 auto;
+        min-height: 40px;
+        height: 40px;
+    }
+
+    @media (max-width: 991.98px) {
+        .loan-filter-item,
+        .loan-filter-item.item-period {
+            max-width: 100% !important;
+        }
+    }
+
+    @media (max-width: 767.98px) {
+        .loan-filter-toolbar {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 1rem;
+        }
+        
+        .loan-filter-item,
+        .loan-filter-item.item-period {
+            flex: 1 1 100%;
+            max-width: 100% !important;
+            width: 100%;
+        }
+        
+        .loan-filter-actions {
+            flex: 1 1 100%;
+            width: 100%;
+            justify-content: stretch;
+            margin-top: 0.25rem;
+        }
+
+        .btn-flat-primary,
+        .btn-flat-secondary {
+            flex: 1 1 50%;
+            width: 100%;
+        }
+
+
+    }
+
+    .loan-table-badge {
+        border-radius: 0px !important;
+        background: #f8fafc;
+        border: 1px solid #cbd5e1;
+        color: #334155;
+        font-weight: 700;
+    }
+
     .loan-small-table-wrap {
         overflow-x: auto;
-        border-radius: 8px;
-        border: 1px solid #cbd5e1;
+        border-radius: 0px !important;
+        border: 1px solid #cbd5e1 !important;
         background: #ffffff;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        box-shadow: none !important;
     }
 
     .loan-small-table {
         width: 100%;
-        min-width: 790px;
+        min-width: 880px; /* Enhanced horizontal layout for readability */
         table-layout: fixed;
-        border-collapse: separate;
-        border-spacing: 0;
-        color: #1f2937;
-        font-size: 0.78rem;
+        border-collapse: collapse !important;
+        color: #1e293b;
+        font-size: 0.8rem;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
     .loan-small-table col.col-group {
-        width: 210px;
+        width: 220px;
     }
 
-    .loan-small-table col.col-position-count,
+    .loan-small-table col.col-position-count {
+        width: 75px;
+    }
+
     .loan-small-table col.col-position-rp {
-        width: 70px;
+        width: 105px;
     }
 
     .loan-small-table col.col-export {
-        width: 110px;
+        width: 120px;
     }
 
     .loan-small-table thead th,
@@ -158,44 +353,40 @@
     .loan-small-table tbody td,
     .loan-small-table tfoot th,
     .loan-small-table tfoot td {
-        height: 30px;
-        padding: 0.42rem 0.5rem !important;
+        height: 34px;
+        padding: 0.5rem 0.75rem !important;
         vertical-align: middle !important;
-        white-space: normal;
+        white-space: nowrap;
         line-height: 1.25;
-        border-right: 1px solid #dbe3ef !important;
-        border-bottom: 1px solid #dbe3ef !important;
-    }
-
-    .loan-small-table thead th:last-child,
-    .loan-small-table tbody td:last-child,
-    .loan-small-table tfoot td:last-child {
-        border-right: none !important;
+        border: 1px solid #cbd5e1 !important; /* Crisp full grid lines */
     }
 
     .loan-small-table thead th {
-        background: var(--loan-blue-deep) !important;
-        color: #ffffff !important;
         text-align: center;
-        letter-spacing: 0;
-        text-transform: none;
-        font-size: 0.72rem;
-        font-weight: 800;
-        padding: 0.46rem 0.5rem !important;
-        white-space: nowrap;
-        border-right: 1px solid rgba(255, 255, 255, 0.18) !important;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.18) !important;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
     }
 
     .loan-small-table thead tr:first-child th {
-        background: var(--loan-blue-ink) !important;
+        background: #042a5f !important; /* Deepest BRI corporate blue */
         color: #ffffff !important;
+        font-size: 0.8rem;
+        font-weight: 800;
     }
 
-    .loan-small-table thead tr:nth-child(2) th,
-    .loan-small-table thead tr:nth-child(3) th {
-        background: var(--loan-blue) !important;
+    .loan-small-table thead tr:nth-child(2) th {
+        background: #0857c3 !important; /* BRI Nusantara Blue */
         color: #ffffff !important;
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+
+    .loan-small-table thead tr:nth-child(3) th {
+        background: #0b57c5 !important; /* Accent Blue */
+        color: #ffffff !important;
+        font-size: 0.7rem;
+        font-weight: 600;
     }
 
     .loan-small-table .sticky-first,
@@ -210,120 +401,145 @@
         z-index: 4;
     }
 
-    .loan-small-table tbody th,
-    .loan-small-table tfoot th {
-        background: #ffffff;
-        color: #0f172a;
+    .loan-small-table tbody th {
+        background: #f8fafc !important; /* Soft gray for row headers */
+        color: #1e293b !important;
         text-align: left;
-        width: 210px;
-        min-width: 210px;
-        max-width: 210px;
-        box-shadow: 2px 0 6px rgba(4, 42, 95, 0.05);
+        width: 220px;
+        min-width: 220px;
+        max-width: 220px;
+        border-right: 2px solid #cbd5e1 !important; /* Distinct vertical separation */
+        font-weight: 700;
         overflow: hidden;
         text-overflow: ellipsis;
-        font-weight: 800;
     }
 
     .loan-small-table tbody td {
         background: #ffffff;
+        font-weight: 500;
+    }
+
+    /* Alternating Spreadsheet Row Colors */
+    .loan-small-table tbody tr:nth-child(even) td {
+        background: #f8fafc;
+    }
+
+    .loan-small-table tbody tr:nth-child(even) th {
+        background: #f1f5f9 !important;
+    }
+
+    .loan-small-table tbody tr:hover td {
+        background: #eff6ff !important;
+    }
+
+    .loan-small-table tbody tr:hover th {
+        background: #e2e8f0 !important;
+    }
+
+    /* Numeric Alignments & Textures */
+    .loan-small-table tbody td.position-count,
+    .loan-small-table tbody td.position-rp {
+        text-align: right !important;
+        font-variant-numeric: tabular-nums;
+        padding-right: 0.75rem !important;
+    }
+
+    .loan-small-table tbody td.position-count {
         font-weight: 600;
-        height: 34px;
+        color: #475569;
     }
 
-    .loan-small-table tbody td.metric-positive {
-        color: #16a34a;
-        font-weight: 800;
-    }
-
-    .loan-small-table tbody td.metric-negative {
-        color: #dc2626;
-        font-weight: 800;
-    }
-
-    .loan-small-table tbody td.metric-neutral {
-        color: #64748b;
+    .loan-small-table tbody td.position-rp {
         font-weight: 700;
+        color: #0f172a;
     }
 
+    /* Excel Summary Footer Styling */
     .loan-small-table tfoot th,
     .loan-small-table tfoot td {
-        background: var(--loan-blue-ink) !important;
+        background: #042a5f !important;
         color: #ffffff !important;
         font-weight: 800;
+        font-size: 0.8rem;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        height: 36px;
     }
 
-    .loan-small-table tbody tr:hover th,
-    .loan-small-table tbody tr:hover td {
-        background: #f1f7ff;
+    .loan-small-table tfoot th {
+        text-align: left;
+        border-right: 2px solid rgba(255, 255, 255, 0.3) !important;
     }
 
-    .loan-small-table tbody tr:nth-child(even) th,
-    .loan-small-table tbody tr:nth-child(even) td {
-        background: #fbfdff;
-    }
-
-    .loan-small-table tbody td,
-    .loan-small-table tfoot td {
-        text-align: center;
-        overflow: hidden;
-        text-overflow: ellipsis;
+    .loan-small-table tfoot td.position-count,
+    .loan-small-table tfoot td.position-rp {
+        text-align: right !important;
+        padding-right: 0.75rem !important;
+        color: #ffffff !important;
     }
 
     .loan-small-table .sub-head {
-        min-width: 70px;
-        max-width: 70px;
+        min-width: 75px;
     }
 
     .loan-small-table .position-group-head {
-        border-left: 2px solid rgba(255, 255, 255, 0.34) !important;
-        border-right: 2px solid rgba(255, 255, 255, 0.34) !important;
+        border-left: 1px solid rgba(255, 255, 255, 0.2) !important;
+        border-right: 1px solid rgba(255, 255, 255, 0.2) !important;
     }
 
     .loan-small-table .position-start {
-        border-left: 2px solid #94a3b8 !important;
+        border-left: 1px solid #cbd5e1 !important;
     }
 
     .loan-small-table .position-end {
-        border-right: 2px solid #94a3b8 !important;
-    }
-
-    .loan-small-table .position-count {
-        text-align: center;
-        font-variant-numeric: tabular-nums;
-        font-weight: 800;
-    }
-
-    .loan-small-table .position-rp {
-        text-align: center;
-        font-variant-numeric: tabular-nums;
-        font-weight: 800;
-        padding-right: 0.5rem !important;
-        padding-left: 0.5rem !important;
+        border-right: 1px solid #94a3b8 !important; /* Section divider */
     }
 
     .loan-small-table .text-start-important {
         text-align: left !important;
     }
 
-    .loan-small-table .btn {
-        min-height: 26px;
-        padding: 0.18rem 0.45rem;
-        border-radius: 6px;
-        font-size: 0.7rem;
-        line-height: 1.2;
+    .loan-small-table tbody td:last-child {
+        text-align: center !important;
+    }
+
+    /* Clean Excel-style Row Export Action Link */
+    .btn-export-excel {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        background: #ffffff !important;
+        border: 1px solid #10b981 !important;
+        color: #10b981 !important;
+        font-weight: 700;
+        font-size: 0.68rem;
+        padding: 0.25rem 0.55rem;
+        height: 24px;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        transition: all 0.15s ease;
+        border-radius: 0px !important;
+        text-decoration: none !important;
+    }
+
+    .btn-export-excel:hover {
+        background: #10b981 !important;
+        color: #ffffff !important;
     }
 
     .loan-small-empty {
-        padding: 3rem 1rem;
+        padding: 3.5rem 1rem;
         text-align: center;
-        color: var(--loan-muted);
-        background: var(--loan-surface-soft);
+        color: #64748b;
+        background: #f8fafc;
+        border-radius: 0px !important;
     }
 
     .loan-small-empty strong {
         display: block;
         margin-bottom: 0.5rem;
-        color: var(--loan-blue-ink);
+        color: #042a5f;
+        font-size: 0.95rem;
     }
 </style>
 
@@ -339,82 +555,81 @@
         </div>
     </div>
 
-    <div class="card loan-shell mb-5 animate-reveal">
-        <div class="card-body p-4">
+    <div class="card loan-shell mb-4 animate-reveal">
+        <div class="card-body p-3">
             <form id="smallArrearsForm" method="GET" action="{{ route('report.dashboard-pinjaman.tunggakan-kecil') }}">
-                <div class="row loan-filter-grid">
-                    <div class="col-xl-4 col-lg-4 col-md-12">
-                        <div class="form-group">
-                            <label class="loan-filter-label">Branch Office (Kanca)</label>
-                            <div class="small-arrears-filter-dropdown">
-                                <button type="button" id="smallArrearsBranchToggle" class="small-arrears-dropdown-toggle" aria-haspopup="true" aria-expanded="false">
-                                    <span id="smallArrearsBranchLabel" class="small-arrears-dropdown-label">Area 6 - All</span>
-                                    <i class="fas fa-chevron-down text-muted"></i>
-                                </button>
-                                <div id="smallArrearsBranchMenu" class="small-arrears-dropdown-menu" aria-labelledby="smallArrearsBranchToggle">
-                                    @foreach($branchOptions as $branch)
-                                        @php($branchId = 'small_arrears_branch_' . \Illuminate\Support\Str::slug($branch, '_'))
-                                        <label class="small-arrears-dropdown-item" for="{{ $branchId }}">
-                                            <span class="small-arrears-dropdown-check">
-                                                <input
-                                                    class="small-arrears-branch-checkbox"
-                                                    type="checkbox"
-                                                    value="{{ $branch }}"
-                                                    id="{{ $branchId }}"
-                                                    @checked(in_array($branch, $selectedBranches, true))
-                                                >
-                                                <span>{{ $branch === 'AREA_6_ALL' ? 'Area 6 - All' : $branch }}</span>
-                                            </span>
-                                        </label>
-                                    @endforeach
-                                </div>
+                <div class="loan-filter-toolbar">
+                    
+                    <!-- Branch Office (Kanca) Selector -->
+                    <div class="loan-filter-item">
+                        <label class="loan-filter-label mb-1">Branch Office (Kanca)</label>
+                        <div class="small-arrears-filter-dropdown">
+                            <button type="button" id="smallArrearsBranchToggle" class="small-arrears-dropdown-toggle" aria-haspopup="true" aria-expanded="false">
+                                <span id="smallArrearsBranchLabel" class="small-arrears-dropdown-label">Area 6 - All</span>
+                                <i class="fas fa-chevron-down text-muted"></i>
+                            </button>
+                            <div id="smallArrearsBranchMenu" class="small-arrears-dropdown-menu" aria-labelledby="smallArrearsBranchToggle">
+                                @foreach($branchOptions as $branch)
+                                    @php($branchId = 'small_arrears_branch_' . \Illuminate\Support\Str::slug($branch, '_'))
+                                    <label class="small-arrears-dropdown-item" for="{{ $branchId }}">
+                                        <span class="small-arrears-dropdown-check">
+                                            <input
+                                                class="small-arrears-branch-checkbox"
+                                                type="checkbox"
+                                                value="{{ $branch }}"
+                                                id="{{ $branchId }}"
+                                                @checked(in_array($branch, $selectedBranches, true))
+                                            >
+                                            <span>{{ $branch === 'AREA_6_ALL' ? 'Area 6 - All' : $branch }}</span>
+                                        </span>
+                                    </label>
+                                @endforeach
                             </div>
                         </div>
                     </div>
-                    <div class="col-xl-4 col-lg-4 col-md-12">
-                        <div class="form-group">
-                            <label class="loan-filter-label">Nama Unit</label>
-                            <div class="small-arrears-filter-dropdown">
-                                <button type="button" id="smallArrearsUnitToggle" class="small-arrears-dropdown-toggle" aria-haspopup="true" aria-expanded="false" @disabled($isAreaAllSelected)>
-                                    <span id="smallArrearsUnitLabel" class="small-arrears-dropdown-label">ALL UKER</span>
-                                    <i class="fas fa-chevron-down text-muted"></i>
-                                </button>
-                                <div id="smallArrearsUnitMenu" class="small-arrears-dropdown-menu" aria-labelledby="smallArrearsUnitToggle">
-                                    @foreach($unitOptions as $unit)
-                                        @php($unitId = 'small_arrears_unit_' . \Illuminate\Support\Str::slug($unit, '_'))
-                                        <label class="small-arrears-dropdown-item" for="{{ $unitId }}">
-                                            <span class="small-arrears-dropdown-check">
-                                                <input
-                                                    class="small-arrears-unit-checkbox"
-                                                    type="checkbox"
-                                                    value="{{ $unit }}"
-                                                    id="{{ $unitId }}"
-                                                    @checked(in_array($unit, $selectedUnits, true))
-                                                >
-                                                <span>{{ $unit }}</span>
-                                            </span>
-                                        </label>
-                                    @endforeach
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-xl-4 col-lg-4 col-md-12">
-                        <div class="form-group">
-                            <label class="loan-filter-label">Periode Posisi</label>
-                            <input id="smallArrearsPeriodInput" type="date" name="periode" class="form-control loan-filter-control" value="{{ $selectedPeriod }}" max="{{ $availablePeriods->first() }}">
-                        </div>
-                    </div>
-                </div>
 
-                <div class="d-flex flex-wrap align-items-center mt-3 pt-3 border-top" style="gap:.75rem;">
-                    <button id="smallArrearsSubmitButton" type="submit" class="btn btn-primary font-weight-bold" style="border-radius: 12px; min-height: 44px; padding: 0 1.5rem;">
-                        <i class="fas fa-filter mr-2"></i>Tampilkan Data
-                    </button>
-                    <button id="smallArrearsResetButton" type="button" class="btn btn-light font-weight-bold text-muted" style="border-radius: 12px; min-height: 44px; padding: 0 1.5rem;">Reset</button>
-                    <div id="smallArrearsLoadingChip" class="loan-loading-chip d-none ml-auto">
-                        <span class="loan-loading-dot"></span>Mengolah Jumlah Rekening Tunggakan Kecil
+                    <!-- Nama Unit Selector -->
+                    <div class="loan-filter-item">
+                        <label class="loan-filter-label mb-1">Nama Unit</label>
+                        <div class="small-arrears-filter-dropdown">
+                            <button type="button" id="smallArrearsUnitToggle" class="small-arrears-dropdown-toggle" aria-haspopup="true" aria-expanded="false" @disabled($isAreaAllSelected)>
+                                <span id="smallArrearsUnitLabel" class="small-arrears-dropdown-label">ALL UKER</span>
+                                <i class="fas fa-chevron-down text-muted"></i>
+                            </button>
+                            <div id="smallArrearsUnitMenu" class="small-arrears-dropdown-menu" aria-labelledby="smallArrearsUnitToggle">
+                                @foreach($unitOptions as $unit)
+                                    @php($unitId = 'small_arrears_unit_' . \Illuminate\Support\Str::slug($unit, '_'))
+                                    <label class="small-arrears-dropdown-item" for="{{ $unitId }}">
+                                        <span class="small-arrears-dropdown-check">
+                                            <input
+                                                class="small-arrears-unit-checkbox"
+                                                type="checkbox"
+                                                value="{{ $unit }}"
+                                                id="{{ $unitId }}"
+                                                @checked(in_array($unit, $selectedUnits, true))
+                                            >
+                                            <span>{{ $unit }}</span>
+                                        </span>
+                                    </label>
+                                @endforeach
+                            </div>
+                        </div>
                     </div>
+
+                    <!-- Periode Posisi Selector -->
+                    <div class="loan-filter-item item-period">
+                        <label class="loan-filter-label mb-1">Periode Posisi</label>
+                        <input id="smallArrearsPeriodInput" type="date" name="periode" class="form-control loan-filter-control" value="{{ $selectedPeriod }}" max="{{ $availablePeriods->first() }}">
+                    </div>
+
+                    <div class="loan-filter-actions">
+                        <button id="smallArrearsSubmitButton" type="submit" class="btn btn-flat-primary">
+                            <i id="smallArrearsSubmitIcon" class="fas fa-filter mr-2"></i>
+                            <span id="smallArrearsSubmitText">Tampilkan</span>
+                        </button>
+                        <button id="smallArrearsResetButton" type="button" class="btn btn-flat-secondary">Reset</button>
+                    </div>
+
                 </div>
             </form>
         </div>
@@ -425,7 +640,6 @@
             <div class="loan-table-heading">
                 <div>
                     <h5>Tabel Tunggakan Kecil</h5>
-                    <div class="text-muted small">Kolom posisi menampilkan jumlah rekening unik, sedangkan total tunggakan menampilkan nominal rupiah.</div>
                 </div>
                 <div class="loan-table-badge">
                     <i class="fas fa-calendar-alt"></i>
@@ -476,12 +690,12 @@
                     <tfoot>
                         <tr id="smallArrearsFoot">
                             <th>Grand Total</th>
-                            <td>0</td>
-                            <td>0</td>
-                            <td>0</td>
-                            <td>0</td>
-                            <td>0</td>
-                            <td>0</td>
+                            <td class="position-start position-count">0</td>
+                            <td class="position-end position-rp">0</td>
+                            <td class="position-start position-count">0</td>
+                            <td class="position-end position-rp">0</td>
+                            <td class="position-start position-count">0</td>
+                            <td class="position-end position-rp">0</td>
                             <td>-</td>
                         </tr>
                     </tfoot>
@@ -505,7 +719,8 @@
         const unitLabel = document.getElementById('smallArrearsUnitLabel');
         const submitButton = document.getElementById('smallArrearsSubmitButton');
         const resetButton = document.getElementById('smallArrearsResetButton');
-        const chip = document.getElementById('smallArrearsLoadingChip');
+        const submitIcon = document.getElementById('smallArrearsSubmitIcon');
+        const submitText = document.getElementById('smallArrearsSubmitText');
         const badge = document.getElementById('smallArrearsBadge');
         const groupHead = document.getElementById('smallArrearsGroupHead');
         const currentSubHead = document.getElementById('smallArrearsCurrentSubHead');
@@ -788,8 +1003,8 @@
                     <td class="position-start position-count">${formatCount(row.current)}</td>
                     <td class="position-end position-rp">${formatCurrency(row.current_tunggakan ?? row.total_tunggakan)}</td>
                     <td>
-                        <a class="btn btn-sm btn-outline-success" href="${buildExportUrl(payload, row)}">
-                            <i class="fas fa-file-excel mr-1"></i>Export Excel
+                        <a class="btn-export-excel" href="${buildExportUrl(payload, row)}">
+                            <i class="fas fa-file-excel mr-1"></i>Export
                         </a>
                     </td>
                 </tr>
@@ -834,8 +1049,9 @@
             const selectedBranches = getSelectedBranches();
             const selectedUnits = getEffectiveUnitSelections();
 
-            chip.classList.remove('d-none');
             submitButton.disabled = true;
+            if (submitIcon) submitIcon.className = 'fas fa-spinner fa-spin mr-2';
+            if (submitText) submitText.textContent = 'Mengolah...';
 
             try {
                 const params = new URLSearchParams();
@@ -872,7 +1088,8 @@
                     total: { current: 0, ytd: 0, mtd: 0, current_tunggakan: 0, ytd_tunggakan: 0, mtd_tunggakan: 0, total_tunggakan: 0 },
                 });
             } finally {
-                chip.classList.add('d-none');
+                if (submitIcon) submitIcon.className = 'fas fa-filter mr-2';
+                if (submitText) submitText.textContent = 'Tampilkan';
                 submitButton.disabled = false;
             }
         }

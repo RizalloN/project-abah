@@ -14,42 +14,37 @@
 @endphp
 
 <style>
-    /* Premium Glassmorphism & Modern UI */
-    .loan-shell {
-        background: rgba(255, 255, 255, 0.7);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.1);
+    /* Modern Corporate Flat Aesthetic (Excel-Inspired) Styling */
+    .loan-dashboard .card.loan-shell,
+    .loan-dashboard .chart-card {
+        border-radius: 0px !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03) !important;
+        background: #ffffff !important;
         overflow: visible !important;
         position: relative;
         z-index: 5;
     }
 
-    .chart-periodik-shell::after {
+    .loan-dashboard .card.loan-shell::before,
+    .loan-dashboard .chart-card::before {
         content: '';
         position: absolute;
-        inset: auto -10% -20% auto;
-        width: 400px;
-        height: 400px;
-        border-radius: 50%;
-        background: radial-gradient(circle, rgba(8, 87, 195, 0.08) 0%, rgba(8, 87, 195, 0.02) 50%, transparent 70%);
-        pointer-events: none;
-        z-index: 0;
-    }
-
-    .loan-filter-grid {
-        position: relative;
-        z-index: 1;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px !important;
+        background: var(--loan-blue) !important; /* Pristine solid corporate blue line */
+        z-index: 10;
     }
 
     .loan-filter-label {
         font-size: 0.72rem;
         font-weight: 800;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: #536c8b;
-        margin-bottom: 0.6rem;
+        letter-spacing: 0.03em;
+        color: #042a5f;
+        margin-bottom: 0.35rem;
         display: flex;
         align-items: center;
         gap: 0.4rem;
@@ -57,161 +52,261 @@
 
     .loan-filter-label i {
         color: var(--loan-blue);
-        font-size: 0.8rem;
+        font-size: 0.75rem;
     }
 
-    .loan-filter-control {
-        border-radius: 14px !important;
-        border: 1.5px solid #e2eaf3 !important;
-        background: #ffffff !important;
-        height: 48px !important;
-        font-weight: 600 !important;
-        color: var(--loan-blue-ink) !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    }
-
-    .loan-filter-control:focus {
-        border-color: var(--loan-blue) !important;
-        box-shadow: 0 0 0 4px rgba(8, 87, 195, 0.1) !important;
-    }
-
-    /* Select2 Premium Override */
-    .select2-container--default .select2-selection--single,
-    .select2-container--default .select2-selection--multiple {
-        border: 1.5px solid #e2eaf3 !important;
-        border-radius: 14px !important;
-        min-height: 48px !important;
-        background: #ffffff !important;
-        transition: all 0.3s ease !important;
-    }
-
-    .select2-container--default.select2-container--focus .select2-selection--single,
-    .select2-container--default.select2-container--focus .select2-selection--multiple {
-        border-color: var(--loan-blue) !important;
-        box-shadow: 0 0 0 4px rgba(8, 87, 195, 0.1) !important;
-    }
-
-    .select2-container--default .select2-selection--multiple .select2-selection__choice {
-        background: linear-gradient(135deg, var(--loan-blue), #307fe2) !important;
-        border: none !important;
-        color: #ffffff !important;
-        border-radius: 8px !important;
-        padding: 4px 10px !important;
-        font-size: 0.75rem !important;
+    /* Dropdowns */
+    .loan-dropdown-toggle {
+        border-radius: 0px !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: none !important;
+        min-height: 40px !important;
+        height: 40px !important;
+        padding: 0.35rem 0.75rem !important;
+        font-size: 0.82rem !important;
         font-weight: 700 !important;
-        margin-top: 8px !important;
+        background: #ffffff !important;
+        color: var(--loan-blue-ink);
+        text-align: left;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        width: 100%;
     }
 
-    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
-        color: rgba(255, 255, 255, 0.8) !important;
-        margin-right: 5px !important;
+    .loan-dropdown-toggle:hover,
+    .loan-dropdown-toggle:focus {
+        border-color: var(--loan-blue) !important;
+        background: #f8fbff !important;
+        box-shadow: none !important;
+        outline: none;
     }
 
-    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+    .loan-dropdown-toggle[disabled] {
+        background: #eef2f7 !important;
+        border-color: #cbd5e1 !important;
+        color: #94a3b8;
+        cursor: not-allowed;
+    }
+
+    .loan-dropdown-menu {
+        border-radius: 0px !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08) !important;
+        padding: 0.25rem !important;
+        background: #ffffff;
+        position: absolute;
+        top: calc(100% + 5px);
+        left: 0;
+        right: 0;
+        z-index: 2000;
+        display: none;
+        max-height: 350px;
+        overflow-y: auto;
+    }
+
+    .loan-dropdown-menu.show {
+        display: block;
+    }
+
+    .loan-dropdown-item {
+        border-radius: 0px !important;
+        padding: 0.5rem 0.75rem !important;
+        font-size: 0.8rem !important;
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+    }
+
+    .loan-dropdown-item:hover {
+        background: #eff6ff !important;
+    }
+
+    .loan-dropdown-item.active {
+        background: #dbeafe !important;
+        color: #1e40af !important;
+        font-weight: 700 !important;
+    }
+
+    .loan-dropdown-item.active .form-check-label {
+        color: #1e40af !important;
+        font-weight: 700 !important;
+    }
+
+    .loan-dropdown-item .form-check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 0;
+        cursor: pointer;
+        width: 100%;
+    }
+
+    .loan-dropdown-item input[type="checkbox"] {
+        width: 1rem;
+        height: 1rem;
+        cursor: pointer;
+        accent-color: var(--loan-blue);
+        border: 1px solid #cbd5e1;
+    }
+
+    .loan-dropdown-item .form-check-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #334155;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    /* Flat Action Buttons */
+    .btn-flat-primary {
+        border-radius: 0px !important;
+        min-height: 40px !important;
+        height: 40px !important;
+        padding: 0 1.25rem !important;
+        background-color: var(--loan-blue) !important;
+        border-color: var(--loan-blue) !important;
         color: #ffffff !important;
+        font-size: 0.82rem !important;
+        font-weight: 700 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0.5rem !important;
+        transition: all 0.15s ease !important;
+        border: 1px solid var(--loan-blue) !important;
+        cursor: pointer;
     }
 
+    .btn-flat-primary:hover,
+    .btn-flat-primary:focus {
+        background-color: var(--loan-blue-deep) !important;
+        border-color: var(--loan-blue-deep) !important;
+        box-shadow: none !important;
+        color: #ffffff !important;
+        text-decoration: none !important;
+    }
+
+    .btn-flat-primary:disabled {
+        background-color: #cbd5e1 !important;
+        border-color: #cbd5e1 !important;
+        color: #94a3b8 !important;
+        cursor: not-allowed !important;
+    }
+
+    .btn-flat-secondary {
+        border-radius: 0px !important;
+        min-height: 40px !important;
+        height: 40px !important;
+        padding: 0 1rem !important;
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        color: #475569 !important;
+        font-size: 0.82rem !important;
+        font-weight: 700 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        transition: all 0.15s ease !important;
+        text-decoration: none !important;
+    }
+
+    .btn-flat-secondary:hover,
+    .btn-flat-secondary:focus {
+        background-color: #f8fafc !important;
+        color: #1e293b !important;
+        border-color: #94a3b8 !important;
+        text-decoration: none !important;
+    }
+
+    /* KPI Overrides */
     .chart-periodik-kpi {
-        background: rgba(255, 255, 255, 0.7);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.5);
-        border-radius: 24px;
-        padding: 1.5rem;
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        background: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 0px !important;
+        box-shadow: none !important;
+        padding: 1rem 1.25rem !important;
+        min-height: 100px !important;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        min-height: 140px;
-        box-shadow: 0 4px 20px rgba(8, 87, 195, 0.05);
+        transition: border-color 0.15s ease, background 0.15s ease !important;
         position: relative;
-        overflow: hidden;
     }
 
     .chart-periodik-kpi:hover {
-        transform: translateY(-8px);
-        box-shadow: 0 15px 35px rgba(8, 87, 195, 0.12);
-        background: #ffffff;
-        border-color: var(--loan-blue);
+        transform: none !important;
+        border-color: var(--loan-blue) !important;
+        background: #f8fbff !important;
+        box-shadow: none !important;
     }
 
     .chart-periodik-kpi__label {
-        font-size: 0.7rem;
-        font-weight: 800;
-        color: var(--loan-muted);
+        font-size: 0.68rem !important;
+        font-weight: 800 !important;
+        color: #475569 !important;
         text-transform: uppercase;
-        letter-spacing: 0.1em;
-        margin-bottom: 0.5rem;
+        letter-spacing: 0.05em !important;
+        margin-bottom: 0.25rem;
     }
 
     .chart-periodik-kpi__value {
-        font-size: 1.85rem;
-        font-weight: 900;
-        color: var(--loan-blue-ink);
-        line-height: 1;
-        margin-bottom: 0.5rem;
+        font-size: 1.55rem !important;
+        font-weight: 800 !important;
+        color: #042a5f !important;
+        font-variant-numeric: tabular-nums;
+        line-height: 1.2 !important;
+        margin-bottom: 0.25rem !important;
     }
 
     .chart-periodik-kpi__hint {
-        font-size: 0.72rem;
-        color: var(--loan-muted);
-        line-height: 1.4;
-        font-weight: 600;
+        font-size: 0.7rem !important;
+        color: #64748b !important;
     }
 
-    .chart-card {
-        background: #ffffff;
-        border-radius: 24px;
-        border: 1px solid #eef2f7;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        transition: all 0.3s ease;
+    .chart-periodik-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
     }
 
-    .chart-card:hover {
-        box-shadow: 0 8px 30px rgba(8, 87, 195, 0.06);
-    }
-
+    /* Chart Cards and Canvas */
     .chart-card__header {
-        padding: 1.5rem;
-        border-bottom: 1px solid #f8fafc;
+        padding: 1rem 1.25rem !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+        background: #f8fafc;
         display: flex;
         justify-content: space-between;
-        align-items: flex-start;
+        align-items: center;
         gap: 1rem;
     }
 
     .chart-card__title {
-        font-size: 1.1rem;
-        font-weight: 800;
-        color: var(--loan-blue-ink);
-        margin-bottom: 0.25rem;
-    }
-
-    .chart-card__desc {
-        font-size: 0.78rem;
-        color: var(--loan-muted);
-        margin-bottom: 0;
-        line-height: 1.5;
+        font-size: 0.92rem !important;
+        font-weight: 800 !important;
+        color: #042a5f !important;
+        margin-bottom: 0 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
     }
 
     .chart-card__badge {
-        background: var(--loan-blue-soft);
-        color: var(--loan-blue);
-        padding: 0.5rem 0.8rem;
-        border-radius: 12px;
-        font-size: 0.7rem;
-        font-weight: 800;
-        display: flex;
-        align-items: center;
-        gap: 0.4rem;
+        background: #e0f2fe !important;
+        color: #0369a1 !important;
+        padding: 0.3rem 0.6rem !important;
+        border-radius: 0px !important;
+        border: 1px solid #bae6fd !important;
+        font-size: 0.7rem !important;
+        font-weight: 700 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 0.35rem !important;
         white-space: nowrap;
     }
 
     .chart-card__body {
-        padding: 1.5rem;
+        padding: 1.25rem !important;
         flex: 1;
         position: relative;
     }
@@ -228,122 +323,42 @@
         align-items: center;
         justify-content: center;
         text-align: center;
-        color: var(--loan-muted);
+        color: #64748b;
         background: #f8fafc;
-        border-radius: 16px;
+        border: 1px dashed #cbd5e1;
     }
 
-    .chart-periodik-summary {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 1.25rem;
+    /* Toolbar Layout */
+    .loan-filter-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 0.75rem;
+        width: 100%;
     }
 
-    .btn-premium {
-        background: linear-gradient(135deg, var(--loan-blue), #307fe2);
-        color: #ffffff;
-        border: none;
-        border-radius: 14px;
-        font-weight: 800;
-        letter-spacing: 0.02em;
-        padding: 0 1.5rem;
-        height: 52px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.6rem;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(8, 87, 195, 0.25);
+    .loan-filter-item {
+        flex: 1 1 200px;
     }
 
-    .btn-premium:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(8, 87, 195, 0.35);
-        color: #ffffff;
+    .loan-filter-item.item-period {
+        flex: 0 1 185px;
     }
 
-    .btn-premium:active {
-        transform: translateY(0);
-    }
-
-    .btn-reset {
-        background: #ffffff;
-        color: var(--loan-blue-ink);
-        border: 1.5px solid #e2eaf3;
-        border-radius: 14px;
-        font-weight: 700;
-        height: 52px;
-        padding: 0 1.5rem;
-        transition: all 0.3s ease;
-    }
-
-    .btn-reset:hover {
-        background: #f8fbff;
-        border-color: var(--loan-blue);
-        color: var(--loan-blue);
-    }
-
-    .chart-note-panel {
-        background: #ffffff;
-        border: 1px solid #eef2f7;
-        padding: 1.5rem;
-        border-radius: 20px;
-        flex: 1;
-        min-width: 300px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.02);
-    }
-
-    .chart-note-panel h6 {
-        color: var(--loan-blue);
-        font-weight: 800;
-        text-transform: uppercase;
-        font-size: 0.75rem;
-        letter-spacing: 0.05em;
-        margin-bottom: 1rem;
+    .loan-filter-actions {
         display: flex;
         align-items: center;
         gap: 0.5rem;
-    }
-
-    .chart-note-panel h6::before {
-        content: '';
-        width: 8px;
-        height: 8px;
-        background: var(--loan-blue);
-        border-radius: 50%;
-    }
-
-    .loan-loading-chip {
-        background: rgba(8, 87, 195, 0.05);
-        border: 1px solid rgba(8, 87, 195, 0.1);
-        padding: 0.5rem 1rem;
-        border-radius: 999px;
-        display: flex;
-        align-items: center;
-        gap: 0.6rem;
-        font-size: 0.75rem;
-        font-weight: 700;
-        color: var(--loan-blue-ink);
-    }
-
-    .loan-loading-dot {
-        width: 8px;
-        height: 8px;
-        background: var(--loan-blue);
-        border-radius: 50%;
-        animation: pulse 1.5s infinite;
+        flex: 0 0 auto;
+        min-height: 40px;
+        height: 40px;
     }
 </style>
 @include('report.dashboard-pinjaman._partials._styles_dropdown')
 <style>
-
     @media (max-width: 1199.98px) {
         .chart-periodik-summary {
             grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .chart-periodik-note {
-            grid-template-columns: 1fr;
         }
     }
 
@@ -354,140 +369,128 @@
 
         .chart-card__header {
             flex-direction: column;
+            align-items: flex-start !important;
+            gap: 0.5rem !important;
         }
     }
 </style>
 
 <div class="loan-dashboard pt-4 px-3">
     <div class="loan-title-hero d-flex flex-wrap justify-content-center align-items-center animate-reveal">
-            <div class="loan-title-hero__wrap">
-                <div class="loan-title-hero__badge">
-                    <i class="fas fa-chart-pie"></i>
-                    <span>Loan Pattern Trend</span>
-                </div>
-                <h1 class="loan-title-hero__title">CHART PERIODIK</h1>
-                <p class="loan-title-hero__desc">
-                Menampilkan tren pola pembayaran dari <strong>snapshot chart periodik</strong> yang dibentuk dari <strong>daily_loan_dinamis</strong> dan <strong>loan_type</strong> untuk melihat distribusi bulanan, musiman, dan kategori lain per kanca serta kode uker.
-                </p>
+        <div class="loan-title-hero__wrap text-center">
+            <div class="loan-title-hero__badge mx-auto">
+                <i class="fas fa-chart-line"></i>
+                <span>Loan Pattern Trend</span>
             </div>
+            <h1 class="loan-title-hero__title">CHART PERIODIK</h1>
+            <p class="loan-title-hero__desc">
+                Tren pola pembayaran snapshot bulanan dan musiman per kantor cabang serta unit kerja.
+            </p>
         </div>
+    </div>
 
-    <div class="card loan-shell mb-4 animate-reveal chart-periodik-shell">
-        <div class="card-body p-4">
+    <div class="card loan-shell mb-4 animate-reveal">
+        <div class="card-body p-3">
             <form id="chartPeriodikForm" method="GET" action="{{ route('report.dashboard-pinjaman.chart-periodik') }}">
-                <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-3">
-                    <div>
-                        <h5 class="mb-1 font-weight-bold text-dark">Filter Periodik</h5>
-                        <div class="text-muted" style="font-size: 0.8rem;">Default scope mengikuti Area 6. Kode uker akan menyesuaikan kanca yang dipilih.</div>
+                <div class="loan-filter-toolbar">
+                    
+                    <!-- Periode Terakhir -->
+                    <div class="loan-filter-item item-period">
+                        <label class="loan-filter-label mb-1">
+                            <i class="fas fa-calendar-alt"></i> Periode
+                        </label>
+                        <div class="loan-dropdown-shell" id="periodeDropdownShell">
+                            <input type="hidden" name="periode" id="chartPeriodikPeriode" value="{{ $selected_period }}">
+                            <button type="button" class="loan-dropdown-toggle" id="periodeDropdownToggle" aria-haspopup="true" aria-expanded="false">
+                                <span class="loan-dropdown-label" id="periodeDropdownLabel">
+                                    {{ $selected_period ? \Carbon\Carbon::parse($selected_period)->format('d M Y') : 'Pilih Periode' }}
+                                </span>
+                                <i class="fas fa-chevron-down text-muted" style="font-size: 0.8rem;"></i>
+                            </button>
+                            <div class="loan-dropdown-menu" id="periodeDropdownMenu">
+                                <div id="periodeOptions">
+                                    @foreach($periods as $periode)
+                                        <div class="loan-dropdown-item filter-single-option {{ $periode === $selected_period ? 'active' : '' }}" 
+                                            data-value="{{ $periode }}" 
+                                            data-label="{{ \Carbon\Carbon::parse($periode)->format('d M Y') }}">
+                                            <span class="form-check-label">{{ \Carbon\Carbon::parse($periode)->format('d M Y') }}</span>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="mt-3 mt-lg-0 loan-loading-chip">
-                        <span class="loan-loading-dot"></span>
-                        <span id="chartPeriodikStatus">Siap menampilkan data.</span>
-                    </div>
-                </div>
 
-                <div class="row loan-filter-grid align-items-end">
-                    <div class="col-xl-3 col-lg-4 col-md-6">
-                        <div class="form-group mb-0">
-                            <label class="loan-filter-label" for="chartPeriodikPeriode">
-                                <i class="fas fa-calendar-alt"></i> Periode Terakhir
-                            </label>
-                            <div class="loan-dropdown-shell" id="periodeDropdownShell">
-                                <input type="hidden" name="periode" id="chartPeriodikPeriode" value="{{ $selected_period }}">
-                                <button type="button" class="loan-dropdown-toggle" id="periodeDropdownToggle" aria-haspopup="true" aria-expanded="false">
-                                    <span class="loan-dropdown-label" id="periodeDropdownLabel">
-                                        {{ $selected_period ? \Carbon\Carbon::parse($selected_period)->format('d M Y') : 'Pilih Periode' }}
-                                    </span>
-                                    <i class="fas fa-chevron-down text-muted" style="font-size: 0.8rem;"></i>
-                                </button>
-                                <div class="loan-dropdown-menu" id="periodeDropdownMenu">
-                                    <div id="periodeOptions">
-                                        @foreach($periods as $periode)
-                                            <div class="loan-dropdown-item filter-single-option {{ $periode === $selected_period ? 'active' : '' }}" 
-                                                data-value="{{ $periode }}" 
-                                                data-label="{{ \Carbon\Carbon::parse($periode)->format('d M Y') }}">
-                                                <span class="form-check-label">{{ \Carbon\Carbon::parse($periode)->format('d M Y') }}</span>
-                                            </div>
-                                        @endforeach
-                                    </div>
+                    <!-- Kantor Cabang -->
+                    <div class="loan-filter-item">
+                        <label class="loan-filter-label mb-1">
+                            <i class="fas fa-university"></i> Kantor Cabang
+                        </label>
+                        <div class="loan-dropdown-shell" id="cabangDropdownShell">
+                            <input type="hidden" name="cabang1" id="chartPeriodikCabang" value="{{ $selected_branch }}">
+                            <button type="button" class="loan-dropdown-toggle" id="cabangDropdownToggle" aria-haspopup="true" aria-expanded="false">
+                                <span class="loan-dropdown-label" id="cabangDropdownLabel">
+                                    {{ collect($branch_options)->firstWhere('value', $selected_branch)['label'] ?? 'Pilih Cabang' }}
+                                </span>
+                                <i class="fas fa-chevron-down text-muted" style="font-size: 0.8rem;"></i>
+                            </button>
+                            <div class="loan-dropdown-menu" id="cabangDropdownMenu">
+                                <div id="cabangOptions">
+                                    @foreach($branch_options as $branchOption)
+                                        <div class="loan-dropdown-item filter-single-option {{ $branchOption['value'] === $selected_branch ? 'active' : '' }}" 
+                                            data-value="{{ $branchOption['value'] }}" 
+                                            data-label="{{ $branchOption['label'] }}">
+                                            <span class="form-check-label">{{ $branchOption['label'] }}</span>
+                                        </div>
+                                    @endforeach
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div class="col-xl-3 col-lg-4 col-md-6">
-                        <div class="form-group mb-0">
-                            <label class="loan-filter-label" for="chartPeriodikCabang">
-                                <i class="fas fa-university"></i> Kantor Cabang
-                            </label>
-                            <div class="loan-dropdown-shell" id="cabangDropdownShell">
-                                <input type="hidden" name="cabang1" id="chartPeriodikCabang" value="{{ $selected_branch }}">
-                                <button type="button" class="loan-dropdown-toggle" id="cabangDropdownToggle" aria-haspopup="true" aria-expanded="false">
-                                    <span class="loan-dropdown-label" id="cabangDropdownLabel">
-                                        {{ collect($branch_options)->firstWhere('value', $selected_branch)['label'] ?? 'Pilih Cabang' }}
-                                    </span>
-                                    <i class="fas fa-chevron-down text-muted" style="font-size: 0.8rem;"></i>
-                                </button>
-                                <div class="loan-dropdown-menu" id="cabangDropdownMenu">
-                                    <div id="cabangOptions">
-                                        @foreach($branch_options as $branchOption)
-                                            <div class="loan-dropdown-item filter-single-option {{ $branchOption['value'] === $selected_branch ? 'active' : '' }}" 
-                                                data-value="{{ $branchOption['value'] }}" 
-                                                data-label="{{ $branchOption['label'] }}">
-                                                <span class="form-check-label">{{ $branchOption['label'] }}</span>
+
+                    <!-- Unit Kerja -->
+                    <div class="loan-filter-item">
+                        <label class="loan-filter-label mb-1">
+                            <i class="fas fa-store"></i> Unit Kerja
+                        </label>
+                        <div class="loan-dropdown-shell" id="unitDropdownShell">
+                            <button type="button" class="loan-dropdown-toggle" id="unitDropdownToggle" aria-haspopup="true" aria-expanded="false">
+                                <span class="loan-dropdown-label" id="unitDropdownLabel">Pilih Unit Kerja</span>
+                                <i class="fas fa-chevron-down text-muted" style="font-size: 0.8rem;"></i>
+                            </button>
+                            <div class="loan-dropdown-menu" id="unitDropdownMenu">
+                                <div id="unitCheckboxes">
+                                    @forelse($unit_options as $unitOption)
+                                        <div class="loan-dropdown-item">
+                                            <div class="form-check">
+                                                <input class="form-check-input filter-unit-checkbox" type="checkbox" 
+                                                    name="unit1[]" 
+                                                    value="{{ $unitOption['value'] }}" 
+                                                    id="unit_{{ $unitOption['value'] }}"
+                                                    @checked(in_array($unitOption['value'], $selectedUnitValues, true))>
+                                                <label class="form-check-label" for="unit_{{ $unitOption['value'] }}">
+                                                    {{ $unitOption['label'] }}
+                                                </label>
                                             </div>
-                                        @endforeach
-                                    </div>
+                                        </div>
+                                    @empty
+                                        <div class="p-3 text-center text-muted" style="font-size: 0.85rem;">
+                                            Pilih kanca untuk memuat unit
+                                        </div>
+                                    @endforelse
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div class="col-xl-4 col-lg-5 col-md-8">
-                        <div class="form-group mb-0">
-                            <label class="loan-filter-label" for="chartPeriodikUnit">
-                                <i class="fas fa-store"></i> Pilih Unit Kerja
-                            </label>
-                            <div class="loan-dropdown-shell" id="unitDropdownShell">
-                                <button type="button" class="loan-dropdown-toggle" id="unitDropdownToggle" aria-haspopup="true" aria-expanded="false">
-                                    <span class="loan-dropdown-label" id="unitDropdownLabel">Pilih Unit Kerja</span>
-                                    <i class="fas fa-chevron-down text-muted" style="font-size: 0.8rem;"></i>
-                                </button>
-                                <div class="loan-dropdown-menu" id="unitDropdownMenu">
-                                    <div id="unitCheckboxes">
-                                        @forelse($unit_options as $unitOption)
-                                            <div class="loan-dropdown-item">
-                                                <div class="form-check">
-                                                    <input class="form-check-input filter-unit-checkbox" type="checkbox" 
-                                                        name="unit1[]" 
-                                                        value="{{ $unitOption['value'] }}" 
-                                                        id="unit_{{ $unitOption['value'] }}"
-                                                        @checked(in_array($unitOption['value'], $selectedUnitValues, true))>
-                                                    <label class="form-check-label" for="unit_{{ $unitOption['value'] }}">
-                                                        {{ $unitOption['label'] }}
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        @empty
-                                            <div class="p-3 text-center text-muted" style="font-size: 0.85rem;">
-                                                Pilih kanca untuk memuat unit
-                                            </div>
-                                        @endforelse
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-xl-2 col-lg-3 col-md-4">
-                        <div class="form-group mb-0">
-                            <label class="loan-filter-label" style="visibility: hidden;">Aksi</label>
-                            <div class="chart-periodik-actions d-flex align-items-center" style="height: 52px; margin-bottom: 0;">
-                                <button type="submit" class="btn btn-premium flex-grow-1 h-100" id="chartPeriodikRefreshButton">
-                                    <i class="fas fa-sync-alt"></i> MUAT
-                                </button>
-                                <a href="{{ route('report.dashboard-pinjaman.chart-periodik') }}" class="btn btn-reset ml-2 h-100 d-flex align-items-center justify-content-center" style="width: 52px; padding: 0;" title="Reset Filter">
-                                    <i class="fas fa-undo"></i>
-                                </a>
-                            </div>
-                        </div>
+
+                    <!-- Actions -->
+                    <div class="loan-filter-actions">
+                        <button type="submit" class="btn btn-flat-primary" id="chartPeriodikRefreshButton">
+                            <i class="fas fa-sync-alt" id="refreshBtnIcon"></i> <span id="refreshBtnText">MUAT</span>
+                        </button>
+                        <a href="{{ route('report.dashboard-pinjaman.chart-periodik') }}" class="btn btn-flat-secondary" title="Reset Filter">
+                            <i class="fas fa-undo"></i>
+                        </a>
                     </div>
                 </div>
             </form>
@@ -516,12 +519,12 @@
             </div>
             <div class="chart-periodik-kpi__hint"><i class="fas fa-crown mr-1"></i> Frekuensi tertinggi.</div>
         </div>
-        <div class="chart-periodik-kpi" style="background: linear-gradient(135deg, var(--loan-blue-ink), var(--loan-blue)); border: none;">
+        <div class="chart-periodik-kpi" style="background: #042a5f !important; border: 1px solid #042a5f !important; border-radius: 0px !important;">
             <div>
-                <div class="chart-periodik-kpi__label" style="color: rgba(255,255,255,0.7);">Scope & Periode</div>
-                <div class="chart-periodik-kpi__value" style="color: #ffffff; font-size: 1.3rem;" id="chartPeriodikScopeLabel">{{ $chart['scope_label'] ?? 'Area 6 - All' }}</div>
+                <div class="chart-periodik-kpi__label" style="color: rgba(255, 255, 255, 0.7) !important;">Scope & Periode</div>
+                <div class="chart-periodik-kpi__value" style="color: #ffffff !important; font-size: 1.25rem !important;" id="chartPeriodikScopeLabel">{{ $chart['scope_label'] ?? 'Area 6 - All' }}</div>
             </div>
-            <div class="chart-periodik-kpi__hint" style="color: rgba(255,255,255,0.8);" id="chartPeriodikPeriodLabel">
+            <div class="chart-periodik-kpi__hint" style="color: rgba(255, 255, 255, 0.8) !important;" id="chartPeriodikPeriodLabel">
                 <i class="fas fa-calendar-alt mr-1"></i> {{ $selected_period_label ?? '-' }}
             </div>
         </div>
@@ -533,7 +536,6 @@
                 <div class="chart-card__header">
                     <div>
                         <h5 class="chart-card__title">Trend Pola Pembayaran</h5>
-                        <p class="chart-card__desc">Perbandingan distribusi pola pembayaran untuk enam periode terakhir hingga periode aktif.</p>
                     </div>
                     <div class="chart-card__badge">
                         <i class="fas fa-chart-line"></i>
@@ -558,7 +560,6 @@
                 <div class="chart-card__header">
                     <div>
                         <h5 class="chart-card__title">Komposisi Periode Aktif</h5>
-                        <p class="chart-card__desc">Pie chart untuk melihat porsi pola pembayaran pada periode yang sedang dipilih.</p>
                     </div>
                     <div class="chart-card__badge">
                         <i class="fas fa-chart-pie"></i>
@@ -577,23 +578,6 @@
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <div class="chart-periodik-note mt-4 animate-reveal" style="display: flex; flex-wrap: wrap; gap: 1.25rem;">
-        <div class="chart-note-panel">
-            <h6><i class="fas fa-database"></i> Catatan logika data</h6>
-            <p class="mb-0" style="font-size: 0.85rem; line-height: 1.6; color: #475569;">
-                Data diturunkan dulu ke <strong>dashboard_pinjaman_chart_periodik_snapshots</strong> dari <strong>daily_loan_dinamis</strong> dan <strong>loan_type</strong>, lalu selector serta chart membaca hasil snapshot itu agar filter periode, kanca, dan kode uker tetap cepat dan konsisten.
-            </p>
-        </div>
-        <div class="chart-note-panel">
-            <h6><i class="fas fa-lightbulb"></i> Contoh scope</h6>
-            <ul style="font-size: 0.85rem; line-height: 1.6; color: #475569; padding-left: 1.2rem; margin-bottom: 0;">
-                <li>Area 6 default menampilkan KC Madiun, KC Magetan, KC Ngawi, dan KC Ponorogo.</li>
-                <li>Jika memilih KC Ponorogo, kode uker yang tampil akan mengikuti unit pada cabang tersebut.</li>
-                <li>Contoh scope spesifik: KC Ponorogo - 3887 - Ngrayun.</li>
-            </ul>
         </div>
     </div>
 </div>
@@ -733,14 +717,37 @@
         }
 
         function setStatus(message) {
-            statusChip.textContent = message;
+            if (statusChip) {
+                statusChip.textContent = message;
+            }
         }
+
+        const refreshBtnIcon = document.getElementById('refreshBtnIcon');
+        const refreshBtnText = document.getElementById('refreshBtnText');
 
         function setLoading(isLoading, message) {
             refreshButton.disabled = isLoading;
-            periodSelect.disabled = isLoading;
-            branchSelect.disabled = isLoading;
-            unitDropdownToggle.disabled = isLoading;
+            
+            // disable dropdown toggles
+            if (periodDropdownToggle) periodDropdownToggle.disabled = isLoading;
+            if (cabangDropdownToggle) cabangDropdownToggle.disabled = isLoading;
+            if (unitDropdownToggle) unitDropdownToggle.disabled = isLoading;
+
+            if (isLoading) {
+                if (refreshBtnIcon) {
+                    refreshBtnIcon.className = 'fas fa-spinner fa-spin';
+                }
+                if (refreshBtnText) {
+                    refreshBtnText.textContent = 'MENGOLAH...';
+                }
+            } else {
+                if (refreshBtnIcon) {
+                    refreshBtnIcon.className = 'fas fa-sync-alt';
+                }
+                if (refreshBtnText) {
+                    refreshBtnText.textContent = 'MUAT';
+                }
+            }
             setStatus(message || (isLoading ? 'Mengambil data...' : 'Siap menampilkan data.'));
         }
 

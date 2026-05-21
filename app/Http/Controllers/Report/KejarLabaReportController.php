@@ -77,17 +77,12 @@ class KejarLabaReportController extends Controller
         $isArea6All = count($selectedKanca) === count($area6Branches)
             && empty(array_diff($area6Branches, $selectedKanca));
 
-        // Fetch Units based on selected Kancas
-        $unitQuery = DB::table('cognos_recovery')
+        // Fetch ALL Units for Area 6 branches so the UI can dynamically filter them on the client-side
+        $availableUnits = DB::table('cognos_recovery')
             ->select('unit_kerja as value', 'unit_kerja as label', 'cabang as kanca_value')
             ->distinct()
-            ->whereIn('cabang', $area6Branches);
-        
-        if (!empty($selectedKanca)) {
-            $unitQuery->whereIn('cabang', $selectedKanca);
-        }
-        
-        $availableUnits = $unitQuery->orderBy('unit_kerja')
+            ->whereIn('cabang', $area6Branches)
+            ->orderBy('unit_kerja')
             ->get()
             ->map(fn($item) => (array)$item)
             ->toArray();
@@ -101,13 +96,19 @@ class KejarLabaReportController extends Controller
         $selectedPeriodLabel = 'No Data';
 
         if ($selectedPeriod) {
-            $selectedPeriodLabel = Carbon::parse($selectedPeriod)->translatedFormat('d M Y');
             $selectedCarbon = Carbon::parse($selectedPeriod);
             
             // M-1 is the end of the previous month
             $m1Period = $selectedCarbon->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
-            // Try to find the closest available snapshot for M-1 from available periods
-            $m1EffectivePeriod = $availablePeriods->first(fn($p) => $p <= $m1Period);
+            $m1EffectivePeriod = $availablePeriods->contains($m1Period) ? $m1Period : null;
+
+            // YoY is 1 year before the selected period
+            $yoyPeriod = $selectedCarbon->copy()->subYearNoOverflow()->toDateString();
+            $yoyEffectivePeriod = $availablePeriods->first(fn($p) => $p <= $yoyPeriod);
+
+            // YTD is December end of the previous year
+            $ytdPeriod = $selectedCarbon->copy()->subYearNoOverflow()->endOfYear()->toDateString();
+            $ytdEffectivePeriod = $availablePeriods->first(fn($p) => $p <= $ytdPeriod);
 
             // 3. Fetch Metrics from cognos_recovery or lw325_ph
             $hasCognosCurrent = DB::table('cognos_recovery')->where('periode', $selectedPeriod)->exists();
@@ -124,15 +125,35 @@ class KejarLabaReportController extends Controller
                     ? $this->getRecoveryMetricsFromPh($m1EffectivePeriod, $selectedKanca, $selectedUnit)
                     : $this->getRecoveryMetricsFromCognos($m1EffectivePeriod, $selectedKanca, $selectedUnit);
             }
-            
-            // 4. Handle RKA Targets
-            $rkaRequested = $request->input('rka_period');
-            $rkaEffective = $snapshotService->resolveEffectiveRkaPeriod($rkaRequested, $selectedPeriod);
-            $rkaForMonth = $rkaEffective ? Carbon::parse($rkaEffective) : $selectedCarbon;
-            $rkaYear = $rkaForMonth->year;
-            $rkaMonthColumn = $rkaService->resolveMonthColumn($rkaForMonth);
-            
-            $rkaByCode = $this->fetchRkaTargetsByCode($rkaMonthColumn, $rkaYear);
+
+            $yoyMetrics = [];
+            $hasCognosYoY = false;
+            if ($yoyEffectivePeriod) {
+                $hasCognosYoY = DB::table('cognos_recovery')->where('periode', $yoyEffectivePeriod)->exists();
+                $yoyMetrics = !$hasCognosYoY && Schema::hasTable('lw325_ph')
+                    ? $this->getRecoveryMetricsFromPh($yoyEffectivePeriod, $selectedKanca, $selectedUnit)
+                    : $this->getRecoveryMetricsFromCognos($yoyEffectivePeriod, $selectedKanca, $selectedUnit);
+            }
+
+            $ytdMetrics = [];
+            $hasCognosYtd = false;
+            if ($ytdEffectivePeriod) {
+                $hasCognosYtd = DB::table('cognos_recovery')->where('periode', $ytdEffectivePeriod)->exists();
+                $ytdMetrics = !$hasCognosYtd && Schema::hasTable('lw325_ph')
+                    ? $this->getRecoveryMetricsFromPh($ytdEffectivePeriod, $selectedKanca, $selectedUnit)
+                    : $this->getRecoveryMetricsFromCognos($ytdEffectivePeriod, $selectedKanca, $selectedUnit);
+            }
+
+            $yoyPeriodLabel = $yoyEffectivePeriod 
+                ? Carbon::parse($yoyEffectivePeriod)->translatedFormat('d M y') 
+                : '-';
+            $ytdPeriodLabel = $ytdEffectivePeriod 
+                ? Carbon::parse($ytdEffectivePeriod)->translatedFormat('d M y') 
+                : '-';
+            $m1PeriodLabel = $m1EffectivePeriod 
+                ? Carbon::parse($m1EffectivePeriod)->translatedFormat('d M y') 
+                : '-';
+            $selectedPeriodLabel = Carbon::parse($selectedPeriod)->translatedFormat('d M y');
 
             // 5. Build Final Rows
             if ($isArea6All) {
@@ -148,37 +169,53 @@ class KejarLabaReportController extends Controller
                         ? $this->getBranchOfficeRecoveryMetricsFromPh($m1EffectivePeriod, $area6Branches)
                         : $this->getBranchOfficeRecoveryMetricsFromCognos($m1EffectivePeriod, $area6Branches);
                 }
-                
-                $branchRkaByOffice = $this->fetchBranchOfficeRkaTargets($rkaMonthColumn, $rkaYear, $area6Branches);
+
+                $branchYoyMetrics = [];
+                if ($yoyEffectivePeriod) {
+                    $branchYoyMetrics = !$hasCognosYoY && Schema::hasTable('lw325_ph')
+                        ? $this->getBranchOfficeRecoveryMetricsFromPh($yoyEffectivePeriod, $area6Branches)
+                        : $this->getBranchOfficeRecoveryMetricsFromCognos($yoyEffectivePeriod, $area6Branches);
+                }
+
+                $branchYtdMetrics = [];
+                if ($ytdEffectivePeriod) {
+                    $branchYtdMetrics = !$hasCognosYtd && Schema::hasTable('lw325_ph')
+                        ? $this->getBranchOfficeRecoveryMetricsFromPh($ytdEffectivePeriod, $area6Branches)
+                        : $this->getBranchOfficeRecoveryMetricsFromCognos($ytdEffectivePeriod, $area6Branches);
+                }
 
                 foreach ($area6Branches as $index => $branchOffice) {
                     $curr = $branchCurrentMetrics[$branchOffice] ?? ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
                     $prev = $branchM1Metrics[$branchOffice] ?? ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
-                    $rka = $branchRkaByOffice[$branchOffice] ?? ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
-
-                    $rkaMicro = (float) ($rka['micro'] ?? 0);
-                    $rkaSmall = (float) ($rka['small'] ?? 0);
-                    $rkaConsumer = (float) ($rka['consumer'] ?? 0);
-                    $rkaTotal = (float) ($rka['total'] ?? 0);
+                    $yoy = $branchYoyMetrics[$branchOffice] ?? ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
+                    $ytd = $branchYtdMetrics[$branchOffice] ?? ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
 
                     $rows[] = [
                         'no' => $index + 1,
                         'kanca' => $branchOffice,
                         'buc' => $branchCodes[$branchOffice] ?? '-',
                         'branch_office' => $branchOffice,
+                        'recovery_yoy' => $yoy,
+                        'recovery_ytd' => $ytd,
                         'recovery_m1' => $prev,
                         'recovery_curr' => $curr,
-                        'rka' => [
-                            'micro' => $rkaMicro,
-                            'small' => $rkaSmall,
-                            'consumer' => $rkaConsumer,
-                            'total' => $rkaTotal,
+                        'delta_yoy' => [
+                            'micro' => $curr['micro'] - $yoy['micro'],
+                            'small' => $curr['small'] - $yoy['small'],
+                            'consumer' => $curr['consumer'] - $yoy['consumer'],
+                            'total' => $curr['total'] - $yoy['total'],
                         ],
-                        'delta' => [
-                            'micro' => $curr['micro'] - $rkaMicro,
-                            'small' => $curr['small'] - $rkaSmall,
-                            'consumer' => $curr['consumer'] - $rkaConsumer,
-                            'total' => $curr['total'] - $rkaTotal,
+                        'delta_ytd' => [
+                            'micro' => $curr['micro'] - $ytd['micro'],
+                            'small' => $curr['small'] - $ytd['small'],
+                            'consumer' => $curr['consumer'] - $ytd['consumer'],
+                            'total' => $curr['total'] - $ytd['total'],
+                        ],
+                        'delta_m1' => [
+                            'micro' => $curr['micro'] - $prev['micro'],
+                            'small' => $curr['small'] - $prev['small'],
+                            'consumer' => $curr['consumer'] - $prev['consumer'],
+                            'total' => $curr['total'] - $prev['total'],
                         ],
                     ];
                 }
@@ -205,48 +242,47 @@ class KejarLabaReportController extends Controller
                     ->values();
 
                 foreach ($units as $index => $u) {
-                    $lookupKey = $u->cabang . '|' . $u->unit_kerja;
+                    $lookupKey = trim(strtoupper($u->cabang)) . '|' . $this->normalizeUnitName($u->unit_kerja);
 
                     $curr = $currentMetrics[$lookupKey] ?? ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
                     $prev = $m1Metrics[$lookupKey] ?? ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
-
-                    // Extraction of numeric code (03885 -> 3885)
-                    preg_match('/\d+/', $u->unit_kerja, $matches);
-                    $uCode = isset($matches[0]) ? (int)$matches[0] : null;
-
-                    $rka = $uCode !== null ? ($rkaByCode[$uCode] ?? null) : null;
-                    $rkaMicro = (float)($rka['micro'] ?? 0);
-                    $rkaSmall = (float)($rka['small'] ?? 0);
-                    $rkaConsumer = (float)($rka['consumer'] ?? 0);
-                    $rkaTotal = (float)($rka['total'] ?? 0);
+                    $yoy = $yoyMetrics[$lookupKey] ?? ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
+                    $ytd = $ytdMetrics[$lookupKey] ?? ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
 
                     $rows[] = [
                         'no' => $index + 1,
                         'kanca' => $u->cabang,
                         'buc' => $u->sub_bc,
                         'unit' => $u->unit_kerja,
+                        'recovery_yoy' => $yoy,
+                        'recovery_ytd' => $ytd,
                         'recovery_m1' => $prev,
                         'recovery_curr' => $curr,
-                        'rka' => [
-                            'micro' => $rkaMicro,
-                            'small' => $rkaSmall,
-                            'consumer' => $rkaConsumer,
-                            'total' => $rkaTotal,
+                        'delta_yoy' => [
+                            'micro' => $curr['micro'] - $yoy['micro'],
+                            'small' => $curr['small'] - $yoy['small'],
+                            'consumer' => $curr['consumer'] - $yoy['consumer'],
+                            'total' => $curr['total'] - $yoy['total'],
                         ],
-                        'delta' => [
-                            'micro' => $curr['micro'] - $rkaMicro,
-                            'small' => $curr['small'] - $rkaSmall,
-                            'consumer' => $curr['consumer'] - $rkaConsumer,
-                            'total' => $curr['total'] - $rkaTotal,
-                        ]
+                        'delta_ytd' => [
+                            'micro' => $curr['micro'] - $ytd['micro'],
+                            'small' => $curr['small'] - $ytd['small'],
+                            'consumer' => $curr['consumer'] - $ytd['consumer'],
+                            'total' => $curr['total'] - $ytd['total'],
+                        ],
+                        'delta_m1' => [
+                            'micro' => $curr['micro'] - $prev['micro'],
+                            'small' => $curr['small'] - $prev['small'],
+                            'consumer' => $curr['consumer'] - $prev['consumer'],
+                            'total' => $curr['total'] - $prev['total'],
+                        ],
                     ];
                 }
             }
         }
 
         $summary = [
-            'total_rka' => collect($rows)->sum(fn($r) => $r['rka']['total']),
-            'total_recovery' => collect($rows)->sum(fn($r) => $r['recovery_curr']['total']),
+            'total_recovery' => collect($rows)->sum(fn($r) => $r['recovery_curr']['total'] ?? 0),
         ];
 
         // Fetch position options for secondary filters
@@ -257,6 +293,9 @@ class KejarLabaReportController extends Controller
             'availablePeriods' => $availablePeriods,
             'selectedPeriod' => $selectedPeriod,
             'selectedPeriodLabel' => $selectedPeriodLabel,
+            'yoyPeriodLabel' => $yoyPeriodLabel ?? '-',
+            'ytdPeriodLabel' => $ytdPeriodLabel ?? '-',
+            'm1PeriodLabel' => $m1PeriodLabel ?? '-',
             'rows' => $rows,
             'summary' => $summary,
             'posisi_rka_options' => $posisiRkaOptions,
@@ -435,11 +474,11 @@ class KejarLabaReportController extends Controller
             $seg = strtoupper((string) $row->segmen_2);
             $val = (float) $row->total_recovery;
 
-            if ($seg === 'MICRO') {
+            if (in_array($seg, ['MICRO', 'MIKRO'])) {
                 $metrics[$key]['micro'] += $val;
-            } elseif ($seg === 'SMALL') {
+            } elseif (in_array($seg, ['SMALL', 'KECIL'])) {
                 $metrics[$key]['small'] += $val;
-            } elseif ($seg === 'CONSUMER') {
+            } elseif (in_array($seg, ['CONSUMER', 'KONSUMER'])) {
                 $metrics[$key]['consumer'] += $val;
             }
 
@@ -459,11 +498,7 @@ class KejarLabaReportController extends Controller
 
         if (!Schema::hasTable('lw325_ph')) return $metrics;
 
-        // Try to get previous ph period
-        $m1Period = DB::table('lw325_ph')
-            ->where('periode', '<', $period)
-            ->orderByDesc('periode')
-            ->value('periode');
+        $m1Period = $this->resolvePreviousMonthEndPhPeriod($period);
 
         if (!$m1Period) return $metrics;
 
@@ -472,7 +507,7 @@ class KejarLabaReportController extends Controller
                 $join->on('n.kanwil', '=', 'o.kanwil')
                     ->on('n.kanca', '=', 'o.kanca')
                     ->on('n.unit', '=', 'o.unit')
-                    ->on('n.acctno', '=', 'o.acctno')
+                    ->whereRaw('CAST(n.acctno AS UNSIGNED) = CAST(o.acctno AS UNSIGNED)')
                     ->whereRaw('n.periode = ?', [$period])
                     ->whereRaw('o.periode = ?', [$m1Period]);
             })
@@ -491,7 +526,7 @@ class KejarLabaReportController extends Controller
                 $join->on('o.kanwil', '=', 'n.kanwil')
                     ->on('o.kanca', '=', 'n.kanca')
                     ->on('o.unit', '=', 'n.unit')
-                    ->on('o.acctno', '=', 'n.acctno')
+                    ->whereRaw('CAST(o.acctno AS UNSIGNED) = CAST(n.acctno AS UNSIGNED)')
                     ->whereRaw('n.periode = ?', [$period]);
             })
             ->selectRaw("o.kanca")
@@ -523,9 +558,9 @@ class KejarLabaReportController extends Controller
 
             if (in_array($seg, ['MICRO', 'MIKRO'])) {
                 $metrics[$key]['micro'] += $val;
-            } elseif ($seg === 'SMALL') {
+            } elseif (in_array($seg, ['SMALL', 'KECIL'])) {
                 $metrics[$key]['small'] += $val;
-            } elseif ($seg === 'CONSUMER') {
+            } elseif (in_array($seg, ['CONSUMER', 'KONSUMER'])) {
                 $metrics[$key]['consumer'] += $val;
             }
 
@@ -540,10 +575,7 @@ class KejarLabaReportController extends Controller
         $metrics = [];
         if (!Schema::hasTable('lw325_ph')) return $metrics;
 
-        $m1Period = DB::table('lw325_ph')
-            ->where('periode', '<', $period)
-            ->orderByDesc('periode')
-            ->value('periode');
+        $m1Period = $this->resolvePreviousMonthEndPhPeriod($period);
 
         if (!$m1Period) return $metrics;
 
@@ -552,7 +584,7 @@ class KejarLabaReportController extends Controller
                 $join->on('n.kanwil', '=', 'o.kanwil')
                     ->on('n.kanca', '=', 'o.kanca')
                     ->on('n.unit', '=', 'o.unit')
-                    ->on('n.acctno', '=', 'o.acctno')
+                    ->whereRaw('CAST(n.acctno AS UNSIGNED) = CAST(o.acctno AS UNSIGNED)')
                     ->whereRaw('n.periode = ?', [$period])
                     ->whereRaw('o.periode = ?', [$m1Period]);
             })
@@ -567,7 +599,7 @@ class KejarLabaReportController extends Controller
                 $join->on('o.kanwil', '=', 'n.kanwil')
                     ->on('o.kanca', '=', 'n.kanca')
                     ->on('o.unit', '=', 'n.unit')
-                    ->on('o.acctno', '=', 'n.acctno')
+                    ->whereRaw('CAST(o.acctno AS UNSIGNED) = CAST(n.acctno AS UNSIGNED)')
                     ->whereRaw('n.periode = ?', [$period]);
             })
             ->selectRaw("o.kanca")
@@ -583,8 +615,9 @@ class KejarLabaReportController extends Controller
         }
         
         if ($unit !== 'all') {
-            $tupokQuery->where('n.unit', $unit);
-            $lunasQuery->where('o.unit', $unit);
+            $normalizedUnit = $this->normalizeUnitName($unit);
+            $tupokQuery->where(DB::raw('TRIM(UPPER(n.unit))'), $normalizedUnit);
+            $lunasQuery->where(DB::raw('TRIM(UPPER(o.unit))'), $normalizedUnit);
         }
 
         $combined = $tupokQuery->unionAll($lunasQuery);
@@ -597,7 +630,7 @@ class KejarLabaReportController extends Controller
             ->get();
 
         foreach ($results as $row) {
-            $key = $row->kanca . '|' . $row->unit;
+            $key = trim(strtoupper($row->kanca)) . '|' . $this->normalizeUnitName($row->unit);
             if (!isset($metrics[$key])) {
                 $metrics[$key] = ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
             }
@@ -607,9 +640,9 @@ class KejarLabaReportController extends Controller
 
             if (in_array($seg, ['MICRO', 'MIKRO'])) {
                 $metrics[$key]['micro'] += $val;
-            } elseif ($seg === 'SMALL') {
+            } elseif (in_array($seg, ['SMALL', 'KECIL'])) {
                 $metrics[$key]['small'] += $val;
-            } elseif ($seg === 'CONSUMER') {
+            } elseif (in_array($seg, ['CONSUMER', 'KONSUMER'])) {
                 $metrics[$key]['consumer'] += $val;
             }
 
@@ -640,7 +673,7 @@ class KejarLabaReportController extends Controller
 
         $metrics = [];
         foreach ($data as $row) {
-            $key = $row->cabang . '|' . $row->unit_kerja;
+            $key = trim(strtoupper($row->cabang)) . '|' . $this->normalizeUnitName($row->unit_kerja);
             if (!isset($metrics[$key])) {
                 $metrics[$key] = ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
             }
@@ -648,11 +681,11 @@ class KejarLabaReportController extends Controller
             $seg = strtoupper($row->segmen_2);
             $val = (float)$row->total_recovery;
 
-            if ($seg === 'MICRO') {
+            if (in_array($seg, ['MICRO', 'MIKRO'])) {
                 $metrics[$key]['micro'] += $val;
-            } elseif ($seg === 'SMALL') {
+            } elseif (in_array($seg, ['SMALL', 'KECIL'])) {
                 $metrics[$key]['small'] += $val;
-            } elseif ($seg === 'CONSUMER') {
+            } elseif (in_array($seg, ['CONSUMER', 'KONSUMER'])) {
                 $metrics[$key]['consumer'] += $val;
             }
             
@@ -660,5 +693,31 @@ class KejarLabaReportController extends Controller
         }
 
         return $metrics;
+    }
+
+    private function normalizeUnitName(string $name): string
+    {
+        $normalized = preg_replace('/^\d+\s*--\s*/', '', $name);
+        return trim(strtoupper($normalized));
+    }
+
+    private function resolvePreviousMonthEndPhPeriod(string $period): ?string
+    {
+        if (!Schema::hasTable('lw325_ph')) {
+            return null;
+        }
+
+        try {
+            $previousMonthEnd = Carbon::parse($period)
+                ->startOfMonth()
+                ->subDay()
+                ->toDateString();
+
+            return DB::table('lw325_ph')
+                ->whereDate('periode', $previousMonthEnd)
+                ->value('periode');
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

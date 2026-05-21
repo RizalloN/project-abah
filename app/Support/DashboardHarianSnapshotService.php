@@ -1318,6 +1318,111 @@ class DashboardHarianSnapshotService
         }
     }
 
+    private function guardSavingsSnapshotAgainstSource(string $period, array $payload): void
+    {
+        $normalizedPeriod = $this->normalizeDate($period) ?? $period;
+
+        if (!$this->savingsSourcePeriodExists($normalizedPeriod)) {
+            return;
+        }
+
+        $table = $this->savingsSourceTableForPeriod($normalizedPeriod);
+        $periodColumn = $this->sourcePeriodColumn($table);
+        $kancaColumn = $table === self::HOURLY_DPK_TABLE ? 'mbname' : 'nama_cabang';
+        $segmentColumn = $table === self::HOURLY_DPK_TABLE ? 'segmen' : 'segmentasi';
+
+        $rawSegment = "UPPER(TRIM(COALESCE(ss.{$segmentColumn}, '')))";
+        $segment = "CASE WHEN {$rawSegment} = 'KORPORASI' THEN 'WHOLESALE' WHEN {$rawSegment} = 'MIKRO' THEN 'MICRO' ELSE {$rawSegment} END";
+        $product = "UPPER(TRIM(COALESCE(ss.produk, '')))";
+        $microSegment = "{$segment} = 'MICRO'";
+
+        $rawByKanca = DB::table($table . ' as ss')
+            ->whereIn("ss.{$periodColumn}", $this->sourcePeriodRawCandidates($table, $normalizedPeriod))
+            ->selectRaw("TRIM(COALESCE(ss.{$kancaColumn}, '')) as raw_cabang")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'GIRO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as giro_ritel")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'DEPOSITO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as deposito_ritel")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'TABUNGAN' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as tabungan_ritel")
+            ->selectRaw("SUM(CASE WHEN {$microSegment} AND {$product} = 'GIRO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as giro_mikro")
+            ->selectRaw("SUM(CASE WHEN {$microSegment} AND {$product} = 'DEPOSITO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as deposito_mikro")
+            ->selectRaw("SUM(CASE WHEN {$microSegment} AND {$product} = 'TABUNGAN' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as tabungan_mikro")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'WHOLESALE' AND {$product} = 'GIRO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as giro_wholesale")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'WHOLESALE' AND {$product} = 'DEPOSITO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as deposito_wholesale")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'WHOLESALE' AND {$product} = 'TABUNGAN' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as tabungan_wholesale")
+            ->selectRaw("SUM(COALESCE(ss.saldo, 0)) as total_simpanan")
+            ->groupBy('raw_cabang')
+            ->get()
+            ->mapWithKeys(function ($row): array {
+                $label = $this->normalizeKancaLabel($row->raw_cabang ?? null);
+
+                if ($label === '') {
+                    return [];
+                }
+
+                $values = [];
+                foreach ($this->savingsSourceGuardColumns() as $column) {
+                    $values[$column] = (float) ($row->{$column} ?? 0);
+                }
+
+                $values['simpanan_ritel'] = $values['giro_ritel'] + $values['deposito_ritel'] + $values['tabungan_ritel'];
+                $values['simpanan_mikro'] = $values['giro_mikro'] + $values['deposito_mikro'] + $values['tabungan_mikro'];
+                $values['simpanan_wholesale'] = $values['giro_wholesale'] + $values['deposito_wholesale'] + $values['tabungan_wholesale'];
+
+                return [$label => $values];
+            })
+            ->all();
+
+        if ($rawByKanca === []) {
+            return;
+        }
+
+        foreach ($payload as $row) {
+            if (!$this->isSummaryScopeRow($row)) {
+                continue;
+            }
+
+            $kancaLabel = (string) ($row['kanca_label'] ?? '');
+            if ($kancaLabel === '' || !array_key_exists($kancaLabel, $rawByKanca)) {
+                continue;
+            }
+
+            foreach ($this->savingsSourceGuardColumns() as $column) {
+                $rawValue = (float) ($rawByKanca[$kancaLabel][$column] ?? 0);
+                $snapshotValue = (float) ($row[$column] ?? 0);
+                $tolerance = max(1.0, abs($rawValue) * 0.000001);
+
+                if (abs($snapshotValue - $rawValue) > $tolerance) {
+                    throw new \RuntimeException(sprintf(
+                        'Dashboard Harian snapshot guard blocked savings source mismatch for %s / %s / %s: snapshot %.2f differs from raw source %.2f.',
+                        $normalizedPeriod,
+                        $kancaLabel,
+                        $column,
+                        $snapshotValue,
+                        $rawValue
+                    ));
+                }
+            }
+        }
+    }
+
+    private function savingsSourceGuardColumns(): array
+    {
+        return [
+            'giro_ritel',
+            'deposito_ritel',
+            'tabungan_ritel',
+            'simpanan_ritel',
+            'giro_mikro',
+            'deposito_mikro',
+            'tabungan_mikro',
+            'simpanan_mikro',
+            'giro_wholesale',
+            'deposito_wholesale',
+            'tabungan_wholesale',
+            'simpanan_wholesale',
+            'total_simpanan',
+        ];
+    }
+
     private function isSummaryScopeRow(array $row): bool
     {
         return (string) ($row['kanca_key'] ?? '') !== ''

@@ -35,7 +35,7 @@ class DashboardDanaService
         $periods = $this->calculatePeriodReferences($selectedPeriod);
         $snapshotData = $this->getDashboardDataFromHarianSnapshot($selectedPeriod, $category, $rkaPeriod, $periods);
         if ($snapshotData !== null) {
-            return $snapshotData;
+            return DashboardCrossAlignmentGuard::alignFunds($snapshotData, $selectedPeriod, $category, $rkaPeriod);
         }
 
         $allPeriodValues = array_filter($periods);
@@ -131,7 +131,7 @@ class DashboardDanaService
             }
         }
 
-        return [
+        $res = [
             'rows' => $formattedRows,
             'total' => $this->calculateGrandTotals($formattedRows),
             'header_dates' => [
@@ -140,6 +140,8 @@ class DashboardDanaService
                 'mtd' => $this->formatDateLabel($periods['mtd']),
             ],
         ];
+
+        return DashboardCrossAlignmentGuard::alignFunds($res, $selectedPeriod, $category, $rkaPeriod);
     }
 
     protected function getDashboardDataFromHarianSnapshot(?string $selectedPeriod, ?string $category, ?string $rkaPeriod = null, ?array $periods = null): ?array
@@ -154,14 +156,13 @@ class DashboardDanaService
             return null;
         }
 
-        $availableCount = DB::table(self::HARIAN_SNAPSHOT_TABLE)
-            ->whereIn('snapshot_period', $periodValues)
+        $hasSelectedSnapshot = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->where('snapshot_period', $selectedPeriod)
             ->whereIn('kanca_label', self::AREA_6_BRANCHES)
             ->whereColumn('kanca_key', 'unit_key')
-            ->distinct()
-            ->count('snapshot_period');
+            ->exists();
 
-        if ($availableCount < count($periodValues)) {
+        if (!$hasSelectedSnapshot) {
             return null;
         }
 

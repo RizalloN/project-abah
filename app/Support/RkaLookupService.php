@@ -339,9 +339,12 @@ class RkaLookupService
 
     public function availableYears(): array
     {
+        $driver = DB::connection()->getDriverName();
+        $yearExpression = $driver === 'sqlite' ? "strftime('%Y', created_at) as year" : 'YEAR(created_at) as year';
+
         return DB::table('rka')
             ->whereNotNull('created_at')
-            ->selectRaw('YEAR(created_at) as year')
+            ->selectRaw($yearExpression)
             ->distinct()
             ->orderByDesc('year')
             ->pluck('year')

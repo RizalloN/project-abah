@@ -535,8 +535,8 @@
         border-collapse: separate !important;
         border-spacing: 0 !important;
         background: #ffffff !important;
-        border-left: 1px solid #cbd5e1 !important;
-        border-top: 1px solid #cbd5e1 !important;
+        border-left: 1px solid #e2e8f0 !important;
+        border-top: 1px solid #e2e8f0 !important;
     }
 
     .kinerja-konsumer-table--compact {
@@ -544,41 +544,41 @@
     }
 
     .kinerja-konsumer-table thead {
-        background: #005baa !important;
+        background: #0f172a !important;
     }
 
     .kinerja-konsumer-table thead tr {
-        background: #005baa !important;
+        background: #0f172a !important;
     }
 
     .kinerja-konsumer-table thead th {
         position: sticky;
         top: 0;
         z-index: 50;
-        background-color: #005baa !important;
+        background-color: #0f172a !important;
         background-image: none !important;
         color: #ffffff !important;
-        padding: 2px 4px !important;
-        font-size: 0.65rem !important;
-        font-weight: bold !important;
+        padding: 6px 8px !important;
+        font-size: 0.68rem !important;
+        font-weight: 700 !important;
         text-transform: uppercase !important;
-        letter-spacing: 0 !important;
-        border-bottom: 1px solid #004580 !important;
-        border-right: 1px solid #004580 !important;
+        letter-spacing: 0.03em !important;
+        border-bottom: 1px solid #1e293b !important;
+        border-right: 1px solid #1e293b !important;
         text-align: center !important;
         vertical-align: middle !important;
         white-space: nowrap;
-        height: 24px !important;
+        height: auto !important;
         box-shadow: none !important;
     }
 
     .kinerja-konsumer-table thead th.sticky-col {
         z-index: 60;
-        background-color: #004c97 !important;
+        background-color: #0f172a !important;
         background-image: none !important;
         color: #ffffff !important;
-        border-bottom: 1px solid #00366b !important;
-        border-right: 1px solid #00366b !important;
+        border-bottom: 1px solid #1e293b !important;
+        border-right: 1px solid #1e293b !important;
     }
 
     .kinerja-konsumer-table td.sticky-col {
@@ -586,56 +586,56 @@
         left: 0;
         background: #ffffff !important;
         z-index: 10;
-        border-right: 1px solid #cbd5e1 !important;
+        border-right: 1px solid #e2e8f0 !important;
     }
 
     .kinerja-konsumer-table thead tr:nth-child(2) th {
-        top: 24px; /* Must match Row 1 height */
-        height: 24px !important;
+        top: 29px; /* Adjust top according to Row 1 height */
+        height: auto !important;
     }
 
     .kinerja-konsumer-table th.sub-head {
-        background-color: #004c97 !important;
+        background-color: #1e293b !important;
         background-image: none !important;
         color: #ffffff !important;
-        border-bottom: 1px solid #00366b !important;
-        border-right: 1px solid #00366b !important;
+        border-bottom: 1px solid #334155 !important;
+        border-right: 1px solid #334155 !important;
     }
 
     .kinerja-konsumer-table th.accent-head {
-        background-color: #005baa !important;
+        background-color: #334155 !important;
         background-image: none !important;
         color: #ffffff !important;
-        border-bottom: 1px solid #004580 !important;
-        border-right: 1px solid #004580 !important;
+        border-bottom: 1px solid #475569 !important;
+        border-right: 1px solid #475569 !important;
     }
 
     .kinerja-konsumer-table td {
-        padding: 2px 4px !important;
-        font-size: 0.68rem !important;
-        font-weight: 500;
-        color: #000000 !important;
-        border-right: 1px solid #cbd5e1 !important;
-        border-bottom: 1px solid #cbd5e1 !important;
+        padding: 5px 8px !important;
+        font-size: 0.72rem !important;
+        font-weight: 550;
+        color: #334155 !important;
+        border-right: 1px solid #e2e8f0 !important;
+        border-bottom: 1px solid #e2e8f0 !important;
         vertical-align: middle;
         text-align: right;
-        height: 20px !important;
-        line-height: 1.1 !important;
-        white-space: nowrap !important; /* Enforce nowrap to prevent stacked/wrapped data in cells */
+        height: auto !important;
+        line-height: 1.25 !important;
+        white-space: nowrap !important;
     }
 
     .kinerja-konsumer-table td.merged-branch-cell {
-        border-left: 1px solid #cbd5e1 !important;
+        border-left: 1px solid #e2e8f0 !important;
         color: #0f2f66 !important;
         font-weight: 600 !important;
         text-transform: uppercase;
         text-align: center !important;
-        font-size: 0.6rem !important;
-        padding: 2px 4px !important;
+        font-size: 0.62rem !important;
+        padding: 5px 8px !important;
         position: sticky !important;
-        left: 32px; /* After No column */
+        left: 0px !important; /* Realigned for removed No column */
         z-index: 20;
-        border-right: 1px solid #cbd5e1 !important;
+        border-right: 1px solid #e2e8f0 !important;
     }
 
     .kinerja-konsumer-table tr:not(.loan-branch-subtotal):not(.row-grand-total) td.merged-branch-cell {
@@ -643,15 +643,15 @@
     }
 
     .kinerja-konsumer-table td.merged-rm-cell {
-        color: #000000 !important;
+        color: #0f172a !important;
         text-align: left !important;
-        font-size: 0.68rem !important;
-        font-weight: 500 !important;
-        padding: 2px 4px !important;
+        font-size: 0.72rem !important;
+        font-weight: 600 !important;
+        padding: 5px 8px !important;
         position: sticky !important;
-        left: 126px; /* Match left setting in Blade */
+        left: 94px !important; /* Realigned for removed No column */
         z-index: 20;
-        border-right: 1px solid #cbd5e1 !important;
+        border-right: 1px solid #e2e8f0 !important;
         box-shadow: none !important;
     }
 
@@ -661,81 +661,81 @@
 
     /* Current Position Highlight Class */
     .highlight-curr {
-        background: #f2f2f2 !important; /* standard light grey for current excel highlighting */
-        color: #000000 !important;
-        font-weight: bold !important;
+        background: #f8fafc !important; /* Clean light slate background */
+        color: #0f172a !important;
+        font-weight: 700 !important;
     }
 
     .loan-branch-subtotal .highlight-curr {
-        background: #b4c6e7 !important;
-        color: #000000 !important;
+        background: #edf4fc !important;
+        color: #0c2340 !important;
     }
 
-    /* Branch Subtotal Row Styling - Excel Ice Blue */
+    /* Branch Subtotal Row Styling - Soft Premium Banking Blue */
     .loan-branch-subtotal {
-        background: #d9e1f2 !important;
+        background: #edf4fc !important;
     }
 
     .loan-branch-subtotal td {
-        background: #d9e1f2 !important;
-        color: #000000 !important;
-        font-weight: bold !important;
-        border-top: 1px solid #8faadc !important;
-        border-bottom: 1px solid #8faadc !important;
-        padding: 2px 4px !important;
-        height: 20px !important;
+        background: #edf4fc !important;
+        color: #0c2340 !important;
+        font-weight: 700 !important;
+        border-top: 1px solid #cbd5e1 !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+        padding: 5px 8px !important;
+        height: auto !important;
     }
 
     .loan-branch-subtotal td.sticky-col,
     .loan-branch-subtotal td.merged-branch-cell {
-        background: #d9e1f2 !important;
-        color: #000000 !important;
+        background: #edf4fc !important;
+        color: #0c2340 !important;
     }
 
     .loan-branch-subtotal td[colspan] {
-        background: #d9e1f2 !important;
-        color: #000000 !important;
+        background: #edf4fc !important;
+        color: #0c2340 !important;
     }
 
-    /* Grand Total Row Styling - Excel Blue Highlight */
+    /* Grand Total Row Styling - Elegant Silver Slate */
     .row-grand-total {
-        background: #b4c6e7 !important;
-        border-top: 1px solid #8faadc !important;
+        background: #e2e8f0 !important;
+        border-top: 1px solid #cbd5e1 !important;
         position: sticky;
         bottom: 0;
         z-index: 40;
     }
 
     .row-grand-total td {
-        background: #b4c6e7 !important;
-        color: #000000 !important;
-        font-weight: 900 !important;
-        font-size: 0.7rem !important;
-        border-top: 1px solid #8faadc !important;
-        border-bottom: 3px double #000000 !important; /* double underline grand total */
-        padding: 4px !important;
+        background: #e2e8f0 !important;
+        color: #0f172a !important;
+        font-weight: 800 !important;
+        font-size: 0.72rem !important;
+        border-top: 1px solid #cbd5e1 !important;
+        border-bottom: 3px double #0f172a !important; /* double underline grand total */
+        padding: 6px 8px !important;
     }
 
     .row-grand-total td.sticky-col {
-        background: #b4c6e7 !important;
-        color: #000000 !important;
+        background: #e2e8f0 !important;
+        color: #0f172a !important;
         box-shadow: none !important;
     }
 
     .row-grand-total td.highlight-curr {
-        background: #b4c6e7 !important;
-        color: #000000 !important;
+        background: #e2e8f0 !important;
+        color: #0f172a !important;
     }
 
     .row-grand-total .delta-indicator.pos,
     .loan-branch-subtotal .delta-indicator.pos {
-        background-color: #c6efce !important;
-        color: #000000 !important;
+        background-color: #e2fcdb !important;
+        color: #1b5e20 !important;
     }
     .row-grand-total .delta-indicator.neg,
     .loan-branch-subtotal .delta-indicator.neg {
-        background-color: #dc2626 !important;
-        color: #ffffff !important;
+        background-color: #ffebee !important;
+        color: #c62828 !important;
     }
 
     .legend-box {
@@ -764,9 +764,37 @@
         text-align: center;
     }
 
-    .pct-good { background: #c6efce; color: #000000; border: 1px solid #9cda9c; }
-    .pct-mid { background: #fde047; color: #000000; border: 1px solid #eab308; }
-    .pct-bad { background: #ffc7ce; color: #000000; border: 1px solid #fecaca; }
+    .pct-good { background: #e2fcdb; color: #1b5e20; border: 1px solid #c8e6c9; }
+    .pct-mid { background: #fff9c4; color: #f57f17; border: 1px solid #fff59d; }
+    .pct-bad { background: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
+
+    /* Direct background color-by-fill styling at TD level */
+    .cell-quadrant {
+        font-weight: 800 !important;
+        text-transform: uppercase !important;
+        font-size: 0.65rem !important;
+        text-align: center !important;
+    }
+    .cell-quadrant.q1 {
+        background-color: #e2fcdb !important;
+        color: #1b5e20 !important;
+        border-right: 1px solid #c8e6c9 !important;
+    }
+    .cell-quadrant.q2 {
+        background-color: #e8f5e9 !important;
+        color: #2e7d32 !important;
+        border-right: 1px solid #c8e6c9 !important;
+    }
+    .cell-quadrant.q3 {
+        background-color: #fff9c4 !important;
+        color: #f57f17 !important;
+        border-right: 1px solid #fff59d !important;
+    }
+    .cell-quadrant.q4 {
+        background-color: #ffebee !important;
+        color: #c62828 !important;
+        border-right: 1px solid #ffcdd2 !important;
+    }
 
     .quadrant-badge {
         display: inline-flex;
@@ -784,30 +812,30 @@
 
     /* Q1: Dark Green */
     .quadrant-badge.q1 {
-        background: #c6efce !important;
-        color: #000000 !important;
-        border-color: #9cda9c !important;
+        background: #e2fcdb !important;
+        color: #1b5e20 !important;
+        border-color: #c8e6c9 !important;
     }
     
     /* Q2: Light Green */
     .quadrant-badge.q2 {
-        background: #e2efda !important;
-        color: #000000 !important;
-        border-color: #c5dfb8 !important;
+        background: #e8f5e9 !important;
+        color: #2e7d32 !important;
+        border-color: #c8e6c9 !important;
     }
     
     /* Q3: Yellow */
     .quadrant-badge.q3 {
-        background: #fff2cc !important;
-        color: #000000 !important;
-        border-color: #ffd966 !important;
+        background: #fff9c4 !important;
+        color: #f57f17 !important;
+        border-color: #fff59d !important;
     }
     
     /* Q4: Dark Red */
     .quadrant-badge.q4 {
-        background: #ffc7ce !important;
-        color: #9c0006 !important;
-        border-color: #ffb3b8 !important;
+        background: #ffebee !important;
+        color: #c62828 !important;
+        border-color: #ffcdd2 !important;
     }
 
     .quadrant-label {
@@ -818,24 +846,30 @@
     /* Excel-style Positive / Negative Filling Indicators */
     .delta-indicator {
         display: inline-block;
-        padding: 2px 4px !important;
         font-weight: bold !important;
-        font-size: 0.64rem !important;
+        font-size: 0.68rem !important;
         text-align: right;
-        min-width: 52px;
-        width: 100%;
         box-sizing: border-box;
-        border-radius: 0px !important;
     }
-    .delta-indicator.pos {
-        background-color: #c6efce !important; /* soft green filling */
-        color: #000000 !important;             /* black text */
-        border: 1px solid #c6efce !important;
+
+    /* Color by Fill delta cells */
+    .cell-pos {
+        background-color: #e2fcdb !important;
+        color: #1b5e20 !important;
     }
-    .delta-indicator.neg {
-        background-color: #dc2626 !important; /* solid red filling */
-        color: #ffffff !important;             /* white text */
-        border: 1px solid #dc2626 !important;
+    .cell-neg {
+        background-color: #ffebee !important;
+        color: #c62828 !important;
+    }
+
+    .kinerja-konsumer-table tbody tr:hover td {
+        background-color: rgba(37, 99, 235, 0.025) !important;
+    }
+    .kinerja-konsumer-table tbody tr.loan-branch-subtotal:hover td {
+        background-color: #edf4fc !important;
+    }
+    .kinerja-konsumer-table tbody tr.row-grand-total:hover td {
+        background-color: #e2e8f0 !important;
     }
 
     .tampilkan-button {

@@ -37,15 +37,17 @@ class OptimizedDashboardDanaService extends DashboardDanaService
         $periods = $this->calculatePeriodReferences($selectedPeriod);
         $snapshotData = $this->getDashboardDataFromHarianSnapshot($selectedPeriod, $category, $rkaPeriod, $periods);
         if ($snapshotData !== null) {
-            return $snapshotData;
+            return DashboardCrossAlignmentGuard::alignFunds($snapshotData, $selectedPeriod, $category, $rkaPeriod);
         }
 
         // Use snapshot if available, otherwise fallback to raw table
         if ($this->hasSnapshotsForPeriods($periods)) {
-            return $this->getDashboardDataFromSnapshot($selectedPeriod, $category, $rkaPeriod, $periods);
+            $data = $this->getDashboardDataFromSnapshot($selectedPeriod, $category, $rkaPeriod, $periods);
+            return DashboardCrossAlignmentGuard::alignFunds($data, $selectedPeriod, $category, $rkaPeriod);
         }
 
-        return $this->getDashboardDataFromRaw($selectedPeriod, $category, $rkaPeriod);
+        $data = $this->getDashboardDataFromRaw($selectedPeriod, $category, $rkaPeriod);
+        return DashboardCrossAlignmentGuard::alignFunds($data, $selectedPeriod, $category, $rkaPeriod);
     }
 
     /**
