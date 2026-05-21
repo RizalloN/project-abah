@@ -456,11 +456,6 @@ class DashboardHarianSnapshotService
         [$payload] = $this->buildAggregatedRowsForPeriod($period, null, null, $sourceMetadata);
 
         $payload = $this->deduplicateSnapshotPayload($payload);
-        $availableColumns = array_flip($this->availableSnapshotColumns());
-        $payload = array_map(
-            static fn (array $row): array => array_intersect_key($row, $availableColumns),
-            $payload
-        );
 
         if ($payload === []) {
             // Same guard: only discard the snapshot when the caller explicitly asks for it.
@@ -476,6 +471,13 @@ class DashboardHarianSnapshotService
         }
 
         $this->guardKurKppSnapshotAgainstSsaSource($period, $payload);
+        $this->guardSavingsSnapshotAgainstSource($period, $payload);
+
+        $availableColumns = array_flip($this->availableSnapshotColumns());
+        $payload = array_map(
+            static fn (array $row): array => array_intersect_key($row, $availableColumns),
+            $payload
+        );
 
         // Atomic swap: InnoDB MVCC ensures concurrent readers continue seeing the
         // previous committed rows until this transaction commits — no visible gap.
