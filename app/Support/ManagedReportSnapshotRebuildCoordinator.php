@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Jobs\ProcessSnapshotDirtyPeriodJob;
 use App\Jobs\RunManagedReportSnapshotRebuildJob;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -22,10 +23,15 @@ class ManagedReportSnapshotRebuildCoordinator
     private const RUNNING_FAIL_SECONDS = 3600;
     private const SNAPSHOT_QUEUELESS_STALE_SECONDS = 1800;
     private const SNAPSHOT_RESERVED_STALE_SECONDS = 600;
+    private const FAST_REFRESH_DIRTY_LIMIT = 50;
 
     public function queue(bool $forceRebuild, ?string $source = null): array
     {
         $this->terminateStaleCachedStates();
+
+        if (!$forceRebuild) {
+            return $this->queueFastDirtyRefresh($source);
+        }
 
         $rebuildId = (string) Str::uuid();
         $slotReserved = false;
@@ -138,6 +144,83 @@ class ManagedReportSnapshotRebuildCoordinator
                     : 'Refresh snapshot seluruh report sudah masuk antrean dan progress akan tampil realtime.',
             ],
         ];
+    }
+
+    private function queueFastDirtyRefresh(?string $source = null): array
+    {
+        $runningState = $this->findRunningRebuildState();
+        if ($runningState !== null) {
+            return $this->activeRebuildResponse(false, $runningState, 'Rebuild snapshot seluruh report masih berjalan. Refresh cepat tidak dijadwalkan agar tidak membuat rebuild paralel.');
+        }
+
+        $startedAt = microtime(true);
+        $dirtyPeriods = app(SnapshotDirtyPeriodService::class);
+        $pendingBefore = $dirtyPeriods->pendingCount();
+        $claims = $dirtyPeriods->claimDue(self::FAST_REFRESH_DIRTY_LIMIT);
+
+        $dispatched = 0;
+        $dispatchFailures = 0;
+        foreach ($claims as $claim) {
+            try {
+                ProcessSnapshotDirtyPeriodJob::dispatch($claim)->onQueue('snapshots-parallel');
+                $dispatched++;
+            } catch (Throwable $e) {
+                $dispatchFailures++;
+                $dirtyPeriods->releaseClaim($claim, $e);
+
+                Log::warning('Fast dirty snapshot refresh failed to dispatch claimed scope.', [
+                    'source' => $source ?? static::class,
+                    'source_table' => $claim['source_table'] ?? null,
+                    'period_key' => $claim['period_key'] ?? null,
+                    'exception_class' => $e::class,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $pendingAfter = $dirtyPeriods->pendingCount();
+        $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
+
+        return [
+            'status_code' => 200,
+            'payload' => [
+                'status' => $dispatchFailures > 0 ? 'warning' : ($dispatched > 0 ? 'queued' : 'completed'),
+                'queued' => $dispatched > 0,
+                'force_rebuild' => false,
+                'progress_percent' => 100,
+                'completed_units' => $dispatched,
+                'total_units' => max(1, $dispatched),
+                'stage' => $dispatched > 0 ? 'dirty-dispatch' : 'completed',
+                'dirty_pending_before' => $pendingBefore,
+                'dirty_dispatched' => $dispatched,
+                'dirty_dispatch_failures' => $dispatchFailures,
+                'dirty_pending_after' => $pendingAfter,
+                'elapsed_ms' => $elapsedMs,
+                'message' => $this->fastDirtyRefreshMessage($pendingBefore, $dispatched, $dispatchFailures, $pendingAfter),
+            ],
+        ];
+    }
+
+    private function fastDirtyRefreshMessage(int $pendingBefore, int $dispatched, int $dispatchFailures, int $pendingAfter): string
+    {
+        if ($dispatchFailures > 0) {
+            return sprintf(
+                'Refresh cepat menjadwalkan %d scope snapshot kotor, tetapi %d scope gagal dijadwalkan dan sudah dilepas untuk retry.',
+                $dispatched,
+                $dispatchFailures
+            );
+        }
+
+        if ($dispatched > 0) {
+            return sprintf(
+                'Refresh cepat snapshot menjadwalkan %d scope kotor dari %d pending. Sisa pending: %d.',
+                $dispatched,
+                $pendingBefore,
+                $pendingAfter
+            );
+        }
+
+        return 'Refresh cepat selesai. Tidak ada snapshot kotor yang perlu direbuild.';
     }
 
     public function registerStandaloneJob(string $rebuildId, string $label, string $fileName = '', string $source = ''): array

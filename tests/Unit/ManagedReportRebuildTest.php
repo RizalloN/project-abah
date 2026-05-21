@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportIndexController;
+use App\Jobs\ProcessSnapshotDirtyPeriodJob;
 use App\Jobs\RunManagedReportSnapshotRebuildJob;
 use App\Jobs\WarmReportCacheJob;
 use App\Support\DashboardHarianSnapshotService;
@@ -77,6 +78,54 @@ class ManagedReportRebuildTest extends TestCase
         $this->assertSame('queued', $payload['status']);
         $this->assertTrue($payload['force_rebuild']);
         Queue::assertPushed(RunManagedReportSnapshotRebuildJob::class, 1);
+    }
+
+    public function test_non_force_rebuild_uses_dirty_period_fast_path_without_full_rebuild_job(): void
+    {
+        Schema::create('snapshot_dirty_periods', function (Blueprint $table): void {
+            $table->string('source_table');
+            $table->string('period_key');
+            $table->string('shard_type')->default('period');
+            $table->string('shard_key')->default('*');
+            $table->dateTime('dirty_since', 6);
+            $table->unsignedBigInteger('dirty_row_count')->default(0);
+            $table->unsignedInteger('attempts')->default(0);
+            $table->dateTime('claimed_at', 6)->nullable();
+            $table->string('claim_token')->nullable();
+            $table->dateTime('dirty_since_at_claim', 6)->nullable();
+            $table->dateTime('last_attempted_at', 6)->nullable();
+            $table->text('last_error')->nullable();
+            $table->timestamps();
+            $table->primary(['source_table', 'period_key', 'shard_type', 'shard_key'], 'pk_snapshot_dirty_periods');
+        });
+
+        DB::table('snapshot_dirty_periods')->insert([
+            'source_table' => 'daily_loan_dinamis',
+            'period_key' => '2026-05-20',
+            'shard_type' => 'period',
+            'shard_key' => '*',
+            'dirty_since' => now(),
+            'dirty_row_count' => 3,
+            'attempts' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $controller = new ImportIndexController(app(PartitionMaintenanceService::class));
+        $response = $controller->rebuildManagedReportSnapshots(Request::create('/import/report-management/rebuild', 'POST', [
+            'force_rebuild' => false,
+        ]));
+
+        $payload = $response->getData(true);
+
+        $this->assertSame('queued', $payload['status']);
+        $this->assertFalse($payload['force_rebuild']);
+        $this->assertSame(1, $payload['dirty_pending_before']);
+        $this->assertSame(1, $payload['dirty_dispatched']);
+        $this->assertSame(0, $payload['dirty_dispatch_failures']);
+        $this->assertArrayNotHasKey('rebuild_id', $payload);
+        Queue::assertPushed(ProcessSnapshotDirtyPeriodJob::class, 1);
+        Queue::assertNotPushed(RunManagedReportSnapshotRebuildJob::class);
     }
 
     public function test_rebuild_status_runs_inline_fallback_when_queue_never_starts(): void

@@ -43,8 +43,11 @@
         backdrop-filter: blur(15px) !important;
         -webkit-backdrop-filter: blur(15px) !important;
         border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-        padding: 1.5rem 1rem !important;
+        padding: 1.25rem 1rem !important;
         transition: all 0.3s ease !important;
+        display: block !important;
+        height: auto !important;
+        line-height: normal !important;
     }
 
     .sidebar-brand-inner {
@@ -55,40 +58,57 @@
     }
 
     .sidebar-brand-badge {
-        width: 58px !important;
-        height: 44px !important;
+        width: 42px !important;
+        height: 42px !important;
         border-radius: 12px !important;
-        background: rgba(255, 255, 255, 0.05) !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
-        padding: 4px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+        background: rgba(255, 255, 255, 0.06) !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        padding: 0px !important;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2) !important;
         transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
         flex-shrink: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        overflow: hidden !important;
     }
 
     .sidebar-brand-mark {
-        width: 100%;
-        height: 100%;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        overflow: hidden;
+        width: 100% !important;
+        height: 100% !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        position: relative !important;
     }
 
     .sidebar-brand-badge img {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: contain !important;
+        transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    }
+
+    .sidebar-brand-fallback {
+        display: none; /* Hidden by default when image loads successfully */
+        color: #ffffff !important;
+        font-weight: 800 !important;
+        font-size: 0.85rem !important;
+        letter-spacing: 0.03em !important;
+        text-transform: uppercase !important;
+        align-items: center;
+        justify-content: center;
         width: 100%;
         height: 100%;
-        object-fit: contain;
-        transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
-        filter: brightness(0) invert(1); /* Keeps logo crisp white on dark background */
+        background: linear-gradient(135deg, #307fe2 0%, #0857c3 100%);
+        border-radius: 10px;
     }
 
     .sidebar-brand-link:hover .sidebar-brand-badge {
-        transform: scale(1.04) rotate(-1.5deg);
-        border-color: rgba(255, 255, 255, 0.4) !important;
-        background: rgba(255, 255, 255, 0.1) !important;
-        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25) !important;
+        transform: scale(1.05) rotate(-1.5deg);
+        border-color: rgba(255, 255, 255, 0.35) !important;
+        background: rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3) !important;
     }
 
     .sidebar-brand-link:hover .sidebar-brand-badge img {
@@ -98,29 +118,35 @@
     .sidebar-brand-text {
         flex: 1 !important;
         min-width: 0 !important;
+        padding-left: 0.25rem !important;
     }
 
     .sidebar-brand-text .title {
         color: #ffffff !important;
-        font-size: 1.22rem !important;
+        font-size: 1.25rem !important;
         font-weight: 850 !important;
-        letter-spacing: 0.04em !important;
+        letter-spacing: 0.02em !important;
+        line-height: 1.2 !important;
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
-        text-shadow: 0 2px 10px rgba(255, 255, 255, 0.1);
+        background: linear-gradient(120deg, #ffffff 0%, #e2f1ff 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     }
 
     .sidebar-brand-text .subtitle {
         font-size: 0.62rem !important;
-        letter-spacing: 0.25em !important;
+        letter-spacing: 0.1em !important;
         color: #71c5e8 !important; /* Mentari light blue */
         font-weight: 700 !important;
-        text-transform: uppercase;
-        margin-top: 0.18rem;
+        text-transform: uppercase !important;
+        margin-top: 0.12rem !important;
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
+        opacity: 0.9 !important;
     }
 
     /* Dark Glassmorphic User Profile Card - Avoids Cutoffs */
