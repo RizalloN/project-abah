@@ -97,6 +97,23 @@ class DashboardPinjamanReportController extends Controller
         'pivot_after_bucket',
         'pivot_previous_balance',
     ];
+    private const DAILY_LOAN_HELPER_OUTPUT_COLUMNS = [
+        'segmen_kinerja',
+        'produk_kinerja',
+        'cabang_normalized',
+        'unit_normalized',
+        'branch_normalized',
+        'rm_normalized',
+        'pn_pemutus_normalized',
+        'cifno_clean',
+        'shadow_built_at',
+        'cabang_normalized_gc',
+        'unit_normalized_gc',
+        'branch_normalized_gc',
+        'rm_normalized_gc',
+        'pn_pemutus_normalized_gc',
+        'cifno_clean_gc',
+    ];
 
     public function summaryIndex(Request $request)
     {
@@ -1246,6 +1263,7 @@ class DashboardPinjamanReportController extends Controller
         $cached = array_values(array_filter(self::MATRIX_MODAL_COLUMNS, function (string $column) use ($available) {
             return in_array($column, self::MATRIX_PIVOT_DETAIL_COLUMNS, true) || isset($available[$column]);
         }));
+        $cached = $this->filterDailyLoanOutputColumns($cached);
 
         return $cached;
     }
@@ -1259,10 +1277,36 @@ class DashboardPinjamanReportController extends Controller
 
         $cached = array_values(array_unique(array_merge(
             self::MATRIX_PIVOT_DETAIL_COLUMNS,
-            Schema::getColumnListing('daily_loan_dinamis')
+            $this->filterDailyLoanOutputColumns(Schema::getColumnListing('daily_loan_dinamis'))
         )));
 
         return $cached;
+    }
+
+    private function dailyLoanOutputExcludedColumns(array $extra = []): array
+    {
+        return array_values(array_unique(array_merge(
+            self::DAILY_LOAN_HELPER_OUTPUT_COLUMNS,
+            $extra
+        )));
+    }
+
+    private function filterDailyLoanOutputColumns(array $columns, array $extraExcluded = []): array
+    {
+        $excluded = array_fill_keys($this->dailyLoanOutputExcludedColumns($extraExcluded), true);
+
+        return array_values(array_filter(
+            $columns,
+            static fn (string $column): bool => !isset($excluded[$column])
+        ));
+    }
+
+    private function qualifyDailyLoanColumns(array $columns): array
+    {
+        return array_map(
+            static fn (string $column): string => 'daily_loan_dinamis.' . $column,
+            $columns
+        );
     }
 
     private function buildMovementMatrixAggregateQuery(
@@ -2171,7 +2215,7 @@ class DashboardPinjamanReportController extends Controller
             : $this->resolveIdentityColumn('daily_loan_dinamis');
 
         return DB::table('daily_loan_dinamis')
-            ->select('daily_loan_dinamis.*')
+            ->select($this->qualifyDailyLoanColumns($this->collectSmallArrearsExportSourceColumns()))
             ->selectRaw("({$totalExpression}) as total_tunggakan_terhitung")
             ->where('periode', $selectedPeriod)
             ->whereRaw("({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000")
@@ -2182,6 +2226,21 @@ class DashboardPinjamanReportController extends Controller
             ->orderBy($orderingColumn);
     }
 
+    private function collectSmallArrearsExportSourceColumns(): array
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $cached = $this->filterDailyLoanOutputColumns(
+            Schema::getColumnListing('daily_loan_dinamis'),
+            ['created_at', 'updated_at', 'uniqueid_namareport']
+        );
+
+        return $cached;
+    }
+
     private function collectSmallArrearsExportColumns(): array
     {
         static $cached = null;
@@ -2189,11 +2248,7 @@ class DashboardPinjamanReportController extends Controller
             return $cached;
         }
 
-        $excluded = ['created_at', 'updated_at', 'uniqueid_namareport'];
-        $cached = array_values(array_filter(
-            Schema::getColumnListing('daily_loan_dinamis'),
-            fn (string $col) => !in_array($col, $excluded, true)
-        ));
+        $cached = $this->collectSmallArrearsExportSourceColumns();
         $cached[] = 'total_tunggakan_terhitung';
 
         return $cached;
@@ -2690,7 +2745,7 @@ class DashboardPinjamanReportController extends Controller
     private function fetchKolekMismatchRows(string $selectedPeriod, string $selectedBranch, ?string $selectedUnit = null): array
     {
         $rows = [];
-        $excluded = ['created_at', 'updated_at'];
+        $excluded = $this->dailyLoanOutputExcludedColumns(['created_at', 'updated_at']);
 
         foreach ($this->buildKolekMismatchBaseQuery($selectedPeriod, [$selectedBranch], $selectedUnit)->cursor() as $row) {
             $actualKolek = $this->normalizeKolekValue($row->kolek ?? null);
@@ -2744,11 +2799,10 @@ class DashboardPinjamanReportController extends Controller
             return $cached;
         }
 
-        $excluded = ['created_at', 'updated_at', 'uniqueid_namareport'];
-        $cached = array_values(array_filter(
+        $cached = $this->filterDailyLoanOutputColumns(
             Schema::getColumnListing('daily_loan_dinamis'),
-            fn (string $col) => !in_array($col, $excluded, true)
-        ));
+            ['created_at', 'updated_at', 'uniqueid_namareport']
+        );
         $cached[] = 'kolek_seharusnya';
         $cached[] = 'keterangan';
 

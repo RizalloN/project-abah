@@ -35,63 +35,106 @@
         }
 
         .main-header.modern-navbar {
-            background: rgba(255, 255, 255, 0.94);
-            backdrop-filter: blur(12px);
-            border-bottom: 1px solid rgba(8, 87, 195, 0.14);
-            box-shadow: 0 10px 28px -24px rgba(8, 87, 195, 0.45);
+            min-height: 64px;
+            background: #ffffff !important;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(8, 87, 195, 0.08) !important;
+            box-shadow: 0 10px 30px rgba(8, 87, 195, 0.04);
+            padding: 0.58rem 1rem;
         }
 
         .modern-navbar .nav-link {
-            color: var(--bri-ink);
+            color: #334155 !important;
         }
 
         .modern-navbar .menu-toggle {
             width: 42px;
             height: 42px;
-            border-radius: 14px;
+            border-radius: 12px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            transition: 0.2s ease;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            color: #334155 !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            transition: all 0.22s ease;
         }
 
         .modern-navbar .menu-toggle:hover {
-            background: rgba(48, 127, 226, 0.12);
-            color: var(--bri-nusantara);
+            background: #f1f5f9;
+            color: var(--bri-nusantara) !important;
+            transform: translateY(-1px);
+            border-color: var(--bri-cakrawala);
         }
 
         .modern-user-trigger {
-            border-radius: 18px;
-            padding: 0.4rem 0.75rem;
-            border: 1px solid rgba(8, 87, 195, 0.16);
-            background: var(--bri-white);
-            box-shadow: 0 12px 28px -24px rgba(8, 87, 195, 0.45);
+            min-height: 48px;
+            border-radius: 14px;
+            padding: 0.35rem 0.72rem;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            transition: all 0.22s ease;
         }
 
         .modern-user-trigger:hover {
-            background: #f7fbff;
-            color: #082f66;
+            background: #f1f5f9;
+            color: var(--bri-nusantara) !important;
+            border-color: var(--bri-cakrawala);
+            transform: translateY(-1px);
         }
 
         .modern-user-badge {
             width: 40px;
             height: 40px;
-            border-radius: 14px;
+            border-radius: 12px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(140deg, var(--bri-nusantara), var(--bri-cakrawala));
+            background: linear-gradient(135deg, var(--bri-cakrawala), var(--bri-mentari));
             color: #ffffff;
             font-weight: 800;
+            text-transform: uppercase;
+            border: 2px solid rgba(255, 255, 255, 0.24);
+            box-shadow: 0 4px 12px rgba(48, 127, 226, 0.2);
+        }
+
+        .modern-navbar-brand {
+            display: inline-flex;
+            align-items: center;
+            min-width: 0;
+            margin-left: 0.72rem;
+            padding-left: 0.88rem;
+            border-left: 1px solid #e2e8f0;
+        }
+
+        .modern-navbar-brand .title {
+            display: block;
+            color: #0f172a;
+            font-size: 0.92rem;
+            font-weight: 800;
+            line-height: 1.1;
+            letter-spacing: 0.01em;
+        }
+
+        .modern-navbar-brand .subtitle {
+            display: block;
+            color: var(--bri-nusantara);
+            font-size: 0.62rem;
+            font-weight: 750;
+            line-height: 1.1;
+            letter-spacing: 0.13em;
             text-transform: uppercase;
         }
 
         .modern-user-menu {
             min-width: 220px;
-            border: 1px solid rgba(8, 87, 195, 0.16);
+            border: 1px solid rgba(8, 87, 195, 0.1);
             border-radius: 16px;
             padding: 0.5rem;
-            box-shadow: 0 18px 38px -24px rgba(8, 87, 195, 0.32);
+            box-shadow: 0 10px 30px rgba(8, 87, 195, 0.08);
         }
 
         .modern-user-menu .dropdown-item {
@@ -105,6 +148,45 @@
         .modern-user-menu .dropdown-item:hover {
             background: #fef2f2;
             color: #b91c1c;
+        }
+
+        .modern-user-name {
+            font-size: 0.9rem;
+            line-height: 1.05;
+            color: #0f172a;
+            max-width: 260px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .modern-user-caption {
+            font-size: 0.62rem;
+            letter-spacing: 0.15em;
+            color: var(--bri-nusantara);
+        }
+
+        .modern-navbar .dropdown-toggle::after {
+            display: none;
+        }
+
+        @media (max-width: 575.98px) {
+            .main-header.modern-navbar {
+                padding-left: 0.6rem;
+                padding-right: 0.6rem;
+            }
+
+            .modern-navbar-brand {
+                display: none;
+            }
+
+            .modern-user-trigger {
+                padding: 0.3rem;
+            }
+
+            .modern-user-badge {
+                margin-right: 0 !important;
+            }
         }
 
         .content-wrapper {
@@ -129,7 +211,7 @@
         .card {
             border: 1px solid rgba(8, 87, 195, 0.12);
             border-radius: 1rem;
-            box-shadow: 0 18px 34px -28px rgba(4, 42, 95, 0.28);
+            box-shadow: 0 18px 34px -28px rgba(8, 87, 195, 0.18);
             overflow: hidden;
         }
 
@@ -145,7 +227,7 @@
             border-radius: 0.8rem;
             font-weight: 700;
             padding: 0.64rem 1rem;
-            box-shadow: 0 14px 24px -20px rgba(4, 42, 95, 0.45);
+            box-shadow: 0 14px 24px -20px rgba(8, 87, 195, 0.3);
         }
 
         .btn-primary,
@@ -347,18 +429,20 @@
         }
 
         .main-sidebar .nav-link.active {
-            background: linear-gradient(120deg, rgba(113, 197, 232, 0.36), rgba(48, 127, 226, 0.5)) !important;
+            background: linear-gradient(135deg, var(--bri-nusantara) 0%, var(--bri-cakrawala) 100%) !important;
             color: #ffffff !important;
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+            box-shadow: 0 6px 20px rgba(8, 87, 195, 0.25) !important;
+            border-color: rgba(255, 255, 255, 0.15) !important;
         }
 
         .main-sidebar .nav-link:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: #ffffff !important;
+            background: rgba(8, 87, 195, 0.05) !important;
+            color: var(--bri-nusantara) !important;
         }
 
         .main-sidebar .nav-treeview > .nav-item > .nav-link.active {
-            background: rgba(113, 197, 232, 0.2) !important;
+            background: rgba(8, 87, 195, 0.06) !important;
+            color: var(--bri-nusantara) !important;
         }
 
         /* Seamless Sidebar Transitions */
@@ -418,7 +502,7 @@
         .sidebar-mini.sidebar-collapse .main-sidebar:hover,
         .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused {
             width: 270px !important;
-            box-shadow: 18px 0 38px -24px rgba(4, 42, 95, 0.56) !important;
+            box-shadow: 18px 0 38px -24px rgba(8, 87, 195, 0.08) !important;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-text,
@@ -539,6 +623,14 @@
                     <i class="fas fa-bars"></i>
                 </a>
             </li>
+            <li class="nav-item d-none d-md-flex align-items-center">
+                <div class="modern-navbar-brand" aria-label="A-Six dashboard">
+                    <span>
+                        <span class="title">A-Six Dashboard</span>
+                        <span class="subtitle">Area 6 Monitoring</span>
+                    </span>
+                </div>
+            </li>
         </ul>
 
         <ul class="navbar-nav ml-auto">
@@ -546,10 +638,10 @@
                 <a class="nav-link modern-user-trigger d-flex align-items-center" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">
                     <span class="modern-user-badge mr-3">{{ strtoupper(substr(Auth::user()->name, 0, 2)) }}</span>
                     <span class="d-none d-sm-block">
-                        <span class="d-block font-weight-bold" style="font-size: 0.92rem; line-height: 1.05; color: #0b3b80;">{{ Auth::user()->pn }} - {{ Auth::user()->name }}</span>
-                        <span class="d-block text-uppercase" style="font-size: 0.62rem; letter-spacing: 0.16em; color: #5b7da7;">A-Six Account</span>
+                        <span class="d-block font-weight-bold modern-user-name">{{ Auth::user()->pn }} - {{ Auth::user()->name }}</span>
+                        <span class="d-block text-uppercase font-weight-bold modern-user-caption">A-Six Account</span>
                     </span>
-                    <i class="fas fa-chevron-down ml-3" style="font-size: 0.75rem; color: #4f72a0;"></i>
+                    <i class="fas fa-chevron-down ml-3" style="font-size: 0.75rem; color: #71c5e8;"></i>
                 </a>
 
                 <div class="dropdown-menu dropdown-menu-right modern-user-menu">

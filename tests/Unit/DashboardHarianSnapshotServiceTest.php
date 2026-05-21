@@ -1262,6 +1262,56 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(0, $metadata['source_recovery_row_count']);
     }
 
+    public function test_dashboard_harian_snapshot_guard_blocks_kur_kpp_that_absorbs_consumer_kpr(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_pinjaman')->insert([
+            [
+                'month_day_year_of_periode' => '2026-05-15',
+                'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+                'nama_uker' => '00045 -- KC Madiun',
+                'segmen_dashboard' => 'Micro',
+                'produk_dashboard' => 'KPR',
+                'produk' => 'KREDIT MIKRO - KPP',
+                'segmen_2025' => 'Micro',
+                'kolektabilitas_one_obligor' => '1',
+                'baki_debet' => 7_668_000_000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'month_day_year_of_periode' => '2026-05-15',
+                'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+                'nama_uker' => '00045 -- KC Madiun',
+                'segmen_dashboard' => 'Consumer',
+                'produk_dashboard' => 'KPR',
+                'produk' => 'KPR',
+                'segmen_2025' => 'Consumer',
+                'kolektabilitas_one_obligor' => '1',
+                'baki_debet' => 272_130_000_000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $guard = new \ReflectionMethod($service, 'guardKurKppSnapshotAgainstSsaSource');
+        $guard->setAccessible(true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('blocked anomalous kur_kpp_os');
+
+        $guard->invoke($service, '2026-05-15', [[
+            'snapshot_period' => '2026-05-15',
+            'kanca_key' => 'kc-madiun',
+            'kanca_label' => 'KC Madiun',
+            'unit_key' => 'kc-madiun',
+            'unit_label' => 'KC Madiun',
+            'kur_kpp_os' => 279_657_000_000,
+        ]]);
+    }
+
     private function createSourceMetadataTables(): void
     {
         foreach (['dashboard_harian_snapshots', 'ssa_pinjaman', 'ssa_simpanan', 'hourly_dpk', 'dly_kap_resegmentasi', 'l1133', 'cognos_recovery', 'lw325_ph'] as $table) {

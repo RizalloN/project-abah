@@ -217,7 +217,7 @@
     .daily-filter-shell {
         position: relative;
         z-index: 80;
-        margin-bottom: 1rem;
+        margin-bottom: 0.5rem;
         padding: 1rem 1.1rem 1.05rem;
         background:
             linear-gradient(180deg, rgba(236, 243, 255, 0.98) 0%, rgba(255, 255, 255, 0.98) 72%),
@@ -1319,8 +1319,8 @@
             <div class="d-flex align-items-center">
                 <h1 class="daily-panel-title">DASHBOARD KERAGAAN HARIAN</h1>
             </div>
-            <div class="d-flex align-items-center gap-2">
-                <a id="exportExcelBtn" href="{{ route('dashboard.harian.export') }}" class="btn btn-sm btn-export-all">
+            <div class="d-flex align-items-center">
+                <a id="exportExcelBtn" href="{{ route('dashboard.harian.export') }}" class="btn btn-sm btn-export-all mr-2">
                     <i class="fas fa-file-excel mr-1"></i> EXPORT EXCEL
                 </a>
                 <button id="captureAllBtn" class="btn btn-sm btn-export-all">
@@ -1432,17 +1432,7 @@
             </div>
         </div>
 
-        <div class="p-4 bg-white">
-        <div class="row mb-3 align-items-center">
-            <div class="col">
-                <!-- Data metrics summary would go here if needed -->
-            </div>
-            <div class="col-auto">
-                <span class="daily-meta-chip py-1 px-2 border-primary-soft" style="background: rgba(0, 82, 156, 0.05); color: var(--bri-blue-main); font-size: 0.75rem;">
-                    <i class="fas fa-coins mr-1"></i> Satuan: Dalam <strong>Rp Juta (Rp J)</strong>
-                </span>
-            </div>
-        </div>
+        <div class="px-4 pb-4 pt-1 bg-white">
         <div class="daily-table-region" data-table-region>
             <div class="daily-table-wrap">
                     <table class="table table-hover daily-table">
@@ -2787,7 +2777,6 @@
                 
                 // Get precise computed widths of all columns from a fully-rendered row in the original table
                 let originalColWidths = [];
-                const tbodyRows = Array.from(document.querySelectorAll('#daily-dashboard-body tr'));
                 for (const row of tbodyRows) {
                     if (row.cells.length === 20 && !row.classList.contains('row-hidden-by-scope')) {
                         originalColWidths = Array.from(row.cells).map(cell => cell.getBoundingClientRect().width);

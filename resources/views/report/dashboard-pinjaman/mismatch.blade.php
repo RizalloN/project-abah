@@ -179,44 +179,39 @@
 
     .select2-container--bootstrap4, .loan-filter-control { display: none !important; }
 
-    .loan-dashboard .loan-title-hero {
-        justify-content: flex-start !important;
-        margin-bottom: 1rem;
-        padding: 1rem 0;
-        border-radius: 0;
-        background: transparent;
-        color: #0f172a;
-        box-shadow: none;
-        border-bottom: 1px solid #e5e7eb;
+    /* Integrated Header Styling */
+    .loan-header-banner {
+        border-bottom: 1px solid #e2e8f0;
+        padding-bottom: 1rem;
     }
-
-    .loan-dashboard .loan-title-hero__wrap {
-        width: 100%;
-        text-align: left;
+    
+    .loan-header-icon-wrap {
+        background: linear-gradient(135deg, #0f766e 0%, #115e59 100%);
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #ffffff;
+        box-shadow: 0 4px 10px rgba(15, 118, 110, 0.15);
     }
-
-    .loan-dashboard .loan-title-hero__badge {
-        margin-bottom: 0.35rem;
-        padding: 0;
-        background: transparent;
+    
+    .loan-header-badge {
+        font-size: 0.65rem;
+        font-weight: 800;
         color: #64748b;
-        letter-spacing: 0;
-        text-transform: none;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        line-height: 1.2;
     }
-
-    .loan-dashboard .loan-title-hero__badge i {
-        color: #0f766e;
-    }
-
-    .loan-dashboard .loan-title-hero__title {
+    
+    .loan-header-title {
+        font-size: 1.4rem;
+        font-weight: 800;
         color: #0f172a;
-        font-size: 1.45rem;
-        letter-spacing: 0;
-        text-transform: none;
-    }
-
-    .loan-dashboard .loan-title-hero__desc {
-        display: none;
+        margin: 0;
+        letter-spacing: -0.02em;
     }
 
     .loan-filter-modern {
@@ -226,7 +221,7 @@
         backdrop-filter: none;
         padding: 1rem;
         border-radius: 8px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid #cbd5e1;
         box-shadow: none;
         margin-bottom: 0;
     }
@@ -253,6 +248,7 @@
     }
 
     .loan-mismatch-summary {
+        display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 1rem;
         margin: 1rem 0;
@@ -264,6 +260,7 @@
         background: #ffffff;
         box-shadow: none;
         transition: none;
+        border: 1px solid #cbd5e1;
     }
 
     .loan-mismatch-card:hover {
@@ -278,127 +275,142 @@
     .loan-audit-label {
         letter-spacing: 0;
         text-transform: none;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #475569;
+        margin-bottom: 0.25rem;
     }
 
     .loan-audit-value {
         font-size: 1.35rem;
+        font-weight: 800;
+        color: #0f172a;
     }
 
+    /* Crisp spreadsheet Excel-style container & inner tables */
     .loan-mismatch-table-wrap {
-        border-radius: 8px;
+        border-radius: 0 !important;
         overflow: auto;
-        border: 1px solid #cbd5e1;
+        border: 1px solid #94a3b8 !important;
         background: #ffffff;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        box-shadow: none !important;
     }
 
     .loan-mismatch-table {
-        border-collapse: separate;
-        border-spacing: 0;
+        border-collapse: collapse !important;
+        border: 1px solid #94a3b8 !important;
         table-layout: fixed;
         min-width: 1280px;
-        color: #1f2937;
         font-size: 0.78rem;
     }
 
     .loan-mismatch-table th,
     .loan-mismatch-table td {
-        border-right: 1px solid #dbe3ef !important;
-        border-bottom: 1px solid #dbe3ef !important;
+        border: 1px solid #cbd5e1 !important; /* Muted crisp excel inner gridlines */
         line-height: 1.25;
-        padding: 0.42rem 0.5rem !important;
+        padding: 6px 8px !important;
         vertical-align: middle !important;
         white-space: normal;
+        border-radius: 0 !important;
     }
 
-    .loan-mismatch-table th:last-child,
-    .loan-mismatch-table td:last-child {
-        border-right: none !important;
-    }
-
+    /* Excel Corporate Header Styling */
     .loan-mismatch-table thead th {
-        background: var(--loan-blue-deep) !important;
+        background-color: #475569 !important; /* Premium corporate slate gray */
         color: #ffffff !important;
-        letter-spacing: 0;
-        text-transform: none;
-        border-right: 1px solid rgba(255, 255, 255, 0.18) !important;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.18) !important;
-        font-size: 0.72rem;
-        font-weight: 800;
-        padding: 0.46rem 0.5rem !important;
+        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        font-weight: 700 !important;
+        font-size: 0.74rem !important;
+        letter-spacing: 0.02em !important;
+        padding: 8px !important;
+        border: 1px solid #334155 !important;
+        text-align: center !important;
+        vertical-align: middle !important;
         white-space: nowrap;
+        border-radius: 0 !important;
     }
 
     .loan-mismatch-table thead tr:first-child th {
-        background: var(--loan-blue-ink) !important;
-        color: #ffffff !important;
+        background-color: #1e293b !important; /* Deep corporate dark slate */
+        border: 1px solid #0f172a !important;
     }
 
     .loan-mismatch-table thead tr:nth-child(2) th {
-        background: var(--loan-blue) !important;
-        color: #ffffff !important;
+        background-color: #334155 !important; /* Slate */
+        border: 1px solid #1e293b !important;
     }
 
+    /* Grid Cells with Excel Grid Lines */
     .loan-mismatch-table tbody td {
-        background: #ffffff;
-        font-weight: 600;
+        background: #ffffff !important;
+        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        font-size: 0.82rem !important;
+        font-weight: 600 !important;
+        color: #1e293b !important;
         height: 34px;
+        border-radius: 0 !important;
     }
 
+    /* Subtle Zebra Striping for detail data rows only */
     .loan-mismatch-table tbody tr:nth-child(even) td {
-        background: #fbfdff;
+        background: #f8fafc !important;
     }
 
     .loan-mismatch-table tbody tr:hover td {
-        background: #f1f7ff;
+        background: #f1f5f9 !important;
     }
 
     .loan-mismatch-table tbody td:first-child {
-        color: #64748b;
-        text-align: center;
-        font-weight: 700;
+        color: #64748b !important;
+        text-align: center !important;
+        font-weight: 700 !important;
     }
 
     .loan-mismatch-table tbody td:nth-child(2) {
-        color: #0f172a;
-        font-weight: 800;
+        color: #0f172a !important;
+        font-weight: 800 !important;
         word-break: break-word;
+        text-align: left !important;
     }
 
     .loan-mismatch-table tbody td:nth-child(3),
     .loan-mismatch-table tbody td:nth-child(5),
     .loan-mismatch-table tbody td:nth-child(7),
     .loan-mismatch-table tbody td:nth-child(9) {
-        text-align: center;
-        font-variant-numeric: tabular-nums;
+        text-align: center !important;
+        font-variant-numeric: tabular-nums !important;
     }
 
     .loan-mismatch-table tbody td:nth-child(4),
     .loan-mismatch-table tbody td:nth-child(6),
     .loan-mismatch-table tbody td:nth-child(8),
     .loan-mismatch-table tbody td:nth-child(10) {
-        text-align: right;
-        font-variant-numeric: tabular-nums;
-        white-space: nowrap;
+        text-align: right !important;
+        font-variant-numeric: tabular-nums !important;
+        white-space: nowrap !important;
     }
 
     .loan-mismatch-table tbody td:nth-child(11) {
-        text-align: center;
+        text-align: center !important;
     }
 
+    /* Accounting Double-Underline Excel Grand Total Styling */
     .loan-mismatch-table tfoot th,
     .loan-mismatch-table tfoot td {
-        background: var(--loan-blue-ink) !important;
-        color: #ffffff !important;
-        font-weight: 800;
-        border-right: 1px solid rgba(255, 255, 255, 0.18) !important;
-        border-bottom: none !important;
+        background-color: #cbd5e1 !important; /* Excel total row solid steel color */
+        color: #0f172a !important;
+        font-weight: 800 !important;
+        font-size: 0.85rem !important;
+        border: 1px solid #94a3b8 !important;
+        border-top: 2px solid #334155 !important;
+        border-bottom: 4px double #000000 !important; /* Classic Excel double underline */
+        border-radius: 0 !important;
     }
 
     .loan-mismatch-table tfoot td {
-        text-align: center;
-        font-variant-numeric: tabular-nums;
-        white-space: nowrap;
+        text-align: center !important;
+        font-variant-numeric: tabular-nums !important;
+        white-space: nowrap !important;
     }
 
     .loan-mismatch-table tfoot td.text-right {
@@ -408,9 +420,10 @@
     .loan-mismatch-table .btn {
         min-height: 28px;
         padding: 0.22rem 0.5rem;
-        border-radius: 6px;
+        border-radius: 4px;
         font-size: 0.72rem;
         line-height: 1.2;
+        font-weight: 700;
     }
 
     @media (max-width: 991.98px) {
@@ -422,23 +435,26 @@
 </style>
 
 <div class="loan-dashboard pt-4">
-    <div class="loan-title-hero d-flex flex-wrap justify-content-center align-items-center">
-        <div class="loan-title-hero__wrap">
-            <div class="loan-title-hero__badge">
-                <i class="fas fa-clipboard-check"></i>
-                <span>Dashboard Pinjaman</span>
-            </div>
-            <h1 class="loan-title-hero__title">Kolek Tidak Sesuai</h1>
-        </div>
-    </div>
-
     <div id="loanMismatchPanel">
         <div class="card loan-shell mb-4 animate-reveal">
             <div class="card-body p-4">
+                <!-- Integrated Page Header inside Card -->
+                <div class="d-flex align-items-center justify-content-between mb-4 pb-3 loan-header-banner">
+                    <div class="d-flex align-items-center">
+                        <div class="mr-3 text-white d-flex align-items-center justify-content-center loan-header-icon-wrap">
+                            <i class="fas fa-clipboard-check fa-lg"></i>
+                        </div>
+                        <div>
+                            <span class="loan-header-badge">Dashboard Pinjaman</span>
+                            <h3 class="loan-header-title">Kolek Tidak Sesuai</h3>
+                        </div>
+                    </div>
+                </div>
+
                 <form id="loanMismatchForm" method="GET" action="{{ route('report.dashboard-pinjaman.kolek-tidak-sesuai') }}">
                     <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-3">
                         <div>
-                            <h5 class="mb-1 font-weight-bold text-dark">Filter</h5>
+                            <h6 class="mb-0 text-uppercase text-muted font-weight-bold" style="font-size: 0.72rem; letter-spacing: 0.08em;"><i class="fas fa-filter mr-1 text-teal"></i> Parameter Pencarian</h6>
                         </div>
                     </div>
 
@@ -474,11 +490,8 @@
 
                         <div>
                             <button id="loanMismatchSubmitButton" type="submit" class="btn-loan-modern-submit w-100">
-                                <i class="fas fa-search"></i> Proses
+                                <i class="fas fa-search mr-1"></i> Proses
                             </button>
-                            <div id="loanMismatchLoadingChip" class="loan-loading-chip d-none mt-2 justify-content-center">
-                                <span class="loan-loading-dot"></span> Memuat
-                            </div>
                         </div>
                     </div>
                 </form>
@@ -575,7 +588,6 @@
         const branchSelect = document.getElementById('loanMismatchCabangSelect');
         const body = document.getElementById('loanMismatchBody');
         const foot = document.getElementById('loanMismatchFoot');
-        const chip = document.getElementById('loanMismatchLoadingChip');
         const submitButton = document.getElementById('loanMismatchSubmitButton');
         const badge = document.getElementById('loanMismatchPeriodBadge');
         
@@ -632,7 +644,9 @@
             const selectedBranch = getSelectedBranch();
 
             if (!periodInput.value || !selectedBranch) return;
-            chip.classList.remove('d-none');
+            
+            const originalBtnHtml = submitButton.innerHTML;
+            submitButton.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Memuat...`;
             submitButton.disabled = true;
             
             try {
@@ -647,7 +661,7 @@
                 document.getElementById('loanMismatchUnits').textContent = formatNumber(payload.audit.units_with_mismatch);
                 document.getElementById('loanMismatchOutstanding').textContent = formatCurrency(payload.audit.total_outstanding_balance);
             } finally {
-                chip.classList.add('d-none');
+                submitButton.innerHTML = originalBtnHtml;
                 submitButton.disabled = false;
             }
         }

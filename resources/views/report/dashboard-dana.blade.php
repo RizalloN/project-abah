@@ -515,53 +515,136 @@
         box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
     }
 
-    .dana-dashboard .dana-card,
-    .dana-dashboard .dana-filter-bar,
-    .dana-dashboard .dana-dropdown-toggle,
-    .dana-dashboard .dana-dropdown-menu,
-    .dana-dashboard .dana-dropdown-option,
-    .dana-dashboard .btn-dana-refresh,
-    .dana-dashboard .btn-capture-all,
-    .dana-dashboard .perf-badge,
-    .capture-status-modal .modal-content,
+    .dana-dashboard .dana-card {
+        border-radius: 12px !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.02) !important;
+        border: 1px solid #e2e8f0 !important;
+        background: #ffffff !important;
+        overflow: hidden !important;
+    }
+
+    .dana-dashboard .dana-filter-bar {
+        border-radius: 12px !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02) !important;
+        border: 1px solid #e2e8f0 !important;
+        background: #ffffff !important;
+        padding: 1.25rem !important;
+    }
+
+    .dana-dashboard .dana-dropdown-toggle {
+        border-radius: 8px !important;
+        border: 1.5px solid #e2e8f0 !important;
+        height: 42px !important;
+        padding-left: 2.75rem !important;
+        font-size: 0.88rem !important;
+        box-shadow: none !important;
+        transition: all 0.2s ease !important;
+    }
+
+    .dana-dashboard .dana-dropdown-toggle:hover {
+        border-color: var(--dana-accent) !important;
+        background: #fafbfc !important;
+    }
+
+    .dana-dashboard .dana-dropdown-menu {
+        border-radius: 12px !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08) !important;
+    }
+
+    .dana-dashboard .dana-dropdown-option {
+        border-radius: 8px !important;
+        font-size: 0.85rem !important;
+    }
+
+    .dana-dashboard .btn-dana-refresh {
+        border-radius: 8px !important;
+        height: 42px !important;
+        font-weight: 600 !important;
+        padding: 0 1.5rem !important;
+        background: linear-gradient(135deg, #0f4c81 0%, #1e40af 100%) !important;
+        box-shadow: 0 4px 12px rgba(15, 76, 129, 0.2) !important;
+    }
+
+    .dana-dashboard .btn-dana-refresh:hover {
+        transform: translateY(-1px) !important;
+        box-shadow: 0 6px 16px rgba(15, 76, 129, 0.3) !important;
+    }
+
+    .dana-dashboard .btn-capture-all {
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        padding: 0.5rem 1rem !important;
+    }
+
+    .dana-dashboard .perf-badge {
+        border-radius: 6px !important;
+        font-size: 0.72rem !important;
+        font-weight: 750 !important;
+        padding: 0.25rem 0.5rem !important;
+        min-width: 60px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    .perf-badge.bg-warn { 
+        background: #fffbeb !important; 
+        color: #b45309 !important; 
+        border: 1px solid #fef3c7 !important;
+    }
+
+    .capture-status-modal .modal-content {
+        border-radius: 0 !important;
+    }
+
     .capture-status-modal .btn {
         border-radius: 0 !important;
     }
 
-    .dana-dashboard .dana-card,
-    .dana-dashboard .dana-filter-bar {
-        box-shadow: none !important;
-        border: 1px solid #b7c9dc;
-        backdrop-filter: none;
-    }
-
+    /* Modernized Classic Excel Table Grid styling */
     .dana-dashboard .dana-table thead th,
     .dana-dashboard .dana-table thead .group-position,
     .dana-dashboard .dana-table thead .group-delta,
     .dana-dashboard .dana-table thead .group-rka {
-        background: #1f4e78 !important;
-        border: 1px solid #9fb8d3 !important;
+        background: linear-gradient(180deg, #10355a 0%, #0c2844 100%) !important;
+        border: 1px solid #244b70 !important;
+        color: #ffffff !important;
+        font-size: 0.7rem !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.04em !important;
+        text-transform: uppercase !important;
+        padding: 0.5rem 0.3rem !important;
     }
 
     .dana-dashboard .dana-table tbody td {
-        border: 1px solid #d9e2f3 !important;
+        border: 1px solid #cbd5e1 !important;
         background-clip: padding-box;
+        padding: 0.4rem 0.5rem !important;
+        font-size: 0.72rem !important;
+        font-weight: 500 !important;
     }
 
     .dana-dashboard .subtotal-row,
     .dana-dashboard .subtotal-row td {
-        background: #ddebf7 !important;
-        color: #1f4e78 !important;
+        background: #e6f4ff !important;
+        color: #0c3b6d !important;
+        font-weight: 700 !important;
+        border-color: #bae6fd !important;
     }
 
     .dana-dashboard .grandtotal-row,
     .dana-dashboard .grandtotal-row td {
-        background: #1f4e78 !important;
+        background: #0c2844 !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        font-size: 0.8rem !important;
+        border-color: #1a3c5e !important;
     }
 
     .dana-dashboard .sticky-col,
     .dana-dashboard .branch-cell {
-        border-color: #b7c9dc !important;
+        border-color: #cbd5e1 !important;
     }
 
 </style>
@@ -575,10 +658,6 @@
             <button id="captureAllBtn" class="btn btn-sm btn-capture-all">
                 <i class="fas fa-file-image mr-1"></i> EXPORT A4
             </button>
-            <div class="dana-total-display text-right">
-                <span style="font-size: 0.7rem; font-weight: 700; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: -2px;">Total Dana Kelolaan</span>
-                <span style="font-size: 1.25rem; font-weight: 800;" id="headerTotalDana">-</span>
-            </div>
         </div>
     </div>
 
@@ -653,8 +732,7 @@
                     <table class="dana-table">
                         <thead>
                             <tr class="group-row">
-                                <th rowspan="2" class="text-center sticky-col" width="40" style="left: 0; z-index: 21;">No</th>
-                                <th rowspan="2" class="sticky-col" width="135" style="left: 40px; z-index: 21;">Kantor Cabang</th>
+                                <th rowspan="2" class="sticky-col" width="135" style="left: 0; z-index: 21;">Kantor Cabang</th>
                                 <th rowspan="2" class="text-center" width="140">Kategori</th>
                                 <th colspan="3" class="text-center border-bottom group-position">Posisi Saldo (Rp)</th>
                                 <th colspan="2" class="text-center border-bottom border-left group-delta">Delta Posisi</th>
@@ -787,6 +865,20 @@ document.addEventListener('DOMContentLoaded', function() {
             return map[name.toUpperCase()] || name;
         };
 
+        const getCellBg = (pct) => {
+            const num = parseFloat(pct) || 0;
+            if (num >= 100) return '#c6f6d5'; // Solid highly visible Excel green
+            if (num < 90) return '#ffe3e3'; // Solid highly visible Excel red
+            return '#fff3bf'; // Solid highly visible Excel yellow
+        };
+
+        const getCellColor = (pct) => {
+            const num = parseFloat(pct) || 0;
+            if (num >= 100) return '#22543d'; // Excel dark green text
+            if (num < 90) return '#742a2a'; // Excel dark red text
+            return '#744210'; // Excel dark yellow/brown text
+        };
+
         const loadData = () => {
             $('#loader').fadeIn(200);
             
@@ -810,10 +902,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     html += `
                         <tr class="${isTotal ? 'subtotal-row' : ''}">
                             ${isStartOfBranch ? `
-                            <td class="text-center text-muted sticky-col" rowspan="5" style="left: 0;">
-                                ${row.no || ''}
-                            </td>
-                            <td class="sticky-col branch-cell" rowspan="5" style="left: 40px;">
+                            <td class="sticky-col branch-cell" rowspan="5" style="left: 0;">
                                 <div class="branch-name">${row.nama_cabang}</div>
                             </td>
                             ` : ''}
@@ -825,11 +914,9 @@ document.addEventListener('DOMContentLoaded', function() {
                             <td class="val-cell ${isTotal ? 'font-weight-bold' : ''}">${formatMoney(row.selected)}</td>
                             <td class="delta-cell ${getColorClass(row.delta_ytd)} ${isTotal ? 'font-weight-bold' : ''}">${formatMoney(row.delta_ytd)}</td>
                             <td class="delta-cell ${getColorClass(row.delta_mtd)} ${isTotal ? 'font-weight-bold' : ''}">${formatMoney(row.delta_mtd)}</td>
-                            <td class="val-cell ${getColorClass(row.rka_rp)} ${isTotal ? 'font-weight-bold' : ''}" style="background: rgba(240, 253, 244, 0.5);">${formatMoney(row.rka_rp)}</td>
-                            <td class="perf-cell" style="background: rgba(240, 253, 244, 0.5);">
-                                <span class="perf-badge ${parseFloat(row.rka_pct) >= 100 ? 'bg-pos' : 'bg-neg'}">
-                                    ${formatPercent(row.rka_pct)}
-                                </span>
+                            <td class="val-cell ${getColorClass(row.rka_rp)} ${isTotal ? 'font-weight-bold' : ''}" style="background: ${getCellBg(row.rka_pct)} !important; color: ${getCellColor(row.rka_pct)} !important;">${formatMoney(row.rka_rp)}</td>
+                            <td class="perf-cell val-cell" style="background: ${getCellBg(row.rka_pct)} !important; color: ${getCellColor(row.rka_pct)} !important; font-weight: bold; text-align: center;">
+                                ${formatPercent(row.rka_pct)}
                             </td>
                         </tr>
                     `;
@@ -838,23 +925,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 const gt = res.total;
                 html += `
                     <tr class="grandtotal-row">
-                        <td colspan="3" class="text-center">TOTAL AREA 6</td>
+                        <td colspan="2" class="text-center">TOTAL AREA 6</td>
                         <td class="val-cell">${formatMoney(gt.ytd)}</td>
                         <td class="val-cell">${formatMoney(gt.mtd)}</td>
                         <td class="val-cell">${formatMoney(gt.selected)}</td>
                         <td class="delta-cell ${getColorClass(gt.delta_ytd)}">${formatMoney(gt.delta_ytd)}</td>
                         <td class="delta-cell ${getColorClass(gt.delta_mtd)}">${formatMoney(gt.delta_mtd)}</td>
-                        <td class="val-cell ${getColorClass(gt.rka_rp)}">${formatMoney(gt.rka_rp)}</td>
-                        <td class="perf-cell">
-                            <span class="perf-badge bg-pos" style="border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white;">
-                                ${formatPercent(gt.rka_pct)}
-                            </span>
+                        <td class="val-cell" style="background: ${getCellBg(gt.rka_pct)} !important; color: ${getCellColor(gt.rka_pct)} !important; font-weight: bold;">${formatMoney(gt.rka_rp)}</td>
+                        <td class="perf-cell val-cell" style="background: ${getCellBg(gt.rka_pct)} !important; color: ${getCellColor(gt.rka_pct)} !important; font-weight: bold; text-align: center;">
+                            ${formatPercent(gt.rka_pct)}
                         </td>
                     </tr>
                 `;
 
                 $('#danaContent').html(html);
-                $('#headerTotalDana').text(formatMoney(res.total.selected / 1000000000));
             }).fail(function() {
                 $('#loader').fadeOut(200);
                 alert('Terjadi kesalahan saat memuat data.');

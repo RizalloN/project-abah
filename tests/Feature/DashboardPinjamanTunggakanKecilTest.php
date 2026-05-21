@@ -39,6 +39,9 @@ beforeEach(function () {
         $table->decimal('tunggakan_bunga', 20, 2)->nullable();
         $table->decimal('tunggakan_penalti', 20, 2)->nullable();
         $table->timestamps();
+        foreach (dailyLoanHelperOutputColumns() as $column) {
+            $table->string($column)->nullable();
+        }
 
         $table->index(['periode', 'cabang1', 'unit1'], 'idx_test_period_branch_unit');
     });
@@ -50,6 +53,27 @@ afterEach(function () {
     Schema::dropIfExists('daily_loan_dinamis');
     Schema::dropIfExists('users');
 });
+
+function dailyLoanHelperOutputColumns(): array
+{
+    return [
+        'segmen_kinerja',
+        'produk_kinerja',
+        'cabang_normalized',
+        'unit_normalized',
+        'branch_normalized',
+        'rm_normalized',
+        'pn_pemutus_normalized',
+        'cifno_clean',
+        'shadow_built_at',
+        'cabang_normalized_gc',
+        'unit_normalized_gc',
+        'branch_normalized_gc',
+        'rm_normalized_gc',
+        'pn_pemutus_normalized_gc',
+        'cifno_clean_gc',
+    ];
+}
 
 function seedSmallArrearsRows(): void
 {
@@ -376,6 +400,53 @@ it('counts kolek mismatch only for status one or three with positive baki debet'
     $response->assertJsonPath('summary_rows.0.outstanding_balance', 300);
 });
 
+it('excludes daily loan helper columns from kolek mismatch export', function () {
+    DB::table('daily_loan_dinamis')->insert(array_merge([
+        'uniqueid_namareport' => 'mismatch-helper-columns-export',
+        'periode' => '2026-04-22',
+        'cabang1' => 'KC Ponorogo',
+        'unit1' => 'Unit Ponorogo',
+        'nomor_rekening1' => 'KTS-HELPER-001',
+        'status_rekening1' => '1',
+        'baki_debet1' => 100,
+        'kolek' => 3,
+        'umur_tunggakan' => 10,
+    ], array_fill_keys(dailyLoanHelperOutputColumns(), 'helper-only')));
+
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->get('/report/dashboard-pinjaman/kolek-tidak-sesuai/export?' . http_build_query([
+            'periode' => '2026-04-22',
+            'cabang1' => ['KC Ponorogo'],
+        ]));
+
+    $response->assertOk();
+    $response->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+    $path = tempnam(sys_get_temp_dir(), 'kolek_mismatch_export_') . '.xlsx';
+    file_put_contents($path, $response->streamedContent());
+
+    try {
+        $sheet = IOFactory::load($path)->getActiveSheet();
+        $rows = $sheet->toArray(null, true, true, true);
+    } finally {
+        @unlink($path);
+    }
+
+    $headers = array_values($rows[1]);
+    expect($headers)->toContain('periode');
+    expect($headers)->toContain('kolek_seharusnya');
+    expect($headers)->toContain('keterangan');
+
+    foreach (dailyLoanHelperOutputColumns() as $helperColumn) {
+        expect($headers)->not->toContain($helperColumn);
+    }
+
+    expect(collect($rows)->skip(1)->pluck('D')->all())->toContain('KTS-HELPER-001');
+});
+
 it('keeps user selected period and returns zero totals when no data exists on that date', function () {
     seedSmallArrearsRows();
 
@@ -500,6 +571,9 @@ it('streams small arrears export as excel workbook for selected unit', function 
 
     expect(array_values($rows[1]))->toContain('periode');
     expect(array_values($rows[1]))->toContain('total_tunggakan_terhitung');
+    foreach (dailyLoanHelperOutputColumns() as $helperColumn) {
+        expect(array_values($rows[1]))->not->toContain($helperColumn);
+    }
 
     $accountValues = collect($rows)->skip(1)->pluck('D')->all();
     expect($accountValues)->toContain('LN-001');

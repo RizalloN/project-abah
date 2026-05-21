@@ -449,25 +449,36 @@ class DashboardDanaService
             ];
         }
 
-        $ukerFilter = [];
         $categoryLower = strtolower($category ?? 'all');
+
         if ($categoryLower === 'ritel') {
-            $ukerFilter = ['KC', 'KCP'];
+            $definitions = [
+                'Giro' => ['mata_anggaran' => ['Giro Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+                'Tabungan' => ['mata_anggaran' => ['Tabungan Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+                'Deposito' => ['mata_anggaran' => ['Deposito Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+                'CASA' => ['mata_anggaran' => ['Giro Retail Funding Total', 'Tabungan Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+            ];
         } elseif ($categoryLower === 'mikro' || $categoryLower === 'micro') {
-            $ukerFilter = ['UNIT'];
-        }
-
-        $definitions = [
-            'Giro' => ['mata_anggaran' => ['Giro Retail Funding Total', 'A.2.a. Giro Korporasi']],
-            'Tabungan' => ['mata_anggaran' => ['Tabungan Retail Funding Total']],
-            'Deposito' => ['mata_anggaran' => ['Deposito Retail Funding Total', 'A.2.b. Deposito Korporasi']],
-            'CASA' => ['mata_anggaran' => ['Giro Retail Funding Total', 'Tabungan Retail Funding Total', 'A.2.a. Giro Korporasi']],
-        ];
-
-        if (!empty($ukerFilter)) {
-            foreach ($definitions as &$def) {
-                $def['uker_contains_any'] = $ukerFilter;
-            }
+            $definitions = [
+                'Giro' => ['mata_anggaran' => ['Giro Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
+                'Tabungan' => ['mata_anggaran' => ['Tabungan Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
+                'Deposito' => ['mata_anggaran' => ['Deposito Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
+                'CASA' => ['mata_anggaran' => ['Giro Retail Funding Total', 'Tabungan Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
+            ];
+        } elseif ($categoryLower === 'wholesale') {
+            $definitions = [
+                'Giro' => ['mata_anggaran' => ['A.2.a. Giro Korporasi']],
+                'Tabungan' => ['mata_anggaran' => []],
+                'Deposito' => ['mata_anggaran' => ['A.2.b. Deposito Korporasi']],
+                'CASA' => ['mata_anggaran' => ['A.2.a. Giro Korporasi']],
+            ];
+        } else {
+            $definitions = [
+                'Giro' => ['mata_anggaran' => ['Giro Retail Funding Total', 'A.2.a. Giro Korporasi']],
+                'Tabungan' => ['mata_anggaran' => ['Tabungan Retail Funding Total']],
+                'Deposito' => ['mata_anggaran' => ['Deposito Retail Funding Total', 'A.2.b. Deposito Korporasi']],
+                'CASA' => ['mata_anggaran' => ['Giro Retail Funding Total', 'Tabungan Retail Funding Total', 'A.2.a. Giro Korporasi']],
+            ];
         }
 
         // RKA data is stored at the kanca level (only KC Ponorogo) and unit level (desc_uker)

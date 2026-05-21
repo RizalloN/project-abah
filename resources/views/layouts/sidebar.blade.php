@@ -1,9 +1,9 @@
 <style>
-    /* Premium Deep-Blue & Neon Accent Sidebar System */
+    /* Premium Bright-White & Biru Nusantara Accent Sidebar System */
     .main-sidebar {
-        background: linear-gradient(180deg, #042a5f 0%, #053b82 100%) !important;
-        border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
-        box-shadow: 10px 0 40px rgba(4, 42, 95, 0.25) !important;
+        background: #ffffff !important;
+        border-right: 1px solid rgba(8, 87, 195, 0.08) !important;
+        box-shadow: 10px 0 40px rgba(8, 87, 195, 0.03) !important;
         overflow-x: hidden !important;
         transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
     }
@@ -37,12 +37,10 @@
         padding: 0 0.5rem !important;
     }
 
-    /* Brand Header Panel - Deep Elegant Blend */
+    /* Brand Header Panel - Bright elegant white with subtle blue border */
     .sidebar-brand-link {
-        background: rgba(4, 42, 95, 0.4) !important;
-        backdrop-filter: blur(15px) !important;
-        -webkit-backdrop-filter: blur(15px) !important;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        background: #ffffff !important;
+        border-bottom: 1px solid rgba(8, 87, 195, 0.06) !important;
         padding: 1.25rem 1rem !important;
         transition: all 0.3s ease !important;
         display: block !important;
@@ -61,10 +59,10 @@
         width: 42px !important;
         height: 42px !important;
         border-radius: 12px !important;
-        background: rgba(255, 255, 255, 0.06) !important;
-        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        background: rgba(8, 87, 195, 0.05) !important;
+        border: 1px solid rgba(8, 87, 195, 0.12) !important;
         padding: 0px !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2) !important;
+        box-shadow: 0 4px 15px rgba(8, 87, 195, 0.04) !important;
         transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
         flex-shrink: 0 !important;
         display: flex !important;
@@ -106,9 +104,9 @@
 
     .sidebar-brand-link:hover .sidebar-brand-badge {
         transform: scale(1.05) rotate(-1.5deg);
-        border-color: rgba(255, 255, 255, 0.35) !important;
-        background: rgba(255, 255, 255, 0.08) !important;
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3) !important;
+        border-color: rgba(8, 87, 195, 0.25) !important;
+        background: rgba(8, 87, 195, 0.08) !important;
+        box-shadow: 0 6px 20px rgba(8, 87, 195, 0.1) !important;
     }
 
     .sidebar-brand-link:hover .sidebar-brand-badge img {
@@ -122,7 +120,7 @@
     }
 
     .sidebar-brand-text .title {
-        color: #ffffff !important;
+        color: #0f172a !important;
         font-size: 1.25rem !important;
         font-weight: 850 !important;
         letter-spacing: 0.02em !important;
@@ -130,41 +128,41 @@
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
-        background: linear-gradient(120deg, #ffffff 0%, #e2f1ff 100%);
+        background: linear-gradient(120deg, #0857c3 0%, #307fe2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        text-shadow: 0 2px 8px rgba(8, 87, 195, 0.05);
     }
 
     .sidebar-brand-text .subtitle {
         font-size: 0.62rem !important;
-        letter-spacing: 0.1em !important;
-        color: #71c5e8 !important; /* Mentari light blue */
-        font-weight: 700 !important;
+        letter-spacing: 0.15em !important;
+        color: #0857c3 !important; /* Biru Nusantara */
+        font-weight: 800 !important;
         text-transform: uppercase !important;
         margin-top: 0.12rem !important;
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
-        opacity: 0.9 !important;
+        opacity: 0.95 !important;
     }
 
-    /* Dark Glassmorphic User Profile Card - Avoids Cutoffs */
+    /* Modern Light Blue-Grey User Profile Card */
     .sidebar-user-panel {
         border-radius: 16px !important;
-        background: rgba(255, 255, 255, 0.04) !important;
-        border: 1px solid rgba(255, 255, 255, 0.07) !important;
-        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.05), 0 10px 30px rgba(0, 0, 0, 0.2) !important;
+        background: #f4f8ff !important;
+        border: 1px solid rgba(8, 87, 195, 0.08) !important;
+        box-shadow: 0 6px 20px rgba(8, 87, 195, 0.03) !important;
         padding: 0.72rem 0.8rem !important;
         margin: 1.25rem 0.4rem !important;
         transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
     }
 
     .sidebar-user-panel:hover {
-        background: rgba(255, 255, 255, 0.08) !important;
+        background: #eef5ff !important;
         transform: translateY(-2px);
-        border-color: rgba(255, 255, 255, 0.15) !important;
-        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08), 0 14px 35px rgba(0, 0, 0, 0.3) !important;
+        border-color: rgba(8, 87, 195, 0.15) !important;
+        box-shadow: 0 10px 25px rgba(8, 87, 195, 0.06) !important;
     }
 
     .sidebar-user-inner {
@@ -178,13 +176,13 @@
         width: 42px !important;
         height: 42px !important;
         border-radius: 12px !important;
-        background: linear-gradient(135deg, #307fe2 0%, #71c5e8 100%) !important;
+        background: linear-gradient(135deg, #0857c3 0%, #307fe2 100%) !important;
         color: #ffffff !important;
-        box-shadow: 0 4px 12px rgba(48, 127, 226, 0.3) !important;
+        box-shadow: 0 4px 12px rgba(8, 87, 195, 0.2) !important;
         font-size: 0.95rem !important;
         font-weight: 750 !important;
         letter-spacing: 0.03em !important;
-        border: 2px solid rgba(255, 255, 255, 0.25) !important;
+        border: 2px solid #ffffff !important;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -205,7 +203,7 @@
     .sidebar-user-info .name {
         font-size: 0.9rem !important;
         font-weight: 750 !important;
-        color: #ffffff !important;
+        color: #0f172a !important;
         line-height: 1.25;
         white-space: nowrap !important;
         overflow: hidden !important;
@@ -214,7 +212,7 @@
 
     .sidebar-user-info .pn {
         font-size: 0.75rem !important;
-        color: #71c5e8 !important;
+        color: #0857c3 !important; /* Biru Nusantara */
         font-weight: 600 !important;
         margin-top: 0.12rem;
         white-space: nowrap !important;
@@ -232,9 +230,9 @@
         align-items: flex-start !important; /* Align items to top to prevent overlap when wrapping */
         width: 100%;
         min-height: 45px;
-        padding: 0.75rem 0.95rem !important;
+        padding: 0.75rem 2.2rem 0.75rem 0.95rem !important;
         border-radius: 12px !important;
-        color: rgba(255, 255, 255, 0.8) !important;
+        color: #334155 !important; /* Elegant slate-grey for clean readable look */
         font-weight: 600 !important;
         font-size: 0.92rem !important;
         border: 1px solid transparent !important;
@@ -251,7 +249,7 @@
         margin-top: 0.15rem !important; /* Vertically align with top text row */
         font-size: 1.08rem !important;
         text-align: center;
-        color: #71c5e8 !important; /* Sky blue icons */
+        color: #0857c3 !important; /* Vibrant Biru Nusantara icons */
         transition: all 250ms cubic-bezier(0.25, 0.8, 0.25, 1) !important;
     }
 
@@ -268,32 +266,38 @@
     }
 
     .main-sidebar .nav-sidebar > .nav-item > .nav-link p .right {
-        margin-left: auto;
-        margin-top: 0.22rem;
+        position: absolute !important;
+        right: 0.95rem !important;
+        top: 0.95rem !important;
+        margin: 0 !important;
         font-size: 0.75rem !important;
-        color: rgba(255, 255, 255, 0.5) !important;
+        color: #64748b !important;
         transition: transform 250ms cubic-bezier(0.25, 0.8, 0.25, 1) !important;
         flex-shrink: 0 !important;
     }
 
-    /* Hover States - Deep Organic Micro-Movements */
+    /* Hover States - Organic Micro-Movements */
     .main-sidebar .nav-sidebar > .nav-item > .nav-link:hover {
-        background: rgba(255, 255, 255, 0.08) !important;
-        color: #ffffff !important;
+        background: rgba(8, 87, 195, 0.05) !important;
+        color: #0857c3 !important;
         transform: translateX(4px) !important;
     }
 
     .main-sidebar .nav-sidebar > .nav-item > .nav-link:hover .nav-icon {
         transform: scale(1.12) translateY(-0.5px) !important;
-        color: #a2d6f9 !important;
+        color: #307fe2 !important;
     }
 
-    /* Active States - Glowing Blue Accent Gradients */
+    .main-sidebar .nav-sidebar > .nav-item > .nav-link:hover p .right {
+        color: #0857c3 !important;
+    }
+
+    /* Active States - Premium Blue Accent Gradients */
     .main-sidebar .nav-sidebar > .nav-item > .nav-link.active {
         background: linear-gradient(135deg, #0857c3 0%, #307fe2 100%) !important;
         color: #ffffff !important;
-        box-shadow: 0 8px 24px rgba(8, 87, 195, 0.35) !important;
-        border-color: rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 6px 18px rgba(8, 87, 195, 0.2) !important;
+        border-color: rgba(255, 255, 255, 0.1) !important;
     }
 
     .main-sidebar .nav-sidebar > .nav-item > .nav-link.active .nav-icon {
@@ -317,7 +321,7 @@
         box-shadow: 0 0 8px rgba(255, 255, 255, 0.9) !important;
     }
 
-    /* Submenu Treeview - Premium Roadmap Connector Guides */
+    /* Submenu Treeview - Soft Blue Connector Guides */
     .main-sidebar .nav-sidebar .nav-treeview {
         position: relative !important;
         margin: 0.15rem 0 0.5rem 0.5rem !important;
@@ -333,7 +337,7 @@
         top: 0 !important;
         bottom: 0 !important;
         width: 1px !important;
-        background: rgba(255, 255, 255, 0.12) !important;
+        background: rgba(8, 87, 195, 0.12) !important;
     }
 
     .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link {
@@ -344,7 +348,7 @@
         margin-bottom: 0.18rem;
         padding: 0.55rem 0.85rem !important;
         border-radius: 10px !important;
-        color: rgba(255, 255, 255, 0.7) !important;
+        color: #475569 !important;
         font-size: 0.85rem !important;
         font-weight: 550 !important;
         background: transparent !important;
@@ -368,7 +372,7 @@
         margin-right: 0.65rem !important;
         margin-top: 0.18rem !important;
         font-size: 0.8rem !important;
-        color: rgba(255, 255, 255, 0.45) !important;
+        color: rgba(8, 87, 195, 0.5) !important;
         transition: all 200ms ease !important;
     }
 
@@ -381,44 +385,44 @@
         width: 5px !important;
         height: 5px !important;
         border-radius: 50% !important;
-        background: rgba(255, 255, 255, 0.25) !important;
+        background: rgba(8, 87, 195, 0.25) !important;
         transform: translateY(-50%) !important;
         transition: all 200ms ease !important;
     }
 
     /* Submenu Hover states */
     .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link:hover {
-        background: rgba(255, 255, 255, 0.05) !important;
-        color: #ffffff !important;
+        background: rgba(8, 87, 195, 0.04) !important;
+        color: #0857c3 !important;
         transform: translateX(3px) !important;
     }
 
     .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link:hover .nav-icon {
-        color: #71c5e8 !important;
+        color: #307fe2 !important;
         transform: scale(1.1) !important;
     }
 
     .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link:hover::before {
-        background: #71c5e8 !important;
+        background: #307fe2 !important;
         transform: translateY(-50%) scale(1.4) !important;
-        box-shadow: 0 0 6px rgba(113, 197, 232, 0.6) !important;
+        box-shadow: 0 0 6px rgba(48, 127, 226, 0.4) !important;
     }
 
     /* Submenu Active State */
     .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link.active {
-        background: rgba(255, 255, 255, 0.08) !important;
-        color: #71c5e8 !important;
+        background: rgba(8, 87, 195, 0.06) !important;
+        color: #0857c3 !important;
         font-weight: 700 !important;
     }
 
     .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link.active .nav-icon {
-        color: #71c5e8 !important;
+        color: #0857c3 !important;
     }
 
     .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link.active::before {
-        background: #71c5e8 !important;
+        background: #0857c3 !important;
         transform: translateY(-50%) scale(1.5) !important;
-        box-shadow: 0 0 8px rgba(113, 197, 232, 0.8) !important;
+        box-shadow: 0 0 8px rgba(8, 87, 195, 0.6) !important;
     }
 
     /* Section Header Custom Styling */
@@ -428,13 +432,13 @@
         padding: 1.6rem 0.95rem 0.6rem !important;
         margin: 0;
         font-size: 0.65rem !important;
-        font-weight: 750 !important;
+        font-weight: 800 !important;
         line-height: 1;
         letter-spacing: 0.16em !important;
         text-align: left !important;
-        color: rgba(113, 197, 232, 0.65) !important; /* Premium light blue category text */
+        color: #0857c3 !important; /* Premium Biru Nusantara category text */
         text-transform: uppercase !important;
-        opacity: 0.9;
+        opacity: 0.85;
     }
 
     /* Job Manager Badge custom glow styling */
@@ -503,7 +507,7 @@
     .sidebar-mini.sidebar-collapse .main-sidebar:hover,
     .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused {
         width: 280px !important;
-        box-shadow: 18px 0 45px rgba(0, 0, 0, 0.3) !important;
+        box-shadow: 18px 0 45px rgba(8, 87, 195, 0.08) !important;
     }
 
     .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-text,

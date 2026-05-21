@@ -20,7 +20,7 @@ class DashboardHarianSnapshotService
     private const L1133_TABLE = 'l1133';
     private const SAVINGS_TABLE = 'ssa_simpanan';
     private const HOURLY_DPK_TABLE = 'hourly_dpk';
-    private const SOURCE_SIGNATURE_VERSION = 'ssa-loan-l1133-micro-overlay-v3';
+    private const SOURCE_SIGNATURE_VERSION = 'ssa-loan-l1133-micro-overlay-v4-kur-kpp-guard';
     private const AUTO_SYNC_RECENT_SOURCE_HOURS = 6;
     private const AREA_6_LABEL = 'Area 6';
     private const ALL_UNIT_LABEL = 'Semua Unit Kerja';
@@ -474,6 +474,8 @@ class DashboardHarianSnapshotService
 
             return 0;
         }
+
+        $this->guardKurKppSnapshotAgainstSsaSource($period, $payload);
 
         // Atomic swap: InnoDB MVCC ensures concurrent readers continue seeing the
         // previous committed rows until this transaction commits — no visible gap.
@@ -1251,6 +1253,67 @@ class DashboardHarianSnapshotService
         }
 
         return array_values($deduplicated);
+    }
+
+    private function guardKurKppSnapshotAgainstSsaSource(string $period, array $payload): void
+    {
+        $normalizedPeriod = $this->normalizeDate($period) ?? $period;
+
+        if (
+            !$this->loanSourcePeriodExists($normalizedPeriod)
+            || $this->dlyKapResegmentasiAvailable($normalizedPeriod)
+            || $this->l1133Available($normalizedPeriod)
+        ) {
+            return;
+        }
+
+        $rawByKanca = DB::table(self::LOAN_TABLE . ' as sp')
+            ->whereIn('sp.month_day_year_of_periode', $this->sourcePeriodRawCandidates(self::LOAN_TABLE, $normalizedPeriod))
+            ->selectRaw("TRIM(COALESCE(sp.nama_cabang, '')) as raw_cabang")
+            ->selectRaw(
+                "SUM(CASE WHEN UPPER(TRIM(COALESCE(sp.segmen_dashboard, ''))) IN ('MICRO', 'MIKRO') "
+                . "AND UPPER(TRIM(COALESCE(sp.produk_dashboard, ''))) = 'KPR' "
+                . "THEN COALESCE(sp.baki_debet, 0) ELSE 0 END) as raw_kur_kpp_os"
+            )
+            ->groupBy('raw_cabang')
+            ->get()
+            ->mapWithKeys(function ($row): array {
+                $label = $this->normalizeKancaLabel($row->raw_cabang ?? null);
+
+                return $label === ''
+                    ? []
+                    : [$label => (float) ($row->raw_kur_kpp_os ?? 0)];
+            })
+            ->all();
+
+        if ($rawByKanca === []) {
+            return;
+        }
+
+        foreach ($payload as $row) {
+            if (!$this->isSummaryScopeRow($row)) {
+                continue;
+            }
+
+            $kancaLabel = (string) ($row['kanca_label'] ?? '');
+            if ($kancaLabel === '' || !array_key_exists($kancaLabel, $rawByKanca)) {
+                continue;
+            }
+
+            $rawValue = (float) $rawByKanca[$kancaLabel];
+            $snapshotValue = (float) ($row['kur_kpp_os'] ?? 0);
+            $tolerance = max(1_000_000.0, abs($rawValue) * 0.001);
+
+            if ($snapshotValue > $rawValue + $tolerance) {
+                throw new \RuntimeException(sprintf(
+                    'Dashboard Harian snapshot guard blocked anomalous kur_kpp_os for %s / %s: snapshot %.2f exceeds raw Micro KPR %.2f.',
+                    $normalizedPeriod,
+                    $kancaLabel,
+                    $snapshotValue,
+                    $rawValue
+                ));
+            }
+        }
     }
 
     private function isSummaryScopeRow(array $row): bool
