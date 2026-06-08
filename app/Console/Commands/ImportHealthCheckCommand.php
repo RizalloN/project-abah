@@ -30,6 +30,14 @@ class ImportHealthCheckCommand extends Command
                 $this->fixStuckJobs($stuckJobs);
             }
 
+            $this->info('Checking for slow database queries...');
+            $killedQueries = $this->killSlowQueries($shouldFix);
+            if (!empty($killedQueries)) {
+                $this->line("<fg=yellow>⚠ Auto-terminated " . count($killedQueries) . " stuck database query/queries.</>");
+            } else {
+                $this->line('<fg=green>✓ No stuck database queries detected.</>');
+            }
+
             return self::SUCCESS;
         } catch (\Throwable $e) {
             $this->error('Health check failed: ' . $e->getMessage());
@@ -137,5 +145,68 @@ class ImportHealthCheckCommand extends Command
         }
 
         $this->line("\n<fg=green>Snapshot queue should resume processing within 60 seconds.</>");
+    }
+
+    /**
+     * Inspect MySQL processlist and terminate stuck queries running longer than 60 seconds.
+     */
+    private function killSlowQueries(bool $shouldFix): array
+    {
+        $killed = [];
+        try {
+            $processes = DB::select("SHOW FULL PROCESSLIST");
+            foreach ($processes as $p) {
+                $queryInfo = strtolower((string) ($p->Info ?? ''));
+                // Target queries running longer than 60 seconds in Query/Execute state
+                // (excluding administrative tasks like ALTER or CREATE INDEX)
+                if (
+                    isset($p->Id, $p->Time, $p->Command, $p->Info) &&
+                    in_array($p->Command, ['Query', 'Execute'], true) &&
+                    $p->Time > 60 &&
+                    !$this->shouldIgnoreSlowQuery($queryInfo)
+                ) {
+                    if ($shouldFix) {
+                        DB::statement("KILL {$p->Id}");
+                        Log::warning("Auto-killed stuck database query to prevent lockup", [
+                            'process_id' => $p->Id,
+                            'time_seconds' => $p->Time,
+                            'query_info' => substr($p->Info, 0, 500),
+                        ]);
+                        $killed[] = $p->Id;
+                    } else {
+                        $this->line("<fg=yellow>⚠ Detected slow query (ID: {$p->Id}, Time: {$p->Time}s): " . substr($p->Info, 0, 100) . "...</>");
+                        $killed[] = $p->Id;
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::error("Failed to check or kill slow database queries: " . $e->getMessage());
+        }
+
+        return $killed;
+    }
+
+    private function shouldIgnoreSlowQuery(string $queryInfo): bool
+    {
+        if ($queryInfo === '') {
+            return true;
+        }
+
+        if (str_contains($queryInfo, 'alter table')
+            || str_contains($queryInfo, 'create index')
+            || str_contains($queryInfo, 'show full processlist')) {
+            return true;
+        }
+
+        if (str_contains($queryInfo, 'load data')) {
+            return true;
+        }
+
+        return str_contains($queryInfo, 'simpanan_multipn')
+            && (
+                str_contains($queryInfo, 'delete from')
+                || str_contains($queryInfo, 'insert into')
+                || str_contains($queryInfo, 'update ')
+            );
     }
 }

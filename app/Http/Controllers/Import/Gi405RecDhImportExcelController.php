@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -17,24 +18,12 @@ use ReflectionMethod;
 
 class Gi405RecDhImportExcelController extends ImportExcelController
 {
-    private const TABLE_NAME = 'gi405_singlerow';
+    private const TABLE_NAME = 'gi405_recovery';
     private const MAX_ERROR_SAMPLES = 8;
     private const REQUIRED_HEADERS = [
-        'PERIODE',
-        'BRANCH',
-        'CURRENCY',
-        'POSTING CONTROL',
-        'ACCOUNT NUMBER',
-        'C/C',
-        'P/C',
-        'F/C',
-        'DESCRIPTION',
-        'BEGINING BALANCE',
-        'EQUIVALENTS IDR',
-        'EQUIVALENTS USD',
-        'TODAY DEBIT',
-        'TODAY CREDIT',
-        'ENDING BALANCE',
+        'Periode',
+        'KODE',
+        'Pendapatan Koreksi PPAP-dr Angsuran PH',
     ];
 
     public function uploadExcel(Request $request, array $allowedExtensions = ['xlsx', 'xls'])
@@ -195,8 +184,8 @@ class Gi405RecDhImportExcelController extends ImportExcelController
     private function stageGi405WorkbookSheetToCsv(string $path, ?callable $send = null): array
     {
         $fingerprint = md5($path . '|' . ((string) (@filemtime($path) ?: '0')) . '|' . ((string) (@filesize($path) ?: '0')));
-        $directory = 'excel_imports/gi405_singlerow';
-        $relativeCsvPath = $directory . '/gi405_singlerow_' . $fingerprint . '.csv';
+        $directory = 'excel_imports/gi405_recovery';
+        $relativeCsvPath = $directory . '/gi405_recovery_' . $fingerprint . '.csv';
         $absoluteCsvPath = Storage::path($relativeCsvPath);
 
         if (file_exists($absoluteCsvPath) && filesize($absoluteCsvPath) > 0) {
@@ -232,7 +221,7 @@ class Gi405RecDhImportExcelController extends ImportExcelController
 
             $output = @fopen($absoluteCsvPath, 'wb');
             if ($output === false) {
-                throw new \RuntimeException('Gagal membuat CSV staging GI405 Single Row.');
+                throw new \RuntimeException('Gagal membuat CSV staging GI405 Recovery.');
             }
 
             try {
@@ -356,7 +345,7 @@ class Gi405RecDhImportExcelController extends ImportExcelController
             return null;
         }
 
-        // GI405 Single Row tidak memakai filter. Cukup cegah import ulang untuk periode yang sudah ada.
+        // GI405 Recovery tidak memakai filter. Cukup cegah import ulang untuk periode yang sudah ada.
         $existingRows = DB::table(self::TABLE_NAME)
             ->whereIn('periode', $periods)
             ->select('periode')
@@ -370,7 +359,7 @@ class Gi405RecDhImportExcelController extends ImportExcelController
             return null;
         }
 
-        return 'Data GI405 Single Row untuk periode yang sama sudah ada di database.<br><br>'
+        return 'Data GI405 Recovery untuk periode yang sama sudah ada di database.<br><br>'
             . 'Periode bentrok: <b>' . e(implode(', ', array_slice($existingRows, 0, 5))) . '</b><br>'
             . 'Import dibatalkan agar file/periode yang sama tidak masuk dua kali.';
     }
@@ -389,7 +378,7 @@ class Gi405RecDhImportExcelController extends ImportExcelController
         array $importOptions = [],
         bool $fullVectorization = false
     ): bool {
-        if ($tableName !== 'gi405_rec_dh') {
+        if ($tableName !== self::TABLE_NAME) {
             return parent::processStagedCsvStream(
                 $send,
                 $csvPath,
@@ -430,21 +419,16 @@ class Gi405RecDhImportExcelController extends ImportExcelController
         }
 
         $timestamp = now()->toDateTimeString();
-        $context = $this->invokeParentPrivate('buildImportContext', $tableName, $normalizedHeaders, $activeFilters, []);
         $pendapatanIndex = $this->findHeaderIndex($normalizedHeaders, 'Pendapatan Koreksi PPAP-dr Angsuran PH');
-        $recoveryIndex = $this->findHeaderIndex($normalizedHeaders, 'Recovery Non Klaim');
         $kodeIndex = $this->findHeaderIndex($normalizedHeaders, 'KODE');
-        $tanggalIndex = $this->findHeaderIndex($normalizedHeaders, 'Tanggal');
+        $periodeIndex = $this->findHeaderIndex($normalizedHeaders, 'Periode');
+        $ukerReference = $this->loadGi405RecoveryUkerReference();
 
         $rowsToInsert = [];
         $sourcePendapatanTotal = 0.0;
-        $sourceRecoveryTotal = 0.0;
         $parsedPendapatanTotal = 0.0;
-        $parsedRecoveryTotal = 0.0;
         $sourceRowCount = 0;
         $sourceRowsWithNumericContent = 0;
-        $duplicatePairs = [];
-        $seenPairs = [];
         $errorCounts = [];
         $errorSamples = [];
         $invalidRowCount = 0;
@@ -472,69 +456,47 @@ class Gi405RecDhImportExcelController extends ImportExcelController
                 continue;
             }
 
+            $rawPendapatan = $pendapatanIndex !== null ? trim((string) ($row[$pendapatanIndex] ?? '')) : '';
+            $rawKode = $kodeIndex !== null ? ($row[$kodeIndex] ?? '') : '';
+            $rawPeriode = $periodeIndex !== null ? trim((string) ($row[$periodeIndex] ?? '')) : '';
+
+            if ($this->shouldSkipGi405RecoverySourceRow($rawPeriode, $rawPendapatan)) {
+                continue;
+            }
+
             $sourceRowCount++;
             $rowsDone++;
 
-            $rawPendapatan = $pendapatanIndex !== null ? trim((string) ($row[$pendapatanIndex] ?? '')) : '';
-            $rawRecovery = $recoveryIndex !== null ? trim((string) ($row[$recoveryIndex] ?? '')) : '';
-            $rawKode = $kodeIndex !== null ? ($row[$kodeIndex] ?? '') : '';
-            $rawTanggal = $tanggalIndex !== null ? trim((string) ($row[$tanggalIndex] ?? '')) : '';
-
             $normalizedPendapatan = $rawPendapatan !== '' ? $this->normalizeDecimalValue($rawPendapatan) : null;
-            $normalizedRecovery = $rawRecovery !== '' ? $this->normalizeDecimalValue($rawRecovery) : null;
+            $normalizedKode = $this->normalizeGi405RecDhKodeValue($rawKode);
+            $normalizedPeriode = null;
 
-            $rowHasNumericContent = $rawPendapatan !== '' || $rawRecovery !== '';
-            if ($rowHasNumericContent) {
+            if ($rawPendapatan !== '') {
                 $sourceRowsWithNumericContent++;
             }
 
             $rowErrors = [];
 
-            if (trim((string) $this->normalizeGi405RecDhKodeValue($rawKode)) === '') {
+            if (trim((string) $normalizedKode) === '') {
                 $rowErrors[] = 'Kode unit kosong/tidak valid.';
+            } elseif (!isset($ukerReference[(string) $normalizedKode])) {
+                $rowErrors[] = 'Kode unit `' . $normalizedKode . '` tidak ditemukan di referensi_uker.';
             }
 
-            if ($rawTanggal === '') {
-                $rowErrors[] = 'Tanggal kosong.';
+            if ($rawPeriode === '') {
+                $rowErrors[] = 'Periode kosong.';
             } else {
                 try {
-                    StrictDateParser::normalize($rawTanggal);
+                    $normalizedPeriode = StrictDateParser::normalize($rawPeriode);
                 } catch (\Throwable) {
-                    $rowErrors[] = 'Tanggal tidak valid: `' . $rawTanggal . '`.';
+                    $rowErrors[] = 'Periode tidak valid: `' . $rawPeriode . '`.';
                 }
             }
 
-            if ($rawPendapatan !== '' && $normalizedPendapatan === null) {
+            if ($rawPendapatan === '') {
+                $rowErrors[] = 'Pendapatan Koreksi PPAP-dr Angsuran PH kosong.';
+            } elseif ($normalizedPendapatan === null) {
                 $rowErrors[] = 'Pendapatan Koreksi PPAP-dr Angsuran PH tidak bisa diparse: `' . $rawPendapatan . '`.';
-            }
-
-            if ($rawRecovery !== '' && $normalizedRecovery === null) {
-                $rowErrors[] = 'Recovery Non Klaim tidak bisa diparse: `' . $rawRecovery . '`.';
-            }
-
-            try {
-                $finalRow = $this->invokeParentPrivate('mapExcelRowForInsert', $row, $normalizedHeaders, $context, $timestamp);
-            } catch (\Throwable $e) {
-                $finalRow = null;
-                $rowErrors[] = $e->getMessage();
-            }
-
-            if ($finalRow === null && $rowErrors === [] && $activeFilters === []) {
-                $rowErrors[] = 'Baris tidak lolos mapping GI405.';
-            }
-
-            if ($finalRow !== null) {
-                $pair = trim((string) ($finalRow['tanggal'] ?? '')) . ' / ' . trim((string) ($finalRow['kode'] ?? ''));
-                if (isset($seenPairs[$pair])) {
-                    $duplicatePairs[$pair] = [
-                        'pair' => $pair,
-                        'first_line' => $seenPairs[$pair],
-                        'line' => $lineNumber,
-                    ];
-                    $rowErrors[] = 'Duplikat pasangan tanggal + kode dengan baris ' . $seenPairs[$pair] . '.';
-                } else {
-                    $seenPairs[$pair] = $lineNumber;
-                }
             }
 
             if ($rowErrors !== []) {
@@ -542,26 +504,25 @@ class Gi405RecDhImportExcelController extends ImportExcelController
                 foreach ($rowErrors as $message) {
                     $this->addGi405ImportErrorSample($errorCounts, $errorSamples, [
                         'line' => $lineNumber,
-                        'kode' => $this->normalizeGi405RecDhKodeValue($rawKode),
-                        'tanggal' => $rawTanggal,
+                        'kode' => $normalizedKode,
+                        'tanggal' => $rawPeriode,
                         'raw_pendapatan' => $rawPendapatan,
-                        'raw_recovery' => $rawRecovery,
+                        'raw_recovery' => null,
                         'reason' => $message,
                     ]);
                 }
             } else {
-                if ($normalizedPendapatan !== null) {
-                    $sourcePendapatanTotal += (float) $normalizedPendapatan;
-                }
-                if ($normalizedRecovery !== null) {
-                    $sourceRecoveryTotal += (float) $normalizedRecovery;
-                }
+                $sourcePendapatanTotal += (float) $normalizedPendapatan;
 
-                $parsedPendapatan = (float) ($finalRow['pendapatan_koreksi_ppap_dr_angsuran_ph'] ?? 0);
-                $parsedRecovery = (float) ($finalRow['recovery_non_klaim'] ?? 0);
+                $finalRow = $this->buildGi405RecoveryInsertRow(
+                    (string) $normalizedPeriode,
+                    (string) $normalizedKode,
+                    (string) $ukerReference[(string) $normalizedKode],
+                    (string) $normalizedPendapatan,
+                    $timestamp
+                );
 
-                $parsedPendapatanTotal += $parsedPendapatan;
-                $parsedRecoveryTotal += $parsedRecovery;
+                $parsedPendapatanTotal += (float) $finalRow['pendapatan_koreksi_ppap_dr_angsuran_ph'];
                 $rowsToInsert[] = $finalRow;
             }
 
@@ -590,23 +551,8 @@ class Gi405RecDhImportExcelController extends ImportExcelController
 
         fclose($handle);
 
-        if ($duplicatePairs !== []) {
-            foreach ($duplicatePairs as $duplicate) {
-                $this->addGi405ImportErrorSample($errorCounts, $errorSamples, [
-                    'line' => (int) ($duplicate['line'] ?? 0),
-                    'kode' => $this->extractKodeFromPair((string) ($duplicate['pair'] ?? '')),
-                    'tanggal' => $this->extractTanggalFromPair((string) ($duplicate['pair'] ?? '')),
-                    'raw_pendapatan' => '',
-                    'raw_recovery' => '',
-                    'reason' => 'Duplikat pasangan tanggal + kode juga ditemukan pada baris ' . ($duplicate['first_line'] ?? '?') . '.',
-                ], 'duplicate_pair');
-            }
-        }
-
         $sourcePendapatanTotal = round($sourcePendapatanTotal, 2);
-        $sourceRecoveryTotal = round($sourceRecoveryTotal, 2);
         $parsedPendapatanTotal = round($parsedPendapatanTotal, 2);
-        $parsedRecoveryTotal = round($parsedRecoveryTotal, 2);
 
         if ($sourceRowCount !== count($rowsToInsert) + $invalidRowCount) {
             $this->addGi405ImportErrorSample($errorCounts, $errorSamples, [
@@ -630,28 +576,6 @@ class Gi405RecDhImportExcelController extends ImportExcelController
             ], 'aggregate_pendapatan_mismatch');
         }
 
-        if (abs($sourceRecoveryTotal - $parsedRecoveryTotal) > 0.009) {
-            $this->addGi405ImportErrorSample($errorCounts, $errorSamples, [
-                'line' => 0,
-                'kode' => null,
-                'tanggal' => null,
-                'raw_pendapatan' => number_format($sourceRecoveryTotal, 2, '.', ''),
-                'raw_recovery' => number_format($parsedRecoveryTotal, 2, '.', ''),
-                'reason' => 'Total recovery hasil parse tidak sama dengan dokumen sumber.',
-            ], 'aggregate_recovery_mismatch');
-        }
-
-        if (abs($sourcePendapatanTotal + $sourceRecoveryTotal) > 0.009) {
-            $this->addGi405ImportErrorSample($errorCounts, $errorSamples, [
-                'line' => 0,
-                'kode' => null,
-                'tanggal' => null,
-                'raw_pendapatan' => number_format($sourcePendapatanTotal, 2, '.', ''),
-                'raw_recovery' => number_format($sourceRecoveryTotal, 2, '.', ''),
-                'reason' => 'Total pendapatan + recovery dari dokumen sumber tidak balance menjadi 0.',
-            ], 'aggregate_source_not_balanced');
-        }
-
         if ($invalidRowCount > 0 || array_sum($errorCounts) > 0) {
             $message = $this->buildGi405ValidationFailureMessage(
                 $sourceRowCount,
@@ -660,9 +584,7 @@ class Gi405RecDhImportExcelController extends ImportExcelController
                 $errorCounts,
                 $errorSamples,
                 $sourcePendapatanTotal,
-                $parsedPendapatanTotal,
-                $sourceRecoveryTotal,
-                $parsedRecoveryTotal
+                $parsedPendapatanTotal
             );
 
             if ($jobId > 0) {
@@ -700,6 +622,47 @@ class Gi405RecDhImportExcelController extends ImportExcelController
         ]);
 
         return true;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function loadGi405RecoveryUkerReference(): array
+    {
+        if (!Schema::hasTable('referensi_uker')) {
+            return [];
+        }
+
+        return DB::table('referensi_uker')
+            ->select('kode_uker', 'nama_uker')
+            ->whereNotNull('kode_uker')
+            ->whereNotNull('nama_uker')
+            ->get()
+            ->mapWithKeys(function ($row): array {
+                $kode = $this->normalizeGi405RecDhKodeValue($row->kode_uker ?? null);
+                $nama = trim((string) ($row->nama_uker ?? ''));
+
+                return ($kode !== null && $kode !== '' && $nama !== '') ? [$kode => $nama] : [];
+            })
+            ->all();
+    }
+
+    private function buildGi405RecoveryInsertRow(
+        string $periode,
+        string $kodeUker,
+        string $namaUker,
+        string $pendapatan,
+        string $timestamp
+    ): array {
+        return [
+            'uniqueid_namareport' => 'uuid_gi405_recovery_' . str_replace('.', '', uniqid('', true)),
+            'periode' => $periode,
+            'kode_uker' => $kodeUker,
+            'pendapatan_koreksi_ppap_dr_angsuran_ph' => $pendapatan,
+            'nama_uker' => $namaUker,
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ];
     }
 
     private function extractGi405BusinessKeys(string $path): array
@@ -853,24 +816,18 @@ class Gi405RecDhImportExcelController extends ImportExcelController
     private function collectGi405BusinessKeys(array $headers, callable $nextRow): array
     {
         $periodeIndex = null;
-        $branchIndex = null;
-        $postingControlIndex = null;
-        $accountNumberIndex = null;
+        $kodeIndex = null;
 
         foreach ($headers as $index => $header) {
             $normalized = $this->normalizeGi405HeaderLabel((string) $header);
             if ($normalized === 'periode') {
                 $periodeIndex = (int) $index;
-            } elseif ($normalized === 'branch') {
-                $branchIndex = (int) $index;
-            } elseif ($normalized === 'posting control') {
-                $postingControlIndex = (int) $index;
-            } elseif ($normalized === 'account number') {
-                $accountNumberIndex = (int) $index;
+            } elseif ($normalized === 'kode') {
+                $kodeIndex = (int) $index;
             }
         }
 
-        if ($periodeIndex === null || $branchIndex === null || $postingControlIndex === null || $accountNumberIndex === null) {
+        if ($periodeIndex === null || $kodeIndex === null) {
             return ['count' => 0, 'duplicates_in_file' => [], 'grouped' => []];
         }
 
@@ -883,11 +840,9 @@ class Gi405RecDhImportExcelController extends ImportExcelController
         while (($row = $nextRow()) !== null) {
             $rowNumber++;
             $periodeRaw = trim((string) ($row[$periodeIndex] ?? ''));
-            $branch = trim((string) ($row[$branchIndex] ?? ''));
-            $postingControl = trim((string) ($row[$postingControlIndex] ?? ''));
-            $accountNumber = trim((string) ($row[$accountNumberIndex] ?? ''));
+            $kode = trim((string) $this->normalizeGi405RecDhKodeValue($row[$kodeIndex] ?? ''));
 
-            if ($periodeRaw === '' || $branch === '' || $postingControl === '' || $accountNumber === '') {
+            if ($periodeRaw === '' || $kode === '') {
                 continue;
             }
 
@@ -897,7 +852,7 @@ class Gi405RecDhImportExcelController extends ImportExcelController
                 continue;
             }
 
-            $pair = $periode . ' / ' . $branch . ' / ' . $postingControl . ' / ' . $accountNumber;
+            $pair = $periode . ' / ' . $kode;
             if (isset($seen[$pair])) {
                 $duplicates[$pair] = true;
                 if (count($duplicateRowSamples) < 5) {
@@ -907,7 +862,7 @@ class Gi405RecDhImportExcelController extends ImportExcelController
             }
 
             $seen[$pair] = $rowNumber;
-            $grouped[$periode][$branch][$postingControl][$accountNumber] = $accountNumber;
+            $grouped[$periode][$kode] = $kode;
         }
 
         return [
@@ -987,6 +942,16 @@ class Gi405RecDhImportExcelController extends ImportExcelController
         return true;
     }
 
+    private function shouldSkipGi405RecoverySourceRow(string $rawPeriode, string $rawPendapatan): bool
+    {
+        $period = strtoupper(trim($rawPeriode));
+        $pendapatan = strtoupper(trim($rawPendapatan));
+
+        return in_array($pendapatan, ['', '\\N'], true)
+            || $period === ''
+            || in_array($period, ['#N/A', 'N/A', 'NA', 'NULL', '\\N', '(BLANK)'], true);
+    }
+
     private function findHeaderIndex(array $headers, string $target): ?int
     {
         foreach ($headers as $index => $header) {
@@ -1015,9 +980,7 @@ class Gi405RecDhImportExcelController extends ImportExcelController
         array $errorCounts,
         array $errorSamples,
         float $sourcePendapatanTotal,
-        float $parsedPendapatanTotal,
-        float $sourceRecoveryTotal,
-        float $parsedRecoveryTotal
+        float $parsedPendapatanTotal
     ): string {
         $summary = [];
         foreach ($errorCounts as $key => $count) {
@@ -1052,9 +1015,7 @@ class Gi405RecDhImportExcelController extends ImportExcelController
             . 'Total baris invalid: <b>' . number_format($invalidRowCount, 0, ',', '.') . '</b><br>'
             . 'Ringkasan error: <b>' . e(implode(' | ', $summary)) . '</b><br><br>'
             . 'Total sumber pendapatan: <b>' . number_format($sourcePendapatanTotal, 2, '.', ',') . '</b><br>'
-            . 'Total hasil parse pendapatan: <b>' . number_format($parsedPendapatanTotal, 2, '.', ',') . '</b><br>'
-            . 'Total sumber recovery: <b>' . number_format($sourceRecoveryTotal, 2, '.', ',') . '</b><br>'
-            . 'Total hasil parse recovery: <b>' . number_format($parsedRecoveryTotal, 2, '.', ',') . '</b><br><br>'
+            . 'Total hasil parse pendapatan: <b>' . number_format($parsedPendapatanTotal, 2, '.', ',') . '</b><br><br>'
             . 'Contoh baris error:<br><b>' . implode('<br>', $samples) . '</b>';
     }
 

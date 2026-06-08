@@ -101,6 +101,9 @@ class OptimizedRkaLookupService extends RkaLookupService
         // can collide with stale entries from before the last invalidation.
         Cache::forever(self::RKA_VERSION_KEY, $newVersion);
 
+        // Clear parent static memoization caches
+        parent::clearMemoization();
+
         // Clear in-memory cache as well
         $this->inMemoryCache = [];
     }

@@ -7,12 +7,12 @@ use App\Jobs\EnsureDashboardSimpananSnapshotJob;
 use App\Jobs\EnsureDashboardSnapshotJob;
 use App\Jobs\EnsureRasioCasaSnapshotJob;
 use App\Jobs\EnsureRekeningDormantSnapshotJob;
-use App\Jobs\RunImportJob;
 use App\Jobs\RunManagedReportDeleteJob;
 use App\Jobs\RunManagedReportLoadJob;
 use App\Jobs\RunManagedReportSnapshotRebuildJob;
 use App\Jobs\SyncImportedReportJob;
 use App\Jobs\WarmReportCacheJob;
+use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use App\Support\ManagedReportLoadCoordinator;
 use App\Support\ManagedReportSnapshotRebuildCoordinator;
@@ -25,12 +25,12 @@ class JobHealthService
     private const SWEEP_LOCK_KEY = 'job_health:sweep:lock';
     private const SWEEP_LAST_RUN_KEY = 'job_health:sweep:last_run';
     private const SWEEP_INTERVAL_SECONDS = 60;
-    private const IMPORT_QUEUE_STALE_SECONDS = 15 * 60;
     private const MANAGED_QUEUE_STALE_SECONDS = 15 * 60;
     private const REPORT_QUEUE_STALE_SECONDS = 20 * 60;
 
     public function __construct(
         private readonly ImportProgressService $importProgressService,
+        private readonly ImportExecutionService $importExecutionService,
         private readonly ManagedReportLoadCoordinator $managedReportLoadCoordinator,
         private readonly ManagedReportSnapshotRebuildCoordinator $managedReportSnapshotRebuildCoordinator,
         private readonly ImportIndexController $importIndexController
@@ -67,6 +67,7 @@ class JobHealthService
         }
 
         try {
+            $recoveredImportIds = $this->importExecutionService->recoverOrphanedZeroProgressJobs();
             $queuedImports = $this->importProgressService->purgeStaleQueuedJobs();
             $processingImports = $this->importProgressService->purgeStaleProcessingJobs();
             $managedLoads = $this->managedReportLoadCoordinator->sweepStaleStates();
@@ -77,6 +78,8 @@ class JobHealthService
             Cache::put(self::SWEEP_LAST_RUN_KEY, now()->toIso8601String(), now()->addMinutes(10));
 
             $summary = [
+                'orphaned_imports_requeued' => count($recoveredImportIds),
+                'orphaned_import_job_ids' => $recoveredImportIds,
                 'stale_imports_queued' => $queuedImports,
                 'stale_imports_processing' => $processingImports,
                 'managed_loads_reconciled' => $managedLoads,
@@ -87,7 +90,7 @@ class JobHealthService
 
             $purgedQueueRowCount = array_sum($purgedQueueRows);
 
-            if (($queuedImports + $processingImports + $managedLoads + $managedRebuilds + $managedDeletes + $purgedQueueRowCount) > 0) {
+            if ((count($recoveredImportIds) + $queuedImports + $processingImports + $managedLoads + $managedRebuilds + $managedDeletes + $purgedQueueRowCount) > 0) {
                 Log::info('Job health sweep dijalankan.', $summary);
             }
 
@@ -102,16 +105,10 @@ class JobHealthService
         $reportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
 
         return [
-            'imports' => $this->deletePendingQueueRows(
-                ['imports-high'],
-                [RunImportJob::class],
-                self::IMPORT_QUEUE_STALE_SECONDS
-            ),
-            'reserved_imports' => $this->deleteReservedQueueRows(
-                ['imports-high'],
-                [RunImportJob::class],
-                self::IMPORT_QUEUE_STALE_SECONDS
-            ),
+            // Database queue retry_after owns pending/reserved import rows. Removing
+            // them here can race a legitimate long-running import.
+            'imports' => 0,
+            'reserved_imports' => 0,
             'managed_imports' => $this->deletePendingQueueRows(
                 ['imports-high', 'reports-low', 'default'],
                 [RunManagedReportLoadJob::class, RunManagedReportDeleteJob::class],

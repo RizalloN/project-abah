@@ -272,6 +272,153 @@ class DashboardPinjamanReportController extends Controller
         ]);
     }
 
+    public function sixMonthArrearsIndex(Request $request)
+    {
+        $availablePeriods = $this->fetchSixMonthArrearsPeriods();
+        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
+        $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
+        $selectedBranches = $branchSelection['selected_values'];
+        $effectiveBranches = $branchSelection['effective_branches'];
+        $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
+        $selectedUnits = $unitSelection['selected_values'];
+        $branchOptions = $this->smallArrearsBranchOptions();
+        $unitOptions = $branchSelection['is_area_all']
+            ? collect()
+            : collect([self::SMALL_ARREARS_ALL_UKER])->merge($this->fetchSmallArrearsDistinctValues('unit1', $selectedPeriod, $effectiveBranches))->values();
+
+        $selectedUnits = $branchSelection['is_area_all']
+            ? []
+            : array_values(array_intersect($selectedUnits, $unitOptions->all()));
+        if (!$branchSelection['is_area_all'] && $selectedUnits === []) {
+            $selectedUnits = [self::SMALL_ARREARS_ALL_UKER];
+        }
+
+        return view('report.dashboard-pinjaman.realisasi-6-bulan-menunggak', [
+            'availablePeriods' => $availablePeriods,
+            'selectedPeriod' => $selectedPeriod,
+            'selectedBranches' => $selectedBranches,
+            'effectiveBranches' => $effectiveBranches,
+            'isAreaAllSelected' => $branchSelection['is_area_all'],
+            'selectedUnits' => $selectedUnits,
+            'branchOptions' => $branchOptions,
+            'unitOptions' => $unitOptions,
+            'isAllUkerSelected' => in_array(self::SMALL_ARREARS_ALL_UKER, $selectedUnits, true) || (!$branchSelection['is_area_all'] && $selectedUnits === []),
+            'targetMonthLabel' => $selectedPeriod ? $this->sixMonthArrearsTargetMonthLabel($selectedPeriod) : '-',
+        ]);
+    }
+
+    public function sixMonthArrearsFilters(Request $request)
+    {
+        @set_time_limit(30);
+        $this->releaseSessionLockIfNeeded();
+
+        $availablePeriods = $this->fetchSixMonthArrearsPeriods();
+        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
+        $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
+        $effectiveBranches = $branchSelection['effective_branches'];
+
+        $unitOptions = $branchSelection['is_area_all']
+            ? collect()
+            : collect([self::SMALL_ARREARS_ALL_UKER])->merge($this->fetchSmallArrearsDistinctValues('unit1', $selectedPeriod, $effectiveBranches))->values();
+
+        return response()->json([
+            'available_periods' => $availablePeriods->all(),
+            'selected_period' => $selectedPeriod,
+            'target_month_label' => $selectedPeriod ? $this->sixMonthArrearsTargetMonthLabel($selectedPeriod) : '-',
+            'branch_options' => $this->smallArrearsBranchOptions()->all(),
+            'unit_options' => $unitOptions->all(),
+            'is_area_all' => $branchSelection['is_area_all'],
+        ]);
+    }
+
+    public function sixMonthArrearsData(Request $request)
+    {
+        @set_time_limit(0);
+        DB::connection()->disableQueryLog();
+        $this->releaseSessionLockIfNeeded();
+
+        $availablePeriods = $this->fetchSixMonthArrearsPeriods();
+        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
+        $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
+        $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
+        $effectiveUnits = $unitSelection['effective_units'];
+        $forceRefresh = $request->boolean('refresh');
+
+        if (!$selectedPeriod) {
+            return response()->json($this->emptySixMonthArrearsPayload(null, [], [], true));
+        }
+
+        $cacheKey = 'dashboard_pinjaman_realisasi_6_bulan_menunggak:v3:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'periode' => $selectedPeriod,
+            'cabang1' => $branchSelection['selected_values'],
+            'unit1' => $unitSelection['selected_values'],
+        ]));
+
+        $payload = $this->rememberPayload(
+            $cacheKey,
+            now()->addMinutes(3),
+            fn () => $this->buildSixMonthArrearsPayload(
+                $selectedPeriod,
+                $branchSelection['effective_branches'],
+                $effectiveUnits,
+                $branchSelection['is_area_all']
+            ),
+            $forceRefresh,
+            fn () => $this->emptySixMonthArrearsPayload($selectedPeriod, $branchSelection['effective_branches'], $effectiveUnits, $branchSelection['is_area_all'])
+        );
+
+        return response()->json($payload);
+    }
+
+    public function sixMonthArrearsExport(Request $request)
+    {
+        @set_time_limit(0);
+        DB::connection()->disableQueryLog();
+        $this->releaseSessionLockIfNeeded();
+
+        $availablePeriods = $this->fetchSixMonthArrearsPeriods();
+        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
+        $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
+        $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
+
+        abort_if(!$selectedPeriod, 422, 'Periode wajib dipilih.');
+
+        $rows = $this->fetchSixMonthArrearsRows($selectedPeriod, $branchSelection['effective_branches'], $unitSelection['effective_units']);
+        $exportColumns = $this->collectSixMonthArrearsExportColumns();
+        $filename = sprintf(
+            'realisasi-6-bulan-menunggak_%s_%s_%s.xlsx',
+            str_replace('-', '', $selectedPeriod),
+            $branchSelection['is_area_all'] ? 'area-6-all' : $this->sanitizeExportToken(implode('-', $branchSelection['selected_values'])),
+            $unitSelection['is_all_uker'] ? 'all-uker' : $this->sanitizeExportToken(implode('-', $unitSelection['selected_values']))
+        );
+
+        return response()->streamDownload(function () use ($rows, $exportColumns) {
+            $spreadsheet = new Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Realisasi 6 Bulan');
+
+            foreach ($exportColumns as $index => $column) {
+                $sheet->setCellValue(Coordinate::stringFromColumnIndex($index + 1) . '1', $column);
+            }
+
+            foreach ($rows as $rowIndex => $row) {
+                foreach ($exportColumns as $columnIndex => $column) {
+                    $sheet->setCellValue(
+                        Coordinate::stringFromColumnIndex($columnIndex + 1) . ($rowIndex + 2),
+                        Arr::get($row, $column, '')
+                    );
+                }
+            }
+
+            $writer = new Xlsx($spreadsheet);
+            $writer->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
     public function smallArrearsFilters(Request $request)
     {
         @set_time_limit(30);
@@ -2564,20 +2711,47 @@ class DashboardPinjamanReportController extends Controller
             return false;
         }
 
-        $lock = Cache::lock('snapshot:dashboard:auto-rebuild:' . $period, 10);
+        $lock = Cache::lock('snapshot:dashboard:auto-rebuild:' . $period, 60);
         $pendingKey = 'snapshot:dashboard:auto-rebuild:pending:' . $period;
         $jobDispatched = false;
+        $built = false;
 
         try {
             if ($lock->get()) {
+                try {
+                    $builder = app(\App\Support\ReportSnapshotBuilder::class);
+                    $builder->rebuildDashboard($period, false);
+                    $builder->rebuildChartPeriodik($period, false);
+                    $builder->rebuildRasioCasa($period, false);
+                    $builder->rebuildPerformanceRm($period, false);
+
+                    app(\App\Support\DashboardHarianSnapshotService::class)->rebuild($period, false);
+
+                    $built = DB::table(self::SNAPSHOT_TABLE)
+                        ->where('periode', $period)
+                        ->exists();
+                } catch (Throwable $builderEx) {
+                    Log::warning('Synchronous rebuild dashboard pinjaman failed, falling back: ' . $builderEx->getMessage());
+                }
+
                 if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
                         EnsureDashboardSnapshotJob::dispatch($period, static::class . '::hasDashboardSnapshot')
                         ->onQueue((string) config('queue.report_queue', 'default'));
                     $jobDispatched = true;
                 }
             }
+        } catch (Throwable $e) {
+            Log::warning('Auto rebuild dashboard snapshot gagal: ' . $e->getMessage(), [
+                'period' => $period,
+            ]);
         } finally {
             optional($lock)->release();
+        }
+
+        if ($built) {
+            Cache::put($cacheKey, true, now()->addMinutes(10));
+
+            return true;
         }
 
         Log::info('Dashboard snapshot unavailable; using source query fallback.', [
@@ -3038,6 +3212,190 @@ class DashboardPinjamanReportController extends Controller
             ->filter(fn (string $item) => $item !== '')
             ->values()
             ->all();
+    }
+
+    private function fetchSixMonthArrearsPeriods(): Collection
+    {
+        $cacheKey = 'dashboard_pinjaman_realisasi_6_bulan_periods:v1:' . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () {
+            return DB::table('daily_loan_dinamis')
+                ->whereNotNull('periode')
+                ->distinct()
+                ->pluck('periode')
+                ->map(function ($period): ?string {
+                    try {
+                        return Carbon::parse($period)->format('Y-m-d');
+                    } catch (Throwable) {
+                        return null;
+                    }
+                })
+                ->filter()
+                ->groupBy(fn (string $period): string => substr($period, 0, 7))
+                ->map(fn (Collection $monthPeriods): string => $monthPeriods->sortDesc()->first())
+                ->sortDesc()
+                ->values();
+        });
+    }
+
+    private function emptySixMonthArrearsPayload(?string $selectedPeriod, array $selectedBranches, array $selectedUnits, bool $isAreaAll): array
+    {
+        return [
+            'selected_period' => $selectedPeriod,
+            'target_month_label' => $selectedPeriod ? $this->sixMonthArrearsTargetMonthLabel($selectedPeriod) : '-',
+            'scope_label' => $isAreaAll ? 'Area 6 - All' : implode(', ', $selectedBranches),
+            'unit_label' => $selectedUnits === [] ? 'ALL UKER' : implode(', ', $selectedUnits),
+            'rows' => [],
+            'summary' => [
+                'debitur' => 0,
+                'outstanding' => 0.0,
+                'tunggakan_pokok' => 0.0,
+                'total_tunggakan' => 0.0,
+                'target_month' => $selectedPeriod ? $this->sixMonthArrearsTargetMonthLabel($selectedPeriod) : '-',
+            ],
+        ];
+    }
+
+    private function buildSixMonthArrearsPayload(string $selectedPeriod, array $selectedBranches, array $selectedUnits, bool $isAreaAll): array
+    {
+        $rows = collect($this->fetchSixMonthArrearsRows($selectedPeriod, $selectedBranches, $selectedUnits));
+
+        return [
+            'selected_period' => $selectedPeriod,
+            'target_month_label' => $this->sixMonthArrearsTargetMonthLabel($selectedPeriod),
+            'scope_label' => $isAreaAll ? 'Area 6 - All' : implode(', ', $selectedBranches),
+            'unit_label' => $selectedUnits === [] ? 'ALL UKER' : implode(', ', $selectedUnits),
+            'rows' => $rows->map(fn (array $row): array => [
+                'periode' => $row['periode'] ?? '',
+                'cabang1' => $row['cabang1'] ?? '',
+                'unit1' => $row['unit1'] ?? '',
+                'nomor_rekening1' => $row['nomor_rekening1'] ?? '',
+                'nama_debitur1' => $row['nama_debitur1'] ?? '',
+                'tgl_realisasi' => $row['tgl_realisasi'] ?? '',
+                'plafon' => (float) ($row['plafon'] ?? 0),
+                'baki_debet1' => (float) ($row['baki_debet1'] ?? 0),
+                'tunggakan_pokok' => (float) ($row['tunggakan_pokok'] ?? 0),
+                'tunggakan_bunga' => (float) ($row['tunggakan_bunga'] ?? 0),
+                'tunggakan_penalti' => (float) ($row['tunggakan_penalti'] ?? 0),
+                'total_tunggakan' => (float) ($row['total_tunggakan'] ?? 0),
+                'umur_tunggakan' => $row['umur_tunggakan'] ?? '',
+                'kolek' => $row['kolek'] ?? '',
+                'kolek_detail' => $row['kolek_detail'] ?? '',
+            ])->values()->all(),
+            'summary' => [
+                'debitur' => $rows->pluck('nomor_rekening1')->filter()->unique()->count(),
+                'outstanding' => (float) $rows->sum(fn (array $row): float => floor((float) ($row['baki_debet1'] ?? 0))),
+                'tunggakan_pokok' => (float) $rows->sum(fn (array $row): float => (float) ($row['total_tunggakan'] ?? 0)),
+                'total_tunggakan' => (float) $rows->sum(fn (array $row): float => (float) ($row['total_tunggakan'] ?? 0)),
+                'target_month' => $this->sixMonthArrearsTargetMonthLabel($selectedPeriod),
+            ],
+        ];
+    }
+
+    private function fetchSixMonthArrearsRows(string $selectedPeriod, array $selectedBranches, array $selectedUnits): array
+    {
+        if (!Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi') && !Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi1')) {
+            return [];
+        }
+
+        if (!Schema::hasColumn('daily_loan_dinamis', 'kolek')) {
+            return [];
+        }
+
+        $tunggakanColumns = array_values(array_filter(
+            ['tunggakan_pokok', 'tunggakan_bunga', 'tunggakan_penalti'],
+            fn (string $column): bool => Schema::hasColumn('daily_loan_dinamis', $column)
+        ));
+
+        if ($tunggakanColumns === []) {
+            return [];
+        }
+
+        [$targetStart, $targetEnd] = $this->sixMonthArrearsTargetRange($selectedPeriod);
+        $realisasiColumn = Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi1') ? 'tgl_realisasi1' : 'tgl_realisasi';
+        $totalTunggakanExpression = collect($tunggakanColumns)
+            ->map(fn (string $column): string => "COALESCE(`{$column}`, 0)")
+            ->implode(' + ');
+        $kolekCast = DB::connection()->getDriverName() === 'sqlite'
+            ? 'CAST(kolek AS INTEGER)'
+            : 'CAST(kolek AS UNSIGNED)';
+        $accountColumn = Schema::hasColumn('daily_loan_dinamis', 'nomor_rekening1')
+            ? 'nomor_rekening1'
+            : $this->resolveIdentityColumn('daily_loan_dinamis');
+
+        $query = DB::table('daily_loan_dinamis')
+            ->select('daily_loan_dinamis.*')
+            ->selectRaw("({$totalTunggakanExpression}) as total_tunggakan")
+            ->where('periode', $selectedPeriod)
+            ->whereBetween($realisasiColumn, [$targetStart, $targetEnd])
+            ->whereRaw("{$kolekCast} >= 2")
+            ->whereRaw("({$totalTunggakanExpression}) > 0")
+            ->when($selectedBranches !== [], fn (Builder $query) => $query->whereIn('cabang1', $selectedBranches))
+            ->when($selectedUnits !== [], fn (Builder $query) => $query->whereIn('unit1', $selectedUnits))
+            ->orderBy('cabang1')
+            ->orderBy('unit1')
+            ->orderBy($accountColumn);
+
+        $rows = [];
+        $excluded = array_flip($this->dailyLoanOutputExcludedColumns(['created_at', 'updated_at', 'uniqueid_namareport']));
+        foreach ($query->cursor() as $row) {
+            $rowData = array_diff_key((array) $row, $excluded);
+            $rowData['bulan_realisasi_target'] = $this->sixMonthArrearsTargetMonthLabel($selectedPeriod);
+            $rowData['tgl_realisasi'] = $rowData[$realisasiColumn] ?? ($rowData['tgl_realisasi'] ?? '');
+            $rowData['kolek_detail'] = $this->kolekDetailFromFormula($row->kolek ?? null, $row->flag_restruk ?? null, $row->umur_tunggakan ?? null);
+            $rows[] = $rowData;
+        }
+
+        return $rows;
+    }
+
+    private function collectSixMonthArrearsExportColumns(): array
+    {
+        $columns = $this->filterDailyLoanOutputColumns(
+            Schema::getColumnListing('daily_loan_dinamis'),
+            ['created_at', 'updated_at', 'uniqueid_namareport']
+        );
+
+        $columns[] = 'total_tunggakan';
+        $columns[] = 'bulan_realisasi_target';
+        $columns[] = 'kolek_detail';
+
+        return $columns;
+    }
+
+    private function sixMonthArrearsTargetRange(string $selectedPeriod): array
+    {
+        $selectedDate = Carbon::parse($selectedPeriod);
+        $targetStartMonth = $selectedDate->copy()->subMonthsNoOverflow(6);
+
+        return [
+            $targetStartMonth->copy()->startOfMonth()->toDateString(),
+            $selectedDate->copy()->toDateString(),
+        ];
+    }
+
+    private function sixMonthArrearsTargetMonthLabel(string $selectedPeriod): string
+    {
+        [$targetStart, $targetEnd] = $this->sixMonthArrearsTargetRange($selectedPeriod);
+
+        return Carbon::parse($targetStart)->translatedFormat('F Y')
+            . ' - '
+            . Carbon::parse($targetEnd)->translatedFormat('F Y');
+    }
+
+    private function kolekDetailFromFormula($kolekValue, $flagRestruk, $umurTunggakanValue): string
+    {
+        $kolek = $this->normalizeKolekValue($kolekValue);
+        $umur = $this->normalizeUmurTunggakanValue($umurTunggakanValue) ?? 0;
+        $isRestruk = strtoupper(trim((string) $flagRestruk)) === 'Y';
+
+        return match ($kolek) {
+            1 => $isRestruk ? 'LR' : 'L',
+            2 => $umur < 31 ? 'SML 1' : ($umur < 61 ? 'SML 2' : 'SML 3'),
+            3 => 'KL',
+            4 => $umur < 150 ? 'D1' : 'D2',
+            default => 'M',
+        };
     }
 
     private function applyFilterConstraint(Builder $query, string $column, array $values): void

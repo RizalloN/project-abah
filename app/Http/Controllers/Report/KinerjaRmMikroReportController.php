@@ -156,7 +156,10 @@ class KinerjaRmMikroReportController extends Controller
                 'branch_code' => (string) ($row['branch_code'] ?? '-'),
                 'unit' => (string) ($row['unit'] ?? '-'),
             ], $row);
-        })->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['nama'])->values();
+        })
+            ->filter(fn (array $row): bool => (float) ($row['realisasi_os'] ?? 0) > 0)
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['nama'])
+            ->values();
 
         return [
             'rows' => $rows->all(),
@@ -210,7 +213,10 @@ class KinerjaRmMikroReportController extends Controller
                 'total_deb' => $totalDeb,
                 'total_os' => $totalOs,
             ];
-        })->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['nama'])->values();
+        })
+            ->filter(fn (array $row): bool => (float) ($row['total_os'] ?? 0) > 0)
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['nama'])
+            ->values();
 
         return [
             'rows' => $rows->all(),
@@ -228,15 +234,18 @@ class KinerjaRmMikroReportController extends Controller
             $totalOs = array_sum(array_map(fn ($week) => (float) ($row[$week . '_realisasi_os'] ?? 0), ['w1', 'w2', 'w3', 'w4']));
             $totalDeb = array_sum(array_map(fn ($week) => (int) ($row[$week . '_realisasi_deb'] ?? 0), ['w1', 'w2', 'w3', 'w4']));
 
-            return $row + [
+            return array_merge($row, [
                 'pn' => $pn,
                 'nama' => $name,
                 'total_deb' => $totalDeb,
                 'total_os' => $totalOs,
                 'target_os' => self::TARGET_MONTHLY_JUTA * 1000000,
                 'pct_target' => self::TARGET_MONTHLY_JUTA > 0 ? ($totalOs / 1000000 / self::TARGET_MONTHLY_JUTA) * 100 : 0,
-            ];
-        })->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['nama'])->values();
+            ]);
+        })
+            ->filter(fn (array $row): bool => (float) ($row['total_os'] ?? 0) > 0)
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['nama'])
+            ->values();
 
         return ['rows' => $rows->all()];
     }
@@ -285,7 +294,7 @@ class KinerjaRmMikroReportController extends Controller
             [$pn, $name] = $this->splitRm((string) $row['rm']);
             $totalOs = (float) $row['lt_250_realisasi_os'] + (float) $row['gt_250_realisasi_os'];
 
-            return $row + [
+            return array_merge($row, [
                 'pn' => $pn,
                 'nama' => $name,
                 'ket' => $totalOs > 0 ? 'Sudah Real' : 'Belum Real',
@@ -293,8 +302,11 @@ class KinerjaRmMikroReportController extends Controller
                 'gt_250_pct' => $totalOs > 0 ? ((float) $row['gt_250_realisasi_os'] / $totalOs) * 100 : 0,
                 'total_deb' => (int) $row['lt_250_realisasi_deb'] + (int) $row['gt_250_realisasi_deb'],
                 'total_os' => $totalOs,
-            ];
-        })->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['nama'])->values();
+            ]);
+        })
+            ->filter(fn (array $row): bool => (float) ($row['total_os'] ?? 0) > 0)
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['nama'])
+            ->values();
 
         return ['rows' => $rows->all()];
     }

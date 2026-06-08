@@ -15,7 +15,7 @@
     </div>
 </div>
 
-<div class="card shadow-sm border-0 import-upload-card" id="report-management-card"
+<div class="card shadow-sm border-0 import-upload-card report-management-card" id="report-management-card"
      data-fetch-url="{{ route('import.report-management.data') }}"
      data-load-start-url="{{ route('import.report-management.load') }}"
      data-load-status-url-template="{{ route('import.report-management.load.status', ['loadId' => '__LOAD_ID__']) }}"
@@ -37,7 +37,7 @@
     </div>
     <div class="card-body p-4">
         <!-- Control Panel (4 Columns) -->
-        <div class="row mb-4 align-items-end">
+        <div class="row mb-4 align-items-end report-management-control-grid">
             <!-- 1. Pilihan Report -->
             <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
                 <div class="form-group mb-0">
@@ -100,7 +100,7 @@
         </div>
 
         <!-- Summary & Actions Bar -->
-        <div class="d-flex flex-wrap align-items-center justify-content-between p-3 mb-4" style="background: #f8fafc; border-radius: 16px; border: 1px solid #f1f5f9;">
+        <div class="d-flex flex-wrap align-items-center justify-content-between p-3 mb-4 report-management-summary-bar">
             <!-- Stats -->
             <div class="d-flex flex-wrap align-items-center" style="gap: 1.5rem;">
                 <div>
@@ -120,11 +120,11 @@
             </div>
 
             <!-- Actions -->
-            <div class="d-flex align-items-center mt-3 mt-md-0" style="gap: 8px;">
-                <button type="button" id="btn-management-filter" class="btn btn-primary" style="border-radius: 12px; font-weight: 600; padding: 0.55rem 1.25rem; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);">
+            <div class="d-flex align-items-center mt-3 mt-md-0 report-management-action-buttons">
+                <button type="button" id="btn-management-filter" class="btn btn-primary report-management-primary-btn">
                     <i class="fas fa-filter mr-2"></i> Tampilkan
                 </button>
-                <button type="button" id="btn-management-deduplicate" class="btn btn-outline-danger" style="border-radius: 12px; font-weight: 600; padding: 0.55rem 1.25rem;" disabled>
+                <button type="button" id="btn-management-deduplicate" class="btn btn-outline-danger report-management-outline-btn" disabled>
                     <i class="fas fa-clone mr-2"></i> Deduplikasi
                 </button>
             </div>
@@ -180,8 +180,8 @@
             </div>
         </div>
 
-        <div class="table-responsive mt-4" style="border-radius: 12px; border: 1px solid #e2e8f0;">
-            <table class="table table-hover mb-0" style="border-collapse: collapse;">
+        <div class="table-responsive report-management-table-wrap mt-4">
+            <table class="table table-hover mb-0 report-management-table">
                 <thead style="background: #f8fafc;">
                     <tr>
                         <th class="text-center" style="width: 5%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;"><i class="far fa-check-square"></i></th>
@@ -1023,14 +1023,15 @@
 
 @section('styles')
 <style>
-    .report-management-hero { position:relative; overflow:hidden; border-radius:16px; padding:1.75rem 2rem; background: radial-gradient(circle at top right, rgba(37,99,235,0.1) 0%, transparent 40%), linear-gradient(135deg, #f8fbff 0%, #eef4ff 100%); border:1px solid rgba(37,99,235,0.15); box-shadow:0 8px 16px -4px rgba(29,78,216,0.08); }
-    .report-management-hero__glow { position:absolute; top:-50px; right:-50px; width:200px; height:200px; border-radius:50%; background:rgba(56,189,248,0.2); filter:blur(30px); }
-    .report-management-hero__eyebrow { display:inline-block; margin-bottom:0.75rem; padding:0.35rem 0.85rem; border-radius:999px; font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#1d4ed8; background:rgba(255,255,255,0.8); border:1px solid rgba(37,99,235,0.15); box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-    .report-management-hero__title { color:#0f172a; font-size:1.5rem; font-weight:800; letter-spacing:-0.02em; margin-bottom:0.5rem; }
+    .report-management-hero { position:relative; overflow:hidden; border-radius:24px; padding:1.75rem 2rem; background:linear-gradient(135deg, #ffffff 0%, #f8fbff 100%); border:1px solid rgba(15, 76, 186, 0.12); box-shadow:0 20px 40px -24px rgba(15, 76, 186, 0.22); }
+    .report-management-hero__glow { display:none; }
+    .report-management-hero__eyebrow { display:inline-block; margin-bottom:0.75rem; padding:0.35rem 0.85rem; border-radius:999px; font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#0f4cba; background:rgba(15, 76, 186, 0.08); border:1px solid rgba(15, 76, 186, 0.12); box-shadow: 0 2px 4px rgba(15, 76, 186, 0.03); }
+    .report-management-hero__title { color:#0f172a; font-size:1.5rem; font-weight:800; letter-spacing:0; margin-bottom:0.5rem; }
     .report-management-hero__text { color:#475569; font-size: 0.95rem; line-height:1.6; max-width:650px; }
-    .report-management-hero__badge { display:inline-flex; align-items:center; padding:0.6rem 1.25rem; border-radius:12px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); color:#334155; font-size: 0.9rem; font-weight:600; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); }
+    .report-management-hero__badge { display:inline-flex; align-items:center; padding:0.6rem 1.25rem; border-radius:14px; background:#ffffff; border:1px solid rgba(226,232,240,0.9); color:#334155; font-size: 0.9rem; font-weight:600; box-shadow:0 12px 24px -18px rgba(15, 23, 42, 0.28); }
 
     .import-upload-card { border-radius:16px; overflow:hidden; box-shadow:0 10px 25px -5px rgba(15,23,42,0.08) !important; border: 1px solid rgba(226,232,240, 0.8) !important; }
+    .import-upload-card.report-management-card { border-radius:24px !important; box-shadow:0 20px 40px -20px rgba(15, 76, 186, 0.08), 0 1px 3px rgba(15, 76, 186, 0.02) !important; border: 1px solid rgba(15, 76, 186, 0.12) !important; }
     .import-upload-card__header { padding:1.5rem 1.75rem 1rem; border-bottom: 1px solid rgba(226,232,240,0.5); background:#ffffff; }
     .import-upload-card__eyebrow { display:inline-block; margin-bottom:0.5rem; padding:0.35rem 0.85rem; border-radius:999px; font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#2563eb; background:rgba(37,99,235,0.08); }
     .import-upload-card__subtitle { color:#64748b; max-width:700px; line-height:1.6; font-size: 0.9rem; }
@@ -1045,34 +1046,42 @@
     .report-management-rebuild-panel, .report-management-recover-panel { display:flex; flex-direction:column; justify-content:space-between; padding:1.5rem; border-radius:12px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); box-shadow:0 4px 6px -1px rgba(0,0,0,0.02); }
     .report-management-progress__meta { display:block; color:#94a3b8; font-size: 0.85rem; font-weight:500; min-height:1.2rem; }
 
-    .report-management-notice { padding:1.25rem 1.5rem; border-radius:12px; background:#f0f9ff; border:1px solid #bae6fd; color:#0369a1; font-size:0.9rem; font-weight:600; line-height:1.5; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); }
+    .report-management-control-grid .form-control { min-height:42px; border-radius:14px !important; border:1px solid rgba(15, 76, 186, 0.14) !important; box-shadow:none; }
+    .report-management-control-grid .form-control:focus { border-color:#0f4cba !important; box-shadow:0 0 0 4px rgba(15, 76, 186, 0.1) !important; }
+    .report-management-control-grid .btn { min-width:48px; min-height:42px; border-radius:14px !important; display:inline-flex; align-items:center; justify-content:center; }
+    .report-management-summary-bar { background:#ffffff; border-radius:18px; border:1px solid rgba(148, 163, 184, 0.14); box-shadow:0 8px 20px -18px rgba(15, 23, 42, 0.24); }
+    .report-management-action-buttons { gap:8px; }
+    .report-management-primary-btn { border:0; border-radius:16px !important; font-weight:700; padding:0.6rem 1.35rem; background:linear-gradient(135deg, #0f4cba, #2563eb); box-shadow:0 14px 28px -12px rgba(15, 76, 186, 0.42); }
+    .report-management-primary-btn:hover { background:linear-gradient(135deg, #0d43a5, #1d5ec2); transform:translateY(-1px); box-shadow:0 18px 34px -14px rgba(15, 76, 186, 0.5); }
+    .report-management-outline-btn { border-radius:16px !important; font-weight:700; padding:0.6rem 1.25rem; }
+    .report-management-notice { padding:1.25rem 1.5rem; border-radius:14px; background:#f0f9ff; border:1px solid #bae6fd; color:#0369a1; font-size:0.9rem; font-weight:600; line-height:1.5; box-shadow:0 8px 20px -18px rgba(15, 23, 42, 0.24); }
 
-    .report-management-load-card { padding:1.5rem; border-radius:16px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); box-shadow:0 10px 15px -3px rgba(0,0,0,0.05); overflow:hidden; position:relative; }
-    .report-management-load-card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:#2563eb; }
+    .report-management-load-card { padding:1.5rem; border-radius:18px; background:#ffffff; border:1px solid rgba(148, 163, 184, 0.16); box-shadow:0 12px 26px -22px rgba(15,23,42,0.25); overflow:hidden; position:relative; }
+    .report-management-load-card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:#0f4cba; }
     .report-management-load-card__header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.25rem; }
     .report-management-load-card__eyebrow { font-size:0.7rem; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; color:#64748b; margin-bottom:0.25rem; }
     .report-management-load-card__title { font-size:1.1rem; font-weight:700; color:#0f172a; line-height:1.2; }
-    .report-management-load-card__stage { padding:0.35rem 0.85rem; border-radius:999px; background:#eff6ff; color:#2563eb; font-size:0.75rem; font-weight:700; letter-spacing:0.02em; border:1px solid #bfdbfe; }
+    .report-management-load-card__stage { padding:0.35rem 0.85rem; border-radius:999px; background:#eff6ff; color:#0f4cba; font-size:0.75rem; font-weight:700; letter-spacing:0.02em; border:1px solid #bfdbfe; }
     
     .report-management-progress { height:10px; background:#f1f5f9; border-radius:999px; overflow:hidden; margin:1.25rem 0 0.75rem; }
-    .report-management-progress__bar { background:linear-gradient(90deg, #2563eb 0%, #60a5fa 100%); transition:width 0.4s cubic-bezier(0.4, 0, 0.2, 1); border-radius:999px; }
-    .report-management-progress__bar--indeterminate { background: linear-gradient(90deg, #2563eb 25%, #60a5fa 50%, #2563eb 75%); background-size: 200% 100%; animation: reportManagementProgressShift 1.5s infinite linear; }
+    .report-management-progress__bar { background:linear-gradient(90deg, #0f4cba 0%, #2563eb 58%, #10b981 100%); transition:width 0.4s cubic-bezier(0.4, 0, 0.2, 1); border-radius:999px; }
+    .report-management-progress__bar--indeterminate { background: linear-gradient(90deg, #0f4cba 25%, #60a5fa 50%, #10b981 75%); background-size: 200% 100%; animation: reportManagementProgressShift 1.5s infinite linear; }
 
     .report-management-load-card__meta-row { display:flex; justify-content:space-between; align-items:center; }
     .report-management-progress__value { font-size:1.25rem; font-weight:800; color:#0f172a; }
     .report-management-load-card__units { font-size:0.85rem; font-weight:600; color:#64748b; }
     .report-management-progress__text { color:#475569; font-size:0.9rem; font-weight:500; }
 
-    .report-management-bulkbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; padding:1rem 1.25rem; border-radius:12px; background:#f8fafc; border:1px solid rgba(226,232,240,0.8); }
+    .report-management-bulkbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; padding:1rem 1.25rem; border-radius:16px; background:#ffffff; border:1px solid rgba(148, 163, 184, 0.14); box-shadow:0 8px 20px -18px rgba(15,23,42,0.18); }
     .report-management-bulkbar .form-check-label { font-weight:600; color:#1e293b; cursor: pointer; }
     .report-management-bulkbar__hint { font-size:0.85rem; font-weight:500; color:#64748b; }
 
-    .report-management-table-wrap { border:1px solid rgba(226,232,240,0.8); border-radius:12px; overflow:hidden; background:#fff; box-shadow:0 2px 4px -1px rgba(0,0,0,0.02); }
+    .report-management-table-wrap { border:1px solid rgba(148, 163, 184, 0.18); border-radius:16px; overflow:hidden; background:#fff; box-shadow:0 8px 18px -18px rgba(15,23,42,0.22); }
     .report-management-table thead th { background:#f8fafc; border-bottom:1px solid rgba(226,232,240,0.8); color:#475569; font-size:0.8rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; padding:1rem 1.25rem; }
     .report-management-table tbody td { padding:1rem 1.25rem; border-top:1px solid rgba(226,232,240,0.5); vertical-align:middle; color:#334155; font-size: 0.95rem; }
     .report-management-col-check { width:60px; }
     .report-management-primary { color:#0f172a; font-weight:600; }
-    .report-management-count { display:inline-flex; align-items:center; justify-content:center; min-width:60px; padding:0.35rem 0.75rem; border-radius:999px; background:#eff6ff; color:#2563eb; font-size: 0.85rem; font-weight:700; border: 1px solid #bfdbfe; }
+    .report-management-count { display:inline-flex; align-items:center; justify-content:center; min-width:60px; padding:0.35rem 0.75rem; border-radius:999px; background:#eff6ff; color:#0f4cba; font-size: 0.85rem; font-weight:700; border: 1px solid #bfdbfe; }
 
     .report-management-period-row td { padding:0.75rem 1.25rem !important; background:#f8fafc !important; border-top:1px solid rgba(226,232,240,0.8) !important; border-bottom:1px solid rgba(226,232,240,0.8) !important; }
     .report-management-period-card { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
@@ -1090,7 +1099,7 @@
     .report-management-pagination__actions { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
     .report-management-page-btn { display:inline-flex; align-items:center; justify-content:center; min-width:36px; height:36px; padding:0 0.75rem; border:1px solid rgba(226,232,240,0.8); border-radius:8px; background:#ffffff; color:#475569; font-weight:600; font-size: 0.9rem; transition: all 0.2s; }
     .report-management-page-btn:hover:not(:disabled) { background: #f8fafc; border-color: #cbd5e1; }
-    .report-management-page-btn.is-active { background:#2563eb; border-color:#2563eb; color:#ffffff; }
+    .report-management-page-btn.is-active { background:#0f4cba; border-color:#0f4cba; color:#ffffff; }
     .report-management-page-btn:disabled { opacity:0.5; cursor:not-allowed; }
 
     .report-management-selection-toast-shell { position:fixed; right:2rem; bottom:2rem; z-index:1080; display:flex; justify-content:flex-end; align-items:flex-end; width:min(400px,calc(100vw - 4rem)); max-width:calc(100vw - 4rem); pointer-events:none; }
@@ -1112,7 +1121,7 @@
     .swal-modern-title { color:#0f172a; font-weight:700; font-size: 1.25rem; }
     .swal-modern-html { color:#475569; font-size:0.95rem; line-height:1.6; }
     .swal-modern-confirm, .swal-modern-cancel { border-radius:10px; font-weight:600; padding:0.75rem 1.5rem; font-size: 0.95rem; }
-    .swal-modern-confirm { background:#2563eb; color:#ffffff; }
+    .swal-modern-confirm { background:#0f4cba; color:#ffffff; }
     .swal-modern-cancel { background:#f1f5f9; color:#475569; }
 
     @media (max-width:991.98px) {
@@ -1125,9 +1134,9 @@
         .import-upload-card__body { padding:1.25rem 1.25rem 6rem; }
         .report-management-stat { flex-direction: row; gap: 1rem; }
         .report-management-stat__icon { width: 40px; height: 40px; font-size: 1rem; }
-        .report-management-action-bar { flex-direction: column; align-items: stretch; gap: 1rem; }
-        .report-management-action-bar__group { flex-direction: column; align-items: stretch; }
-        .report-management-filter-btn { width: 100%; min-width: 0; }
+        .report-management-summary-bar { align-items: stretch !important; }
+        .report-management-action-buttons { width: 100%; flex-direction: column; align-items: stretch !important; }
+        .report-management-action-buttons .btn { width: 100%; min-width: 0; }
         .report-management-selection-toast-shell { left:1rem; right:1rem; bottom:1rem; width:calc(100vw - 2rem); max-width:calc(100vw - 2rem); }
         .report-management-selection-toast { flex-direction:column; align-items: stretch; text-align: center; }
         .report-management-selection-toast__actions { justify-content: center; margin-top: 0.5rem; }

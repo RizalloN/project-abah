@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
+use App\Services\Reports\BusinessClusterReportService;
 use App\Services\Reports\KolaborasiReportService;
 use Illuminate\Http\Request;
 
@@ -13,7 +14,8 @@ use Illuminate\Http\Request;
 class KolaborasiReportController extends Controller
 {
     public function __construct(
-        private readonly KolaborasiReportService $kolaborasiService
+        private readonly KolaborasiReportService $kolaborasiService,
+        private readonly BusinessClusterReportService $businessClusterService
     ) {}
 
     public function programReferralPartnerPerusahaanAnak(Request $request)
@@ -36,5 +38,12 @@ class KolaborasiReportController extends Controller
             'bod_boc + simpanan_multipn',
             'Nasabah Prioritas BOD/BOC'
         );
+    }
+
+    public function businessCluster(Request $request)
+    {
+        return view('report.business-cluster', $this->businessClusterService->buildReport(
+            $request->input('branch_office')
+        ));
     }
 }

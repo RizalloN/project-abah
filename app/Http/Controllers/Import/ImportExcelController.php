@@ -443,7 +443,7 @@ class ImportExcelController extends Controller
             'lw321pn' => 'LW321PN - Kolektibilitas dan Tunggakan Per AO',
             'lw321_npd' => 'LW321 NPD Micro',
             'lw321_npdd' => 'LW321 NPDD Micro',
-            'gi405_singlerow' => 'GI405 Single Row',
+            'gi405_recovery' => 'GI405 Recovery',
             L1133CsvImporter::TABLE => 'L1133 - Laporan Harian Pinjaman Kanwil',
             default => $this->resolveActiveReport()?->nama_report ?? 'Preview Data',
         };
@@ -527,6 +527,7 @@ class ImportExcelController extends Controller
     private const BULK_LOAD_TEMP_DIR = 'app/import_bulk';
     private const STAGED_CSV_TEMP_DIR = 'app/excel_stage';
     private const DAILY_LOAN_IMPORT_LOCK_NAME = 'project_abah:table_write:daily_loan_dinamis';
+    private const SERIALIZED_CSV_MAX_RECORD_BYTES = 1048576;
 
     protected function schemaService(): SchemaIntrospectionService
     {
@@ -685,7 +686,7 @@ class ImportExcelController extends Controller
     {
         $resolvedTable = strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName())));
 
-        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'gi405_singlerow', 'lw321pn', 'lw321_npd', 'lw321_npdd'], true);
+        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'lw321pn', 'lw321_npd', 'lw321_npdd'], true);
     }
 
     private function normalizeImportActiveFilters(array $filters, ?string $tableName = null): array
@@ -709,7 +710,7 @@ class ImportExcelController extends Controller
 
     private function isGi405RecDhTable(?string $tableName = null): bool
     {
-        return strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName()))) === 'gi405_singlerow';
+        return strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName()))) === 'gi405_recovery';
     }
 
     private function isLw325PhTable(?string $tableName = null): bool
@@ -747,8 +748,8 @@ class ImportExcelController extends Controller
 
     private function hasRequiredGi405RecDhImportData(array $row): bool
     {
-        $kode = trim((string) ($row['kode'] ?? ''));
-        $tanggal = trim((string) ($row['tanggal'] ?? ''));
+        $kode = trim((string) ($row['kode_uker'] ?? $row['kode'] ?? ''));
+        $tanggal = trim((string) ($row['periode'] ?? $row['tanggal'] ?? ''));
         $uniqueId = trim((string) ($row['uniqueid_namareport'] ?? ''));
 
         return $kode !== '' && $tanggal !== '' && $uniqueId !== '';
@@ -758,7 +759,6 @@ class ImportExcelController extends Controller
     {
         $checks = [
             'Pendapatan Koreksi PPAP-dr Angsuran PH' => 'pendapatan_koreksi_ppap_dr_angsuran_ph',
-            'Recovery Non Klaim' => 'recovery_non_klaim',
         ];
 
         foreach ($checks as $headerLabel => $dbColumn) {
@@ -1161,9 +1161,13 @@ class ImportExcelController extends Controller
     private function readCsvRecord($handle, string $delimiter = ',', ?string $tableName = null)
     {
         if ($this->usesSerializedCsvRepair($tableName)) {
-            $line = fgets($handle);
+            $line = fgets($handle, self::SERIALIZED_CSV_MAX_RECORD_BYTES + 1);
             if ($line === false) {
                 return false;
+            }
+
+            if ($this->isCsvRecordOverReadLimit((string) $line, $handle)) {
+                $this->discardOversizedCsvRecordTail($handle);
             }
 
             return $this->normalizeCsvRow([rtrim($line, "\r\n")], $delimiter, null, $tableName);
@@ -1175,6 +1179,22 @@ class ImportExcelController extends Controller
         }
 
         return $this->normalizeCsvRow($row, $delimiter, null, $tableName);
+    }
+
+    private function isCsvRecordOverReadLimit(string $line, $handle): bool
+    {
+        return strlen($line) >= self::SERIALIZED_CSV_MAX_RECORD_BYTES
+            && !str_ends_with($line, "\n")
+            && !feof($handle);
+    }
+
+    private function discardOversizedCsvRecordTail($handle): void
+    {
+        while (($tail = fgets($handle, self::SERIALIZED_CSV_MAX_RECORD_BYTES + 1)) !== false) {
+            if (str_ends_with((string) $tail, "\n")) {
+                break;
+            }
+        }
     }
 
     private function getDailyLoanExpectedCsvColumns(?int $expectedColumns = null): ?int
@@ -2717,9 +2737,10 @@ class ImportExcelController extends Controller
             $file = new \SplFileObject($csvPath, 'r');
             $file->seek(PHP_INT_MAX);
             $lineIndex = $file->key();
-            $currentLine = trim((string) $file->current());
-            if ($currentLine === '' && $lineIndex > 0) {
+
+            while ($lineIndex > 0 && trim((string) $file->current()) === '') {
                 $lineIndex--;
+                $file->seek($lineIndex);
             }
 
             return max(0, $lineIndex);
@@ -2729,16 +2750,20 @@ class ImportExcelController extends Controller
                 return 0;
             }
 
-            $lines = 0;
+            $lineNumber = 0;
+            $lastNonEmptyLine = 0;
             try {
-                while (fgets($handle) !== false) {
-                    $lines++;
+                while (($line = fgets($handle)) !== false) {
+                    $lineNumber++;
+                    if (trim((string) $line) !== '') {
+                        $lastNonEmptyLine = $lineNumber;
+                    }
                 }
             } finally {
                 fclose($handle);
             }
 
-            return max(0, $lines - 1);
+            return max(0, $lastNonEmptyLine - 1);
         }
     }
 
@@ -3042,10 +3067,10 @@ class ImportExcelController extends Controller
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '';
             $uniqueIdPrefix = 'uuid_rka_' . str_replace('.', '', uniqid('', true));
-        } elseif ($tableName === 'gi405_singlerow' && isset($tableColumnsLookup['uniqueid_namareport'])) {
+        } elseif ($tableName === 'gi405_recovery' && isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '';
-            $uniqueIdPrefix = 'uuid_gi405';
+            $uniqueIdPrefix = 'uuid_gi405_recovery';
         } elseif ($tableName === 'lw325_ph' && isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '_RPH';
@@ -5567,21 +5592,9 @@ class ImportExcelController extends Controller
             'normalized' => true,
             'backend' => 'polars',
             'headers' => [
-                'PERIODE',
-                'BRANCH',
-                'CURRENCY',
-                'POSTING CONTROL',
-                'ACCOUNT NUMBER',
-                'C/C',
-                'P/C',
-                'F/C',
-                'DESCRIPTION',
-                'BEGINING BALANCE',
-                'EQUIVALENTS IDR',
-                'EQUIVALENTS USD',
-                'TODAY DEBIT',
-                'TODAY CREDIT',
-                'ENDING BALANCE',
+                'Periode',
+                'KODE',
+                'Pendapatan Koreksi PPAP-dr Angsuran PH',
             ],
             'skipped_rows' => array_values(array_map('intval', (array) ($donePayload['skipped_rows'] ?? []))),
             'skipped_count' => (int) ($donePayload['skipped_count'] ?? 0),
@@ -6002,21 +6015,9 @@ class ImportExcelController extends Controller
             'written_rows' => 0,
             'total_rows' => 0,
             'headers' => [
-                'PERIODE',
-                'BRANCH',
-                'CURRENCY',
-                'POSTING CONTROL',
-                'ACCOUNT NUMBER',
-                'C/C',
-                'P/C',
-                'F/C',
-                'DESCRIPTION',
-                'BEGINING BALANCE',
-                'EQUIVALENTS IDR',
-                'EQUIVALENTS USD',
-                'TODAY DEBIT',
-                'TODAY CREDIT',
-                'ENDING BALANCE',
+                'Periode',
+                'KODE',
+                'Pendapatan Koreksi PPAP-dr Angsuran PH',
             ],
             'periods' => [],
         ];
@@ -6036,21 +6037,9 @@ class ImportExcelController extends Controller
             'duplicate_count' => (int) ($normalized['duplicate_count'] ?? 0),
             'written_rows' => (int) ($normalized['written_rows'] ?? 0),
             'headers' => $normalized['headers'] ?? [
-                'PERIODE',
-                'BRANCH',
-                'CURRENCY',
-                'POSTING CONTROL',
-                'ACCOUNT NUMBER',
-                'C/C',
-                'P/C',
-                'F/C',
-                'DESCRIPTION',
-                'BEGINING BALANCE',
-                'EQUIVALENTS IDR',
-                'EQUIVALENTS USD',
-                'TODAY DEBIT',
-                'TODAY CREDIT',
-                'ENDING BALANCE',
+                'Periode',
+                'KODE',
+                'Pendapatan Koreksi PPAP-dr Angsuran PH',
             ],
             'periods' => $normalized['periods'] ?? [],
         ];
@@ -6635,6 +6624,39 @@ class ImportExcelController extends Controller
         return array_keys($normalizedPeriods);
     }
 
+    private function assertDailyLoanImportPeriodsEmptyOrFail(array $periods): void
+    {
+        $normalizedPeriods = $this->normalizeDailyLoanReplacePeriods($periods);
+        if ($normalizedPeriods === []) {
+            return;
+        }
+
+        $guard = app(ImportDuplicateGuardService::class);
+        foreach ($normalizedPeriods as $period) {
+            $guard->assertSlotEmpty('daily_loan_dinamis', ['periode' => $period]);
+        }
+    }
+
+    private function collectDailyLoanPeriodsFromFastPathStage(string $stagingTable, string $innerSelectSql, string $whereClauses): array
+    {
+        $sql = "SELECT DISTINCT src.`periode` AS `periode`\n"
+            . "FROM (\n"
+            . "  SELECT \n{$innerSelectSql}\n"
+            . "  FROM `{$stagingTable}`\n"
+            . ") AS src\n"
+            . $whereClauses;
+
+        $periods = [];
+        foreach (DB::select($sql) as $row) {
+            $period = trim((string) ($row->periode ?? ''));
+            if ($period !== '') {
+                $periods[] = $period;
+            }
+        }
+
+        return $this->normalizeDailyLoanReplacePeriods($periods);
+    }
+
     private function buildDirectGenericCsvLoadPlan(string $tableName, string $absolutePath, array $normalizedHeaders, array $importOptions = []): array
     {
         $delimiter = $this->detectCsvDelimiter($absolutePath);
@@ -6818,6 +6840,12 @@ class ImportExcelController extends Controller
             $lockAcquired = $this->acquireMysqlAdvisoryLockOnPdo($pdo, self::DAILY_LOAN_IMPORT_LOCK_NAME, 90);
             if (!$lockAcquired) {
                 throw new \RuntimeException('Import Daily Loan sedang berjalan. Tunggu proses sebelumnya selesai terlebih dahulu.');
+            }
+
+            if (!$replaceExistingPeriods) {
+                $this->assertDailyLoanImportPeriodsEmptyOrFail(
+                    array_merge((array) ($loadPlan['period_hints'] ?? []), $replacePeriods)
+                );
             }
 
             $pdo->beginTransaction();
@@ -7327,7 +7355,7 @@ class ImportExcelController extends Controller
         }
 
         if ($this->isGi405RecDhTable($tableName)) {
-            return $this->buildGenericFastPathBulkImportSqlParts($context, 'gi405_singlerow');
+            return $this->buildGenericFastPathBulkImportSqlParts($context, 'gi405_recovery');
         }
 
         if ($this->isDlyKapResegmentasiTable($tableName)) {
@@ -7518,6 +7546,10 @@ class ImportExcelController extends Controller
         $isLw321Npd = $this->isLw321NpdTable($tableName);
         $isLw321Npdd = $this->isLw321NpddTable($tableName);
 
+        if ($isGi405RecDh) {
+            return false;
+        }
+
         if ($csvPath === '' || !file_exists($csvPath) || (!$isDailyLoan && !$isLw325Ph && !$isGi405RecDh && !$isDlyKapResegmentasi && !$isLw321Pn && !$isLw321Npd && !$isLw321Npdd)) {
             return false;
         }
@@ -7543,7 +7575,7 @@ class ImportExcelController extends Controller
             $label = $isLw325Ph
                 ? 'LW325 - PH'
                 : ($isGi405RecDh
-                    ? 'GI405 Single Row'
+                    ? 'GI405 Recovery'
                     : ($isDlyKapResegmentasi ? 'DLY KAP Resegmentasi' : ($isLw321Pn ? 'LW321PN' : ($isLw321Npd ? 'LW321 NPD' : ($isLw321Npdd ? 'LW321 NPDD' : 'Daily Loan')))));
             $send('progress', [
                 'percent' => 18,
@@ -7663,6 +7695,12 @@ class ImportExcelController extends Controller
                 throw new \RuntimeException("Import {$label} sedang berjalan di background. Silakan tunggu.");
             }
 
+            if ($isDailyLoan) {
+                $this->assertDailyLoanImportPeriodsEmptyOrFail(
+                    $this->collectDailyLoanPeriodsFromFastPathStage($stagingTable, $innerSelectSql, $whereClauses)
+                );
+            }
+
             $inserted = 0;
             $sessionSqlMode = null;
 
@@ -7780,7 +7818,11 @@ class ImportExcelController extends Controller
         $isGi405RecDhTable = $this->isGi405RecDhTable($tableName);
         $isLw325PhTable = $this->isLw325PhTable($tableName);
         $isSsaTable = $isSsaSimpananTable || $isSsaPinjamanTable;
-        $isDirectPolarsTable = $isSsaTable || $isGi405RecDhTable || $isLw325PhTable;
+        if ($isGi405RecDhTable) {
+            return false;
+        }
+
+        $isDirectPolarsTable = $isSsaTable || $isLw325PhTable;
 
         if (!$isDailyLoanTable && !$isDirectPolarsTable) {
             return false;
@@ -8665,7 +8707,7 @@ class ImportExcelController extends Controller
 
         $handle = @fopen($path, 'r');
         if (!$handle) {
-            throw new \RuntimeException('Gagal membuka file CSV GI405 Single Row.');
+            throw new \RuntimeException('Gagal membuka file CSV GI405 Recovery.');
         }
 
         $previewLimit = 100;
@@ -8680,7 +8722,7 @@ class ImportExcelController extends Controller
                 $lineNumber++;
 
                 if ($headerIndex === null) {
-                    if ($this->detectHeaderIndex([$row], 'gi405_singlerow') !== 0) {
+                    if ($this->detectHeaderIndex([$row], 'gi405_recovery') !== 0) {
                         continue;
                     }
 
@@ -8718,7 +8760,7 @@ class ImportExcelController extends Controller
         }
 
         if ($headerIndex === null || $headers === []) {
-            throw new \RuntimeException($this->headerNotFoundMessage('gi405_singlerow'));
+            throw new \RuntimeException($this->headerNotFoundMessage('gi405_recovery'));
         }
 
         return [
@@ -8843,6 +8885,7 @@ class ImportExcelController extends Controller
             'f' => 'f_c',
             'month_day_year_of_posisi' => 'month_day_year_of_posisi',
             'periode' => 'periode',
+            'kode' => 'kode_uker',
             'segmen_dashboard' => 'segmen_dashboard',
             'produk_dashboard' => 'produk_dashboard',
         ];
@@ -9150,7 +9193,7 @@ class ImportExcelController extends Controller
                 continue;
             }
             $resolvedColumn = $context['table_columns_by_lower'][$dbColLower] ?? $dbCol;
-            if (($context['table_name'] ?? '') === 'gi405_rec_dh' && strtolower($resolvedColumn) === 'kode') {
+            if (($context['table_name'] ?? '') === 'gi405_recovery' && strtolower($resolvedColumn) === 'kode_uker') {
                 $value = $this->normalizeGi405RecDhKodeValue($value);
             }
             $finalRow[$resolvedColumn] = $this->normalizeValueForDatabaseColumn($resolvedColumn, $value, $context);
@@ -9195,11 +9238,11 @@ class ImportExcelController extends Controller
             return null;
         }
 
-        if (($context['table_name'] ?? '') === 'gi405_rec_dh' && !$this->hasRequiredGi405RecDhImportData($finalRow)) {
+        if (($context['table_name'] ?? '') === 'gi405_recovery' && !$this->hasRequiredGi405RecDhImportData($finalRow)) {
             return null;
         }
 
-        if (($context['table_name'] ?? '') === 'gi405_rec_dh') {
+        if (($context['table_name'] ?? '') === 'gi405_recovery') {
             $this->assertGi405RecDhNumericMapping($row, $normalizedHeaders, $finalRow);
         }
 
@@ -11718,6 +11761,7 @@ class ImportExcelController extends Controller
             'unique_id_col' => $importContext['unique_id_col'] ?? null,
             'unique_id_suffix' => $importContext['suffix'] ?? null,
             'manual_values' => (array) ($importContext['manual_column_values'] ?? []),
+            'preserve_column_positions' => $this->isSimpananMultiPnTable($tableName),
         ];
 
         $configFile = storage_path('app/excel_gpu_config_' . uniqid() . '.json');
@@ -12068,6 +12112,7 @@ class ImportExcelController extends Controller
             $headerCount = $context['header_count'];
             $reservedGapIds = [];
             $reservedGapIdOffset = 0;
+            $dailyLoanImportPeriods = [];
 
             if ($this->usesGapIdReuse($tableName) && $estimatedTotalRows > 0) {
                 $reservedGapIds = $this->findSmallestAvailableIds($tableName, $estimatedTotalRows);
@@ -12108,6 +12153,13 @@ class ImportExcelController extends Controller
                     $periodValue = trim((string) ($finalRow[$ssaReplacePeriodColumn] ?? ''));
                     if ($periodValue !== '') {
                         $ssaReplacePeriods[$periodValue] = true;
+                    }
+                }
+
+                if ($cachedIsDailyLoan) {
+                    $periodValue = trim((string) ($finalRow['periode'] ?? ''));
+                    if ($periodValue !== '') {
+                        $dailyLoanImportPeriods[$periodValue] = true;
                     }
                 }
 
@@ -12191,81 +12243,97 @@ class ImportExcelController extends Controller
             fclose($outputHandle);
             $outputHandle = null;
 
-            if ($forceDirectLoad) {
-                $ssaReplacePeriods = array_values(array_keys($ssaReplacePeriods));
-                if ($ssaReplacePeriodColumn !== null && $ssaReplacePeriods !== []) {
-                    if ($jobId > 0) {
-                        $this->rememberDetectedImportPeriods($jobId, $ssaReplacePeriods);
+            $dailyLoanLockAcquired = false;
+            try {
+                if ($cachedIsDailyLoan) {
+                    if (!$this->acquireMysqlAdvisoryLockOnDb(self::DAILY_LOAN_IMPORT_LOCK_NAME, 10)) {
+                        throw new \RuntimeException('Import Daily Loan sedang berjalan. Tunggu proses sebelumnya selesai terlebih dahulu.');
                     }
 
-                    $send('progress', [
-                        'percent' => 95,
-                        'message' => 'Membersihkan data lama untuk periode: ' . implode(', ', $ssaReplacePeriods) . '...',
-                        'rows_done' => $rowsDone,
-                        'total' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
-                        'speed' => 0,
-                        'processed_rows' => $rowsDone,
-                        'total_rows' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
-                        'mode' => 'direct_load',
-                    ]);
-
-                    DB::table($tableName)
-                        ->whereIn($ssaReplacePeriodColumn, $ssaReplacePeriods)
-                        ->delete();
+                    $dailyLoanLockAcquired = true;
+                    $this->assertDailyLoanImportPeriodsEmptyOrFail(array_keys($dailyLoanImportPeriods));
                 }
 
-                $directLoadSourcePath = $outputCsvPath;
-                if ($tableName === 'simpanan_multipn') {
-                    // File hasil staging ditulis via fputcsv default comma, jadi delimiter yang dipakai
-                    // untuk membaca ulang file staging harus mengikuti format output staging, bukan
-                    // delimiter sumber asli. Kalau delimiter sumber asli dipakai di sini, kolom bisa
-                    // bergeser dan LOAD DATA mengisi field bisnis dengan NULL.
-                    $loadSource = $this->prepareSimpananMultiPnDirectLoadSource($outputCsvPath, ',', $send);
-                    $directLoadSourcePath = (string) ($loadSource['path'] ?? $outputCsvPath);
-                    if (!empty($loadSource['cleanup']) && $directLoadSourcePath !== '') {
-                        $cleanupPaths[] = $directLoadSourcePath;
-                    }
-                }
+                if ($forceDirectLoad) {
+                    $ssaReplacePeriods = array_values(array_keys($ssaReplacePeriods));
+                    if ($ssaReplacePeriodColumn !== null && $ssaReplacePeriods !== []) {
+                        if ($jobId > 0) {
+                            $this->rememberDetectedImportPeriods($jobId, $ssaReplacePeriods);
+                        }
 
-                $send('progress', [
-                    'percent' => 96,
-                    'message' => 'CSV hasil filter siap. Memuat data ke MySQL via LOAD DATA LOCAL INFILE...',
-                    'rows_done' => $rowsDone,
-                    'total' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
-                    'speed' => 0,
-                    'processed_rows' => $rowsDone,
-                    'total_rows' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
-                    'mode' => $forceDirectLoad ? 'direct_load' : 'staged_load',
-                ]);
-
-                $inserted = $this->loadCsvIntoMysqlDirect(
-                    $directLoadSourcePath,
-                    $tableName,
-                    $bulkLoadColumns,
-                    $beforeDirectLoad
-                );
-            } else {
-                $inserted = $this->loadCsvIntoMysqlChunked(
-                    $outputCsvPath,
-                    $tableName,
-                    $bulkLoadColumns,
-                    function (int $processedLines, int $totalLines) use ($send, $rowsDone, $estimatedTotalRows, $forceDirectLoad): void {
-                        $ratio = $totalLines > 0 ? min(1, $processedLines / $totalLines) : 1;
-                        $percent = 96 + (int) floor($ratio * 3);
                         $send('progress', [
-                            'percent' => min(99, $percent),
-                            'message' => 'Memuat data ke MySQL (chunked)...',
+                            'percent' => 95,
+                            'message' => 'Membersihkan data lama untuk periode: ' . implode(', ', $ssaReplacePeriods) . '...',
                             'rows_done' => $rowsDone,
                             'total' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
                             'speed' => 0,
                             'processed_rows' => $rowsDone,
                             'total_rows' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
-                            'mode' => $forceDirectLoad ? 'direct_load' : 'staged_load',
+                            'mode' => 'direct_load',
                         ]);
-                    },
-                    $this->fallbackBulkLoadChunkLines(),
-                    $estimatedTotalRows
-                );
+
+                        DB::table($tableName)
+                            ->whereIn($ssaReplacePeriodColumn, $ssaReplacePeriods)
+                            ->delete();
+                    }
+
+                    $directLoadSourcePath = $outputCsvPath;
+                    if ($tableName === 'simpanan_multipn') {
+                        // File hasil staging ditulis via fputcsv default comma, jadi delimiter yang dipakai
+                        // untuk membaca ulang file staging harus mengikuti format output staging, bukan
+                        // delimiter sumber asli. Kalau delimiter sumber asli dipakai di sini, kolom bisa
+                        // bergeser dan LOAD DATA mengisi field bisnis dengan NULL.
+                        $loadSource = $this->prepareSimpananMultiPnDirectLoadSource($outputCsvPath, ',', $send);
+                        $directLoadSourcePath = (string) ($loadSource['path'] ?? $outputCsvPath);
+                        if (!empty($loadSource['cleanup']) && $directLoadSourcePath !== '') {
+                            $cleanupPaths[] = $directLoadSourcePath;
+                        }
+                    }
+
+                    $send('progress', [
+                        'percent' => 96,
+                        'message' => 'CSV hasil filter siap. Memuat data ke MySQL via LOAD DATA LOCAL INFILE...',
+                        'rows_done' => $rowsDone,
+                        'total' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
+                        'speed' => 0,
+                        'processed_rows' => $rowsDone,
+                        'total_rows' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
+                        'mode' => $forceDirectLoad ? 'direct_load' : 'staged_load',
+                    ]);
+
+                    $inserted = $this->loadCsvIntoMysqlDirect(
+                        $directLoadSourcePath,
+                        $tableName,
+                        $bulkLoadColumns,
+                        $beforeDirectLoad
+                    );
+                } else {
+                    $inserted = $this->loadCsvIntoMysqlChunked(
+                        $outputCsvPath,
+                        $tableName,
+                        $bulkLoadColumns,
+                        function (int $processedLines, int $totalLines) use ($send, $rowsDone, $estimatedTotalRows, $forceDirectLoad): void {
+                            $ratio = $totalLines > 0 ? min(1, $processedLines / $totalLines) : 1;
+                            $percent = 96 + (int) floor($ratio * 3);
+                            $send('progress', [
+                                'percent' => min(99, $percent),
+                                'message' => 'Memuat data ke MySQL (chunked)...',
+                                'rows_done' => $rowsDone,
+                                'total' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
+                                'speed' => 0,
+                                'processed_rows' => $rowsDone,
+                                'total_rows' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
+                                'mode' => $forceDirectLoad ? 'direct_load' : 'staged_load',
+                            ]);
+                        },
+                        $this->fallbackBulkLoadChunkLines(),
+                        $estimatedTotalRows
+                    );
+                }
+            } finally {
+                if ($dailyLoanLockAcquired) {
+                    $this->releaseMysqlAdvisoryLockOnDb(self::DAILY_LOAN_IMPORT_LOCK_NAME);
+                }
             }
             $failed = max(0, $rowsDone - $inserted);
             $this->applyManualColumnValuesAfterLoad($tableName, $context, $inserted);
@@ -12496,7 +12564,7 @@ class ImportExcelController extends Controller
     private function resolveDirectLoadTableLabel(string $tableName): string
     {
         return match (strtolower(trim($tableName))) {
-            'gi405_singlerow' => 'GI405 Single Row',
+            'gi405_recovery' => 'GI405 Recovery',
             'ssa_pinjaman' => 'SSA Pinjaman',
             'ssa_simpanan' => 'SSA Simpanan',
             'hourly_dpk' => 'Hourly DPK',

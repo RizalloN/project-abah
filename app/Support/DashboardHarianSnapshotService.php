@@ -20,7 +20,7 @@ class DashboardHarianSnapshotService
     private const L1133_TABLE = 'l1133';
     private const SAVINGS_TABLE = 'ssa_simpanan';
     private const HOURLY_DPK_TABLE = 'hourly_dpk';
-    private const SOURCE_SIGNATURE_VERSION = 'ssa-loan-primary-v1-kur-kpp-guard';
+    private const SOURCE_SIGNATURE_VERSION = 'landing-option-gi405-v1';
     private const AUTO_SYNC_RECENT_SOURCE_HOURS = 6;
     private const AREA_6_LABEL = 'Area 6';
     private const ALL_UNIT_LABEL = 'Semua Unit Kerja';
@@ -194,8 +194,7 @@ class DashboardHarianSnapshotService
         ['key' => 'ldr_ritel_non_commercial', 'label' => 'LDR Ritel Non Commercial', 'type' => 'percent', 'depth' => 1, 'accent' => 'default'],
         ['key' => 'ldr_mikro_non_commercial', 'label' => 'LDR Mikro Non Commercial', 'type' => 'percent', 'depth' => 1, 'accent' => 'default'],
         ['key' => 'rec_dh_total', 'label' => '7. Rec DH per Segmen', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
-        ['key' => 'rec_dh_small', 'label' => 'Small', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
-        ['key' => 'rec_dh_consumer', 'label' => 'Consumer', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'rec_dh_small', 'label' => 'Ritel', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
         ['key' => 'rec_dh_micro', 'label' => 'Micro', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
     ];
 
@@ -511,6 +510,29 @@ class DashboardHarianSnapshotService
         $version = ReportCacheVersion::composite(['harian', 'pinjaman', 'simpanan']);
 
         return Cache::remember("dh:periods:v{$version}", now()->addMinutes(10), function (): Collection {
+            // Check the latest raw shared periods computed from raw source tables
+            $shared = $this->resolveSharedPeriods();
+            $latestShared = $shared[0] ?? null;
+
+            if ($latestShared !== null) {
+                try {
+                    // If the latest raw shared period is not in the snapshot table, let's build it synchronously on-the-fly!
+                    if (Schema::hasTable(self::SNAPSHOT_TABLE)) {
+                        $exists = DB::table(self::SNAPSHOT_TABLE)
+                            ->where('snapshot_period', $latestShared)
+                            ->exists();
+                        if (!$exists) {
+                            $this->buildPeriodSnapshot($latestShared, false);
+                        }
+                    }
+                } catch (Throwable $e) {
+                    Log::warning('Auto-building latest shared period snapshot failed in fetchPeriods.', [
+                        'period' => $latestShared,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
             try {
                 if (Schema::hasTable(self::SNAPSHOT_TABLE) && DB::table(self::SNAPSHOT_TABLE)->exists()) {
                     return DB::table(self::SNAPSHOT_TABLE)
@@ -525,7 +547,7 @@ class DashboardHarianSnapshotService
                 // Fall through to source intersection.
             }
 
-            return collect($this->resolveSharedPeriods());
+            return collect($shared);
         });
     }
 
@@ -539,11 +561,12 @@ class DashboardHarianSnapshotService
                 $hasSnapshot = $this->snapshotPeriodHasData($sourcePeriod);
 
                 if (!$hasSnapshot) {
-                    if (app()->runningInConsole() || app()->runningUnitTests()) {
-                        $builtCount = $this->buildPeriodSnapshot($sourcePeriod, false);
-                        $hasSnapshot = $builtCount > 0;
-                        $this->snapshotExistenceCache[$sourcePeriod] = $hasSnapshot;
-                    } else {
+                    // Always try to build it synchronously on-the-fly to keep local XAMPP / development environments fresh without requiring background workers
+                    $builtCount = $this->buildPeriodSnapshot($sourcePeriod, false);
+                    $hasSnapshot = $builtCount > 0;
+                    $this->snapshotExistenceCache[$sourcePeriod] = $hasSnapshot;
+
+                    if (!$hasSnapshot) {
                         $this->dispatchSnapshotRebuild($sourcePeriod);
                     }
                 }
@@ -1420,6 +1443,7 @@ class DashboardHarianSnapshotService
         $segmen_2025 = "UPPER(TRIM(COALESCE(sp.segmen_2025, '')))";
         $balance = 'COALESCE(sp.baki_debet, 0)';
         $kol = "CAST(NULLIF(TRIM(COALESCE(sp.kolektabilitas_one_obligor, '')), '') AS UNSIGNED)";
+        $validKol = "{$kol} BETWEEN 1 AND 5";
 
         $query = DB::table(self::LOAN_TABLE . ' as sp')
             ->whereIn('sp.month_day_year_of_periode', $this->sourcePeriodRawCandidates(self::LOAN_TABLE, $period))
@@ -1430,9 +1454,9 @@ class DashboardHarianSnapshotService
                 ? '(' . implode(' OR ', $condition) . ')'
                 : $condition;
 
-            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} THEN {$balance} ELSE 0 END) as {$alias}_os");
+            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$validKol} THEN {$balance} ELSE 0 END) as {$alias}_os");
             $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} = 2 THEN {$balance} ELSE 0 END) as {$alias}_sml");
-            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} > 2 THEN {$balance} ELSE 0 END) as {$alias}_npl");
+            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} BETWEEN 3 AND 5 THEN {$balance} ELSE 0 END) as {$alias}_npl");
         }
 
         return $query
@@ -1692,6 +1716,7 @@ class DashboardHarianSnapshotService
         $segmen_2025 = "UPPER(TRIM(COALESCE(sp.segmen_2025, '')))";
         $balance = 'COALESCE(sp.baki_debet, 0)';
         $kol = "CAST(NULLIF(TRIM(COALESCE(sp.kolektabilitas_one_obligor, '')), '') AS UNSIGNED)";
+        $validKol = "{$kol} BETWEEN 1 AND 5";
 
         $query = DB::table(self::LOAN_TABLE . ' as sp')
             ->whereIn('sp.month_day_year_of_periode', $this->sourcePeriodRawCandidates(self::LOAN_TABLE, $period))
@@ -1743,9 +1768,9 @@ class DashboardHarianSnapshotService
                 $combinedCondition = $condition;
             }
             
-            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} THEN {$balance} ELSE 0 END) as {$alias}_os");
+            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$validKol} THEN {$balance} ELSE 0 END) as {$alias}_os");
             $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} = 2 THEN {$balance} ELSE 0 END) as {$alias}_sml");
-            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} > 2 THEN {$balance} ELSE 0 END) as {$alias}_npl");
+            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} BETWEEN 3 AND 5 THEN {$balance} ELSE 0 END) as {$alias}_npl");
         }
 
         // NOTE: total_os, total_sml_abs_non_commercial, total_npl_abs_non_commercial are computed in finalizeMetrics
@@ -1783,7 +1808,15 @@ class DashboardHarianSnapshotService
     {
         $normalizedPeriod = $this->normalizeDate($period);
 
-        // Tier 1: Check Cognos Recovery Table
+        // Tier 1: Check if gi405_recovery table exists and has data for the period
+        if ($normalizedPeriod && Schema::hasTable('gi405_recovery')) {
+            $exists = DB::table('gi405_recovery')->where('periode', $normalizedPeriod)->exists();
+            if ($exists) {
+                return $this->fetchGi405RecoveryAggregates($normalizedPeriod, $kancaKey, $unitKey);
+            }
+        }
+
+        // Tier 2: Check Cognos Recovery Table
         if ($normalizedPeriod && Schema::hasTable('cognos_recovery')) {
             $exists = DB::table('cognos_recovery')->where('periode', $normalizedPeriod)->exists();
             if ($exists) {
@@ -1791,8 +1824,7 @@ class DashboardHarianSnapshotService
             }
         }
 
-        // Tier 2: Fallback to DH Recovery logic (PH-based)
-        return $this->fetchPhAggregates($period, $kancaKey, $unitKey);
+        return collect();
     }
 
     private function overlayDlyKapPriorityLoanAggregates(string $period, Collection $ssaRows, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
@@ -2305,6 +2337,68 @@ class DashboardHarianSnapshotService
             ->selectRaw("0 as ph_tupok")
             ->selectRaw("0 as ph_lunas")
             ->groupBy('raw_kanca', 'raw_unit')
+            ->get();
+    }
+
+    private function fetchGi405RecoveryAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
+    {
+        if (!Schema::hasTable('gi405_recovery')) {
+            return collect();
+        }
+
+        $normalizedSnapshotPeriod = $this->normalizeDate($period);
+        if ($normalizedSnapshotPeriod === null) {
+            return collect();
+        }
+
+        $query = DB::table('gi405_recovery as gr')
+            ->join('referensi_uker as ru', 'gr.kode_uker', '=', 'ru.kode_uker')
+            ->where('gr.periode', $normalizedSnapshotPeriod);
+
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        if ($normalizedKanca !== []) {
+            $kancaConditions = collect($normalizedKanca)
+                ->map(fn (string $value) => $this->buildFilterCondition('ru.nama_cabang', $value))
+                ->filter()
+                ->all();
+            
+            if (!empty($kancaConditions)) {
+                $query->where(function ($q) use ($kancaConditions) {
+                    foreach ($kancaConditions as $condition) {
+                        $q->orWhereRaw($condition);
+                    }
+                });
+            }
+        }
+
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+        if ($normalizedUnit !== []) {
+            $unitConditions = collect($normalizedUnit)
+                ->map(fn (string $value) => $this->buildFilterCondition('ru.nama_uker', $value))
+                ->filter()
+                ->all();
+            
+            if (!empty($unitConditions)) {
+                $query->where(function ($q) use ($unitConditions) {
+                    foreach ($unitConditions as $condition) {
+                        $q->orWhereRaw($condition);
+                    }
+                });
+            }
+        }
+
+        $valExpr = "COALESCE(gr.pendapatan_koreksi_ppap_dr_angsuran_ph, 0) * -1";
+
+        return $query
+            ->selectRaw("ru.nama_cabang as raw_kanca")
+            ->selectRaw("ru.nama_uker as raw_unit")
+            ->selectRaw("SUM(CASE WHEN UPPER(TRIM(SUBSTRING_INDEX(ru.nama_uker, ' -- ', -1))) NOT LIKE 'UNIT%' THEN {$valExpr} ELSE 0 END) as rec_dh_small")
+            ->selectRaw("0 as rec_dh_consumer")
+            ->selectRaw("SUM(CASE WHEN UPPER(TRIM(SUBSTRING_INDEX(ru.nama_uker, ' -- ', -1))) LIKE 'UNIT%' THEN {$valExpr} ELSE 0 END) as rec_dh_micro")
+            ->selectRaw("SUM({$valExpr}) as rec_dh_total")
+            ->selectRaw("0 as ph_tupok")
+            ->selectRaw("0 as ph_lunas")
+            ->groupBy('ru.nama_cabang', 'ru.nama_uker')
             ->get();
     }
 
@@ -3346,19 +3440,15 @@ class DashboardHarianSnapshotService
     {
         $normalizedPeriod = $this->normalizeDate($period) ?? $period;
         $hasSsaSavings = Schema::hasTable(self::SAVINGS_TABLE) && $this->sourcePeriodExists(self::SAVINGS_TABLE, $period);
-        $hasHourlySavings = $this->hourlyDpkSourcePeriodExists($period);
-        $hasFallbackLoan = $this->dlyKapResegmentasiAvailable($normalizedPeriod) || $this->l1133Available($normalizedPeriod);
+        $hasDlyKap = $this->dlyKapResegmentasiAvailable($normalizedPeriod);
+        $hasL1133 = $this->l1133Available($normalizedPeriod);
 
-        if ($this->loanSourcePeriodExists($period) && $hasSsaSavings) {
+        if ($hasSsaSavings && $this->loanSourcePeriodExists($period)) {
             return 'option1';
         }
 
-        if ($hasFallbackLoan && $hasSsaSavings) {
+        if ($hasSsaSavings && $hasDlyKap && $hasL1133) {
             return 'option2';
-        }
-
-        if ($hasFallbackLoan && $hasHourlySavings) {
-            return 'option3';
         }
 
         return 'none';
@@ -3504,6 +3594,17 @@ class DashboardHarianSnapshotService
     private function sourceRecoveryState(string $period): array
     {
         $normalizedPeriod = $this->normalizeDate($period);
+
+        if ($normalizedPeriod && Schema::hasTable('gi405_recovery')) {
+            $exists = DB::table('gi405_recovery')->where('periode', $normalizedPeriod)->exists();
+            if ($exists) {
+                return [
+                    'gi405_recovery',
+                    $normalizedPeriod,
+                    $this->sourceAggregateState('gi405_recovery', 'periode', [$normalizedPeriod], ['pendapatan_koreksi_ppap_dr_angsuran_ph']),
+                ];
+            }
+        }
 
         if ($normalizedPeriod && Schema::hasTable('cognos_recovery')) {
             $exists = DB::table('cognos_recovery')->where('periode', $normalizedPeriod)->exists();
@@ -4014,6 +4115,7 @@ class DashboardHarianSnapshotService
             self::DLY_KAP_TABLE => 'periode',
             self::L1133_TABLE => 'periode',
             self::HOURLY_DPK_TABLE => 'posisi',
+            'gi405_recovery' => 'periode',
             default => 'Month_Day_Year_of_Posisi',
         };
     }
@@ -4095,7 +4197,7 @@ class DashboardHarianSnapshotService
         return app(RkaLookupService::class);
     }
 
-    public function fetchTimeseriesTrend(array $months, string $category, array|string|null $kancaKey = null, array|string|null $unitKey = null): array
+    public function fetchTimeseriesTrend(array $months, string $category, array|string|null $kancaKey = null, array|string|null $unitKey = null, string $segment = 'total'): array
     {
         if (!$this->canUseSnapshotMetrics() || $months === []) {
             return [
@@ -4104,18 +4206,79 @@ class DashboardHarianSnapshotService
             ];
         }
 
-        $columnMap = [
-            'simpanan' => 'total_simpanan',
-            'simpanan_casa' => 'total_casa',
-            'pinjaman' => 'total_os_non_commercial',
-            'sml' => 'total_sml_pct_non_commercial',
-            'npl' => 'total_npl_abs_non_commercial',
-        ];
-
-        $metric = $columnMap[$category] ?? 'total_simpanan';
         $valueType = $category === 'sml' ? 'percent' : 'currency';
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
+
+        $numerator = '';
+        $denominator = '';
+        $metric = '';
+
+        if ($valueType === 'percent') {
+            // SML metric segments
+            if ($segment === 'small') {
+                $numerator = 'sme_sml';
+                $denominator = 'sme_os';
+            } elseif ($segment === 'consumer') {
+                $numerator = 'consumer_sml';
+                $denominator = 'consumer_os';
+            } elseif ($segment === 'micro') {
+                $numerator = 'micro_sml';
+                $denominator = 'micro_os';
+            } else {
+                $numerator = 'total_sml_abs_non_commercial';
+                $denominator = 'total_os_non_commercial';
+            }
+        } else {
+            // Currency metrics: simpanan, simpanan_casa, pinjaman, npl
+            if ($category === 'simpanan') {
+                if ($segment === 'ritel') {
+                    $metric = 'simpanan_ritel';
+                } elseif ($segment === 'micro') {
+                    $metric = 'simpanan_mikro';
+                } elseif ($segment === 'giro') {
+                    $metric = '(COALESCE(giro_ritel, 0) + COALESCE(giro_mikro, 0) + COALESCE(giro_wholesale, 0))';
+                } elseif ($segment === 'non_wholesale') {
+                    $metric = '(COALESCE(simpanan_ritel, 0) + COALESCE(simpanan_mikro, 0))';
+                } else {
+                    $metric = 'total_simpanan';
+                }
+            } elseif ($category === 'simpanan_casa') {
+                if ($segment === 'ritel') {
+                    $metric = 'casa_ritel';
+                } elseif ($segment === 'micro') {
+                    $metric = 'casa_mikro';
+                } elseif ($segment === 'giro') {
+                    $metric = '(COALESCE(giro_ritel, 0) + COALESCE(giro_mikro, 0) + COALESCE(giro_wholesale, 0))';
+                } elseif ($segment === 'non_wholesale') {
+                    $metric = '(COALESCE(casa_ritel, 0) + COALESCE(casa_mikro, 0))';
+                } else {
+                    $metric = 'total_casa';
+                }
+            } elseif ($category === 'pinjaman') {
+                if ($segment === 'small') {
+                    $metric = 'sme_os';
+                } elseif ($segment === 'consumer') {
+                    $metric = 'consumer_os';
+                } elseif ($segment === 'micro') {
+                    $metric = 'micro_os';
+                } else {
+                    $metric = 'total_os_non_commercial';
+                }
+            } elseif ($category === 'npl') {
+                if ($segment === 'small') {
+                    $metric = 'sme_npl';
+                } elseif ($segment === 'consumer') {
+                    $metric = 'consumer_npl';
+                } elseif ($segment === 'micro') {
+                    $metric = 'micro_npl';
+                } else {
+                    $metric = 'total_npl_abs_non_commercial';
+                }
+            } else {
+                $metric = 'total_simpanan';
+            }
+        }
 
         $query = DB::table(self::SNAPSHOT_TABLE)
             ->selectRaw('snapshot_period')
@@ -4129,9 +4292,9 @@ class DashboardHarianSnapshotService
             });
 
         if ($valueType === 'percent') {
-            $query->selectRaw('SUM(total_sml_abs_non_commercial) as numerator')
-                ->selectRaw('SUM(total_os_non_commercial) as denominator')
-                ->selectRaw('CASE WHEN SUM(total_os_non_commercial) > 0 THEN (SUM(total_sml_abs_non_commercial) * 100.0) / SUM(total_os_non_commercial) ELSE 0 END as value');
+            $query->selectRaw("SUM({$numerator}) as numerator")
+                ->selectRaw("SUM({$denominator}) as denominator")
+                ->selectRaw("CASE WHEN SUM({$denominator}) > 0 THEN (SUM({$numerator}) * 100.0) / SUM({$denominator}) ELSE 0 END as value");
         } else {
             $query->selectRaw("SUM({$metric}) as value");
         }

@@ -27,7 +27,6 @@ class ImportExecutionService
         'daily_loan_dinamis',
         'ssa_simpanan',
         'ssa_pinjaman',
-        'simpanan_multipn',
         'hourly_dpk',
         'lw325_ph',
     ];
@@ -327,7 +326,14 @@ class ImportExecutionService
         }
 
         if (strtolower((string) ($job->status ?? '')) === 'processing') {
-            $job = $this->recoverZeroProgressProcessingJob($jobId, $job);
+            $forceReservationRecovery = $executionSource === 'worker'
+                && !$this->isRecoverableZeroProgressProcessingJob($jobId, $job)
+                && $this->isQueueReservationHandoff($jobId, $job);
+            $job = $this->recoverZeroProgressProcessingJob(
+                $jobId,
+                $job,
+                $forceReservationRecovery
+            );
             if (!$job || strtolower((string) ($job->status ?? '')) === 'processing') {
                 return;
             }
@@ -356,7 +362,7 @@ class ImportExecutionService
             $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
             $this->releaseDispatchMarker($jobId);
 
-            Log::warning('Generic import worker skipped Simpanan MultiPN CSV job because it must run through the dedicated stream executor.', [
+            Log::info('Generic import worker skipped Simpanan MultiPN CSV job because it must run through the dedicated stream executor.', [
                 'job_id' => $jobId,
                 'table_name' => $tableName,
             ]);
@@ -601,6 +607,10 @@ class ImportExecutionService
             return false;
         }
 
+        if (!empty($payload['queue_present'])) {
+            return false;
+        }
+
         if ((time() - $startedAt) < $this->inlineFallbackGraceSeconds()) {
             return false;
         }
@@ -758,6 +768,32 @@ class ImportExecutionService
         }
     }
 
+    private function runSimpananMultiPnCsvStreamJob(int $jobId): void
+    {
+        $request = Request::create('/import-csv/simpanan-multipn/stream', 'GET', [
+            'job_id' => $jobId,
+        ]);
+
+        try {
+            $session = app('session.store');
+            if (method_exists($session, 'start') && !$session->isStarted()) {
+                $session->start();
+            }
+
+            $request->setLaravelSession($session);
+        } catch (\Throwable $e) {
+            Log::warning('Simpanan MultiPN stream executor could not attach session store.', [
+                'job_id' => $jobId,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        app()->instance('request', $request);
+
+        $response = app(ImportSimpananMultiPnCsvController::class)->processImportStream($request);
+        $response->sendContent();
+    }
+
     private function importCache()
     {
         $store = trim((string) config('import.cache_store', 'file'));
@@ -769,17 +805,59 @@ class ImportExecutionService
         return $store !== '' ? Cache::store($store) : Cache::store();
     }
 
-    private function recoverZeroProgressProcessingJob(int $jobId, object $job): ?object
+    public function recoverOrphanedZeroProgressJobs(int $minimumAgeSeconds = 60): array
     {
-        if (!$this->isRecoverableZeroProgressProcessingJob($jobId, $job)) {
+        $minimumAgeSeconds = max(30, $minimumAgeSeconds);
+        $cutoff = now()->subSeconds($minimumAgeSeconds);
+        $candidates = DB::table('import_jobs')
+            ->where('status', 'processing')
+            ->where('total_success', 0)
+            ->where('total_failed', 0)
+            ->where('updated_at', '<=', $cutoff)
+            ->orderBy('updated_at')
+            ->limit(20)
+            ->get();
+
+        $recovered = [];
+        foreach ($candidates as $job) {
+            $jobId = (int) ($job->id ?? 0);
+            if ($jobId <= 0
+                || !$this->isRecoverableZeroProgressImportJob($jobId, $job)
+                || $this->hasActiveQueueRow($jobId)
+                || $this->hasActiveExecutionLock($jobId)) {
+                continue;
+            }
+
+            $job = $this->recoverZeroProgressProcessingJob($jobId, $job, true);
+            if (!$job || strtolower((string) ($job->status ?? '')) !== 'queued') {
+                continue;
+            }
+
+            $this->releaseDispatchMarker($jobId);
+            if ($this->dispatch($jobId, 'Job orphan terdeteksi dan otomatis dimasukkan kembali ke antrean import.')) {
+                $recovered[] = $jobId;
+            }
+        }
+
+        return $recovered;
+    }
+
+    private function recoverZeroProgressProcessingJob(int $jobId, object $job, bool $force = false): ?object
+    {
+        if (!$force && !$this->isRecoverableZeroProgressProcessingJob($jobId, $job)) {
             return $job;
         }
 
-        if ($this->hasRecentProcessingPulse($jobId, $job)) {
+        if ($force && !$this->isZeroProgressProcessingJob($jobId, $job)) {
+            return $job;
+        }
+
+        if (!$force && $this->hasRecentProcessingPulse($jobId, $job)) {
             return $job;
         }
 
         $this->forceReleaseImportRuntimeLocks($jobId);
+        $this->releaseDispatchMarker($jobId);
 
         $message = 'Import sebelumnya berhenti sebelum ada baris masuk. Worker melanjutkan ulang otomatis.';
         $this->progressService->updateJob($jobId, [
@@ -809,15 +887,7 @@ class ImportExecutionService
 
     private function isRecoverableZeroProgressProcessingJob(int $jobId, object $job): bool
     {
-        if (!$this->isRecoverableZeroProgressImportJob($jobId, $job)) {
-            return false;
-        }
-
-        if (strtolower((string) ($job->status ?? '')) !== 'processing') {
-            return false;
-        }
-
-        if ((int) ($job->total_success ?? 0) > 0 || (int) ($job->total_failed ?? 0) > 0) {
+        if (!$this->isZeroProgressProcessingJob($jobId, $job)) {
             return false;
         }
 
@@ -830,6 +900,55 @@ class ImportExecutionService
             return Carbon::parse($updatedAt)->lt(now()->subMinutes($this->zeroProgressRecoveryMinutes()));
         } catch (\Throwable) {
             return true;
+        }
+    }
+
+    private function isZeroProgressProcessingJob(int $jobId, object $job): bool
+    {
+        return $this->isRecoverableZeroProgressImportJob($jobId, $job)
+            && strtolower((string) ($job->status ?? '')) === 'processing'
+            && (int) ($job->total_success ?? 0) === 0
+            && (int) ($job->total_failed ?? 0) === 0;
+    }
+
+    private function isQueueReservationHandoff(int $jobId, object $job): bool
+    {
+        if (!$this->isZeroProgressProcessingJob($jobId, $job)) {
+            return false;
+        }
+
+        $progress = $this->progressService->getCachedProgress($jobId);
+
+        return trim((string) ($progress['message'] ?? ''))
+            === 'Worker queue sudah mengambil job import dan sedang memulai proses.';
+    }
+
+    private function hasActiveQueueRow(int $jobId): bool
+    {
+        try {
+            return DB::table('jobs')
+                ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%')
+                ->where('payload', 'like', '%jobId%')
+                ->where('payload', 'like', '%i:' . $jobId . ';%')
+                ->exists();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function hasActiveExecutionLock(int $jobId): bool
+    {
+        $lock = $this->importCache()->lock('import_excel_execute_job_' . $jobId, 7200);
+        $acquired = false;
+
+        try {
+            $acquired = $lock->get();
+
+            return !$acquired;
+        } finally {
+            if ($acquired) {
+                $lock->release();
+            }
         }
     }
 
@@ -928,6 +1047,7 @@ class ImportExecutionService
             'import_excel_execute_job_',
             'import_excel_dispatch_job_',
             'import_file_stream_job_',
+            'import_excel_stream_job_',
         ] as $prefix) {
             try {
                 $cache->lock($prefix . $jobId, 1)->forceRelease();

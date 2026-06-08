@@ -880,12 +880,24 @@
         align-items: center;
         justify-content: center;
         min-width: 100%;
+        min-height: 100%;
     }
     .daily-table thead .rka-sub-label {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         min-width: 100%;
+        min-height: 100%;
+    }
+    .daily-table thead .header-center {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-width: 100%;
+        height: 100%;
+        min-height: var(--daily-header-group-height);
+        text-align: center;
     }
     .daily-table thead .column-heading {
         display: flex;
@@ -896,6 +908,12 @@
         text-align: center;
         height: 100%;
         padding: 4px 0;
+    }
+    .daily-table thead th[rowspan="3"] .header-center {
+        min-height: calc(var(--daily-header-group-height) + var(--daily-header-column-height) + var(--daily-header-rka-height));
+    }
+    .daily-table thead th[rowspan="2"] .column-heading {
+        min-height: calc(var(--daily-header-column-height) + var(--daily-header-rka-height));
     }
 
     .daily-table thead .column-heading .main {
@@ -1102,6 +1120,49 @@
     /* Quality metrics (SML/NPL): reversed — negative = good (green), positive = bad (red) */
     .delta-quality-good { color: #16a34a !important; font-weight: 700; } /* green: quality improved (value went down) */
     .delta-quality-bad  { color: #dc2626 !important; font-weight: 700; } /* red: quality worsened (value went up) */
+
+    /* Keep achievement heatmap visible on sub-segment/total rows without coloring non-gap columns. */
+    .daily-table tbody td.rka-col.pct-achieve-good,
+    .daily-table tbody tr:hover td.rka-col.pct-achieve-good,
+    .daily-table tbody tr.metric-block-simpanan:hover td.rka-col.pct-achieve-good,
+    .daily-table tbody tr.metric-block-os:hover td.rka-col.pct-achieve-good,
+    .daily-table tbody tr.metric-block-sml:hover td.rka-col.pct-achieve-good,
+    .daily-table tbody tr.metric-block-npl:hover td.rka-col.pct-achieve-good,
+    .daily-table tbody tr.metric-block-casa:hover td.rka-col.pct-achieve-good,
+    .daily-table tbody tr.metric-block-ldr:hover td.rka-col.pct-achieve-good,
+    .daily-table tbody tr.metric-block-recdh:hover td.rka-col.pct-achieve-good {
+        background-color: #c6efce !important;
+        color: #276221 !important;
+        font-weight: 800 !important;
+    }
+
+    .daily-table tbody td.rka-col.pct-achieve-warn,
+    .daily-table tbody tr:hover td.rka-col.pct-achieve-warn,
+    .daily-table tbody tr.metric-block-simpanan:hover td.rka-col.pct-achieve-warn,
+    .daily-table tbody tr.metric-block-os:hover td.rka-col.pct-achieve-warn,
+    .daily-table tbody tr.metric-block-sml:hover td.rka-col.pct-achieve-warn,
+    .daily-table tbody tr.metric-block-npl:hover td.rka-col.pct-achieve-warn,
+    .daily-table tbody tr.metric-block-casa:hover td.rka-col.pct-achieve-warn,
+    .daily-table tbody tr.metric-block-ldr:hover td.rka-col.pct-achieve-warn,
+    .daily-table tbody tr.metric-block-recdh:hover td.rka-col.pct-achieve-warn {
+        background-color: #ffeb9c !important;
+        color: #7d5a00 !important;
+        font-weight: 800 !important;
+    }
+
+    .daily-table tbody td.rka-col.pct-achieve-bad,
+    .daily-table tbody tr:hover td.rka-col.pct-achieve-bad,
+    .daily-table tbody tr.metric-block-simpanan:hover td.rka-col.pct-achieve-bad,
+    .daily-table tbody tr.metric-block-os:hover td.rka-col.pct-achieve-bad,
+    .daily-table tbody tr.metric-block-sml:hover td.rka-col.pct-achieve-bad,
+    .daily-table tbody tr.metric-block-npl:hover td.rka-col.pct-achieve-bad,
+    .daily-table tbody tr.metric-block-casa:hover td.rka-col.pct-achieve-bad,
+    .daily-table tbody tr.metric-block-ldr:hover td.rka-col.pct-achieve-bad,
+    .daily-table tbody tr.metric-block-recdh:hover td.rka-col.pct-achieve-bad {
+        background-color: #ffc7ce !important;
+        color: #9c0006 !important;
+        font-weight: 800 !important;
+    }
     
     .daily-empty {
         padding: 3rem;
@@ -1484,10 +1545,10 @@
                         </colgroup>
                         <thead>
                             <tr class="group-row text-center">
-                                <th class="sticky-label group-label" rowspan="3">Keterangan</th>
-                                <th class="group-position" colspan="7" data-position-group-colspan>Posisi</th>
-                                <th class="group-delta" colspan="5">Delta Terhadap</th>
-                                <th class="group-rka" colspan="6">Perbandingan RKA</th>
+                                <th class="sticky-label group-label" rowspan="3"><span class="header-center">Keterangan</span></th>
+                                <th class="group-position" colspan="7" data-position-group-colspan><span class="header-center">Posisi</span></th>
+                                <th class="group-delta" colspan="5"><span class="header-center">Delta Terhadap</span></th>
+                                <th class="group-rka" colspan="6"><span class="header-center">Perbandingan RKA</span></th>
                             </tr>
                             <tr class="column-row text-center">
                                 <th class="value-col position-col" rowspan="2">
@@ -1555,7 +1616,7 @@
                             </tr>
                         </thead>
                         <tbody id="daily-dashboard-body">
-                            <tr><td colspan="19" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
+                            <tr><td colspan="20" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -2231,7 +2292,7 @@
             const rkaDecValue = Number(row?.values?.rka_dec || 0);
             const reverse = isQualityTargetMetric(row?.key);
             const compare = function (targetValue) {
-                const delta = reverse ? (targetValue - currentValue) : (currentValue - targetValue);
+                const delta = currentValue - targetValue;
                 let achievement = 0;
 
                 if (reverse) {
@@ -2280,7 +2341,7 @@
                 'consumer_sml', 'briguna_konsumer_sml', 'kpr_sml', 'kkb_sml',
                 'sme_npl', 'kecil_npl', 'kecil_non_cashcoll_npl', 'cashcoll_npl', 'medium_npl',
                 'consumer_npl', 'briguna_konsumer_npl', 'kpr_npl', 'kkb_npl',
-                'casa_ritel', 'ldr_ritel_non_commercial'
+                'casa_ritel', 'ldr_ritel_non_commercial', 'rec_dh_small'
             ];
 
             let mikroKeys = [
@@ -2288,7 +2349,7 @@
                 'micro_os', 'briguna_mikro_os', 'kupedes_os', 'kur_mikro_os', 'kur_kecil_os', 'kur_kpp_os',
                 'micro_sml', 'briguna_mikro_sml', 'kupedes_sml', 'kur_mikro_sml', 'kur_kecil_sml', 'kur_kpp_sml',
                 'micro_npl', 'briguna_mikro_npl', 'kupedes_npl', 'kur_mikro_npl', 'kur_kecil_npl', 'kur_kpp_npl',
-                'casa_mikro', 'ldr_mikro_non_commercial'
+                'casa_mikro', 'ldr_mikro_non_commercial', 'rec_dh_micro'
             ];
 
             if (scopeMode === 'kc' || scopeMode === 'kcp') {
@@ -2363,11 +2424,17 @@
                     rowsByKey.total_sml_abs_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, totalSmlNonCommercialChildren, group, smpanMetricName);
                     
                     const smeNplChildren = ['kecil_npl'];
+                    const microNplChildren = ['briguna_mikro_npl', 'kupedes_npl', 'kur_mikro_npl', 'kur_kecil_npl', 'kur_kpp_npl'];
                     rowsByKey.sme_npl[group][smpanMetricName] = sumMetric(rowsByKey, smeNplChildren, group, smpanMetricName);
                     rowsByKey.consumer_npl[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_konsumer_npl', 'kpr_npl', 'kkb_npl'], group, smpanMetricName);
+                    rowsByKey.micro_npl[group][smpanMetricName] = sumMetric(rowsByKey, microNplChildren, group, smpanMetricName);
                     
                     const totalNplNonCommercialChildren = (scopeMode === 'kc' || scopeMode === 'kcp') ? ['sme_npl', 'consumer_npl'] : ['sme_npl', 'consumer_npl', 'micro_npl'];
                     rowsByKey.total_npl_abs_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, totalNplNonCommercialChildren, group, smpanMetricName);
+
+                    if (rowsByKey.rec_dh_total) {
+                        rowsByKey.rec_dh_total[group][smpanMetricName] = sumMetric(rowsByKey, ['rec_dh_small', 'rec_dh_micro'], group, smpanMetricName);
+                    }
                 });
             });
 
@@ -2402,7 +2469,7 @@
             const rows = payload.rows || [];
             const periods = payload.comparison_periods || {};
             const hasH1 = Boolean(periods.h1 && periods.h1.period);
-            const emptyColspan = hasH1 ? 19 : 18;
+            const emptyColspan = hasH1 ? 20 : 19;
             const blockClassMap = {
                 total_simpanan: 'metric-block-simpanan',
                 total_os: 'metric-block-os',
@@ -2615,7 +2682,7 @@
                 .catch(function (error) {
                     console.error('Gagal memuat data dashboard harian.', error);
                     const hidden = positionH1Header && positionH1Header.classList.contains('position-col-hidden');
-                    body.innerHTML = '<tr><td colspan="' + (hidden ? 18 : 19) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
+                    body.innerHTML = '<tr><td colspan="' + (hidden ? 19 : 20) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
                 .finally(function () {
                     tableRegion.classList.remove('daily-loading');
@@ -3059,7 +3126,7 @@ if (window.jQuery && captureModal) {
         syncPosisiSelect(initialFilters.posisi_terakhir || [], initialSelected.posisi_terakhir || '');
         syncRkaSelect(initialFilters.posisi_rka || [], initialSelected.posisi_rka || '');
 
-        body.innerHTML = '<tr><td colspan="19" class="daily-empty"><i class="fas fa-filter mr-2 text-muted"></i>Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
+        body.innerHTML = '<tr><td colspan="20" class="daily-empty"><i class="fas fa-filter mr-2 text-muted"></i>Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
 
         if (initialData && Object.keys(initialData).length) {
             applyPayload(initialData);

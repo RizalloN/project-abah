@@ -92,6 +92,12 @@ class ImportIndexController extends Controller
             'kanca' => 'cabang',
             'identity' => 'uniqueid_namareport',
         ],
+        'gi405_recovery' => [
+            'index' => 'idx_gi405_recovery_delete_scope',
+            'period' => 'periode',
+            'kanca' => 'kode_uker',
+            'identity' => 'uniqueid_namareport',
+        ],
         'cognos_ph' => [
             'index' => 'idx_cognos_ph_delete_scope',
             'period' => 'periode',

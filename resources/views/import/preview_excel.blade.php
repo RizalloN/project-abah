@@ -40,7 +40,7 @@
             </div>
         </div>
 
-        <form id="importForm" method="POST" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-filtered-rows-url="{{ route('import.preview.filtered-rows') }}">
+        <form id="importForm" method="POST" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-filtered-rows-url="{{ route('import.preview.filtered-rows') }}" data-no-route-loading>
             @csrf
             <input type="hidden" name="path"                id="file_path"           value="{{ $path }}">
             <input type="hidden" name="delimiter" value="{{ $currentDelimiter ?? 'auto' }}">
@@ -1378,7 +1378,12 @@ document.addEventListener('DOMContentLoaded', function () {
                               '<small class="text-muted">Sebagian baris gagal diproses atau terbatasi oleh filter yang aktif.</small>' +
                               skippedHtml,
                         confirmButtonText: 'Kembali ke Import',
-                    }).then(function () { window.location.href = '{{ route("import.index") }}'; });
+                    }).then(function () {
+                        if (typeof window.showRouteLoading === 'function') {
+                            window.showRouteLoading('Memuat halaman', 'Menyiapkan tampilan berikutnya dengan data terbaru.');
+                        }
+                        window.location.href = '{{ route("import.index") }}';
+                    });
                 } else {
                     themedSwal({
                         icon: d.total_failed > 0 ? 'warning' : 'success',
@@ -1387,7 +1392,12 @@ document.addEventListener('DOMContentLoaded', function () {
                               (d.total_failed > 0 ? '<br><small class="text-warning">' + Number(d.total_failed).toLocaleString('id-ID') + ' baris gagal saat insert atau tidak lolos proses validasi.</small>' : '') +
                               skippedHtml,
                         confirmButtonText: 'Lanjut',
-                    }).then(function () { window.location.href = '{{ route("import.index") }}'; });
+                    }).then(function () {
+                        if (typeof window.showRouteLoading === 'function') {
+                            window.showRouteLoading('Memuat halaman', 'Menyiapkan tampilan berikutnya dengan data terbaru.');
+                        }
+                        window.location.href = '{{ route("import.index") }}';
+                    });
                 }
             }, 600);
         }
@@ -1537,7 +1547,12 @@ document.addEventListener('DOMContentLoaded', function () {
                                   '<small class="text-muted">Sebagian baris gagal diproses atau terbatasi oleh filter yang aktif.</small>' +
                                   skippedHtml,
                             confirmButtonText: 'Kembali ke Import',
-                        }).then(function () { window.location.href = '{{ route("import.index") }}'; });
+                        }).then(function () {
+                            if (typeof window.showRouteLoading === 'function') {
+                                window.showRouteLoading('Memuat halaman', 'Menyiapkan tampilan berikutnya dengan data terbaru.');
+                            }
+                            window.location.href = '{{ route("import.index") }}';
+                        });
                     } else {
                         themedSwal({
                             icon: 'success',
@@ -1546,7 +1561,12 @@ document.addEventListener('DOMContentLoaded', function () {
                                   (d.total_failed > 0 ? '<br><small class="text-warning">⚠ ' + Number(d.total_failed).toLocaleString('id-ID') + ' baris gagal saat insert atau tidak lolos proses validasi.</small>' : '') +
                                   skippedHtml,
                             confirmButtonText: 'Lanjut',
-                        }).then(function () { window.location.href = '{{ route("import.index") }}'; });
+                        }).then(function () {
+                            if (typeof window.showRouteLoading === 'function') {
+                                window.showRouteLoading('Memuat halaman', 'Menyiapkan tampilan berikutnya dengan data terbaru.');
+                            }
+                            window.location.href = '{{ route("import.index") }}';
+                        });
                     }
                 }, 600);
             });

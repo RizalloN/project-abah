@@ -90,12 +90,16 @@ def _read_excel_with_openpyxl(file_path, header_index):
         wb.close()
 
 
-def read_excel_table(file_path, header_index):
+def read_excel_table(file_path, header_index, preserve_column_positions=False):
     """
     Try Polars first for lower memory + multithreaded parse.
     Fallback to pandas to keep compatibility on older environments.
     Returns: (headers, row_values, backend_name)
     """
+    if preserve_column_positions:
+        headers, row_values = _read_excel_with_openpyxl(file_path, header_index)
+        return headers, row_values, 'openpyxl-column-preserving'
+
     polars_errors = []
 
     try:
@@ -163,6 +167,7 @@ DECIMAL_COLUMNS = {
     'BAKI_DEBET1', 'CKPN', 'BAP', 'BILPRN', 'BILINT', 'BILLC', 'PMTAMT',
     'TUNGGAKAN_POKOK', 'TUNGGAKAN_BUNGA'
 }
+SIMPANAN_DECIMAL_COLUMNS = {'SALDO_IDR'}
 NULL_STRS    = {'', 'nan', 'none', 'nat', 'null', 'n/a', 'na'}
 INDONESIAN_MONTHS = {
     'januari': 'january',
@@ -195,6 +200,14 @@ def normalize_locale_date_text(value: str) -> str:
 
 def allows_locale_date_text(table_name) -> bool:
     return str(table_name or '').strip().lower() in LOCALE_DATE_TABLES
+
+
+def is_simpanan_multipn_table(table_name) -> bool:
+    return str(table_name or '').strip().lower() == 'simpanan_multipn'
+
+
+def is_gi405_recovery_table(table_name) -> bool:
+    return str(table_name or '').strip().lower() == 'gi405_recovery'
 
 
 def normalize_decimal_value(value):
@@ -264,6 +277,11 @@ def normalize_value(header_name, value, table_name=None):
                 return d.strftime('%Y-%m-%d')
             except (ValueError, OverflowError):
                 pass
+            if is_gi405_recovery_table(table_name):
+                match = re.match(r'^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$', value_str)
+                if match:
+                    day, month, year = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+                    return date(year, month, day).strftime('%Y-%m-%d')
             from dateutil import parser as dateutil_parser
             normalized_date_text = value_str
             if allows_locale_date_text(table_name):
@@ -273,7 +291,7 @@ def normalize_value(header_name, value, table_name=None):
         except Exception:
             return None
 
-    if header in DECIMAL_COLUMNS:
+    if header in DECIMAL_COLUMNS or (is_simpanan_multipn_table(table_name) and header in SIMPANAN_DECIMAL_COLUMNS):
         return normalize_decimal_value(value)
 
     # Fallback: jika nilainya terlihat seperti angka dengan ribuan (misal "219,000.00")
@@ -290,6 +308,27 @@ def normalize_value(header_name, value, table_name=None):
         pass
 
     return value_str
+
+
+def is_valid_simpanan_import_row(final_row):
+    posisi = final_row.get('posisi')
+    cifno = str(final_row.get('CIFNO') if 'CIFNO' in final_row else final_row.get('cifno') or '').strip()
+    no_rekening = str(final_row.get('no_rekening') or '').strip()
+    jenis = str(final_row.get('jenis_simpanan') or '').strip().upper()
+    saldo = final_row.get('saldo_idr')
+
+    if posisi is None or str(posisi).strip() == '':
+        return False
+    if cifno == '' or no_rekening == '' or jenis == '' or saldo is None or str(saldo).strip() == '':
+        return False
+    if re.fullmatch(r"[A-Z0-9.,+_\/'-]+", no_rekening, flags=re.I) is None:
+        return False
+    if len(no_rekening) < 6:
+        return False
+    if not (jenis.startswith('TABUNGAN') or jenis.startswith('GIRO') or jenis.startswith('DEPOSITO')):
+        return False
+
+    return normalize_decimal_value(saldo) is not None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -405,14 +444,15 @@ def _run_process_inner(config):
     send_progress(5, 'Membaca file Excel (Polars preferred, pandas fallback)...')
 
     try:
-        _headers, row_values, backend = read_excel_table(file_path, header_index)
+        preserve_column_positions = bool(config.get('preserve_column_positions')) or is_simpanan_multipn_table(table_name) or is_gi405_recovery_table(table_name)
+        _headers, row_values, backend = read_excel_table(file_path, header_index, preserve_column_positions)
         total_rows = len(row_values)
         send_progress(20, 'File dibaca via ' + backend + ': ' + str(total_rows) + ' baris. Memproses kolom...')
     except Exception as e:
         send_error('Gagal membaca file Excel: ' + str(e))
         sys.exit(1)
 
-    is_simpanan_multipn = str(table_name).strip().lower() == 'simpanan_multipn'
+    is_simpanan_multipn = is_simpanan_multipn_table(table_name)
     unique_id_col = str(config.get('unique_id_col') or ('uniqueid_SimoPN' if is_simpanan_multipn else 'uniqueid_namareport')).strip()
     suffix        = str(config.get('unique_id_suffix') if config.get('unique_id_suffix') is not None else ('_SimoPN' if is_simpanan_multipn else '_DLD'))
     table_columns_map = {str(col).lower(): str(col) for col in table_columns_raw}
@@ -504,6 +544,9 @@ def _run_process_inner(config):
                 continue
             final_row[manual_col] = manual_value
 
+        if is_simpanan_multipn and not is_valid_simpanan_import_row(final_row):
+            continue
+
         if len(final_row) > 3:
             rows_done += 1
 
@@ -527,6 +570,10 @@ def _run_process_inner(config):
             send_progress(pct, 'Memproses... (' + str(speed) + ' baris/detik)', rows_done, total_rows, speed)
 
     if csv_file is not None:
+        if is_simpanan_multipn and rows_done == 0:
+            csv_file.close()
+            send_error('Tidak ada baris Simpanan MultiPN valid. Periksa mapping kolom Excel sebelum import.')
+            sys.exit(1)
         csv_file.close()
         send_progress(95, 'CSV sementara selesai dibuat. Menunggu MySQL bulk load...', rows_done, total_rows)
         send_event('done', {'total_rows': rows_done, 'csv_path': output_csv_path})
@@ -534,6 +581,10 @@ def _run_process_inner(config):
 
     if batch:
         print(json.dumps({'type': 'batch', 'rows': batch}, ensure_ascii=False, default=str), flush=True)
+
+    if is_simpanan_multipn and rows_done == 0:
+        send_error('Tidak ada baris Simpanan MultiPN valid. Periksa mapping kolom Excel sebelum import.')
+        sys.exit(1)
 
     send_progress(95, 'File selesai diproses. Menunggu PHP selesai insert ke database...', rows_done, total_rows)
     send_event('done', {'total_rows': rows_done})
@@ -550,7 +601,8 @@ def run_stage(config):
         normalized_headers = {str(i): v for i, v in enumerate(normalized_headers)}
 
     try:
-        _headers, row_values, backend = read_excel_table(file_path, header_index)
+        preserve_column_positions = bool(config.get('preserve_column_positions')) or is_simpanan_multipn_table(table_name) or is_gi405_recovery_table(table_name)
+        _headers, row_values, backend = read_excel_table(file_path, header_index, preserve_column_positions)
     except Exception as e:
         send_error('Gagal membaca file Excel untuk staging: ' + str(e))
         sys.exit(1)

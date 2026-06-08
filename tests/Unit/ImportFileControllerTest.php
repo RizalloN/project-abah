@@ -265,8 +265,15 @@ class ImportFileControllerTest extends TestCase
             null,
         ]);
 
+        $sourcePeriodWithManual = $this->invokeMethod($controller, 'resolveIbbizBulkPeriodeValue', [
+            'usak_ibbiz_uker',
+            ['4/1/2026 12:00:00 AM', '4', 'R - KANWIL MALANG'],
+            '2026-05-22',
+        ]);
+
         $this->assertSame('2026-04-01', $manualPeriod);
         $this->assertSame('2026-04-01', $sourcePeriod);
+        $this->assertSame('2026-05-22', $sourcePeriodWithManual);
     }
 
     public function test_usak_ibbiz_uker_bypasses_date_and_no_columns(): void
@@ -291,6 +298,44 @@ class ImportFileControllerTest extends TestCase
         ], array_column($blueprint, 'column'));
 
         $this->assertSame([2, 3, 4, 5, 6, 7, 8, 9], array_column($blueprint, 'index'));
+    }
+
+    public function test_ibbiz_preview_headers_are_mapped_neatly(): void
+    {
+        $controller = new ImportFileController();
+
+        $prettyCorp = $this->invokeMethod($controller, 'getPrettyIbbizHeaders', [
+            'ibbisniz_corp',
+            ['textbox10', 'TEXTBOX11', 'textbox12', 'textbox7', 'textbox13', 'JUMLAHTRANSAKSI', 'NOMINAL', 'FEE', 'other_column'],
+        ]);
+
+        $prettyUker = $this->invokeMethod($controller, 'getPrettyIbbizHeaders', [
+            'usak_ibbiz_uker',
+            ['textbox23', 'textbox10', 'textbox11', 'textbox12', 'textbox7', 'textbox13', 'textbox14', 'textbox5', 'textbox4', 'REFERRAL'],
+        ]);
+
+        $this->assertSame([
+            'Wilayah', 'Cabang', 'Uker', 'Corporate ID', 'Nama Perusahaan', 'Jml Trx Sukses', 'Nominal', 'Fee Transaksi', 'Other Column'
+        ], $prettyCorp);
+
+        $this->assertSame([
+            'Periode', 'No', 'Kanwil', 'Kanca', 'Uker', 'Corporate ID', 'Nama Perusahaan', 'Status', 'Deskripsi', 'Referral'
+        ], $prettyUker);
+    }
+
+    public function test_filter_options_sorting_is_natural(): void
+    {
+        $controller = new ImportFileController();
+
+        $values = ['10 - KC Malang', '2 - KC Surabaya', '1 - KC Banyuwangi', '11 - KC Ponorogo'];
+        $this->invokeMethod($controller, 'sortFilterValues', [&$values]);
+
+        $this->assertSame([
+            '1 - KC Banyuwangi',
+            '2 - KC Surabaya',
+            '10 - KC Malang',
+            '11 - KC Ponorogo',
+        ], $values);
     }
 
     private function invokeMethod(object $target, string $method, array $args = [])

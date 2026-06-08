@@ -352,6 +352,47 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame('2026-04-20', $after['source_recovery_period']);
     }
 
+    public function test_rebuild_does_not_cut_timeseries_when_gi405_recovery_is_empty(): void
+    {
+        $this->createSourceMetadataTables();
+
+        Schema::create('gi405_recovery', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->nullable();
+        });
+
+        DB::table('ssa_pinjaman')->insert([
+            'month_day_year_of_periode' => '2026-05-01',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '00045 -- KC Madiun',
+            'segmen_2025' => 'Consumer',
+            'kolektabilitas_one_obligor' => '1',
+            'baki_debet' => 1000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('ssa_simpanan')->insert([
+            'Month_Day_Year_of_Posisi' => '2026-05-01',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '00045 -- KC Madiun',
+            'segmentasi' => 'Ritel',
+            'produk' => 'Tabungan',
+            'saldo' => 500,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $result = (new DashboardHarianSnapshotService())->rebuild(null, true);
+
+        $this->assertArrayHasKey('2026-05-01', $result);
+        $this->assertGreaterThan(0, $result['2026-05-01']);
+        $this->assertTrue(
+            DB::table('dashboard_harian_snapshots')
+                ->where('snapshot_period', '2026-05-01')
+                ->exists()
+        );
+    }
+
     public function test_consumer_briguna_includes_consumer_rows_marked_briguna_mikro(): void
     {
         $this->createSourceMetadataTables();
@@ -404,6 +445,72 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(125.0, (float) $row->briguna_konsumer_os);
         $this->assertSame(50.0, (float) $row->kpr_os);
         $this->assertSame(300.0, (float) $row->briguna_mikro_os);
+    }
+
+    public function test_ssa_pinjaman_kolektabilitas_zero_is_excluded_from_loan_snapshot_metrics(): void
+    {
+        $this->createSourceMetadataTables();
+
+        Schema::table('dashboard_harian_snapshots', function (Blueprint $table): void {
+            $table->decimal('kpr_os', 20, 2)->default(0);
+            $table->decimal('kpr_sml', 20, 2)->default(0);
+            $table->decimal('kpr_npl', 20, 2)->default(0);
+            $table->decimal('total_os', 20, 2)->default(0);
+            $table->decimal('total_os_non_commercial', 20, 2)->default(0);
+            $table->decimal('total_sml_abs_non_commercial', 20, 2)->default(0);
+            $table->decimal('total_npl_abs_non_commercial', 20, 2)->default(0);
+        });
+
+        $baseLoanRow = [
+            'month_day_year_of_periode' => '2026-05-31',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '00045 -- KC Madiun',
+            'segmen_dashboard' => 'Consumer',
+            'produk_dashboard' => 'KPR',
+            'produk' => 'KPR',
+            'segmen_2025' => 'Consumer',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
+        DB::table('ssa_pinjaman')->insert([
+            $baseLoanRow + ['kolektabilitas_one_obligor' => '0', 'baki_debet' => 900],
+            $baseLoanRow + ['kolektabilitas_one_obligor' => '1', 'baki_debet' => 100],
+            $baseLoanRow + ['kolektabilitas_one_obligor' => '2', 'baki_debet' => 200],
+            $baseLoanRow + ['kolektabilitas_one_obligor' => '3', 'baki_debet' => 300],
+            $baseLoanRow + ['kolektabilitas_one_obligor' => '5', 'baki_debet' => 500],
+            $baseLoanRow + ['kolektabilitas_one_obligor' => '6', 'baki_debet' => 600],
+        ]);
+
+        DB::table('ssa_simpanan')->insert([
+            'Month_Day_Year_of_Posisi' => '2026-05-31',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '00045 -- KC Madiun',
+            'segmentasi' => 'Ritel',
+            'produk' => 'Tabungan',
+            'saldo' => 10000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+
+        $this->assertSame(2, $service->buildPeriodSnapshot('2026-05-31', true));
+
+        $summary = DB::table('dashboard_harian_snapshots')
+            ->where('snapshot_period', '2026-05-31')
+            ->where('kanca_key', 'kc-madiun')
+            ->where('unit_key', 'kc-madiun')
+            ->first();
+
+        $this->assertNotNull($summary);
+        $this->assertSame(1100.0, (float) $summary->kpr_os);
+        $this->assertSame(200.0, (float) $summary->kpr_sml);
+        $this->assertSame(800.0, (float) $summary->kpr_npl);
+        $this->assertSame(1100.0, (float) $summary->total_os);
+        $this->assertSame(1100.0, (float) $summary->total_os_non_commercial);
+        $this->assertSame(200.0, (float) $summary->total_sml_abs_non_commercial);
+        $this->assertSame(800.0, (float) $summary->total_npl_abs_non_commercial);
     }
 
     public function test_snapshot_freshness_rebuilds_legacy_rows_and_rejects_changed_signature(): void
@@ -804,6 +911,19 @@ class DashboardHarianSnapshotServiceTest extends TestCase
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+            DB::table('l1133')->insert([
+                'periode' => $period,
+                'kode_kanca' => '00045',
+                'nama_kanca' => 'KC Madiun',
+                'kode_uker' => '00045',
+                'nama_uker' => 'KC Madiun',
+                'jenis' => 'KUPEDES KOMERSIAL',
+                'outstanding' => 5000,
+                'dpk' => 50,
+                'npl' => 5,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
         }
 
         $service = new DashboardHarianSnapshotService();
@@ -814,7 +934,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         );
     }
 
-    public function test_shared_period_can_use_dly_kap_when_ssa_pinjaman_is_not_available_yet(): void
+    public function test_shared_period_can_use_dly_kap_and_l1133_when_ssa_pinjaman_is_not_available_yet(): void
     {
         $this->createSourceMetadataTables();
 
@@ -832,6 +952,19 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        DB::table('l1133')->insert([
+            'periode' => '2026-05-03',
+            'kode_kanca' => '00045',
+            'nama_kanca' => 'KC Madiun',
+            'kode_uker' => '00045',
+            'nama_uker' => 'KC Madiun',
+            'jenis' => 'KUPEDES KOMERSIAL',
+            'outstanding' => 5000,
+            'dpk' => 50,
+            'npl' => 5,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         $service = new DashboardHarianSnapshotService();
         $reflection = new \ReflectionMethod($service, 'resolveSharedPeriods');
@@ -840,7 +973,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertContains('2026-05-03', $reflection->invoke($service));
     }
 
-    public function test_hourly_dpk_can_replace_ssa_simpanan_for_dly_kap_l1133_option(): void
+    public function test_hourly_dpk_cannot_replace_ssa_simpanan_for_landing_source_options(): void
     {
         $this->createSourceMetadataTables();
 
@@ -866,26 +999,20 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        DB::table('dly_kap_resegmentasi')->insert([
+            'periode' => '2026-05-10',
+            'tl_rp' => 1000,
+            'dpk_rp' => 100,
+            'npl_rp' => 10,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         $service = new DashboardHarianSnapshotService();
         $sharedPeriods = new \ReflectionMethod($service, 'resolveSharedPeriods');
         $sharedPeriods->setAccessible(true);
-        $metadataBuilder = new \ReflectionMethod($service, 'buildSourceMetadata');
-        $metadataBuilder->setAccessible(true);
-        $aggregateBuilder = new \ReflectionMethod($service, 'fetchSavingsAggregates');
-        $aggregateBuilder->setAccessible(true);
 
-        $this->assertContains('2026-05-10', $sharedPeriods->invoke($service));
-
-        $metadata = $metadataBuilder->invoke($service, '2026-05-10');
-        $this->assertSame(1, $metadata['source_savings_row_count']);
-
-        $payload = $aggregateBuilder->invoke($service, '2026-05-10', null, null);
-        $areaRow = $payload->first();
-
-        $this->assertNotNull($areaRow);
-        $this->assertSame(1000.0, (float) $areaRow->giro_wholesale);
-        $this->assertSame(1000.0, (float) $areaRow->total_simpanan);
+        $this->assertNotContains('2026-05-10', $sharedPeriods->invoke($service));
     }
 
     public function test_ssa_simpanan_stays_primary_when_hourly_dpk_is_also_available(): void

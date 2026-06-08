@@ -6,6 +6,7 @@ use App\Models\ImportJob;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\ImportExecutionService;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -192,6 +193,105 @@ class StatusSyncValidationTest extends TestCase
         $this->assertEquals('processing', $payload2['status']);
         // Harus fallback dengan message yang relevan untuk status 'processing'
         $this->assertStringContainsString('diproses', $payload2['message']);
+    }
+
+    public function test_reserved_queue_row_does_not_change_job_to_processing_before_worker_starts(): void
+    {
+        $jobId = 7;
+        $this->createTestJob($jobId, 'queued', [
+            'total_files' => 100,
+            'file_name' => 'ssa.xlsx',
+            'folder_path' => 'imports',
+            'id_report' => 17,
+        ]);
+
+        DB::table('jobs')->insert([
+            'queue' => 'imports-high',
+            'reserved_at' => now()->timestamp,
+            'available_at' => now()->timestamp,
+            'created_at' => now()->timestamp,
+            'payload' => 'O:21:"App\\Jobs\\RunImportJob":1:{s:5:"jobId";i:7;}',
+        ]);
+
+        $payload = $this->progressService->getStatusPayload($jobId);
+
+        $this->assertSame('queued', $payload['status']);
+        $this->assertTrue($payload['queue_present']);
+        $this->assertTrue($payload['queue_reserved']);
+        $this->assertFalse($payload['is_stale_queue']);
+        $this->assertStringContainsString('menyiapkan proses', $payload['message']);
+        $this->assertSame(
+            'queued',
+            DB::table('import_jobs')->where('id', $jobId)->value('status')
+        );
+    }
+
+    public function test_old_queued_job_with_active_queue_row_is_not_marked_failed(): void
+    {
+        $jobId = 9;
+        $this->createTestJob($jobId, 'queued', [
+            'total_files' => 100,
+            'file_name' => 'ssa.xlsx',
+            'folder_path' => 'imports',
+            'id_report' => 17,
+            'updated_at' => now()->subMinutes(20),
+        ]);
+
+        DB::table('jobs')->insert([
+            'queue' => 'imports-high',
+            'reserved_at' => null,
+            'available_at' => now()->subMinutes(20)->timestamp,
+            'created_at' => now()->subMinutes(20)->timestamp,
+            'payload' => 'O:21:"App\\Jobs\\RunImportJob":1:{s:5:"jobId";i:9;}',
+        ]);
+
+        $payload = $this->progressService->getStatusPayload($jobId);
+        $purged = $this->progressService->purgeStaleQueuedJobs();
+
+        $this->assertSame('queued', $payload['status']);
+        $this->assertTrue($payload['queue_present']);
+        $this->assertFalse($payload['queue_reserved']);
+        $this->assertFalse($payload['is_stale_queue']);
+        $this->assertSame(0, $purged);
+        $this->assertSame(
+            'queued',
+            DB::table('import_jobs')->where('id', $jobId)->value('status')
+        );
+    }
+
+    public function test_orphaned_zero_progress_job_is_automatically_requeued(): void
+    {
+        Bus::fake();
+        $jobId = 8;
+        $state = [
+            'params' => [
+                'job_id' => $jobId,
+                'table_name' => 'ssa_simpanan',
+                'file_path' => 'excel_imports/ssa.xlsx',
+            ],
+            'headers' => [],
+        ];
+
+        $this->createTestJob($jobId, 'processing', [
+            'total_files' => 0,
+            'file_name' => 'ssa.xlsx',
+            'folder_path' => 'imports',
+            'id_report' => 17,
+            'job_context' => json_encode([
+                'table_name' => 'ssa_simpanan',
+                'state' => $state,
+            ]),
+            'updated_at' => now()->subMinutes(2),
+        ]);
+
+        $recovered = $this->executionService->recoverOrphanedZeroProgressJobs(60);
+
+        $this->assertSame([$jobId], $recovered);
+        $this->assertSame(
+            'queued',
+            DB::table('import_jobs')->where('id', $jobId)->value('status')
+        );
+        Bus::assertDispatched(\App\Jobs\RunImportJob::class, fn ($job): bool => $job->jobId === $jobId);
     }
 
     /**

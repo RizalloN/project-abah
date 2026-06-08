@@ -503,6 +503,10 @@ class ImportProgressService
                 continue;
             }
 
+            if ($this->findActiveQueueRowForJob($jobId) !== null) {
+                continue;
+            }
+
             $success = (int) ($job->total_success ?? 0);
             $failed = (int) ($job->total_failed ?? 0);
             $this->markFailed(
@@ -728,6 +732,11 @@ class ImportProgressService
         }
         $progress = $this->importCache()->get($this->cacheKey($jobId));
         $progress = is_array($progress) ? $progress : [];
+        $queueRow = $job->status === 'queued'
+            ? $this->findActiveQueueRowForJob($jobId)
+            : null;
+        $queuePresent = $queueRow !== null;
+        $queueReserved = $queuePresent && $queueRow->reserved_at !== null;
 
         $isTerminal = in_array((string) $job->status, ['completed', 'failed', 'failed_partial', 'terminated'], true);
         if ($isTerminal) {
@@ -760,12 +769,17 @@ class ImportProgressService
             try {
                 $queuedAt = Carbon::parse($job->updated_at);
                 $queuedForSeconds = max(0, now()->diffInSeconds($queuedAt));
-                $isStaleQueue = $queuedAt->lt(now()->subMinutes(self::STALE_QUEUED_MINUTES));
+                $isStaleQueue = !$queuePresent
+                    && $queuedAt->lt(now()->subMinutes(self::STALE_QUEUED_MINUTES));
             } catch (\Throwable) {
                 $queuedForSeconds = null;
                 $isStaleQueue = false;
             }
         }
+
+        $message = $queueReserved
+            ? 'Worker queue sudah mengambil job import dan sedang menyiapkan proses.'
+            : $this->resolveStatusMessage($job, $progress);
 
         return [
             'status' => (string) $job->status,
@@ -779,10 +793,12 @@ class ImportProgressService
             'percent' => max(0, min(100, $percent)),
             'phase' => (string) ($progress['phase'] ?? ''),
             'mode' => (string) ($progress['mode'] ?? ''),
-            'message' => $this->resolveStatusMessage($job, $progress),
+            'message' => $message,
             'updated_at' => $progress['updated_at'] ?? (string) $job->updated_at,
             'queued_for_seconds' => $queuedForSeconds,
             'is_stale_queue' => $isStaleQueue,
+            'queue_present' => $queuePresent,
+            'queue_reserved' => $queueReserved,
             'termination_requested' => $terminationRequested,
             'termination_requested_at' => $terminationRequest['requested_at'] ?? null,
         ];
@@ -1024,19 +1040,10 @@ class ImportProgressService
 
         if ($status === 'queued') {
             $queueRow = $this->findActiveQueueRowForJob($jobId);
-            if ($queueRow !== null && $queueRow->reserved_at !== null) {
-                $cachedProgress = $this->importCache()->get($this->cacheKey($jobId));
-                $cachedProgress = is_array($cachedProgress) ? $cachedProgress : [];
-
-                $this->markProcessing($jobId, [
-                    'status' => 'processing',
-                    'phase' => 'polars',
-                    'mode' => 'polars',
-                    'percent' => max(8, (int) ($cachedProgress['percent'] ?? 5)),
-                    'message' => 'Worker queue sudah mengambil job import dan sedang memulai proses.',
-                ]);
-
-                return $this->findJob($jobId);
+            if ($queueRow !== null) {
+                // An existing queue row means Laravel still owns this job. The worker
+                // itself performs the queued -> processing transition.
+                return $job;
             }
 
             if ($queuedAt->gte(now()->subMinutes(self::STALE_QUEUED_MINUTES))) {

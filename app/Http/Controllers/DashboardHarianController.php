@@ -64,6 +64,7 @@ class DashboardHarianController extends Controller
         $selectedKanca = $this->normalizeFilter($request->input('kanca'));
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
         $selectedCategory = $request->input('category', 'simpanan'); // Default to simpanan
+        $selectedSegment = $request->input('segment', 'total'); // Default to total
         $monthOptions = $this->timeseriesMonthOptions();
         $selectedMonth = $this->resolveTimeseriesMonth($request->input('period_month'), $monthOptions);
 
@@ -84,9 +85,10 @@ class DashboardHarianController extends Controller
                 'kanca' => $selectedKanca ?? [],
                 'unit_kerja' => $selectedUnit ?? 'all',
                 'category' => $selectedCategory,
+                'segment' => $selectedSegment,
                 'period_month' => $selectedMonth,
             ],
-            'initialData' => $this->timeseriesPayload($selectedCategory, $selectedKanca, $selectedUnit, $selectedMonth),
+            'initialData' => $this->timeseriesPayload($selectedCategory, $selectedKanca, $selectedUnit, $selectedMonth, $selectedSegment),
         ];
 
         return view('report.dashboard-harian-timeseries', compact('dashboardPage'));
@@ -97,6 +99,7 @@ class DashboardHarianController extends Controller
         $selectedKanca = $this->normalizeFilter($request->input('kanca'));
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
         $category = $request->input('category', 'simpanan');
+        $segment = $request->input('segment', 'total');
         $monthOptions = $this->timeseriesMonthOptions();
         $selectedMonth = $this->resolveTimeseriesMonth($request->input('period_month'), $monthOptions);
 
@@ -105,7 +108,7 @@ class DashboardHarianController extends Controller
             $selectedKanca = ['KC Madiun', 'KC Ngawi', 'KC Magetan', 'KC Ponorogo'];
         }
 
-        return response()->json($this->timeseriesPayload($category, $selectedKanca, $selectedUnit, $selectedMonth));
+        return response()->json($this->timeseriesPayload($category, $selectedKanca, $selectedUnit, $selectedMonth, $segment));
     }
 
     public function data(Request $request): JsonResponse
@@ -180,21 +183,22 @@ class DashboardHarianController extends Controller
         });
     }
 
-    private function timeseriesPayload(string $category, array|string|null $selectedKanca, array|string|null $selectedUnit, ?string $selectedMonth = null): array
+    private function timeseriesPayload(string $category, array|string|null $selectedKanca, array|string|null $selectedUnit, ?string $selectedMonth = null, string $segment = 'total'): array
     {
         $monthOptions = $this->timeseriesMonthOptions();
         $resolvedMonth = $this->resolveTimeseriesMonth($selectedMonth, $monthOptions);
 
         $cacheKey = 'dashboard_harian:timeseries:' . md5(json_encode([
-            'schema' => 'v3-sml-percent-loan-overlay-refresh',
+            'schema' => 'v4-segment-timeseries-trend-v1',
             'version' => $this->reportCacheVersion(),
             'category' => $category,
             'kanca' => $selectedKanca,
             'unit' => $selectedUnit,
             'period_month' => $resolvedMonth,
+            'segment' => $segment,
         ]));
 
-        return $this->rememberDashboardPayload($cacheKey, function () use ($category, $selectedKanca, $selectedUnit, $monthOptions, $resolvedMonth) {
+        return $this->rememberDashboardPayload($cacheKey, function () use ($category, $selectedKanca, $selectedUnit, $monthOptions, $resolvedMonth, $segment) {
             $emptyPayload = [
                 'months' => [],
                 'series' => [],
@@ -204,6 +208,7 @@ class DashboardHarianController extends Controller
                 'source' => DashboardHarianSnapshotService::SNAPSHOT_TABLE,
                 'selected_month' => $resolvedMonth,
                 'available_months' => $monthOptions,
+                'segment' => $segment,
             ];
 
             $months = $this->timeseriesWindowMonths($resolvedMonth, $monthOptions);
@@ -215,7 +220,8 @@ class DashboardHarianController extends Controller
                 $months,
                 $category,
                 $selectedKanca,
-                $selectedUnit
+                $selectedUnit,
+                $segment
             );
 
             return [
@@ -227,6 +233,7 @@ class DashboardHarianController extends Controller
                 'source' => DashboardHarianSnapshotService::SNAPSHOT_TABLE,
                 'selected_month' => $resolvedMonth,
                 'available_months' => $monthOptions,
+                'segment' => $segment,
             ];
         });
     }

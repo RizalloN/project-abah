@@ -44,6 +44,20 @@ class AppServiceProvider extends ServiceProvider
         $this->registerSecurityRateLimiters();
         $this->registerQueueWorkerAutoEnsure();
 
+        // Record user logins to login_histories table
+        Event::listen(\Illuminate\Auth\Events\Login::class, function (\Illuminate\Auth\Events\Login $event): void {
+            try {
+                DB::table('login_histories')->insert([
+                    'user_id'    => $event->user->getKey(),
+                    'login_at'   => now(),
+                    'ip_address' => request()->ip(),
+                    'user_agent' => request()->userAgent(),
+                ]);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('Failed to log login history: ' . $e->getMessage());
+            }
+        });
+
         // 🔥 PROTECT FROM ACCIDENTAL DATA LOSS
         // Mencegah perintah destruktif yang dapat menghapus seluruh database secara tidak sengaja.
         if (!app()->runningUnitTests()) {

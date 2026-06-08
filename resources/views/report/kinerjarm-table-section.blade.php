@@ -59,7 +59,7 @@
     $formatPercent = $formatPercent ?? fn ($value, int $decimals = 1) => number_format((float) $value, $decimals, ',', '.') . '%';
     $quadrantLabel = $quadrantLabel ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'Kuadran ' . (int) $quadrant : '-';
     $quadrantClass = $quadrantClass ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'q' . (int) $quadrant : '';
-    $achievementHeader = ($selectedSegmen ?? '') === 'CONSUMER' ? 'Plafon Net' : 'Realisasi JG';
+    $achievementHeader = ($selectedSegmen ?? '') === 'CONSUMER' ? 'Delta OS' : 'Realisasi JG';
     $selectedHeaderLabel = $selectedPeriodShortLabel ?? 'POSISI';
     $valueFor = fn (array $row, string $key): float => (float) data_get($row, "comparison_values.{$key}", data_get($row, $key, 0));
     $deltaFor = fn (array $row, string $key): float => (float) data_get($row, "comparison_deltas.{$key}", (float) ($row['curr'] ?? 0) - $valueFor($row, $key));
@@ -181,7 +181,7 @@
                                         data-rm-name="{{ $rmName }}"
                                         data-segment="{{ $selectedSegmen }}"
                                         data-period="{{ $selectedPeriod }}"
-                                        title="Klik untuk detail rincian"
+                                        title="Klik dua kali untuk detail historis"
                                         style="cursor: pointer; transition: all 0.2s; position: relative; left: 94px;">
                                         <div class="d-flex align-items-center">
                                             <i class="fas fa-info-circle me-1 text-primary" style="font-size: 0.65rem; opacity: 0.6;"></i>
@@ -197,17 +197,15 @@
                                 @if($isFirstRmRowForQuad)
                                     @php
                                         $qClass = '';
-                                        if (($selectedSegmen ?? '') !== 'CONSUMER' && !empty($rmData['quadrant'])) {
+                                        if (!empty($rmData['quadrant'])) {
                                             $qClass = $quadrantClass($rmData['quadrant']);
                                         }
                                     @endphp
                                     <td rowspan="{{ $rmData['rm_rowspan'] }}" class="text-center-important cell-quadrant {{ $qClass }}">
-                                        @if (($selectedSegmen ?? '') !== 'CONSUMER' && !empty($rmData['quadrant']))
+                                        @if (!empty($rmData['quadrant']))
                                             <span class="quadrant-label">{{ $quadrantLabel($rmData['quadrant']) }}</span>
-                                        @elseif (($selectedSegmen ?? '') !== 'CONSUMER')
-                                            <span class="text-muted small">-</span>
                                         @else
-                                            <span class="text-muted small"></span>
+                                            <span class="text-muted small">-</span>
                                         @endif
                                     </td>
                                     @php $isFirstRmRowForQuad = false; @endphp

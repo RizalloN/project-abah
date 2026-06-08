@@ -44,6 +44,40 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertSame('KPR', $this->invokePrivateMethod($controller, 'normalizeProductLabel', ['kpr', 'MICRO']));
     }
 
+    public function test_controller_uses_consumer_monthly_target_table(): void
+    {
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        $target = $this->invokePrivateMethod($controller, 'resolveManualTargetForProduct', [
+            collect(),
+            'CONSUMER',
+            'Aris Sulistyawan',
+        ]);
+
+        $this->assertSame(19, $target['target_jg_deb']);
+        $this->assertSame(3700000000.0, $target['target_jg_os']);
+
+        $ronaTarget = $this->invokePrivateMethod($controller, 'resolveManualTargetForProduct', [
+            collect(),
+            'CONSUMER',
+            'Rona Rohana Talibata',
+        ]);
+
+        $this->assertSame(20, $ronaTarget['target_jg_deb']);
+        $this->assertSame(3750000000.0, $ronaTarget['target_jg_os']);
+    }
+
+    public function test_controller_calculates_consumer_quadrant_from_target_achievement(): void
+    {
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        $this->assertSame(1, $this->invokePrivateMethod($controller, 'calculateConsumerQuadrant', [3937500000, 3750000000.0]));
+        $this->assertSame(2, $this->invokePrivateMethod($controller, 'calculateConsumerQuadrant', [3750000000, 3750000000.0]));
+        $this->assertSame(3, $this->invokePrivateMethod($controller, 'calculateConsumerQuadrant', [1875000000, 3750000000.0]));
+        $this->assertSame(4, $this->invokePrivateMethod($controller, 'calculateConsumerQuadrant', [1874999999, 3750000000.0]));
+        $this->assertNull($this->invokePrivateMethod($controller, 'calculateConsumerQuadrant', [1000000, 0.0]));
+    }
+
     public function test_kinerjarm_table_section_renders_amounts_in_juta_and_quadrant_badge(): void
     {
         $html = view('report.kinerjarm-table-section', [
@@ -117,9 +151,9 @@ class KinerjaRmFormattingTest extends TestCase
         ])->render();
 
         $this->assertStringContainsString('1.600,0', $html);
-        $this->assertStringContainsString('Plafon Net', $html);
-        $this->assertStringNotContainsString('Kuadran 2', $html);
-        $this->assertStringNotContainsString('quadrant-badge q2', $html);
+        $this->assertStringContainsString('Delta OS', $html);
+        $this->assertStringContainsString('Kuadran 2', $html);
+        $this->assertStringContainsString('cell-quadrant q2', $html);
         $this->assertStringNotContainsString('% LAR</th>', $html);
         $this->assertStringContainsString('31 Mar 26', $html);
         $this->assertStringContainsString('31 Des 25', $html);
@@ -149,6 +183,47 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringContainsString('Realisasi OS (Rp Juta)', $html);
         $this->assertStringContainsString('1.600,0', $html);
         $this->assertStringContainsString('12,35%', $html);
+    }
+
+    public function test_kinerjarm_consumer_history_modal_renders_target_and_pg(): void
+    {
+        $html = view('report.kinerjarm-detail-modal', [
+            'rm' => '00187063 - RONA ROHANA TALIBATA',
+            'segmen' => 'CONSUMER',
+            'detailMode' => 'consumer_surplus',
+            'historyRangeLabel' => 'Jan 2026 - Mei 2026',
+            'selectedHistoryYear' => 2026,
+            'details' => [
+                [
+                    'periode' => '31 Mei 2026',
+                    'periode_raw' => '2026-05-31',
+                    'year' => 2026,
+                    'previous_period' => '30 Apr 2026',
+                    'current_debitur' => 128,
+                    'previous_debitur' => 126,
+                    'debitur' => 2,
+                    'current_os' => 230451000000,
+                    'previous_os' => 228090000000,
+                    'delta_os' => 2361000000,
+                    'surplus_plafon' => 2361000000,
+                    'target_jg_deb' => 20,
+                    'target_jg_os' => 3750000000,
+                ],
+            ],
+            'formatAmount' => fn ($value, int $decimals = 0) => number_format(((float) $value) / 1000000, $decimals, ',', '.'),
+            'formatPercent' => fn ($value, int $decimals = 2) => number_format((float) $value, $decimals, ',', '.'),
+        ])->render();
+
+        $this->assertStringContainsString('Target JG 2026', $html);
+        $this->assertStringContainsString('Target Deb', $html);
+        $this->assertStringContainsString('Target Rp', $html);
+        $this->assertStringContainsString('OS Bulan Ini 2026', $html);
+        $this->assertStringContainsString('OS Bulan Lalu 2026', $html);
+        $this->assertStringContainsString('Delta OS 2026', $html);
+        $this->assertStringContainsString('% PG', $html);
+        $this->assertStringContainsString('3.750', $html);
+        $this->assertStringContainsString('2.361', $html);
+        $this->assertStringContainsString('62,96%', $html);
     }
 
     public function test_kinerjarm_table_section_renders_zero_realisasi_values(): void

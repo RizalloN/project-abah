@@ -92,7 +92,7 @@ trait SmartCsvImportSupport
 
         try {
             $samples = [];
-            while (($line = fgets($handle)) !== false && count($samples) < 12) {
+            while (($line = fgets($handle, 1048577)) !== false && count($samples) < 12) {
                 $line = preg_replace('/^\xEF\xBB\xBF/', '', (string) $line);
                 if (trim($line) === '') {
                     continue;
@@ -154,7 +154,7 @@ trait SmartCsvImportSupport
             $sampleBadRows = [];
             $lineNumber = 0;
 
-            while (($line = fgets($handle)) !== false && $lineNumber < 25) {
+            while (($line = fgets($handle, 1048577)) !== false && $lineNumber < 25) {
                 $lineNumber++;
                 $parsed = $this->smartParseCsvLine($line, $delimiter, true);
                 if ($parsed === [] || empty(array_filter($parsed, static fn ($value): bool => trim((string) $value) !== ''))) {

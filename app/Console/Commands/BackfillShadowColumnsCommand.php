@@ -139,16 +139,31 @@ class BackfillShadowColumnsCommand extends Command
             }
         }
 
-        $periods = DB::table('daily_loan_dinamis')
+        // Fast index-only scan to get distinct periods
+        $allPeriods = DB::table('daily_loan_dinamis')
             ->select('periode')
-            ->where(fn ($q) => $this->applyShadowBackfillPredicate($q, $requiredColumns))
             ->distinct()
             ->orderByDesc('periode')
-            ->limit(10)
             ->pluck('periode')
             ->filter()
             ->values()
             ->all();
+
+        $periods = [];
+        foreach ($allPeriods as $period) {
+            // Highly optimized sub-check utilizing the index on `periode` and stopping immediately when 1 match is found
+            $needsBackfill = DB::table('daily_loan_dinamis')
+                ->where('periode', $period)
+                ->where(fn ($q) => $this->applyShadowBackfillPredicate($q, $requiredColumns))
+                ->exists();
+
+            if ($needsBackfill) {
+                $periods[] = $period;
+                if (count($periods) >= 10) {
+                    break;
+                }
+            }
+        }
 
         if (empty($periods)) {
             $this->line('   Auto-discover: No periods with NULL shadow columns found.');
@@ -495,7 +510,7 @@ class BackfillShadowColumnsCommand extends Command
                 branch_normalized = UPPER(TRIM(COALESCE(branch1, ''))),
                 rm_normalized = UPPER(TRIM(COALESCE(pn_pengelola1, ''))),
                 pn_pemutus_normalized = NULLIF(TRIM(LEADING '0' FROM TRIM(SUBSTRING_INDEX(COALESCE(pn_pemutus1, ''), '-', 1))), ''),
-                cifno_clean = REGEXP_REPLACE(COALESCE(cifno, ''), '[^0-9]', ''){$shadowBuiltAssignment}
+                cifno_clean = UPPER(TRIM(COALESCE(cifno, ''))){$shadowBuiltAssignment}
             WHERE uniqueid_namareport IN ('{$idList}')
         SQL;
 

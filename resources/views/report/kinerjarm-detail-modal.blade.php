@@ -27,7 +27,7 @@
 <div class="modal-header kinerja-rm-modal__header">
     <div>
         <p class="kinerja-rm-modal__eyebrow">
-            CONSUMER Surplesi Plafon Net{{ $historyRangeLabel ? ' - ' . $historyRangeLabel : '' }}
+            CONSUMER Delta OS{{ $historyRangeLabel ? ' - ' . $historyRangeLabel : '' }}
         </p>
         <h5 class="modal-title" id="rmDetailModalLabel">{{ $rm }}</h5>
     </div>
@@ -39,7 +39,7 @@
             <table class="table table-sm mb-0 kinerja-rm-modal__table">
                 <tbody>
                     <tr>
-                        <td colspan="8" class="text-center py-4 text-muted">Tidak ada surplesi plafon net untuk RM ini pada rentang periode terpilih.</td>
+                        <td colspan="12" class="text-center py-4 text-muted">Tidak ada data pembanding bulan sebelumnya untuk RM ini pada rentang periode terpilih.</td>
                     </tr>
                 </tbody>
             </table>
@@ -69,8 +69,50 @@
             @foreach($detailsByYear as $year => $yearDetails)
                 @php
                     $isActiveYear = (string) $year === $activeHistoryYear;
-                    $totalSurplus = (float) $yearDetails->sum(fn ($detail) => (float) ($detail['surplus_plafon'] ?? 0));
-                    $totalDebitur = (int) $yearDetails->sum(fn ($detail) => (int) ($detail['debitur'] ?? 0));
+                    $monthlyDetails = $yearDetails
+                        ->groupBy(fn ($detail) => \Carbon\Carbon::parse($detail['periode_raw'])->format('Y-m'))
+                        ->sortKeys()
+                        ->map(function ($monthDetails) {
+                            $summaryDetails = $monthDetails->filter(fn ($detail) => (bool) ($detail['is_summary'] ?? false));
+                            $sourceDetails = $summaryDetails->isNotEmpty() ? $summaryDetails : $monthDetails;
+                            $first = $sourceDetails->first();
+                            $totalRealization = (float) $sourceDetails->sum(fn ($detail) => (float) ($detail['delta_os'] ?? $detail['surplus_plafon'] ?? 0));
+                            $targetJgOs = (float) ($first['target_jg_os'] ?? 0.0);
+
+                            return [
+                                'month_label' => \Carbon\Carbon::parse($first['periode_raw'])->translatedFormat('M Y'),
+                                'period_label' => $first['periode'] ?? '-',
+                                'previous_period' => $first['previous_period'] ?? '-',
+                                'target_jg_deb' => (int) ($first['target_jg_deb'] ?? 0),
+                                'target_jg_os' => $targetJgOs,
+                                'current_debitur' => (int) $sourceDetails->sum(fn ($detail) => (int) ($detail['current_debitur'] ?? 0)),
+                                'current_os' => (float) $sourceDetails->sum(fn ($detail) => (float) ($detail['current_os'] ?? $detail['current_plafon'] ?? 0)),
+                                'previous_debitur' => (int) $sourceDetails->sum(fn ($detail) => (int) ($detail['previous_debitur'] ?? 0)),
+                                'previous_os' => (float) $sourceDetails->sum(fn ($detail) => (float) ($detail['previous_os'] ?? $detail['previous_plafon'] ?? 0)),
+                                'delta_debitur' => (int) $sourceDetails->sum(fn ($detail) => (int) ($detail['debitur'] ?? 0)),
+                                'delta_os' => $totalRealization,
+                                'pg_pct' => $targetJgOs > 0 ? ($totalRealization / $targetJgOs) * 100 : null,
+                            ];
+                        })
+                        ->values();
+                    $yearSummaryDetails = $yearDetails->filter(fn ($detail) => (bool) ($detail['is_summary'] ?? false));
+                    $yearTotalSource = $yearSummaryDetails->isNotEmpty() ? $yearSummaryDetails : $yearDetails;
+                    $accountDetails = $yearDetails
+                        ->filter(fn ($detail) => empty($detail['is_summary']) && !empty($detail['account']))
+                        ->sortBy([
+                            ['periode_raw', 'desc'],
+                            ['surplus_plafon', 'desc'],
+                        ])
+                        ->values();
+                    $totalSurplus = (float) $yearTotalSource->sum(fn ($detail) => (float) ($detail['delta_os'] ?? $detail['surplus_plafon'] ?? 0));
+                    $totalDebitur = (int) $yearTotalSource->sum(fn ($detail) => (int) ($detail['debitur'] ?? 0));
+                    $totalTargetDebitur = (int) $monthlyDetails->sum(fn ($detail) => (int) ($detail['target_jg_deb'] ?? 0));
+                    $totalTargetOs = (float) $monthlyDetails->sum(fn ($detail) => (float) ($detail['target_jg_os'] ?? 0));
+                    $totalCurrentDebitur = (int) $monthlyDetails->sum(fn ($detail) => (int) ($detail['current_debitur'] ?? 0));
+                    $totalCurrentOs = (float) $monthlyDetails->sum(fn ($detail) => (float) ($detail['current_os'] ?? 0));
+                    $totalPreviousDebitur = (int) $monthlyDetails->sum(fn ($detail) => (int) ($detail['previous_debitur'] ?? 0));
+                    $totalPreviousOs = (float) $monthlyDetails->sum(fn ($detail) => (float) ($detail['previous_os'] ?? 0));
+                    $totalPgPct = $totalTargetOs > 0 ? ($totalSurplus / $totalTargetOs) * 100 : null;
                 @endphp
                 <div
                     class="tab-pane fade {{ $isActiveYear ? 'show active' : '' }}"
@@ -80,20 +122,30 @@
                 >
                     <div class="kinerja-rm-modal__summary">
                         <div>
-                            <span>Debitur Surplesi {{ $year }}</span>
+                            <span>Debitur Naik {{ $year }}</span>
                             <strong>{{ number_format($totalDebitur, 0, ',', '.') }}</strong>
                         </div>
                         <div>
-                            <span>Plafon Net {{ $year }}</span>
+                            <span>Target JG {{ $year }}</span>
+                            <strong>
+                                {{ $totalTargetDebitur > 0 ? number_format($totalTargetDebitur, 0, ',', '.') . ' deb / ' : '' }}{{ $totalTargetOs > 0 ? $formatAmount($totalTargetOs) : '-' }}
+                            </strong>
+                        </div>
+                        <div>
+                            <span>OS Bulan Ini {{ $year }}</span>
+                            <strong>{{ $formatAmount($totalCurrentOs) }}</strong>
+                        </div>
+                        <div>
+                            <span>OS Bulan Lalu {{ $year }}</span>
+                            <strong>{{ $formatAmount($totalPreviousOs) }}</strong>
+                        </div>
+                        <div>
+                            <span>Delta OS {{ $year }}</span>
                             <strong>{{ $formatAmount($totalSurplus) }}</strong>
                         </div>
                         <div>
-                            <span>Basis</span>
-                            <strong>Scope RM</strong>
-                        </div>
-                        <div>
-                            <span>Periode</span>
-                            <strong>{{ $year }}</strong>
+                            <span>% PG {{ $year }}</span>
+                            <strong>{{ $totalPgPct === null ? '-' : $formatPercent($totalPgPct) . '%' }}</strong>
                         </div>
                     </div>
 
@@ -101,43 +153,86 @@
                         <table class="table table-sm mb-0 kinerja-rm-modal__table">
                             <thead>
                                 <tr>
-                                    <th class="text-center">Tahun</th>
+                                    <th class="text-start">Bulan</th>
                                     <th class="text-center">Posisi</th>
                                     <th class="text-center">Pembanding</th>
-                                    <th class="text-start">Scope</th>
-                                    <th class="text-start">Unit / Produk</th>
-                                    <th class="text-end">Plafon Lalu</th>
-                                    <th class="text-end">Plafon Kini</th>
-                                    <th class="text-end">Net</th>
+                                    <th class="text-end">Target Deb</th>
+                                    <th class="text-end">Target Rp</th>
+                                    <th class="text-end">Deb Ini</th>
+                                    <th class="text-end">OS Ini</th>
+                                    <th class="text-end">Deb Lalu</th>
+                                    <th class="text-end">OS Lalu</th>
+                                    <th class="text-end">Deb Naik</th>
+                                    <th class="text-end">Delta OS</th>
+                                    <th class="text-end">% PG</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach($yearDetails as $detail)
+                                @foreach($monthlyDetails as $detail)
                                     <tr>
-                                        <td class="text-center">
-                                            <span class="badge bg-light text-dark">{{ $detail['year'] ?? '-' }}</span>
-                                        </td>
-                                        <td class="text-center fw-bold">{{ $detail['periode'] }}</td>
+                                        <td class="text-start fw-bold">{{ $detail['month_label'] }}</td>
+                                        <td class="text-center">{{ $detail['period_label'] }}</td>
                                         <td class="text-center">{{ $detail['previous_period'] }}</td>
-                                        <td class="text-start">{{ $detail['account'] ?: '-' }}</td>
-                                        <td class="text-start">
-                                            <div class="fw-semibold">{{ $detail['unit'] ?: $detail['cabang'] }}</div>
-                                            <small class="text-muted">{{ $detail['produk'] }} / {{ number_format((int) ($detail['debitur'] ?? 0), 0, ',', '.') }} deb</small>
-                                        </td>
-                                        <td class="text-end">{{ $formatAmount($detail['previous_plafon']) }}</td>
-                                        <td class="text-end">{{ $formatAmount($detail['current_plafon']) }}</td>
-                                        <td class="text-end fw-bold text-success">{{ $formatAmount($detail['surplus_plafon']) }}</td>
+                                        <td class="text-end">{{ $detail['target_jg_deb'] > 0 ? number_format((int) $detail['target_jg_deb'], 0, ',', '.') : '-' }}</td>
+                                        <td class="text-end fw-semibold">{{ $detail['target_jg_os'] > 0 ? $formatAmount($detail['target_jg_os']) : '-' }}</td>
+                                        <td class="text-end">{{ number_format((int) $detail['current_debitur'], 0, ',', '.') }}</td>
+                                        <td class="text-end fw-semibold">{{ $formatAmount($detail['current_os']) }}</td>
+                                        <td class="text-end">{{ number_format((int) $detail['previous_debitur'], 0, ',', '.') }}</td>
+                                        <td class="text-end fw-semibold">{{ $formatAmount($detail['previous_os']) }}</td>
+                                        <td class="text-end">{{ number_format((int) $detail['delta_debitur'], 0, ',', '.') }}</td>
+                                        <td class="text-end fw-bold {{ (float) $detail['delta_os'] < 0 ? 'text-danger' : 'text-success' }}">{{ $formatAmount($detail['delta_os']) }}</td>
+                                        <td class="text-end fw-bold">{{ $detail['pg_pct'] === null ? '-' : $formatPercent($detail['pg_pct']) . '%' }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <td colspan="7" class="text-end">TOTAL NET {{ $year }}</td>
-                                    <td class="text-end">{{ $formatAmount($totalSurplus) }}</td>
+                                    <td colspan="3" class="text-end">TOTAL {{ $year }}</td>
+                                    <td class="text-end">{{ $totalTargetDebitur > 0 ? number_format($totalTargetDebitur, 0, ',', '.') : '-' }}</td>
+                                    <td class="text-end">{{ $totalTargetOs > 0 ? $formatAmount($totalTargetOs) : '-' }}</td>
+                                    <td class="text-end">{{ number_format($totalCurrentDebitur, 0, ',', '.') }}</td>
+                                    <td class="text-end">{{ $formatAmount($totalCurrentOs) }}</td>
+                                    <td class="text-end">{{ number_format($totalPreviousDebitur, 0, ',', '.') }}</td>
+                                    <td class="text-end">{{ $formatAmount($totalPreviousOs) }}</td>
+                                    <td class="text-end">{{ number_format($totalDebitur, 0, ',', '.') }}</td>
+                                    <td class="text-end {{ (float) $totalSurplus < 0 ? 'text-danger' : 'text-success' }}">{{ $formatAmount($totalSurplus) }}</td>
+                                    <td class="text-end">{{ $totalPgPct === null ? '-' : $formatPercent($totalPgPct) . '%' }}</td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
+                    @if($accountDetails->isNotEmpty())
+                        <div class="table-responsive kinerja-rm-modal__table-wrap mt-3">
+                            <table class="table table-sm mb-0 kinerja-rm-modal__table">
+                                <thead>
+                                    <tr>
+                                        <th class="text-start">Rekening</th>
+                                        <th class="text-start">Debitur</th>
+                                        <th class="text-start">Produk</th>
+                                        <th class="text-start">Jenis</th>
+                                        <th class="text-end">OS Lalu</th>
+                                        <th class="text-end">OS Ini</th>
+                                        <th class="text-end">Delta OS</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($accountDetails as $detail)
+                                        <tr>
+                                            <td class="text-start fw-bold">{{ $detail['account'] ?: '-' }}</td>
+                                            <td class="text-start">{{ trim((string) ($detail['nama_debitur'] ?? '')) ?: '-' }}</td>
+                                            <td class="text-start">{{ $detail['produk'] ?? '-' }}</td>
+                                            <td class="text-start">{{ $detail['movement'] ?? '-' }}</td>
+                                            <td class="text-end">{{ $formatAmount($detail['previous_os'] ?? 0) }}</td>
+                                            <td class="text-end">{{ $formatAmount($detail['current_os'] ?? 0) }}</td>
+                                            <td class="text-end fw-bold {{ (float) ($detail['delta_os'] ?? 0) < 0 ? 'text-danger' : 'text-success' }}">
+                                                {{ $formatAmount($detail['delta_os'] ?? 0) }}
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
                 </div>
             @endforeach
         </div>

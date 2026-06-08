@@ -104,6 +104,30 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         Log::shouldHaveReceived('warning')->once();
     }
 
+    public function test_daily_loan_csv_reader_caps_oversized_serialized_record(): void
+    {
+        $csvPath = storage_path('framework/testing/daily_loan_oversized_record.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, str_repeat("\0", 2 * 1024 * 1024) . "\n");
+
+        $handle = fopen($csvPath, 'r');
+        $this->assertNotFalse($handle);
+
+        try {
+            $row = $this->invokeMethod('readCsvRecord', [$handle, ',', 'daily_loan_dinamis']);
+
+            $this->assertIsArray($row);
+            $this->assertCount(1, $row);
+            $this->assertLessThanOrEqual(1024 * 1024, strlen((string) $row[0]));
+        } finally {
+            fclose($handle);
+            @unlink($csvPath);
+        }
+    }
+
     public function test_daily_loan_row_with_date_like_kode_kanwil_is_rejected(): void
     {
         $headers = array_map('strtolower', $this->dailyLoanHeaders());

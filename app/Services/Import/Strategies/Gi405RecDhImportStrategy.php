@@ -6,14 +6,14 @@ class Gi405RecDhImportStrategy implements ImportStrategyInterface
 {
     public function key(): string
     {
-        return 'gi405_singlerow';
+        return 'gi405_recovery';
     }
 
     public function supports(?object $report, ?string $tableName = null): bool
     {
         $table = strtolower(trim((string) ($tableName ?? $report->table_name ?? '')));
 
-        return $table === 'gi405_singlerow';
+        return $table === 'gi405_recovery';
     }
 
     public function prepareContext(array $context): array
@@ -26,20 +26,9 @@ class Gi405RecDhImportStrategy implements ImportStrategyInterface
         $required = [
             'uniqueid_namareport',
             'periode',
-            'branch',
-            'currency',
-            'posting_control',
-            'account_number',
-            'c_c',
-            'p_c',
-            'f_c',
-            'description',
-            'begining_balance',
-            'equivalents_idr',
-            'equivalents_usd',
-            'today_debit',
-            'today_credit',
-            'ending_balance',
+            'kode_uker',
+            'pendapatan_koreksi_ppap_dr_angsuran_ph',
+            'nama_uker',
         ];
 
         $lookup = array_fill_keys(array_map('strtolower', $availableColumns), true);
@@ -54,7 +43,7 @@ class Gi405RecDhImportStrategy implements ImportStrategyInterface
         if ($missing !== []) {
             return [
                 'ok' => false,
-                'message' => 'Schema GI405 Single Row tidak lengkap. Kolom yang hilang: ' . implode(', ', $missing),
+                'message' => 'Schema GI405 Recovery tidak lengkap. Kolom yang hilang: ' . implode(', ', $missing),
             ];
         }
 

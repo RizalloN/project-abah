@@ -261,7 +261,7 @@
 
     .casa-loading-overlay {
         position: absolute;
-        inset: 0;
+        inset: 48px 0 0;
         z-index: 20;
         display: flex;
         flex-direction: column;
@@ -483,12 +483,61 @@
         display: none;
     }
 
+    .casa-unit-toolbar {
+        margin-top: 1rem;
+        padding: 1rem;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: #f8fafc;
+    }
+
+    .casa-unit-toolbar .row {
+        row-gap: 0.75rem;
+    }
+
+    .casa-unit-view-switch {
+        display: inline-flex;
+        max-width: 100%;
+        margin: 1rem 0;
+        overflow-x: auto;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: #ffffff;
+    }
+
+    .casa-unit-view-switch .btn {
+        min-width: 130px;
+        border: 0;
+        border-right: 1px solid var(--border-color);
+        border-radius: 0;
+        color: var(--text-muted);
+        background: #ffffff;
+        font-size: 0.82rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .casa-unit-view-switch .btn:last-child {
+        border-right: 0;
+    }
+
+    .casa-unit-view-switch .btn.active {
+        color: #ffffff;
+        background: var(--primary-blue);
+    }
+
     @media (max-width: 767.98px) {
         .casa-action {
             width: 100%;
         }
         .casa-filter-meta {
             gap: 0.45rem 0.9rem;
+        }
+        .casa-unit-view-switch {
+            display: flex;
+        }
+        .casa-unit-view-switch .btn {
+            flex: 0 0 auto;
         }
     }
 </style>
@@ -618,6 +667,11 @@
                     <li class="nav-item">
                         <a class="nav-link active" data-toggle="tab" href="#tab-total" role="tab">
                             <i class="fas fa-chart-pie mr-1"></i> Total
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-toggle="tab" href="#tab-per-uker" role="tab">
+                            <i class="fas fa-building mr-1"></i> Per Unit Kerja
                         </a>
                     </li>
                     <li class="nav-item">
@@ -757,6 +811,75 @@
                                     <tbody id="tbody-micro"></tbody>
                                 </table>
                             </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="tab-per-uker" role="tabpanel">
+                        <div class="casa-unit-toolbar">
+                            <form id="filterFormPerUker" class="row align-items-end">
+                                <div class="col-lg-4 col-md-6">
+                                    <label class="casa-filter-label" for="filter_cabang1_uker">Cabang Kelolaan</label>
+                                    <select id="filter_cabang1_uker" name="cabang1" class="form-control casa-filter-control">
+                                        <option value="">Pilih Cabang</option>
+                                        @foreach(($unitBranchOptions ?? collect()) as $branchOption)
+                                            <option value="{{ $branchOption }}">{{ $branchOption }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="col-lg-3 col-md-6">
+                                    <button type="submit" id="submitButtonPerUker" class="btn btn-primary btn-block casa-action">
+                                        <i class="fas fa-play mr-2"></i> Tampilkan UKER
+                                    </button>
+                                </div>
+                                <div class="col-lg-5 d-flex align-items-center justify-content-lg-end">
+                                    <span id="loadingChipPerUker" class="casa-loading-chip d-none">
+                                        <span class="casa-loading-dot"></span>
+                                        Memproses unit kerja...
+                                    </span>
+                                    <span id="summaryBadgePerUker" class="casa-table-badge">
+                                        <i class="fas fa-info-circle text-muted"></i> Pilih cabang
+                                    </span>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="casa-unit-view-switch" role="group" aria-label="Tampilan segmen unit kerja">
+                            <button type="button" class="btn active" data-uker-view="total" aria-pressed="true">
+                                <i class="fas fa-chart-pie mr-1"></i> Total
+                            </button>
+                            <button type="button" class="btn" data-uker-view="briguna-kpr" aria-pressed="false">
+                                <i class="fas fa-home mr-1"></i> Briguna & KPR
+                            </button>
+                            <button type="button" class="btn" data-uker-view="mikro-smc" aria-pressed="false">
+                                <i class="fas fa-store mr-1"></i> Mikro & SMC
+                            </button>
+                        </div>
+
+                        <div class="per-uker-view" data-uker-panel="total">
+                            @include('report.partials.rasio-casa-unit-table', [
+                                'tbodyId' => 'tbody-per-uker-total',
+                                'segments' => [
+                                    ['key' => 'total', 'label' => 'TOTAL'],
+                                ],
+                            ])
+                        </div>
+                        <div class="per-uker-view d-none" data-uker-panel="briguna-kpr">
+                            @include('report.partials.rasio-casa-unit-table', [
+                                'tbodyId' => 'tbody-per-uker-briguna-kpr',
+                                'segments' => [
+                                    ['key' => 'briguna', 'label' => 'BRIGUNA'],
+                                    ['key' => 'kpr', 'label' => 'KPR'],
+                                ],
+                            ])
+                        </div>
+                        <div class="per-uker-view d-none" data-uker-panel="mikro-smc">
+                            @include('report.partials.rasio-casa-unit-table', [
+                                'tbodyId' => 'tbody-per-uker-mikro-smc',
+                                'segments' => [
+                                    ['key' => 'mikro', 'label' => 'MIKRO'],
+                                    ['key' => 'smc', 'label' => 'SMC'],
+                                ],
+                            ])
                         </div>
                     </div>
 
@@ -1009,7 +1132,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function updateGroupLabel(label) {
         const normalizedLabel = (label || 'BRANCH OFFICE').toUpperCase();
-        $('.col-group-label').each(function () {
+        $('.col-group-label[data-default-label]').each(function () {
             const $label = $(this);
             const nextText = normalizedLabel === 'UKER'
                 ? ($label.data('filtered-label') || 'UKER')
@@ -1332,6 +1455,125 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ============================================================
+    // Handler untuk Rasio CASA Per Unit Kerja
+    // ============================================================
+    const formPerUker = document.getElementById('filterFormPerUker');
+    const cabangPerUkerSelect = document.getElementById('filter_cabang1_uker');
+    const submitButtonPerUker = document.getElementById('submitButtonPerUker');
+    const loadingChipPerUker = document.getElementById('loadingChipPerUker');
+    const summaryBadgePerUker = document.getElementById('summaryBadgePerUker');
+    let activeRequestPerUker = null;
+
+    function renderPerUkerMessage(message) {
+        const singleHtml = `<tr class="loading-row"><td colspan="16" class="text-center">${message}</td></tr>`;
+        const dualHtml = `<tr class="loading-row"><td colspan="31" class="text-center">${message}</td></tr>`;
+
+        $('#tbody-per-uker-total').html(singleHtml);
+        $('#tbody-per-uker-briguna-kpr').html(dualHtml);
+        $('#tbody-per-uker-mikro-smc').html(dualHtml);
+    }
+
+    function setPerUkerView(viewName) {
+        $('[data-uker-view]').each(function () {
+            const isActive = $(this).data('uker-view') === viewName;
+            $(this).toggleClass('active', isActive).attr('aria-pressed', isActive ? 'true' : 'false');
+        });
+        $('[data-uker-panel]').each(function () {
+            $(this).toggleClass('d-none', $(this).data('uker-panel') !== viewName);
+        });
+    }
+
+    $('[data-uker-view]').on('click', function () {
+        setPerUkerView($(this).data('uker-view'));
+    });
+
+    $('.report-tabs a[data-toggle="tab"]').on('shown.bs.tab', function () {
+        setOverlay('', '', false);
+    });
+
+    async function loadDataPerUker() {
+        const selectedCabang = cabangPerUkerSelect.value;
+
+        if (!selectedCabang) {
+            summaryBadgePerUker.innerHTML = '<i class="fas fa-exclamation-circle text-warning mr-1"></i> Pilih cabang';
+            cabangPerUkerSelect.focus();
+            return;
+        }
+
+        if (activeRequestPerUker && typeof activeRequestPerUker.abort === 'function') {
+            activeRequestPerUker.abort();
+        }
+
+        loadingChipPerUker.classList.remove('d-none');
+        summaryBadgePerUker.classList.add('d-none');
+        submitButtonPerUker.disabled = true;
+        renderPerUkerMessage('Memproses rasio CASA per unit kerja...');
+
+        activeRequestPerUker = $.ajax({
+            url: "{{ route('report.data.rasiocasa') }}",
+            type: 'POST',
+            data: {
+                posisi: filterPosisi.value,
+                branch_office: [selectedCabang],
+                nama_uker: [],
+                _token: '{{ csrf_token() }}'
+            },
+            dataType: 'json',
+        });
+
+        try {
+            const res = await activeRequestPerUker;
+
+            if (res.status !== 'success') {
+                renderPerUkerMessage(res.message || 'Data unit kerja tidak berhasil dimuat.');
+                summaryBadgePerUker.innerHTML = '<i class="fas fa-exclamation-triangle text-danger mr-1"></i> Gagal memuat';
+                return;
+            }
+
+            const labels = res.labels || {};
+            const effectiveDates = res.effective_dates || {};
+            const dataList = res.data || [];
+            const totalData = res.total || {};
+            const responseMeta = res.meta || {};
+            const hasAnyData = responseMeta.has_rows === true || dataList.length > 0;
+
+            updateTableLabels(labels.prev || '-', labels.curr || '-', labels.m2 || '-', labels.ytd || '-');
+
+            if (effectiveDates.curr) {
+                filterPosisi.value = effectiveDates.curr;
+            }
+
+            if (!hasAnyData || dataList.length === 0) {
+                renderPerUkerMessage(res.message || `Tidak ada data unit kerja untuk ${selectedCabang}.`);
+                summaryBadgePerUker.innerHTML = '<i class="fas fa-info-circle text-warning mr-1"></i> Data kosong';
+                return;
+            }
+
+            renderSingleTableBody('tbody-per-uker-total', dataList, totalData, 'total');
+            renderSingleTableBody('tbody-per-uker-briguna-kpr', dataList, totalData, 'briguna', true, 'kpr');
+            renderSingleTableBody('tbody-per-uker-mikro-smc', dataList, totalData, 'mikro', true, 'smc');
+            summaryBadgePerUker.innerHTML = `<i class="fas fa-check-circle text-success mr-1"></i> ${dataList.length} unit kerja | ${selectedCabang} | ${labels.curr || effectiveDates.curr || '-'}`;
+        } catch (xhr) {
+            if (xhr && xhr.statusText === 'abort') {
+                return;
+            }
+
+            renderPerUkerMessage('Gagal memuat data per unit kerja. Silakan coba lagi.');
+            summaryBadgePerUker.innerHTML = '<i class="fas fa-exclamation-triangle text-danger mr-1"></i> Gagal memuat';
+        } finally {
+            loadingChipPerUker.classList.add('d-none');
+            summaryBadgePerUker.classList.remove('d-none');
+            submitButtonPerUker.disabled = false;
+            activeRequestPerUker = null;
+        }
+    }
+
+    formPerUker.addEventListener('submit', function (event) {
+        event.preventDefault();
+        loadDataPerUker();
+    });
+
+    // ============================================================
     // Handler untuk Rasio CASA Per RM
     // ============================================================
     const cabang1Select = document.getElementById('filter_cabang1_rm');
@@ -1339,6 +1581,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const submitButtonPerRm = document.getElementById('submitButtonPerRm');
     const loadingChipPerRm = document.getElementById('loadingChipPerRm');
     const branchOptionsPerRm = @json($branchOptions ?? []);
+    const allUnitPerRmValue = 'ALL UKER';
     let activeRequestPerRm = null;
 
     function populatePerRmBranches() {
@@ -1362,6 +1605,11 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
+        const allOption = document.createElement('option');
+        allOption.value = allUnitPerRmValue;
+        allOption.textContent = 'Semua Unit Kerja';
+        unit1Select.appendChild(allOption);
+
         const units = Array.isArray(branchUkerMap[selectedCabang]) ? branchUkerMap[selectedCabang] : [];
         units.forEach(function(unit) {
             const option = document.createElement('option');
@@ -1370,7 +1618,8 @@ document.addEventListener('DOMContentLoaded', function () {
             unit1Select.appendChild(option);
         });
 
-        unit1Select.disabled = units.length === 0;
+        unit1Select.value = allUnitPerRmValue;
+        unit1Select.disabled = false;
     }
 
     cabang1Select.addEventListener('change', function() {
@@ -1383,7 +1632,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const selectedUnit = unit1Select.value;
 
         if (!selectedCabang || !selectedUnit) {
-            alert('Pilih cabang dan unit kerja terlebih dahulu.');
+            alert('Pilih cabang terlebih dahulu.');
             return;
         }
 
@@ -1471,6 +1720,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     resetTableState();
     syncNamaUkerOptions();
+    renderPerUkerMessage('Pilih cabang lalu tampilkan data per unit kerja.');
+    setPerUkerView('total');
 });
 </script>
 @endsection

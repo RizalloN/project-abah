@@ -276,8 +276,8 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(700000000.0, $item['delta_yoy']);
         $this->assertSame(600000000.0, $item['delta_ytd']);
         $this->assertSame(400000000.0, $item['delta_mtd']);
-        $this->assertSame(11, $item['ach_deb']);
-        $this->assertSame(250000000.0, $item['ach_os']);
+        $this->assertSame(3, $item['ach_deb']);
+        $this->assertSame(62500000.0, $item['ach_os']);
     }
 
     public function test_kinerja_rm_realisasi_period_uses_selected_daily_position(): void
@@ -292,25 +292,28 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame('2026-05-15', $resolved);
     }
 
-    public function test_kinerja_rm_does_not_synthesize_quadrants_for_non_small_segments(): void
+    public function test_kinerja_rm_consumer_quadrant_uses_monthly_target_achievement(): void
     {
         DB::table('performance_rm_snapshots')->insert([
-            $this->snapshotRow('2026-04-20', 1600000000, 1, 250000000),
+            $this->snapshotRow('2026-05-20', 1600000000, 25, 5741000000, [
+                'rm' => 'Rons Rohana Talibata',
+            ]),
         ]);
 
         $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
 
         $result = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
             'CONSUMER',
-            '2026-04-20',
-            $this->comparisonPeriods('2026-04-20', '2026-04-20', null, null, '2026-04-20'),
-            '2026-04-20',
+            '2026-05-20',
+            $this->comparisonPeriods('2026-05-20', '2026-05-20', null, null, '2026-05-20'),
+            '2026-05-20',
             null,
             null,
             null,
         ]);
 
-        $this->assertNull($result['rows'][0]['rms']['RM A']['quadrant']);
+        $this->assertSame(4, $result['rows'][0]['rms']['Rons Rohana Talibata']['quadrant']);
+        $this->assertSame(1148200000.0, $result['rows'][0]['rms']['Rons Rohana Talibata']['items'][0]['ach_os']);
     }
 
     public function test_kinerja_rm_small_quadrant_uses_ratas_and_lar_when_snapshot_quadrant_is_missing(): void

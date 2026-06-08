@@ -187,9 +187,9 @@ class ManagedReportManagementService
             'period_priority' => ['periode'],
             'kanca_priority' => ['mbdesc'],
         ],
-        'gi405_singlerow' => [
+        'gi405_recovery' => [
             'period_priority' => ['periode'],
-            'kanca_priority' => ['branch'],
+            'no_kanca' => true,
         ],
         'cognos_ph' => [
             'period_priority' => ['periode'],
@@ -376,6 +376,7 @@ class ManagedReportManagementService
         $override = self::MANAGEMENT_SCOPE_COLUMN_OVERRIDES[$tableName] ?? null;
         $periodColumn = null;
         $kancaColumn = null;
+        $noKanca = is_array($override) && ($override['no_kanca'] ?? false);
 
         if (is_array($override)) {
             $priorityPeriod = $this->resolveCandidateColumns($tableColumns, (array) ($override['period_priority'] ?? []));
@@ -383,9 +384,11 @@ class ManagedReportManagementService
                 $periodColumn = $this->resolveMostPopulatedColumn($tableName, $priorityPeriod);
             }
 
-            $priorityKanca = $this->resolveCandidateColumns($tableColumns, (array) ($override['kanca_priority'] ?? []));
-            if ($priorityKanca !== []) {
-                $kancaColumn = $this->resolveMostPopulatedColumn($tableName, $priorityKanca);
+            if (!$noKanca) {
+                $priorityKanca = $this->resolveCandidateColumns($tableColumns, (array) ($override['kanca_priority'] ?? []));
+                if ($priorityKanca !== []) {
+                    $kancaColumn = $this->resolveMostPopulatedColumn($tableName, $priorityKanca);
+                }
             }
         }
 
@@ -400,7 +403,7 @@ class ManagedReportManagementService
             }
         }
 
-        if ($kancaColumn === null) {
+        if ($kancaColumn === null && !$noKanca) {
             $kancaCandidates = $this->resolveCandidateColumns($tableColumns, self::KANCA_COLUMN_CANDIDATES);
             $kancaColumn = $this->resolveMostPopulatedColumn($tableName, $kancaCandidates);
             if ($kancaColumn === null) {
@@ -419,7 +422,7 @@ class ManagedReportManagementService
                 );
             }
 
-            if ($kancaColumn === null) {
+            if ($kancaColumn === null && !$noKanca) {
                 $kancaColumn = $this->resolveMostPopulatedColumn(
                     $tableName,
                     $this->resolveCandidateColumns($tableColumns, (array) ($override['kanca'] ?? []))

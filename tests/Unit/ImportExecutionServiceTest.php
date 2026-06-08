@@ -711,4 +711,49 @@ class ImportExecutionServiceTest extends TestCase
         Config::set('import.queue.inline_fallback_grace_seconds', 7);
         $this->assertSame(7, $method->invoke($service));
     }
+
+    public function test_inline_fallback_does_not_run_while_queue_still_owns_job(): void
+    {
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $service = new ImportExecutionService($progressService);
+        $method = new \ReflectionMethod($service, 'shouldRunInlineFallback');
+        $method->setAccessible(true);
+
+        $shouldFallback = $method->invoke($service, [
+            'status' => 'queued',
+            'job_id' => 172,
+            'queue_present' => true,
+            'queue_reserved' => true,
+        ], time() - 60, false);
+
+        $this->assertFalse($shouldFallback);
+    }
+
+    public function test_simpanan_multipn_is_not_recovered_by_generic_zero_progress_recovery(): void
+    {
+        $jobId = 196;
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $progressService->shouldReceive('getJobState')
+            ->once()
+            ->with($jobId)
+            ->andReturn([
+                'params' => [
+                    'table_name' => 'simpanan_multipn',
+                ],
+            ]);
+
+        $service = new ImportExecutionService($progressService);
+        $method = new \ReflectionMethod($service, 'isRecoverableZeroProgressImportJob');
+        $method->setAccessible(true);
+
+        $recoverable = $method->invoke($service, $jobId, (object) [
+            'id' => $jobId,
+            'id_report' => 9,
+            'status' => 'processing',
+            'total_success' => 0,
+            'total_failed' => 0,
+        ]);
+
+        $this->assertFalse($recoverable);
+    }
 }

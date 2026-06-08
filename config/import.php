@@ -58,7 +58,7 @@ return [
             'enabled' => env('IMPORT_DIRECT_LOAD_SSA_PINJAMAN_ENABLED', true),
             'max_rows' => env('IMPORT_DIRECT_LOAD_SSA_PINJAMAN_MAX_ROWS', 0),
         ],
-        'gi405_singlerow' => [
+        'gi405_recovery' => [
             'enabled' => env('IMPORT_DIRECT_LOAD_GI405_REC_DH_ENABLED', true),
             'max_rows' => env('IMPORT_DIRECT_LOAD_GI405_REC_DH_MAX_ROWS', 0),
         ],

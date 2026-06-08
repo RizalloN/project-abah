@@ -51,6 +51,15 @@ class UserManagementController extends Controller
     public function index(): View
     {
         $users = User::query()
+            ->select('users.*')
+            ->selectSub(
+                \Illuminate\Support\Facades\DB::table('login_histories')
+                    ->select('login_at')
+                    ->whereColumn('user_id', 'users.id')
+                    ->latest('login_at')
+                    ->limit(1),
+                'last_login_at'
+            )
             ->orderByRaw("CASE WHEN role = 'admin' THEN 0 ELSE 1 END")
             ->orderBy('name')
             ->paginate(15);
@@ -62,6 +71,25 @@ class UserManagementController extends Controller
         ];
 
         return view('admin.user-management', compact('users', 'stats'));
+    }
+
+    public function loginHistory(User $user): \Illuminate\Http\JsonResponse
+    {
+        $history = \Illuminate\Support\Facades\DB::table('login_histories')
+            ->where('user_id', $user->getKey())
+            ->selectRaw('DATE(login_at) as date, COUNT(*) as count')
+            ->groupBy('date')
+            ->orderByDesc('date')
+            ->get();
+
+        return response()->json([
+            'user' => [
+                'id' => $user->getKey(),
+                'name' => $user->name,
+                'pn' => $user->pn,
+            ],
+            'history' => $history
+        ]);
     }
 
     public function store(Request $request): RedirectResponse

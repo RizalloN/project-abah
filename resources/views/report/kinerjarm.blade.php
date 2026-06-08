@@ -1425,8 +1425,8 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // RM Detail Click Handler
-    $(document).on('click', '.clickable-rm-row', function() {
+    // RM Detail Double Click Handler
+    $(document).on('dblclick', '.clickable-rm-row', function() {
         const rm = $(this).data('rm-name');
         const segmen = $(this).data('segment');
         const periode = $(this).data('period');

@@ -881,9 +881,19 @@ class RekeningDormantController extends Controller
             $lock = Cache::lock('snapshot:dormant:auto-rebuild:' . $missingPeriod, 60);
             $pendingKey = 'snapshot:dormant:auto-rebuild:pending:' . $missingPeriod;
             $jobDispatched = false;
+            $built = false;
 
             try {
                 if ($lock->get()) {
+                    try {
+                        app(ReportSnapshotBuilder::class)->rebuildRekeningDormant($missingPeriod, false);
+                        $built = $this->dormantSnapshotQuery()
+                            ->where('posisi', $missingPeriod)
+                            ->exists();
+                    } catch (Throwable $builderEx) {
+                        Log::warning('Synchronous rebuild rekening dormant failed, falling back: ' . $builderEx->getMessage());
+                    }
+
                     if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
                         EnsureRekeningDormantSnapshotJob::dispatch($missingPeriod, static::class . '::hasDormantSnapshots')
                             ->onQueue((string) config('queue.report_queue', 'default'));
@@ -896,6 +906,11 @@ class RekeningDormantController extends Controller
                 ]);
             } finally {
                 optional($lock)->release();
+            }
+
+            if ($built) {
+                Cache::put($periodCacheKey, true, now()->addMinutes(10));
+                continue;
             }
 
             Log::info('Rekening dormant snapshot unavailable; using source query fallback.', [

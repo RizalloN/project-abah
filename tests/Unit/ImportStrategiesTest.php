@@ -112,7 +112,7 @@ class ImportStrategiesTest extends TestCase
     {
         $strategy = new Gi405RecDhImportStrategy();
 
-        $this->assertTrue($strategy->supports(null, 'gi405_singlerow'));
+        $this->assertTrue($strategy->supports(null, 'gi405_recovery'));
         $this->assertSame('bulk_csv_filtered', $strategy->importMode());
     }
 

@@ -66,7 +66,7 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
 
     public function test_mark_coalesces_dirty_period_and_claim_clear_is_token_scoped(): void
     {
-        $service = new SnapshotDirtyPeriodService();
+        $service = new SnapshotDirtyPeriodService;
 
         $service->mark('daily_loan_dinamis', '2026-05-12');
         $service->mark('daily_loan_dinamis', '2026-05-12');
@@ -88,7 +88,7 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
 
     public function test_release_claim_moves_to_failed_after_max_attempts(): void
     {
-        $service = new SnapshotDirtyPeriodService();
+        $service = new SnapshotDirtyPeriodService;
         $service->mark('hourly_dpk', '2026-05-12');
 
         for ($i = 0; $i < SnapshotDirtyPeriodService::MAX_ATTEMPTS; $i++) {
@@ -116,9 +116,23 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
         ]);
     }
 
+    public function test_claimable_count_excludes_exhausted_dirty_rows(): void
+    {
+        $service = new SnapshotDirtyPeriodService;
+        $service->mark('simpanan_multipn', '2026-05-16');
+
+        \DB::table('snapshot_dirty_periods')
+            ->where('source_table', 'simpanan_multipn')
+            ->where('period_key', '2026-05-16')
+            ->update(['attempts' => SnapshotDirtyPeriodService::MAX_ATTEMPTS]);
+
+        $this->assertSame(1, $service->pendingCount('simpanan_multipn'));
+        $this->assertSame(0, $service->claimableCount('simpanan_multipn', '2026-05-16'));
+    }
+
     public function test_claim_due_recovers_stale_claim_when_worker_disappears(): void
     {
-        $service = new SnapshotDirtyPeriodService();
+        $service = new SnapshotDirtyPeriodService;
         $service->mark('lw325_ph', '2026-05-13');
 
         $claims = $service->claimDue(1);
@@ -143,7 +157,7 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
 
     public function test_mark_resets_attempts_and_clears_failed_marker_for_fresh_source_change(): void
     {
-        $service = new SnapshotDirtyPeriodService();
+        $service = new SnapshotDirtyPeriodService;
         $service->mark('ssa_pinjaman', '2026-05-13');
 
         $claims = $service->claimDue(1);

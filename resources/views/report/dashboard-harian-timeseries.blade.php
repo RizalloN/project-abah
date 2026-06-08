@@ -703,9 +703,10 @@
     <!-- Filters -->
     <div class="card filter-card">
         <div class="card-body p-4">
-            <div class="row align-items-end">
-                <div class="col-lg-3 mb-3 mb-lg-0">
-                    <label class="filter-label">Kategori Metrik</label>
+            <!-- Row 1: Metrik & Segmen selectors -->
+            <div class="row mb-4">
+                <div class="col-lg-6 mb-3 mb-lg-0">
+                    <label class="filter-label" style="font-weight: 700; color: #475569; margin-bottom: 0.5rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Kategori Metrik</label>
                     <div class="category-selector" id="categorySelector">
                         <button class="category-btn {{ $dashboardPage['selected']['category'] === 'simpanan' ? 'active' : '' }}" data-value="simpanan">Simpanan</button>
                         <button class="category-btn {{ $dashboardPage['selected']['category'] === 'simpanan_casa' ? 'active' : '' }}" data-value="simpanan_casa">Simpanan CASA</button>
@@ -714,7 +715,17 @@
                         <button class="category-btn {{ $dashboardPage['selected']['category'] === 'npl' ? 'active' : '' }}" data-value="npl">NPL</button>
                     </div>
                 </div>
-                <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
+                <div class="col-lg-6">
+                    <label class="filter-label" style="font-weight: 700; color: #475569; margin-bottom: 0.5rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Segmen Metrik</label>
+                    <div class="category-selector" id="segmentSelector">
+                        {{-- Dynamically populated by JS --}}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 2: Branch, Unit, Period, and Update -->
+            <div class="row align-items-end">
+                <div class="col-lg-4 col-md-6 mb-3 mb-lg-0">
                     <label class="filter-label">Kantor Cabang</label>
                     <div class="branch-filter-dropdown" id="kancaDropdownShell">
                         <div class="branch-dropdown-toggle" id="kancaDropdown">
@@ -728,7 +739,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-lg-2 col-md-6 mb-3 mb-lg-0">
+                <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
                     <label class="filter-label">Unit Kerja</label>
                     <div class="branch-filter-dropdown" id="unitDropdownShell">
                         <div class="branch-dropdown-toggle" id="unitDropdown">
@@ -743,7 +754,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-lg-2 col-md-6 mb-3 mb-lg-0">
+                <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
                     <label class="filter-label">Periode Akhir</label>
                     <div class="branch-filter-dropdown" id="periodDropdownShell">
                         <div class="branch-dropdown-toggle" id="periodDropdown">
@@ -776,15 +787,15 @@
             </div>
         </div>
     </div>
-
-    <!-- Capture Target Area -->
-    <div id="timeseriesCaptureArea" style="background: #fdfdfe; padding: 1.5rem 0.5rem; border-radius: 20px;">
-        <!-- Summary Chart Container -->
-        <div class="row mb-3" id="summaryChartContainer">
-        <div class="col-12">
-            <div class="card chart-card summary-chart-card">
-                <div class="chart-header">
-                    <h5 class="chart-title"><i class="fas fa-chart-area mr-2 text-primary"></i>Area 6 - Konsolidasi</h5>
+ 
+     <!-- Capture Target Area -->
+     <div id="timeseriesCaptureArea" style="background: #fdfdfe; padding: 1.5rem 0.5rem; border-radius: 20px;">
+         <!-- Summary Chart Container -->
+         <div class="row mb-3" id="summaryChartContainer">
+         <div class="col-12">
+             <div class="card chart-card summary-chart-card">
+                 <div class="chart-header">
+                     <h5 class="chart-title" id="summaryChartTitle"><i class="fas fa-chart-area mr-2 text-primary"></i>Area 6 - Konsolidasi</h5>
                     <div class="d-flex align-items-center">
                         <div class="unit-badge" id="summaryChartBadge">Total Konsolidasi Selected Branches</div>
                         <button class="btn-export-jpg ml-2" onclick="window.downloadTimeseriesChart('summary', 'Timeseries-Area6-Consolidation')" title="Export to JPG">
@@ -864,6 +875,7 @@
             const routes = @json($dashboardPage['routes']);
             const initialTimeseriesData = @json($dashboardPage['initialData'] ?? []);
             let currentCategory = '{{ $dashboardPage['selected']['category'] }}';
+            let currentSegment = '{{ $dashboardPage['selected']['segment'] ?? 'total' }}';
             let charts = {};
             let activeRequestId = 0;
             const totalArea6Count = 4;
@@ -1148,7 +1160,12 @@
 
             function drawExportHeader(ctx) {
                 const { width, marginX, marginY } = A4_EXPORT;
-                const category = document.querySelector('.category-btn.active')?.textContent?.trim() || '-';
+                const categoryBtn = document.querySelector('#categorySelector .category-btn.active');
+                const segmentBtn = document.querySelector('#segmentSelector .segment-btn.active');
+                let category = categoryBtn ? categoryBtn.textContent.trim() : '-';
+                if (segmentBtn && segmentBtn.getAttribute('data-value') !== 'total') {
+                    category += ' - ' + segmentBtn.textContent.trim();
+                }
                 const periodSelect = document.getElementById('periodMonthFilter');
                 const period = periodSelect?.options[periodSelect.selectedIndex]?.text || '-';
                 const unit = unitLabel?.textContent?.trim() || 'Semua Unit';
@@ -1287,7 +1304,13 @@
                         const branchGridHeight = contentHeight - summaryHeight - A4_EXPORT.sectionGap;
                         const branchCardWidth = Math.floor((cardWidth - A4_EXPORT.branchGap) / 2);
                         const branchCardHeight = Math.floor((branchGridHeight - A4_EXPORT.branchGap) / 2);
-                        const category = sanitizeFilePart(document.querySelector('.category-btn.active')?.textContent || 'Timeseries');
+                        const categoryBtn = document.querySelector('#categorySelector .category-btn.active');
+                        const segmentBtn = document.querySelector('#segmentSelector .segment-btn.active');
+                        let categoryText = categoryBtn ? categoryBtn.textContent : 'Timeseries';
+                        if (segmentBtn && segmentBtn.getAttribute('data-value') !== 'total') {
+                            categoryText += '-' + segmentBtn.textContent;
+                        }
+                        const category = sanitizeFilePart(categoryText);
                         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
                         const { summary, branches } = resolveA4LayoutEntries(chartEntries);
                         const pageCanvas = document.createElement('canvas');
@@ -1579,6 +1602,7 @@
                 try {
                     const queryParams = new URLSearchParams({
                         category: currentCategory,
+                        segment: currentSegment,
                         unit_kerja: unit,
                         period_month: periodMonth
                     });
@@ -1834,6 +1858,18 @@
                     if (badge) {
                         badge.textContent = selectedCount === 0 ? 'Total Konsolidasi Area 6' : 'Total Konsolidasi (4 Cabang Dipilih)';
                     }
+
+                    // Dynamically update the summary chart title
+                    const titleEl = document.getElementById('summaryChartTitle');
+                    if (titleEl) {
+                        const categoryBtn = document.querySelector('.category-btn.active');
+                        const segmentBtn = document.querySelector('.segment-btn.active');
+                        let label = 'Area 6 - ' + (categoryBtn ? categoryBtn.textContent.trim() : 'Konsolidasi');
+                        if (segmentBtn && segmentBtn.getAttribute('data-value') !== 'total') {
+                            label += ' (' + segmentBtn.textContent.trim() + ')';
+                        }
+                        titleEl.innerHTML = `<i class="fas fa-chart-area mr-2 text-primary"></i>${label}`;
+                    }
                 }
 
                 const container = document.getElementById('individualChartsContainer');
@@ -1848,11 +1884,18 @@
                     const isFullWidth = branchNames.length === 1;
                     const unitSuffix = (unitInput && unitInput.value !== 'all') ? unitLabel.textContent : 'Konsolidasi';
 
+                    // Resolve selected segment label
+                    const segmentBtn = document.querySelector('.segment-btn.active');
+                    let segLabel = '';
+                    if (segmentBtn && segmentBtn.getAttribute('data-value') !== 'total') {
+                        segLabel = ' (' + segmentBtn.textContent.trim() + ')';
+                    }
+
                     branchNames.forEach(branch => {
                         const col = document.createElement('div');
                         col.className = isFullWidth ? 'col-12 mb-4' : 'col-lg-6 mb-3';
                         const canvasId = `chart_${branch.replace(/[^\w-]/g, '_')}`;
-                        const displayTitle = `${branch} - ${unitSuffix}`;
+                        const displayTitle = `${branch} - ${unitSuffix}${segLabel}`;
                         
                         col.innerHTML = `
                             <div class="card chart-card">
@@ -1884,13 +1927,78 @@
                 }
             }
 
+            // --- Segments Configurations ---
+            const segmentsConfig = {
+                simpanan: [
+                    { value: 'total', label: 'Simpanan Total' },
+                    { value: 'ritel', label: 'Ritel' },
+                    { value: 'micro', label: 'Micro' },
+                    { value: 'giro', label: 'Giro' },
+                    { value: 'non_wholesale', label: 'Non Wholesale' }
+                ],
+                simpanan_casa: [
+                    { value: 'total', label: 'CASA Total' },
+                    { value: 'ritel', label: 'Ritel' },
+                    { value: 'micro', label: 'Micro' },
+                    { value: 'giro', label: 'Giro' },
+                    { value: 'non_wholesale', label: 'Non Wholesale' }
+                ],
+                pinjaman: [
+                    { value: 'total', label: 'Pinjaman Total' },
+                    { value: 'small', label: 'Small' },
+                    { value: 'consumer', label: 'Consumer' },
+                    { value: 'micro', label: 'Micro' }
+                ],
+                sml: [
+                    { value: 'total', label: 'SML Total' },
+                    { value: 'small', label: 'Small' },
+                    { value: 'consumer', label: 'Consumer' },
+                    { value: 'micro', label: 'Micro' }
+                ],
+                npl: [
+                    { value: 'total', label: 'NPL Total' },
+                    { value: 'small', label: 'Small' },
+                    { value: 'consumer', label: 'Consumer' },
+                    { value: 'micro', label: 'Micro' }
+                ]
+            };
+
+            function renderSegmentSelector() {
+                const container = document.getElementById('segmentSelector');
+                if (!container) return;
+
+                const options = segmentsConfig[currentCategory] || [];
+                
+                // Reset segment to 'total' if currentSegment is invalid for this category
+                const isValid = options.some(opt => opt.value === currentSegment);
+                if (!isValid) {
+                    currentSegment = 'total';
+                }
+
+                container.innerHTML = options.map(opt => {
+                    const isActive = opt.value === currentSegment ? 'active' : '';
+                    return `<button type="button" class="category-btn segment-btn ${isActive}" data-value="${opt.value}">${opt.label}</button>`;
+                }).join('');
+
+                // Add click listeners to segment buttons
+                container.querySelectorAll('.segment-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        container.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
+                        this.classList.add('active');
+                        currentSegment = this.getAttribute('data-value');
+                        fetchData();
+                    });
+                });
+            }
+
             // Category Selector
-            const categoryBtns = document.querySelectorAll('.category-btn');
+            const categoryBtns = document.querySelectorAll('#categorySelector .category-btn');
             categoryBtns.forEach(btn => {
                 btn.addEventListener('click', function() {
                     categoryBtns.forEach(b => b.classList.remove('active'));
                     this.classList.add('active');
                     currentCategory = this.getAttribute('data-value');
+                    renderSegmentSelector();
                     fetchData();
                 });
             });
@@ -1904,6 +2012,7 @@
             }
 
             // Initial Initialization
+            renderSegmentSelector();
             rebuildKancaOptions();
             syncSummaryVisibility(Array.from(activeKancas));
             if (hasTimeseriesData(initialTimeseriesData)) {

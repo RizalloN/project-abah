@@ -28,6 +28,10 @@ return [
 
     'worker_memory' => (int) env('QUEUE_WORKER_MEMORY', 512),
 
+    'worker_max_jobs' => (int) env('QUEUE_WORKER_MAX_JOBS', 25),
+
+    'worker_max_time' => (int) env('QUEUE_WORKER_MAX_TIME', 3600),
+
     /*
     |--------------------------------------------------------------------------
     | Queue Connections

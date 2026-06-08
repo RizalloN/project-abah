@@ -35,13 +35,90 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
             $table->integer('source_savings_row_count')->nullable();
             $table->decimal('total_os', 20, 2)->nullable();
             $table->decimal('total_os_non_commercial', 20, 2)->nullable();
+            $table->decimal('sme_os', 20, 2)->nullable();
+            $table->decimal('consumer_os', 20, 2)->nullable();
+            $table->decimal('micro_os', 20, 2)->nullable();
             $table->decimal('total_sml_abs_non_commercial', 20, 2)->nullable();
+            $table->decimal('sme_sml', 20, 2)->nullable();
+            $table->decimal('consumer_sml', 20, 2)->nullable();
+            $table->decimal('micro_sml', 20, 2)->nullable();
             $table->decimal('total_npl_abs_non_commercial', 20, 2)->nullable();
+            $table->decimal('sme_npl', 20, 2)->nullable();
+            $table->decimal('consumer_npl', 20, 2)->nullable();
+            $table->decimal('micro_npl', 20, 2)->nullable();
+            $table->decimal('kecil_non_cashcoll_os', 20, 2)->nullable();
+            $table->decimal('cashcoll_os', 20, 2)->nullable();
+            $table->decimal('kecil_non_cashcoll_sml', 20, 2)->nullable();
+            $table->decimal('cashcoll_sml', 20, 2)->nullable();
+            $table->decimal('kecil_non_cashcoll_npl', 20, 2)->nullable();
+            $table->decimal('cashcoll_npl', 20, 2)->nullable();
+            $table->decimal('briguna_konsumer_os', 20, 2)->nullable();
+            $table->decimal('kpr_os', 20, 2)->nullable();
+            $table->decimal('kkb_os', 20, 2)->nullable();
+            $table->decimal('briguna_konsumer_sml', 20, 2)->nullable();
+            $table->decimal('kpr_sml', 20, 2)->nullable();
+            $table->decimal('kkb_sml', 20, 2)->nullable();
+            $table->decimal('briguna_konsumer_npl', 20, 2)->nullable();
+            $table->decimal('kpr_npl', 20, 2)->nullable();
+            $table->decimal('kkb_npl', 20, 2)->nullable();
+            $table->decimal('briguna_mikro_os', 20, 2)->nullable();
+            $table->decimal('kupedes_os', 20, 2)->nullable();
+            $table->decimal('kur_mikro_os', 20, 2)->nullable();
+            $table->decimal('kur_kecil_os', 20, 2)->nullable();
+            $table->decimal('kur_kpp_os', 20, 2)->nullable();
+            $table->decimal('briguna_mikro_sml', 20, 2)->nullable();
+            $table->decimal('kupedes_sml', 20, 2)->nullable();
+            $table->decimal('kur_mikro_sml', 20, 2)->nullable();
+            $table->decimal('kur_kecil_sml', 20, 2)->nullable();
+            $table->decimal('kur_kpp_sml', 20, 2)->nullable();
+            $table->decimal('briguna_mikro_npl', 20, 2)->nullable();
+            $table->decimal('kupedes_npl', 20, 2)->nullable();
+            $table->decimal('kur_mikro_npl', 20, 2)->nullable();
+            $table->decimal('kur_kecil_npl', 20, 2)->nullable();
+            $table->decimal('kur_kpp_npl', 20, 2)->nullable();
             $table->decimal('total_casa', 20, 2)->nullable();
             $table->decimal('rec_dh_total', 20, 2)->nullable();
+            $table->integer('source_row_count')->nullable();
+            $table->decimal('rec_dh_small', 20, 2)->nullable();
+            $table->decimal('rec_dh_consumer', 20, 2)->nullable();
+            $table->decimal('rec_dh_micro', 20, 2)->nullable();
+            $table->decimal('simpanan_ritel', 20, 2)->nullable();
+            $table->decimal('deposito_ritel', 20, 2)->nullable();
+            $table->decimal('simpanan_mikro', 20, 2)->nullable();
+            $table->decimal('simpanan_wholesale', 20, 2)->nullable();
+            $table->decimal('casa_ritel', 20, 2)->nullable();
+            $table->decimal('casa_mikro', 20, 2)->nullable();
+            $table->decimal('commercial_os', 20, 2)->nullable();
+            $table->decimal('medium_os', 20, 2)->nullable();
+            $table->decimal('commercial_sml', 20, 2)->nullable();
+            $table->decimal('medium_sml', 20, 2)->nullable();
+            $table->decimal('commercial_npl', 20, 2)->nullable();
+            $table->decimal('medium_npl', 20, 2)->nullable();
+            $table->decimal('ph_tupok', 20, 2)->nullable();
+            $table->decimal('ph_lunas', 20, 2)->nullable();
+            $table->decimal('deposito_mikro', 20, 2)->nullable();
+            $table->decimal('deposito_wholesale', 20, 2)->nullable();
+            $table->decimal('kecil_os', 20, 2)->nullable();
+            $table->decimal('kecil_sml', 20, 2)->nullable();
+            $table->decimal('kecil_npl', 20, 2)->nullable();
+            $table->decimal('total_sml_pct_non_commercial', 20, 2)->nullable();
+            $table->decimal('total_npl_pct_non_commercial', 20, 2)->nullable();
             $table->integer('source_loan_row_count')->nullable();
             $table->timestamps();
         });
+
+        Schema::dropIfExists('hourly_dpk');
+        Schema::create('hourly_dpk', function (Blueprint $table): void {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('posisi')->nullable();
+            $table->string('mbname')->nullable();
+            $table->string('brname')->nullable();
+            $table->string('segmen')->nullable();
+            $table->string('produk')->nullable();
+            $table->decimal('saldo', 20, 2)->nullable();
+        });
+
+        $this->createSsaPinjamanTable();
     }
 
     public function test_landing_simpanan_and_pinjaman_use_harian_summary_rows(): void
@@ -97,7 +174,7 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $this->assertSame(['Ritel', 'Mikro', 'Wholesale'], $service->fetchCategories());
     }
 
-    public function test_area6_portfolio_exposes_retail_and_micro_ranking_modes(): void
+    public function test_area6_portfolio_exposes_cabang_ritel_and_micro_scopes(): void
     {
         DB::table('dashboard_harian_snapshots')->insert([
             $this->summaryRow('2026-05-19', 'KC Madiun', 1_000_000_000, 2_000_000_000, 10, 20, [
@@ -135,15 +212,75 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
 
         $payload = $this->invokePrivate($controller, 'buildArea6PortfolioLandingFresh', [null]);
 
-        $this->assertSame('ritel', $payload['default_scope']);
+        $this->assertSame('cabang_konsol', $payload['default_scope']);
+        $this->assertArrayHasKey('cabang_konsol', $payload['ranking_modes']);
         $this->assertArrayHasKey('ritel', $payload['ranking_modes']);
-        $this->assertArrayHasKey('mikro', $payload['ranking_modes']);
-        $this->assertSame('KCP Caruban', data_get($payload, 'ranking_modes.ritel.rankings.0.rows.0.label'));
-        $this->assertSame('KC Madiun', data_get($payload, 'ranking_modes.ritel.rankings.0.rows.0.meta'));
-        $this->assertSame('UNIT B', data_get($payload, 'ranking_modes.mikro.rankings.0.rows.0.label'));
-        $this->assertSame('KC Magetan', data_get($payload, 'ranking_modes.mikro.rankings.0.rows.0.meta'));
-        $this->assertSame($payload['ranking_modes']['ritel']['rankings'], $payload['rankings']);
+        $this->assertArrayHasKey('micro', $payload['ranking_modes']);
+        $this->assertSame('KC Madiun', data_get($payload, 'ranking_modes.ritel.branches.0.name'));
+        $this->assertSame('Rp800,00 Jt', data_get($payload, 'ranking_modes.ritel.branches.0.simpanan_fmt'));
+        $this->assertSame('Rp1,60 M', data_get($payload, 'ranking_modes.ritel.branches.0.pinjaman_fmt'));
+        $this->assertSame('UNIT B', data_get($payload, 'ranking_modes.micro.rankings.0.rows.0.label'));
+
+        $this->assertSame('4.800', data_get($payload, 'scopes.cabang_konsol.cards.0.realization_value'));
+        $this->assertSame('1.400', data_get($payload, 'scopes.ritel.cards.0.realization_value'));
+        $this->assertSame('1.900', data_get($payload, 'scopes.micro.cards.0.realization_value'));
     }
+
+    public function test_area6_portfolio_segment_performance(): void
+    {
+        DB::table('dashboard_harian_snapshots')->insert([
+            $this->summaryRow('2026-05-19', 'KC Madiun', 1_000_000_000, 2_000_000_000, 10, 20, [
+                'kecil_non_cashcoll_os' => 12_000_000_000,
+                'briguna_konsumer_os' => 18_000_000_000,
+                'kupedes_os' => 24_000_000_000,
+                'kecil_non_cashcoll_sml' => 1_000_000_000,
+                'briguna_konsumer_sml' => 2_000_000_000,
+                'kupedes_sml' => 3_000_000_000,
+                'kecil_non_cashcoll_npl' => 500_000_000,
+                'briguna_konsumer_npl' => 800_000_000,
+                'kupedes_npl' => 1_200_000_000,
+            ]),
+        ]);
+
+        $controller = new DashboardSimpananController();
+
+        $payload = $this->invokePrivate($controller, 'buildArea6PortfolioLandingFresh', [null]);
+
+        $this->assertArrayHasKey('segment_performance', $payload);
+        $segPerf = $payload['segment_performance'];
+        $this->assertArrayHasKey('segments', $segPerf);
+        $this->assertCount(3, $segPerf['segments']);
+
+        // Check SME
+        $sme = collect($segPerf['segments'])->firstWhere('label', 'OS SME');
+        $this->assertNotNull($sme);
+        $this->assertSame('fas fa-briefcase', $sme['icon']);
+        $this->assertSame('12.000', $sme['os']['realization_fmt']);
+        $this->assertSame('1.000', $sme['sml']['realization_fmt']);
+        $this->assertSame('500', $sme['npl']['realization_fmt']);
+
+        // Check KONSUMER
+        $consumer = collect($segPerf['segments'])->firstWhere('label', 'OS KONSUMER');
+        $this->assertNotNull($consumer);
+        $this->assertSame('fas fa-users', $consumer['icon']);
+        $this->assertSame('18.000', $consumer['os']['realization_fmt']);
+        $this->assertSame('2.000', $consumer['sml']['realization_fmt']);
+        $this->assertSame('800', $consumer['npl']['realization_fmt']);
+
+        // Check MIKRO
+        $micro = collect($segPerf['segments'])->firstWhere('label', 'OS MIKRO');
+        $this->assertNotNull($micro);
+        $this->assertSame('fas fa-store', $micro['icon']);
+        $this->assertSame('24.000', $micro['os']['realization_fmt']);
+        $this->assertSame('3.000', $micro['sml']['realization_fmt']);
+        $this->assertSame('1.200', $micro['npl']['realization_fmt']);
+
+        // Check totals
+        $this->assertSame('54.000', data_get($segPerf, 'total.os.realization_fmt'));
+        $this->assertSame('6.000', data_get($segPerf, 'total.sml.realization_fmt'));
+        $this->assertSame('2.500', data_get($segPerf, 'total.npl.realization_fmt'));
+    }
+
 
     public function test_area6_daily_loan_period_uses_latest_available_source_period(): void
     {
@@ -209,6 +346,141 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $this->assertSame('12', $dormant['current_value']);
         $this->assertSame('performance_new_payroll_snapshots', $payroll['detail_payload']['source_table']);
         $this->assertSame('7', $payroll['current_value']);
+    }
+
+    public function test_kinerja_area6_cards_include_mom_delta(): void
+    {
+        Cache::flush();
+        $service = app(\App\Support\DashboardHarianSnapshotService::class);
+        foreach (['canUseSnapshotMetricsCache', 'sharedPeriodsRequestCache'] as $prop) {
+            $ref = new \ReflectionProperty(\App\Support\DashboardHarianSnapshotService::class, $prop);
+            $ref->setAccessible(true);
+            $ref->setValue($service, null);
+        }
+
+        DB::table('dashboard_harian_snapshots')->insert([
+            $this->summaryRow('2026-04-24', 'KC Madiun', 1_000_000_000, 2_000_000_000, 10, 20, [
+                'total_os_non_commercial' => 1_500_000_000,
+                'total_sml_abs_non_commercial' => 45_000_000,
+                'total_npl_abs_non_commercial' => 20_000_000,
+                'kecil_non_cashcoll_os' => 1_500_000_000,
+                'kecil_non_cashcoll_sml' => 45_000_000,
+                'kecil_non_cashcoll_npl' => 20_000_000,
+            ]),
+            $this->summaryRow('2026-05-24', 'KC Madiun', 1_000_000_000, 2_000_000_000, 10, 20, [
+                'total_os_non_commercial' => 1_800_000_000,
+                'total_sml_abs_non_commercial' => 50_000_000,
+                'total_npl_abs_non_commercial' => 30_000_000,
+                'kecil_non_cashcoll_os' => 1_800_000_000,
+                'kecil_non_cashcoll_sml' => 50_000_000,
+                'kecil_non_cashcoll_npl' => 30_000_000,
+            ]),
+        ]);
+
+        $controller = new DashboardSimpananController();
+        $payload = $this->invokePrivate($controller, 'buildArea6PortfolioLandingFresh', ['2026-05-24']);
+
+        $osCard = collect($payload['cards'])->firstWhere('key', 'os');
+        $smlCard = collect($payload['cards'])->firstWhere('key', 'sml');
+        $nplCard = collect($payload['cards'])->firstWhere('key', 'npl');
+
+
+
+        $this->assertNotNull($osCard);
+        $this->assertArrayHasKey('mom', $osCard['deltas']);
+        $this->assertSame('+300', $osCard['deltas']['mom']['value']);
+        $this->assertSame('up', $osCard['deltas']['mom']['type']);
+        $this->assertSame('green', $osCard['deltas']['mom']['color']);
+
+        $this->assertNotNull($smlCard);
+        $this->assertArrayHasKey('mom', $smlCard['deltas']);
+        $this->assertSame('+5', $smlCard['deltas']['mom']['value']);
+        
+        $this->assertNotNull($nplCard);
+        $this->assertArrayHasKey('mom', $nplCard['deltas']);
+        $this->assertSame('+10', $nplCard['deltas']['mom']['value']);
+    }
+
+    public function test_presentation_payload_uses_dashboard_harian_snapshot_values(): void
+    {
+        $snapshotRows = [
+            $this->summaryRow('2026-04-30', 'KC Madiun', 900_000_000, 1_800_000_000, 9, 18, [
+                'total_sml_abs_non_commercial' => 40_000_000,
+                'total_npl_abs_non_commercial' => 15_000_000,
+            ]),
+            $this->summaryRow('2026-04-30', 'KC Magetan', 1_800_000_000, 2_700_000_000, 18, 27, [
+                'total_sml_abs_non_commercial' => 70_000_000,
+                'total_npl_abs_non_commercial' => 35_000_000,
+            ]),
+            $this->summaryRow('2026-05-19', 'KC Madiun', 1_100_000_000, 2_100_000_000, 11, 21, [
+                'total_sml_abs_non_commercial' => 50_000_000,
+                'total_npl_abs_non_commercial' => 20_000_000,
+                'kecil_non_cashcoll_os' => 600_000_000,
+                'briguna_konsumer_os' => 700_000_000,
+                'kupedes_os' => 800_000_000,
+                'kecil_non_cashcoll_sml' => 10_000_000,
+                'briguna_konsumer_sml' => 15_000_000,
+                'kupedes_sml' => 25_000_000,
+                'kecil_non_cashcoll_npl' => 5_000_000,
+                'briguna_konsumer_npl' => 6_000_000,
+                'kupedes_npl' => 9_000_000,
+            ]),
+            $this->summaryRow('2026-05-19', 'KC Magetan', 2_200_000_000, 3_300_000_000, 22, 33, [
+                'total_sml_abs_non_commercial' => 100_000_000,
+                'total_npl_abs_non_commercial' => 50_000_000,
+                'kecil_non_cashcoll_os' => 900_000_000,
+                'briguna_konsumer_os' => 1_100_000_000,
+                'kupedes_os' => 1_300_000_000,
+                'kecil_non_cashcoll_sml' => 20_000_000,
+                'briguna_konsumer_sml' => 30_000_000,
+                'kupedes_sml' => 50_000_000,
+                'kecil_non_cashcoll_npl' => 10_000_000,
+                'briguna_konsumer_npl' => 15_000_000,
+                'kupedes_npl' => 25_000_000,
+            ]),
+        ];
+
+        foreach ($snapshotRows as $row) {
+            DB::table('dashboard_harian_snapshots')->insert($row);
+        }
+
+        $controller = new DashboardSimpananController();
+
+        $payload = $this->invokePrivate($controller, 'buildPresentationPayload', ['2026-05-19']);
+        $cards = collect($payload['summary']['cards'])->keyBy('key');
+        $series = collect($payload['timeseries']['series'])->keyBy('key');
+
+        $this->assertSame(['meta', 'assets', 'summary', 'performance_overview', 'timeseries', 'cover_card_timeseries', 'micro', 'quality', 'kts', 'digital_strategy'], array_keys($payload));
+        $this->assertSame('Area 6 - Region Malang', $payload['meta']['title']);
+        $this->assertSame('2026-05-19', $payload['meta']['period']);
+        $this->assertTrue($cards->get('simpanan')['available']);
+        $this->assertEqualsWithDelta(3_300_000_000, $cards->get('simpanan')['value_raw'], 0.01);
+        $this->assertEqualsWithDelta(5_400_000_000, $cards->get('os')['value_raw'], 0.01);
+        $this->assertEqualsWithDelta(150_000_000, $cards->get('sml')['value_raw'], 0.01);
+        $this->assertEqualsWithDelta(70_000_000, $cards->get('npl')['value_raw'], 0.01);
+        $this->assertTrue($payload['timeseries']['available']);
+        $this->assertTrue($series->has('sml_nominal'));
+        $this->assertContains(150, array_map('intval', $series->get('sml_nominal')['values']));
+        $this->assertCount(8, $payload['digital_strategy']['cards']);
+        $this->assertSame([], $payload['kts']['ritel']);
+        $this->assertSame([], $payload['kts']['micro']);
+    }
+
+    public function test_presentation_payload_marks_empty_sources_without_dummy_numbers(): void
+    {
+        $controller = new DashboardSimpananController();
+
+        $payload = $this->invokePrivate($controller, 'buildPresentationPayload', [null]);
+        $cards = collect($payload['summary']['cards'])->keyBy('key');
+
+        $this->assertFalse($cards->get('simpanan')['available']);
+        $this->assertSame('Data belum tersedia', $cards->get('simpanan')['value']);
+        $this->assertNull($cards->get('os')['value_raw']);
+        $this->assertSame('Data belum tersedia', $cards->get('sml')['ratio']);
+        $this->assertFalse($payload['timeseries']['available']);
+        $this->assertSame([], $payload['kts']['ritel']);
+        $this->assertSame([], $payload['kts']['micro']);
+        $this->assertCount(8, $payload['digital_strategy']['cards']);
     }
 
     private function summaryRow(string $period, string $branch, int $simpanan, int $pinjaman, int $savingsRows, int $loanRows, array $extra = []): array
@@ -285,6 +557,24 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
             $table->date('periode')->nullable();
             $table->string('cabang1')->nullable();
             $table->string('unit1')->nullable();
+        });
+    }
+
+    private function createSsaPinjamanTable(): void
+    {
+        Schema::dropIfExists('ssa_pinjaman');
+        Schema::create('ssa_pinjaman', function (Blueprint $table): void {
+            $table->id();
+            $table->date('month_day_year_of_periode')->nullable();
+            $table->string('nama_cabang')->nullable();
+            $table->string('nama_uker')->nullable();
+            $table->string('segmen_dashboard')->nullable();
+            $table->string('produk_dashboard')->nullable();
+            $table->string('produk')->nullable();
+            $table->string('segmen_lama')->nullable();
+            $table->string('segmen_2025')->nullable();
+            $table->decimal('baki_debet', 20, 2)->nullable();
+            $table->unsignedTinyInteger('kolektabilitas_one_obligor')->nullable();
         });
     }
 

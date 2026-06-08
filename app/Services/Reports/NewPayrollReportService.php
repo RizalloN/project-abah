@@ -106,15 +106,27 @@ class NewPayrollReportService
         $yoyStart    = $selectedDate->copy()->subYearNoOverflow()->startOfMonth()->toDateString();
         $yoyEnd      = Carbon::parse($yoyStart)->endOfMonth()->toDateString();
 
+        $prevSnapshot = DB::table('performance_pis_per_produk')
+            ->whereDate('posisi', '<=', $prevEnd)
+            ->whereIn(DB::raw('UPPER(TRIM(kanca))'), array_map('strtoupper', $branches))
+            ->when(!empty($selectedUkers), fn ($q) => $q->whereIn(DB::raw('UPPER(TRIM(uker))'), $selectedUkers))
+            ->max('posisi') ?? $effectiveSnapshot;
+
+        $yoySnapshot = DB::table('performance_pis_per_produk')
+            ->whereDate('posisi', '<=', $yoyEnd)
+            ->whereIn(DB::raw('UPPER(TRIM(kanca))'), array_map('strtoupper', $branches))
+            ->when(!empty($selectedUkers), fn ($q) => $q->whereIn(DB::raw('UPPER(TRIM(uker))'), $selectedUkers))
+            ->max('posisi') ?? $effectiveSnapshot;
+
         $rows = DB::table('performance_pis_per_produk')
             ->selectRaw("{$groupExpression} as branch")
-            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_curr', [$currStart, $currEnd])
-            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_prev', [$prevStart, $prevEnd])
-            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_yoy_prev', [$yoyStart, $yoyEnd])
-            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_curr', [$currStart, $currEnd])
-            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev', [$prevStart, $prevEnd])
-            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev', [$yoyStart, $yoyEnd])
-            ->whereDate('posisi', $effectiveSnapshot)
+            ->selectRaw('COUNT(CASE WHEN posisi = ? AND tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_curr', [$effectiveSnapshot, $currStart, $currEnd])
+            ->selectRaw('COUNT(CASE WHEN posisi = ? AND tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_prev', [$prevSnapshot, $prevStart, $prevEnd])
+            ->selectRaw('COUNT(CASE WHEN posisi = ? AND tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_yoy_prev', [$yoySnapshot, $yoyStart, $yoyEnd])
+            ->selectRaw('SUM(CASE WHEN posisi = ? AND tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_curr', [$effectiveSnapshot, $currStart, $currEnd])
+            ->selectRaw('SUM(CASE WHEN posisi = ? AND tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev', [$prevSnapshot, $prevStart, $prevEnd])
+            ->selectRaw('SUM(CASE WHEN posisi = ? AND tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev', [$yoySnapshot, $yoyStart, $yoyEnd])
+            ->whereIn('posisi', array_unique([$effectiveSnapshot, $prevSnapshot, $yoySnapshot]))
             ->whereIn(DB::raw('UPPER(TRIM(kanca))'), array_map('strtoupper', $branches))
             ->when(!empty($selectedUkers), fn ($q) => $q->whereIn(DB::raw('UPPER(TRIM(uker))'), $selectedUkers))
             ->groupBy(DB::raw($groupExpression))

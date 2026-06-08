@@ -49,15 +49,19 @@
             "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#a78bfa,#fdba74,#f59e0b,#60a5fa\" \"php artisan serve\" \"php artisan queue:work --queue=imports-high,imports-daily-loan --tries=1 --timeout=0 --sleep=1\" \"php artisan queue:work --queue=default,reports-low --tries=1 --timeout=0 --sleep=1\" \"php artisan queue:work --queue=snapshots-parallel,shadow-backfill,reports-low --tries=1 --timeout=0 --sleep=1\" \"php artisan schedule:work\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,import-queue,main-queue,snapshot-queue,scheduler,logs,vite --kill-others"
         ],
         "start": [
+            "Composer\\Config::disableProcessTimeout",
             "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1"
         ],
         "start:vite": [
+            "Composer\\Config::disableProcessTimeout",
             "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1 -WithVite"
         ],
         "start:staging": [
+            "Composer\\Config::disableProcessTimeout",
             "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1 -ImportWorkers 4 -ReportWorkers 4 -SnapshotWorkers 3 -ShadowWorkers 3"
         ],
         "start:power": [
+            "Composer\\Config::disableProcessTimeout",
             "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1 -ImportWorkers 6 -ReportWorkers 6 -SnapshotWorkers 4 -ShadowWorkers 4"
         ],
         "stop:power": [

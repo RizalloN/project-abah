@@ -6,7 +6,7 @@
                 <th colspan="2" class="group-head">W1</th><th colspan="2" class="group-head">W2</th><th colspan="2" class="group-head">W3</th><th colspan="2" class="group-head">W4</th>
                 <th colspan="2" class="group-head">Total</th><th rowspan="2">Target s.d Akhir Bulan</th><th rowspan="2">Penc. Target</th>
             </tr>
-            <tr><th>Deb</th><th>Rp.Juta</th><th>Deb</th><th>Rp.Juta</th><th>Deb</th><th>Rp.Juta</th><th>Deb</th><th>Rp.Juta</th><th>Deb</th><th>Rp.Juta</th></tr>
+            <tr><th>Deb</th><th>Plafon Juta</th><th>Deb</th><th>Plafon Juta</th><th>Deb</th><th>Plafon Juta</th><th>Deb</th><th>Plafon Juta</th><th>Deb</th><th>Plafon Juta</th></tr>
         </thead>
         <tbody>
             @forelse ($rows as $index => $row)
@@ -24,6 +24,22 @@
             @empty
                 <tr><td colspan="18" class="rm-mikro-empty">Data tidak ditemukan.</td></tr>
             @endforelse
+            @if ($rows->isNotEmpty())
+                @php
+                    $totalOs = (float) $rows->sum('total_os');
+                    $totalTargetJuta = $rows->count() * (float) $targetMonthlyJuta;
+                    $totalPct = $totalTargetJuta > 0 ? (($totalOs / 1000000) / $totalTargetJuta) * 100 : 0;
+                @endphp
+                <tr class="rm-mikro-total">
+                    <td colspan="6" class="strong">GRAND TOTAL</td>
+                    @foreach (['w1', 'w2', 'w3', 'w4'] as $week)
+                        <td class="text-right">{{ $formatAmount($rows->sum($week . '_deb')) }}</td>
+                        <td class="text-right">{{ $formatJuta($rows->sum($week . '_os')) }}</td>
+                    @endforeach
+                    <td class="text-right strong">{{ $formatAmount($rows->sum('total_deb')) }}</td><td class="text-right strong">{{ $formatJuta($totalOs) }}</td><td class="text-right">{{ $formatAmount($totalTargetJuta) }}</td>
+                    <td class="text-center strong">{{ $formatPercent($totalPct) }}</td>
+                </tr>
+            @endif
         </tbody>
     </table>
 </div>

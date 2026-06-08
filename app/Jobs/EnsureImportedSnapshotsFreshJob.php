@@ -12,6 +12,7 @@ use App\Support\SnapshotSourceSignatureService;
 use App\Support\SimpananMultiPnSnapshotGate;
 use App\Support\SsaSimpananSnapshotBuilder;
 use App\Support\StrictDateParser;
+use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -32,6 +33,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
     public $timeout = 2400;
     public $backoff = [60, 300];
 
+    private ?string $resolvedPeriodScope = null;
+
     public function __construct(
         private readonly string $tableName,
         private readonly ?string $periodHint = null,
@@ -42,7 +45,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
 
     public function middleware(): array
     {
-        $periodScope = StrictDateParser::normalize($this->periodHint) ?? trim((string) $this->periodHint);
+        $periodScope = $this->resolveLockPeriodScope();
         $scope = strtolower(trim($this->tableName)) . ':' . ($periodScope !== '' ? $periodScope : 'latest');
 
         return [
@@ -50,7 +53,30 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             (new WithoutOverlapping('snapshot:freshness:' . $scope))
                 ->releaseAfter(60)
                 ->expireAfter($this->timeout + 300),
+            (new WithoutOverlapping('snapshot:freshness:period:' . ($periodScope !== '' ? $periodScope : 'latest')))
+                ->releaseAfter(60)
+                ->expireAfter($this->timeout + 300),
         ];
+    }
+
+    private function resolveLockPeriodScope(): string
+    {
+        if ($this->resolvedPeriodScope !== null) {
+            return $this->resolvedPeriodScope;
+        }
+
+        $periodScope = StrictDateParser::normalize($this->periodHint) ?? trim((string) $this->periodHint);
+        if ($periodScope !== '') {
+            return $this->resolvedPeriodScope = $periodScope;
+        }
+
+        $table = strtolower(trim($this->tableName));
+        $sourceDefinition = $this->sourceDefinition($table);
+        if ($sourceDefinition === null) {
+            return $this->resolvedPeriodScope = '';
+        }
+
+        return $this->resolvedPeriodScope = ($this->resolvePeriod($table, $sourceDefinition['period_column']) ?? '');
     }
 
     public function handle(
@@ -60,6 +86,18 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
     ): void
     {
         $table = strtolower(trim($this->tableName));
+        $sourceDefinition = $this->sourceDefinition($table);
+        $periodScope = $sourceDefinition !== null
+            ? ($this->resolvePeriod($table, $sourceDefinition['period_column']) ?? '')
+            : '';
+
+        if ($periodScope !== ''
+            && $sourceDefinition !== null
+            && !$this->sourceHasRows($table, $sourceDefinition['period_column'], $periodScope)) {
+            $this->handleDeletedSourcePeriod($dashboardHarian, $table, $periodScope);
+
+            return;
+        }
 
         match ($table) {
             'daily_loan_dinamis' => $this->ensureDailyLoanSnapshots($builder, $dashboardHarian, $sourceSignatures),
@@ -68,10 +106,126 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             'ssa_pinjaman' => $this->ensureSsaSnapshots($dashboardHarian, $sourceSignatures, false),
             'hourly_dpk' => $this->ensureHourlyDpkSnapshots($dashboardHarian, $sourceSignatures),
             'lw325_ph' => $this->ensureReportPhSnapshots($dashboardHarian, $sourceSignatures),
+            'gi405_recovery' => $this->ensureGi405RecoverySnapshots($dashboardHarian, $sourceSignatures),
             'dly_kap_resegmentasi' => $this->ensureFallbackLoanSnapshots($dashboardHarian, 'dly_kap_resegmentasi'),
             'l1133' => $this->ensureFallbackLoanSnapshots($dashboardHarian, 'l1133'),
             default => null,
         };
+    }
+
+    private function handleDeletedSourcePeriod(
+        DashboardHarianSnapshotService $dashboardHarian,
+        string $table,
+        string $period
+    ): void {
+        $deletedRows = 0;
+
+        $cleanupMap = match ($table) {
+            'daily_loan_dinamis' => [
+                'dashboard_pinjaman_snapshots' => 'periode',
+                'dashboard_pinjaman_chart_periodik_snapshots' => 'periode',
+                'performance_rm_snapshots' => 'periode',
+                'rasio_casa_debitur_snapshots' => 'loan_period',
+            ],
+            'simpanan_multipn' => [
+                'dashboard_simpanan_snapshots' => 'snapshot_period',
+                'rekening_dormant_snapshots' => 'posisi',
+                'performance_rm_snapshots' => 'periode',
+                'rasio_casa_debitur_snapshots' => 'casa_period',
+            ],
+            'ssa_simpanan' => [
+                'ssa_simpanan_snapshots' => 'periode',
+            ],
+            default => [],
+        };
+
+        foreach ($cleanupMap as $snapshotTable => $periodColumn) {
+            $deletedRows += $this->deleteSnapshotPeriod($snapshotTable, $periodColumn, $period);
+        }
+
+        $affectedDashboardPeriods = $this->affectedDashboardHarianPeriodsForDeletedSource($dashboardHarian, $table, $period);
+        foreach ($affectedDashboardPeriods as $snapshotPeriod) {
+            $dashboardHarian->rebuild($snapshotPeriod, true);
+        }
+
+        $this->forgetSourceSignatures($table, $period);
+
+        if ($deletedRows > 0 || $affectedDashboardPeriods !== []) {
+            ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
+            $this->bumpReportCacheVersion($this->cacheScopeForTable($table));
+        }
+
+        Log::warning('Auto-maintained snapshots after source period was deleted.', [
+            'source_table' => $table,
+            'period' => $period,
+            'deleted_snapshot_rows' => $deletedRows,
+            'dashboard_harian_periods' => $affectedDashboardPeriods,
+            'source' => $this->source,
+        ]);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function affectedDashboardHarianPeriodsForDeletedSource(
+        DashboardHarianSnapshotService $dashboardHarian,
+        string $table,
+        string $period
+    ): array {
+        $periods = match ($table) {
+            'lw325_ph' => $dashboardHarian->resolveAffectedSnapshotPeriodsForPh($period),
+            'dly_kap_resegmentasi', 'l1133' => $dashboardHarian->resolveAffectedSnapshotPeriodsForLoanFallback($table, $period),
+            default => [$period],
+        };
+
+        if ($table === 'lw325_ph' && $periods === []) {
+            $end = Carbon::parse($period)->addMonthNoOverflow()->endOfMonth()->toDateString();
+            $periods = DB::table('dashboard_harian_snapshots')
+                ->whereBetween('snapshot_period', [$period, $end])
+                ->select('snapshot_period')
+                ->distinct()
+                ->pluck('snapshot_period')
+                ->map(fn ($value): string => Carbon::parse($value)->toDateString())
+                ->all();
+        }
+
+        if ($periods === []) {
+            $periods = [$period];
+        }
+
+        return array_values(array_unique(array_filter(
+            array_map(fn ($value): string => trim((string) $value), $periods),
+            fn (string $value): bool => $value !== ''
+        )));
+    }
+
+    private function deleteSnapshotPeriod(string $snapshotTable, string $periodColumn, string $period): int
+    {
+        if (!Schema::hasTable($snapshotTable) || !Schema::hasColumn($snapshotTable, $periodColumn)) {
+            return 0;
+        }
+
+        $deleted = (int) DB::table($snapshotTable)
+            ->where($periodColumn, $period)
+            ->delete();
+
+        if ($deleted > 0) {
+            ReportDataSyncService::analyzeTable($snapshotTable);
+        }
+
+        return $deleted;
+    }
+
+    private function forgetSourceSignatures(string $sourceTable, string $period): void
+    {
+        if (!Schema::hasTable('snapshot_source_signatures')) {
+            return;
+        }
+
+        DB::table('snapshot_source_signatures')
+            ->where('source_table', $sourceTable)
+            ->where('period_key', $period)
+            ->delete();
     }
 
     private function ensureDailyLoanSnapshots(
@@ -120,9 +274,11 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             $periodColumn = (string) $definition['period_column'];
             $before = $this->snapshotRowCount($snapshotTable, $periodColumn, $period);
             $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly($snapshotTable, $period);
-            $isStale = $hasAnomaly || ($before > 0 && !$sourceSignatures->isFresh('daily_loan_dinamis', $snapshotTable, $period, $sourceMetadata));
+            $isFresh = !$hasAnomaly
+                && $sourceSignatures->isFresh('daily_loan_dinamis', $snapshotTable, $period, $sourceMetadata, $before);
+            $isStale = $hasAnomaly || !$isFresh;
 
-            if ($before > 0 && !$isStale) {
+            if ($isFresh) {
                 continue;
             }
 
@@ -136,9 +292,9 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
                 }
 
                 ReportDataSyncService::analyzeTable($snapshotTable);
-                $rebuiltAny = $rebuiltAny || $after > 0;
+                $rebuiltAny = true;
 
-                if ($after > 0 && $sourceMetadata !== null) {
+                if ($sourceMetadata !== null) {
                     $sourceSignatures->markBuilt('daily_loan_dinamis', $snapshotTable, $period, $sourceMetadata, [
                         'period_column' => $periodColumn,
                         'rows_before' => $before,
@@ -317,9 +473,11 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             $periodColumn = (string) $definition['period_column'];
             $before = $this->snapshotRowCount($snapshotTable, $periodColumn, $period);
             $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly($snapshotTable, $period);
-            $isStale = $hasAnomaly || ($before > 0 && !$sourceSignatures->isFresh('simpanan_multipn', $snapshotTable, $period, $sourceMetadata));
+            $isFresh = !$hasAnomaly
+                && $sourceSignatures->isFresh('simpanan_multipn', $snapshotTable, $period, $sourceMetadata, $before);
+            $isStale = $hasAnomaly || !$isFresh;
 
-            if ($before > 0 && !$isStale) {
+            if ($isFresh) {
                 continue;
             }
 
@@ -332,9 +490,9 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
                 }
 
                 ReportDataSyncService::analyzeTable($snapshotTable);
-                $rebuiltAny = $rebuiltAny || $after > 0;
+                $rebuiltAny = true;
 
-                if ($after > 0 && $sourceMetadata !== null) {
+                if ($sourceMetadata !== null) {
                     $sourceSignatures->markBuilt('simpanan_multipn', $snapshotTable, $period, $sourceMetadata, [
                         'period_column' => $periodColumn,
                         'rows_before' => $before,
@@ -390,14 +548,15 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         if ($includeSimpananSnapshot) {
             $before = $this->snapshotRowCount('ssa_simpanan_snapshots', 'periode', $period);
             $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly('ssa_simpanan_snapshots', $period);
-            $isStale = $hasAnomaly || ($before > 0 && !$sourceSignatures->isFresh('ssa_simpanan', 'ssa_simpanan_snapshots', $period, $sourceMetadata));
-            if ($before <= 0 || $isStale) {
+            $isFresh = !$hasAnomaly
+                && $sourceSignatures->isFresh('ssa_simpanan', 'ssa_simpanan_snapshots', $period, $sourceMetadata, $before);
+            if (!$isFresh) {
                 app(SsaSimpananSnapshotBuilder::class)->rebuild($period, false);
                 $after = $this->snapshotRowCount('ssa_simpanan_snapshots', 'periode', $period);
                 ReportDataSyncService::analyzeTable('ssa_simpanan_snapshots');
-                $rebuiltAny = $rebuiltAny || $after > 0;
+                $rebuiltAny = true;
 
-                if ($after > 0 && $sourceMetadata !== null) {
+                if ($sourceMetadata !== null) {
                     $sourceSignatures->markBuilt('ssa_simpanan', 'ssa_simpanan_snapshots', $period, $sourceMetadata, [
                         'period_column' => 'periode',
                         'rows_before' => $before,
@@ -414,6 +573,9 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
                 'source_table' => $table,
                 'has_ssa_simpanan' => $this->sourceHasRows('ssa_simpanan', 'Month_Day_Year_of_Posisi', $period),
                 'has_ssa_pinjaman' => $this->sourceHasRows('ssa_pinjaman', 'month_day_year_of_periode', $period),
+                'has_l1133' => $this->sourceHasRows('l1133', 'periode', $period),
+                'has_dly_kap' => $this->sourceHasRows('dly_kap_resegmentasi', 'periode', $period),
+                'has_gi405_recovery' => $this->sourceHasRows('gi405_recovery', 'periode', $period),
                 'source' => $this->source,
             ]);
 
@@ -426,8 +588,10 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
 
         $before = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $period);
         $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly('dashboard_harian_snapshots', $period);
-        $isStale = $hasAnomaly || ($before > 0 && !$sourceSignatures->isFresh($table, 'dashboard_harian_snapshots', $period, $sourceMetadata));
-        if ($before > 0 && !$isStale) {
+        $isFresh = !$hasAnomaly
+            && $sourceSignatures->isFresh($table, 'dashboard_harian_snapshots', $period, $sourceMetadata, $before);
+        $isStale = $hasAnomaly || !$isFresh;
+        if ($isFresh) {
             if ($rebuiltAny) {
                 $this->bumpReportCacheVersion($includeSimpananSnapshot ? 'simpanan' : 'harian');
             }
@@ -437,9 +601,9 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
 
         $after = (int) ($dashboardHarian->rebuild($period, false)[$period] ?? 0);
         ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
-        $rebuiltAny = $rebuiltAny || $after > 0;
+        $rebuiltAny = true;
 
-        if ($after > 0 && $sourceMetadata !== null) {
+        if ($sourceMetadata !== null) {
             $sourceSignatures->markBuilt($table, 'dashboard_harian_snapshots', $period, $sourceMetadata, [
                 'period_column' => 'snapshot_period',
                 'rows_before' => $before,
@@ -480,17 +644,19 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         foreach ($affectedPeriods as $snapshotPeriod) {
             $before = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $snapshotPeriod);
             $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly('dashboard_harian_snapshots', $snapshotPeriod);
-            $isStale = $hasAnomaly || ($before > 0 && !$sourceSignatures->isFresh('lw325_ph', 'dashboard_harian_snapshots', $snapshotPeriod, $sourceMetadata));
-            if ($before > 0 && !$isStale) {
+            $isFresh = !$hasAnomaly
+                && $sourceSignatures->isFresh('lw325_ph', 'dashboard_harian_snapshots', $snapshotPeriod, $sourceMetadata, $before);
+            $isStale = $hasAnomaly || !$isFresh;
+            if ($isFresh) {
                 continue;
             }
 
             $startedAt = microtime(true);
             $after = (int) ($dashboardHarian->rebuild($snapshotPeriod, false)[$snapshotPeriod] ?? 0);
             ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
-            $rebuiltAny = $rebuiltAny || $after > 0;
+            $rebuiltAny = true;
 
-            if ($after > 0 && $sourceMetadata !== null) {
+            if ($sourceMetadata !== null) {
                 $sourceSignatures->markBuilt('lw325_ph', 'dashboard_harian_snapshots', $snapshotPeriod, $sourceMetadata, [
                     'period_column' => 'snapshot_period',
                     'source_period' => $period,
@@ -513,7 +679,61 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         }
 
         if ($rebuiltAny) {
-            $this->bumpReportCacheVersion('pinjaman');
+            $this->bumpReportCacheVersion('harian');
+        }
+    }
+
+    private function ensureGi405RecoverySnapshots(
+        DashboardHarianSnapshotService $dashboardHarian,
+        SnapshotSourceSignatureService $sourceSignatures
+    ): void
+    {
+        $period = $this->resolvePeriod('gi405_recovery', 'periode');
+        if ($period === null || !$this->sourceHasRows('gi405_recovery', 'periode', $period)) {
+            return;
+        }
+
+        $sourceMetadata = $sourceSignatures->capture('gi405_recovery', 'periode', $period);
+        $rebuiltAny = false;
+
+        $before = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $period);
+        $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly('dashboard_harian_snapshots', $period);
+        $isFresh = !$hasAnomaly
+            && $sourceSignatures->isFresh('gi405_recovery', 'dashboard_harian_snapshots', $period, $sourceMetadata, $before);
+        $isStale = $hasAnomaly || !$isFresh;
+
+        if ($isFresh) {
+            return;
+        }
+
+        $startedAt = microtime(true);
+        $after = (int) ($dashboardHarian->rebuild($period, false)[$period] ?? 0);
+        ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
+        $rebuiltAny = true;
+
+        if ($sourceMetadata !== null) {
+            $sourceSignatures->markBuilt('gi405_recovery', 'dashboard_harian_snapshots', $period, $sourceMetadata, [
+                'period_column' => 'snapshot_period',
+                'source_period' => $period,
+                'rows_before' => $before,
+                'rows_after' => $after,
+                'source' => $this->source,
+            ]);
+        }
+
+        Log::warning($isStale ? 'Auto-refreshed stale Dashboard Harian snapshot after GI405 Recovery import.' : 'Auto-recovered missing Dashboard Harian snapshot after GI405 Recovery import.', [
+            'recovery_period' => $period,
+            'snapshot_period' => $period,
+            'rows_before' => $before,
+            'rows_after' => $after,
+            'stale' => $isStale,
+            'snapshot_anomaly' => $hasAnomaly,
+            'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+            'source' => $this->source,
+        ]);
+
+        if ($rebuiltAny) {
+            $this->bumpReportCacheVersion('harian');
         }
     }
 
@@ -535,7 +755,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
 
         if ($rebuilt > 0) {
             ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
-            $this->bumpReportCacheVersion('pinjaman');
+            $this->bumpReportCacheVersion('harian');
         }
 
         Log::warning('Auto-checked Dashboard Harian snapshots after fallback loan import.', [
@@ -568,6 +788,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
                 'has_hourly_dpk' => $this->sourceHasRows('hourly_dpk', 'posisi', $period),
                 'has_dly_kap' => $this->sourceHasRows('dly_kap_resegmentasi', 'periode', $period),
                 'has_l1133' => $this->sourceHasRows('l1133', 'periode', $period),
+                'has_gi405_recovery' => $this->sourceHasRows('gi405_recovery', 'periode', $period),
                 'source' => $this->source,
             ]);
 
@@ -577,24 +798,26 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         $sourceMetadata = $sourceSignatures->capture('hourly_dpk', 'posisi', $period);
         $before = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $period);
         $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly('dashboard_harian_snapshots', $period);
-        $isStale = $hasAnomaly || ($before > 0 && !$sourceSignatures->isFresh('hourly_dpk', 'dashboard_harian_snapshots', $period, $sourceMetadata));
-        if ($before > 0 && !$isStale) {
+        $isFresh = !$hasAnomaly
+            && $sourceSignatures->isFresh('hourly_dpk', 'dashboard_harian_snapshots', $period, $sourceMetadata, $before);
+        $isStale = $hasAnomaly || !$isFresh;
+        if ($isFresh) {
             return;
         }
 
         $after = (int) ($dashboardHarian->rebuild($period, false)[$period] ?? 0);
         ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
 
-        if ($after > 0 && $sourceMetadata !== null) {
+        if ($sourceMetadata !== null) {
             $sourceSignatures->markBuilt('hourly_dpk', 'dashboard_harian_snapshots', $period, $sourceMetadata, [
                 'period_column' => 'snapshot_period',
                 'rows_before' => $before,
                 'rows_after' => $after,
                 'source' => $this->source,
             ]);
-
-            $this->bumpReportCacheVersion('simpanan');
         }
+
+        $this->bumpReportCacheVersion('simpanan');
 
         Log::warning($isStale ? 'Auto-refreshed stale Dashboard Harian snapshot after Hourly DPK import.' : 'Auto-recovered missing Dashboard Harian snapshot after Hourly DPK import.', [
             'period' => $period,
@@ -610,16 +833,25 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
     {
         $hint = StrictDateParser::normalize($this->periodHint) ?? trim((string) $this->periodHint);
         if ($hint !== '') {
-            return $hint;
+            return $this->resolvedPeriodScope = $hint;
+        }
+
+        if ($this->resolvedPeriodScope !== null) {
+            return $this->resolvedPeriodScope !== '' ? $this->resolvedPeriodScope : null;
         }
 
         if (!Schema::hasTable($table) || !Schema::hasColumn($table, $column)) {
+            $this->resolvedPeriodScope = '';
+
             return null;
         }
 
         $latest = DB::table($table)->max($column);
 
-        return StrictDateParser::normalize((string) $latest) ?? (trim((string) $latest) ?: null);
+        $resolved = StrictDateParser::normalize((string) $latest) ?? (trim((string) $latest) ?: null);
+        $this->resolvedPeriodScope = $resolved ?? '';
+
+        return $resolved;
     }
 
     private function sourceHasRows(string $table, string $periodColumn, string $period): bool
@@ -627,6 +859,22 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         return Schema::hasTable($table)
             && Schema::hasColumn($table, $periodColumn)
             && DB::table($table)->where($periodColumn, $period)->exists();
+    }
+
+    /**
+     * @return array{period_column:string}|null
+     */
+    private function sourceDefinition(string $table): ?array
+    {
+        return match (strtolower(trim($table))) {
+            'daily_loan_dinamis' => ['period_column' => 'periode'],
+            'simpanan_multipn' => ['period_column' => 'posisi'],
+            'ssa_simpanan' => ['period_column' => 'Month_Day_Year_of_Posisi'],
+            'ssa_pinjaman' => ['period_column' => 'month_day_year_of_periode'],
+            'hourly_dpk' => ['period_column' => 'posisi'],
+            'lw325_ph', 'gi405_recovery', 'dly_kap_resegmentasi', 'l1133' => ['period_column' => 'periode'],
+            default => null,
+        };
     }
 
     private function snapshotRowCount(string $table, string $periodColumn, string $period): int
@@ -696,15 +944,27 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         ReportCacheVersion::bump($scope);
     }
 
+    private function cacheScopeForTable(string $tableName): string
+    {
+        return match (strtolower(trim($tableName))) {
+            'daily_loan_dinamis', 'ssa_pinjaman', 'lw325_ph', 'gi405_recovery' => 'pinjaman',
+            'simpanan_multipn', 'ssa_simpanan', 'hourly_dpk' => 'simpanan',
+            'dly_kap_resegmentasi', 'l1133' => 'harian',
+            default => 'global',
+        };
+    }
+
     private function dashboardHarianSourcesAreAvailable(string $period): bool
     {
         $hasSsaSavings = $this->sourceHasRows('ssa_simpanan', 'Month_Day_Year_of_Posisi', $period);
-        $hasHourlySavings = $this->sourceHasRows('hourly_dpk', 'posisi', $period);
         $hasSsaLoan = $this->sourceHasRows('ssa_pinjaman', 'month_day_year_of_periode', $period);
-        $hasFallbackLoan = $this->sourceHasRows('dly_kap_resegmentasi', 'periode', $period)
-            || $this->sourceHasRows('l1133', 'periode', $period);
+        $hasDlyKap = $this->sourceHasRows('dly_kap_resegmentasi', 'periode', $period);
+        $hasL1133 = $this->sourceHasRows('l1133', 'periode', $period);
+        $hasGi405Recovery = !Schema::hasTable('gi405_recovery')
+            || $this->sourceHasRows('gi405_recovery', 'periode', $period);
 
-        return ($hasSsaSavings && ($hasSsaLoan || $hasFallbackLoan))
-            || (!$hasSsaSavings && $hasHourlySavings && $hasFallbackLoan);
+        return $hasSsaSavings
+            && $hasGi405Recovery
+            && ($hasSsaLoan || ($hasDlyKap && $hasL1133));
     }
 }

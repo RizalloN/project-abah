@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 74" role="img" aria-label="Danantara Indonesia">
+  <rect width="320" height="74" fill="none"/>
+  <g fill="none" stroke="#0f4c8a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 56c16-22 32-36 52-42"/>
+    <path d="M50 60c14-16 28-25 45-29"/>
+    <path d="M69 62c10-9 19-14 31-16"/>
+  </g>
+  <text x="116" y="34" fill="#0f4c8a" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" letter-spacing="1.2">DANANTARA</text>
+  <text x="118" y="55" fill="#64748b" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="2.4">INDONESIA</text>
+</svg>

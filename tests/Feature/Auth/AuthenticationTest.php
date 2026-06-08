@@ -25,6 +25,16 @@ beforeEach(function () {
             $table->timestamps();
         });
     }
+
+    if (!Schema::hasTable('login_histories')) {
+        Schema::create('login_histories', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('user_id');
+            $table->timestamp('login_at')->useCurrent();
+            $table->string('ip_address', 45)->nullable();
+            $table->text('user_agent')->nullable();
+        });
+    }
 });
 
 test('login screen can be rendered', function () {
@@ -155,4 +165,45 @@ test('users can logout', function () {
     expect(Auth::check())->toBeFalse();
     expect($response->getStatusCode())->toBeIn([302, 303]);
     expect($response->getTargetUrl())->toBe(url('/'));
+});
+
+test('successful login records history to the database', function () {
+    $user = User::factory()->create();
+
+    $request = LoginRequest::create('/login', 'POST', [
+        'pn' => $user->pn,
+        'password' => 'password',
+    ]);
+    $request->setContainer(app());
+    $request->setRedirector(app('redirect'));
+    $request->setLaravelSession(app('session')->driver());
+
+    app(AuthenticatedSessionController::class)->store($request);
+
+    $this->assertDatabaseHas('login_histories', [
+        'user_id' => $user->id,
+    ]);
+});
+
+test('admin can retrieve user daily login history via JSON endpoint', function () {
+    $admin = User::factory()->create(['role' => 'admin']);
+    $user = User::factory()->create();
+
+    // Seed some login history records
+    \Illuminate\Support\Facades\DB::table('login_histories')->insert([
+        ['user_id' => $user->id, 'login_at' => now()->subDay(), 'ip_address' => '127.0.0.1'],
+        ['user_id' => $user->id, 'login_at' => now(), 'ip_address' => '127.0.0.1'],
+    ]);
+
+    $this->actingAs($admin);
+
+    $response = $this->get(route('user-management.login-history', $user));
+
+    $response->assertStatus(200);
+    $response->assertJsonStructure([
+        'user' => ['id', 'name', 'pn'],
+        'history' => [
+            '*' => ['date', 'count']
+        ]
+    ]);
 });

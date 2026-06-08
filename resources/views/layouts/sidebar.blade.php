@@ -496,10 +496,10 @@
 
     .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-brand-text,
     .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-user-info,
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar p,
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar .right,
+    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar > .nav-item:not(:hover) p,
+    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar > .nav-item:not(:hover) .right,
     .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-header,
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar .nav-treeview {
+    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar > .nav-item:not(:hover) .nav-treeview {
         display: none !important;
     }
 
@@ -677,6 +677,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.realisasi-6-bulan-menunggak') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.realisasi-6-bulan-menunggak*') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Realisasi 6 Bulan Menunggak</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.matrix') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.matrix') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Matrix Pergeseran Kolek</p>
@@ -716,6 +722,12 @@
                             <a href="{{ route('report.dashboard-pinjaman.kinerja-ptp') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerja-ptp') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Kinerja PTP</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.kinerja-non-ptp') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerja-non-ptp') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Histori PTP Deb</p>
                             </a>
                         </li>
                     </ul>
@@ -913,6 +925,13 @@
                             </a>
                         </li>
                     </ul>
+                </li>
+
+                <li class="nav-item">
+                    <a href="{{ route('report.kolaborasi.business-cluster') }}" class="nav-link {{ request()->routeIs('report.kolaborasi.business-cluster') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-layer-group"></i>
+                        <p>Business Cluster</p>
+                    </a>
                 </li>
             </ul>
         </nav>

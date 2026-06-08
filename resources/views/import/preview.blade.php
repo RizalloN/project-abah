@@ -62,7 +62,7 @@
         </div>
         @endif
 
-        <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST" data-init-url="{{ $initRoute ?? '' }}" data-stream-url="{{ $streamRoute ?? '' }}" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-filtered-rows-url="{{ $filteredRowsRoute ?? route('import.preview.filtered-rows') }}" data-warm-index-url="{{ $warmIndexRoute ?? route('import.preview.warm-index') }}">
+        <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST" data-no-route-loading data-init-url="{{ $initRoute ?? '' }}" data-stream-url="{{ $streamRoute ?? '' }}" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-filtered-rows-url="{{ $filteredRowsRoute ?? route('import.preview.filtered-rows') }}" data-warm-index-url="{{ $warmIndexRoute ?? route('import.preview.warm-index') }}">
             @csrf
             <input type="hidden" name="file_path" value="{{ $filePath }}">
             <input type="hidden" name="delimiter" value="{{ $currentDelimiter }}">
@@ -174,7 +174,21 @@
                                                             </div>
                                                         </div>
                                                         <div class="p-2 bg-white" id="list_container_{{ $index }}" style="max-height: 250px; overflow-y: auto;" data-col="{{ $index }}">
-                                                            <div class="text-center text-muted py-2 small">Memuat opsi filter awal...</div>
+                                                            @foreach(array_slice($formattedUniqueValues[$index] ?? [], 0, 200) as $filterValueIndex => $filterValue)
+                                                                @php
+                                                                    $filterValueString = trim((string) $filterValue);
+                                                                    $filterInputId = 'filter_' . $index . '_initial_' . $filterValueIndex;
+                                                                @endphp
+                                                                <div class="custom-control custom-checkbox filter-item-container mb-1">
+                                                                    <input class="custom-control-input filter-checkbox" type="checkbox" id="{{ $filterInputId }}" value="{{ $filterValueString }}" data-col="{{ $index }}" checked>
+                                                                    <label for="{{ $filterInputId }}" class="custom-control-label font-weight-normal filter-label">
+                                                                        {{ $filterValueString === '' ? '(Blank)' : $filterValueString }}
+                                                                    </label>
+                                                                </div>
+                                                            @endforeach
+                                                            @if(count($formattedUniqueValues[$index] ?? []) > 200)
+                                                                <div class="small text-muted mt-2">Menampilkan 200 opsi awal. Gunakan pencarian atau buka dropdown untuk memuat opsi lengkap.</div>
+                                                            @endif
                                                         </div>
                                                     </div>
                                                 </div>
@@ -960,6 +974,9 @@
                 const normalizedActiveFiltersForRows = normalizeActiveFiltersForServer(activeFilters || {});
                 url.searchParams.set('active_filters_json', JSON.stringify(normalizedActiveFiltersForRows));
                 url.searchParams.set('limit', '100');
+                if (previewStateKey) {
+                    url.searchParams.set('preview_state_key', previewStateKey);
+                }
                 url.searchParams.set('_', String(Date.now()));
 
                 const response = await fetch(url.toString(), {
@@ -1044,6 +1061,9 @@
                 url.searchParams.set('delimiter', delimiterValue);
                 url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
                 url.searchParams.set('filterable_column_indices_json', JSON.stringify(filterableColumnIndices || []));
+                if (previewStateKey) {
+                    url.searchParams.set('preview_state_key', previewStateKey);
+                }
                 url.searchParams.set('_', String(Date.now()));
 
                 fetch(url.toString(), {
@@ -1760,6 +1780,9 @@
                                       skippedHtml,
                                 confirmButtonText: 'Tutup'
                             }).then(() => {
+                                if (typeof window.showRouteLoading === 'function') {
+                                    window.showRouteLoading('Memuat halaman', 'Menyiapkan tampilan berikutnya dengan data terbaru.');
+                                }
                                 window.location.href = "{{ route('import.index') }}";
                             });
                             return;
@@ -1775,6 +1798,9 @@
                                   skippedHtml,
                             confirmButtonText: 'Tutup'
                         }).then(() => {
+                            if (typeof window.showRouteLoading === 'function') {
+                                window.showRouteLoading('Memuat halaman', 'Menyiapkan tampilan berikutnya dengan data terbaru.');
+                            }
                             window.location.href = "{{ route('import.index') }}";
                         });
                     }, 500);

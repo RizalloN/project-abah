@@ -13,31 +13,65 @@ use Illuminate\Support\Facades\Schema;
 use App\Support\SimpananMultiPnSnapshotGate;
 use App\Support\DashboardDanaService;
 use App\Support\ReportCacheVersion;
+use App\Support\DashboardHarianSnapshotService;
 use Illuminate\Http\Request;
 use Throwable;
 
 class DashboardSimpananController extends Controller
 {
-    private const PAYLOAD_CACHE_MINUTES = 2;
-    private const SUMMARY_CACHE_MINUTES = 5;
-    private const SUMMARY_LATEST_CACHE_MINUTES = 30;
-    private const TOP_BRANCH_CACHE_MINUTES = 5;
-    private const DIGITAL_PERFORMANCE_CACHE_MINUTES = 10;
+    private const PAYLOAD_CACHE_MINUTES = 1440;
+    private const SUMMARY_CACHE_MINUTES = 1440;
+    private const SUMMARY_LATEST_CACHE_MINUTES = 1440;
+    private const TOP_BRANCH_CACHE_MINUTES = 1440;
+    private const DIGITAL_PERFORMANCE_CACHE_MINUTES = 1440;
     private const LOAN_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
     private const HARIAN_SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
-    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v4';
+    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v13';
     private const CACHE_LOCK_SECONDS = 20;
     private const SNAPSHOT_SUMMARY_TABLE = 'dashboard_simpanan_snapshots';
     private const SNAPSHOT_BRANCH_TABLE = 'dashboard_simpanan_branch_snapshots';
     private const AREA_6_BRANCH_LABELS = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
     private array $snapshotExistsMemo = [];
+    private array $snapshotPeriodMemo = [];
 
-    public function index(): View
+    private static array $hasTableMemo = [];
+    private static array $hasColumnMemo = [];
+
+    private function hasTable(string $table): bool
     {
-        $dashboard = $this->buildDashboardPayload();
+        if (!isset(self::$hasTableMemo[$table])) {
+            self::$hasTableMemo[$table] = \Illuminate\Support\Facades\Schema::hasTable($table);
+        }
+        return self::$hasTableMemo[$table];
+    }
+
+    private function hasColumn(string $table, string $column): bool
+    {
+        $key = $table . '.' . $column;
+        if (!isset(self::$hasColumnMemo[$key])) {
+            self::$hasColumnMemo[$key] = \Illuminate\Support\Facades\Schema::hasColumn($table, $column);
+        }
+        return self::$hasColumnMemo[$key];
+    }
+
+    public function index(Request $request): View
+    {
+        $periodsService = app(\App\Support\DashboardHarianSnapshotService::class);
+        $availablePeriods = $periodsService->fetchPeriods();
+        
+        $selectedPeriod = $request->input('periode');
+        if ($selectedPeriod && !$availablePeriods->contains($selectedPeriod)) {
+            $selectedPeriod = $availablePeriods->first();
+        } else {
+            $selectedPeriod ??= $availablePeriods->first();
+        }
+
+        $dashboard = $this->buildDashboardPayload($selectedPeriod);
 
         return view('dashboard', [
             'dashboard' => $dashboard,
+            'periods' => $availablePeriods,
+            'selectedPeriod' => $selectedPeriod,
         ]);
     }
 
@@ -74,12 +108,1425 @@ class DashboardSimpananController extends Controller
         return response()->json($data);
     }
 
-    private function buildDashboardPayload(): array
+    public function presentationData(Request $request)
+    {
+        $period = $this->resolvePresentationPeriod($request->query('periode'));
+        $payload = $this->cachedPresentationPayload($period);
+
+        if ($request->boolean('warm')) {
+            return response()->noContent();
+        }
+
+        return response()->json($payload);
+    }
+
+    public function presentationKtsData(Request $request)
+    {
+        $requestedPeriod = trim((string) $request->query('periode'));
+        $period = $this->resolveArea6DailyLoanPeriod($requestedPeriod !== '' ? $requestedPeriod : null);
+
+        return response()->json([
+            'kts' => $this->cachedPresentationKtsPayload($period),
+        ]);
+    }
+
+    public function area6Data(Request $request)
+    {
+        $selectedPeriod = $request->query('periode');
+        $loanPeriods = $this->resolveLoanDashboardPeriods($selectedPeriod ?: null);
+        $loanPeriod = $loanPeriods[0] ?? null;
+
+        $area6Portfolio = $this->buildArea6PortfolioLanding($loanPeriod);
+
+        return response()->json([
+            'area6_portfolio' => $area6Portfolio,
+        ]);
+    }
+
+    public function presentation(Request $request)
+    {
+        $periods = app(DashboardHarianSnapshotService::class)->fetchPeriods();
+        $period = $this->resolvePresentationPeriod($request->query('periode'), $periods);
+        $payload = $this->cachedPresentationPayloadIfAvailable($period);
+
+        return view('presentation', [
+            'selectedPeriod' => $period,
+            'periods' => $periods,
+            'presentationPayload' => $payload,
+        ]);
+    }
+
+    private function cachedPresentationPayload(?string $period): array
+    {
+        $cacheKey = $this->presentationPayloadCacheKey($period);
+
+        return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($period) {
+            return $this->buildPresentationPayload($period);
+        });
+    }
+
+    private function cachedPresentationPayloadIfAvailable(?string $period): ?array
+    {
+        $cacheKey = $this->presentationPayloadCacheKey($period);
+
+        return Cache::has($cacheKey)
+            ? Cache::get($cacheKey)
+            : null;
+    }
+
+    private function cachedPresentationKtsPayload(?string $period): array
+    {
+        $cacheKey = 'dashboard_simpanan:presentation_kts_payload:'
+            . self::LANDING_SOURCE_CACHE_VERSION . ':v'
+            . $this->reportCacheVersion() . ':'
+            . ($period ?? 'null');
+
+        return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($period) {
+            return $this->buildPresentationKts([], $period);
+        });
+    }
+
+    private function presentationPayloadCacheKey(?string $period): string
+    {
+        return 'dashboard_simpanan:presentation_payload:'
+            . ($period ?? 'null') . ':'
+            . self::LANDING_SOURCE_CACHE_VERSION . ':v'
+            . $this->reportCacheVersion() . ':lazy_kts_v1';
+    }
+
+    private function resolvePresentationPeriod(mixed $requestedPeriod, ?Collection $periods = null): ?string
+    {
+        $requested = trim((string) $requestedPeriod);
+        $periods ??= app(DashboardHarianSnapshotService::class)->fetchPeriods();
+
+        if ($requested !== '' && $periods->contains($requested)) {
+            return $requested;
+        }
+
+        return $periods->first()
+            ?: (Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)
+                ? DB::table(self::HARIAN_SNAPSHOT_TABLE)->max('snapshot_period')
+                : null);
+    }
+
+    private function buildPresentationPayload(?string $selectedPeriod): array
+    {
+        $dashboard = $this->buildDashboardPayload($selectedPeriod);
+        $dashboardPeriod = (string) data_get($dashboard, 'period', $selectedPeriod);
+        $loanPeriods = $this->resolveLoanDashboardPeriods($dashboardPeriod ?: $selectedPeriod);
+        $loanPeriod = $loanPeriods[0] ?? null;
+        $dailyLoanPeriod = $this->resolveArea6DailyLoanPeriod($loanPeriod ?? $dashboardPeriod ?: null);
+        $area6Portfolio = data_get($dashboard, 'area6_portfolio', []);
+        $digitalPerformance = data_get($dashboard, 'digital_performance', []);
+
+        return [
+            'meta' => [
+                'title' => 'Area 6 - Region Malang',
+                'subtitle' => 'Materi Pendukung Asistensi',
+                'period' => $dashboardPeriod ?: null,
+                'period_label' => $this->formatPeriodLabel($dashboardPeriod ?: null),
+                'loan_period' => $loanPeriod,
+                'loan_period_label' => $this->formatPeriodLabel($loanPeriod),
+                'daily_loan_period' => $dailyLoanPeriod,
+                'daily_loan_period_label' => $this->formatPeriodLabel($dailyLoanPeriod),
+                'generated_at' => now()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('Y-m-d H:i:s'),
+                'source_note' => 'Angka diambil dari payload landing dan tabel snapshot/report existing; tidak memakai angka dummy.',
+            ],
+            'assets' => $this->buildPresentationAssets(),
+            'summary' => $this->buildPresentationSummary($dashboard, $dashboardPeriod ?: null, $loanPeriod),
+            'performance_overview' => $this->buildPresentationPerformanceOverview($area6Portfolio, $dashboardPeriod ?: null),
+            'timeseries' => $this->buildPresentationTimeseries($dashboardPeriod ?: null),
+            'cover_card_timeseries' => $this->buildPresentationCoverCardTimeseries($dashboardPeriod ?: null, $dailyLoanPeriod),
+            'micro' => $this->buildPresentationMicro($dailyLoanPeriod),
+            'quality' => $this->buildPresentationQuality($area6Portfolio),
+            'kts' => $this->buildPresentationKtsSummary($dailyLoanPeriod),
+            'digital_strategy' => $this->buildPresentationDigitalStrategy($digitalPerformance),
+        ];
+    }
+
+    private function buildPresentationAssets(): array
+    {
+        return [
+            'bri_logo' => asset('images/bri-logo-template.png'),
+            'danantara_logo' => asset('images/danantara-logo-template.png'),
+            'cover_base' => asset('images/ppt-template/cover-base.png'),
+        ];
+    }
+
+    private function buildPresentationSummary(array $dashboard, ?string $period, ?string $loanPeriod): array
+    {
+        $liveReports = collect(data_get($dashboard, 'live_reports', []));
+        $simpananReport = $liveReports->firstWhere('key', 'simpanan') ?? [];
+        $pinjamanReport = $liveReports->firstWhere('key', 'pinjaman') ?? [];
+        $portfolioReport = $liveReports->firstWhere('key', 'portfolio') ?? [];
+        $area6Metrics = $period ? $this->area6ScopeSnapshotMetrics($period, 'cabang_konsol') : (object) [];
+        $harianAvailable = $period && Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)
+            ? $this->area6HarianSnapshotSummaryQuery()
+                ->where('snapshot_period', $period)
+                ->exists()
+            : false;
+        $simpananSummary = $period ? $this->buildPeriodSummary($period) : $this->emptySummary();
+        $loanSummary = $loanPeriod ? $this->buildLoanSummary($loanPeriod) : $this->emptyLoanSummary();
+        $simpananRaw = (float) ($simpananSummary['total_balance'] ?? 0);
+        $loanRaw = (float) ($loanSummary['total_balance'] ?? 0);
+        $osRaw = (float) ($area6Metrics->total_os_non_commercial ?? 0.0);
+        $smlRaw = (float) ($area6Metrics->total_sml_abs_non_commercial ?? 0.0);
+        $nplRaw = (float) ($area6Metrics->total_npl_abs_non_commercial ?? 0.0);
+        $smlRatio = $this->percentOf($smlRaw, $osRaw);
+        $nplRatio = $this->percentOf($nplRaw, $osRaw);
+        $unavailable = 'Data belum tersedia';
+
+        return [
+            'cards' => [
+                [
+                    'key' => 'simpanan',
+                    'label' => 'Total Simpanan',
+                    'available' => $harianAvailable,
+                    'value' => $harianAvailable ? data_get($simpananReport, 'value', $this->formatCurrencyCompact($simpananRaw)) : $unavailable,
+                    'value_raw' => $harianAvailable ? $simpananRaw : null,
+                    'trend' => data_get($simpananReport, 'trend', '0,00%'),
+                    'meta' => data_get($simpananReport, 'meta', '-'),
+                    'source' => data_get($simpananReport, 'detail_payload.source_table', self::HARIAN_SNAPSHOT_TABLE),
+                ],
+                [
+                    'key' => 'os',
+                    'label' => 'Total OS Non Commercial',
+                    'available' => $harianAvailable,
+                    'value' => $harianAvailable ? $this->formatCurrencyCompact($osRaw) : $unavailable,
+                    'value_raw' => $harianAvailable ? $osRaw : null,
+                    'trend' => data_get($pinjamanReport, 'trend', '0,00%'),
+                    'meta' => 'OS Area 6 Cabang Konsol',
+                    'source' => self::HARIAN_SNAPSHOT_TABLE,
+                ],
+                [
+                    'key' => 'ldr',
+                    'label' => 'LDR',
+                    'available' => $harianAvailable && $simpananRaw > 0,
+                    'value' => $harianAvailable && $simpananRaw > 0
+                        ? data_get($portfolioReport, 'value', $this->formatRatio($loanRaw, $simpananRaw))
+                        : $unavailable,
+                    'value_raw' => $harianAvailable && $simpananRaw > 0 ? $loanRaw / $simpananRaw : null,
+                    'trend' => data_get($portfolioReport, 'trend', '0,00%'),
+                    'meta' => data_get($portfolioReport, 'meta', '-'),
+                    'source' => 'Landing LDR',
+                ],
+                [
+                    'key' => 'sml',
+                    'label' => 'SML',
+                    'available' => $harianAvailable,
+                    'value' => $harianAvailable ? $this->formatCurrencyCompact($smlRaw) : $unavailable,
+                    'value_raw' => $harianAvailable ? $smlRaw : null,
+                    'ratio' => $harianAvailable ? $this->formatPercentTwo($smlRatio) : $unavailable,
+                    'ratio_raw' => $harianAvailable ? $smlRatio : null,
+                    'meta' => 'Nominal dan rasio SML',
+                    'source' => self::HARIAN_SNAPSHOT_TABLE,
+                ],
+                [
+                    'key' => 'npl',
+                    'label' => 'NPL',
+                    'available' => $harianAvailable,
+                    'value' => $harianAvailable ? $this->formatCurrencyCompact($nplRaw) : $unavailable,
+                    'value_raw' => $harianAvailable ? $nplRaw : null,
+                    'ratio' => $harianAvailable ? $this->formatPercentTwo($nplRatio) : $unavailable,
+                    'ratio_raw' => $harianAvailable ? $nplRatio : null,
+                    'meta' => 'Nominal dan rasio NPL',
+                    'source' => self::HARIAN_SNAPSHOT_TABLE,
+                ],
+            ],
+            'highlights' => [
+                $harianAvailable ? data_get($simpananReport, 'detail', 'Simpanan mengikuti snapshot landing.') : $unavailable,
+                $harianAvailable ? data_get($pinjamanReport, 'detail', 'Pinjaman mengikuti snapshot landing.') : $unavailable,
+                $harianAvailable ? 'SML ' . $this->formatCurrencyCompact($smlRaw) . ' (' . $this->formatPercentTwo($smlRatio) . ')' : $unavailable,
+                $harianAvailable ? 'NPL ' . $this->formatCurrencyCompact($nplRaw) . ' (' . $this->formatPercentTwo($nplRatio) . ')' : $unavailable,
+            ],
+            'composition_dpk' => [
+                'tabungan_pct' => $simpananRaw > 0 ? (($simpananSummary['tabungan_balance'] ?? 0) / $simpananRaw) * 100 : 0.0,
+                'giro_pct' => $simpananRaw > 0 ? (($simpananSummary['giro_balance'] ?? 0) / $simpananRaw) * 100 : 0.0,
+                'other_pct' => $simpananRaw > 0 ? (($simpananSummary['other_balance'] ?? 0) / $simpananRaw) * 100 : 0.0,
+            ]
+        ];
+    }
+
+    private function buildPresentationPerformanceOverview(array $area6Portfolio, ?string $period = null): array
+    {
+        $scope = data_get($area6Portfolio, 'scopes.cabang_konsol', $area6Portfolio);
+
+        return [
+            'period_label' => data_get($area6Portfolio, 'period_label', '-'),
+            'rka_month_year' => data_get($scope, 'segment_performance.rka_month_year', null),
+            'segments' => data_get($scope, 'segment_performance.segments', []),
+            'total' => data_get($scope, 'segment_performance.total', []),
+            'composition' => data_get($scope, 'segment_performance.composition', []),
+            'branches' => array_values(data_get($area6Portfolio, 'ranking_modes.cabang_konsol.branches', [])),
+            'scope_cards' => data_get($area6Portfolio, 'scopes', []),
+            'matrix' => $this->buildPresentationPerformanceMatrix($period),
+        ];
+    }
+
+    private function buildPresentationPerformanceMatrix(?string $period): array
+    {
+        $empty = [
+            'available' => false,
+            'unit' => 'Rupiah',
+            'periods' => [],
+            'metrics' => [
+                'simpanan' => ['label' => 'Simpanan', 'tone' => 'blue'],
+                'os' => ['label' => 'OS', 'tone' => 'green'],
+                'sml' => ['label' => 'SML', 'tone' => 'amber'],
+                'npl' => ['label' => 'NPL', 'tone' => 'red'],
+            ],
+            'scope_options' => [],
+            'rows' => [],
+        ];
+
+        if (!$period || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return $empty;
+        }
+
+        $comparisonPeriods = $this->buildPresentationComparisonPeriods($period);
+        $periodValues = array_values(array_filter(array_column($comparisonPeriods, 'period')));
+        if (empty($periodValues)) {
+            return $empty;
+        }
+
+        $branchRows = $this->fetchPresentationMatrixRows($periodValues, true);
+        $unitRows = $this->fetchPresentationMatrixRows($periodValues, false);
+        $currentPeriod = Carbon::parse($period)->toDateString();
+
+        $rows = [
+            'area6' => $this->formatPresentationMatrixRows($branchRows, $comparisonPeriods, $currentPeriod, true),
+        ];
+
+        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+            $branchKey = strtoupper(trim($branchName));
+            $branchUnitRows = $unitRows->filter(function ($row) use ($branchKey): bool {
+                return strtoupper(trim((string) ($row->branch_label ?? ''))) === $branchKey;
+            });
+
+            $rows[$branchKey] = $this->formatPresentationMatrixRows($branchUnitRows, $comparisonPeriods, $currentPeriod, false);
+        }
+
+        return [
+            'available' => $branchRows->isNotEmpty() || $unitRows->isNotEmpty(),
+            'unit' => 'Rupiah',
+            'periods' => $comparisonPeriods,
+            'metrics' => $empty['metrics'],
+            'scope_options' => array_merge(
+                [['key' => 'area6', 'label' => 'Area 6 Konsol']],
+                collect(self::AREA_6_BRANCH_LABELS)
+                    ->map(fn (string $branch): array => [
+                        'key' => strtoupper(trim($branch)),
+                        'label' => $branch,
+                    ])
+                    ->all()
+            ),
+            'rows' => $rows,
+        ];
+    }
+
+    private function buildPresentationComparisonPeriods(string $period): array
+    {
+        $current = Carbon::parse($period)->toDateString();
+        $endOfPreviousMonth = Carbon::parse($current)->subMonthNoOverflow()->endOfMonth()->toDateString();
+        $sameDatePreviousMonth = Carbon::parse($current)->subMonthNoOverflow()->toDateString();
+        $prevYearEnd = Carbon::parse($current)->subYear()->endOfYear()->toDateString();
+
+        $ytdPeriod = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->where('snapshot_period', '<=', $prevYearEnd)
+            ->orderBy('snapshot_period', 'desc')
+            ->value('snapshot_period') ?: $prevYearEnd;
+
+        $mtmPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($sameDatePreviousMonth) ?: $sameDatePreviousMonth;
+        $mtdPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($endOfPreviousMonth) ?: $endOfPreviousMonth;
+
+        return [
+            'ytd' => [
+                'key' => 'ytd',
+                'period' => Carbon::parse($ytdPeriod)->toDateString(),
+                'label' => 'YtD',
+                'display' => Carbon::parse($ytdPeriod)->translatedFormat('d M y'),
+            ],
+            'mtm' => [
+                'key' => 'mtm',
+                'period' => Carbon::parse($mtmPeriod)->toDateString(),
+                'label' => 'MtM',
+                'display' => Carbon::parse($mtmPeriod)->translatedFormat('d M y'),
+            ],
+            'mtd' => [
+                'key' => 'mtd',
+                'period' => Carbon::parse($mtdPeriod)->toDateString(),
+                'label' => 'MtD',
+                'display' => Carbon::parse($mtdPeriod)->translatedFormat('d M y'),
+            ],
+            'current' => [
+                'key' => 'current',
+                'period' => $current,
+                'label' => 'Posisi',
+                'display' => Carbon::parse($current)->translatedFormat('d M y'),
+            ],
+        ];
+    }
+
+    private function fetchPresentationMatrixRows(array $periods, bool $summaryRows): Collection
+    {
+        $branchLabelExpression = Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_label')
+            ? 'kanca_label'
+            : (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'branch_label') ? 'branch_label' : "''");
+        $unitLabelExpression = $summaryRows
+            ? $branchLabelExpression
+            : (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'unit_label')
+                ? 'unit_label'
+                : (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'uker_label') ? 'uker_label' : "''"));
+
+        $query = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->whereIn('snapshot_period', $periods)
+            ->whereIn(DB::raw('UPPER(TRIM(' . $branchLabelExpression . '))'), $this->dashboardBranchNames());
+
+        if ($this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_key') && $this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'unit_key')) {
+            $summaryRows
+                ? $query->whereColumn('kanca_key', 'unit_key')
+                : $query->whereColumn('kanca_key', '<>', 'unit_key');
+        } elseif ($this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'scope')) {
+            $query->where('scope', $summaryRows ? 'branch' : 'unit');
+        }
+
+        $query
+            ->selectRaw('snapshot_period')
+            ->selectRaw("COALESCE({$branchLabelExpression}, '') as branch_label")
+            ->selectRaw("COALESCE({$unitLabelExpression}, '') as unit_label")
+            ->selectRaw('COALESCE(SUM(COALESCE(total_simpanan, 0)), 0) as total_simpanan')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_os, 0)), 0) as total_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_os_non_commercial, 0)), 0) as total_os_non_commercial')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_sml_abs_non_commercial, 0)), 0) as sml_abs')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_npl_abs_non_commercial, 0)), 0) as npl_abs')
+            ->selectRaw('COALESCE(SUM(COALESCE(sme_os, 0)), 0) as sme_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(consumer_os, 0)), 0) as consumer_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(micro_os, 0)), 0) as micro_os')
+            ->groupBy('snapshot_period');
+
+        // GROUP BY must use the raw column name (not a COALESCE expression) to satisfy
+        // MySQL ONLY_FULL_GROUP_BY mode. When the expression is a literal string (e.g. "''")
+        // we skip grouping on it — there is only one distinct value so it's not needed.
+        if ($branchLabelExpression !== "''") {
+            $query->groupBy($branchLabelExpression);
+        }
+        if ($unitLabelExpression !== "''" && $unitLabelExpression !== $branchLabelExpression) {
+            $query->groupBy($unitLabelExpression);
+        }
+
+        return $query->get();
+    }
+
+    private function formatPresentationMatrixRows(Collection $rows, array $comparisonPeriods, string $currentPeriod, bool $summaryRows): array
+    {
+        $grouped = $rows->groupBy(function ($row): string {
+            return strtoupper(trim((string) ($row->branch_label ?? ''))) . '|'
+                . strtoupper(trim((string) ($row->unit_label ?? '')));
+        });
+
+        $rkaService = null;
+        $rkaYear = null;
+        $monthColumn = null;
+        $definitions = [
+            'simpanan'     => ['mata_anggaran' => ['A.1. DPK Retail Funding Total', 'A.2. DPK Korporasi']],
+            'os'           => ['mata_anggaran' => ['B. KREDIT TOTAL']],
+            'sme_os'       => ['mata_anggaran' => ['B.2. SMALL', 'B.3. MEDIUM']],
+            'consumer_os'  => ['mata_anggaran' => ['B.4. KONSUMER']],
+            'micro_os'     => ['mata_anggaran' => ['B.1. MIKRO']],
+        ];
+        try {
+            $rkaService = app(\App\Support\RkaLookupService::class);
+            $rkaYear = (int) Carbon::parse($currentPeriod)->format('Y');
+            $monthColumn = $rkaService->resolveMonthColumn(Carbon::parse($currentPeriod));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Failed to initialize RkaLookupService in formatPresentationMatrixRows: ' . $e->getMessage());
+        }
+
+        return $grouped
+            ->map(function (Collection $periodRows) use ($comparisonPeriods, $currentPeriod, $summaryRows, $rkaService, $rkaYear, $monthColumn, $definitions): ?array {
+                $indexed = $periodRows->keyBy(fn ($row) => Carbon::parse($row->snapshot_period)->toDateString());
+                $current = $indexed->get($currentPeriod);
+                if (!$current) {
+                    return null;
+                }
+
+                $metricValues = [
+                    'simpanan'    => fn ($row): float => (float) ($row->total_simpanan ?? 0.0),
+                    'os'          => fn ($row): float => (float) ($row->total_os ?? 0.0),
+                    'sml'         => fn ($row): float => (float) ($row->sml_abs ?? 0.0),
+                    'npl'         => fn ($row): float => (float) ($row->npl_abs ?? 0.0),
+                    'sme_os'      => fn ($row): float => (float) ($row->sme_os ?? 0.0),
+                    'consumer_os' => fn ($row): float => (float) ($row->consumer_os ?? 0.0),
+                    'micro_os'    => fn ($row): float => (float) ($row->micro_os ?? 0.0),
+                ];
+
+                $rkaValues = [];
+                if ($rkaService && $monthColumn) {
+                    $kanca = (string) ($current->branch_label ?? '');
+                    $unit = $summaryRows ? null : (string) ($current->unit_label ?? '');
+                    try {
+                        $rkaValues = $rkaService->aggregateForScope($definitions, $monthColumn, $kanca, $unit, $rkaYear);
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning('RkaLookupService aggregateForScope failed in formatPresentationMatrixRows: ' . $e->getMessage());
+                    }
+                }
+
+                $metrics = [];
+                foreach ($metricValues as $metricKey => $resolver) {
+                    $latest = $resolver($current);
+                    $baselineValues = [];
+                    foreach ($comparisonPeriods as $periodInfo) {
+                        $row = $indexed->get((string) $periodInfo['period']);
+                        $baselineValues[$periodInfo['key']] = $row ? $resolver($row) : 0.0;
+                    }
+
+                    $osNonCommercial = (float) ($current->total_os_non_commercial ?? 0.0);
+                    $ratio = in_array($metricKey, ['sml', 'npl'], true) && $osNonCommercial > 0
+                        ? ($latest / $osNonCommercial) * 100
+                        : null;
+
+                    $metricData = [
+                        'latest_raw' => $latest,
+                        'latest' => $this->formatCurrencyCompact($latest),
+                        'ytd_raw' => $latest - ($baselineValues['ytd'] ?? 0.0),
+                        'ytd' => $this->formatPresentationMatrixDelta($latest - ($baselineValues['ytd'] ?? 0.0)),
+                        'mtm_raw' => $latest - ($baselineValues['mtm'] ?? 0.0),
+                        'mtm' => $this->formatPresentationMatrixDelta($latest - ($baselineValues['mtm'] ?? 0.0)),
+                        'mtd_raw' => $latest - ($baselineValues['mtd'] ?? 0.0),
+                        'mtd' => $this->formatPresentationMatrixDelta($latest - ($baselineValues['mtd'] ?? 0.0)),
+                        'series' => [
+                            round(($baselineValues['ytd'] ?? 0.0) / 1000000),
+                            round(($baselineValues['mtm'] ?? 0.0) / 1000000),
+                            round(($baselineValues['mtd'] ?? 0.0) / 1000000),
+                            round($latest / 1000000),
+                        ],
+                        'ratio_raw' => $ratio,
+                        'ratio' => $ratio === null ? null : $this->formatPercentTwo($ratio),
+                    ];
+
+                    if (in_array($metricKey, ['simpanan', 'os', 'sme_os', 'consumer_os', 'micro_os'], true)) {
+                        $targetVal = (float) ($rkaValues[$metricKey] ?? 0.0);
+                        if ($targetVal > 0.0) {
+                            $gap = $latest - $targetVal;
+                            $penc = ($latest / $targetVal) * 100;
+
+                            $metricData['rka_raw'] = $targetVal;
+                            $metricData['rka_fmt'] = $this->formatCurrencyCompact($targetVal);
+
+                            $gapDelta = $this->formatPresentationMatrixDelta($gap);
+                            $metricData['gap_raw'] = $gap;
+                            $metricData['gap_fmt'] = $gapDelta['value'];
+                            $metricData['gap_class'] = $gapDelta['class'];
+
+                            $metricData['penc_raw'] = $penc;
+                            $metricData['penc_fmt'] = $this->formatPercentTwo($penc);
+                        } else {
+                            $metricData['rka_raw'] = 0.0;
+                            $metricData['rka_fmt'] = '-';
+
+                            $metricData['gap_raw'] = 0.0;
+                            $metricData['gap_fmt'] = '-';
+                            $metricData['gap_class'] = '';
+
+                            $metricData['penc_raw'] = 0.0;
+                            $metricData['penc_fmt'] = '-';
+                        }
+                    }
+
+                    $metrics[$metricKey] = $metricData;
+                }
+
+                return [
+                    'label' => $summaryRows ? (string) ($current->branch_label ?? '-') : (string) ($current->unit_label ?? '-'),
+                    'branch' => (string) ($current->branch_label ?? '-'),
+                    'type' => $summaryRows ? 'Cabang Konsol' : 'Unit',
+                    'metrics' => $metrics,
+                ];
+            })
+            ->filter()
+            ->sortByDesc(fn (array $row): float => (float) data_get($row, 'metrics.simpanan.latest_raw', 0.0))
+            ->values()
+            ->all();
+    }
+
+    private function formatPresentationMatrixDelta(float $delta): array
+    {
+        $prefix = $delta >= 0 ? '+' : '-';
+        $class = $delta >= 0 ? 'pos' : 'neg';
+
+        return [
+            'value' => $prefix . $this->formatCurrencyCompact(abs($delta)),
+            'class' => $class,
+        ];
+    }
+
+    private function buildPresentationTimeseries(?string $period): array
+    {
+        $empty = [
+            'available' => false,
+            'source' => self::HARIAN_SNAPSHOT_TABLE,
+            'unit' => 'Rp Juta',
+            'labels' => [],
+            'series' => [],
+        ];
+
+        if (!$period || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return $empty;
+        }
+
+        $comp = $this->buildPresentationComparisonPeriods($period);
+        $resolvedPeriods = [
+            $comp['ytd']['period'],
+            $comp['mtm']['period'],
+            $comp['mtd']['period'],
+            $comp['current']['period']
+        ];
+        usort($resolvedPeriods, function ($a, $b) {
+            return strcmp($a, $b);
+        });
+        $resolvedPeriods = array_values(array_unique($resolvedPeriods));
+
+        $rows = $this->area6HarianSnapshotSummaryQuery()
+            ->whereIn('snapshot_period', $resolvedPeriods)
+            ->selectRaw('snapshot_period')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_simpanan, 0)), 0) as simpanan_total')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_os_non_commercial, 0)), 0) as os_total')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_sml_abs_non_commercial, 0)), 0) as sml_nominal')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_npl_abs_non_commercial, 0)), 0) as npl_nominal')
+            ->groupBy('snapshot_period')
+            ->get()
+            ->keyBy(fn ($row) => Carbon::parse($row->snapshot_period)->toDateString());
+
+        $labels = [];
+        $series = [
+            'simpanan_total' => ['key' => 'simpanan_total', 'label' => 'Realisasi Simpanan Total', 'values' => [], 'display_values' => []],
+            'os_total' => ['key' => 'os_total', 'label' => 'Realisasi OS Total', 'values' => [], 'display_values' => []],
+            'sml_nominal' => ['key' => 'sml_nominal', 'label' => 'Realisasi SML', 'values' => [], 'display_values' => []],
+            'npl_nominal' => ['key' => 'npl_nominal', 'label' => 'Realisasi NPL', 'values' => [], 'display_values' => []],
+        ];
+
+        foreach ($resolvedPeriods as $resolvedPeriod) {
+            $date = Carbon::parse($resolvedPeriod)->toDateString();
+            $row = $rows->get($date);
+            if (!$row) {
+                continue;
+            }
+
+            // Find matching prefix
+            $prefix = 'Posisi';
+            if ($date === $comp['ytd']['period']) {
+                $prefix = 'YtD';
+            } elseif ($date === $comp['mtm']['period']) {
+                $prefix = 'MtM';
+            } elseif ($date === $comp['mtd']['period']) {
+                $prefix = 'MtD';
+            }
+
+            $labels[] = $prefix . ' (' . Carbon::parse($date)->translatedFormat('d M y') . ')';
+
+            foreach (array_keys($series) as $key) {
+                $raw = (float) ($row->{$key} ?? 0.0);
+                $series[$key]['values'][] = round($raw / 1000000);
+                $series[$key]['display_values'][] = $this->formatCurrencyCompact($raw);
+            }
+        }
+
+        return [
+            'available' => $rows->isNotEmpty(),
+            'source' => self::HARIAN_SNAPSHOT_TABLE,
+            'unit' => 'Rp Juta',
+            'labels' => $labels,
+            'series' => array_values($series),
+        ];
+    }
+
+    private function buildPresentationCoverCardTimeseries(?string $period, ?string $dailyLoanPeriod): array
+    {
+        $pointKeys = ['ytd', 'mtm', 'mtd', 'current'];
+        $defaultPeriods = [
+            'ytd' => ['key' => 'ytd', 'label' => 'YtD', 'period' => null, 'display' => '-'],
+            'mtm' => ['key' => 'mtm', 'label' => 'MtM', 'period' => null, 'display' => '-'],
+            'mtd' => ['key' => 'mtd', 'label' => 'MtD', 'period' => null, 'display' => '-'],
+            'current' => ['key' => 'current', 'label' => 'Posisi', 'period' => null, 'display' => '-'],
+        ];
+        $snapshotPeriods = $defaultPeriods;
+
+        $cards = [];
+        $emptyFormatter = fn (?float $value): string => $value === null ? 'Data belum tersedia' : $this->formatCurrencyCompact($value);
+        $ratioFormatter = fn (?float $value): string => $value === null ? 'Data belum tersedia' : number_format($value, 2, ',', '.') . 'x';
+        $integerFormatter = fn (?float $value): string => $value === null ? 'Data belum tersedia' : $this->formatInteger((int) $value);
+
+        $makeCard = function (
+            string $key,
+            string $label,
+            string $unit,
+            string $tone,
+            array $periods,
+            callable $resolver,
+            callable $formatter,
+            ?string $meta = null
+        ) use ($pointKeys): array {
+            $points = [];
+
+            foreach ($pointKeys as $pointKey) {
+                $periodInfo = $periods[$pointKey] ?? ['key' => $pointKey, 'label' => strtoupper($pointKey), 'period' => null, 'display' => '-'];
+                $value = $periodInfo['period'] ? $resolver((string) $periodInfo['period']) : null;
+                $points[] = [
+                    'key' => $pointKey,
+                    'label' => (string) ($periodInfo['label'] ?? strtoupper($pointKey)),
+                    'period' => $periodInfo['period'] ?? null,
+                    'period_label' => (string) ($periodInfo['display'] ?? '-'),
+                    'value' => $value,
+                    'display_value' => $formatter($value),
+                ];
+            }
+
+            return [
+                'key' => $key,
+                'label' => $label,
+                'unit' => $unit,
+                'tone' => $tone,
+                'meta' => $meta,
+                'available' => collect($points)->contains(fn (array $point): bool => $point['value'] !== null),
+                'points' => $points,
+            ];
+        };
+
+        if ($period && Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            $snapshotPeriods = $this->buildPresentationComparisonPeriods($period);
+            $periodValues = array_values(array_unique(array_filter(array_map(
+                fn (string $key): ?string => $snapshotPeriods[$key]['period'] ?? null,
+                $pointKeys
+            ))));
+
+            $totalRows = $this->area6HarianSnapshotSummaryQuery()
+                ->whereIn('snapshot_period', $periodValues)
+                ->selectRaw('snapshot_period')
+                ->selectRaw('COALESCE(SUM(COALESCE(total_simpanan, 0)), 0) as simpanan_total')
+                ->selectRaw('COALESCE(SUM(COALESCE(total_os, 0)), 0) as os_total')
+                ->selectRaw('COALESCE(SUM(COALESCE(total_os_non_commercial, 0)), 0) as os_non_commercial_total')
+                ->selectRaw('COALESCE(SUM(COALESCE(total_sml_abs_non_commercial, 0)), 0) as sml_nominal')
+                ->selectRaw('COALESCE(SUM(COALESCE(total_npl_abs_non_commercial, 0)), 0) as npl_nominal')
+                ->groupBy('snapshot_period')
+                ->get()
+                ->keyBy(fn ($row) => Carbon::parse($row->snapshot_period)->toDateString());
+
+            $branchRows = $this->fetchPresentationMatrixRows($periodValues, true);
+            $currentPeriod = (string) ($snapshotPeriods['current']['period'] ?? '');
+            $currentBranchRows = $branchRows->filter(fn ($row): bool => Carbon::parse($row->snapshot_period)->toDateString() === $currentPeriod);
+            $topSimpananBranch = $currentBranchRows->sortByDesc(fn ($row): float => (float) ($row->total_simpanan ?? 0))->first();
+            $topOsBranch = $currentBranchRows->sortByDesc(fn ($row): float => (float) ($row->total_os ?? 0))->first();
+            $branchGroups = $branchRows->groupBy(fn ($row): string => strtoupper(trim((string) ($row->branch_label ?? ''))));
+
+            $branchResolver = function ($branchRow, string $column) use ($branchGroups): callable {
+                $branchKey = strtoupper(trim((string) ($branchRow->branch_label ?? '')));
+                $rows = $branchGroups->get($branchKey, collect())->keyBy(fn ($row) => Carbon::parse($row->snapshot_period)->toDateString());
+
+                return fn (string $pointPeriod): ?float => $rows->has($pointPeriod)
+                    ? (float) ($rows->get($pointPeriod)->{$column} ?? 0.0)
+                    : null;
+            };
+
+            $cards['simpanan'] = $makeCard(
+                'simpanan',
+                'Simpanan',
+                'currency',
+                '#059669',
+                $snapshotPeriods,
+                fn (string $pointPeriod): ?float => $totalRows->has($pointPeriod) ? (float) ($totalRows->get($pointPeriod)->simpanan_total ?? 0.0) : null,
+                $emptyFormatter
+            );
+
+            $cards['os'] = $makeCard(
+                'os',
+                'OS',
+                'currency',
+                '#2563eb',
+                $snapshotPeriods,
+                fn (string $pointPeriod): ?float => $totalRows->has($pointPeriod) ? (float) ($totalRows->get($pointPeriod)->os_non_commercial_total ?? 0.0) : null,
+                $emptyFormatter
+            );
+
+            $cards['ldr'] = $makeCard(
+                'ldr',
+                'LDR',
+                'ratio',
+                '#7c3aed',
+                $snapshotPeriods,
+                function (string $pointPeriod) use ($totalRows): ?float {
+                    if (!$totalRows->has($pointPeriod)) {
+                        return null;
+                    }
+
+                    $row = $totalRows->get($pointPeriod);
+                    $simpanan = (float) ($row->simpanan_total ?? 0.0);
+                    if ($simpanan <= 0.0) {
+                        return null;
+                    }
+
+                    return (float) ($row->os_non_commercial_total ?? 0.0) / $simpanan;
+                },
+                $ratioFormatter
+            );
+
+            $cards['sml'] = $makeCard(
+                'sml',
+                'SML',
+                'currency',
+                '#ea580c',
+                $snapshotPeriods,
+                fn (string $pointPeriod): ?float => $totalRows->has($pointPeriod) ? (float) ($totalRows->get($pointPeriod)->sml_nominal ?? 0.0) : null,
+                $emptyFormatter
+            );
+
+            $cards['npl'] = $makeCard(
+                'npl',
+                'NPL',
+                'currency',
+                '#dc2626',
+                $snapshotPeriods,
+                fn (string $pointPeriod): ?float => $totalRows->has($pointPeriod) ? (float) ($totalRows->get($pointPeriod)->npl_nominal ?? 0.0) : null,
+                $emptyFormatter
+            );
+
+            $cards['top_simpanan'] = $makeCard(
+                'top_simpanan',
+                'Top Simpanan',
+                'currency',
+                '#d97706',
+                $snapshotPeriods,
+                $topSimpananBranch ? $branchResolver($topSimpananBranch, 'total_simpanan') : fn (string $pointPeriod): ?float => null,
+                $emptyFormatter,
+                $topSimpananBranch ? (string) ($topSimpananBranch->branch_label ?? '') : null
+            );
+
+            $cards['top_os'] = $makeCard(
+                'top_os',
+                'Top OS',
+                'currency',
+                '#0891b2',
+                $snapshotPeriods,
+                $topOsBranch ? $branchResolver($topOsBranch, 'total_os') : fn (string $pointPeriod): ?float => null,
+                $emptyFormatter,
+                $topOsBranch ? (string) ($topOsBranch->branch_label ?? '') : null
+            );
+        }
+
+        $ktsPeriods = $dailyLoanPeriod ? $this->buildPresentationDailyLoanComparisonPeriods($dailyLoanPeriod) : $defaultPeriods;
+        $cards['kts_membaik'] = $makeCard(
+            'kts_membaik',
+            'KTS Membaik',
+            'rekening',
+            '#10b981',
+            $ktsPeriods ?: $defaultPeriods,
+            fn (string $pointPeriod): ?float => null,
+            $integerFormatter,
+            'Ritel + Micro'
+        );
+        $cards['kts_memburuk'] = $makeCard(
+            'kts_memburuk',
+            'KTS Memburuk',
+            'rekening',
+            '#ef4444',
+            $ktsPeriods ?: $defaultPeriods,
+            fn (string $pointPeriod): ?float => null,
+            $integerFormatter,
+            'Ritel + Micro'
+        );
+
+        return [
+            'source' => [
+                'harian' => self::HARIAN_SNAPSHOT_TABLE,
+                'kts' => 'daily_loan_dinamis',
+            ],
+            'periods' => $snapshotPeriods,
+            'cards' => $cards,
+        ];
+    }
+
+    private function buildPresentationDailyLoanComparisonPeriods(?string $period): array
+    {
+        if (!$period || !Schema::hasTable('daily_loan_dinamis')) {
+            return [];
+        }
+
+        $current = Carbon::parse($period)->toDateString();
+        $endOfPreviousMonth = Carbon::parse($current)->subMonthNoOverflow()->endOfMonth()->toDateString();
+        $sameDatePreviousMonth = Carbon::parse($current)->subMonthNoOverflow()->toDateString();
+        $prevYearEnd = Carbon::parse($current)->subYear()->endOfYear()->toDateString();
+
+        $periods = [
+            'ytd' => $this->resolveArea6DailyLoanPeriod($prevYearEnd),
+            'mtm' => $this->resolveArea6DailyLoanPeriod($sameDatePreviousMonth),
+            'mtd' => $this->resolveArea6DailyLoanPeriod($endOfPreviousMonth),
+            'current' => $this->resolveArea6DailyLoanPeriod($current),
+        ];
+
+        return collect($periods)->map(function (?string $resolvedPeriod, string $key): array {
+            $labels = [
+                'ytd' => 'YtD',
+                'mtm' => 'MtM',
+                'mtd' => 'MtD',
+                'current' => 'Posisi',
+            ];
+
+            return [
+                'key' => $key,
+                'period' => $resolvedPeriod,
+                'label' => $labels[$key] ?? strtoupper($key),
+                'display' => $resolvedPeriod ? Carbon::parse($resolvedPeriod)->translatedFormat('d M y') : '-',
+            ];
+        })->all();
+    }
+
+    private function buildPresentationMicro(?string $period): array
+    {
+        return [
+            'period' => $period,
+            'period_label' => $this->formatPeriodLabel($period),
+            'decision' => $this->buildPresentationDecisionEvaluation($period),
+            'mantri_productivity' => $this->buildPresentationMantriProductivity($period),
+            'rm_kur_micro' => $this->buildPresentationRmKurMicro($period),
+        ];
+    }
+
+    private function buildPresentationDecisionEvaluation(?string $period): array
+    {
+        $payload = $this->invokeKinerjaRmMikroPayload('unit_pemutus', $period, true);
+        $rows = collect($payload['rows'] ?? [])
+            ->sortByDesc(fn (array $row) => (float) ($row['mtd_total_os'] ?? 0))
+            ->take(24)
+            ->map(fn (array $row): array => [
+                'unit' => (string) ($row['unit'] ?? '-'),
+                'cabang' => (string) ($row['cabang'] ?? '-'),
+                'kaunit_deb' => (int) ($row['kaunit_mtd_deb'] ?? 0),
+                'mbm_deb' => (int) ($row['mbm_mtd_deb'] ?? 0),
+                'pinca_deb' => (int) ($row['pinca_mtd_deb'] ?? 0),
+                'rmbh_deb' => (int) ($row['rmbh_mtd_deb'] ?? 0),
+                'total_deb' => (int) ($row['mtd_total_deb'] ?? 0),
+                'total_os' => (float) ($row['mtd_total_os'] ?? 0),
+                'total_os_fmt' => $this->formatCurrencyCompact((float) ($row['mtd_total_os'] ?? 0)),
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'available' => !empty($rows),
+            'source' => 'Kinerja RM Mikro - Unit per Pemutus',
+            'rows' => $rows,
+            'total' => [
+                'total_deb' => (int) data_get($payload, 'total.mtd_total_deb', 0),
+                'total_os' => (float) data_get($payload, 'total.mtd_total_os', 0.0),
+                'total_os_fmt' => $this->formatCurrencyCompact((float) data_get($payload, 'total.mtd_total_os', 0.0)),
+            ],
+        ];
+    }
+
+    private function buildPresentationMantriProductivity(?string $period): array
+    {
+        $payload = $this->invokeKinerjaRmMikroPayload('produktivitas_mantri', $period, true);
+        $rows = collect($payload['rows'] ?? [])
+            ->sortByDesc(fn (array $row) => (float) ($row['realisasi_os'] ?? 0))
+            ->take(24)
+            ->map(fn (array $row): array => [
+                'nama_mantri' => (string) ($row['nama_mantri'] ?? $row['pn_pengelola'] ?? '-'),
+                'unit' => (string) ($row['unit'] ?? '-'),
+                'cabang' => (string) ($row['cabang'] ?? '-'),
+                'realisasi_deb' => (int) ($row['realisasi_deb'] ?? 0),
+                'realisasi_os' => (float) ($row['realisasi_os'] ?? 0),
+                'realisasi_os_fmt' => $this->formatCurrencyCompact((float) ($row['realisasi_os'] ?? 0)),
+                'ratas_mantri_hk' => (float) ($row['ratas_mantri_hk'] ?? 0),
+                'tiket_size' => (float) ($row['tiket_size'] ?? 0),
+                'ket' => (string) ($row['ket'] ?? '-'),
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'available' => !empty($rows),
+            'source' => 'Kinerja Mantri - Produktivitas per Mantri',
+            'working_days' => (int) data_get($payload, 'working_days', 0),
+            'rows' => $rows,
+            'total' => [
+                'jumlah_mantri' => (int) data_get($payload, 'total.jumlah_mantri', 0),
+                'realisasi_deb' => (int) data_get($payload, 'total.realisasi_deb', 0),
+                'realisasi_os' => (float) data_get($payload, 'total.realisasi_os', 0.0),
+                'realisasi_os_fmt' => $this->formatCurrencyCompact((float) data_get($payload, 'total.realisasi_os', 0.0)),
+            ],
+        ];
+    }
+
+    private function buildPresentationRmKurMicro(?string $period): array
+    {
+        $payload = $this->invokeKinerjaRmMikroPayload('per_rm', $period, false);
+        $rows = collect($payload['rows'] ?? [])
+            ->sortByDesc(fn (array $row) => (float) ($row['realisasi_os'] ?? 0))
+            ->take(24)
+            ->map(fn (array $row): array => [
+                'nama' => (string) ($row['nama'] ?? $row['rm'] ?? '-'),
+                'unit' => (string) ($row['unit'] ?? '-'),
+                'cabang' => (string) ($row['cabang'] ?? '-'),
+                'total_deb' => (int) ($row['total_deb'] ?? 0),
+                'total_os' => (float) ($row['total_os'] ?? 0),
+                'total_os_fmt' => $this->formatCurrencyCompact((float) ($row['total_os'] ?? 0)),
+                'realisasi_deb' => (int) ($row['realisasi_deb'] ?? 0),
+                'realisasi_os' => (float) ($row['realisasi_os'] ?? 0),
+                'realisasi_os_fmt' => $this->formatCurrencyCompact((float) ($row['realisasi_os'] ?? 0)),
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'available' => !empty($rows),
+            'source' => 'Kinerja RM Mikro - RM KUR Mikro',
+            'rows' => $rows,
+            'total' => [
+                'total_deb' => (int) data_get($payload, 'total.total_deb', 0),
+                'total_os' => (float) data_get($payload, 'total.total_os', 0.0),
+                'total_os_fmt' => $this->formatCurrencyCompact((float) data_get($payload, 'total.total_os', 0.0)),
+                'realisasi_deb' => (int) data_get($payload, 'total.realisasi_deb', 0),
+                'realisasi_os' => (float) data_get($payload, 'total.realisasi_os', 0.0),
+                'realisasi_os_fmt' => $this->formatCurrencyCompact((float) data_get($payload, 'total.realisasi_os', 0.0)),
+            ],
+        ];
+    }
+
+    private function invokeKinerjaRmMikroPayload(string $category, ?string $period, bool $mantri): array
+    {
+        if (!$period) {
+            return ['rows' => [], 'total' => []];
+        }
+
+        $cacheKey = 'dashboard_simpanan:kinerja_rm_mikro:'
+            . ($mantri ? 'mantri' : 'report') . ':'
+            . $category . ':'
+            . $period . ':v'
+            . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($category, $period, $mantri) {
+            try {
+                $controller = app(\App\Http\Controllers\Report\KinerjaRmMikroReportController::class);
+                $method = new \ReflectionMethod($controller, $mantri ? 'buildMantriPayload' : 'buildReportPayload');
+                $method->setAccessible(true);
+
+                return (array) $method->invoke($controller, $category, $period);
+            } catch (Throwable $e) {
+                Log::warning('Payload presentasi Kinerja RM Mikro gagal dibaca.', [
+                    'category' => $category,
+                    'period' => $period,
+                    'error' => $e->getMessage(),
+                ]);
+
+                return ['rows' => [], 'total' => [], 'message' => 'Data belum tersedia'];
+            }
+        });
+    }
+
+    private function buildPresentationQuality(array $area6Portfolio): array
+    {
+        $scope = data_get($area6Portfolio, 'scopes.cabang_konsol', $area6Portfolio);
+        $cards = collect(data_get($scope, 'cards', []))->keyBy('key');
+        $rankingModes = data_get($area6Portfolio, 'ranking_modes', []);
+
+        return [
+            'sml' => [
+                'title' => 'Kinerja SML Area 6 - Region Malang',
+                'card' => $cards->get('sml', []),
+                'ritel_nominal' => $this->extractPresentationRankingRows($rankingModes, 'ritel', '5 SML Nominal'),
+                'micro_nominal' => $this->extractPresentationRankingRows($rankingModes, 'micro', '5 SML Nominal'),
+                'ritel_ratio' => $this->extractPresentationRankingRows($rankingModes, 'ritel', '5 SML Rasio'),
+                'micro_ratio' => $this->extractPresentationRankingRows($rankingModes, 'micro', '5 SML Rasio'),
+            ],
+            'npl' => [
+                'title' => 'Kinerja NPL Area 6 - Region Malang',
+                'card' => $cards->get('npl', []),
+                'ritel_nominal' => $this->extractPresentationRankingRows($rankingModes, 'ritel', '5 NPL Nominal'),
+                'micro_nominal' => $this->extractPresentationRankingRows($rankingModes, 'micro', '5 NPL Nominal'),
+                'ritel_ratio' => $this->extractPresentationRankingRows($rankingModes, 'ritel', '5 NPL Rasio'),
+                'micro_ratio' => $this->extractPresentationRankingRows($rankingModes, 'micro', '5 NPL Rasio'),
+            ],
+        ];
+    }
+
+    private function buildPresentationKts(array $area6Portfolio, ?string $period): array
+    {
+        $ktsRetail = $this->buildArea6KtsRanking($period, 'retail');
+        $ktsMicro = $this->buildArea6KtsRanking($period, 'unit');
+        $categories = [
+            'membaik' => [
+                'label' => 'KTS Membaik',
+                'ritel' => $this->buildPresentationKtsCategoryRanking($period, 'retail', 'membaik'),
+                'micro' => $this->buildPresentationKtsCategoryRanking($period, 'unit', 'membaik'),
+            ],
+            'memburuk' => [
+                'label' => 'KTS Memburuk',
+                'ritel' => $this->buildPresentationKtsCategoryRanking($period, 'retail', 'memburuk'),
+                'micro' => $this->buildPresentationKtsCategoryRanking($period, 'unit', 'memburuk'),
+            ],
+        ];
+
+        return [
+            'period' => $period,
+            'period_label' => $this->formatPeriodLabel($period),
+            'source' => 'daily_loan_dinamis',
+            'ritel_total' => $ktsRetail['total_count'] ?? 0,
+            'ritel' => $ktsRetail['rows'] ?? [],
+            'micro_total' => $ktsMicro['total_count'] ?? 0,
+            'micro' => $ktsMicro['rows'] ?? [],
+            'categories' => $categories,
+        ];
+    }
+
+    private function buildPresentationKtsSummary(?string $period): array
+    {
+        $emptyScope = [
+            'total_count' => 0,
+            'total_os' => 0.0,
+            'total_os_fmt' => 'Rp0',
+            'rows' => [],
+            'branches' => [],
+        ];
+
+        return [
+            'period' => $period,
+            'period_label' => $this->formatPeriodLabel($period),
+            'source' => 'daily_loan_dinamis',
+            'loading_details' => true,
+            'ritel_total' => 0,
+            'ritel' => [],
+            'micro_total' => 0,
+            'micro' => [],
+            'categories' => [
+                'membaik' => [
+                    'label' => 'KTS Membaik',
+                    'ritel' => $emptyScope,
+                    'micro' => $emptyScope,
+                ],
+                'memburuk' => [
+                    'label' => 'KTS Memburuk',
+                    'ritel' => $emptyScope,
+                    'micro' => $emptyScope,
+                ],
+            ],
+        ];
+    }
+
+    private function buildPresentationKtsCategoryRanking(?string $period, string $scope, string $category): array
+    {
+        $empty = ['total_count' => 0, 'total_os' => 0.0, 'total_os_fmt' => 'Rp0', 'rows' => [], 'branches' => []];
+        if (!$period || !Schema::hasTable('daily_loan_dinamis')) {
+            return $empty;
+        }
+
+        foreach (['cabang1', 'unit1', 'status_rekening1', 'baki_debet1', 'kolek', 'umur_tunggakan', 'nomor_rekening1', 'nama_debitur1'] as $column) {
+            if (!Schema::hasColumn('daily_loan_dinamis', $column)) {
+                return $empty;
+            }
+        }
+
+        $cacheKey = 'dashboard_simpanan:presentation_kts_category:'
+            . self::LANDING_SOURCE_CACHE_VERSION . ':v'
+            . $this->reportCacheVersion() . ':'
+            . $period . ':' . $scope . ':' . $category;
+
+        return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($period, $scope, $category): array {
+            $actualKolekExpression = "CAST(kolek AS UNSIGNED)";
+            $umurTunggakanExpression = "CAST(umur_tunggakan AS SIGNED)";
+            $expectedKolekExpression = "CASE
+                WHEN {$umurTunggakanExpression} <= 0 THEN 1
+                WHEN {$umurTunggakanExpression} <= 90 THEN 2
+                WHEN {$umurTunggakanExpression} <= 120 THEN 3
+                WHEN {$umurTunggakanExpression} <= 180 THEN 4
+                ELSE 5
+            END";
+            $directionSql = $category === 'membaik'
+                ? "{$actualKolekExpression} < {$expectedKolekExpression}"
+                : "{$actualKolekExpression} > {$expectedKolekExpression}";
+            $groupColumns = $scope === 'branch' ? ['cabang1'] : ['cabang1', 'unit1'];
+
+            $baseQuery = DB::table('daily_loan_dinamis')
+                ->where('periode', $period)
+                ->whereIn('cabang1', self::AREA_6_BRANCH_LABELS)
+                ->whereIn('status_rekening1', ['1', '3'])
+                ->where('baki_debet1', '>', 0)
+                ->whereIn('kolek', ['1', '2', '3', '4', '5'])
+                ->whereNotNull('umur_tunggakan')
+                ->whereRaw($directionSql);
+
+            $this->applyArea6DailyLoanUnitScope($baseQuery, $scope);
+
+            $rankedRows = (clone $baseQuery)
+                ->select($groupColumns)
+                ->selectRaw('COUNT(*) as mismatch_count')
+                ->selectRaw('COALESCE(SUM(COALESCE(baki_debet1, 0)), 0) as outstanding_balance')
+                ->groupBy($groupColumns)
+                ->orderByDesc('mismatch_count')
+                ->orderByDesc('outstanding_balance')
+                ->limit(18)
+                ->get();
+
+            $total = (clone $baseQuery)
+                ->selectRaw('COUNT(*) as mismatch_count')
+                ->selectRaw('COALESCE(SUM(COALESCE(baki_debet1, 0)), 0) as outstanding_balance')
+                ->first();
+
+            $branchTotals = (clone $baseQuery)
+                ->select('cabang1')
+                ->selectRaw('COUNT(*) as mismatch_count')
+                ->selectRaw('COALESCE(SUM(COALESCE(baki_debet1, 0)), 0) as outstanding_balance')
+                ->groupBy('cabang1')
+                ->get()
+                ->keyBy('cabang1');
+
+            $detailLimitPerBranch = 30;
+            $branchesData = [];
+            foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+                $branchTotal = $branchTotals->get($branchName);
+                $branchTotalCount = (int) ($branchTotal->mismatch_count ?? 0);
+                $branchTotalOs = (float) ($branchTotal->outstanding_balance ?? 0);
+
+                $debiturs = (clone $baseQuery)
+                    ->where('cabang1', $branchName)
+                    ->select([
+                        'nomor_rekening1',
+                        'nama_debitur1',
+                        'baki_debet1',
+                        'kolek',
+                        'umur_tunggakan',
+                        'unit1'
+                    ])
+                    ->orderByDesc('baki_debet1')
+                    ->limit($detailLimitPerBranch)
+                    ->get();
+
+                $debitursMapped = $debiturs->map(function ($deb, int $idx): array {
+                    $arrears = (int) ($deb->umur_tunggakan ?? 0);
+                    $expected = 1;
+                    if ($arrears <= 0) {
+                        $expected = 1;
+                    } elseif ($arrears <= 90) {
+                        $expected = 2;
+                    } elseif ($arrears <= 120) {
+                        $expected = 3;
+                    } elseif ($arrears <= 180) {
+                        $expected = 4;
+                    } else {
+                        $expected = 5;
+                    }
+
+                    $actual = (int) ($deb->kolek ?? 1);
+
+                    return [
+                        'rank' => $idx + 1,
+                        'nomor_rekening' => (string) ($deb->nomor_rekening1 ?? '-'),
+                        'nama_debitur' => (string) ($deb->nama_debitur1 ?? '-'),
+                        'baki_debet' => (float) ($deb->baki_debet1 ?? 0),
+                        'baki_debet_fmt' => $this->formatCurrencyCompact((float) ($deb->baki_debet1 ?? 0)),
+                        'kolek_aktual' => $actual,
+                        'kolek_seharusnya' => $expected,
+                        'umur_tunggakan' => $arrears,
+                        'unit' => (string) ($deb->unit1 ?? '-'),
+                    ];
+                })->all();
+
+                $branchesData[] = [
+                    'branch_name' => $branchName,
+                    'total_count' => $branchTotalCount,
+                    'total_os' => $branchTotalOs,
+                    'total_os_fmt' => $this->formatCurrencyCompact($branchTotalOs),
+                    'shown_count' => count($debitursMapped),
+                    'is_limited' => $branchTotalCount > count($debitursMapped),
+                    'debiturs' => $debitursMapped,
+                ];
+            }
+
+            return [
+                'total_count' => (int) ($total->mismatch_count ?? 0),
+                'total_os' => (float) ($total->outstanding_balance ?? 0),
+                'total_os_fmt' => $this->formatCurrencyCompact((float) ($total->outstanding_balance ?? 0)),
+                'rows' => $rankedRows->map(function ($row, int $index) use ($scope): array {
+                    return [
+                        'rank' => $index + 1,
+                        'label' => $scope === 'branch' ? (string) ($row->cabang1 ?? '-') : (string) ($row->unit1 ?? '-'),
+                        'meta' => in_array($scope, ['unit', 'unit_kerja', 'retail'], true) ? (string) ($row->cabang1 ?? 'Area 6') : 'Area 6',
+                        'value' => $this->formatInteger((int) ($row->mismatch_count ?? 0)) . ' rek',
+                        'sub' => $this->formatCurrencyCompact((float) ($row->outstanding_balance ?? 0)),
+                    ];
+                })->all(),
+                'branches' => $branchesData,
+            ];
+        });
+    }
+
+    private function queryPresentationKtsCategoryTotalsForPeriods(array $periods): array
+    {
+        $periods = array_values(array_unique(array_filter(array_map(
+            fn ($period): ?string => $period ? Carbon::parse($period)->toDateString() : null,
+            $periods
+        ))));
+
+        if (empty($periods) || !Schema::hasTable('daily_loan_dinamis')) {
+            return [];
+        }
+
+        foreach (['periode', 'cabang1', 'unit1', 'status_rekening1', 'baki_debet1', 'kolek', 'umur_tunggakan'] as $column) {
+            if (!Schema::hasColumn('daily_loan_dinamis', $column)) {
+                return [];
+            }
+        }
+
+        $cacheKey = 'dashboard_simpanan:presentation_kts_category_totals:'
+            . self::LANDING_SOURCE_CACHE_VERSION . ':v'
+            . $this->reportCacheVersion() . ':'
+            . md5(implode('|', $periods));
+
+        return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($periods): array {
+            $actualKolekExpression = "CAST(kolek AS UNSIGNED)";
+            $umurTunggakanExpression = "CAST(umur_tunggakan AS SIGNED)";
+            $expectedKolekExpression = "CASE
+                WHEN {$umurTunggakanExpression} <= 0 THEN 1
+                WHEN {$umurTunggakanExpression} <= 90 THEN 2
+                WHEN {$umurTunggakanExpression} <= 120 THEN 3
+                WHEN {$umurTunggakanExpression} <= 180 THEN 4
+                ELSE 5
+            END";
+            $presentationScopeSql = "(UPPER(TRIM(unit1)) LIKE 'KC %'
+                OR UPPER(TRIM(unit1)) LIKE 'KCP %'
+                OR UPPER(TRIM(unit1)) LIKE 'UNIT %')";
+
+            return DB::table('daily_loan_dinamis')
+                ->whereIn('periode', $periods)
+                ->whereIn('cabang1', self::AREA_6_BRANCH_LABELS)
+                ->whereIn('status_rekening1', ['1', '3'])
+                ->where('baki_debet1', '>', 0)
+                ->whereRaw($presentationScopeSql)
+                ->whereIn('kolek', ['1', '2', '3', '4', '5'])
+                ->whereNotNull('umur_tunggakan')
+                ->selectRaw('periode')
+                ->selectRaw("SUM(CASE WHEN {$actualKolekExpression} < {$expectedKolekExpression} THEN 1 ELSE 0 END) as membaik")
+                ->selectRaw("SUM(CASE WHEN {$actualKolekExpression} > {$expectedKolekExpression} THEN 1 ELSE 0 END) as memburuk")
+                ->groupBy('periode')
+                ->get()
+                ->mapWithKeys(fn ($row): array => [
+                    Carbon::parse($row->periode)->toDateString() => [
+                        'membaik' => (int) ($row->membaik ?? 0),
+                        'memburuk' => (int) ($row->memburuk ?? 0),
+                    ],
+                ])
+                ->all();
+        });
+    }
+
+    private function queryPresentationKtsCategoryTotal(?string $period, string $category): ?float
+    {
+        if (!$period || !Schema::hasTable('daily_loan_dinamis')) {
+            return null;
+        }
+
+        foreach (['cabang1', 'unit1', 'status_rekening1', 'baki_debet1', 'kolek', 'umur_tunggakan'] as $column) {
+            if (!Schema::hasColumn('daily_loan_dinamis', $column)) {
+                return null;
+            }
+        }
+
+        $actualKolekExpression = "CAST(kolek AS UNSIGNED)";
+        $umurTunggakanExpression = "CAST(umur_tunggakan AS SIGNED)";
+        $expectedKolekExpression = "CASE
+            WHEN {$umurTunggakanExpression} <= 0 THEN 1
+            WHEN {$umurTunggakanExpression} <= 90 THEN 2
+            WHEN {$umurTunggakanExpression} <= 120 THEN 3
+            WHEN {$umurTunggakanExpression} <= 180 THEN 4
+            ELSE 5
+        END";
+        $directionSql = $category === 'membaik'
+            ? "{$actualKolekExpression} < {$expectedKolekExpression}"
+            : "{$actualKolekExpression} > {$expectedKolekExpression}";
+
+        $total = 0;
+
+        foreach (['retail', 'unit'] as $scope) {
+            $query = DB::table('daily_loan_dinamis')
+                ->where('periode', $period)
+                ->whereIn('cabang1', self::AREA_6_BRANCH_LABELS)
+                ->whereIn('status_rekening1', ['1', '3'])
+                ->where('baki_debet1', '>', 0)
+                ->whereIn('kolek', ['1', '2', '3', '4', '5'])
+                ->whereNotNull('umur_tunggakan')
+                ->whereRaw($directionSql);
+
+            $this->applyArea6DailyLoanUnitScope($query, $scope);
+
+            $total += (int) $query->count();
+        }
+
+        return (float) $total;
+    }
+
+    private function extractPresentationRankingRows(array $rankingModes, string $scope, string $title): array
+    {
+        $groups = data_get($rankingModes, $scope . '.rankings', []);
+        foreach ($groups as $group) {
+            if (($group['title'] ?? '') === $title) {
+                return array_values($group['rows'] ?? []);
+            }
+        }
+
+        return [];
+    }
+
+    private function buildPresentationDigitalStrategy(array $digitalPerformance): array
+    {
+        $cards = collect(data_get($digitalPerformance, 'cards', []))->keyBy('key');
+        $order = ['edc', 'qris', 'qlola', 'brimo', 'brilink', 'casa', 'dormant', 'payroll'];
+
+        return [
+            'updated_at' => data_get($digitalPerformance, 'updated_at'),
+            'cards' => collect($order)->map(function (string $key) use ($cards): array {
+                $card = $cards->get($key);
+                if (!$card) {
+                    return [
+                        'key' => $key,
+                        'title' => strtoupper($key),
+                        'available' => false,
+                        'current_value' => 'Data belum tersedia',
+                        'secondary_value' => '-',
+                        'trend' => '-',
+                        'source' => $this->defaultDigitalSourceTable($key),
+                    ];
+                }
+
+                return [
+                    'key' => $key,
+                    'title' => (string) data_get($card, 'title', strtoupper($key)),
+                    'available' => data_get($card, 'current_value') !== '-',
+                    'current_value' => (string) data_get($card, 'current_value', 'Data belum tersedia'),
+                    'current_label' => (string) data_get($card, 'current_label', ''),
+                    'secondary_value' => (string) data_get($card, 'secondary_value', '-'),
+                    'secondary_label' => (string) data_get($card, 'secondary_label', ''),
+                    'trend' => (string) data_get($card, 'trend', '-'),
+                    'source_updated_at' => data_get($card, 'source_updated_at'),
+                    'source' => (string) data_get($card, 'source_table', $this->defaultDigitalSourceTable($key)),
+                    'stats' => data_get($card, 'stats', []),
+                ];
+            })->all(),
+        ];
+    }
+
+    private function buildDashboardPayload(?string $selectedPeriod = null): array
     {
         $cacheVersion = $this->reportCacheVersion();
+        
+        if ($selectedPeriod) {
+            $payloadCacheKey = 'dashboard_simpanan:payload:' . $selectedPeriod . ':' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion;
+            
+            return Cache::remember($payloadCacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($selectedPeriod) {
+                return $this->buildDashboardPayloadFresh($selectedPeriod);
+            });
+        }
+
         $payloadCacheKey = 'dashboard_simpanan:payload:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion;
         $latestCacheKey = 'dashboard_simpanan:payload:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:v' . $cacheVersion;
-        $stableLatestCacheKey = 'dashboard_simpanan:payload:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest';
+        $stableLatestCacheKey = 'dashboard_simpanan:payload:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:stable:v' . $cacheVersion;
         $cachedPayload = Cache::get($payloadCacheKey);
 
         if (is_array($cachedPayload)) {
@@ -162,14 +1609,14 @@ class DashboardSimpananController extends Controller
         });
     }
 
-    private function buildDashboardPayloadFresh(): array
+    private function buildDashboardPayloadFresh(?string $selectedPeriod = null): array
     {
         if (!Schema::hasTable('simpanan_multipn') && !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
             return $this->emptyDashboard();
         }
 
-        [$currentPeriod, $previousPeriod, $yoyPeriod] = $this->resolveDashboardPeriods();
-        [$loanCurrentPeriod, $loanPreviousPeriod, $loanYoyPeriod] = $this->resolveLoanDashboardPeriods();
+        [$currentPeriod, $previousPeriod, $yoyPeriod] = $this->resolveDashboardPeriods($selectedPeriod);
+        [$loanCurrentPeriod, $loanPreviousPeriod, $loanYoyPeriod] = $this->resolveLoanDashboardPeriods($selectedPeriod);
 
         if (!$currentPeriod) {
             return $this->emptyDashboard();
@@ -370,7 +1817,7 @@ class DashboardSimpananController extends Controller
                     'icon_bg' => 'rgba(23, 162, 184, 0.13)',
                 ],
                 [
-                    'label' => 'Growth Simpanan MoM',
+                    'label' => 'Growth Simpanan MtM',
                     'value' => $this->formatSignedPercent($savingsMoM),
                     'delta' => 'vs ' . ($previousPeriod ? $this->formatPeriodLabel($previousPeriod) : 'periode sebelumnya'),
                     'delta_class' => $this->deltaClass($savingsMoM),
@@ -379,7 +1826,7 @@ class DashboardSimpananController extends Controller
                     'icon_bg' => 'rgba(255, 193, 7, 0.16)',
                 ],
                 [
-                    'label' => 'Growth Pinjaman MoM',
+                    'label' => 'Growth Pinjaman MtM',
                     'value' => $this->formatSignedPercent($loanMoM),
                     'delta' => 'vs ' . ($loanPreviousPeriod ? $this->formatPeriodLabel($loanPreviousPeriod) : 'periode sebelumnya'),
                     'delta_class' => $this->deltaClass($loanMoM),
@@ -636,7 +2083,7 @@ class DashboardSimpananController extends Controller
         $cacheVersion = $this->reportCacheVersion();
         $cacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none');
         $latestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none');
-        $stableLatestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest';
+        $stableLatestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:stable:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none');
         $cachedPayload = Cache::get($cacheKey);
 
         if (is_array($cachedPayload)) {
@@ -665,7 +2112,11 @@ class DashboardSimpananController extends Controller
         $locked = false;
 
         try {
-            $locked = $lock->get();
+            try {
+                $locked = $lock->block(5);
+            } catch (Throwable $e) {
+                $locked = $lock->get();
+            }
 
             if ($locked) {
                 $freshPayload = $this->buildArea6PortfolioLandingFresh($loanPeriod, $dailyLoanPeriod);
@@ -676,7 +2127,7 @@ class DashboardSimpananController extends Controller
                 return $freshPayload;
             }
         } catch (Throwable $e) {
-            Log::warning('Dashboard simpanan Area 6 fallback digunakan.', [
+            Log::warning('Dashboard simpanan Area 6 lock failed, generating fresh directly.', [
                 'period' => $loanPeriod,
                 'error' => $e->getMessage(),
             ]);
@@ -684,6 +2135,15 @@ class DashboardSimpananController extends Controller
             if ($locked) {
                 $lock->release();
             }
+        }
+
+        try {
+            return $this->buildArea6PortfolioLandingFresh($loanPeriod, $dailyLoanPeriod);
+        } catch (Throwable $e) {
+            Log::warning('Dashboard simpanan Area 6 fallback digunakan.', [
+                'period' => $loanPeriod,
+                'error' => $e->getMessage(),
+            ]);
         }
 
         return $this->emptyArea6PortfolioLanding();
@@ -722,125 +2182,989 @@ class DashboardSimpananController extends Controller
     {
         $harian = $this->fetchArea6HarianPortfolio();
         $dailyLoanPeriod ??= $this->resolveArea6DailyLoanPeriod($loanPeriod);
-        $ktsUnit = $this->buildArea6KtsRanking($dailyLoanPeriod, 'unit');
-        $ktsBranch = $this->buildArea6KtsRanking($dailyLoanPeriod, 'retail');
-        $smallArrearsUnit = $this->buildArea6SmallArrearsRanking($dailyLoanPeriod, 'unit');
-        $smallArrearsBranch = $this->buildArea6SmallArrearsRanking($dailyLoanPeriod, 'retail');
-        $microRankings = $this->buildArea6RankingGroups($harian['unit_rows'], $ktsUnit, $smallArrearsUnit, 'unit');
-        $retailRankings = $this->buildArea6RankingGroups($harian['branch_rows'], $ktsBranch, $smallArrearsBranch, 'retail');
+
+        // Fetch unified rankings (KC, KCP, and Unit combined)
+        $period = $harian['period'];
+        $branchLabelExpression = Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_label')
+            ? 'kanca_label'
+            : (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'branch_label') ? 'branch_label' : "''");
+        $unitLabelExpression = Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'unit_label')
+            ? 'unit_label'
+            : (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'uker_label') ? 'uker_label' : "''");
+
+        $allUkerRows = [];
+        if ($period) {
+            $allUkerRows = $this->area6HarianSnapshotScopeQuery((string) $period, false)
+                ->selectRaw("COALESCE({$branchLabelExpression}, '') as branch_label")
+                ->selectRaw("COALESCE({$unitLabelExpression}, '') as unit_label")
+                ->selectRaw('COALESCE(total_simpanan, 0) as total_simpanan')
+                ->selectRaw('COALESCE(total_os, 0) as total_os')
+                ->selectRaw('COALESCE(total_os_non_commercial, 0) as total_os_non_commercial')
+                ->selectRaw('COALESCE(total_sml_abs_non_commercial, 0) as sml_abs')
+                ->selectRaw('COALESCE(total_npl_abs_non_commercial, 0) as npl_abs')
+                ->get()
+                ->map(function ($row) {
+                    $osNonCommercial = (float) ($row->total_os_non_commercial ?? 0);
+                    $smlAbs = (float) ($row->sml_abs ?? 0);
+                    $nplAbs = (float) ($row->npl_abs ?? 0);
+                    $simpanan = (float) ($row->total_simpanan ?? 0);
+
+                    return [
+                        'branch' => trim((string) ($row->branch_label ?? '')),
+                        'unit' => trim((string) ($row->unit_label ?? '')),
+                        'total_os' => (float) ($row->total_os ?? 0),
+                        'total_os_non_commercial' => $osNonCommercial,
+                        'total_simpanan' => $simpanan,
+                        'sml_abs' => $smlAbs,
+                        'npl_abs' => $nplAbs,
+                        'sml_pct' => $this->percentOf($smlAbs, $osNonCommercial),
+                        'npl_pct' => $this->percentOf($nplAbs, $osNonCommercial),
+                    ];
+                })
+                ->filter(fn (array $row) => $row['unit'] !== '')
+                ->values()
+                ->all();
+        }
+
+        $retailRows = array_values(array_filter(
+            $allUkerRows,
+            fn (array $row): bool => $this->isArea6RetailLabel($row['unit'] ?? null)
+        ));
+        $microRows = array_values(array_filter(
+            $allUkerRows,
+            fn (array $row): bool => $this->isArea6MicroLabel($row['unit'] ?? null)
+        ));
+
+        $ktsRetail = $this->buildArea6KtsRanking($dailyLoanPeriod, 'retail');
+        $smallArrearsRetail = $this->buildArea6SmallArrearsRanking($dailyLoanPeriod, 'retail');
+        $retailRankings = $this->buildArea6RankingGroups($retailRows, $ktsRetail, $smallArrearsRetail, 'unit_kerja');
+
+        $ktsMicro = $this->buildArea6KtsRanking($dailyLoanPeriod, 'unit');
+        $smallArrearsMicro = $this->buildArea6SmallArrearsRanking($dailyLoanPeriod, 'unit');
+        $microRankings = $this->buildArea6RankingGroups($microRows, $ktsMicro, $smallArrearsMicro, 'unit');
+
+        // Fetch Cabang Konsol Data (Madiun, Magetan, Ngawi, Ponorogo)
+        $branchRows = [];
+        if ($period) {
+            $branchRows = $this->area6HarianSnapshotScopeQuery((string) $period, true)
+                ->selectRaw("COALESCE({$branchLabelExpression}, '') as branch_label")
+                ->selectRaw('COALESCE(total_simpanan, 0) as total_simpanan')
+                ->selectRaw('COALESCE(total_os, 0) as total_os')
+                ->selectRaw('COALESCE(total_os_non_commercial, 0) as total_os_non_commercial')
+                ->selectRaw('COALESCE(total_sml_abs_non_commercial, 0) as sml_abs')
+                ->selectRaw('COALESCE(total_sml_pct_non_commercial, 0) as sml_pct')
+                ->selectRaw('COALESCE(total_npl_abs_non_commercial, 0) as npl_abs')
+                ->selectRaw('COALESCE(total_npl_pct_non_commercial, 0) as npl_pct')
+                ->get();
+        }
+
+        $branchesIndexed = collect($branchRows)->keyBy(function ($row) {
+            return strtoupper(trim($row->branch_label));
+        });
+
+        $simpananRka = [];
+        $pinjamanRka = [];
+        if ($period) {
+            try {
+                $rkaService = app(\App\Support\RkaLookupService::class);
+                $rkaYear = (int) Carbon::parse($period)->format('Y');
+                $monthColumn = $rkaService->resolveMonthColumn(Carbon::parse($period));
+                
+                $definitions = [
+                    'simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total', 'A.2. DPK Korporasi']],
+                    'pinjaman' => ['mata_anggaran' => ['B. KREDIT TOTAL']],
+                ];
+                
+                $branchesToQuery = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+                $rkaBranchAggregates = $rkaService->aggregateByKancaWithSummaryFallback(
+                    $definitions,
+                    $monthColumn,
+                    $branchesToQuery,
+                    $rkaYear
+                );
+                
+                $simpananRka = $rkaBranchAggregates['simpanan'] ?? [];
+                $pinjamanRka = $rkaBranchAggregates['pinjaman'] ?? [];
+            } catch (\Throwable $e) {
+                // Safe fallback if service fails or RKA table is missing
+            }
+        }
+
+        $maxSimpanan = 0.0;
+        $maxPinjaman = 0.0;
+        $maxSmlNominal = 0.0;
+        $maxNplNominal = 0.0;
+        $maxSmlPct = 0.0;
+        $maxNplPct = 0.0;
+
+        $totalArea6Simpanan = 0.0;
+        $totalArea6Pinjaman = 0.0;
+        $totalArea6SmlAbs = 0.0;
+        $totalArea6NplAbs = 0.0;
+        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+            $key = strtoupper(trim($branchName));
+            $row = $branchesIndexed->get($key);
+            $totalArea6Simpanan += $row ? (float) $row->total_simpanan : 0.0;
+            $totalArea6Pinjaman += $row ? (float) $row->total_os : 0.0;
+            $totalArea6SmlAbs += $row ? (float) $row->sml_abs : 0.0;
+            $totalArea6NplAbs += $row ? (float) $row->npl_abs : 0.0;
+        }
+
+        $restrukByBranch = [];
+        if ($period && $this->hasTable('daily_loan_dinamis') && $this->hasColumn('daily_loan_dinamis', 'baki_debet1') && $this->hasColumn('daily_loan_dinamis', 'cabang1')) {
+            try {
+                $restrukByBranch = DB::table('daily_loan_dinamis')
+                    ->where('periode', $period)
+                    ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), array_map('strtoupper', self::AREA_6_BRANCH_LABELS))
+                    ->where('kolek', 1)
+                    ->where(DB::raw("UPPER(TRIM(COALESCE(flag_restruk, '')))"), 'Y')
+                    ->selectRaw('UPPER(TRIM(cabang1)) as branch_key')
+                    ->selectRaw('SUM(baki_debet1) as restruk_abs')
+                    ->groupBy('branch_key')
+                    ->get()
+                    ->pluck('restruk_abs', 'branch_key')
+                    ->toArray();
+            } catch (\Throwable $e) {
+                $restrukByBranch = [];
+            }
+        }
+
+        $branchesData = [];
+        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+            $key = strtoupper(trim($branchName));
+            $row = $branchesIndexed->get($key);
+
+            $simpanan = $row ? (float) $row->total_simpanan : 0.0;
+            $pinjaman = $row ? (float) $row->total_os : 0.0;
+            $smlAbs = $row ? (float) $row->sml_abs : 0.0;
+            $smlPct = $row ? (float) $row->sml_pct : 0.0;
+            $nplAbs = $row ? (float) $row->npl_abs : 0.0;
+            $nplPct = $row ? (float) $row->npl_pct : 0.0;
+
+            $restrukAbs = (float) ($restrukByBranch[$key] ?? 0.0);
+            $larAbs = $restrukAbs + $smlAbs + $nplAbs;
+            $larPct = $pinjaman > 0 ? ($larAbs / $pinjaman) * 100 : 0.0;
+
+            if ($simpanan > $maxSimpanan) $maxSimpanan = $simpanan;
+            if ($pinjaman > $maxPinjaman) $maxPinjaman = $pinjaman;
+            if ($smlAbs > $maxSmlNominal) $maxSmlNominal = $smlAbs;
+            if ($smlPct > $maxSmlPct) $maxSmlPct = $smlPct;
+            if ($nplAbs > $maxNplNominal) $maxNplNominal = $nplAbs;
+            if ($nplPct > $maxNplPct) $maxNplPct = $nplPct;
+
+            $smlShare = $totalArea6SmlAbs > 0 ? ($smlAbs / $totalArea6SmlAbs) * 100 : 0.0;
+            $nplShare = $totalArea6NplAbs > 0 ? ($nplAbs / $totalArea6NplAbs) * 100 : 0.0;
+
+            $simpananTarget = (float) ($simpananRka[$key] ?? 0.0);
+            $pinjamanTarget = (float) ($pinjamanRka[$key] ?? 0.0);
+
+            if ($simpananTarget > 0.0) {
+                $simpShare = ($simpanan / $simpananTarget) * 100;
+                $simpWidth = min(100.0, $simpShare);
+            } else {
+                $simpShare = $totalArea6Simpanan > 0 ? ($simpanan / $totalArea6Simpanan) * 100 : 0.0;
+                $simpWidth = $maxSimpanan > 0 ? ($simpanan / $maxSimpanan) * 100 : 0.0;
+            }
+
+            if ($pinjamanTarget > 0.0) {
+                $pinjShare = ($pinjaman / $pinjamanTarget) * 100;
+                $pinjWidth = min(100.0, $pinjShare);
+            } else {
+                $pinjShare = $totalArea6Pinjaman > 0 ? ($pinjaman / $totalArea6Pinjaman) * 100 : 0.0;
+                $pinjWidth = $maxPinjaman > 0 ? ($pinjaman / $maxPinjaman) * 100 : 0.0;
+            }
+
+            $branchesData[$branchName] = [
+                'name' => $branchName,
+                'simpanan' => $simpanan,
+                'simpanan_fmt' => $this->formatCurrencyCompact($simpanan),
+                'simpanan_target' => $simpananTarget > 0.0 ? $simpananTarget : null,
+                'simpanan_target_fmt' => $simpananTarget > 0.0 ? $this->formatCurrencyCompact($simpananTarget) : null,
+                'simpanan_share_fmt' => $this->formatPercentTwo($simpShare),
+                'simpanan_contribution_pct' => $totalArea6Simpanan > 0 ? ($simpanan / $totalArea6Simpanan) * 100 : 0.0,
+                'simpanan_contribution_pct_fmt' => $this->formatPercentTwo($totalArea6Simpanan > 0 ? ($simpanan / $totalArea6Simpanan) * 100 : 0.0),
+                'simpanan_width' => $simpWidth,
+                'pinjaman' => $pinjaman,
+                'pinjaman_fmt' => $this->formatCurrencyCompact($pinjaman),
+                'pinjaman_target' => $pinjamanTarget > 0.0 ? $pinjamanTarget : null,
+                'pinjaman_target_fmt' => $pinjamanTarget > 0.0 ? $this->formatCurrencyCompact($pinjamanTarget) : null,
+                'pinjaman_share_fmt' => $this->formatPercentTwo($pinjShare),
+                'pinjaman_contribution_pct' => $totalArea6Pinjaman > 0 ? ($pinjaman / $totalArea6Pinjaman) * 100 : 0.0,
+                'pinjaman_contribution_pct_fmt' => $this->formatPercentTwo($totalArea6Pinjaman > 0 ? ($pinjaman / $totalArea6Pinjaman) * 100 : 0.0),
+                'pinjaman_width' => $pinjWidth,
+                'sml_abs' => $smlAbs,
+                'sml_abs_fmt' => $this->formatCurrencyCompact($smlAbs),
+                'sml_pct' => $smlPct,
+                'sml_pct_fmt' => $this->formatPercentTwo($smlPct),
+                'sml_share_fmt' => $this->formatPercentTwo($smlShare),
+                'npl_abs' => $nplAbs,
+                'npl_abs_fmt' => $this->formatCurrencyCompact($nplAbs),
+                'npl_pct' => $nplPct,
+                'npl_pct_fmt' => $this->formatPercentTwo($nplPct),
+                'npl_share_fmt' => $this->formatPercentTwo($nplShare),
+                'restruk_abs' => $restrukAbs,
+                'restruk_abs_fmt' => $this->formatCurrencyCompact($restrukAbs),
+                'restruk_pct' => $pinjaman > 0 ? ($restrukAbs / $pinjaman) * 100 : 0.0,
+                'restruk_pct_fmt' => $this->formatPercentTwo($pinjaman > 0 ? ($restrukAbs / $pinjaman) * 100 : 0.0),
+                'lar_abs' => $larAbs,
+                'lar_abs_fmt' => $this->formatCurrencyCompact($larAbs),
+                'lar_pct' => $larPct,
+                'lar_pct_fmt' => $this->formatPercentTwo($larPct),
+            ];
+        }
+
+        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+            $branchesData[$branchName]['sml_width'] = $maxSmlNominal > 0 ? ($branchesData[$branchName]['sml_abs'] / $maxSmlNominal) * 100 : 0;
+            $branchesData[$branchName]['npl_width'] = $maxNplNominal > 0 ? ($branchesData[$branchName]['npl_abs'] / $maxNplNominal) * 100 : 0;
+            $branchesData[$branchName]['sml_pct_width'] = $maxSmlPct > 0 ? ($branchesData[$branchName]['sml_pct'] / $maxSmlPct) * 100 : 0;
+            $branchesData[$branchName]['npl_pct_width'] = $maxNplPct > 0 ? ($branchesData[$branchName]['npl_pct'] / $maxNplPct) * 100 : 0;
+        }
+
         $periodLabel = $this->formatSourcePeriodLabel($harian['period']);
         $loanPeriodLabel = $this->formatSourcePeriodLabel($loanPeriod);
         $dailyLoanPeriodLabel = $this->formatSourcePeriodLabel($dailyLoanPeriod);
 
+        $periodDate = $harian['period'] ? Carbon::parse($harian['period']) : null;
+        $periodFormat = $periodDate ? $periodDate->translatedFormat('d F Y') : '19 Mei 2026';
+        $rkaMonthYear = $periodDate ? $periodDate->translatedFormat('F y') : 'Mei 26';
+
+        // Aggregate Retail (KC + KCP) branch performance
+        $maxSimpananRetail = 0.0;
+        $maxPinjamanRetail = 0.0;
+        $maxSmlNominalRetail = 0.0;
+        $maxNplNominalRetail = 0.0;
+        $maxSmlPctRetail = 0.0;
+        $maxNplPctRetail = 0.0;
+
+        $retailBranchesData = [];
+        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+            $key = strtoupper(trim($branchName));
+            $branchRetailRows = array_filter($retailRows, function ($r) use ($key) {
+                return strtoupper(trim($r['branch'])) === $key;
+            });
+
+            $simpanan = 0.0;
+            $pinjaman = 0.0;
+            $osNonCommercial = 0.0;
+            $smlAbs = 0.0;
+            $nplAbs = 0.0;
+
+            foreach ($branchRetailRows as $r) {
+                $simpanan += (float) ($r['total_simpanan'] ?? 0.0);
+                $pinjaman += (float) ($r['total_os'] ?? 0.0);
+                $osNonCommercial += (float) ($r['total_os_non_commercial'] ?? 0.0);
+                $smlAbs += (float) ($r['sml_abs'] ?? 0.0);
+                $nplAbs += (float) ($r['npl_abs'] ?? 0.0);
+            }
+
+            $smlPct = $osNonCommercial > 0 ? ($smlAbs / $osNonCommercial) * 100 : 0.0;
+            $nplPct = $osNonCommercial > 0 ? ($nplAbs / $osNonCommercial) * 100 : 0.0;
+
+            if ($simpanan > $maxSimpananRetail) $maxSimpananRetail = $simpanan;
+            if ($pinjaman > $maxPinjamanRetail) $maxPinjamanRetail = $pinjaman;
+            if ($smlAbs > $maxSmlNominalRetail) $maxSmlNominalRetail = $smlAbs;
+            if ($smlPct > $maxSmlPctRetail) $maxSmlPctRetail = $smlPct;
+            if ($nplAbs > $maxNplNominalRetail) $maxNplNominalRetail = $nplAbs;
+            if ($nplPct > $maxNplPctRetail) $maxNplPctRetail = $nplPct;
+
+            $simpShare = $totalArea6Simpanan > 0 ? ($simpanan / $totalArea6Simpanan) * 100 : 0.0;
+            $pinjShare = $totalArea6Pinjaman > 0 ? ($pinjaman / $totalArea6Pinjaman) * 100 : 0.0;
+            $smlShare = $totalArea6SmlAbs > 0 ? ($smlAbs / $totalArea6SmlAbs) * 100 : 0.0;
+            $nplShare = $totalArea6NplAbs > 0 ? ($nplAbs / $totalArea6NplAbs) * 100 : 0.0;
+
+            $retailBranchesData[$branchName] = [
+                'name' => $branchName,
+                'simpanan' => $simpanan,
+                'simpanan_fmt' => $this->formatCurrencyCompact($simpanan),
+                'simpanan_share_fmt' => $this->formatPercentTwo($simpShare),
+                'pinjaman' => $pinjaman,
+                'pinjaman_fmt' => $this->formatCurrencyCompact($pinjaman),
+                'pinjaman_share_fmt' => $this->formatPercentTwo($pinjShare),
+                'sml_abs' => $smlAbs,
+                'sml_abs_fmt' => $this->formatCurrencyCompact($smlAbs),
+                'sml_pct' => $smlPct,
+                'sml_pct_fmt' => $this->formatPercentTwo($smlPct),
+                'sml_share_fmt' => $this->formatPercentTwo($smlShare),
+                'npl_abs' => $nplAbs,
+                'npl_abs_fmt' => $this->formatCurrencyCompact($nplAbs),
+                'npl_pct' => $nplPct,
+                'npl_pct_fmt' => $this->formatPercentTwo($nplPct),
+                'npl_share_fmt' => $this->formatPercentTwo($nplShare),
+            ];
+        }
+
+        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+            $retailBranchesData[$branchName]['simpanan_width'] = $maxSimpananRetail > 0 ? ($retailBranchesData[$branchName]['simpanan'] / $maxSimpananRetail) * 100 : 0;
+            $retailBranchesData[$branchName]['pinjaman_width'] = $maxPinjamanRetail > 0 ? ($retailBranchesData[$branchName]['pinjaman'] / $maxPinjamanRetail) * 100 : 0;
+            $retailBranchesData[$branchName]['sml_width'] = $maxSmlNominalRetail > 0 ? ($retailBranchesData[$branchName]['sml_abs'] / $maxSmlNominalRetail) * 100 : 0;
+            $retailBranchesData[$branchName]['npl_width'] = $maxNplNominalRetail > 0 ? ($retailBranchesData[$branchName]['npl_abs'] / $maxNplNominalRetail) * 100 : 0;
+            $retailBranchesData[$branchName]['sml_pct_width'] = $maxSmlPctRetail > 0 ? ($retailBranchesData[$branchName]['sml_pct'] / $maxSmlPctRetail) * 100 : 0;
+            $retailBranchesData[$branchName]['npl_pct_width'] = $maxNplPctRetail > 0 ? ($retailBranchesData[$branchName]['npl_pct'] / $maxNplPctRetail) * 100 : 0;
+        }
+
+        $scopePayloads = [
+            'cabang_konsol' => $this->buildArea6PortfolioScopePayload('cabang_konsol', $harian['period'], $periodFormat, $rkaMonthYear, null),
+            'ritel' => $this->buildArea6PortfolioScopePayload('ritel', $harian['period'], $periodFormat, $rkaMonthYear, $this->area6ScopeUnitKeys((string) $harian['period'], 'ritel')),
+            'micro' => $this->buildArea6PortfolioScopePayload('micro', $harian['period'], $periodFormat, $rkaMonthYear, $this->area6ScopeUnitKeys((string) $harian['period'], 'micro')),
+        ];
+
         return [
             'title' => 'Kinerja Area 6',
-            'subtitle' => 'Ringkasan cepat dari snapshot Dashboard Harian dan Pinjaman. Pilih Ritel untuk KC/KCP atau Mikro untuk unit.',
+            'subtitle' => 'Ringkasan cepat dari snapshot Dashboard Harian dan Pinjaman. Pilih Cabang Konsol, Ritel, atau Micro.',
             'period_label' => $periodLabel,
             'loan_period_label' => $loanPeriodLabel,
             'loan_detail_period_label' => $dailyLoanPeriodLabel,
-            'default_scope' => 'ritel',
-            'cards' => [
-                    [
-                        'key' => 'os',
-                        'label' => 'Pinjaman (Outstanding)',
-                        'value' => $this->formatCurrencyCompact($harian['totals']['total_os']),
-                        'meta' => 'OS Non Commercial ' . $this->formatCurrencyCompact($harian['totals']['total_os_non_commercial']),
-                        'icon' => 'fas fa-hand-holding-usd',
-                        'tone' => 'blue',
-                        'detail_payload' => $this->buildLandingSourceDetail('Pinjaman Outstanding Area 6', $harian['period'], self::HARIAN_SNAPSHOT_TABLE, [
-                            ['label' => 'Total OS', 'value' => $this->formatCurrencyFull($harian['totals']['total_os']), 'source' => 'SUM total_os, baris summary kanca'],
-                            ['label' => 'OS Non Commercial', 'value' => $this->formatCurrencyFull($harian['totals']['total_os_non_commercial']), 'source' => 'SUM total_os_non_commercial'],
-                            ['label' => 'Unit terbaca', 'value' => $this->formatInteger(count($harian['unit_rows'])), 'source' => self::HARIAN_SNAPSHOT_TABLE],
-                        ], 'Sumber mengikuti snapshot Dashboard Harian terbaru untuk summary kanca Area 6.'),
-                    ],
-                    [
-                        'key' => 'quality',
-                        'label' => 'Kualitas SML / NPL',
-                        'value' => $this->formatPercentTwo($harian['totals']['sml_pct']) . ' / ' . $this->formatPercentTwo($harian['totals']['npl_pct']),
-                        'meta' => 'SML ' . $this->formatCurrencyCompact($harian['totals']['sml_abs']) . ' | NPL ' . $this->formatCurrencyCompact($harian['totals']['npl_abs']),
-                        'icon' => 'fas fa-shield-alt',
-                        'tone' => 'red',
-                        'detail_payload' => $this->buildLandingSourceDetail('Kualitas Pinjaman Area 6', $harian['period'], self::HARIAN_SNAPSHOT_TABLE, [
-                            ['label' => 'SML (%)', 'value' => $this->formatPercentTwo($harian['totals']['sml_pct']), 'source' => 'total_sml_abs_non_commercial / total_os_non_commercial'],
-                            ['label' => 'SML (ABS)', 'value' => $this->formatCurrencyFull($harian['totals']['sml_abs']), 'source' => 'SUM total_sml_abs_non_commercial'],
-                            ['label' => 'NPL (%)', 'value' => $this->formatPercentTwo($harian['totals']['npl_pct']), 'source' => 'total_npl_abs_non_commercial / total_os_non_commercial'],
-                            ['label' => 'NPL (ABS)', 'value' => $this->formatCurrencyFull($harian['totals']['npl_abs']), 'source' => 'SUM total_npl_abs_non_commercial'],
-                        ], 'Persentase dihitung ulang dari agregat Area 6 agar tidak menjumlahkan persen per unit.'),
-                    ],
-                    [
-                        'key' => 'ldr',
-                        'label' => 'LDR',
-                        'value' => $this->formatPercentTwo($harian['totals']['ldr_pct']),
-                        'meta' => 'OS Non Commercial / Simpanan',
-                        'icon' => 'fas fa-layer-group',
-                        'tone' => 'green',
-                        'detail_payload' => $this->buildLandingSourceDetail('LDR Area 6', $harian['period'], self::HARIAN_SNAPSHOT_TABLE, [
-                            ['label' => 'LDR', 'value' => $this->formatPercentTwo($harian['totals']['ldr_pct']), 'source' => 'total_os_non_commercial / total_simpanan'],
-                            ['label' => 'Total Simpanan', 'value' => $this->formatCurrencyFull($harian['totals']['total_simpanan']), 'source' => 'SUM total_simpanan'],
-                        ], 'LDR Area 6 mengikuti denominator simpanan pada Dashboard Harian.'),
-                    ],
-                    [
-                        'key' => 'casa',
-                        'label' => 'CASA',
-                        'value' => $this->formatPercentTwo($harian['totals']['casa_pct']),
-                        'meta' => 'Total CASA ' . $this->formatCurrencyCompact($harian['totals']['total_casa']),
-                        'icon' => 'fas fa-percentage',
-                        'tone' => 'amber',
-                        'detail_payload' => $this->buildLandingSourceDetail('CASA Area 6', $harian['period'], self::HARIAN_SNAPSHOT_TABLE, [
-                            ['label' => 'CASA (%)', 'value' => $this->formatPercentTwo($harian['totals']['casa_pct']), 'source' => 'total_casa / total_simpanan'],
-                            ['label' => 'Total CASA', 'value' => $this->formatCurrencyFull($harian['totals']['total_casa']), 'source' => 'SUM total_casa'],
-                        ], 'CASA diambil dari snapshot Dashboard Harian, bukan dari angka pengganti.'),
-                    ],
-                    [
-                        'key' => 'rec_dh',
-                        'label' => 'Rec. DH',
-                        'value' => $this->formatCurrencyCompact($harian['totals']['rec_dh_total']),
-                        'meta' => 'Recovery ekstra komtable',
-                        'icon' => 'fas fa-undo-alt',
-                        'tone' => 'purple',
-                        'detail_payload' => $this->buildLandingSourceDetail('Rec. DH Area 6', $harian['period'], self::HARIAN_SNAPSHOT_TABLE, [
-                            ['label' => 'Total Rec. DH', 'value' => $this->formatCurrencyFull($harian['totals']['rec_dh_total']), 'source' => 'SUM rec_dh_total'],
-                        ], 'Mengikuti nilai Rec. DH yang sudah diringkas oleh Dashboard Harian.'),
-                    ],
-                    [
-                        'key' => 'kts',
-                        'label' => 'Kolek Tidak Sesuai (KTS)',
-                        'value' => $this->formatInteger($ktsUnit['total_count']) . ' rek',
-                        'meta' => $this->formatCurrencyCompact($ktsUnit['total_os']) . ' OS terdampak',
-                        'icon' => 'fas fa-exclamation-triangle',
-                        'tone' => 'orange',
-                        'detail_payload' => $this->buildLandingSourceDetail('KTS Area 6', $dailyLoanPeriod, 'daily_loan_dinamis', [
-                            ['label' => 'Total rekening KTS', 'value' => $this->formatInteger($ktsUnit['total_count']), 'source' => 'kolek_vs_umur_tunggakan_v3'],
-                            ['label' => 'OS terdampak', 'value' => $this->formatCurrencyFull($ktsUnit['total_os']), 'source' => 'SUM baki_debet1 pada rekening mismatch'],
-                        ], 'Rule KTS mengikuti Dashboard Pinjaman: status rekening 1/3, baki debet positif, kolek dibanding umur tunggakan.'),
-                    ],
-                    [
-                        'key' => 'small_arrears',
-                        'label' => 'Tunggakan Kecil',
-                        'value' => $this->formatInteger($smallArrearsUnit['total_count']) . ' rek',
-                        'meta' => $this->formatCurrencyCompact($smallArrearsUnit['total_amount']) . ' total tunggakan',
-                        'icon' => 'fas fa-coins',
-                        'tone' => 'teal',
-                        'detail_payload' => $this->buildLandingSourceDetail('Tunggakan Kecil Area 6', $dailyLoanPeriod, 'daily_loan_dinamis', [
-                            ['label' => 'Total rekening', 'value' => $this->formatInteger($smallArrearsUnit['total_count']), 'source' => 'Total tunggakan > 0 dan <= 100.000'],
-                            ['label' => 'Total tunggakan', 'value' => $this->formatCurrencyFull($smallArrearsUnit['total_amount']), 'source' => 'tunggakan pokok + bunga + penalti'],
-                        ], 'Rule mengikuti menu Tunggakan Kecil pada Dashboard Pinjaman.'),
-                    ],
+            'default_scope' => 'cabang_konsol',
+            'cards' => $scopePayloads['cabang_konsol']['cards'],
+            'segment_performance' => $scopePayloads['cabang_konsol']['segment_performance'],
+            'ranking_modes' => [
+                'cabang_konsol' => [
+                    'label' => 'Cabang Konsol',
+                    'description' => 'Semua unit kerja termasuk KC, KCP, dan unit.',
+                    'branches' => array_values($branchesData),
                 ],
-                'ranking_modes' => [
-                    'ritel' => [
-                        'label' => 'Ritel (KC/KCP)',
-                        'description' => 'Ranking level kantor cabang/kantor cabang pembantu.',
-                        'rankings' => $retailRankings,
-                    ],
-                    'mikro' => [
-                        'label' => 'Mikro (Unit)',
-                        'description' => 'Ranking level unit kerja mikro.',
-                        'rankings' => $microRankings,
-                    ],
+                'ritel' => [
+                    'label' => 'Ritel',
+                    'description' => 'KC dan KCP.',
+                    'branches' => array_values($retailBranchesData),
                 ],
-                'rankings' => $retailRankings,
+                'micro' => [
+                    'label' => 'Micro',
+                    'description' => 'Unit mikro.',
+                    'rankings' => $microRankings,
+                ],
+            ],
+            'rankings' => $retailRankings,
+            'overall_trends' => $scopePayloads['cabang_konsol']['overall_trends'],
+            'scopes' => $scopePayloads,
+        ];
+    }
+
+    private function buildArea6PortfolioScopePayload(string $scopeKey, ?string $period, string $periodFormat, string $rkaMonthYear, ?array $unitKeys): array
+    {
+        $service = app(DashboardHarianSnapshotService::class);
+        $periodPayload = $service->buildDashboardPayload($period, null, $this->dashboardBranchNames(), $unitKeys);
+        $rows = collect($periodPayload['rows'] ?? []);
+
+        $osRow = $rows->firstWhere('key', 'total_os_non_commercial');
+        $smlRow = $rows->firstWhere('key', 'total_sml_abs_non_commercial');
+        $nplRow = $rows->firstWhere('key', 'total_npl_abs_non_commercial');
+        $snapshotMetrics = $this->area6ScopeSnapshotMetrics((string) $period, $scopeKey);
+
+        $osRealization = (float) ($snapshotMetrics->total_os_non_commercial ?? $osRow['values']['current'] ?? 0.0);
+        $osTarget = (float) ($osRow['values']['rka'] ?? 0.0);
+        $osPct = (float) ($osRow['values']['penc_pct'] ?? 0.0);
+        $osGap = $osRealization - $osTarget;
+
+        $smlRealization = (float) ($snapshotMetrics->total_sml_abs_non_commercial ?? $smlRow['values']['current'] ?? 0.0);
+        $smlTarget = (float) ($smlRow['values']['rka'] ?? 0.0);
+        $smlPct = $smlRealization > 0 ? ($smlTarget / $smlRealization) * 100 : 100.0;
+        $smlGap = $smlTarget - $smlRealization;
+
+        $nplRealization = (float) ($snapshotMetrics->total_npl_abs_non_commercial ?? $nplRow['values']['current'] ?? 0.0);
+        $nplTarget = (float) ($nplRow['values']['rka'] ?? 0.0);
+        $nplPct = $nplRealization > 0 ? ($nplTarget / $nplRealization) * 100 : 100.0;
+        $nplGap = $nplTarget - $nplRealization;
+
+        $scopeLabel = $this->area6ScopeLabel($scopeKey);
+        $overallTrends = $this->buildArea6ScopeOverallTrends(
+            $scopeKey,
+            $period,
+            data_get($periodPayload, 'comparison_periods.mtm.period'),
+            data_get($periodPayload, 'comparison_periods.mtd.period'),
+            [
+                'os' => [$osRealization, $osTarget, $osPct, $osGap],
+                'sml' => [$smlRealization, $smlTarget, $smlPct, $smlGap],
+                'npl' => [$nplRealization, $nplTarget, $nplPct, $nplGap],
+            ]
+        );
+
+        $osMomDelta = (float) data_get($overallTrends, 'os.mom_delta', 0.0);
+        $smlMomDelta = (float) data_get($overallTrends, 'sml.mom_delta', 0.0);
+        $nplMomDelta = (float) data_get($overallTrends, 'npl.mom_delta', 0.0);
+
+        $cards = [
+            [
+                'key' => 'os',
+                'header_title' => 'OUTSTANDING (OS)',
+                'realization_value' => number_format(round($osRealization / 1000000), 0, ',', '.'),
+                'realization_label' => 'OS per ' . $periodFormat,
+                'target_value' => number_format(round($osTarget / 1000000), 0, ',', '.'),
+                'target_label' => 'RKA ' . $rkaMonthYear,
+                'pct_value' => number_format($osPct, 2, ',', '.') . '%',
+                'pct_label' => '% Penc. RKA ' . $rkaMonthYear,
+                'pct_color' => $this->getArea6AchievementColor($osPct, 'os'),
+                'gap_value' => $this->formatArea6CardGap($osGap),
+                'gap_label' => 'Gap thd RKA ' . $rkaMonthYear,
+                'gap_color' => $osGap >= 0 ? 'green' : 'red',
+                'deltas' => [
+                    'dtd' => $this->formatArea6CardDelta((float) ($osRow['deltas']['dtd'] ?? 0.0), 'os'),
+                    'mtd' => $this->formatArea6CardDelta((float) ($osRow['deltas']['mtd'] ?? 0.0), 'os'),
+                    'ytd' => $this->formatArea6CardDelta((float) ($osRow['deltas']['ytd'] ?? 0.0), 'os'),
+                    'mom' => $this->formatArea6CardDelta($osMomDelta, 'os'),
+                ],
+                'tone' => 'blue',
+                'icon' => 'fas fa-chart-line',
+                'detail_payload' => $this->buildLandingSourceDetail('Pinjaman Outstanding Area 6 - ' . $scopeLabel, $period, self::HARIAN_SNAPSHOT_TABLE, [
+                    ['label' => 'Total OS', 'value' => $this->formatCurrencyFull($osRealization), 'source' => 'SUM total_os_non_commercial scope ' . $scopeLabel],
+                    ['label' => 'Unit scope', 'value' => $scopeLabel, 'source' => self::HARIAN_SNAPSHOT_TABLE],
+                ], 'Sumber mengikuti snapshot Dashboard Harian terbaru sesuai toggle ' . $scopeLabel . '.'),
+            ],
+            [
+                'key' => 'sml',
+                'header_title' => 'SPECIAL MENTION LOAN (SML)',
+                'realization_value' => number_format(round($smlRealization / 1000000), 0, ',', '.'),
+                'realization_label' => 'SML per ' . $periodFormat,
+                'target_value' => number_format(round($smlTarget / 1000000), 0, ',', '.'),
+                'target_label' => 'RKA ' . $rkaMonthYear,
+                'pct_value' => number_format($smlPct, 2, ',', '.') . '%',
+                'pct_label' => '% Penc. RKA ' . $rkaMonthYear,
+                'pct_color' => $this->getArea6AchievementColor($smlPct, 'sml'),
+                'gap_value' => $this->formatArea6CardGap($smlGap),
+                'gap_label' => 'Gap thd RKA ' . $rkaMonthYear,
+                'gap_color' => $smlGap >= 0 ? 'green' : 'red',
+                'deltas' => [
+                    'dtd' => $this->formatArea6CardDelta((float) ($smlRow['deltas']['dtd'] ?? 0.0), 'sml'),
+                    'mtd' => $this->formatArea6CardDelta((float) ($smlRow['deltas']['mtd'] ?? 0.0), 'sml'),
+                    'ytd' => $this->formatArea6CardDelta((float) ($smlRow['deltas']['ytd'] ?? 0.0), 'sml'),
+                    'mom' => $this->formatArea6CardDelta($smlMomDelta, 'sml'),
+                ],
+                'tone' => 'blue',
+                'icon' => 'fas fa-search',
+                'detail_payload' => $this->buildLandingSourceDetail('SML Area 6 - ' . $scopeLabel, $period, self::HARIAN_SNAPSHOT_TABLE, [
+                    ['label' => 'SML (ABS)', 'value' => $this->formatCurrencyFull($smlRealization), 'source' => 'SUM total_sml_abs_non_commercial scope ' . $scopeLabel],
+                    ['label' => 'Unit scope', 'value' => $scopeLabel, 'source' => self::HARIAN_SNAPSHOT_TABLE],
+                ], 'Sumber mengikuti snapshot Dashboard Harian terbaru sesuai toggle ' . $scopeLabel . '.'),
+            ],
+            [
+                'key' => 'npl',
+                'header_title' => 'NON-PERFORMING LOAN (NPL)',
+                'realization_value' => number_format(round($nplRealization / 1000000), 0, ',', '.'),
+                'realization_label' => 'NPL per ' . $periodFormat,
+                'target_value' => number_format(round($nplTarget / 1000000), 0, ',', '.'),
+                'target_label' => 'RKA ' . $rkaMonthYear,
+                'pct_value' => number_format($nplPct, 2, ',', '.') . '%',
+                'pct_label' => '% Penc. RKA ' . $rkaMonthYear,
+                'pct_color' => $this->getArea6AchievementColor($nplPct, 'npl'),
+                'gap_value' => $this->formatArea6CardGap($nplGap),
+                'gap_label' => 'Gap thd RKA ' . $rkaMonthYear,
+                'gap_color' => $nplGap >= 0 ? 'green' : 'red',
+                'deltas' => [
+                    'dtd' => $this->formatArea6CardDelta((float) ($nplRow['deltas']['dtd'] ?? 0.0), 'npl'),
+                    'mtd' => $this->formatArea6CardDelta((float) ($nplRow['deltas']['mtd'] ?? 0.0), 'npl'),
+                    'ytd' => $this->formatArea6CardDelta((float) ($nplRow['deltas']['ytd'] ?? 0.0), 'npl'),
+                    'mom' => $this->formatArea6CardDelta($nplMomDelta, 'npl'),
+                ],
+                'tone' => 'blue',
+                'icon' => 'fas fa-shield-alt',
+                'detail_payload' => $this->buildLandingSourceDetail('NPL Area 6 - ' . $scopeLabel, $period, self::HARIAN_SNAPSHOT_TABLE, [
+                    ['label' => 'NPL (ABS)', 'value' => $this->formatCurrencyFull($nplRealization), 'source' => 'SUM total_npl_abs_non_commercial scope ' . $scopeLabel],
+                    ['label' => 'Unit scope', 'value' => $scopeLabel, 'source' => self::HARIAN_SNAPSHOT_TABLE],
+                ], 'Sumber mengikuti snapshot Dashboard Harian terbaru sesuai toggle ' . $scopeLabel . '.'),
+            ],
+        ];
+
+        $segmentPerformance = $this->buildArea6ScopeSegmentPerformance($scopeKey, $rows, $snapshotMetrics, $rkaMonthYear, $periodFormat, $period, $unitKeys);
+
+        return [
+            'cards' => $cards,
+            'segment_performance' => $segmentPerformance,
+            'overall_trends' => $overallTrends,
+        ];
+    }
+
+    private function buildArea6ScopeOverallTrends(string $scopeKey, ?string $period, ?string $mtmPeriod, ?string $mtdPeriod, array $currentMetrics): array
+    {
+        $date4 = $period ?? '2026-05-19';
+        
+        $endOfPreviousMonth = Carbon::parse($date4)->subMonthNoOverflow()->endOfMonth()->toDateString();
+        $date3 = $mtdPeriod ?: $this->resolveHarianSnapshotPeriodOnOrBefore($endOfPreviousMonth) ?: $endOfPreviousMonth;
+        
+        $sameDatePreviousMonth = Carbon::parse($date4)->subMonthNoOverflow()->toDateString();
+        $date2 = $mtmPeriod ?: $this->resolveHarianSnapshotPeriodOnOrBefore($sameDatePreviousMonth) ?: $sameDatePreviousMonth;
+        
+        $prevYearEnd = Carbon::parse($date4)->subYear()->endOfYear()->format('Y-m-d');
+        $date1 = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->where('snapshot_period', '<=', $prevYearEnd)
+            ->orderBy('snapshot_period', 'desc')
+            ->value('snapshot_period') ?? '2025-12-31';
+
+        $resolvedDates = [$date1, $date2, $date3, $date4];
+        $historicalQuery = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->whereIn('snapshot_period', $resolvedDates)
+            ->whereIn(DB::raw('UPPER(TRIM(kanca_label))'), $this->dashboardBranchNames());
+        $this->applyArea6PortfolioScope($historicalQuery, $scopeKey);
+
+        $historicalMetrics = $historicalQuery
+            ->selectRaw('
+                snapshot_period,
+                SUM(total_os_non_commercial) as total_os,
+                SUM(total_sml_abs_non_commercial) as total_sml,
+                SUM(total_npl_abs_non_commercial) as total_npl
+            ')
+            ->groupBy('snapshot_period')
+            ->get()
+            ->keyBy(fn ($row) => Carbon::parse($row->snapshot_period)->toDateString());
+
+        $values = ['os' => [], 'sml' => [], 'npl' => []];
+        foreach ($resolvedDates as $date) {
+            $row = $historicalMetrics->get(Carbon::parse($date)->toDateString());
+            $values['os'][] = $row ? round($row->total_os / 1000000) : 0;
+            $values['sml'][] = $row ? round($row->total_sml / 1000000) : 0;
+            $values['npl'][] = $row ? round($row->total_npl / 1000000) : 0;
+        }
+
+        $prefixes = ['YtD', 'MtM', 'MtD', 'Posisi'];
+        $formattedDates = [];
+        foreach ($resolvedDates as $idx => $d) {
+            $formattedDates[] = $prefixes[$idx] . ' (' . Carbon::parse($d)->translatedFormat('d-M-y') . ')';
+        }
+
+        return [
+            'dates' => $formattedDates,
+            'os' => $this->buildArea6TrendMetric($values['os'], $currentMetrics['os'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, 'total_os'), 'os'),
+            'sml' => $this->buildArea6TrendMetric($values['sml'], $currentMetrics['sml'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, 'total_sml'), 'sml'),
+            'npl' => $this->buildArea6TrendMetric($values['npl'], $currentMetrics['npl'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, 'total_npl'), 'npl'),
+        ];
+    }
+
+    private function buildArea6TrendMetric(array $values, array $metric, float $momDelta, string $type): array
+    {
+        [$realization, $target, $pct, $gap] = $metric;
+        $points = $this->calculateSvgPoints($values);
+        $path = '';
+        foreach ($points as $idx => $point) {
+            $path .= ($idx === 0 ? 'M' : 'L') . $point['x'] . ',' . $point['y'] . ' ';
+        }
+
+        $threshold = $type === 'os' ? 95 : 80;
+
+        return [
+            'values' => $values,
+            'points' => $points,
+            'path' => trim($path),
+            'latest' => number_format(round($realization / 1000000), 0, ',', '.'),
+            'rka' => number_format(round($target / 1000000), 0, ',', '.'),
+            'pct' => number_format($pct, 2, ',', '.') . '%',
+            'gap' => $this->formatArea6CardGap($gap),
+            'gap_color' => $gap >= 0 ? 'green' : 'red',
+            'status_arrow' => $gap >= 0 ? 'up' : 'down',
+            'status_bg' => $gap >= 0 ? 'green' : 'red',
+            'pct_color' => $pct >= 100 ? 'green' : ($pct >= $threshold ? 'amber' : 'red'),
+            'mom_delta' => $momDelta,
+        ];
+    }
+
+    private function area6ScopeSnapshotMetrics(string $period, string $scopeKey): object
+    {
+        $empty = (object) [
+            'total_os_non_commercial' => 0.0,
+            'total_sml_abs_non_commercial' => 0.0,
+            'total_npl_abs_non_commercial' => 0.0,
+            'sme_os' => 0.0,
+            'consumer_os' => 0.0,
+            'micro_os' => 0.0,
+            'sme_sml' => 0.0,
+            'consumer_sml' => 0.0,
+            'micro_sml' => 0.0,
+            'sme_npl' => 0.0,
+            'consumer_npl' => 0.0,
+            'micro_npl' => 0.0,
+        ];
+
+        if ($period === '' || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return $empty;
+        }
+
+        $query = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->where('snapshot_period', $period)
+            ->whereIn(DB::raw('UPPER(TRIM(kanca_label))'), $this->dashboardBranchNames());
+        $this->applyArea6PortfolioScope($query, $scopeKey);
+
+        return $query
+            ->selectRaw('COALESCE(SUM(COALESCE(total_os_non_commercial, 0)), 0) as total_os_non_commercial')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_sml_abs_non_commercial, 0)), 0) as total_sml_abs_non_commercial')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_npl_abs_non_commercial, 0)), 0) as total_npl_abs_non_commercial')
+            ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(sme_os, 0) <> 0 THEN COALESCE(sme_os, 0) ELSE COALESCE(kecil_non_cashcoll_os, 0) + COALESCE(cashcoll_os, 0) END), 0) as sme_os')
+            ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(consumer_os, 0) <> 0 THEN COALESCE(consumer_os, 0) ELSE COALESCE(briguna_konsumer_os, 0) + COALESCE(kpr_os, 0) + COALESCE(kkb_os, 0) END), 0) as consumer_os')
+            ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(micro_os, 0) <> 0 THEN COALESCE(micro_os, 0) ELSE COALESCE(briguna_mikro_os, 0) + COALESCE(kupedes_os, 0) + COALESCE(kur_mikro_os, 0) + COALESCE(kur_kecil_os, 0) + COALESCE(kur_kpp_os, 0) END), 0) as micro_os')
+            ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(sme_sml, 0) <> 0 THEN COALESCE(sme_sml, 0) ELSE COALESCE(kecil_non_cashcoll_sml, 0) + COALESCE(cashcoll_sml, 0) END), 0) as sme_sml')
+            ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(consumer_sml, 0) <> 0 THEN COALESCE(consumer_sml, 0) ELSE COALESCE(briguna_konsumer_sml, 0) + COALESCE(kpr_sml, 0) + COALESCE(kkb_sml, 0) END), 0) as consumer_sml')
+            ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(micro_sml, 0) <> 0 THEN COALESCE(micro_sml, 0) ELSE COALESCE(briguna_mikro_sml, 0) + COALESCE(kupedes_sml, 0) + COALESCE(kur_mikro_sml, 0) + COALESCE(kur_kecil_sml, 0) + COALESCE(kur_kpp_sml, 0) END), 0) as micro_sml')
+            ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(sme_npl, 0) <> 0 THEN COALESCE(sme_npl, 0) ELSE COALESCE(kecil_non_cashcoll_npl, 0) + COALESCE(cashcoll_npl, 0) END), 0) as sme_npl')
+            ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(consumer_npl, 0) <> 0 THEN COALESCE(consumer_npl, 0) ELSE COALESCE(briguna_konsumer_npl, 0) + COALESCE(kpr_npl, 0) + COALESCE(kkb_npl, 0) END), 0) as consumer_npl')
+            ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(micro_npl, 0) <> 0 THEN COALESCE(micro_npl, 0) ELSE COALESCE(briguna_mikro_npl, 0) + COALESCE(kupedes_npl, 0) + COALESCE(kur_mikro_npl, 0) + COALESCE(kur_kecil_npl, 0) + COALESCE(kur_kpp_npl, 0) END), 0) as micro_npl')
+            ->first() ?: $empty;
+    }
+
+    private function parseSegmentMetricWithCurrent(?array $row, string $type, float $current): array
+    {
+        $metric = $this->parseSegmentMetric($row, $type);
+        $target = (float) ($metric['target'] ?? 0.0);
+        $pct = $type === 'os'
+            ? ($target > 0 ? ($current / $target) * 100 : 0.0)
+            : ($current > 0 ? ($target / $current) * 100 : 100.0);
+        $maxVal = max($current, $target);
+
+        $metric['realization'] = $current;
+        $metric['realization_scaled'] = round($current / 1000000);
+        $metric['realization_fmt'] = number_format($metric['realization_scaled'], 0, ',', '.');
+        $metric['pct'] = $pct;
+        $metric['pct_fmt'] = number_format($pct, 2, ',', '.') . '%';
+        $metric['pct_color'] = $this->getArea6AchievementColor($pct, $type);
+        $metric['penc_bar_width'] = $maxVal > 0 ? ($current / $maxVal) * 100 : 0.0;
+        $metric['rka_bar_width'] = $maxVal > 0 ? ($target / $maxVal) * 100 : 0.0;
+
+        return $metric;
+    }
+
+    private function buildArea6ScopeSegmentPerformance(string $scopeKey, Collection $rows, object $snapshotMetrics, string $rkaMonthYear, string $periodFormat, ?string $period = null, ?array $unitKeys = null): array
+    {
+        $segmentDefinitions = match ($scopeKey) {
+            'ritel' => [
+                ['label' => 'OS SME', 'icon' => 'fas fa-briefcase', 'os' => 'sme_os', 'sml' => 'sme_sml', 'npl' => 'sme_npl'],
+                ['label' => 'OS KONSUMER', 'icon' => 'fas fa-users', 'os' => 'consumer_os', 'sml' => 'consumer_sml', 'npl' => 'consumer_npl'],
+            ],
+            'micro' => [
+                ['label' => 'OS MIKRO', 'icon' => 'fas fa-store', 'os' => 'micro_os', 'sml' => 'micro_sml', 'npl' => 'micro_npl'],
+            ],
+            default => [
+                ['label' => 'OS SME', 'icon' => 'fas fa-briefcase', 'os' => 'sme_os', 'sml' => 'sme_sml', 'npl' => 'sme_npl'],
+                ['label' => 'OS KONSUMER', 'icon' => 'fas fa-users', 'os' => 'consumer_os', 'sml' => 'consumer_sml', 'npl' => 'consumer_npl'],
+                ['label' => 'OS MIKRO', 'icon' => 'fas fa-store', 'os' => 'micro_os', 'sml' => 'micro_sml', 'npl' => 'micro_npl'],
+            ],
+        };
+
+        $segments = [];
+        $totals = [
+            'os' => ['realization' => 0.0, 'target' => 0.0],
+            'sml' => ['realization' => 0.0, 'target' => 0.0],
+            'npl' => ['realization' => 0.0, 'target' => 0.0],
+        ];
+
+        foreach ($segmentDefinitions as $definition) {
+            $os = $this->parseSegmentMetricWithCurrent($rows->firstWhere('key', $definition['os']), 'os', (float) ($snapshotMetrics->{$definition['os']} ?? 0.0));
+            $sml = $this->parseSegmentMetricWithCurrent($rows->firstWhere('key', $definition['sml']), 'sml', (float) ($snapshotMetrics->{$definition['sml']} ?? 0.0));
+            $npl = $this->parseSegmentMetricWithCurrent($rows->firstWhere('key', $definition['npl']), 'npl', (float) ($snapshotMetrics->{$definition['npl']} ?? 0.0));
+
+            foreach (['os' => $os, 'sml' => $sml, 'npl' => $npl] as $metricKey => $metric) {
+                $totals[$metricKey]['realization'] += (float) $metric['realization'];
+                $totals[$metricKey]['target'] += (float) $metric['target'];
+            }
+
+            $segments[] = [
+                'label' => $definition['label'],
+                'icon' => $definition['icon'],
+                'os' => $os,
+                'sml' => $sml,
+                'npl' => $npl,
             ];
+        }
+
+        $totalOs = $this->formatArea6ScopeSegmentTotal($totals['os']['realization'], $totals['os']['target'], 'os');
+        $totalSml = $this->formatArea6ScopeSegmentTotal($totals['sml']['realization'], $totals['sml']['target'], 'sml');
+        $totalNpl = $this->formatArea6ScopeSegmentTotal($totals['npl']['realization'], $totals['npl']['target'], 'npl');
+        
+        // Fetch restruk_os (kolek 1 flag_restruk = Y)
+        $restrukOs = 0.0;
+        if ($period && $this->hasTable('daily_loan_dinamis')) {
+            $q = DB::table('daily_loan_dinamis')
+                ->where('periode', $period)
+                ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), $this->dashboardBranchNames());
+            
+            if (!empty($unitKeys)) {
+                $q->whereIn(DB::raw('UPPER(TRIM(unit1))'), array_map('strtoupper', $unitKeys));
+            }
+            
+            $restrukOs = (float) $q->where('kolek', 1)
+                ->where(DB::raw("UPPER(TRIM(COALESCE(flag_restruk, '')))"), 'Y')
+                ->sum('baki_debet1');
+        }
+
+        $totalOsRealization = $totals['os']['realization'];
+        $smlRealization = $totals['sml']['realization'];
+        $nplRealization = $totals['npl']['realization'];
+        $larRealization = $restrukOs + $smlRealization + $nplRealization;
+
+        $smlPct = $totalOsRealization > 0 ? ($smlRealization / $totalOsRealization) * 100 : 0.0;
+        $nplPct = $totalOsRealization > 0 ? ($nplRealization / $totalOsRealization) * 100 : 0.0;
+        $larPct = $totalOsRealization > 0 ? ($larRealization / $totalOsRealization) * 100 : 0.0;
+        $healthyPct = max(0.0, 100.0 - $larPct);
+        $lrPct = $totalOsRealization > 0 ? ($restrukOs / $totalOsRealization) * 100 : 0.0;
+
+        return [
+            'rka_month_year' => $rkaMonthYear,
+            'period_format' => $periodFormat,
+            'segments' => $segments,
+            'total' => [
+                'os' => $totalOs,
+                'sml' => $totalSml,
+                'npl' => $totalNpl,
+            ],
+            'composition' => [
+                'os' => [
+                    'name' => 'LAR',
+                    'value' => number_format(round($larRealization / 1000000), 0, ',', '.'),
+                    'pct' => number_format($larPct, 2, ',', '.') . '%',
+                    'raw_pct' => $larPct,
+                ],
+                'sml' => [
+                    'value' => number_format(round($smlRealization / 1000000), 0, ',', '.'),
+                    'pct' => number_format($smlPct, 2, ',', '.') . '%',
+                    'raw_pct' => $smlPct,
+                ],
+                'npl' => [
+                    'value' => number_format(round($nplRealization / 1000000), 0, ',', '.'),
+                    'pct' => number_format($nplPct, 2, ',', '.') . '%',
+                    'raw_pct' => $nplPct,
+                ],
+                'total' => [
+                    'value' => number_format(round($totalOsRealization / 1000000), 0, ',', '.'),
+                ],
+                'angles' => [
+                    'healthy' => $healthyPct,
+                    'lr' => $healthyPct + $lrPct,
+                    'sml' => $healthyPct + $lrPct + $smlPct,
+                ],
+                'center' => [
+                    'pct' => number_format($larPct, 2, ',', '.') . '%',
+                    'label' => 'LAR SHARE',
+                ]
+            ],
+        ];
+    }
+
+    private function formatArea6ScopeSegmentTotal(float $realization, float $target, string $type): array
+    {
+        $pct = $type === 'os'
+            ? ($target > 0 ? ($realization / $target) * 100 : 0.0)
+            : ($realization > 0 ? ($target / $realization) * 100 : 100.0);
+        $max = max($realization, $target);
+
+        return [
+            'realization_fmt' => number_format(round($realization / 1000000), 0, ',', '.'),
+            'target_fmt' => number_format(round($target / 1000000), 0, ',', '.'),
+            'pct_fmt' => number_format($pct, 2, ',', '.') . '%',
+            'pct_color' => $this->getArea6AchievementColor($pct, $type),
+            'penc_bar_width' => $max > 0 ? ($realization / $max) * 100 : 0.0,
+            'rka_bar_width' => $max > 0 ? ($target / $max) * 100 : 0.0,
+        ];
+    }
+
+    private function formatArea6CompositionMetric(float $value, float $total): array
+    {
+        $pct = $total > 0 ? ($value / $total) * 100 : 0.0;
+
+        return [
+            'value' => number_format(round($value / 1000000), 0, ',', '.'),
+            'pct' => number_format($pct, 2, ',', '.') . '%',
+            'raw_pct' => $pct,
+        ];
+    }
+
+    private function area6ScopeUnitKeys(string $period, string $scopeKey): array
+    {
+        if ($period === '' || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return [];
+        }
+
+        $query = $this->area6HarianSnapshotScopeQuery($period, false)
+            ->select('unit_key');
+        $this->applyArea6UnitLabelScope($query, $scopeKey);
+
+        return $query->pluck('unit_key')
+            ->map(fn ($value) => trim((string) $value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function applyArea6PortfolioScope($query, string $scopeKey): void
+    {
+        if ($scopeKey === 'cabang_konsol') {
+            $query->whereRaw('kanca_key = unit_key');
+
+            return;
+        }
+
+        $query->whereRaw('kanca_key <> unit_key');
+        $this->applyArea6UnitLabelScope($query, $scopeKey);
+    }
+
+    private function applyArea6UnitLabelScope($query, string $scopeKey): void
+    {
+        $labelColumn = Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'unit_label')
+            ? 'unit_label'
+            : (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'uker_label') ? 'uker_label' : null);
+
+        if ($labelColumn === null) {
+            return;
+        }
+
+        if ($scopeKey === 'ritel') {
+            $query->where(function ($nested) use ($labelColumn): void {
+                $nested->whereRaw("UPPER(TRIM({$labelColumn})) LIKE 'KC%'")
+                    ->orWhereRaw("UPPER(TRIM({$labelColumn})) LIKE 'KCP%'");
+            });
+
+            return;
+        }
+
+        if ($scopeKey === 'micro') {
+            $query->whereRaw("UPPER(TRIM({$labelColumn})) LIKE 'UNIT%'");
+        }
+    }
+
+    private function area6ScopeLabel(string $scopeKey): string
+    {
+        return match ($scopeKey) {
+            'ritel' => 'Ritel',
+            'micro' => 'Micro',
+            default => 'Cabang Konsol',
+        };
+    }
+
+    private function snapshotMetricDelta(Collection $metricsByPeriod, ?string $currentPeriod, ?string $comparisonPeriod, string $column): float
+    {
+        if (!$currentPeriod || !$comparisonPeriod) {
+            return 0.0;
+        }
+
+        $currentKey = Carbon::parse($currentPeriod)->toDateString();
+        $comparisonKey = Carbon::parse($comparisonPeriod)->toDateString();
+        $current = $metricsByPeriod->get($currentKey);
+        $comparison = $metricsByPeriod->get($comparisonKey);
+
+        return (float) ($current->{$column} ?? 0.0) - (float) ($comparison->{$column} ?? 0.0);
+    }
+
+    private function calculateSvgPoints(array $values, int $width = 110, int $height = 50, int $padding = 12): array
+    {
+        $min = min($values);
+        $max = max($values);
+        $range = $max - $min;
+        
+        $xCoords = [10, 40, 70, 100];
+        $points = [];
+        
+        foreach ($values as $index => $val) {
+            $x = $xCoords[$index] ?? 10;
+            if ($range > 0) {
+                // Map values so that max is at top ($padding) and min is at bottom ($height - $padding)
+                $y = $height - $padding - (($val - $min) / $range) * ($height - 2 * $padding);
+            } else {
+                $y = $height / 2;
+            }
+            $points[] = [
+                'x' => $x,
+                'y' => round($y, 1),
+                'val' => $val,
+                'val_fmt' => number_format($val, 0, ',', '.')
+            ];
+        }
+        
+        return $points;
+    }
+
+    private function formatArea6CardDelta(float $delta, string $metricType): array
+    {
+        $scaled = round($delta / 1000000);
+        $isNegative = $scaled < 0;
+        $absVal = abs($scaled);
+        
+        $formattedVal = number_format($absVal, 0, ',', '.');
+        if ($isNegative) {
+            $valueStr = '(' . $formattedVal . ')';
+            $type = 'down';
+        } else {
+            $valueStr = '+' . $formattedVal;
+            $type = 'up';
+        }
+        
+        if ($metricType === 'os') {
+            $color = $isNegative ? 'red' : 'green';
+        } else {
+            // SML/NPL: always red in the mockup
+            $color = 'red';
+        }
+        
+        return [
+            'raw' => $delta,
+            'value' => $valueStr,
+            'type' => $type,
+            'color' => $color,
+        ];
+    }
+
+    private function formatArea6CardGap(float $gap): string
+    {
+        $scaled = round($gap / 1000000);
+        $isNegative = $scaled < 0;
+        $absVal = abs($scaled);
+        
+        $formattedVal = number_format($absVal, 0, ',', '.');
+        if ($isNegative) {
+            return '(' . $formattedVal . ')';
+        } else {
+            return '+' . $formattedVal;
+        }
+    }
+
+    private function getArea6AchievementColor(float $pct, string $metricType): string
+    {
+        if ($metricType === 'os') {
+            if ($pct >= 100) {
+                return 'green';
+            } elseif ($pct >= 95) {
+                return 'amber';
+            } else {
+                return 'red';
+            }
+        } else {
+            if ($pct >= 100) {
+                return 'green';
+            } elseif ($pct >= 90) {
+                return 'amber';
+            } else {
+                return 'red';
+            }
+        }
+    }
+
+    private function parseSegmentMetric(?array $row, string $type): array
+    {
+        $realization = (float) ($row['values']['current'] ?? 0.0);
+        $target = (float) ($row['values']['rka'] ?? 0.0);
+
+        if ($type === 'os') {
+            $pct = $target > 0 ? ($realization / $target) * 100 : 0.0;
+            $color = $this->getArea6AchievementColor($pct, 'os');
+        } else {
+            $pct = $realization > 0 ? ($target / $realization) * 100 : 100.0;
+            $color = $this->getArea6AchievementColor($pct, $type);
+        }
+
+        $maxVal = max($realization, $target);
+        $pencBarWidth = $maxVal > 0 ? ($realization / $maxVal) * 100 : 0.0;
+        $rkaBarWidth = $maxVal > 0 ? ($target / $maxVal) * 100 : 0.0;
+
+        $realizationScaled = round($realization / 1000000);
+        $targetScaled = round($target / 1000000);
+
+        return [
+            'realization' => $realization,
+            'target' => $target,
+            'realization_scaled' => $realizationScaled,
+            'target_scaled' => $targetScaled,
+            'realization_fmt' => number_format($realizationScaled, 0, ',', '.'),
+            'target_fmt' => number_format($targetScaled, 0, ',', '.'),
+            'pct' => $pct,
+            'pct_fmt' => number_format($pct, 2, ',', '.') . '%',
+            'pct_color' => $color,
+            'penc_bar_width' => $pencBarWidth,
+            'rka_bar_width' => $rkaBarWidth,
+        ];
     }
 
     private function emptyArea6PortfolioLanding(): array
@@ -853,6 +3177,8 @@ class DashboardSimpananController extends Controller
             'loan_detail_period_label' => 'Belum ada data',
             'cards' => [],
             'rankings' => [],
+            'segment_performance' => [],
+            'overall_trends' => [],
         ];
     }
 
@@ -865,20 +3191,22 @@ class DashboardSimpananController extends Controller
         $cacheKey = 'dashboard_simpanan:area6_daily_loan_period:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $this->reportCacheVersion() . ':' . ($requestedPeriod ?? 'latest');
 
         return Cache::remember($cacheKey, now()->addMinutes(2), function () use ($requestedPeriod) {
-            $query = DB::table('daily_loan_dinamis')
-                ->whereIn('cabang1', self::AREA_6_BRANCH_LABELS);
+            $query = DB::table('daily_loan_dinamis');
 
             if ($requestedPeriod) {
-                $period = (clone $query)
+                $period = $query
                     ->where('periode', '<=', $requestedPeriod)
-                    ->max('periode');
+                    ->orderByDesc('periode')
+                    ->value('periode');
 
                 if ($period) {
                     return Carbon::parse($period)->toDateString();
                 }
             }
 
-            $period = $query->max('periode');
+            $period = $query
+                ->orderByDesc('periode')
+                ->value('periode');
 
             return $period ? Carbon::parse($period)->toDateString() : null;
         });
@@ -1057,19 +3385,19 @@ class DashboardSimpananController extends Controller
         $query = DB::table(self::HARIAN_SNAPSHOT_TABLE)
             ->where('snapshot_period', $period);
 
-        if (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_label')) {
+        if ($this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_label')) {
             $query->whereIn(DB::raw('UPPER(TRIM(kanca_label))'), $this->dashboardBranchNames());
-        } elseif (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'branch_label')) {
+        } elseif ($this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'branch_label')) {
             $query->whereIn(DB::raw('UPPER(TRIM(branch_label))'), $this->dashboardBranchNames());
         }
 
-        if (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_key') && Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'unit_key')) {
+        if ($this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_key') && $this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'unit_key')) {
             return $summaryRows
                 ? $query->whereColumn('kanca_key', 'unit_key')
                 : $query->whereColumn('kanca_key', '<>', 'unit_key');
         }
 
-        if (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'scope')) {
+        if ($this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'scope')) {
             return $query->where('scope', $summaryRows ? 'branch' : 'unit');
         }
 
@@ -1080,17 +3408,17 @@ class DashboardSimpananController extends Controller
     {
         $query = DB::table(self::HARIAN_SNAPSHOT_TABLE);
 
-        if (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_label')) {
+        if ($this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_label')) {
             $query->whereIn(DB::raw('UPPER(TRIM(kanca_label))'), $this->dashboardBranchNames());
-        } elseif (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'branch_label')) {
+        } elseif ($this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'branch_label')) {
             $query->whereIn(DB::raw('UPPER(TRIM(branch_label))'), $this->dashboardBranchNames());
         }
 
-        if (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_key') && Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'unit_key')) {
+        if ($this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_key') && $this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'unit_key')) {
             return $query->whereColumn('kanca_key', 'unit_key');
         }
 
-        if (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'scope')) {
+        if ($this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'scope')) {
             return $query->where('scope', 'branch');
         }
 
@@ -1190,12 +3518,16 @@ class DashboardSimpananController extends Controller
             ? 'kanca_label'
             : (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'branch_label') ? 'branch_label' : "''");
 
-        $rows = $this->area6HarianSnapshotSummaryQuery()
+        $query = $this->area6HarianSnapshotSummaryQuery()
             ->where('snapshot_period', $period)
             ->selectRaw("COALESCE({$branchLabelExpression}, '') as kantor_cabang")
-            ->selectRaw('COALESCE(SUM(COALESCE(total_simpanan, 0)), 0) as total_balance')
-            ->groupBy(DB::raw("COALESCE({$branchLabelExpression}, '')"))
-            ->orderByDesc('total_balance')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_simpanan, 0)), 0) as total_balance');
+
+        if ($branchLabelExpression !== "''") {
+            $query->groupBy($branchLabelExpression);
+        }
+
+        $rows = $query->orderByDesc('total_balance')
             ->limit(5)
             ->get();
 
@@ -1212,12 +3544,16 @@ class DashboardSimpananController extends Controller
             ? 'kanca_label'
             : (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'branch_label') ? 'branch_label' : "''");
 
-        $rows = $this->area6HarianSnapshotSummaryQuery()
+        $query = $this->area6HarianSnapshotSummaryQuery()
             ->where('snapshot_period', $period)
             ->selectRaw("COALESCE({$branchLabelExpression}, '') as cabang1")
-            ->selectRaw('COALESCE(SUM(COALESCE(total_os, 0)), 0) as total_balance')
-            ->groupBy(DB::raw("COALESCE({$branchLabelExpression}, '')"))
-            ->orderByDesc('total_balance')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_os, 0)), 0) as total_balance');
+
+        if ($branchLabelExpression !== "''") {
+            $query->groupBy($branchLabelExpression);
+        }
+
+        $rows = $query->orderByDesc('total_balance')
             ->limit(5)
             ->get();
 
@@ -1231,49 +3567,41 @@ class DashboardSimpananController extends Controller
         return [
             [
                 'title' => '5 OS Terbesar',
-                'hint' => 'Outstanding terbesar per ' . $targetLabel,
                 'tone' => 'blue',
                 'rows' => $this->rankHarianUnits($rows, 'total_os', 'desc', 5, 'currency', false, null, $scope),
             ],
             [
                 'title' => '5 OS Terkecil',
-                'hint' => 'OS positif paling kecil per ' . $targetLabel,
                 'tone' => 'slate',
                 'rows' => $this->rankHarianUnits($rows, 'total_os', 'asc', 5, 'currency', true, null, $scope),
             ],
             [
                 'title' => '5 SML Nominal',
-                'hint' => 'Nominal SML terbesar per ' . $targetLabel,
                 'tone' => 'amber',
                 'rows' => $this->rankHarianUnits($rows, 'sml_abs', 'desc', 5, 'currency', false, 'sml_pct', $scope),
             ],
             [
                 'title' => '5 SML Rasio',
-                'hint' => 'Rasio SML paling tinggi per ' . $targetLabel,
                 'tone' => 'red',
                 'rows' => $this->rankHarianUnits($rows, 'sml_pct', 'desc', 5, 'percent', false, 'sml_abs', $scope),
             ],
             [
                 'title' => '5 NPL Nominal',
-                'hint' => 'Nominal NPL terbesar per ' . $targetLabel,
                 'tone' => 'orange',
                 'rows' => $this->rankHarianUnits($rows, 'npl_abs', 'desc', 5, 'currency', false, 'npl_pct', $scope),
             ],
             [
                 'title' => '5 NPL Rasio',
-                'hint' => 'Rasio NPL paling tinggi per ' . $targetLabel,
                 'tone' => 'red',
                 'rows' => $this->rankHarianUnits($rows, 'npl_pct', 'desc', 5, 'percent', false, 'npl_abs', $scope),
             ],
             [
-                'title' => '3 KTS Terbanyak',
-                'hint' => 'Kolek tidak sesuai per ' . $targetLabel,
+                'title' => '5 KTS Terbanyak',
                 'tone' => 'orange',
                 'rows' => $kts['rows'],
             ],
             [
-                'title' => '3 Tunggakan Kecil',
-                'hint' => 'Jumlah rekening tunggakan kecil per ' . $targetLabel,
+                'title' => '5 Tunggakan Kecil',
                 'tone' => 'teal',
                 'rows' => $smallArrears['rows'],
             ],
@@ -1282,8 +3610,8 @@ class DashboardSimpananController extends Controller
 
     private function rankHarianUnits(array $rows, string $field, string $direction, int $limit, string $format, bool $positiveOnly = false, ?string $secondaryField = null, string $scope = 'unit'): array
     {
-        $labelField = $scope === 'unit' ? 'unit' : 'branch';
-        $metaField = $scope === 'unit' ? 'branch' : 'unit';
+        $labelField = in_array($scope, ['unit', 'unit_kerja']) ? 'unit' : 'branch';
+        $metaField = in_array($scope, ['unit', 'unit_kerja']) ? 'branch' : 'unit';
 
         $sorted = collect($rows)
             ->filter(fn (array $row) => !$positiveOnly || (float) ($row[$field] ?? 0) > 0)
@@ -1325,11 +3653,11 @@ class DashboardSimpananController extends Controller
             }
         }
 
-        $cacheKey = 'dashboard_simpanan:area6_kts:v' . $this->reportCacheVersion() . ':' . $period . ':' . $scope;
+        $cacheKey = 'dashboard_simpanan:area6_kts_top5:v' . $this->reportCacheVersion() . ':' . $period . ':' . $scope;
 
         return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($period, $scope) {
-            $actualKolekExpression = "CAST(REGEXP_REPLACE(TRIM(COALESCE(kolek, '')), '[^0-9]', '') AS UNSIGNED)";
-            $umurTunggakanExpression = "CAST(REGEXP_REPLACE(REPLACE(TRIM(COALESCE(umur_tunggakan, '')), ',', ''), '[^0-9-]', '') AS SIGNED)";
+            $actualKolekExpression = "CAST(kolek AS UNSIGNED)";
+            $umurTunggakanExpression = "CAST(umur_tunggakan AS SIGNED)";
             $expectedKolekExpression = "CASE
                 WHEN {$umurTunggakanExpression} <= 0 THEN 1
                 WHEN {$umurTunggakanExpression} <= 90 THEN 2
@@ -1341,10 +3669,10 @@ class DashboardSimpananController extends Controller
             $baseQuery = DB::table('daily_loan_dinamis')
                 ->where('periode', $period)
                 ->whereIn('cabang1', self::AREA_6_BRANCH_LABELS)
-                ->whereIn(DB::raw('TRIM(status_rekening1)'), ['1', '3'])
+                ->whereIn('status_rekening1', ['1', '3'])
                 ->where('baki_debet1', '>', 0)
-                ->whereRaw("TRIM(COALESCE(kolek, '')) REGEXP '^[^0-9]*[1-5][^0-9]*$'")
-                ->whereRaw("REPLACE(TRIM(COALESCE(umur_tunggakan, '')), ',', '') REGEXP '-?[0-9]+'")
+                ->whereIn('kolek', ['1', '2', '3', '4', '5'])
+                ->whereNotNull('umur_tunggakan')
                 ->whereRaw("{$actualKolekExpression} <> {$expectedKolekExpression}");
 
             $groupColumns = $scope === 'branch' ? ['cabang1'] : ['cabang1', 'unit1'];
@@ -1359,7 +3687,7 @@ class DashboardSimpananController extends Controller
                 ->groupBy($groupColumns)
                 ->orderByDesc('mismatch_count')
                 ->orderByDesc('outstanding_balance')
-                ->limit(3)
+                ->limit(5)
                 ->get();
 
             $total = (clone $baseQuery)
@@ -1372,7 +3700,7 @@ class DashboardSimpananController extends Controller
                     return [
                         'rank' => $index + 1,
                         'label' => $scope === 'branch' ? (string) ($row->cabang1 ?? '-') : (string) ($row->unit1 ?? '-'),
-                        'meta' => $scope === 'unit' ? (string) ($row->cabang1 ?? 'Area 6') : 'Ritel Area 6',
+                        'meta' => in_array($scope, ['unit', 'unit_kerja']) ? (string) ($row->cabang1 ?? 'Area 6') : 'Ritel Area 6',
                         'value' => $this->formatInteger((int) ($row->mismatch_count ?? 0)) . ' rek',
                         'sub' => $this->formatCurrencyCompact((float) ($row->outstanding_balance ?? 0)),
                     ];
@@ -1400,7 +3728,7 @@ class DashboardSimpananController extends Controller
             }
         }
 
-        $cacheKey = 'dashboard_simpanan:area6_small_arrears:v' . $this->reportCacheVersion() . ':' . $period . ':' . $scope;
+        $cacheKey = 'dashboard_simpanan:area6_small_arrears_top5:v' . $this->reportCacheVersion() . ':' . $period . ':' . $scope;
 
         return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($period, $scope) {
             $accountColumn = Schema::hasColumn('daily_loan_dinamis', 'nomor_rekening1') ? 'nomor_rekening1' : null;
@@ -1434,7 +3762,7 @@ class DashboardSimpananController extends Controller
                 ->groupBy($groupColumns)
                 ->orderByDesc('current_count')
                 ->orderByDesc('total_amount')
-                ->limit(3)
+                ->limit(5)
                 ->get();
 
             $total = DB::table('daily_loan_dinamis')
@@ -1452,7 +3780,7 @@ class DashboardSimpananController extends Controller
                     return [
                         'rank' => $index + 1,
                         'label' => $scope === 'branch' ? (string) ($row->cabang1 ?? '-') : (string) ($row->unit1 ?? '-'),
-                        'meta' => $scope === 'unit' ? (string) ($row->cabang1 ?? 'Area 6') : 'Ritel Area 6',
+                        'meta' => in_array($scope, ['unit', 'unit_kerja']) ? (string) ($row->cabang1 ?? 'Area 6') : 'Ritel Area 6',
                         'value' => $this->formatInteger((int) ($row->current_count ?? 0)) . ' rek',
                         'sub' => $this->formatCurrencyCompact((float) ($row->total_amount ?? 0)),
                     ];
@@ -1468,6 +3796,10 @@ class DashboardSimpananController extends Controller
         }
 
         $query->whereNotNull('unit1')->where('unit1', '<>', '');
+
+        if ($scope === 'unit_kerja') {
+            return;
+        }
 
         if ($scope === 'retail') {
             $query->where(function ($nested): void {
@@ -1573,8 +3905,8 @@ class DashboardSimpananController extends Controller
             'metrics' => [
                 ['label' => 'Total Simpanan', 'value' => 'Rp0', 'delta' => '0 rekening aktif', 'delta_class' => 'text-muted', 'icon' => 'fas fa-building', 'icon_class' => 'text-primary', 'icon_bg' => 'rgba(13, 110, 253, 0.12)'],
                 ['label' => 'Total Pinjaman', 'value' => 'Rp0', 'delta' => '0 rekening aktif', 'delta_class' => 'text-muted', 'icon' => 'fas fa-chart-line', 'icon_class' => 'text-info', 'icon_bg' => 'rgba(23, 162, 184, 0.13)'],
-                ['label' => 'Growth Simpanan MoM', 'value' => '0,0%', 'delta' => 'vs periode sebelumnya', 'delta_class' => 'text-muted', 'icon' => 'fas fa-wallet', 'icon_class' => 'text-warning', 'icon_bg' => 'rgba(255, 193, 7, 0.16)'],
-                ['label' => 'Growth Pinjaman MoM', 'value' => '0,0%', 'delta' => 'vs periode sebelumnya', 'delta_class' => 'text-muted', 'icon' => 'fas fa-database', 'icon_class' => 'text-success', 'icon_bg' => 'rgba(40, 167, 69, 0.14)'],
+                ['label' => 'Growth Simpanan MtM', 'value' => '0,0%', 'delta' => 'vs periode sebelumnya', 'delta_class' => 'text-muted', 'icon' => 'fas fa-wallet', 'icon_class' => 'text-warning', 'icon_bg' => 'rgba(255, 193, 7, 0.16)'],
+                ['label' => 'Growth Pinjaman MtM', 'value' => '0,0%', 'delta' => 'vs periode sebelumnya', 'delta_class' => 'text-muted', 'icon' => 'fas fa-database', 'icon_class' => 'text-success', 'icon_bg' => 'rgba(40, 167, 69, 0.14)'],
             ],
             'performance' => [
                 'title' => 'Performa Simpanan',
@@ -1648,8 +3980,19 @@ class DashboardSimpananController extends Controller
         ];
     }
 
-    private function resolveLoanDashboardPeriods(): array
+    private function resolveLoanDashboardPeriods(?string $selectedPeriod = null): array
     {
+        if ($selectedPeriod) {
+            $currentPeriod = Carbon::parse($selectedPeriod)->toDateString();
+            $previousCandidate = Carbon::parse($currentPeriod)->subMonthNoOverflow()->endOfMonth()->toDateString();
+            $yoyCandidate = Carbon::parse($currentPeriod)->subYearNoOverflow()->endOfMonth()->toDateString();
+
+            $previousPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($previousCandidate) ?: $previousCandidate;
+            $yoyPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($yoyCandidate) ?: $yoyCandidate;
+
+            return [$currentPeriod, $previousPeriod, $yoyPeriod];
+        }
+
         $cacheKey = 'dashboard_pinjaman:periods:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $this->reportCacheVersion();
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () {
@@ -1699,13 +4042,26 @@ class DashboardSimpananController extends Controller
             return $this->emptyLoanSummary();
         }
 
+        foreach (['periode', 'baki_debet1', 'cabang1', 'unit1'] as $column) {
+            if (!Schema::hasColumn('daily_loan_dinamis', $column)) {
+                return $this->emptyLoanSummary();
+            }
+        }
+
+        $accountCountExpression = Schema::hasColumn('daily_loan_dinamis', 'nomor_rekening1')
+            ? 'COUNT(DISTINCT nomor_rekening1)'
+            : 'COUNT(*)';
+        $sourceUpdatedExpression = Schema::hasColumn('daily_loan_dinamis', 'updated_at')
+            ? 'MAX(updated_at)'
+            : 'NULL';
+
         $summary = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->selectRaw('COALESCE(SUM(COALESCE(baki_debet1, 0)), 0) as total_balance')
-            ->selectRaw('COUNT(DISTINCT nomor_rekening1) as account_count')
+            ->selectRaw($accountCountExpression . ' as account_count')
             ->selectRaw('COUNT(DISTINCT cabang1) as branch_count')
             ->selectRaw('COUNT(DISTINCT unit1) as unit_count')
-            ->selectRaw('MAX(updated_at) as source_updated_at')
+            ->selectRaw($sourceUpdatedExpression . ' as source_updated_at')
             ->first();
 
         return [
@@ -1724,6 +4080,12 @@ class DashboardSimpananController extends Controller
     {
         if (!Schema::hasTable(self::LOAN_SNAPSHOT_TABLE)) {
             return null;
+        }
+
+        foreach (['periode', 'loan_balance', 'account_number', 'cabang1', 'unit1'] as $column) {
+            if (!Schema::hasColumn(self::LOAN_SNAPSHOT_TABLE, $column)) {
+                return null;
+            }
         }
 
         $row = DB::table(self::LOAN_SNAPSHOT_TABLE)
@@ -1761,7 +4123,12 @@ class DashboardSimpananController extends Controller
                 return $harianRows;
             }
 
-            if (Schema::hasTable(self::LOAN_SNAPSHOT_TABLE)) {
+            if (
+                Schema::hasTable(self::LOAN_SNAPSHOT_TABLE)
+                && Schema::hasColumn(self::LOAN_SNAPSHOT_TABLE, 'periode')
+                && Schema::hasColumn(self::LOAN_SNAPSHOT_TABLE, 'cabang1')
+                && Schema::hasColumn(self::LOAN_SNAPSHOT_TABLE, 'loan_balance')
+            ) {
                 return DB::table(self::LOAN_SNAPSHOT_TABLE)
                     ->where('periode', $period)
                     ->whereNotNull('cabang1')
@@ -1771,6 +4138,15 @@ class DashboardSimpananController extends Controller
                     ->orderByDesc('total_balance')
                     ->limit(5)
                     ->get();
+            }
+
+            if (
+                !Schema::hasTable('daily_loan_dinamis')
+                || !Schema::hasColumn('daily_loan_dinamis', 'periode')
+                || !Schema::hasColumn('daily_loan_dinamis', 'cabang1')
+                || !Schema::hasColumn('daily_loan_dinamis', 'baki_debet1')
+            ) {
+                return collect();
             }
 
             return DB::table('daily_loan_dinamis')
@@ -1925,9 +4301,26 @@ class DashboardSimpananController extends Controller
         $lock = Cache::lock('snapshot:dashboard_simpanan:auto-rebuild:' . $period, 60);
         $pendingKey = 'snapshot:dashboard_simpanan:auto-rebuild:pending:' . $period;
         $jobDispatched = false;
+        $built = false;
 
         try {
             if ($lock->get()) {
+                try {
+                    $builder = app(\App\Support\ReportSnapshotBuilder::class);
+                    $builder->rebuildDashboardSimpanan($period, false);
+                    $builder->rebuildRekeningDormant($period, false);
+                    $builder->rebuildRasioCasa($period, false);
+                    $builder->rebuildPerformanceRm($period, false);
+
+                    app(\App\Support\DashboardHarianSnapshotService::class)->rebuild($period, false);
+
+                    $built = DB::table(self::SNAPSHOT_SUMMARY_TABLE)
+                        ->where('snapshot_period', $period)
+                        ->exists();
+                } catch (Throwable $builderEx) {
+                    Log::warning('Synchronous rebuild dashboard simpanan failed, falling back: ' . $builderEx->getMessage());
+                }
+
                 if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
                     EnsureDashboardSimpananSnapshotJob::dispatch($period, static::class . '::hasSimpananSnapshot')
                         ->onQueue((string) config('queue.report_queue', 'default'));
@@ -1940,6 +4333,13 @@ class DashboardSimpananController extends Controller
             ]);
         } finally {
             optional($lock)->release();
+        }
+
+        if ($built) {
+            Cache::put($cacheKey, true, now()->addMinutes(10));
+            $this->snapshotExistsMemo[$period] = true;
+
+            return true;
         }
 
         Log::info('Dashboard simpanan snapshot unavailable; using source query fallback.', [
@@ -1958,8 +4358,19 @@ class DashboardSimpananController extends Controller
         return app(SimpananMultiPnSnapshotGate::class)->isReady($period);
     }
 
-    private function resolveDashboardPeriods(): array
+    private function resolveDashboardPeriods(?string $selectedPeriod = null): array
     {
+        if ($selectedPeriod) {
+            $currentPeriod = Carbon::parse($selectedPeriod)->toDateString();
+            $previousCandidate = Carbon::parse($currentPeriod)->subMonthNoOverflow()->endOfMonth()->toDateString();
+            $yoyCandidate = Carbon::parse($currentPeriod)->subYearNoOverflow()->endOfMonth()->toDateString();
+
+            $previousPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($previousCandidate) ?: $previousCandidate;
+            $yoyPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($yoyCandidate) ?: $yoyCandidate;
+
+            return [$currentPeriod, $previousPeriod, $yoyPeriod];
+        }
+
         $cacheKey = 'dashboard_simpanan:periods:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $this->reportCacheVersion();
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () {
@@ -1995,7 +4406,7 @@ class DashboardSimpananController extends Controller
 
     private function resolveHarianDashboardPeriods(): array
     {
-        if (!Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+        if (!$this->hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
             return [null, null, null];
         }
 
@@ -2022,15 +4433,19 @@ class DashboardSimpananController extends Controller
 
     private function resolveHarianSnapshotPeriodOnOrBefore(string $period): ?string
     {
-        if (!Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
-            return null;
+        if (array_key_exists($period, $this->snapshotPeriodMemo)) {
+            return $this->snapshotPeriodMemo[$period];
+        }
+
+        if (!$this->hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return $this->snapshotPeriodMemo[$period] = null;
         }
 
         $actualPeriod = $this->area6HarianSnapshotSummaryQuery()
             ->where('snapshot_period', '<=', $period)
             ->max('snapshot_period');
 
-        return $actualPeriod ? Carbon::parse($actualPeriod)->toDateString() : null;
+        return $this->snapshotPeriodMemo[$period] = ($actualPeriod ? Carbon::parse($actualPeriod)->toDateString() : null);
     }
 
     private function buildDigitalPerformance(): array
@@ -2548,16 +4963,7 @@ class DashboardSimpananController extends Controller
     private function buildQlolaPerformanceCard(): ?array
     {
         try {
-            // Coba beberapa nama tabel QLola yang mungkin ada
-            $tableName = null;
-            foreach (['qlola_detail', 'qlola_report', 'qlola_summary'] as $tbl) {
-                if (Schema::hasTable($tbl)) {
-                    $tableName = $tbl;
-                    break;
-                }
-            }
-
-            if (!$tableName) {
+            if (!$this->hasTable('usak_ibbiz_uker') && !$this->hasTable('ibbisniz_corp')) {
                 // Return stub card jika tabel tidak ada
                 return [
                     'key' => 'qlola',
@@ -2587,11 +4993,14 @@ class DashboardSimpananController extends Controller
                     ],
                     'source_updated_at' => null,
                     'is_stub' => true,
-                    'detail_payload' => $this->buildLandingSourceDetail('Performance QLola', null, 'qlola_detail / qlola_report / qlola_summary', [['label' => 'Status', 'value' => 'Tabel sumber belum tersedia', 'source' => 'Schema check']], 'Landing page tidak membuat angka pengganti saat tabel QLola belum ada.'),
+                    'detail_payload' => $this->buildLandingSourceDetail('Performance QLola', null, 'usak_ibbiz_uker / ibbisniz_corp', [['label' => 'Status', 'value' => 'Tabel sumber belum tersedia', 'source' => 'Schema check']], 'Landing page tidak membuat angka pengganti saat tabel QLola belum ada.'),
                 ];
             }
 
-            $latestPeriod = DB::table($tableName)->max('posisi') ?? DB::table($tableName)->max('periode');
+            $latestUserPeriod = $this->hasTable('usak_ibbiz_uker') ? DB::table('usak_ibbiz_uker')->max('periode') : null;
+            $latestCorpPeriod = $this->hasTable('ibbisniz_corp') ? DB::table('ibbisniz_corp')->max('periode') : null;
+            $latestPeriod = $latestUserPeriod ?? $latestCorpPeriod;
+
             if (!$latestPeriod) {
                 return null;
             }
@@ -2600,18 +5009,31 @@ class DashboardSimpananController extends Controller
             $branches = $this->dashboardBranchNames();
             $timeline = [];
 
+            $usakBranchExpression = "UPPER(TRIM(CASE WHEN LOCATE(' - ', kanca) > 0 THEN SUBSTRING(kanca, LOCATE(' - ', kanca) + 3) ELSE kanca END))";
+            $corpBranchExpression = "UPPER(TRIM(CASE WHEN LOCATE(' - ', cabang) > 0 THEN SUBSTRING(cabang, LOCATE(' - ', cabang) + 3) ELSE cabang END))";
+
             foreach ($periods as $period) {
-                $row = DB::table($tableName)
-                    ->whereDate(Schema::hasColumn($tableName, 'posisi') ? 'posisi' : 'periode', $period)
-                    ->whereIn(DB::raw('UPPER(TRIM(' . (Schema::hasColumn($tableName, 'kanca') ? 'kanca' : 'cabang') . '))'), $branches)
-                    ->selectRaw('COUNT(DISTINCT ' . (Schema::hasColumn($tableName, 'cif') ? 'cif' : 'id') . ') as nasabah_count')
-                    ->selectRaw('COALESCE(SUM(COALESCE(' . (Schema::hasColumn($tableName, 'nominal') ? 'nominal' : '0') . ', 0)), 0) as volume')
-                    ->first();
+                $userCount = 0;
+                if ($this->hasTable('usak_ibbiz_uker')) {
+                    $userCount = DB::table('usak_ibbiz_uker')
+                        ->whereDate('periode', $period)
+                        ->whereIn(DB::raw($usakBranchExpression), $branches)
+                        ->whereIn(DB::raw('UPPER(TRIM(deskripsi))'), ['ACTIVE', 'ACTIVATED'])
+                        ->count();
+                }
+
+                $volume = 0.0;
+                if ($this->hasTable('ibbisniz_corp')) {
+                    $volume = (float) DB::table('ibbisniz_corp')
+                        ->whereDate('periode', $period)
+                        ->whereIn(DB::raw($corpBranchExpression), $branches)
+                        ->sum('nominal');
+                }
 
                 $timeline[] = [
                     'label' => Carbon::parse($period)->translatedFormat('d M'),
-                    'nasabah_count' => (int) ($row->nasabah_count ?? 0),
-                    'volume' => (float) ($row->volume ?? 0),
+                    'nasabah_count' => $userCount,
+                    'volume' => $volume,
                     'source_updated_at' => $period,
                 ];
             }
@@ -2643,7 +5065,7 @@ class DashboardSimpananController extends Controller
                     ['label' => 'Periode', 'value' => Carbon::parse($latestPeriod)->translatedFormat('d M Y')],
                 ],
                 'source_updated_at' => $latestPeriod,
-                'source_table' => $tableName,
+                'source_table' => 'usak_ibbiz_uker / ibbisniz_corp',
             ]);
         } catch (Throwable $e) {
             Log::warning('Dashboard digital QLola gagal disusun: ' . $e->getMessage());
@@ -2687,6 +5109,8 @@ class DashboardSimpananController extends Controller
                     'trend_class' => 'text-muted',
                     'trend_value' => 0,
                     'trend_reference' => 'Data belum tersedia',
+                    'value' => '–',
+                    'meta' => 'Data belum tersedia',
                     'chart' => ['points' => [], 'path' => '', 'area_path' => ''],
                     'series' => [],
                     'series_labels' => [],
@@ -2734,6 +5158,8 @@ class DashboardSimpananController extends Controller
                 'secondary_value' => $this->formatInteger($totalDebitur),
                 'secondary_label' => 'Total Debitur',
                 'trend_reference' => $this->formatInteger($casaCount) . ' debitur punya CASA',
+                'value' => $this->formatPercent($rasio),
+                'meta' => $this->formatInteger($casaCount) . ' debitur punya CASA',
                 'trend_direction' => $rasio - 50,
                 'series' => [$rasio],
                 'series_labels' => [Carbon::parse($latestPeriod)->translatedFormat('d M')],
@@ -2794,6 +5220,8 @@ class DashboardSimpananController extends Controller
             'secondary_value' => $this->formatCurrencyCompact($osAmount),
             'secondary_label' => 'OS Debitur',
             'trend_reference' => $this->formatCurrencyCompact($casaAmount) . ' CASA',
+            'value' => $this->formatPercent($ratio),
+            'meta' => $this->formatCurrencyCompact($casaAmount) . ' CASA',
             'trend_direction' => $ratio,
             'series' => [$ratio],
             'series_labels' => [Carbon::parse($latestPeriod)->translatedFormat('d M')],
@@ -3238,7 +5666,7 @@ class DashboardSimpananController extends Controller
     {
         $prefix = $value > 0 ? '+' : '';
 
-        return $prefix . number_format($value, 1, ',', '.') . '%';
+        return $prefix . number_format($value, 2, ',', '.') . '%';
     }
 
     private function formatCurrencyCompact(float $value): string

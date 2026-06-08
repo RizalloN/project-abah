@@ -11,11 +11,17 @@ use Throwable;
 class SnapshotDirtyPeriodService
 {
     public const TABLE = 'snapshot_dirty_periods';
+
     public const FAILED_TABLE = 'failed_snapshot_dirty_periods';
+
     private const AUDIT_TABLE = 'report_sync_audits';
+
     public const DEFAULT_SHARD_TYPE = 'period';
+
     public const DEFAULT_SHARD_KEY = '*';
+
     public const MAX_ATTEMPTS = 5;
+
     private const CLAIM_STALE_AFTER_SECONDS = 600;
 
     /**
@@ -23,7 +29,7 @@ class SnapshotDirtyPeriodService
      */
     public function claimDue(int $limit = 50, ?string $sourceTable = null, ?string $period = null): array
     {
-        if (!Schema::hasTable(self::TABLE)) {
+        if (! Schema::hasTable(self::TABLE)) {
             return [];
         }
 
@@ -101,7 +107,7 @@ class SnapshotDirtyPeriodService
         string $shardKey = self::DEFAULT_SHARD_KEY,
         int $count = 1
     ): void {
-        if (!Schema::hasTable(self::TABLE)) {
+        if (! Schema::hasTable(self::TABLE)) {
             return;
         }
 
@@ -126,14 +132,14 @@ class SnapshotDirtyPeriodService
         $this->forgetFailedMarker($key);
 
         $dirtySinceExpression = in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)
-            ? DB::raw('LEAST(dirty_since, ' . DB::getPdo()->quote($now->format('Y-m-d H:i:s.u')) . ')')
+            ? DB::raw('LEAST(dirty_since, '.DB::getPdo()->quote($now->format('Y-m-d H:i:s.u')).')')
             : $now;
 
         $affected = DB::table(self::TABLE)
             ->where($key)
             ->update([
                 'dirty_since' => $dirtySinceExpression,
-                'dirty_row_count' => DB::raw('dirty_row_count + ' . max(1, $count)),
+                'dirty_row_count' => DB::raw('dirty_row_count + '.max(1, $count)),
                 'claimed_at' => null,
                 'claim_token' => null,
                 'dirty_since_at_claim' => null,
@@ -162,11 +168,11 @@ class SnapshotDirtyPeriodService
     }
 
     /**
-     * @param array<string, mixed> $claim
+     * @param  array<string, mixed>  $claim
      */
     public function clearClaim(array $claim): bool
     {
-        if (!Schema::hasTable(self::TABLE)) {
+        if (! Schema::hasTable(self::TABLE)) {
             return false;
         }
 
@@ -188,11 +194,11 @@ class SnapshotDirtyPeriodService
     }
 
     /**
-     * @param array<string, mixed> $claim
+     * @param  array<string, mixed>  $claim
      */
     public function releaseClaim(array $claim, Throwable|string $error): void
     {
-        if (!Schema::hasTable(self::TABLE)) {
+        if (! Schema::hasTable(self::TABLE)) {
             return;
         }
 
@@ -212,6 +218,7 @@ class SnapshotDirtyPeriodService
 
         if ((int) ($row->attempts ?? 0) >= self::MAX_ATTEMPTS) {
             $this->moveToFailed($row, $message);
+
             return;
         }
 
@@ -233,13 +240,34 @@ class SnapshotDirtyPeriodService
 
     public function pendingCount(?string $sourceTable = null): int
     {
-        if (!Schema::hasTable(self::TABLE)) {
+        if (! Schema::hasTable(self::TABLE)) {
             return 0;
         }
 
         $query = DB::table(self::TABLE)->whereNull('claimed_at');
         if ($sourceTable !== null && trim($sourceTable) !== '') {
             $query->where('source_table', strtolower(trim($sourceTable)));
+        }
+
+        return (int) $query->count();
+    }
+
+    public function claimableCount(?string $sourceTable = null, ?string $period = null): int
+    {
+        if (! Schema::hasTable(self::TABLE)) {
+            return 0;
+        }
+
+        $query = DB::table(self::TABLE)
+            ->whereNull('claimed_at')
+            ->where('attempts', '<', self::MAX_ATTEMPTS);
+
+        if ($sourceTable !== null && trim($sourceTable) !== '') {
+            $query->where('source_table', strtolower(trim($sourceTable)));
+        }
+
+        if ($period !== null && trim($period) !== '') {
+            $query->where('period_key', trim($period));
         }
 
         return (int) $query->count();
@@ -272,11 +300,11 @@ class SnapshotDirtyPeriodService
     }
 
     /**
-     * @param array{source_table:string, period_key:string, shard_type:string, shard_key:string} $key
+     * @param  array{source_table:string, period_key:string, shard_type:string, shard_key:string}  $key
      */
     private function forgetFailedMarker(array $key): void
     {
-        if (!Schema::hasTable(self::FAILED_TABLE)) {
+        if (! Schema::hasTable(self::FAILED_TABLE)) {
             return;
         }
 
@@ -285,12 +313,13 @@ class SnapshotDirtyPeriodService
 
     private function moveToFailed(object $row, string $message): void
     {
-        if (!Schema::hasTable(self::FAILED_TABLE)) {
+        if (! Schema::hasTable(self::FAILED_TABLE)) {
             Log::error('Snapshot dirty period reached max attempts.', [
                 'source_table' => $row->source_table ?? null,
                 'period_key' => $row->period_key ?? null,
                 'message' => $message,
             ]);
+
             return;
         }
 
@@ -323,11 +352,11 @@ class SnapshotDirtyPeriodService
     }
 
     /**
-     * @param array<string, mixed> $claim
+     * @param  array<string, mixed>  $claim
      */
     private function writeAudit(array $claim, string $action, string $status, ?string $message = null): void
     {
-        if (!Schema::hasTable(self::AUDIT_TABLE)) {
+        if (! Schema::hasTable(self::AUDIT_TABLE)) {
             return;
         }
 
@@ -352,7 +381,7 @@ class SnapshotDirtyPeriodService
                 'updated_at' => now(),
             ]);
         } catch (Throwable $e) {
-            Log::warning('Gagal menulis audit dirty-period snapshot: ' . $e->getMessage(), [
+            Log::warning('Gagal menulis audit dirty-period snapshot: '.$e->getMessage(), [
                 'action' => $action,
                 'status' => $status,
             ]);

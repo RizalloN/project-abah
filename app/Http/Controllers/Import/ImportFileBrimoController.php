@@ -618,15 +618,29 @@ class ImportFileBrimoController extends Controller
         $isDuplicate = false;
         $duplicateText = '';
 
-        if ($samplePeriode) {
-            $isDuplicate = DB::table($tableName)->where('periode', $samplePeriode)->exists();
-            if ($isDuplicate) {
-                $duplicateText = "Data untuk PERIODE <b>$samplePeriode</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
+        if (in_array($tableName, ['user_brimo_rpt_v2', 'user_brimo_fin'])) {
+            if ($samplePosisi) {
+                $isDuplicate = DB::table($tableName)->whereDate('posisi', $samplePosisi)->exists();
+                if ($isDuplicate) {
+                    $duplicateText = "Data untuk tanggal POSISI <b>$samplePosisi</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
+                }
+            } elseif ($samplePeriode) {
+                $isDuplicate = DB::table($tableName)->where('periode', $samplePeriode)->exists();
+                if ($isDuplicate) {
+                    $duplicateText = "Data untuk PERIODE <b>$samplePeriode</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
+                }
             }
-        } elseif ($samplePosisi) {
-            $isDuplicate = DB::table($tableName)->whereDate('posisi', $samplePosisi)->exists();
-            if ($isDuplicate) {
-                $duplicateText = "Data untuk tanggal POSISI <b>$samplePosisi</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
+        } else {
+            if ($samplePeriode) {
+                $isDuplicate = DB::table($tableName)->where('periode', $samplePeriode)->exists();
+                if ($isDuplicate) {
+                    $duplicateText = "Data untuk PERIODE <b>$samplePeriode</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
+                }
+            } elseif ($samplePosisi) {
+                $isDuplicate = DB::table($tableName)->whereDate('posisi', $samplePosisi)->exists();
+                if ($isDuplicate) {
+                    $duplicateText = "Data untuk tanggal POSISI <b>$samplePosisi</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
+                }
             }
         }
 

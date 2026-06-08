@@ -7,7 +7,7 @@ class GenericCsvImportStrategy implements ImportStrategyInterface
     private const SPECIALIZED_TABLES = [
         'daily_loan_dinamis',
         'simpanan_multipn',
-        'gi405_singlerow',
+        'gi405_recovery',
         'ssa_pinjaman',
         'ssa_simpanan',
         'hourly_dpk',

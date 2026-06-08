@@ -35,15 +35,30 @@
             font-family: Arial, Helvetica, sans-serif;
         }
 
+        @keyframes revealCard {
+            from {
+                opacity: 0;
+                transform: translateY(18px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         .login-card {
             width: 100%;
             max-width: 420px;
             padding: 32px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.96);
-            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
-            backdrop-filter: blur(8px);
+            border: 1px solid rgba(8, 87, 195, 0.08);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.88);
+            box-shadow: 
+                0 20px 45px rgba(8, 87, 195, 0.08), 
+                0 10px 20px rgba(15, 23, 42, 0.04);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            animation: revealCard 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
 
         .brand {
@@ -96,6 +111,7 @@
             border-radius: 6px;
             font-size: 0.95rem;
             outline: none;
+            transition: all 0.2s ease;
         }
 
         input:focus {
@@ -134,11 +150,44 @@
             color: #ffffff;
             font-weight: 700;
             cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s ease;
         }
 
         button:hover,
         button:focus {
             background: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #cbd5e1;
+            color: #94a3b8;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        /* Button spinner style */
+        .btn-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #ffffff;
+            animation: btn-spin 0.6s linear infinite;
+        }
+
+        @keyframes btn-spin {
+            to { transform: rotate(360deg); }
         }
 
         @media (max-width: 480px) {
@@ -192,5 +241,18 @@
             <button type="submit">Masuk</button>
         </form>
     </main>
+
+    <script>
+        document.querySelector('form').addEventListener('submit', function (event) {
+            const button = this.querySelector('button[type="submit"]');
+            if (button) {
+                // Use setTimeout to ensure native validation runs first
+                window.setTimeout(function () {
+                    button.disabled = true;
+                    button.innerHTML = '<span class="btn-spinner"></span> <span>Memproses...</span>';
+                }, 0);
+            }
+        });
+    </script>
 </body>
 </html>

@@ -536,37 +536,39 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             return 0;
         }
 
-        $handle = @fopen($csvPath, 'rb');
-        if ($handle === false) {
-            return 0;
-        }
-
-        $lineCount = 0;
-        $lastByte = '';
-
         try {
-            while (!feof($handle)) {
-                $chunk = (string) fread($handle, 4 * 1024 * 1024);
-                if ($chunk === '') {
-                    continue;
-                }
+            $file = new \SplFileObject($csvPath, 'r');
+            $file->seek(PHP_INT_MAX);
+            $lineIndex = $file->key();
 
-                $lineCount += substr_count($chunk, "\n");
-                $lastByte = substr($chunk, -1);
+            while ($lineIndex > 0 && trim((string) $file->current()) === '') {
+                $lineIndex--;
+                $file->seek($lineIndex);
             }
-        } finally {
-            @fclose($handle);
-        }
 
-        if ($lineCount <= 0 && $lastByte === '') {
-            return 0;
-        }
+            return max(0, $lineIndex);
+        } catch (\Throwable) {
+            $handle = @fopen($csvPath, 'rb');
+            if ($handle === false) {
+                return 0;
+            }
 
-        if ($lastByte !== "\n") {
-            $lineCount++;
-        }
+            $lineNumber = 0;
+            $lastNonEmptyLine = 0;
 
-        return max(0, $lineCount - 1);
+            try {
+                while (($line = fgets($handle)) !== false) {
+                    $lineNumber++;
+                    if (trim((string) $line) !== '') {
+                        $lastNonEmptyLine = $lineNumber;
+                    }
+                }
+            } finally {
+                @fclose($handle);
+            }
+
+            return max(0, $lastNonEmptyLine - 1);
+        }
     }
 
     public function processImportStream(Request $request)
@@ -957,6 +959,27 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 }
 
                 $failed = $validationSkipped + max(0, $expectedLoadRows - $inserted);
+                $insertShortfall = max(0, $expectedLoadRows - $inserted);
+
+                $this->storeSimpananMultiPnJobMetadata($jobId, [
+                    'content_hash' => $contentHash,
+                    'period_hints' => (array) ($loadPlan['period_hints'] ?? []),
+                    'branch_hints' => (array) ($loadPlan['branch_hints'] ?? []),
+                    'table_name' => 'simpanan_multipn',
+                    'direct_load_audit' => [
+                        'backend' => (string) ($loadPlan['validation_backend'] ?? ''),
+                        'source_rows' => (int) ($loadPlan['source_rows'] ?? 0),
+                        'validation_written_rows' => $expectedLoadRows,
+                        'validation_skipped_count' => $validationSkipped,
+                        'validation_duplicate_count' => (int) ($loadPlan['validation_duplicate_count'] ?? 0),
+                        'load_inserted_rows' => $inserted,
+                        'insert_shortfall' => $insertShortfall,
+                        'total_rows' => $finalTotalRows,
+                        'total_success' => $inserted,
+                        'total_failed' => $failed,
+                        'completed_at' => now()->toDateTimeString(),
+                    ],
+                ]);
 
                 $send('progress', [
                     'status' => 'processing',
@@ -2588,6 +2611,10 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             $tableName = trim((string) ($metadata['table_name'] ?? ''));
             if ($tableName !== '') {
                 $context['table_name'] = $tableName;
+            }
+
+            if (isset($metadata['direct_load_audit']) && is_array($metadata['direct_load_audit'])) {
+                $context['direct_load_audit'] = $metadata['direct_load_audit'];
             }
 
             $updates = [

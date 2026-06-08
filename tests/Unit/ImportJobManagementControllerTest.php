@@ -150,6 +150,50 @@ class ImportJobManagementControllerTest extends TestCase
         $this->assertStringContainsString('diproses langsung', $payload['message']);
     }
 
+    public function test_force_start_allows_failed_zero_progress_job(): void
+    {
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $executionService = Mockery::mock(ImportExecutionService::class);
+
+        $progressService->shouldReceive('findJob')
+            ->once()
+            ->with(79)
+            ->andReturn((object) [
+                'id' => 79,
+                'status' => 'failed',
+                'total_files' => 100,
+                'total_success' => 0,
+                'total_failed' => 0,
+            ]);
+        $progressService->shouldReceive('clearTerminationRequest')
+            ->once()
+            ->with(79);
+        $progressService->shouldReceive('markQueued')
+            ->once()
+            ->with(79, Mockery::on(fn (array $payload): bool => ($payload['status'] ?? null) === 'queued'
+                && ($payload['total_rows'] ?? null) === 100
+                && ($payload['total_success'] ?? null) === 0
+                && ($payload['total_failed'] ?? null) === 0));
+        $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')
+            ->once()
+            ->with(79);
+        $executionService->shouldNotReceive('run');
+
+        $controller = new class(
+            app(ManagedReportSnapshotRebuildCoordinator::class),
+            app(ImportIndexController::class)
+        ) extends ImportJobManagementController {
+            protected function launchImportInBackground(int $jobId): bool
+            {
+                return true;
+            }
+        };
+        $response = $controller->forceStart(79, $progressService, $executionService);
+        $payload = $response->getData(true);
+
+        $this->assertSame('success', $payload['status']);
+    }
+
     public function test_queue_health_purges_stale_reserved_snapshot_jobs_without_active_state(): void
     {
         $rebuildId = '123e4567-e89b-12d3-a456-426614174000';

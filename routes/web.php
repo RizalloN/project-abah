@@ -7,6 +7,7 @@ use App\Http\Controllers\Report\DigitalPerformanceController;
 use App\Http\Controllers\Report\KejarLabaReportController;
 use App\Http\Controllers\Report\KinerjaRmReportController;
 use App\Http\Controllers\Report\KinerjaRmMikroReportController;
+use App\Http\Controllers\Report\KinerjaNonPtpReportController;
 use App\Http\Controllers\Report\KinerjaPtpReportController;
 use App\Http\Controllers\Report\KolaborasiReportController;
 use App\Http\Controllers\Report\NewPayrollReportController;
@@ -25,6 +26,7 @@ use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
 use App\Http\Controllers\Import\ImportReportPhController;
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Http\Controllers\Import\SnapshotAuditController;
+use App\Http\Controllers\Input\BusinessClusterController;
 use App\Http\Controllers\Input\BodBocController;
 use App\Http\Controllers\Input\InputRekananController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
@@ -57,6 +59,14 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
 
     Route::get('/dashboard', [DashboardSimpananController::class, 'index'])
         ->name('dashboard');
+    Route::get('/dashboard/presentation-data', [DashboardSimpananController::class, 'presentationData'])
+        ->name('dashboard.presentation-data');
+    Route::get('/dashboard/presentation-kts-data', [DashboardSimpananController::class, 'presentationKtsData'])
+        ->name('dashboard.presentation-kts-data');
+    Route::get('/dashboard/presentation', [DashboardSimpananController::class, 'presentation'])
+        ->name('dashboard.presentation');
+    Route::get('/dashboard/area6-data', [DashboardSimpananController::class, 'area6Data'])
+        ->name('dashboard.area6-data');
 
     Route::get('/report/dashboard-pinjaman', [DashboardPinjamanReportController::class, 'summaryIndex'])
         ->name('report.dashboard-pinjaman');
@@ -99,6 +109,14 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.tunggakan-kecil.data');
     Route::get('/report/dashboard-pinjaman/tunggakan-kecil/export', [DashboardPinjamanReportController::class, 'smallArrearsExport'])
         ->name('report.dashboard-pinjaman.tunggakan-kecil.export');
+    Route::get('/report/dashboard-pinjaman/realisasi-6-bulan-menunggak', [DashboardPinjamanReportController::class, 'sixMonthArrearsIndex'])
+        ->name('report.dashboard-pinjaman.realisasi-6-bulan-menunggak');
+    Route::get('/report/dashboard-pinjaman/realisasi-6-bulan-menunggak/filters', [DashboardPinjamanReportController::class, 'sixMonthArrearsFilters'])
+        ->name('report.dashboard-pinjaman.realisasi-6-bulan-menunggak.filters');
+    Route::get('/report/dashboard-pinjaman/realisasi-6-bulan-menunggak/data', [DashboardPinjamanReportController::class, 'sixMonthArrearsData'])
+        ->name('report.dashboard-pinjaman.realisasi-6-bulan-menunggak.data');
+    Route::get('/report/dashboard-pinjaman/realisasi-6-bulan-menunggak/export', [DashboardPinjamanReportController::class, 'sixMonthArrearsExport'])
+        ->name('report.dashboard-pinjaman.realisasi-6-bulan-menunggak.export');
     Route::get('/report/dashboard-pinjaman/kejar-laba', [KejarLabaReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kejar-laba');
     Route::get('/report/dashboard-pinjaman/kinerjarm', [KinerjaRmReportController::class, 'index'])
@@ -111,6 +129,8 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kinerja-ptp');
     Route::get('/report/dashboard-pinjaman/kinerja-ptp/detail', [KinerjaPtpReportController::class, 'detail'])
         ->name('report.dashboard-pinjaman.kinerja-ptp.detail');
+    Route::get('/report/dashboard-pinjaman/kinerja-non-ptp', [KinerjaNonPtpReportController::class, 'index'])
+        ->name('report.dashboard-pinjaman.kinerja-non-ptp');
     // Digital Performance Reports (EDC, QRIS, Brilink) — dihandle oleh DigitalPerformanceController
     Route::get('/report/optimalisasi-digital/edc', [DigitalPerformanceController::class, 'performanceEdc'])->name('report.edc');
     Route::get('/report/optimalisasi-digital/qris', [DigitalPerformanceController::class, 'performanceQris'])->name('report.qris');
@@ -126,6 +146,7 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
     // Kolaborasi Perusahaan Anak — dihandle oleh KolaborasiReportController
     Route::get('/report/kolaborasi-perusahaan-anak/program-referral-partner-perusahaan-anak', [KolaborasiReportController::class, 'programReferralPartnerPerusahaanAnak'])->name('report.kolaborasi.referral');
     Route::get('/report/kolaborasi-perusahaan-anak/nasabah-prioritas-bod-boc', [KolaborasiReportController::class, 'nasabahPrioritasBodBoc'])->name('report.kolaborasi.bodboc');
+    Route::get('/report/kolaborasi-perusahaan-anak/business-cluster', [KolaborasiReportController::class, 'businessCluster'])->name('report.kolaborasi.business-cluster');
 
     Route::get('/report/rekening-transaksi-debitur', [RasioCasaDebiturController::class, 'index'])->name('report.rasiocasa.debitur');
     Route::post('/report/data/rasiocasa', [RasioCasaDebiturController::class, 'fetchData'])->name('report.data.rasiocasa');
@@ -152,6 +173,7 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/bod-boc/import-template', [BodBocController::class, 'importTemplate'])->name('bod-boc.import-template');
     Route::get('/bod-boc/import-preview', [BodBocController::class, 'previewImport'])->name('bod-boc.import-preview');
     Route::post('/bod-boc/store', [BodBocController::class, 'store'])->name('bod-boc.store');
+    Route::post('/business-cluster/store-link', [BusinessClusterController::class, 'store'])->name('business-cluster.store');
     Route::get('/import', [ImportIndexController::class, 'index'])->name('import.index');
     Route::get('/report-management', [ImportIndexController::class, 'reportManagement'])->name('report-management.index');
     Route::get('/job-management', [ImportJobManagementController::class, 'index'])->name('job-management.index');
@@ -171,6 +193,7 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::get('/file-management/download', FileManagementDownloadController::class)->name('file-management.download');
     Route::post('/file-management/delete', [FileManagementController::class, 'destroy'])->middleware('throttle:admin-sensitive')->name('file-management.destroy');
     Route::get('/user-management', [UserManagementController::class, 'index'])->name('user-management.index');
+    Route::get('/user-management/{user}/login-history', [UserManagementController::class, 'loginHistory'])->name('user-management.login-history');
     Route::post('/user-management', [UserManagementController::class, 'store'])->middleware('throttle:admin-sensitive')->name('user-management.store');
     Route::put('/user-management/{user}', [UserManagementController::class, 'update'])->middleware('throttle:admin-sensitive')->name('user-management.update');
     Route::delete('/user-management/{user}', [UserManagementController::class, 'destroy'])->middleware('throttle:admin-sensitive')->name('user-management.destroy');

@@ -253,6 +253,58 @@ class ReportDataSyncServiceTest extends TestCase
         Bus::assertDispatched(RebuildDashboardHarianSnapshotJob::class);
     }
 
+    public function test_ssa_pinjaman_import_dispatches_harian_rebuild_when_simpanan_is_ready(): void
+    {
+        Bus::fake();
+        Config::set('cache.default', 'array');
+        Config::set('import.snapshot.enable_analyze_table', false);
+
+        Schema::dropIfExists('ssa_pinjaman');
+        Schema::dropIfExists('ssa_simpanan');
+        Schema::dropIfExists('gi405_recovery');
+        Schema::create('ssa_pinjaman', function (Blueprint $table): void {
+            $table->id();
+            $table->date('month_day_year_of_periode')->nullable();
+        });
+        Schema::create('ssa_simpanan', function (Blueprint $table): void {
+            $table->id();
+            $table->date('Month_Day_Year_of_Posisi')->nullable();
+        });
+        Schema::create('gi405_recovery', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->nullable();
+        });
+
+        DB::table('ssa_pinjaman')->insert(['month_day_year_of_periode' => '2026-05-31']);
+        DB::table('ssa_simpanan')->insert(['Month_Day_Year_of_Posisi' => '2026-05-31']);
+        DB::table('gi405_recovery')->insert(['periode' => '2026-05-31']);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
+        $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+        $dirtyPeriods->shouldReceive('register')
+            ->once()
+            ->with(['2026-05-31'])
+            ->andReturnTrue();
+        $dirtyPeriods->shouldReceive('debounceSeconds')
+            ->twice()
+            ->andReturn(0);
+
+        $importProgressService = Mockery::mock(\App\Services\Import\ImportProgressService::class);
+        $importProgressService->shouldReceive('hasActiveProcessingJobsForTable')
+            ->once()
+            ->with('ssa_pinjaman', 77)
+            ->andReturnFalse();
+        $this->app->instance(\App\Services\Import\ImportProgressService::class, $importProgressService);
+
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
+        $service->syncImportedTable('ssa_pinjaman', '2026-05-31', 77, 'unit-test');
+
+        Bus::assertDispatched(EnsureImportedSnapshotsFreshJob::class);
+        Bus::assertDispatched(RebuildDashboardHarianSnapshotJob::class);
+    }
+
     public function test_hourly_dpk_import_waits_for_fallback_loan_before_dashboard_rebuild(): void
     {
         Bus::fake();
@@ -409,5 +461,42 @@ class ReportDataSyncServiceTest extends TestCase
         $reflection->invoke($service, '2026-05-10', 77, 'unit-test');
 
         $this->assertTrue(true);
+    }
+
+    public function test_gi405_recovery_import_dispatches_harian_rebuild(): void
+    {
+        Bus::fake();
+        Config::set('cache.default', 'array');
+        Config::set('import.snapshot.enable_analyze_table', false);
+
+        Schema::dropIfExists('gi405_recovery');
+        Schema::create('gi405_recovery', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->nullable();
+        });
+
+        DB::table('gi405_recovery')->insert(['periode' => '2026-05-21']);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
+        $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+
+        $importProgressService = Mockery::mock(\App\Services\Import\ImportProgressService::class);
+        $importProgressService->shouldReceive('hasActiveProcessingJobsForTable')
+            ->once()
+            ->with('gi405_recovery', 77)
+            ->andReturnFalse();
+        $this->app->instance(\App\Services\Import\ImportProgressService::class, $importProgressService);
+
+        $dashboardHarianSnapshotService->shouldReceive('rebuild')
+            ->once()
+            ->with('2026-05-21', false)
+            ->andReturn(['2026-05-21' => 1]);
+
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
+        $service->syncImportedTable('gi405_recovery', '2026-05-21', 77, 'unit-test');
+
+        Bus::assertDispatched(EnsureImportedSnapshotsFreshJob::class);
     }
 }

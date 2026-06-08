@@ -22,6 +22,8 @@ class RasioCasaDebiturController extends Controller
     private const SEGMENTS = ['TOTAL', 'BRIGUNA', 'KPR', 'MIKRO', 'SMC'];
     private const SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
     private const UKER_SNAPSHOT_TABLE = 'rasio_casa_debitur_uker_snapshots';
+    private const PER_RM_ALL_UNIT = 'ALL UKER';
+    private const PER_RM_ALL_UNIT_LABEL = 'SEMUA UNIT KERJA';
     private const LOAN_CIF_BRANCH_INDEX = 'idx_loan_periode_cif';
     private const CASA_CIF_TYPE_INDEX = 'idx_smp_posisi_cif_covering';
 
@@ -41,8 +43,17 @@ class RasioCasaDebiturController extends Controller
             ->map(fn (string $branch) => $this->formatBranchLabel($branch))
             ->all();
         ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->buildRasioFilterOptions();
+        $unitBranchOptions = collect($branchOptions)
+            ->filter(fn ($branch) => in_array($this->normalizeBranchKey((string) $branch), self::PRIORITY_BRANCHES, true))
+            ->values();
 
-        return view('report.Rasiocasadebitur', compact('branches', 'defaultPeriod', 'branchOptions', 'branchUkerMap'));
+        return view('report.Rasiocasadebitur', compact(
+            'branches',
+            'defaultPeriod',
+            'branchOptions',
+            'branchUkerMap',
+            'unitBranchOptions'
+        ));
     }
 
     public function fetchData(Request $request)
@@ -327,7 +338,8 @@ class RasioCasaDebiturController extends Controller
             ));
             sort($rms);
 
-            [$rows, $total] = $this->assembleRmRows($rms, $previousSummary, $currentSummary, "{$selectedBranch} | {$selectedUker}", $m2Summary, $ytdSummary);
+            $scopeLabel = $this->isPerRmAllUnit($selectedUker) ? self::PER_RM_ALL_UNIT_LABEL : $selectedUker;
+            [$rows, $total] = $this->assembleRmRows($rms, $previousSummary, $currentSummary, "{$selectedBranch} | {$scopeLabel}", $m2Summary, $ytdSummary);
 
             $payload = [
                 'status' => 'success',
@@ -460,7 +472,9 @@ class RasioCasaDebiturController extends Controller
             return DB::table('daily_loan_dinamis')
                 ->where('periode', $loanPeriod)
                 ->whereRaw("UPPER(TRIM({$branchColumn})) = ?", [$selectedBranch])
-                ->whereRaw("UPPER(TRIM({$unitColumn})) = ?", [$selectedUnit])
+                ->when(!$this->isPerRmAllUnit($selectedUnit), function ($query) use ($unitColumn, $selectedUnit) {
+                    $query->whereRaw("UPPER(TRIM({$unitColumn})) = ?", [$selectedUnit]);
+                })
                 ->whereNotNull($rmColumn)
                 ->whereRaw("TRIM({$rmColumn}) <> ''")
                 ->selectRaw("UPPER(TRIM({$rmColumn})) as rm_name")
@@ -471,6 +485,20 @@ class RasioCasaDebiturController extends Controller
                 ->values()
                 ->all();
         });
+    }
+
+    private function isPerRmAllUnit(string $selectedUnit): bool
+    {
+        $normalized = strtoupper(trim($selectedUnit));
+
+        return in_array($normalized, [
+            self::PER_RM_ALL_UNIT,
+            self::PER_RM_ALL_UNIT_LABEL,
+            'SEMUA UKER',
+            'SEMUA UNIT',
+            'ALL UNIT',
+            'ALL UNITS',
+        ], true);
     }
 
     private function buildSummarySnapshot(string $loanPeriod, bool $forceRefresh = false): array
@@ -1088,9 +1116,29 @@ class RasioCasaDebiturController extends Controller
         $lock = Cache::lock('snapshot:rasio:auto-rebuild:' . $loanPeriod, 60);
         $pendingKey = 'snapshot:rasio:auto-rebuild:pending:' . $loanPeriod;
         $jobDispatched = false;
+        $built = false;
 
         try {
             if ($lock->get()) {
+                try {
+                    app(ReportSnapshotBuilder::class)->rebuildRasioCasa($loanPeriod, false);
+
+                    $expectedCasaPeriod = $this->resolveAvailableCasaPeriod($loanPeriod);
+                    $summaryExists = !$hasSummarySnapshotTable || $this->snapshotExistsForCasaPeriod(
+                        self::SNAPSHOT_TABLE,
+                        $loanPeriod,
+                        $expectedCasaPeriod
+                    );
+                    $ukerExists = !$hasUkerSnapshotTable || $this->snapshotExistsForCasaPeriod(
+                        self::UKER_SNAPSHOT_TABLE,
+                        $loanPeriod,
+                        $expectedCasaPeriod
+                    );
+                    $built = $summaryExists && $ukerExists;
+                } catch (Throwable $builderEx) {
+                    Log::warning('Synchronous rebuild rasio casa failed, falling back: ' . $builderEx->getMessage());
+                }
+
                 if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
                         EnsureRasioCasaSnapshotJob::dispatch($loanPeriod, static::class . '::ensureRasioSnapshot')
                         ->onQueue((string) config('queue.report_queue', 'default'));
@@ -1103,6 +1151,12 @@ class RasioCasaDebiturController extends Controller
             ]);
         } finally {
             optional($lock)->release();
+        }
+
+        if ($built) {
+            Cache::put($cacheKey, true, now()->addMinutes(10));
+
+            return;
         }
 
         Log::info('Rasio CASA snapshot unavailable; using source query fallback.', [
@@ -1999,7 +2053,9 @@ class RasioCasaDebiturController extends Controller
         $loanBase = DB::table('daily_loan_dinamis as d')
             ->where('d.periode', $loanPeriod)
             ->whereRaw("UPPER(TRIM(d.{$loanBranchColumn})) = ?", [$selectedBranch])
-            ->whereRaw("UPPER(TRIM(d.{$loanUnitColumn})) = ?", [$selectedUnit])
+            ->when(!$this->isPerRmAllUnit($selectedUnit), function ($query) use ($loanUnitColumn, $selectedUnit) {
+                $query->whereRaw("UPPER(TRIM(d.{$loanUnitColumn})) = ?", [$selectedUnit]);
+            })
             ->whereNotNull("d.{$loanKeyColumn}")
             ->where("d.{$loanKeyColumn}", '<>', '')
             ->whereNotNull("d.{$loanRmColumn}")
@@ -2087,7 +2143,9 @@ class RasioCasaDebiturController extends Controller
                     ->where('posisi', $casaDate)
                     ->whereIn($casaKeyColumn, $chunk)
                     ->whereRaw('UPPER(TRIM(kantor_cabang)) LIKE ?', ['%' . $selectedBranch . '%'])
-                    ->whereRaw('UPPER(TRIM(unit_kerja)) LIKE ?', ['%' . $selectedUnit . '%']);
+                    ->when(!$this->isPerRmAllUnit($selectedUnit), function ($query) use ($selectedUnit) {
+                        $query->whereRaw('UPPER(TRIM(unit_kerja)) LIKE ?', ['%' . $selectedUnit . '%']);
+                    });
 
                 if ($applyCasaTypeFilter) {
                     $casaQuery->where(function ($query) {

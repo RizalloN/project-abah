@@ -6,6 +6,9 @@ use Illuminate\Support\Str;
 
 class CsvAutoRepairService
 {
+    private const MAX_SERIALIZED_REPAIR_PAYLOAD_BYTES = 1048576;
+    private const SIGNATURE_FIELD_SAMPLE_BYTES = 96;
+
     private array $lastParseMeta = [
         'status' => 'normal',
         'reason' => null,
@@ -98,10 +101,13 @@ class CsvAutoRepairService
     public function buildCsvRowPreview(array $row, string $delimiter): string
     {
         if (count($row) === 1 && isset($row[0]) && is_string($row[0])) {
-            return Str::limit(trim($row[0]), 500);
+            return Str::limit($this->sampleCsvPreviewValue($row[0], 1000), 500);
         }
 
-        $previewRow = array_slice($row, 0, 12);
+        $previewRow = array_map(
+            fn ($value) => is_string($value) ? $this->sampleCsvPreviewValue($value, 240) : $value,
+            array_slice($row, 0, 12)
+        );
         $encoded = json_encode($previewRow, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         if ($encoded !== false) {
@@ -116,15 +122,16 @@ class CsvAutoRepairService
         $candidates = [];
         $seen = [];
 
-        $pushCandidate = static function (array $candidateRow, bool $repaired = false) use (&$candidates, &$seen): void {
-            $key = md5(json_encode(array_values($candidateRow), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $pushCandidate = function (array $candidateRow, bool $repaired = false) use (&$candidates, &$seen): void {
+            $candidateRow = array_values($candidateRow);
+            $key = $this->buildCandidateSignature($candidateRow);
             if (isset($seen[$key])) {
                 return;
             }
 
             $seen[$key] = true;
             $candidates[] = [
-                'row' => array_values($candidateRow),
+                'row' => $candidateRow,
                 'repaired' => $repaired,
             ];
         };
@@ -132,8 +139,12 @@ class CsvAutoRepairService
         $pushCandidate($row, false);
 
         if (count($row) === 1 && isset($row[0]) && is_string($row[0])) {
-            $rawValue = trim($row[0]);
-            if ($rawValue !== '' && str_contains($rawValue, $delimiter)) {
+            $rawValue = (string) $row[0];
+            if (
+                strlen($rawValue) <= self::MAX_SERIALIZED_REPAIR_PAYLOAD_BYTES
+                && trim($rawValue) !== ''
+                && str_contains($rawValue, $delimiter)
+            ) {
                 foreach ($this->buildDailyLoanSerializedPayloadVariants($rawValue) as $variant) {
                     $parsed = str_getcsv($variant, $delimiter, '"', '\\');
                     if (count($parsed) > 1) {
@@ -144,6 +155,41 @@ class CsvAutoRepairService
         }
 
         return $candidates;
+    }
+
+    private function buildCandidateSignature(array $row): string
+    {
+        $parts = ['count=' . count($row)];
+        $indexes = [0, 1, 2, count($row) - 3, count($row) - 2, count($row) - 1];
+        $indexes = array_values(array_unique(array_filter(
+            $indexes,
+            static fn (int $index): bool => $index >= 0 && $index < count($row)
+        )));
+
+        foreach ($indexes as $index) {
+            $value = (string) ($row[$index] ?? '');
+            $parts[] = implode(':', [
+                $index,
+                strlen($value),
+                substr($value, 0, self::SIGNATURE_FIELD_SAMPLE_BYTES),
+                substr($value, -self::SIGNATURE_FIELD_SAMPLE_BYTES),
+            ]);
+        }
+
+        return sha1(implode('|', $parts));
+    }
+
+    private function sampleCsvPreviewValue(string $value, int $bytes): string
+    {
+        $sample = strlen($value) > $bytes ? substr($value, 0, $bytes) : $value;
+        $sample = str_replace("\0", '', $sample);
+        $sample = trim($sample);
+
+        if ($sample === '' && $value !== '') {
+            return '[binary/empty sample]';
+        }
+
+        return strlen($value) > $bytes ? ($sample . '...') : $sample;
     }
 
     private function buildDailyLoanSerializedPayloadVariants(string $payload): array

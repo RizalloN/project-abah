@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Log;
 class RkaLookupService
 {
     private array $loadedRowsCache = [];
+    private static array $normalizedScopeValuesMemo = [];
+    private static array $flexibleMatchMemo = [];
 
     /**
      * uker_key values that are kanca-level rollup rows (e.g. '45-KC Madiun'
@@ -364,16 +366,31 @@ class RkaLookupService
             ->all();
     }
 
+    public static function clearMemoization(): void
+    {
+        self::$normalizedScopeValuesMemo = [];
+        self::$flexibleMatchMemo = [];
+    }
+
     private function normalizeScopeValue($value): ?string
     {
-        $normalized = strtoupper(trim((string) $value));
-
-        if ($normalized === '') {
+        if ($value === null) {
             return null;
         }
 
+        $cacheKey = (string) $value;
+        if (isset(self::$normalizedScopeValuesMemo[$cacheKey])) {
+            return self::$normalizedScopeValuesMemo[$cacheKey];
+        }
+
+        $normalized = strtoupper(trim((string) $value));
+
+        if ($normalized === '') {
+            return self::$normalizedScopeValuesMemo[$cacheKey] = null;
+        }
+
         if (in_array($normalized, ['ALL', 'ALL KANCA', 'ALL UKER'], true)) {
-            return null;
+            return self::$normalizedScopeValuesMemo[$cacheKey] = null;
         }
 
         $normalized = ltrim($normalized, "'\" ");
@@ -386,7 +403,7 @@ class RkaLookupService
         $normalized = preg_replace('/\s+DETAIL$/u', '', $normalized) ?? $normalized;
         $normalized = trim($normalized);
 
-        return $normalized !== '' ? $normalized : null;
+        return self::$normalizedScopeValuesMemo[$cacheKey] = ($normalized !== '' ? $normalized : null);
     }
 
     private function matchesDefinition(array $row, array $definition): bool
@@ -604,14 +621,19 @@ class RkaLookupService
 
     private function flexibleMatch(string $ukerKey, string $label): bool
     {
+        $cacheKey = $ukerKey . '|||' . $label;
+        if (isset(self::$flexibleMatchMemo[$cacheKey])) {
+            return self::$flexibleMatchMemo[$cacheKey];
+        }
+
         $normalizedLabel = $this->normalizeScopeValue($label);
         if ($normalizedLabel === null) {
-            return true;
+            return self::$flexibleMatchMemo[$cacheKey] = true;
         }
 
         // Exact match first
         if ($ukerKey === $normalizedLabel) {
-            return true;
+            return self::$flexibleMatchMemo[$cacheKey] = true;
         }
 
         // Try slug-based matching for better flexibility (matches 'kc-madiun' to '45-KC MADIUN')
@@ -619,7 +641,7 @@ class RkaLookupService
         $labelSlug = \Illuminate\Support\Str::slug($label);
 
         if ($labelSlug !== '' && (str_contains($ukerSlug, $labelSlug) || str_contains($labelSlug, $ukerSlug))) {
-            return true;
+            return self::$flexibleMatchMemo[$cacheKey] = true;
         }
 
         // Last resort: keyword matching
@@ -627,12 +649,12 @@ class RkaLookupService
         if (!empty($keywords)) {
             foreach ($keywords as $word) {
                 if (!str_contains($ukerSlug, $word)) {
-                    return false;
+                    return self::$flexibleMatchMemo[$cacheKey] = false;
                 }
             }
-            return true;
+            return self::$flexibleMatchMemo[$cacheKey] = true;
         }
 
-        return false;
+        return self::$flexibleMatchMemo[$cacheKey] = false;
     }
 }

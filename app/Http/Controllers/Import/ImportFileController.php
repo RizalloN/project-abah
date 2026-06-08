@@ -193,7 +193,7 @@ class ImportFileController extends Controller
 
     private function requiresManualIbbizPeriode(string $tableName): bool
     {
-        return strtolower(trim($tableName)) === 'ibbisniz_corp';
+        return in_array(strtolower(trim($tableName)), ['ibbisniz_corp', 'usak_ibbiz_uker'], true);
     }
 
     private function normalizeManualImportPeriode(string $tableName, $value): ?string
@@ -553,6 +553,57 @@ class ImportFileController extends Controller
         }
 
         return $this->normalizeDailyLoanHeader($header);
+    }
+
+    private function sortFilterValues(array &$values): void
+    {
+        sort($values, SORT_NATURAL | SORT_FLAG_CASE);
+    }
+
+    private function getPrettyIbbizHeaders(string $tableName, array $headers): array
+    {
+        $tableName = strtolower(trim($tableName));
+
+        if ($tableName === 'ibbisniz_corp') {
+            $mappedHeaders = [];
+            foreach ($headers as $index => $h) {
+                $norm = strtoupper(trim((string) $h));
+                $mappedHeaders[] = match ($norm) {
+                    'TEXTBOX10' => 'Wilayah',
+                    'TEXTBOX11' => 'Cabang',
+                    'TEXTBOX12' => 'Uker',
+                    'TEXTBOX7' => 'Corporate ID',
+                    'TEXTBOX13' => 'Nama Perusahaan',
+                    'JUMLAHTRANSAKSI', 'JUMLAH_TRANSAKSI' => 'Jml Trx Sukses',
+                    'NOMINAL' => 'Nominal',
+                    'FEE' => 'Fee Transaksi',
+                    default => ucwords(strtolower(str_replace('_', ' ', $h))),
+                };
+            }
+            return $mappedHeaders;
+        }
+
+        if ($tableName === 'usak_ibbiz_uker') {
+            $mappedHeaders = [];
+            foreach ($headers as $index => $h) {
+                $mappedHeaders[] = match ($index) {
+                    0 => 'Periode',
+                    1 => 'No',
+                    2 => 'Kanwil',
+                    3 => 'Kanca',
+                    4 => 'Uker',
+                    5 => 'Corporate ID',
+                    6 => 'Nama Perusahaan',
+                    7 => 'Status',
+                    8 => 'Deskripsi',
+                    9 => 'Referral',
+                    default => ucwords(strtolower(str_replace('_', ' ', $h))),
+                };
+            }
+            return $mappedHeaders;
+        }
+
+        return $headers;
     }
 
     private function applyDailyLoanCompatibilityColumns(array $rowData): array
@@ -965,6 +1016,10 @@ class ImportFileController extends Controller
         }
 
         if ($tableName === 'usak_ibbiz_uker') {
+            if ($manualPeriode !== null && $manualPeriode !== '') {
+                return $manualPeriode;
+            }
+
             $rawPeriode = trim((string) ($sourceData[0] ?? ''));
             if ($rawPeriode === '') {
                 return $manualPeriode;
@@ -2187,7 +2242,7 @@ class ImportFileController extends Controller
         }
 
         $values = array_keys($valuesMap);
-        sort($values);
+        $this->sortFilterValues($values);
 
         return $values;
     }
@@ -2784,8 +2839,21 @@ class ImportFileController extends Controller
         $manualImportPeriode = null;
 
         if ($this->requiresManualIbbizPeriode($requestedTableName)) {
-            $request->validate(['periode' => 'required|date_format:Y-m-d']);
-            $manualImportPeriode = $this->normalizeManualImportPeriode($requestedTableName, $request->input('periode'));
+            $rawPeriode = $request->input('periode');
+            if (empty($rawPeriode)) {
+                $request->validate(['periode' => 'required']);
+            }
+            try {
+                $manualImportPeriode = $this->normalizeManualImportPeriode($requestedTableName, $rawPeriode);
+            } catch (\Throwable $e) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $e->getMessage(),
+                    ], 422);
+                }
+                return back()->with('error', $e->getMessage());
+            }
         }
 
         if (in_array($requestedTableName, ['casa_brilink_web', 'casa_brilink_edc'], true)) {
@@ -3132,7 +3200,9 @@ class ImportFileController extends Controller
         
         $formattedUniqueValues = [];
         foreach ($uniqueValues as $index => $valuesMap) {
-            $keys = array_keys($valuesMap); sort($keys); $formattedUniqueValues[$index] = $keys;
+            $keys = array_keys($valuesMap);
+            $this->sortFilterValues($keys);
+            $formattedUniqueValues[$index] = $keys;
         }
 
         $filterableColumnIndices = [];
@@ -3148,9 +3218,11 @@ class ImportFileController extends Controller
             $this->dispatchPreviewIndexWarmup($filePath, $currentDelimiter, $tableName, $isBrilinkSummary, $filterableColumnIndices);
         }
 
+        $headers = $this->getPrettyIbbizHeaders($tableName, $headers);
+
         $area6ColumnHints = $isDailyLoan
             ? []
-            : ['KANCA', 'KCI', 'BRANCH', 'BRDESC', 'MBDESC'];
+            : ['KANCA', 'KCI', 'BRANCH', 'BRDESC', 'MBDESC', 'CABANG'];
         $initialArea6Selections = $this->buildInitialArea6Selections($headers, $formattedUniqueValues, $area6ColumnHints);
         if ($disableArea6AutoFilter) {
             $initialArea6Selections = [];
@@ -3210,25 +3282,25 @@ class ImportFileController extends Controller
             'file_path' => 'required|string',
             'delimiter' => 'nullable|string',
             'filterable_column_indices_json' => 'nullable|string',
+            'preview_state_key' => 'nullable|string',
         ]);
 
         $filePath = (string) $request->input('file_path');
         $currentDelimiter = (string) $request->input('delimiter', 'auto');
+        $previewStateKey = trim((string) $request->input('preview_state_key', ''));
         $filterableColumnIndices = json_decode((string) $request->input('filterable_column_indices_json', ''), true);
         if (!is_array($filterableColumnIndices)) {
             $filterableColumnIndices = [];
         }
 
-        $resolvedFilePath = $filePath;
-        if (!file_exists($resolvedFilePath)) {
-            try {
-                $storageResolvedPath = Storage::path($filePath);
-                if (is_string($storageResolvedPath) && $storageResolvedPath !== '' && file_exists($storageResolvedPath)) {
-                    $resolvedFilePath = $storageResolvedPath;
-                }
-            } catch (\Throwable $e) {
-            }
-        }
+        $previewState = $previewStateKey !== ''
+            ? app(\App\Services\Import\ExcelImportJobService::class)->getPreviewState($previewStateKey)
+            : [];
+        $previewMeta = !empty($previewState['previewMeta']) && is_array($previewState['previewMeta'])
+            ? (array) $previewState['previewMeta']
+            : (array) session('excel_preview_meta', []);
+
+        $resolvedFilePath = $this->resolveStagedCsvPath($filePath, $previewMeta, $previewStateKey);
 
         if (!file_exists($resolvedFilePath)) {
             return response()->json([
@@ -3340,79 +3412,14 @@ class ImportFileController extends Controller
             $previewMeta = [];
         }
 
-        $resolvedFilePath = $filePath;
-        if (!file_exists($resolvedFilePath)) {
-            try {
-                $storageResolvedPath = Storage::path($filePath);
-                if (is_string($storageResolvedPath) && $storageResolvedPath !== '' && file_exists($storageResolvedPath)) {
-                    $resolvedFilePath = $storageResolvedPath;
-                }
-            } catch (\Throwable $e) {
-            }
-        }
-
-        $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
-        if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
-            $resolvedFilePath = $stagedCsvPath;
-        }
-
+        $resolvedFilePath = $this->resolveStagedCsvPath($filePath, $previewMeta, $previewStateKey);
         if (!file_exists($resolvedFilePath)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'File tidak ditemukan di server.',
             ], 404);
         }
-
         $extension = strtolower(pathinfo($resolvedFilePath, PATHINFO_EXTENSION));
-        if (!in_array($extension, ['csv', 'txt'], true)) {
-            $headerIndex = isset($previewMeta['header_index']) ? (int) $previewMeta['header_index'] : null;
-            $sourceHeaders = array_values((array) ($previewMeta['source_headers'] ?? []));
-            $previewPath = urldecode((string) ($previewMeta['path'] ?? ''));
-            $sourceExcelPath = $previewPath !== '' ? Storage::path($previewPath) : $resolvedFilePath;
-
-            if (
-                $previewStateKey !== ''
-                && $headerIndex !== null
-                && !empty($sourceHeaders)
-                && is_string($sourceExcelPath)
-                && $sourceExcelPath !== ''
-                && file_exists($sourceExcelPath)
-            ) {
-                try {
-                    $stagingService = app(\App\Services\Import\ExcelStagingService::class);
-                    $generatedStagedCsvPath = $stagingService->createStagedCsvPath(storage_path('app/import_preview_filters'), 'filter_preview');
-                    $stageResult = $stagingService->stageExcelToCsv(
-                        static function (string $event, array $payload): void {
-                        },
-                        $sourceExcelPath,
-                        $headerIndex,
-                        $sourceHeaders,
-                        $generatedStagedCsvPath,
-                        null,
-                        'excel_filter_preview_'
-                    );
-
-                    $candidateCsvPath = (string) ($stageResult['staged_csv_path'] ?? '');
-                    if ($candidateCsvPath !== '' && file_exists($candidateCsvPath)) {
-                        $resolvedFilePath = $candidateCsvPath;
-                        $extension = strtolower(pathinfo($resolvedFilePath, PATHINFO_EXTENSION));
-
-                        $previewMeta['staged_csv_path'] = $candidateCsvPath;
-                        session(['excel_preview_meta' => array_merge((array) session('excel_preview_meta', []), [
-                            'staged_csv_path' => $candidateCsvPath,
-                        ])]);
-
-                        if ($previewStateKey !== '') {
-                            app(\App\Services\Import\ExcelImportJobService::class)->putPreviewState(
-                                $previewStateKey,
-                                array_merge($previewState, ['previewMeta' => $previewMeta])
-                            );
-                        }
-                    }
-                } catch (\Throwable $e) {
-                }
-            }
-        }
 
         if (!in_array($extension, ['csv', 'txt'], true)) {
             return response()->json([
@@ -3436,6 +3443,43 @@ class ImportFileController extends Controller
             ]);
         }
 
+        $indexDbPath = $this->previewIndexDbPath($resolvedFilePath, $currentDelimiter, $tableName);
+        $indexReady = file_exists($indexDbPath) && filesize($indexDbPath) > 0;
+        if (!$indexReady && $this->isJumlahMerchantDetailTable($tableName)) {
+            $lockKey = $this->previewIndexWarmLockKey($resolvedFilePath, $currentDelimiter, $tableName);
+            if (!Cache::has($lockKey)) {
+                $this->dispatchPreviewIndexWarmup(
+                    $resolvedFilePath,
+                    $currentDelimiter,
+                    $tableName,
+                    $isBrilinkSummary,
+                    array_merge([$sourceColumnIndex], array_keys($normalizedActiveFilters))
+                );
+            }
+
+            $indexReady = $this->waitForPreviewIndex($indexDbPath, 2.0);
+        }
+
+        if ($indexReady) {
+            try {
+                $values = $this->queryPreviewFilterOptionsFromIndex($indexDbPath, $sourceColumnIndex, $normalizedActiveFilters);
+                Cache::put($cacheKey, $values, now()->addHours(4));
+
+                return response()->json([
+                    'status' => 'success',
+                    'values' => $values,
+                    'cached' => false,
+                    'source' => 'sqlite',
+                ]);
+            } catch (\Throwable $indexError) {
+                Log::warning('Preview filter option index query failed: ' . $indexError->getMessage(), [
+                    'file' => $resolvedFilePath,
+                    'table' => $tableName,
+                    'column' => $sourceColumnIndex,
+                ]);
+            }
+        }
+
         $handle = fopen($resolvedFilePath, 'r');
         if ($handle === false) {
             return response()->json([
@@ -3454,7 +3498,7 @@ class ImportFileController extends Controller
             $resolvedDelimiter = $this->resolveDelimiter($handle, $currentDelimiter);
             rewind($handle);
 
-            if ($tableName === 'jumlah_merchant_qris_detail' && !$isDailyLoan && !$isBrilinkSummary) {
+            if (($tableName === 'jumlah_merchant_qris_detail' || $this->isJumlahMerchantDetailTable($tableName)) && !$isDailyLoan && !$isBrilinkSummary) {
                 $values = $this->collectFilterOptionsFromCsvFast(
                     $handle,
                     $resolvedDelimiter,
@@ -3574,7 +3618,7 @@ class ImportFileController extends Controller
         }
 
         $values = array_keys($valuesMap);
-        sort($values);
+        $this->sortFilterValues($values);
         Cache::put($cacheKey, $values, now()->addHours(4));
 
         return response()->json([
@@ -3715,7 +3759,7 @@ class ImportFileController extends Controller
             fclose($handle);
 
             $values = array_keys($uniqueValues);
-            sort($values);
+            $this->sortFilterValues($values);
 
             // Cache untuk 8 jam
             Cache::put($cacheKey, $values, now()->addHours(8));
@@ -3770,17 +3814,6 @@ class ImportFileController extends Controller
 
         $displayFilterMap = $this->normalizeDisplayFilterMap($displayFilterMap);
 
-        $resolvedFilePath = $filePath;
-        if (!file_exists($resolvedFilePath)) {
-            try {
-                $storageResolvedPath = Storage::path($filePath);
-                if (is_string($storageResolvedPath) && $storageResolvedPath !== '' && file_exists($storageResolvedPath)) {
-                    $resolvedFilePath = $storageResolvedPath;
-                }
-            } catch (\Throwable $e) {
-            }
-        }
-
         $previewState = $previewStateKey !== ''
             ? app(\App\Services\Import\ExcelImportJobService::class)->getPreviewState($previewStateKey)
             : [];
@@ -3793,68 +3826,14 @@ class ImportFileController extends Controller
             $previewMeta = [];
         }
 
-        $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
-        if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
-            $resolvedFilePath = $stagedCsvPath;
-        }
-
-        $extension = strtolower(pathinfo($resolvedFilePath, PATHINFO_EXTENSION));
-        if (!in_array($extension, ['csv', 'txt'], true)) {
-            $headerIndex = isset($previewMeta['header_index']) ? (int) $previewMeta['header_index'] : null;
-            $sourceHeaders = array_values((array) ($previewMeta['source_headers'] ?? []));
-            $previewPath = urldecode((string) ($previewMeta['path'] ?? ''));
-            $sourceExcelPath = $previewPath !== '' ? Storage::path($previewPath) : $resolvedFilePath;
-
-            if (
-                $previewStateKey !== ''
-                && $headerIndex !== null
-                && !empty($sourceHeaders)
-                && is_string($sourceExcelPath)
-                && $sourceExcelPath !== ''
-                && file_exists($sourceExcelPath)
-            ) {
-                try {
-                    $stagingService = app(\App\Services\Import\ExcelStagingService::class);
-                    $generatedStagedCsvPath = $stagingService->createStagedCsvPath(storage_path('app/import_preview_filters'), 'filtered_preview');
-                    $stageResult = $stagingService->stageExcelToCsv(
-                        static function (string $event, array $payload): void {
-                        },
-                        $sourceExcelPath,
-                        $headerIndex,
-                        $sourceHeaders,
-                        $generatedStagedCsvPath,
-                        null,
-                        'excel_filtered_preview_'
-                    );
-
-                    $candidateCsvPath = (string) ($stageResult['staged_csv_path'] ?? '');
-                    if ($candidateCsvPath !== '' && file_exists($candidateCsvPath)) {
-                        $resolvedFilePath = $candidateCsvPath;
-                        $extension = strtolower(pathinfo($resolvedFilePath, PATHINFO_EXTENSION));
-
-                        $previewMeta['staged_csv_path'] = $candidateCsvPath;
-                        session(['excel_preview_meta' => array_merge((array) session('excel_preview_meta', []), [
-                            'staged_csv_path' => $candidateCsvPath,
-                        ])]);
-
-                        if ($previewStateKey !== '') {
-                            app(\App\Services\Import\ExcelImportJobService::class)->putPreviewState(
-                                $previewStateKey,
-                                array_merge($previewState, ['previewMeta' => $previewMeta])
-                            );
-                        }
-                    }
-                } catch (\Throwable $e) {
-                }
-            }
-        }
-
+        $resolvedFilePath = $this->resolveStagedCsvPath($filePath, $previewMeta, $previewStateKey);
         if (!file_exists($resolvedFilePath)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'File tidak ditemukan di server.',
             ], 404);
         }
+        $extension = strtolower(pathinfo($resolvedFilePath, PATHINFO_EXTENSION));
 
         if (!in_array($extension, ['csv', 'txt'], true)) {
             return response()->json([
@@ -3907,7 +3886,11 @@ class ImportFileController extends Controller
         if (!$indexReady) {
             $lockKey = $this->previewIndexWarmLockKey($resolvedFilePath, $currentDelimiter, $tableName);
             if (!Cache::has($lockKey)) {
-                $this->dispatchPreviewIndexWarmup($resolvedFilePath, $currentDelimiter, $tableName, $isBrilinkSummary);
+                $this->dispatchPreviewIndexWarmup($resolvedFilePath, $currentDelimiter, $tableName, $isBrilinkSummary, array_keys($normalizedFilters));
+            }
+
+            if ($this->isJumlahMerchantDetailTable($tableName)) {
+                $indexReady = $this->waitForPreviewIndex($indexDbPath, 2.0);
             }
         }
 
@@ -4219,6 +4202,113 @@ class ImportFileController extends Controller
         return $normalize($requestPath) === $normalize($metaPath);
     }
 
+    private function resolveStagedCsvPath(
+        string $filePath,
+        array &$previewMeta,
+        string $previewStateKey
+    ): string {
+        $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
+        if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
+            return $stagedCsvPath;
+        }
+
+        $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        if (in_array($extension, ['csv', 'txt'], true)) {
+            return $filePath;
+        }
+
+        $headerIndex = isset($previewMeta['header_index']) ? (int) $previewMeta['header_index'] : null;
+        $sourceHeaders = array_values((array) ($previewMeta['source_headers'] ?? []));
+        $previewPath = urldecode((string) ($previewMeta['path'] ?? ''));
+        $sourceExcelPath = $previewPath !== '' ? Storage::path($previewPath) : $filePath;
+
+        if (
+            $previewStateKey === ''
+            || $headerIndex === null
+            || empty($sourceHeaders)
+            || !is_string($sourceExcelPath)
+            || $sourceExcelPath === ''
+            || !file_exists($sourceExcelPath)
+        ) {
+            return $filePath;
+        }
+
+        $lockKey = 'excel_staging_lock_' . md5($sourceExcelPath);
+        $maxWaitSeconds = 30;
+        $sleepMicroseconds = 200000; // 200ms
+        $elapsedSeconds = 0;
+
+        // Loop wait if another process is staging
+        while (Cache::has($lockKey)) {
+            usleep($sleepMicroseconds);
+            $elapsedSeconds += 0.2;
+            if ($elapsedSeconds >= $maxWaitSeconds) {
+                break;
+            }
+
+            // Re-read preview state to see if another process finished staging
+            $previewState = app(\App\Services\Import\ExcelImportJobService::class)->getPreviewState($previewStateKey);
+            $previewMeta = !empty($previewState['previewMeta']) && is_array($previewState['previewMeta'])
+                ? (array) $previewState['previewMeta']
+                : (array) session('excel_preview_meta', []);
+
+            $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
+            if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
+                return $stagedCsvPath;
+            }
+        }
+
+        // Re-check after waiting
+        if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
+            return $stagedCsvPath;
+        }
+
+        // Acquire lock
+        if (Cache::add($lockKey, true, now()->addMinutes(5))) {
+            try {
+                $stagingService = app(\App\Services\Import\ExcelStagingService::class);
+                $generatedStagedCsvPath = $stagingService->createStagedCsvPath(storage_path('app/import_preview_filters'), 'filter_preview');
+                $stageResult = $stagingService->stageExcelToCsv(
+                    static function (string $event, array $payload): void {},
+                    $sourceExcelPath,
+                    $headerIndex,
+                    $sourceHeaders,
+                    $generatedStagedCsvPath,
+                    null,
+                    'excel_filter_preview_'
+                );
+
+                $candidateCsvPath = (string) ($stageResult['staged_csv_path'] ?? '');
+                if ($candidateCsvPath !== '' && file_exists($candidateCsvPath)) {
+                    $stagedCsvPath = $candidateCsvPath;
+                    $previewMeta['staged_csv_path'] = $candidateCsvPath;
+                    session(['excel_preview_meta' => array_merge((array) session('excel_preview_meta', []), [
+                        'staged_csv_path' => $candidateCsvPath,
+                    ])]);
+
+                    $previewState = app(\App\Services\Import\ExcelImportJobService::class)->getPreviewState($previewStateKey);
+                    app(\App\Services\Import\ExcelImportJobService::class)->putPreviewState(
+                        $previewStateKey,
+                        array_merge($previewState, ['previewMeta' => $previewMeta])
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::error('Error during excel preview staging: ' . $e->getMessage());
+            } finally {
+                Cache::forget($lockKey);
+            }
+        } else {
+            // If lock failed, do a final fallback check
+            $previewState = app(\App\Services\Import\ExcelImportJobService::class)->getPreviewState($previewStateKey);
+            $previewMeta = !empty($previewState['previewMeta']) && is_array($previewState['previewMeta'])
+                ? (array) $previewState['previewMeta']
+                : (array) session('excel_preview_meta', []);
+            $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
+        }
+
+        return $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : $filePath;
+    }
+
     private function dispatchPreviewIndexWarmup(
         string $resolvedFilePath,
         string $currentDelimiter,
@@ -4291,10 +4381,10 @@ class ImportFileController extends Controller
                 continue;
             }
 
-            $placeholders = implode(',', array_fill(0, count($values), '?'));
-            $whereParts[] = 'c' . (int) $sourceIndex . ' IN (' . $placeholders . ')';
-            foreach ($values as $value) {
-                $params[] = $value;
+            [$condition, $conditionParams] = $this->buildSqliteInCondition('c' . (int) $sourceIndex, $values);
+            if ($condition !== '') {
+                $whereParts[] = $condition;
+                array_push($params, ...$conditionParams);
             }
         }
 
@@ -4316,6 +4406,82 @@ class ImportFileController extends Controller
             'rows' => $rows,
             'truncated' => $truncated,
         ];
+    }
+
+    private function queryPreviewFilterOptionsFromIndex(string $dbPath, int $sourceColumnIndex, array $normalizedFilters): array
+    {
+        $pdo = new \PDO('sqlite:' . $dbPath);
+        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $pdo->exec('PRAGMA busy_timeout = 3000');
+
+        $this->ensurePreviewQueryIndexes($pdo, array_merge([$sourceColumnIndex], array_keys($normalizedFilters)));
+
+        $column = 'c' . (int) $sourceColumnIndex;
+        $whereParts = [$column . ' IS NOT NULL', "TRIM({$column}) <> ''"];
+        $params = [];
+        foreach ($normalizedFilters as $sourceIndex => $allowedValues) {
+            $values = array_keys($allowedValues);
+            if (empty($values)) {
+                continue;
+            }
+
+            [$condition, $conditionParams] = $this->buildSqliteInCondition('c' . (int) $sourceIndex, $values);
+            if ($condition !== '') {
+                $whereParts[] = $condition;
+                array_push($params, ...$conditionParams);
+            }
+        }
+
+        $sql = 'SELECT DISTINCT ' . $column . ' as value FROM preview_rows';
+        if (!empty($whereParts)) {
+            $sql .= ' WHERE ' . implode(' AND ', $whereParts);
+        }
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+
+        $values = [];
+        while (($value = $stmt->fetchColumn()) !== false) {
+            $cleanValue = trim((string) $value);
+            if ($cleanValue !== '') {
+                $values[] = $cleanValue;
+            }
+        }
+
+        $this->sortFilterValues($values);
+
+        return $values;
+    }
+
+    private function buildSqliteInCondition(string $column, array $values): array
+    {
+        $values = array_values(array_unique(array_map(static fn ($value): string => trim((string) $value), $values)));
+        if (empty($values)) {
+            return ['', []];
+        }
+
+        $parts = [];
+        $params = [];
+        foreach (array_chunk($values, 800) as $chunk) {
+            $parts[] = $column . ' IN (' . implode(',', array_fill(0, count($chunk), '?')) . ')';
+            array_push($params, ...$chunk);
+        }
+
+        return ['(' . implode(' OR ', $parts) . ')', $params];
+    }
+
+    private function waitForPreviewIndex(string $indexDbPath, float $maxSeconds): bool
+    {
+        $deadline = microtime(true) + max(0.0, $maxSeconds);
+        do {
+            if (file_exists($indexDbPath) && filesize($indexDbPath) > 0) {
+                return true;
+            }
+
+            usleep(200000);
+        } while (microtime(true) < $deadline);
+
+        return file_exists($indexDbPath) && filesize($indexDbPath) > 0;
     }
 
     private function ensurePreviewQueryIndexes(\PDO $pdo, array $sourceColumns): void

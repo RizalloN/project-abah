@@ -830,7 +830,7 @@ class ExcelStagingService
                     }
                     $send('progress', [
                         'percent' => 38,
-                        'message' => ($progressMessage ?? 'Menyiapkan CSV staging GI405 Single Row...') . ' (' . number_format($processedRows, 0, ',', '.') . ' baris)',
+                        'message' => ($progressMessage ?? 'Menyiapkan CSV staging GI405 Recovery...') . ' (' . number_format($processedRows, 0, ',', '.') . ' baris)',
                         'rows_done' => $processedRows,
                         'total' => 0,
                         'speed' => 0,

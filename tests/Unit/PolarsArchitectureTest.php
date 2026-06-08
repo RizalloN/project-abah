@@ -91,7 +91,7 @@ class PolarsArchitectureTest extends TestCase
             [SsaSimpananImportStrategy::class, 'ssa_simpanan'],
             [SsaPinjamanImportStrategy::class, 'ssa_pinjaman'],
             [HourlyDpkImportStrategy::class, 'hourly_dpk'],
-            [Gi405RecDhImportStrategy::class, 'gi405_singlerow'],
+            [Gi405RecDhImportStrategy::class, 'gi405_recovery'],
             [Lw325PhImportStrategy::class, 'lw325_ph'],
             [Lw321PnImportStrategy::class, 'lw321pn'],
             [Lw321NpdImportStrategy::class, 'lw321_npd'],

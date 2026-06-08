@@ -6,7 +6,7 @@
                 <th colspan="8" class="group-head">Kelola Posisi {{ $selectedPeriodLabel }}</th><th colspan="2" class="group-head">Realisasi s.d {{ $selectedPeriodShortLabel }}</th>
             </tr>
             <tr>
-                <th>Lancar Deb</th><th>OS Juta</th><th>SML Deb</th><th>OS Juta</th><th>NPL Deb</th><th>OS Juta</th><th>Total Deb</th><th>OS Juta</th><th>Deb</th><th>OS Juta</th>
+                <th>Lancar Deb</th><th>OS Juta</th><th>SML Deb</th><th>OS Juta</th><th>NPL Deb</th><th>OS Juta</th><th>Total Deb</th><th>OS Juta</th><th>Deb</th><th>Plafon Juta</th>
             </tr>
         </thead>
         <tbody>
@@ -22,6 +22,16 @@
             @empty
                 <tr><td colspan="16" class="rm-mikro-empty">Data tidak ditemukan.</td></tr>
             @endforelse
+            @if ($rows->isNotEmpty())
+                <tr class="rm-mikro-total">
+                    <td colspan="6" class="strong">GRAND TOTAL</td>
+                    <td class="text-right">{{ $formatAmount($total['lancar_deb'] ?? 0) }}</td><td class="text-right">{{ $formatJuta($total['lancar_os'] ?? 0) }}</td>
+                    <td class="text-right">{{ $formatAmount($total['sml_deb'] ?? 0) }}</td><td class="text-right">{{ $formatJuta($total['sml_os'] ?? 0) }}</td>
+                    <td class="text-right">{{ $formatAmount($total['npl_deb'] ?? 0) }}</td><td class="text-right">{{ $formatJuta($total['npl_os'] ?? 0) }}</td>
+                    <td class="text-right">{{ $formatAmount($total['total_deb'] ?? 0) }}</td><td class="text-right">{{ $formatJuta($total['total_os'] ?? 0) }}</td>
+                    <td class="text-right">{{ $formatAmount($total['realisasi_deb'] ?? 0) }}</td><td class="text-right">{{ $formatJuta($total['realisasi_os'] ?? 0) }}</td>
+                </tr>
+            @endif
         </tbody>
     </table>
 </div>

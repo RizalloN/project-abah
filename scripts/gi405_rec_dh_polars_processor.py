@@ -8,13 +8,9 @@ import polars as pl
 
 
 REQUIRED_HEADERS = [
+    "Periode",
     "KODE",
     "Pendapatan Koreksi PPAP-dr Angsuran PH",
-    "Recovery Non Klaim",
-    "KC Konsol",
-    "Nama Uker",
-    "Segmen",
-    "Tanggal",
 ]
 
 
@@ -83,32 +79,25 @@ def main():
 
     df = df.with_columns([
         pl.col("KODE").cast(pl.Utf8).str.strip_chars().alias("KODE"),
-        pl.col("KC Konsol").cast(pl.Utf8).str.strip_chars().alias("KC Konsol"),
-        pl.col("Nama Uker").cast(pl.Utf8).str.strip_chars().alias("Nama Uker"),
-        pl.col("Segmen").cast(pl.Utf8).str.strip_chars().alias("Segmen"),
-        pl.col("Tanggal").cast(pl.Utf8).str.strip_chars().alias("Tanggal"),
+        pl.col("Periode").cast(pl.Utf8).str.strip_chars().alias("Periode"),
         pl.col("Pendapatan Koreksi PPAP-dr Angsuran PH")
             .cast(pl.Utf8)
             .str.replace_all(r"[^0-9,\.\-\(\)]", "")
             .alias("Pendapatan Koreksi PPAP-dr Angsuran PH"),
-        pl.col("Recovery Non Klaim")
-            .cast(pl.Utf8)
-            .str.replace_all(r"[^0-9,\.\-\(\)]", "")
-            .alias("Recovery Non Klaim"),
     ])
 
     df = df.filter(
         pl.col("KODE").is_not_null()
         & (pl.col("KODE") != "")
-        & pl.col("Tanggal").is_not_null()
-        & (pl.col("Tanggal") != "")
+        & pl.col("Periode").is_not_null()
+        & (pl.col("Periode") != "")
     )
 
     if df.height == 0:
         raise RuntimeError("Polars tidak menemukan baris data GI405 - Rec. DH yang valid.")
 
     duplicate_pairs = (
-        df.group_by(["Tanggal", "KODE"])
+        df.group_by(["Periode", "KODE"])
         .len()
         .filter(pl.col("len") > 1)
         .height
@@ -126,7 +115,7 @@ def main():
         skipped_rows=[],
         skipped_count=0,
         duplicate_count=duplicate_pairs,
-        dates=df.select("Tanggal").unique().to_series().to_list(),
+        dates=df.select("Periode").unique().to_series().to_list(),
     )
 
 

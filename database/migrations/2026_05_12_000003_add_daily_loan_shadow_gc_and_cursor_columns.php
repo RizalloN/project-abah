@@ -39,7 +39,7 @@ return new class extends Migration
         ],
         'cifno_clean_gc' => [
             'type' => 'VARCHAR(50)',
-            'expression' => "REGEXP_REPLACE(COALESCE(`cifno`, ''), '[^0-9]', '')",
+            'expression' => "UPPER(TRIM(COALESCE(`cifno`, '')))",
             'legacy' => 'cifno_clean',
         ],
     ];

@@ -5,7 +5,10 @@ param(
     [Nullable[int]]$ReportWorkers = $null,
     [Nullable[int]]$SnapshotWorkers = $null,
     [Nullable[int]]$ShadowWorkers = $null,
-    [Nullable[int]]$WorkerMemory = $null
+    [Nullable[int]]$WorkerMemory = $null,
+    [Nullable[int]]$WorkerMaxJobs = $null,
+    [Nullable[int]]$WorkerMaxTime = $null,
+    [switch]$SkipQueueRestart
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,28 +42,136 @@ function Get-IntSetting {
     return $Default
 }
 
+function Invoke-ProcessWithTimeout {
+    param(
+        [string]$FilePath,
+        [string[]]$ArgumentList,
+        [int]$TimeoutSeconds
+    )
+
+    $stdoutPath = [IO.Path]::GetTempFileName()
+    $stderrPath = [IO.Path]::GetTempFileName()
+
+    try {
+        $process = Start-Process `
+            -FilePath $FilePath `
+            -ArgumentList $ArgumentList `
+            -NoNewWindow `
+            -PassThru `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath
+
+        $timedOut = $false
+        if ($TimeoutSeconds -gt 0) {
+            try {
+                Wait-Process -Id $process.Id -Timeout $TimeoutSeconds -ErrorAction Stop
+            } catch {
+                $timedOut = $true
+                try {
+                    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+                } catch {
+                    # Process may have exited between timeout and stop.
+                }
+            }
+        } else {
+            Wait-Process -Id $process.Id
+        }
+
+        $process.Refresh()
+        $output = @()
+        if (Test-Path $stdoutPath) {
+            $output += Get-Content -Path $stdoutPath -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $stderrPath) {
+            $output += Get-Content -Path $stderrPath -ErrorAction SilentlyContinue
+        }
+
+        return @{
+            TimedOut = $timedOut
+            ExitCode = if ($timedOut) { $null } else { $process.ExitCode }
+            Output = $output
+        }
+    } finally {
+        Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 $importWorkerCount = Get-IntSetting -Value $ImportWorkers -EnvName 'ABAH_IMPORT_WORKERS' -Default 3
 $reportWorkerCount = Get-IntSetting -Value $ReportWorkers -EnvName 'ABAH_REPORT_WORKERS' -Default 3
 $snapshotWorkerCount = Get-IntSetting -Value $SnapshotWorkers -EnvName 'ABAH_SNAPSHOT_WORKERS' -Default 2
 $shadowWorkerCount = Get-IntSetting -Value $ShadowWorkers -EnvName 'ABAH_SHADOW_WORKERS' -Default 2
 $queueWorkerMemory = Get-IntSetting -Value $WorkerMemory -EnvName 'ABAH_WORKER_MEMORY' -Default 512
+$queueWorkerMaxJobs = Get-IntSetting -Value $WorkerMaxJobs -EnvName 'ABAH_WORKER_MAX_JOBS' -Default 25
+$queueWorkerMaxTime = Get-IntSetting -Value $WorkerMaxTime -EnvName 'ABAH_WORKER_MAX_TIME' -Default 3600
+$startupMigrateTimeout = Get-IntSetting -Value $null -EnvName 'ABAH_START_MIGRATE_TIMEOUT' -Default 240
+$startupQueueRestartTimeout = Get-IntSetting -Value $null -EnvName 'ABAH_START_QUEUE_RESTART_TIMEOUT' -Default 60
+$startupDdnsTimeout = Get-IntSetting -Value $null -EnvName 'ABAH_START_DDNS_TIMEOUT' -Default 90
+
+Write-Host ("Worker policy: memory {0}MB, max-jobs {1}, max-time {2}s." -f $queueWorkerMemory, $queueWorkerMaxJobs, $queueWorkerMaxTime)
+
+$ddnsUpdater = Join-Path $projectRoot 'ddns-update.bat'
+if (Test-Path $ddnsUpdater -PathType Leaf) {
+    Write-Host ("Memperbarui DuckDNS public IP (timeout {0}s)..." -f $startupDdnsTimeout)
+    try {
+        $ddnsResult = Invoke-ProcessWithTimeout `
+            -FilePath 'cmd.exe' `
+            -ArgumentList @('/c', "`"$ddnsUpdater`"") `
+            -TimeoutSeconds $startupDdnsTimeout
+
+        if ($ddnsResult.TimedOut) {
+            Write-Warning ("DuckDNS update melewati timeout {0}s. Scheduler Laravel akan mencoba lagi berkala." -f $startupDdnsTimeout)
+        } elseif ($ddnsResult.ExitCode -eq 0) {
+            Write-Host 'DuckDNS public IP berhasil diperbarui.'
+        } else {
+            Write-Warning ("DuckDNS update keluar dengan kode {0}. Scheduler Laravel akan mencoba lagi berkala." -f $ddnsResult.ExitCode)
+        }
+    } catch {
+        Write-Warning ("Tidak dapat menjalankan DuckDNS update: {0}" -f $_.Exception.Message)
+    }
+}
 
 # Ensure schema is current before spawning workers. Critical for snapshot dirty-period
 # triggers (migration 2026_05_12_000002_create_dirty_marker_triggers.php) which let
 # CRUD on hourly_dpk, ssa_simpanan, etc. propagate to dashboard_harian_snapshots
 # automatically. If migrate fails we surface the error but continue so the user can
 # still bring up workers and diagnose.
-Write-Host 'Menjalankan php artisan migrate --force untuk memastikan trigger dirty-period dan schema terbaru terpasang...'
+Write-Host ("Menjalankan php artisan migrate --force untuk memastikan trigger dirty-period dan schema terbaru terpasang (timeout {0}s)..." -f $startupMigrateTimeout)
 try {
-    $migrateOutput = & php artisan migrate --force --no-interaction 2>&1
-    if ($LASTEXITCODE -eq 0) {
+    $migrateResult = Invoke-ProcessWithTimeout `
+        -FilePath 'php' `
+        -ArgumentList @('artisan', 'migrate', '--force', '--no-interaction') `
+        -TimeoutSeconds $startupMigrateTimeout
+
+    if ($migrateResult.TimedOut) {
+        Write-Warning ("php artisan migrate melewati timeout {0}s. Worker tetap dijalankan; cek database lock/migration manual." -f $startupMigrateTimeout)
+    } elseif ($migrateResult.ExitCode -eq 0) {
         Write-Host 'Migrate selesai. Trigger snapshot dirty-period dipastikan terpasang.'
     } else {
-        Write-Warning ("php artisan migrate keluar dengan kode {0}. Output:`n{1}" -f $LASTEXITCODE, ($migrateOutput -join "`n"))
+        Write-Warning ("php artisan migrate keluar dengan kode {0}. Output:`n{1}" -f $migrateResult.ExitCode, ($migrateResult.Output -join "`n"))
         Write-Warning 'Worker tetap dijalankan, tetapi periksa migrasi sebelum mengandalkan auto-rebuild snapshot.'
     }
 } catch {
     Write-Warning ("Tidak dapat menjalankan php artisan migrate: {0}" -f $_.Exception.Message)
+}
+
+if (-not $SkipQueueRestart) {
+    Write-Host ("Mengirim sinyal queue:restart agar worker lama recycle aman setelah job aktif selesai (timeout {0}s)..." -f $startupQueueRestartTimeout)
+    try {
+        $restartResult = Invoke-ProcessWithTimeout `
+            -FilePath 'php' `
+            -ArgumentList @('artisan', 'queue:restart', '--no-interaction') `
+            -TimeoutSeconds $startupQueueRestartTimeout
+
+        if ($restartResult.TimedOut) {
+            Write-Warning ("php artisan queue:restart melewati timeout {0}s. Worker baru tetap dijalankan." -f $startupQueueRestartTimeout)
+        } elseif ($restartResult.ExitCode -eq 0) {
+            Write-Host 'Sinyal queue:restart terkirim.'
+        } else {
+            Write-Warning ("php artisan queue:restart keluar dengan kode {0}. Output:`n{1}" -f $restartResult.ExitCode, ($restartResult.Output -join "`n"))
+        }
+    } catch {
+        Write-Warning ("Tidak dapat menjalankan php artisan queue:restart: {0}" -f $_.Exception.Message)
+    }
 }
 
 function Get-ProcessCommandCount {
@@ -129,7 +240,7 @@ function Start-PersistentQueuePool {
 
         $slotWorkerName = "$WorkerKey-$slot"
         $scriptPath = Join-Path $projectRoot 'scripts\queue-persistent.ps1'
-        $command = "cd /d `"$projectRoot`" && powershell -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Queues `"$Queues`" -Tries 1 -Timeout 0 -Sleep 1 -Memory $queueWorkerMemory -RestartDelaySeconds 3 -WorkerName `"$slotWorkerName`" >> `"$slotLogPath`" 2>&1"
+        $command = "cd /d `"$projectRoot`" && powershell -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Queues `"$Queues`" -Tries 1 -Timeout 0 -Sleep 1 -Memory $queueWorkerMemory -MaxJobs $queueWorkerMaxJobs -MaxTimeSeconds $queueWorkerMaxTime -RestartDelaySeconds 3 -WorkerName `"$slotWorkerName`" >> `"$slotLogPath`" 2>&1"
         Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $command -WindowStyle Hidden | Out-Null
         Write-Host "$Name persistent worker $slot/$DesiredCount dijalankan. Log: $slotLogPath"
     }

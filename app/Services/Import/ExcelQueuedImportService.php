@@ -680,7 +680,7 @@ class ExcelQueuedImportService
     {
         $resolvedTable = strtolower(trim($tableName));
 
-        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'gi405_singlerow'], true);
+        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn'], true);
     }
 
 }

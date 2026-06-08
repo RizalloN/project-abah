@@ -13,7 +13,7 @@ class SnapshotSourceSignatureService
     private const SIGNATURE_VERSION = 'snapshot-source-v1';
     private const BUCKET_SIGNATURE_VERSION = 'snapshot-source-v2-buckets';
     private const SNAPSHOT_FORMULA_VERSIONS = [
-        'performance_rm_snapshots' => 'performance-rm-v5-valid-consumer-plafon-basis',
+        'performance_rm_snapshots' => 'performance-rm-v9-consumer-cif-xlookup-net-disbursement',
     ];
 
     private const NUMERIC_COLUMNS = [
@@ -44,7 +44,13 @@ class SnapshotSourceSignatureService
         'lw325_ph' => [
             'pokok',
         ],
+        'gi405_recovery' => [
+            'pendapatan_koreksi_ppap_dr_angsuran_ph',
+        ],
     ];
+
+    /** @var array<string, array<string, true>> */
+    private array $tableColumns = [];
 
     /**
      * @return array{source_signature: string, source_row_count: int, source_max_updated_at: mixed, payload: array<string, mixed>}|null
@@ -59,7 +65,7 @@ class SnapshotSourceSignatureService
             || $periodColumn === ''
             || $period === ''
             || !Schema::hasTable($sourceTable)
-            || !Schema::hasColumn($sourceTable, $periodColumn)) {
+            || !$this->tableHasColumn($sourceTable, $periodColumn)) {
             return null;
         }
 
@@ -71,7 +77,11 @@ class SnapshotSourceSignatureService
         $selectedAliases = [];
 
         foreach (['updated_at', 'created_at', 'id', 'uniqueid_namareport'] as $column) {
-            if (!Schema::hasColumn($sourceTable, $column)) {
+            if ($sourceTable === 'simpanan_multipn') {
+                continue;
+            }
+
+            if (!$this->tableHasColumn($sourceTable, $column)) {
                 continue;
             }
 
@@ -81,7 +91,7 @@ class SnapshotSourceSignatureService
         }
 
         foreach (self::NUMERIC_COLUMNS[$sourceTable] ?? [] as $column) {
-            if (!Schema::hasColumn($sourceTable, $column)) {
+            if (!$this->tableHasColumn($sourceTable, $column)) {
                 continue;
             }
 
@@ -106,6 +116,20 @@ class SnapshotSourceSignatureService
 
         foreach ($selectedAliases as $alias) {
             $payload[$alias] = $this->normalizeAggregateValue($row[$alias] ?? null);
+        }
+
+        if ($sourceTable === 'simpanan_multipn') {
+            $timestampColumn = $this->tableHasColumn($sourceTable, 'updated_at')
+                ? 'updated_at'
+                : ($this->tableHasColumn($sourceTable, 'created_at') ? 'created_at' : null);
+
+            if ($timestampColumn !== null) {
+                $timestampAlias = 'max_' . $timestampColumn;
+                $row[$timestampAlias] = DB::table($sourceTable)
+                    ->where($periodColumn, $period)
+                    ->max($timestampColumn);
+                $payload[$timestampAlias] = $this->normalizeAggregateValue($row[$timestampAlias] ?? null);
+            }
         }
 
         $bucketSignatures = $this->captureBucketSignatures($sourceTable, $periodColumn, $period);
@@ -141,7 +165,7 @@ class SnapshotSourceSignatureService
             ->selectRaw('COUNT(*) as source_row_count');
 
         foreach (self::NUMERIC_COLUMNS[$sourceTable] ?? [] as $column) {
-            if (!Schema::hasColumn($sourceTable, $column)) {
+            if (!$this->tableHasColumn($sourceTable, $column)) {
                 continue;
             }
 
@@ -150,6 +174,7 @@ class SnapshotSourceSignatureService
 
         return $query
             ->groupBy('bucket_key')
+            ->orderBy('bucket_key')
             ->limit(200)
             ->get()
             ->mapWithKeys(function ($row): array {
@@ -172,11 +197,12 @@ class SnapshotSourceSignatureService
             'hourly_dpk' => ['kanca', 'kantor_cabang'],
             'ssa_pinjaman' => ['kanca', 'kantor_cabang'],
             'lw325_ph' => ['kanca', 'cabang'],
+            'gi405_recovery' => ['kode_uker'],
             default => [],
         };
 
         foreach ($candidates as $column) {
-            if (Schema::hasColumn($sourceTable, $column)) {
+            if ($this->tableHasColumn($sourceTable, $column)) {
                 return $column;
             }
         }
@@ -184,7 +210,38 @@ class SnapshotSourceSignatureService
         return null;
     }
 
-    public function isFresh(string $sourceTable, string $snapshotTable, string $periodKey, ?array $sourceMetadata): bool
+    private function tableHasColumn(string $table, string $column): bool
+    {
+        $table = strtolower(trim($table));
+        $column = strtolower(trim($column));
+        if ($table === '' || $column === '') {
+            return false;
+        }
+
+        if (!array_key_exists($table, $this->tableColumns)) {
+            try {
+                $this->tableColumns[$table] = array_fill_keys(
+                    array_map(
+                        static fn (string $name): string => strtolower($name),
+                        Schema::getColumnListing($table)
+                    ),
+                    true
+                );
+            } catch (Throwable) {
+                $this->tableColumns[$table] = [];
+            }
+        }
+
+        return isset($this->tableColumns[$table][$column]);
+    }
+
+    public function isFresh(
+        string $sourceTable,
+        string $snapshotTable,
+        string $periodKey,
+        ?array $sourceMetadata,
+        ?int $snapshotRowCount = null
+    ): bool
     {
         if ($sourceMetadata === null || !Schema::hasTable(self::TABLE)) {
             return false;
@@ -200,10 +257,26 @@ class SnapshotSourceSignatureService
             return false;
         }
 
+        $context = null;
         $formulaVersion = $this->snapshotFormulaVersion($snapshotTable);
+        if ($formulaVersion !== null || $snapshotRowCount !== null) {
+            $decodedContext = json_decode((string) ($existing->context ?? ''), true);
+            $context = is_array($decodedContext) ? $decodedContext : [];
+        }
+
         if ($formulaVersion !== null) {
-            $context = json_decode((string) ($existing->context ?? ''), true);
             if (!is_array($context) || (string) ($context['snapshot_formula_version'] ?? '') !== $formulaVersion) {
+                return false;
+            }
+        }
+
+        if ($snapshotRowCount !== null) {
+            if (array_key_exists('rows_after', $context ?? [])) {
+                if ((int) $context['rows_after'] !== $snapshotRowCount) {
+                    return false;
+                }
+            } elseif ($snapshotRowCount <= 0) {
+                // Legacy signatures cannot prove that an empty snapshot was a valid build result.
                 return false;
             }
         }

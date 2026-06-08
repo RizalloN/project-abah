@@ -44,12 +44,18 @@ class DrainSnapshotDirtyPeriodsCommand extends Command
                     'context' => ['queue_threshold' => $queueThreshold],
                 ]);
                 usleep(500_000);
+
                 continue;
             }
 
             $claims = $dirtyPeriods->claimDue(min($limit, $maxDispatch), $sourceTable, $period);
             if ($claims === []) {
+                if ($dirtyPeriods->claimableCount($sourceTable, $period) === 0) {
+                    break;
+                }
+
                 usleep(500_000);
+
                 continue;
             }
 
@@ -73,6 +79,7 @@ class DrainSnapshotDirtyPeriodsCommand extends Command
             'passes' => $passes,
             'dispatched' => $dispatched,
             'pending' => $dirtyPeriods->pendingCount($sourceTable),
+            'claimable' => $dirtyPeriods->claimableCount($sourceTable, $period),
         ], JSON_UNESCAPED_SLASHES));
 
         return self::SUCCESS;
@@ -96,11 +103,11 @@ class DrainSnapshotDirtyPeriodsCommand extends Command
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      */
     private function audit(string $action, string $status, array $payload = []): void
     {
-        if (!Schema::hasTable('report_sync_audits')) {
+        if (! Schema::hasTable('report_sync_audits')) {
             return;
         }
 

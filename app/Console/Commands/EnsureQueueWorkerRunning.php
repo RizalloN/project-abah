@@ -13,7 +13,8 @@ class EnsureQueueWorkerRunning extends Command
                           {--queues= : Queues to monitor}
                           {--timeout= : Queue worker timeout in seconds (0 = unlimited)}
                           {--memory= : Queue worker memory limit in MB}
-                          {--max-jobs=0 : Maximum jobs before restart (0 = unlimited)}
+                          {--max-jobs= : Maximum jobs before restart (0 = unlimited)}
+                          {--max-time= : Maximum seconds before restart (0 = unlimited)}
                           {--check-interval=60 : How often to check if worker is running}
                           {--once : Run one check and exit}';
 
@@ -25,10 +26,11 @@ class EnsureQueueWorkerRunning extends Command
         $queues = $this->normalizeQueues((string) ($this->option('queues') ?: config('queue.worker_queues', 'imports-high,imports-daily-loan,snapshots-parallel,default,reports-low,shadow-backfill')));
         $timeout = (string) ($this->option('timeout') ?? config('queue.worker_timeout', 0));
         $memory = (string) ($this->option('memory') ?? config('queue.worker_memory', 512));
-        $maxJobs = (int) $this->option('max-jobs');
+        $maxJobs = (int) ($this->option('max-jobs') ?? config('queue.worker_max_jobs', 25));
+        $maxTime = (int) ($this->option('max-time') ?? config('queue.worker_max_time', 3600));
 
         if ((bool) $this->option('once')) {
-            $this->checkAndEnsureWorker($queues, $timeout, $memory, $maxJobs);
+            $this->checkAndEnsureWorker($queues, $timeout, $memory, $maxJobs, $maxTime);
 
             return 0;
         }
@@ -39,14 +41,14 @@ class EnsureQueueWorkerRunning extends Command
         $this->newLine();
 
         while (true) {
-            $this->checkAndEnsureWorker($queues, $timeout, $memory, $maxJobs);
+            $this->checkAndEnsureWorker($queues, $timeout, $memory, $maxJobs, $maxTime);
             sleep($checkInterval);
         }
 
         return 0;
     }
 
-    private function checkAndEnsureWorker(string $queues, string $timeout, string $memory, int $maxJobs): void
+    private function checkAndEnsureWorker(string $queues, string $timeout, string $memory, int $maxJobs, int $maxTime): void
     {
         try {
             $queueNames = $this->queueNames($queues);
@@ -88,7 +90,7 @@ class EnsureQueueWorkerRunning extends Command
                 $this->warn("[" . now()->toDateTimeString() . "] Queue worker not running with {$pendingJobs} pending jobs!");
                 $this->info("Attempting to start queue worker...");
 
-                $this->startQueueWorker($queues, $timeout, $memory, $maxJobs);
+                $this->startQueueWorker($queues, $timeout, $memory, $maxJobs, $maxTime);
                 $this->info("Queue worker started.");
 
                 Log::warning('Queue worker was not running. Automatically restarted.', [
@@ -168,7 +170,7 @@ class EnsureQueueWorkerRunning extends Command
         return shell_exec('powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ' . escapeshellarg($encoded) . ' 2>NUL') ?? '';
     }
 
-    private function startQueueWorker(string $queues, string $timeout, string $memory, int $maxJobs): void
+    private function startQueueWorker(string $queues, string $timeout, string $memory, int $maxJobs, int $maxTime): void
     {
         $php = (new PhpExecutableFinder())->find(false) ?: PHP_BINARY ?: 'php';
         $artisan = base_path('artisan');
@@ -183,6 +185,9 @@ class EnsureQueueWorkerRunning extends Command
         ];
         if ($maxJobs > 0) {
             $workerArgs[] = '--max-jobs=' . $maxJobs;
+        }
+        if ($maxTime > 0) {
+            $workerArgs[] = '--max-time=' . $maxTime;
         }
 
         // Start worker in background (non-blocking).

@@ -62,6 +62,9 @@ class ReportDataSyncService
         'hourly_dpk',
         'ssa_pinjaman',
         'lw325_ph',
+        'gi405_recovery',
+        'dly_kap_resegmentasi',
+        'l1133',
         'performance_pis_per_produk',
     ];
     private const LIGHTWEIGHT_IMPORT_TABLES = [
@@ -181,6 +184,9 @@ class ReportDataSyncService
                 'hourly_dpk' => $this->syncHourlyDpk($periodHint, $jobId, $source),
                 'ssa_pinjaman' => $this->syncSsaPinjaman($periodHint, $jobId, $source, $deleteId),
                 'lw325_ph' => $this->syncReportPh($periodHint, $jobId, $source, $deleteId),
+                'gi405_recovery' => $this->syncGi405Recovery($periodHint, $jobId, $source, $deleteId),
+                'dly_kap_resegmentasi' => $this->syncFallbackLoanSource('dly_kap_resegmentasi', $periodHint, $jobId, $source, $deleteId),
+                'l1133' => $this->syncFallbackLoanSource('l1133', $periodHint, $jobId, $source, $deleteId),
                 'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($periodHint, $jobId, $source, $deleteId),
                 'rka' => app(\App\Support\OptimizedRkaLookupService::class)->invalidateCache(),
                 default => null,
@@ -537,6 +543,57 @@ class ReportDataSyncService
         )->onQueue('snapshots-parallel');
     }
 
+    private function syncGi405Recovery(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
+    {
+        $this->runSnapshotAudit('gi405_recovery', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint, $deleteId) {
+            if ($deleteId) {
+                $this->heartbeat($deleteId, 'Rebuilding Daily Dashboard snapshots after GI405 Recovery import...');
+            }
+
+            if ($periodHint !== null && trim($periodHint) !== '') {
+                return $this->dashboardHarianSnapshotService->rebuild($periodHint, false);
+            }
+
+            return $this->dashboardHarianSnapshotService->syncDuePeriods();
+        });
+
+        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+            $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        }
+
+        $this->dispatchSnapshotFreshnessCheck('gi405_recovery', $periodHint, $source);
+    }
+
+    private function syncFallbackLoanSource(string $tableName, ?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
+    {
+        $normalizedTable = strtolower(trim($tableName));
+        $period = trim((string) $periodHint);
+
+        $this->runSnapshotAudit($normalizedTable, $periodHint, $jobId, $source, 'snapshot_dashboard_harian_fallback', function () use ($normalizedTable, $period, $deleteId) {
+            if ($deleteId) {
+                $this->heartbeat($deleteId, 'Rebuilding Daily Dashboard snapshots after fallback loan source mutation...');
+            }
+
+            $affectedPeriods = $period !== ''
+                ? $this->dashboardHarianSnapshotService->resolveAffectedSnapshotPeriodsForLoanFallback($normalizedTable, $period)
+                : [];
+
+            if ($affectedPeriods === [] && $period !== '') {
+                $affectedPeriods = [$period];
+            }
+
+            return $affectedPeriods !== []
+                ? $this->dashboardHarianSnapshotService->syncDuePeriods($affectedPeriods)
+                : $this->dashboardHarianSnapshotService->syncDuePeriods();
+        });
+
+        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+            $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        }
+
+        $this->dispatchSnapshotFreshnessCheck($normalizedTable, $periodHint, $source);
+    }
+
     private function syncPerformanceNewPayroll(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
         $this->runSnapshotAudit('performance_pis_per_produk', $periodHint, $jobId, $source, 'snapshot_new_payroll', function () use ($periodHint, $deleteId) {
@@ -719,9 +776,11 @@ class ReportDataSyncService
         $hasHourlySavings = $this->safeSourcePeriodHasRows('hourly_dpk', 'posisi', $period);
         $hasSsaLoan = $this->safeSourcePeriodHasRows('ssa_pinjaman', 'month_day_year_of_periode', $period);
         $hasFallbackLoan = $this->dashboardHarianFallbackLoanSourcePeriodHasRows($period);
+        $hasGi405 = $this->safeSourcePeriodHasRows('gi405_recovery', 'periode', $period);
 
-        $bothReady = ($hasSsaSavings && ($hasSsaLoan || $hasFallbackLoan))
-            || (!$hasSsaSavings && $hasHourlySavings && $hasFallbackLoan);
+        $bothReady = (($hasSsaSavings && ($hasSsaLoan || $hasFallbackLoan))
+            || (!$hasSsaSavings && $hasHourlySavings && $hasFallbackLoan))
+            && $hasGi405;
 
         if (!$bothReady) {
             if (!$hasSsaSavings && !$hasHourlySavings) {
@@ -732,6 +791,10 @@ class ReportDataSyncService
                 $missing[] = 'fallback_loan_source';
             } elseif ($hasSsaSavings && !$hasSsaLoan && !$hasFallbackLoan) {
                 $missing[] = 'loan_source';
+            }
+
+            if (!$hasGi405) {
+                $missing[] = 'gi405_recovery_source';
             }
         }
 
@@ -808,6 +871,9 @@ class ReportDataSyncService
             'hourly_dpk',
             'ssa_pinjaman',
             'lw325_ph',
+            'gi405_recovery',
+            'dly_kap_resegmentasi',
+            'l1133',
         ], true)) {
             return;
         }
@@ -918,6 +984,9 @@ class ReportDataSyncService
             'ssa_pinjaman',
             'hourly_dpk',
             'lw325_ph',
+            'gi405_recovery',
+            'dly_kap_resegmentasi',
+            'l1133',
         ], true)) {
             return;
         }
@@ -956,8 +1025,11 @@ class ReportDataSyncService
             'ssa_simpanan' => 'Month_Day_Year_of_Posisi',
             'ssa_pinjaman' => 'month_day_year_of_periode',
             'lw325_ph' => 'periode',
+            'gi405_recovery' => 'periode',
             'daily_loan_dinamis' => 'periode',
             'simpanan_multipn' => 'posisi',
+            'dly_kap_resegmentasi' => 'periode',
+            'l1133' => 'periode',
         ];
 
         foreach ($checks as $table => $column) {
@@ -1032,6 +1104,15 @@ class ReportDataSyncService
                 self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
             ],
             'lw325_ph' => [
+                self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
+            ],
+            'gi405_recovery' => [
+                self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
+            ],
+            'dly_kap_resegmentasi' => [
+                self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
+            ],
+            'l1133' => [
                 self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
             ],
             'performance_pis_per_produk' => [
@@ -1152,6 +1233,9 @@ class ReportDataSyncService
             'hourly_dpk' => $this->syncHourlyDpk($normalizedPeriodHint, null, $source),
             'ssa_pinjaman' => $this->syncSsaPinjaman($normalizedPeriodHint, null, $source, $deleteId),
             'lw325_ph' => $this->syncReportPh($normalizedPeriodHint, null, $source, $deleteId),
+            'gi405_recovery' => $this->syncGi405Recovery($normalizedPeriodHint, null, $source, $deleteId),
+            'dly_kap_resegmentasi' => $this->syncFallbackLoanSource('dly_kap_resegmentasi', $normalizedPeriodHint, null, $source, $deleteId),
+            'l1133' => $this->syncFallbackLoanSource('l1133', $normalizedPeriodHint, null, $source, $deleteId),
             'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($normalizedPeriodHint, null, $source, $deleteId),
             default => null,
         };
@@ -1306,7 +1390,7 @@ class ReportDataSyncService
     private function cacheScopeForTable(string $tableName): string
     {
         return match (strtolower(trim($tableName))) {
-            'daily_loan_dinamis', 'ssa_pinjaman', 'lw325_ph' => 'pinjaman',
+            'daily_loan_dinamis', 'ssa_pinjaman', 'lw325_ph', 'gi405_recovery' => 'pinjaman',
             'simpanan_multipn', 'ssa_simpanan', 'hourly_dpk' => 'simpanan',
             'dly_kap_resegmentasi', 'l1133' => 'harian',
             default => 'global',

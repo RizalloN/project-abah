@@ -10,9 +10,9 @@
             </tr>
             <tr>
                 @foreach (($payload['months'] ?? []) as $month)
-                    <th>Deb</th><th>Rp.Juta</th>
+                    <th>Deb</th><th>Plafon Juta</th>
                 @endforeach
-                <th>Deb</th><th>Rp.Juta</th>
+                <th>Deb</th><th>Plafon Juta</th>
             </tr>
         </thead>
         <tbody>
@@ -30,6 +30,21 @@
             @empty
                 <tr><td colspan="34" class="rm-mikro-empty">Data tidak ditemukan.</td></tr>
             @endforelse
+            @if ($rows->isNotEmpty())
+                <tr class="rm-mikro-total">
+                    <td colspan="8" class="strong">GRAND TOTAL</td>
+                    @foreach (($payload['months'] ?? []) as $month)
+                        @php
+                            $monthDeb = $rows->sum(fn ($row) => (int) data_get($row, 'months.' . $month['key'] . '.deb', 0));
+                            $monthOs = $rows->sum(fn ($row) => (float) data_get($row, 'months.' . $month['key'] . '.os', 0));
+                        @endphp
+                        <td class="text-right">{{ $formatAmount($monthDeb) }}</td>
+                        <td class="text-right">{{ $formatJuta($monthOs) }}</td>
+                    @endforeach
+                    <td class="text-right strong">{{ $formatAmount($rows->sum('total_deb')) }}</td>
+                    <td class="text-right strong">{{ $formatJuta($rows->sum('total_os')) }}</td>
+                </tr>
+            @endif
         </tbody>
     </table>
 </div>

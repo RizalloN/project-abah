@@ -413,7 +413,7 @@ class ReportSnapshotBuilder
             DB::table($snapshotTable)->where('periode', $period)->delete();
         }
 
-        DB::statement("
+        $this->statementWithConcurrencyRetry('chart periodik period snapshot upsert', fn (): bool => DB::statement("
             INSERT INTO {$snapshotTable}
             (
                 uniqueid_dpcs, periode, source_uniqueid_namareport, account_number, baki_debet1,
@@ -455,10 +455,10 @@ class ReportSnapshotBuilder
                 unit1 = VALUES(unit1),
                 branch1 = VALUES(branch1),
                 updated_at = VALUES(updated_at)
-        ", [$period, $period, $period]);
+        ", [$period, $period, $period]));
 
         if (!$force) {
-            DB::statement("
+            $this->statementWithConcurrencyRetry('chart periodik period snapshot prune', fn (): bool => DB::statement("
                 DELETE snap
                 FROM {$snapshotTable} snap
                 LEFT JOIN (
@@ -471,7 +471,7 @@ class ReportSnapshotBuilder
                 ) src ON src.uniqueid_dpcs = snap.uniqueid_dpcs
                 WHERE snap.periode = ?
                     AND src.uniqueid_dpcs IS NULL
-            ", [$period, $period, $period]);
+            ", [$period, $period, $period]));
         }
 
         $rowCount = (int) DB::table(self::CHART_PERIODIK_SNAPSHOT_TABLE)->where('periode', $period)->count();
@@ -731,7 +731,7 @@ class ReportSnapshotBuilder
             ";
         }
 
-        DB::statement("
+        $this->statementWithConcurrencyRetry('rasio snapshot upsert', fn (): bool => DB::statement("
             INSERT INTO " . self::RASIO_SNAPSHOT_TABLE . " (
                 uniqueid_rcds, loan_period, casa_period, branch_key, 
                 branch_label, segment_key, os_amount, casa_amount, 
@@ -807,7 +807,7 @@ class ReportSnapshotBuilder
                 casa_amount = VALUES(casa_amount),
                 source_row_count = VALUES(source_row_count),
                 updated_at = VALUES(updated_at)
-        ", $bindings);
+        ", $bindings));
 
         return (int) DB::table(self::RASIO_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->count();
     }
@@ -852,7 +852,7 @@ class ReportSnapshotBuilder
             ";
         }
 
-        DB::statement("
+        $this->statementWithConcurrencyRetry('rasio uker snapshot upsert', fn (): bool => DB::statement("
             INSERT INTO " . self::RASIO_UKER_SNAPSHOT_TABLE . " (
                 uniqueid_rcdus, loan_period, casa_period, source_branch_key, 
                 uker_key, uker_label, segment_key, os_amount, casa_amount, 
@@ -932,7 +932,7 @@ class ReportSnapshotBuilder
                 casa_amount = VALUES(casa_amount),
                 source_row_count = VALUES(source_row_count),
                 updated_at = VALUES(updated_at)
-        ", $bindings);
+        ", $bindings));
 
         return (int) DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->count();
     }
@@ -1175,7 +1175,7 @@ class ReportSnapshotBuilder
 
         $dormantBranchFilterExpression = $this->buildDormantBranchFilterSqlExpression('kantor_cabang');
 
-        DB::statement("
+        $this->statementWithConcurrencyRetry('dormant snapshot upsert', fn (): bool => DB::statement("
             INSERT INTO {$snapshotTable}
             (
                 uniqueid_rds, posisi, branch_label, raw_branch, unit_kerja, dormant_count, snapshot_version, created_at, updated_at
@@ -1213,10 +1213,10 @@ class ReportSnapshotBuilder
             ) base
             WHERE {$branchLabelExpression} IS NOT NULL
             {$conflictSql}
-        ", [$period, $period, $period]);
+        ", [$period, $period, $period]));
 
         if (!$force) {
-            DB::statement("
+            $this->statementWithConcurrencyRetry('dormant snapshot prune', fn (): bool => DB::statement("
                 DELETE snap
                 FROM {$snapshotTable} snap
                 LEFT JOIN (
@@ -1246,7 +1246,7 @@ class ReportSnapshotBuilder
                 WHERE snap.posisi = ?
                     AND snap.snapshot_version = ?
                     AND src.uniqueid_rds IS NULL
-            ", [$period, $period, $period, self::DORMANT_SNAPSHOT_VERSION]);
+            ", [$period, $period, $period, self::DORMANT_SNAPSHOT_VERSION]));
         }
 
         $rowCount = (int) DB::table(self::DORMANT_SNAPSHOT_TABLE)
@@ -1274,6 +1274,16 @@ class ReportSnapshotBuilder
         $yoyStart = $snapshotDate->copy()->subYearNoOverflow()->startOfMonth()->toDateString();
         $yoyEnd = Carbon::parse($yoyStart)->endOfMonth()->toDateString();
 
+        $prevSnapshot = DB::table('performance_pis_per_produk')
+            ->whereDate('posisi', '<=', $prevEnd)
+            ->whereIn(DB::raw('UPPER(TRIM(kanca))'), self::NEW_PAYROLL_BRANCHES)
+            ->max('posisi') ?? $snapshotPosisi;
+
+        $yoySnapshot = DB::table('performance_pis_per_produk')
+            ->whereDate('posisi', '<=', $yoyEnd)
+            ->whereIn(DB::raw('UPPER(TRIM(kanca))'), self::NEW_PAYROLL_BRANCHES)
+            ->max('posisi') ?? $snapshotPosisi;
+
         // Use single INSERT ... SELECT ... ON DUPLICATE KEY UPDATE
         $branchList = implode("','", self::NEW_PAYROLL_BRANCHES);
 
@@ -1292,7 +1302,7 @@ class ReportSnapshotBuilder
                 updated_at = VALUES(updated_at)
         ";
 
-        DB::statement(
+        $this->statementWithConcurrencyRetry('new payroll snapshot upsert', fn (): bool => DB::statement(
             "INSERT INTO " . self::NEW_PAYROLL_SNAPSHOT_TABLE . " (
                 uniqueid_pnps, snapshot_posisi, branch, rekening_curr, rekening_prev, rekening_yoy_prev,
                 saldo_curr, saldo_prev, saldo_yoy_prev, created_at, updated_at
@@ -1301,21 +1311,22 @@ class ReportSnapshotBuilder
                 MD5(CONCAT_WS('|', 'pnps', ?, base.branch)) as uniqueid_pnps,
                 ? as snapshot_posisi,
                 base.branch as branch,
-                SUM(CASE WHEN base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_curr,
-                SUM(CASE WHEN base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_prev,
-                SUM(CASE WHEN base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_yoy_prev,
-                SUM(CASE WHEN base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN base.saldo_britama_kerjasama ELSE 0 END) as saldo_curr,
-                SUM(CASE WHEN base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN base.saldo_britama_kerjasama ELSE 0 END) as saldo_prev,
-                SUM(CASE WHEN base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN base.saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev,
+                SUM(CASE WHEN base.posisi = ? AND base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_curr,
+                SUM(CASE WHEN base.posisi = ? AND base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_prev,
+                SUM(CASE WHEN base.posisi = ? AND base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_yoy_prev,
+                SUM(CASE WHEN base.posisi = ? AND base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN base.saldo_britama_kerjasama ELSE 0 END) as saldo_curr,
+                SUM(CASE WHEN base.posisi = ? AND base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN base.saldo_britama_kerjasama ELSE 0 END) as saldo_prev,
+                SUM(CASE WHEN base.posisi = ? AND base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN base.saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev,
                 NOW() as created_at,
                 NOW() as updated_at
             FROM (
                 SELECT
                     TRIM(UPPER(kanca)) as branch,
+                    posisi,
                     tanggal_pembuatan_rekening,
                     saldo_britama_kerjasama
                 FROM performance_pis_per_produk
-                WHERE posisi = ?
+                WHERE posisi IN (?, ?, ?)
                     AND TRIM(UPPER(kanca)) IN ('{$branchList}')
             ) base
             GROUP BY base.branch
@@ -1323,15 +1334,15 @@ class ReportSnapshotBuilder
             [
                 $snapshotPosisi, // for MD5
                 $snapshotPosisi, // snapshot_posisi
-                $currStart, $currEnd,
-                $prevStart, $prevEnd,
-                $yoyStart, $yoyEnd,
-                $currStart, $currEnd,
-                $prevStart, $prevEnd,
-                $yoyStart, $yoyEnd,
-                $snapshotPosisi, // WHERE posisi = ?
+                $snapshotPosisi, $currStart, $currEnd,
+                $prevSnapshot, $prevStart, $prevEnd,
+                $yoySnapshot, $yoyStart, $yoyEnd,
+                $snapshotPosisi, $currStart, $currEnd,
+                $prevSnapshot, $prevStart, $prevEnd,
+                $yoySnapshot, $yoyStart, $yoyEnd,
+                $snapshotPosisi, $prevSnapshot, $yoySnapshot, // WHERE posisi IN (?, ?, ?)
             ]
-        );
+        ));
 
         if (!$force) {
             DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)
@@ -2069,19 +2080,19 @@ class ReportSnapshotBuilder
             return;
         }
 
-        DB::statement("
+        $this->statementWithConcurrencyRetry('create rasio casa temp table', fn (): bool => DB::statement("
             CREATE TEMPORARY TABLE IF NOT EXISTS tmp_rasio_casa_balances (
                 identity_key VARCHAR(64) COLLATE utf8mb4_unicode_ci NOT NULL PRIMARY KEY,
                 casa_balance DECIMAL(22, 2) NOT NULL DEFAULT 0
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        ");
-        DB::statement('TRUNCATE TABLE tmp_rasio_casa_balances');
+        "));
+        $this->statementWithConcurrencyRetry('truncate rasio casa temp table', fn (): bool => DB::statement('TRUNCATE TABLE tmp_rasio_casa_balances'));
 
         $casaFilterSql = $applyCasaTypeFilter
             ? "AND (s.jenis_simpanan LIKE 'GIRO%' OR s.jenis_simpanan LIKE 'TABUNGAN%')"
             : '';
 
-        DB::statement("
+        $this->statementWithConcurrencyRetry('populate rasio casa temp table', fn (): bool => DB::statement("
             INSERT INTO tmp_rasio_casa_balances (identity_key, casa_balance)
             SELECT
                 {$this->buildRasioIdentityExpression("s.{$casaKeyColumn}")} as identity_key,
@@ -2092,7 +2103,7 @@ class ReportSnapshotBuilder
                 AND s.{$casaKeyColumn} <> ''
                 {$casaFilterSql}
             GROUP BY identity_key
-        ", [$casaDate]);
+        ", [$casaDate]));
 
         $this->rasioCasaTempTablePeriod = $casaDate;
         $this->rasioCasaTempTableTypeFilter = $applyCasaTypeFilter;
@@ -2380,6 +2391,7 @@ class ReportSnapshotBuilder
             );
         }
 
+        $this->updateConsumerPerformanceRmSurplusMetrics($period, $snapshotTable, $snapshotColumns);
         $this->updateSmallPerformanceRmQuadrantsSqlFirst($period, $snapshotTable);
 
         return (int) DB::table($snapshotTable)
@@ -2404,11 +2416,16 @@ class ReportSnapshotBuilder
         $kurRitelDescriptionSql = $this->buildKinerjaRmNormalizedSql('d.description');
         $kurRitelDescriptionToken = $this->normalizeKinerjaRmToken('Kredit Mikro - KUR Ritel 2015');
         $realisasiDateColumn = 'd.' . $this->resolvePerformanceRmRealisasiDateColumn();
+        $currentCifRealisasiDateColumn = 'd2.' . $this->resolvePerformanceRmRealisasiDateColumn();
         $consumerPreviousPeriod = $segment === 'CONSUMER'
             ? $this->resolvePreviousMonthPerformanceRmPeriod($period)
             : null;
         $hasConsumerSurplusBase = $segment === 'CONSUMER' && $consumerPreviousPeriod !== null;
+        $consumerPreviousLookupOrderSql = Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
+            ? 'd.uniqueid_namareport'
+            : 'UPPER(TRIM(d.nomor_rekening1))';
         [$ruleSql, $ruleBindings] = $this->buildKinerjaRmRuleSql($normalizedRules, 'd');
+        [$currentCifRuleSql, $currentCifRuleBindings] = $this->buildKinerjaRmRuleSql($normalizedRules, 'd2');
         $canonicalProductSql = $this->buildKinerjaRmCanonicalProductSql($segment, 'd.produk_kinerja');
         $consumerSurplusJoinSql = $hasConsumerSurplusBase
             ? "
@@ -2419,68 +2436,96 @@ class ReportSnapshotBuilder
                     current_groups.branch_code,
                     current_groups.rm,
                     current_groups.produk,
-                    CASE
-                        WHEN previous_groups.previous_plafon > 0
-                            AND current_groups.current_plafon > previous_groups.previous_plafon
-                        THEN current_groups.current_deb
-                        ELSE 0
-                    END as surplus_deb,
-                    CASE
-                        WHEN previous_groups.previous_plafon > 0
-                            AND current_groups.current_plafon > previous_groups.previous_plafon
-                        THEN current_groups.current_plafon - previous_groups.previous_plafon
-                        ELSE 0
-                    END as surplus_os
+                    SUM(current_groups.debitur) as surplus_deb,
+                    SUM(current_groups.current_plafon - COALESCE(previous_closed.previous_os, 0)) as surplus_os
                 FROM (
                     SELECT
-                        COALESCE(cabang_normalized, '') as cabang,
-                        COALESCE(unit_normalized, '') as unit,
-                        COALESCE(branch_normalized, '') as branch_code,
-                        COALESCE(rm_normalized, '') as rm,
-                        {$canonicalProductSql} as produk,
-                        COUNT(DISTINCT nomor_rekening1) as current_deb,
-                        SUM(COALESCE(plafon, 0)) as current_plafon
-                    FROM daily_loan_dinamis d
-                    WHERE periode = ?
-                        AND ({$ruleSql})
-                        AND pn_pengelola1 IS NOT NULL
-                        AND pn_pengelola1 <> ''
-                        AND nomor_rekening1 IS NOT NULL
-                        AND nomor_rekening1 <> ''
+                        current_base.cabang,
+                        current_base.unit,
+                        current_base.branch_code,
+                        current_base.rm,
+                        current_base.produk,
+                        current_base.clean_cif,
+                        COUNT(DISTINCT current_base.account_key) as debitur,
+                        SUM(current_base.current_plafon) as current_plafon
+                    FROM (
+                        SELECT
+                            COALESCE(d.cabang_normalized, '') as cabang,
+                            COALESCE(d.unit_normalized, '') as unit,
+                            COALESCE(d.branch_normalized, '') as branch_code,
+                            COALESCE(d.rm_normalized, '') as rm,
+                            {$canonicalProductSql} as produk,
+                            UPPER(TRIM(d.nomor_rekening1)) as account_key,
+                            UPPER(TRIM(d.cifno)) as clean_cif,
+                            COALESCE(d.plafon, 0) as current_plafon
+                        FROM daily_loan_dinamis d
+                        WHERE d.periode = ?
+                            AND ({$ruleSql})
+                            AND d.pn_pengelola1 IS NOT NULL
+                            AND d.pn_pengelola1 <> ''
+                            AND d.nomor_rekening1 IS NOT NULL
+                            AND d.nomor_rekening1 <> ''
+                            AND d.cifno IS NOT NULL
+                            AND d.cifno <> ''
+                            AND {$realisasiDateColumn} BETWEEN ? AND ?
+                    ) current_base
                     GROUP BY
-                        COALESCE(cabang_normalized, ''),
-                        COALESCE(unit_normalized, ''),
-                        COALESCE(branch_normalized, ''),
-                        COALESCE(rm_normalized, ''),
-                        {$canonicalProductSql}
+                        current_base.cabang,
+                        current_base.unit,
+                        current_base.branch_code,
+                        current_base.rm,
+                        current_base.produk,
+                        current_base.clean_cif
                 ) current_groups
                 LEFT JOIN (
                     SELECT
-                        COALESCE(cabang_normalized, '') as cabang,
-                        COALESCE(unit_normalized, '') as unit,
-                        COALESCE(branch_normalized, '') as branch_code,
-                        COALESCE(rm_normalized, '') as rm,
-                        {$canonicalProductSql} as produk,
-                        SUM(COALESCE(plafon, 0)) as previous_plafon
-                    FROM daily_loan_dinamis d
-                    WHERE periode = ?
-                        AND segmen_kinerja = 'CONSUMER'
-                        AND produk_kinerja IN ('BRIGUNAKONSUMER', 'KPR')
-                        AND pn_pengelola1 IS NOT NULL
-                        AND pn_pengelola1 <> ''
-                        AND nomor_rekening1 IS NOT NULL
-                        AND nomor_rekening1 <> ''
-                    GROUP BY
-                        COALESCE(cabang_normalized, ''),
-                        COALESCE(unit_normalized, ''),
-                        COALESCE(branch_normalized, ''),
-                        COALESCE(rm_normalized, ''),
-                        {$canonicalProductSql}
-                ) previous_groups ON previous_groups.cabang = current_groups.cabang
-                    AND previous_groups.unit = current_groups.unit
-                    AND previous_groups.branch_code = current_groups.branch_code
-                    AND previous_groups.rm = current_groups.rm
-                    AND previous_groups.produk = current_groups.produk
+                        previous_base.clean_cif,
+                        previous_base.previous_os
+                    FROM (
+                        SELECT
+                            UPPER(TRIM(d.cifno)) as clean_cif,
+                            UPPER(TRIM(d.nomor_rekening1)) as account_key,
+                            COALESCE(d.baki_debet1, 0) as previous_os,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY UPPER(TRIM(d.cifno))
+                                ORDER BY {$consumerPreviousLookupOrderSql}
+                            ) as row_num
+                        FROM daily_loan_dinamis d
+                        WHERE d.periode = ?
+                            AND UPPER(TRIM(d.cifno)) IN (
+                                SELECT DISTINCT UPPER(TRIM(d2.cifno))
+                                FROM daily_loan_dinamis d2
+                                WHERE d2.periode = ?
+                                    AND ({$currentCifRuleSql})
+                                    AND d2.pn_pengelola1 IS NOT NULL
+                                    AND d2.pn_pengelola1 <> ''
+                                    AND d2.nomor_rekening1 IS NOT NULL
+                                    AND d2.nomor_rekening1 <> ''
+                                    AND d2.cifno IS NOT NULL
+                                    AND d2.cifno <> ''
+                                    AND {$currentCifRealisasiDateColumn} BETWEEN ? AND ?
+                            )
+                            AND d.nomor_rekening1 IS NOT NULL
+                            AND d.nomor_rekening1 <> ''
+                            AND d.cifno IS NOT NULL
+                            AND d.cifno <> ''
+                    ) previous_base
+                    LEFT JOIN (
+                        SELECT DISTINCT UPPER(TRIM(nomor_rekening1)) as account_key
+                        FROM daily_loan_dinamis
+                        WHERE periode = ?
+                            AND nomor_rekening1 IS NOT NULL
+                            AND nomor_rekening1 <> ''
+                    ) current_accounts ON current_accounts.account_key = previous_base.account_key
+                    WHERE previous_base.row_num = 1
+                        AND current_accounts.account_key IS NULL
+                ) previous_closed ON previous_closed.clean_cif = current_groups.clean_cif
+                GROUP BY
+                    current_groups.cabang,
+                    current_groups.unit,
+                    current_groups.branch_code,
+                    current_groups.rm,
+                    current_groups.produk
             ) consumer_surplus ON consumer_surplus.cabang = COALESCE(d.cabang_normalized, '')
                 AND consumer_surplus.unit = COALESCE(d.unit_normalized, '')
                 AND consumer_surplus.branch_code = COALESCE(d.branch_normalized, '')
@@ -2488,6 +2533,8 @@ class ReportSnapshotBuilder
                 AND consumer_surplus.produk = {$canonicalProductSql}
             "
             : '';
+        $consumerSurplusJoinSql = '';
+        $hasConsumerSurplusBase = false;
         $weekRanges = [
             'w1' => [$periodDate->copy()->startOfMonth(), $periodDate->copy()->startOfMonth()->addDays(6)],
             'w2' => [$periodDate->copy()->startOfMonth()->addDays(7), $periodDate->copy()->startOfMonth()->addDays(13)],
@@ -2639,7 +2686,18 @@ class ReportSnapshotBuilder
 
         $bindings = array_merge(
             $bindings,
-            $hasConsumerSurplusBase ? [$period, ...$ruleBindings, $consumerPreviousPeriod] : [],
+            $hasConsumerSurplusBase ? [
+                $period,
+                ...$ruleBindings,
+                $periodStart,
+                $period,
+                $consumerPreviousPeriod,
+                $period,
+                ...$currentCifRuleBindings,
+                $periodStart,
+                $period,
+                $period,
+            ] : [],
             $depositBindings,
             [$period],
             $ruleBindings
@@ -2673,14 +2731,14 @@ class ReportSnapshotBuilder
                         COALESCE(d.branch_normalized, '') as branch_code,
                         COALESCE(d.rm_normalized, '') as rm,
                         {$canonicalProductSql} as produk,
-                        NULLIF(d.cifno_clean, '') as clean_cif
+                        UPPER(TRIM(d.cifno)) as clean_cif
                     FROM daily_loan_dinamis d
                     WHERE d.periode = ?
                         AND ({$ruleSql})
                         AND d.pn_pengelola1 IS NOT NULL
                         AND d.pn_pengelola1 <> ''
-                        AND d.cifno_clean IS NOT NULL
-                        AND d.cifno_clean <> ''
+                        AND d.cifno IS NOT NULL
+                        AND d.cifno <> ''
                 ) cif_groups
                 LEFT JOIN simpanan_multipn deposits FORCE INDEX (idx_smp_posisi_cif_covering)
                     ON deposits.posisi = ?
@@ -2692,6 +2750,190 @@ class ReportSnapshotBuilder
                 AND dep.rm = COALESCE(d.rm_normalized, '')
                 AND dep.produk = {$canonicalProductSql}
         ";
+    }
+
+    /**
+     * @param array<string, int> $snapshotColumns
+     */
+    private function updateConsumerPerformanceRmSurplusMetrics(string $period, string $snapshotTable, array $snapshotColumns): void
+    {
+        if (!isset($snapshotColumns['realisasi_deb'], $snapshotColumns['realisasi_os'])) {
+            return;
+        }
+
+        DB::table($snapshotTable)
+            ->where('periode', $period)
+            ->where('segmen', 'CONSUMER')
+            ->update([
+                'realisasi_deb' => 0,
+                'realisasi_os' => 0,
+                'updated_at' => now(),
+            ]);
+
+        $previousPeriod = $this->resolvePreviousMonthPerformanceRmPeriod($period);
+        if ($previousPeriod === null) {
+            return;
+        }
+
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+        $realisasiDateColumn = $this->resolvePerformanceRmRealisasiDateColumn();
+
+        $currentRows = DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->where('segmen_kinerja', 'CONSUMER')
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '')
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->whereNotNull('cifno')
+            ->where('cifno', '<>', '')
+            ->whereBetween($realisasiDateColumn, [$periodStart, $period])
+            ->selectRaw("COALESCE(cabang_normalized, '') as cabang")
+            ->selectRaw("COALESCE(unit_normalized, '') as unit")
+            ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
+            ->selectRaw("COALESCE(rm_normalized, '') as rm")
+            ->selectRaw("CASE WHEN produk_kinerja = 'BRIGUNAKONSUMER' THEN 'BRIGUNA-KONSUMER' ELSE produk_kinerja END as produk")
+            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+            ->selectRaw("UPPER(TRIM(cifno)) as clean_cif")
+            ->selectRaw('COALESCE(plafon, 0) as current_plafon')
+            ->get();
+
+        if ($currentRows->isEmpty()) {
+            return;
+        }
+
+        $currentCifs = $currentRows
+            ->pluck('clean_cif')
+            ->map(fn ($value): string => (string) $value)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $currentAccountKeys = [];
+        foreach (array_chunk($currentCifs, 500) as $cifChunk) {
+            DB::table('daily_loan_dinamis')
+                ->where('periode', $period)
+                ->whereIn(DB::raw('UPPER(TRIM(cifno))'), $cifChunk)
+                ->whereNotNull('nomor_rekening1')
+                ->where('nomor_rekening1', '<>', '')
+                ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+                ->distinct()
+                ->orderBy('account_key')
+                ->chunk(1000, function ($rows) use (&$currentAccountKeys): void {
+                    foreach ($rows as $row) {
+                        $accountKey = (string) ($row->account_key ?? '');
+                        if ($accountKey !== '') {
+                            $currentAccountKeys[$accountKey] = true;
+                        }
+                    }
+                });
+        }
+
+        $previousLookupOrderColumn = Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
+            ? 'uniqueid_namareport'
+            : 'nomor_rekening1';
+        $previousOsByCif = [];
+        foreach (array_chunk($currentCifs, 500) as $cifChunk) {
+            DB::table('daily_loan_dinamis')
+                ->where('periode', $previousPeriod)
+                ->whereIn(DB::raw('UPPER(TRIM(cifno))'), $cifChunk)
+                ->where('segmen_kinerja', 'CONSUMER')
+                ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+                ->whereNotNull('nomor_rekening1')
+                ->where('nomor_rekening1', '<>', '')
+                ->whereNotNull('cifno')
+                ->where('cifno', '<>', '')
+                ->selectRaw("UPPER(TRIM(cifno)) as clean_cif")
+                ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+                ->selectRaw('COALESCE(baki_debet1, 0) as previous_os')
+                ->orderBy($previousLookupOrderColumn)
+                ->chunk(1000, function ($rows) use (&$previousOsByCif, $currentAccountKeys): void {
+                    foreach ($rows as $row) {
+                        $cleanCif = (string) ($row->clean_cif ?? '');
+                        $accountKey = (string) ($row->account_key ?? '');
+                        if ($cleanCif === '' || isset($currentAccountKeys[$accountKey]) || array_key_exists($cleanCif, $previousOsByCif)) {
+                            continue;
+                        }
+
+                        $previousOsByCif[$cleanCif] = (float) ($row->previous_os ?? 0);
+                    }
+                });
+        }
+
+        $currentMetricsByCif = [];
+        foreach ($currentRows as $row) {
+            $groupKey = implode('|', [
+                (string) ($row->cabang ?? ''),
+                (string) ($row->unit ?? ''),
+                (string) ($row->branch_code ?? ''),
+                (string) ($row->rm ?? ''),
+                (string) ($row->produk ?? ''),
+            ]);
+            $cleanCif = (string) ($row->clean_cif ?? '');
+            $metricKey = $groupKey . '|' . $cleanCif;
+
+            $currentMetricsByCif[$metricKey] ??= [
+                'group_key' => $groupKey,
+                'cabang' => (string) ($row->cabang ?? ''),
+                'unit' => (string) ($row->unit ?? ''),
+                'branch_code' => (string) ($row->branch_code ?? ''),
+                'rm' => (string) ($row->rm ?? ''),
+                'produk' => (string) ($row->produk ?? ''),
+                'clean_cif' => $cleanCif,
+                'accounts' => [],
+                'current_plafon' => 0.0,
+            ];
+
+            $accountKey = (string) ($row->account_key ?? '');
+            if ($accountKey !== '') {
+                $currentMetricsByCif[$metricKey]['accounts'][$accountKey] = true;
+            }
+
+            $currentMetricsByCif[$metricKey]['current_plafon'] += (float) ($row->current_plafon ?? 0);
+        }
+
+        $metricsByGroup = [];
+        foreach ($currentMetricsByCif as $metric) {
+            $groupKey = (string) $metric['group_key'];
+            $metricsByGroup[$groupKey] ??= [
+                'cabang' => $metric['cabang'],
+                'unit' => $metric['unit'],
+                'branch_code' => $metric['branch_code'],
+                'rm' => $metric['rm'],
+                'produk' => $metric['produk'],
+                'accounts' => [],
+                'realisasi_os' => 0.0,
+            ];
+
+            foreach ($metric['accounts'] as $accountKey => $_) {
+                $metricsByGroup[$groupKey]['accounts'][$accountKey] = true;
+            }
+
+            $previousOs = (float) ($previousOsByCif[(string) $metric['clean_cif']] ?? 0);
+            $metricsByGroup[$groupKey]['realisasi_os'] += (float) $metric['current_plafon'] - $previousOs;
+        }
+
+        foreach ($metricsByGroup as $metric) {
+            $query = DB::table($snapshotTable)
+                ->where('periode', $period)
+                ->where('cabang', $metric['cabang'])
+                ->where('unit', $metric['unit'])
+                ->where('rm', $metric['rm'])
+                ->where('segmen', 'CONSUMER')
+                ->where('produk', $metric['produk']);
+
+            if (isset($snapshotColumns['branch_code'])) {
+                $query->where('branch_code', $metric['branch_code']);
+            }
+
+            $query->update([
+                'realisasi_deb' => count($metric['accounts']),
+                'realisasi_os' => $metric['realisasi_os'],
+                'updated_at' => now(),
+            ]);
+        }
     }
 
     /**
@@ -2744,7 +2986,7 @@ class ReportSnapshotBuilder
         $periodStart = $dateObj->copy()->startOfMonth()->toDateString();
         $month = max(1, $dateObj->month);
 
-        DB::statement(
+        $this->statementWithConcurrencyRetry('performance rm quadrant update', fn (): bool => DB::statement(
             "
             UPDATE {$snapshotTable} p
             INNER JOIN (
@@ -2792,7 +3034,7 @@ class ReportSnapshotBuilder
                 AND p.segmen = 'SMALL'
             ",
             [$period, $yearStart, $periodStart, $month, $month, $period]
-        );
+        ));
     }
 
     private function syncPerformanceRmSnapshotRowsFromTemp(string $period, string $tempTable): void
@@ -2817,32 +3059,32 @@ class ReportSnapshotBuilder
                 $updatableColumns
             ));
 
-            DB::statement("
+            $this->statementWithConcurrencyRetry('performance rm snapshot update from temp', fn (): bool => DB::statement("
                 UPDATE {$target} target
                 INNER JOIN {$source} source ON {$joinSql}
                 SET {$assignments}
                 WHERE target.periode = ?
-            ", [$period]);
+            ", [$period]));
         }
 
         $insertColumnsSql = implode(', ', array_map([$this, 'quoteIdentifier'], $columns));
         $selectColumnsSql = implode(', ', array_map(fn (string $column): string => 'source.' . $this->quoteIdentifier($column), $columns));
 
-        DB::statement("
+        $this->statementWithConcurrencyRetry('performance rm snapshot insert from temp', fn (): bool => DB::statement("
             INSERT INTO {$target} ({$insertColumnsSql})
             SELECT {$selectColumnsSql}
             FROM {$source} source
             LEFT JOIN {$target} target ON {$joinSql}
             WHERE target.id IS NULL
-        ");
+        "));
 
-        DB::statement("
+        $this->statementWithConcurrencyRetry('performance rm snapshot delete stale from temp', fn (): bool => DB::statement("
             DELETE target
             FROM {$target} target
             LEFT JOIN {$source} source ON {$joinSql}
             WHERE target.periode = ?
                 AND source.periode IS NULL
-        ", [$period]);
+        ", [$period]));
     }
 
     /**
@@ -2940,7 +3182,7 @@ class ReportSnapshotBuilder
                 updated_at = VALUES(updated_at)
         ";
 
-        DB::statement(
+        $this->statementWithConcurrencyRetry('performance rm cabang snapshot upsert', fn (): bool => DB::statement(
             "
             INSERT INTO performance_rm_cabang_snapshots (
                 periode, cabang, segmen, produk,
@@ -2976,10 +3218,10 @@ class ReportSnapshotBuilder
             {$conflictSql}
             ",
             [$period]
-        );
+        ));
 
         if (!$force) {
-            DB::statement("
+            $this->statementWithConcurrencyRetry('performance rm cabang snapshot prune', fn (): bool => DB::statement("
                 DELETE target
                 FROM performance_rm_cabang_snapshots target
                 LEFT JOIN (
@@ -2994,7 +3236,7 @@ class ReportSnapshotBuilder
                     AND source.produk <=> target.produk
                 WHERE target.periode = ?
                     AND source.periode IS NULL
-            ", [$period, $period]);
+            ", [$period, $period]));
         }
 
         $rowCount = (int) DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)
@@ -3298,10 +3540,10 @@ class ReportSnapshotBuilder
             ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) < 250000000 THEN COALESCE(plafon, 0) ELSE 0 END) as lt_250_realisasi_os", [$periodStart, $period])
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) > 250000000 THEN nomor_rekening1 END) as gt_250_realisasi_deb", [$periodStart, $period])
             ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) > 250000000 THEN COALESCE(plafon, 0) ELSE 0 END) as gt_250_realisasi_os", [$periodStart, $period])
-            // OPTIMIZATION: Use cifno_clean instead of REGEXP_REPLACE in GROUP_CONCAT (5x faster)
+            // Keep full alphanumeric CIF intact for downstream snapshot matching.
             ->selectRaw(DB::getDriverName() === 'sqlite'
-                ? 'GROUP_CONCAT(DISTINCT cifno_clean) as cifno_list'
-                : "GROUP_CONCAT(DISTINCT cifno_clean SEPARATOR ',') as cifno_list")
+                ? 'GROUP_CONCAT(DISTINCT UPPER(TRIM(cifno))) as cifno_list'
+                : "GROUP_CONCAT(DISTINCT UPPER(TRIM(cifno)) SEPARATOR ',') as cifno_list")
             // Use shadow columns in GROUP BY to avoid function overhead
             ->groupBy('cabang_normalized', 'unit_normalized', 'branch_normalized', 'rm_normalized', 'produk_kinerja')
             ->get();
@@ -3352,33 +3594,50 @@ class ReportSnapshotBuilder
             return $rows;
         }
 
-        $productSql = "CASE WHEN produk_kinerja = 'BRIGUNAKONSUMER' THEN 'BRIGUNA-KONSUMER' ELSE produk_kinerja END";
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+        $realisasiDateColumn = $this->resolvePerformanceRmRealisasiDateColumn();
 
-        $previousPlafonByGroup = DB::table('daily_loan_dinamis')
+        $currentAccountKeys = DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+            ->distinct()
+            ->pluck('account_key')
+            ->map(fn ($accountKey): string => (string) $accountKey)
+            ->filter()
+            ->flip();
+
+        $previousLookupOrderColumn = Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
+            ? 'uniqueid_namareport'
+            : 'nomor_rekening1';
+
+        $previousClosedOsByCif = [];
+        DB::table('daily_loan_dinamis')
             ->where('periode', $previousPeriod)
             ->where('segmen_kinerja', 'CONSUMER')
             ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->whereNotNull('pn_pengelola1')
-            ->where('pn_pengelola1', '<>', '')
-            ->selectRaw("COALESCE(cabang_normalized, '') as cabang")
-            ->selectRaw("COALESCE(unit_normalized, '') as unit")
-            ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
-            ->selectRaw("COALESCE(rm_normalized, '') as rm")
-            ->selectRaw("{$productSql} as produk")
-            ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
-            ->groupByRaw("COALESCE(cabang_normalized, ''), COALESCE(unit_normalized, ''), COALESCE(branch_normalized, ''), COALESCE(rm_normalized, ''), {$productSql}")
-            ->get()
-            ->mapWithKeys(fn ($row): array => [
-                $this->consumerSurplusGroupKey([
-                    'cabang' => $row->cabang,
-                    'unit' => $row->unit,
-                    'branch_code' => $row->branch_code,
-                    'rm' => $row->rm,
-                    'produk' => $row->produk,
-                ]) => (float) $row->plafon,
-            ]);
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->whereNotNull('cifno')
+            ->where('cifno', '<>', '')
+            ->selectRaw('UPPER(TRIM(cifno)) as clean_cif')
+            ->selectRaw('UPPER(TRIM(nomor_rekening1)) as account_key')
+            ->selectRaw('COALESCE(baki_debet1, 0) as previous_os')
+            ->orderBy($previousLookupOrderColumn)
+            ->chunk(1000, function ($sourceRows) use (&$previousClosedOsByCif, $currentAccountKeys): void {
+                foreach ($sourceRows as $sourceRow) {
+                    $cleanCif = (string) ($sourceRow->clean_cif ?? '');
+                    $accountKey = (string) ($sourceRow->account_key ?? '');
+                    if ($cleanCif === '' || isset($currentAccountKeys[$accountKey]) || array_key_exists($cleanCif, $previousClosedOsByCif)) {
+                        continue;
+                    }
 
-        $currentPlafonByGroup = [];
+                    $previousClosedOsByCif[$cleanCif] = (float) ($sourceRow->previous_os ?? 0);
+                }
+            });
+
+        $currentRealizationByCif = [];
         DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->where('segmen_kinerja', 'CONSUMER')
@@ -3387,6 +3646,9 @@ class ReportSnapshotBuilder
             ->where('pn_pengelola1', '<>', '')
             ->whereNotNull('nomor_rekening1')
             ->where('nomor_rekening1', '<>', '')
+            ->whereNotNull('cifno')
+            ->where('cifno', '<>', '')
+            ->whereBetween($realisasiDateColumn, [$periodStart, $period])
             ->select([
                 'cabang_normalized',
                 'unit_normalized',
@@ -3395,9 +3657,11 @@ class ReportSnapshotBuilder
                 'produk_kinerja',
                 'nomor_rekening1',
                 'plafon',
+                'cifno',
             ])
+            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
             ->orderBy('nomor_rekening1')
-            ->chunk(1000, function ($sourceRows) use (&$currentPlafonByGroup): void {
+            ->chunk(1000, function ($sourceRows) use (&$currentRealizationByCif): void {
                 foreach ($sourceRows as $sourceRow) {
                     $groupKey = $this->consumerSurplusGroupKey([
                         'cabang' => $sourceRow->cabang_normalized,
@@ -3406,33 +3670,34 @@ class ReportSnapshotBuilder
                         'rm' => $sourceRow->rm_normalized,
                         'produk' => $sourceRow->produk_kinerja,
                     ]);
-                    $account = (string) $sourceRow->nomor_rekening1;
-                    $currentPlafon = (float) ($sourceRow->plafon ?? 0);
+                    $cleanCif = strtoupper(trim((string) ($sourceRow->cifno ?? '')));
+                    $accountKey = (string) ($sourceRow->account_key ?? '');
+                    $metricKey = $groupKey . '|' . $cleanCif;
 
-                    if (!isset($currentPlafonByGroup[$groupKey])) {
-                        $currentPlafonByGroup[$groupKey] = ['debitur' => [], 'plafon' => 0.0];
+                    if (!isset($currentRealizationByCif[$metricKey])) {
+                        $currentRealizationByCif[$metricKey] = [
+                            'group_key' => $groupKey,
+                            'clean_cif' => $cleanCif,
+                            'accounts' => [],
+                            'current_plafon' => 0.0,
+                        ];
                     }
 
-                    $currentPlafonByGroup[$groupKey]['debitur'][$account] = true;
-                    $currentPlafonByGroup[$groupKey]['plafon'] += $currentPlafon;
+                    $currentRealizationByCif[$metricKey]['accounts'][$accountKey] = true;
+                    $currentRealizationByCif[$metricKey]['current_plafon'] += (float) ($sourceRow->plafon ?? 0);
                 }
             });
 
         $surplusByGroup = [];
-        foreach ($currentPlafonByGroup as $groupKey => $metric) {
-            if (!isset($previousPlafonByGroup[$groupKey]) || (float) $previousPlafonByGroup[$groupKey] <= 0) {
-                continue;
-            }
+        foreach ($currentRealizationByCif as $metric) {
+            $groupKey = (string) ($metric['group_key'] ?? '');
+            $cleanCif = (string) ($metric['clean_cif'] ?? '');
+            $netDisbursement = (float) ($metric['current_plafon'] ?? 0)
+                - (float) ($previousClosedOsByCif[$cleanCif] ?? 0);
 
-            $surplus = (float) $metric['plafon'] - (float) $previousPlafonByGroup[$groupKey];
-            if ($surplus <= 0) {
-                continue;
-            }
-
-            $surplusByGroup[$groupKey] = [
-                'debitur' => count($metric['debitur']),
-                'os' => $surplus,
-            ];
+            $surplusByGroup[$groupKey] ??= ['debitur' => 0, 'os' => 0.0];
+            $surplusByGroup[$groupKey]['debitur'] += count($metric['accounts'] ?? []);
+            $surplusByGroup[$groupKey]['os'] += $netDisbursement;
         }
 
         foreach ($rows as &$row) {
@@ -3441,8 +3706,8 @@ class ReportSnapshotBuilder
                 continue;
             }
 
-            $row['realisasi_deb'] = (int) $metric['debitur'];
-            $row['realisasi_os'] = (float) $metric['os'];
+            $row['realisasi_deb'] = (int) ($metric['debitur'] ?? 0);
+            $row['realisasi_os'] = (float) ($metric['os'] ?? 0);
         }
         unset($row);
 
@@ -3466,32 +3731,28 @@ class ReportSnapshotBuilder
     private function resolvePreviousMonthPerformanceRmPeriod(string $period): ?string
     {
         $periodDate = Carbon::parse($period);
-        $previousStart = $periodDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
         $previousEnd = $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
 
-        $previousPeriod = DB::table('daily_loan_dinamis')
-            ->whereBetween('periode', [$previousStart, $previousEnd])
-            ->max('periode');
+        $exists = DB::table('daily_loan_dinamis')
+            ->where('periode', $previousEnd)
+            ->exists();
 
-        return $previousPeriod !== null ? (string) $previousPeriod : null;
+        return $exists ? $previousEnd : null;
     }
 
     private function fetchDepositsByNormalizedCifs(array $normalizedCifs, ?string $latestPosisi): array
     {
-        // Convert normalized CIFs (already cleaned in daily_loan_dinamis.cifno_clean)
-        // Note: simpanan_multipn doesn't have cifno_clean yet, so we still use REGEXP_REPLACE here
-        // This is fine since it's a smaller table and this is not in the main aggregation path
+        // CIF is an alphanumeric identifier; keep its full value intact.
         if (empty($normalizedCifs)) {
             return [];
         }
 
         $deposits = DB::table('simpanan_multipn')
             ->where('posisi', $latestPosisi ?? DB::table('simpanan_multipn')->max('posisi'))
-            ->selectRaw("REGEXP_REPLACE(CIFNO, '[^0-9]', '') as clean_cif")
+            ->selectRaw('CIFNO as clean_cif')
             ->selectRaw("SUM(COALESCE(saldo_idr, 0)) as total_deposit");
 
-        // normalizedCifs already come from cifno_clean (numeric-only)
-        $deposits->whereIn(DB::raw("REGEXP_REPLACE(CIFNO, '[^0-9]', '')"), array_unique($normalizedCifs));
+        $deposits->whereIn('CIFNO', array_unique($normalizedCifs));
 
         return $deposits
             ->groupBy('clean_cif')

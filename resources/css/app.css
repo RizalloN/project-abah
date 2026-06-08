@@ -2,3 +2,35 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+    html {
+        text-size-adjust: 100%;
+    }
+
+    body {
+        min-width: 320px;
+    }
+
+    img,
+    svg,
+    video,
+    canvas {
+        max-width: 100%;
+    }
+}
+
+@layer components {
+    .tw-page-shell {
+        @apply mx-auto w-full max-w-[1840px] px-3 sm:px-4 lg:px-6;
+    }
+
+    .tw-surface {
+        @apply rounded-lg border border-slate-200 bg-white shadow-sm;
+    }
+
+    .tw-scroll-x {
+        @apply w-full overflow-x-auto;
+        -webkit-overflow-scrolling: touch;
+    }
+}

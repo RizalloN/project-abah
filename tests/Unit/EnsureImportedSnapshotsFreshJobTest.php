@@ -211,6 +211,160 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         ));
     }
 
+    public function test_daily_loan_zero_result_is_marked_fresh_and_not_rebuilt_repeatedly(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-05-06',
+            'baki_debet1' => 1000,
+            'created_at' => '2026-05-08 10:00:00',
+            'updated_at' => '2026-05-08 10:00:00',
+        ]);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $builder->shouldReceive('rebuildDashboard')
+            ->once()
+            ->with('2026-05-06', false)
+            ->andReturn(['2026-05-06' => 0]);
+        $builder->shouldReceive('rebuildChartPeriodik')
+            ->once()
+            ->with('2026-05-06', false)
+            ->andReturn(['2026-05-06' => 0]);
+        $builder->shouldReceive('rebuildPerformanceRm')
+            ->once()
+            ->with('2026-05-06', false)
+            ->andReturn(['2026-05-06' => 0]);
+        $builder->shouldReceive('rebuildRasioCasa')
+            ->once()
+            ->with('2026-05-06', false)
+            ->andReturn(['2026-05-06' => 0]);
+
+        $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
+        $dashboardHarian->shouldNotReceive('rebuild');
+
+        $job = new EnsureImportedSnapshotsFreshJob('daily_loan_dinamis', '2026-05-06', 'unit-test');
+        $job->handle($builder, $dashboardHarian, $this->sourceSignatures);
+        $job->handle($builder, $dashboardHarian, $this->sourceSignatures);
+
+        $metadata = $this->sourceSignatures->capture('daily_loan_dinamis', 'periode', '2026-05-06');
+        foreach ([
+            'dashboard_pinjaman_snapshots',
+            'dashboard_pinjaman_chart_periodik_snapshots',
+            'performance_rm_snapshots',
+            'rasio_casa_debitur_snapshots',
+        ] as $snapshotTable) {
+            $this->assertTrue($this->sourceSignatures->isFresh(
+                'daily_loan_dinamis',
+                $snapshotTable,
+                '2026-05-06',
+                $metadata
+            ));
+        }
+    }
+
+    public function test_latest_and_explicit_period_jobs_use_the_same_overlap_lock(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-05-06',
+            'baki_debet1' => 1000,
+            'created_at' => '2026-05-08 10:00:00',
+            'updated_at' => '2026-05-08 10:00:00',
+        ]);
+
+        $latestMiddleware = (new EnsureImportedSnapshotsFreshJob('daily_loan_dinamis'))
+            ->middleware();
+        $explicitMiddleware = (new EnsureImportedSnapshotsFreshJob('daily_loan_dinamis', '2026-05-06'))
+            ->middleware();
+        $simpananMiddleware = (new EnsureImportedSnapshotsFreshJob('simpanan_multipn', '2026-05-06'))
+            ->middleware();
+
+        $this->assertSame(
+            'snapshot:freshness:daily_loan_dinamis:2026-05-06',
+            $latestMiddleware[1]->key
+        );
+        $this->assertSame($latestMiddleware[1]->key, $explicitMiddleware[1]->key);
+        $this->assertSame('snapshot:freshness:period:2026-05-06', $latestMiddleware[2]->key);
+        $this->assertSame($latestMiddleware[2]->key, $explicitMiddleware[2]->key);
+        $this->assertSame($latestMiddleware[2]->key, $simpananMiddleware[2]->key);
+    }
+
+    public function test_latest_job_keeps_the_period_resolved_for_its_overlap_lock(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-05-06',
+            'baki_debet1' => 1000,
+            'created_at' => '2026-05-08 10:00:00',
+            'updated_at' => '2026-05-08 10:00:00',
+        ]);
+
+        $job = new EnsureImportedSnapshotsFreshJob('daily_loan_dinamis', null, 'unit-test');
+        $middleware = $job->middleware();
+
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-05-07',
+            'baki_debet1' => 2000,
+            'created_at' => '2026-05-08 11:00:00',
+            'updated_at' => '2026-05-08 11:00:00',
+        ]);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $builder->shouldReceive('rebuildDashboard')->once()->with('2026-05-06', false)->andReturn(['2026-05-06' => 0]);
+        $builder->shouldReceive('rebuildChartPeriodik')->once()->with('2026-05-06', false)->andReturn(['2026-05-06' => 0]);
+        $builder->shouldReceive('rebuildPerformanceRm')->once()->with('2026-05-06', false)->andReturn(['2026-05-06' => 0]);
+        $builder->shouldReceive('rebuildRasioCasa')->once()->with('2026-05-06', false)->andReturn(['2026-05-06' => 0]);
+
+        $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
+        $dashboardHarian->shouldNotReceive('rebuild');
+
+        $job->handle($builder, $dashboardHarian, $this->sourceSignatures);
+
+        $this->assertSame('snapshot:freshness:daily_loan_dinamis:2026-05-06', $middleware[1]->key);
+        $this->assertDatabaseHas('snapshot_source_signatures', [
+            'source_table' => 'daily_loan_dinamis',
+            'snapshot_table' => 'dashboard_pinjaman_snapshots',
+            'period_key' => '2026-05-06',
+        ]);
+        $this->assertDatabaseMissing('snapshot_source_signatures', [
+            'source_table' => 'daily_loan_dinamis',
+            'period_key' => '2026-05-07',
+        ]);
+    }
+
+    public function test_signature_row_count_distinguishes_valid_zero_from_deleted_snapshot(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-05-06',
+            'baki_debet1' => 1000,
+            'created_at' => '2026-05-08 10:00:00',
+            'updated_at' => '2026-05-08 10:00:00',
+        ]);
+
+        $metadata = $this->sourceSignatures->capture('daily_loan_dinamis', 'periode', '2026-05-06');
+        $this->assertNotNull($metadata);
+
+        $this->sourceSignatures->markBuilt(
+            'daily_loan_dinamis',
+            'dashboard_pinjaman_snapshots',
+            '2026-05-06',
+            $metadata,
+            ['rows_after' => 1]
+        );
+
+        $this->assertTrue($this->sourceSignatures->isFresh(
+            'daily_loan_dinamis',
+            'dashboard_pinjaman_snapshots',
+            '2026-05-06',
+            $metadata,
+            1
+        ));
+        $this->assertFalse($this->sourceSignatures->isFresh(
+            'daily_loan_dinamis',
+            'dashboard_pinjaman_snapshots',
+            '2026-05-06',
+            $metadata,
+            0
+        ));
+    }
+
     public function test_simpanan_existing_snapshots_rebuild_when_source_signature_changes(): void
     {
         $this->insertReadySimpananRows('2026-05-06', 1000);
@@ -255,6 +409,11 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
     {
         DB::table('ssa_simpanan')->insert($this->ssaSimpananRow('2026-05-06', 1000));
         DB::table('ssa_pinjaman')->insert($this->ssaPinjamanRow('2026-05-06', 1500));
+        DB::table('gi405_recovery')->insert([
+            'periode' => '2026-05-06',
+            'created_at' => '2026-05-08 10:00:00',
+            'updated_at' => '2026-05-08 10:00:00',
+        ]);
         DB::table('dashboard_harian_snapshots')->insert($this->snapshotRow('snapshot_period', '2026-05-06', '2026-05-08 09:00:00'));
 
         $oldMetadata = $this->sourceSignatures->capture('ssa_pinjaman', 'month_day_year_of_periode', '2026-05-06');
@@ -281,10 +440,36 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         ));
     }
 
+    public function test_ssa_pinjaman_dashboard_harian_snapshot_waits_for_gi405_recovery_rows(): void
+    {
+        DB::table('ssa_simpanan')->insert($this->ssaSimpananRow('2026-05-06', 1000));
+        DB::table('ssa_pinjaman')->insert($this->ssaPinjamanRow('2026-05-06', 1500));
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
+        $dashboardHarian->shouldNotReceive('rebuild');
+
+        (new EnsureImportedSnapshotsFreshJob('ssa_pinjaman', '2026-05-06', 'unit-test'))
+            ->handle($builder, $dashboardHarian, $this->sourceSignatures);
+
+        $metadata = $this->sourceSignatures->capture('ssa_pinjaman', 'month_day_year_of_periode', '2026-05-06');
+        $this->assertFalse($this->sourceSignatures->isFresh(
+            'ssa_pinjaman',
+            'dashboard_harian_snapshots',
+            '2026-05-06',
+            $metadata
+        ));
+    }
+
     public function test_ssa_simpanan_existing_snapshots_rebuild_when_signature_changes(): void
     {
         DB::table('ssa_simpanan')->insert($this->ssaSimpananRow('2026-05-06', 1000));
         DB::table('ssa_pinjaman')->insert($this->ssaPinjamanRow('2026-05-06', 1500));
+        DB::table('gi405_recovery')->insert([
+            'periode' => '2026-05-06',
+            'created_at' => '2026-05-08 10:00:00',
+            'updated_at' => '2026-05-08 10:00:00',
+        ]);
         DB::table('ssa_simpanan_snapshots')->insert($this->snapshotRow('periode', '2026-05-06', '2026-05-08 09:00:00'));
         DB::table('dashboard_harian_snapshots')->insert($this->snapshotRow('snapshot_period', '2026-05-06', '2026-05-08 09:00:00'));
 
@@ -293,6 +478,7 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         $this->markFresh('ssa_simpanan', 'dashboard_harian_snapshots', '2026-05-06', $oldMetadata);
 
         DB::table('ssa_simpanan')->where('Month_Day_Year_of_Posisi', '2026-05-06')->update(['saldo' => 2500]);
+        DB::table('gi405_recovery')->where('periode', '2026-05-06')->update(['updated_at' => '2026-05-08 12:00:00']);
 
         $ssaBuilder = Mockery::mock(SsaSimpananSnapshotBuilder::class);
         $ssaBuilder->shouldReceive('rebuild')->once()->with('2026-05-06', false)->andReturn(['2026-05-06' => 1]);
@@ -315,6 +501,118 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
             '2026-05-06',
             $newMetadata
         ));
+    }
+
+    public function test_deleted_ssa_simpanan_period_forces_cleanup_and_dashboard_harian_refresh(): void
+    {
+        DB::table('ssa_simpanan_snapshots')->insert($this->snapshotRow('periode', '2026-05-06', '2026-05-08 09:00:00'));
+        DB::table('dashboard_harian_snapshots')->insert($this->snapshotRow('snapshot_period', '2026-05-06', '2026-05-08 09:00:00'));
+
+        DB::table('snapshot_source_signatures')->insert([
+            'source_table' => 'ssa_simpanan',
+            'snapshot_table' => 'dashboard_harian_snapshots',
+            'period_key' => '2026-05-06',
+            'source_signature' => str_repeat('a', 64),
+            'source_row_count' => 10,
+            'source_max_updated_at' => '2026-05-08 09:00:00',
+            'built_at' => now(),
+            'context' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $builder->shouldNotReceive('rebuildDashboard');
+        $builder->shouldNotReceive('rebuildChartPeriodik');
+        $builder->shouldNotReceive('rebuildPerformanceRm');
+        $builder->shouldNotReceive('rebuildRasioCasa');
+
+        $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
+        $dashboardHarian->shouldReceive('rebuild')
+            ->once()
+            ->with('2026-05-06', true)
+            ->andReturn(['2026-05-06' => 0]);
+
+        Cache::put('report_cache_version:simpanan', 4, now()->addHours(24));
+
+        (new EnsureImportedSnapshotsFreshJob('ssa_simpanan', '2026-05-06', 'unit-test'))
+            ->handle($builder, $dashboardHarian, $this->sourceSignatures);
+
+        $this->assertDatabaseMissing('ssa_simpanan_snapshots', [
+            'periode' => '2026-05-06',
+        ]);
+        $this->assertDatabaseMissing('snapshot_source_signatures', [
+            'source_table' => 'ssa_simpanan',
+            'period_key' => '2026-05-06',
+        ]);
+        $this->assertSame(5, (int) Cache::get('report_cache_version:simpanan'));
+    }
+
+    public function test_gi405_recovery_existing_dashboard_harian_snapshot_rebuilds_when_signature_changes(): void
+    {
+        DB::table('ssa_simpanan')->insert($this->ssaSimpananRow('2026-05-06', 1000));
+        DB::table('ssa_pinjaman')->insert($this->ssaPinjamanRow('2026-05-06', 1500));
+        DB::table('gi405_recovery')->insert([
+            'periode' => '2026-05-06',
+            'created_at' => '2026-05-08 10:00:00',
+            'updated_at' => '2026-05-08 10:00:00',
+        ]);
+        DB::table('dashboard_harian_snapshots')->insert($this->snapshotRow('snapshot_period', '2026-05-06', '2026-05-08 09:00:00'));
+
+        $oldMetadata = $this->sourceSignatures->capture('gi405_recovery', 'periode', '2026-05-06');
+        $this->markFresh('gi405_recovery', 'dashboard_harian_snapshots', '2026-05-06', $oldMetadata);
+
+        DB::table('gi405_recovery')->where('periode', '2026-05-06')->update(['updated_at' => '2026-05-08 12:00:00']);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
+        $dashboardHarian->shouldReceive('rebuild')
+            ->once()
+            ->with('2026-05-06', false)
+            ->andReturn(['2026-05-06' => 1]);
+
+        (new EnsureImportedSnapshotsFreshJob('gi405_recovery', '2026-05-06', 'unit-test'))
+            ->handle($builder, $dashboardHarian, $this->sourceSignatures);
+
+        $newMetadata = $this->sourceSignatures->capture('gi405_recovery', 'periode', '2026-05-06');
+        $this->assertTrue($this->sourceSignatures->isFresh(
+            'gi405_recovery',
+            'dashboard_harian_snapshots',
+            '2026-05-06',
+            $newMetadata
+        ));
+    }
+
+    public function test_gi405_zero_result_is_marked_fresh_and_not_rebuilt_repeatedly(): void
+    {
+        DB::table('gi405_recovery')->insert([
+            'periode' => '2026-05-06',
+            'created_at' => '2026-05-08 10:00:00',
+            'updated_at' => '2026-05-08 10:00:00',
+        ]);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
+        $dashboardHarian->shouldReceive('rebuild')
+            ->once()
+            ->with('2026-05-06', false)
+            ->andReturn(['2026-05-06' => 0]);
+
+        Cache::put('report_cache_version:harian', 3, now()->addHours(24));
+
+        $job = new EnsureImportedSnapshotsFreshJob('gi405_recovery', '2026-05-06', 'unit-test');
+        $job->handle($builder, $dashboardHarian, $this->sourceSignatures);
+        $job->handle($builder, $dashboardHarian, $this->sourceSignatures);
+
+        $metadata = $this->sourceSignatures->capture('gi405_recovery', 'periode', '2026-05-06');
+        $this->assertTrue($this->sourceSignatures->isFresh(
+            'gi405_recovery',
+            'dashboard_harian_snapshots',
+            '2026-05-06',
+            $metadata,
+            0
+        ));
+        $this->assertSame(4, (int) Cache::get('report_cache_version:harian'));
     }
 
     public function test_lw325_ph_existing_affected_dashboard_harian_snapshot_rebuilds_when_signature_changes(): void
@@ -375,12 +673,12 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
             ->with(['2026-05-12', '2026-05-13', '2026-05-16'])
             ->andReturn(['built' => 2, 'failed' => 0, 'missing' => [], 'stale' => ['2026-05-13'], 'checked' => 3]);
 
-        Cache::put('report_cache_version:pinjaman', 3, now()->addHours(24));
+        Cache::put('report_cache_version:harian', 3, now()->addHours(24));
 
         (new EnsureImportedSnapshotsFreshJob('l1133', '2026-05-12', 'unit-test'))
             ->handle($builder, $dashboardHarian, $this->sourceSignatures);
 
-        $this->assertSame(4, (int) Cache::get('report_cache_version:pinjaman'));
+        $this->assertSame(4, (int) Cache::get('report_cache_version:harian'));
     }
 
     public function test_dly_kap_import_checks_exact_dashboard_harian_period(): void
@@ -403,12 +701,12 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
             ->with(['2026-05-16'])
             ->andReturn(['built' => 1, 'failed' => 0, 'missing' => [], 'stale' => ['2026-05-16'], 'checked' => 1]);
 
-        Cache::put('report_cache_version:pinjaman', 7, now()->addHours(24));
+        Cache::put('report_cache_version:harian', 7, now()->addHours(24));
 
         (new EnsureImportedSnapshotsFreshJob('dly_kap_resegmentasi', '2026-05-16', 'unit-test'))
             ->handle($builder, $dashboardHarian, $this->sourceSignatures);
 
-        $this->assertSame(8, (int) Cache::get('report_cache_version:pinjaman'));
+        $this->assertSame(8, (int) Cache::get('report_cache_version:harian'));
     }
 
     private function createTables(): void
@@ -474,6 +772,12 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
             $table->id();
             $table->date('periode');
             $table->decimal('outstanding', 20, 2)->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('gi405_recovery', function (Blueprint $table) {
+            $table->id();
+            $table->date('periode');
             $table->timestamps();
         });
 

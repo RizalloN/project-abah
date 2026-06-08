@@ -3,131 +3,255 @@
 @section('title', 'Kinerja PTP')
 
 @section('content')
+<!-- Premium Fonts Integration -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
 <style>
-    .ptp-page {
-        padding: 1.25rem 1rem 1.75rem;
-        color: #0f172a;
+    /* Premium Design System Variables aligned with A-SIX Dashboard */
+    :root {
+        --ptp-font-primary: 'Inter', 'Plus Jakarta Sans', sans-serif;
+        --ptp-font-display: 'Inter', 'Outfit', sans-serif;
+        --ptp-r-xl: 18px;
+        --ptp-r-lg: 14px;
+        --ptp-r-md: 8px;
+        
+        /* Cohesive Brand Theme Colors */
+        --ptp-c-dark: #0f172a;
+        --ptp-c-muted: #64748b;
+        --ptp-c-border: #e2e8f0;
+        --ptp-c-bg-light: #f8fafc;
+        
+        --ptp-c-blue: #0857c3;        /* A-SIX Brand Primary Blue */
+        --ptp-c-blue-sub: #053b82;    /* A-SIX Navy Blue */
+        --ptp-c-orange: #d97706;      /* Dashboard Amber */
+        --ptp-c-orange-sub: #b45309;  /* Dark Amber */
+        --ptp-c-yellow: #ca8a04;
+        
+        /* Premium Shadows */
+        --ptp-shadow-sm: 0 1px 3px rgba(15,23,42,0.03), 0 1px 2px rgba(15,23,42,0.02);
+        --ptp-shadow-md: 0 4px 12px -2px rgba(15,23,42,0.06), 0 2px 6px -1px rgba(15,23,42,0.03);
+        --ptp-shadow-lg: 0 12px 24px -4px rgba(15,23,42,0.08), 0 4px 12px -2px rgba(15,23,42,0.04);
+        --ptp-shadow-premium: 0 20px 25px -5px rgba(15, 23, 42, 0.08), 0 10px 10px -5px rgba(15, 23, 42, 0.04);
     }
 
+    .ptp-page {
+        padding: 1.5rem 1.25rem 2rem;
+        color: var(--ptp-c-dark);
+        font-family: var(--ptp-font-primary);
+        background: #f8fafc; /* Premium dashboard shell background */
+        min-height: calc(100vh - 60px);
+    }
+
+    /* Premium Header Card matching .db-header */
     .ptp-header {
-        margin-bottom: 1rem;
-        padding: 1.1rem 1.25rem;
-        border: 1px solid #dbe3ef;
-        border-radius: 8px;
+        margin-bottom: 1.25rem;
+        padding: 1rem 1.5rem;
+        border: 1px solid var(--ptp-c-border);
+        border-top: 3px solid var(--ptp-c-blue);
+        border-radius: var(--ptp-r-lg);
         background: #ffffff;
-        box-shadow: 0 10px 22px -18px rgba(15, 23, 42, .3);
+        box-shadow: var(--ptp-shadow-sm);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .ptp-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .ptp-logo {
+        width: 40px;
+        height: 40px;
+        background: linear-gradient(135deg, var(--ptp-c-blue), #307fe2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--ptp-r-md);
+        font-size: 1.2rem;
+        color: #ffffff;
+        box-shadow: 0 2px 8px rgba(8, 87, 195, 0.15);
     }
 
     .ptp-title {
         margin: 0;
-        font-size: 1.45rem;
+        font-family: var(--ptp-font-display);
+        font-size: 1.15rem;
         font-weight: 800;
-        letter-spacing: 0;
+        letter-spacing: -0.02em;
+        color: var(--ptp-c-dark);
+        line-height: 1.2;
     }
 
     .ptp-subtitle {
-        margin-top: .25rem;
-        color: #64748b;
-        font-size: .85rem;
+        margin-top: 0.15rem;
+        color: var(--ptp-c-muted);
+        font-size: 0.72rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    
+    .ptp-subtitle-badge {
+        background: #e2e8f0;
+        color: var(--ptp-c-dark);
+        padding: 0.15rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
     }
 
+    /* Premium Control Cards matching .dana-filter-bar */
     .ptp-panel {
-        border: 1px solid #dbe3ef;
-        border-radius: 8px;
+        border: 1px solid var(--ptp-c-border);
+        border-radius: var(--ptp-r-lg);
         background: #ffffff;
-        box-shadow: 0 10px 22px -18px rgba(15, 23, 42, .26);
+        box-shadow: var(--ptp-shadow-sm);
+        transition: all 0.2s ease;
+        margin-bottom: 1.25rem;
+    }
+    
+    .ptp-panel:hover {
+        box-shadow: var(--ptp-shadow-md);
     }
 
     .ptp-panel-body {
-        padding: 1rem;
+        padding: 1.25rem 1.5rem;
     }
 
     .ptp-filter-label {
         display: block;
-        margin-bottom: .35rem;
-        color: #475569;
-        font-size: .72rem;
+        margin-bottom: 0.5rem;
+        color: var(--ptp-c-muted);
+        font-size: 0.7rem;
         font-weight: 800;
         text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .ptp-filter-control {
         min-height: 42px;
-        border-color: #cbd5e1;
-        border-radius: 7px;
-        font-size: .88rem;
+        border: 1.5px solid var(--ptp-c-border);
+        border-radius: var(--ptp-r-md);
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: var(--ptp-c-dark);
+        background-color: #ffffff;
+        transition: all 0.2s ease;
+        padding-inline: 0.75rem;
+    }
+    
+    .ptp-filter-control:focus {
+        border-color: var(--ptp-c-blue);
+        box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.15);
+        background-color: #ffffff;
+        outline: none;
     }
 
     .ptp-action {
         min-height: 42px;
-        border-radius: 7px;
-        font-weight: 800;
+        border-radius: var(--ptp-r-md);
+        font-weight: 700;
+        font-size: 0.88rem;
+        letter-spacing: 0.025em;
+        text-transform: uppercase;
+        background: linear-gradient(135deg, var(--ptp-c-blue) 0%, var(--ptp-c-blue-sub) 100%);
+        border: none;
+        color: #ffffff;
+        box-shadow: 0 4px 12px rgba(8, 87, 195, 0.15);
+        transition: all 0.2s ease;
+    }
+    
+    .ptp-action:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(8, 87, 195, 0.25);
+        background: linear-gradient(135deg, var(--ptp-c-blue-sub) 0%, #032d66 100%);
     }
 
+    /* Clean Excel-Style Table Wrapper matching .dana-card */
+    /* Clean Excel-Style Table Wrapper matching .dana-card */
     .ptp-table-wrap {
         width: 100%;
-        max-height: calc(100vh - 210px);
+        max-height: calc(100vh - 230px);
         overflow: auto;
-        border: 1px solid #dbe3ef;
-        border-radius: 8px;
-        background: #f8fafc;
+        border: 1px solid #b7c3d0;
+        border-radius: 0;
+        background: #ffffff;
         scrollbar-gutter: stable;
     }
 
+    /* Clean Excel-Style Table Layout */
     .ptp-table {
-        width: 100%;
-        min-width: 1500px;
-        border-collapse: collapse;
+        width: max-content;
+        min-width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
         margin: 0;
-        font-size: .78rem;
+        font-size: 0.74rem;
         white-space: nowrap;
+        background: #ffffff;
+        color: #002060;
     }
 
     .ptp-table th,
     .ptp-table td {
-        border-right: 1px solid #d8dee8;
-        border-bottom: 1px solid #d8dee8;
-        padding: .38rem .5rem;
+        border: 1px solid #d9e1ec;
+        padding: 0.28rem 0.4rem;
         vertical-align: middle;
+        font-family: var(--ptp-font-primary);
     }
 
+    /* Professional Sticky Headers with Solid Colors matching Harian Dashboard */
     .ptp-table th {
         position: sticky;
         text-align: center;
         color: #ffffff;
-        font-size: .68rem;
+        font-size: 0.68rem;
         font-weight: 800;
         text-transform: uppercase;
-        box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .16), 0 1px 0 rgba(15, 23, 42, .16);
+        letter-spacing: 0;
+        z-index: 4;
+        border: 1px solid #ffffff !important;
     }
 
     .ptp-table thead tr:nth-child(1) th {
         top: 0;
-        z-index: 4;
+        height: 28px;
     }
-
     .ptp-table thead tr:nth-child(2) th {
-        top: 29px;
-        z-index: 4;
+        top: 28px;
+        height: 26px;
     }
-
     .ptp-table thead tr:nth-child(3) th {
-        top: 58px;
-        z-index: 4;
+        top: 54px;
+        height: 26px;
+    }
+    .ptp-table thead th[rowspan="3"] {
+        top: 0 !important;
+        height: 80px !important;
+        z-index: 5 !important;
     }
 
     .ptp-table td {
         background: #ffffff;
-        color: #111827;
+        color: #002060;
         font-variant-numeric: tabular-nums;
+        font-weight: 500;
+        padding-top: 0.2rem;
+        padding-bottom: 0.2rem;
     }
 
     .ptp-table tbody tr:nth-child(even) td {
-        background: #fbfdff;
+        background: #f5f7fa;
     }
 
     .ptp-table tbody tr:hover td {
-        background: #eef6ff;
+        background: #eaf5ff;
     }
 
     .ptp-table tbody tr.ptp-drill-row {
@@ -138,39 +262,48 @@
         cursor: zoom-in;
     }
 
+    /* Drill Down Row Selection Style */
     .ptp-table tbody tr.ptp-drill-row.is-selected td {
-        background: #e0f2fe !important;
-        box-shadow: inset 0 1px 0 rgba(8, 87, 195, .16), inset 0 -1px 0 rgba(8, 87, 195, .16);
+        background: #dbeafe !important;
+        font-weight: 600;
     }
 
     .ptp-table tbody td.ptp-drill-cell.is-selected {
-        background: #bae6fd !important;
-        box-shadow: inset 0 0 0 2px rgba(8, 87, 195, .28);
+        background: #bfdbfe !important;
+        outline: 2px solid var(--ptp-c-blue);
+        outline-offset: -2px;
     }
 
+    /* Solid professional colors matching daily harian table */
     .ptp-head-blue {
-        background: #082c6c;
+        background-color: #0070c0 !important;
+        background: #0070c0 !important;
     }
 
     .ptp-head-blue-sub {
-        background: #0c3478;
+        background-color: #005b9f !important;
+        background: #005b9f !important;
     }
 
     .ptp-head-orange {
-        background: #d85a08;
+        background-color: #d97706 !important;
+        background: #d97706 !important;
     }
 
     .ptp-head-orange-sub {
-        background: #c94f06;
+        background-color: #b45309 !important;
+        background: #b45309 !important;
     }
 
     .ptp-head-yellow {
-        background: #fff200;
-        color: #111827 !important;
+        background-color: #ca8a04 !important;
+        background: #ca8a04 !important;
+        color: #ffffff !important;
     }
 
     .ptp-head-success {
-        background: #c75308;
+        background-color: #0f766e !important;
+        background: #0f766e !important;
     }
 
     .ptp-left {
@@ -185,93 +318,88 @@
         text-align: center;
     }
 
+    /* Excel Summary Row Styling matching daily harian total style */
     .ptp-total-row td {
-        background: #fff7d6 !important;
-        font-weight: 900;
+        background-color: #f2f2f2 !important;
+        color: #002060 !important;
+        font-weight: 800 !important;
+        border-top: 2px solid #8fa3b8 !important;
+        border-bottom: 2px double #8fa3b8 !important;
     }
 
+    /* Clean Solid Conditional Formatting (Plain Text, Muted Solid Colors, No Pill Shapes) */
     .ptp-success-rate-cell {
-        background:
-            linear-gradient(90deg, rgba(var(--success-rgb, 250, 204, 21), .34) 0 var(--success-rate, 0%), rgba(var(--success-rgb, 250, 204, 21), .10) var(--success-rate, 0%) 100%) !important;
-        color: #0f172a !important;
-        font-weight: 900;
-        box-shadow: inset 0 0 0 1px rgba(var(--success-rgb, 250, 204, 21), .24);
-    }
-
-    .ptp-success-rate-cell > span {
-        display: inline-block;
-        min-width: 58px;
-        padding: .08rem .35rem;
-        border-radius: 6px;
-        background: rgba(255, 255, 255, .84);
-        box-shadow: inset 0 0 0 1px rgba(var(--success-rgb, 250, 204, 21), .20);
-    }
-
-    .ptp-table tbody tr:hover td.ptp-success-rate-cell,
-    .ptp-total-row td.ptp-success-rate-cell {
-        background:
-            linear-gradient(90deg, rgba(var(--success-rgb, 250, 204, 21), .40) 0 var(--success-rate, 0%), rgba(var(--success-rgb, 250, 204, 21), .12) var(--success-rate, 0%) 100%) !important;
+        text-align: center !important;
+        font-weight: 700 !important;
     }
 
     .ptp-empty {
-        padding: 2rem 1rem;
+        padding: 3rem 1.5rem;
         text-align: center;
-        color: #64748b;
+        color: var(--ptp-c-muted);
+        font-weight: 600;
     }
 
+    /* Drill down modal premium styles */
     .ptp-drill-modal .modal-content {
-        border: 0;
-        border-radius: 10px;
-        box-shadow: 0 24px 60px -24px rgba(15, 23, 42, .45);
+        border: none;
+        border-radius: var(--ptp-r-xl);
+        box-shadow: var(--ptp-shadow-premium);
+        overflow: hidden;
     }
 
     .ptp-drill-modal .modal-header {
-        border-bottom: 1px solid #e2e8f0;
-        background: #f8fafc;
+        border-bottom: 1px solid var(--ptp-c-border);
+        background: var(--ptp-c-bg-light);
+        padding: 1.25rem 1.5rem;
     }
 
     .ptp-drill-modal .modal-body {
         background: #ffffff;
+        padding: 1.5rem;
     }
 
     .ptp-drill-toolbar {
         display: flex;
         flex-wrap: wrap;
         justify-content: space-between;
-        gap: .75rem;
-        margin-bottom: .75rem;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
     }
 
     .ptp-drill-meta {
         display: flex;
         flex-wrap: wrap;
-        gap: .45rem;
-        color: #475569;
-        font-size: .78rem;
+        gap: 0.5rem;
+        color: var(--ptp-c-dark);
+        font-size: 0.76rem;
         font-weight: 700;
     }
 
     .ptp-drill-meta span {
-        padding: .2rem .45rem;
-        border: 1px solid #e2e8f0;
+        padding: 0.25rem 0.6rem;
+        border: 1px solid var(--ptp-c-border);
         border-radius: 6px;
-        background: #f8fafc;
+        background: var(--ptp-c-bg-light);
+        box-shadow: var(--ptp-shadow-sm);
     }
 
     .ptp-drill-state {
-        padding: 1.25rem;
-        border: 1px dashed #cbd5e1;
-        border-radius: 8px;
-        color: #64748b;
+        padding: 2.5rem;
+        border: 2px dashed var(--ptp-c-border);
+        border-radius: var(--ptp-r-lg);
+        color: var(--ptp-c-muted);
         text-align: center;
-        font-weight: 700;
+        font-weight: 600;
+        font-size: 0.88rem;
     }
 
     .ptp-drill-table-wrap {
-        max-height: 62vh;
+        max-height: 60vh;
         overflow: auto;
-        border: 1px solid #dbe3ef;
-        border-radius: 8px;
+        border: 1px solid #b7c3d0;
+        border-radius: 0;
         background: #ffffff;
         scrollbar-gutter: stable;
     }
@@ -280,15 +408,16 @@
         width: 100%;
         min-width: 1180px;
         border-collapse: collapse;
-        font-size: .76rem;
+        font-size: 0.74rem;
         white-space: nowrap;
+        background: #ffffff;
+        color: #002060;
     }
 
     .ptp-drill-table th,
     .ptp-drill-table td {
-        border-right: 1px solid #e2e8f0;
-        border-bottom: 1px solid #e2e8f0;
-        padding: .42rem .55rem;
+        border: 1px solid #d9e1ec;
+        padding: 0.28rem 0.4rem;
         vertical-align: middle;
     }
 
@@ -296,73 +425,80 @@
         position: sticky;
         top: 0;
         z-index: 1;
-        background: #123b70;
+        background-color: #005b9f !important;
+        background: #005b9f !important;
         color: #ffffff;
-        font-size: .68rem;
+        font-size: 0.68rem;
         font-weight: 800;
         text-transform: uppercase;
-        box-shadow: 0 1px 0 rgba(15, 23, 42, .18);
+        border: 1px solid #ffffff !important;
     }
 
     .ptp-drill-table td {
         background: #ffffff;
-        color: #0f172a;
+        color: #002060;
         font-variant-numeric: tabular-nums;
+        font-weight: 500;
+        padding-top: 0.2rem;
+        padding-bottom: 0.2rem;
     }
 
     .ptp-drill-table tbody tr:nth-child(even) td {
-        background: #f8fafc;
+        background: #f5f7fa;
     }
 
     .ptp-drill-table tbody tr:hover td {
-        background: #eef6ff;
+        background: #eaf5ff;
     }
 
     .ptp-drill-footer-note {
-        margin-top: .65rem;
-        color: #64748b;
-        font-size: .78rem;
+        margin-top: 0.75rem;
+        color: var(--ptp-c-muted);
+        font-size: 0.76rem;
         font-weight: 700;
     }
 
     @media (max-width: 768px) {
         .ptp-page {
-            padding-inline: .75rem;
+            padding: 1rem 0.75rem;
         }
 
         .ptp-title {
-            font-size: 1.2rem;
+            font-size: 1.1rem;
         }
     }
 
-    /* Export Styles */
+    /* Premium PDF Export button */
     .btn-export-pdf {
-        min-height: 36px;
-        border-radius: 10px;
-        border: 1px solid #e2e8f0;
+        min-height: 40px;
+        border-radius: var(--ptp-r-md);
+        border: 1.5px solid var(--ptp-c-border);
         background: #ffffff;
-        color: #0f172a;
+        color: var(--ptp-c-dark);
         font-weight: 800;
         letter-spacing: 0.025em;
-        font-size: 0.72rem;
-        padding: 0.45rem 1rem !important;
-        box-shadow: 0 10px 20px -18px rgba(15, 23, 42, 0.3);
+        font-size: 0.76rem;
+        padding: 0.5rem 1.25rem !important;
+        box-shadow: var(--ptp-shadow-sm);
         transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
     }
 
     .btn-export-pdf:hover {
-        background: #f8fbff;
-        border-color: #0857c3;
-        color: #0857c3;
+        background: #fef2f2;
+        border-color: #f87171;
+        color: #ef4444;
         transform: translateY(-1px);
-        box-shadow: 0 14px 28px -20px rgba(8, 87, 195, 0.4);
+        box-shadow: var(--ptp-shadow-md);
     }
 
     /* Capture Status Modal Premium Styles */
     .capture-status-modal .modal-content {
-        border-radius: 24px;
+        border-radius: var(--ptp-r-xl);
         border: none;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+        box-shadow: var(--ptp-shadow-premium);
         overflow: hidden;
     }
 
@@ -381,14 +517,14 @@
         font-size: 2.5rem;
     }
 
-    .icon-loading { background: rgba(8, 87, 195, 0.1); color: #0857c3; }
+    .icon-loading { background: rgba(8, 87, 195, 0.1); color: var(--ptp-c-blue); }
     .icon-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
     .icon-success { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
 
     .capture-status-modal .btn-primary {
-        border-radius: 12px;
+        border-radius: var(--ptp-r-md);
         padding: 0.6rem 1.5rem;
-        font-weight: 600;
+        font-weight: 700;
         letter-spacing: 0.5px;
     }
 </style>
@@ -400,48 +536,52 @@
         default => ['bo' => 'BO', 'mbm' => 'MBM'],
     };
 
+    // Excel Style Solid Conditional Formatting Helper
     $successRateStyle = static function ($value): string {
-        $rate = max(0, min(100, (float) $value));
-        $stops = [
-            ['rate' => 0, 'rgb' => [239, 68, 68]],
-            ['rate' => 50, 'rgb' => [250, 204, 21]],
-            ['rate' => 100, 'rgb' => [34, 197, 94]],
-        ];
-
-        $from = $stops[0];
-        $to = $stops[1];
-        if ($rate > 50) {
-            $from = $stops[1];
-            $to = $stops[2];
+        $rate = (float) $value;
+        if ($rate < 50.0) {
+            // Soft red background, deep red text
+            return 'background-color: #fee2e2 !important; color: #991b1b !important; font-weight: 700;';
+        } elseif ($rate <= 60.0) {
+            // Soft yellow/amber background, deep amber text
+            return 'background-color: #fef3c7 !important; color: #92400e !important; font-weight: 700;';
+        } else {
+            // Soft green background, deep green text
+            return 'background-color: #dcfce7 !important; color: #166534 !important; font-weight: 700;';
         }
-
-        $span = max(1, $to['rate'] - $from['rate']);
-        $mix = ($rate - $from['rate']) / $span;
-        $rgb = array_map(
-            static fn ($start, $end): int => (int) round($start + (($end - $start) * $mix)),
-            $from['rgb'],
-            $to['rgb']
-        );
-
-        return '--success-rate: ' . number_format($rate, 2, '.', '') . '%; --success-rgb: ' . implode(', ', $rgb) . ';';
     };
 @endphp
 
 <div class="ptp-page">
-    <div class="ptp-header d-flex align-items-center justify-content-between">
-        <div>
-            <h1 class="ptp-title">Kinerja PTP</h1>
-            <div class="ptp-subtitle">{{ $reportConfig['label'] }} | {{ $levels[$selectedLevel] ?? 'Kinerja per MBM' }} | Posisi {{ $selectedPeriodLabel }}</div>
+    <!-- Premium Header -->
+    <div class="ptp-header d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+        <div class="ptp-brand d-flex align-items-center gap-3">
+            <div class="ptp-logo">
+                <i class="fas fa-chart-line text-white"></i>
+            </div>
+            <div>
+                <h1 class="ptp-title">Kinerja PTP</h1>
+                <div class="ptp-subtitle">
+                    <span class="ptp-subtitle-badge">{{ $reportConfig['label'] }}</span>
+                    <span>{{ $levels[$selectedLevel] ?? 'Kinerja per MBM' }}</span>
+                    <span class="mx-1 opacity-50">|</span>
+                    <span class="font-semibold text-slate-700">Posisi {{ $selectedPeriodLabel }}</span>
+                </div>
+            </div>
         </div>
-        <button id="exportPdfBtn" class="btn btn-export-pdf">
-            <i class="fas fa-file-pdf mr-2 text-danger"></i>EXPORT PDF
-        </button>
+        <div class="d-flex align-items-center gap-3">
+            <button id="exportPdfBtn" class="btn btn-export-pdf">
+                <i class="fas fa-file-pdf text-danger"></i>EXPORT PDF
+            </button>
+        </div>
     </div>
 
+
+    <!-- Premium Filters Card -->
     <div class="ptp-panel mb-3">
         <div class="ptp-panel-body">
             <form method="GET" action="{{ route('report.dashboard-pinjaman.kinerja-ptp') }}">
-                <div class="row">
+                <div class="row align-items-end">
                     <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
                         <label class="ptp-filter-label" for="jenis">Jenis PTP</label>
                         <select id="jenis" name="jenis" class="form-control ptp-filter-control">
@@ -458,7 +598,7 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
+                    <div class="col-lg-3 col-md-6 mb-3 mb-md-0">
                         <label class="ptp-filter-label" for="periode">Periode</label>
                         <select id="periode" name="periode" class="form-control ptp-filter-control">
                             @forelse ($availablePeriods as $period)
@@ -468,7 +608,7 @@
                             @endforelse
                         </select>
                     </div>
-                    <div class="col-lg-3 col-md-6 d-flex align-items-end">
+                    <div class="col-lg-3 col-md-6">
                         <button type="submit" class="btn btn-primary ptp-action w-100">
                             <i class="fas fa-filter mr-2"></i>Tampilkan
                         </button>
@@ -478,15 +618,21 @@
         </div>
     </div>
 
+    <!-- Premium Table Card -->
     <div class="ptp-panel">
         <div class="ptp-panel-body">
-            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-                <div class="font-weight-bold">{{ $levels[$selectedLevel] ?? 'Kinerja per MBM' }}</div>
-                <div class="text-muted small">{{ $formatCount($rows->count()) }} baris | Double click angka untuk nominatif</div>
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                <div class="h6 font-weight-bold mb-0 text-slate-800">{{ $levels[$selectedLevel] ?? 'Kinerja per MBM' }}</div>
+                <div class="text-slate-500 small font-semibold">
+                    <i class="fas fa-info-circle mr-1"></i> {{ $formatCount($rows->count()) }} baris | Double click angka untuk nominatif
+                </div>
             </div>
 
             @if ($rows->isEmpty())
-                <div class="ptp-empty">Data belum tersedia untuk pilihan ini.</div>
+                <div class="ptp-empty">
+                    <i class="fas fa-folder-open d-block mb-2 font-size-lg text-slate-400" style="font-size: 2rem;"></i>
+                    Data belum tersedia untuk pilihan ini.
+                </div>
             @else
                 <div class="ptp-table-wrap" id="ptp-capture-area">
                     <table class="ptp-table">
@@ -497,7 +643,7 @@
                                 @endforeach
                                 <th colspan="9" class="ptp-head-blue">{{ $reportConfig['total_heading'] }}</th>
                                 <th colspan="4" class="ptp-head-orange">NPD Billing Sudah Muncul</th>
-                                <th rowspan="3" class="ptp-head-success">Success<br>Rate</th>
+                                <th rowspan="3" class="ptp-head-success">Success Rate</th>
                                 <th colspan="2" class="ptp-head-yellow">Today</th>
                             </tr>
                             <tr>
@@ -549,8 +695,9 @@
                                     <td class="ptp-right ptp-drill-cell" data-ptp-metric="sudah_bayar_rupiah">{{ $formatJuta($row['sudah_bayar_rupiah'] ?? 0) }}</td>
                                     <td class="ptp-right ptp-drill-cell" data-ptp-metric="belum_bayar_rek">{{ $formatCount($row['belum_bayar_rek'] ?? 0) }}</td>
                                     <td class="ptp-right ptp-drill-cell" data-ptp-metric="belum_bayar_rupiah">{{ $formatJuta($row['belum_bayar_rupiah'] ?? 0) }}</td>
+                                    <!-- Clean Solid Conditional Formatting without inner shapes -->
                                     <td class="ptp-center ptp-success-rate-cell ptp-drill-cell" data-ptp-metric="success_rate" style="{{ $successRateStyle($row['success_rate'] ?? 0) }}">
-                                        <span>{{ $formatPercent($row['success_rate'] ?? 0) }}</span>
+                                        {{ $formatPercent($row['success_rate'] ?? 0) }}
                                     </td>
                                     <td class="ptp-right ptp-drill-cell" data-ptp-metric="today_rek">{{ $formatCount($row['today_rek'] ?? 0) }}</td>
                                     <td class="ptp-right ptp-drill-cell" data-ptp-metric="today_rupiah">{{ $formatJuta($row['today_rupiah'] ?? 0) }}</td>
@@ -572,7 +719,7 @@
                                 <td class="ptp-right">{{ $formatCount($total['belum_bayar_rek'] ?? 0) }}</td>
                                 <td class="ptp-right">{{ $formatJuta($total['belum_bayar_rupiah'] ?? 0) }}</td>
                                 <td class="ptp-center ptp-success-rate-cell" style="{{ $successRateStyle($total['success_rate'] ?? 0) }}">
-                                    <span>{{ $formatPercent($total['success_rate'] ?? 0) }}</span>
+                                    {{ $formatPercent($total['success_rate'] ?? 0) }}
                                 </td>
                                 <td class="ptp-right">{{ $formatCount($total['today_rek'] ?? 0) }}</td>
                                 <td class="ptp-right">{{ $formatJuta($total['today_rupiah'] ?? 0) }}</td>
@@ -584,22 +731,23 @@
         </div>
     </div>
 
+    <!-- Nominatif Modal -->
     <div class="modal fade ptp-drill-modal" id="ptpDetailModal" tabindex="-1" role="dialog" aria-hidden="true">
         <div class="modal-dialog modal-xl" role="document">
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
-                        <h5 class="modal-title font-weight-bold mb-1">Nominatif Kinerja PTP</h5>
-                        <div id="ptpDrillSubtitle" class="text-muted" style="font-size: .8rem; font-weight: 700;">-</div>
+                        <h5 class="modal-title font-weight-bold mb-1" style="font-family: var(--ptp-font-display);">Nominatif Kinerja PTP</h5>
+                        <div id="ptpDrillSubtitle" class="text-muted small font-semibold">-</div>
                     </div>
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Tutup">
-                        <span aria-hidden="true">&times;</span>
+                    <button type="button" class="close text-slate-400" data-dismiss="modal" aria-label="Tutup">
+                        <span aria-hidden="true" style="font-size: 1.5rem;">&times;</span>
                     </button>
                 </div>
                 <div class="modal-body">
                     <div class="ptp-drill-toolbar">
                         <div id="ptpDrillMeta" class="ptp-drill-meta"></div>
-                        <button id="ptpDrillLoadMoreButton" type="button" class="btn btn-sm btn-outline-primary d-none">
+                        <button id="ptpDrillLoadMoreButton" type="button" class="btn btn-sm btn-outline-primary d-none font-bold">
                             <i class="fas fa-plus mr-1"></i> Muat Lagi
                         </button>
                     </div>
@@ -626,8 +774,8 @@
                         <div class="capture-status-modal-icon icon-loading">
                             <i class="fas fa-circle-notch fa-spin"></i>
                         </div>
-                        <h4 class="font-weight-bold mb-2">Menyusun Laporan PDF</h4>
-                        <p class="text-muted mb-0">Sedang mengolah tabel kinerja PTP ke dalam format PDF A4 Landscape. Mohon tunggu sebentar...</p>
+                        <h4 class="font-weight-bold mb-2" style="font-family: var(--ptp-font-display);">Menyusun Laporan PDF</h4>
+                        <p class="text-muted small mb-0 font-medium">Sedang mengolah tabel kinerja PTP ke dalam format PDF A4 Landscape. Mohon tunggu sebentar...</p>
                     </div>
 
                     <!-- Error State -->
@@ -635,8 +783,8 @@
                         <div class="capture-status-modal-icon icon-error">
                             <i class="fas fa-exclamation-triangle"></i>
                         </div>
-                        <h4 class="font-weight-bold mb-2">Gagal Ekspor PDF</h4>
-                        <p id="captureErrorMessage" class="text-muted mb-4">Terjadi kendala saat menyusun file PDF.</p>
+                        <h4 class="font-weight-bold mb-2" style="font-family: var(--ptp-font-display);">Gagal Ekspor PDF</h4>
+                        <p id="captureErrorMessage" class="text-muted mb-4 small font-semibold">Terjadi kendala saat menyusun file PDF.</p>
                         <button type="button" class="btn btn-primary w-100" data-dismiss="modal">
                             Tutup & Coba Lagi
                         </button>
@@ -647,8 +795,8 @@
                         <div class="capture-status-modal-icon icon-success">
                             <i class="fas fa-check-circle"></i>
                         </div>
-                        <h4 class="font-weight-bold mb-2">Ekspor Berhasil!</h4>
-                        <p class="text-muted mb-4">Laporan PDF Kinerja PTP telah berhasil diunduh ke perangkat Anda.</p>
+                        <h4 class="font-weight-bold mb-2" style="font-family: var(--ptp-font-display);">Ekspor Berhasil!</h4>
+                        <p class="text-muted mb-4 small font-semibold">Laporan PDF Kinerja PTP telah berhasil diunduh ke perangkat Anda.</p>
                         <button type="button" class="btn btn-primary w-100" data-dismiss="modal">
                             Selesai
                         </button>
@@ -893,62 +1041,37 @@
                 const originalTable = captureArea.querySelector('table');
                 if (!originalTable) throw new Error('Tabel data tidak ditemukan.');
 
-                // 1. Ambil lebar asli tabel
-                const tableRealWidth = originalTable.scrollWidth || 1500;
+                const tableRealWidth = originalTable.scrollWidth || 1600;
 
-                // 2. Buat container isolasi
                 const tempWrap = document.createElement('div');
                 tempWrap.id = 'pdf-isolation-wrap';
-                // Gunakan koordinat normal di dalam viewport (karena tertutup modal backdrop) agar tidak dibuang oleh html2canvas
                 tempWrap.style.cssText = `position: absolute; left: 0; top: 0; width: ${tableRealWidth + 40}px; background: #ffffff; padding: 20px; z-index: 1030;`;
 
-                // 3. Inject CSS secara eksplisit agar html2canvas tidak kehilangan styling
                 const tempStyle = document.createElement('style');
                 tempStyle.textContent = `
-                    #pdf-isolation-wrap { font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif; background: #ffffff; }
+                    #pdf-isolation-wrap { font-family: "Inter", "Plus Jakarta Sans", sans-serif; background: #ffffff; }
                     .pdf-header { margin-bottom: 20px; border-bottom: 3px solid #0857c3; padding-bottom: 15px; width: 100%; background: #ffffff; }
-                    .pdf-title { font-size: 24px; font-weight: bold; color: #082c6c; margin: 0 0 5px 0; }
-                    .pdf-subtitle { font-size: 14px; color: #475569; }
+                    .pdf-title { font-size: 24px; font-weight: bold; color: #0f172a; margin: 0 0 5px 0; }
+                    .pdf-subtitle { font-size: 14px; color: #64748b; }
                     .ptp-table-clone { width: ${tableRealWidth}px; border-collapse: collapse; margin: 0; font-size: 12px; white-space: nowrap; background: #ffffff; }
-                    .ptp-table-clone th, .ptp-table-clone td { border: 1px solid #d8dee8; padding: 6px 8px; vertical-align: middle; }
+                    .ptp-table-clone th, .ptp-table-clone td { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: middle; }
                     .ptp-table-clone th { text-align: center; color: #ffffff; font-size: 11px; font-weight: bold; text-transform: uppercase; }
                     .ptp-table-clone td { background: #ffffff; color: #111827; }
-                    .ptp-table-clone tbody tr:nth-child(even) td { background: #fbfdff; }
-                    .ptp-head-blue { background-color: #082c6c !important; color: #ffffff !important; }
-                    .ptp-head-blue-sub { background-color: #0c3478 !important; color: #ffffff !important; }
-                    .ptp-head-orange { background-color: #d85a08 !important; color: #ffffff !important; }
-                    .ptp-head-orange-sub { background-color: #c94f06 !important; color: #ffffff !important; }
-                    .ptp-head-yellow { background-color: #fff200 !important; color: #111827 !important; }
-                    .ptp-head-success { background-color: #c75308 !important; color: #ffffff !important; }
+                    .ptp-table-clone tbody tr:nth-child(even) td { background: #f8fafc; }
+                    .ptp-head-blue { background-color: #0857c3 !important; color: #ffffff !important; }
+                    .ptp-head-blue-sub { background-color: #053b82 !important; color: #ffffff !important; }
+                    .ptp-head-orange { background-color: #d97706 !important; color: #ffffff !important; }
+                    .ptp-head-orange-sub { background-color: #b45309 !important; color: #ffffff !important; }
+                    .ptp-head-yellow { background-color: #ca8a04 !important; color: #ffffff !important; }
+                    .ptp-head-success { background-color: #0f766e !important; color: #ffffff !important; }
                     .ptp-left { text-align: left !important; }
                     .ptp-right { text-align: right !important; }
                     .ptp-center { text-align: center !important; }
-                    .ptp-total-row td { background-color: #fff7d6 !important; font-weight: bold !important; }
-                    .ptp-success-rate-cell {
-                        background:
-                            linear-gradient(90deg, rgba(var(--success-rgb, 250, 204, 21), .34) 0 var(--success-rate, 0%), rgba(var(--success-rgb, 250, 204, 21), .10) var(--success-rate, 0%) 100%) !important;
-                        color: #0f172a !important;
-                        font-weight: bold !important;
-                        box-shadow: inset 0 0 0 1px rgba(var(--success-rgb, 250, 204, 21), .24);
-                    }
-                    .ptp-success-rate-cell > span {
-                        display: inline-block;
-                        min-width: 58px;
-                        padding: 2px 6px;
-                        border-radius: 6px;
-                        background: rgba(255, 255, 255, .84);
-                        box-shadow: inset 0 0 0 1px rgba(var(--success-rgb, 250, 204, 21), .20);
-                    }
-                    .ptp-total-row td.ptp-success-rate-cell {
-                        background:
-                            linear-gradient(90deg, rgba(var(--success-rgb, 250, 204, 21), .40) 0 var(--success-rate, 0%), rgba(var(--success-rgb, 250, 204, 21), .12) var(--success-rate, 0%) 100%) !important;
-                    }
+                    .ptp-total-row td { background-color: #fef08a !important; font-weight: bold !important; }
                 `;
                 tempWrap.appendChild(tempStyle);
 
-                // 4. Rekonstruksi HTML Murni (Membersihkan class sticky/absolute)
                 let rawTableHtml = originalTable.innerHTML;
-                // Buang class sticky-col jika ada di string HTML
                 rawTableHtml = rawTableHtml.replace(/sticky-col/g, '');
 
                 const contentHtml = `
@@ -966,7 +1089,6 @@
                 tempWrap.appendChild(contentContainer);
                 document.body.appendChild(tempWrap);
 
-                // Tunggu font dan layout selesai di-render
                 await new Promise(r => setTimeout(r, 800));
 
                 const opt = {
@@ -978,7 +1100,7 @@
                         useCORS: true, 
                         logging: false,
                         backgroundColor: '#ffffff',
-                        windowWidth: tableRealWidth + 100, // Pastikan html2canvas melihat keseluruhan lebar
+                        windowWidth: tableRealWidth + 100,
                         x: 0,
                         y: 0
                     },
@@ -986,10 +1108,8 @@
                     pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
                 };
 
-                // Generate PDF dari tempWrap (html2pdf akan memproses konten secara terisolasi)
                 await html2pdf().set(opt).from(tempWrap).save();
 
-                // Bersihkan DOM
                 document.body.removeChild(tempWrap);
 
                 progressUI.classList.add('d-none');

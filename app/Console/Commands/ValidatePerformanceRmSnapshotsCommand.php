@@ -218,34 +218,50 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             return;
         }
 
-        $productSql = "CASE WHEN produk_kinerja = 'BRIGUNAKONSUMER' THEN 'BRIGUNA-KONSUMER' ELSE produk_kinerja END";
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+        $realisasiDateColumn = Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi1') ? 'tgl_realisasi1' : 'tgl_realisasi';
 
-        $previousPlafonByGroup = DB::table('daily_loan_dinamis')
+        $currentAccountKeys = DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+            ->distinct()
+            ->pluck('account_key')
+            ->map(fn ($accountKey): string => (string) $accountKey)
+            ->filter()
+            ->flip();
+
+        $previousLookupOrderColumn = Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
+            ? 'uniqueid_namareport'
+            : 'nomor_rekening1';
+
+        $previousClosedOsByCif = [];
+        DB::table('daily_loan_dinamis')
             ->where('periode', $previousPeriod)
             ->where('segmen_kinerja', 'CONSUMER')
             ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->whereNotNull('pn_pengelola1')
-            ->where('pn_pengelola1', '<>', '')
-            ->selectRaw("COALESCE(cabang_normalized, '') as cabang")
-            ->selectRaw("COALESCE(unit_normalized, '') as unit")
-            ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
-            ->selectRaw("COALESCE(rm_normalized, '') as rm")
-            ->selectRaw("{$productSql} as produk")
-            ->selectRaw('SUM(COALESCE(plafon, 0)) as previous_plafon')
-            ->groupByRaw("COALESCE(cabang_normalized, ''), COALESCE(unit_normalized, ''), COALESCE(branch_normalized, ''), COALESCE(rm_normalized, ''), {$productSql}")
-            ->get()
-            ->mapWithKeys(fn ($row): array => [
-                $this->sourceKey([
-                    'cabang' => (string) ($row->cabang ?? ''),
-                    'unit' => (string) ($row->unit ?? ''),
-                    'branch_code' => (string) ($row->branch_code ?? ''),
-                    'rm' => (string) ($row->rm ?? ''),
-                    'segmen' => 'CONSUMER',
-                    'produk' => $this->canonicalProduct('CONSUMER', (string) ($row->produk ?? '')),
-                ]) => (float) $row->previous_plafon,
-            ]);
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->whereNotNull('cifno')
+            ->where('cifno', '<>', '')
+            ->selectRaw('UPPER(TRIM(cifno)) as clean_cif')
+            ->selectRaw('UPPER(TRIM(nomor_rekening1)) as account_key')
+            ->selectRaw('COALESCE(baki_debet1, 0) as previous_os')
+            ->orderBy($previousLookupOrderColumn)
+            ->chunk(1000, function ($rows) use (&$previousClosedOsByCif, $currentAccountKeys): void {
+                foreach ($rows as $row) {
+                    $cleanCif = (string) ($row->clean_cif ?? '');
+                    $accountKey = (string) ($row->account_key ?? '');
+                    if ($cleanCif === '' || isset($currentAccountKeys[$accountKey]) || array_key_exists($cleanCif, $previousClosedOsByCif)) {
+                        continue;
+                    }
 
-        $currentPlafonByGroup = [];
+                    $previousClosedOsByCif[$cleanCif] = (float) ($row->previous_os ?? 0);
+                }
+            });
+
+        $currentRealizationByCif = [];
         DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->where('segmen_kinerja', 'CONSUMER')
@@ -254,6 +270,9 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             ->where('pn_pengelola1', '<>', '')
             ->whereNotNull('nomor_rekening1')
             ->where('nomor_rekening1', '<>', '')
+            ->whereNotNull('cifno')
+            ->where('cifno', '<>', '')
+            ->whereBetween($realisasiDateColumn, [$periodStart, $period])
             ->select([
                 'cabang_normalized',
                 'unit_normalized',
@@ -262,9 +281,11 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
                 'produk_kinerja',
                 'nomor_rekening1',
                 'plafon',
+                'cifno',
             ])
+            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
             ->orderBy('nomor_rekening1')
-            ->chunk(1000, function ($rows) use (&$currentPlafonByGroup): void {
+            ->chunk(1000, function ($rows) use (&$currentRealizationByCif): void {
                 foreach ($rows as $row) {
                     $groupKey = $this->sourceKey([
                         'cabang' => (string) ($row->cabang_normalized ?? ''),
@@ -274,38 +295,43 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
                         'segmen' => 'CONSUMER',
                         'produk' => $this->canonicalProduct('CONSUMER', (string) ($row->produk_kinerja ?? '')),
                     ]);
-                    $account = (string) $row->nomor_rekening1;
-                    $currentPlafon = (float) ($row->plafon ?? 0);
+                    $cleanCif = strtoupper(trim((string) ($row->cifno ?? '')));
+                    $accountKey = (string) ($row->account_key ?? '');
+                    $metricKey = $groupKey . '|' . $cleanCif;
 
-                    if (!isset($currentPlafonByGroup[$groupKey])) {
-                        $currentPlafonByGroup[$groupKey] = ['debitur' => [], 'plafon' => 0.0];
+                    if (!isset($currentRealizationByCif[$metricKey])) {
+                        $currentRealizationByCif[$metricKey] = [
+                            'group_key' => $groupKey,
+                            'clean_cif' => $cleanCif,
+                            'accounts' => [],
+                            'current_plafon' => 0.0,
+                        ];
                     }
 
-                    $currentPlafonByGroup[$groupKey]['debitur'][$account] = true;
-                    $currentPlafonByGroup[$groupKey]['plafon'] += $currentPlafon;
+                    $currentRealizationByCif[$metricKey]['accounts'][$accountKey] = true;
+                    $currentRealizationByCif[$metricKey]['current_plafon'] += (float) ($row->plafon ?? 0);
                 }
             });
 
-        foreach ($currentPlafonByGroup as $groupKey => $metric) {
+        $surplusByGroup = [];
+        foreach ($currentRealizationByCif as $metric) {
+            $groupKey = (string) ($metric['group_key'] ?? '');
+            $cleanCif = (string) ($metric['clean_cif'] ?? '');
+            $netDisbursement = (float) ($metric['current_plafon'] ?? 0)
+                - (float) ($previousClosedOsByCif[$cleanCif] ?? 0);
+
+            $surplusByGroup[$groupKey] ??= ['debitur' => 0, 'os' => 0.0];
+            $surplusByGroup[$groupKey]['debitur'] += count($metric['accounts'] ?? []);
+            $surplusByGroup[$groupKey]['os'] += $netDisbursement;
+        }
+
+        foreach ($surplusByGroup as $groupKey => $metric) {
             if (!isset($sourceRows[$groupKey])) {
                 continue;
             }
 
-            if (!isset($previousPlafonByGroup[$groupKey]) || (float) $previousPlafonByGroup[$groupKey] <= 0) {
-                $sourceRows[$groupKey]->realisasi_deb = 0;
-                $sourceRows[$groupKey]->realisasi_os = 0.0;
-                continue;
-            }
-
-            $os = (float) $metric['plafon'] - (float) $previousPlafonByGroup[$groupKey];
-            if ($os <= 0) {
-                $sourceRows[$groupKey]->realisasi_deb = 0;
-                $sourceRows[$groupKey]->realisasi_os = 0.0;
-                continue;
-            }
-
-            $sourceRows[$groupKey]->realisasi_deb = count($metric['debitur']);
-            $sourceRows[$groupKey]->realisasi_os = $os;
+            $sourceRows[$groupKey]->realisasi_deb = (int) ($metric['debitur'] ?? 0);
+            $sourceRows[$groupKey]->realisasi_os = (float) ($metric['os'] ?? 0);
         }
     }
 
@@ -594,7 +620,10 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             return (object) ['total_deb' => 0, 'total_real' => 0];
         }
 
-        $current = DB::table('daily_loan_dinamis')
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+        $realisasiDateColumn = Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi1') ? 'tgl_realisasi1' : 'tgl_realisasi';
+
+        $currentRows = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->where('segmen_kinerja', 'CONSUMER')
             ->whereIn('produk_kinerja', $this->getSourceProducts($produk))
@@ -605,47 +634,84 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             ->where('pn_pengelola1', '<>', '')
             ->whereNotNull('nomor_rekening1')
             ->where('nomor_rekening1', '<>', '')
-            ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb, SUM(COALESCE(plafon, 0)) as current_plafon')
-            ->first();
+            ->whereNotNull('cifno')
+            ->where('cifno', '<>', '')
+            ->whereBetween($realisasiDateColumn, [$periodStart, $period])
+            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+            ->selectRaw("UPPER(TRIM(cifno)) as clean_cif")
+            ->selectRaw('COUNT(DISTINCT nomor_rekening1) as debitur')
+            ->selectRaw('SUM(COALESCE(plafon, 0)) as current_plafon')
+            ->groupByRaw("UPPER(TRIM(nomor_rekening1)), UPPER(TRIM(cifno))")
+            ->get();
 
-        $previous = DB::table('daily_loan_dinamis')
-            ->where('periode', $previousPeriod)
-            ->where('segmen_kinerja', 'CONSUMER')
-            ->whereIn('produk_kinerja', $this->getSourceProducts($produk))
-            ->whereRaw("COALESCE(NULLIF(cabang_normalized, ''), UPPER(TRIM(cabang1))) = ?", [strtoupper(trim($cabang))])
-            ->whereRaw("COALESCE(NULLIF(unit_normalized, ''), UPPER(TRIM(unit1))) = ?", [strtoupper(trim($unit))])
-            ->whereRaw("COALESCE(NULLIF(rm_normalized, ''), UPPER(TRIM(pn_pengelola1))) = ?", [strtoupper(trim($rm))])
-            ->whereNotNull('pn_pengelola1')
-            ->where('pn_pengelola1', '<>', '')
-            ->selectRaw('SUM(COALESCE(plafon, 0)) as previous_plafon')
-            ->first();
-
-        $previousPlafon = (float) ($previous->previous_plafon ?? 0);
-        if ($previousPlafon <= 0) {
+        if ($currentRows->isEmpty()) {
             return (object) ['total_deb' => 0, 'total_real' => 0];
         }
 
-        $net = (float) ($current->current_plafon ?? 0) - $previousPlafon;
+        $currentAccountKeys = DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+            ->distinct()
+            ->pluck('account_key')
+            ->map(fn ($value): string => (string) $value)
+            ->filter()
+            ->flip();
+
+        $previousLookupOrderColumn = Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
+            ? 'uniqueid_namareport'
+            : 'nomor_rekening1';
+
+        $previousClosedOsByCif = [];
+        DB::table('daily_loan_dinamis')
+            ->where('periode', $previousPeriod)
+            ->where('segmen_kinerja', 'CONSUMER')
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->whereNotNull('cifno')
+            ->where('cifno', '<>', '')
+            ->selectRaw('UPPER(TRIM(cifno)) as clean_cif')
+            ->selectRaw('UPPER(TRIM(nomor_rekening1)) as account_key')
+            ->selectRaw('COALESCE(baki_debet1, 0) as previous_os')
+            ->orderBy($previousLookupOrderColumn)
+            ->chunk(1000, function ($rows) use (&$previousClosedOsByCif, $currentAccountKeys): void {
+                foreach ($rows as $row) {
+                    $cleanCif = (string) ($row->clean_cif ?? '');
+                    $accountKey = (string) ($row->account_key ?? '');
+                    if ($cleanCif === '' || isset($currentAccountKeys[$accountKey]) || array_key_exists($cleanCif, $previousClosedOsByCif)) {
+                        continue;
+                    }
+
+                    $previousClosedOsByCif[$cleanCif] = (float) ($row->previous_os ?? 0);
+                }
+            });
+
+        $totalDebitur = 0;
+        $totalReal = 0.0;
+        foreach ($currentRows->groupBy(fn ($row): string => (string) ($row->clean_cif ?? '')) as $cleanCif => $rows) {
+            $totalDebitur += (int) $rows->sum('debitur');
+            $totalReal += (float) $rows->sum('current_plafon') - (float) ($previousClosedOsByCif[$cleanCif] ?? 0);
+        }
 
         return (object) [
-            'total_deb' => $net > 0 ? (int) ($current->total_deb ?? 0) : 0,
-            'total_real' => max($net, 0.0),
+            'total_deb' => $totalDebitur,
+            'total_real' => $totalReal,
         ];
     }
 
     private function resolvePreviousMonthDailyLoanPeriod(string $period): ?string
     {
         $periodDate = Carbon::parse($period);
+        $previousEnd = $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
 
-        $previous = DB::table('daily_loan_dinamis')
-            ->whereBetween('periode', [
-                $periodDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString(),
-                $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString(),
-            ])
+        $exists = DB::table('daily_loan_dinamis')
+            ->where('periode', $previousEnd)
             ->where('segmen_kinerja', 'CONSUMER')
             ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->max('periode');
+            ->exists();
 
-        return $previous !== null ? (string) $previous : null;
+        return $exists ? $previousEnd : null;
     }
 }

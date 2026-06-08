@@ -4,18 +4,19 @@
 
 @section('content')
 
-<div class="card border-0 mb-4 shadow-sm" style="border-radius: 20px; background: #ffffff;">
-    <div class="card-body p-4">
+<div class="card border-0 mb-4 shadow-sm import-template-card">
+    <div class="card-body p-4 import-template-card__body">
         <div class="row align-items-center">
             <div class="col-lg-6 mb-3 mb-lg-0">
-                <h5 class="font-weight-bold text-dark mb-1" style="font-size: 1.15rem;">
-                    <i class="fas fa-file-download text-primary mr-2"></i> Template Import
+                <span class="import-template-card__eyebrow">Download Template</span>
+                <h5 class="font-weight-bold text-dark mb-1 import-template-card__title" style="display: flex; align-items: center; gap: 8px;">
+                    <i class="fas fa-file-download text-primary"></i> Template Import
                 </h5>
-                <p class="text-muted mb-0" style="font-size: 0.9rem;">Pilih report untuk mengunduh format template.</p>
+                <p class="import-template-card__text mb-0">Pilih report untuk mengunduh format template.</p>
             </div>
             <div class="col-lg-6">
-                <div class="d-flex align-items-center justify-content-lg-end gap-2" style="gap: 12px;">
-                    <div style="flex: 1; max-width: 320px;">
+                <div class="import-template-actions">
+                    <div class="import-template-select">
                         <select id="download-template-select" class="form-control select2" data-placeholder="Cari Report">
                             <option value="">Cari Report</option>
                             @foreach($downloadTemplates as $key => $template)
@@ -25,10 +26,9 @@
                     </div>
                     <button type="button"
                        id="btn-download-template"
-                       class="btn btn-primary disabled"
+                       class="btn btn-primary disabled import-template-button"
                        aria-disabled="true"
-                       data-route-template="{{ route('import.template') }}"
-                       style="border-radius: 12px; font-weight: 600; padding: 0.55rem 1.25rem;">
+                       data-route-template="{{ route('import.template') }}">
                         Unduh
                     </button>
                 </div>
@@ -39,13 +39,13 @@
 
 <div id="download-toast-stack" class="download-toast-stack" aria-live="polite" aria-atomic="true"></div>
 
-<div class="card border-0 mb-4 shadow-sm import-upload-card" style="border-radius: 20px; background: #ffffff; overflow: hidden;">
+<div class="card border-0 mb-4 shadow-sm import-upload-card">
     <div class="card-header border-0 bg-transparent px-4 pt-4 pb-0 import-upload-card__header">
         <span class="import-upload-card__eyebrow">Import report</span>
         <div class="d-flex flex-wrap align-items-start justify-content-between" style="gap: 1rem;">
             <div>
-                <h5 class="font-weight-bold text-dark mb-1" style="font-size: 1.25rem;">
-                    <i class="fas fa-cloud-upload-alt text-primary mr-2"></i> Upload Data
+                <h5 class="font-weight-bold text-dark mb-1 import-upload-card__title" style="display: flex; align-items: center; gap: 8px;">
+                    <i class="fas fa-cloud-upload-alt text-primary"></i> Upload Data
                 </h5>
                 <p class="import-upload-card__subtitle mb-0">Pilih report, unggah file sesuai formatnya, lalu lanjutkan ke preview sebelum import.</p>
             </div>
@@ -55,7 +55,7 @@
         </div>
     </div>
 
-    <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data" data-prepare-preview-url="" data-upload-limits-url="{{ route('import.upload-limits') }}" data-chunked-upload="" data-chunk-init-url="" data-chunk-upload-url="" data-chunk-finalize-url="">
+    <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data" data-prepare-preview-url="" data-upload-limits-url="{{ route('import.upload-limits') }}" data-chunked-upload="" data-chunk-init-url="" data-chunk-upload-url="" data-chunk-finalize-url="" data-no-route-loading>
         @csrf
 
         <div class="card-body p-4 import-upload-card__body">
@@ -103,13 +103,13 @@
 
                     <div id="form-periode" class="form-group mb-4" style="display: none;">
                         <label id="periode-label" class="font-weight-bold text-dark mb-2">Periode</label>
-                        <input type="date" id="periode_input" name="periode" class="form-control" style="border-radius: 12px; padding: 0.6rem 1rem; border: 1px solid #cbd5e1;">
+                        <input type="date" id="periode_input" name="periode" class="form-control">
                         <small id="periode-help" class="d-none"></small>
                     </div>
 
                     <div id="form-kanca" class="form-group mb-0" style="display: none;">
                         <label id="kanca-label" class="font-weight-bold text-dark mb-2">Kanca</label>
-                        <select id="kanca_input" name="kanca_manual" class="form-control" style="border-radius: 12px; border: 1px solid #cbd5e1;">
+                        <select id="kanca_input" name="kanca_manual" class="form-control">
                             <option value="">-- Pilih Kanca --</option>
                             <option value="KC Madiun">KC Madiun</option>
                             <option value="KC Magetan">KC Magetan</option>
@@ -117,6 +117,12 @@
                             <option value="KC Ponorogo">KC Ponorogo</option>
                         </select>
                         <small id="kanca-help" class="d-none"></small>
+                    </div>
+
+                    <div id="form-business-cluster-link" class="form-group mb-0 mt-4" style="display: none;">
+                        <label id="business-cluster-link-label" class="font-weight-bold text-dark mb-2">Link URL Spreadsheet</label>
+                        <input type="url" id="business_cluster_link_url" name="link_url" class="form-control" placeholder="https://docs.google.com/spreadsheets/d/...">
+                        <small id="business-cluster-link-help" class="text-muted">Tempel link spreadsheet Business Cluster yang sudah bisa diakses.</small>
                     </div>
                 </div>
 
@@ -139,13 +145,13 @@
                     </div>
 
                     <!-- Modern Dropzone area -->
-                    <div id="import-dropzone" class="import-dropzone d-flex flex-column align-items-center justify-content-center" tabindex="0" role="button" aria-label="Area upload file" style="border: 2px dashed #cbd5e1; border-radius: 20px; padding: 2.5rem 1.5rem; background: #f8fafc; cursor: pointer; transition: all 0.2s; min-height: 200px;">
-                        <div class="import-dropzone__icon mb-3" style="font-size: 2.5rem; color: #94a3b8;">
+                    <div id="import-dropzone" class="import-dropzone d-flex flex-column align-items-center justify-content-center" tabindex="0" role="button" aria-label="Area upload file">
+                        <div class="import-dropzone__icon mb-3">
                             <i class="fas fa-cloud-upload-alt"></i>
                         </div>
                         <div class="import-dropzone__content text-center">
-                            <div id="import-dropzone-title" class="import-dropzone__title font-weight-bold text-dark mb-1" style="font-size: 1.1rem;">Pilih file atau tarik ke sini</div>
-                            <div id="import-dropzone-text" class="import-dropzone__text text-muted" style="font-size: 0.9rem;">File otomatis disesuaikan dengan report</div>
+                            <div id="import-dropzone-title" class="import-dropzone__title">Pilih file atau tarik ke sini</div>
+                            <div id="import-dropzone-text" class="import-dropzone__text">File otomatis disesuaikan dengan report</div>
                             <div class="import-dropzone__hint">
                                 <span><i class="fas fa-file-archive mr-1"></i> RAR</span>
                                 <span><i class="fas fa-file-excel mr-1"></i> Excel</span>
@@ -154,18 +160,18 @@
                         </div>
                     </div>
 
-                    <div id="import-file-preview" class="import-file-preview d-none align-items-center mt-3" style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 16px; padding: 1.25rem;">
-                        <div class="import-file-preview__icon text-primary mr-3" style="font-size: 1.75rem;">
+                    <div id="import-file-preview" class="import-file-preview d-none align-items-center mt-3">
+                        <div class="import-file-preview__icon">
                             <i class="fas fa-file-excel"></i>
                         </div>
-                        <div class="import-file-preview__body flex-grow-1" style="min-width: 0;">
-                            <div id="import-file-name" class="import-file-preview__name font-weight-bold text-dark mb-1 text-truncate" style="font-size: 0.95rem;">-</div>
-                            <div class="import-file-preview__meta text-muted d-flex align-items-center gap-2" style="font-size: 0.85rem; gap: 8px;">
+                        <div class="import-file-preview__body">
+                            <div id="import-file-name" class="import-file-preview__name">-</div>
+                            <div class="import-file-preview__meta text-muted">
                                 <span id="import-file-size" class="font-weight-bold text-secondary">0 KB</span>
                                 <span id="import-file-extension" class="badge badge-light border text-uppercase">-</span>
                             </div>
                         </div>
-                        <button type="button" id="import-file-clear" class="btn btn-sm btn-light text-danger ml-3" style="border-radius: 10px; padding: 0.4rem 0.6rem;" title="Ganti File">
+                        <button type="button" id="import-file-clear" class="import-file-preview__clear ml-3" title="Ganti File">
                             <i class="fas fa-trash-alt"></i>
                         </button>
                     </div>
@@ -175,7 +181,7 @@
 
         <div class="card-footer bg-transparent border-0 px-4 pb-4 pt-0 text-right import-upload-card__footer">
             <hr class="mt-0 mb-4" style="border-top: 1px solid #f1f5f9;">
-            <button type="submit" id="btn-submit" class="btn btn-primary font-weight-bold import-upload-card__submit" style="border-radius: 14px; padding: 0.75rem 2rem; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);">
+            <button type="submit" id="btn-submit" class="btn btn-primary font-weight-bold import-upload-card__submit">
                 <i class="fas fa-file-archive mr-2"></i> Upload Sekarang
             </button>
         </div>
@@ -184,26 +190,26 @@
 
 @if(!empty($showReportManagementPanel))
 <style>
-    .rm-panel { border-radius: 26px; overflow: hidden; box-shadow: 0 28px 60px -40px rgba(15,23,42,0.32); border: 1px solid rgba(226,232,240,0.8); background: #fff; margin-top: 2rem; margin-bottom: 2rem; }
-    .rm-header { padding: 1.45rem 1.5rem 1rem; border-bottom: 1px solid rgba(226,232,240,0.5); background: radial-gradient(circle at top left, rgba(59, 130, 246, 0.09), transparent 28%), linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); }
-    .rm-eyebrow { display: inline-block; padding: 0.35rem 0.85rem; border-radius: 999px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #1d4ed8; background: rgba(37,99,235,0.08); margin-bottom: 0.55rem; }
+    .rm-panel { border-radius: 26px; overflow: hidden; box-shadow: 0 28px 60px -40px rgba(15,23,42,0.32); border: 1px solid rgba(15, 76, 186, 0.12); background: #fff; margin-top: 2rem; margin-bottom: 2rem; }
+    .rm-header { padding: 1.45rem 1.5rem 1rem; border-bottom: 1px solid rgba(15, 76, 186, 0.1); background: radial-gradient(circle at top left, rgba(15, 76, 186, 0.08), transparent 28%), linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); }
+    .rm-eyebrow { display: inline-block; padding: 0.35rem 0.85rem; border-radius: 999px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #0f4cba; background: rgba(15, 76, 186, 0.08); margin-bottom: 0.55rem; }
     .rm-card-inner { padding: 1.75rem; border-radius: 20px; background: #ffffff; border: 1px solid rgba(148, 163, 184, 0.2); height: 100%; display: flex; flex-direction: column; justify-content: center; box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); transition: transform 0.2s ease, box-shadow 0.2s ease; }
     .rm-card-inner:hover { box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.08); transform: translateY(-2px); }
     .rm-card-inner--sync { justify-content: space-between; }
     .rm-card-eyebrow { display: inline-flex; align-items: center; padding: 0.45rem 1rem; border-radius: 999px; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 1.25rem; align-self: flex-start; }
     .rm-card-eyebrow--source { background: rgba(15, 23, 42, 0.04); color: #475569; }
-    .rm-card-eyebrow--sync { background: rgba(37,99,235,0.08); color: #2563eb; }
+    .rm-card-eyebrow--sync { background: rgba(15, 76, 186, 0.08); color: #0f4cba; }
     .rm-stat-card { padding: 1.5rem; border-radius: 20px; background: #fff; border: 1px solid rgba(148, 163, 184, 0.2); display: flex; align-items: center; gap: 1rem; height: 100%; box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); transition: transform 0.2s ease, box-shadow 0.2s ease; }
     .rm-stat-card:hover { box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.08); transform: translateY(-2px); }
     .rm-stat-icon { width: 54px; height: 54px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; }
     .rm-action-bar { padding: 1.25rem 1.5rem; border-radius: 20px; background: #ffffff; border: 1px solid rgba(148, 163, 184, 0.2); display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); }
     .rm-btn { min-height: 48px; border-radius: 16px; padding: 0 1.75rem; font-weight: 700; font-size: 0.95rem; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; }
-    .rm-btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; border: none; box-shadow: 0 14px 24px -14px rgba(37,99,235,0.5); }
-    .rm-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 18px 28px -14px rgba(37,99,235,0.6); color: #fff; }
+    .rm-btn-primary { background: linear-gradient(135deg, #0f4cba, #2563eb); color: #fff; border: none; box-shadow: 0 14px 24px -14px rgba(15, 76, 186, 0.5); }
+    .rm-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 18px 28px -14px rgba(15, 76, 186, 0.6); color: #fff; }
     .rm-btn-danger-outline { border: 2px solid #ef4444; color: #ef4444; background: transparent; }
     .rm-btn-danger-outline:hover { background: #fef2f2; color: #dc2626; transform: translateY(-1px); }
-    .rm-btn-secondary-outline { border: 2px solid #2563eb; color: #2563eb; background: transparent; width: 100%; margin-top: 1rem; }
-    .rm-btn-secondary-outline:hover { background: rgba(37,99,235,0.05); color: #1d4ed8; transform: translateY(-1px); }
+    .rm-btn-secondary-outline { border: 2px solid #0f4cba; color: #0f4cba; background: transparent; width: 100%; margin-top: 1rem; }
+    .rm-btn-secondary-outline:hover { background: rgba(15, 76, 186, 0.05); color: #0f4cba; transform: translateY(-1px); }
     .rm-progress { padding: 1.5rem; border-radius: 20px; background: #ffffff; border: 1px solid rgba(148, 163, 184, 0.2); box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); }
     .rm-progress-badge { display: inline-flex; padding: 0.35rem 0.85rem; border-radius: 999px; background: #dcfce7; color: #059669; font-size: 0.8rem; font-weight: 800; border: 1px solid #a7f3d0; text-transform: uppercase; letter-spacing: 0.05em; }
     .rm-progress-bar { height: 12px; border-radius: 999px; background: #e2e8f0; margin-bottom: 0.75rem; overflow: hidden; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08); }
@@ -234,8 +240,8 @@
     .queue-monitor__nav { display: flex; padding: 0.5rem 1.5rem; background: #fdfdfe; border-bottom: 1px solid rgba(226,232,240,0.8); gap: 1rem; }
     .queue-nav-item { padding: 0.4rem 0.8rem; font-size: 0.75rem; font-weight: 700; color: #64748b; cursor: pointer; border-radius: 8px; transition: 0.2s; }
     .queue-nav-item:hover { background: #f1f5f9; color: #1e293b; }
-    .queue-nav-item.active { background: #eff6ff; color: #2563eb; }
-    
+    .queue-nav-item.active { background: #eff6ff; color: #0f4cba; }
+
     .queue-table-container { display: none; padding: 1rem 1.5rem; max-height: 400px; overflow-y: auto; }
     .queue-table-container.active { display: block; }
     .queue-table { width: 100%; font-size: 0.75rem; border-collapse: collapse; }
@@ -353,6 +359,9 @@
         }
 
         function redirectToImportIndex() {
+            if (typeof window.showRouteLoading === 'function') {
+                window.showRouteLoading('Memuat halaman', 'Menyiapkan tampilan berikutnya dengan data terbaru.');
+            }
             window.location.href = "{{ route('import.index') }}";
         }
 
@@ -442,6 +451,7 @@
         const formCsv = document.getElementById('form-csv');
         const formPeriode = document.getElementById('form-periode');
         const formKanca = document.getElementById('form-kanca');
+        const formBusinessClusterLink = document.getElementById('form-business-cluster-link');
         const formImport = document.getElementById('form-import');
         const btnSubmit = document.getElementById('btn-submit');
         const btnDownloadTemplate = document.getElementById('btn-download-template');
@@ -451,10 +461,12 @@
         const inputCsv = document.getElementById('file_csv');
         const periodeInput = document.getElementById('periode_input');
         const kancaInput = document.getElementById('kanca_input');
+        const businessClusterLinkInput = document.getElementById('business_cluster_link_url');
         const periodeLabel = document.getElementById('periode-label');
         const periodeHelp = document.getElementById('periode-help');
         const kancaLabel = document.getElementById('kanca-label');
         const kancaHelp = document.getElementById('kanca-help');
+        const businessClusterLinkHelp = document.getElementById('business-cluster-link-help');
         const excelLabel = document.getElementById('excel-label');
         const excelHelp = document.getElementById('excel-help');
         const csvLabel = document.getElementById('csv-label');
@@ -709,6 +721,9 @@
             }
 
             if (finalizePayload.redirect) {
+                if (typeof window.showRouteLoading === 'function') {
+                    window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
+                }
                 window.location.href = finalizePayload.redirect;
                 return;
             }
@@ -1202,6 +1217,7 @@
                 rar: 'btn btn-primary font-weight-bold import-upload-card__submit',
                 excel: 'btn btn-success font-weight-bold import-upload-card__submit',
                 csv: 'btn btn-info font-weight-bold import-upload-card__submit',
+                link: 'btn btn-primary font-weight-bold import-upload-card__submit',
             };
 
             formImport.dataset.uploadKind = kind;
@@ -1292,6 +1308,28 @@
             }
         }
 
+        function configureBusinessClusterLink(options = {}) {
+            const {
+                visible = false,
+                required = false,
+                help = 'Tempel link spreadsheet Business Cluster yang sudah bisa diakses.',
+                value = '',
+            } = options;
+
+            if (!formBusinessClusterLink || !businessClusterLinkInput) {
+                return;
+            }
+
+            formBusinessClusterLink.style.display = visible ? 'block' : 'none';
+            businessClusterLinkInput.disabled = !visible;
+            businessClusterLinkInput.required = Boolean(visible && required);
+            businessClusterLinkInput.value = value;
+
+            if (businessClusterLinkHelp) {
+                businessClusterLinkHelp.textContent = help;
+            }
+        }
+
         function getFileExtension(fileName) {
             const parts = String(fileName || '').toLowerCase().split('.');
             return parts.length > 1 ? parts.pop() : '';
@@ -1314,6 +1352,13 @@
         }
 
         function getActiveUploadDescriptor() {
+            if (formImport.dataset.uploadKind === 'link') {
+                return {
+                    type: 'Link Spreadsheet',
+                    accept: 'Google Sheets URL',
+                };
+            }
+
             const activeInput = getActiveFileInput();
 
             if (activeInput === inputExcel) {
@@ -1491,11 +1536,12 @@
             const isReportPh = reportName.includes('report nominatif rekening pinjaman ph');
             const isCognosPh = reportName.includes('cognos ph');
             const isCognosRecovery = reportName.includes('cognos recovery');
-            const isGi405RecDh = tableName === 'gi405_singlerow' || importController.includes('Gi405RecDhImportExcelController');
+            const isGi405RecDh = tableName === 'gi405_recovery' || importController.includes('Gi405RecDhImportExcelController');
             const isSsaSimpanan = tableName === 'ssa_simpanan';
             const isSsaPinjaman = tableName === 'ssa_pinjaman';
             const isInputRekanan = tableName === 'input_rekanan';
             const isBodBoc = tableName === 'bod_boc';
+            const isBusinessCluster = tableName === 'business_cluster';
             const isRka = tableName === 'rka';
             const isDlyKapResegmentasi = tableName === 'dly_kap_resegmentasi';
             const isL1133 = tableName === 'l1133';
@@ -1518,8 +1564,13 @@
             if (kancaInput) {
                 kancaInput.disabled = true;
                 kancaInput.required = false;
+                kancaInput.name = 'kanca_manual';
             }
             configureKancaInput({ visible: false });
+            configureBusinessClusterLink({ visible: false });
+            if (importDropzone) {
+                importDropzone.classList.remove('d-none');
+            }
 
             formImport.dataset.preparePreviewUrl = '';
             formImport.dataset.directRedirect = '';
@@ -1527,6 +1578,39 @@
             formImport.dataset.chunkInitUrl = '';
             formImport.dataset.chunkUploadUrl = '';
             formImport.dataset.chunkFinalizeUrl = '';
+
+            if (isBusinessCluster) {
+                formImport.action = "{{ route('business-cluster.store') }}";
+                formImport.dataset.preparePreviewUrl = '';
+                formImport.dataset.directRedirect = '';
+
+                if (kancaInput) {
+                    kancaInput.name = 'nama_kanca';
+                }
+
+                configurePeriodeInput({ visible: false });
+                configureKancaInput({
+                    visible: true,
+                    required: true,
+                    label: 'Nama Kanca',
+                    help: 'Pilih kanca pemilik link spreadsheet Business Cluster.',
+                });
+                configureBusinessClusterLink({
+                    visible: true,
+                    required: true,
+                    help: 'Gunakan link spreadsheet Business Cluster yang sudah bisa diakses oleh aplikasi.',
+                });
+
+                if (importDropzone) {
+                    importDropzone.classList.add('d-none');
+                }
+
+                importFilePreview?.classList.add('d-none');
+                applyButtonState('link', '<i class="fas fa-link"></i> Simpan Link');
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
 
             if (isDailyLoan) {
                 formCsv.style.display = 'block';
@@ -1567,7 +1651,7 @@
                 formImport.dataset.preparePreviewUrl = "{{ route('import.gi405.prepare-preview') }}";
 
                 if (excelLabel) {
-                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel GI405 Single Row (.xlsx, .xls)';
+                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel GI405 Recovery (.xlsx, .xls)';
                 }
 
                 if (excelHelp) {
@@ -1997,12 +2081,14 @@
                 ? 'Proses Excel'
                 : uploadKind === 'csv'
                     ? 'Proses CSV'
-                    : 'Proses Import';
+                    : (uploadKind === 'link' ? 'Simpan Link' : 'Proses Import');
             const descText = hasAsyncPreview
                 ? (isPolarsFlow ? 'File sedang diproses menuju fase Polars.' : 'File sedang diproses untuk preview.')
-                : (isPolarsFlow ? 'File sedang diproses menuju fase Polars.' : 'File sedang diproses.');
-            const initialPhaseText = isPolarsFlow ? 'Fase Polars dimulai...' : 'Menyiapkan proses...';
-            const initialStatusText = isPolarsFlow ? 'Menyiapkan batch Polars...' : 'Menunggu proses...';
+                : (uploadKind === 'link'
+                    ? 'Link spreadsheet sedang disimpan.'
+                    : (isPolarsFlow ? 'File sedang diproses menuju fase Polars.' : 'File sedang diproses.'));
+            const initialPhaseText = uploadKind === 'link' ? 'Menyiapkan penyimpanan link...' : (isPolarsFlow ? 'Fase Polars dimulai...' : 'Menyiapkan proses...');
+            const initialStatusText = uploadKind === 'link' ? 'Menyimpan data link...' : (isPolarsFlow ? 'Menyiapkan batch Polars...' : 'Menunggu proses...');
 
             const progressHtml = `
                 <div class="swal-import-shell">
@@ -2327,6 +2413,9 @@
                                 try { evtData = JSON.parse(event.data); } catch (_) {}
                                 eventSource.close();
                                 if (evtData.redirect) {
+                                    if (typeof window.showRouteLoading === 'function') {
+                                        window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
+                                    }
                                     window.location.href = evtData.redirect;
                                 }
                             });
@@ -2369,12 +2458,18 @@
                                 uploadProgressText.innerText = 'Upload selesai. Membuka halaman preview...';
                             }
 
+                            if (typeof window.showRouteLoading === 'function') {
+                                window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
+                            }
                             window.location.href = data.redirect;
                             return;
                         }
 
                         if (directRedirect) {
                             if (data.redirect) {
+                                if (typeof window.showRouteLoading === 'function') {
+                                    window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
+                                }
                                 window.location.href = data.redirect;
                                 return;
                             }
@@ -2425,6 +2520,9 @@
                             try { evtData = JSON.parse(event.data); } catch (_) {}
                             eventSource.close();
                             if (evtData.redirect) {
+                                if (typeof window.showRouteLoading === 'function') {
+                                    window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
+                                }
                                 window.location.href = evtData.redirect;
                             }
                         });
@@ -2577,7 +2675,7 @@
         padding: .9rem 1rem;
         border-radius: 16px;
         background: #fff;
-        box-shadow: 0 18px 40px -24px rgba(15, 23, 42, .45);
+        box-shadow: 0 18px 40px -24px rgba(15, 76, 186, .45);
         border: 1px solid rgba(148, 163, 184, .24);
         transform: translateY(0);
         opacity: 1;
@@ -2590,11 +2688,11 @@
     }
 
     .download-toast--success {
-        border-left: 4px solid #16a34a;
+        border-left: 4px solid #10b981;
     }
 
     .download-toast--error {
-        border-left: 4px solid #dc2626;
+        border-left: 4px solid #ef4444;
     }
 
     .download-toast__icon {
@@ -2610,11 +2708,11 @@
     }
 
     .download-toast--success .download-toast__icon {
-        background: #16a34a;
+        background: #10b981;
     }
 
     .download-toast--error .download-toast__icon {
-        background: #dc2626;
+        background: #ef4444;
     }
 
     .download-toast__body {
@@ -2652,34 +2750,32 @@
         color: #0f172a;
     }
 
-    .import-template-card {
+    .import-template-card,
+    .import-upload-card {
+        border-radius: 24px !important;
         overflow: hidden;
-        border-radius: 22px;
+        border: 1px solid rgba(15, 76, 186, 0.12) !important;
+        box-shadow: 0 20px 40px -20px rgba(15, 76, 186, 0.08), 0 1px 3px rgba(15, 76, 186, 0.02) !important;
         background: #ffffff;
-        border: 1px solid rgba(8, 87, 195, 0.12);
-        box-shadow: 0 18px 34px -28px rgba(4, 42, 95, 0.24);
     }
 
     .import-template-card__body {
-        padding: 1.35rem 1.5rem;
+        padding: 1.5rem;
     }
 
     .import-template-card__eyebrow,
     .import-upload-card__eyebrow {
         display: inline-block;
-        margin-bottom: 0.55rem;
-        padding: 0.35rem 0.7rem;
+        margin-bottom: 0.65rem;
+        padding: 0.4rem 0.85rem;
         border-radius: 999px;
         font-size: 0.72rem;
         font-weight: 800;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-    }
-
-    .import-template-card__eyebrow {
-        color: #1d4ed8;
-        background: rgba(37, 99, 235, 0.08);
-        border: 1px solid rgba(37, 99, 235, 0.12);
+        color: #0f4cba;
+        background: rgba(15, 76, 186, 0.08);
+        border: 1px solid rgba(15, 76, 186, 0.12);
     }
 
     .import-template-card__title {
@@ -2714,7 +2810,7 @@
     .import-template-select .select2-container--bootstrap4 .select2-selection--single {
         min-height: 48px;
         border-radius: 14px !important;
-        border: 1px solid rgba(8, 87, 195, 0.14) !important;
+        border: 1px solid rgba(15, 76, 186, 0.14) !important;
         background: #ffffff !important;
         display: flex;
         align-items: center;
@@ -2733,8 +2829,8 @@
     }
 
     .import-template-select .select2-container--bootstrap4.select2-container--focus .select2-selection--single {
-        border-color: #307fe2 !important;
-        box-shadow: 0 0 0 0.2rem rgba(48, 127, 226, 0.16) !important;
+        border-color: #0f4cba !important;
+        box-shadow: 0 0 0 0.2rem rgba(15, 76, 186, 0.16) !important;
     }
 
     .import-template-button {
@@ -2742,21 +2838,21 @@
         align-items: center;
         justify-content: center;
         min-height: 48px;
-        padding: 0.8rem 1.25rem;
+        padding: 0.8rem 1.5rem;
         border-radius: 16px;
         border: 0;
-        background: linear-gradient(135deg, #0857c3, #307fe2);
+        background: linear-gradient(135deg, #0f4cba, #2563eb);
         color: #ffffff;
         font-weight: 700;
-        box-shadow: 0 18px 30px -20px rgba(8, 87, 195, 0.42);
-        transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+        box-shadow: 0 14px 28px -10px rgba(15, 76, 186, 0.4);
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .import-template-button:hover {
         color: #ffffff;
         text-decoration: none;
-        transform: translateY(-1px);
-        box-shadow: 0 22px 34px -20px rgba(8, 87, 195, 0.5);
+        transform: translateY(-2px);
+        box-shadow: 0 18px 34px -10px rgba(15, 76, 186, 0.5);
     }
 
     .import-template-button.disabled,
@@ -2767,24 +2863,10 @@
         box-shadow: none;
     }
 
-    .import-upload-card {
-        border-radius: 22px;
-        overflow: hidden;
-        border: 1px solid rgba(8, 87, 195, 0.12) !important;
-        box-shadow: 0 18px 34px -28px rgba(4, 42, 95, 0.24) !important;
-        background: #ffffff;
-    }
-
     .import-upload-card__header {
-        padding: 1.25rem 1.5rem 1rem;
+        padding: 1.45rem 1.5rem 1.15rem;
         background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-        border-bottom: 1px solid rgba(8, 87, 195, 0.08);
-    }
-
-    .import-upload-card__eyebrow {
-        color: #1d4ed8;
-        background: rgba(37, 99, 235, 0.08);
-        border: 1px solid rgba(37, 99, 235, 0.12);
+        border-bottom: 1px solid rgba(15, 76, 186, 0.08);
     }
 
     .import-upload-card__subtitle {
@@ -2796,17 +2878,18 @@
     .import-upload-card__badge {
         display: inline-flex;
         align-items: center;
-        gap: 0.3rem;
-        padding: 0.55rem 0.8rem;
+        gap: 0.35rem;
+        padding: 0.55rem 0.95rem;
         border-radius: 999px;
         background: #ecfdf5;
-        border: 1px solid #bbf7d0;
+        border: 1px solid #a7f3d0;
         color: #047857;
         font-size: 0.78rem;
         font-weight: 800;
         letter-spacing: 0.04em;
         text-transform: uppercase;
         white-space: nowrap;
+        box-shadow: 0 2px 4px rgba(4, 120, 87, 0.04);
     }
 
     .import-upload-card__body {
@@ -2816,28 +2899,64 @@
     .import-report-summary {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 0.75rem;
+        gap: 1rem;
     }
 
     .import-report-summary__item {
-        padding: 0.9rem 1rem;
-        border-radius: 16px;
-        background: #f8fbff;
-        border: 1px solid rgba(8, 87, 195, 0.12);
+        padding: 1.1rem 1.25rem;
+        border-radius: 18px;
         min-width: 0;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        background: #ffffff;
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -2px rgba(0, 0, 0, 0.02);
+    }
+    .import-report-summary__item:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 20px -8px rgba(15, 76, 186, 0.08);
     }
 
-    .import-report-summary__item--primary {
-        background: linear-gradient(180deg, #ffffff 0%, #eef6ff 100%);
-        border-color: rgba(8, 87, 195, 0.2);
-        box-shadow: inset 3px 0 0 #307fe2;
+    /* Column 1: Report dipilih (Blue theme) */
+    .import-report-summary__item:nth-child(1) {
+        background: linear-gradient(180deg, #ffffff 0%, #edf4fe 100%);
+        border-left: 4px solid #0f4cba;
+        box-shadow: inset 1px 0 0 rgba(15, 76, 186, 0.1), 0 4px 6px -1px rgba(15, 76, 186, 0.02);
+    }
+    .import-report-summary__item:nth-child(1) .import-report-summary__label {
+        color: #0f4cba;
+    }
+
+    /* Column 2: Format (Cyan theme) */
+    .import-report-summary__item:nth-child(2) {
+        background: linear-gradient(180deg, #ffffff 0%, #e0f7fa 100%);
+        border-left: 4px solid #00a3ff;
+    }
+    .import-report-summary__item:nth-child(2) .import-report-summary__label {
+        color: #00a3ff;
+    }
+
+    /* Column 3: Periode (Amber/Yellow theme) */
+    .import-report-summary__item:nth-child(3) {
+        background: linear-gradient(180deg, #ffffff 0%, #fffbeb 100%);
+        border-left: 4px solid #f59e0b;
+    }
+    .import-report-summary__item:nth-child(3) .import-report-summary__label {
+        color: #f59e0b;
+    }
+
+    /* Column 4: Target tabel (Red/Danger theme) */
+    .import-report-summary__item:nth-child(4) {
+        background: linear-gradient(180deg, #ffffff 0%, #fef2f2 100%);
+        border-left: 4px solid #ef4444;
+    }
+    .import-report-summary__item:nth-child(4) .import-report-summary__label {
+        color: #ef4444;
     }
 
     .import-report-summary__label {
         display: block;
-        margin-bottom: 0.26rem;
-        color: #5b7da7;
-        font-size: 0.7rem;
+        margin-bottom: 0.35rem;
+        font-size: 0.68rem;
         font-weight: 800;
         letter-spacing: 0.08em;
         text-transform: uppercase;
@@ -2846,14 +2965,10 @@
     .import-report-summary__item strong {
         display: block;
         color: #0f172a;
-        font-size: 0.94rem;
+        font-size: 0.95rem;
         font-weight: 800;
         line-height: 1.35;
         word-break: break-word;
-    }
-
-    .import-report-summary__item--primary strong {
-        font-size: 1.02rem;
     }
 
     .import-upload-card__body .form-group label {
@@ -2880,7 +2995,7 @@
         margin: 4px;
         border-radius: 12px;
         background: #eaf2ff;
-        color: #0b3b80;
+        color: #0f4cba;
     }
 
     .import-upload-card__footer {
@@ -2892,84 +3007,105 @@
         min-height: 50px;
         padding: 0.85rem 1.4rem;
         border-radius: 16px;
-        box-shadow: 0 18px 34px -22px rgba(8, 87, 195, 0.48);
+        box-shadow: 0 14px 28px -10px rgba(15, 76, 186, 0.4);
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .import-upload-card__submit.btn-primary,
     .import-upload-card__submit.btn-success,
     .import-upload-card__submit.btn-info {
         border: 0;
-        background: linear-gradient(135deg, #0857c3, #307fe2);
-        box-shadow: 0 18px 34px -22px rgba(8, 87, 195, 0.5);
+        background: linear-gradient(135deg, #0f4cba, #2563eb);
+        box-shadow: 0 14px 28px -10px rgba(15, 76, 186, 0.4);
     }
 
     .import-upload-card__submit.btn-primary:hover,
     .import-upload-card__submit.btn-success:hover,
-    .import-upload-card__submit.btn-info:hover,
-    .import-upload-card__submit.btn-primary:focus,
-    .import-upload-card__submit.btn-success:focus,
-    .import-upload-card__submit.btn-info:focus {
-        background: linear-gradient(135deg, #0749a5, #236bcc);
-        box-shadow: 0 22px 38px -24px rgba(8, 87, 195, 0.55);
+    .import-upload-card__submit.btn-info:hover {
+        background: linear-gradient(135deg, #0d43a5, #1d5ec2);
+        transform: translateY(-2px);
+        box-shadow: 0 18px 34px -10px rgba(15, 76, 186, 0.5);
+    }
+
+    @keyframes bounceCloud {
+        0%, 100% {
+            transform: translateY(0);
+        }
+        50% {
+            transform: translateY(-5px);
+        }
     }
 
     .import-dropzone {
         display: flex;
         align-items: center;
-        gap: 1rem;
+        gap: 1.25rem;
         margin-top: 1.15rem;
-        padding: 1.1rem 1.15rem;
-        border-radius: 18px !important;
-        border: 1.5px dashed rgba(8, 87, 195, 0.28);
-        background: linear-gradient(180deg, #f7fbff 0%, #ffffff 100%);
+        padding: 1.5rem 1.75rem;
+        border-radius: 20px !important;
+        border: 2px dashed rgba(15, 76, 186, 0.25) !important;
+        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
         cursor: pointer;
-        transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-        min-height: 210px;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        min-height: 200px;
     }
 
     .import-dropzone:hover,
     .import-dropzone:focus,
     .import-dropzone.is-dragover {
         outline: none;
-        transform: translateY(-2px);
-        border-color: rgba(8, 87, 195, 0.56);
-        box-shadow: 0 20px 34px -28px rgba(8, 87, 195, 0.3);
+        transform: translateY(-3px);
+        border-color: #0f4cba !important;
+        box-shadow: 0 20px 35px -20px rgba(15, 76, 186, 0.15), 0 0 0 4px rgba(15, 76, 186, 0.08);
+        background: linear-gradient(180deg, #edf4fe 0%, #ffffff 100%);
+    }
+
+    .import-dropzone:hover .import-dropzone__icon i {
+        animation: bounceCloud 1.2s infinite ease-in-out;
     }
 
     .import-dropzone.has-file {
         border-style: solid;
-        background: linear-gradient(180deg, #eef6ff 0%, #ffffff 100%);
+        border-color: #10b981 !important;
+        background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
     }
 
     .import-dropzone__icon {
-        width: 58px;
-        height: 58px;
-        border-radius: 16px;
+        width: 60px;
+        height: 60px;
+        border-radius: 18px;
         display: grid;
         place-items: center;
-        background: #eaf2ff;
-        color: #0857c3 !important;
-        font-size: 1.45rem;
+        background: rgba(15, 76, 186, 0.08);
+        color: #0f4cba !important;
+        font-size: 1.6rem;
         flex: 0 0 auto;
+        transition: all 0.2s ease;
+    }
+
+    .import-dropzone.has-file .import-dropzone__icon {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981 !important;
     }
 
     .import-dropzone__title {
-        color: #111827;
-        font-size: 1rem;
+        color: #0f172a;
+        font-size: 1.05rem;
         font-weight: 800;
-        margin-bottom: 0.18rem;
+        margin-bottom: 0.25rem;
     }
 
     .import-dropzone__text {
         color: #64748b;
-        line-height: 1.55;
+        font-size: 0.88rem;
+        line-height: 1.5;
     }
 
     .import-dropzone__hint {
         display: flex;
         justify-content: center;
         flex-wrap: wrap;
-        gap: 0.45rem;
+        gap: 0.5rem;
         margin-top: 0.85rem;
     }
 
@@ -2977,36 +3113,44 @@
         display: inline-flex;
         align-items: center;
         min-height: 28px;
-        padding: 0.32rem 0.62rem;
+        padding: 0.35rem 0.75rem;
         border-radius: 999px;
         background: #ffffff;
         border: 1px solid #e2e8f0;
         color: #475569;
-        font-size: 0.78rem;
+        font-size: 0.75rem;
         font-weight: 700;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+        transition: all 0.2s ease;
+    }
+
+    .import-dropzone__hint span:hover {
+        border-color: #cbd5e1;
+        color: #1e293b;
+        transform: scale(1.05);
     }
 
     .import-file-preview {
         display: flex;
         align-items: center;
-        gap: 0.9rem;
-        margin-top: 1rem;
-        padding: 0.95rem 1rem;
-        border-radius: 16px !important;
-        background: #ffffff;
-        border: 1px solid rgba(8, 87, 195, 0.12);
-        box-shadow: 0 16px 28px -24px rgba(4, 42, 95, 0.2);
+        gap: 1rem;
+        margin-top: 1.15rem;
+        padding: 1.1rem 1.25rem;
+        border-radius: 18px !important;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        box-shadow: 0 10px 25px -15px rgba(16, 185, 129, 0.15);
     }
 
     .import-file-preview__icon {
-        width: 44px;
-        height: 44px;
+        width: 46px;
+        height: 46px;
         border-radius: 14px;
         display: grid;
         place-items: center;
-        background: rgba(48, 127, 226, 0.12);
-        color: #0857c3;
-        font-size: 1.1rem;
+        background: rgba(16, 185, 129, 0.12);
+        color: #10b981;
+        font-size: 1.25rem;
         flex: 0 0 auto;
     }
 
@@ -3016,7 +3160,7 @@
     }
 
     .import-file-preview__name {
-        color: #111827;
+        color: #0f172a;
         font-weight: 700;
         white-space: nowrap;
         overflow: hidden;
@@ -3036,14 +3180,16 @@
         border: 0;
         border-radius: 14px;
         padding: 0.7rem 0.95rem;
-        background: rgba(8, 87, 195, 0.08);
-        color: #0f172a;
+        background: rgba(239, 68, 68, 0.08);
+        color: #ef4444;
         font-weight: 700;
-        transition: background 0.2s ease;
+        transition: all 0.2s ease;
     }
 
     .import-file-preview__clear:hover {
-        background: rgba(8, 87, 195, 0.14);
+        background: rgba(239, 68, 68, 0.14);
+        color: #dc2626;
+        transform: translateY(-1px);
     }
 
     .swal-modern-popup {
@@ -3071,11 +3217,11 @@
         justify-content: center;
         border: 0;
         border-radius: 16px;
-        background: linear-gradient(135deg, #fb923c, #ea580c);
+        background: linear-gradient(135deg, #0f4cba, #2563eb);
         color: #ffffff;
         font-weight: 700;
         padding: 0.8rem 1.3rem;
-        box-shadow: 0 16px 34px -22px rgba(15, 23, 42, 0.45);
+        box-shadow: 0 14px 28px -10px rgba(15, 76, 186, 0.4);
     }
 
     .swal-import-shell {
@@ -3099,8 +3245,8 @@
         margin-inline: auto;
         padding: 0.4rem 0.72rem;
         border-radius: 999px;
-        background: rgba(251, 146, 60, 0.12);
-        color: #c2410c;
+        background: rgba(15, 76, 186, 0.08);
+        color: #0f4cba;
         font-size: 0.72rem;
         font-weight: 800;
         letter-spacing: 0.08em;
@@ -3121,7 +3267,7 @@
     }
 
     .swal-import-phase {
-        color: #c2410c;
+        color: #0f4cba;
         font-size: 0.76rem;
         font-weight: 800;
         letter-spacing: 0.08em;
@@ -3168,7 +3314,7 @@
 
     .swal-import-progress__bar {
         position: relative;
-        background: linear-gradient(90deg, #111827 0%, #fb923c 48%, #ea580c 100%);
+        background: linear-gradient(90deg, #0f4cba 0%, #2563eb 48%, #10b981 100%);
         background-size: 200% 100%;
         font-weight: 800;
         font-size: 11px;
@@ -3182,7 +3328,7 @@
     }
 
     .swal-import-meta__status {
-        color: #c2410c;
+        color: #0f4cba;
         font-weight: 700;
         letter-spacing: 0.02em;
         display: block;
@@ -3224,7 +3370,7 @@
 
     .swal-import-metrics__state {
         flex: 0 0 auto;
-        color: #c2410c;
+        color: #0f4cba;
         font-size: 0.73rem;
         font-weight: 800;
         letter-spacing: 0.04em;
@@ -3333,8 +3479,8 @@
 
     .select2-container--default.select2-container--open .select2-selection--single,
     .select2-container--default.select2-container--focus .select2-selection--single {
-        border-color: #2563eb !important;
-        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
+        border-color: #0f4cba !important;
+        box-shadow: 0 0 0 4px rgba(15, 76, 186, 0.1) !important;
         background-color: #f8fafc !important;
     }
 
@@ -3356,7 +3502,7 @@
     }
 
     .select2-container--default.select2-container--open .select2-selection--single .select2-selection__arrow b {
-        border-color: transparent transparent #2563eb transparent !important;
+        border-color: transparent transparent #0f4cba transparent !important;
         border-width: 0 5px 6px 5px !important;
     }
 
@@ -3381,12 +3527,12 @@
 
     .select2-results__option--highlighted[aria-selected] {
         background-color: #f1f5f9 !important;
-        color: #2563eb !important;
+        color: #0f4cba !important;
     }
 
     .select2-results__option[aria-selected=true] {
-        background-color: rgba(37, 99, 235, 0.05) !important;
-        color: #2563eb !important;
+        background-color: rgba(15, 76, 186, 0.05) !important;
+        color: #0f4cba !important;
     }
 
     .select2-search--dropdown {
@@ -3417,8 +3563,8 @@
     }
 
     select.form-control:not(.select2-hidden-accessible):focus {
-        border-color: #2563eb !important;
-        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
+        border-color: #0f4cba !important;
+        box-shadow: 0 0 0 4px rgba(15, 76, 186, 0.1) !important;
         outline: none !important;
     }
 
@@ -3430,7 +3576,7 @@
         transform: translateX(4px);
     }
     .form-group:focus-within label {
-        color: #2563eb !important;
+        color: #0f4cba !important;
     }
 
     @keyframes selectDropdownReveal {

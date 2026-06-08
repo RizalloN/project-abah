@@ -65,7 +65,7 @@
                         'rows' => $rows,
                         'total' => $total,
                         'showTargets' => true,
-                        'showTargetColumns' => !in_array($selectedSegmen, ['CONSUMER', 'SMALL']),
+                        'showTargetColumns' => $selectedSegmen !== 'SMALL',
                         'showAchievementColumns' => true,
                         'showLarColumn' => $selectedSegmen !== 'CONSUMER',
                         'compact' => false,

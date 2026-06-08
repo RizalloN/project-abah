@@ -316,8 +316,8 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             ? (object) ['total_deb' => 0, 'total_real' => 0]
             : DB::query()
                 ->fromSub($query, 'surplus')
-                ->selectRaw('SUM(CASE WHEN previous_plafon > 0 AND current_plafon > previous_plafon THEN total_deb ELSE 0 END) as total_deb')
-                ->selectRaw('SUM(CASE WHEN previous_plafon > 0 AND current_plafon > previous_plafon THEN current_plafon - previous_plafon ELSE 0 END) as total_real')
+                ->selectRaw('COALESCE(SUM(total_deb), 0) as total_deb')
+                ->selectRaw('COALESCE(SUM(total_real), 0) as total_real')
                 ->first();
     }
 
@@ -329,8 +329,8 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             ? (object) ['total_deb' => 0, 'total_real' => 0]
             : DB::query()
                 ->fromSub($query, 'surplus')
-                ->selectRaw('SUM(CASE WHEN previous_plafon > 0 AND current_plafon > previous_plafon THEN total_deb ELSE 0 END) as total_deb')
-                ->selectRaw('SUM(CASE WHEN previous_plafon > 0 AND current_plafon > previous_plafon THEN current_plafon - previous_plafon ELSE 0 END) as total_real')
+                ->selectRaw('COALESCE(SUM(total_deb), 0) as total_deb')
+                ->selectRaw('COALESCE(SUM(total_real), 0) as total_real')
                 ->first();
     }
 
@@ -350,9 +350,14 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             return null;
         }
 
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+        $realisasiDateColumn = Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi1') ? 'tgl_realisasi1' : 'tgl_realisasi';
         $productSql = "CASE WHEN produk_kinerja = 'BRIGUNAKONSUMER' THEN 'BRIGUNA-KONSUMER' ELSE produk_kinerja END";
+        $previousLookupOrderSql = Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
+            ? 'uniqueid_namareport'
+            : 'UPPER(TRIM(nomor_rekening1))';
 
-        $current = DB::table('daily_loan_dinamis')
+        $currentBase = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->where('segmen_kinerja', 'CONSUMER')
             ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
@@ -360,55 +365,84 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             ->where('pn_pengelola1', '<>', '')
             ->whereNotNull('nomor_rekening1')
             ->where('nomor_rekening1', '<>', '')
+            ->whereNotNull('cifno')
+            ->where('cifno', '<>', '')
+            ->whereBetween($realisasiDateColumn, [$periodStart, $period])
             ->selectRaw("COALESCE(cabang_normalized, '') as cabang")
             ->selectRaw("COALESCE(unit_normalized, '') as unit")
             ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
             ->selectRaw("COALESCE(rm_normalized, '') as rm")
             ->selectRaw("{$productSql} as produk")
-            ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
-            ->selectRaw('SUM(COALESCE(plafon, 0)) as current_plafon');
+            ->selectRaw('UPPER(TRIM(cifno)) as clean_cif')
+            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+            ->selectRaw('COUNT(DISTINCT nomor_rekening1) as current_deb')
+            ->selectRaw('SUM(COALESCE(plafon, 0)) as current_plafon')
+            ->groupByRaw("COALESCE(cabang_normalized, ''), COALESCE(unit_normalized, ''), COALESCE(branch_normalized, ''), COALESCE(rm_normalized, ''), {$productSql}, UPPER(TRIM(cifno)), account_key");
 
         if ($cabang !== null) {
-            $current->whereRaw("COALESCE(NULLIF(cabang_normalized, ''), UPPER(TRIM(cabang1))) = ?", [strtoupper(trim($cabang))]);
+            $currentBase->whereRaw("COALESCE(NULLIF(cabang_normalized, ''), UPPER(TRIM(cabang1))) = ?", [strtoupper(trim($cabang))]);
         }
         if ($unit !== null) {
-            $current->whereRaw("COALESCE(NULLIF(unit_normalized, ''), UPPER(TRIM(unit1))) = ?", [strtoupper(trim($unit))]);
+            $currentBase->whereRaw("COALESCE(NULLIF(unit_normalized, ''), UPPER(TRIM(unit1))) = ?", [strtoupper(trim($unit))]);
         }
         if ($rm !== null) {
-            $current->whereRaw("COALESCE(NULLIF(rm_normalized, ''), UPPER(TRIM(pn_pengelola1))) = ?", [strtoupper(trim($rm))]);
+            $currentBase->whereRaw("COALESCE(NULLIF(rm_normalized, ''), UPPER(TRIM(pn_pengelola1))) = ?", [strtoupper(trim($rm))]);
         }
         if ($produk !== null) {
-            $current->whereIn('produk_kinerja', $this->getSourceProductTokens($produk));
+            $currentBase->whereIn('produk_kinerja', $this->getSourceProductTokens($produk));
         }
 
-        $current->groupByRaw("COALESCE(cabang_normalized, ''), COALESCE(unit_normalized, ''), COALESCE(branch_normalized, ''), COALESCE(rm_normalized, ''), {$productSql}");
-
-        $previous = DB::table('daily_loan_dinamis')
+        $previousRanked = DB::table('daily_loan_dinamis')
             ->where('periode', $previousPeriod)
             ->where('segmen_kinerja', 'CONSUMER')
             ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->whereNotNull('pn_pengelola1')
-            ->where('pn_pengelola1', '<>', '')
             ->whereNotNull('nomor_rekening1')
             ->where('nomor_rekening1', '<>', '')
-            ->selectRaw("COALESCE(cabang_normalized, '') as cabang")
-            ->selectRaw("COALESCE(unit_normalized, '') as unit")
-            ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
-            ->selectRaw("COALESCE(rm_normalized, '') as rm")
-            ->selectRaw("{$productSql} as produk")
-            ->selectRaw('SUM(COALESCE(plafon, 0)) as previous_plafon')
-            ->groupByRaw("COALESCE(cabang_normalized, ''), COALESCE(unit_normalized, ''), COALESCE(branch_normalized, ''), COALESCE(rm_normalized, ''), {$productSql}");
+            ->whereNotNull('cifno')
+            ->where('cifno', '<>', '')
+            ->selectRaw('UPPER(TRIM(cifno)) as clean_cif')
+            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+            ->selectRaw('COALESCE(baki_debet1, 0) as previous_os')
+            ->selectRaw("{$previousLookupOrderSql} as lookup_order");
+
+        $currentAccounts = DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->selectRaw('UPPER(TRIM(nomor_rekening1)) as account_key')
+            ->distinct();
+
+        $previousClosed = DB::query()
+            ->fromSub($previousRanked, 'previous_base')
+            ->leftJoinSub($currentAccounts, 'current_accounts', function ($join): void {
+                $join->on('current_accounts.account_key', '=', 'previous_base.account_key');
+            })
+            ->whereNull('current_accounts.account_key')
+            ->selectRaw('previous_base.clean_cif')
+            ->selectRaw('previous_base.previous_os')
+            ->selectRaw('previous_base.lookup_order');
+
+        $previousBase = DB::query()
+            ->fromSub($previousClosed, 'previous_closed')
+            ->selectRaw('previous_closed.clean_cif')
+            ->selectRaw('previous_closed.previous_os')
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY previous_closed.clean_cif ORDER BY previous_closed.lookup_order) as row_num');
 
         return DB::query()
-            ->fromSub($current, 'cur')
-            ->leftJoinSub($previous, 'prev', function ($join): void {
-                $join->on('prev.cabang', '=', 'cur.cabang')
-                    ->on('prev.unit', '=', 'cur.unit')
-                    ->on('prev.branch_code', '=', 'cur.branch_code')
-                    ->on('prev.rm', '=', 'cur.rm')
-                    ->on('prev.produk', '=', 'cur.produk');
+            ->fromSub($currentBase, 'cur')
+            ->leftJoinSub(
+                DB::query()
+                    ->fromSub($previousBase, 'ranked_previous')
+                    ->where('ranked_previous.row_num', 1)
+                    ->selectRaw('ranked_previous.clean_cif')
+                    ->selectRaw('ranked_previous.previous_os'),
+                'prev',
+                function ($join): void {
+                $join->on('prev.clean_cif', '=', 'cur.clean_cif');
             })
-            ->selectRaw('cur.total_deb, cur.current_plafon, prev.previous_plafon as previous_plafon');
+            ->selectRaw('cur.cabang, cur.unit, cur.branch_code, cur.rm, cur.produk')
+            ->selectRaw('cur.current_deb as total_deb')
+            ->selectRaw('cur.current_plafon - COALESCE(prev.previous_os, 0) as total_real');
     }
 
     private function resolvePreviousMonthDailyLoanPeriod(string $period): ?string

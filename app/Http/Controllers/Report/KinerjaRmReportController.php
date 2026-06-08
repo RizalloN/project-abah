@@ -31,6 +31,22 @@ class KinerjaRmReportController extends Controller
     
     private const AVAILABLE_SEGMENTS = ['CONSUMER', 'SMALL'];
     private const DEFAULT_SEGMENT = 'CONSUMER';
+    private const CONSUMER_MONTHLY_TARGETS = [
+        'ARISSULISTYAWAN' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
+        'ZULFAENDYCRISMANA' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
+        'RATNADWISISWIYANTORO' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
+        'RIDHOARDIANTO' => ['target_jg_deb' => 15, 'target_jg_os' => 3700000000.0],
+        'DIMASPERDANAHADIWIJAYA' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
+        'RONSROHANATALIBATA' => ['target_jg_deb' => 20, 'target_jg_os' => 3750000000.0],
+        'RONAROHANATALIBATA' => ['target_jg_deb' => 20, 'target_jg_os' => 3750000000.0],
+        'ARDINI' => ['target_jg_deb' => 20, 'target_jg_os' => 3850000000.0],
+        'NAVANYOGAPRATAMA' => ['target_jg_deb' => 16, 'target_jg_os' => 1900000000.0],
+        'MUHAMADSYAMSUDINHIMAWIJAYA' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
+        'BAGUSPRASETYO' => ['target_jg_deb' => 20, 'target_jg_os' => 3750000000.0],
+        'ARIANISETYOPALUPI' => ['target_jg_deb' => 20, 'target_jg_os' => 3750000000.0],
+        'TITINOKTAVIA' => ['target_jg_deb' => 20, 'target_jg_os' => 3850000000.0],
+        'FARIDRAMOLDONI' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
+    ];
 
     public function __construct(
         private readonly RkaLookupService $rkaLookup
@@ -121,7 +137,7 @@ class KinerjaRmReportController extends Controller
             return view('report.kinerjarm-detail-modal', [
                 'rm' => $rm,
                 'segmen' => $segmen,
-                'details' => $this->fetchConsumerSurplusHistoryDetails((string) $rm, (string) $selectedPeriod),
+                'details' => $this->fetchConsumerNetDisbursementHistoryDetails((string) $rm, (string) $selectedPeriod),
                 'detailMode' => 'consumer_surplus',
                 'historyRangeLabel' => $historyRangeLabel,
                 'selectedHistoryYear' => $selectedHistoryYear,
@@ -319,7 +335,7 @@ class KinerjaRmReportController extends Controller
         return array_values(array_unique(array_filter($keys)));
     }
 
-    private function fetchConsumerSurplusHistoryDetails(string $rm, string $selectedPeriod): Collection
+    private function fetchConsumerNetDisbursementHistoryDetails(string $rm, string $selectedPeriod): Collection
     {
         if (!Schema::hasTable(self::SOURCE_TABLE)) {
             return collect();
@@ -327,6 +343,7 @@ class KinerjaRmReportController extends Controller
 
         [$historyStart, $periodEnd] = $this->resolveHistoryDateRange($selectedPeriod);
         $rmKeys = $this->consumerRmLookupKeys($rm);
+        $target = $this->resolveConsumerMonthlyTargetForRm($rm);
 
         $periods = DB::table(self::SOURCE_TABLE)
             ->whereBetween('periode', [$historyStart, $periodEnd])
@@ -352,11 +369,62 @@ class KinerjaRmReportController extends Controller
                 continue;
             }
 
-            $details = $details->merge($this->fetchConsumerSurplusAccountDetails($rmKeys, $period, $previousPeriod));
+            $previousByProduct = DB::table(self::SNAPSHOT_TABLE)
+                ->where('periode', $previousPeriod)
+                ->where('segmen', 'CONSUMER')
+                ->where('rm', $rm)
+                ->get()
+                ->keyBy(fn ($row): string => strtoupper(trim((string) ($row->produk ?? ''))));
+
+            $monthlySnapshots = DB::table(self::SNAPSHOT_TABLE)
+                ->where('periode', $period)
+                ->where('segmen', 'CONSUMER')
+                ->where('rm', $rm)
+                ->orderBy('produk')
+                ->get();
+
+            foreach ($monthlySnapshots as $snapshot) {
+                $product = $this->normalizeProductLabel((string) ($snapshot->produk ?? ''), 'CONSUMER')
+                    ?? strtoupper(trim((string) ($snapshot->produk ?? '')));
+                $previous = $previousByProduct->get(strtoupper(trim((string) ($snapshot->produk ?? ''))));
+
+                $details->push([
+                    'periode' => Carbon::parse($period)->translatedFormat('d M Y'),
+                    'periode_raw' => $period,
+                    'year' => Carbon::parse($period)->year,
+                    'previous_period' => Carbon::parse($previousPeriod)->translatedFormat('d M Y'),
+                    'account' => '',
+                    'nama_debitur' => '',
+                    'movement' => 'Rekap Bulanan',
+                    'is_summary' => true,
+                    'debitur' => (int) ($snapshot->realisasi_deb ?? 0),
+                    'current_debitur' => (int) ($snapshot->total_deb ?? 0),
+                    'previous_debitur' => (int) ($previous->total_deb ?? 0),
+                    'cabang' => trim((string) ($snapshot->cabang ?? '')),
+                    'unit' => trim((string) ($snapshot->unit ?? '')),
+                    'produk' => $product,
+                    'previous_plafon' => (float) ($previous->loan_os ?? 0),
+                    'current_plafon' => (float) ($snapshot->loan_os ?? 0),
+                    'previous_os' => (float) ($previous->loan_os ?? 0),
+                    'current_os' => (float) ($snapshot->loan_os ?? 0),
+                    'delta_os' => (float) ($snapshot->realisasi_os ?? 0),
+                    'surplus_plafon' => (float) ($snapshot->realisasi_os ?? 0),
+                    'target_jg_deb' => (int) ($target['target_jg_deb'] ?? 0),
+                    'target_jg_os' => (float) ($target['target_jg_os'] ?? 0.0),
+                ]);
+            }
+        }
+
+        $selectedPreviousPeriod = $this->resolvePreviousMonthSourcePeriod($selectedPeriod);
+        if ($selectedPreviousPeriod !== null) {
+            $details = $details->merge(
+                $this->fetchConsumerSurplusAccountDetails($rmKeys, $selectedPeriod, $selectedPreviousPeriod, $target)
+            );
         }
 
         return $details->sortBy([
             ['periode_raw', 'asc'],
+            ['is_summary', 'desc'],
             ['surplus_plafon', 'desc']
         ])->values();
     }
@@ -364,46 +432,27 @@ class KinerjaRmReportController extends Controller
     private function resolvePreviousMonthSourcePeriod(string $period): ?string
     {
         $periodDate = Carbon::parse($period);
-        $previousStart = $periodDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
         $previousEnd = $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
 
-        $previousPeriod = DB::table(self::SOURCE_TABLE)
-            ->whereBetween('periode', [$previousStart, $previousEnd])
-            ->max('periode');
+        $exists = DB::table(self::SOURCE_TABLE)
+            ->where('periode', $previousEnd)
+            ->exists();
 
-        return $previousPeriod !== null ? (string) $previousPeriod : null;
+        return $exists ? $previousEnd : null;
     }
 
-    private function fetchConsumerSurplusAccountDetails(array $rmKeys, string $period, string $previousPeriod): Collection
+    /**
+     * @param array{target_jg_deb:int, target_jg_os:float} $target
+     */
+    private function fetchConsumerSurplusAccountDetails(array $rmKeys, string $period, string $previousPeriod, array $target): Collection
     {
         $productSql = "CASE WHEN produk_kinerja = 'BRIGUNAKONSUMER' THEN 'BRIGUNA-KONSUMER' ELSE produk_kinerja END";
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+        $realisasiDateColumn = Schema::hasColumn(self::SOURCE_TABLE, 'tgl_realisasi1')
+            ? 'tgl_realisasi1'
+            : 'tgl_realisasi';
 
-        $previousPlafonByGroup = DB::table(self::SOURCE_TABLE)
-            ->where('periode', $previousPeriod)
-            ->whereIn('segmen_kinerja', ['CONSUMER'])
-            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->whereIn('rm_normalized', $rmKeys)
-            ->whereNotNull('pn_pengelola1')
-            ->where('pn_pengelola1', '<>', '')
-            ->selectRaw("COALESCE(cabang_normalized, UPPER(TRIM(cabang1)), '') as cabang")
-            ->selectRaw("COALESCE(unit_normalized, UPPER(TRIM(unit1)), '') as unit")
-            ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
-            ->selectRaw("COALESCE(rm_normalized, UPPER(TRIM(pn_pengelola1)), '') as rm")
-            ->selectRaw("{$productSql} as produk")
-            ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
-            ->groupByRaw("COALESCE(cabang_normalized, UPPER(TRIM(cabang1)), ''), COALESCE(unit_normalized, UPPER(TRIM(unit1)), ''), COALESCE(branch_normalized, ''), COALESCE(rm_normalized, UPPER(TRIM(pn_pengelola1)), ''), {$productSql}")
-            ->get()
-            ->mapWithKeys(fn ($row): array => [
-                implode('|', [
-                    (string) ($row->cabang ?? ''),
-                    (string) ($row->unit ?? ''),
-                    (string) ($row->branch_code ?? ''),
-                    (string) ($row->rm ?? ''),
-                    (string) ($row->produk ?? ''),
-                ]) => (float) $row->plafon,
-            ]);
-
-        return DB::table(self::SOURCE_TABLE)
+        $currentRows = DB::table(self::SOURCE_TABLE)
             ->where('periode', $period)
             ->whereIn('segmen_kinerja', ['CONSUMER'])
             ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
@@ -417,31 +466,49 @@ class KinerjaRmReportController extends Controller
             ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
             ->selectRaw("COALESCE(rm_normalized, UPPER(TRIM(pn_pengelola1)), '') as rm")
             ->selectRaw("{$productSql} as produk")
-            ->selectRaw('COUNT(DISTINCT nomor_rekening1) as debitur')
-            ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
-            ->groupByRaw("COALESCE(cabang_normalized, UPPER(TRIM(cabang1)), ''), COALESCE(unit_normalized, UPPER(TRIM(unit1)), ''), COALESCE(branch_normalized, ''), COALESCE(rm_normalized, UPPER(TRIM(pn_pengelola1)), ''), {$productSql}")
+            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+            ->selectRaw('nomor_rekening1')
+            ->selectRaw('MAX(nama_debitur1) as nama_debitur1')
+            ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as current_os')
+            ->selectRaw("MAX(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN 1 ELSE 0 END) as is_current_month_realization", [$periodStart, $period])
+            ->groupByRaw("COALESCE(cabang_normalized, UPPER(TRIM(cabang1)), ''), COALESCE(unit_normalized, UPPER(TRIM(unit1)), ''), COALESCE(branch_normalized, ''), COALESCE(rm_normalized, UPPER(TRIM(pn_pengelola1)), ''), {$productSql}, UPPER(TRIM(nomor_rekening1)), nomor_rekening1")
+            ->get();
+
+        $accountKeys = $currentRows
+            ->pluck('account_key')
+            ->map(fn ($value): string => (string) $value)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($accountKeys === []) {
+            return collect();
+        }
+
+        $previousOsByAccount = DB::table(self::SOURCE_TABLE)
+            ->where('periode', $previousPeriod)
+            ->whereIn('segmen_kinerja', ['CONSUMER'])
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereIn(DB::raw('UPPER(TRIM(nomor_rekening1))'), $accountKeys)
+            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+            ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as previous_os')
+            ->groupBy('account_key')
             ->get()
-            ->map(function ($row) use ($previousPlafonByGroup, $period, $previousPeriod) {
-                $key = implode('|', [
-                    (string) ($row->cabang ?? ''),
-                    (string) ($row->unit ?? ''),
-                    (string) ($row->branch_code ?? ''),
-                    (string) ($row->rm ?? ''),
-                    (string) ($row->produk ?? ''),
-                ]);
+            ->mapWithKeys(fn ($row): array => [(string) ($row->account_key ?? '') => (float) $row->previous_os]);
 
-                if (!$previousPlafonByGroup->has($key)) {
-                    return null;
-                }
+        return $currentRows
+            ->map(function ($row) use ($previousOsByAccount, $period, $previousPeriod, $target) {
+                $accountKey = (string) ($row->account_key ?? '');
+                $hasPreviousAccount = $previousOsByAccount->has($accountKey);
+                $currentOs = (float) ($row->current_os ?? 0);
+                $previousOs = $hasPreviousAccount ? (float) $previousOsByAccount[$accountKey] : 0.0;
+                $isCurrentMonthRealization = (int) ($row->is_current_month_realization ?? 0) === 1;
+                $netDisbursement = $hasPreviousAccount
+                    ? ($currentOs - $previousOs)
+                    : ($isCurrentMonthRealization ? $currentOs : 0.0);
 
-                $previous = (float) $previousPlafonByGroup[$key];
-                if ($previous <= 0.0) {
-                    return null;
-                }
-
-                $current = (float) ($row->plafon ?? 0);
-                $surplus = max(0.0, $current - $previous);
-                if ($surplus <= 0.0) {
+                if (abs($netDisbursement) <= 0.0001) {
                     return null;
                 }
 
@@ -450,20 +517,48 @@ class KinerjaRmReportController extends Controller
                     'periode_raw' => $period,
                     'year' => Carbon::parse($period)->year,
                     'previous_period' => Carbon::parse($previousPeriod)->translatedFormat('d M Y'),
-                    'account' => (string) ($row->branch_code ?? ''),
-                    'debitur' => (int) ($row->debitur ?? 0),
+                    'account' => (string) ($row->nomor_rekening1 ?? ''),
+                    'debitur' => $netDisbursement > 0 ? 1 : 0,
+                    'nama_debitur' => (string) ($row->nama_debitur1 ?? ''),
+                    'movement' => $hasPreviousAccount
+                        ? ($netDisbursement > 0 ? 'Suplesi / OS Naik' : 'Turun Pokok / OS Turun')
+                        : 'Realisasi Baru',
+                    'is_summary' => false,
+                    'current_debitur' => 1,
+                    'previous_debitur' => $hasPreviousAccount ? 1 : 0,
                     'cabang' => trim((string) ($row->cabang ?? '')),
                     'unit' => trim((string) ($row->unit ?? '')),
                     'produk' => $this->normalizeProductLabel((string) ($row->produk ?? ''), 'CONSUMER')
                         ?? strtoupper(trim((string) ($row->produk ?? ''))),
-                    'previous_plafon' => $previous,
-                    'current_plafon' => $current,
-                    'surplus_plafon' => $surplus,
+                    'previous_plafon' => $previousOs,
+                    'current_plafon' => $currentOs,
+                    'previous_os' => $previousOs,
+                    'current_os' => $currentOs,
+                    'delta_os' => $netDisbursement,
+                    'surplus_plafon' => $netDisbursement,
+                    'target_jg_deb' => (int) ($target['target_jg_deb'] ?? 0),
+                    'target_jg_os' => (float) ($target['target_jg_os'] ?? 0.0),
                 ];
             })
             ->filter()
             ->sortByDesc('surplus_plafon')
             ->values();
+    }
+
+    /**
+     * @return array{target_jg_deb:int, target_jg_os:float}
+     */
+    private function resolveConsumerMonthlyTargetForRm(string $rm): array
+    {
+        $manualTargets = Schema::hasTable('performance_targets')
+            ? DB::table('performance_targets')
+                ->get()
+                ->groupBy('category')
+                ->map(fn ($items) => $items->keyBy('rm_name'))
+            : collect();
+        $rmName = trim(explode('-', $rm, 2)[1] ?? $rm);
+
+        return $this->resolveManualTargetForProduct($manualTargets, 'CONSUMER', $rmName);
     }
 
     private function consumerRmLookupKeys(string $rm): array
@@ -673,7 +768,7 @@ class KinerjaRmReportController extends Controller
         $comparisonKeys = array_keys($comparisonPeriodValues);
         $emptyComparisonValues = array_fill_keys($comparisonKeys, 0.0);
 
-        $cacheKey = 'kinerja_rm_rows_v16-consumer-merged-product:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_rows_v18-consumer-account-os-delta:' . $this->reportCacheVersion() . ':' . md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'comparisons' => $comparisonPeriodValues,
@@ -684,9 +779,50 @@ class KinerjaRmReportController extends Controller
         ]));
 
         return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $comparisonPeriodValues, $comparisonKeys, $emptyComparisonValues, $realisasiPeriod, $selectedCabang, $selectedProduct, $qualityType) {
-            $averagePeriods = $segmen === 'SMALL'
+            if ($segmen === 'CONSUMER'
+                && Schema::hasTable(self::SOURCE_TABLE)
+                && Schema::hasColumn(self::SOURCE_TABLE, 'segmen_kinerja')
+                && $this->resolvePreviousMonthSourcePeriod($selectedPeriod) === null
+            ) {
+                return [
+                    'rows' => [],
+                    'total' => [
+                        'segmen' => $segmen,
+                        'cabang' => $selectedCabang ?? 'SEMUA CABANG',
+                        'rm' => 'TOTAL',
+                        'curr' => 0.0,
+                        'curr_deb' => 0,
+                        'yoy' => 0.0,
+                        'ytd' => 0.0,
+                        'mtd' => 0.0,
+                        'comparison_values' => $emptyComparisonValues,
+                        'comparison_deltas' => $emptyComparisonValues,
+                        'delta_yoy' => 0.0,
+                        'delta_ytd' => 0.0,
+                        'delta_mtd' => 0.0,
+                        'target_jg_deb' => 0,
+                        'target_jg_os' => 0.0,
+                        'ach_deb' => null,
+                        'ach_os' => null,
+                        'ach_has_data' => false,
+                        'lar_pct' => null,
+                        'lar_has_data' => false,
+                    ],
+                ];
+            }
+
+            $averagePeriods = in_array($segmen, ['SMALL', 'CONSUMER'], true)
                 ? $this->resolveAveragePeriodsInScope($realisasiPeriod, $segmen, $selectedCabang, $selectedProduct)
                 : [$realisasiPeriod];
+            if ($segmen === 'CONSUMER'
+                && Schema::hasTable(self::SOURCE_TABLE)
+                && Schema::hasColumn(self::SOURCE_TABLE, 'segmen_kinerja')
+            ) {
+                $averagePeriods = array_values(array_filter(
+                    $averagePeriods,
+                    fn (string $period): bool => $this->resolvePreviousMonthSourcePeriod($period) !== null
+                ));
+            }
             $larPeriod = $segmen === 'SMALL'
                 ? $this->resolveLatestPeriodInYearScope($selectedPeriod, $segmen, $selectedCabang, $selectedProduct)
                 : ($this->resolveLatestPeriodInScope($selectedPeriod, $segmen, $selectedCabang, $selectedProduct) ?? $selectedPeriod);
@@ -765,9 +901,9 @@ class KinerjaRmReportController extends Controller
                     $pivoted[$key]['quadrant'] ??= $quadrant;
                 }
 
-                // For SMALL segment, collect realisasi data from ALL average periods to compute average
+                // For SMALL and CONSUMER segments, collect realisasi data from ALL average periods to compute average
                 // For other segments, use only selectedPeriod
-                $useForRealisasiAverage = $segmen === 'SMALL'
+                $useForRealisasiAverage = in_array($segmen, ['SMALL', 'CONSUMER'], true)
                     ? in_array($row->periode, $averagePeriods, true)
                     : ($row->periode === $realisasiPeriod);
 
@@ -872,16 +1008,20 @@ class KinerjaRmReportController extends Controller
                 $target = $this->resolveManualTargetForProduct($manualTargets, $productLabel, $nameOnly);
                 $tDeb = (int) ($target['target_jg_deb'] ?? 0);
                 $tOs = (float) ($target['target_jg_os'] ?? 0.0);
-                $realisasiDivisor = $segmen === 'SMALL'
+                $realisasiDivisor = in_array($segmen, ['SMALL', 'CONSUMER'], true)
                     ? max(1, Carbon::parse($realisasiPeriod)->month)
                     : $data['realisasi_period_count'];
-                $hasAchievementData = $segmen === 'SMALL' || $data['realisasi_period_count'] > 0;
+                $hasAchievementData = in_array($segmen, ['SMALL', 'CONSUMER'], true) || $data['realisasi_period_count'] > 0;
                 $achDeb = $hasAchievementData
                     ? (int) round($data['realisasi_deb_sum'] / max(1, $realisasiDivisor))
                     : null;
                 $achOs = $hasAchievementData
                     ? ($data['realisasi_os_sum'] / max(1, $realisasiDivisor))
                     : null;
+                if ($segmen === 'CONSUMER') {
+                    $quadrant = $this->calculateConsumerQuadrant($achOs, $tOs);
+                    $branches[$cabangKey]['rms'][$rmName]['quadrant'] = $quadrant;
+                }
                 $comparisonDeltas = [];
                 foreach ($comparisonKeys as $periodKey) {
                     $comparisonDeltas[$periodKey] = $data['curr'] - ($data['comparison_values'][$periodKey] ?? 0.0);
@@ -1204,6 +1344,15 @@ class KinerjaRmReportController extends Controller
      */
     private function resolveManualTargetForProduct(Collection $manualTargets, string $productLabel, string $rmName): array
     {
+        if ($productLabel === 'CONSUMER') {
+            $consumerTargetKey = preg_replace('/[^A-Z0-9]/', '', strtoupper($rmName)) ?? '';
+            $consumerTarget = self::CONSUMER_MONTHLY_TARGETS[$consumerTargetKey] ?? null;
+
+            if ($consumerTarget !== null) {
+                return $consumerTarget;
+            }
+        }
+
         $lookupCategories = match ($productLabel) {
             'CONSUMER' => ['BRIGUNA-KONSUMER', 'KPR', 'CONSUMER'],
             'SMALL' => ['SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL'],
@@ -1762,6 +1911,24 @@ class KinerjaRmReportController extends Controller
             $isRatasA && $isLarA => 1,
             $isRatasA => 2,
             $isLarA => 3,
+            default => 4,
+        };
+    }
+
+    private function calculateConsumerQuadrant(mixed $achievementOs, float $targetOs): ?int
+    {
+        $achievement = $this->normalizeNumericValue($achievementOs);
+
+        if ($achievement === null || $targetOs <= 0.0) {
+            return null;
+        }
+
+        $achievementPct = ($achievement / $targetOs) * 100;
+
+        return match (true) {
+            $achievementPct >= 105.0 => 1,
+            $achievementPct >= 100.0 => 2,
+            $achievementPct >= 50.0 => 3,
             default => 4,
         };
     }

@@ -56,8 +56,30 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         Schema::create('performance_rm_snapshots', function (Blueprint $table) {
             $table->id();
             $table->date('periode');
+            $table->string('cabang')->nullable();
+            $table->string('unit')->nullable();
+            $table->string('branch_code')->nullable();
+            $table->string('rm')->nullable();
             $table->string('segmen');
             $table->string('produk');
+            $table->integer('lancar_deb')->default(0);
+            $table->decimal('lancar_os', 20, 2)->default(0);
+            $table->integer('sml_deb')->default(0);
+            $table->decimal('sml_os', 20, 2)->default(0);
+            $table->integer('npl_deb')->default(0);
+            $table->decimal('npl_os', 20, 2)->default(0);
+            $table->integer('total_deb')->default(0);
+            $table->decimal('loan_os', 20, 2)->default(0);
+            $table->integer('realisasi_deb')->default(0);
+            $table->decimal('realisasi_os', 20, 2)->default(0);
+            foreach (['w1', 'w2', 'w3', 'w4'] as $week) {
+                $table->integer($week . '_realisasi_deb')->default(0);
+                $table->decimal($week . '_realisasi_os', 20, 2)->default(0);
+            }
+            $table->integer('lt_250_realisasi_deb')->default(0);
+            $table->decimal('lt_250_realisasi_os', 20, 2)->default(0);
+            $table->integer('gt_250_realisasi_deb')->default(0);
+            $table->decimal('gt_250_realisasi_os', 20, 2)->default(0);
         });
 
         Cache::forget('report_cache_version:pinjaman');
@@ -157,6 +179,63 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame(100000000.0, (float) $rows->get('0001 - MANTRI SATU')['realisasi_os']);
         $this->assertSame(250000000.0, (float) $rows->get('0002 - MANTRI DUA')['realisasi_os']);
         $this->assertSame(2, (int) $payload['total']['jumlah_mantri']);
+    }
+
+    public function test_rm_mikro_kur_payload_hides_rm_with_zero_monthly_realisasi(): void
+    {
+        DB::table('performance_rm_snapshots')->insert([
+            [
+                'periode' => '2026-05-31',
+                'cabang' => 'KC TEST',
+                'unit' => 'UNIT TEST',
+                'branch_code' => '001',
+                'rm' => '0001 - RM AKTIF',
+                'segmen' => 'MICRO',
+                'produk' => 'KUR-MIKRO',
+                'total_deb' => 10,
+                'loan_os' => 1000000000,
+                'realisasi_deb' => 2,
+                'realisasi_os' => 250000000,
+                'w1_realisasi_deb' => 2,
+                'w1_realisasi_os' => 250000000,
+                'lt_250_realisasi_deb' => 1,
+                'lt_250_realisasi_os' => 100000000,
+                'gt_250_realisasi_deb' => 1,
+                'gt_250_realisasi_os' => 150000000,
+            ],
+            [
+                'periode' => '2026-05-31',
+                'cabang' => 'KC TEST',
+                'unit' => 'UNIT TEST',
+                'branch_code' => '001',
+                'rm' => '0002 - RM PINDAH',
+                'segmen' => 'MICRO',
+                'produk' => 'KUR-MIKRO',
+                'total_deb' => 8,
+                'loan_os' => 800000000,
+                'realisasi_deb' => 0,
+                'realisasi_os' => 0,
+                'w1_realisasi_deb' => 0,
+                'w1_realisasi_os' => 0,
+                'lt_250_realisasi_deb' => 0,
+                'lt_250_realisasi_os' => 0,
+                'gt_250_realisasi_deb' => 0,
+                'gt_250_realisasi_os' => 0,
+            ],
+        ]);
+
+        $controller = new KinerjaRmMikroReportController();
+        $perRm = $this->invokePrivateMethod($controller, 'perRmPayload', '2026-05-31');
+        $rekap = $this->invokePrivateMethod($controller, 'rekapPayload', '2026-05-31');
+        $seriesHarian = $this->invokePrivateMethod($controller, 'seriesHarianPayload', '2026-05-31');
+        $tiering = $this->invokePrivateMethod($controller, 'tieringPayload', '2026-05-31');
+
+        $this->assertSame(['RM AKTIF'], collect($perRm['rows'])->pluck('nama')->all());
+        $this->assertSame(250000000.0, (float) $perRm['total']['realisasi_os']);
+        $this->assertSame(1, (int) $rekap['total']['total_rm']);
+        $this->assertSame(0, (int) $rekap['total']['belum_real']);
+        $this->assertSame(['RM AKTIF'], collect($seriesHarian['rows'])->pluck('nama')->all());
+        $this->assertSame(['RM AKTIF'], collect($tiering['rows'])->pluck('nama')->all());
     }
 
     private function insertDailyLoan(array $overrides): void

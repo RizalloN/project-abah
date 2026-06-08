@@ -13,10 +13,40 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
+use Symfony\Component\Process\Process;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Artisan::command('network:update-duckdns', function () {
+    $scriptPath = base_path('ddns-update.bat');
+    if (!is_file($scriptPath)) {
+        $this->error('ddns-update.bat tidak ditemukan.');
+
+        return 1;
+    }
+
+    $process = new Process(['cmd.exe', '/c', $scriptPath], base_path());
+    $process->setTimeout(90);
+    $process->run();
+
+    $output = trim($process->getOutput() . "\n" . $process->getErrorOutput());
+    $output = preg_replace('/token=[^&"\s]+/i', 'token=***', $output) ?? $output;
+    $output = preg_replace('/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i', '***', $output) ?? $output;
+
+    if ($output !== '') {
+        $this->line($output);
+    }
+
+    if (!$process->isSuccessful()) {
+        $this->error('DuckDNS update gagal.');
+
+        return $process->getExitCode() ?: 1;
+    }
+
+    return 0;
+})->purpose('Update DuckDNS public IP for asixdashboard.duckdns.org');
 
 Artisan::command('reports:snapshot {report=all} {--period=} {--force}', function () {
     $report = (string) $this->argument('report');
@@ -185,28 +215,42 @@ Artisan::command('queue:health-sweep', function () {
 
 Schedule::command('queue:health-sweep')
     ->everyMinute()
-    ->withoutOverlapping();
+    ->withoutOverlapping(2)
+    ->runInBackground();
+
+Schedule::command('network:update-duckdns')
+    ->everyFiveMinutes()
+    ->withoutOverlapping(10)
+    ->runInBackground();
 
 Schedule::command('logs:maintenance')
     ->everyThirtyMinutes()
-    ->withoutOverlapping();
+    ->withoutOverlapping(35)
+    ->runInBackground();
 
 Schedule::command('cache:maintenance')
     ->hourly()
-    ->withoutOverlapping()
+    ->withoutOverlapping(120)
     ->runInBackground();
 
 Schedule::command('optimize')
     ->dailyAt('03:00')
-    ->withoutOverlapping();
+    ->withoutOverlapping(180)
+    ->runInBackground();
 
-Schedule::command('queue:ensure-running --once')
+Schedule::command(
+    'queue:ensure-running --once --timeout=900 --memory=512'
+    . ' --max-jobs=' . (int) config('queue.worker_max_jobs', 25)
+    . ' --max-time=' . (int) config('queue.worker_max_time', 3600)
+)
     ->everyMinute()
-    ->withoutOverlapping();
+    ->withoutOverlapping(2)
+    ->runInBackground();
 
-Schedule::command('import:health-check')
+Schedule::command('import:health-check --fix --hours=1')
     ->everyTenMinutes()
-    ->withoutOverlapping();
+    ->withoutOverlapping(15)
+    ->runInBackground();
 
 Artisan::command('reports:resume-snapshot-queues-if-idle', function () {
     app(SnapshotQueuePauseService::class)->resumeWhenNoActiveImports();
@@ -220,27 +264,33 @@ Artisan::command('reports:resume-snapshot-queues-if-idle', function () {
 
 Schedule::command('reports:resume-snapshot-queues-if-idle')
     ->everyMinute()
-    ->withoutOverlapping();
+    ->withoutOverlapping(2)
+    ->runInBackground();
 
 Schedule::command('snapshot:validate-integrity --report=performance_rm')
     ->dailyAt('09:00')
-    ->withoutOverlapping();
+    ->withoutOverlapping(120)
+    ->runInBackground();
 
 Schedule::command('snapshot:validate-integrity --report=ssa_simpanan')
     ->dailyAt('09:05')
-    ->withoutOverlapping();
+    ->withoutOverlapping(120)
+    ->runInBackground();
 
 Schedule::command('snapshot:validate-integrity --report=dashboard_simpanan')
     ->dailyAt('09:10')
-    ->withoutOverlapping();
+    ->withoutOverlapping(120)
+    ->runInBackground();
 
 Schedule::command('snapshot:validate-integrity --report=dashboard_harian')
     ->dailyAt('09:15')
-    ->withoutOverlapping();
+    ->withoutOverlapping(120)
+    ->runInBackground();
 
 Schedule::command('snapshot:validate-integrity --report=dormant_account')
     ->dailyAt('09:20')
-    ->withoutOverlapping();
+    ->withoutOverlapping(120)
+    ->runInBackground();
 
 Artisan::command('reports:dashboard-harian-sync-missing', function () {
     $flushed = app(SnapshotBatchAggregator::class)->flushDueBatches();
@@ -274,21 +324,26 @@ Artisan::command('reports:ensure-fresh-snapshots {--period=}', function () {
         ->onQueue('snapshots-parallel');
     EnsureImportedSnapshotsFreshJob::dispatch('lw325_ph', $period, 'schedule:reports:ensure-fresh-snapshots')
         ->onQueue('snapshots-parallel');
+    EnsureImportedSnapshotsFreshJob::dispatch('gi405_recovery', $period, 'schedule:reports:ensure-fresh-snapshots')
+        ->onQueue('snapshots-parallel');
 
     $this->info('Snapshot freshness check dispatched.');
 })->purpose('Dispatch self-healing checks for imported report snapshots');
 
 Schedule::command('reports:ensure-fresh-snapshots')
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
+    ->hourly()
+    ->withoutOverlapping(10)
+    ->runInBackground();
 
 Schedule::command('reports:snapshot:drain-dirty --max-runtime=55')
     ->everyMinute()
-    ->withoutOverlapping();
+    ->withoutOverlapping(2)
+    ->runInBackground();
 
 Schedule::command('reports:dashboard-harian-sync-missing')
     ->everyFiveMinutes()
-    ->withoutOverlapping();
+    ->withoutOverlapping(10)
+    ->runInBackground();
 
 // Auto-discover and backfill shadow columns for daily_loan_dinamis every 15 minutes.
 // Runs shadow:backfill with no --periods flag, which now auto-discovers periods that have NULL shadow columns.
@@ -315,7 +370,7 @@ Artisan::command('shadow:auto-backfill-scheduler', function () {
 
 Schedule::command('shadow:auto-backfill-scheduler')
     ->everyFifteenMinutes()
-    ->withoutOverlapping()
+    ->withoutOverlapping(30)
     ->runInBackground();
 
 Artisan::command('reports:delete-scope {table} {--period=} {--blank-kanca} {--chunk=10000}', function () {

@@ -25,13 +25,26 @@ class ImportJobManagementController extends Controller
         return view('import.job-management');
     }
 
-    public function data(Request $request, ImportProgressService $progressService)
+    public function data(
+        Request $request,
+        ImportProgressService $progressService,
+        ?ImportExecutionService $executionService = null
+    )
     {
         if (!Schema::hasTable('import_jobs')) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Tabel `import_jobs` belum tersedia.',
             ], 500);
+        }
+
+        try {
+            ($executionService ?? app(ImportExecutionService::class))
+                ->recoverOrphanedZeroProgressJobs();
+        } catch (\Throwable $e) {
+            Log::warning('Job Management gagal menjalankan recovery import orphan.', [
+                'message' => $e->getMessage(),
+            ]);
         }
 
         $validated = $request->validate([
@@ -100,14 +113,16 @@ class ImportJobManagementController extends Controller
                 $durationSeconds = max(0, $updatedAt->diffInSeconds($createdAt));
             }
 
+            $resolvedStatus = (string) ($statusPayload['status'] ?? $job->status);
+
             return [
                 'id' => (int) $job->id,
                 'report_name' => (string) ($job->nama_report ?? 'Report #' . (int) $job->id_report),
                 'table_name' => (string) ($job->table_name ?? ''),
                 'file_name' => (string) ($job->file_name ?? ''),
-                'status' => (string) ($statusPayload['status'] ?? $job->status),
-                'status_label' => $this->statusLabel((string) ($statusPayload['status'] ?? $job->status)),
-                'status_tone' => $this->statusTone((string) ($statusPayload['status'] ?? $job->status)),
+                'status' => $resolvedStatus,
+                'status_label' => $this->statusLabel($resolvedStatus),
+                'status_tone' => $this->statusTone($resolvedStatus),
                 'percent' => (int) ($statusPayload['percent'] ?? 0),
                 'processed_rows' => (int) ($statusPayload['processed_rows'] ?? 0),
                 'total_rows' => (int) ($statusPayload['total_rows'] ?? $job->total_files ?? 0),
@@ -117,9 +132,9 @@ class ImportJobManagementController extends Controller
                 'phase' => (string) ($statusPayload['phase'] ?? ''),
                 'mode' => (string) ($statusPayload['mode'] ?? ''),
                 'termination_requested' => (bool) ($statusPayload['termination_requested'] ?? false),
-                'can_terminate' => in_array((string) ($statusPayload['status'] ?? $job->status), ['queued', 'processing'], true),
-                'can_force_start' => (string) ($statusPayload['status'] ?? $job->status) === 'queued',
-                'can_delete' => in_array((string) ($statusPayload['status'] ?? $job->status), ['completed', 'failed', 'failed_partial', 'terminated'], true),
+                'can_terminate' => in_array($resolvedStatus, ['queued', 'processing'], true),
+                'can_force_start' => $resolvedStatus === 'queued' || $this->isFailedZeroProgressJob($job, $resolvedStatus),
+                'can_delete' => in_array($resolvedStatus, ['completed', 'failed', 'failed_partial', 'terminated'], true),
                 'created_by_name' => (string) ($job->created_by_name ?? 'System'),
                 'created_at' => $createdAt?->toIso8601String(),
                 'created_at_label' => $createdAt?->format('d M Y H:i:s'),
@@ -194,11 +209,27 @@ class ImportJobManagementController extends Controller
         }
 
         $status = strtolower(trim((string) ($job->status ?? '')));
-        if ($status !== 'queued') {
+        $retryingFailedZeroProgress = $this->isFailedZeroProgressJob($job, $status);
+        if ($status !== 'queued' && !$retryingFailedZeroProgress) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Force start hanya tersedia untuk job import yang masih queued.',
+                'message' => 'Force start hanya tersedia untuk job import queued atau failed tanpa baris sukses.',
             ], 422);
+        }
+
+        if ($retryingFailedZeroProgress) {
+            $progressService->clearTerminationRequest($jobId);
+            $progressService->markQueued($jobId, [
+                'status' => 'queued',
+                'phase' => 'polars',
+                'mode' => 'polars',
+                'percent' => 5,
+                'message' => 'Job gagal sebelum ada baris masuk. Force start menjalankan ulang dari file sumber.',
+                'processed_rows' => 0,
+                'total_rows' => (int) ($job->total_files ?? 0),
+                'total_success' => 0,
+                'total_failed' => 0,
+            ]);
         }
 
         $progressService->cleanupQueuedImportJobRowsForJob($jobId);
@@ -215,6 +246,13 @@ class ImportJobManagementController extends Controller
             'status' => 'success',
             'message' => 'Force start dijalankan. Job import diproses di background tanpa menunggu worker queue.',
         ]);
+    }
+
+    private function isFailedZeroProgressJob(object $job, string $status): bool
+    {
+        return $status === 'failed'
+            && (int) ($job->total_success ?? 0) === 0
+            && (int) ($job->total_failed ?? 0) === 0;
     }
 
     protected function launchImportInBackground(int $jobId): bool

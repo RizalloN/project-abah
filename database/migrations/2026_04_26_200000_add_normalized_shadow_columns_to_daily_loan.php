@@ -119,7 +119,7 @@ return new class extends Migration
                 unit_normalized = UPPER(TRIM(COALESCE(d.unit1, ''))),
                 branch_normalized = UPPER(TRIM(COALESCE(d.branch1, ''))),
                 rm_normalized = UPPER(TRIM(COALESCE(d.pn_pengelola1, ''))),
-                cifno_clean = REGEXP_REPLACE(COALESCE(d.cifno, ''), '[^0-9]', '')
+                cifno_clean = UPPER(TRIM(COALESCE(d.cifno, '')))
             WHERE segmen_kinerja IS NULL OR produk_kinerja IS NULL
         SQL
         );

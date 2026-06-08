@@ -95,6 +95,9 @@ class RebuildSnapshotHarianBatch implements ShouldQueue
         $candidates = [
             ['source_table' => 'ssa_simpanan', 'period_column' => 'Month_Day_Year_of_Posisi'],
             ['source_table' => 'ssa_pinjaman', 'period_column' => 'month_day_year_of_periode'],
+            ['source_table' => 'dly_kap_resegmentasi', 'period_column' => 'periode'],
+            ['source_table' => 'l1133', 'period_column' => 'periode'],
+            ['source_table' => 'gi405_recovery', 'period_column' => 'periode'],
             ['source_table' => 'daily_loan_dinamis', 'period_column' => 'periode'],
             ['source_table' => 'simpanan_multipn', 'period_column' => 'posisi'],
             ['source_table' => 'lw325_ph', 'period_column' => 'periode'],

@@ -91,12 +91,13 @@
                                 <th class="border-top-0 border-bottom-0 pl-4">Pengguna</th>
                                 <th class="border-top-0 border-bottom-0">PN</th>
                                 <th class="border-top-0 border-bottom-0">Role</th>
+                                <th class="border-top-0 border-bottom-0">Terakhir Login</th>
                                 <th class="text-center border-top-0 border-bottom-0 pr-4">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
                             @forelse ($users as $userItem)
-                                <tr>
+                                <tr class="user-row" data-user-id="{{ $userItem->id }}" data-user-name="{{ $userItem->name }}" data-user-pn="{{ $userItem->pn }}" title="Double klik untuk melihat riwayat login">
                                     <td class="pl-4 align-middle">
                                         <div class="d-flex align-items-center">
                                             <div class="bg-primary text-white d-flex align-items-center justify-content-center mr-3 font-weight-bold" style="width: 40px; height: 40px; border-radius: 10px; font-size: 1.1rem;">
@@ -114,6 +115,14 @@
                                             {{ strtoupper($userItem->role) }}
                                         </span>
                                     </td>
+                                    <td class="align-middle text-dark">
+                                        @if($userItem->last_login_at)
+                                            <div class="font-weight-bold" style="font-size: 0.85rem;">{{ \Carbon\Carbon::parse($userItem->last_login_at)->diffForHumans() }}</div>
+                                            <span class="text-muted small" style="font-size: 0.72rem;"><i class="far fa-clock mr-1"></i>{{ \Carbon\Carbon::parse($userItem->last_login_at)->format('d M Y H:i:s') }}</span>
+                                        @else
+                                            <span class="text-muted small">-</span>
+                                        @endif
+                                    </td>
                                     <td class="text-center align-middle pr-4">
                                         <button type="button" class="btn btn-sm btn-outline-primary" data-toggle="modal" data-target="#editUserModal-{{ $userItem->id }}" style="border-radius: 6px;">
                                             <i class="fas fa-pen"></i>
@@ -128,7 +137,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="4" class="text-center text-muted py-5">Belum ada user terdaftar.</td></tr>
+                                <tr><td colspan="5" class="text-center text-muted py-5">Belum ada user terdaftar.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -213,12 +222,70 @@
         </div>
     </div>
 @endforeach
+
+<!-- Login History Modal -->
+<div class="modal fade" id="loginHistoryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-md">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 16px;">
+            <div class="modal-header border-bottom-0 bg-light py-3 px-4" style="border-top-left-radius: 16px; border-top-right-radius: 16px;">
+                <div>
+                    <h5 class="modal-title font-weight-bold text-dark mb-0"><i class="fas fa-history text-primary mr-2"></i> Riwayat Login</h5>
+                    <div class="text-muted small mt-1" id="loginHistoryUserSub">Memuat...</div>
+                </div>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body p-4">
+                <div id="loginHistoryLoader" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="sr-only">Loading...</span>
+                    </div>
+                    <div class="text-muted mt-2 small">Mengambil data riwayat login...</div>
+                </div>
+                <div id="loginHistoryContent" style="display: none;">
+                    <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                        <table class="table table-sm table-hover mb-0" style="font-size: 0.85rem;">
+                            <thead class="bg-light text-muted">
+                                <tr>
+                                    <th class="border-top-0 border-bottom-0 pl-3 py-2">Tanggal</th>
+                                    <th class="border-top-0 border-bottom-0 text-center pr-3 py-2" style="width: 130px;">Jumlah Login</th>
+                                </tr>
+                            </thead>
+                            <tbody id="loginHistoryTableBody">
+                                <!-- Populated dynamically via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div id="loginHistoryEmpty" class="text-center py-4 text-muted small" style="display: none;">
+                    <i class="fas fa-info-circle mb-2" style="font-size: 1.5rem;"></i>
+                    <div>Tidak ada riwayat login tercatat.</div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-top-0 py-3 px-4" style="border-bottom-left-radius: 16px; border-bottom-right-radius: 16px;">
+                <button type="button" class="btn btn-secondary btn-block font-weight-bold" data-dismiss="modal" style="border-radius: 8px;">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
 @endsection
 
 @section('styles')
 <style>
     .modal.user-management-edit-modal { z-index: 2055; }
     .modal-backdrop.user-management-edit-backdrop { z-index: 2050; }
+    
+    .user-row {
+        cursor: pointer;
+        transition: background-color 0.15s ease-in-out;
+    }
+    .user-row:hover {
+        background-color: rgba(8, 87, 195, 0.04) !important;
+    }
+    
+    #loginHistoryModal { z-index: 2065; }
+    .modal-backdrop.login-history-backdrop { z-index: 2060; }
 </style>
 @endsection
 
@@ -252,6 +319,79 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (!$('.modal.show').length) {
                     $('body').removeClass('modal-open').css('padding-right', '');
                     $('.modal-backdrop.user-management-edit-backdrop').remove();
+                }
+            });
+        });
+
+        // Setup Login History Modal lifecycle in body
+        const $historyModal = $('#loginHistoryModal');
+        if (!$historyModal.parent().is('body')) {
+            $historyModal.appendTo(document.body);
+        }
+
+        $historyModal.on('show.bs.modal', function () {
+            window.setTimeout(function () {
+                $('.modal-backdrop').last().addClass('login-history-backdrop');
+            }, 0);
+        });
+
+        $historyModal.on('hidden.bs.modal', function () {
+            if (!$('.modal.show').length) {
+                $('body').removeClass('modal-open').css('padding-right', '');
+                $('.modal-backdrop.login-history-backdrop').remove();
+            }
+        });
+
+        // Double-click row handler
+        $('.user-row').on('dblclick', function() {
+            const userId = $(this).data('user-id');
+            const userName = $(this).data('user-name');
+            const userPn = $(this).data('user-pn');
+            
+            $('#loginHistoryUserSub').text(userName + ' (PN: ' + userPn + ')');
+            
+            $('#loginHistoryLoader').show();
+            $('#loginHistoryContent').hide();
+            $('#loginHistoryEmpty').hide();
+            
+            $historyModal.modal('show');
+            
+            $.ajax({
+                url: '/user-management/' + userId + '/login-history',
+                method: 'GET',
+                dataType: 'json',
+                success: function(response) {
+                    $('#loginHistoryLoader').hide();
+                    
+                    const history = response.history;
+                    if (history && history.length > 0) {
+                        let html = '';
+                        history.forEach(function(row) {
+                            const rawDate = new Date(row.date);
+                            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+                            let formattedDate = rawDate.toLocaleDateString('id-ID', options);
+                            if (formattedDate === 'Invalid Date' || !formattedDate) {
+                                formattedDate = row.date;
+                            }
+                            html += `<tr>
+                                <td class="pl-3 py-2 align-middle font-weight-bold text-dark">${formattedDate}</td>
+                                <td class="text-center pr-3 py-2 align-middle">
+                                    <span class="badge badge-primary px-3 py-1 font-weight-bold" style="border-radius: 6px; font-size: 0.82rem;">
+                                        ${row.count} x
+                                    </span>
+                                </td>
+                            </tr>`;
+                        });
+                        $('#loginHistoryTableBody').html(html);
+                        $('#loginHistoryContent').show();
+                    } else {
+                        $('#loginHistoryEmpty').show();
+                    }
+                },
+                error: function() {
+                    $('#loginHistoryLoader').hide();
+                    $('#loginHistoryEmpty').find('div').text('Gagal memuat data riwayat login.');
+                    $('#loginHistoryEmpty').show();
                 }
             });
         });

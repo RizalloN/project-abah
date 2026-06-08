@@ -230,15 +230,15 @@ class ValidateShadowColumnsCommand extends Command
             $issues[] = "Data inconsistency: {$inconsistentProduk} rows have produk_dashboard but produk_kinerja is NULL";
         }
 
-        // Check cifno_clean format (should be numeric-only)
+        // Check cifno_clean format (should be alphanumeric)
         $invalidCifno = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->whereNotNull('cifno_clean')
-            ->where(DB::raw('cifno_clean REGEXP "[^0-9]"'), true)
+            ->where(DB::raw('cifno_clean REGEXP "[^a-zA-Z0-9]"'), true)
             ->count();
 
         if ($invalidCifno > 0) {
-            $issues[] = "Data quality: {$invalidCifno} rows have non-numeric cifno_clean values";
+            $issues[] = "Data quality: {$invalidCifno} rows have non-alphanumeric cifno_clean values";
         }
 
         return $issues;

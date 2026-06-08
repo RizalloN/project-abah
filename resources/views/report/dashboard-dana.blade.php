@@ -602,13 +602,13 @@
         border-radius: 0 !important;
     }
 
-    /* Modernized Classic Excel Table Grid styling */
+    /* Modernized Classic Excel Table Grid styling - BRI Corporate Color Scheme */
     .dana-dashboard .dana-table thead th,
     .dana-dashboard .dana-table thead .group-position,
     .dana-dashboard .dana-table thead .group-delta,
     .dana-dashboard .dana-table thead .group-rka {
-        background: linear-gradient(180deg, #10355a 0%, #0c2844 100%) !important;
-        border: 1px solid #244b70 !important;
+        background: linear-gradient(180deg, #0857c3 0%, #06469c 100%) !important;
+        border: 1px solid #1e40af !important;
         color: #ffffff !important;
         font-size: 0.7rem !important;
         font-weight: 700 !important;
@@ -627,25 +627,28 @@
 
     .dana-dashboard .subtotal-row,
     .dana-dashboard .subtotal-row td {
-        background: #e6f4ff !important;
-        color: #0c3b6d !important;
+        background: #eef6ff !important;
+        color: #0857c3 !important;
         font-weight: 700 !important;
-        border-color: #bae6fd !important;
+        border-color: #cfe0f4 !important;
     }
 
     .dana-dashboard .grandtotal-row,
     .dana-dashboard .grandtotal-row td {
-        background: #0c2844 !important;
+        background: linear-gradient(90deg, #0857c3 0%, #06469c 100%) !important;
         color: #ffffff !important;
         font-weight: 700 !important;
         font-size: 0.8rem !important;
-        border-color: #1a3c5e !important;
+        border-color: #1e40af !important;
     }
 
     .dana-dashboard .sticky-col,
     .dana-dashboard .branch-cell {
         border-color: #cbd5e1 !important;
     }
+
+    .text-pos { color: #047857 !important; }
+    .text-neg { color: #b91c1c !important; }
 
 </style>
 
@@ -867,16 +870,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const getCellBg = (pct) => {
             const num = parseFloat(pct) || 0;
-            if (num >= 100) return '#c6f6d5'; // Solid highly visible Excel green
-            if (num < 90) return '#ffe3e3'; // Solid highly visible Excel red
-            return '#fff3bf'; // Solid highly visible Excel yellow
+            if (num >= 100) return '#d1fae5'; // Soft highly premium Excel green
+            if (num < 90) return '#fee2e2'; // Soft highly premium Excel red
+            return '#fef3c7'; // Soft highly premium Excel yellow
         };
 
         const getCellColor = (pct) => {
             const num = parseFloat(pct) || 0;
-            if (num >= 100) return '#22543d'; // Excel dark green text
-            if (num < 90) return '#742a2a'; // Excel dark red text
-            return '#744210'; // Excel dark yellow/brown text
+            if (num >= 100) return '#065f46'; // Premium dark green text
+            if (num < 90) return '#991b1b'; // Premium dark red text
+            return '#92400e'; // Premium dark yellow/brown text
         };
 
         const loadData = () => {
