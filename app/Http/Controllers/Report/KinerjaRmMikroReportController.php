@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SyncImportedReportJob;
 use App\Support\ReportCacheVersion;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -35,6 +36,7 @@ class KinerjaRmMikroReportController extends Controller
         'kuadran' => 'Kuadran',
         'produktivitas_mantri' => 'Produktivitas per Mantri',
         'pdwk_override' => 'PDWK - Override',
+        'extreme_low_mantri' => 'Extreme Low Mantri',
         'rekap_mantri' => 'Rekap Mantri',
     ];
 
@@ -59,6 +61,17 @@ class KinerjaRmMikroReportController extends Controller
 
     private const AREA_BRANCH_ORDER = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
     private const MANTRI_PRODUCTS = ['BRIGUNAMIKRO', 'CASHCOLLATERAL', 'KUPEDES', 'KPR', 'KURMIKRO'];
+    private const MANTRI_HEADCOUNT_POSITIONS = ['ASSOCIATE MANTRI 1', 'ASSOCIATE MANTRI 2', 'JUNIOR ASSOCIATE MANTRI'];
+    private const EXTREME_LOW_BUCKETS = [
+        'el_0_100' => ['label' => '0 s.d 100 Jt', 'group' => 'extreme'],
+        'el_100_200' => ['label' => '>100 s.d 200 Jt', 'group' => 'extreme'],
+        'el_200_400' => ['label' => '>200 s.d 400 Jt', 'group' => 'extreme'],
+        'low_400_600' => ['label' => '>400 s.d 600 Jt', 'group' => 'low'],
+        'low_600_800' => ['label' => '>600 s.d 800 Jt', 'group' => 'low'],
+        'mid_800_1000' => ['label' => '>800 Jt s.d 1 M', 'group' => 'mid'],
+        'mid_1000_1200' => ['label' => '>1 s.d 1,20 M', 'group' => 'mid'],
+        'high_1200' => ['label' => '>1,20 M', 'group' => 'high'],
+    ];
 
     public function index(Request $request): View
     {
@@ -104,6 +117,61 @@ class KinerjaRmMikroReportController extends Controller
             'formatPercent' => fn ($value, int $decimals = 1) => $this->formatPercent($value, $decimals),
             'achievementClass' => fn ($value, float $target) => $this->achievementClass((float) $value, $target),
             'gradientClass' => fn ($value, float $min, float $max, bool $higherIsBetter = true) => $this->gradientClass((float) $value, $min, $max, $higherIsBetter),
+        ]);
+    }
+
+    public function mantriExtremeLowDetail(Request $request): JsonResponse
+    {
+        $period = trim((string) $request->query('periode', ''));
+        $branch = $this->normalizeKey((string) $request->query('branch', ''));
+        $unit = $this->normalizeKey((string) $request->query('unit', ''));
+
+        if ($period === '' || $branch === '' || $unit === '') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Parameter periode, branch, dan unit wajib diisi.',
+            ], 422);
+        }
+
+        $rows = $this->cachedExtremeLowMantriRosterRows($period)
+            ->filter(fn (array $row): bool => $row['branch_office'] === $branch && $row['nama_uker'] === $unit)
+            ->sortBy(fn (array $row): string => $row['bucket_key'] . '|' . $row['nama_mantri'] . '|' . $row['pn_mantri'])
+            ->values();
+
+        $totalMantri = $rows->count();
+        $buckets = [];
+
+        foreach (self::EXTREME_LOW_BUCKETS as $key => $meta) {
+            $bucketRows = $rows->where('bucket_key', $key)->values();
+            $buckets[$key] = [
+                'key' => $key,
+                'label' => $meta['label'],
+                'group' => $meta['group'],
+                'deb' => $bucketRows->count(),
+                'pct' => $this->ratioPercent($bucketRows->count(), $totalMantri),
+                'rows' => $bucketRows->all(),
+            ];
+        }
+
+        $under800Keys = ['el_0_100', 'el_100_200', 'el_200_400', 'low_400_600', 'low_600_800'];
+        $under800Rows = $rows
+            ->filter(fn (array $row): bool => in_array($row['bucket_key'], $under800Keys, true))
+            ->values();
+
+        return response()->json([
+            'status' => 'success',
+            'periode' => $period,
+            'branch_office' => $branch,
+            'nama_uker' => $unit,
+            'total_mantri' => $totalMantri,
+            'buckets' => $buckets,
+            'under_800' => [
+                'key' => 'under_800',
+                'label' => 'Total Under 800 Juta',
+                'deb' => $under800Rows->count(),
+                'pct' => $this->ratioPercent($under800Rows->count(), $totalMantri),
+                'rows' => $under800Rows->all(),
+            ],
         ]);
     }
 
@@ -522,11 +590,12 @@ class KinerjaRmMikroReportController extends Controller
             return ['rows' => [], 'total' => [], 'working_days' => 0];
         }
 
-        return Cache::remember('kinerja_rm_mikro_mantri_v2:' . $this->reportCacheVersion() . ':' . $period . ':' . $category, 600, function () use ($category, $period): array {
+        return Cache::remember('kinerja_rm_mikro_mantri_v9:' . $this->reportCacheVersion() . ':' . $period . ':' . $category, 600, function () use ($category, $period): array {
             return match ($category) {
                 'kuadran' => $this->mantriKuadranPayload($period),
                 'produktivitas_mantri' => $this->mantriProductivityPayload($period),
                 'pdwk_override' => $this->mantriPdwkOverridePayload($period),
+                'extreme_low_mantri' => $this->mantriExtremeLowPayload($period),
                 'rekap_mantri' => $this->mantriRekapPayload($period),
                 default => $this->mantriUnitPemutusPayload($period),
             };
@@ -572,7 +641,7 @@ class KinerjaRmMikroReportController extends Controller
                 'kaunit_mtd_deb', 'kaunit_mtd_os', 'mbm_mtd_deb', 'mbm_mtd_os', 'pinca_mtd_deb', 'pinca_mtd_os', 'rmbh_mtd_deb', 'rmbh_mtd_os', 'mtd_total_deb', 'mtd_total_os',
             ]),
             'working_days' => $this->networkDays($periodStart, $period),
-            'message' => 'Data Mantri dari daily_loan_dinamis segmen Micro untuk Briguna-Mikro, Cash Collateral, Kupedes, KPR, dan KUR-Mikro.',
+            'message' => '',
         ];
     }
 
@@ -610,7 +679,7 @@ class KinerjaRmMikroReportController extends Controller
                 'realisasi_os' => $rows->sum('realisasi_os'),
             ],
             'working_days' => $workingDays,
-            'message' => 'Kuadran dihitung dari realisasi bulan berjalan, tiket size, dan ratas Mantri per hari kerja.',
+            'message' => '',
         ];
     }
 
@@ -649,7 +718,7 @@ class KinerjaRmMikroReportController extends Controller
                 'realisasi_os' => $rows->sum('realisasi_os'),
             ],
             'working_days' => $workingDays,
-            'message' => 'Produktivitas per Mantri dihitung dari realisasi bulan berjalan per pn_pengelola1.',
+            'message' => '',
         ];
     }
 
@@ -666,7 +735,7 @@ class KinerjaRmMikroReportController extends Controller
             'rows' => $rows->all(),
             'total' => $this->sumMantriRows($rows, $this->pdwkMetricColumns()),
             'working_days' => $this->networkDays($periodStart, $period),
-            'message' => 'PDWK dibandingkan antara jabatan pemutus aktual dari BRIHC dan limit plafon keputusan.',
+            'message' => '',
         ];
     }
 
@@ -702,8 +771,347 @@ class KinerjaRmMikroReportController extends Controller
             'rows' => $rows->all(),
             'total' => $this->sumMantriRows($rows, array_merge($this->pdwkMetricColumns(), ['jumlah_unit', 'jumlah_mantri'])),
             'working_days' => $workingDays,
-            'message' => 'Rekap Mantri dikonsolidasikan per cabang dari realisasi bulan berjalan.',
+            'message' => '',
         ];
+    }
+
+    private function mantriExtremeLowPayload(string $period): array
+    {
+        if (!Schema::hasTable('brihc_pemasar')) {
+            return [
+                'rows' => [],
+                'total' => $this->finalizeExtremeLowMantriRow([
+                    'branch_office' => 'AREA 6',
+                    'nama_uker' => 'TOTAL',
+                    'total_mantri' => 0,
+                    'buckets' => $this->blankExtremeLowBuckets(),
+                ]),
+                'working_days' => 0,
+                'bucket_meta' => self::EXTREME_LOW_BUCKETS,
+                'message' => '',
+            ];
+        }
+
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+        $rosterRows = $this->cachedExtremeLowMantriRosterRows($period);
+        $groups = [];
+        $total = [
+            'branch_office' => 'AREA 6',
+            'nama_uker' => 'TOTAL',
+            'total_mantri' => 0,
+            'buckets' => $this->blankExtremeLowBuckets(),
+        ];
+
+        foreach ($rosterRows as $detail) {
+            $branch = (string) $detail['branch_office'];
+            $unit = (string) $detail['nama_uker'];
+            $groupKey = $branch . '|' . $unit;
+            if (!isset($groups[$groupKey])) {
+                $groups[$groupKey] = [
+                    'branch_office' => $branch,
+                    'nama_uker' => $unit,
+                    'total_mantri' => 0,
+                    'buckets' => $this->blankExtremeLowBuckets(),
+                ];
+            }
+
+            $bucketKey = (string) $detail['bucket_key'];
+            $groups[$groupKey]['total_mantri']++;
+            $groups[$groupKey]['buckets'][$bucketKey]['deb']++;
+            $total['total_mantri']++;
+            $total['buckets'][$bucketKey]['deb']++;
+        }
+
+        $rows = collect($groups)
+            ->map(fn (array $row): array => $this->finalizeExtremeLowMantriRow($row))
+            ->sortBy(fn (array $row): string => $this->branchSortKey($row['branch_office']) . '|' . $row['nama_uker'])
+            ->values()
+            ->map(function (array $row, int $index): array {
+                $row['no'] = $index + 1;
+
+                return $row;
+            });
+
+        return [
+            'rows' => $rows->all(),
+            'total' => $this->finalizeExtremeLowMantriRow($total),
+            'working_days' => $this->networkDays($periodStart, $period),
+            'bucket_meta' => self::EXTREME_LOW_BUCKETS,
+            'message' => '',
+        ];
+    }
+
+    private function extremeLowMantriRosterRows(string $period): Collection
+    {
+        if (!Schema::hasTable('brihc_pemasar')) {
+            return collect();
+        }
+
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+        $monthlyRealizations = $this->mantriMonthlyRealizationsByPn($period, $periodStart);
+        $ptUnitKeys = $this->brihcPemasarPtUnitKeys();
+
+        return $this->dailyLoanMantriCandidates($period)
+            ->filter(fn (array $candidate): bool => isset($ptUnitKeys[$candidate['mantri_key']]))
+            ->map(function (array $candidate) use ($monthlyRealizations): array {
+                $mantriKey = (string) $candidate['mantri_key'];
+                $amount = (float) ($monthlyRealizations[$mantriKey] ?? 0);
+                $bucketKey = $this->extremeLowBucketKey($amount);
+
+                return array_merge($candidate, [
+                    'status' => 'PT',
+                    'realisasi_os' => $amount,
+                    'realisasi_juta' => $amount / 1000000,
+                    'bucket_key' => $bucketKey,
+                    'bucket_label' => self::EXTREME_LOW_BUCKETS[$bucketKey]['label'] ?? '-',
+                ]);
+            })
+            ->values();
+    }
+
+    private function cachedExtremeLowMantriRosterRows(string $period): Collection
+    {
+        return Cache::remember(
+            'kinerja_rm_mikro_extreme_low_roster_v4:' . $this->reportCacheVersion() . ':' . $period,
+            600,
+            fn (): Collection => $this->extremeLowMantriRosterRows($period)
+        );
+    }
+
+    private function dailyLoanMantriCandidates(string $period): Collection
+    {
+        $grouped = [];
+
+        DB::table('daily_loan_dinamis as d')
+            ->where('d.periode', $period)
+            ->where('d.segmen_kinerja', 'MICRO')
+            ->whereIn('d.produk_kinerja', self::MANTRI_PRODUCTS)
+            ->whereNotNull('d.pn_pengelola1')
+            ->where('d.pn_pengelola1', '<>', '')
+            ->select('d.pn_pengelola1', 'd.unit1', 'd.cabang1')
+            ->selectRaw('COUNT(*) as rekening_count')
+            ->selectRaw('SUM(COALESCE(d.baki_debet1, 0)) as portfolio_os')
+            ->groupBy('d.pn_pengelola1', 'd.unit1', 'd.cabang1')
+            ->get()
+            ->each(function ($row) use (&$grouped): void {
+                $mantriKey = $this->mantriPnKey((string) ($row->pn_pengelola1 ?? ''));
+                $branch = $this->normalizeKey((string) ($row->cabang1 ?? ''));
+                $unit = $this->normalizeKey((string) ($row->unit1 ?? ''));
+                if ($mantriKey === '' || $unit === '' || !in_array($branch, self::AREA_BRANCH_ORDER, true)) {
+                    return;
+                }
+
+                $assignmentKey = $branch . '|' . $unit;
+                $grouped[$mantriKey]['names'][(string) $row->pn_pengelola1] =
+                    ($grouped[$mantriKey]['names'][(string) $row->pn_pengelola1] ?? 0) + (int) ($row->rekening_count ?? 0);
+                $currentAssignment = $grouped[$mantriKey]['assignments'][$assignmentKey] ?? [
+                    'branch_office' => $branch,
+                    'nama_uker' => $unit,
+                    'rekening_count' => 0,
+                    'portfolio_os' => 0.0,
+                ];
+                $currentAssignment['rekening_count'] += (int) ($row->rekening_count ?? 0);
+                $currentAssignment['portfolio_os'] += (float) ($row->portfolio_os ?? 0);
+                $grouped[$mantriKey]['assignments'][$assignmentKey] = $currentAssignment;
+            });
+
+        return collect($grouped)->map(function (array $data, string $mantriKey): array {
+            $assignments = collect($data['assignments'] ?? [])
+                ->sort(function (array $left, array $right): int {
+                    return [$right['rekening_count'], $right['portfolio_os'], $right['nama_uker']]
+                        <=> [$left['rekening_count'], $left['portfolio_os'], $left['nama_uker']];
+                });
+            $assignment = $assignments->first() ?? [
+                'branch_office' => '-',
+                'nama_uker' => '-',
+            ];
+
+            $pnPengelola = (string) collect($data['names'] ?? [])
+                ->sortDesc()
+                ->keys()
+                ->first();
+            [$pn, $name] = $this->splitRm($pnPengelola);
+
+            return [
+                'mantri_key' => $mantriKey,
+                'pn_mantri' => $pn !== '-' ? $pn : $mantriKey,
+                'nama_mantri' => $name,
+                'pn_pengelola1' => $pnPengelola,
+                'branch_office' => (string) ($assignment['branch_office'] ?? '-'),
+                'nama_uker' => (string) ($assignment['nama_uker'] ?? '-'),
+            ];
+        })->values();
+    }
+
+    private function brihcPemasarPtUnitKeys(): array
+    {
+        $columns = array_values(array_intersect([
+            'uniqueid_namareport',
+            'nip',
+            'pernr',
+            'esgdesc',
+            'psadesc',
+            'orgdesc',
+            'pn_mantri',
+        ], Schema::getColumnListing('brihc_pemasar')));
+        if ($columns === []
+            || !in_array('esgdesc', $columns, true)
+            || !in_array('orgdesc', $columns, true)) {
+            return [];
+        }
+
+        $ptUnitKeys = [];
+        DB::table('brihc_pemasar')
+            ->select($columns)
+            ->get()
+            ->each(function ($row) use (&$ptUnitKeys): void {
+                if (!str_contains($this->normalizeKey($this->brihcPemasarValue($row, 'esgdesc')), 'PT')) {
+                    return;
+                }
+
+                if (!str_starts_with($this->normalizeKey($this->brihcPemasarValue($row, 'orgdesc')), 'UNIT')) {
+                    return;
+                }
+
+                if (!in_array($this->normalizeKey($this->brihcPemasarValue($row, 'psadesc')), self::AREA_BRANCH_ORDER, true)) {
+                    return;
+                }
+
+                $mantriKey = $this->brihcPemasarMantriKey($row);
+                if ($mantriKey !== '') {
+                    $ptUnitKeys[$mantriKey] = true;
+                }
+            });
+
+        return $ptUnitKeys;
+    }
+
+    private function mantriMonthlyRealizationsByPn(string $period, string $periodStart): array
+    {
+        return DB::table('daily_loan_dinamis as d')
+            ->where('d.periode', $period)
+            ->where('d.segmen_kinerja', 'MICRO')
+            ->whereIn('d.produk_kinerja', self::MANTRI_PRODUCTS)
+            ->whereBetween('d.tgl_realisasi', [$periodStart, $period])
+            ->whereRaw(
+                "NOT (d.produk_kinerja = ? AND {$this->normalizedSql('d.description')} = ?)",
+                ['KURMIKRO', $this->normalizeToken(self::KUR_RITEL_DESCRIPTION)]
+            )
+            ->select('d.pn_pengelola1', 'd.rm_normalized')
+            ->selectRaw('SUM(COALESCE(d.plafon, 0)) as realisasi_os')
+            ->groupBy('d.pn_pengelola1', 'd.rm_normalized')
+            ->get()
+            ->reduce(function (array $carry, $row): array {
+                $key = $this->mantriPnKey((string) ($row->pn_pengelola1 ?? ''))
+                    ?: $this->mantriPnKey((string) ($row->rm_normalized ?? ''));
+
+                if ($key !== '') {
+                    $carry[$key] = ($carry[$key] ?? 0) + (float) ($row->realisasi_os ?? 0);
+                }
+
+                return $carry;
+            }, []);
+    }
+
+    private function finalizeExtremeLowMantriRow(array $row): array
+    {
+        $totalMantri = max(0, (int) ($row['total_mantri'] ?? 0));
+        $buckets = $row['buckets'] ?? $this->blankExtremeLowBuckets();
+
+        foreach (self::EXTREME_LOW_BUCKETS as $key => $meta) {
+            $deb = (int) ($buckets[$key]['deb'] ?? 0);
+            $buckets[$key] = [
+                'label' => $meta['label'],
+                'group' => $meta['group'],
+                'deb' => $deb,
+                'pct' => $this->ratioPercent($deb, $totalMantri),
+            ];
+        }
+
+        $under800Deb = (int) collect(['el_0_100', 'el_100_200', 'el_200_400', 'low_400_600', 'low_600_800'])
+            ->sum(fn (string $key): int => (int) ($buckets[$key]['deb'] ?? 0));
+
+        return array_merge($row, [
+            'total_mantri' => $totalMantri,
+            'buckets' => $buckets,
+            'under_800' => [
+                'label' => 'Total Under 800 Juta',
+                'deb' => $under800Deb,
+                'pct' => $this->ratioPercent($under800Deb, $totalMantri),
+            ],
+        ]);
+    }
+
+    private function blankExtremeLowBuckets(): array
+    {
+        $buckets = [];
+        foreach (self::EXTREME_LOW_BUCKETS as $key => $meta) {
+            $buckets[$key] = [
+                'label' => $meta['label'],
+                'group' => $meta['group'],
+                'deb' => 0,
+                'pct' => 0,
+            ];
+        }
+
+        return $buckets;
+    }
+
+    private function extremeLowBucketKey(float $amount): string
+    {
+        return match (true) {
+            $amount <= 100000000 => 'el_0_100',
+            $amount <= 200000000 => 'el_100_200',
+            $amount <= 400000000 => 'el_200_400',
+            $amount <= 600000000 => 'low_400_600',
+            $amount <= 800000000 => 'low_600_800',
+            $amount <= 1000000000 => 'mid_800_1000',
+            $amount <= 1200000000 => 'mid_1000_1200',
+            default => 'high_1200',
+        };
+    }
+
+    private function brihcPemasarMantriKey(object $row): string
+    {
+        foreach (['pn_mantri', 'pernr', 'nip', 'uniqueid_namareport', 'completename'] as $column) {
+            $key = $this->mantriPnKey($this->brihcPemasarValue($row, $column));
+            if ($key !== '') {
+                return $key;
+            }
+        }
+
+        return '';
+    }
+
+    private function brihcPemasarValue(object $row, string $column): string
+    {
+        return property_exists($row, $column) ? trim((string) ($row->{$column} ?? '')) : '';
+    }
+
+    private function mantriPnKey(?string $value): string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return '';
+        }
+
+        if (str_contains($value, '|')) {
+            $parts = explode('|', $value);
+            $value = trim((string) end($parts));
+        }
+
+        $identifier = trim(explode('-', $value, 2)[0]);
+        $digits = preg_replace('/\D+/', '', $identifier) ?? '';
+        if ($digits !== '') {
+            return ltrim($digits, '0') ?: '0';
+        }
+
+        return $this->normalizeToken($value);
+    }
+
+    private function ratioPercent(int|float $part, int|float $whole): float
+    {
+        return $whole > 0 ? ((float) $part / (float) $whole) * 100 : 0.0;
     }
 
     private function mantriPdwkAggregateQuery(string $period, array $groupColumns, string $periodStart)

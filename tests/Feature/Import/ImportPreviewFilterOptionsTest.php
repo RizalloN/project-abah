@@ -14,6 +14,7 @@ beforeEach(function () {
     }
 
     Schema::dropIfExists('jumlah_merchant_qris_detail');
+    Schema::dropIfExists('jumlah_merchant_detail');
     Schema::dropIfExists('sv_merchant');
     Schema::dropIfExists('nama_report');
 
@@ -38,6 +39,14 @@ beforeEach(function () {
         $table->timestamps();
     });
 
+    Schema::create('jumlah_merchant_detail', function (Blueprint $table) {
+        $table->string('uniqueid_namareport', 255)->primary();
+        $table->string('NAMA_KANCA', 150)->nullable();
+        $table->string('NAMA_UKER', 180)->nullable();
+        $table->date('POSISI')->nullable();
+        $table->timestamps();
+    });
+
     Schema::create('sv_merchant', function (Blueprint $table) {
         $table->string('uniqueid_namareport', 255)->primary();
         $table->string('TAHUN', 10)->nullable();
@@ -57,8 +66,72 @@ beforeEach(function () {
 
 afterEach(function () {
     Schema::dropIfExists('sv_merchant');
+    Schema::dropIfExists('jumlah_merchant_detail');
     Schema::dropIfExists('jumlah_merchant_qris_detail');
     Schema::dropIfExists('nama_report');
+});
+
+it('limits merchant detail preview filters and finds area 6 branches beyond the large file sample', function () {
+    $user = User::factory()->make([
+        'role' => 'admin',
+    ]);
+
+    DB::table('nama_report')->insert([
+        'id_report' => 101,
+        'nama_report' => 'Jumlah Merchant Detail',
+        'table_name' => 'jumlah_merchant_detail',
+        'active' => 1,
+        'import_controller' => 'ImportFileController',
+        'requires_manual_periode' => 0,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $csvDirectory = storage_path('framework/testing/import-preview');
+    File::ensureDirectoryExists($csvDirectory);
+    $csvPath = $csvDirectory . DIRECTORY_SEPARATOR . 'merchant-detail-large-filter-preview.csv';
+    $payload = str_repeat('X', 1100);
+    $rows = ['TAHUN|NAMA_KANCA|NAMA_UKER|MERCHANT_PAYLOAD'];
+
+    for ($i = 1; $i <= 5000; $i++) {
+        $rows[] = "2026|KC Banyuwangi|UKER BANYUWANGI|{$payload}";
+    }
+
+    foreach (['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'] as $branch) {
+        $rows[] = "2026|{$branch}|{$branch}|{$payload}";
+    }
+
+    File::put($csvPath, implode(PHP_EOL, $rows) . PHP_EOL);
+
+    try {
+        expect(File::size($csvPath))->toBeGreaterThan(5 * 1024 * 1024);
+
+        $this->be($user);
+        $session = app('session.store');
+        $session->start();
+        $session->put('active_id_report', 101);
+
+        $request = Request::create('/import/preview/direct', 'GET', [
+            'file_path' => $csvPath,
+            'delimiter' => '|',
+        ]);
+        $request->setLaravelSession($session);
+
+        $response = app(ImportFileController::class)->preview($request);
+        $data = $response->getData();
+
+        expect(array_keys($data['formattedUniqueValues']))->toBe([1, 2]);
+        expect($data['filterableColumnIndices'])->toBe([1, 2]);
+        expect($data['initialArea6Selections']['1'] ?? [])->toBe([
+            'KC Madiun',
+            'KC Magetan',
+            'KC Ngawi',
+            'KC Ponorogo',
+        ]);
+        expect($data['formattedUniqueValues'])->not->toHaveKey(3);
+    } finally {
+        File::delete($csvPath);
+    }
 });
 
 it('loads qris detail filter options from the full file instead of the first preview rows', function () {

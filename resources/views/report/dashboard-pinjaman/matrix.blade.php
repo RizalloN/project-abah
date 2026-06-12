@@ -279,7 +279,7 @@
 <div class="loan-dashboard pt-4 px-3">
     <div class="loan-recovery-header">
         <h1>Report Recovery</h1>
-        <p>Matrix kolektibilitas dengan recovery dari LW325 PH: turunan pokok dan lunas.</p>
+        <p>Matrix kolektibilitas dengan recovery LW325 untuk turunan pokok/lunas dan PH dari Daily Loan Dinamis.</p>
     </div>
 
     <div id="loanMatrixPanel">

@@ -7,6 +7,10 @@ $metrics = data_get($dashboard ?? [], 'metrics', []);
 $liveReports = is_array(data_get($dashboard ?? [], 'live_reports')) ? data_get($dashboard ?? [], 'live_reports') : [];
 $digitalCards = is_array(data_get($dashboard ?? [], 'digital_performance.cards')) ? data_get($dashboard ?? [], 'digital_performance.cards') : [];
 $timeseries = data_get($dashboard ?? [], 'timeseries', ['labels'=>[],'simpanan'=>[],'pinjaman'=>[]]);
+$landingSummary = data_get($dashboard ?? [], 'landing_summary', []);
+$landingProfit = data_get($landingSummary, 'profit', []);
+$landingDecision = data_get($landingSummary, 'decision', []);
+$landingRealization = data_get($landingSummary, 'realization', []);
 $area6Portfolio = data_get($dashboard ?? [], 'area6_portfolio', []);
 $area6Cards = is_array(data_get($area6Portfolio, 'cards')) ? data_get($area6Portfolio, 'cards') : [];
 $area6Rankings = is_array(data_get($area6Portfolio, 'rankings')) ? data_get($area6Portfolio, 'rankings') : [];
@@ -260,6 +264,296 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .kpi-card .kc-link:hover {
   color: var(--c-blue-d);
   text-decoration: underline;
+}
+
+/* --- LANDING EXECUTIVE SUMMARY --- */
+.landing-summary {
+  margin: 0.85rem 0 1.25rem;
+  background: #ffffff;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.landing-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.05rem 1.25rem;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--c-border);
+}
+.landing-summary-title {
+  font-size: 1rem;
+  font-weight: 850;
+  color: #0f172a;
+}
+.landing-summary-sub {
+  margin-top: 0.12rem;
+  font-size: 0.7rem;
+  color: #64748b;
+}
+.landing-summary-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.36rem 0.78rem;
+  background: #eef6ff;
+  border: 1px solid #bfdbfe;
+  color: var(--c-blue);
+  font-size: 0.65rem;
+  font-weight: 800;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.landing-summary-grid {
+  display: grid;
+  grid-template-columns: 1.04fr 1fr 1.12fr;
+  gap: 0.9rem;
+  padding: 1rem;
+}
+.landing-summary-card {
+  min-width: 0;
+  border: 1px solid var(--c-border);
+  background: #ffffff;
+  border-radius: var(--r-xl);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.landing-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1.15rem;
+  background: linear-gradient(135deg, #0f4cba 0%, #1e40af 100%);
+  border-bottom: none;
+}
+.landing-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.landing-card-icon-wrap {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+}
+.landing-card-period {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--r-md);
+  white-space: nowrap;
+}
+.landing-main-value {
+  padding: 0.95rem 0.95rem 0.35rem;
+}
+.landing-main-value .value {
+  font-size: 1.42rem;
+  font-weight: 900;
+  line-height: 1;
+  color: #0f172a;
+}
+.landing-main-value .meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin-top: 0.45rem;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+.landing-branch-list,
+.landing-decision-list,
+.landing-segment-list {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem 0.95rem 0.95rem;
+}
+.landing-branch-row,
+.landing-decision-row,
+.landing-segment-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 52px;
+  padding: 0.6rem 0.8rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--r-md);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+.landing-branch-row:hover,
+.landing-decision-row:hover,
+.landing-segment-row:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(15, 23, 42, 0.08);
+  border-color: var(--c-blue);
+  background: #ffffff;
+}
+.landing-branch-icon,
+.landing-decision-icon,
+.landing-segment-icon {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: var(--c-blue);
+  border-radius: var(--r-md);
+  font-size: 0.9rem;
+  transition: all 0.25s ease;
+}
+.landing-branch-row:hover .landing-branch-icon,
+.landing-decision-row:hover .landing-decision-icon,
+.landing-segment-row:hover .landing-segment-icon {
+  background: var(--c-blue);
+  color: #ffffff;
+  border-color: var(--c-blue);
+}
+.landing-branch-body,
+.landing-decision-body,
+.landing-segment-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.landing-row-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+.landing-row-label {
+  min-width: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.landing-row-sub {
+  font-size: 0.61rem;
+  font-weight: 700;
+  color: #64748b;
+  white-space: nowrap;
+}
+.landing-row-value {
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 0.78rem;
+  font-weight: 900;
+  color: #0f172a;
+}
+.landing-progress-container {
+  height: 5px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  width: 100%;
+}
+.landing-progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.landing-progress-bar.bg-primary {
+  background-color: var(--c-blue) !important;
+}
+.landing-progress-bar.bg-success {
+  background-color: #10b981 !important;
+}
+.landing-progress-bar.bg-green {
+  background-color: #10b981 !important;
+}
+.landing-progress-bar.bg-amber {
+  background-color: #f59e0b !important;
+}
+.landing-progress-bar.bg-red {
+  background-color: #ef4444 !important;
+}
+.landing-progress-bar.bg-blue {
+  background-color: #3b82f6 !important;
+}
+.landing-scope-caption {
+  margin: 0.85rem 0.95rem 0;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.28rem 0.72rem;
+  border-radius: 999px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: var(--c-blue);
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+.landing-decision-row,
+.landing-segment-row {
+  justify-content: flex-start;
+}
+.landing-decision-body,
+.landing-segment-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.landing-realization-tabs {
+  display: inline-flex;
+  gap: 0.22rem;
+  padding: 0.18rem;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+}
+.landing-realization-tab {
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.6rem;
+  font-weight: 850;
+  cursor: pointer;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  transition: all 0.2s ease;
+}
+.landing-realization-tab:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+.landing-realization-tab.active {
+  background: #ffffff;
+  color: var(--c-blue);
+  box-shadow: var(--shadow-sm);
+}
+.landing-empty {
+  padding: 1rem;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 /* ── AREA 6 PORTFOLIO PANEL ── */
@@ -637,6 +931,9 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   padding: 0 1.25rem 1.25rem;
 }
 @media (max-width: 1100px) {
+  .landing-summary-grid {
+    grid-template-columns: 1fr;
+  }
   .area6-segment-container {
     grid-template-columns: 1fr;
   }
@@ -1765,6 +2062,13 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   .db-meta { flex-wrap: wrap; gap: 0.42rem; }
   .kpi-strip { grid-template-columns: 1fr; }
   .kpi-card .kc-sub { white-space: normal; }
+  .landing-summary-head { align-items: flex-start; flex-direction: column; }
+  .landing-summary-grid { padding: 0.8rem; }
+  .landing-card-head { align-items: flex-start; flex-direction: column; }
+  .landing-realization-tabs { flex-wrap: wrap; border-radius: var(--r-md); }
+  .landing-branch-row,
+  .landing-decision-row,
+  .landing-segment-row { align-items: flex-start; }
   .area6-head { align-items: flex-start; flex-direction: column; }
   .area6-head-actions { align-items: flex-start; }
   .area6-periods { justify-content: flex-start; }
@@ -3674,19 +3978,22 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 
     @if(!empty($area6RankingModes))
       @foreach($area6RankingModes as $scopeKey => $scopePayload)
-        @if($scopeKey === 'cabang_konsol' || $scopeKey === 'ritel')
+        @if(!empty(data_get($scopePayload, 'branches', [])))
           @php
             $branches = data_get($scopePayload, 'branches', []);
+            $hideSimpananPanel = (bool) data_get($scopePayload, 'hide_simpanan', false);
+            $scopeDescription = data_get($scopePayload, 'description', '');
           @endphp
           <div class="cabang-performance-grid area6-ranking-mode {{ $scopeKey === $area6DefaultScope ? '' : 'd-none' }}" data-area6-ranking-scope="{{ $scopeKey }}">
             {{-- PANEL 1: SIMPANAN --}}
+            @unless($hideSimpananPanel)
             <div class="perf-panel-card tone-blue">
               <div class="perf-panel-head">
                 <div class="perf-panel-title">
                   <span>Performa Simpanan</span>
                   <i class="perf-panel-badge bg-simp"></i>
                 </div>
-                <div class="perf-panel-subtitle">{{ $scopeKey === 'ritel' ? 'Total dana simpanan per cabang ritel (KC + KCP)' : 'Total dana simpanan per cabang konsolidasi' }}</div>
+                <div class="perf-panel-subtitle">Total dana simpanan per cabang Area 6</div>
               </div>
               <div class="perf-panel-body">
                 @forelse($branches as $b)
@@ -3704,6 +4011,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
                 @endforelse
               </div>
             </div>
+            @endunless
 
             {{-- PANEL 2: PINJAMAN --}}
             <div class="perf-panel-card tone-teal">
@@ -3712,7 +4020,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
                   <span>Performa Pinjaman</span>
                   <i class="perf-panel-badge bg-pinj"></i>
                 </div>
-                <div class="perf-panel-subtitle">{{ $scopeKey === 'ritel' ? 'Total outstanding pinjaman (OS) per cabang ritel (KC + KCP)' : 'Total outstanding pinjaman (OS) per cabang konsolidasi' }}</div>
+                <div class="perf-panel-subtitle">{{ $scopeDescription ?: 'Total outstanding pinjaman (OS) per cabang' }}</div>
               </div>
               <div class="perf-panel-body">
                 @forelse($branches as $b)
@@ -3860,6 +4168,155 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
       @endforelse
       </div>
     @endif
+  </section>
+
+  {{-- LANDING EXECUTIVE SUMMARY --}}
+  <section class="landing-summary">
+    <div class="landing-summary-head">
+      <div>
+        <div class="landing-summary-title">{{ data_get($landingSummary, 'title', 'Ringkasan Eksekutif Area 6') }}</div>
+        <div class="landing-summary-sub">{{ data_get($landingSummary, 'subtitle', 'Laba rugi, putusan mikro, dan realisasi segmen pada periode aktif.') }}</div>
+      </div>
+      <div class="landing-summary-badge">
+        <i class="fas fa-layer-group"></i>
+        Ikut Trigger Kinerja Area
+      </div>
+    </div>
+
+    <div class="landing-summary-grid">
+      <div class="landing-summary-card">
+        <div class="landing-card-head">
+          <div class="landing-card-title">
+            <span class="landing-card-icon-wrap"><i class="fas fa-balance-scale"></i></span>
+            <span>Laba Rugi</span>
+          </div>
+          <div class="landing-card-period">{{ data_get($landingProfit, 'period_label', 'Belum ada data') }}</div>
+        </div>
+        @if(data_get($landingProfit, 'available'))
+          <div class="landing-main-value">
+            <div class="value">{{ data_get($landingProfit, 'total_fmt', 'Rp0') }}</div>
+            <div class="meta {{ data_get($landingProfit, 'delta_class', 'text-muted') }}">
+              <i class="fas fa-chart-line"></i>
+              {{ data_get($landingProfit, 'delta_fmt', '0,0%') }} vs periode sebelumnya
+            </div>
+          </div>
+          <div class="landing-branch-list">
+            @php
+              $totalProfit = (float) data_get($landingProfit, 'total', 1);
+              if ($totalProfit <= 0) $totalProfit = 1;
+            @endphp
+            @foreach(data_get($landingProfit, 'branches', []) as $branch)
+              @php
+                $branchNominal = (float) data_get($branch, 'nominal', 0);
+                $pctContribution = min(100, max(0, ($branchNominal / $totalProfit) * 100));
+              @endphp
+              <div class="landing-branch-row">
+                <div class="landing-branch-icon"><i class="fas fa-building"></i></div>
+                <div class="landing-branch-body">
+                  <div class="landing-row-label-row">
+                    <span class="landing-row-label">{{ data_get($branch, 'name', '-') }}</span>
+                    <span class="landing-row-sub">Kontribusi {{ number_format($pctContribution, 1, ',', '.') }}%</span>
+                  </div>
+                  <div class="landing-progress-container">
+                    <div class="landing-progress-bar bg-primary" style="width: {{ $pctContribution }}%;"></div>
+                  </div>
+                </div>
+                <div class="landing-row-value">{{ data_get($branch, 'nominal_fmt', 'Rp0') }}</div>
+              </div>
+            @endforeach
+          </div>
+        @else
+          <div class="landing-empty">Data laba setelah pajak belum tersedia.</div>
+        @endif
+      </div>
+
+      <div class="landing-summary-card">
+        <div class="landing-card-head">
+          <div class="landing-card-title">
+            <span class="landing-card-icon-wrap"><i class="fas fa-stamp"></i></span>
+            <span>Rekap Putusan</span>
+          </div>
+          <div class="landing-card-period">{{ data_get($landingDecision, 'period_label', 'Belum ada data') }}</div>
+        </div>
+        @if(data_get($landingDecision, 'available'))
+          <div class="landing-decision-list">
+            @php
+              $decisionItems = collect(data_get($landingDecision, 'items', []));
+              $totalDecisionNominal = (float) $decisionItems->sum('nominal');
+              if ($totalDecisionNominal <= 0) $totalDecisionNominal = 1;
+            @endphp
+            @foreach($decisionItems as $item)
+              @php
+                $itemNominal = (float) data_get($item, 'nominal', 0);
+                $pctContribution = min(100, max(0, ($itemNominal / $totalDecisionNominal) * 100));
+              @endphp
+              <div class="landing-decision-row">
+                <div class="landing-decision-icon"><i class="{{ data_get($item, 'icon', 'fas fa-user-check') }}"></i></div>
+                <div class="landing-decision-body">
+                  <div class="landing-row-label-row">
+                    <span class="landing-row-label">{{ data_get($item, 'label', '-') }}</span>
+                    <span class="landing-row-sub">{{ data_get($item, 'deb_fmt', '0 deb') }}</span>
+                  </div>
+                  <div class="landing-progress-container">
+                    <div class="landing-progress-bar bg-success" style="width: {{ $pctContribution }}%;"></div>
+                  </div>
+                </div>
+                <div class="landing-row-value">{{ data_get($item, 'nominal_fmt', 'Rp0') }}</div>
+              </div>
+            @endforeach
+          </div>
+        @else
+          <div class="landing-empty">Data putusan RM Mikro belum tersedia.</div>
+        @endif
+      </div>
+
+      <div class="landing-summary-card">
+        @php
+          $realizationScopes = data_get($landingRealization, 'scopes', []);
+          $realizationDefaultScope = data_get($landingRealization, 'default_scope', $area6DefaultScope);
+        @endphp
+        <div class="landing-card-head">
+          <div class="landing-card-title">
+            <span class="landing-card-icon-wrap"><i class="fas fa-chart-bar"></i></span>
+            <span>Realisasi Segmen</span>
+          </div>
+          <div class="landing-card-period">Sinkron dengan Kinerja Area</div>
+        </div>
+
+        @if(!empty($realizationScopes))
+          @foreach($realizationScopes as $scopeKey => $scopePayload)
+            <div class="landing-realization-panel {{ $scopeKey === $realizationDefaultScope ? '' : 'd-none' }}" data-landing-realization-panel="{{ $scopeKey }}">
+              <div class="landing-scope-caption">{{ data_get($scopePayload, 'label', strtoupper($scopeKey)) }}</div>
+              <div class="landing-segment-list">
+                @foreach(data_get($scopePayload, 'segments', []) as $segment)
+                  @php
+                    $targetVal = (float) data_get($segment, 'target', 0);
+                    $realVal = (float) data_get($segment, 'realization', 0);
+                    $pctReal = $targetVal > 0 ? min(100, ($realVal / $targetVal) * 100) : 0;
+                    $color = data_get($segment, 'pct_color', 'blue');
+                  @endphp
+                  <div class="landing-segment-row">
+                    <div class="landing-segment-icon"><i class="{{ data_get($segment, 'icon', 'fas fa-chart-line') }}"></i></div>
+                    <div class="landing-segment-body">
+                      <div class="landing-row-label-row">
+                        <span class="landing-row-label">{{ data_get($segment, 'label', '-') }}</span>
+                        <span class="landing-row-sub">Target {{ data_get($segment, 'target_fmt', 'Rp0') }} | {{ data_get($segment, 'pct_fmt', '0,00%') }}</span>
+                      </div>
+                      <div class="landing-progress-container">
+                        <div class="landing-progress-bar bg-{{ $color }}" style="width: {{ $pctReal }}%;"></div>
+                      </div>
+                    </div>
+                    <div class="landing-row-value">{{ data_get($segment, 'realization_fmt', 'Rp0') }}</div>
+                  </div>
+                @endforeach
+              </div>
+            </div>
+          @endforeach
+        @else
+          <div class="landing-empty">Data realisasi segmen belum tersedia.</div>
+        @endif
+      </div>
+    </div>
   </section>
 
   {{-- MAIN GRID: Chart + Digital --}}
@@ -4284,6 +4741,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
       document.querySelectorAll('.area6-scope-content').forEach(panel => {
         panel.classList.toggle('d-none', panel.getAttribute('data-area6-content-scope') !== scope);
+      });
+
+      document.querySelectorAll('.landing-realization-panel').forEach(panel => {
+        panel.classList.toggle('d-none', panel.getAttribute('data-landing-realization-panel') !== scope);
       });
     });
   });

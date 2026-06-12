@@ -263,3 +263,67 @@ it('streams six month arrears export with kolek detail as the last column', func
     expect(collect($rows)->skip(1)->pluck('D')->all())->toContain('LN-001');
     expect(collect($rows)->skip(1)->pluck('D')->all())->toContain('LN-002');
 });
+
+it('filters four month realization arrears across m four through selected period', function () {
+    seedSixMonthArrearsRows();
+
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->getJson('/report/dashboard-pinjaman/realisasi-6-bulan-menunggak/data?' . http_build_query([
+            'periode' => '2026-05-31',
+            'cabang1' => 'KC Madiun',
+            'unit1' => 'Unit A',
+            'range_months' => 4,
+        ]));
+
+    $response->assertOk();
+    $response->assertJsonPath('selected_period', '2026-05-31');
+    $response->assertJsonPath('target_month_label', 'January 2026 - May 2026');
+    $response->assertJsonPath('summary.debitur', 3);
+    $response->assertJsonPath('summary.outstanding', 150000000);
+    $response->assertJsonPath('summary.total_tunggakan', 1500000);
+
+    $accounts = collect($response->json('rows'))->pluck('nomor_rekening1')->all();
+    expect($accounts)->toBe(['LN-006', 'LN-007', 'LN-008']);
+});
+
+it('streams four month arrears export with range_months parameter', function () {
+    seedSixMonthArrearsRows();
+
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->get('/report/dashboard-pinjaman/realisasi-6-bulan-menunggak/export?' . http_build_query([
+            'periode' => '2026-05-31',
+            'cabang1' => 'KC Madiun',
+            'unit1' => 'Unit A',
+            'range_months' => 4,
+        ]));
+
+    $response->assertOk();
+    $response->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect($response->headers->get('content-disposition'))->toContain('realisasi-4-bulan-menunggak_20260531_KC-Madiun_Unit-A.xlsx');
+
+    $path = tempnam(sys_get_temp_dir(), 'four_month_arrears_export_') . '.xlsx';
+    file_put_contents($path, $response->streamedContent());
+
+    try {
+        $sheet = IOFactory::load($path)->getActiveSheet();
+        $rows = $sheet->toArray(null, true, true, true);
+    } finally {
+        @unlink($path);
+    }
+
+    $headers = array_values($rows[1]);
+    expect(end($headers))->toBe('kolek_detail');
+    
+    $accounts = collect($rows)->skip(1)->pluck('D')->filter()->values()->all();
+    expect($accounts)->toContain('LN-006');
+    expect($accounts)->toContain('LN-007');
+    expect($accounts)->toContain('LN-008');
+    expect($accounts)->not->toContain('LN-001');
+});
+

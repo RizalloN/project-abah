@@ -25,6 +25,7 @@ Thumbs.db
 /.phpunit.cache
 /public/storage
 /storage/logs/*
+/storage/framework/network-health/
 
 # File debug/temp sementara — jangan commit ke repo
 /debug_*.php

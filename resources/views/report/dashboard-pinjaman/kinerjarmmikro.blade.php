@@ -6,142 +6,273 @@
 @include('report.dashboard-pinjaman._partials._styles')
 
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
+
+    /* Font override for clean look */
+    .loan-dashboard,
+    .loan-dashboard select,
+    .loan-dashboard button,
+    .loan-dashboard table,
+    .loan-dashboard input {
+        font-family: 'Plus Jakarta Sans', -apple-system, sans-serif !important;
+    }
+
     .rm-mikro-hero {
-        margin-bottom: 1rem;
-        padding: 1.35rem 1.2rem;
-        border-radius: 0 0 1.4rem 1.4rem;
-        background:
-            radial-gradient(circle at 14% 18%, rgba(255, 103, 31, 0.18), transparent 26%),
-            radial-gradient(circle at 88% 10%, rgba(59, 130, 246, 0.22), transparent 28%),
-            linear-gradient(135deg, #063c78 0%, #075aa9 48%, #0f4c97 100%);
-        color: #fff;
-        box-shadow: 0 18px 40px -30px rgba(0, 55, 116, 0.55);
+        position: relative;
+        margin-bottom: 1.5rem;
+        padding: 2.25rem 2rem;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #042a5f 0%, #0857c3 100%);
+        color: #ffffff;
+        box-shadow: 0 12px 30px -15px rgba(4, 42, 95, 0.45);
+        overflow: hidden;
+    }
+
+    .rm-mikro-hero::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -20%;
+        width: 100%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(113, 197, 232, 0.15) 0%, transparent 60%);
+        pointer-events: none;
     }
 
     .rm-mikro-hero h1 {
         margin: 0;
-        font-size: clamp(1.18rem, 2.05vw, 2rem);
-        font-weight: 900;
-        letter-spacing: .035em;
-        text-align: center;
+        font-size: 2.20rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
         text-transform: uppercase;
+        background: linear-gradient(to bottom, #ffffff, #e2e8f0);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
     }
 
     .rm-mikro-hero p {
-        max-width: 850px;
-        margin: .65rem auto 0;
-        color: rgba(255,255,255,.8);
-        font-size: .82rem;
-        line-height: 1.6;
-        text-align: center;
-    }
-
-    .rm-mikro-note {
-        font-size: .8rem;
-        color: var(--loan-muted);
+        margin: 0.5rem 0 0 0;
+        font-size: 1rem;
+        color: rgba(255, 255, 255, 0.88);
+        font-weight: 500;
+        letter-spacing: 0.02em;
     }
 
     .rm-mikro-tabs {
         display: flex;
         flex-wrap: wrap;
-        gap: .45rem;
+        gap: .5rem;
     }
 
     .rm-mikro-tab {
-        border: 1px solid rgba(8, 87, 195, .16);
-        border-radius: 999px;
-        padding: .52rem .88rem;
-        background: #fff;
-        color: #174e92;
-        font-size: .78rem;
-        font-weight: 800;
-        line-height: 1;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 999px !important;
+        padding: 0.5rem 1.25rem !important;
+        background: #ffffff !important;
+        color: #475569 !important;
+        font-size: 0.8rem !important;
+        font-weight: 700 !important;
+        line-height: 1.2;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+        outline: none !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .rm-mikro-tab:hover {
+        background: #f1f5f9 !important;
+        border-color: #0857c3 !important;
+        color: #0857c3 !important;
     }
 
     .rm-mikro-tab.active {
-        background: linear-gradient(125deg, #0857c3 0%, #307fe2 100%);
-        color: #fff;
-        box-shadow: 0 12px 20px -16px rgba(4, 42, 95, .72);
+        background: linear-gradient(135deg, #0857c3 0%, #004b87 100%) !important;
+        color: #ffffff !important;
+        border-color: #0857c3 !important;
+        box-shadow: 0 4px 12px rgba(8, 87, 195, 0.35) !important;
+    }
+
+    .loan-filter-control {
+        border-radius: 10px !important;
+        border: 1px solid #cbd5e1 !important;
+        background-color: #ffffff !important;
+        color: #1e293b !important;
+        font-weight: 700 !important;
+        min-height: 42px !important;
+        padding: 0.375rem 0.75rem !important;
+        transition: all 0.2s ease;
+        appearance: none;
+        background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 0.75rem center;
+        background-size: 1rem;
+        padding-right: 2.25rem !important;
+        cursor: pointer;
+    }
+
+    .loan-filter-control:focus {
+        border-color: #0857c3 !important;
+        box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.15) !important;
+        outline: none !important;
+    }
+
+    .loan-shell .btn-primary {
+        background: linear-gradient(135deg, #0857c3 0%, #002d62 100%) !important;
+        border: none !important;
+        border-radius: 10px !important;
+        font-weight: 700 !important;
+        min-height: 42px !important;
+        color: #ffffff !important;
+        box-shadow: 0 4px 14px rgba(8, 87, 195, 0.25) !important;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+    }
+
+    .loan-shell .btn-primary:hover {
+        box-shadow: 0 6px 20px rgba(8, 87, 195, 0.4) !important;
+        transform: translateY(-1px);
+        filter: brightness(1.05);
     }
 
     .rm-mikro-table-wrap {
-        overflow: auto;
-        border: 1px solid rgba(8, 87, 195, .14);
-        border-radius: 14px;
-        background: #f8fbff;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 6px 24px -10px rgba(0, 45, 98, 0.12) !important;
+        background: #ffffff !important;
+        overflow-x: auto;
+        overflow-y: auto;
     }
 
-    .rm-mikro-table {
+    .rm-mikro-table,
+    .mantri-monitoring-table {
+        border-collapse: separate !important;
+        border-spacing: 0 !important;
+        font-size: 0.8rem !important;
+        color: #334155 !important;
+        background: #ffffff !important;
         width: 100%;
-        min-width: 1500px;
-        border-collapse: collapse;
-        font-size: .8rem;
     }
 
-    .rm-mikro-table th {
-        position: sticky;
-        top: 0;
-        z-index: 10;
-        padding: .5rem .58rem;
-        background: #2f74b6;
-        color: #fff;
-        border-right: 1px solid rgba(255,255,255,.14);
-        border-bottom: 1px solid rgba(255,255,255,.12);
-        text-align: center;
-        vertical-align: middle;
-        white-space: nowrap;
-        font-size: .66rem;
-        font-weight: 800;
-        letter-spacing: .04em;
-        text-transform: uppercase;
+    .rm-mikro-table th,
+    .mantri-monitoring-table th {
+        background: #002d62 !important; /* Nusantara Deep Navy */
+        color: #ffffff !important;
+        font-weight: 800 !important;
+        font-size: 0.72rem !important;
+        letter-spacing: 0.04em !important;
+        text-transform: uppercase !important;
+        padding: 0.75rem 0.85rem !important;
+        border-right: 1px solid #0857c3 !important;
+        border-bottom: 2px solid #0857c3 !important;
+        text-align: center !important;
+        vertical-align: middle !important;
+        white-space: nowrap !important;
     }
 
-    .rm-mikro-table td {
-        padding: .6rem .66rem;
-        border-right: 1px solid rgba(8, 87, 195, .09);
-        border-bottom: 1px solid rgba(8, 87, 195, .09);
-        background: #fff;
-        color: #1f2937;
-        white-space: nowrap;
-        vertical-align: middle;
+    .rm-mikro-table td,
+    .mantri-monitoring-table td {
+        padding: 0.6rem 0.8rem !important;
+        border-right: 1px solid #cbd5e1 !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+        background: #ffffff;
+        color: #334155 !important;
+        vertical-align: middle !important;
+        white-space: nowrap !important;
     }
 
-    .rm-mikro-table tbody tr:nth-child(even) td {
-        background: #fbfdff;
+    .rm-mikro-table th:first-child,
+    .mantri-monitoring-table th:first-child,
+    .rm-mikro-table td:first-child,
+    .mantri-monitoring-table td:first-child {
+        border-left: 1px solid #cbd5e1 !important;
     }
 
-    .rm-mikro-table tbody tr:hover td {
-        background: #eef6ff;
+    .rm-mikro-table thead tr:first-child th,
+    .mantri-monitoring-table thead tr:first-child th {
+        border-top: 1px solid #cbd5e1 !important;
     }
 
-    .rm-mikro-table .group-head {
-        background: #245d9f;
+    .rm-mikro-table tbody tr:nth-child(even) td,
+    .mantri-monitoring-table tbody tr:nth-child(even) td {
+        background: #f8fbff !important; /* Modern soft blue spreadsheet alternate */
     }
 
-    .rm-mikro-table .text-right {
-        text-align: right;
+    .rm-mikro-table tbody tr:hover td,
+    .mantri-monitoring-table tbody tr:hover td {
+        background: #eef6ff !important;
+        color: #0857c3 !important;
     }
 
-    .rm-mikro-table .text-center {
-        text-align: center;
+    .rm-mikro-table .group-head,
+    .mantri-monitoring-table .group-head {
+        background: #042a5f !important; /* Deepest Nusantara Blue */
+        color: #ffffff !important;
+        font-weight: 800 !important;
     }
 
-    .rm-mikro-table .strong {
-        font-weight: 800;
-        color: #0f172a;
+    .rm-mikro-table .text-right,
+    .mantri-monitoring-table .text-right {
+        text-align: right !important;
     }
 
-    .rm-mikro-total td {
-        background: #fff7d6 !important;
-        font-weight: 900;
+    .rm-mikro-table .text-center,
+    .mantri-monitoring-table .text-center {
+        text-align: center !important;
     }
 
-    .heat-red { background: #fee2e2 !important; color: #991b1b !important; font-weight: 800; }
-    .heat-orange { background: #ffedd5 !important; color: #9a3412 !important; font-weight: 800; }
-    .heat-yellow { background: #fef9c3 !important; color: #854d0e !important; font-weight: 800; }
-    .heat-lime { background: #dcfce7 !important; color: #166534 !important; font-weight: 800; }
-    .heat-green { background: #bbf7d0 !important; color: #14532d !important; font-weight: 900; }
-    .heat-muted { background: #f1f5f9 !important; color: #64748b !important; }
+    .rm-mikro-table .strong,
+    .mantri-monitoring-table .strong {
+        font-weight: 800 !important;
+        color: #0f172a !important;
+    }
+
+    /* Elegant Grand Total row like Excel styling but modern */
+    .loan-dashboard .rm-mikro-table tbody tr.rm-mikro-total td,
+    .loan-dashboard .rm-mikro-table tbody tr.rm-mikro-total th,
+    .loan-dashboard .rm-mikro-table tfoot tr.rm-mikro-total td,
+    .loan-dashboard .rm-mikro-table tfoot tr.rm-mikro-total th,
+    .loan-dashboard .mantri-monitoring-table tbody tr.rm-mikro-total td,
+    .loan-dashboard .mantri-monitoring-table tbody tr.rm-mikro-total th,
+    .loan-dashboard .mantri-monitoring-table tfoot tr.rm-mikro-total td,
+    .loan-dashboard .mantri-monitoring-table tfoot tr.rm-mikro-total th,
+    .loan-dashboard .rm-mikro-table tbody tr.row-total td,
+    .loan-dashboard .rm-mikro-table tbody tr.row-total th,
+    .loan-dashboard .rm-mikro-table tfoot tr.row-total td,
+    .loan-dashboard .rm-mikro-table tfoot tr.row-total th,
+    .loan-dashboard .mantri-monitoring-table tbody tr.row-total td,
+    .loan-dashboard .mantri-monitoring-table tbody tr.row-total th,
+    .loan-dashboard .mantri-monitoring-table tfoot tr.row-total td,
+    .loan-dashboard .mantri-monitoring-table tfoot tr.row-total th {
+        background: #ffeb3b !important; /* Bright yellow spreadsheet grand total */
+        color: #1e293b !important;
+        font-weight: 900 !important;
+        border-top: 2px solid #a16207 !important;
+        border-bottom: 4px double #a16207 !important; /* Double lines for accounting totals */
+    }
+
+    /* HSL conditional formatting palettes (Soft, readable pastel style) */
+    .heat-red { background: #fee2e2 !important; color: #b91c1c !important; font-weight: 700 !important; border-color: #fca5a5 !important; }
+    .heat-orange { background: #ffedd5 !important; color: #ea580c !important; font-weight: 700 !important; border-color: #fdba74 !important; }
+    .heat-yellow { background: #fef9c3 !important; color: #a16207 !important; font-weight: 700 !important; border-color: #fde047 !important; }
+    .heat-lime { background: #dcfce7 !important; color: #15803d !important; font-weight: 700 !important; border-color: #86efac !important; }
+    .heat-green { background: #bbf7d0 !important; color: #166534 !important; font-weight: 800 !important; border-color: #4ade80 !important; }
+    .heat-muted { background: #f1f5f9 !important; color: #64748b !important; border-color: #cbd5e1 !important; }
+
+    .mantri-monitoring-table {
+        min-width: 1780px;
+    }
+
+    .mantri-monitoring-table thead th {
+        border-right: 1px solid #0857c3 !important;
+        border-bottom: 2px solid #0857c3 !important;
+    }
+
+    .mantri-monitoring-table .cell-extreme { background: transparent !important; color: #334155 !important; }
+    .mantri-monitoring-table .cell-low { background: transparent !important; color: #334155 !important; }
+    .mantri-monitoring-table .cell-under { background: #ffe4e6 !important; color: #9f1239 !important; font-weight: 800 !important; border-color: #fecaca !important; }
+    .mantri-monitoring-table .cell-mid { background: #eff6ff !important; color: #1e40af !important; font-weight: 800 !important; border-color: #bfdbfe !important; }
+    .mantri-monitoring-table .cell-high { background: #ecfdf5 !important; color: #065f46 !important; font-weight: 800 !important; border-color: #a7f3d0 !important; }
 
     .target-bar {
         min-width: 96px;
@@ -163,8 +294,45 @@
     .rm-mikro-empty {
         padding: 2.6rem 1rem;
         text-align: center;
-        color: var(--loan-muted);
+        color: #94a3b8;
+        font-weight: 600;
     }
+
+    .rm-mikro-info-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.6rem 1.15rem;
+        background-color: #f8fbff;
+        border: 1px solid rgba(8, 87, 195, 0.12);
+        border-radius: 999px;
+        color: #475569;
+        font-size: 0.8rem;
+        font-weight: 600;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+        transition: all 0.2s ease;
+    }
+
+    .rm-mikro-info-badge:hover {
+        background-color: #f0f7ff;
+        border-color: rgba(8, 87, 195, 0.25);
+    }
+    
+    .rm-mikro-info-badge strong {
+        color: #0857c3;
+        margin-left: 0.25rem;
+        font-weight: 800;
+    }
+
+    /* Sticky vertical viewport styles dynamically compiled */
+    @include('report.partials.sticky-table-viewport-style', [
+        'wrapperSelector' => '.rm-mikro-table-wrap',
+        'tableSelector' => '.rm-mikro-table'
+    ])
+
+    @include('report.partials.sticky-table-viewport-style', [
+        'wrapperSelector' => '.rm-mikro-table-wrap',
+        'tableSelector' => '.mantri-monitoring-table'
+    ])
 </style>
 
 @php
@@ -175,7 +343,7 @@
 <div class="loan-dashboard pt-4 px-3">
     <div class="rm-mikro-hero animate-reveal">
         <h1>Kinerja RM Mikro</h1>
-        <p>Monitoring RM Mikro KUR berdasarkan posisi OS, SML, NPL, realisasi bulanan, series harian, rekap produktivitas, dan tiering plafon dari report Daily Loan Dinamis periode terbaru.</p>
+        <p>Analisis & Produktivitas RM Mikro</p>
     </div>
 
     <div class="card loan-shell mb-4 animate-reveal">
@@ -213,8 +381,15 @@
                     </div>
                 </div>
             </form>
-            <div class="rm-mikro-note mt-3">
-                Periode posisi: <strong>{{ $selectedPeriodLabel }}</strong>. Target realisasi RM bulanan: <strong>{{ $formatAmount($targetMonthlyJuta) }} Rp.Juta</strong>.
+            <div class="d-flex flex-wrap align-items-center justify-content-between mt-3" style="gap: 0.75rem;">
+                <div class="rm-mikro-info-badge">
+                    <i class="far fa-calendar-alt mr-2 text-primary"></i>
+                    <span>Periode Posisi: <strong>{{ $selectedPeriodLabel }}</strong></span>
+                </div>
+                <div class="rm-mikro-info-badge">
+                    <i class="fas fa-bullseye mr-2 text-warning"></i>
+                    <span>Target Realisasi RM Bulanan: <strong>{{ $formatAmount($targetMonthlyJuta) }} Rp.Juta</strong></span>
+                </div>
             </div>
         </div>
     </div>
@@ -224,7 +399,6 @@
             <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
                 <div>
                     <h5 class="mb-1 font-weight-bold text-dark">{{ $reportCategories[$selectedReportCategory] ?? 'Per UKER' }}</h5>
-                    <div class="rm-mikro-note">{{ $payload['message'] ?? 'Data RM Mikro KUR dari daily_loan_dinamis dengan filter KUR-Mikro khusus Kredit Mikro - KUR Ritel 2015.' }}</div>
                 </div>
                 <div class="loan-table-badge">
                     <i class="fas fa-table"></i>
@@ -238,9 +412,12 @@
                 @elseif ($selectedReportCategory === 'kuadran')
                     @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_kuadran', ['rows' => $rows])
                 @elseif ($selectedReportCategory === 'produktivitas_mantri')
+                    @include('report.dashboard-pinjaman._partials._styles')
                     @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_produktivitas', ['rows' => $rows])
                 @elseif ($selectedReportCategory === 'pdwk_override')
                     @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_pdwk', ['rows' => $rows])
+                @elseif ($selectedReportCategory === 'extreme_low_mantri')
+                    @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_extreme_low', ['rows' => $rows, 'total' => $total])
                 @else
                     @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_rekap', ['rows' => $rows])
                 @endif
@@ -260,4 +437,28 @@
         </div>
     </div>
 </div>
+
+@section('scripts')
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.rm-mikro-table-wrap').forEach(el => {
+            el.classList.add('table-container');
+        });
+    });
+</script>
+
+@include('report.partials.sticky-table-viewport-script', [
+    'wrapperSelector' => '.rm-mikro-table-wrap',
+    'tableSelector' => '.rm-mikro-table',
+    'visibleRowLimit' => 100
+])
+
+@include('report.partials.sticky-table-viewport-script', [
+    'wrapperSelector' => '.rm-mikro-table-wrap',
+    'tableSelector' => '.mantri-monitoring-table',
+    'visibleRowLimit' => 100
+])
+
+@include('report.partials.floating-scrollbar')
+@endsection
 @endsection

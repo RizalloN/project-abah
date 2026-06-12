@@ -14,6 +14,7 @@ class SchedulerCentralizationTest extends TestCase
         $this->assertStringNotContainsString('$schedule->command(', $kernel);
         $this->assertSame(1, substr_count($consoleRoutes, 'queue:ensure-running --once'));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('network:update-duckdns'"));
+        $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('network:public-health --fix'"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('reports:ensure-fresh-snapshots'"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('reports:snapshot:drain-dirty --max-runtime=55'"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('reports:dashboard-harian-sync-missing'"));
@@ -37,6 +38,14 @@ class SchedulerCentralizationTest extends TestCase
         );
         $this->assertStringContainsString(
             "Artisan::command('network:update-duckdns'",
+            $consoleRoutes
+        );
+        $this->assertStringContainsString(
+            "Artisan::command('network:public-health",
+            $consoleRoutes
+        );
+        $this->assertMatchesRegularExpression(
+            "/Schedule::command\\('network:public-health --fix'\\)\\s*->everyMinute\\(\\)\\s*->withoutOverlapping\\(2\\)\\s*->runInBackground\\(\\);/s",
             $consoleRoutes
         );
         $this->assertStringContainsString(

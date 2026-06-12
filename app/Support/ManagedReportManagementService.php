@@ -212,6 +212,11 @@ class ManagedReportManagementService
             'kanca_priority' => ['nama_cabang'],
             'normalize_kanca_whitespace' => true,
         ],
+        'ssa_almafacts' => [
+            'period_priority' => ['month_day_year_of_posisi'],
+            'kanca_priority' => ['kanca_konsolidasi'],
+            'normalize_kanca_whitespace' => true,
+        ],
         'lw321pn' => [
             'period_priority' => ['periode'],
             'kanca_priority' => ['kode_kanca'],

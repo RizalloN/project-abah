@@ -679,7 +679,7 @@
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.realisasi-6-bulan-menunggak') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.realisasi-6-bulan-menunggak*') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
-                                <p>Realisasi 6 Bulan Menunggak</p>
+                                <p>Monitoring Realisasi yang Menunggak</p>
                             </a>
                         </li>
                         <li class="nav-item">
@@ -733,12 +733,72 @@
                     </ul>
                 </li>
 
+                <li class="nav-item {{ request()->routeIs('report.dashboard-almafacts.kinerja-laba-rugi', 'report.dashboard-almafacts.timeseries', 'report.dashboard-almafacts.timeseries.data') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kinerja-laba-rugi', 'report.dashboard-almafacts.timeseries', 'report.dashboard-almafacts.timeseries.data') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-balance-scale"></i>
+                        <p>
+                            Dashboard Almafacts
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
+                    </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-almafacts.kinerja-laba-rugi') }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kinerja-laba-rugi') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Kinerja Laba Rugi</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-almafacts.timeseries') }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.timeseries') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Timeseries Laba Rugi</p>
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+
+                <li class="nav-item {{ request()->routeIs('report.dashboard-almafacts.kpi') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-chart-line"></i>
+                        <p>
+                            KPI
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
+                    </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => 'mbm']) }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi') && in_array(request()->route('sheet'), [null, 'mbm'], true) ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>KPI MBM</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => 'ka-unit']) }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi') && request()->route('sheet') === 'ka-unit' ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>KPI KA Unit</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => 'rm-mikro']) }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi') && request()->route('sheet') === 'rm-mikro' ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>KPI RM Mikro</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => 'mantri']) }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi') && request()->route('sheet') === 'mantri' ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>KPI Mantri</p>
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+
 
                 @if(Auth::user()?->isAdmin())
                 <li class="nav-header text-uppercase">MANAGEMENT</li>
 
-                <li class="nav-item {{ request()->routeIs('job-management.*', 'file-management.*', 'user-management.*') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('job-management.*', 'file-management.*', 'user-management.*') ? 'active' : '' }}">
+                <li class="nav-item {{ request()->routeIs('job-management.*', 'file-management.*', 'user-management.*', 'link-management.*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('job-management.*', 'file-management.*', 'user-management.*', 'link-management.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-cogs"></i>
                         <p>
                             Management
@@ -769,6 +829,12 @@
                             <a href="{{ route('user-management.index') }}" class="nav-link {{ request()->routeIs('user-management.*') ? 'active' : '' }}">
                                 <i class="nav-icon fas fa-users-cog"></i>
                                 <p>User Management</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('link-management.index') }}" class="nav-link {{ request()->routeIs('link-management.*') ? 'active' : '' }}">
+                                <i class="nav-icon fas fa-link"></i>
+                                <p>Link Management</p>
                             </a>
                         </li>
                     </ul>

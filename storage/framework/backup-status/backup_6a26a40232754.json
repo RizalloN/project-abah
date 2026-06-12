@@ -1,0 +1,6 @@
+{
+    "status": "failed",
+    "message": "mysqldump gagal (exit 3): mysqldump: Error 2013: Lost connection to MySQL server during query when dumping table `simpanan_multipn` at row: 46191621",
+    "updated_at": 1780917603,
+    "backup_id": "backup_6a26a40232754"
+}

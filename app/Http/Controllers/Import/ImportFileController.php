@@ -138,7 +138,7 @@ class ImportFileController extends Controller
 
     private function previewFilterCacheKey(string $filePath, string $delimiter, int $columnIndex, string $tableName, string $contextSignature = ''): string
     {
-        return 'preview_filter_options:v3:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName . '|' . $contextSignature);
+        return 'preview_filter_options:v4:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName . '|' . $contextSignature);
     }
 
     private function normalizeDisplayFilterMap(array $displayFilterMap, int $maxValidIndex = -1): array
@@ -2972,6 +2972,7 @@ class ImportFileController extends Controller
         }
 
         $isJumlahMerchantQrisDetail = $this->isJumlahMerchantQrisDetailReport($reportData) || $tableName === 'jumlah_merchant_qris_detail';
+        $isJumlahMerchantDetail = $this->isJumlahMerchantDetailTable($tableName);
         $disableArea6AutoFilter = $isDailyLoan || in_array($tableName, [
             'sv_merchant',
         ], true);
@@ -2993,7 +2994,15 @@ class ImportFileController extends Controller
             $previewUniqueLimitPerColumn = min($previewUniqueLimitPerColumn, 80);
         }
 
-        if (!$isDailyLoan && $fileSizeBytes > self::LARGE_FILE_THRESHOLD_BYTES) {
+        if ($isJumlahMerchantDetail) {
+            // Merchant detail contains dozens of high-cardinality columns. Only organizational
+            // filters are useful in preview; scan the file once so all Area 6 branches are found.
+            $previewSampleLimit = min($previewSampleLimit, 100);
+            $previewUniqueScanLimit = PHP_INT_MAX;
+            $previewUniqueLimitPerColumn = 500;
+        }
+
+        if (!$isDailyLoan && !$isJumlahMerchantDetail && $fileSizeBytes > self::LARGE_FILE_THRESHOLD_BYTES) {
             $previewSampleLimit = min($previewSampleLimit, self::LARGE_FILE_PREVIEW_SAMPLE_LIMIT);
             $previewUniqueScanLimit = min($previewUniqueScanLimit, self::LARGE_FILE_PREVIEW_UNIQUE_SCAN_LIMIT);
             $previewUniqueLimitPerColumn = min($previewUniqueLimitPerColumn, self::LARGE_FILE_PREVIEW_UNIQUE_LIMIT_PER_COLUMN);
@@ -3026,7 +3035,9 @@ class ImportFileController extends Controller
                 $collectUniqueValues = true;
                 $previewFilterableHeaders = $isJumlahMerchantQrisDetail
                     ? array_fill_keys(['MBDESC', 'BRDESC'], true)
-                    : [];
+                    : ($isJumlahMerchantDetail
+                        ? array_fill_keys(['NAMA_KANCA', 'NAMA_UKER'], true)
+                        : []);
                 
                 // Pre-allocate for non-daily-loan date parsing
                 $posisiCache = [];
@@ -3053,7 +3064,7 @@ class ImportFileController extends Controller
                         }
 
                         foreach ($headers as $i => $h) {
-                            if ($isJumlahMerchantQrisDetail) {
+                            if ($isJumlahMerchantQrisDetail || $isJumlahMerchantDetail) {
                                 $normalizedHeader = strtoupper(trim((string) $h));
                                 if (!isset($previewFilterableHeaders[$normalizedHeader])) {
                                     continue;
@@ -3462,7 +3473,12 @@ class ImportFileController extends Controller
 
         if ($indexReady) {
             try {
-                $values = $this->queryPreviewFilterOptionsFromIndex($indexDbPath, $sourceColumnIndex, $normalizedActiveFilters);
+                $values = $this->queryPreviewFilterOptionsFromIndex(
+                    $indexDbPath,
+                    $sourceColumnIndex,
+                    $normalizedActiveFilters,
+                    $this->isJumlahMerchantDetailTable($tableName)
+                );
                 Cache::put($cacheKey, $values, now()->addHours(4));
 
                 return response()->json([
@@ -3672,7 +3688,7 @@ class ImportFileController extends Controller
             (string) @filemtime($resolvedFilePath),
             (string) $columnIndex,
             (string) $currentDelimiter,
-            'v2',
+            'v3',
         ]);
         $cacheKey = "import_dynamic_filter:" . md5($fileSignature);
         $cached = Cache::get($cacheKey);
@@ -3896,7 +3912,12 @@ class ImportFileController extends Controller
 
         if ($indexReady) {
             try {
-                $indexed = $this->queryPreviewRowsFromIndex($indexDbPath, $normalizedFilters, $limit);
+                $indexed = $this->queryPreviewRowsFromIndex(
+                    $indexDbPath,
+                    $normalizedFilters,
+                    $limit,
+                    $this->isJumlahMerchantDetailTable($tableName)
+                );
                 return response()->json([
                     'status' => 'success',
                     'rows' => $indexed['rows'],
@@ -3929,7 +3950,7 @@ class ImportFileController extends Controller
             (string) $tableName,
             md5((string) json_encode($displayFilterMap)),
             md5((string) json_encode($activeFilters)),
-            'v2',
+            'v3',
         ]);
 
         $cacheKey = 'import_preview_filtered_rows:' . md5($fileSignature);
@@ -4042,7 +4063,7 @@ class ImportFileController extends Controller
             (string) @filemtime($resolvedFilePath),
             (string) $currentDelimiter,
             (string) $tableName,
-            'v2',
+            'v3',
         ]);
 
         return $baseDir . DIRECTORY_SEPARATOR . md5($signature) . '.sqlite';
@@ -4190,7 +4211,7 @@ class ImportFileController extends Controller
             (string) @filemtime($resolvedFilePath),
             (string) $currentDelimiter,
             (string) $tableName,
-            'v2',
+            'v3',
         ]);
 
         return 'import_preview_index_warm:' . md5($signature);
@@ -4356,7 +4377,7 @@ class ImportFileController extends Controller
         }
     }
 
-    private function queryPreviewRowsFromIndex(string $dbPath, array $normalizedFilters, int $limit): array
+    private function queryPreviewRowsFromIndex(string $dbPath, array $normalizedFilters, int $limit, bool $trimIndexedValues = false): array
     {
         $pdo = new \PDO('sqlite:' . $dbPath);
         $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
@@ -4381,7 +4402,10 @@ class ImportFileController extends Controller
                 continue;
             }
 
-            [$condition, $conditionParams] = $this->buildSqliteInCondition('c' . (int) $sourceIndex, $values);
+            $columnExpression = $trimIndexedValues
+                ? 'TRIM(c' . (int) $sourceIndex . ')'
+                : 'c' . (int) $sourceIndex;
+            [$condition, $conditionParams] = $this->buildSqliteInCondition($columnExpression, $values);
             if ($condition !== '') {
                 $whereParts[] = $condition;
                 array_push($params, ...$conditionParams);
@@ -4408,7 +4432,7 @@ class ImportFileController extends Controller
         ];
     }
 
-    private function queryPreviewFilterOptionsFromIndex(string $dbPath, int $sourceColumnIndex, array $normalizedFilters): array
+    private function queryPreviewFilterOptionsFromIndex(string $dbPath, int $sourceColumnIndex, array $normalizedFilters, bool $trimIndexedValues = false): array
     {
         $pdo = new \PDO('sqlite:' . $dbPath);
         $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
@@ -4417,7 +4441,8 @@ class ImportFileController extends Controller
         $this->ensurePreviewQueryIndexes($pdo, array_merge([$sourceColumnIndex], array_keys($normalizedFilters)));
 
         $column = 'c' . (int) $sourceColumnIndex;
-        $whereParts = [$column . ' IS NOT NULL', "TRIM({$column}) <> ''"];
+        $columnExpr = $trimIndexedValues ? 'TRIM(' . $column . ')' : $column;
+        $whereParts = [$column . ' IS NOT NULL', $columnExpr . " <> ''"];
         $params = [];
         foreach ($normalizedFilters as $sourceIndex => $allowedValues) {
             $values = array_keys($allowedValues);
@@ -4425,14 +4450,17 @@ class ImportFileController extends Controller
                 continue;
             }
 
-            [$condition, $conditionParams] = $this->buildSqliteInCondition('c' . (int) $sourceIndex, $values);
+            $filterColumnExpression = $trimIndexedValues
+                ? 'TRIM(c' . (int) $sourceIndex . ')'
+                : 'c' . (int) $sourceIndex;
+            [$condition, $conditionParams] = $this->buildSqliteInCondition($filterColumnExpression, $values);
             if ($condition !== '') {
                 $whereParts[] = $condition;
                 array_push($params, ...$conditionParams);
             }
         }
 
-        $sql = 'SELECT DISTINCT ' . $column . ' as value FROM preview_rows';
+        $sql = 'SELECT DISTINCT ' . $columnExpr . ' as value FROM preview_rows';
         if (!empty($whereParts)) {
             $sql .= ' WHERE ' . implode(' AND ', $whereParts);
         }

@@ -114,13 +114,9 @@ class ProgressiveBackupCommand extends Command
         // Estimate database size in bytes for accurate progress reporting
         $estimatedBytes = $this->estimateDatabaseBytes($database);
 
-        $processInfo = $this->startBackupProcess($backupService, $outputPath, $logPath);
-
-        if (!is_resource($processInfo['process'])) {
-            throw new \RuntimeException('Gagal memulai proses backup.');
-        }
-
-        $backupProcess = $processInfo['process'];
+        $originalMysqlSettings = $this->relaxMysqlDumpConnectionLimits($backupId);
+        $processInfo = [];
+        $backupProcess = null;
         $loopCount = 0;
         $lastSize = 0;
         $noProgressSeconds = 0;
@@ -128,6 +124,14 @@ class ProgressiveBackupCommand extends Command
         $maxStallSeconds = 600;
 
         try {
+            $processInfo = $this->startBackupProcess($backupService, $outputPath, $logPath);
+
+            if (!is_resource($processInfo['process'])) {
+                throw new \RuntimeException('Gagal memulai proses backup.');
+            }
+
+            $backupProcess = $processInfo['process'];
+
             while (true) {
                 $loopCount++;
 
@@ -193,10 +197,12 @@ class ProgressiveBackupCommand extends Command
                 throw new \RuntimeException('mysqldump selesai tetapi file backup kosong atau tidak ditemukan.');
             }
 
-            // Post-compression if gzip available
+            $this->restoreMysqlDumpConnectionLimits($originalMysqlSettings);
+            $originalMysqlSettings = [];
+
+            // Post-compression keeps the backup directory from ballooning after large dumps.
             if (!str_ends_with($outputPath, '.gz')) {
-                $gzipPath = $this->resolveGzipPath();
-                if ($gzipPath !== '' && is_file($outputPath)) {
+                if (is_file($outputPath)) {
                     $this->putStatus($backupId, [
                         'status' => 'processing',
                         'progress_percent' => 96,
@@ -208,9 +214,9 @@ class ProgressiveBackupCommand extends Command
                     ]);
 
                     try {
-                        $this->compressFileWithGzip($outputPath, $gzipPath);
+                        $this->compressBackupFile($outputPath);
                     } catch (\Exception $e) {
-                        Log::warning("Gzip compression failed, keeping uncompressed: " . $e->getMessage());
+                        Log::warning("Backup compression failed, keeping uncompressed SQL: " . $e->getMessage());
                     }
                 }
             }
@@ -220,6 +226,8 @@ class ProgressiveBackupCommand extends Command
                 @proc_terminate($backupProcess);
                 @proc_close($backupProcess);
             }
+
+            $this->restoreMysqlDumpConnectionLimits($originalMysqlSettings);
         }
     }
 
@@ -416,6 +424,85 @@ class ProgressiveBackupCommand extends Command
         return trim(implode(PHP_EOL, $messages));
     }
 
+    private function compressBackupFile(string $inputPath): void
+    {
+        $gzipPath = $this->resolveGzipPath();
+        if ($gzipPath !== '') {
+            try {
+                $this->compressFileWithGzip($inputPath, $gzipPath);
+                return;
+            } catch (\Throwable $e) {
+                Log::warning("External gzip compression failed, trying PHP zlib fallback: " . $e->getMessage());
+            }
+        }
+
+        $this->compressFileWithPhpGzip($inputPath);
+    }
+
+    /**
+     * mysqldump opens its own MySQL connection, so session settings on Laravel's
+     * connection do not help. Temporarily relaxing GLOBAL values makes the next
+     * mysqldump connection less likely to hit Error 2013 on very large tables.
+     *
+     * @return array<string, int>
+     */
+    private function relaxMysqlDumpConnectionLimits(string $backupId): array
+    {
+        $desired = [
+            'net_read_timeout' => 28800,
+            'net_write_timeout' => 28800,
+            'wait_timeout' => 28800,
+            'interactive_timeout' => 28800,
+            'max_allowed_packet' => 536870912,
+        ];
+
+        $original = [];
+        $applied = [];
+
+        foreach ($desired as $name => $value) {
+            try {
+                $row = DB::selectOne("SHOW GLOBAL VARIABLES LIKE '{$name}'");
+                $current = $row->Value ?? $row->VALUE ?? null;
+                if ($current !== null) {
+                    $original[$name] = (int) $current;
+                }
+
+                DB::statement('SET GLOBAL ' . $name . ' = ' . (int) $value);
+                $applied[] = $name;
+            } catch (\Throwable $e) {
+                Log::warning("Could not relax MySQL dump setting {$name}: " . $e->getMessage());
+            }
+        }
+
+        if ($applied !== []) {
+            $this->putStatus($backupId, [
+                'status' => 'processing',
+                'progress_percent' => 2,
+                'current_table_index' => 0,
+                'total_tables' => 1,
+                'current_table' => 'Full Database (Single-Pass)',
+                'message' => 'Menyiapkan koneksi backup untuk tabel besar...',
+                'updated_at' => now()->timestamp,
+            ]);
+        }
+
+        return $original;
+    }
+
+    /**
+     * @param array<string, int> $original
+     */
+    private function restoreMysqlDumpConnectionLimits(array $original): void
+    {
+        foreach ($original as $name => $value) {
+            try {
+                DB::statement('SET GLOBAL ' . $name . ' = ' . (int) $value);
+            } catch (\Throwable $e) {
+                Log::warning("Could not restore MySQL dump setting {$name}: " . $e->getMessage());
+            }
+        }
+    }
+
     private function compressFileWithGzip(string $inputPath, string $gzipPath): void
     {
         if (!is_file($inputPath)) {
@@ -457,6 +544,64 @@ class ProgressiveBackupCommand extends Command
         if (is_file($outputPath) && filesize($outputPath) > 0 && is_file($inputPath)) {
             @unlink($inputPath);
         }
+    }
+
+    private function compressFileWithPhpGzip(string $inputPath): void
+    {
+        if (!extension_loaded('zlib')) {
+            throw new \RuntimeException('PHP zlib tidak aktif, kompresi fallback tidak tersedia.');
+        }
+
+        if (!is_file($inputPath)) {
+            throw new \RuntimeException("Input file tidak ditemukan: {$inputPath}");
+        }
+
+        $outputPath = $inputPath . '.gz';
+        @unlink($outputPath);
+
+        $source = fopen($inputPath, 'rb');
+        if (!is_resource($source)) {
+            throw new \RuntimeException('Gagal membaca file SQL untuk kompresi.');
+        }
+
+        $target = gzopen($outputPath, 'wb4');
+        if (!is_resource($target)) {
+            fclose($source);
+            throw new \RuntimeException('Gagal membuat file gzip backup.');
+        }
+
+        try {
+            while (!feof($source)) {
+                $chunk = fread($source, 8 * 1024 * 1024);
+                if ($chunk === false) {
+                    throw new \RuntimeException('Gagal membaca chunk SQL untuk kompresi.');
+                }
+
+                if ($chunk === '') {
+                    continue;
+                }
+
+                $written = gzwrite($target, $chunk);
+                if ($written === false || $written === 0) {
+                    throw new \RuntimeException('Gagal menulis chunk gzip backup.');
+                }
+            }
+        } catch (\Throwable $e) {
+            fclose($source);
+            gzclose($target);
+            @unlink($outputPath);
+            throw $e;
+        }
+
+        fclose($source);
+        gzclose($target);
+
+        if (!is_file($outputPath) || (int) filesize($outputPath) === 0) {
+            @unlink($outputPath);
+            throw new \RuntimeException('File gzip backup kosong setelah kompresi.');
+        }
+
+        @unlink($inputPath);
     }
 
     /**
@@ -508,6 +653,8 @@ class ProgressiveBackupCommand extends Command
     private function resolveDumpBinaryPath(): string
     {
         $candidates = [
+            trim((string) env('MYSQLDUMP_BINARY', '')),
+            'D:\\XAMPP\\mysql\\bin\\mysqldump.exe',
             'C:\\xampp\\mysql\\bin\\mysqldump.exe',
             'C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqldump.exe',
             'C:\\Program Files (x86)\\MySQL\\MySQL Server 5.7\\bin\\mysqldump.exe',
@@ -517,6 +664,10 @@ class ProgressiveBackupCommand extends Command
         ];
 
         foreach ($candidates as $path) {
+            if ($path === '') {
+                continue;
+            }
+
             if ($path === 'mysqldump' || (file_exists($path) && is_executable($path))) {
                 return $path;
             }
@@ -528,8 +679,10 @@ class ProgressiveBackupCommand extends Command
     private function resolveGzipPath(): string
     {
         $candidates = [
+            trim((string) env('GZIP_BINARY', '')),
             'C:\\Program Files\\Git\\usr\\bin\\gzip.exe',
             'C:\\Program Files (x86)\\Git\\usr\\bin\\gzip.exe',
+            'D:\\XAMPP\\php\\gzip.exe',
             'C:\\xampp\\php\\gzip.exe',
             'C:\\Windows\\System32\\gzip.exe',
             '/usr/bin/gzip',
@@ -537,6 +690,10 @@ class ProgressiveBackupCommand extends Command
         ];
 
         foreach ($candidates as $path) {
+            if ($path === '') {
+                continue;
+            }
+
             if (file_exists($path) && is_executable($path)) {
                 return $path;
             }

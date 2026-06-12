@@ -260,6 +260,33 @@ class ImportExcelController extends Controller
         return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === 'lw321_npdd';
     }
 
+    private function isSsaAlmafactsTable(?string $tableName = null): bool
+    {
+        return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === 'ssa_almafacts';
+    }
+
+    private function forceSsaAlmafactsPositionHeadersByIndex(array $headers): array
+    {
+        if (count($headers) < 8) {
+            return $headers;
+        }
+
+        foreach ([
+            0 => 'month_day_year_of_posisi',
+            1 => 'kanca_konsolidasi',
+            2 => 'jenis_unit_kerja',
+            3 => 'kode_unit_kerja',
+            4 => 'unit_kerja',
+            5 => 'keterangan_1',
+            6 => 'keterangan_2',
+            7 => 'nominal',
+        ] as $index => $header) {
+            $headers[$index] = $header;
+        }
+
+        return $headers;
+    }
+
     private function forceLw321NpdPositionHeadersByIndex(array $headers): array
     {
         if (count($headers) < 28) {
@@ -3001,6 +3028,10 @@ class ImportExcelController extends Controller
             $normalizedHeaders = $this->forceLw321NpddPositionHeadersByIndex($normalizedHeaders);
         }
 
+        if ($this->isSsaAlmafactsTable($tableName)) {
+            $normalizedHeaders = $this->forceSsaAlmafactsPositionHeadersByIndex($normalizedHeaders);
+        }
+
         if ($this->isDlyKapResegmentasiTable($tableName)) {
             $normalizedHeaders = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
         }
@@ -3059,6 +3090,14 @@ class ImportExcelController extends Controller
             $uniqueIdCol = $tableColumnsByLower['uniqueid_brihc'] ?? 'uniqueid_brihc';
             $suffix = '_BRIHC';
             $uniqueIdPrefix = 'uuid_brihc';
+        } elseif ($tableName === 'brihc_pemasar' && isset($tableColumnsLookup['uniqueid_namareport'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
+            $suffix = '';
+            $uniqueIdPrefix = 'uuid_mantri';
+        } elseif ($normalizedTableName === 'ssa_almafacts' && isset($tableColumnsLookup['uniqueid_namareport'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
+            $suffix = '';
+            $uniqueIdPrefix = 'uuid_ssaalmafacts';
         } elseif ($tableName === 'wilayah_mbm' && isset($tableColumnsLookup['uniqueid_mbm'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_mbm'] ?? 'uniqueid_mbm';
             $suffix = '_MBM';
@@ -3101,6 +3140,10 @@ class ImportExcelController extends Controller
         $dateColumnsLookup = $this->getExcelDateColumnsLookup();
         $decimalColumnsLookup = $this->getExcelDecimalColumnsLookup();
         $integerColumnsLookup = $this->getExcelIntegerColumnsLookup();
+        if ($this->isSsaAlmafactsTable($tableName)) {
+            $dateColumnsLookup['MONTH_DAY_YEAR_OF_POSISI'] = true;
+            $decimalColumnsLookup['NOMINAL'] = true;
+        }
         if ($this->isLw321PnTable($tableName)) {
             foreach ([
                 'PERIODE',
@@ -3237,6 +3280,8 @@ class ImportExcelController extends Controller
                 'is_date' => isset($dateColumnsLookup[$normalizedHeader]),
                 'is_decimal' => isset($decimalColumnsLookup[$normalizedHeader]),
                 'is_integer' => isset($integerColumnsLookup[$normalizedHeader]),
+                'comma_is_thousands' => $this->isSsaAlmafactsTable($tableName) && $normalizedHeader === 'NOMINAL',
+                'month_name_first_date' => $this->isSsaAlmafactsTable($tableName) && $normalizedHeader === 'MONTH_DAY_YEAR_OF_POSISI',
                 'filter_lookup' => $filterLookup,
                 'db_candidates' => $mappedDbCandidates,
                 'source_pre_normalized' => $fastSourcePreNormalized,
@@ -6347,6 +6392,18 @@ class ImportExcelController extends Controller
         return StrictDateParser::buildMySqlCaseExpression($this->buildLocaleDateTextExpression($textExpression));
     }
 
+    private function buildDirectLoadMonthNameFirstDateExpression(string $columnExpression): string
+    {
+        $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
+        $localeExpression = $this->buildLocaleDateTextExpression($textExpression);
+        $fallbackExpression = StrictDateParser::buildMySqlCaseExpression($localeExpression);
+
+        return "CASE "
+            . "WHEN {$localeExpression} REGEXP '^[A-Za-z]+ [0-9]{1,2}, [0-9]{4}$' "
+                . "THEN STR_TO_DATE({$localeExpression}, '%M %e, %Y') "
+            . "ELSE {$fallbackExpression} END";
+    }
+
     private function buildLocaleDateTextExpression(string $textExpression): string
     {
         $expression = "LOWER({$textExpression})";
@@ -6386,6 +6443,10 @@ class ImportExcelController extends Controller
         $sourcePreNormalized = !empty($rule['source_pre_normalized']);
 
         if (!empty($rule['is_date'])) {
+            if (!empty($rule['month_name_first_date'])) {
+                return $this->buildDirectLoadMonthNameFirstDateExpression($columnExpression);
+            }
+
             return $sourcePreNormalized
                 ? $this->buildFastDirectLoadDateExpression($columnExpression)
                 : (!empty($rule['allow_locale_date_text'])
@@ -6394,6 +6455,10 @@ class ImportExcelController extends Controller
         }
 
         if (!empty($rule['is_decimal'])) {
+            if (!empty($rule['comma_is_thousands'])) {
+                $columnExpression = "REPLACE({$columnExpression}, ',', '')";
+            }
+
             return $this->buildDirectLoadDecimalExpression(
                 $columnExpression,
                 $this->resolveDirectLoadDecimalScale($dbColumn, $context)
@@ -8094,6 +8159,15 @@ class ImportExcelController extends Controller
 
     private function getCsvPreviewLimits(): array
     {
+        if ($this->isSsaAlmafactsTable()) {
+            return [
+                'preview_limit' => 100,
+                'unique_scan_limit' => 250,
+                'max_unique_values_per_column' => 250,
+                'enable_fast_path' => true,
+            ];
+        }
+
         if ($this->isDailyLoanActive()) {
             return [
                 'preview_limit' => 60,
@@ -8366,6 +8440,10 @@ class ImportExcelController extends Controller
 
     private function prepareCsvPreviewPayload(string $path): array
     {
+        if ($this->isSsaAlmafactsTable()) {
+            return $this->prepareSsaAlmafactsCsvPreviewFastPath($path);
+        }
+
         // OPTIMIZATION: Use single-pass fast path untuk Daily Loan
         if ($this->isDailyLoanActive()) {
             return $this->prepareDailyLoanCsvPreviewFastPath($path);
@@ -8592,6 +8670,107 @@ class ImportExcelController extends Controller
             'delimiter' => $delimiter,
             'staged_csv_path' => $stagedCsvPath,
         ];
+    }
+
+    private function prepareSsaAlmafactsCsvPreviewFastPath(string $path): array
+    {
+        $fileSize = @filesize($path) ?: 0;
+        $fileMtime = @filemtime($path) ?: 0;
+        $cacheKey = 'ssa_almafacts_preview:' . md5($path . '|' . $fileSize . '|' . $fileMtime);
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached) && !empty($cached['headers'])) {
+            return $cached;
+        }
+
+        $delimiter = $this->detectCsvDelimiter($path);
+        $handle = @fopen($path, 'rb');
+        if ($handle === false) {
+            throw new \RuntimeException('File CSV SSA Almafacts tidak dapat dibuka.');
+        }
+
+        $settings = $this->getCsvPreviewLimits();
+        $previewLimit = (int) ($settings['preview_limit'] ?? 100);
+        $uniqueLimit = (int) ($settings['unique_scan_limit'] ?? 250);
+        $maxUniqueValues = (int) ($settings['max_unique_values_per_column'] ?? 250);
+        $headers = [];
+        $preview = [];
+        $uniqueValues = [];
+        $rowsScanned = 0;
+
+        try {
+            while (($headerRow = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                if (empty(array_filter($headerRow, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                $headers = $this->forceSsaAlmafactsPositionHeadersByIndex(array_values($headerRow));
+                break;
+            }
+
+            if (count($headers) < 8) {
+                throw new \RuntimeException('Header SSA Almafacts tidak lengkap. Dibutuhkan 8 kolom.');
+            }
+
+            $headers = array_slice($headers, 0, 8);
+            foreach (array_keys($headers) as $index) {
+                $uniqueValues[$index] = [];
+            }
+
+            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                if (empty(array_filter($row, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                $row = $this->normalizeCsvRow($row, $delimiter, 8);
+                $row = array_slice($row, 0, 8);
+                $rowsScanned++;
+
+                if (count($preview) < $previewLimit) {
+                    $preview[] = $row;
+                }
+
+                if ($rowsScanned <= $uniqueLimit) {
+                    foreach (array_keys($headers) as $index) {
+                        $value = trim((string) ($row[$index] ?? ''));
+                        $key = $value === '' ? '(Blank)' : $value;
+                        if (
+                            isset($uniqueValues[$index][$key])
+                            || count($uniqueValues[$index]) < $maxUniqueValues
+                        ) {
+                            $uniqueValues[$index][$key] = true;
+                        }
+                    }
+                }
+
+                if (count($preview) >= $previewLimit && $rowsScanned >= $uniqueLimit) {
+                    break;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        $formattedUniqueValues = [];
+        foreach ($uniqueValues as $index => $values) {
+            $keys = array_keys($values);
+            usort($keys, 'strnatcmp');
+            $formattedUniqueValues[$index] = $keys;
+        }
+
+        $result = [
+            'total_rows' => null,
+            'header_index' => 0,
+            'headers' => $headers,
+            'sourceHeaders' => $headers,
+            'preview' => $preview,
+            'formattedUniqueValues' => $formattedUniqueValues,
+            'delimiter' => $delimiter,
+            'staged_csv_path' => null,
+        ];
+
+        Cache::put($cacheKey, $result, now()->addHours(6));
+
+        return $result;
     }
 
     private function prepareLw321PnCsvPreviewFastPath(string $path): array
@@ -9242,6 +9421,10 @@ class ImportExcelController extends Controller
             return null;
         }
 
+        if (($context['table_name'] ?? '') === 'ssa_almafacts' && !$this->hasRequiredSsaAlmafactsImportData($finalRow)) {
+            return null;
+        }
+
         if (($context['table_name'] ?? '') === 'gi405_recovery') {
             $this->assertGi405RecDhNumericMapping($row, $normalizedHeaders, $finalRow);
         }
@@ -9255,6 +9438,13 @@ class ImportExcelController extends Controller
             && array_key_exists('saldo', $row)
             && $row['saldo'] !== null
             && trim((string) $row['saldo']) !== '';
+    }
+
+    private function hasRequiredSsaAlmafactsImportData(array $row): bool
+    {
+        return !empty($row['month_day_year_of_posisi'])
+            && !empty($row['kode_unit_kerja'])
+            && !empty($row['keterangan_1']);
     }
 
     private function applyDerivedRkaValues(array $finalRow, array $context): array
@@ -9425,6 +9615,10 @@ class ImportExcelController extends Controller
         // normalizeExcelValue already handles decimal columns via is_decimal lookup
         // No need to call it again here
         if (!empty($rule['is_decimal'])) {
+            if (!empty($rule['comma_is_thousands']) && is_scalar($value)) {
+                $value = str_replace(',', '', (string) $value);
+            }
+
             return $this->normalizeDecimalValue(
                 $value,
                 strtoupper(trim($headerName)) === 'RATE' ? 6 : 2
@@ -9454,6 +9648,7 @@ class ImportExcelController extends Controller
             'hourly_dpk',
             'ssa_simpanan',
             'ssa_pinjaman',
+            'ssa_almafacts',
         ], true);
     }
 
@@ -9880,6 +10075,76 @@ class ImportExcelController extends Controller
         return $normalized;
     }
 
+    private function normalizeSsaAlmafactsCsvEncoding(string $tableName, string $relativePath): void
+    {
+        if (!$this->isSsaAlmafactsTable($tableName)) {
+            return;
+        }
+
+        $extension = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['csv', 'txt'], true)) {
+            return;
+        }
+
+        $absolutePath = Storage::path($relativePath);
+        $input = @fopen($absolutePath, 'rb');
+        if ($input === false) {
+            throw new \RuntimeException('File SSA Almafacts tidak dapat dibuka untuk pemeriksaan encoding.');
+        }
+
+        $bom = fread($input, 2);
+        $sourceEncoding = match ($bom) {
+            "\xFF\xFE" => 'UTF-16LE',
+            "\xFE\xFF" => 'UTF-16BE',
+            default => null,
+        };
+
+        if ($sourceEncoding === null) {
+            fclose($input);
+            return;
+        }
+
+        $temporaryPath = $absolutePath . '.utf8.' . str_replace('.', '', uniqid('', true));
+        $output = @fopen($temporaryPath, 'wb');
+        if ($output === false) {
+            fclose($input);
+            throw new \RuntimeException('File sementara UTF-8 SSA Almafacts tidak dapat dibuat.');
+        }
+
+        $conversionError = null;
+        try {
+            $filter = @stream_filter_append(
+                $input,
+                "convert.iconv.{$sourceEncoding}/UTF-8",
+                STREAM_FILTER_READ
+            );
+            if ($filter === false) {
+                throw new \RuntimeException("Konversi {$sourceEncoding} ke UTF-8 tidak tersedia.");
+            }
+
+            if (stream_copy_to_stream($input, $output) === false) {
+                throw new \RuntimeException('Konversi encoding SSA Almafacts gagal.');
+            }
+        } catch (\Throwable $e) {
+            $conversionError = $e;
+        } finally {
+            fclose($input);
+            fclose($output);
+        }
+
+        if ($conversionError !== null) {
+            @unlink($temporaryPath);
+            throw $conversionError;
+        }
+
+        if (!@copy($temporaryPath, $absolutePath)) {
+            @unlink($temporaryPath);
+            throw new \RuntimeException('File hasil konversi SSA Almafacts tidak dapat disimpan.');
+        }
+
+        @unlink($temporaryPath);
+    }
+
     public function uploadExcel(Request $request, array $allowedExtensions = ['xlsx', 'xls', 'csv', 'txt'])
     {
         $request->validate(['file' => 'required|file|mimes:' . implode(',', $allowedExtensions)]);
@@ -9927,6 +10192,7 @@ class ImportExcelController extends Controller
         }
 
         $path = $file->store('excel_imports');
+        $this->normalizeSsaAlmafactsCsvEncoding($tableName, $path);
         $cacheKey = 'excel_preview_' . md5($path . '|' . (auth()->id() ?? 'guest') . '|' . microtime(true));
 
         session()->forget(['excel_preview_meta', 'excel_display_filter_map']);
@@ -10719,6 +10985,7 @@ class ImportExcelController extends Controller
                     $cached['streamRoute'] = $streamRoute;
                     $cached['previewStateKey'] = $previewStateKey;
                     $cached['filtersDisabled'] = $filtersDisabled;
+                    $cached['disableFilterPrefetch'] = $this->isSsaAlmafactsTable($activeTableName);
                     $cached['pageTitle'] = $this->resolvePreviewPageTitle();
                     $cached['previewBannerTitle'] = $this->resolvePreviewBannerTitle();
                     return view('import.preview_excel', $cached);
@@ -10792,6 +11059,7 @@ class ImportExcelController extends Controller
                 'streamRoute' => $streamRoute,
                 'previewStateKey' => $previewStateKey,
                 'filtersDisabled' => $filtersDisabled,
+                'disableFilterPrefetch' => $this->isSsaAlmafactsTable($tableName),
                 'pageTitle' => $this->resolvePreviewPageTitle(),
                 'previewBannerTitle' => $this->resolvePreviewBannerTitle(),
             ]);
@@ -10918,6 +11186,7 @@ class ImportExcelController extends Controller
             'streamRoute' => $streamRoute,
             'previewStateKey' => $previewStateKey,
             'filtersDisabled' => $filtersDisabled,
+            'disableFilterPrefetch' => $this->isSsaAlmafactsTable($tableName),
             'pageTitle' => $this->resolvePreviewPageTitle(),
             'previewBannerTitle' => $this->resolvePreviewBannerTitle(),
         ]);
@@ -11033,17 +11302,27 @@ class ImportExcelController extends Controller
                         return false;
                     }
 
-                    $lineNumber = 0;
-                    while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
-                        if ($this->detectHeaderIndex([$row], $tableName) === 0) {
-                            $headerIndex = $lineNumber;
-                            $sheet = [];
-                            $sheet[$headerIndex] = $this->isDailyLoanActive()
-                                ? self::DAILY_LOAN_SOURCE_HEADERS
-                                : $row;
-                            break;
+                    if ($this->isSsaAlmafactsTable($tableName)) {
+                        $firstRow = $this->readCsvRecord($handle, $delimiter, $tableName);
+                        if ($firstRow !== false && count((array) $firstRow) >= 8) {
+                            $headerIndex = 0;
+                            $sheet = [
+                                0 => $this->forceSsaAlmafactsPositionHeadersByIndex(array_values((array) $firstRow)),
+                            ];
                         }
-                        $lineNumber++;
+                    } else {
+                        $lineNumber = 0;
+                        while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                            if ($this->detectHeaderIndex([$row], $tableName) === 0) {
+                                $headerIndex = $lineNumber;
+                                $sheet = [];
+                                $sheet[$headerIndex] = $this->isDailyLoanActive()
+                                    ? self::DAILY_LOAN_SOURCE_HEADERS
+                                    : $row;
+                                break;
+                            }
+                            $lineNumber++;
+                        }
                     }
                     fclose($handle);
 
@@ -11191,6 +11470,9 @@ class ImportExcelController extends Controller
             }
             if ($this->isLw321NpddTable($tableName)) {
                 $normalizedHeadersForSession = $this->forceLw321NpddPositionHeadersByIndex($normalizedHeadersForSession);
+            }
+            if ($this->isSsaAlmafactsTable($tableName)) {
+                $normalizedHeadersForSession = $this->forceSsaAlmafactsPositionHeadersByIndex($normalizedHeadersForSession);
             }
 
             // ── Staging Excel to CSV (jika perlu) ───────────────────────
@@ -12084,6 +12366,8 @@ class ImportExcelController extends Controller
                 $ssaReplacePeriodColumn = 'Month_Day_Year_of_Posisi';
             } elseif ($this->isSsaPinjamanTable($tableName)) {
                 $ssaReplacePeriodColumn = 'Month_Day_Year_of_Periode';
+            } elseif ($this->isSsaAlmafactsTable($tableName)) {
+                $ssaReplacePeriodColumn = 'month_day_year_of_posisi';
             }
 
             if ($jobId > 0) {

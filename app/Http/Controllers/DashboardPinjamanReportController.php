@@ -293,6 +293,11 @@ class DashboardPinjamanReportController extends Controller
             $selectedUnits = [self::SMALL_ARREARS_ALL_UKER];
         }
 
+        $months = (int) $request->input('range_months', 6);
+        if (!in_array($months, [4, 6], true)) {
+            $months = 6;
+        }
+
         return view('report.dashboard-pinjaman.realisasi-6-bulan-menunggak', [
             'availablePeriods' => $availablePeriods,
             'selectedPeriod' => $selectedPeriod,
@@ -303,7 +308,8 @@ class DashboardPinjamanReportController extends Controller
             'branchOptions' => $branchOptions,
             'unitOptions' => $unitOptions,
             'isAllUkerSelected' => in_array(self::SMALL_ARREARS_ALL_UKER, $selectedUnits, true) || (!$branchSelection['is_area_all'] && $selectedUnits === []),
-            'targetMonthLabel' => $selectedPeriod ? $this->sixMonthArrearsTargetMonthLabel($selectedPeriod) : '-',
+            'targetMonthLabel' => $selectedPeriod ? $this->sixMonthArrearsTargetMonthLabel($selectedPeriod, $months) : '-',
+            'rangeMonths' => $months,
         ]);
     }
 
@@ -321,13 +327,19 @@ class DashboardPinjamanReportController extends Controller
             ? collect()
             : collect([self::SMALL_ARREARS_ALL_UKER])->merge($this->fetchSmallArrearsDistinctValues('unit1', $selectedPeriod, $effectiveBranches))->values();
 
+        $months = (int) $request->input('range_months', 6);
+        if (!in_array($months, [4, 6], true)) {
+            $months = 6;
+        }
+
         return response()->json([
             'available_periods' => $availablePeriods->all(),
             'selected_period' => $selectedPeriod,
-            'target_month_label' => $selectedPeriod ? $this->sixMonthArrearsTargetMonthLabel($selectedPeriod) : '-',
+            'target_month_label' => $selectedPeriod ? $this->sixMonthArrearsTargetMonthLabel($selectedPeriod, $months) : '-',
             'branch_options' => $this->smallArrearsBranchOptions()->all(),
             'unit_options' => $unitOptions->all(),
             'is_area_all' => $branchSelection['is_area_all'],
+            'range_months' => $months,
         ]);
     }
 
@@ -344,15 +356,21 @@ class DashboardPinjamanReportController extends Controller
         $effectiveUnits = $unitSelection['effective_units'];
         $forceRefresh = $request->boolean('refresh');
 
-        if (!$selectedPeriod) {
-            return response()->json($this->emptySixMonthArrearsPayload(null, [], [], true));
+        $months = (int) $request->input('range_months', 6);
+        if (!in_array($months, [4, 6], true)) {
+            $months = 6;
         }
 
-        $cacheKey = 'dashboard_pinjaman_realisasi_6_bulan_menunggak:v3:' . md5(json_encode([
+        if (!$selectedPeriod) {
+            return response()->json($this->emptySixMonthArrearsPayload(null, [], [], true, $months));
+        }
+
+        $cacheKey = 'dashboard_pinjaman_realisasi_6_bulan_menunggak:v4:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'cabang1' => $branchSelection['selected_values'],
             'unit1' => $unitSelection['selected_values'],
+            'range_months' => $months,
         ]));
 
         $payload = $this->rememberPayload(
@@ -362,10 +380,11 @@ class DashboardPinjamanReportController extends Controller
                 $selectedPeriod,
                 $branchSelection['effective_branches'],
                 $effectiveUnits,
-                $branchSelection['is_area_all']
+                $branchSelection['is_area_all'],
+                $months
             ),
             $forceRefresh,
-            fn () => $this->emptySixMonthArrearsPayload($selectedPeriod, $branchSelection['effective_branches'], $effectiveUnits, $branchSelection['is_area_all'])
+            fn () => $this->emptySixMonthArrearsPayload($selectedPeriod, $branchSelection['effective_branches'], $effectiveUnits, $branchSelection['is_area_all'], $months)
         );
 
         return response()->json($payload);
@@ -384,19 +403,25 @@ class DashboardPinjamanReportController extends Controller
 
         abort_if(!$selectedPeriod, 422, 'Periode wajib dipilih.');
 
-        $rows = $this->fetchSixMonthArrearsRows($selectedPeriod, $branchSelection['effective_branches'], $unitSelection['effective_units']);
+        $months = (int) $request->input('range_months', 6);
+        if (!in_array($months, [4, 6], true)) {
+            $months = 6;
+        }
+
+        $rows = $this->fetchSixMonthArrearsRows($selectedPeriod, $branchSelection['effective_branches'], $unitSelection['effective_units'], $months);
         $exportColumns = $this->collectSixMonthArrearsExportColumns();
         $filename = sprintf(
-            'realisasi-6-bulan-menunggak_%s_%s_%s.xlsx',
+            'realisasi-%d-bulan-menunggak_%s_%s_%s.xlsx',
+            $months,
             str_replace('-', '', $selectedPeriod),
             $branchSelection['is_area_all'] ? 'area-6-all' : $this->sanitizeExportToken(implode('-', $branchSelection['selected_values'])),
             $unitSelection['is_all_uker'] ? 'all-uker' : $this->sanitizeExportToken(implode('-', $unitSelection['selected_values']))
         );
 
-        return response()->streamDownload(function () use ($rows, $exportColumns) {
+        return response()->streamDownload(function () use ($rows, $exportColumns, $months) {
             $spreadsheet = new Spreadsheet();
             $sheet = $spreadsheet->getActiveSheet();
-            $sheet->setTitle('Realisasi 6 Bulan');
+            $sheet->setTitle('Realisasi ' . $months . ' Bulan');
 
             foreach ($exportColumns as $index => $column) {
                 $sheet->setCellValue(Coordinate::stringFromColumnIndex($index + 1) . '1', $column);
@@ -1184,8 +1209,10 @@ class DashboardPinjamanReportController extends Controller
 
         $startedAt = microtime(true);
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
-        $useCurrentSnapshot = false;
-        $useComparisonSnapshot = false;
+        $useCurrentSnapshot = $this->shouldUseSnapshot($selectedPeriod, $filters);
+        $useComparisonSnapshot = $comparisonPeriod
+            ? $this->shouldUseSnapshot($comparisonPeriod, $filters)
+            : false;
         $useLw325RecoveryMetrics = $this->shouldUseLw325RecoveryMetrics($selectedPeriod);
 
         // Ensure both periods use the same source to avoid account_number format mismatches
@@ -1200,14 +1227,24 @@ class DashboardPinjamanReportController extends Controller
 
         // Optimize: Set read-only connection mode for better database optimization
         try {
-            // Movement comparison must stay database-side so large portfolios do not require PHP in-memory joins.
-            $matrixRowsRaw = $this->buildMovementMatrixAggregateQuery(
-                $selectedPeriod,
-                $comparisonPeriod,
-                $filters,
-                $useCurrentSnapshot,
-                $useComparisonSnapshot
-            )->get();
+            if ($useLw325RecoveryMetrics) {
+                $matrixRowsRaw = $this->buildMovementMatrixAndSuplesiAggregateQuery(
+                    $selectedPeriod,
+                    $comparisonPeriod,
+                    $filters,
+                    $useCurrentSnapshot,
+                    $useComparisonSnapshot
+                )->get();
+            } else {
+                // Movement comparison must stay database-side so large portfolios do not require PHP in-memory joins.
+                $matrixRowsRaw = $this->buildMovementMatrixAggregateQuery(
+                    $selectedPeriod,
+                    $comparisonPeriod,
+                    $filters,
+                    $useCurrentSnapshot,
+                    $useComparisonSnapshot
+                )->get();
+            }
             
             $matrixRowsCount = $matrixRowsRaw->count();
             
@@ -1221,17 +1258,27 @@ class DashboardPinjamanReportController extends Controller
                 }
 
                 $bucketMap[$before][$after] = $amountCents;
+
+                $suplesiCents = (int) ($row->suplesi_cents ?? 0);
+                if ($useLw325RecoveryMetrics && $suplesiCents > 0) {
+                    $metricMap[$before]['suplesi'] = ($metricMap[$before]['suplesi'] ?? 0) + $suplesiCents;
+                }
             }
 
-            $metricRowsRaw = $this->buildMovementMetricAggregateQuery(
-                $selectedPeriod,
-                $comparisonPeriod,
-                $phPeriod,
-                $filters,
-                $useCurrentSnapshot,
-                $useComparisonSnapshot,
-                $useLw325RecoveryMetrics
-            )->get();
+            $metricRowsRaw = $useLw325RecoveryMetrics
+                ? $this->buildRecoveryMetricAggregateQuery(
+                    $this->buildLw325RecoveryMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useComparisonSnapshot)
+                        ->unionAll($this->buildDailyLoanPhMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useComparisonSnapshot))
+                )->get()
+                : $this->buildMovementMetricAggregateQuery(
+                    $selectedPeriod,
+                    $comparisonPeriod,
+                    $phPeriod,
+                    $filters,
+                    $useCurrentSnapshot,
+                    $useComparisonSnapshot,
+                    false
+                )->get();
             
             $metricRowsCount = $metricRowsRaw->count();
             
@@ -1489,6 +1536,49 @@ class DashboardPinjamanReportController extends Controller
             ->groupBy('before_bucket', 'after_bucket');
     }
 
+    private function buildMovementMatrixAndSuplesiAggregateQuery(
+        string $selectedPeriod,
+        ?string $comparisonPeriod,
+        array $filters,
+        ?bool $useCurrentSnapshot = null,
+        ?bool $useComparisonSnapshot = null
+    ) {
+        $currentSnapshot = $this->buildAggregatedLoanSnapshotQuery($selectedPeriod, $filters, 'curr', $useCurrentSnapshot);
+        $previousSnapshot = $comparisonPeriod
+            ? $this->buildAggregatedLoanSnapshotQuery($comparisonPeriod, $filters, 'prev', $useComparisonSnapshot)
+            : $this->buildEmptyAggregatedLoanSnapshotQuery();
+
+        $joinedCurrent = DB::query()
+            ->fromSub($currentSnapshot, 'curr')
+            ->leftJoinSub($previousSnapshot, 'prev', function ($join) {
+                $join->on('curr.account_number', '=', 'prev.account_number');
+            })
+            ->selectRaw("
+                COALESCE(prev.bucket, 'New Account') as before_bucket,
+                curr.bucket as after_bucket,
+                SUM(curr.balance_cents) as amount_cents,
+                SUM(
+                    CASE
+                        WHEN curr.balance_cents > COALESCE(prev.balance_cents, 0)
+                        THEN curr.balance_cents - COALESCE(prev.balance_cents, 0)
+                        ELSE 0
+                    END
+                ) as suplesi_cents
+            ")
+            ->whereNotNull('curr.bucket')
+            ->whereIn('curr.bucket', self::QUALITY_BUCKETS)
+            ->groupByRaw("COALESCE(prev.bucket, 'New Account'), curr.bucket");
+
+        $anonymousCurrent = DB::query()
+            ->fromSub($this->buildAnonymousCurrentMovementQuery($selectedPeriod, $filters), 'anon_matrix')
+            ->selectRaw('before_bucket, after_bucket, amount_cents, amount_cents as suplesi_cents');
+
+        return DB::query()
+            ->fromSub($joinedCurrent->unionAll($anonymousCurrent), 'movement_matrix')
+            ->selectRaw('before_bucket, after_bucket, SUM(amount_cents) as amount_cents, SUM(suplesi_cents) as suplesi_cents')
+            ->groupBy('before_bucket', 'after_bucket');
+    }
+
     private function buildMovementMetricAggregateQuery(
         string $selectedPeriod,
         ?string $comparisonPeriod,
@@ -1503,69 +1593,81 @@ class DashboardPinjamanReportController extends Controller
         $previousSnapshot = $comparisonPeriod
             ? $this->buildAggregatedLoanSnapshotQuery($comparisonPeriod, $filters, 'prev', $useComparisonSnapshot)
             : $this->buildEmptyAggregatedLoanSnapshotQuery();
-        $principalReductionMetric = $useLw325RecoveryMetrics ? 'NULL' : "'principal_reduction'";
-        $lunasMetric = $useLw325RecoveryMetrics ? 'NULL' : "'lunas'";
-
-        // Consolidated metrics query: single pass instead of 4 UNIONs
-        $joinedMetrics = DB::query()
-            ->fromSub($currentSnapshot, 'curr')
-            ->leftJoinSub($previousSnapshot, 'prev', function ($join) {
-                $join->on('curr.account_number', '=', 'prev.account_number');
-            })
-            ->leftJoinSub($this->buildPhSnapshotQuery($phPeriod), 'ph', function ($join) {
-                $join->on('curr.account_number', '=', 'ph.account_number');
-            })
-            ->selectRaw("
-                COALESCE(prev.bucket, 'New Account') as before_bucket,
-                CASE
-                    WHEN COALESCE(prev.balance_cents, 0) > 0 
-                        AND curr.balance_cents > 0 
-                        AND prev.balance_cents > curr.balance_cents
-                    THEN {$principalReductionMetric}
-                    WHEN curr.balance_cents > 0
-                    THEN 'suplesi'
-                    ELSE NULL
-                END as metric_type,
-                CASE
-                    WHEN COALESCE(prev.balance_cents, 0) > 0 
-                        AND curr.balance_cents > 0 
-                        AND prev.balance_cents > curr.balance_cents
-                    THEN prev.balance_cents - curr.balance_cents
-                    WHEN COALESCE(prev.balance_cents, 0) <= 0 AND curr.balance_cents > 0
-                    THEN curr.balance_cents
-                    WHEN curr.balance_cents > COALESCE(prev.balance_cents, 0)
-                    THEN curr.balance_cents - COALESCE(prev.balance_cents, 0)
-                    ELSE 0
-                END as amount_cents
-            ")
-            ->whereNotNull('curr.bucket');
-
-        // Exit metrics (PH and Lunas) - separate since it's a different join pattern
-        $exitMetrics = DB::query()
-            ->fromSub($previousSnapshot, 'prev')
-            ->leftJoinSub($currentSnapshot, 'curr', function ($join) {
-                $join->on('prev.account_number', '=', 'curr.account_number');
-            })
-            ->leftJoinSub($this->buildPhSnapshotQuery($phPeriod), 'ph', function ($join) {
-                $join->on('prev.account_number', '=', 'ph.account_number');
-            })
-            ->selectRaw("
-                prev.bucket as before_bucket,
-                CASE WHEN ph.account_number IS NOT NULL THEN 'ph' ELSE {$lunasMetric} END as metric_type,
-                prev.balance_cents as amount_cents
-            ")
-            ->whereNull('curr.account_number')
-            ->whereNotNull('prev.bucket')
-            ->whereIn('prev.bucket', self::BEFORE_ROWS);
+        if ($useLw325RecoveryMetrics) {
+            $joinedMetrics = DB::query()
+                ->fromSub($currentSnapshot, 'curr')
+                ->leftJoinSub($previousSnapshot, 'prev', function ($join) {
+                    $join->on('curr.account_number', '=', 'prev.account_number');
+                })
+                ->selectRaw("
+                    COALESCE(prev.bucket, 'New Account') as before_bucket,
+                    'suplesi' as metric_type,
+                    curr.balance_cents - COALESCE(prev.balance_cents, 0) as amount_cents
+                ")
+                ->whereNotNull('curr.bucket')
+                ->whereRaw('curr.balance_cents > COALESCE(prev.balance_cents, 0)');
+        } else {
+            // Consolidated metrics query: single pass instead of 4 UNIONs
+            $joinedMetrics = DB::query()
+                ->fromSub($currentSnapshot, 'curr')
+                ->leftJoinSub($previousSnapshot, 'prev', function ($join) {
+                    $join->on('curr.account_number', '=', 'prev.account_number');
+                })
+                ->selectRaw("
+                    COALESCE(prev.bucket, 'New Account') as before_bucket,
+                    CASE
+                        WHEN COALESCE(prev.balance_cents, 0) > 0 
+                            AND curr.balance_cents > 0 
+                            AND prev.balance_cents > curr.balance_cents
+                        THEN 'principal_reduction'
+                        WHEN curr.balance_cents > 0
+                        THEN 'suplesi'
+                        ELSE NULL
+                    END as metric_type,
+                    CASE
+                        WHEN COALESCE(prev.balance_cents, 0) > 0 
+                            AND curr.balance_cents > 0 
+                            AND prev.balance_cents > curr.balance_cents
+                        THEN prev.balance_cents - curr.balance_cents
+                        WHEN COALESCE(prev.balance_cents, 0) <= 0 AND curr.balance_cents > 0
+                        THEN curr.balance_cents
+                        WHEN curr.balance_cents > COALESCE(prev.balance_cents, 0)
+                        THEN curr.balance_cents - COALESCE(prev.balance_cents, 0)
+                        ELSE 0
+                    END as amount_cents
+                ")
+                ->whereNotNull('curr.bucket');
+        }
 
         // Anonymous metrics
         $anonMetrics = DB::query()
             ->fromSub($this->buildAnonymousCurrentMovementQuery($selectedPeriod, $filters), 'anon_metric')
             ->selectRaw("before_bucket, 'suplesi' as metric_type, amount_cents");
 
-        $movementMetrics = $joinedMetrics
-            ->unionAll($exitMetrics)
-            ->unionAll($anonMetrics);
+        $movementMetrics = $joinedMetrics->unionAll($anonMetrics);
+
+        if (!$useLw325RecoveryMetrics) {
+            // Exit metrics (PH and Lunas) - separate since it's a different join pattern.
+            $exitMetrics = DB::query()
+                ->fromSub($previousSnapshot, 'prev')
+                ->leftJoinSub($currentSnapshot, 'curr', function ($join) {
+                    $join->on('prev.account_number', '=', 'curr.account_number');
+                })
+                ->selectRaw("
+                    prev.bucket as before_bucket,
+                    'lunas' as metric_type,
+                    prev.balance_cents as amount_cents
+                ")
+                ->whereNull('curr.account_number')
+                ->whereNotNull('prev.bucket')
+                ->whereIn('prev.bucket', self::BEFORE_ROWS);
+
+            $movementMetrics->unionAll($exitMetrics);
+        }
+
+        $movementMetrics->unionAll(
+            $this->buildDailyLoanPhMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useComparisonSnapshot)
+        );
 
         if ($useLw325RecoveryMetrics) {
             $movementMetrics->unionAll(
@@ -1573,6 +1675,11 @@ class DashboardPinjamanReportController extends Controller
             );
         }
 
+        return $this->buildRecoveryMetricAggregateQuery($movementMetrics);
+    }
+
+    private function buildRecoveryMetricAggregateQuery($movementMetrics)
+    {
         return DB::query()
             ->fromSub($movementMetrics, 'movement_metrics')
             ->selectRaw('before_bucket, metric_type, SUM(amount_cents) as amount_cents')
@@ -1580,6 +1687,48 @@ class DashboardPinjamanReportController extends Controller
             ->whereIn('before_bucket', self::BEFORE_ROWS)
             ->where('amount_cents', '>', 0)
             ->groupBy('before_bucket', 'metric_type');
+    }
+
+    private function buildDailyLoanPhMetricQuery(
+        string $selectedPeriod,
+        ?string $comparisonPeriod,
+        array $filters,
+        ?bool $useComparisonSnapshot = null
+    ) {
+        if (!Schema::hasColumn('daily_loan_dinamis', 'status_rekening1')) {
+            return DB::query()
+                ->selectRaw("'New Account' as before_bucket, 'ph' as metric_type, 0 as amount_cents")
+                ->whereRaw('1 = 0');
+        }
+
+        $alias = 'ph_loan';
+        $balanceExpression = $this->buildExcelSnapshotOsHelperExpression("{$alias}.baki_debet1");
+        $previousSnapshot = $comparisonPeriod
+            ? $this->buildPreviousBucketLookupQuery($comparisonPeriod, $filters, 'prev_ph_loan', $useComparisonSnapshot)
+            : $this->buildEmptyAggregatedLoanSnapshotQuery();
+
+        $query = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
+            ->leftJoinSub($previousSnapshot, 'prev_bucket', function ($join) use ($alias) {
+                $join->on(DB::raw("TRIM({$alias}.nomor_rekening1)"), '=', 'prev_bucket.account_number');
+            })
+            ->where("{$alias}.periode", $selectedPeriod)
+            ->whereRaw("TRIM(COALESCE({$alias}.status_rekening1, '')) = '5'")
+            ->whereNotNull("{$alias}.nomor_rekening1")
+            ->where("{$alias}.nomor_rekening1", '<>', '')
+            ->selectRaw("COALESCE(prev_bucket.bucket, 'New Account') as before_bucket")
+            ->selectRaw("'ph' as metric_type")
+            ->selectRaw("CAST(ROUND(SUM(COALESCE({$balanceExpression}, 0)) * 100, 0) AS SIGNED) as amount_cents")
+            ->groupByRaw("COALESCE(prev_bucket.bucket, 'New Account')");
+
+        $this->applyFilterConstraint($query, "{$alias}.segmen_dashboard", $filters['segmen']);
+        $this->applyFilterConstraint($query, "{$alias}.produk_dashboard", $filters['produk']);
+        $this->applyFilterConstraint($query, "{$alias}.cabang1", $filters['cabang']);
+        $this->applyFilterConstraint($query, "{$alias}.unit1", $filters['unit']);
+
+        return DB::query()
+            ->fromSub($query, 'daily_loan_ph_metrics')
+            ->selectRaw('before_bucket, metric_type, amount_cents')
+            ->where('amount_cents', '>', 0);
     }
 
     private function buildLw325RecoveryMetricQuery(
@@ -1604,40 +1753,40 @@ class DashboardPinjamanReportController extends Controller
                 ->whereRaw('1 = 0');
         }
 
-        $previousSnapshot = $this->buildAggregatedLoanSnapshotQuery($comparisonPeriod, $filters, 'prev_recovery', $useComparisonSnapshot);
-        $currentAccountKeySql = $this->phAccountKeySql('n');
-        $previousAccountKeySql = $this->phAccountKeySql('o');
+        $previousSnapshot = $this->buildPreviousBucketLookupQuery($comparisonPeriod, $filters, 'prev_recovery', $useComparisonSnapshot);
 
         $tupokQuery = DB::table('lw325_ph as n')
-            ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $currentPhPeriod, $currentAccountKeySql, $previousAccountKeySql) {
-                $join->whereRaw("{$currentAccountKeySql} = {$previousAccountKeySql}")
+            ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $currentPhPeriod) {
+                $join->on('n.acctno', '=', 'o.acctno')
                     ->on('n.kanca', '=', 'o.kanca')
                     ->on('n.unit', '=', 'o.unit')
                     ->whereRaw('n.periode = ?', [$currentPhPeriod])
                     ->whereRaw('o.periode = ?', [$previousPhPeriod]);
             })
-            ->leftJoinSub($previousSnapshot, 'prev_bucket', function ($join) use ($previousAccountKeySql) {
-                $join->whereRaw("{$previousAccountKeySql} = prev_bucket.account_number");
+            ->leftJoinSub($previousSnapshot, 'prev_bucket', function ($join) {
+                $join->on('o.acctno', '=', 'prev_bucket.account_number');
             })
             ->selectRaw("COALESCE(prev_bucket.bucket, 'New Account') as before_bucket")
             ->selectRaw("'principal_reduction' as metric_type")
             ->selectRaw("CAST(ROUND((COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) * 100, 0) AS SIGNED) as amount_cents")
             ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
             ->whereNotNull('n.acctno')
-            ->where('n.acctno', '<>', '');
+            ->where('n.acctno', '<>', '')
+            ->whereNotNull('o.acctno')
+            ->where('o.acctno', '<>', '');
 
         $this->applyLw325RecoveryFilters($tupokQuery, 'n', $filters);
 
-        $previousSnapshotForLunas = $this->buildAggregatedLoanSnapshotQuery($comparisonPeriod, $filters, 'prev_recovery_lunas', $useComparisonSnapshot);
+        $previousSnapshotForLunas = $this->buildPreviousBucketLookupQuery($comparisonPeriod, $filters, 'prev_recovery_lunas', $useComparisonSnapshot);
         $lunasQuery = DB::table('lw325_ph as o')
-            ->leftJoin('lw325_ph as n', function ($join) use ($currentPhPeriod, $currentAccountKeySql, $previousAccountKeySql) {
-                $join->whereRaw("{$previousAccountKeySql} = {$currentAccountKeySql}")
+            ->leftJoin('lw325_ph as n', function ($join) use ($currentPhPeriod) {
+                $join->on('o.acctno', '=', 'n.acctno')
                     ->on('o.kanca', '=', 'n.kanca')
                     ->on('o.unit', '=', 'n.unit')
                     ->whereRaw('n.periode = ?', [$currentPhPeriod]);
             })
-            ->leftJoinSub($previousSnapshotForLunas, 'prev_bucket', function ($join) use ($previousAccountKeySql) {
-                $join->whereRaw("{$previousAccountKeySql} = prev_bucket.account_number");
+            ->leftJoinSub($previousSnapshotForLunas, 'prev_bucket', function ($join) {
+                $join->on('o.acctno', '=', 'prev_bucket.account_number');
             })
             ->where('o.periode', $previousPhPeriod)
             ->whereNull('n.acctno')
@@ -1674,6 +1823,38 @@ class DashboardPinjamanReportController extends Controller
                 account_number,
                 balance_cents,
                 {$this->buildMovementBucketLabelExpressionFromRank($alias . '_agg.bucket_rank')} as bucket
+            ");
+    }
+
+    private function buildPreviousBucketLookupQuery(string $period, array $filters, string $alias, ?bool $useSnapshot = null)
+    {
+        $shouldUseSnapshot = $useSnapshot ?? $this->shouldUseSnapshot($period, $filters);
+
+        if (!$shouldUseSnapshot) {
+            return $this->buildAggregatedLoanSnapshotQuery($period, $filters, $alias, $useSnapshot);
+        }
+
+        $bucketRankExpression = $this->buildMovementBucketRankExpression("{$alias}.quality_bucket");
+        $baseQuery = DB::table(self::SNAPSHOT_TABLE . " as {$alias}")
+            ->where("{$alias}.periode", $period)
+            ->whereNotNull("{$alias}.account_number")
+            ->where("{$alias}.account_number", '<>', '')
+            ->selectRaw("
+                {$alias}.account_number,
+                MAX({$bucketRankExpression}) as bucket_rank
+            ")
+            ->groupBy("{$alias}.account_number");
+
+        $this->applyFilterConstraint($baseQuery, "{$alias}.segmen_dashboard", $filters['segmen']);
+        $this->applyFilterConstraint($baseQuery, "{$alias}.produk_dashboard", $filters['produk']);
+        $this->applyFilterConstraint($baseQuery, "{$alias}.cabang1", $filters['cabang']);
+        $this->applyFilterConstraint($baseQuery, "{$alias}.unit1", $filters['unit']);
+
+        return DB::query()
+            ->fromSub($baseQuery, $alias . '_bucket')
+            ->selectRaw("
+                account_number,
+                {$this->buildMovementBucketLabelExpressionFromRank($alias . '_bucket.bucket_rank')} as bucket
             ");
     }
 
@@ -3238,33 +3419,35 @@ class DashboardPinjamanReportController extends Controller
         });
     }
 
-    private function emptySixMonthArrearsPayload(?string $selectedPeriod, array $selectedBranches, array $selectedUnits, bool $isAreaAll): array
+    private function emptySixMonthArrearsPayload(?string $selectedPeriod, array $selectedBranches, array $selectedUnits, bool $isAreaAll, int $months = 6): array
     {
         return [
             'selected_period' => $selectedPeriod,
-            'target_month_label' => $selectedPeriod ? $this->sixMonthArrearsTargetMonthLabel($selectedPeriod) : '-',
+            'target_month_label' => $selectedPeriod ? $this->sixMonthArrearsTargetMonthLabel($selectedPeriod, $months) : '-',
             'scope_label' => $isAreaAll ? 'Area 6 - All' : implode(', ', $selectedBranches),
             'unit_label' => $selectedUnits === [] ? 'ALL UKER' : implode(', ', $selectedUnits),
+            'range_months' => $months,
             'rows' => [],
             'summary' => [
                 'debitur' => 0,
                 'outstanding' => 0.0,
                 'tunggakan_pokok' => 0.0,
                 'total_tunggakan' => 0.0,
-                'target_month' => $selectedPeriod ? $this->sixMonthArrearsTargetMonthLabel($selectedPeriod) : '-',
+                'target_month' => $selectedPeriod ? $this->sixMonthArrearsTargetMonthLabel($selectedPeriod, $months) : '-',
             ],
         ];
     }
 
-    private function buildSixMonthArrearsPayload(string $selectedPeriod, array $selectedBranches, array $selectedUnits, bool $isAreaAll): array
+    private function buildSixMonthArrearsPayload(string $selectedPeriod, array $selectedBranches, array $selectedUnits, bool $isAreaAll, int $months = 6): array
     {
-        $rows = collect($this->fetchSixMonthArrearsRows($selectedPeriod, $selectedBranches, $selectedUnits));
+        $rows = collect($this->fetchSixMonthArrearsRows($selectedPeriod, $selectedBranches, $selectedUnits, $months));
 
         return [
             'selected_period' => $selectedPeriod,
-            'target_month_label' => $this->sixMonthArrearsTargetMonthLabel($selectedPeriod),
+            'target_month_label' => $this->sixMonthArrearsTargetMonthLabel($selectedPeriod, $months),
             'scope_label' => $isAreaAll ? 'Area 6 - All' : implode(', ', $selectedBranches),
             'unit_label' => $selectedUnits === [] ? 'ALL UKER' : implode(', ', $selectedUnits),
+            'range_months' => $months,
             'rows' => $rows->map(fn (array $row): array => [
                 'periode' => $row['periode'] ?? '',
                 'cabang1' => $row['cabang1'] ?? '',
@@ -3287,12 +3470,12 @@ class DashboardPinjamanReportController extends Controller
                 'outstanding' => (float) $rows->sum(fn (array $row): float => floor((float) ($row['baki_debet1'] ?? 0))),
                 'tunggakan_pokok' => (float) $rows->sum(fn (array $row): float => (float) ($row['total_tunggakan'] ?? 0)),
                 'total_tunggakan' => (float) $rows->sum(fn (array $row): float => (float) ($row['total_tunggakan'] ?? 0)),
-                'target_month' => $this->sixMonthArrearsTargetMonthLabel($selectedPeriod),
+                'target_month' => $this->sixMonthArrearsTargetMonthLabel($selectedPeriod, $months),
             ],
         ];
     }
 
-    private function fetchSixMonthArrearsRows(string $selectedPeriod, array $selectedBranches, array $selectedUnits): array
+    private function fetchSixMonthArrearsRows(string $selectedPeriod, array $selectedBranches, array $selectedUnits, int $months = 6): array
     {
         if (!Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi') && !Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi1')) {
             return [];
@@ -3311,7 +3494,7 @@ class DashboardPinjamanReportController extends Controller
             return [];
         }
 
-        [$targetStart, $targetEnd] = $this->sixMonthArrearsTargetRange($selectedPeriod);
+        [$targetStart, $targetEnd] = $this->sixMonthArrearsTargetRange($selectedPeriod, $months);
         $realisasiColumn = Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi1') ? 'tgl_realisasi1' : 'tgl_realisasi';
         $totalTunggakanExpression = collect($tunggakanColumns)
             ->map(fn (string $column): string => "COALESCE(`{$column}`, 0)")
@@ -3337,10 +3520,10 @@ class DashboardPinjamanReportController extends Controller
             ->orderBy($accountColumn);
 
         $rows = [];
-        $excluded = array_flip($this->dailyLoanOutputExcludedColumns(['created_at', 'updated_at', 'uniqueid_namareport']));
+        $excluded = array_diff_key(array_flip($this->dailyLoanOutputExcludedColumns(['created_at', 'updated_at', 'uniqueid_namareport'])), []);
         foreach ($query->cursor() as $row) {
             $rowData = array_diff_key((array) $row, $excluded);
-            $rowData['bulan_realisasi_target'] = $this->sixMonthArrearsTargetMonthLabel($selectedPeriod);
+            $rowData['bulan_realisasi_target'] = $this->sixMonthArrearsTargetMonthLabel($selectedPeriod, $months);
             $rowData['tgl_realisasi'] = $rowData[$realisasiColumn] ?? ($rowData['tgl_realisasi'] ?? '');
             $rowData['kolek_detail'] = $this->kolekDetailFromFormula($row->kolek ?? null, $row->flag_restruk ?? null, $row->umur_tunggakan ?? null);
             $rows[] = $rowData;
@@ -3363,10 +3546,10 @@ class DashboardPinjamanReportController extends Controller
         return $columns;
     }
 
-    private function sixMonthArrearsTargetRange(string $selectedPeriod): array
+    private function sixMonthArrearsTargetRange(string $selectedPeriod, int $months = 6): array
     {
         $selectedDate = Carbon::parse($selectedPeriod);
-        $targetStartMonth = $selectedDate->copy()->subMonthsNoOverflow(6);
+        $targetStartMonth = $selectedDate->copy()->subMonthsNoOverflow($months);
 
         return [
             $targetStartMonth->copy()->startOfMonth()->toDateString(),
@@ -3374,9 +3557,9 @@ class DashboardPinjamanReportController extends Controller
         ];
     }
 
-    private function sixMonthArrearsTargetMonthLabel(string $selectedPeriod): string
+    private function sixMonthArrearsTargetMonthLabel(string $selectedPeriod, int $months = 6): string
     {
-        [$targetStart, $targetEnd] = $this->sixMonthArrearsTargetRange($selectedPeriod);
+        [$targetStart, $targetEnd] = $this->sixMonthArrearsTargetRange($selectedPeriod, $months);
 
         return Carbon::parse($targetStart)->translatedFormat('F Y')
             . ' - '
