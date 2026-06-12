@@ -31,6 +31,8 @@ Thumbs.db
 /debug_*.php
 /test_*.php
 /temp_*.php
+snippet.txt
+snippet*.txt
 /.tmp_*
 /.codex_tmp_*
 *.tmp.php
