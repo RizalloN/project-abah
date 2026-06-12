@@ -3,6 +3,7 @@
 use App\Http\Controllers\DashboardPinjamanReportController;
 use App\Http\Controllers\DashboardHarianController;
 use App\Http\Controllers\DashboardSimpananController;
+use App\Http\Controllers\Report\AlmafactsDashboardController;
 use App\Http\Controllers\Report\DigitalPerformanceController;
 use App\Http\Controllers\Report\KejarLabaReportController;
 use App\Http\Controllers\Report\KinerjaRmReportController;
@@ -32,6 +33,7 @@ use App\Http\Controllers\Input\InputRekananController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Admin\FileManagementDownloadController;
 use App\Http\Controllers\Admin\FileManagementController;
+use App\Http\Controllers\Admin\LinkManagementController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\RasioCasaDebiturController;
 use App\Http\Controllers\RekeningDormantController;
@@ -125,12 +127,22 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kinerjarm.history');
     Route::get('/report/dashboard-pinjaman/kinerjarmmikro', [KinerjaRmMikroReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerjarmmikro');
+    Route::get('/report/dashboard-pinjaman/kinerjarmmikro/mantri-extreme-low-detail', [KinerjaRmMikroReportController::class, 'mantriExtremeLowDetail'])
+        ->name('report.dashboard-pinjaman.kinerjarmmikro.mantri-extreme-low-detail');
     Route::get('/report/dashboard-pinjaman/kinerja-ptp', [KinerjaPtpReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerja-ptp');
     Route::get('/report/dashboard-pinjaman/kinerja-ptp/detail', [KinerjaPtpReportController::class, 'detail'])
         ->name('report.dashboard-pinjaman.kinerja-ptp.detail');
     Route::get('/report/dashboard-pinjaman/kinerja-non-ptp', [KinerjaNonPtpReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerja-non-ptp');
+    Route::get('/report/dashboard-almafacts/kinerja-laba-rugi', [AlmafactsDashboardController::class, 'labaRugi'])
+        ->name('report.dashboard-almafacts.kinerja-laba-rugi');
+    Route::get('/report/dashboard-almafacts/kpi/{sheet?}', [AlmafactsDashboardController::class, 'kpi'])
+        ->name('report.dashboard-almafacts.kpi');
+    Route::get('/report/dashboard-almafacts/timeseries', [AlmafactsDashboardController::class, 'timeseries'])
+        ->name('report.dashboard-almafacts.timeseries');
+    Route::get('/report/dashboard-almafacts/timeseries/data', [AlmafactsDashboardController::class, 'timeseriesData'])
+        ->name('report.dashboard-almafacts.timeseries.data');
     // Digital Performance Reports (EDC, QRIS, Brilink) — dihandle oleh DigitalPerformanceController
     Route::get('/report/optimalisasi-digital/edc', [DigitalPerformanceController::class, 'performanceEdc'])->name('report.edc');
     Route::get('/report/optimalisasi-digital/qris', [DigitalPerformanceController::class, 'performanceQris'])->name('report.qris');
@@ -197,6 +209,8 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/user-management', [UserManagementController::class, 'store'])->middleware('throttle:admin-sensitive')->name('user-management.store');
     Route::put('/user-management/{user}', [UserManagementController::class, 'update'])->middleware('throttle:admin-sensitive')->name('user-management.update');
     Route::delete('/user-management/{user}', [UserManagementController::class, 'destroy'])->middleware('throttle:admin-sensitive')->name('user-management.destroy');
+    Route::get('/link-management', [LinkManagementController::class, 'index'])->name('link-management.index');
+    Route::post('/link-management', [LinkManagementController::class, 'update'])->middleware('throttle:admin-sensitive')->name('link-management.update');
     Route::get('/import/upload-limits', [ImportIndexController::class, 'uploadLimits'])->name('import.upload-limits');
     Route::get('/import/template', [ImportIndexController::class, 'downloadTemplate'])->name('import.template');
     Route::post('/import/report-management/data', [ImportIndexController::class, 'reportManagementData'])->name('import.report-management.data');

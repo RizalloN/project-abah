@@ -176,53 +176,70 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
 
     public function test_area6_portfolio_exposes_cabang_ritel_and_micro_scopes(): void
     {
-        DB::table('dashboard_harian_snapshots')->insert([
-            $this->summaryRow('2026-05-19', 'KC Madiun', 1_000_000_000, 2_000_000_000, 10, 20, [
-                'total_os_non_commercial' => 1_800_000_000,
-                'total_sml_abs_non_commercial' => 45_000_000,
-                'total_npl_abs_non_commercial' => 20_000_000,
-                'total_casa' => 400_000_000,
-                'rec_dh_total' => 11_000_000,
-            ]),
-            $this->summaryRow('2026-05-19', 'KC Magetan', 2_000_000_000, 3_500_000_000, 20, 35, [
-                'total_os_non_commercial' => 3_000_000_000,
-                'total_sml_abs_non_commercial' => 90_000_000,
-                'total_npl_abs_non_commercial' => 40_000_000,
-                'total_casa' => 800_000_000,
-                'rec_dh_total' => 22_000_000,
-            ]),
-            $this->unitRow('2026-05-19', 'KC Madiun', 'KCP Caruban', 800_000_000, 1_600_000_000, [
-                'total_os_non_commercial' => 1_400_000_000,
-                'total_sml_abs_non_commercial' => 50_000_000,
-                'total_npl_abs_non_commercial' => 20_000_000,
-            ]),
-            $this->unitRow('2026-05-19', 'KC Madiun', 'UNIT A', 600_000_000, 900_000_000, [
-                'total_os_non_commercial' => 800_000_000,
-                'total_sml_abs_non_commercial' => 70_000_000,
-                'total_npl_abs_non_commercial' => 25_000_000,
-            ]),
-            $this->unitRow('2026-05-19', 'KC Magetan', 'UNIT B', 700_000_000, 1_300_000_000, [
-                'total_os_non_commercial' => 1_100_000_000,
-                'total_sml_abs_non_commercial' => 80_000_000,
-                'total_npl_abs_non_commercial' => 35_000_000,
-            ]),
-        ]);
+        DB::table('dashboard_harian_snapshots')->insert($this->summaryRow('2026-05-19', 'KC Madiun', 1_000_000_000, 2_000_000_000, 10, 20, [
+            'total_os_non_commercial' => 1_800_000_000,
+            'total_sml_abs_non_commercial' => 45_000_000,
+            'total_npl_abs_non_commercial' => 20_000_000,
+            'sme_os' => 500_000_000,
+            'consumer_os' => 600_000_000,
+            'micro_os' => 700_000_000,
+            'sme_sml' => 10_000_000,
+            'sme_npl' => 5_000_000,
+            'consumer_sml' => 15_000_000,
+            'consumer_npl' => 5_000_000,
+            'micro_sml' => 20_000_000,
+            'micro_npl' => 10_000_000,
+            'total_casa' => 400_000_000,
+            'rec_dh_total' => 11_000_000,
+        ]));
+        DB::table('dashboard_harian_snapshots')->insert($this->summaryRow('2026-05-19', 'KC Magetan', 2_000_000_000, 3_500_000_000, 20, 35, [
+            'total_os_non_commercial' => 3_000_000_000,
+            'total_sml_abs_non_commercial' => 90_000_000,
+            'total_npl_abs_non_commercial' => 40_000_000,
+            'sme_os' => 900_000_000,
+            'consumer_os' => 1_000_000_000,
+            'micro_os' => 1_200_000_000,
+            'sme_sml' => 20_000_000,
+            'sme_npl' => 10_000_000,
+            'consumer_sml' => 30_000_000,
+            'consumer_npl' => 15_000_000,
+            'micro_sml' => 40_000_000,
+            'micro_npl' => 15_000_000,
+            'total_casa' => 800_000_000,
+            'rec_dh_total' => 22_000_000,
+        ]));
+        DB::table('dashboard_harian_snapshots')->insert($this->unitRow('2026-05-19', 'KC Madiun', 'KCP Caruban', 800_000_000, 1_600_000_000, [
+            'total_os_non_commercial' => 1_400_000_000,
+            'total_sml_abs_non_commercial' => 50_000_000,
+            'total_npl_abs_non_commercial' => 20_000_000,
+        ]));
+        DB::table('dashboard_harian_snapshots')->insert($this->unitRow('2026-05-19', 'KC Madiun', 'UNIT A', 600_000_000, 900_000_000, [
+            'total_os_non_commercial' => 800_000_000,
+            'total_sml_abs_non_commercial' => 70_000_000,
+            'total_npl_abs_non_commercial' => 25_000_000,
+        ]));
+        DB::table('dashboard_harian_snapshots')->insert($this->unitRow('2026-05-19', 'KC Magetan', 'UNIT B', 700_000_000, 1_300_000_000, [
+            'total_os_non_commercial' => 1_100_000_000,
+            'total_sml_abs_non_commercial' => 80_000_000,
+            'total_npl_abs_non_commercial' => 35_000_000,
+        ]));
 
         $controller = new DashboardSimpananController();
 
         $payload = $this->invokePrivate($controller, 'buildArea6PortfolioLandingFresh', [null]);
 
-        $this->assertSame('cabang_konsol', $payload['default_scope']);
-        $this->assertArrayHasKey('cabang_konsol', $payload['ranking_modes']);
-        $this->assertArrayHasKey('ritel', $payload['ranking_modes']);
+        $this->assertSame('area6', $payload['default_scope']);
+        $this->assertArrayHasKey('area6', $payload['ranking_modes']);
+        $this->assertArrayHasKey('sme', $payload['ranking_modes']);
+        $this->assertArrayHasKey('consumer', $payload['ranking_modes']);
         $this->assertArrayHasKey('micro', $payload['ranking_modes']);
-        $this->assertSame('KC Madiun', data_get($payload, 'ranking_modes.ritel.branches.0.name'));
-        $this->assertSame('Rp800,00 Jt', data_get($payload, 'ranking_modes.ritel.branches.0.simpanan_fmt'));
-        $this->assertSame('Rp1,60 M', data_get($payload, 'ranking_modes.ritel.branches.0.pinjaman_fmt'));
-        $this->assertSame('UNIT B', data_get($payload, 'ranking_modes.micro.rankings.0.rows.0.label'));
+        $this->assertSame('KC Madiun', data_get($payload, 'ranking_modes.sme.branches.0.name'));
+        $this->assertSame('Rp500,00 Jt', data_get($payload, 'ranking_modes.sme.branches.0.pinjaman_fmt'));
+        $this->assertSame('KC Madiun', data_get($payload, 'ranking_modes.micro.branches.0.name'));
+        $this->assertSame('Rp700,00 Jt', data_get($payload, 'ranking_modes.micro.branches.0.pinjaman_fmt'));
 
-        $this->assertSame('4.800', data_get($payload, 'scopes.cabang_konsol.cards.0.realization_value'));
-        $this->assertSame('1.400', data_get($payload, 'scopes.ritel.cards.0.realization_value'));
+        $this->assertSame('4.800', data_get($payload, 'scopes.area6.cards.0.realization_value'));
+        $this->assertSame('1.400', data_get($payload, 'scopes.sme.cards.0.realization_value'));
         $this->assertSame('1.900', data_get($payload, 'scopes.micro.cards.0.realization_value'));
     }
 

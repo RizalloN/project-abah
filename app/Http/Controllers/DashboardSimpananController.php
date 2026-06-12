@@ -26,7 +26,7 @@ class DashboardSimpananController extends Controller
     private const DIGITAL_PERFORMANCE_CACHE_MINUTES = 1440;
     private const LOAN_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
     private const HARIAN_SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
-    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v13';
+    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v18';
     private const CACHE_LOCK_SECONDS = 20;
     private const SNAPSHOT_SUMMARY_TABLE = 'dashboard_simpanan_snapshots';
     private const SNAPSHOT_BRANCH_TABLE = 'dashboard_simpanan_branch_snapshots';
@@ -357,7 +357,11 @@ class DashboardSimpananController extends Controller
             'segments' => data_get($scope, 'segment_performance.segments', []),
             'total' => data_get($scope, 'segment_performance.total', []),
             'composition' => data_get($scope, 'segment_performance.composition', []),
-            'branches' => array_values(data_get($area6Portfolio, 'ranking_modes.cabang_konsol.branches', [])),
+            'branches' => array_values(
+                data_get($area6Portfolio, 'ranking_modes.area6.branches',
+                    data_get($area6Portfolio, 'ranking_modes.cabang_konsol.branches', [])
+                )
+            ),
             'scope_cards' => data_get($area6Portfolio, 'scopes', []),
             'matrix' => $this->buildPresentationPerformanceMatrix($period),
         ];
@@ -1091,6 +1095,297 @@ class DashboardSimpananController extends Controller
         ];
     }
 
+    private function buildLandingExecutiveSummary(?string $loanPeriod, array $area6Portfolio): array
+    {
+        $detailPeriod = data_get($area6Portfolio, 'loan_detail_period') ?: $this->resolveArea6DailyLoanPeriod($loanPeriod);
+
+        return [
+            'title' => 'Ringkasan Eksekutif Area 6',
+            'subtitle' => 'Laba rugi, putusan mikro, dan realisasi segmen pada periode aktif.',
+            'profit' => $this->buildLandingProfitLossSummary(),
+            'decision' => $this->buildLandingDecisionSummary($detailPeriod),
+            'realization' => $this->buildLandingSegmentRealizationSummary($area6Portfolio),
+        ];
+    }
+
+    private function emptyLandingExecutiveSummary(): array
+    {
+        return [
+            'title' => 'Ringkasan Eksekutif Area 6',
+            'subtitle' => 'Laba rugi, putusan mikro, dan realisasi segmen pada periode aktif.',
+            'profit' => [
+                'available' => false,
+                'period' => null,
+                'period_label' => 'Belum ada data',
+                'total' => 0.0,
+                'total_fmt' => 'Rp0',
+                'delta_fmt' => '0,0%',
+                'delta_class' => 'text-muted',
+                'branches' => [],
+            ],
+            'decision' => [
+                'available' => false,
+                'period' => null,
+                'period_label' => 'Belum ada data',
+                'source' => 'Kinerja RM Mikro - Unit per Pemutus',
+                'items' => [],
+            ],
+            'realization' => [
+                'available' => false,
+                'default_scope' => 'area6',
+                'scopes' => [],
+            ],
+        ];
+    }
+
+    private function buildLandingProfitLossSummary(): array
+    {
+        $empty = $this->emptyLandingExecutiveSummary()['profit'];
+
+        if (!$this->hasTable('ssa_almafacts')) {
+            return $empty;
+        }
+
+        try {
+            $period = DB::table('ssa_almafacts')
+                ->where('keterangan_1', '15. Laba Setelah Pajak')
+                ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
+                ->max('month_day_year_of_posisi');
+
+            if (!$period) {
+                return $empty;
+            }
+
+            $rows = DB::table('ssa_almafacts')
+                ->select('kanca_konsolidasi', DB::raw('SUM(nominal) as nominal'))
+                ->where('month_day_year_of_posisi', $period)
+                ->where('keterangan_1', '15. Laba Setelah Pajak')
+                ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
+                ->groupBy('kanca_konsolidasi')
+                ->get()
+                ->keyBy('kanca_konsolidasi');
+
+            $branches = collect(self::AREA_6_BRANCH_LABELS)
+                ->map(function (string $branchName) use ($rows): array {
+                    $nominal = (float) data_get($rows->get($branchName), 'nominal', 0.0);
+
+                    return [
+                        'name' => $branchName,
+                        'nominal' => $nominal,
+                        'nominal_fmt' => $this->formatCurrencyCompact($nominal),
+                    ];
+                })
+                ->values()
+                ->all();
+
+            $total = array_sum(array_column($branches, 'nominal'));
+            $previousPeriod = DB::table('ssa_almafacts')
+                ->where('keterangan_1', '15. Laba Setelah Pajak')
+                ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
+                ->where('month_day_year_of_posisi', '<', $period)
+                ->max('month_day_year_of_posisi');
+            $previousTotal = $previousPeriod
+                ? (float) DB::table('ssa_almafacts')
+                    ->where('month_day_year_of_posisi', $previousPeriod)
+                    ->where('keterangan_1', '15. Laba Setelah Pajak')
+                    ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
+                    ->sum('nominal')
+                : 0.0;
+            $delta = $this->percentChange($total, $previousTotal);
+
+            return [
+                'available' => $total !== 0.0,
+                'period' => $period,
+                'period_label' => $this->formatPeriodLabel($period),
+                'total' => $total,
+                'total_fmt' => $this->formatCurrencyCompact($total),
+                'delta_fmt' => $this->formatSignedPercent($delta),
+                'delta_class' => $this->deltaClass($delta),
+                'branches' => $branches,
+            ];
+        } catch (Throwable $e) {
+            Log::warning('Ringkasan laba rugi landing gagal dibaca.', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return $empty;
+        }
+    }
+
+    private function buildLandingDecisionSummary(?string $period): array
+    {
+        $empty = $this->emptyLandingExecutiveSummary()['decision'];
+
+        if (!$period) {
+            return $empty;
+        }
+
+        $payload = $this->invokeKinerjaRmMikroPayload('unit_pemutus', $period, true);
+        $total = (array) data_get($payload, 'total', []);
+
+        $items = [
+            [
+                'key' => 'boh',
+                'label' => 'BOH/RMBH',
+                'deb' => (int) ($total['rmbh_mtd_deb'] ?? 0),
+                'nominal' => (float) ($total['rmbh_mtd_os'] ?? 0.0),
+                'icon' => 'fas fa-user-tie',
+            ],
+            [
+                'key' => 'k_unit',
+                'label' => 'K Unit',
+                'deb' => (int) ($total['kaunit_mtd_deb'] ?? 0),
+                'nominal' => (float) ($total['kaunit_mtd_os'] ?? 0.0),
+                'icon' => 'fas fa-store-alt',
+            ],
+            [
+                'key' => 'mbm',
+                'label' => 'MBM',
+                'deb' => (int) ($total['mbm_mtd_deb'] ?? 0),
+                'nominal' => (float) ($total['mbm_mtd_os'] ?? 0.0),
+                'icon' => 'fas fa-user-shield',
+            ],
+        ];
+
+        $items = collect($items)
+            ->map(function (array $item): array {
+                $item['nominal_fmt'] = $this->formatCurrencyCompact((float) $item['nominal']);
+                $item['deb_fmt'] = $this->formatInteger((int) $item['deb']) . ' deb';
+
+                return $item;
+            })
+            ->all();
+
+        return [
+            'available' => collect($items)->contains(fn (array $item) => (int) $item['deb'] > 0 || (float) $item['nominal'] !== 0.0),
+            'period' => $period,
+            'period_label' => $this->formatPeriodLabel($period),
+            'source' => 'Kinerja RM Mikro - Unit per Pemutus',
+            'items' => $items,
+            'total_deb' => array_sum(array_column($items, 'deb')),
+            'total_nominal' => array_sum(array_column($items, 'nominal')),
+        ];
+    }
+
+    private function buildLandingSegmentRealizationSummary(array $area6Portfolio): array
+    {
+        $source = data_get($area6Portfolio, 'scopes.area6.segment_performance');
+        if (!$source) {
+            return [
+                'available' => false,
+                'default_scope' => 'area6',
+                'scopes' => [],
+            ];
+        }
+
+        $segmentsByKey = collect(data_get($source, 'segments', []))
+            ->mapWithKeys(function (array $segment): array {
+                $key = $this->landingSegmentKey((string) ($segment['label'] ?? ''));
+
+                return $key ? [$key => $segment] : [];
+            });
+
+        $segments = collect(['sme', 'consumer', 'micro'])
+            ->map(function (string $segmentKey) use ($segmentsByKey): ?array {
+                $segment = $segmentsByKey->get($segmentKey);
+                if (!$segment) {
+                    return null;
+                }
+
+                return $this->formatLandingRealizationSegment($segmentKey, $segment);
+            })
+            ->filter()
+            ->values();
+
+        $totalRealization = (float) $segments->sum('realization');
+        $totalTarget = (float) $segments->sum('target');
+        $totalPct = $totalTarget > 0 ? ($totalRealization / $totalTarget) * 100 : 0.0;
+        $area6Total = [
+            'key' => 'area6_total',
+            'label' => 'Area 6 Total',
+            'icon' => 'fas fa-layer-group',
+            'realization' => $totalRealization,
+            'target' => $totalTarget,
+            'realization_fmt' => $this->formatCurrencyCompact($totalRealization),
+            'target_fmt' => $this->formatCurrencyCompact($totalTarget),
+            'pct_fmt' => number_format($totalPct, 2, ',', '.') . '%',
+            'pct_color' => $this->getArea6AchievementColor($totalPct, 'os'),
+        ];
+
+        $scopes = [
+            'area6' => [
+                'label' => 'Area 6',
+                'segments' => array_merge([$area6Total], $segments->all()),
+            ],
+            'sme' => [
+                'label' => 'SME',
+                'segments' => $segments->where('key', 'sme')->values()->all(),
+            ],
+            'consumer' => [
+                'label' => 'Konsumer',
+                'segments' => $segments->where('key', 'consumer')->values()->all(),
+            ],
+            'micro' => [
+                'label' => 'Micro',
+                'segments' => $segments->where('key', 'micro')->values()->all(),
+            ],
+        ];
+
+        return [
+            'available' => !empty($scopes),
+            'default_scope' => 'area6',
+            'scopes' => $scopes,
+        ];
+    }
+
+    private function formatLandingRealizationSegment(string $segmentKey, array $segment): array
+    {
+        $os = (array) data_get($segment, 'os', []);
+        $realization = (float) data_get($os, 'realization', 0.0);
+        $target = (float) data_get($os, 'target', 0.0);
+
+        return [
+            'key' => $segmentKey,
+            'label' => $this->landingSegmentDisplayLabel($segmentKey),
+            'icon' => (string) data_get($segment, 'icon', 'fas fa-chart-line'),
+            'realization' => $realization,
+            'target' => $target,
+            'realization_fmt' => $this->formatCurrencyCompact($realization),
+            'target_fmt' => $this->formatCurrencyCompact($target),
+            'pct_fmt' => (string) data_get($os, 'pct_fmt', '0,00%'),
+            'pct_color' => (string) data_get($os, 'pct_color', 'blue'),
+        ];
+    }
+
+    private function landingSegmentKey(string $label): ?string
+    {
+        $normalized = strtoupper($label);
+
+        if (str_contains($normalized, 'MIKRO')) {
+            return 'micro';
+        }
+
+        if (str_contains($normalized, 'KONSUMER') || str_contains($normalized, 'CONSUMER')) {
+            return 'consumer';
+        }
+
+        if (str_contains($normalized, 'SME') || str_contains($normalized, 'KECIL')) {
+            return 'sme';
+        }
+
+        return null;
+    }
+
+    private function landingSegmentDisplayLabel(string $key): string
+    {
+        return match ($key) {
+            'micro' => 'Micro',
+            'consumer' => 'Konsumer',
+            'sme' => 'SME / Small',
+            default => strtoupper($key),
+        };
+    }
+
     private function invokeKinerjaRmMikroPayload(string $category, ?string $period, bool $mantri): array
     {
         if (!$period) {
@@ -1126,7 +1421,7 @@ class DashboardSimpananController extends Controller
     {
         $scope = data_get($area6Portfolio, 'scopes.cabang_konsol', $area6Portfolio);
         $cards = collect(data_get($scope, 'cards', []))->keyBy('key');
-        $rankingModes = data_get($area6Portfolio, 'ranking_modes', []);
+        $rankingModes = data_get($area6Portfolio, 'legacy_ranking_modes', data_get($area6Portfolio, 'ranking_modes', []));
 
         return [
             'sml' => [
@@ -1653,6 +1948,7 @@ class DashboardSimpananController extends Controller
         $digitalPerformance = $this->buildDigitalPerformance();
         $timeseries = $this->buildTimeseriesPayload($currentPeriod, $loanCurrentPeriod);
         $area6Portfolio = $this->buildArea6PortfolioLanding($loanCurrentPeriod);
+        $landingSummary = $this->buildLandingExecutiveSummary($loanCurrentPeriod, $area6Portfolio);
         $simpananSourceDetail = $this->buildLandingSourceDetail(
             'Simpanan Realtime',
             $currentPeriod,
@@ -1797,6 +2093,7 @@ class DashboardSimpananController extends Controller
             'digital_performance' => $digitalPerformance,
             'timeseries' => $timeseries,
             'area6_portfolio' => $area6Portfolio,
+            'landing_summary' => $landingSummary,
             'metrics' => [
                 [
                     'label' => 'Total Simpanan',
@@ -2502,22 +2799,54 @@ class DashboardSimpananController extends Controller
             $retailBranchesData[$branchName]['npl_pct_width'] = $maxNplPctRetail > 0 ? ($retailBranchesData[$branchName]['npl_pct'] / $maxNplPctRetail) * 100 : 0;
         }
 
+        $segmentBranchModes = [
+            'sme' => $this->buildArea6SegmentBranchPerformance($harian['period'], 'sme'),
+            'consumer' => $this->buildArea6SegmentBranchPerformance($harian['period'], 'consumer'),
+            'micro' => $this->buildArea6SegmentBranchPerformance($harian['period'], 'micro'),
+        ];
+
         $scopePayloads = [
-            'cabang_konsol' => $this->buildArea6PortfolioScopePayload('cabang_konsol', $harian['period'], $periodFormat, $rkaMonthYear, null),
-            'ritel' => $this->buildArea6PortfolioScopePayload('ritel', $harian['period'], $periodFormat, $rkaMonthYear, $this->area6ScopeUnitKeys((string) $harian['period'], 'ritel')),
-            'micro' => $this->buildArea6PortfolioScopePayload('micro', $harian['period'], $periodFormat, $rkaMonthYear, $this->area6ScopeUnitKeys((string) $harian['period'], 'micro')),
+            'area6' => $this->buildArea6PortfolioScopePayload('area6', $harian['period'], $periodFormat, $rkaMonthYear, null),
+            'sme' => $this->buildArea6PortfolioScopePayload('sme', $harian['period'], $periodFormat, $rkaMonthYear, null),
+            'consumer' => $this->buildArea6PortfolioScopePayload('consumer', $harian['period'], $periodFormat, $rkaMonthYear, null),
+            'micro' => $this->buildArea6PortfolioScopePayload('micro', $harian['period'], $periodFormat, $rkaMonthYear, null),
         ];
 
         return [
             'title' => 'Kinerja Area 6',
-            'subtitle' => 'Ringkasan cepat dari snapshot Dashboard Harian dan Pinjaman. Pilih Cabang Konsol, Ritel, atau Micro.',
+            'subtitle' => 'Ringkasan cepat dari snapshot Dashboard Harian dan Pinjaman. Area 6 mencakup seluruh cabang dan seluruh segmen.',
             'period_label' => $periodLabel,
             'loan_period_label' => $loanPeriodLabel,
             'loan_detail_period_label' => $dailyLoanPeriodLabel,
-            'default_scope' => 'cabang_konsol',
-            'cards' => $scopePayloads['cabang_konsol']['cards'],
-            'segment_performance' => $scopePayloads['cabang_konsol']['segment_performance'],
+            'default_scope' => 'area6',
+            'cards' => $scopePayloads['area6']['cards'],
+            'segment_performance' => $scopePayloads['area6']['segment_performance'],
             'ranking_modes' => [
+                'area6' => [
+                    'label' => 'Area 6',
+                    'description' => 'Seluruh cabang dan seluruh segmen.',
+                    'branches' => array_values($branchesData),
+                ],
+                'sme' => [
+                    'label' => 'SME',
+                    'description' => 'Segmen small / SME per cabang.',
+                    'branches' => array_values($segmentBranchModes['sme']),
+                    'hide_simpanan' => true,
+                ],
+                'consumer' => [
+                    'label' => 'Konsumer',
+                    'description' => 'Segmen konsumer per cabang.',
+                    'branches' => array_values($segmentBranchModes['consumer']),
+                    'hide_simpanan' => true,
+                ],
+                'micro' => [
+                    'label' => 'Micro',
+                    'description' => 'Segmen micro per cabang.',
+                    'branches' => array_values($segmentBranchModes['micro']),
+                    'hide_simpanan' => true,
+                ],
+            ],
+            'legacy_ranking_modes' => [
                 'cabang_konsol' => [
                     'label' => 'Cabang Konsol',
                     'description' => 'Semua unit kerja termasuk KC, KCP, dan unit.',
@@ -2535,7 +2864,7 @@ class DashboardSimpananController extends Controller
                 ],
             ],
             'rankings' => $retailRankings,
-            'overall_trends' => $scopePayloads['cabang_konsol']['overall_trends'],
+            'overall_trends' => $scopePayloads['area6']['overall_trends'],
             'scopes' => $scopePayloads,
         ];
     }
@@ -2546,23 +2875,24 @@ class DashboardSimpananController extends Controller
         $periodPayload = $service->buildDashboardPayload($period, null, $this->dashboardBranchNames(), $unitKeys);
         $rows = collect($periodPayload['rows'] ?? []);
 
-        $osRow = $rows->firstWhere('key', 'total_os_non_commercial');
-        $smlRow = $rows->firstWhere('key', 'total_sml_abs_non_commercial');
-        $nplRow = $rows->firstWhere('key', 'total_npl_abs_non_commercial');
+        $metricKeys = $this->area6PortfolioMetricKeys($scopeKey);
+        $osRow = $rows->firstWhere('key', $metricKeys['os_row']);
+        $smlRow = $rows->firstWhere('key', $metricKeys['sml_row']);
+        $nplRow = $rows->firstWhere('key', $metricKeys['npl_row']);
         $snapshotMetrics = $this->area6ScopeSnapshotMetrics((string) $period, $scopeKey);
 
-        $osRealization = (float) ($snapshotMetrics->total_os_non_commercial ?? $osRow['values']['current'] ?? 0.0);
-        $osTarget = (float) ($osRow['values']['rka'] ?? 0.0);
-        $osPct = (float) ($osRow['values']['penc_pct'] ?? 0.0);
+        $osRealization = (float) ($snapshotMetrics->{$metricKeys['os_metric']} ?? data_get($osRow, 'values.current', 0.0));
+        $osTarget = (float) data_get($osRow, 'values.rka', 0.0);
+        $osPct = (float) data_get($osRow, 'values.penc_pct', 0.0);
         $osGap = $osRealization - $osTarget;
 
-        $smlRealization = (float) ($snapshotMetrics->total_sml_abs_non_commercial ?? $smlRow['values']['current'] ?? 0.0);
-        $smlTarget = (float) ($smlRow['values']['rka'] ?? 0.0);
+        $smlRealization = (float) ($snapshotMetrics->{$metricKeys['sml_metric']} ?? data_get($smlRow, 'values.current', 0.0));
+        $smlTarget = (float) data_get($smlRow, 'values.rka', 0.0);
         $smlPct = $smlRealization > 0 ? ($smlTarget / $smlRealization) * 100 : 100.0;
         $smlGap = $smlTarget - $smlRealization;
 
-        $nplRealization = (float) ($snapshotMetrics->total_npl_abs_non_commercial ?? $nplRow['values']['current'] ?? 0.0);
-        $nplTarget = (float) ($nplRow['values']['rka'] ?? 0.0);
+        $nplRealization = (float) ($snapshotMetrics->{$metricKeys['npl_metric']} ?? data_get($nplRow, 'values.current', 0.0));
+        $nplTarget = (float) data_get($nplRow, 'values.rka', 0.0);
         $nplPct = $nplRealization > 0 ? ($nplTarget / $nplRealization) * 100 : 100.0;
         $nplGap = $nplTarget - $nplRealization;
 
@@ -2576,7 +2906,8 @@ class DashboardSimpananController extends Controller
                 'os' => [$osRealization, $osTarget, $osPct, $osGap],
                 'sml' => [$smlRealization, $smlTarget, $smlPct, $smlGap],
                 'npl' => [$nplRealization, $nplTarget, $nplPct, $nplGap],
-            ]
+            ],
+            $metricKeys
         );
 
         $osMomDelta = (float) data_get($overallTrends, 'os.mom_delta', 0.0);
@@ -2588,7 +2919,7 @@ class DashboardSimpananController extends Controller
                 'key' => 'os',
                 'header_title' => 'OUTSTANDING (OS)',
                 'realization_value' => number_format(round($osRealization / 1000000), 0, ',', '.'),
-                'realization_label' => 'OS per ' . $periodFormat,
+                'realization_label' => $metricKeys['os_label'] . ' per ' . $periodFormat,
                 'target_value' => number_format(round($osTarget / 1000000), 0, ',', '.'),
                 'target_label' => 'RKA ' . $rkaMonthYear,
                 'pct_value' => number_format($osPct, 2, ',', '.') . '%',
@@ -2598,9 +2929,9 @@ class DashboardSimpananController extends Controller
                 'gap_label' => 'Gap thd RKA ' . $rkaMonthYear,
                 'gap_color' => $osGap >= 0 ? 'green' : 'red',
                 'deltas' => [
-                    'dtd' => $this->formatArea6CardDelta((float) ($osRow['deltas']['dtd'] ?? 0.0), 'os'),
-                    'mtd' => $this->formatArea6CardDelta((float) ($osRow['deltas']['mtd'] ?? 0.0), 'os'),
-                    'ytd' => $this->formatArea6CardDelta((float) ($osRow['deltas']['ytd'] ?? 0.0), 'os'),
+                    'dtd' => $this->formatArea6CardDelta((float) data_get($osRow, 'deltas.dtd', 0.0), 'os'),
+                    'mtd' => $this->formatArea6CardDelta((float) data_get($osRow, 'deltas.mtd', 0.0), 'os'),
+                    'ytd' => $this->formatArea6CardDelta((float) data_get($osRow, 'deltas.ytd', 0.0), 'os'),
                     'mom' => $this->formatArea6CardDelta($osMomDelta, 'os'),
                 ],
                 'tone' => 'blue',
@@ -2614,7 +2945,7 @@ class DashboardSimpananController extends Controller
                 'key' => 'sml',
                 'header_title' => 'SPECIAL MENTION LOAN (SML)',
                 'realization_value' => number_format(round($smlRealization / 1000000), 0, ',', '.'),
-                'realization_label' => 'SML per ' . $periodFormat,
+                'realization_label' => $metricKeys['sml_label'] . ' per ' . $periodFormat,
                 'target_value' => number_format(round($smlTarget / 1000000), 0, ',', '.'),
                 'target_label' => 'RKA ' . $rkaMonthYear,
                 'pct_value' => number_format($smlPct, 2, ',', '.') . '%',
@@ -2624,9 +2955,9 @@ class DashboardSimpananController extends Controller
                 'gap_label' => 'Gap thd RKA ' . $rkaMonthYear,
                 'gap_color' => $smlGap >= 0 ? 'green' : 'red',
                 'deltas' => [
-                    'dtd' => $this->formatArea6CardDelta((float) ($smlRow['deltas']['dtd'] ?? 0.0), 'sml'),
-                    'mtd' => $this->formatArea6CardDelta((float) ($smlRow['deltas']['mtd'] ?? 0.0), 'sml'),
-                    'ytd' => $this->formatArea6CardDelta((float) ($smlRow['deltas']['ytd'] ?? 0.0), 'sml'),
+                    'dtd' => $this->formatArea6CardDelta((float) data_get($smlRow, 'deltas.dtd', 0.0), 'sml'),
+                    'mtd' => $this->formatArea6CardDelta((float) data_get($smlRow, 'deltas.mtd', 0.0), 'sml'),
+                    'ytd' => $this->formatArea6CardDelta((float) data_get($smlRow, 'deltas.ytd', 0.0), 'sml'),
                     'mom' => $this->formatArea6CardDelta($smlMomDelta, 'sml'),
                 ],
                 'tone' => 'blue',
@@ -2640,7 +2971,7 @@ class DashboardSimpananController extends Controller
                 'key' => 'npl',
                 'header_title' => 'NON-PERFORMING LOAN (NPL)',
                 'realization_value' => number_format(round($nplRealization / 1000000), 0, ',', '.'),
-                'realization_label' => 'NPL per ' . $periodFormat,
+                'realization_label' => $metricKeys['npl_label'] . ' per ' . $periodFormat,
                 'target_value' => number_format(round($nplTarget / 1000000), 0, ',', '.'),
                 'target_label' => 'RKA ' . $rkaMonthYear,
                 'pct_value' => number_format($nplPct, 2, ',', '.') . '%',
@@ -2650,9 +2981,9 @@ class DashboardSimpananController extends Controller
                 'gap_label' => 'Gap thd RKA ' . $rkaMonthYear,
                 'gap_color' => $nplGap >= 0 ? 'green' : 'red',
                 'deltas' => [
-                    'dtd' => $this->formatArea6CardDelta((float) ($nplRow['deltas']['dtd'] ?? 0.0), 'npl'),
-                    'mtd' => $this->formatArea6CardDelta((float) ($nplRow['deltas']['mtd'] ?? 0.0), 'npl'),
-                    'ytd' => $this->formatArea6CardDelta((float) ($nplRow['deltas']['ytd'] ?? 0.0), 'npl'),
+                    'dtd' => $this->formatArea6CardDelta((float) data_get($nplRow, 'deltas.dtd', 0.0), 'npl'),
+                    'mtd' => $this->formatArea6CardDelta((float) data_get($nplRow, 'deltas.mtd', 0.0), 'npl'),
+                    'ytd' => $this->formatArea6CardDelta((float) data_get($nplRow, 'deltas.ytd', 0.0), 'npl'),
                     'mom' => $this->formatArea6CardDelta($nplMomDelta, 'npl'),
                 ],
                 'tone' => 'blue',
@@ -2673,8 +3004,150 @@ class DashboardSimpananController extends Controller
         ];
     }
 
-    private function buildArea6ScopeOverallTrends(string $scopeKey, ?string $period, ?string $mtmPeriod, ?string $mtdPeriod, array $currentMetrics): array
+    private function area6PortfolioMetricKeys(string $scopeKey): array
     {
+        return match ($scopeKey) {
+            'sme' => [
+                'os_row' => 'sme_os',
+                'sml_row' => 'sme_sml',
+                'npl_row' => 'sme_npl',
+                'os_metric' => 'sme_os',
+                'sml_metric' => 'sme_sml',
+                'npl_metric' => 'sme_npl',
+                'os_label' => 'OS SME',
+                'sml_label' => 'SML SME',
+                'npl_label' => 'NPL SME',
+            ],
+            'consumer' => [
+                'os_row' => 'consumer_os',
+                'sml_row' => 'consumer_sml',
+                'npl_row' => 'consumer_npl',
+                'os_metric' => 'consumer_os',
+                'sml_metric' => 'consumer_sml',
+                'npl_metric' => 'consumer_npl',
+                'os_label' => 'OS Konsumer',
+                'sml_label' => 'SML Konsumer',
+                'npl_label' => 'NPL Konsumer',
+            ],
+            'micro' => [
+                'os_row' => 'micro_os',
+                'sml_row' => 'micro_sml',
+                'npl_row' => 'micro_npl',
+                'os_metric' => 'micro_os',
+                'sml_metric' => 'micro_sml',
+                'npl_metric' => 'micro_npl',
+                'os_label' => 'OS Micro',
+                'sml_label' => 'SML Micro',
+                'npl_label' => 'NPL Micro',
+            ],
+            default => [
+                'os_row' => 'total_os_non_commercial',
+                'sml_row' => 'total_sml_abs_non_commercial',
+                'npl_row' => 'total_npl_abs_non_commercial',
+                'os_metric' => 'total_os_non_commercial',
+                'sml_metric' => 'total_sml_abs_non_commercial',
+                'npl_metric' => 'total_npl_abs_non_commercial',
+                'os_label' => 'OS',
+                'sml_label' => 'SML',
+                'npl_label' => 'NPL',
+            ],
+        };
+    }
+
+    private function buildArea6SegmentBranchPerformance(?string $period, string $segmentKey): array
+    {
+        if (!$period || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return [];
+        }
+
+        $expressions = $this->area6SegmentSqlExpressions($segmentKey);
+        if (empty($expressions)) {
+            return [];
+        }
+
+        $branchLabelExpression = Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_label')
+            ? 'kanca_label'
+            : (Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'branch_label') ? 'branch_label' : "''");
+
+        $rows = $this->area6HarianSnapshotScopeQuery($period, true)
+            ->selectRaw("COALESCE({$branchLabelExpression}, '') as branch_label")
+            ->selectRaw("COALESCE(SUM({$expressions['os']}), 0) as pinjaman")
+            ->selectRaw("COALESCE(SUM({$expressions['sml']}), 0) as sml_abs")
+            ->selectRaw("COALESCE(SUM({$expressions['npl']}), 0) as npl_abs")
+            ->groupBy('branch_label')
+            ->get()
+            ->keyBy(fn ($row) => strtoupper(trim((string) ($row->branch_label ?? ''))));
+
+        $totalPinjaman = (float) $rows->sum(fn ($row) => (float) ($row->pinjaman ?? 0.0));
+        $totalSml = (float) $rows->sum(fn ($row) => (float) ($row->sml_abs ?? 0.0));
+        $totalNpl = (float) $rows->sum(fn ($row) => (float) ($row->npl_abs ?? 0.0));
+        $maxPinjaman = max(0.0, (float) $rows->max(fn ($row) => (float) ($row->pinjaman ?? 0.0)));
+        $maxSmlPct = 0.0;
+        $maxNplPct = 0.0;
+
+        $branches = [];
+        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+            $row = $rows->get(strtoupper(trim($branchName)));
+            $pinjaman = (float) ($row->pinjaman ?? 0.0);
+            $smlAbs = (float) ($row->sml_abs ?? 0.0);
+            $nplAbs = (float) ($row->npl_abs ?? 0.0);
+            $smlPct = $pinjaman > 0 ? ($smlAbs / $pinjaman) * 100 : 0.0;
+            $nplPct = $pinjaman > 0 ? ($nplAbs / $pinjaman) * 100 : 0.0;
+            $maxSmlPct = max($maxSmlPct, $smlPct);
+            $maxNplPct = max($maxNplPct, $nplPct);
+
+            $branches[$branchName] = [
+                'name' => $branchName,
+                'pinjaman' => $pinjaman,
+                'pinjaman_fmt' => $this->formatCurrencyCompact($pinjaman),
+                'pinjaman_share_fmt' => $this->formatPercentTwo($totalPinjaman > 0 ? ($pinjaman / $totalPinjaman) * 100 : 0.0),
+                'pinjaman_width' => $maxPinjaman > 0 ? ($pinjaman / $maxPinjaman) * 100 : 0.0,
+                'sml_abs' => $smlAbs,
+                'sml_abs_fmt' => $this->formatCurrencyCompact($smlAbs),
+                'sml_pct' => $smlPct,
+                'sml_pct_fmt' => $this->formatPercentTwo($smlPct),
+                'sml_share_fmt' => $this->formatPercentTwo($totalSml > 0 ? ($smlAbs / $totalSml) * 100 : 0.0),
+                'npl_abs' => $nplAbs,
+                'npl_abs_fmt' => $this->formatCurrencyCompact($nplAbs),
+                'npl_pct' => $nplPct,
+                'npl_pct_fmt' => $this->formatPercentTwo($nplPct),
+                'npl_share_fmt' => $this->formatPercentTwo($totalNpl > 0 ? ($nplAbs / $totalNpl) * 100 : 0.0),
+            ];
+        }
+
+        foreach ($branches as $branchName => $branch) {
+            $branches[$branchName]['sml_pct_width'] = $maxSmlPct > 0 ? ($branch['sml_pct'] / $maxSmlPct) * 100 : 0.0;
+            $branches[$branchName]['npl_pct_width'] = $maxNplPct > 0 ? ($branch['npl_pct'] / $maxNplPct) * 100 : 0.0;
+        }
+
+        return array_values($branches);
+    }
+
+    private function area6SegmentSqlExpressions(string $segmentKey): array
+    {
+        return match ($segmentKey) {
+            'sme' => [
+                'os' => "CASE WHEN COALESCE(sme_os, 0) <> 0 THEN COALESCE(sme_os, 0) ELSE COALESCE(kecil_non_cashcoll_os, 0) + COALESCE(cashcoll_os, 0) END",
+                'sml' => "CASE WHEN COALESCE(sme_sml, 0) <> 0 THEN COALESCE(sme_sml, 0) ELSE COALESCE(kecil_non_cashcoll_sml, 0) + COALESCE(cashcoll_sml, 0) END",
+                'npl' => "CASE WHEN COALESCE(sme_npl, 0) <> 0 THEN COALESCE(sme_npl, 0) ELSE COALESCE(kecil_non_cashcoll_npl, 0) + COALESCE(cashcoll_npl, 0) END",
+            ],
+            'consumer' => [
+                'os' => "CASE WHEN COALESCE(consumer_os, 0) <> 0 THEN COALESCE(consumer_os, 0) ELSE COALESCE(briguna_konsumer_os, 0) + COALESCE(kpr_os, 0) + COALESCE(kkb_os, 0) END",
+                'sml' => "CASE WHEN COALESCE(consumer_sml, 0) <> 0 THEN COALESCE(consumer_sml, 0) ELSE COALESCE(briguna_konsumer_sml, 0) + COALESCE(kpr_sml, 0) + COALESCE(kkb_sml, 0) END",
+                'npl' => "CASE WHEN COALESCE(consumer_npl, 0) <> 0 THEN COALESCE(consumer_npl, 0) ELSE COALESCE(briguna_konsumer_npl, 0) + COALESCE(kpr_npl, 0) + COALESCE(kkb_npl, 0) END",
+            ],
+            'micro' => [
+                'os' => "CASE WHEN COALESCE(micro_os, 0) <> 0 THEN COALESCE(micro_os, 0) ELSE COALESCE(briguna_mikro_os, 0) + COALESCE(kupedes_os, 0) + COALESCE(kur_mikro_os, 0) + COALESCE(kur_kecil_os, 0) + COALESCE(kur_kpp_os, 0) END",
+                'sml' => "CASE WHEN COALESCE(micro_sml, 0) <> 0 THEN COALESCE(micro_sml, 0) ELSE COALESCE(briguna_mikro_sml, 0) + COALESCE(kupedes_sml, 0) + COALESCE(kur_mikro_sml, 0) + COALESCE(kur_kecil_sml, 0) + COALESCE(kur_kpp_sml, 0) END",
+                'npl' => "CASE WHEN COALESCE(micro_npl, 0) <> 0 THEN COALESCE(micro_npl, 0) ELSE COALESCE(briguna_mikro_npl, 0) + COALESCE(kupedes_npl, 0) + COALESCE(kur_mikro_npl, 0) + COALESCE(kur_kecil_npl, 0) + COALESCE(kur_kpp_npl, 0) END",
+            ],
+            default => [],
+        };
+    }
+
+    private function buildArea6ScopeOverallTrends(string $scopeKey, ?string $period, ?string $mtmPeriod, ?string $mtdPeriod, array $currentMetrics, ?array $metricKeys = null): array
+    {
+        $metricKeys ??= $this->area6PortfolioMetricKeys($scopeKey);
         $date4 = $period ?? '2026-05-19';
         
         $endOfPreviousMonth = Carbon::parse($date4)->subMonthNoOverflow()->endOfMonth()->toDateString();
@@ -2690,28 +3163,17 @@ class DashboardSimpananController extends Controller
             ->value('snapshot_period') ?? '2025-12-31';
 
         $resolvedDates = [$date1, $date2, $date3, $date4];
-        $historicalQuery = DB::table(self::HARIAN_SNAPSHOT_TABLE)
-            ->whereIn('snapshot_period', $resolvedDates)
-            ->whereIn(DB::raw('UPPER(TRIM(kanca_label))'), $this->dashboardBranchNames());
-        $this->applyArea6PortfolioScope($historicalQuery, $scopeKey);
-
-        $historicalMetrics = $historicalQuery
-            ->selectRaw('
-                snapshot_period,
-                SUM(total_os_non_commercial) as total_os,
-                SUM(total_sml_abs_non_commercial) as total_sml,
-                SUM(total_npl_abs_non_commercial) as total_npl
-            ')
-            ->groupBy('snapshot_period')
-            ->get()
-            ->keyBy(fn ($row) => Carbon::parse($row->snapshot_period)->toDateString());
+        $historicalMetrics = collect($resolvedDates)
+            ->mapWithKeys(fn ($date) => [
+                Carbon::parse($date)->toDateString() => $this->area6ScopeSnapshotMetrics(Carbon::parse($date)->toDateString(), $scopeKey),
+            ]);
 
         $values = ['os' => [], 'sml' => [], 'npl' => []];
         foreach ($resolvedDates as $date) {
             $row = $historicalMetrics->get(Carbon::parse($date)->toDateString());
-            $values['os'][] = $row ? round($row->total_os / 1000000) : 0;
-            $values['sml'][] = $row ? round($row->total_sml / 1000000) : 0;
-            $values['npl'][] = $row ? round($row->total_npl / 1000000) : 0;
+            $values['os'][] = $row ? round(((float) ($row->{$metricKeys['os_metric']} ?? 0.0)) / 1000000) : 0;
+            $values['sml'][] = $row ? round(((float) ($row->{$metricKeys['sml_metric']} ?? 0.0)) / 1000000) : 0;
+            $values['npl'][] = $row ? round(((float) ($row->{$metricKeys['npl_metric']} ?? 0.0)) / 1000000) : 0;
         }
 
         $prefixes = ['YtD', 'MtM', 'MtD', 'Posisi'];
@@ -2722,9 +3184,9 @@ class DashboardSimpananController extends Controller
 
         return [
             'dates' => $formattedDates,
-            'os' => $this->buildArea6TrendMetric($values['os'], $currentMetrics['os'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, 'total_os'), 'os'),
-            'sml' => $this->buildArea6TrendMetric($values['sml'], $currentMetrics['sml'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, 'total_sml'), 'sml'),
-            'npl' => $this->buildArea6TrendMetric($values['npl'], $currentMetrics['npl'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, 'total_npl'), 'npl'),
+            'os' => $this->buildArea6TrendMetric($values['os'], $currentMetrics['os'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, $metricKeys['os_metric']), 'os'),
+            'sml' => $this->buildArea6TrendMetric($values['sml'], $currentMetrics['sml'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, $metricKeys['sml_metric']), 'sml'),
+            'npl' => $this->buildArea6TrendMetric($values['npl'], $currentMetrics['npl'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, $metricKeys['npl_metric']), 'npl'),
         ];
     }
 
@@ -2821,6 +3283,12 @@ class DashboardSimpananController extends Controller
     private function buildArea6ScopeSegmentPerformance(string $scopeKey, Collection $rows, object $snapshotMetrics, string $rkaMonthYear, string $periodFormat, ?string $period = null, ?array $unitKeys = null): array
     {
         $segmentDefinitions = match ($scopeKey) {
+            'sme' => [
+                ['label' => 'OS SME', 'icon' => 'fas fa-briefcase', 'os' => 'sme_os', 'sml' => 'sme_sml', 'npl' => 'sme_npl'],
+            ],
+            'consumer' => [
+                ['label' => 'OS KONSUMER', 'icon' => 'fas fa-users', 'os' => 'consumer_os', 'sml' => 'consumer_sml', 'npl' => 'consumer_npl'],
+            ],
             'ritel' => [
                 ['label' => 'OS SME', 'icon' => 'fas fa-briefcase', 'os' => 'sme_os', 'sml' => 'sme_sml', 'npl' => 'sme_npl'],
                 ['label' => 'OS KONSUMER', 'icon' => 'fas fa-users', 'os' => 'consumer_os', 'sml' => 'consumer_sml', 'npl' => 'consumer_npl'],
@@ -2867,7 +3335,7 @@ class DashboardSimpananController extends Controller
         
         // Fetch restruk_os (kolek 1 flag_restruk = Y)
         $restrukOs = 0.0;
-        if ($period && $this->hasTable('daily_loan_dinamis')) {
+        if ($period && $this->hasTable('daily_loan_dinamis') && !in_array($scopeKey, ['sme', 'consumer', 'micro'], true)) {
             $q = DB::table('daily_loan_dinamis')
                 ->where('periode', $period)
                 ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), $this->dashboardBranchNames());
@@ -2982,7 +3450,7 @@ class DashboardSimpananController extends Controller
 
     private function applyArea6PortfolioScope($query, string $scopeKey): void
     {
-        if ($scopeKey === 'cabang_konsol') {
+        if (in_array($scopeKey, ['area6', 'cabang_konsol', 'sme', 'consumer', 'micro'], true)) {
             $query->whereRaw('kanca_key = unit_key');
 
             return;
@@ -3019,6 +3487,9 @@ class DashboardSimpananController extends Controller
     private function area6ScopeLabel(string $scopeKey): string
     {
         return match ($scopeKey) {
+            'area6' => 'Area 6',
+            'sme' => 'SME',
+            'consumer' => 'Konsumer',
             'ritel' => 'Ritel',
             'micro' => 'Micro',
             default => 'Cabang Konsol',
@@ -3939,6 +4410,7 @@ class DashboardSimpananController extends Controller
                 'cards' => [],
             ],
             'area6_portfolio' => $this->emptyArea6PortfolioLanding(),
+            'landing_summary' => $this->emptyLandingExecutiveSummary(),
             'live_reports' => [
                 ['key' => 'simpanan', 'title' => 'Simpanan Realtime', 'eyebrow' => 'Snapshot aktif', 'value' => 'Rp0', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => '0 rekening | 0 CIF', 'detail' => 'Top cabang belum tersedia', 'updated' => 'Belum ada data', 'badge' => 'Simpanan', 'badge_class' => 'badge-primary', 'icon' => 'fas fa-piggy-bank', 'icon_bg' => 'rgba(13, 110, 253, 0.12)', 'tone' => 'primary', 'link' => route('dashboard'), 'link_label' => 'Buka report simpanan', 'detail_payload' => $this->buildLandingSourceDetail('Simpanan Realtime', null, 'simpanan_multipn', [['label' => 'Status', 'value' => 'Belum ada data', 'source' => 'simpanan_multipn']], 'Tabel sumber belum memiliki posisi yang bisa ditampilkan.')],
                 ['key' => 'pinjaman', 'title' => 'Pinjaman Realtime', 'eyebrow' => 'Outstanding aktif', 'value' => 'Rp0', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => '0 rekening | 0 cabang', 'detail' => 'Top cabang belum tersedia', 'updated' => 'Belum ada data', 'badge' => 'Pinjaman', 'badge_class' => 'badge-info', 'icon' => 'fas fa-hand-holding-usd', 'icon_bg' => 'rgba(23, 162, 184, 0.12)', 'tone' => 'info', 'link' => route('report.dashboard-pinjaman'), 'link_label' => 'Buka report pinjaman', 'detail_payload' => $this->buildLandingSourceDetail('Pinjaman Realtime', null, 'daily_loan_dinamis', [['label' => 'Status', 'value' => 'Belum ada data', 'source' => 'daily_loan_dinamis']], 'Tabel sumber belum memiliki periode yang bisa ditampilkan.')],

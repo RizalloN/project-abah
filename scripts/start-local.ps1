@@ -109,25 +109,22 @@ $startupDdnsTimeout = Get-IntSetting -Value $null -EnvName 'ABAH_START_DDNS_TIME
 
 Write-Host ("Worker policy: memory {0}MB, max-jobs {1}, max-time {2}s." -f $queueWorkerMemory, $queueWorkerMaxJobs, $queueWorkerMaxTime)
 
-$ddnsUpdater = Join-Path $projectRoot 'ddns-update.bat'
-if (Test-Path $ddnsUpdater -PathType Leaf) {
-    Write-Host ("Memperbarui DuckDNS public IP (timeout {0}s)..." -f $startupDdnsTimeout)
-    try {
-        $ddnsResult = Invoke-ProcessWithTimeout `
-            -FilePath 'cmd.exe' `
-            -ArgumentList @('/c', "`"$ddnsUpdater`"") `
-            -TimeoutSeconds $startupDdnsTimeout
+Write-Host ("Memeriksa akses publik dan DuckDNS (timeout {0}s)..." -f $startupDdnsTimeout)
+try {
+    $networkHealthResult = Invoke-ProcessWithTimeout `
+        -FilePath 'php' `
+        -ArgumentList @('artisan', 'network:public-health', '--fix', '--force') `
+        -TimeoutSeconds $startupDdnsTimeout
 
-        if ($ddnsResult.TimedOut) {
-            Write-Warning ("DuckDNS update melewati timeout {0}s. Scheduler Laravel akan mencoba lagi berkala." -f $startupDdnsTimeout)
-        } elseif ($ddnsResult.ExitCode -eq 0) {
-            Write-Host 'DuckDNS public IP berhasil diperbarui.'
-        } else {
-            Write-Warning ("DuckDNS update keluar dengan kode {0}. Scheduler Laravel akan mencoba lagi berkala." -f $ddnsResult.ExitCode)
-        }
-    } catch {
-        Write-Warning ("Tidak dapat menjalankan DuckDNS update: {0}" -f $_.Exception.Message)
+    if ($networkHealthResult.TimedOut) {
+        Write-Warning ("Public health check melewati timeout {0}s. Scheduler Laravel akan mencoba lagi berkala." -f $startupDdnsTimeout)
+    } elseif ($networkHealthResult.ExitCode -eq 0) {
+        Write-Host 'Akses publik dan DuckDNS sehat.'
+    } else {
+        Write-Warning ("Public health check keluar dengan kode {0}. Scheduler Laravel akan mencoba lagi berkala." -f $networkHealthResult.ExitCode)
     }
+} catch {
+    Write-Warning ("Tidak dapat menjalankan public health check: {0}" -f $_.Exception.Message)
 }
 
 # Ensure schema is current before spawning workers. Critical for snapshot dirty-period

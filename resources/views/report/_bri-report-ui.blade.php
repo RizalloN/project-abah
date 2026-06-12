@@ -20,7 +20,7 @@
         overflow: visible;
         background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
         box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.22) !important;
-    }
+    }                   
 
     .report-filter-card .card-body,
     .report-data-card .card-header,

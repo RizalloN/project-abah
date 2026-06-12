@@ -86,6 +86,22 @@ class ManagedReportManagementServiceTest extends TestCase
         $this->assertSame('2026-03-31', $filter);
     }
 
+    public function test_ssa_almafacts_management_scope_uses_period_and_kanca_konsolidasi(): void
+    {
+        $service = new ManagedReportManagementService();
+
+        [$periodColumn, $kancaColumn] = $service->resolveManagementScopeColumns('ssa_almafacts', [
+            'uniqueid_namareport',
+            'month_day_year_of_posisi',
+            'kanca_konsolidasi',
+            'kode_unit_kerja',
+            'nominal',
+        ]);
+
+        $this->assertSame('month_day_year_of_posisi', $periodColumn);
+        $this->assertSame('kanca_konsolidasi', $kancaColumn);
+    }
+
     public function test_ssa_period_label_keeps_full_date_when_bucket_has_single_exact_date(): void
     {
         $service = new ManagedReportManagementService();

@@ -507,7 +507,7 @@ class KejarLabaReportController extends Controller
                 $join->on('n.kanwil', '=', 'o.kanwil')
                     ->on('n.kanca', '=', 'o.kanca')
                     ->on('n.unit', '=', 'o.unit')
-                    ->whereRaw('CAST(n.acctno AS UNSIGNED) = CAST(o.acctno AS UNSIGNED)')
+                    ->on('n.acctno', '=', 'o.acctno')
                     ->whereRaw('n.periode = ?', [$period])
                     ->whereRaw('o.periode = ?', [$m1Period]);
             })
@@ -515,7 +515,11 @@ class KejarLabaReportController extends Controller
             ->selectRaw("o.segmen_dashboard")
             ->selectRaw("(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) as amount")
             ->selectRaw("'tupok' as type")
-            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0');
+            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
+            ->whereNotNull('n.acctno')
+            ->where('n.acctno', '<>', '')
+            ->whereNotNull('o.acctno')
+            ->where('o.acctno', '<>', '');
 
         if (!empty($branchOffices)) {
             $tupokQuery->whereIn('n.kanca', $branchOffices);
@@ -526,7 +530,7 @@ class KejarLabaReportController extends Controller
                 $join->on('o.kanwil', '=', 'n.kanwil')
                     ->on('o.kanca', '=', 'n.kanca')
                     ->on('o.unit', '=', 'n.unit')
-                    ->whereRaw('CAST(o.acctno AS UNSIGNED) = CAST(n.acctno AS UNSIGNED)')
+                    ->on('o.acctno', '=', 'n.acctno')
                     ->whereRaw('n.periode = ?', [$period]);
             })
             ->selectRaw("o.kanca")
@@ -534,7 +538,9 @@ class KejarLabaReportController extends Controller
             ->selectRaw("COALESCE(o.pokok, 0) as amount")
             ->selectRaw("'lunas' as type")
             ->where('o.periode', $m1Period)
-            ->whereNull('n.acctno');
+            ->whereNull('n.acctno')
+            ->whereNotNull('o.acctno')
+            ->where('o.acctno', '<>', '');
 
         if (!empty($branchOffices)) {
             $lunasQuery->whereIn('o.kanca', $branchOffices);
@@ -584,7 +590,7 @@ class KejarLabaReportController extends Controller
                 $join->on('n.kanwil', '=', 'o.kanwil')
                     ->on('n.kanca', '=', 'o.kanca')
                     ->on('n.unit', '=', 'o.unit')
-                    ->whereRaw('CAST(n.acctno AS UNSIGNED) = CAST(o.acctno AS UNSIGNED)')
+                    ->on('n.acctno', '=', 'o.acctno')
                     ->whereRaw('n.periode = ?', [$period])
                     ->whereRaw('o.periode = ?', [$m1Period]);
             })
@@ -592,14 +598,18 @@ class KejarLabaReportController extends Controller
             ->selectRaw("o.unit")
             ->selectRaw("o.segmen_dashboard")
             ->selectRaw("(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) as amount")
-            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0');
+            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
+            ->whereNotNull('n.acctno')
+            ->where('n.acctno', '<>', '')
+            ->whereNotNull('o.acctno')
+            ->where('o.acctno', '<>', '');
 
         $lunasQuery = DB::table('lw325_ph as o')
             ->leftJoin('lw325_ph as n', function ($join) use ($m1Period, $period) {
                 $join->on('o.kanwil', '=', 'n.kanwil')
                     ->on('o.kanca', '=', 'n.kanca')
                     ->on('o.unit', '=', 'n.unit')
-                    ->whereRaw('CAST(o.acctno AS UNSIGNED) = CAST(n.acctno AS UNSIGNED)')
+                    ->on('o.acctno', '=', 'n.acctno')
                     ->whereRaw('n.periode = ?', [$period]);
             })
             ->selectRaw("o.kanca")
@@ -607,7 +617,9 @@ class KejarLabaReportController extends Controller
             ->selectRaw("o.segmen_dashboard")
             ->selectRaw("COALESCE(o.pokok, 0) as amount")
             ->where('o.periode', $m1Period)
-            ->whereNull('n.acctno');
+            ->whereNull('n.acctno')
+            ->whereNotNull('o.acctno')
+            ->where('o.acctno', '<>', '');
 
         if (!empty($kancas)) {
             $tupokQuery->whereIn('n.kanca', $kancas);

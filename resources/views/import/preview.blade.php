@@ -64,6 +64,7 @@
 
         <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST" data-no-route-loading data-init-url="{{ $initRoute ?? '' }}" data-stream-url="{{ $streamRoute ?? '' }}" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-filtered-rows-url="{{ $filteredRowsRoute ?? route('import.preview.filtered-rows') }}" data-warm-index-url="{{ $warmIndexRoute ?? route('import.preview.warm-index') }}">
             @csrf
+            <input type="hidden" id="import_preview_filter_build" value="merchant-filter-direct-v1">
             <input type="hidden" name="file_path" value="{{ $filePath }}">
             <input type="hidden" name="delimiter" value="{{ $currentDelimiter }}">
             <input type="hidden" name="active_filters_json" id="active_filters_json" value="{}">
@@ -257,12 +258,15 @@
 
 @section('scripts')
 <script>
+    window.importPreviewFilterBuild = 'merchant-filter-state-v2';
+
     document.addEventListener('DOMContentLoaded', function () {
         const filterOptionsMap = @json($formattedUniqueValues);
         const filtersDisabled = @json($filtersDisabled);
         const filterableColumnIndices = @json($filterableColumnIndices ?? []);
         const forceAllChecked = @json(!empty($forceAllFiltersCheckedOnLoad));
         const headers = @json($headers);
+        const initialArea6Selections = @json($initialArea6Selections ?? []);
         const disableArea6AutoFilter = @json(!empty($disableArea6AutoFilter));
         const importFormElement = document.getElementById('importForm');
         const previewTbody = document.querySelector('.table-responsive tbody');
@@ -288,6 +292,7 @@
         let previewRenderToken = 0;
         let previewViewMode = 'sample';
         let previewRefreshTimer = null;
+        window.__importPreviewFilterState = filterState;
 
         const swalTheme = {
             customClass: {
@@ -397,10 +402,11 @@
             };
         }
 
-        const dropdownMenus = document.querySelectorAll('.dropdown-menu');
-
-        dropdownMenus.forEach(menu => {
-            menu.addEventListener('click', function (e) { e.stopPropagation(); });
+        // Let controls receive their events first, then keep Bootstrap from closing the menu.
+        document.querySelectorAll('.import-preview-table .dropdown-menu').forEach(function (menu) {
+            menu.addEventListener('click', function (event) {
+                event.stopPropagation();
+            });
         });
 
         /* =========================================================
@@ -417,7 +423,7 @@
             return (hash >>> 0).toString(36);
         }
 
-        const storageKeyPrefix = 'preview_filter_v5_' + stableHash(JSON.stringify({
+        const storageKeyPrefix = 'preview_filter_v8_' + stableHash(JSON.stringify({
             file: filePathValue,
             delimiter: delimiterValue,
             headers: headers,
@@ -480,17 +486,27 @@
             }, delay);
         }
 
+        function normalizeFilterValue(value) {
+            return String(value ?? '').trim();
+        }
+
+        function normalizeFilterValues(values) {
+            return Array.from(new Set(
+                (Array.isArray(values) ? values : []).map(normalizeFilterValue)
+            ));
+        }
+
         Object.keys(filterOptionsMap).forEach(function (col) {
-            const values = Array.isArray(filterOptionsMap[col]) ? filterOptionsMap[col].map(function (value) {
-                return String(value).trim();
-            }) : [];
-            const header = String(headers[col] || '');
-            let selectedValues;
-            if (forceAllChecked) {
-                selectedValues = new Set(values);
-            } else {
-                selectedValues = new Set(values);
-            }
+            const values = normalizeFilterValues(filterOptionsMap[col]);
+            const configuredInitialValues = normalizeFilterValues(initialArea6Selections[col] || []);
+            const shouldApplyArea6Selection = !forceAllChecked
+                && !disableArea6AutoFilter
+                && configuredInitialValues.length > 0;
+            const selectedValues = shouldApplyArea6Selection
+                ? new Set(values.filter(function (value) {
+                    return configuredInitialValues.includes(value);
+                }))
+                : new Set(values);
 
             filterState[col] = {
                 allValues: values,
@@ -534,7 +550,7 @@
             for (const displayColStr in activeFilters) {
                 const displayCol = Number(displayColStr);
                 const values = activeFilters[displayColStr];
-                if (!Array.isArray(values) || values.length === 0) {
+                if (!Array.isArray(values)) {
                     continue;
                 }
                 normalized[displayCol] = values;
@@ -552,53 +568,6 @@
                 });
 
             return JSON.stringify(ordered);
-        }
-
-        function rowMatchesActiveFilters(row, activeFilters) {
-            const filterEntries = Object.keys(activeFilters || {});
-            if (!filterEntries.length) {
-                return true;
-            }
-
-            for (let i = 0; i < filterEntries.length; i++) {
-                const col = filterEntries[i];
-                const allowed = Array.isArray(activeFilters[col]) ? activeFilters[col] : [];
-                if (!allowed.length) {
-                    return false;
-                }
-
-                const cell = row.children[parseInt(col, 10) + 1];
-                if (!cell) {
-                    return false;
-                }
-
-                const cellVal = (cell.getAttribute('data-val') || '').trim();
-                if (!allowed.includes(cellVal)) {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        function collectPreviewValuesForColumn(col, activeFilters) {
-            const values = new Set();
-            const rows = document.querySelectorAll('.preview-row');
-            rows.forEach(function (row) {
-                if (!rowMatchesActiveFilters(row, activeFilters)) {
-                    return;
-                }
-
-                const cell = row.children[parseInt(col, 10) + 1];
-                if (!cell) {
-                    return;
-                }
-
-                const cellVal = (cell.getAttribute('data-val') || '').trim();
-                values.add(cellVal);
-            });
-
-            return values;
         }
 
         function escapeHtml(value) {
@@ -648,19 +617,7 @@
                 return [];
             }
 
-            const activeFilters = buildActiveFilterContext(col);
-            const previewValues = Object.keys(activeFilters).length > 0
-                ? collectPreviewValuesForColumn(col, activeFilters)
-                : null;
-            if (previewValues && previewValues.size === 0) {
-                return [];
-            }
-
-            const effectiveValues = previewValues && previewValues.size > 0
-                ? state.allValues.filter(function (value) {
-                    return previewValues.has(value);
-                })
-                : state.allValues.slice();
+            const effectiveValues = state.allValues.slice();
 
             const term = (searchTerms[col] || '').toLowerCase();
             if (!term) {
@@ -680,22 +637,95 @@
                 return;
             }
 
-            if (!filteredValues.length) {
+            selectAll.disabled = Boolean(state.isLoading);
+
+            const visibleCheckboxes = Array.from(document.querySelectorAll('.filter-checkbox[data-col="' + col + '"]'));
+            const visibleValues = visibleCheckboxes.map(function (checkbox) {
+                return String(checkbox.value || '').trim();
+            });
+            const comparisonValues = visibleValues.length ? visibleValues : filteredValues;
+
+            if (!comparisonValues.length) {
                 selectAll.checked = false;
                 selectAll.indeterminate = false;
                 return;
             }
 
             let checkedCount = 0;
-            filteredValues.forEach(function (value) {
+            comparisonValues.forEach(function (value) {
                 if (state.selectedValues.has(value)) {
                     checkedCount++;
                 }
             });
 
-            selectAll.checked = checkedCount === filteredValues.length;
-            selectAll.indeterminate = checkedCount > 0 && checkedCount < filteredValues.length;
+            selectAll.checked = checkedCount === comparisonValues.length;
+            selectAll.indeterminate = checkedCount > 0 && checkedCount < comparisonValues.length;
         }
+
+        function syncVisibleFilterCheckboxes(col) {
+            const state = filterState[col];
+            if (!state) {
+                return;
+            }
+
+            document.querySelectorAll('.filter-checkbox[data-col="' + col + '"]').forEach(function (checkbox) {
+                checkbox.checked = state.selectedValues.has(String(checkbox.value || '').trim());
+            });
+        }
+
+        function clearDependentFilterSignatures(changedCol) {
+            Object.keys(filterState).forEach(function (key) {
+                if (String(key) !== String(changedCol) && filterState[key]) {
+                    filterState[key].loadedSignature = '';
+                }
+            });
+        }
+
+        function scheduleDependentFilterRefresh(changedCol) {
+            if (deferDependentFilterRefresh) {
+                return;
+            }
+
+            debounceRender(changedCol + '_refresh', function() {
+                refreshDependentFilterOptions(changedCol);
+            }, 300);
+        }
+
+        function applySelectAllState(colIndex, isChecked) {
+            const state = filterState[colIndex];
+            if (!state) {
+                return;
+            }
+
+            if (state.isLoading) {
+                syncSelectAllCheckbox(colIndex, getFilteredValues(colIndex));
+                return;
+            }
+
+            const values = getFilteredValues(colIndex);
+
+            values.forEach(function (value) {
+                if (isChecked) {
+                    state.selectedValues.add(value);
+                } else {
+                    state.selectedValues.delete(value);
+                }
+            });
+
+            renderFilterList(colIndex);
+
+            clearDependentFilterSignatures(colIndex);
+            updatePreviewTable();
+            scheduleDependentFilterRefresh(colIndex);
+        }
+
+        window.__previewApplySelectAllState = applySelectAllState;
+        window.__importPreviewAfterFilterChanged = function (colIndex) {
+            clearDependentFilterSignatures(colIndex);
+            syncSelectAllCheckbox(colIndex, getFilteredValues(colIndex));
+            updatePreviewTable();
+            scheduleDependentFilterRefresh(colIndex);
+        };
 
         function renderFilterList(col) {
             const container = document.getElementById('list_container_' + col);
@@ -738,6 +768,7 @@
             }
 
             container.innerHTML = html;
+            syncVisibleFilterCheckboxes(col);
             syncSelectAllCheckbox(col, filteredValues);
         }
 
@@ -766,11 +797,16 @@
             if ((isInitialPrefetch || Object.keys(activeFilters).length === 0) && !state.fullOptionsLoaded) {
                 const cachedValues = getFromLocalStorage(col);
                 if (cachedValues) {
-                    state.allValues = cachedValues;
+                    const normalizedCachedValues = normalizeFilterValues(cachedValues);
+                    const previousValues = Array.isArray(state.allValues) ? state.allValues.slice() : [];
                     const previousSelection = new Set(state.selectedValues || []);
-                    state.selectedValues = new Set(cachedValues.filter(function (value) {
-                        return previousSelection.has(value) || previousSelection.size === 0;
-                    }));
+                    const hadAllSelected = previousValues.length === 0 || previousSelection.size === previousValues.length;
+                    state.allValues = normalizedCachedValues;
+                    state.selectedValues = hadAllSelected
+                        ? new Set(normalizedCachedValues)
+                        : new Set(normalizedCachedValues.filter(function (value) {
+                            return previousSelection.has(value);
+                        }));
                     state.fullOptionsLoaded = true;
                     state.loadedSignature = signature;
                     renderFilterList(col);
@@ -813,9 +849,7 @@
                 const previousValues = Array.isArray(state.allValues) ? state.allValues.slice() : [];
                 const previousSelection = new Set(state.selectedValues || []);
                 const hadAllSelected = previousValues.length === 0 || previousSelection.size === previousValues.length;
-                const normalizedValues = payload.values.map(function (value) {
-                    return String(value).trim();
-                });
+                const normalizedValues = normalizeFilterValues(payload.values);
 
                 if (state.pendingSignature !== signature || state.needsRefresh) {
                     return;
@@ -862,7 +896,10 @@
             if (!cols.length) {
                 return;
             }
-            if (!cols.length) {
+
+            // Batasi prefetch jika kolom terlalu banyak (> 8 kolom) untuk mencegah website stuck/freeze
+            if (cols.length > 8) {
+                console.log('Prefetch skipped because table has too many columns:', cols.length);
                 return;
             }
 
@@ -880,7 +917,13 @@
                     return;
                 }
 
-                ensureFullFilterOptions(key);
+                const container = document.getElementById('list_container_' + key);
+                const dropdown = container ? container.closest('.dropdown') : null;
+                const isOpen = dropdown && (dropdown.classList.contains('show') || dropdown.querySelector('.dropdown-menu').classList.contains('show'));
+
+                if (isOpen) {
+                    ensureFullFilterOptions(key);
+                }
             });
         }
 
@@ -1093,6 +1136,11 @@
                 activeFilters[col] = Array.from(state.selectedValues);
             });
 
+            const activeFiltersInput = document.getElementById('active_filters_json');
+            if (activeFiltersInput) {
+                activeFiltersInput.value = JSON.stringify(activeFilters);
+            }
+
             if (Object.keys(activeFilters).length === 0) {
                 if (previewRefreshTimer) {
                     clearTimeout(previewRefreshTimer);
@@ -1222,56 +1270,18 @@
                 state.selectedValues.delete(value);
             }
 
-            Object.keys(filterState).forEach(function (key) {
-                if (String(key) !== String(colIndex) && filterState[key]) {
-                    filterState[key].loadedSignature = '';
-                }
-            });
+            clearDependentFilterSignatures(colIndex);
 
             syncSelectAllCheckbox(colIndex, getFilteredValues(colIndex));
+            syncVisibleFilterCheckboxes(colIndex);
             updatePreviewTable();
-
-            if (!deferDependentFilterRefresh) {
-                // Debounce refresh dependent filters untuk menghindari multiple requests
-                debounceRender(colIndex + '_refresh', function() {
-                    refreshDependentFilterOptions(colIndex);
-                }, 300);
-            }
+            scheduleDependentFilterRefresh(colIndex);
         });
 
-        const selectAllCbs = document.querySelectorAll('.select-all-cb');
-        selectAllCbs.forEach(cb => {
+        document.querySelectorAll('.select-all-cb').forEach(function (cb) {
             cb.addEventListener('change', function () {
-                const isChecked = this.checked;
                 const colIndex = this.getAttribute('data-col');
-                const state = filterState[colIndex];
-                if (!state) {
-                    return;
-                }
-
-                getFilteredValues(colIndex).forEach(function (value) {
-                    if (isChecked) {
-                        state.selectedValues.add(value);
-                    } else {
-                        state.selectedValues.delete(value);
-                    }
-                });
-
-                Object.keys(filterState).forEach(function (key) {
-                    if (String(key) !== String(colIndex) && filterState[key]) {
-                        filterState[key].loadedSignature = '';
-                    }
-                });
-
-                renderFilterList(colIndex);
-                updatePreviewTable();
-
-                if (!deferDependentFilterRefresh) {
-                    // Debounce refresh dependent filters
-                    debounceRender(colIndex + '_refresh', function() {
-                        refreshDependentFilterOptions(colIndex);
-                    }, 300);
-                }
+                applySelectAllState(colIndex, this.checked);
             });
         });
 
@@ -2342,6 +2352,18 @@
     .import-preview-table .dropdown-menu {
         border: 1px solid #e2e8f0;
         border-radius: 8px !important;
+    }
+
+    .import-preview-table .dropdown-menu .custom-control-label {
+        display: block;
+        min-height: 1.5rem;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .import-preview-table .dropdown-menu .custom-control-input:disabled ~ .custom-control-label {
+        cursor: wait;
+        opacity: 0.58;
     }
 
     .import-preview-footer {

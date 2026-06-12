@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\JobHealthService;
+use App\Services\Network\PublicAccessHealthService;
 use App\Jobs\EnsureImportedSnapshotsFreshJob;
 use App\Support\ManagedReportDeleteRecoveryService;
 use App\Support\ReportDataSyncService;
@@ -11,6 +12,7 @@ use App\Support\StrictDateParser;
 use App\Services\Import\SnapshotQueuePauseService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 use Symfony\Component\Process\Process;
@@ -20,33 +22,76 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Artisan::command('network:update-duckdns', function () {
-    $scriptPath = base_path('ddns-update.bat');
-    if (!is_file($scriptPath)) {
-        $this->error('ddns-update.bat tidak ditemukan.');
+    $lock = Cache::lock('network:duckdns-update', 120);
+    if (!$lock->get()) {
+        $this->warn('DuckDNS update sedang berjalan di proses lain.');
 
-        return 1;
+        return 0;
     }
 
-    $process = new Process(['cmd.exe', '/c', $scriptPath], base_path());
-    $process->setTimeout(90);
-    $process->run();
+    try {
+        $scriptPath = base_path('ddns-update.bat');
+        if (!is_file($scriptPath)) {
+            $this->error('ddns-update.bat tidak ditemukan.');
 
-    $output = trim($process->getOutput() . "\n" . $process->getErrorOutput());
-    $output = preg_replace('/token=[^&"\s]+/i', 'token=***', $output) ?? $output;
-    $output = preg_replace('/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i', '***', $output) ?? $output;
+            return 1;
+        }
 
-    if ($output !== '') {
-        $this->line($output);
+        $process = new Process(['cmd.exe', '/c', $scriptPath], base_path());
+        $process->setTimeout(90);
+        $process->run();
+
+        $output = trim($process->getOutput() . "\n" . $process->getErrorOutput());
+        $output = preg_replace('/token=[^&"\s]+/i', 'token=***', $output) ?? $output;
+        $output = preg_replace('/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i', '***', $output) ?? $output;
+
+        if ($output !== '') {
+            $this->line($output);
+        }
+
+        if (!$process->isSuccessful()) {
+            $this->error('DuckDNS update gagal.');
+
+            return $process->getExitCode() ?: 1;
+        }
+
+        return 0;
+    } finally {
+        $lock->release();
     }
-
-    if (!$process->isSuccessful()) {
-        $this->error('DuckDNS update gagal.');
-
-        return $process->getExitCode() ?: 1;
-    }
-
-    return 0;
 })->purpose('Update DuckDNS public IP for asixdashboard.duckdns.org');
+
+Artisan::command('network:public-health {--fix} {--force} {--json}', function () {
+    $status = app(PublicAccessHealthService::class)->check(
+        fix: (bool) $this->option('fix'),
+        force: (bool) $this->option('force')
+    );
+
+    if ($this->option('json')) {
+        $this->line(json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+        return $status['healthy'] ? 0 : 1;
+    }
+
+    $this->table(
+        ['Metric', 'Value'],
+        [
+            ['healthy', $status['healthy'] ? 'yes' : 'no'],
+            ['domain', $status['domain']],
+            ['public_ip', $status['public_ip'] ?? '-'],
+            ['dns_ip', $status['dns_ip'] ?? '-'],
+            ['ip_matches', $status['ip_matches'] ? 'yes' : 'no'],
+            ['port_80', ($status['ports'][80] ?? false) ? 'open' : 'closed'],
+            ['port_443', ($status['ports'][443] ?? false) ? 'open' : 'closed'],
+            ['http_status', (string) ($status['http_status'] ?? '-')],
+            ['fix_attempted', $status['fix_attempted'] ? 'yes' : 'no'],
+            ['fix_exit_code', (string) ($status['fix_exit_code'] ?? '-')],
+            ['duration_ms', (string) $status['duration_ms']],
+        ]
+    );
+
+    return $status['healthy'] ? 0 : 1;
+})->purpose('Check public dashboard access and repair DuckDNS when IP changes');
 
 Artisan::command('reports:snapshot {report=all} {--period=} {--force}', function () {
     $report = (string) $this->argument('report');
@@ -221,6 +266,11 @@ Schedule::command('queue:health-sweep')
 Schedule::command('network:update-duckdns')
     ->everyFiveMinutes()
     ->withoutOverlapping(10)
+    ->runInBackground();
+
+Schedule::command('network:public-health --fix')
+    ->everyMinute()
+    ->withoutOverlapping(2)
     ->runInBackground();
 
 Schedule::command('logs:maintenance')

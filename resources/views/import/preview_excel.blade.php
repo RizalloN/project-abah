@@ -182,6 +182,7 @@
 document.addEventListener('DOMContentLoaded', function () {
     const filterOptionsMap = @json($formattedUniqueValues);
     const filtersDisabled = @json($filtersDisabled);
+    const disableFilterPrefetch = @json($disableFilterPrefetch ?? false);
     const importFormElement = document.getElementById('importForm');
     const previewTbody = document.querySelector('.table-responsive tbody');
     const previewShell = document.querySelector('.import-preview-table-shell');
@@ -258,8 +259,11 @@ document.addEventListener('DOMContentLoaded', function () {
     /* =========================================================
        DROPDOWN: klik di dalam menu tidak menutup dropdown
     ========================================================= */
-    document.querySelectorAll('.dropdown-menu').forEach(function (menu) {
-        menu.addEventListener('click', function (e) { e.stopPropagation(); });
+    // Let controls receive their events first, then keep Bootstrap from closing the menu.
+    document.querySelectorAll('.import-preview-table .dropdown-menu').forEach(function (menu) {
+        menu.addEventListener('click', function (event) {
+            event.stopPropagation();
+        });
     });
 
     /* =========================================================
@@ -331,10 +335,18 @@ document.addEventListener('DOMContentLoaded', function () {
         }, delay);
     }
 
+    function normalizeFilterValue(value) {
+        return String(value ?? '').trim();
+    }
+
+    function normalizeFilterValues(values) {
+        return Array.from(new Set(
+            (Array.isArray(values) ? values : []).map(normalizeFilterValue)
+        ));
+    }
+
     Object.keys(filterOptionsMap).forEach(function (col) {
-        const values = Array.isArray(filterOptionsMap[col]) ? filterOptionsMap[col].map(function (value) {
-            return String(value);
-        }) : [];
+        const values = normalizeFilterValues(filterOptionsMap[col]);
 
         filterState[col] = {
             allValues: values,
@@ -383,51 +395,6 @@ document.addEventListener('DOMContentLoaded', function () {
             });
 
         return JSON.stringify(ordered);
-    }
-
-    function rowMatchesActiveFilters(row, activeFilters) {
-        const filterEntries = Object.keys(activeFilters || {});
-        if (!filterEntries.length) {
-            return true;
-        }
-
-        for (let i = 0; i < filterEntries.length; i++) {
-            const col = filterEntries[i];
-            const allowed = Array.isArray(activeFilters[col]) ? activeFilters[col] : [];
-            if (!allowed.length) {
-                return false;
-            }
-
-            const cell = row.children[parseInt(col, 10) + 1];
-            if (!cell) {
-                return false;
-            }
-
-            const cellVal = (cell.getAttribute('data-val') || '').trim();
-            if (!allowed.includes(cellVal)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    function collectPreviewValuesForColumn(col, activeFilters) {
-        const values = new Set();
-        document.querySelectorAll('.preview-row').forEach(function (row) {
-            if (!rowMatchesActiveFilters(row, activeFilters)) {
-                return;
-            }
-
-            const cell = row.children[parseInt(col, 10) + 1];
-            if (!cell) {
-                return;
-            }
-
-            values.add((cell.getAttribute('data-val') || '').trim());
-        });
-
-        return values;
     }
 
     function escapeHtml(value) {
@@ -479,19 +446,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return [];
         }
 
-        const activeFilters = buildActiveFilterContext(col);
-        const previewValues = Object.keys(activeFilters).length > 0
-            ? collectPreviewValuesForColumn(col, activeFilters)
-            : null;
-        if (previewValues && previewValues.size === 0) {
-            return [];
-        }
-
-        const effectiveValues = previewValues && previewValues.size > 0
-            ? state.allValues.filter(function (value) {
-                return previewValues.has(value);
-            })
-            : state.allValues.slice();
+        const effectiveValues = state.allValues.slice();
 
         const term = (searchTerms[col] || '').toLowerCase();
         if (!term) {
@@ -511,21 +466,82 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        if (!filteredValues.length) {
+        selectAll.disabled = Boolean(state.isLoading);
+
+        const visibleCheckboxes = Array.from(document.querySelectorAll('.filter-checkbox[data-col="' + col + '"]'));
+        const visibleValues = visibleCheckboxes.map(function (checkbox) {
+            return String(checkbox.value || '').trim();
+        });
+        const comparisonValues = visibleValues.length ? visibleValues : filteredValues;
+
+        if (!comparisonValues.length) {
             selectAll.checked = false;
             selectAll.indeterminate = false;
             return;
         }
 
         let checkedCount = 0;
-        filteredValues.forEach(function (value) {
+        comparisonValues.forEach(function (value) {
             if (state.selectedValues.has(value)) {
                 checkedCount++;
             }
         });
 
-        selectAll.checked = checkedCount === filteredValues.length;
-        selectAll.indeterminate = checkedCount > 0 && checkedCount < filteredValues.length;
+        selectAll.checked = checkedCount === comparisonValues.length;
+        selectAll.indeterminate = checkedCount > 0 && checkedCount < comparisonValues.length;
+    }
+
+    function syncVisibleFilterCheckboxes(col) {
+        const state = filterState[col];
+        if (!state) {
+            return;
+        }
+
+        document.querySelectorAll('.filter-checkbox[data-col="' + col + '"]').forEach(function (checkbox) {
+            checkbox.checked = state.selectedValues.has(String(checkbox.value || '').trim());
+        });
+    }
+
+    function clearDependentFilterSignatures(changedCol) {
+        Object.keys(filterState).forEach(function (key) {
+            if (String(key) !== String(changedCol) && filterState[key]) {
+                filterState[key].loadedSignature = '';
+            }
+        });
+    }
+
+    function scheduleDependentFilterRefresh(changedCol) {
+        debounceRender(changedCol + '_refresh', function() {
+            refreshDependentFilterOptions(changedCol);
+        }, 300);
+    }
+
+    function applySelectAllState(colIndex, isChecked) {
+        const state = filterState[colIndex];
+        if (!state) {
+            return;
+        }
+
+        if (state.isLoading) {
+            syncSelectAllCheckbox(colIndex, getFilteredValues(colIndex));
+            return;
+        }
+
+        const values = getFilteredValues(colIndex);
+
+        values.forEach(function (value) {
+            if (isChecked) {
+                state.selectedValues.add(value);
+            } else {
+                state.selectedValues.delete(value);
+            }
+        });
+
+        renderFilterList(colIndex);
+
+        clearDependentFilterSignatures(colIndex);
+        updatePreviewTable();
+        scheduleDependentFilterRefresh(colIndex);
     }
 
     function renderFilterList(col) {
@@ -568,6 +584,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         container.innerHTML = html;
+        syncVisibleFilterCheckboxes(col);
         syncSelectAllCheckbox(col, filteredValues);
     }
 
@@ -596,11 +613,16 @@ document.addEventListener('DOMContentLoaded', function () {
         if ((isInitialPrefetch || Object.keys(activeFilters).length === 0) && !state.fullOptionsLoaded) {
             const cachedValues = getFromLocalStorage(col);
             if (cachedValues) {
-                state.allValues = cachedValues;
+                const normalizedCachedValues = normalizeFilterValues(cachedValues);
+                const previousValues = Array.isArray(state.allValues) ? state.allValues.slice() : [];
                 const previousSelection = new Set(state.selectedValues || []);
-                state.selectedValues = new Set(cachedValues.filter(function (value) {
-                    return previousSelection.has(value) || previousSelection.size === 0;
-                }));
+                const hadAllSelected = previousValues.length === 0 || previousSelection.size === previousValues.length;
+                state.allValues = normalizedCachedValues;
+                state.selectedValues = hadAllSelected
+                    ? new Set(normalizedCachedValues)
+                    : new Set(normalizedCachedValues.filter(function (value) {
+                        return previousSelection.has(value);
+                    }));
                 state.fullOptionsLoaded = true;
                 state.loadedSignature = signature;
                 renderFilterList(col);
@@ -642,9 +664,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const previousValues = Array.isArray(state.allValues) ? state.allValues.slice() : [];
             const previousSelection = new Set(state.selectedValues || []);
             const hadAllSelected = previousValues.length === 0 || previousSelection.size === previousValues.length;
-            const normalizedValues = payload.values.map(function (value) {
-                return String(value).trim();
-            });
+            const normalizedValues = normalizeFilterValues(payload.values);
 
             if (state.pendingSignature !== signature || state.needsRefresh) {
                 return;
@@ -686,8 +706,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Prefetch semua filter options secara parallel saat page load
     async function prefetchAllFilterOptions() {
+        if (disableFilterPrefetch) return;
+
         const cols = Object.keys(filterState);
         if (!cols.length) return;
+
+        // Batasi prefetch jika kolom terlalu banyak (> 8 kolom) untuk mencegah website stuck/freeze
+        if (cols.length > 8) {
+            console.log('Prefetch skipped because table has too many columns:', cols.length);
+            return;
+        }
 
         const prefetchPromises = cols.map(col => ensureFullFilterOptions(col, true));
         try {
@@ -703,7 +731,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
-            ensureFullFilterOptions(key);
+            const container = document.getElementById('list_container_' + key);
+            const dropdown = container ? container.closest('.dropdown') : null;
+            const isOpen = dropdown && (dropdown.classList.contains('show') || dropdown.querySelector('.dropdown-menu').classList.contains('show'));
+
+            if (isOpen) {
+                ensureFullFilterOptions(key);
+            }
         });
     }
 
@@ -929,31 +963,25 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        var colIndex = e.target.getAttribute('data-col');
-        var state = filterState[colIndex];
+        const colIndex = e.target.getAttribute('data-col');
+        const state = filterState[colIndex];
         if (!state) {
             return;
         }
 
+        const value = e.target.value.trim();
         if (e.target.checked) {
-            state.selectedValues.add(e.target.value.trim());
+            state.selectedValues.add(value);
         } else {
-            state.selectedValues.delete(e.target.value.trim());
+            state.selectedValues.delete(value);
         }
 
-        Object.keys(filterState).forEach(function (key) {
-            if (String(key) !== String(colIndex) && filterState[key]) {
-                filterState[key].loadedSignature = '';
-            }
-        });
+        clearDependentFilterSignatures(colIndex);
 
         syncSelectAllCheckbox(colIndex, getFilteredValues(colIndex));
+        syncVisibleFilterCheckboxes(colIndex);
         updatePreviewTable();
-        
-        // Debounce refresh dependent filters
-        debounceRender(colIndex + '_refresh', function() {
-            refreshDependentFilterOptions(colIndex);
-        }, 300);
+        scheduleDependentFilterRefresh(colIndex);
     });
 
     /* =========================================================
@@ -961,34 +989,8 @@ document.addEventListener('DOMContentLoaded', function () {
     ========================================================= */
     document.querySelectorAll('.select-all-cb').forEach(function (cb) {
         cb.addEventListener('change', function () {
-            var isChecked = this.checked;
-            var colIndex  = this.getAttribute('data-col');
-            var state = filterState[colIndex];
-            if (!state) {
-                return;
-            }
-
-            getFilteredValues(colIndex).forEach(function (value) {
-                if (isChecked) {
-                    state.selectedValues.add(value);
-                } else {
-                    state.selectedValues.delete(value);
-                }
-            });
-
-            Object.keys(filterState).forEach(function (key) {
-                if (String(key) !== String(colIndex) && filterState[key]) {
-                    filterState[key].loadedSignature = '';
-                }
-            });
-
-            renderFilterList(colIndex);
-            updatePreviewTable();
-            
-            // Debounce refresh dependent filters
-            debounceRender(colIndex + '_refresh', function() {
-                refreshDependentFilterOptions(colIndex);
-            }, 300);
+            const colIndex = this.getAttribute('data-col');
+            applySelectAllState(colIndex, this.checked);
         });
     });
 
@@ -1904,6 +1906,18 @@ document.addEventListener('DOMContentLoaded', function () {
     .import-preview-table .dropdown-menu {
         border: 1px solid #e2e8f0;
         border-radius: 8px !important;
+    }
+
+    .import-preview-table .dropdown-menu .custom-control-label {
+        display: block;
+        min-height: 1.5rem;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .import-preview-table .dropdown-menu .custom-control-input:disabled ~ .custom-control-label {
+        cursor: wait;
+        opacity: 0.58;
     }
 
     @media (max-width: 767.98px) {

@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\Report\KinerjaRmMikroReportController;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -52,6 +53,18 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             $table->id();
             $table->string('pn')->nullable();
             $table->string('jabatan')->nullable();
+        });
+        Schema::create('brihc_pemasar', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->string('completename')->nullable();
+            $table->string('nip')->nullable();
+            $table->string('pernr')->nullable();
+            $table->string('esgdesc')->nullable();
+            $table->string('psadesc')->nullable();
+            $table->string('orgdesc')->nullable();
+            $table->string('positiondesc')->nullable();
+            $table->string('pn_mantri')->nullable();
+            $table->string('status')->nullable();
         });
         Schema::create('performance_rm_snapshots', function (Blueprint $table) {
             $table->id();
@@ -181,6 +194,138 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame(2, (int) $payload['total']['jumlah_mantri']);
     }
 
+    public function test_extreme_low_mantri_payload_starts_from_daily_loan_and_only_checks_brihc_pt_unit_status(): void
+    {
+        $this->insertBrihcPemasar([
+            'uniqueid_namareport' => 'MANTRI-1',
+            'completename' => 'Nama BRIHC Berbeda',
+            'orgdesc' => 'Unit BRIHC Berbeda',
+            'pn_mantri' => '6494 | 0001 - Mantri Satu',
+        ]);
+        $this->insertBrihcPemasar([
+            'uniqueid_namareport' => 'MANTRI-2',
+            'completename' => 'Mantri Dua',
+            'pn_mantri' => '6494 | 0002 - Mantri Dua',
+        ]);
+        $this->insertBrihcPemasar([
+            'uniqueid_namareport' => 'MANTRI-3',
+            'completename' => 'Mantri Nol',
+            'pn_mantri' => '6494 | 0003 - Mantri Nol',
+        ]);
+        $this->insertBrihcPemasar([
+            'uniqueid_namareport' => 'NON-PT',
+            'completename' => 'Kontrak',
+            'pn_mantri' => '6494 | 0004 - Kontrak',
+            'esgdesc' => 'TKWT',
+        ]);
+        $this->insertBrihcPemasar([
+            'uniqueid_namareport' => 'NON-MANTRI',
+            'completename' => 'Kaunit',
+            'pn_mantri' => '6494 | 0005 - Kaunit',
+            'positiondesc' => 'KAUNIT',
+        ]);
+        $this->insertBrihcPemasar([
+            'uniqueid_namareport' => 'MANTRI-TANPA-DAILY',
+            'completename' => 'Mantri Tanpa Daily',
+            'pn_mantri' => '6494 | 0006 - Mantri Tanpa Daily',
+        ]);
+
+        $this->insertDailyLoan([
+            'periode' => '2026-05-31',
+            'tgl_realisasi' => '2026-05-05',
+            'pn_pengelola1' => '0001 - Mantri Satu',
+            'rm_normalized' => '0001 - MANTRI SATU',
+            'nomor_rekening1' => 'EL-1',
+            'plafon' => 50000000,
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-05-31',
+            'tgl_realisasi' => '2026-05-07',
+            'pn_pengelola1' => '0002 - Mantri Dua',
+            'rm_normalized' => '0002 - MANTRI DUA',
+            'nomor_rekening1' => 'EL-2A',
+            'plafon' => 150000000,
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-05-31',
+            'tgl_realisasi' => '2026-05-11',
+            'pn_pengelola1' => '0002 - Mantri Dua',
+            'rm_normalized' => '0002 - MANTRI DUA',
+            'nomor_rekening1' => 'EL-2B',
+            'plafon' => 100000000,
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-05-31',
+            'tgl_realisasi' => '2026-04-30',
+            'pn_pengelola1' => '0002 - Mantri Dua',
+            'rm_normalized' => '0002 - MANTRI DUA',
+            'nomor_rekening1' => 'EL-LUAR-BULAN',
+            'plafon' => 999000000,
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-05-31',
+            'tgl_realisasi' => '2026-04-30',
+            'pn_pengelola1' => '0003 - Mantri Nol',
+            'rm_normalized' => '0003 - MANTRI NOL',
+            'nomor_rekening1' => 'EL-NOL',
+            'plafon' => 100000000,
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-05-31',
+            'tgl_realisasi' => '2026-04-30',
+            'pn_pengelola1' => '0004 - Pengelola Non PT',
+            'rm_normalized' => '0004 - PENGELOLA NON PT',
+            'nomor_rekening1' => 'EL-NON-PT',
+            'plafon' => 100000000,
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-05-31',
+            'tgl_realisasi' => '2026-04-30',
+            'pn_pengelola1' => '0005 - Pengelola Lima',
+            'rm_normalized' => '0005 - PENGELOLA LIMA',
+            'nomor_rekening1' => 'EL-POSISI-DIABAIKAN',
+            'plafon' => 100000000,
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-05-31',
+            'tgl_realisasi' => '2026-05-12',
+            'pn_pengelola1' => '0001 - Mantri Satu',
+            'rm_normalized' => '0001 - MANTRI SATU',
+            'produk_kinerja' => 'KURMIKRO',
+            'description' => 'Kredit Mikro - KUR Ritel 2015',
+            'nomor_rekening1' => 'EL-RITEL',
+            'plafon' => 999000000,
+        ]);
+
+        $payload = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'mantriExtremeLowPayload', '2026-05-31');
+        $row = collect($payload['rows'])->firstWhere('nama_uker', 'UNIT TEST');
+
+        $this->assertNotNull($row);
+        $this->assertSame(4, (int) $row['total_mantri']);
+        $this->assertSame(3, (int) $row['buckets']['el_0_100']['deb']);
+        $this->assertSame(1, (int) $row['buckets']['el_200_400']['deb']);
+        $this->assertSame(4, (int) $row['under_800']['deb']);
+        $this->assertEqualsWithDelta(75.0, $row['buckets']['el_0_100']['pct'], 0.0001);
+        $this->assertEqualsWithDelta(100.0, $row['under_800']['pct'], 0.0001);
+        $this->assertSame(4, (int) $payload['total']['total_mantri']);
+        $this->assertSame(1, (int) $payload['total']['buckets']['el_200_400']['deb']);
+
+        $detailResponse = (new KinerjaRmMikroReportController())->mantriExtremeLowDetail(Request::create('/', 'GET', [
+            'periode' => '2026-05-31',
+            'branch' => 'KC MADIUN',
+            'unit' => 'UNIT TEST',
+        ]));
+        $detail = $detailResponse->getData(true);
+
+        $this->assertSame('success', $detail['status']);
+        $this->assertSame(4, (int) $detail['total_mantri']);
+        $this->assertSame(3, (int) $detail['buckets']['el_0_100']['deb']);
+        $this->assertSame(1, (int) $detail['buckets']['el_200_400']['deb']);
+        $this->assertSame(4, (int) $detail['under_800']['deb']);
+        $this->assertSame(['Mantri Nol', 'Mantri Satu', 'Pengelola Lima'], collect($detail['buckets']['el_0_100']['rows'])->pluck('nama_mantri')->sort()->values()->all());
+        $this->assertSame(['Mantri Dua'], collect($detail['buckets']['el_200_400']['rows'])->pluck('nama_mantri')->all());
+    }
+
     public function test_rm_mikro_kur_payload_hides_rm_with_zero_monthly_realisasi(): void
     {
         DB::table('performance_rm_snapshots')->insert([
@@ -249,8 +394,8 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             'branch1' => '001',
             'unit_normalized' => 'UNIT TEST',
             'unit1' => 'UNIT TEST',
-            'cabang_normalized' => 'KC TEST',
-            'cabang1' => 'KC TEST',
+            'cabang_normalized' => 'KC MADIUN',
+            'cabang1' => 'KC MADIUN',
             'rm_normalized' => '0001 - MANTRI SATU',
             'pn_pengelola1' => '0001 - Mantri Satu',
             'nomor_rekening1' => 'TEST-1',
@@ -260,6 +405,22 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             'kolek' => 1,
             'tgl_realisasi' => '2026-05-06',
             'pn_pemutus_normalized' => null,
+        ], $overrides));
+    }
+
+    private function insertBrihcPemasar(array $overrides): void
+    {
+        DB::table('brihc_pemasar')->insert(array_merge([
+            'uniqueid_namareport' => 'MANTRI-' . uniqid(),
+            'completename' => 'Mantri Test',
+            'nip' => null,
+            'pernr' => null,
+            'esgdesc' => 'PT',
+            'psadesc' => 'KC Madiun',
+            'orgdesc' => 'Unit Test',
+            'positiondesc' => 'Associate Mantri 1',
+            'pn_mantri' => '6494 | 0001 - Mantri Test',
+            'status' => null,
         ], $overrides));
     }
 
