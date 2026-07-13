@@ -13,6 +13,13 @@
     .dashboard-timeseries {
         padding-bottom: 2rem;
         min-width: 0;
+        overflow-x: clip;
+    }
+
+    .dashboard-timeseries *,
+    .dashboard-timeseries *::before,
+    .dashboard-timeseries *::after {
+        box-sizing: border-box;
     }
 
     .timeseries-hero {
@@ -22,6 +29,10 @@
         background: linear-gradient(135deg, #003b75 0%, #00529c 100%);
         border-bottom: 1px solid rgba(219, 229, 239, 0.92);
         color: #ffffff;
+    }
+
+    .timeseries-hero > div:first-child {
+        min-width: 0;
     }
 
     .timeseries-hero::before {
@@ -35,7 +46,7 @@
 
     .timeseries-title {
         margin: 0;
-        font-size: clamp(1.35rem, 2.35vw, 2.35rem);
+        font-size: 1.75rem;
         font-weight: 900;
         color: #ffffff;
         letter-spacing: 0.035em;
@@ -62,6 +73,7 @@
         gap: 0.75rem;
         flex-wrap: wrap;
         padding-top: 2.15rem;
+        min-width: 0;
     }
 
     .timeseries-hero .btn-export-all {
@@ -127,6 +139,7 @@
         display: flex;
         gap: 0.5rem;
         flex-wrap: wrap;
+        min-width: 0;
     }
 
     .category-btn {
@@ -139,6 +152,9 @@
         font-size: 0.85rem;
         transition: all 0.2s ease;
         cursor: pointer;
+        min-width: 0;
+        overflow-wrap: anywhere;
+        text-align: center;
     }
 
     .category-btn:hover {
@@ -178,6 +194,7 @@
         min-width: 220px;
         max-width: 280px;
         position: relative;
+        flex: 1 1 240px;
     }
 
     .metric-dropdown-toggle {
@@ -228,6 +245,7 @@
         border-radius: 1rem;
         box-shadow: 0 22px 42px -18px rgba(8, 87, 195, 0.28);
         animation: slideDown 0.18s ease-out;
+        max-width: min(420px, calc(100vw - 2rem));
     }
 
     .metric-dropdown-menu.show {
@@ -347,6 +365,8 @@
         font-weight: 700;
         color: #1e293b;
         margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
     }
 
     .chart-body {
@@ -433,6 +453,10 @@
         color: #0857c3;
         font-weight: 700;
         text-transform: uppercase;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .btn-export-jpg {
@@ -581,6 +605,7 @@
         display: none;
         overflow: hidden;
         animation: slideDown 0.2s ease-out;
+        max-width: min(420px, calc(100vw - 2rem));
     }
 
     .branch-dropdown-menu.show {
@@ -677,6 +702,12 @@
             margin-inline: 0;
         }
 
+        .timeseries-title {
+            font-size: 1.08rem;
+            line-height: 1.15;
+            letter-spacing: 0.02em;
+        }
+
         .timeseries-hero-actions {
             width: 100%;
             justify-content: flex-start;
@@ -695,39 +726,206 @@
         .category-selector {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
+            width: 100%;
         }
 
         .category-btn {
             width: 100%;
             padding-inline: 0.75rem;
+            min-height: 42px;
+            font-size: 0.76rem;
+            line-height: 1.2;
+        }
+
+        .metric-dropdown-shell {
+            width: 100%;
+            min-width: 0;
+            max-width: none;
+        }
+
+        .branch-dropdown-toggle,
+        .metric-dropdown-toggle,
+        #applyFilters {
+            min-height: 40px;
+            border-radius: 0.7rem;
+        }
+
+        .branch-dropdown-label,
+        .metric-dropdown-label {
+            font-size: 0.8rem;
         }
 
         .chart-body {
             overflow-x: auto;
             overflow-y: hidden;
-            padding: 1rem;
+            padding: 0.75rem;
         }
 
         .summary-chart-body {
-            height: 340px !important;
+            height: 300px !important;
             max-height: none !important;
-            padding: 0.5rem 0.9rem 1.1rem 1rem;
+            padding: 0.45rem 0.55rem 0.8rem 0.55rem;
         }
 
         .branch-chart-body {
-            height: 270px !important;
-            max-height: 270px !important;
+            height: 245px !important;
+            max-height: 245px !important;
         }
 
         .summary-chart-body .chart-canvas-frame,
         .branch-chart-body .chart-canvas-frame {
-            min-width: 660px;
+            min-width: min(520px, calc(100vw - 2.5rem));
         }
 
         .chart-header {
             align-items: flex-start;
             flex-direction: column;
             gap: 0.5rem;
+        }
+
+        .unit-badge {
+            white-space: normal;
+        }
+    }
+
+    @media (min-width: 768px) and (max-width: 1180px) {
+        .timeseries-hero {
+            align-items: flex-start !important;
+            padding: 1rem 1.15rem !important;
+        }
+
+        .timeseries-title {
+            font-size: 1.25rem !important;
+            line-height: 1.15;
+        }
+
+        .timeseries-hero-actions {
+            padding-top: 0.4rem;
+        }
+
+        .filter-card {
+            border-radius: 1rem;
+        }
+
+        .filter-card .card-body {
+            padding: 0.9rem !important;
+        }
+
+        .category-selector {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            width: 100%;
+        }
+
+        .category-btn {
+            width: 100%;
+            padding: 0.55rem 0.65rem;
+            border-radius: 0.75rem;
+            font-size: 0.78rem;
+            line-height: 1.2;
+        }
+
+        .metric-dropdown-shell {
+            width: 100%;
+            max-width: none;
+        }
+
+        .branch-dropdown-toggle,
+        .metric-dropdown-toggle,
+        #applyFilters {
+            min-height: 40px;
+        }
+
+        .summary-chart-card {
+            min-height: 350px;
+        }
+
+        .summary-chart-body {
+            height: 300px !important;
+            padding: 0.5rem 0.8rem 1rem 0.9rem;
+        }
+
+        .branch-chart-body {
+            height: 260px !important;
+            max-height: 260px !important;
+        }
+
+        .branch-chart-body.tall {
+            height: 340px !important;
+            max-height: 340px !important;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .filter-card {
+            border-radius: 0.85rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .filter-card .card-body {
+            padding: 0.75rem !important;
+        }
+
+        .filter-label {
+            font-size: 0.66rem;
+            margin-bottom: 0.35rem;
+        }
+
+        .category-selector {
+            grid-template-columns: 1fr;
+            gap: 0.4rem;
+        }
+
+        .category-btn {
+            min-height: 38px;
+            padding: 0.48rem 0.6rem;
+        }
+
+        .chart-card {
+            border-radius: 0.75rem;
+        }
+
+        .chart-card:hover {
+            transform: none;
+        }
+
+        .chart-header {
+            padding: 0.7rem 0.75rem;
+        }
+
+        .chart-title {
+            font-size: 0.82rem;
+            line-height: 1.25;
+        }
+
+        .summary-chart-card {
+            min-height: 310px;
+        }
+
+        .summary-chart-body {
+            height: 255px !important;
+        }
+
+        .branch-chart-body {
+            height: 225px !important;
+            max-height: 225px !important;
+        }
+    }
+
+    @media (max-width: 991.98px) {
+        #timeseriesCaptureArea {
+            padding: 1rem 0.35rem !important;
+            border-radius: 14px !important;
+        }
+
+        .metric-dropdown-menu,
+        .branch-dropdown-menu {
+            max-height: min(360px, calc(100dvh - 160px));
+        }
+
+        .options-container,
+        .metric-options {
+            max-height: min(260px, calc(100dvh - 220px));
         }
     }
 </style>
@@ -749,7 +947,7 @@
     <!-- Header -->
     <div class="timeseries-hero px-4 py-3 d-flex align-items-center justify-content-between">
         <div class="d-flex align-items-center">
-            <h1 class="timeseries-title m-0" style="font-size: 1.5rem; font-weight: 800; letter-spacing: 0.02em;">TIMESERIES LABA RUGI</h1>
+            <h1 class="timeseries-title m-0">TIMESERIES LABA RUGI</h1>
         </div>
         <div class="d-flex align-items-center gap-2">
             <button id="captureAllBtn" class="btn btn-sm btn-export-all">
@@ -940,6 +1138,7 @@
 
         let charts = {};
         let activeRequestId = 0;
+        let chartResizeFrame = null;
 
         // Active State Selection
         let currentMetric = @json($selectedMetric);
@@ -1314,6 +1513,15 @@
 
             function createChartConfig(title, labels, datasets, isSummary = false) {
                 const yAxisBounds = resolveYAxisBounds(datasets, isSummary);
+                const isPhone = window.matchMedia('(max-width: 575.98px)').matches;
+                const isCompact = window.matchMedia('(max-width: 767.98px)').matches;
+                const isTablet = window.matchMedia('(min-width: 768px) and (max-width: 1180px)').matches;
+                const latestBorderWidth = isPhone ? 2.2 : (isCompact || isTablet ? 2.7 : 3.25);
+                const otherBorderWidth = isPhone ? 1.4 : (isCompact || isTablet ? 1.7 : 2);
+                const latestPointRadius = isPhone ? 2.4 : (isCompact || isTablet ? 3 : 4);
+                const otherPointRadius = isPhone ? 1.8 : (isCompact || isTablet ? 2.2 : 2.5);
+                const tickSize = isPhone ? 8 : (isCompact || isTablet ? 9 : 10);
+                const legendSize = isPhone ? 8 : (isCompact || isTablet ? 9 : 10);
 
                 return {
                     type: 'line',
@@ -1331,9 +1539,9 @@
                                 yAxisID: 'y',
                                 borderColor: isLatest ? monthColors[0].border : (isRka ? monthColors[1].border : monthColors[2].border),
                                 backgroundColor: isLatest ? monthColors[0].bg : (isRka ? monthColors[1].bg : monthColors[2].bg),
-                                borderWidth: isLatest ? 3.25 : 2,
-                                pointRadius: isLatest ? 4 : 2.5,
-                                pointHoverRadius: isLatest ? 6 : 4,
+                                borderWidth: isLatest ? latestBorderWidth : otherBorderWidth,
+                                pointRadius: isLatest ? latestPointRadius : otherPointRadius,
+                                pointHoverRadius: isLatest ? latestPointRadius + 1.5 : otherPointRadius + 1.2,
                                 pointBackgroundColor: '#ffffff',
                                 pointBorderColor: isLatest ? monthColors[0].border : (isRka ? monthColors[1].border : monthColors[2].border),
                                 pointBorderWidth: isLatest ? 2 : 1.5,
@@ -1351,13 +1559,13 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        devicePixelRatio: 2.5,
+                        devicePixelRatio: isPhone ? 1.75 : 2.5,
                         layout: {
                             padding: {
-                                top: isSummary ? 16 : 24,
-                                right: isSummary ? 16 : 26,
-                                bottom: isSummary ? 36 : 30,
-                                left: isSummary ? 12 : 12
+                                top: isCompact ? 8 : (isSummary ? 16 : 24),
+                                right: isCompact ? 8 : (isSummary ? 16 : 26),
+                                bottom: isCompact ? 16 : (isSummary ? 36 : 30),
+                                left: isCompact ? 4 : 12
                             }
                         },
                         interaction: { intersect: false, mode: 'index' },
@@ -1367,11 +1575,11 @@
                                 labels: {
                                     usePointStyle: true,
                                     pointStyle: 'line',
-                                    boxWidth: 28,
+                                    boxWidth: isCompact ? 18 : 28,
                                     boxHeight: 8,
                                     color: '#475569',
-                                    padding: 14,
-                                    font: { weight: '600', size: 10 }
+                                    padding: isCompact ? 8 : 14,
+                                    font: { weight: '600', size: legendSize }
                                 }
                             },
                             tooltip: {
@@ -1404,15 +1612,15 @@
                                     display: true,
                                     text: 'Nilai (Rp Juta)',
                                     color: '#475569',
-                                    font: { weight: '600', size: 10 }
+                                    font: { weight: '600', size: tickSize }
                                 },
                                 grid: { color: 'rgba(15, 23, 42, 0.055)', drawTicks: true },
                                 ticks: {
-                                    maxTicksLimit: isSummary ? 7 : 6,
-                                    padding: 10,
+                                    maxTicksLimit: isCompact ? 5 : (isSummary ? 7 : 6),
+                                    padding: isCompact ? 6 : 10,
                                     display: true,
                                     color: '#64748b',
-                                    font: { size: 10, weight: '500' },
+                                    font: { size: tickSize, weight: '500' },
                                     callback: function(value) {
                                         return new Intl.NumberFormat('id-ID', { 
                                             maximumFractionDigits: 0
@@ -1426,9 +1634,12 @@
                                 grid: { display: false, drawTicks: true },
                                 ticks: {
                                     display: true,
-                                    padding: 10,
+                                    padding: isCompact ? 6 : 10,
                                     color: '#64748b',
-                                    font: { size: 10, weight: '500' }
+                                    maxRotation: isPhone ? 0 : 30,
+                                    autoSkip: true,
+                                    maxTicksLimit: isPhone ? 6 : 12,
+                                    font: { size: tickSize, weight: '500' }
                                 }
                             }
                         }
@@ -1507,7 +1718,29 @@
                         charts[key] = new Chart(ctx, createChartConfig(key, data.labels, datasets, false));
                     });
                 }
+
+                scheduleChartResize();
             }
+
+            function resizeVisibleCharts() {
+                chartResizeFrame = null;
+                Object.values(charts).forEach(chart => {
+                    try {
+                        chart.resize();
+                    } catch (error) {}
+                });
+            }
+
+            function scheduleChartResize() {
+                if (chartResizeFrame !== null) {
+                    return;
+                }
+
+                chartResizeFrame = window.requestAnimationFrame(resizeVisibleCharts);
+            }
+
+            window.addEventListener('resize', scheduleChartResize);
+            window.addEventListener('orientationchange', scheduleChartResize);
 
             // --- Metric Select Handler ---
             const quickMetricBtns = document.querySelectorAll('#categorySelector .category-btn');

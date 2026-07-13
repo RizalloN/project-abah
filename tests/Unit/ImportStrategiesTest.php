@@ -81,6 +81,8 @@ class ImportStrategiesTest extends TestCase
         $this->assertFalse($strategy->supports(null, 'hourly_dpk'));
         $this->assertFalse($strategy->supports(null, 'l1133'));
         $this->assertFalse($strategy->supports(null, 'lw321pn'));
+        $this->assertFalse($strategy->supports(null, 'lw321_npd'));
+        $this->assertFalse($strategy->supports(null, 'lw321_npdd'));
         $this->assertSame(['A', 'B'], $strategy->transformHeaders(['A', 'B']));
         $this->assertSame('bulk_csv_staging', $strategy->importMode());
     }
@@ -121,23 +123,23 @@ class ImportStrategiesTest extends TestCase
         $strategy = new HourlyDpkImportStrategy();
 
         $headers = $strategy->transformHeaders([
-            'Month, Day, Year of POSISI',
+            'Minute of POSISI',
             'MBNAME',
             'BRNAME',
-            'SEGMEN',
+            'SEGMEN2',
             'PRODUK',
             'Saldo',
         ]);
 
         $this->assertTrue($strategy->supports(null, 'hourly_dpk'));
         $this->assertSame('bulk_csv_staging', $strategy->importMode());
-        $this->assertSame(['posisi', 'mbname', 'brname', 'segmen', 'produk', 'saldo'], $headers);
+        $this->assertSame(['posisi', 'mbname', 'brname', 'segmen2', 'produk', 'saldo'], $headers);
         $this->assertTrue($strategy->validateSchema([
             'uniqueid_namareport',
             'posisi',
             'mbname',
             'brname',
-            'segmen',
+            'segmen2',
             'produk',
             'saldo',
         ])['ok']);
@@ -444,4 +446,5 @@ class ImportStrategiesTest extends TestCase
             ], array_slice($strategy->transformHeaders($headers), 21));
         }
     }
+
 }

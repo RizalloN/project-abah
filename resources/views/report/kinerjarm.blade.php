@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Kinerja RM')
+@section('title', 'Kinerja RM Ritel')
 
 @section('content')
 <style>
@@ -253,6 +253,31 @@
         background: rgba(245, 158, 11, 0.12) !important;
         color: #b45309 !important;
         font-weight: 800;
+    }
+
+    .kinerja-rm-scope-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        margin-top: 0.28rem;
+        padding: 0.18rem 0.42rem;
+        border: 1px solid #bfdbfe;
+        border-radius: 6px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 0.58rem;
+        font-weight: 900;
+        line-height: 1;
+        max-width: 100%;
+        text-align: left;
+        white-space: normal;
+    }
+
+    .kinerja-rm-scope-badge.is-kcp {
+        border-color: #a7f3d0;
+        background: #ecfdf5;
+        color: #047857;
     }
 
     .kinerja-tabs-shell {
@@ -1192,6 +1217,313 @@
             grid-template-columns: repeat(2, minmax(0, 1fr));
         }
     }
+
+    /* Compact RM Ritel UI */
+    .rm-ritel-page {
+        padding: 0.85rem 1rem 1.25rem;
+        background: #f8fafc;
+    }
+
+    .rm-ritel-page .kinerja-konsumer-shell {
+        background: transparent !important;
+    }
+
+    .rm-ritel-page #kinerjaContentArea > .px-4.pb-4 {
+        padding-right: 0 !important;
+        padding-left: 0 !important;
+        padding-bottom: 0 !important;
+    }
+
+    .rm-ritel-page .lux-header-section {
+        align-items: center;
+        margin-bottom: 0.75rem;
+        padding: 0.8rem 1rem;
+        border: 1px solid #dbe5ef;
+        border-radius: 12px;
+        background: #ffffff;
+        box-shadow: none;
+    }
+
+    .rm-ritel-page .lux-header-info h1 {
+        margin: 0;
+        color: #0f172a;
+        font-size: 1.28rem;
+        font-weight: 850;
+        letter-spacing: 0;
+        line-height: 1.2;
+        text-transform: none;
+    }
+
+    .rm-ritel-page .lux-header-info h1 i {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 0.95rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .rm-ritel-meta {
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+    }
+
+    .rm-ritel-meta span {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0.3rem 0.65rem;
+        border: 1px solid #dbe5ef;
+        border-radius: 999px;
+        background: #f8fafc;
+        color: #334155;
+        font-size: 0.74rem;
+        font-weight: 800;
+    }
+
+    .rm-ritel-page .lux-filter-card {
+        margin-bottom: 0.8rem;
+        padding: 0.85rem;
+        border: 1px solid #dbe5ef;
+        border-radius: 12px;
+        background: #ffffff;
+        box-shadow: none;
+    }
+
+    .rm-ritel-page .lux-filter-grid {
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 0.65rem;
+        align-items: end;
+    }
+
+    .rm-ritel-page .lux-field {
+        gap: 0.32rem;
+    }
+
+    .rm-ritel-page .lux-label {
+        padding-left: 0;
+        color: #64748b;
+        font-size: 0.66rem;
+        font-weight: 850;
+        letter-spacing: 0.06em;
+    }
+
+    .rm-ritel-page .lux-select {
+        height: 38px;
+        min-height: 38px;
+        padding: 0 2rem 0 0.75rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #0f172a;
+        font-size: 0.82rem;
+        font-weight: 700;
+        box-shadow: none;
+    }
+
+    .rm-ritel-page .lux-select:hover,
+    .rm-ritel-page .lux-select:focus {
+        background: #ffffff;
+        border-color: #1d4ed8;
+        box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.1);
+    }
+
+    .rm-ritel-page .lux-select-wrap i {
+        right: 0.75rem;
+        color: #64748b;
+        font-size: 0.72rem;
+    }
+
+    .rm-ritel-page .lux-actions {
+        gap: 0.45rem;
+        align-self: end;
+    }
+
+    .rm-ritel-page .lux-btn {
+        height: 38px;
+        min-height: 38px;
+        padding: 0 0.85rem;
+        border-radius: 8px;
+        font-size: 0.78rem;
+        font-weight: 850;
+        letter-spacing: 0;
+        gap: 0.45rem;
+        box-shadow: none;
+        text-transform: none;
+    }
+
+    .rm-ritel-page .lux-btn:hover {
+        transform: none;
+        box-shadow: none;
+    }
+
+    .rm-ritel-page .lux-btn-primary {
+        background: #1d4ed8;
+        color: #ffffff;
+    }
+
+    .rm-ritel-page .lux-btn-primary:hover {
+        background: #1e40af;
+    }
+
+    .rm-ritel-page .lux-btn-capture {
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        color: #334155;
+    }
+
+    .rm-ritel-page .kinerja-table-container {
+        scrollbar-width: auto;
+        scrollbar-color: #cbd5e1 #ffffff;
+        scrollbar-gutter: stable both-edges;
+    }
+
+    .rm-ritel-page .kinerja-table-container::-webkit-scrollbar {
+        width: 12px;
+        height: 14px;
+    }
+
+    .rm-ritel-page .kinerja-table-container:hover::-webkit-scrollbar {
+        height: 16px;
+    }
+
+    .rm-ritel-page .kinerja-table-container::-webkit-scrollbar-track {
+        background: #ffffff;
+        border-radius: 999px;
+        box-shadow: inset 0 0 0 1px #e2e8f0;
+    }
+
+    .rm-ritel-page .kinerja-table-container::-webkit-scrollbar-thumb {
+        min-width: 72px;
+        border: 3px solid #ffffff;
+        border-radius: 999px;
+        background: #cbd5e1;
+        box-shadow:
+            inset 0 0 0 1px rgba(148, 163, 184, 0.32),
+            0 1px 4px rgba(15, 23, 42, 0.16);
+    }
+
+    .rm-ritel-page .kinerja-table-container:hover::-webkit-scrollbar-thumb,
+    .rm-ritel-page .kinerja-table-container::-webkit-scrollbar-thumb:hover {
+        border-width: 2px;
+        background: #94a3b8;
+        cursor: grab;
+    }
+
+    .rm-ritel-page .kinerja-table-container::-webkit-scrollbar-corner {
+        background: #ffffff;
+    }
+
+    .rm-ritel-page .kinerja-tabs-shell {
+        border-radius: 12px;
+        box-shadow: none;
+    }
+
+    .rm-ritel-page .kinerja-tabs-header {
+        padding: 0.75rem 0.85rem;
+        background: #ffffff;
+    }
+
+    .rm-ritel-page .kinerja-tabs-kicker {
+        margin-bottom: 0.2rem;
+        font-size: 0.66rem;
+        letter-spacing: 0.08em;
+    }
+
+    .rm-ritel-page .kinerja-tabs-title {
+        font-size: 1rem;
+        letter-spacing: 0;
+    }
+
+    .rm-ritel-page .kinerja-tabs-subtitle,
+    .rm-ritel-page .kinerja-tab-btn__meta,
+    .rm-ritel-page .kinerja-quality-intro__desc,
+    .rm-ritel-page .kinerja-report-card__subtitle {
+        display: none;
+    }
+
+    .rm-ritel-page .kinerja-tabs-nav {
+        gap: 0.35rem;
+        padding: 0.25rem;
+        border-radius: 10px;
+    }
+
+    .rm-ritel-page .kinerja-tab-btn {
+        min-width: 92px;
+        padding: 0.5rem 0.7rem;
+        border-radius: 8px;
+        text-align: center;
+    }
+
+    .rm-ritel-page .kinerja-tab-btn__label {
+        font-size: 0.78rem;
+    }
+
+    .rm-ritel-page .kinerja-tabs-body {
+        padding: 0.55rem;
+    }
+
+    .rm-ritel-page .kinerja-report-card__header {
+        padding: 0.55rem 0.75rem;
+        background: #ffffff;
+    }
+
+    .rm-ritel-page .kinerja-report-card__title {
+        font-size: 0.92rem;
+        gap: 0.42rem;
+    }
+
+    .rm-ritel-page .kinerja-report-card__meta,
+    .rm-ritel-page .kinerja-report-chip {
+        padding: 0.28rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.66rem;
+    }
+
+    .rm-ritel-page .kinerja-quality-intro {
+        padding: 0.2rem 0.15rem 0.45rem;
+        margin-bottom: 0.45rem;
+    }
+
+    .rm-ritel-page .kinerja-quality-intro__title {
+        font-size: 0.88rem;
+    }
+
+    .rm-ritel-page .kinerja-quality-stack {
+        gap: 0.55rem;
+    }
+
+    .rm-ritel-page .premium-loader-text {
+        font-size: 0.78rem;
+        letter-spacing: 0;
+        text-transform: none;
+    }
+
+    @media (max-width: 768px) {
+        .rm-ritel-page {
+            padding: 0.65rem;
+        }
+
+        .rm-ritel-page .lux-header-section {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 0.65rem;
+        }
+
+        .rm-ritel-page .lux-actions {
+            width: 100%;
+        }
+
+        .rm-ritel-page .lux-btn {
+            flex: 1;
+        }
+    }
 </style>
 
 @php
@@ -1221,21 +1553,22 @@
     $formatPercent = $formatPercent ?? fn ($value, int $decimals = 1) => number_format((float) $value, $decimals, ',', '.');
 @endphp
 
-<div class="pt-4 px-4">
+<div class="rm-ritel-page">
     <div class="kinerja-konsumer-shell animate-reveal">
-        <!-- New Luxury Header Section -->
         <header class="lux-header-section">
             <div class="lux-header-info">
-                <h1><i class="fas fa-chart-line"></i> KINERJA RM</h1>
-                <p class="lux-header-subtitle">{{ $title }}</p>
+                <h1><i class="fas fa-chart-line"></i> Kinerja RM Ritel</h1>
+            </div>
+            <div class="rm-ritel-meta">
+                <span>{{ ucfirst(strtolower($selectedSegmen)) }}</span>
+                <span>{{ \Carbon\Carbon::parse($selectedPeriod)->translatedFormat('d M Y') }}</span>
             </div>
         </header>
         
-        <!-- New Luxury Filter Section -->
         <div class="lux-filter-card">
             <form id="kinerjaFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.kinerjarm') }}" class="lux-filter-grid">
                 <div class="lux-field">
-                    <label for="kinerjaSegmen" class="lux-label">Segmen RM</label>
+                    <label for="kinerjaSegmen" class="lux-label">Segmen</label>
                     <div class="lux-select-wrap">
                         <select id="kinerjaSegmen" name="segmen" class="lux-select" required onchange="this.form.submit();">
                             @foreach($availableSegmens as $segmen)
@@ -1249,7 +1582,7 @@
                 </div>
 
                 <div class="lux-field">
-                    <label for="kinerjaPeriode" class="lux-label">Periode Laporan</label>
+                    <label for="kinerjaPeriode" class="lux-label">Periode</label>
                     <div class="lux-select-wrap">
                         <select id="kinerjaPeriode" name="periode" class="lux-select">
                             @foreach($availablePeriods as $period)
@@ -1262,11 +1595,26 @@
                     </div>
                 </div>
 
+                @if($selectedSegmen === 'SMALL')
+                    <div class="lux-field">
+                        <label for="kinerjaRmCategory" class="lux-label">Kategori RM</label>
+                        <div class="lux-select-wrap">
+                            <select id="kinerjaRmCategory" name="kategori_rm" class="lux-select">
+                                <option value="" @selected($selectedRmCategory === null)>Semua RM Small</option>
+                                @foreach($availableRmCategories as $categoryValue => $categoryLabel)
+                                    <option value="{{ $categoryValue }}" @selected($selectedRmCategory === $categoryValue)>{{ $categoryLabel }}</option>
+                                @endforeach
+                            </select>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                    </div>
+                @endif
+
                 <div class="lux-field">
-                    <label for="kinerjaCabang" class="lux-label">Unit Kerja</label>
+                    <label for="kinerjaCabang" class="lux-label">Cabang</label>
                     <div class="lux-select-wrap">
                         <select id="kinerjaCabang" name="cabang1" class="lux-select">
-                            <option value="" @selected($selectedCabang === null)>SEMUA CABANG</option>
+                            <option value="" @selected($selectedCabang === null)>Semua Cabang</option>
                             @foreach($availableCabangs as $cabang)
                                 <option value="{{ $cabang }}" @selected($selectedCabang === $cabang)>{{ $cabang }}</option>
                             @endforeach
@@ -1276,10 +1624,10 @@
                 </div>
 
                 <div class="lux-field">
-                    <label for="kinerjaProduk" class="lux-label">Jenis Produk</label>
+                    <label for="kinerjaProduk" class="lux-label">Produk</label>
                     <div class="lux-select-wrap">
                         <select id="kinerjaProduk" name="produk" class="lux-select">
-                            <option value="" @selected($selectedProduct === null)>SEMUA PRODUK</option>
+                            <option value="" @selected($selectedProduct === null)>Semua Produk</option>
                             @foreach($availableProducts as $product)
                                 <option value="{{ $product }}" @selected($selectedProduct === $product)>{{ $product }}</option>
                             @endforeach
@@ -1290,10 +1638,10 @@
 
                 <div class="lux-actions">
                     <button type="submit" class="lux-btn lux-btn-primary">
-                        <i class="fas fa-search"></i> TAMPILKAN
+                        <i class="fas fa-search"></i> Tampilkan
                     </button>
                     <button type="button" id="captureAllBtn" class="lux-btn lux-btn-capture">
-                        <i class="fas fa-camera"></i> CAPTURE ALL
+                        <i class="fas fa-camera"></i> Capture
                     </button>
                 </div>
             </form>
@@ -1301,9 +1649,9 @@
 
         <div class="kinerja-ajax-wrapper" id="kinerjaAjaxWrapper">
             <div class="kinerja-loading-overlay">
-                <div class="premium-loader">
-                    <div class="premium-loader-spinner"></div>
-                    <div class="premium-loader-text">Mengolah Data RM...</div>
+                    <div class="premium-loader">
+                        <div class="premium-loader-spinner"></div>
+                    <div class="premium-loader-text">Memuat data...</div>
                 </div>
             </div>
             <div id="kinerjaAjaxContainer">
@@ -1534,7 +1882,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         ctx.fillStyle = '#0f172a';
         ctx.font = 'bold 62px "Inter", "Segoe UI", Arial, sans-serif';
-        ctx.fillText('Kinerja RM Performance Report', marginX, marginY + 45);
+        ctx.fillText('Kinerja RM Ritel', marginX, marginY + 45);
 
         ctx.fillStyle = '#475569';
         ctx.font = '600 30px "Inter", "Segoe UI", Arial, sans-serif';
@@ -1562,7 +1910,7 @@ document.addEventListener('DOMContentLoaded', function() {
         ctx.fillText(`Generated: ${new Date().toLocaleString('id-ID')}`, marginX, height - 45);
         
         ctx.textAlign = 'right';
-        ctx.fillText('Report RM Performance', width - marginX, height - 45);
+        ctx.fillText('Kinerja RM Ritel', width - marginX, height - 45);
         ctx.textAlign = 'left';
     }
 
@@ -1681,7 +2029,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
             const link = document.createElement('a');
-            link.download = `Kinerja-RM-A4-${timestamp}.jpg`;
+            link.download = `Kinerja-RM-Ritel-${timestamp}.jpg`;
             link.href = reportCanvas.toDataURL('image/jpeg', 0.95);
             link.click();
 

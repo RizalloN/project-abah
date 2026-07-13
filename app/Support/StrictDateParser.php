@@ -118,6 +118,14 @@ class StrictDateParser
             'd-M-Y',
             'j-M-y',
             'j-M-Y',
+            'd M y',
+            'j M y',
+            'd F y',
+            'j F y',
+            'M d y',
+            'M j y',
+            'F d y',
+            'F j y',
             'M d Y',
             'M j Y',
             'F d Y',
@@ -184,6 +192,10 @@ class StrictDateParser
                 . "AND DATE_FORMAT(STR_TO_DATE({$textExpression}, '%e %M %Y'), '%e %M %Y') = {$textExpression} THEN STR_TO_DATE({$textExpression}, '%e %M %Y') "
             . "WHEN {$textExpression} REGEXP '^[0-9]{1,2}\\s+[A-Za-z]{3}\\s+[0-9]{4}$' "
                 . "AND DATE_FORMAT(STR_TO_DATE({$textExpression}, '%e %b %Y'), '%e %b %Y') = {$textExpression} THEN STR_TO_DATE({$textExpression}, '%e %b %Y') "
+            . "WHEN {$textExpression} REGEXP '^[0-9]{1,2}\\s+[A-Za-z]{3,}\\s+[0-9]{2}$' "
+                . "AND DATE_FORMAT(STR_TO_DATE({$textExpression}, '%e %M %y'), '%e %M %y') = {$textExpression} THEN STR_TO_DATE({$textExpression}, '%e %M %y') "
+            . "WHEN {$textExpression} REGEXP '^[0-9]{1,2}\\s+[A-Za-z]{3}\\s+[0-9]{2}$' "
+                . "AND DATE_FORMAT(STR_TO_DATE({$textExpression}, '%e %b %y'), '%e %b %y') = {$textExpression} THEN STR_TO_DATE({$textExpression}, '%e %b %y') "
             . "WHEN {$textExpression} REGEXP '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' "
                 . "AND CAST(SUBSTRING_INDEX(SUBSTRING_INDEX({$textExpression}, '/', 2), '/', -1) AS UNSIGNED) > 12 "
                 . "AND DATE_FORMAT(STR_TO_DATE({$textExpression}, '%m/%d/%Y'), '%m/%d/%Y') = {$textExpression} THEN STR_TO_DATE({$textExpression}, '%m/%d/%Y') "

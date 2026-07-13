@@ -360,10 +360,25 @@
 
     .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link p {
         display: block;
+        flex: 1 1 auto;
+        min-width: 0;
         margin: 0;
         line-height: 1.35;
         white-space: normal !important;
         word-break: break-word !important;
+    }
+
+    .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link.sidebar-nav-compact {
+        align-items: center !important;
+        min-height: 40px;
+        padding-right: 0.65rem !important;
+    }
+
+    .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link.sidebar-nav-compact p {
+        font-size: 0.8rem;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+        text-wrap: balance;
     }
 
     .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link .nav-icon {
@@ -623,6 +638,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="{{ route('dashboard.harian.keragaan-uker') }}" class="nav-link {{ request()->routeIs('dashboard.harian.keragaan-uker*') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Keragaan per Uker</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="{{ route('dashboard.harian.timeseries') }}" class="nav-link {{ request()->routeIs('dashboard.harian.timeseries') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Timeseries</p>
@@ -631,8 +652,8 @@
                     </ul>
                 </li>
 
-                <li class="nav-item {{ request()->routeIs('dashboard', 'report.dashboard-dana') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('dashboard', 'report.dashboard-dana') ? 'active' : '' }}">
+                <li class="nav-item {{ request()->routeIs('dashboard', 'report.dashboard-dana', 'report.dashboard-dana.hourly-dpk') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('dashboard', 'report.dashboard-dana', 'report.dashboard-dana.hourly-dpk') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-university"></i>
                         <p>
                             Dashboard Simpanan
@@ -650,6 +671,12 @@
                             <a href="{{ route('report.dashboard-dana') }}" class="nav-link {{ request()->routeIs('report.dashboard-dana') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Dashboard Dana</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-dana.hourly-dpk') }}" class="nav-link {{ request()->routeIs('report.dashboard-dana.hourly-dpk') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Hourly DPK</p>
                             </a>
                         </li>
                     </ul>
@@ -683,6 +710,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.analisa-ug-npl') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.analisa-ug-npl*') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Analisa UG NPL</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.matrix') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.matrix') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Matrix Pergeseran Kolek</p>
@@ -701,15 +734,15 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="{{ route('report.dashboard-pinjaman.kejar-laba') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kejar-laba') ? 'active' : '' }}">
+                            <a href="{{ route('report.dashboard-pinjaman.data-ph') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.data-ph') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
-                                <p>Report Recovery</p>
+                                <p>Data PH</p>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.kinerjarm') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerjarm') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
-                                <p>Kinerja RM</p>
+                                <p>Kinerja RM Ritel</p>
                             </a>
                         </li>
                         <li class="nav-item">
@@ -733,8 +766,8 @@
                     </ul>
                 </li>
 
-                <li class="nav-item {{ request()->routeIs('report.dashboard-almafacts.kinerja-laba-rugi', 'report.dashboard-almafacts.timeseries', 'report.dashboard-almafacts.timeseries.data') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kinerja-laba-rugi', 'report.dashboard-almafacts.timeseries', 'report.dashboard-almafacts.timeseries.data') ? 'active' : '' }}">
+                <li class="nav-item {{ request()->routeIs('report.dashboard-almafacts.financial-highlight', 'report.dashboard-almafacts.kinerja-laba-rugi', 'report.dashboard-almafacts.timeseries', 'report.dashboard-almafacts.timeseries.data') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.financial-highlight', 'report.dashboard-almafacts.kinerja-laba-rugi', 'report.dashboard-almafacts.timeseries', 'report.dashboard-almafacts.timeseries.data') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-balance-scale"></i>
                         <p>
                             Dashboard Almafacts
@@ -742,6 +775,12 @@
                         </p>
                     </a>
                     <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-almafacts.financial-highlight') }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.financial-highlight') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Financial Highlight</p>
+                            </a>
+                        </li>
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-almafacts.kinerja-laba-rugi') }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kinerja-laba-rugi') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
@@ -788,6 +827,42 @@
                             <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => 'mantri']) }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi') && request()->route('sheet') === 'mantri' ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>KPI Mantri</p>
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+
+                <li class="nav-item {{ request()->routeIs('report.dashboard-dana.market-share', 'report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.instansi') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share', 'report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.instansi') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-chart-pie"></i>
+                        <p>
+                            Marketshare
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
+                    </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-dana.market-share') }}" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Market Share</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-dana.market-share.mapping') }}" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share.mapping') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Mapping</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-dana.market-share.area6') }}" class="nav-link sidebar-nav-compact {{ request()->routeIs('report.dashboard-dana.market-share.area6') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Marketshare Area 6</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-dana.market-share.instansi') }}" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share.instansi') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Marketshare Instansi</p>
                             </a>
                         </li>
                     </ul>
@@ -993,11 +1068,28 @@
                     </ul>
                 </li>
 
-                <li class="nav-item">
-                    <a href="{{ route('report.kolaborasi.business-cluster') }}" class="nav-link {{ request()->routeIs('report.kolaborasi.business-cluster') ? 'active' : '' }}">
+                <li class="nav-item {{ request()->routeIs('report.kolaborasi.business-cluster', 'report.kolaborasi.sppg') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.kolaborasi.business-cluster', 'report.kolaborasi.sppg') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-layer-group"></i>
-                        <p>Business Cluster</p>
+                        <p>
+                            Business Cluster
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
                     </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('report.kolaborasi.business-cluster') }}" class="nav-link {{ request()->routeIs('report.kolaborasi.business-cluster') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Business Cluster</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.kolaborasi.sppg') }}" class="nav-link {{ request()->routeIs('report.kolaborasi.sppg') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>SPPG</p>
+                            </a>
+                        </li>
+                    </ul>
                 </li>
             </ul>
         </nav>

@@ -209,6 +209,31 @@
         box-shadow: 0 8px 20px -8px rgba(8, 87, 195, 0.5);
     }
 
+    .recovery-dimension-row {
+        margin-top: 0.85rem;
+        padding-top: 0.9rem;
+        border-top: 1px solid rgba(8, 87, 195, 0.12);
+    }
+
+    .timeseries-dimension-select {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid #cbd8e8;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #eaf2ff 0%, #ffffff 78%);
+        color: #334155;
+        font-size: 0.88rem;
+        font-weight: 700;
+        padding: 0.55rem 0.85rem;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 12px 22px -20px rgba(15, 23, 42, 0.2);
+    }
+
+    .timeseries-dimension-select:focus {
+        border-color: #0857c3;
+        box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.12);
+        outline: none;
+    }
+
     /* Chart Card Styling */
     .chart-card {
         background: var(--chart-card-bg);
@@ -713,6 +738,7 @@
                         <button class="category-btn {{ $dashboardPage['selected']['category'] === 'pinjaman' ? 'active' : '' }}" data-value="pinjaman">Pinjaman</button>
                         <button class="category-btn {{ $dashboardPage['selected']['category'] === 'sml' ? 'active' : '' }}" data-value="sml">SML</button>
                         <button class="category-btn {{ $dashboardPage['selected']['category'] === 'npl' ? 'active' : '' }}" data-value="npl">NPL</button>
+                        <button class="category-btn {{ $dashboardPage['selected']['category'] === 'recovery' ? 'active' : '' }}" data-value="recovery">Recovery</button>
                     </div>
                 </div>
                 <div class="col-lg-6">
@@ -720,6 +746,27 @@
                     <div class="category-selector" id="segmentSelector">
                         {{-- Dynamically populated by JS --}}
                     </div>
+                </div>
+            </div>
+
+            <div class="row recovery-dimension-row d-none" id="recoveryDimensionRow">
+                <div class="col-lg-6 mb-3 mb-lg-0">
+                    <label class="filter-label" for="recoverySegmentFilter">Segmen Dashboard</label>
+                    <select id="recoverySegmentFilter" class="timeseries-dimension-select">
+                        <option value="">Semua Segmen Dashboard</option>
+                        @foreach(($dashboardPage['filters']['recovery_dimensions']['segments'] ?? []) as $segment)
+                            <option value="{{ $segment }}" {{ ($dashboardPage['selected']['recovery_segment'] ?? '') === $segment ? 'selected' : '' }}>{{ $segment }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="col-lg-6">
+                    <label class="filter-label" for="recoveryProductFilter">Produk Dashboard</label>
+                    <select id="recoveryProductFilter" class="timeseries-dimension-select">
+                        <option value="">Semua Produk Dashboard</option>
+                        @foreach(($dashboardPage['filters']['recovery_dimensions']['products'] ?? []) as $product)
+                            <option value="{{ $product }}" {{ ($dashboardPage['selected']['recovery_product'] ?? '') === $product ? 'selected' : '' }}>{{ $product }}</option>
+                        @endforeach
+                    </select>
                 </div>
             </div>
 
@@ -876,6 +923,8 @@
             const initialTimeseriesData = @json($dashboardPage['initialData'] ?? []);
             let currentCategory = '{{ $dashboardPage['selected']['category'] }}';
             let currentSegment = '{{ $dashboardPage['selected']['segment'] ?? 'total' }}';
+            let currentRecoverySegment = @json($dashboardPage['selected']['recovery_segment'] ?? '');
+            let currentRecoveryProduct = @json($dashboardPage['selected']['recovery_product'] ?? '');
             let charts = {};
             let activeRequestId = 0;
             const totalArea6Count = 4;
@@ -883,6 +932,7 @@
             // --- Data Definitions ---
             const allKancasData = @json($dashboardPage['filters']['kanca']);
             const allUnitsData = @json($dashboardPage['filters']['unit_kerja']);
+            const recoveryDimensions = @json($dashboardPage['filters']['recovery_dimensions'] ?? ['segments' => [], 'products' => [], 'products_by_segment' => []]);
             const selectedKancasInitial = @json($dashboardPage['selected']['kanca']);
             const selectedUnitInitial = '{{ $dashboardPage['selected']['unit_kerja'] }}';
 
@@ -898,6 +948,9 @@
             const unitInput = document.getElementById('unitInput');
             const unitOptionsContainer = document.getElementById('unitOptions');
             const periodMonthSelect = document.getElementById('periodMonthFilter');
+            const recoveryDimensionRow = document.getElementById('recoveryDimensionRow');
+            const recoverySegmentSelect = document.getElementById('recoverySegmentFilter');
+            const recoveryProductSelect = document.getElementById('recoveryProductFilter');
             const applyBtn = document.getElementById('applyFilters');
 
             // --- Export JPG Logic ---
@@ -1062,7 +1115,7 @@
                             },
                             title: {
                                 display: true,
-                                text: 'Value (Rp Miliar)',
+                                text: originalScales.y?.title?.text || 'Value (Rp Miliar)',
                                 color: '#334155',
                                 font: { weight: '600', size: Math.round(23 * fontScale) }
                             },
@@ -1165,6 +1218,14 @@
                 let category = categoryBtn ? categoryBtn.textContent.trim() : '-';
                 if (segmentBtn && segmentBtn.getAttribute('data-value') !== 'total') {
                     category += ' - ' + segmentBtn.textContent.trim();
+                }
+                if (currentCategory === 'recovery') {
+                    if (currentRecoverySegment && recoverySegmentSelect) {
+                        category += ' - ' + recoverySegmentSelect.options[recoverySegmentSelect.selectedIndex].text;
+                    }
+                    if (currentRecoveryProduct && recoveryProductSelect) {
+                        category += ' - ' + recoveryProductSelect.options[recoveryProductSelect.selectedIndex].text;
+                    }
                 }
                 const periodSelect = document.getElementById('periodMonthFilter');
                 const period = periodSelect?.options[periodSelect.selectedIndex]?.text || '-';
@@ -1309,6 +1370,10 @@
                         let categoryText = categoryBtn ? categoryBtn.textContent : 'Timeseries';
                         if (segmentBtn && segmentBtn.getAttribute('data-value') !== 'total') {
                             categoryText += '-' + segmentBtn.textContent;
+                        }
+                        if (currentCategory === 'recovery') {
+                            if (currentRecoverySegment) categoryText += '-' + currentRecoverySegment;
+                            if (currentRecoveryProduct) categoryText += '-' + currentRecoveryProduct;
                         }
                         const category = sanitizeFilePart(categoryText);
                         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
@@ -1606,6 +1671,10 @@
                         unit_kerja: unit,
                         period_month: periodMonth
                     });
+                    if (currentCategory === 'recovery') {
+                        queryParams.set('recovery_segment', currentRecoverySegment);
+                        queryParams.set('recovery_product', currentRecoveryProduct);
+                    }
                     selectedKanca.forEach(k => queryParams.append('kanca[]', k));
 
                     const response = await fetch(`${routes.data}?${queryParams.toString()}`);
@@ -1687,6 +1756,7 @@
             function createChartConfig(title, months, datasets, isSummary = false, valueType = 'currency') {
                 const yAxisBounds = resolveYAxisBounds(datasets, isSummary);
                 const isPercent = valueType === 'percent';
+                const isMillion = valueType === 'currency_million';
 
                 return {
                     type: 'line',
@@ -1751,9 +1821,12 @@
                                         let label = context.dataset.label || '';
                                         if (label) { label += ': '; }
                                         if (context.parsed.y !== null) {
-                                            label += new Intl.NumberFormat('id-ID', {
+                                            const formattedValue = new Intl.NumberFormat('id-ID', {
                                                 maximumFractionDigits: isPercent ? 2 : 0
-                                            }).format(context.parsed.y) + (isPercent ? '%' : ' Rp M');
+                                            }).format(context.parsed.y);
+                                            label += isPercent
+                                                ? formattedValue + '%'
+                                                : (isMillion ? 'Rp ' + formattedValue + ' Juta' : formattedValue + ' Rp M');
                                         }
                                         return label;
                                     }
@@ -1773,7 +1846,9 @@
                                 },
                                 title: {
                                     display: true,
-                                    text: isPercent ? 'Persentase (%)' : 'Value (Rp Miliar)',
+                                    text: isPercent
+                                        ? 'Persentase (%)'
+                                        : (isMillion ? 'Value (Rp Juta)' : 'Value (Rp Miliar)'),
                                     color: '#475569',
                                     font: { weight: '600', size: 10 }
                                 },
@@ -1862,11 +1937,15 @@
                     // Dynamically update the summary chart title
                     const titleEl = document.getElementById('summaryChartTitle');
                     if (titleEl) {
-                        const categoryBtn = document.querySelector('.category-btn.active');
+                        const categoryBtn = document.querySelector('#categorySelector .category-btn.active');
                         const segmentBtn = document.querySelector('.segment-btn.active');
                         let label = 'Area 6 - ' + (categoryBtn ? categoryBtn.textContent.trim() : 'Konsolidasi');
                         if (segmentBtn && segmentBtn.getAttribute('data-value') !== 'total') {
                             label += ' (' + segmentBtn.textContent.trim() + ')';
+                        }
+                        if (currentCategory === 'recovery') {
+                            const dimensions = [currentRecoverySegment, currentRecoveryProduct].filter(Boolean);
+                            if (dimensions.length > 0) label += ' - ' + dimensions.join(' / ');
                         }
                         titleEl.innerHTML = `<i class="fas fa-chart-area mr-2 text-primary"></i>${label}`;
                     }
@@ -1889,6 +1968,10 @@
                     let segLabel = '';
                     if (segmentBtn && segmentBtn.getAttribute('data-value') !== 'total') {
                         segLabel = ' (' + segmentBtn.textContent.trim() + ')';
+                    }
+                    if (currentCategory === 'recovery') {
+                        const dimensions = [currentRecoverySegment, currentRecoveryProduct].filter(Boolean);
+                        if (dimensions.length > 0) segLabel += ' - ' + dimensions.join(' / ');
                     }
 
                     branchNames.forEach(branch => {
@@ -1960,8 +2043,38 @@
                     { value: 'small', label: 'Small' },
                     { value: 'consumer', label: 'Consumer' },
                     { value: 'micro', label: 'Micro' }
+                ],
+                recovery: [
+                    { value: 'ritel', label: 'Ritel' },
+                    { value: 'micro', label: 'Mikro' }
                 ]
             };
+
+            function rebuildRecoveryProductOptions() {
+                if (!recoveryProductSelect) return;
+
+                const productsBySegment = recoveryDimensions.products_by_segment || {};
+                const products = currentRecoverySegment
+                    ? (productsBySegment[currentRecoverySegment] || [])
+                    : (recoveryDimensions.products || []);
+
+                if (currentRecoveryProduct && !products.includes(currentRecoveryProduct)) {
+                    currentRecoveryProduct = '';
+                }
+
+                recoveryProductSelect.innerHTML = '';
+                recoveryProductSelect.add(new Option('Semua Produk Dashboard', '', currentRecoveryProduct === '', currentRecoveryProduct === ''));
+                products.forEach(product => {
+                    recoveryProductSelect.add(new Option(product, product, false, product === currentRecoveryProduct));
+                });
+            }
+
+            function syncRecoveryDimensionVisibility() {
+                if (recoveryDimensionRow) {
+                    recoveryDimensionRow.classList.add('d-none');
+                }
+                rebuildRecoveryProductOptions();
+            }
 
             function renderSegmentSelector() {
                 const container = document.getElementById('segmentSelector');
@@ -1972,8 +2085,10 @@
                 // Reset segment to 'total' if currentSegment is invalid for this category
                 const isValid = options.some(opt => opt.value === currentSegment);
                 if (!isValid) {
-                    currentSegment = 'total';
+                    currentSegment = options[0]?.value || 'total';
                 }
+
+                syncRecoveryDimensionVisibility();
 
                 container.innerHTML = options.map(opt => {
                     const isActive = opt.value === currentSegment ? 'active' : '';
@@ -2002,6 +2117,21 @@
                     fetchData();
                 });
             });
+
+            if (recoverySegmentSelect) {
+                recoverySegmentSelect.addEventListener('change', function() {
+                    currentRecoverySegment = this.value;
+                    rebuildRecoveryProductOptions();
+                    fetchData();
+                });
+            }
+
+            if (recoveryProductSelect) {
+                recoveryProductSelect.addEventListener('change', function() {
+                    currentRecoveryProduct = this.value;
+                    fetchData();
+                });
+            }
 
             if (applyBtn) {
                 applyBtn.addEventListener('click', fetchData);

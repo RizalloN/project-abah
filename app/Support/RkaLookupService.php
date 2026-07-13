@@ -610,9 +610,9 @@ class RkaLookupService
             return null;
         }
 
-        foreach (['KCP', 'UNIT', 'KC'] as $prefix) {
-            if ($normalized === $prefix || str_starts_with($normalized, $prefix . ' ')) {
-                return $prefix;
+        foreach (['KCP', 'UNIT', 'KC'] as $kind) {
+            if ($this->ukerContainsToken($normalized, $kind)) {
+                return $kind;
             }
         }
 
@@ -634,6 +634,12 @@ class RkaLookupService
         // Exact match first
         if ($ukerKey === $normalizedLabel) {
             return self::$flexibleMatchMemo[$cacheKey] = true;
+        }
+
+        $sourceKind = $this->scopeKind($ukerKey);
+        $targetKind = $this->scopeKind($normalizedLabel);
+        if ($sourceKind !== null && $targetKind !== null && $sourceKind !== $targetKind) {
+            return self::$flexibleMatchMemo[$cacheKey] = false;
         }
 
         // Try slug-based matching for better flexibility (matches 'kc-madiun' to '45-KC MADIUN')

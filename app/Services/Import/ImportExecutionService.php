@@ -17,7 +17,7 @@ use Illuminate\Support\Carbon;
 class ImportExecutionService
 {
     private const IMPORT_QUEUE = 'imports-high';
-    private const DAILY_LOAN_IMPORT_QUEUE = 'imports-high';
+    private const DAILY_LOAN_IMPORT_QUEUE = 'imports-daily-loan';
     private const DAILY_LOAN_REPORT_ID = 8;
     private const DISPATCHED_KEY_PREFIX = 'import_excel_dispatched_job_';
     private const DISPATCHED_TTL_HOURS = 6;
@@ -43,7 +43,7 @@ class ImportExecutionService
         }
 
         $job = $this->progressService->findJob($jobId);
-        if ($job && strtolower((string) ($job->status ?? '')) === 'processing') {
+        if ($job && in_array(strtolower((string) ($job->status ?? '')), ['staging', 'processing'], true)) {
             $job = $this->recoverZeroProgressProcessingJob($jobId, $job);
         }
 
@@ -62,7 +62,7 @@ class ImportExecutionService
 
             // Re-fetch inside lock to guard against concurrent dispatch races
             $job = $this->progressService->findJob($jobId);
-            if ($job && strtolower((string) ($job->status ?? '')) === 'processing') {
+            if ($job && in_array(strtolower((string) ($job->status ?? '')), ['staging', 'processing'], true)) {
                 $job = $this->recoverZeroProgressProcessingJob($jobId, $job);
             }
 
@@ -133,10 +133,10 @@ class ImportExecutionService
         $reportId = (int) ($job->id_report ?? 0);
 
         if ($reportId === self::DAILY_LOAN_REPORT_ID || $tableName === 'daily_loan_dinamis') {
-            return self::DAILY_LOAN_IMPORT_QUEUE;
+            return $this->dailyLoanImportQueue();
         }
 
-        return self::IMPORT_QUEUE;
+        return $this->importQueue();
     }
 
     private function resolvePostImportSyncQueue(int $jobId, array $params = []): string
@@ -145,7 +145,7 @@ class ImportExecutionService
         $job = $this->progressService->findJob($jobId);
 
         if ((int) ($job->id_report ?? 0) === self::DAILY_LOAN_REPORT_ID || $tableName === 'daily_loan_dinamis') {
-            return self::DAILY_LOAN_IMPORT_QUEUE;
+            return $this->dailyLoanImportQueue();
         }
 
         $queue = trim((string) config('queue.report_queue', 'default'));
@@ -325,7 +325,7 @@ class ImportExecutionService
             return;
         }
 
-        if (strtolower((string) ($job->status ?? '')) === 'processing') {
+        if (in_array(strtolower((string) ($job->status ?? '')), ['staging', 'processing'], true)) {
             $forceReservationRecovery = $executionSource === 'worker'
                 && !$this->isRecoverableZeroProgressProcessingJob($jobId, $job)
                 && $this->isQueueReservationHandoff($jobId, $job);
@@ -334,7 +334,7 @@ class ImportExecutionService
                 $job,
                 $forceReservationRecovery
             );
-            if (!$job || strtolower((string) ($job->status ?? '')) === 'processing') {
+            if (!$job || in_array(strtolower((string) ($job->status ?? '')), ['staging', 'processing'], true)) {
                 return;
             }
         }
@@ -370,8 +370,7 @@ class ImportExecutionService
             return;
         }
 
-        $requiresPreparedStaging = in_array($tableName, ['lw321_npd', 'lw321_npdd'], true)
-            && empty($params['staged_csv_path']);
+        $requiresPreparedStaging = false;
 
         // ── OPTIMIZATION: Initialize job jika belum sepenuhnya ready ──────
         // Deteksi header dan staging CSV dilakukan ASYNC (dalam job execution)
@@ -392,6 +391,16 @@ class ImportExecutionService
             $controller = app($controllerClass);
 
             try {
+                $this->progressService->markStaging($jobId, [
+                    'status' => 'staging',
+                    'phase' => 'initializing',
+                    'mode' => 'excel_init',
+                    'percent' => 3,
+                    'message' => 'Worker sudah mengambil job import dan sedang membaca struktur file.',
+                    'processed_rows' => 0,
+                    'total_rows' => (int) ($job->total_files ?? 0),
+                ]);
+
                 $initResult = $controller->initializeQueuedImportJobForExecution($jobId);
                 
                 if (!$initResult) {
@@ -599,7 +608,7 @@ class ImportExecutionService
         }
 
         $status = (string) ($payload['status'] ?? '');
-        if ($status === 'processing') {
+        if (in_array($status, ['staging', 'processing'], true)) {
             return $this->shouldRunInlineFallbackForStaleProcessing($payload);
         }
 
@@ -699,11 +708,32 @@ class ImportExecutionService
             return false;
         }
 
-        if ($this->importCache()->has($this->dispatchedKey($jobId))) {
+        if ($this->hasQueuedImportJobRow($jobId)) {
             return true;
         }
 
-        return $this->hasQueuedImportJobRow($jobId);
+        if (!$this->importCache()->has($this->dispatchedKey($jobId))) {
+            return false;
+        }
+
+        $job = $this->progressService->findJob($jobId);
+        if (!$job) {
+            $this->releaseDispatchMarker($jobId);
+            return false;
+        }
+
+        $status = strtolower((string) ($job->status ?? ''));
+        if (in_array($status, ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
+            $this->releaseDispatchMarker($jobId);
+            return false;
+        }
+
+        if (in_array($status, ['staging', 'processing'], true) && $this->hasRecentProcessingPulse($jobId, $job)) {
+            return true;
+        }
+
+        $this->releaseDispatchMarker($jobId);
+        return false;
     }
 
     private function hasQueuedImportJobRow(int $jobId): bool
@@ -714,7 +744,7 @@ class ImportExecutionService
 
         try {
             return DB::table('jobs')
-                ->whereIn('queue', [self::DAILY_LOAN_IMPORT_QUEUE, self::IMPORT_QUEUE])
+                ->whereIn('queue', [$this->dailyLoanImportQueue(), $this->importQueue()])
                 ->where('payload', 'like', '%' . str_replace('\\', '\\\\', RunImportJob::class) . '%')
                 ->where('payload', 'like', '%jobId%')
                 ->where('payload', 'like', '%i:' . $jobId . ';%')
@@ -805,12 +835,26 @@ class ImportExecutionService
         return $store !== '' ? Cache::store($store) : Cache::store();
     }
 
+    private function importQueue(): string
+    {
+        $queue = trim((string) config('import.queue.import_queue', self::IMPORT_QUEUE));
+
+        return $queue !== '' ? $queue : self::IMPORT_QUEUE;
+    }
+
+    private function dailyLoanImportQueue(): string
+    {
+        $queue = trim((string) config('import.queue.daily_loan_queue', self::DAILY_LOAN_IMPORT_QUEUE));
+
+        return $queue !== '' ? $queue : self::DAILY_LOAN_IMPORT_QUEUE;
+    }
+
     public function recoverOrphanedZeroProgressJobs(int $minimumAgeSeconds = 60): array
     {
         $minimumAgeSeconds = max(30, $minimumAgeSeconds);
         $cutoff = now()->subSeconds($minimumAgeSeconds);
         $candidates = DB::table('import_jobs')
-            ->where('status', 'processing')
+            ->whereIn('status', ['staging', 'processing'])
             ->where('total_success', 0)
             ->where('total_failed', 0)
             ->where('updated_at', '<=', $cutoff)
@@ -906,7 +950,7 @@ class ImportExecutionService
     private function isZeroProgressProcessingJob(int $jobId, object $job): bool
     {
         return $this->isRecoverableZeroProgressImportJob($jobId, $job)
-            && strtolower((string) ($job->status ?? '')) === 'processing'
+            && in_array(strtolower((string) ($job->status ?? '')), ['staging', 'processing'], true)
             && (int) ($job->total_success ?? 0) === 0
             && (int) ($job->total_failed ?? 0) === 0;
     }

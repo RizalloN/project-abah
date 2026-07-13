@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kinerja Area 6 - Madiun, Magetan, Ngawi, Ponorogo</title>
-  
+
   <!-- FontAwesome -->
   <link rel="stylesheet" href="{{ asset('adminlte/plugins/fontawesome-free/css/all.min.css') }}">
   <!-- Google Font: Inter -->
@@ -136,7 +136,7 @@
       height: 12px;
       background: rgba(0, 0, 0, 0.15);
     }
-    
+
     /* Cover slide logos */
     .pres-cover-logos-container {
       margin-bottom: 1.5rem;
@@ -1238,7 +1238,7 @@
         background: rgba(15, 23, 42, 0.15);
         border-radius: 4px;
       }
-      
+
       /* Grids adjustment to stacked layout */
       .pres-cover-layout,
       .pres-explorer-grid,
@@ -1249,12 +1249,12 @@
         gap: 1.25rem !important;
         height: auto !important;
       }
-      
+
       .pres-cover-board {
         grid-template-columns: repeat(2, 1fr) !important;
         gap: 0.85rem !important;
       }
-      
+
       .pres-digital-list {
         grid-template-columns: repeat(2, 1fr) !important;
         gap: 0.75rem !important;
@@ -1273,7 +1273,7 @@
         font-size: 0.75rem;
         font-weight: 600;
       }
-      
+
       /* Hide subtitle brand in narrow screen */
       .pres-title-lbl span {
         display: none !important;
@@ -1285,7 +1285,7 @@
       .apple-presentation-mode {
         padding: 4.2rem 0.75rem 4.2rem 0.75rem !important;
       }
-      
+
       .pres-top-bar {
         top: 0.75rem !important;
         left: 0.75rem !important;
@@ -1316,7 +1316,7 @@
       .pres-segment-summary-grid {
         grid-template-columns: repeat(2, 1fr) !important;
       }
-      
+
       /* Scale typography down */
       .pres-cover-title {
         font-size: 2.1rem !important;
@@ -1352,20 +1352,20 @@
         padding: 0 0.55rem !important;
         height: 30px !important;
       }
-      
+
       /* Make table horizontal scrolling smooth */
       .pres-table-scroll {
         overflow-x: auto !important;
         -webkit-overflow-scrolling: touch;
       }
-      
+
       /* Compact controls bar */
       .pres-control-bar {
         flex-direction: column !important;
         align-items: stretch !important;
         gap: 0.5rem !important;
       }
-      .pres-control-group, 
+      .pres-control-group,
       .pres-compact-select {
         width: 100% !important;
         box-sizing: border-box;
@@ -2392,6 +2392,221 @@
       border-color: var(--pres-academic) !important;
     }
 
+    .pres-executive-grid,
+    .pres-executive-scan,
+    .pres-executive-edge {
+      position: absolute;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .pres-executive-grid {
+      inset: 5.25rem 3.15rem 4.35rem 3.15rem;
+      background-image:
+        linear-gradient(rgba(8, 87, 195, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(8, 87, 195, 0.06) 1px, transparent 1px);
+      background-size: 64px 64px;
+      mask-image: linear-gradient(90deg, transparent 0%, #000 16%, #000 84%, transparent 100%);
+      opacity: 0.46;
+      animation: pres-grid-drift 34s linear infinite;
+    }
+
+    .pres-executive-scan {
+      left: 3.15rem;
+      right: 3.15rem;
+      top: 4.35rem;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, rgba(0, 174, 239, 0.9), rgba(247, 159, 31, 0.75), transparent);
+      box-shadow: 0 0 22px rgba(0, 174, 239, 0.32);
+      transform-origin: left center;
+      animation: pres-scan-run 7.5s ease-in-out infinite;
+    }
+
+    .pres-executive-edge {
+      top: 4.35rem;
+      bottom: 4.35rem;
+      width: 3px;
+      background: linear-gradient(180deg, rgba(8, 87, 195, 0), rgba(8, 87, 195, 0.72), rgba(247, 159, 31, 0.65), rgba(8, 87, 195, 0));
+      opacity: 0.7;
+    }
+
+    .pres-executive-edge.left {
+      left: 3.15rem;
+    }
+
+    .pres-executive-edge.right {
+      right: 3.15rem;
+    }
+
+    .pres-command-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-height: 34px;
+      padding: 0.38rem 0.72rem;
+      border: 1px solid rgba(8, 87, 195, 0.22);
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(243,248,255,0.96));
+      color: #0857c3;
+      font-size: 0.72rem;
+      font-weight: 850;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      box-shadow: 0 8px 18px rgba(8, 87, 195, 0.05);
+    }
+
+    .pres-command-chip i {
+      color: #f59e0b;
+      font-size: 0.72rem;
+    }
+
+    .pres-live-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.48rem;
+      min-height: 34px;
+      padding: 0.36rem 0.72rem;
+      border: 1px solid rgba(5, 150, 105, 0.22);
+      border-radius: 10px;
+      background: #ffffff;
+      color: #047857;
+      font-size: 0.72rem;
+      font-weight: 850;
+      box-shadow: 0 4px 12px rgba(5, 150, 105, 0.04);
+    }
+
+    .pres-live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #10b981;
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45);
+      animation: pres-live-pulse 1.7s ease-out infinite;
+    }
+
+    .pres-autoplay-panel {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      min-width: 210px;
+    }
+
+    .pres-autoplay-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      border: 1px solid rgba(8, 87, 195, 0.22);
+      border-radius: 10px;
+      background: #ffffff;
+      color: #0857c3;
+      box-shadow: 0 4px 12px rgba(8, 87, 195, 0.03);
+      transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease;
+    }
+
+    .pres-autoplay-btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .pres-autoplay-btn.is-running {
+      background: var(--pres-academic);
+      color: #ffffff;
+    }
+
+    .pres-auto-meta {
+      display: grid;
+      gap: 0.28rem;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pres-auto-label {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.8rem;
+      color: #64748b;
+      font-size: 0.66rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .pres-auto-progress {
+      height: 5px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(8, 87, 195, 0.12);
+    }
+
+    .pres-auto-progress-fill {
+      display: block;
+      height: 100%;
+      width: 0%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #0857c3, #00aeef, #f59e0b);
+    }
+
+    .pres-auto-progress-fill.is-running {
+      animation: pres-autoplay-fill var(--pres-autoplay-duration, 9000ms) linear forwards;
+    }
+
+    .pres-cover-command-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .pres-cover-lead::after {
+      content: '';
+      display: block;
+      width: min(420px, 100%);
+      height: 4px;
+      margin-top: 1rem;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #0857c3, #00aeef, #f59e0b);
+      transform-origin: left center;
+      animation: pres-accent-breathe 4.8s ease-in-out infinite;
+    }
+
+    .apple-slide.active .pres-glass-card,
+    .apple-slide.active .pres-cover-card,
+    .apple-slide.active .pres-panel {
+      animation: pres-panel-rise 0.86s cubic-bezier(.19, 1, .22, 1) both;
+    }
+
+    @keyframes pres-grid-drift {
+      0% { background-position: 0 0; }
+      100% { background-position: 128px 64px; }
+    }
+
+    @keyframes pres-scan-run {
+      0%, 100% { transform: scaleX(0.04); opacity: 0.18; }
+      42% { transform: scaleX(1); opacity: 0.8; }
+      58% { transform: scaleX(1); opacity: 0.56; }
+    }
+
+    @keyframes pres-live-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.42); }
+      100% { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
+    }
+
+    @keyframes pres-autoplay-fill {
+      from { width: 0%; }
+      to { width: 100%; }
+    }
+
+    @keyframes pres-accent-breathe {
+      0%, 100% { transform: scaleX(0.72); opacity: 0.62; }
+      50% { transform: scaleX(1); opacity: 1; }
+    }
+
+    @keyframes pres-panel-rise {
+      from { opacity: 0; transform: translateY(16px) scale(0.992); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
     @media (max-width: 1024px) {
       .apple-presentation-mode {
         padding-left: 1.15rem !important;
@@ -2408,6 +2623,1202 @@
         left: 1.15rem !important;
         right: 1.15rem !important;
       }
+
+      .pres-executive-grid,
+      .pres-executive-scan {
+        left: 1.15rem !important;
+        right: 1.15rem !important;
+      }
+
+      .pres-executive-edge {
+        display: none;
+      }
+
+      .pres-live-chip,
+      .pres-command-chip {
+        display: none;
+      }
+
+      .pres-autoplay-panel {
+        min-width: 150px;
+      }
+    }
+
+    /* ==========================================================================
+       PPT MODE MASSIVE REDESIGN OVERRIDES (EXECUTIVE BANKING MASTERPIECE)
+       ========================================================================= */
+
+    /* 1. Dotted Grid Background Pattern & Pulse Animations */
+    #apple-presentation-mode {
+      background:
+        radial-gradient(rgba(8, 87, 195, 0.08) 1.2px, transparent 1.2px),
+        linear-gradient(180deg, #ffffff 0%, #f7f9fc 50%, #e8eff7 100%) !important;
+      background-size: 24px 24px, auto !important;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.8s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+
+    /* 2. Theme Dark Overrides for Opening (Cover) & Closing Slides */
+    #apple-presentation-mode.theme-dark {
+      background:
+        radial-gradient(rgba(255, 255, 255, 0.04) 1.2px, transparent 1.2px),
+        linear-gradient(135deg, #0A2540 0%, #001020 100%) !important;
+      background-size: 24px 24px, auto !important;
+      color: #ffffff !important;
+    }
+
+    #apple-presentation-mode.theme-dark::before {
+      content: '';
+      position: absolute;
+      width: 800px;
+      height: 800px;
+      background: radial-gradient(circle, rgba(8, 87, 195, 0.18) 0%, transparent 70%);
+      top: -200px;
+      left: -200px;
+      z-index: 1;
+      pointer-events: none;
+      display: block !important;
+      animation: ambient-pulse-1 20s infinite alternate ease-in-out;
+    }
+
+    #apple-presentation-mode.theme-dark::after {
+      content: '';
+      position: absolute;
+      width: 900px;
+      height: 900px;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 70%);
+      bottom: -300px;
+      right: -300px;
+      z-index: 1;
+      pointer-events: none;
+      display: block !important;
+      animation: ambient-pulse-2 25s infinite alternate ease-in-out;
+    }
+
+    /* Adjustments for top & bottom bars in dark theme */
+    #apple-presentation-mode.theme-dark .pres-top-bar,
+    #apple-presentation-mode.theme-dark .pres-bottom-bar {
+      background: rgba(10, 37, 64, 0.82) !important;
+      border-color: rgba(255, 255, 255, 0.12) !important;
+      color: #ffffff !important;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45) !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-title-lbl,
+    #apple-presentation-mode.theme-dark .pres-meta-chip,
+    #apple-presentation-mode.theme-dark .pres-nav-btn-back,
+    #apple-presentation-mode.theme-dark .pres-nav-btn,
+    #apple-presentation-mode.theme-dark .pres-paginator,
+    #apple-presentation-mode.theme-dark .pres-slide-counter-badge,
+    #apple-presentation-mode.theme-dark .pres-autoplay-panel {
+      color: #ffffff !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+      border-color: rgba(255, 255, 255, 0.14) !important;
+      box-shadow: none !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-title-lbl span {
+      color: #3b82f6 !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-logo-divider {
+      background: rgba(255, 255, 255, 0.25) !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-logos-wrapper {
+      background: #ffffff !important;
+      border-color: rgba(255, 255, 255, 0.85) !important;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-logos-wrapper .pres-logo-divider {
+      background: rgba(8, 87, 195, 0.2) !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-dot {
+      background: rgba(255, 255, 255, 0.3) !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-dot.active {
+      background: #0071e3 !important;
+      box-shadow: 0 0 12px rgba(0, 113, 227, 0.6);
+    }
+
+    #apple-presentation-mode.theme-dark .pres-autoplay-btn {
+      color: #ffffff !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-nav-btn-back:hover,
+    #apple-presentation-mode.theme-dark .pres-nav-btn:hover {
+      background: rgba(255, 255, 255, 0.16) !important;
+      border-color: rgba(255, 255, 255, 0.3) !important;
+      color: #3b82f6 !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-auto-label span {
+      color: rgba(255, 255, 255, 0.6) !important;
+    }
+    #apple-presentation-mode.theme-dark #pres-auto-state {
+      color: #ffffff !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-auto-progress {
+      background: rgba(255, 255, 255, 0.15) !important;
+    }
+
+    /* 3. Framed Image Styling */
+    .pres-cover-image-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      width: 100%;
+      min-height: 0;
+      padding: 0.5rem;
+    }
+
+    .pres-cover-image-frame {
+      width: 100%;
+      height: 100%;
+      max-height: 480px;
+      object-fit: cover;
+      border-radius: 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+      transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    #pres-slide-0 .pres-cover-image-frame {
+      border: 8px solid #0857c3;
+      box-shadow: 0 20px 40px rgba(8, 87, 195, 0.25);
+    }
+
+    #pres-slide-8 .pres-cover-image-frame {
+      border: 8px solid #ffffff;
+      box-shadow: 0 20px 40px rgba(255, 255, 255, 0.15);
+    }
+
+    .pres-cover-image-frame:hover {
+      transform: translateY(-8px) scale(1.025);
+    }
+
+    #pres-slide-0 .pres-cover-image-frame:hover {
+      box-shadow: 0 30px 60px rgba(8, 87, 195, 0.45);
+    }
+
+    #pres-slide-8 .pres-cover-image-frame:hover {
+      box-shadow: 0 30px 60px rgba(255, 255, 255, 0.3);
+    }
+
+    /* 4. Timeline Progress Bar (Self-Moving Autoplay) */
+    .pres-auto-progress {
+      position: relative;
+      height: 4px;
+      background: rgba(0, 0, 0, 0.08);
+      border-radius: 2px;
+      overflow: hidden;
+      width: 60px;
+    }
+
+    .pres-auto-progress-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 0%;
+      background: #0071e3;
+      border-radius: 2px;
+      transition: none;
+    }
+
+    .pres-auto-progress-fill.is-running {
+      width: 100%;
+      transition: width var(--pres-autoplay-duration) linear !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-auto-progress-fill {
+      background: #3b82f6 !important;
+    }
+
+    /* 5. Custom 130 Tahun BRI Badge styles */
+    .bri-130-badge {
+      transition: transform 0.3s ease;
+    }
+    .bri-130-badge:hover {
+      transform: scale(1.06);
+    }
+    #apple-presentation-mode.theme-dark .bri-130-badge text {
+      fill: #0857c3 !important;
+    }
+    #apple-presentation-mode.theme-dark .bri-130-badge text:last-of-type {
+      fill: #e61c24 !important;
+    }
+    #apple-presentation-mode.theme-dark .bri-130-badge path[stroke="#0857c3"] {
+      stroke: #0857c3 !important;
+    }
+
+    /* 6. Tableau Table Style Polishing */
+    .pres-table-dense {
+      background: #ffffff;
+    }
+
+    .pres-table-dense thead th {
+      background: #f1f5f9 !important;
+      border-bottom: 2px solid #cbd5e1 !important;
+      font-weight: 800 !important;
+      color: #334155 !important;
+      font-size: 0.68rem !important;
+      padding: 0.65rem 0.8rem !important;
+      text-transform: uppercase;
+      letter-spacing: 0.04em !important;
+    }
+
+    .pres-table-dense tbody td {
+      border-bottom: 1px solid #e2e8f0 !important;
+      padding: 0.6rem 0.8rem !important;
+      color: #1e293b !important;
+      font-weight: 500;
+    }
+
+    .pres-table-dense tbody tr:nth-child(even) td {
+      background: #f8fafc !important;
+    }
+
+    .pres-table-dense tbody tr:hover td {
+      background: rgba(8, 87, 195, 0.06) !important;
+    }
+
+    /* Double underline for total rows */
+    .pres-table-dense tbody tr[style*="background"] td,
+    .pres-table-dense tbody tr.pres-kts-branch-header td {
+      border-bottom: 3px double #0857c3 !important;
+      font-weight: 800 !important;
+    }
+
+    /* 7. Strategic Priorities Slide Cards */
+    .pres-priority-card {
+      background: #ffffff;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      border-radius: 16px;
+      padding: 1.8rem;
+      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.03);
+      display: flex;
+      gap: 1.5rem;
+      align-items: flex-start;
+      transition: all 0.3s ease;
+    }
+
+    .pres-priority-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 16px 35px rgba(8, 87, 195, 0.08);
+      border-color: rgba(8, 87, 195, 0.25);
+    }
+
+    .pres-priority-icon-wrapper {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.35rem;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .pres-priority-icon-wrapper.casa {
+      background: rgba(8, 87, 195, 0.1);
+      color: #0857c3;
+      border: 1px solid rgba(8, 87, 195, 0.2);
+    }
+
+    .pres-priority-icon-wrapper.quality {
+      background: rgba(16, 185, 129, 0.1);
+      color: #047857;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .pres-priority-icon-wrapper.prod {
+      background: rgba(245, 158, 11, 0.1);
+      color: #b45309;
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+
+    /* 8. Slide transition speed improvement */
+    .apple-slide {
+      transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.5s !important;
+    }
+
+    /* 16-page BRI executive deck system */
+    .bri-deck-title-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .bri-deck-kicker {
+      color: #0857c3;
+      font-size: 0.78rem;
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .bri-deck-title {
+      margin: 0.2rem 0 0;
+      color: #0f172a;
+      font-size: clamp(1.7rem, 2.45vw, 2.65rem);
+      font-weight: 900;
+      line-height: 1.05;
+    }
+
+    .bri-deck-subtitle {
+      margin: 0.5rem 0 0;
+      color: #475569;
+      font-size: 0.88rem;
+      font-weight: 600;
+      line-height: 1.45;
+      max-width: 760px;
+    }
+
+    .bri-cover-hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(360px, 0.82fr) minmax(560px, 1.18fr);
+      gap: 1.35rem;
+      height: 100%;
+      align-items: stretch;
+    }
+
+    .bri-cover-copy {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 2.2rem;
+      border-radius: 20px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(239,246,255,0.92));
+      border: 1px solid rgba(255, 255, 255, 0.55);
+      box-shadow: 0 24px 58px rgba(0, 0, 0, 0.18);
+    }
+
+    .bri-cover-photo {
+      position: relative;
+      overflow: hidden;
+      border-radius: 22px;
+      border: 8px solid #ffffff;
+      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.26);
+      background: #0857c3;
+    }
+
+    .bri-cover-photo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transform: scale(1.01);
+    }
+
+    .bri-cover-photo::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(8, 87, 195, 0.14), transparent 38%, rgba(230, 28, 36, 0.08));
+      pointer-events: none;
+    }
+
+    .bri-cover-title {
+      margin: 0.45rem 0 0;
+      color: #0857c3;
+      font-size: clamp(2.6rem, 4.7vw, 5.4rem);
+      font-weight: 950;
+      line-height: 0.94;
+    }
+
+    .bri-cover-meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.65rem;
+      margin-top: 1.2rem;
+    }
+
+    .bri-cover-meta .pres-cover-stat {
+      min-height: 72px;
+    }
+
+    .bri-highlight-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.85rem;
+    }
+
+    .bri-dashboard-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: 12px;
+      border: 1px solid rgba(8, 87, 195, 0.14);
+      background: #ffffff;
+      box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
+    }
+
+    .bri-dashboard-card .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 0.55rem 0.85rem;
+      color: #ffffff;
+      background: linear-gradient(90deg, #0857c3, #307fe2);
+      font-size: 0.76rem;
+      font-weight: 900;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .bri-dashboard-card .card-head.cyan {
+      background: linear-gradient(90deg, #307fe2, #00aeef);
+    }
+
+    .bri-dashboard-card .card-head.red {
+      background: linear-gradient(90deg, #0857c3, #ef4444);
+    }
+
+    .bri-dashboard-card .metric-main {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.4rem;
+      padding: 0.9rem 1rem 0.65rem;
+      text-align: center;
+    }
+
+    .bri-dashboard-card .metric-main span,
+    .bri-dashboard-card .metric-deltas span {
+      display: block;
+      color: #475569;
+      font-size: 0.67rem;
+      font-weight: 800;
+    }
+
+    .bri-dashboard-card .metric-main strong {
+      display: block;
+      margin-top: 0.18rem;
+      color: #0f172a;
+      font-size: 1.23rem;
+      font-weight: 950;
+      line-height: 1;
+    }
+
+    .bri-dashboard-card .achievement {
+      padding: 0.35rem 1rem 0.75rem;
+      text-align: center;
+      border-top: 1px solid rgba(15, 23, 42, 0.07);
+    }
+
+    .bri-dashboard-card .achievement strong {
+      display: block;
+      color: #f59e0b;
+      font-size: 1.55rem;
+      font-weight: 950;
+      line-height: 1;
+    }
+
+    .bri-dashboard-card .metric-deltas {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0;
+      padding: 0.65rem 0.85rem 0.85rem;
+      border-top: 1px solid rgba(15, 23, 42, 0.07);
+      text-align: center;
+    }
+
+    .bri-dashboard-card .metric-deltas strong {
+      color: #059669;
+      font-size: 0.76rem;
+      font-weight: 900;
+    }
+
+    .bri-dashboard-card .metric-deltas strong.neg {
+      color: #dc2626;
+    }
+
+    .bri-panel-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 0.9rem;
+      margin-top: 0.9rem;
+      min-height: 0;
+    }
+
+    .bri-blue-panel-title {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      min-height: 34px;
+      padding: 0.48rem 0.8rem;
+      color: #ffffff;
+      background: linear-gradient(90deg, #0857c3, #307fe2);
+      border-radius: 10px 10px 0 0;
+      font-size: 0.76rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .bri-inner-panel {
+      overflow: hidden;
+      border: 1px solid rgba(8, 87, 195, 0.14);
+      border-radius: 11px;
+      background: #ffffff;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+    }
+
+    .bri-panel-body {
+      padding: 0.8rem;
+    }
+
+    .bri-product-row,
+    .bri-branch-card,
+    .bri-finance-card {
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      border-radius: 10px;
+      background: #ffffff;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+    }
+
+    .bri-product-row {
+      display: grid;
+      grid-template-columns: 140px repeat(3, minmax(0, 1fr));
+      gap: 0.75rem;
+      align-items: center;
+      padding: 0.55rem 0.7rem;
+      margin-bottom: 0.42rem;
+    }
+
+    .bri-raised-bars {
+      display: flex;
+      align-items: end;
+      gap: 1rem;
+      height: 310px;
+      padding: 1.2rem 1.4rem 0.75rem;
+      perspective: 900px;
+    }
+
+    .bri-raised-bar {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      height: 100%;
+    }
+
+    .bri-raised-bar .bar {
+      width: 76%;
+      min-height: 18px;
+      border-radius: 10px 10px 4px 4px;
+      background: linear-gradient(180deg, var(--bar-color), #073b8e);
+      box-shadow: inset -10px 0 18px rgba(255,255,255,0.16), 10px 12px 20px rgba(8,87,195,0.18);
+      transform: rotateX(7deg) rotateY(-8deg);
+      transform-origin: bottom center;
+    }
+
+    .bri-raised-bar strong {
+      color: #0f172a;
+      font-size: 0.78rem;
+      font-weight: 900;
+      text-align: center;
+    }
+
+    .bri-raised-bar span {
+      color: #64748b;
+      font-size: 0.68rem;
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .bri-saving-highlight-slide {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      gap: 0.72rem;
+    }
+
+    .bri-saving-highlight-slide .bri-deck-title-row {
+      flex: 0 0 auto;
+    }
+
+    .bri-saving-highlight-slide .bri-highlight-grid {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.58rem;
+      flex: 0 0 auto;
+    }
+
+    .bri-saving-highlight-slide .bri-dashboard-card .card-head {
+      min-height: 32px;
+      padding: 0.42rem 0.55rem;
+      font-size: 0.66rem;
+    }
+
+    .bri-saving-highlight-slide .bri-dashboard-card .metric-main {
+      padding: 0.58rem 0.62rem 0.42rem;
+    }
+
+    .bri-saving-highlight-slide .bri-dashboard-card .metric-main strong {
+      font-size: 1rem;
+      line-height: 1.12;
+    }
+
+    .bri-saving-highlight-slide .bri-dashboard-card .achievement {
+      padding: 0.36rem 0.58rem 0.54rem;
+    }
+
+    .bri-saving-highlight-slide .bri-dashboard-card .achievement strong {
+      font-size: 1.2rem;
+      line-height: 1.05;
+    }
+
+    .bri-saving-highlight-slide .bri-panel-grid {
+      flex: 1 1 auto;
+      min-height: 0;
+      margin-top: 0;
+    }
+
+    .bri-saving-highlight-slide .bri-inner-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .bri-saving-highlight-slide .bri-panel-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .bri-saving-highlight-slide #pres-saving-summary-table {
+      overflow: auto;
+    }
+
+    .bri-raised-bars {
+      display: grid;
+      grid-template-columns: 1fr;
+      align-content: center;
+      gap: 0.72rem;
+      height: 100%;
+      min-height: 0;
+      padding: 0.9rem 0.95rem;
+      perspective: none;
+    }
+
+    .bri-raised-bar {
+      display: grid;
+      grid-template-columns: minmax(115px, 0.72fr) minmax(170px, 1.25fr) minmax(52px, auto);
+      align-items: center;
+      gap: 0.8rem;
+      min-height: 58px;
+      height: auto;
+      padding: 0.78rem 0.88rem;
+      border: 1px solid rgba(8, 87, 195, 0.12);
+      border-radius: 14px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96)),
+        radial-gradient(circle at 10% 0%, rgba(8, 87, 195, 0.12), transparent 34%);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+    }
+
+    .bri-raised-bar .bar-meta {
+      display: grid;
+      gap: 0.18rem;
+      min-width: 0;
+    }
+
+    .bri-raised-bar strong {
+      color: #0f172a;
+      font-size: 0.82rem;
+      font-weight: 950;
+      line-height: 1.12;
+      text-align: left;
+      white-space: normal;
+    }
+
+    .bri-raised-bar span {
+      color: #64748b;
+      font-size: 0.68rem;
+      font-weight: 850;
+      line-height: 1.2;
+      text-align: left;
+      white-space: normal;
+    }
+
+    .bri-raised-bar .bar-track {
+      height: 18px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e5edf7;
+      box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.09);
+    }
+
+    .bri-raised-bar .bar {
+      width: var(--bar-width, 0%);
+      height: 100% !important;
+      min-height: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--bar-color), #307fe2);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 8px 16px rgba(8, 87, 195, 0.16);
+      transform: none;
+    }
+
+    .bri-raised-bar em {
+      justify-self: end;
+      color: var(--bar-color, #0857c3);
+      font-size: 0.9rem;
+      font-style: normal;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    .bri-donut-lite {
+      --p1: 70%;
+      --p2: 15%;
+      --p3: 15%;
+      width: 205px;
+      height: 205px;
+      border-radius: 50%;
+      background: conic-gradient(#0857c3 0 var(--p1), #71c5e8 var(--p1) calc(var(--p1) + var(--p2)), #ef4444 calc(var(--p1) + var(--p2)) 100%);
+      box-shadow: 0 18px 36px rgba(8,87,195,0.18);
+      position: relative;
+      margin: 0 auto;
+    }
+
+    .bri-donut-lite::after {
+      content: '';
+      position: absolute;
+      inset: 48px;
+      border-radius: inherit;
+      background: #ffffff;
+      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+    }
+
+    .bri-mini-stat-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.65rem;
+    }
+
+    .bri-branch-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    .bri-branch-card {
+      padding: 0.9rem;
+    }
+
+    .bri-branch-card h3,
+    .bri-finance-card h3 {
+      margin: 0;
+      color: #0f172a;
+      font-size: 0.95rem;
+      font-weight: 900;
+    }
+
+    .bri-branch-card .metric-line,
+    .bri-finance-card .metric-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.65rem;
+      margin-top: 0.55rem;
+      color: #475569;
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    .bri-finance-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.72rem;
+    }
+
+    .bri-finance-card {
+      padding: 0.9rem;
+      border-top: 4px solid var(--tone, #0857c3);
+    }
+
+    .bri-finance-card strong {
+      display: block;
+      margin-top: 0.55rem;
+      color: var(--tone, #0857c3);
+      font-size: 1.25rem;
+      font-weight: 950;
+    }
+
+    .bri-deep-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.9rem;
+      min-height: 0;
+    }
+
+    @media (max-width: 1100px) {
+      .bri-cover-hero,
+      .bri-panel-grid,
+      .bri-deep-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .bri-highlight-grid,
+      .bri-branch-grid,
+      .bri-finance-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    /* Presentation QC fit layer: keep every slide inside the framed viewport. */
+    #apple-presentation-mode {
+      --pres-stage-x: clamp(1.15rem, 2.15vw, 2.65rem);
+      --pres-stage-top: clamp(4.35rem, 7.2vh, 5.05rem);
+      --pres-stage-bottom: clamp(4.65rem, 7.8vh, 5.2rem);
+      padding: var(--pres-stage-top) var(--pres-stage-x) var(--pres-stage-bottom) !important;
+    }
+
+    .pres-slides-container {
+      width: 100% !important;
+      height: calc(100vh - var(--pres-stage-top) - var(--pres-stage-bottom)) !important;
+      max-width: min(100%, 1840px) !important;
+      margin: 0 auto !important;
+      overflow: visible !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+    .pres-slides-container::before {
+      top: 50% !important;
+      left: 50% !important;
+      width: calc(100% - 0.35rem) !important;
+      height: calc(100% - 0.35rem) !important;
+      max-width: none !important;
+      max-height: none !important;
+      transform: translate(-50%, -50%) !important;
+      border-width: 6px !important;
+      border-radius: 24px !important;
+    }
+
+    .apple-presentation-mode::after {
+      left: var(--pres-stage-x) !important;
+      right: var(--pres-stage-x) !important;
+      top: calc(var(--pres-stage-top) - 0.72rem) !important;
+    }
+
+    .pres-executive-grid {
+      inset: var(--pres-stage-top) var(--pres-stage-x) var(--pres-stage-bottom) !important;
+    }
+
+    .pres-executive-scan {
+      left: var(--pres-stage-x) !important;
+      right: var(--pres-stage-x) !important;
+      top: calc(var(--pres-stage-top) - 0.72rem) !important;
+    }
+
+    .pres-executive-edge {
+      top: calc(var(--pres-stage-top) - 0.72rem) !important;
+      bottom: calc(var(--pres-stage-bottom) - 0.72rem) !important;
+    }
+
+    .pres-executive-edge.left {
+      left: var(--pres-stage-x) !important;
+    }
+
+    .pres-executive-edge.right {
+      right: var(--pres-stage-x) !important;
+    }
+
+    .pres-top-bar,
+    .pres-bottom-bar {
+      left: var(--pres-stage-x) !important;
+      right: var(--pres-stage-x) !important;
+    }
+
+    .apple-slide {
+      width: calc(100% - 4.35rem) !important;
+      height: calc(100% - 1.15rem) !important;
+      max-width: none !important;
+      max-height: none !important;
+      padding: 0.72rem 0.92rem !important;
+      justify-content: flex-start !important;
+      overflow: hidden !important;
+      gap: 0.62rem;
+    }
+
+    .apple-slide.active {
+      transform: translateX(0) scale(1) !important;
+    }
+
+    .apple-slide.prev {
+      transform: translateX(-42px) scale(0.985) !important;
+    }
+
+    .bri-cover-hero {
+      height: 100% !important;
+      min-height: 0 !important;
+      gap: 1rem !important;
+    }
+
+    .bri-cover-copy {
+      min-height: 0 !important;
+      overflow: hidden !important;
+      padding: clamp(1.25rem, 2.25vh, 1.8rem) !important;
+    }
+
+    .bri-cover-title {
+      font-size: clamp(2.15rem, 4.25vw, 4.55rem) !important;
+      line-height: 0.96 !important;
+    }
+
+    .bri-cover-meta {
+      gap: 0.52rem !important;
+      margin-top: 0.86rem !important;
+    }
+
+    .bri-cover-meta .pres-cover-stat {
+      min-height: 60px !important;
+    }
+
+    #pres-slide-0 .bri-cover-copy > div:last-child,
+    #pres-slide-8 .bri-cover-copy > div:last-child {
+      margin-top: 0.75rem !important;
+      align-items: center !important;
+    }
+
+    #pres-slide-0 .pres-splash-accent-btn,
+    #pres-slide-8 .pres-splash-accent-btn {
+      min-height: 38px !important;
+      padding: 0.62rem 1.22rem !important;
+      font-size: 0.88rem !important;
+      line-height: 1.08 !important;
+    }
+
+    .bri-deck-title-row {
+      flex: 0 0 auto;
+      margin-bottom: 0.52rem !important;
+    }
+
+    .bri-deck-title {
+      font-size: clamp(1.55rem, 2.12vw, 2.32rem) !important;
+      line-height: 1.02 !important;
+    }
+
+    .bri-deck-subtitle {
+      margin-top: 0.35rem !important;
+      font-size: 0.8rem !important;
+      line-height: 1.35 !important;
+    }
+
+    .bri-highlight-grid {
+      gap: 0.62rem !important;
+      flex: 0 0 auto;
+    }
+
+    .bri-dashboard-card .card-head {
+      min-height: 30px !important;
+      padding: 0.38rem 0.65rem !important;
+      font-size: 0.66rem !important;
+    }
+
+    .bri-dashboard-card .metric-main {
+      padding: 0.58rem 0.82rem 0.42rem !important;
+      gap: 0.3rem !important;
+    }
+
+    .bri-dashboard-card .metric-main span,
+    .bri-dashboard-card .metric-deltas span {
+      font-size: 0.6rem !important;
+    }
+
+    .bri-dashboard-card .metric-main strong {
+      font-size: clamp(0.96rem, 1.18vw, 1.18rem) !important;
+    }
+
+    .bri-dashboard-card .achievement {
+      padding: 0.28rem 0.78rem 0.48rem !important;
+    }
+
+    .bri-dashboard-card .achievement strong {
+      font-size: clamp(1.08rem, 1.65vw, 1.4rem) !important;
+    }
+
+    .bri-dashboard-card .metric-deltas {
+      padding: 0.48rem 0.72rem 0.58rem !important;
+    }
+
+    .bri-dashboard-card .metric-deltas strong {
+      font-size: 0.66rem !important;
+      overflow-wrap: anywhere;
+    }
+
+    .bri-panel-grid,
+    .bri-deep-grid,
+    .pres-grid-2col,
+    .pres-kts-grid,
+    .pres-digital-layout {
+      flex: 1 1 auto;
+      min-height: 0 !important;
+      margin-top: 0.48rem !important;
+    }
+
+    .bri-inner-panel,
+    .pres-glass-card,
+    .pres-panel-card,
+    .pres-timeseries-card {
+      min-height: 0;
+    }
+
+    .bri-inner-panel {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .bri-panel-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: hidden;
+      padding: 0.62rem !important;
+    }
+
+    .bri-product-row {
+      grid-template-columns: minmax(120px, 0.58fr) repeat(3, minmax(0, 1fr)) !important;
+      gap: 0.55rem !important;
+      padding: 0.42rem 0.55rem !important;
+      margin-bottom: 0.32rem !important;
+    }
+
+    .bri-donut-lite {
+      width: clamp(150px, 12vw, 190px) !important;
+      height: clamp(150px, 12vw, 190px) !important;
+    }
+
+    .bri-donut-lite::after {
+      inset: clamp(36px, 3vw, 46px) !important;
+    }
+
+    #pres-slide-1 .bri-highlight-grid {
+      max-height: 232px;
+    }
+
+    #pres-slide-1 .bri-panel-grid {
+      flex: 1 1 0;
+    }
+
+    #pres-slide-1 .pres-table-scroll {
+      max-height: min(136px, 18vh) !important;
+      overflow: auto !important;
+    }
+
+    #pres-slide-1 #pres-loan-composition-summary {
+      margin-top: 0.48rem !important;
+      font-size: 0.78rem;
+      line-height: 1.16;
+    }
+
+    #pres-slide-3 .bri-inner-panel,
+    #pres-slide-4 .bri-panel-grid,
+    #pres-slide-6 .bri-panel-grid,
+    #pres-slide-10 .pres-segment-panel,
+    #pres-slide-15 .pres-digital-layout {
+      height: auto !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+    }
+
+    #pres-slide-3 .bri-panel-body {
+      height: auto !important;
+    }
+
+    #pres-slide-5 .pres-timeseries-grid,
+    #pres-slide-9 .pres-explorer-grid,
+    #pres-slide-12 .bri-deep-grid,
+    #pres-slide-13 .pres-kts-grid,
+    #pres-slide-14 .pres-digital-layout,
+    #pres-slide-15 .pres-digital-layout {
+      height: auto !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+    }
+
+    #pres-slide-5 .pres-timeseries-chart-box,
+    #pres-slide-9 .pres-chart-wrap,
+    #pres-slide-15 .pres-chart-wrap {
+      height: auto !important;
+      min-height: 0 !important;
+    }
+
+    .pres-table-scroll {
+      min-height: 0 !important;
+      overflow: auto !important;
+      scrollbar-width: thin;
+    }
+
+    .pres-table-dense th,
+    .pres-table-dense td {
+      padding: 0.42rem 0.52rem !important;
+      font-size: 0.68rem !important;
+      line-height: 1.18 !important;
+    }
+
+    .bri-branch-grid,
+    .bri-finance-grid {
+      flex: 1 1 auto;
+      min-height: 0;
+      align-content: start;
+      gap: 0.56rem !important;
+      overflow: hidden;
+    }
+
+    .bri-branch-card,
+    .bri-finance-card {
+      padding: 0.68rem !important;
+      min-width: 0;
+    }
+
+    .bri-branch-card h3,
+    .bri-finance-card h3 {
+      font-size: 0.82rem !important;
+      line-height: 1.15 !important;
+    }
+
+    .bri-branch-card .metric-line,
+    .bri-finance-card .metric-line {
+      margin-top: 0.36rem !important;
+      font-size: 0.64rem !important;
+      line-height: 1.18 !important;
+    }
+
+    .bri-finance-card strong {
+      margin-top: 0.35rem !important;
+      font-size: 1rem !important;
+    }
+
+    .pres-top-bar {
+      top: 0.7rem !important;
+    }
+
+    .pres-bottom-bar {
+      bottom: 0.65rem !important;
+      padding-top: 0.46rem !important;
+    }
+
+    @media (min-width: 1600px) {
+      #apple-presentation-mode {
+        --pres-stage-top: 4.65rem;
+        --pres-stage-bottom: 4.95rem;
+        --pres-stage-x: 2.2rem;
+      }
     }
   </style>
 </head>
@@ -2415,6 +3826,11 @@
 
   <!-- Apple Presentation Mode Container -->
   <div class="apple-presentation-mode active" id="apple-presentation-mode">
+    <div class="pres-executive-grid" aria-hidden="true"></div>
+    <div class="pres-executive-scan" aria-hidden="true"></div>
+    <div class="pres-executive-edge left" aria-hidden="true"></div>
+    <div class="pres-executive-edge right" aria-hidden="true"></div>
+
     <!-- Top Bar -->
     <div class="pres-top-bar">
       <div class="pres-title-brand">
@@ -2426,9 +3842,23 @@
         <div class="pres-title-lbl">Kinerja Area 6 <span>- Madiun, Magetan, Ngawi, Ponorogo</span></div>
       </div>
       <div class="pres-controls-right">
+        <div class="pres-live-chip" title="Data presentasi aktif dari payload dashboard">
+          <span class="pres-live-dot"></span>
+          <span id="pres-live-status">Live Dashboard</span>
+        </div>
         <!-- co-branding Danantara & BRI appears exactly once on the top right -->
         <div class="pres-logos-wrapper">
           <img class="pres-logo-brand logo-danantara" src="{{ asset('images/danantara-logo-template.png') }}" alt="Danantara">
+          <div class="pres-logo-divider"></div>
+          <!-- Custom SVG 130 Tahun BRI Badge -->
+          <svg class="bri-130-badge" viewBox="0 0 145 40" style="height: 20px; width: auto; display: block; overflow: visible;">
+            <path d="M 14 10 L 20 6 L 20 34 M 14 34 L 26 34" fill="none" stroke="#0857c3" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"></path>
+            <path d="M 32 6 L 48 6 L 40 19 C 46 19 50 23 52 28 C 52 33 48 35 42 35 C 36 35 34 32 34 31" fill="none" stroke="#e61c24" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"></path>
+            <path d="M 68 6 C 58 6 56 19 56 21 C 58 23 60 35 70 35 C 80 35 82 23 82 21 C 82 19 80 6 70 6 Z" fill="none" stroke="#0857c3" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"></path>
+            <path d="M 66 21 C 68 17 72 17 74 21 C 76 25 70 29 70 29 C 70 29 64 25 66 21 Z" fill="#e61c24" opacity="0.85"></path>
+            <text x="88" y="21" font-family="'Inter', sans-serif" font-weight="900" font-size="12" fill="#0857c3">TAHUN</text>
+            <text x="88" y="32" font-family="'Inter', sans-serif" font-weight="900" font-size="9" fill="#e61c24" letter-spacing="0.05em">1895-2025</text>
+          </svg>
           <div class="pres-logo-divider"></div>
           <img class="pres-logo-brand logo-bri" src="{{ asset('images/bri-logo-template.png') }}" alt="BRI">
         </div>
@@ -2446,15 +3876,20 @@
 
     <!-- Slides Viewport -->
     <div class="pres-slides-container">
+      @include('presentation._executive-slides')
+      @if(false)
       <!-- Slide 1: Welcome Intro -->
       <div class="apple-slide active" id="pres-slide-0">
         <div class="pres-cover-layout">
           <div class="pres-glass-card pres-cover-lead animate-fade-in slide-delay-1">
             <div>
-              <div class="pres-cover-eyebrow">Executive Performance Dossier</div>
-              <h1 class="pres-cover-title">Kinerja Area 6 - Madiun</h1>
-              <p class="pres-cover-subtitle">
-                Deck konsolidasi Madiun, Magetan, Ngawi, dan Ponorogo untuk membaca posisi simpanan, OS, SML, NPL, KTS, dan 8 strategi dana digital secara ringkas, padat, dan siap forum.
+              <div class="pres-cover-eyebrow">Micro Directorate – Micro Sales Management Group</div>
+              <h1 class="pres-cover-title" style="color: #0857c3;">Materi Pendukung Asistensi</h1>
+              <p class="pres-cover-subtitle" style="font-style: italic; color: #0857c3; font-weight: 700; font-size: 1.25rem; margin-top: 0.35rem; margin-bottom: 1rem;">
+                Regional 6 / Madiun
+              </p>
+              <p style="font-size: 0.85rem; color: #475569; line-height: 1.5; margin-bottom: 1.5rem;">
+                Evaluasi harian kinerja simpanan, OS non-commercial, kualitas kredit (SML, NPL, LAR), audit Kolek Tidak Sesuai (KTS), dan implementasi 8 strategi produk dana digital.
               </p>
               <div class="pres-cover-strip">
                 <div class="pres-cover-stat">
@@ -2462,38 +3897,44 @@
                     <span>Periode</span>
                     <strong id="pres-cover-period">-</strong>
                   </div>
-                  <i class="far fa-calendar-alt" style="color: #3b82f6; font-size: 1.15rem; opacity: 0.85; flex-shrink: 0;"></i>
+                  <i class="far fa-calendar-alt" style="color: #0857c3; font-size: 1.15rem; opacity: 0.85; flex-shrink: 0;"></i>
                 </div>
                 <div class="pres-cover-stat">
                   <div>
                     <span>Data Loan</span>
                     <strong id="pres-cover-loan-period">-</strong>
                   </div>
-                  <i class="far fa-clock" style="color: #6366f1; font-size: 1.15rem; opacity: 0.85; flex-shrink: 0;"></i>
+                  <i class="far fa-clock" style="color: #e61c24; font-size: 1.15rem; opacity: 0.85; flex-shrink: 0;"></i>
                 </div>
                 <div class="pres-cover-stat">
                   <div>
-                    <span>KTS</span>
+                    <span>Audit KTS</span>
                     <strong id="pres-cover-kts">-</strong>
                   </div>
-                  <i class="fas fa-users" style="color: #10b981; font-size: 1.15rem; opacity: 0.85; flex-shrink: 0;"></i>
+                  <i class="fas fa-users" style="color: #0857c3; font-size: 1.15rem; opacity: 0.85; flex-shrink: 0;"></i>
                 </div>
                 <div class="pres-cover-stat">
                   <div>
-                    <span>Strategi Aktif</span>
+                    <span>Digital Strategy</span>
                     <strong id="pres-cover-digital-count">-</strong>
                   </div>
-                  <i class="fas fa-bullseye" style="color: #f59e0b; font-size: 1.15rem; opacity: 0.85; flex-shrink: 0;"></i>
+                  <i class="fas fa-bullseye" style="color: #e61c24; font-size: 1.15rem; opacity: 0.85; flex-shrink: 0;"></i>
                 </div>
               </div>
             </div>
-            <button type="button" class="pres-splash-accent-btn" id="pres-start-slides-btn">
-              Masuk ke Deck Kinerja <i class="fas fa-arrow-right"></i>
-            </button>
+            <div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
+              <button type="button" class="pres-splash-accent-btn" id="pres-start-slides-btn" style="margin-top: 0; align-self: flex-start;">
+                Masuk ke Deck Kinerja <i class="fas fa-arrow-right"></i>
+              </button>
+              <span style="font-size: 0.72rem; color: #64748b; font-weight: 600;">PT Bank Rakyat Indonesia (Persero) Tbk.</span>
+            </div>
           </div>
-          <div class="pres-cover-board animate-fade-in slide-delay-2" id="pres-cover-board">
-            <!-- Summary cards are mapped dynamically -->
+          <!-- Right side: Widescreen Framed Building Image -->
+          <div class="pres-cover-image-container animate-fade-in slide-delay-2">
+            <img class="pres-cover-image-frame" src="{{ asset('images/ppt-template/cover-base.png') }}" alt="Gedung Kantor Pusat BRI">
           </div>
+          <!-- Hidden container to keep pres-cover-board for JS compatibility -->
+          <div id="pres-cover-board" style="display: none;"></div>
         </div>
       </div>
 
@@ -2605,7 +4046,7 @@
                 <strong id="pres-kredit-achievement">Data belum tersedia</strong>
               </div>
             </div>
-            
+
             <!-- Segment summary status bar -->
             <div style="margin-top:1.6rem;">
               <div style="font-size:0.85rem; font-weight:600; color:rgba(0,0,0,0.5); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.75rem;">Kontribusi OS 4 Kantor Cabang</div>
@@ -2645,7 +4086,7 @@
                   <select class="pres-compact-select" id="pres-seg-scope-select" style="min-width: 145px; font-weight: 700;" aria-label="Pilih cabang"></select>
                 </div>
               </div>
-              
+
               <!-- Subtitle & Comparison periods display -->
               <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.7rem; font-weight:600; color:#64748b; margin-bottom:0.6rem; padding-bottom:0.4rem; border-bottom:1px solid rgba(0,0,0,0.06);">
                 <span id="pres-seg-explorer-caption" style="color:#0071e3; font-weight:800;">Area 6 Konsol</span>
@@ -2670,7 +4111,7 @@
                   <strong id="pres-seg-total-outlet">-</strong>
                 </div>
               </div>
-              
+
               <!-- Scrollable Table -->
               <div class="pres-table-scroll" style="overflow-y:auto; flex-grow:1; min-height:0;">
                 <table class="pres-table-dense" style="font-size:0.78rem; width:100%; border-collapse: collapse;">
@@ -2948,53 +4389,78 @@
 
       <!-- Slide 8: Outlook & Summary -->
       <div class="apple-slide" id="pres-slide-7">
-        <div class="pres-grid-2col" style="align-items:center;">
-          <!-- Left side list -->
-          <div class="animate-fade-in slide-delay-1">
-            <div style="font-size:0.9rem; font-weight:700; color:#0071e3; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:0.5rem;">
-              Arahan Eksekutif & Prioritas Kerja
-            </div>
-            <h2 class="pres-text-gradient-silver" style="font-size:2.6rem; font-weight:800; margin:0 0 1.5rem 0; letter-spacing:-0.02em; line-height:1.2;">
-              Strategi dan Target Kerja Area 6
-            </h2>
-            <div style="display:flex; flex-direction:column; gap:1.25rem; margin-top:2rem;">
-              <div style="display:flex; gap:1rem; align-items:flex-start;">
-                <div style="background:rgba(0, 113, 227, 0.08); border:1px solid rgba(0, 113, 227, 0.2); color:#0071e3; min-width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:0.95rem;">1</div>
-                <div>
-                  <h4 style="margin:0 0 0.25rem 0; font-size:1.05rem; font-weight:600; color:#1d1d1f;">Akselerasi Simpanan Berbiaya Murah (CASA)</h4>
-                  <p style="margin:0; font-size:0.88rem; color:rgba(0,0,0,0.6);">Fokus akuisisi EDC, QRIS, Brimo, Rekening Dormant, Payroll, dan pemanfaatan platform QLola korporasi.</p>
-                </div>
-              </div>
-              <div style="display:flex; gap:1rem; align-items:flex-start;">
-                <div style="background:rgba(16, 185, 129, 0.08); border:1px solid rgba(16, 185, 129, 0.2); color:#047857; min-width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:0.95rem;">2</div>
-                <div>
-                  <h4 style="margin:0 0 0.25rem 0; font-size:1.05rem; font-weight:600; color:#1d1d1f;">Penetapan Kualitas Kredit Sejak Dini</h4>
-                  <p style="margin:0; font-size:0.88rem; color:rgba(0,0,0,0.6);">Eskalasi Restrukturisasi, penanganan kolek SML, mitigasi penambahan NPL, dan penyesuaian data KTS.</p>
-                </div>
-              </div>
-              <div style="display:flex; gap:1rem; align-items:flex-start;">
-                <div style="background:rgba(245, 158, 11, 0.08); border:1px solid rgba(245, 158, 11, 0.2); color:#b45309; min-width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:0.95rem;">3</div>
-                <div>
-                  <h4 style="margin:0 0 0.25rem 0; font-size:1.05rem; font-weight:600; color:#1d1d1f;">Penguatan Produktivitas Mantri & RM</h4>
-                  <p style="margin:0; font-size:0.88rem; color:rgba(0,0,0,0.6);">Evaluasi keputusan kredit harian dan peningkatan sebaran digital tools untuk optimalisasi portofolio.</p>
-                </div>
-              </div>
+      <!-- Slide 8: Outlook & Strategic Priorities -->
+      <div class="apple-slide" id="pres-slide-7">
+        <div class="animate-fade-in slide-delay-1" style="font-size:0.9rem; font-weight:700; color:#0071e3; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:0.5rem;">
+          Arahan Eksekutif & Prioritas Kerja
+        </div>
+        <h2 class="animate-fade-in slide-delay-2 pres-text-gradient-silver" style="font-size:2.2rem; font-weight:800; margin:0 0 1.75rem 0; letter-spacing:-0.02em;">
+          Strategi dan Target Kerja Area 6 - Madiun
+        </h2>
+
+        <!-- Widescreen Priorities Grid -->
+        <div class="pres-priority-grid animate-fade-in slide-delay-3" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; width: 100%;">
+          <!-- Priority 1 -->
+          <div class="pres-priority-card animate-fade-in slide-delay-3">
+            <div class="pres-priority-icon-wrapper casa">1</div>
+            <div>
+              <h3 style="margin:0 0 0.5rem 0; font-size:1.15rem; font-weight:800; color:#0f172a;">Akselerasi Simpanan Berbiaya Murah (CASA)</h3>
+              <p style="margin:0; font-size:0.88rem; color:#475569; line-height:1.6;">
+                Fokus akuisisi mesin EDC, sebaran QRIS merchant, aktivasi Brimo massal, pengelolaan Rekening Dormant, perluasan Payroll instansi, serta pemanfaatan platform QLola korporasi secara maksimal.
+              </p>
             </div>
           </div>
 
-          <!-- Right side interactive close splash -->
-          <div class="pres-glass-card animate-fade-in slide-delay-3 text-center" style="padding:3rem 2rem;">
-            <i class="fas fa-check-circle" style="font-size:3.5rem; color:#10b981; filter:drop-shadow(0 0 10px rgba(16,185,129,0.25)); margin-bottom:1.5rem;"></i>
-            <h3 style="font-size:1.8rem; font-weight:800; margin:0;" class="pres-text-gradient-silver">Review Selesai</h3>
-            <p style="font-size:0.92rem; color:rgba(0,0,0,0.55); margin:1rem auto 2rem auto; max-width:280px;">
-              Presentasi evaluasi Area 6 telah selesai dirangkum. Terima kasih.
-            </p>
-            <button type="button" class="pres-splash-accent-btn" id="pres-finish-close-btn" style="background:linear-gradient(135deg, #6b7280, #4b5563); box-shadow:0 8px 24px rgba(0,0,0,0.15);">
-              Tutup & Selesai
-            </button>
+          <!-- Priority 2 -->
+          <div class="pres-priority-card animate-fade-in slide-delay-4">
+            <div class="pres-priority-icon-wrapper quality">2</div>
+            <div>
+              <h3 style="margin:0 0 0.5rem 0; font-size:1.15rem; font-weight:800; color:#0f172a;">Penataan Kualitas Kredit Sejak Dini</h3>
+              <p style="margin:0; font-size:0.88rem; color:#475569; line-height:1.6;">
+                Akselerasi pipeline Whitelist Restrukturisasi, penanganan SML agresif, pencegahan dini saldo NPL baru, serta penyelarasan dan perbaikan data audit KTS secara konsisten.
+              </p>
+            </div>
+          </div>
+
+          <!-- Priority 3 -->
+          <div class="pres-priority-card animate-fade-in slide-delay-5">
+            <div class="pres-priority-icon-wrapper prod">3</div>
+            <div>
+              <h3 style="margin:0 0 0.5rem 0; font-size:1.15rem; font-weight:800; color:#0f172a;">Penguatan Produktivitas Mantri & RM</h3>
+              <p style="margin:0; font-size:0.88rem; color:#475569; line-height:1.6;">
+                Evaluasi harian putusan kredit BOH & MBM, peningkatan sebaran digital tools untuk optimalisasi portofolio, serta pembinaan kompetensi Mantri dan RM dalam memitigasi risiko kredit.
+              </p>
+            </div>
           </div>
         </div>
       </div>
+
+      <!-- Slide 9: Executive Closing (Terima Kasih) -->
+      <div class="apple-slide" id="pres-slide-8">
+        <div class="pres-cover-layout">
+          <div class="pres-glass-card pres-cover-lead animate-fade-in slide-delay-1" style="background: transparent !important; border: none !important; box-shadow: none !important; display: flex; flex-direction: column; justify-content: space-between; padding: 1rem 0 !important; border-top: none !important;">
+            <div>
+              <div class="pres-cover-eyebrow" style="color: #3b82f6 !important; font-weight: 800;">PT Bank Rakyat Indonesia (Persero) Tbk.</div>
+              <h1 class="pres-cover-title" style="color: #ffffff !important; font-size: clamp(2.5rem, 5vw, 4.5rem) !important; margin-top: 1rem; border-bottom: 4px solid #3b82f6; display: inline-block; padding-bottom: 0.5rem; line-height: 1.1;">
+                Terima kasih!
+              </h1>
+              <p class="pres-cover-subtitle" style="color: rgba(255, 255, 255, 0.7) !important; font-size: 1.15rem; line-height: 1.6; margin-top: 1.5rem; max-width: 32rem;">
+                Presentasi laporan konsolidasi Kinerja Harian Area 6 telah selesai dirangkum. Seluruh data disajikan secara realtime dari sistem core banking dan dashboard analitik.
+              </p>
+            </div>
+            <div style="margin-top: 2rem;">
+              <button type="button" class="pres-splash-accent-btn" id="pres-finish-close-btn" style="background: #e61c24 !important; border-color: #b91c1c !important; box-shadow: 0 10px 25px rgba(230, 28, 36, 0.35) !important;">
+                Tutup & Selesai <i class="fas fa-check-circle" style="margin-left: 0.35rem;"></i>
+              </button>
+            </div>
+          </div>
+          <!-- Right side: Framed Building Image with White Border -->
+          <div class="pres-cover-image-container animate-fade-in slide-delay-2">
+            <img class="pres-cover-image-frame" src="{{ asset('images/ppt-template/cover-base.png') }}" alt="Gedung Kantor Pusat BRI">
+          </div>
+        </div>
+      </div>
+      @endif
     </div>
 
     <!-- Bottom Bar -->
@@ -3008,19 +4474,28 @@
       <!-- Page dots indicator -->
       <div style="display: flex; flex-direction: column; align-items: center; gap: 0.35rem;">
         <div class="pres-paginator" id="pres-paginator-dots">
-          <div class="pres-dot active" data-index="0"></div>
-          <div class="pres-dot" data-index="1"></div>
-          <div class="pres-dot" data-index="2"></div>
-          <div class="pres-dot" data-index="3"></div>
-          <div class="pres-dot" data-index="4"></div>
-          <div class="pres-dot" data-index="5"></div>
-          <div class="pres-dot" data-index="6"></div>
-          <div class="pres-dot" data-index="7"></div>
+          @for ($i = 0; $i < 16; $i++)
+            <div class="pres-dot {{ $i === 0 ? 'active' : '' }}" data-index="{{ $i }}"></div>
+          @endfor
         </div>
-        <div class="pres-slide-counter-badge" id="pres-slide-counter-badge">Slide 1 dari 8</div>
+        <div class="pres-slide-counter-badge" id="pres-slide-counter-badge">Slide 1 dari 16</div>
       </div>
 
       <div class="pres-nav-buttons-container">
+        <div class="pres-autoplay-panel" aria-label="Kontrol autoplay presentasi">
+          <button type="button" class="pres-autoplay-btn" id="pres-autoplay-btn" title="Putar otomatis">
+            <i class="fas fa-play"></i>
+          </button>
+          <div class="pres-auto-meta">
+            <div class="pres-auto-label">
+              <span>Autoplay</span>
+              <span id="pres-auto-state">OFF</span>
+            </div>
+            <div class="pres-auto-progress" aria-hidden="true">
+              <span class="pres-auto-progress-fill" id="pres-auto-progress-fill"></span>
+            </div>
+          </div>
+        </div>
         <button type="button" class="pres-nav-btn" id="pres-next-btn" title="Slide Selanjutnya (Right Arrow / Spacebar)">
           <i class="fas fa-chevron-right"></i>
         </button>
@@ -3035,7 +4510,7 @@
       <div class="loading-ring-inner"></div>
     </div>
     <div class="dashboard-loading-text">Memuat Data Presentasi...</div>
-    
+
     <!-- Beautiful progress bar container -->
     <div style="width: 280px; height: 6px; background: rgba(0,0,0,0.06); border-radius: 4px; overflow: hidden; margin-top: 1.25rem; border: 1px solid rgba(0,0,0,0.05); position: relative;">
       <div id="loading-progress-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #0071e3, #1f8bfd); border-radius: 4px; transition: width 0.4s ease;"></div>
@@ -3061,9 +4536,16 @@
       const presFinishBtn = document.getElementById('pres-finish-close-btn');
       const presDots = document.getElementById('pres-paginator-dots');
       const presPeriodeSelector = document.getElementById('pres-periode-selector');
+      const presAutoplayBtn = document.getElementById('pres-autoplay-btn');
+      const presAutoState = document.getElementById('pres-auto-state');
+      const presAutoProgressFill = document.getElementById('pres-auto-progress-fill');
+      const presLiveStatus = document.getElementById('pres-live-status');
 
       let currentSlideIndex = 0;
-      const totalSlides = 8;
+      const totalSlides = 16;
+      const autoplayDelay = 9000;
+      let autoplayTimer = null;
+      let autoplayEnabled = false;
       let presentationData = null;
       let timeseriesChartDana = null;
       let timeseriesChartQuality = null;
@@ -3134,7 +4616,7 @@
         }
         const numeric = parseFloat(clean);
         if (Number.isNaN(numeric)) return '#64748b';
-        
+
         if (numeric >= 100) {
           return '#16a34a'; // Hijau (Premium green for >=100%)
         } else if (numeric >= 90) {
@@ -3191,7 +4673,7 @@
         const min = Math.min(...validValues);
         const max = Math.max(...validValues);
         const range = max - min;
-        
+
         // Add padding margins so circular markers are fully inside the card container bounds
         const coords = values.map((value, index) => {
           if (value === null) return null;
@@ -3245,6 +4727,113 @@
         });
       };
 
+      const slideStoryLabels = [
+        'Executive opener',
+        'Loan highlight',
+        'Funding highlight',
+        'Product performance',
+        'Loan composition',
+        'Trendline motion',
+        'Funding mix',
+        'Branch war room',
+        'Profitability',
+        'Performance vs RKA',
+        'Segment explorer',
+        'Risk radar',
+        'SML deep dive',
+        'NPL deep dive',
+        'KTS intelligence',
+        'Digital closing'
+      ];
+
+      const runCountUpAnimationsInSlide = (slideIndex) => {
+        const slide = document.getElementById('pres-slide-' + slideIndex);
+        if (!slide) return;
+
+        const elements = slide.querySelectorAll('[data-raw-val]');
+        elements.forEach(el => {
+          const endVal = parseFloat(el.getAttribute('data-raw-val') || '0');
+          if (isNaN(endVal)) return;
+          const isCurrency = el.getAttribute('data-is-currency') === 'true';
+          const isPercent = el.getAttribute('data-is-percent') === 'true';
+          const suffix = el.getAttribute('data-suffix') || '';
+
+          let startTimestamp = null;
+          const duration = 1200;
+
+          const step = (timestamp) => {
+            if (!startTimestamp) startTimestamp = timestamp;
+            const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+            const val = progress * endVal;
+
+            if (isCurrency) {
+              el.innerHTML = formatCurrencyCompact(val);
+            } else if (isPercent) {
+              el.innerHTML = val.toFixed(2).replace('.', ',') + '%';
+            } else {
+              el.innerHTML = Math.floor(val).toLocaleString('id-ID') + suffix;
+            }
+
+            if (progress < 1) {
+              window.requestAnimationFrame(step);
+            }
+          };
+          window.requestAnimationFrame(step);
+        });
+      };
+
+      const resetAutoplayProgress = () => {
+        if (!presAutoProgressFill) return;
+        presAutoProgressFill.classList.remove('is-running');
+        presAutoProgressFill.style.width = '0%';
+        void presAutoProgressFill.offsetWidth;
+        if (autoplayEnabled) {
+          presAutoProgressFill.style.setProperty('--pres-autoplay-duration', autoplayDelay + 'ms');
+          presAutoProgressFill.classList.add('is-running');
+        }
+      };
+
+      const updateAutoplayUi = () => {
+        if (presAutoplayBtn) {
+          presAutoplayBtn.classList.toggle('is-running', autoplayEnabled);
+          presAutoplayBtn.setAttribute('title', autoplayEnabled ? 'Jeda autoplay' : 'Putar otomatis');
+          presAutoplayBtn.innerHTML = autoplayEnabled ? '<i class="fas fa-pause"></i>' : '<i class="fas fa-play"></i>';
+        }
+        if (presAutoState) {
+          presAutoState.textContent = autoplayEnabled ? 'ON' : 'OFF';
+        }
+        resetAutoplayProgress();
+      };
+
+      const scheduleAutoplay = () => {
+        if (autoplayTimer !== null) {
+          window.clearTimeout(autoplayTimer);
+          autoplayTimer = null;
+        }
+        if (!autoplayEnabled) return;
+
+        autoplayTimer = window.setTimeout(() => {
+          const nextIndex = currentSlideIndex >= totalSlides - 1 ? 0 : currentSlideIndex + 1;
+          showSlide(nextIndex);
+          scheduleAutoplay();
+        }, autoplayDelay);
+      };
+
+      const startAutoplay = () => {
+        autoplayEnabled = true;
+        updateAutoplayUi();
+        scheduleAutoplay();
+      };
+
+      const stopAutoplay = () => {
+        autoplayEnabled = false;
+        if (autoplayTimer !== null) {
+          window.clearTimeout(autoplayTimer);
+          autoplayTimer = null;
+        }
+        updateAutoplayUi();
+      };
+
       const showSlide = (index) => {
         currentSlideIndex = index;
         const slides = document.querySelectorAll('.apple-slide');
@@ -3257,6 +4846,14 @@
           }
         });
 
+        // Toggle dark theme for cover and closing slides.
+        if (presMode) {
+          presMode.classList.toggle('theme-dark', index === 0 || index === 15);
+        }
+
+        // Run count-up animations on active slide elements
+        runCountUpAnimationsInSlide(index);
+
         // Update dots
         const dots = document.querySelectorAll('.pres-dot');
         dots.forEach((dot, idx) => {
@@ -3268,22 +4865,20 @@
         if (slideCounter) {
           slideCounter.innerText = 'Slide ' + (index + 1) + ' dari ' + totalSlides;
         }
+        if (presLiveStatus) {
+          presLiveStatus.textContent = slideStoryLabels[index] || 'Live Dashboard';
+        }
+        if (autoplayEnabled) {
+          resetAutoplayProgress();
+        }
 
         // Trigger animations
-        if (index === 1 && presentationData) {
-          renderPerformanceExplorer();
-        }
-
-        if (index === 2 && presentationData) {
-          renderSegmentExplorer();
-        }
-
-        if (index === 3 && presentationData) {
+        if (index === 5 && presentationData) {
           const tsData = presentationData.timeseries || {};
           if (tsData.available && tsData.series) {
             const canvasDana = document.getElementById('pres-timeseries-chart-dana');
             const canvasQuality = document.getElementById('pres-timeseries-chart-quality');
-            
+
             const simpananSeries = tsData.series.find(s => s.key === 'simpanan_total') || {};
             const osSeries = tsData.series.find(s => s.key === 'os_total') || {};
             const smlSeries = tsData.series.find(s => s.key === 'sml_nominal') || {};
@@ -3299,7 +4894,7 @@
               const blueGradient = ctx.createLinearGradient(0, 0, 0, 300);
               blueGradient.addColorStop(0, 'rgba(0, 113, 227, 0.22)');
               blueGradient.addColorStop(1, 'rgba(0, 113, 227, 0.01)');
-              
+
               const greenGradient = ctx.createLinearGradient(0, 0, 0, 300);
               greenGradient.addColorStop(0, 'rgba(16, 185, 129, 0.22)');
               greenGradient.addColorStop(1, 'rgba(16, 185, 129, 0.01)');
@@ -3402,7 +4997,7 @@
               if (timeseriesChartQuality) {
                 timeseriesChartQuality.destroy();
               }
-              
+
               const greenGradient = ctx.createLinearGradient(0, 0, 0, 300);
               greenGradient.addColorStop(0, 'rgba(16, 185, 129, 0.15)');
               greenGradient.addColorStop(1, 'rgba(16, 185, 129, 0.01)');
@@ -3542,28 +5137,48 @@
           }
         }
 
-        if (index === 4 && presentationData) {
+        if (index === 9 && presentationData) {
+          renderPerformanceExplorer();
+        }
+
+        if (index === 10 && presentationData) {
+          renderSegmentExplorer();
+        }
+
+        if (index === 11 && presentationData) {
           renderRiskOverview();
         }
 
-        if (index === 5 && presentationData) {
+        if (index === 14 && presentationData) {
           if (presentationData?.kts?.loading_details) {
             loadPresentationKts();
           }
           renderKts();
+        }
+
+        if (index === 15 && presentationData) {
+          renderDigitalTableAndChart();
         }
       };
 
       const populateCover = (data) => {
         document.getElementById('pres-cover-period').textContent = data?.meta?.period_label || '-';
         document.getElementById('pres-cover-loan-period').textContent = data?.meta?.daily_loan_period_label || data?.meta?.loan_period_label || '-';
+
         const ktsTotal = Number(data?.kts?.ritel_total || 0) + Number(data?.kts?.micro_total || 0);
-        document.getElementById('pres-cover-kts').textContent = data?.kts?.loading_details
-          ? 'Memuat...'
-          : new Intl.NumberFormat('id-ID').format(ktsTotal) + ' rek';
+        const coverKts = document.getElementById('pres-cover-kts');
+        coverKts.textContent = data?.kts?.loading_details ? 'Memuat...' : new Intl.NumberFormat('id-ID').format(ktsTotal) + ' rek';
+        if (!data?.kts?.loading_details) {
+          coverKts.setAttribute('data-raw-val', ktsTotal);
+          coverKts.setAttribute('data-suffix', ' rek');
+        }
 
         const digCards = data?.digital_strategy?.cards || [];
-        document.getElementById('pres-cover-digital-count').textContent = digCards.filter(card => card.available !== false).length + ' strategi';
+        const digCountVal = digCards.filter(card => card.available !== false).length;
+        const coverDigital = document.getElementById('pres-cover-digital-count');
+        coverDigital.textContent = digCountVal + ' strategi';
+        coverDigital.setAttribute('data-raw-val', digCountVal);
+        coverDigital.setAttribute('data-suffix', ' strategi');
 
         const board = document.getElementById('pres-cover-board');
         if (!board) return;
@@ -3642,8 +5257,17 @@
           return acc;
         }, { latest: 0, ytd: 0, mtm: 0, mtd: 0 });
 
-        document.getElementById('pres-explorer-latest').textContent = formatCurrencyCompact(totals.latest);
-        document.getElementById('pres-explorer-count').textContent = rows.length + (performanceState.scope === 'area6' ? ' cabang' : ' unit');
+        const latestEl = document.getElementById('pres-explorer-latest');
+        latestEl.textContent = formatCurrencyCompact(totals.latest);
+        latestEl.setAttribute('data-raw-val', totals.latest);
+        latestEl.setAttribute('data-is-currency', 'true');
+
+        const countEl = document.getElementById('pres-explorer-count');
+        const suffix = performanceState.scope === 'area6' ? ' cabang' : ' unit';
+        countEl.textContent = rows.length + suffix;
+        countEl.setAttribute('data-raw-val', rows.length);
+        countEl.setAttribute('data-suffix', suffix);
+
         document.getElementById('pres-explorer-ytd').textContent = (totals.ytd >= 0 ? '+' : '-') + formatCurrencyCompact(Math.abs(totals.ytd));
         document.getElementById('pres-explorer-mtm-mtd').textContent = `${totals.mtm >= 0 ? '+' : '-'}${formatCurrencyCompact(Math.abs(totals.mtm))} / ${totals.mtd >= 0 ? '+' : '-'}${formatCurrencyCompact(Math.abs(totals.mtd))}`;
         document.getElementById('pres-explorer-caption').textContent = scopeOption?.label || 'Area 6 Konsol';
@@ -3796,7 +5420,7 @@
           });
         }
       };
-      
+
       const populateSegmentControls = (data) => {
         const select = document.getElementById('pres-seg-scope-select');
         const options = data?.performance_overview?.matrix?.scope_options || [];
@@ -3942,7 +5566,7 @@
       const populateRiskControls = (data) => {
         const select = document.getElementById('pres-risk-scope-select');
         if (!select) return;
-        
+
         const branches = data?.performance_overview?.branches || [];
         const options = [
           { key: 'area6', label: 'Area 6 Konsol' },
@@ -3959,7 +5583,7 @@
         if (!presentationData) return;
         const branches = presentationData?.performance_overview?.branches || [];
         const composition = presentationData?.performance_overview?.composition || {};
-        
+
         let healthyPct = 0;
         let restrukPct = 0;
         let smlPct = 0;
@@ -3987,11 +5611,31 @@
         }
 
         document.getElementById('pres-risk-subtitle').textContent = subtitle;
-        document.getElementById('pres-lar-healthy-val').textContent = `${healthyPct.toFixed(2).replace('.', ',')}%`;
-        document.getElementById('pres-lar-restruk-val').textContent = `${restrukPct.toFixed(2).replace('.', ',')}%`;
-        document.getElementById('pres-lar-sml-val').textContent = `${smlPct.toFixed(2).replace('.', ',')}%`;
-        document.getElementById('pres-lar-npl-val').textContent = `${nplPct.toFixed(2).replace('.', ',')}%`;
-        document.getElementById('pres-lar-ratio-val').textContent = `${larPct.toFixed(2).replace('.', ',')}%`;
+
+        const healthyValEl = document.getElementById('pres-lar-healthy-val');
+        healthyValEl.textContent = `${healthyPct.toFixed(2).replace('.', ',')}%`;
+        healthyValEl.setAttribute('data-raw-val', healthyPct);
+        healthyValEl.setAttribute('data-is-percent', 'true');
+
+        const restrukValEl = document.getElementById('pres-lar-restruk-val');
+        restrukValEl.textContent = `${restrukPct.toFixed(2).replace('.', ',')}%`;
+        restrukValEl.setAttribute('data-raw-val', restrukPct);
+        restrukValEl.setAttribute('data-is-percent', 'true');
+
+        const smlValEl = document.getElementById('pres-lar-sml-val');
+        smlValEl.textContent = `${smlPct.toFixed(2).replace('.', ',')}%`;
+        smlValEl.setAttribute('data-raw-val', smlPct);
+        smlValEl.setAttribute('data-is-percent', 'true');
+
+        const nplValEl = document.getElementById('pres-lar-npl-val');
+        nplValEl.textContent = `${nplPct.toFixed(2).replace('.', ',')}%`;
+        nplValEl.setAttribute('data-raw-val', nplPct);
+        nplValEl.setAttribute('data-is-percent', 'true');
+
+        const ratioValEl = document.getElementById('pres-lar-ratio-val');
+        ratioValEl.textContent = `${larPct.toFixed(2).replace('.', ',')}%`;
+        ratioValEl.setAttribute('data-raw-val', larPct);
+        ratioValEl.setAttribute('data-is-percent', 'true');
 
         const healthyEl = document.getElementById('pres-spectrum-healthy');
         const restrukEl = document.getElementById('pres-spectrum-restruk');
@@ -4006,6 +5650,8 @@
         const donutCenter = document.getElementById('pres-risk-donut-center');
         if (donutCenter) {
           donutCenter.textContent = `${larPct.toFixed(2).replace('.', ',')}%`;
+          donutCenter.setAttribute('data-raw-val', larPct);
+          donutCenter.setAttribute('data-is-percent', 'true');
         }
 
         const riskCanvas = document.getElementById('pres-risk-composition-chart');
@@ -4061,8 +5707,15 @@
 
         const payload = presentationData?.kts?.categories?.[ktsState.category]?.[ktsState.scope] || {};
         const branches = payload.branches || [];
-        document.getElementById('pres-kts-total-count').textContent = `${payload.total_count || 0} rek`;
-        document.getElementById('pres-kts-total-os').textContent = payload.total_os_fmt || formatCurrencyCompact(payload.total_os || 0);
+        const countEl = document.getElementById('pres-kts-total-count');
+        countEl.textContent = `${payload.total_count || 0} rek`;
+        countEl.setAttribute('data-raw-val', payload.total_count || 0);
+        countEl.setAttribute('data-suffix', ' rek');
+
+        const osEl = document.getElementById('pres-kts-total-os');
+        osEl.textContent = payload.total_os_fmt || formatCurrencyCompact(payload.total_os || 0);
+        osEl.setAttribute('data-raw-val', payload.total_os || 0);
+        osEl.setAttribute('data-is-currency', 'true');
         document.getElementById('pres-kts-period').textContent = presentationData?.kts?.period_label || '-';
         document.getElementById('pres-kts-caption').textContent = ktsState.category === 'membaik' ? 'KTS Membaik' : 'KTS Memburuk';
         document.getElementById('pres-kts-title').textContent = ktsState.scope === 'ritel' ? 'Ritel' : 'Micro';
@@ -4188,11 +5841,291 @@
         }
       };
 
+      const setText = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+      };
+
+      const metricAggregate = (metric) => {
+        const rows = presentationData?.performance_overview?.matrix?.rows?.area6 || [];
+        return rows.reduce((acc, row) => {
+          const item = row?.metrics?.[metric] || {};
+          acc.latest += Number(item.latest_raw || 0);
+          acc.ytd += Number(item.ytd_raw || 0);
+          acc.mtm += Number(item.mtm_raw || 0);
+          acc.mtd += Number(item.mtd_raw || 0);
+          acc.rka += Number(item.rka_raw || 0);
+          return acc;
+        }, { latest: 0, ytd: 0, mtm: 0, mtd: 0, rka: 0 });
+      };
+
+      const signedCurrency = (value) => {
+        const numeric = Number(value || 0);
+        const prefix = numeric >= 0 ? '+' : '-';
+        return prefix + formatCurrencyCompact(Math.abs(numeric));
+      };
+
+      const signedClass = (value) => Number(value || 0) < 0 ? 'neg' : '';
+
+      const simpleBar = (value, max, color = '#0857c3') => {
+        const width = max > 0 ? Math.max(5, Math.min(100, (Number(value || 0) / max) * 100)) : 0;
+        return `<span class="pres-value-bar-track"><span class="pres-value-bar-fill" style="width:${width}%; background:${color};"></span></span>`;
+      };
+
+      const renderExecutiveLoanDashboard = (data) => {
+        const summaryCards = data?.summary?.cards || [];
+        const cardMap = Object.fromEntries(summaryCards.map(card => [card.key, card]));
+        const os = metricAggregate('os');
+        const sml = metricAggregate('sml');
+        const npl = metricAggregate('npl');
+        const osRaw = Number(cardMap.os?.value_raw || os.latest || 0);
+
+        setText('pres-loan-sml-value', cardMap.sml?.value || formatCurrencyCompact(sml.latest));
+        setText('pres-loan-sml-ratio', cardMap.sml?.ratio || '-');
+        setText('pres-loan-sml-status', cardMap.sml?.ratio || '-');
+        setText('pres-loan-npl-value', cardMap.npl?.value || formatCurrencyCompact(npl.latest));
+        setText('pres-loan-npl-ratio', cardMap.npl?.ratio || '-');
+        setText('pres-loan-npl-status', cardMap.npl?.ratio || '-');
+
+        [
+          ['pres-loan-os-ytd', os.ytd],
+          ['pres-loan-os-mtm', os.mtm],
+          ['pres-loan-os-mtd', os.mtd],
+          ['pres-loan-sml-ytd', sml.ytd],
+          ['pres-loan-sml-mtm', sml.mtm],
+          ['pres-loan-sml-mtd', sml.mtd],
+          ['pres-loan-npl-ytd', npl.ytd],
+          ['pres-loan-npl-mtm', npl.mtm],
+          ['pres-loan-npl-mtd', npl.mtd],
+        ].forEach(([id, value]) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          el.textContent = signedCurrency(value);
+          el.classList.toggle('neg', Number(value || 0) < 0);
+        });
+
+        renderLoanProducts(data);
+
+        const healthy = Math.max(0, osRaw - Number(cardMap.sml?.value_raw || sml.latest || 0) - Number(cardMap.npl?.value_raw || npl.latest || 0));
+        const total = Math.max(1, healthy + Number(cardMap.sml?.value_raw || sml.latest || 0) + Number(cardMap.npl?.value_raw || npl.latest || 0));
+        const p1 = (healthy / total) * 100;
+        const p2 = (Number(cardMap.sml?.value_raw || sml.latest || 0) / total) * 100;
+        const donut = document.getElementById('pres-loan-mini-donut');
+        if (donut) {
+          donut.style.setProperty('--p1', p1.toFixed(2) + '%');
+          donut.style.setProperty('--p2', p2.toFixed(2) + '%');
+        }
+
+        const summary = document.getElementById('pres-loan-composition-summary');
+        if (summary) {
+          summary.innerHTML = `
+            <div class="metric-line"><span>OS</span><strong>${escapeHtml(cardMap.os?.value || '-')}</strong></div>
+            <div class="metric-line"><span>SML</span><strong>${escapeHtml(cardMap.sml?.value || '-')} (${escapeHtml(cardMap.sml?.ratio || '-')})</strong></div>
+            <div class="metric-line"><span>NPL</span><strong>${escapeHtml(cardMap.npl?.value || '-')} (${escapeHtml(cardMap.npl?.ratio || '-')})</strong></div>
+          `;
+        }
+
+        const donutBig = document.getElementById('pres-loan-composition-donut');
+        if (donutBig) {
+          donutBig.style.setProperty('--p1', p1.toFixed(2) + '%');
+          donutBig.style.setProperty('--p2', p2.toFixed(2) + '%');
+        }
+        const legend = document.getElementById('pres-loan-composition-legend');
+        if (legend) {
+          legend.innerHTML = `
+            <div class="pres-mini-stat"><span>OS Non Commercial</span><strong>${escapeHtml(cardMap.os?.value || '-')}</strong></div>
+            <div class="pres-mini-stat"><span>SML</span><strong>${escapeHtml(cardMap.sml?.value || '-')}</strong></div>
+            <div class="pres-mini-stat"><span>NPL</span><strong>${escapeHtml(cardMap.npl?.value || '-')}</strong></div>
+            <div class="pres-mini-stat"><span>LDR</span><strong>${escapeHtml(cardMap.ldr?.value || '-')}</strong></div>
+          `;
+        }
+      };
+
+      const renderLoanProducts = (data) => {
+        const rows = data?.loan_products?.rows || [];
+        const maxOs = Math.max(...rows.map(row => Number(row.os_raw || 0)), 0);
+        const rowsHtml = rows.map(row => `
+          <div class="bri-product-row">
+            <div style="font-weight:900; color:#0f172a;"><i class="${escapeHtml(row.icon || 'fas fa-chart-bar')}" style="color:#0857c3; margin-right:0.35rem;"></i>${escapeHtml(row.label || '-')}</div>
+            <div><strong>${escapeHtml(row.os || '-')}</strong>${simpleBar(row.os_raw, maxOs, '#0857c3')}</div>
+            <div><strong>${escapeHtml(row.sml || '-')}</strong>${simpleBar(row.sml_raw, Math.max(...rows.map(r => Number(r.sml_raw || 0)), 0), '#71c5e8')}</div>
+            <div><strong>${escapeHtml(row.npl || '-')}</strong>${simpleBar(row.npl_raw, Math.max(...rows.map(r => Number(r.npl_raw || 0)), 0), '#ef4444')}</div>
+          </div>
+        `).join('');
+
+        const compactRows = document.getElementById('pres-loan-product-rows');
+        if (compactRows) compactRows.innerHTML = rowsHtml || '<div class="pres-mini-stat"><span>Produk</span><strong>Data belum tersedia</strong></div>';
+
+        const bars = document.getElementById('pres-loan-product-bars');
+        if (bars) bars.innerHTML = rowsHtml;
+
+        const table = document.getElementById('pres-loan-product-table');
+        if (table) {
+          table.innerHTML = rows.map(row => `
+            <tr>
+              <td style="font-weight:850;">${escapeHtml(row.label || '-')}</td>
+              <td style="text-align:right;">${escapeHtml(row.os || '-')}</td>
+              <td style="text-align:right;">${escapeHtml(row.sml || '-')} <span style="color:#64748b;">${escapeHtml(row.sml_pct || '')}</span></td>
+              <td style="text-align:right;">${escapeHtml(row.npl || '-')} <span style="color:#64748b;">${escapeHtml(row.npl_pct || '')}</span></td>
+            </tr>
+          `).join('') || '<tr><td colspan="4" style="text-align:center;">Data belum tersedia</td></tr>';
+        }
+      };
+
+      const renderSavingsDashboard = (data) => {
+        const cards = data?.savings_breakdown?.cards || [];
+        const grid = document.getElementById('pres-saving-cards');
+        if (grid) {
+          grid.innerHTML = cards.map(card => `
+            <div class="bri-dashboard-card">
+              <div class="card-head" style="background:linear-gradient(90deg, ${escapeHtml(card.tone || '#0857c3')}, #307fe2);">${escapeHtml(card.label || '-')}</div>
+              <div class="metric-main" style="grid-template-columns:1fr;">
+                <div><span>Nominal</span><strong>${escapeHtml(card.value || '-')}</strong></div>
+              </div>
+              <div class="achievement"><span>Kontribusi</span><strong>${escapeHtml(card.pct || '-')}</strong></div>
+            </div>
+          `).join('');
+        }
+
+        const barItems = cards.filter(card => card.key !== 'total_simpanan');
+        const barHtml = barItems.map(card => {
+          const pct = Math.max(0, Math.min(100, Number(card.pct_raw || 0)));
+          return `
+          <div class="bri-raised-bar">
+            <div class="bar-meta">
+              <strong>${escapeHtml(card.label || '-')}</strong>
+              <span>${escapeHtml(card.value || '-')}</span>
+            </div>
+            <div class="bar-track">
+              <div class="bar" style="--bar-width:${pct.toFixed(2)}%; --bar-color:${escapeHtml(card.tone || '#0857c3')};"></div>
+            </div>
+            <em>${escapeHtml(card.pct || '-')}</em>
+          </div>
+        `;
+        }).join('');
+        ['pres-saving-bar-stage', 'pres-saving-composition-bars'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.innerHTML = barHtml || '<div class="pres-mini-stat"><span>Komposisi</span><strong>Data belum tersedia</strong></div>';
+        });
+
+        const tableHtml = `
+          <table class="pres-table-dense">
+            <thead><tr><th>Komponen</th><th style="text-align:right;">Nominal</th><th style="text-align:right;">Share</th></tr></thead>
+            <tbody>
+              ${cards.map(card => `<tr><td style="font-weight:850;">${escapeHtml(card.label || '-')}</td><td style="text-align:right;">${escapeHtml(card.value || '-')}</td><td style="text-align:right;">${escapeHtml(card.pct || '-')}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        `;
+        ['pres-saving-summary-table', 'pres-saving-composition-table'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.innerHTML = tableHtml;
+        });
+      };
+
+      const renderBranchWarRoom = (data) => {
+        const branches = data?.performance_overview?.branches || [];
+        const grid = document.getElementById('pres-branch-war-room');
+        if (!grid) return;
+        grid.innerHTML = branches.map(branch => `
+          <div class="bri-branch-card">
+            <h3>${escapeHtml(branch.name || '-')}</h3>
+            <div class="metric-line"><span>Simpanan</span><strong>${escapeHtml(branch.simpanan_fmt || '-')}</strong></div>
+            <div class="metric-line"><span>OS</span><strong>${escapeHtml(branch.pinjaman_fmt || '-')}</strong></div>
+            <div class="metric-line"><span>Penc. RKA OS</span><strong>${escapeHtml(branch.pinjaman_share_fmt || '-')}</strong></div>
+            <div class="metric-line"><span>SML</span><strong>${escapeHtml(branch.sml_abs_fmt || '-')} (${escapeHtml(branch.sml_pct_fmt || '-')})</strong></div>
+            <div class="metric-line"><span>NPL</span><strong>${escapeHtml(branch.npl_abs_fmt || '-')} (${escapeHtml(branch.npl_pct_fmt || '-')})</strong></div>
+            <div style="margin-top:0.75rem;">${simpleBar(branch.pinjaman || 0, Math.max(...branches.map(b => Number(b.pinjaman || 0)), 0), '#0857c3')}</div>
+          </div>
+        `).join('');
+      };
+
+      const renderFinancialHighlights = (data) => {
+        const financial = data?.financial_highlights || {};
+        setText('pres-financial-period', financial.period_label || '-');
+        const cards = document.getElementById('pres-financial-cards');
+        if (cards) {
+          cards.innerHTML = (financial.cards || []).map(card => `
+            <div class="bri-finance-card" style="--tone:${escapeHtml(card.tone || '#0857c3')};">
+              <h3>${escapeHtml(card.label || '-')}</h3>
+              <strong>${escapeHtml(card.value || '-')}</strong>
+              <div class="metric-line"><span>Sumber</span><span>Almafacts</span></div>
+            </div>
+          `).join('');
+        }
+        const branches = document.getElementById('pres-financial-branches');
+        if (branches) {
+          const rows = financial.branches || [];
+          const max = Math.max(...rows.map(row => Number(row.value_raw || 0)), 0);
+          branches.innerHTML = rows.map(row => `
+            <div class="metric-line" style="margin:0.5rem 0;">
+              <span style="min-width:140px;">${escapeHtml(row.name || '-')}</span>
+              <strong>${escapeHtml(row.value || '-')}</strong>
+            </div>
+            ${simpleBar(row.value_raw, max, '#0857c3')}
+          `).join('') || '<div class="pres-mini-stat"><span>Financial</span><strong>Data belum tersedia</strong></div>';
+        }
+      };
+
+      const renderQualityDeepDive = (data, type) => {
+        const target = document.getElementById(type === 'sml' ? 'pres-sml-deep-grid' : 'pres-npl-deep-grid');
+        const payload = data?.quality?.[type] || {};
+        if (!target) return;
+        const groups = [
+          ['Ritel Nominal', payload.ritel_nominal || []],
+          ['Ritel Rasio', payload.ritel_ratio || []],
+          ['Micro Nominal', payload.micro_nominal || []],
+          ['Micro Rasio', payload.micro_ratio || []],
+        ];
+        target.innerHTML = groups.map(([title, rows]) => `
+          <div class="bri-inner-panel">
+            <div class="bri-blue-panel-title"><i class="fas fa-ranking-star"></i> ${escapeHtml(title)}</div>
+            <div class="bri-panel-body">
+              <table class="pres-table-dense">
+                <tbody>
+                  ${(rows || []).slice(0, 8).map((row, idx) => `
+                    <tr>
+                      <td style="font-weight:900; width:38px;">${idx + 1}</td>
+                      <td>${escapeHtml(row.label || row.name || '-')}</td>
+                      <td style="text-align:right; font-weight:850;">${escapeHtml(row.value || row.value_fmt || row.amount_fmt || '-')}</td>
+                    </tr>
+                  `).join('') || '<tr><td style="text-align:center;">Data belum tersedia</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `).join('');
+      };
+
+      const renderMicroProductivity = (data) => {
+        const grid = document.getElementById('pres-micro-productivity-grid');
+        if (!grid) return;
+        const micro = data?.micro || {};
+        const cards = [
+          ['Putusan', micro?.decision?.total?.total_os_fmt || '-', (micro?.decision?.total?.total_deb || 0) + ' deb'],
+          ['Mantri', micro?.mantri_productivity?.total?.realisasi_os_fmt || '-', (micro?.mantri_productivity?.total?.jumlah_mantri || 0) + ' mantri'],
+          ['RM KUR Mikro', micro?.rm_kur_micro?.total?.realisasi_os_fmt || '-', (micro?.rm_kur_micro?.total?.realisasi_deb || 0) + ' deb'],
+        ];
+        grid.innerHTML = cards.map(([label, value, meta]) => `
+          <div class="pres-mini-stat" style="margin-top:0.65rem;">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+            <small style="color:#64748b; font-weight:800;">${escapeHtml(meta)}</small>
+          </div>
+        `).join('');
+      };
+
       const populatePresentationData = (data) => {
         presentationData = data;
-        
+
         populateCover(data);
         populatePerformanceControls(data);
+        renderExecutiveLoanDashboard(data);
+        renderSavingsDashboard(data);
+        renderBranchWarRoom(data);
+        renderFinancialHighlights(data);
+        renderQualityDeepDive(data, 'sml');
+        renderQualityDeepDive(data, 'npl');
+        renderMicroProductivity(data);
 
         // Shared branch data
         const simpCard = data.summary.cards.find(c => c.key === 'simpanan') || {};
@@ -4202,7 +6135,10 @@
 
         // Slide 3: Kredit Performance
         const osCard = data.summary.cards.find(c => c.key === 'os') || {};
-        document.getElementById('pres-kredit-total-volume').textContent = osCard.value || 'Rp -';
+        const totalVolumeEl = document.getElementById('pres-kredit-total-volume');
+        totalVolumeEl.textContent = osCard.value || 'Rp -';
+        totalVolumeEl.setAttribute('data-raw-val', osCard.value_raw || 0);
+        totalVolumeEl.setAttribute('data-is-currency', 'true');
         const loanTrendEl = document.getElementById('pres-kredit-total-trend');
         loanTrendEl.className = 'pres-kpi-sub-trend ' + (osCard.trend && osCard.trend.startsWith('-') ? 'neg' : 'pos');
         loanTrendEl.innerHTML = `<i class="fas ${osCard.trend && osCard.trend.startsWith('-') ? 'fa-arrow-down' : 'fa-arrow-up'} mr-1"></i> ${osCard.trend || '0%'} MtM`;
@@ -4239,7 +6175,7 @@
         // Comparative Quality Table
         const qualityComparisonTbody = document.getElementById('pres-quality-comparison-tbody');
         qualityComparisonTbody.innerHTML = '';
-        
+
         let totalOsArea = 0;
         let totalSmlArea = 0;
         let totalNplArea = 0;
@@ -4310,11 +6246,11 @@
           cardDiv.style.flexDirection = 'column';
           cardDiv.style.justifyContent = 'space-between';
           cardDiv.style.padding = '1.25rem';
-          
+
           const isCasa = c.key === 'casa';
           const trendIsNeg = c.trend && c.trend.includes('-') && !isCasa;
           const trendColor = trendIsNeg ? '#ef4444' : '#047857';
-          
+
           cardDiv.innerHTML = `
             <div>
               <div style="font-size:0.7rem; font-weight:700; color:rgba(0,0,0,0.4); text-transform:uppercase; letter-spacing:0.05em; display:flex; justify-content:space-between; align-items:center;">
@@ -4544,7 +6480,7 @@
           if (!btn) return;
           segmentState.metric = btn.getAttribute('data-seg-metric');
           setActiveButton(segMetricToggle, 'data-seg-metric', segmentState.metric);
-          
+
           // Update Title
           const titleEl = document.getElementById('pres-seg-explorer-title');
           if (segmentState.metric === 'sme_os') titleEl.textContent = 'OS SME';
@@ -4605,13 +6541,36 @@
       }
 
       // Start slideshow trigger
-      if (presStartBtn) presStartBtn.addEventListener('click', () => showSlide(1));
+      if (presStartBtn) {
+        presStartBtn.addEventListener('click', () => {
+          showSlide(1);
+          startAutoplay();
+        });
+      }
+
+      if (presFinishBtn) {
+        presFinishBtn.addEventListener('click', () => {
+          stopAutoplay();
+          window.location.href = "{{ route('dashboard', ['periode' => $selectedPeriod]) }}";
+        });
+      }
+
+      if (presAutoplayBtn) {
+        presAutoplayBtn.addEventListener('click', () => {
+          if (autoplayEnabled) {
+            stopAutoplay();
+          } else {
+            startAutoplay();
+          }
+        });
+      }
 
       // Navigations
       if (presPrevBtn) {
         presPrevBtn.addEventListener('click', () => {
           if (currentSlideIndex > 0) {
             showSlide(currentSlideIndex - 1);
+            scheduleAutoplay();
           }
         });
       }
@@ -4620,6 +6579,7 @@
         presNextBtn.addEventListener('click', () => {
           if (currentSlideIndex < totalSlides - 1) {
             showSlide(currentSlideIndex + 1);
+            scheduleAutoplay();
           }
         });
       }
@@ -4630,7 +6590,10 @@
           const dot = e.target.closest('.pres-dot');
           if (dot) {
             const idx = parseInt(dot.getAttribute('data-index'));
-            if (!isNaN(idx)) showSlide(idx);
+            if (!isNaN(idx)) {
+              showSlide(idx);
+              scheduleAutoplay();
+            }
           }
         });
       }
@@ -4641,14 +6604,24 @@
           e.preventDefault();
           if (currentSlideIndex < totalSlides - 1) {
             showSlide(currentSlideIndex + 1);
+            scheduleAutoplay();
           }
         } else if (e.key === 'ArrowLeft') {
           e.preventDefault();
           if (currentSlideIndex > 0) {
             showSlide(currentSlideIndex - 1);
+            scheduleAutoplay();
+          }
+        } else if (e.key.toLowerCase() === 'a') {
+          e.preventDefault();
+          if (autoplayEnabled) {
+            stopAutoplay();
+          } else {
+            startAutoplay();
           }
         } else if (e.key === 'Escape') {
           e.preventDefault();
+          stopAutoplay();
           // Redirect back to dashboard
           window.location.href = "{{ route('dashboard', ['periode' => $selectedPeriod]) }}";
         }

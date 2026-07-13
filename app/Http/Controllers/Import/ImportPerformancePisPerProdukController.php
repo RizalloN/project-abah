@@ -466,6 +466,7 @@ class ImportPerformancePisPerProdukController extends Controller
             'deferDependentFilterRefresh' => true,
             'disableFilterOptionsLocalCache' => true,
             'initialFilterOptionsAreComplete' => true,
+            'portalFilterDropdowns' => true,
             'detectedPosisi' => $context['posisi'] ?? $periodeInput,
             'manualPeriode' => $periodeInput,
             'manualPeriodeLabel' => Carbon::parse($periodeInput)->translatedFormat('d F Y'),

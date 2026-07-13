@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Import;
 
+use App\Support\ReportCacheVersion;
 use App\Support\StrictDateParser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -610,6 +611,10 @@ class Gi405RecDhImportExcelController extends ImportExcelController
         });
 
         $failed = max(0, count($rowsToInsert) - $inserted);
+
+        if ($inserted > 0) {
+            ReportCacheVersion::bump('harian');
+        }
 
         if ($jobId > 0) {
             $this->progressService()->updateTotals($jobId, $inserted, $failed, $sourceRowCount, $failed > 0 ? 'failed_partial' : 'completed');

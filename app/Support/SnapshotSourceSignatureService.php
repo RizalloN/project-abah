@@ -13,7 +13,7 @@ class SnapshotSourceSignatureService
     private const SIGNATURE_VERSION = 'snapshot-source-v1';
     private const BUCKET_SIGNATURE_VERSION = 'snapshot-source-v2-buckets';
     private const SNAPSHOT_FORMULA_VERSIONS = [
-        'performance_rm_snapshots' => 'performance-rm-v9-consumer-cif-xlookup-net-disbursement',
+        'performance_rm_snapshots' => 'performance-rm-v16-small-plafon-raw-date',
     ];
 
     private const NUMERIC_COLUMNS = [

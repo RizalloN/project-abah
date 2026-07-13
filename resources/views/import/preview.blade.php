@@ -132,7 +132,7 @@
                         </div>
                     @endif
 
-                    <div class="table-responsive import-preview-table-shell" style="min-height: 450px; max-height: 600px; overflow-y: auto; overflow-x: auto;">
+                    <div class="table-responsive import-preview-table-shell">
                         <table class="table table-bordered table-hover m-0 import-preview-table">
                             <thead class="thead-light sticky-top" style="z-index: 2;">
                                 <tr>
@@ -154,12 +154,12 @@
                                                 @if(!$filtersDisabled && isset($formattedUniqueValues[$index]) && count($formattedUniqueValues[$index]) > 0)
                                                 <input type="hidden" name="has_filter[]" value="{{ $index }}">
 
-                                                <div class="dropdown">
-                                                    <button class="btn btn-xs btn-light border dropdown-toggle filter-btn" type="button" data-toggle="dropdown" aria-expanded="false">
+                                                <div class="dropdown import-preview-filter-dropdown">
+                                                    <button class="btn btn-xs btn-light border dropdown-toggle filter-btn" type="button" data-filter-dropdown-toggle="1" @if(!($portalFilterDropdowns ?? true)) data-toggle="dropdown" data-boundary="window" @endif aria-haspopup="true" aria-expanded="false">
                                                         <i class="fas fa-filter text-muted" id="icon_filter_{{ $index }}"></i>
                                                     </button>
 
-                                                    <div class="dropdown-menu dropdown-menu-right shadow p-0" style="width: 280px; border-radius: 8px;">
+                                                    <div class="dropdown-menu dropdown-menu-right shadow p-0 import-preview-filter-menu" style="width: 280px; border-radius: 8px;">
                                                         <div class="p-2 bg-light border-bottom">
                                                             <div class="input-group input-group-sm">
                                                                 <div class="input-group-prepend">
@@ -282,6 +282,7 @@
         const disableFilterOptionsLocalCache = @json(!empty($disableFilterOptionsLocalCache));
         const deferDependentFilterRefresh = @json(!empty($deferDependentFilterRefresh));
         const initialFilterOptionsAreComplete = @json(!empty($initialFilterOptionsAreComplete));
+        const portalFilterDropdowns = @json($portalFilterDropdowns ?? true);
         const filePathValue = importFormElement?.querySelector('input[name="file_path"]')?.value || '';
         const previewStateKey = importFormElement?.querySelector('input[name="preview_state_key"]')?.value || '';
         const delimiterValue = importFormElement?.querySelector('input[name="delimiter"]')?.value || 'auto';
@@ -911,6 +912,14 @@
             }
         }
 
+        function getFilterDropdownFromMenu(menu) {
+            return menu ? (menu.__filterDropdownOriginalParent || menu.closest('.import-preview-filter-dropdown')) : null;
+        }
+
+        function getFilterMenuForDropdown(dropdown) {
+            return dropdown ? (dropdown.__portalFilterMenu || dropdown.querySelector('.import-preview-filter-menu')) : null;
+        }
+
         function refreshDependentFilterOptions(excludeCol) {
             Object.keys(filterState).forEach(function (key) {
                 if (String(key) === String(excludeCol)) {
@@ -918,8 +927,10 @@
                 }
 
                 const container = document.getElementById('list_container_' + key);
-                const dropdown = container ? container.closest('.dropdown') : null;
-                const isOpen = dropdown && (dropdown.classList.contains('show') || dropdown.querySelector('.dropdown-menu').classList.contains('show'));
+                const menu = container ? container.closest('.dropdown-menu') : null;
+                const dropdown = container ? (container.closest('.dropdown') || getFilterDropdownFromMenu(menu)) : null;
+                const dropdownMenu = menu || getFilterMenuForDropdown(dropdown);
+                const isOpen = dropdown && dropdownMenu && (dropdown.classList.contains('show') || dropdownMenu.classList.contains('show'));
 
                 if (isOpen) {
                     ensureFullFilterOptions(key);
@@ -1226,9 +1237,10 @@
         }
 
         function updateIconsColor() {
-            const dropdowns = document.querySelectorAll('.dropdown');
+            const dropdowns = document.querySelectorAll('.import-preview-filter-dropdown');
             dropdowns.forEach(dropdown => {
-                const container = dropdown.querySelector('[id^="list_container_"]');
+                const menu = getFilterMenuForDropdown(dropdown);
+                const container = menu ? menu.querySelector('[id^="list_container_"]') : dropdown.querySelector('[id^="list_container_"]');
                 if (container) {
                     const colIndexStr = container.getAttribute('data-col');
                     if (!colIndexStr) {
@@ -1300,6 +1312,10 @@
 
         document.querySelectorAll('.dropdown').forEach(function (dropdown) {
             dropdown.addEventListener('shown.bs.dropdown', function () {
+                if (portalFilterDropdowns && dropdown.classList.contains('import-preview-filter-dropdown')) {
+                    return;
+                }
+
                 const container = dropdown.querySelector('[id^="list_container_"]');
                 if (!container) {
                     return;
@@ -1311,16 +1327,208 @@
         });
 
         document.querySelectorAll('.filter-btn').forEach(function (button) {
-            button.addEventListener('click', function () {
+            button.addEventListener('click', function (event) {
                 const dropdown = button.closest('.dropdown');
-                const container = dropdown ? dropdown.querySelector('[id^="list_container_"]') : null;
+                const isPortalFilter = portalFilterDropdowns && dropdown && dropdown.classList.contains('import-preview-filter-dropdown');
+                const menu = getFilterMenuForDropdown(dropdown);
+                const container = menu ? menu.querySelector('[id^="list_container_"]') : null;
                 if (!container) {
                     return;
+                }
+
+                if (isPortalFilter) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (typeof event.stopImmediatePropagation === 'function') {
+                        event.stopImmediatePropagation();
+                    }
+
+                    if (dropdown.classList.contains('show') && dropdown.__portalFilterMenu) {
+                        closePortaledFilterMenu(dropdown);
+                        return;
+                    }
+
+                    closeAllPortaledFilterMenus(dropdown);
+                    openPortaledFilterMenu(dropdown);
                 }
 
                 ensureFullFilterOptions(container.getAttribute('data-col'));
             });
         });
+
+        function positionPortaledFilterMenu(dropdown) {
+            const menu = dropdown ? dropdown.__portalFilterMenu : null;
+            const button = dropdown ? dropdown.querySelector('.filter-btn') : null;
+            if (!menu || !button || !document.body.contains(menu)) {
+                return;
+            }
+
+            const rect = button.getBoundingClientRect();
+            const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+            const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+            const viewportPadding = 12;
+            const preferredMenuWidth = viewportWidth <= 420 ? viewportWidth - (viewportPadding * 2) : 380;
+            const menuWidth = Math.max(280, Math.min(preferredMenuWidth, viewportWidth - (viewportPadding * 2)));
+            const spaceBelow = viewportHeight - rect.bottom - viewportPadding;
+            const spaceAbove = rect.top - viewportPadding;
+            const availableHeight = Math.max(220, Math.max(spaceBelow, spaceAbove));
+            const menuHeight = Math.min(Math.max(menu.scrollHeight || menu.offsetHeight || 420, 320), availableHeight);
+            const openAbove = spaceBelow < Math.min(320, menuHeight) && spaceAbove > spaceBelow;
+            const left = Math.max(viewportPadding, Math.min(rect.right - menuWidth, viewportWidth - menuWidth - viewportPadding));
+            const preferredTop = openAbove ? rect.top - menuHeight - 6 : rect.bottom + 6;
+            const top = Math.max(viewportPadding, Math.min(preferredTop, viewportHeight - menuHeight - viewportPadding));
+            const list = menu.querySelector('[id^="list_container_"]');
+
+            menu.style.position = 'fixed';
+            menu.style.inset = 'auto auto auto auto';
+            menu.style.left = left + 'px';
+            menu.style.top = top + 'px';
+            menu.style.width = menuWidth + 'px';
+            menu.style.right = 'auto';
+            menu.style.bottom = 'auto';
+            menu.style.transform = 'none';
+            menu.style.zIndex = '2147483000';
+            menu.style.maxWidth = 'calc(100vw - 16px)';
+            menu.style.maxHeight = menuHeight + 'px';
+            menu.style.overflow = 'hidden';
+            menu.style.display = 'block';
+            menu.style.pointerEvents = 'auto';
+            menu.style.visibility = 'visible';
+            menu.style.opacity = '1';
+
+            if (list) {
+                list.style.maxHeight = Math.max(150, menuHeight - 132) + 'px';
+                list.style.overflowY = 'auto';
+            }
+        }
+
+        function openPortaledFilterMenu(dropdown) {
+            if (!portalFilterDropdowns || !dropdown) {
+                return;
+            }
+
+            const menu = getFilterMenuForDropdown(dropdown);
+            if (!menu) {
+                return;
+            }
+
+            const button = dropdown.querySelector('.filter-btn');
+            if (!menu.__filterDropdownOriginalParent) {
+                menu.__filterDropdownOriginalParent = dropdown;
+                menu.__filterDropdownOriginalNextSibling = menu.nextSibling;
+            }
+            dropdown.__portalFilterMenu = menu;
+            dropdown.classList.add('show');
+            if (button) {
+                button.setAttribute('aria-expanded', 'true');
+            }
+
+            menu.classList.add('import-preview-filter-menu-portal');
+            menu.classList.add('show');
+            menu.setAttribute('data-portal-filter-open', '1');
+            menu.setAttribute('data-col', menu.querySelector('[id^="list_container_"]')?.getAttribute('data-col') || '');
+            menu.style.visibility = 'hidden';
+            menu.style.opacity = '0';
+            menu.style.display = 'block';
+            document.body.appendChild(menu);
+            positionPortaledFilterMenu(dropdown);
+            requestAnimationFrame(function () {
+                positionPortaledFilterMenu(dropdown);
+                const searchInput = menu.querySelector('.search-filter');
+                if (searchInput) {
+                    searchInput.focus({ preventScroll: true });
+                    searchInput.select();
+                }
+            });
+        }
+
+        function closePortaledFilterMenu(dropdown) {
+            if (!portalFilterDropdowns || !dropdown || !dropdown.__portalFilterMenu) {
+                return;
+            }
+
+            const menu = dropdown.__portalFilterMenu;
+            const parent = menu.__filterDropdownOriginalParent || dropdown;
+            const nextSibling = menu.__filterDropdownOriginalNextSibling || null;
+            const button = dropdown.querySelector('.filter-btn');
+            dropdown.classList.remove('show');
+            if (button) {
+                button.setAttribute('aria-expanded', 'false');
+            }
+
+            menu.classList.remove('import-preview-filter-menu-portal');
+            menu.classList.remove('show');
+            menu.removeAttribute('data-portal-filter-open');
+            menu.removeAttribute('data-col');
+            menu.style.position = '';
+            menu.style.inset = '';
+            menu.style.left = '';
+            menu.style.top = '';
+            menu.style.width = '';
+            menu.style.right = '';
+            menu.style.bottom = '';
+            menu.style.transform = '';
+            menu.style.zIndex = '';
+            menu.style.maxWidth = '';
+            menu.style.maxHeight = '';
+            menu.style.overflow = '';
+            menu.style.display = '';
+            menu.style.pointerEvents = '';
+            menu.style.visibility = '';
+            menu.style.opacity = '';
+            const list = menu.querySelector('[id^="list_container_"]');
+            if (list) {
+                list.style.maxHeight = '';
+                list.style.overflowY = '';
+            }
+
+            if (nextSibling && nextSibling.parentNode === parent) {
+                parent.insertBefore(menu, nextSibling);
+            } else {
+                parent.appendChild(menu);
+            }
+
+            menu.__filterDropdownOriginalParent = null;
+            menu.__filterDropdownOriginalNextSibling = null;
+            dropdown.__portalFilterMenu = null;
+        }
+
+        function closeAllPortaledFilterMenus(exceptDropdown) {
+            if (!portalFilterDropdowns) {
+                return;
+            }
+
+            document.querySelectorAll('.import-preview-filter-dropdown').forEach(function (dropdown) {
+                if (dropdown !== exceptDropdown) {
+                    closePortaledFilterMenu(dropdown);
+                }
+            });
+        }
+
+        if (portalFilterDropdowns) {
+            document.addEventListener('mousedown', function (event) {
+                const target = event.target;
+                const insidePortalMenu = target && target.closest ? target.closest('.import-preview-filter-menu-portal') : null;
+                const insideFilterButton = target && target.closest ? target.closest('.import-preview-filter-dropdown') : null;
+                if (!insidePortalMenu && !insideFilterButton) {
+                    closeAllPortaledFilterMenus();
+                }
+            });
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    closeAllPortaledFilterMenus();
+                }
+            });
+
+            window.addEventListener('resize', function () {
+                document.querySelectorAll('.import-preview-filter-dropdown.show').forEach(positionPortaledFilterMenu);
+            });
+
+            window.addEventListener('scroll', function () {
+                document.querySelectorAll('.import-preview-filter-dropdown.show').forEach(positionPortaledFilterMenu);
+            }, true);
+        }
 
         let importProgressStartedAt = null;
         let importProgressTicker = null;
@@ -2276,8 +2484,13 @@
 
     .import-preview-table-shell {
         position: relative;
+        min-height: 450px;
+        max-height: 600px;
+        overflow-x: auto;
+        overflow-y: auto;
         border-top: 1px solid #e2e8f0;
         background: #ffffff;
+        isolation: isolate;
     }
 
     .import-preview-table-shell.is-preview-loading .import-preview-table {
@@ -2289,7 +2502,7 @@
     .preview-loading-overlay {
         position: absolute;
         inset: 0;
-        z-index: 5;
+        z-index: 20;
         display: flex;
         align-items: flex-start;
         justify-content: center;
@@ -2331,11 +2544,19 @@
         font-size: 0.88rem;
     }
 
+    .import-preview-table thead {
+        position: sticky;
+        top: 0;
+        z-index: 15 !important;
+    }
+
     .import-preview-table thead th {
         background: #f8fafc !important;
         border-color: #e2e8f0 !important;
         color: #0f172a;
         font-size: 0.82rem;
+        position: relative;
+        z-index: 16;
     }
 
     .import-preview-table tbody td {
@@ -2347,21 +2568,126 @@
         border-radius: 8px;
         min-width: 30px;
         min-height: 30px;
+        position: relative;
+        z-index: 18;
     }
 
-    .import-preview-table .dropdown-menu {
+    .import-preview-table .dropdown-menu,
+    .import-preview-filter-menu {
         border: 1px solid #e2e8f0;
         border-radius: 8px !important;
+        z-index: 1080;
     }
 
-    .import-preview-table .dropdown-menu .custom-control-label {
-        display: block;
+    .import-preview-filter-menu-portal {
+        position: fixed !important;
+        display: block !important;
+        z-index: 2147483000 !important;
+        width: min(380px, calc(100vw - 24px)) !important;
+        max-width: calc(100vw - 24px) !important;
+        min-width: min(280px, calc(100vw - 24px)) !important;
+        padding: 0 !important;
+        box-sizing: border-box;
+        white-space: normal !important;
+        background: #ffffff;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 10px !important;
+        box-shadow: 0 28px 70px -30px rgba(15, 23, 42, 0.58), 0 0 0 1px rgba(15, 23, 42, 0.04) !important;
+        overscroll-behavior: contain;
+    }
+
+    .import-preview-filter-dropdown.show .filter-btn {
+        color: #00529c;
+        background: #eaf2ff;
+        border-color: #9cc7f5 !important;
+        box-shadow: 0 0 0 3px rgba(0, 82, 156, 0.14);
+    }
+
+    .import-preview-filter-menu-portal .p-2.bg-light {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        background: #f8fafc !important;
+    }
+
+    .import-preview-filter-menu-portal .p-2.border-bottom.bg-white {
+        position: sticky;
+        top: 47px;
+        z-index: 2;
+    }
+
+    .import-preview-filter-menu-portal .search-filter {
+        min-height: 34px;
+        border-color: #cbd5e1;
+        box-shadow: none;
+    }
+
+    .import-preview-filter-menu-portal .search-filter:focus {
+        border-color: #00529c;
+        box-shadow: 0 0 0 3px rgba(0, 82, 156, 0.14);
+    }
+
+    .import-preview-filter-menu-portal > div,
+    .import-preview-filter-menu-portal .filter-item-container {
+        display: block !important;
+        width: 100%;
+        float: none !important;
+        clear: both;
+    }
+
+    .import-preview-filter-menu-portal [id^="list_container_"] {
+        display: block !important;
+        width: 100% !important;
+        white-space: normal !important;
+    }
+
+    .import-preview-filter-menu-portal .filter-item {
+        display: block !important;
+        width: 100% !important;
+        white-space: normal !important;
+    }
+
+    .import-preview-filter-menu-portal .input-group {
+        display: flex !important;
+        flex-wrap: nowrap;
+        width: 100%;
+    }
+
+    .import-preview-filter-menu-portal .custom-control {
+        display: block !important;
+        width: 100%;
+        min-height: 1.75rem;
+        margin-bottom: 0.2rem;
+        padding: 0.18rem 0.3rem 0.18rem 1.65rem;
+        border-radius: 6px;
+        white-space: normal !important;
+    }
+
+    .import-preview-filter-menu-portal .custom-control:hover {
+        background: #eff6ff;
+    }
+
+    .import-preview-filter-menu-portal .custom-control-input {
+        position: absolute;
+        left: 0;
+        z-index: -1;
+        opacity: 0;
+    }
+
+    .import-preview-table .dropdown-menu .custom-control-label,
+    .import-preview-filter-menu .custom-control-label {
+        display: block !important;
         min-height: 1.5rem;
         cursor: pointer;
         user-select: none;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.35;
+        color: #0f172a;
     }
 
-    .import-preview-table .dropdown-menu .custom-control-input:disabled ~ .custom-control-label {
+    .import-preview-table .dropdown-menu .custom-control-input:disabled ~ .custom-control-label,
+    .import-preview-filter-menu .custom-control-input:disabled ~ .custom-control-label {
         cursor: wait;
         opacity: 0.58;
     }

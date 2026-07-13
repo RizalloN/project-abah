@@ -45,7 +45,6 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "composer ddns:update",
             "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#a78bfa,#fdba74,#f59e0b,#60a5fa\" \"php artisan serve\" \"php artisan queue:work --queue=imports-high,imports-daily-loan --tries=1 --timeout=0 --sleep=1\" \"php artisan queue:work --queue=default,reports-low --tries=1 --timeout=0 --sleep=1\" \"php artisan queue:work --queue=snapshots-parallel,shadow-backfill,reports-low --tries=1 --timeout=0 --sleep=1\" \"php artisan schedule:work\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,import-queue,main-queue,snapshot-queue,scheduler,logs,vite --kill-others"
         ],
         "start": [

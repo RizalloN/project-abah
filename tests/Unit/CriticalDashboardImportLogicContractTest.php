@@ -24,6 +24,31 @@ class CriticalDashboardImportLogicContractTest extends TestCase
         $this->assertStringContainsString('allowForceStart', $source);
     }
 
+    public function test_chunk_upload_consumes_prepare_preview_as_event_stream_before_redirecting(): void
+    {
+        $source = file_get_contents(base_path('resources/views/import/index.blade.php'));
+
+        $this->assertStringContainsString("String(finalizePayload.redirect).includes('prepare-preview')", $source);
+        $this->assertStringContainsString('new EventSource(finalizePayload.redirect)', $source);
+        $this->assertStringContainsString('window.location.href = readyData.redirect', $source);
+    }
+
+    public function test_excel_init_uses_timeout_and_staging_heartbeat(): void
+    {
+        $stagingSource = file_get_contents(base_path('app/Services/Import/ExcelStagingService.php'));
+        $executionSource = file_get_contents(base_path('app/Services/Import/ImportExecutionService.php'));
+        $controllerSource = file_get_contents(base_path('app/Http/Controllers/Import/ImportExcelController.php'));
+
+        $this->assertStringContainsString('proc_open($cmd', $stagingSource);
+        $this->assertStringContainsString("config('import.excel_init_timeout_seconds'", $stagingSource);
+        $this->assertStringContainsString('terminateProcess($process, $pipes)', $stagingSource);
+        $this->assertStringNotContainsString('@shell_exec($cmd)', $stagingSource);
+
+        $this->assertStringContainsString('markStaging($jobId', $executionSource);
+        $this->assertStringContainsString("'phase' => 'staging_csv'", $controllerSource);
+        $this->assertStringContainsString("'mode' => 'excel_stage'", $controllerSource);
+    }
+
     public function test_dashboard_pinjaman_kredit_reads_dashboard_harian_summary_key_rows_only(): void
     {
         $source = file_get_contents(base_path('app/Support/DashboardPinjamanKreditService.php'));
@@ -36,8 +61,41 @@ class CriticalDashboardImportLogicContractTest extends TestCase
     {
         $source = file_get_contents(base_path('app/Http/Controllers/DashboardPinjamanReportController.php'));
 
-        $this->assertStringContainsString('dashboard_pinjaman_kredit_unified:v12-quality-rka-direction', $source);
+        $this->assertStringContainsString('dashboard_pinjaman_kredit_unified:v18-strict-uker-kind-rka-cache-refresh', $source);
         $this->assertStringContainsString('kreditSnapshotSignature', $source);
         $this->assertStringContainsString("ReportCacheVersion::composite(['harian', 'pinjaman', 'simpanan'])", $source);
+    }
+
+    public function test_performance_rm_snapshot_keeps_rm_mikro_kur_on_kur_ritel_2015_only(): void
+    {
+        $source = file_get_contents(base_path('app/Support/ReportSnapshotBuilder.php'));
+
+        $this->assertStringContainsString(
+            "['source_segment' => 'MICRO', 'products' => ['KUR-MIKRO', 'KUR-KECIL'], 'descriptions' => ['Kredit Mikro - KUR Ritel 2015']]",
+            $source
+        );
+        $this->assertStringContainsString("'KURKECIL' => 'KUR-MIKRO'", $source);
+    }
+
+    public function test_lw321_npd_and_npdd_excel_preview_uses_dedicated_staging_paths(): void
+    {
+        $source = file_get_contents(base_path('app/Http/Controllers/Import/ImportExcelController.php'));
+
+        $this->assertMatchesRegularExpression('/private function isLw321PnTable\(.*?lw321pn/s', $source);
+        $this->assertMatchesRegularExpression('/private function isLw321NpdTable\(.*?lw321_npd/s', $source);
+        $this->assertMatchesRegularExpression('/private function isLw321NpddTable\(.*?lw321_npdd/s', $source);
+        $this->assertStringContainsString('$this->stageLw321PnExcelToCsv($path, null, false)', $source);
+        $this->assertStringContainsString(
+            'REPLACE(REPLACE(COALESCE({$columnExpression}, \'\'), CHAR(13), \'\'), CHAR(10), \'\')',
+            $source
+        );
+        $this->assertStringNotContainsString('private function isLw321NpdTable(?string $tableName = null): bool
+    {
+        return false;
+    }', $source);
+        $this->assertStringNotContainsString('private function isLw321NpddTable(?string $tableName = null): bool
+    {
+        return false;
+    }', $source);
     }
 }

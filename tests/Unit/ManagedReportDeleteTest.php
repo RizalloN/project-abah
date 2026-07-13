@@ -878,6 +878,61 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame('MBDESC', $kancaColumn);
     }
 
+    public function test_management_scope_reads_qris_detail_daily_month_day_year_period(): void
+    {
+        Schema::create('jumlah_merchant_qris_detail', function (Blueprint $table) {
+            $table->string('PERIODE')->nullable();
+            $table->string('Month_Day_Year_of_Periode')->nullable();
+            $table->string('MBDESC')->nullable();
+            $table->string('BRDESC')->nullable();
+        });
+
+        DB::table('jumlah_merchant_qris_detail')->insert([
+            'PERIODE' => 'Jul 2026',
+            'Month_Day_Year_of_Periode' => '13 Jul 26',
+            'MBDESC' => 'KC Madiun',
+            'BRDESC' => 'Unit Sudirman',
+        ]);
+
+        $controller = app(ImportIndexController::class);
+        $resolver = new \ReflectionMethod($controller, 'resolveManagementScopeColumns');
+        $resolver->setAccessible(true);
+        $formatter = new \ReflectionMethod($controller, 'formatManagementPeriodLabel');
+        $formatter->setAccessible(true);
+
+        [$periodColumn, $kancaColumn] = $resolver->invoke(
+            $controller,
+            'jumlah_merchant_qris_detail',
+            Schema::getColumnListing('jumlah_merchant_qris_detail')
+        );
+
+        $this->assertSame('Month_Day_Year_of_Periode', $periodColumn);
+        $this->assertSame('MBDESC', $kancaColumn);
+        $this->assertSame('2026-07-13', $formatter->invoke($controller, '13 Jul 26', $periodColumn));
+    }
+
+    public function test_management_period_filter_matches_dd_mmm_yy_text_when_using_normalized_date(): void
+    {
+        Schema::create('jumlah_merchant_qris_detail', function (Blueprint $table) {
+            $table->string('Month_Day_Year_of_Periode')->nullable();
+            $table->string('MBDESC')->nullable();
+        });
+
+        DB::table('jumlah_merchant_qris_detail')->insert([
+            ['Month_Day_Year_of_Periode' => '13 Jul 26', 'MBDESC' => 'KC Madiun'],
+            ['Month_Day_Year_of_Periode' => '14 Jul 26', 'MBDESC' => 'KC Madiun'],
+        ]);
+
+        $controller = app(ImportIndexController::class);
+        $method = new \ReflectionMethod($controller, 'applyManagedPeriodFilterConstraint');
+        $method->setAccessible(true);
+
+        $query = DB::table('jumlah_merchant_qris_detail');
+        $method->invoke($controller, $query, 'jumlah_merchant_qris_detail', 'Month_Day_Year_of_Periode', '2026-07-13');
+
+        $this->assertSame(1, $query->count());
+    }
+
     public function test_management_scope_treats_tanggal_as_period_column_and_normalizes_display_to_short_date(): void
     {
         Schema::create('tanggal_scope_resolution', function (Blueprint $table) {
@@ -1055,59 +1110,99 @@ class ManagedReportDeleteTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    public function test_lw321_micro_tables_can_use_full_table_delete_shortcut(): void
+    public function test_delete_management_removes_ssa_almafacts_by_period_and_branch(): void
     {
+        Schema::create('ssa_almafacts', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('month_day_year_of_posisi')->nullable();
+            $table->string('kanca_konsolidasi')->nullable();
+            $table->string('kode_unit_kerja')->nullable();
+            $table->string('unit_kerja')->nullable();
+            $table->string('keterangan')->nullable();
+            $table->decimal('saldo', 24, 2)->nullable();
+            $table->timestamps();
+        });
+
+        DB::table('nama_report')->insert([
+            'id_report' => 39,
+            'nama_report' => 'SSA Almafacts',
+            'table_name' => 'ssa_almafacts',
+            'active' => 1,
+        ]);
+
+        DB::table('ssa_almafacts')->insert([
+            [
+                'uniqueid_namareport' => 'ALMA-1',
+                'month_day_year_of_posisi' => '2026-05-31',
+                'kanca_konsolidasi' => 'KC Madiun',
+                'kode_unit_kerja' => '45',
+                'unit_kerja' => 'KC Madiun',
+                'keterangan' => '15. Laba Setelah Pajak',
+                'saldo' => 1000,
+            ],
+            [
+                'uniqueid_namareport' => 'ALMA-2',
+                'month_day_year_of_posisi' => '2026-05-31',
+                'kanca_konsolidasi' => 'KC Madiun',
+                'kode_unit_kerja' => '3212',
+                'unit_kerja' => 'UNIT DOLOPO MADIUN',
+                'keterangan' => '00. Amount',
+                'saldo' => 2000,
+            ],
+            [
+                'uniqueid_namareport' => 'ALMA-KEEP-BRANCH',
+                'month_day_year_of_posisi' => '2026-05-31',
+                'kanca_konsolidasi' => 'KC Ponorogo',
+                'kode_unit_kerja' => '8146',
+                'unit_kerja' => 'UNIT PASAR CONDONG PONOROGO',
+                'keterangan' => '00. Amount',
+                'saldo' => 3000,
+            ],
+            [
+                'uniqueid_namareport' => 'ALMA-KEEP-PERIOD',
+                'month_day_year_of_posisi' => '2026-04-30',
+                'kanca_konsolidasi' => 'KC Madiun',
+                'kode_unit_kerja' => '45',
+                'unit_kerja' => 'KC Madiun',
+                'keterangan' => '00. Amount',
+                'saldo' => 4000,
+            ],
+        ]);
+
+        $syncService = \Mockery::mock(ReportDataSyncService::class);
+        $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('ssa_almafacts')->andReturn('lightweight');
+        $syncService->shouldReceive('syncAfterDeleteLightweight')->once()->with('ssa_almafacts', '2026-05-31', \Mockery::type('string'))->andReturnNull();
+        app()->instance(ReportDataSyncService::class, $syncService);
+
         $controller = app(ImportIndexController::class);
-        $method = new \ReflectionMethod($controller, 'shouldUseManagedDeleteFullTableShortcut');
-        $method->setAccessible(true);
-
-        foreach (['lw321_npd', 'lw321_npdd'] as $tableName) {
-            $this->assertTrue($method->invoke($controller, [
-                'table_name' => $tableName,
-                'candidate_rows' => 25,
-                'table_total_rows' => 25,
-                'hard_force' => true,
-            ]));
-
-            $this->assertFalse($method->invoke($controller, [
-                'table_name' => $tableName,
-                'candidate_rows' => 25,
-                'table_total_rows' => 25,
-                'hard_force' => false,
-            ]));
-        }
-    }
-
-    public function test_lw321_micro_exact_branch_scope_can_use_direct_delete_without_limit(): void
-    {
-        $controller = app(ImportIndexController::class);
-        $method = new \ReflectionMethod($controller, 'shouldUseDirectDeleteWithoutLimit');
-        $method->setAccessible(true);
-
-        foreach (['lw321_npd', 'lw321_npdd'] as $tableName) {
-            $this->assertTrue($method->invoke(
-                $controller,
-                $tableName,
-                'periode',
-                'kanca',
+        $request = Request::create('/import/report-management/delete', 'POST', [
+            'id_report' => 39,
+            'scopes' => [
                 [
-                    ['column' => 'periode', 'mode' => 'equal', 'value' => '2026-05-12'],
-                    ['column' => 'kanca', 'mode' => 'equal', 'value' => 'KC Madiun'],
+                    'period_filter' => '2026-05-31',
+                    'kanca_filter' => 'KC Madiun',
+                    'period_is_null' => false,
+                    'kanca_is_null' => false,
                 ],
-                50000
-            ));
+            ],
+            'force' => true,
+            'hard_force' => true,
+        ]);
 
-            $this->assertFalse($method->invoke(
-                $controller,
-                $tableName,
-                'periode',
-                'kanca',
-                [
-                    ['column' => 'periode', 'mode' => 'equal', 'value' => '2026-05-12'],
-                ],
-                50000
-            ));
-        }
+        $response = $controller->deleteManagedReportRows($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->status());
+        $this->assertSame('completed', $payload['status']);
+        $this->assertSame(2, $payload['deleted_rows']);
+        $this->assertSame(2, DB::table('ssa_almafacts')->count());
+        $this->assertSame(0, DB::table('ssa_almafacts')
+            ->where('month_day_year_of_posisi', '2026-05-31')
+            ->where('kanca_konsolidasi', 'KC Madiun')
+            ->count());
+        $this->assertSame(1, DB::table('ssa_almafacts')->where('uniqueid_namareport', 'ALMA-KEEP-BRANCH')->count());
+        $this->assertSame(1, DB::table('ssa_almafacts')->where('uniqueid_namareport', 'ALMA-KEEP-PERIOD')->count());
+        Queue::assertNothingPushed();
     }
 
     public function test_lw325_report_management_groups_blank_period_and_blank_kanca_by_created_at(): void

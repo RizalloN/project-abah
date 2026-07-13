@@ -125,6 +125,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             'giro_mikro' => 180.0,
             'tabungan_mikro' => 120.0,
             'giro_wholesale' => 40.0,
+            'tabungan_wholesale' => 15.0,
             'deposito_wholesale' => 10.0,
             'kecil_non_cashcoll_npl' => 11.0,
             'cashcoll_npl' => 4.0,
@@ -133,6 +134,10 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             'kpr_npl' => 3.0,
             'kkb_npl' => 2.0,
             'micro_npl' => 20.0,
+            'rec_dh_total' => 100.0,
+            'rec_dh_small' => 40.0,
+            'rec_dh_consumer' => 20.0,
+            'rec_dh_micro' => 40.0,
         ]);
 
         $this->assertSame(12345.0, $result['total_os']);
@@ -146,11 +151,46 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(2000.0, $result['total_simpanan']);
         $this->assertSame(500.0, $result['casa_ritel']);
         $this->assertSame(300.0, $result['casa_mikro']);
-        $this->assertSame(800.0, $result['total_casa']);
-        $this->assertSame(40.0, $result['casa_pct']);
+        $this->assertSame(800.0, $result['casa_non_wholesale']);
+        $this->assertSame(55.0, $result['casa_wholesale']);
+        $this->assertSame(855.0, $result['total_casa']);
+        $this->assertSame(42.75, $result['casa_pct']);
         $this->assertSame(9.5, $result['ldr_non_commercial']);
         $this->assertSame(34.0, $result['ldr_ritel_non_commercial']);
         $this->assertEqualsWithDelta(6.6666666667, $result['ldr_mikro_non_commercial'], 0.0001);
+        $this->assertSame(100.0, $result['rec_dh_total']);
+        $this->assertSame(60.0, $result['rec_dh_small']);
+        $this->assertSame(40.0, $result['rec_dh_micro']);
+    }
+
+    public function test_recovery_dh_ritel_display_includes_consumer_without_double_counting_snapshot_rows(): void
+    {
+        $service = new DashboardHarianSnapshotService();
+        $reflection = new \ReflectionMethod($service, 'finalizeMetrics');
+        $reflection->setAccessible(true);
+
+        $rawResult = $reflection->invoke($service, [
+            'rec_dh_small' => 40.0,
+            'rec_dh_consumer' => 20.0,
+            'rec_dh_micro' => 40.0,
+        ]);
+
+        $this->assertSame(100.0, $rawResult['rec_dh_total']);
+        $this->assertSame(60.0, $rawResult['rec_dh_small']);
+        $this->assertSame(20.0, $rawResult['rec_dh_consumer']);
+        $this->assertSame(40.0, $rawResult['rec_dh_micro']);
+
+        $reloadedSnapshotResult = $reflection->invoke($service, [
+            'rec_dh_total' => 100.0,
+            'rec_dh_small' => 60.0,
+            'rec_dh_consumer' => 20.0,
+            'rec_dh_micro' => 40.0,
+        ]);
+
+        $this->assertSame(100.0, $reloadedSnapshotResult['rec_dh_total']);
+        $this->assertSame(60.0, $reloadedSnapshotResult['rec_dh_small']);
+        $this->assertSame(20.0, $reloadedSnapshotResult['rec_dh_consumer']);
+        $this->assertSame(40.0, $reloadedSnapshotResult['rec_dh_micro']);
     }
 
     public function test_finalize_rka_metrics_adds_wholesale_to_total_simpanan_when_retail_total_excludes_it(): void
@@ -166,11 +206,15 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             'deposito_ritel' => 300.0,
             'tabungan_ritel' => 500.0,
             'giro_wholesale' => 40.0,
+            'tabungan_wholesale' => 20.0,
             'deposito_wholesale' => 10.0,
         ]);
 
-        $this->assertSame(1_050.0, $result['total_simpanan']);
-        $this->assertSame(50.0, $result['simpanan_wholesale']);
+        $this->assertSame(1_070.0, $result['total_simpanan']);
+        $this->assertSame(70.0, $result['simpanan_wholesale']);
+        $this->assertSame(700.0, $result['casa_non_wholesale']);
+        $this->assertSame(60.0, $result['casa_wholesale']);
+        $this->assertSame(760.0, $result['total_casa']);
     }
 
     public function test_unit_normalization_preserves_kc_and_kcp_detail_labels(): void
@@ -308,6 +352,112 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(5.125, $payload['area_total']['2026-05'][0]);
         $this->assertSame(7.25, $payload['series']['KC Madiun']['2026-05'][0]);
         $this->assertSame(3.0, $payload['series']['KC Ngawi']['2026-05'][0]);
+    }
+
+    public function test_recovery_timeseries_uses_gi405_daily_delta_for_ritel_and_mikro(): void
+    {
+        Schema::create('referensi_uker', function (Blueprint $table): void {
+            $table->string('kode_uker')->primary();
+            $table->string('nama_uker');
+            $table->string('nama_cabang');
+        });
+
+        Schema::create('gi405_recovery', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->index();
+            $table->string('kode_uker')->index();
+            $table->string('nama_uker')->nullable();
+            $table->decimal('pendapatan_koreksi_ppap_dr_angsuran_ph', 24, 2)->default(0);
+        });
+
+        DB::table('referensi_uker')->insert([
+            [
+                'kode_uker' => '00045',
+                'nama_uker' => '00045 -- KC Madiun',
+                'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            ],
+            [
+                'kode_uker' => '00552',
+                'nama_uker' => '00552 -- KCP Caruban',
+                'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            ],
+            [
+                'kode_uker' => '06343',
+                'nama_uker' => '06343 -- UNIT MUNENG MADIUN',
+                'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            ],
+            [
+                'kode_uker' => '00049',
+                'nama_uker' => '00049 -- KC Magetan',
+                'nama_cabang' => '00049 -- KC Magetan (Konsolidasi-MB)',
+            ],
+            [
+                'kode_uker' => '00999',
+                'nama_uker' => '00999 -- KCP BARU MADIUN',
+                'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            ],
+        ]);
+
+        $cumulative = [
+            '00045' => [-1_000_000_000, -1_200_000_000, -1_500_000_000, -1_900_000_000],
+            '00552' => [-500_000_000, -550_000_000, -650_000_000, -800_000_000],
+            '06343' => [-2_000_000_000, -2_300_000_000, -2_700_000_000, -3_200_000_000],
+            '00049' => [-4_000_000_000, -4_500_000_000, -5_000_000_000, -5_500_000_000],
+        ];
+        $rows = [];
+        foreach ($cumulative as $kodeUker => $values) {
+            foreach ($values as $offset => $value) {
+                $rows[] = [
+                    'periode' => '2026-06-' . (20 + $offset),
+                    'kode_uker' => $kodeUker,
+                    'nama_uker' => null,
+                    'pendapatan_koreksi_ppap_dr_angsuran_ph' => $value,
+                ];
+            }
+        }
+        $rows[] = [
+            'periode' => '2026-06-23',
+            'kode_uker' => '00999',
+            'nama_uker' => null,
+            'pendapatan_koreksi_ppap_dr_angsuran_ph' => -10_000_000_000,
+        ];
+        DB::table('gi405_recovery')->insert($rows);
+
+        $service = new DashboardHarianSnapshotService();
+        $ritel = $service->fetchTimeseriesTrend(
+            ['2026-06'],
+            'recovery',
+            ['KC Madiun'],
+            null,
+            'ritel'
+        );
+        $mikro = $service->fetchTimeseriesTrend(
+            ['2026-06'],
+            'recovery',
+            ['KC Madiun'],
+            null,
+            'micro'
+        );
+        $fallback = $service->fetchTimeseriesTrend(
+            ['2026-06'],
+            'recovery',
+            ['KC Madiun'],
+            null,
+            'total'
+        );
+        $dimensions = $service->fetchRecoveryDimensionOptions();
+
+        $this->assertSame('currency_million', $ritel['value_type']);
+        $this->assertNull($ritel['series']['KC Madiun']['2026-06'][19]);
+        $this->assertEqualsWithDelta(250.0, $ritel['series']['KC Madiun']['2026-06'][20], 0.000001);
+        $this->assertEqualsWithDelta(400.0, $ritel['series']['KC Madiun']['2026-06'][21], 0.000001);
+        $this->assertEqualsWithDelta(550.0, $ritel['series']['KC Madiun']['2026-06'][22], 0.000001);
+        $this->assertEqualsWithDelta(300.0, $mikro['series']['KC Madiun']['2026-06'][20], 0.000001);
+        $this->assertEqualsWithDelta(400.0, $mikro['series']['KC Madiun']['2026-06'][21], 0.000001);
+        $this->assertEqualsWithDelta(500.0, $mikro['series']['KC Madiun']['2026-06'][22], 0.000001);
+        $this->assertSame($ritel['series'], $fallback['series']);
+        $this->assertSame(['Ritel', 'Mikro'], $dimensions['segments']);
+        $this->assertSame([], $dimensions['products']);
     }
 
     public function test_source_metadata_signature_changes_when_source_values_change(): void
@@ -1357,6 +1507,81 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(51000000.0, (float) $row->rec_dh_total);
     }
 
+    public function test_recovery_aggregates_overlay_lw325_ph_when_primary_recovery_exists(): void
+    {
+        Schema::create('cognos_recovery', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->index();
+            $table->string('cabang')->nullable();
+            $table->string('unit_kerja')->nullable();
+            $table->string('segmen_bisnis_2025')->nullable();
+            $table->decimal('total_recovery', 20, 2)->nullable();
+        });
+
+        Schema::create('lw325_ph', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->nullable();
+            $table->string('acctno')->nullable();
+            $table->string('kanca')->nullable();
+            $table->string('unit')->nullable();
+            $table->string('segmen_dashboard')->nullable();
+            $table->decimal('pokok', 20, 2)->nullable();
+            $table->timestamps();
+        });
+
+        DB::table('cognos_recovery')->insert([
+            'periode' => '2026-07-11',
+            'cabang' => 'KC Madiun',
+            'unit_kerja' => 'KC Madiun',
+            'segmen_bisnis_2025' => 'SMALL',
+            'total_recovery' => 700,
+        ]);
+
+        DB::table('lw325_ph')->insert([
+            [
+                'periode' => '2026-06-30',
+                'acctno' => '0001',
+                'kanca' => 'KC Madiun',
+                'unit' => 'KC Madiun',
+                'segmen_dashboard' => 'SMALL',
+                'pokok' => 500,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'periode' => '2026-07-11',
+                'acctno' => '1',
+                'kanca' => 'KC Madiun',
+                'unit' => 'KC Madiun',
+                'segmen_dashboard' => 'SMALL',
+                'pokok' => 400,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'periode' => '2026-06-30',
+                'acctno' => '0002',
+                'kanca' => 'KC Madiun',
+                'unit' => 'KC Madiun',
+                'segmen_dashboard' => 'MICRO',
+                'pokok' => 300,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $reflection = new \ReflectionMethod($service, 'fetchRecoveryAggregates');
+        $reflection->setAccessible(true);
+
+        $row = $reflection->invoke($service, '2026-07-11')->first();
+
+        $this->assertNotNull($row);
+        $this->assertSame(100.0, (float) $row->ph_tupok);
+        $this->assertSame(300.0, (float) $row->ph_lunas);
+        $this->assertSame(700.0, (float) $row->rec_dh_total);
+    }
+
     public function test_ph_recovery_does_not_fallback_to_same_month_previous_period(): void
     {
         $this->createSourceMetadataTables();
@@ -1749,6 +1974,34 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             \Illuminate\Support\Facades\Facade::clearResolvedInstance('cache');
             Cache::swap($cacheManager);
         }
+    }
+
+    public function test_automatic_stale_candidates_include_recent_gi405_recovery_periods(): void
+    {
+        $this->createSourceMetadataTables();
+
+        Schema::dropIfExists('gi405_recovery');
+        Schema::create('gi405_recovery', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->nullable();
+            $table->decimal('pendapatan_koreksi_ppap_dr_angsuran_ph', 24, 2)->nullable();
+            $table->timestamps();
+        });
+
+        DB::table('gi405_recovery')->insert([
+            'periode' => '2026-07-03',
+            'pendapatan_koreksi_ppap_dr_angsuran_ph' => 1000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $method = new \ReflectionMethod($service, 'resolveAutomaticStaleCandidatePeriods');
+        $method->setAccessible(true);
+
+        $candidates = $method->invoke($service, ['2026-07-04', '2026-07-03', '2026-07-02']);
+
+        $this->assertContains('2026-07-03', $candidates);
     }
 
     private function createSourceMetadataTables(): void

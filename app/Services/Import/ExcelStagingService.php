@@ -115,18 +115,73 @@ class ExcelStagingService
         $configFile = storage_path('app/' . $configPrefix . uniqid() . '.json');
         file_put_contents($configFile, json_encode(['file_path' => $path], JSON_UNESCAPED_UNICODE));
 
-        $nullDevice = PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null';
         $cmd = escapeshellarg($pythonExe)
             . ' ' . escapeshellarg($scriptPath)
             . ' --config ' . escapeshellarg($configFile)
-            . ' --mode init'
-            . ' 2>' . $nullDevice;
+            . ' --mode init';
 
-        $output = @shell_exec($cmd);
-        @unlink($configFile);
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = proc_open($cmd, $descriptors, $pipes);
+        if (!is_resource($process)) {
+            @unlink($configFile);
+
+            return $this->detectExcelHeaderViaNativeXlsx($path);
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $output = '';
+        $stderr = '';
+        $startedAt = microtime(true);
+        $timeoutSeconds = max(10, (int) config('import.excel_init_timeout_seconds', 60));
+
+        try {
+            while (true) {
+                $status = proc_get_status($process);
+
+                $chunk = fread($pipes[1], 65536);
+                if ($chunk !== false && $chunk !== '') {
+                    $output .= $chunk;
+                }
+
+                $errorChunk = fread($pipes[2], 65536);
+                if ($errorChunk !== false && $errorChunk !== '') {
+                    $stderr .= $errorChunk;
+                    if (strlen($stderr) > 4096) {
+                        $stderr = substr($stderr, -4096);
+                    }
+                }
+
+                if (!$status['running']) {
+                    break;
+                }
+
+                if ((microtime(true) - $startedAt) > $timeoutSeconds) {
+                    $this->terminateProcess($process, $pipes);
+                    @unlink($configFile);
+
+                    return $this->detectExcelHeaderViaNativeXlsx($path);
+                }
+
+                usleep(50000);
+            }
+
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            proc_close($process);
+        } finally {
+            @unlink($configFile);
+        }
 
         if (!$output) {
-            return null;
+            return $this->detectExcelHeaderViaNativeXlsx($path);
         }
 
         $result = json_decode(trim($output), true);

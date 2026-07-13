@@ -10,12 +10,31 @@
 
         return number_format((float) $value, 0, ',', '.');
     };
-    $tone = static function ($value): string {
-        if ($value === null || abs((float) $value) < 0.01) {
-            return 'neutral';
+    $formatDeltaRp = static function ($value) use ($formatRp): string {
+        if ($value === null) {
+            return '-';
         }
 
-        return (float) $value >= 0 ? 'positive' : 'negative';
+        if (abs((float) $value) < 0.01) {
+            return '0';
+        }
+
+        return (float) $value > 0 ? '+' . $formatRp($value) : $formatRp($value);
+    };
+    $tone = static function ($value, bool $qualityMetric = false): string {
+        if ($value === null) {
+            return 'empty';
+        }
+
+        if (abs((float) $value) < 0.01) {
+            return 'zero';
+        }
+
+        if ($qualityMetric) {
+            return (float) $value > 0 ? 'negative' : 'positive';
+        }
+
+        return (float) $value > 0 ? 'positive' : 'negative';
     };
 @endphp
 
@@ -40,7 +59,7 @@
                 <i class="fas fa-calendar-alt"></i>
                 <select id="alma-periode" name="periode" class="alma-select">
                     @foreach($periodOptions as $period)
-                        <option value="{{ $period }}" @selected($period === $selectedPeriod)>{{ \Carbon\Carbon::parse($period)->translatedFormat('d M Y') }}</option>
+                        <option value="{{ $period }}" @selected($period === $selectedPeriod)>{{ \Carbon\Carbon::parse($period)->translatedFormat('F y') }}</option>
                     @endforeach
                 </select>
             </div>
@@ -62,7 +81,7 @@
                 <i class="fas fa-bullseye"></i>
                 <select id="alma-rka" name="rka_periode" class="alma-select">
                     @foreach($rkaPeriodOptions as $period)
-                        <option value="{{ $period }}" @selected($period === $selectedRkaPeriod)>{{ \Carbon\Carbon::parse($period)->translatedFormat('M Y') }}</option>
+                        <option value="{{ $period }}" @selected($period === $selectedRkaPeriod)>{{ \Carbon\Carbon::parse($period)->translatedFormat('F y') }}</option>
                     @endforeach
                 </select>
             </div>
@@ -102,7 +121,7 @@
         <div class="alma-table-head">
             <div>
                 <strong>{{ $selectedBranchLabel }}</strong>
-                <span>{{ $selectedPeriodLabel }} dibandingkan YoY, YTD, M-2, dan M-1.</span>
+                <span>Nominal laba setelah pajak dalam Rupiah.</span>
             </div>
             <div class="alma-chip">RKA {{ $selectedRkaLabel }} & {{ $rkaDecLabel }}</div>
         </div>
@@ -115,8 +134,8 @@
                         @if($showUnitColumn)
                             <th rowspan="2" class="sticky-col unit">Unit Kerja</th>
                         @endif
-                        <th colspan="5">Posisi Laba Rugi</th>
-                        <th colspan="4">Delta Posisi Terhadap</th>
+                        <th colspan="5">Posisi</th>
+                        <th colspan="4">Delta Posisi</th>
                         <th colspan="4">RKA</th>
                     </tr>
                     <tr>
@@ -125,14 +144,14 @@
                         <th>{{ $comparisonLabels['m2'] }}</th>
                         <th>{{ $comparisonLabels['m1'] }}</th>
                         <th>{{ $comparisonLabels['current'] }}</th>
-                        <th>YoY</th>
-                        <th>YtD</th>
-                        <th>M-2</th>
-                        <th>MtD</th>
-                        <th>RP {{ $selectedRkaLabel }}</th>
-                        <th>GAP {{ $selectedRkaLabel }}</th>
-                        <th>RP {{ $rkaDecLabel }}</th>
-                        <th>GAP {{ $rkaDecLabel }}</th>
+                        <th>{{ $comparisonLabels['yoy'] }}</th>
+                        <th>{{ $comparisonLabels['ytd'] }}</th>
+                        <th>{{ $comparisonLabels['m2'] }}</th>
+                        <th>{{ $comparisonLabels['m1'] }}</th>
+                        <th>RKA {{ $selectedRkaLabel }}</th>
+                        <th>Delta {{ $selectedRkaLabel }}</th>
+                        <th>RKA {{ $rkaDecLabel }}</th>
+                        <th>Delta {{ $rkaDecLabel }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -151,14 +170,14 @@
                             <td class="num">{{ $formatRp($row['values']['m2']) }}</td>
                             <td class="num">{{ $formatRp($row['values']['m1']) }}</td>
                             <td class="num strong">{{ $formatRp($row['values']['current']) }}</td>
-                            <td class="num {{ $tone($row['deltas']['yoy']) }}">{{ $formatRp($row['deltas']['yoy']) }}</td>
-                            <td class="num {{ $tone($row['deltas']['ytd']) }}">{{ $formatRp($row['deltas']['ytd']) }}</td>
-                            <td class="num {{ $tone($row['deltas']['m2']) }}">{{ $formatRp($row['deltas']['m2']) }}</td>
-                            <td class="num {{ $tone($row['deltas']['m1']) }}">{{ $formatRp($row['deltas']['m1']) }}</td>
+                            <td class="num delta {{ $tone($row['deltas']['yoy']) }}">{{ $formatDeltaRp($row['deltas']['yoy']) }}</td>
+                            <td class="num delta {{ $tone($row['deltas']['ytd']) }}">{{ $formatDeltaRp($row['deltas']['ytd']) }}</td>
+                            <td class="num delta {{ $tone($row['deltas']['m2']) }}">{{ $formatDeltaRp($row['deltas']['m2']) }}</td>
+                            <td class="num delta {{ $tone($row['deltas']['m1']) }}">{{ $formatDeltaRp($row['deltas']['m1']) }}</td>
                             <td class="num">{{ $formatRp($row['rka']['current']) }}</td>
-                            <td class="num {{ $tone($row['rka']['current_gap']) }}">{{ $formatRp($row['rka']['current_gap']) }}</td>
+                            <td class="num delta {{ $tone($row['rka']['current_gap']) }}">{{ $formatDeltaRp($row['rka']['current_gap']) }}</td>
                             <td class="num">{{ $formatRp($row['rka']['dec']) }}</td>
-                            <td class="num {{ $tone($row['rka']['dec_gap']) }}">{{ $formatRp($row['rka']['dec_gap']) }}</td>
+                            <td class="num delta {{ $tone($row['rka']['dec_gap']) }}">{{ $formatDeltaRp($row['rka']['dec_gap']) }}</td>
                         </tr>
                     @empty
                         <tr>
@@ -180,14 +199,14 @@
                             <td class="num">{{ $formatRp($summary['values']['m2']) }}</td>
                             <td class="num">{{ $formatRp($summary['values']['m1']) }}</td>
                             <td class="num strong">{{ $formatRp($summary['values']['current']) }}</td>
-                            <td class="num {{ $tone($summary['deltas']['yoy']) }}">{{ $formatRp($summary['deltas']['yoy']) }}</td>
-                            <td class="num {{ $tone($summary['deltas']['ytd']) }}">{{ $formatRp($summary['deltas']['ytd']) }}</td>
-                            <td class="num {{ $tone($summary['deltas']['m2']) }}">{{ $formatRp($summary['deltas']['m2']) }}</td>
-                            <td class="num {{ $tone($summary['deltas']['m1']) }}">{{ $formatRp($summary['deltas']['m1']) }}</td>
+                            <td class="num delta {{ $tone($summary['deltas']['yoy']) }}">{{ $formatDeltaRp($summary['deltas']['yoy']) }}</td>
+                            <td class="num delta {{ $tone($summary['deltas']['ytd']) }}">{{ $formatDeltaRp($summary['deltas']['ytd']) }}</td>
+                            <td class="num delta {{ $tone($summary['deltas']['m2']) }}">{{ $formatDeltaRp($summary['deltas']['m2']) }}</td>
+                            <td class="num delta {{ $tone($summary['deltas']['m1']) }}">{{ $formatDeltaRp($summary['deltas']['m1']) }}</td>
                             <td class="num">{{ $formatRp($summary['rka']['current']) }}</td>
-                            <td class="num {{ $tone($summary['rka']['current_gap']) }}">{{ $formatRp($summary['rka']['current_gap']) }}</td>
+                            <td class="num delta {{ $tone($summary['rka']['current_gap']) }}">{{ $formatDeltaRp($summary['rka']['current_gap']) }}</td>
                             <td class="num">{{ $formatRp($summary['rka']['dec']) }}</td>
-                            <td class="num {{ $tone($summary['rka']['dec_gap']) }}">{{ $formatRp($summary['rka']['dec_gap']) }}</td>
+                            <td class="num delta {{ $tone($summary['rka']['dec_gap']) }}">{{ $formatDeltaRp($summary['rka']['dec_gap']) }}</td>
                         </tr>
                     @endif
                 </tbody>
@@ -215,6 +234,14 @@
         --alma-radius: 16px;
         --alma-radius-sm: 10px;
         color: #0f172a;
+        min-width: 0;
+        overflow-x: clip;
+    }
+
+    .alma-page *,
+    .alma-page *::before,
+    .alma-page *::after {
+        box-sizing: border-box;
     }
 
     .alma-hero {
@@ -222,8 +249,8 @@
         align-items: center;
         justify-content: space-between;
         gap: 1.5rem;
-        padding: 1.75rem 2rem;
-        margin-bottom: 1.5rem;
+        padding: 1.2rem 1.35rem;
+        margin-bottom: 1rem;
         background: var(--alma-gradient-primary);
         border: none;
         border-radius: var(--alma-radius);
@@ -233,16 +260,8 @@
         overflow: hidden;
     }
 
-    .alma-hero::before {
-        content: "";
-        position: absolute;
-        width: 300px;
-        height: 300px;
-        background: radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, transparent 70%);
-        top: -100px;
-        right: -50px;
-        border-radius: 50%;
-        pointer-events: none;
+    .alma-hero > div:first-child {
+        min-width: 0;
     }
 
     .alma-eyebrow {
@@ -257,9 +276,9 @@
     .alma-hero h1 {
         margin: 0;
         color: #ffffff;
-        font-size: 1.85rem;
+        font-size: 1.55rem;
         font-weight: 800;
-        letter-spacing: -0.02em;
+        letter-spacing: 0;
     }
 
     .alma-hero p {
@@ -267,6 +286,7 @@
         color: rgba(255, 255, 255, 0.85);
         font-size: 0.92rem;
         font-weight: 500;
+        max-width: 760px;
     }
 
     .alma-hero p strong {
@@ -288,8 +308,15 @@
         font-weight: 800;
         font-size: 0.9rem;
         white-space: nowrap;
+        max-width: min(360px, 36vw);
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
         transition: all 0.25s ease;
+    }
+
+    .alma-hero-mark span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .alma-hero-mark:hover {
@@ -299,11 +326,11 @@
 
     .alma-filter {
         display: grid;
-        grid-template-columns: repeat(3, minmax(200px, 1fr)) auto;
-        gap: 1.25rem;
+        grid-template-columns: repeat(3, minmax(180px, 1fr)) auto;
+        gap: .9rem;
         align-items: end;
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
         background: #ffffff;
         border: 1px solid var(--alma-line);
         border-radius: var(--alma-radius);
@@ -323,6 +350,11 @@
         font-weight: 800;
         letter-spacing: 0.08em;
         text-transform: uppercase;
+    }
+
+    .alma-field,
+    .alma-actions {
+        min-width: 0;
     }
 
     .alma-select-wrap {
@@ -369,6 +401,7 @@
         gap: 0.75rem;
         align-items: center;
         justify-content: flex-end;
+        flex-wrap: wrap;
     }
 
     .alma-btn {
@@ -418,19 +451,20 @@
     .alma-summary {
         display: grid;
         grid-template-columns: repeat(4, minmax(160px, 1fr));
-        gap: 1.25rem;
-        margin-bottom: 1.5rem;
+        gap: .85rem;
+        margin-bottom: 1rem;
     }
 
     .alma-metric {
-        min-height: 96px;
-        padding: 1.15rem 1.25rem;
+        min-height: 82px;
+        padding: .9rem 1rem;
         background: #ffffff;
         border: 1px solid var(--alma-line);
         border-radius: var(--alma-radius);
         box-shadow: var(--alma-shadow-sm);
         transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
         position: relative;
+        min-width: 0;
     }
 
     .alma-metric:hover {
@@ -455,6 +489,7 @@
         font-size: 1.3rem;
         font-weight: 800;
         line-height: 1.2;
+        overflow-wrap: anywhere;
     }
 
     .alma-metric.positive {
@@ -471,6 +506,13 @@
         color: #b91c1c;
     }
 
+    .alma-metric.zero {
+        border-left: 4px solid #eab308;
+    }
+    .alma-metric.zero strong {
+        color: #92400e;
+    }
+
     .alma-table-panel {
         background: #ffffff;
         border: 1px solid var(--alma-line);
@@ -485,7 +527,7 @@
         justify-content: space-between;
         gap: 1rem;
         align-items: center;
-        padding: 1.25rem 1.5rem;
+        padding: .9rem 1rem;
         border-bottom: 1px solid var(--alma-line);
         background: #fafbfe;
     }
@@ -497,6 +539,7 @@
     }
 
     .alma-table-head span {
+        display: block;
         margin-top: 0.25rem;
         color: var(--alma-muted);
         font-size: 0.85rem;
@@ -504,7 +547,7 @@
     }
 
     .alma-chip {
-        padding: 0.5rem 0.85rem;
+        padding: .45rem .75rem;
         border: 1px solid rgba(8, 87, 195, 0.12);
         border-radius: var(--alma-radius-sm);
         background: var(--alma-blue-light);
@@ -524,11 +567,16 @@
     .alma-table-wrap {
         border-radius: var(--alma-radius-sm) !important;
         border: 1px solid var(--alma-line) !important;
+        height: auto !important;
+        max-height: var(--alma-table-max-height, calc(100dvh - 300px)) !important;
+        overflow: auto !important;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x pan-y;
     }
 
     .alma-table {
         width: 100%;
-        min-width: 1500px;
+        min-width: 1360px;
         border-collapse: separate !important;
         border-spacing: 0 !important;
         margin: 0;
@@ -539,8 +587,8 @@
     .alma-table td {
         border-right: 1px solid #e2e8f0 !important;
         border-bottom: 1px solid #e2e8f0 !important;
-        padding: 0.7rem 0.8rem !important;
-        font-size: 0.8rem;
+        padding: .52rem .62rem !important;
+        font-size: .76rem;
         vertical-align: middle;
         white-space: nowrap;
     }
@@ -549,7 +597,7 @@
         background-color: var(--alma-blue) !important;
         color: #ffffff !important;
         font-weight: 800;
-        font-size: 0.78rem;
+        font-size: .72rem;
         letter-spacing: 0.03em;
         text-transform: uppercase;
         text-align: center;
@@ -561,7 +609,7 @@
         background-color: #f0f6fc !important;
         color: var(--alma-ink) !important;
         font-weight: 750;
-        font-size: 0.72rem;
+        font-size: .68rem;
         text-transform: uppercase;
         text-align: center;
         border-right: 1px solid #cbddeb !important;
@@ -578,7 +626,7 @@
     }
 
     .alma-table tbody td {
-        font-size: 0.82rem;
+        font-size: .76rem;
         color: var(--alma-ink);
         background: #ffffff;
     }
@@ -647,6 +695,7 @@
         left: 204px !important;
         width: 250px;
         min-width: 250px;
+        max-width: 280px;
     }
 
     .alma-unit-name {
@@ -661,23 +710,40 @@
         font-weight: 700;
     }
 
-    /* Excel-style conditional formatting colors */
+    .alma-table td.delta {
+        font-weight: 850;
+    }
+
     .alma-table td.positive {
-        background-color: #f0fdf4 !important;
+        background-color: #dcfce7 !important;
         color: #166534 !important;
     }
 
     .alma-table td.negative {
-        background-color: #fef2f2 !important;
+        background-color: #fee2e2 !important;
         color: #991b1b !important;
     }
 
+    .alma-table td.zero {
+        background-color: #fef9c3 !important;
+        color: #92400e !important;
+    }
+
+    .alma-table td.empty {
+        background-color: #f8fafc !important;
+        color: #94a3b8 !important;
+    }
+
     .alma-table tbody tr:hover td.positive {
-        background-color: #dcfce7 !important;
+        background-color: #bbf7d0 !important;
     }
 
     .alma-table tbody tr:hover td.negative {
-        background-color: #fee2e2 !important;
+        background-color: #fecaca !important;
+    }
+
+    .alma-table tbody tr:hover td.zero {
+        background-color: #fef08a !important;
     }
 
     /* Grand Total Row styling (Excel-Modern style with soft yellow fill) */
@@ -705,6 +771,11 @@
         color: #991b1b !important; /* red text */
     }
 
+    .alma-table-total td.zero {
+        background-color: #fef9c3 !important;
+        color: #92400e !important;
+    }
+
     .alma-table tbody tr.alma-table-total:hover td {
         background-color: #fef08a !important; /* slightly darker yellow on hover */
     }
@@ -721,6 +792,11 @@
     .alma-table tbody tr.alma-table-total:hover td.negative {
         background-color: #fef08a !important;
         color: #991b1b !important;
+    }
+
+    .alma-table tbody tr.alma-table-total:hover td.zero {
+        background-color: #fef08a !important;
+        color: #92400e !important;
     }
 
     .alma-empty {
@@ -742,11 +818,31 @@
 
         .alma-filter {
             grid-template-columns: 1fr;
-            padding: 1.25rem;
+            padding: 0.9rem;
         }
 
         .alma-summary {
             grid-template-columns: 1fr;
+        }
+
+        .alma-hero {
+            padding: 0.95rem 1rem;
+            border-radius: 12px;
+        }
+
+        .alma-hero h1 {
+            font-size: 1.28rem;
+            line-height: 1.15;
+        }
+
+        .alma-hero p {
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+
+        .alma-hero-mark {
+            max-width: 100%;
+            justify-content: center;
         }
 
         .alma-actions {
@@ -756,6 +852,167 @@
 
         .alma-actions .alma-btn {
             flex: 1;
+        }
+
+        .alma-table-head {
+            padding: 0.75rem;
+        }
+
+        .alma-table th,
+        .alma-table td {
+            padding: 0.45rem 0.52rem !important;
+            font-size: 0.72rem;
+        }
+
+        .alma-table-wrap {
+            max-height: var(--alma-table-max-height, calc(100dvh - 260px)) !important;
+        }
+    }
+
+    @media (min-width: 768px) and (max-width: 1180px) {
+        .alma-filter {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .alma-actions {
+            justify-content: flex-end;
+        }
+
+        .alma-summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .alma-table {
+            min-width: 1260px;
+        }
+
+        .alma-table .branch {
+            width: 136px;
+            min-width: 136px;
+        }
+
+        .alma-table .unit {
+            left: 190px !important;
+            width: 220px;
+            min-width: 220px;
+        }
+    }
+
+    @media (max-width: 767.98px) {
+        .alma-hero,
+        .alma-filter,
+        .alma-table-panel,
+        .alma-metric {
+            border-radius: 12px;
+        }
+
+        .alma-summary {
+            gap: 0.65rem;
+        }
+
+        .alma-metric {
+            min-height: 72px;
+            padding: 0.75rem 0.85rem;
+        }
+
+        .alma-metric span {
+            font-size: 0.68rem;
+        }
+
+        .alma-metric strong {
+            font-size: 1.05rem;
+        }
+
+        .alma-chip {
+            width: 100%;
+            text-align: center;
+            white-space: normal;
+        }
+
+        .alma-btn {
+            min-height: 40px;
+            padding-inline: 0.85rem;
+        }
+
+        .alma-table .sticky-col {
+            position: static !important;
+            left: auto !important;
+            width: auto;
+            min-width: auto;
+            max-width: none;
+            box-shadow: none;
+        }
+
+        .alma-table {
+            min-width: 1120px;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .alma-hero {
+            padding: 0.8rem;
+        }
+
+        .alma-hero h1 {
+            font-size: 1.12rem;
+        }
+
+        .alma-hero p {
+            font-size: 0.76rem;
+        }
+
+        .alma-filter {
+            gap: 0.6rem;
+            padding: 0.65rem;
+        }
+
+        .alma-select-wrap,
+        .alma-btn {
+            min-height: 38px;
+        }
+
+        .alma-select-wrap i {
+            width: 36px;
+            flex-basis: 36px;
+        }
+
+        .alma-select {
+            min-height: 36px;
+            font-size: 0.8rem;
+        }
+
+        .alma-actions {
+            gap: 0.5rem;
+        }
+
+        .alma-actions .alma-btn {
+            flex-basis: 100%;
+        }
+
+        .alma-table-head strong {
+            font-size: 0.98rem;
+        }
+
+        .alma-table-head span {
+            font-size: 0.76rem;
+        }
+
+        .alma-table {
+            min-width: 980px;
+        }
+
+        .alma-table th,
+        .alma-table td {
+            padding: 0.36rem 0.42rem !important;
+            font-size: 0.68rem;
+        }
+
+        .alma-table thead tr:first-child th {
+            font-size: 0.66rem;
+        }
+
+        .alma-table thead tr:nth-child(2) th {
+            font-size: 0.64rem;
         }
     }
 </style>
@@ -770,6 +1027,45 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const form = document.getElementById('alma-filter-form');
+    const tableWrap = document.querySelector('.alma-table-wrap');
+    let resizeFrame = null;
+
+    function syncTableHeight() {
+        resizeFrame = null;
+
+        if (!tableWrap) {
+            return;
+        }
+
+        const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        const rect = tableWrap.getBoundingClientRect();
+        const bottomGap = window.matchMedia('(max-width: 767.98px)').matches ? 18 : 24;
+        const minHeight = window.matchMedia('(max-width: 767.98px)').matches ? 260 : 320;
+        const availableHeight = Math.floor(viewportHeight - rect.top - bottomGap);
+        const maxHeight = Math.max(minHeight, availableHeight);
+
+        tableWrap.style.setProperty('--alma-table-max-height', maxHeight + 'px');
+        tableWrap.style.maxHeight = maxHeight + 'px';
+        tableWrap.style.overflowY = 'auto';
+        tableWrap.style.overflowX = 'auto';
+    }
+
+    function scheduleTableHeight() {
+        if (resizeFrame !== null) {
+            return;
+        }
+
+        resizeFrame = window.requestAnimationFrame(syncTableHeight);
+    }
+
+    scheduleTableHeight();
+    window.addEventListener('resize', scheduleTableHeight);
+    window.addEventListener('orientationchange', scheduleTableHeight);
+    window.addEventListener('load', scheduleTableHeight);
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', scheduleTableHeight);
+    }
+
     if (!form) {
         return;
     }

@@ -1023,122 +1023,541 @@
 
 @section('styles')
 <style>
-    .report-management-hero { position:relative; overflow:hidden; border-radius:24px; padding:1.75rem 2rem; background:linear-gradient(135deg, #ffffff 0%, #f8fbff 100%); border:1px solid rgba(15, 76, 186, 0.12); box-shadow:0 20px 40px -24px rgba(15, 76, 186, 0.22); }
-    .report-management-hero__glow { display:none; }
-    .report-management-hero__eyebrow { display:inline-block; margin-bottom:0.75rem; padding:0.35rem 0.85rem; border-radius:999px; font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#0f4cba; background:rgba(15, 76, 186, 0.08); border:1px solid rgba(15, 76, 186, 0.12); box-shadow: 0 2px 4px rgba(15, 76, 186, 0.03); }
-    .report-management-hero__title { color:#0f172a; font-size:1.5rem; font-weight:800; letter-spacing:0; margin-bottom:0.5rem; }
-    .report-management-hero__text { color:#475569; font-size: 0.95rem; line-height:1.6; max-width:650px; }
-    .report-management-hero__badge { display:inline-flex; align-items:center; padding:0.6rem 1.25rem; border-radius:14px; background:#ffffff; border:1px solid rgba(226,232,240,0.9); color:#334155; font-size: 0.9rem; font-weight:600; box-shadow:0 12px 24px -18px rgba(15, 23, 42, 0.28); }
+    /* Mature, Simple, Formal Corporate Design */
+    .report-management-hero {
+        position: relative;
+        overflow: hidden;
+        border-radius: 12px;
+        padding: 1.25rem 1.75rem;
+        background: #0f1e36;
+        color: #ffffff;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+    }
+    .report-management-hero__glow { display: none; }
+    .report-management-hero__eyebrow {
+        display: inline-block;
+        margin-bottom: 0.5rem;
+        padding: 0.35rem 0.85rem;
+        border-radius: 8px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #cbd5e1;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    .report-management-hero__title {
+        color: #ffffff;
+        font-size: 1.5rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        margin-bottom: 0.25rem;
+    }
+    .report-management-hero__text {
+        color: #cbd5e1;
+        font-size: 0.88rem;
+        max-width: 650px;
+    }
+    .report-management-hero__badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: #e2e8f0;
+        font-size: 0.8rem;
+        font-weight: 700;
+        box-shadow: none;
+    }
 
-    .import-upload-card { border-radius:16px; overflow:hidden; box-shadow:0 10px 25px -5px rgba(15,23,42,0.08) !important; border: 1px solid rgba(226,232,240, 0.8) !important; }
-    .import-upload-card.report-management-card { border-radius:24px !important; box-shadow:0 20px 40px -20px rgba(15, 76, 186, 0.08), 0 1px 3px rgba(15, 76, 186, 0.02) !important; border: 1px solid rgba(15, 76, 186, 0.12) !important; }
-    .import-upload-card__header { padding:1.5rem 1.75rem 1rem; border-bottom: 1px solid rgba(226,232,240,0.5); background:#ffffff; }
-    .import-upload-card__eyebrow { display:inline-block; margin-bottom:0.5rem; padding:0.35rem 0.85rem; border-radius:999px; font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#2563eb; background:rgba(37,99,235,0.08); }
-    .import-upload-card__subtitle { color:#64748b; max-width:700px; line-height:1.6; font-size: 0.9rem; }
-    .import-upload-card__body { position:relative; padding:1.75rem 1.75rem 7rem; }
-
-    .report-management-top-shell { padding:1.25rem; border-radius:16px; background:#f8fafc; border:1px solid rgba(226,232,240,0.8); }
-    .report-management-top-grid { align-items:stretch; }
-    .report-management-field-panel { display:flex; flex-direction:column; justify-content:center; padding:1.5rem; border-radius:12px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); box-shadow:0 4px 6px -1px rgba(0,0,0,0.02); }
-    .report-management-field-panel__eyebrow { display:inline-flex; align-items:center; align-self:flex-start; margin-bottom:0.75rem; padding:0.35rem 0.85rem; border-radius:999px; background:rgba(15,23,42,0.04); color:#475569; font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; }
-    .report-management-field-panel__label { margin-bottom:0.75rem; color:#0f172a; font-size:0.95rem; font-weight:600; }
-
-    .report-management-rebuild-panel, .report-management-recover-panel { display:flex; flex-direction:column; justify-content:space-between; padding:1.5rem; border-radius:12px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); box-shadow:0 4px 6px -1px rgba(0,0,0,0.02); }
-    .report-management-progress__meta { display:block; color:#94a3b8; font-size: 0.85rem; font-weight:500; min-height:1.2rem; }
-
-    .report-management-control-grid .form-control { min-height:42px; border-radius:14px !important; border:1px solid rgba(15, 76, 186, 0.14) !important; box-shadow:none; }
-    .report-management-control-grid .form-control:focus { border-color:#0f4cba !important; box-shadow:0 0 0 4px rgba(15, 76, 186, 0.1) !important; }
-    .report-management-control-grid .btn { min-width:48px; min-height:42px; border-radius:14px !important; display:inline-flex; align-items:center; justify-content:center; }
-    .report-management-summary-bar { background:#ffffff; border-radius:18px; border:1px solid rgba(148, 163, 184, 0.14); box-shadow:0 8px 20px -18px rgba(15, 23, 42, 0.24); }
-    .report-management-action-buttons { gap:8px; }
-    .report-management-primary-btn { border:0; border-radius:16px !important; font-weight:700; padding:0.6rem 1.35rem; background:linear-gradient(135deg, #0f4cba, #2563eb); box-shadow:0 14px 28px -12px rgba(15, 76, 186, 0.42); }
-    .report-management-primary-btn:hover { background:linear-gradient(135deg, #0d43a5, #1d5ec2); transform:translateY(-1px); box-shadow:0 18px 34px -14px rgba(15, 76, 186, 0.5); }
-    .report-management-outline-btn { border-radius:16px !important; font-weight:700; padding:0.6rem 1.25rem; }
-    .report-management-notice { padding:1.25rem 1.5rem; border-radius:14px; background:#f0f9ff; border:1px solid #bae6fd; color:#0369a1; font-size:0.9rem; font-weight:600; line-height:1.5; box-shadow:0 8px 20px -18px rgba(15, 23, 42, 0.24); }
-
-    .report-management-load-card { padding:1.5rem; border-radius:18px; background:#ffffff; border:1px solid rgba(148, 163, 184, 0.16); box-shadow:0 12px 26px -22px rgba(15,23,42,0.25); overflow:hidden; position:relative; }
-    .report-management-load-card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:#0f4cba; }
-    .report-management-load-card__header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.25rem; }
-    .report-management-load-card__eyebrow { font-size:0.7rem; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; color:#64748b; margin-bottom:0.25rem; }
-    .report-management-load-card__title { font-size:1.1rem; font-weight:700; color:#0f172a; line-height:1.2; }
-    .report-management-load-card__stage { padding:0.35rem 0.85rem; border-radius:999px; background:#eff6ff; color:#0f4cba; font-size:0.75rem; font-weight:700; letter-spacing:0.02em; border:1px solid #bfdbfe; }
+    .import-upload-card.report-management-card {
+        border-radius: 12px !important;
+        box-shadow: 0 4px 20px rgba(15, 48, 86, 0.04) !important;
+        border: 1px solid #cbd5e1 !important;
+        background: #ffffff;
+    }
     
-    .report-management-progress { height:10px; background:#f1f5f9; border-radius:999px; overflow:hidden; margin:1.25rem 0 0.75rem; }
-    .report-management-progress__bar { background:linear-gradient(90deg, #0f4cba 0%, #2563eb 58%, #10b981 100%); transition:width 0.4s cubic-bezier(0.4, 0, 0.2, 1); border-radius:999px; }
-    .report-management-progress__bar--indeterminate { background: linear-gradient(90deg, #0f4cba 25%, #60a5fa 50%, #10b981 75%); background-size: 200% 100%; animation: reportManagementProgressShift 1.5s infinite linear; }
+    .report-management-control-grid .form-control {
+        min-height: 40px;
+        border-radius: 8px !important;
+        border: 1px solid #cbd5e1 !important;
+        background: #ffffff;
+        color: #0f172a;
+        font-size: 0.88rem;
+        font-weight: 600;
+        box-shadow: none;
+    }
+    .report-management-control-grid .form-control:focus {
+        border-color: #64748b !important;
+        box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.12) !important;
+    }
+    .report-management-control-grid label {
+        color: #475569 !important;
+        font-size: 0.72rem !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.05em !important;
+        text-transform: uppercase !important;
+    }
+    .report-management-control-grid .btn {
+        min-width: 44px;
+        min-height: 40px;
+        border-radius: 8px !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        color: #475569;
+        transition: all 0.15s ease;
+    }
+    .report-management-control-grid .btn:hover:not(:disabled) {
+        background: #f8fafc;
+        color: #0f172a;
+        border-color: #94a3b8;
+    }
+    .report-management-control-grid .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
 
-    .report-management-load-card__meta-row { display:flex; justify-content:space-between; align-items:center; }
-    .report-management-progress__value { font-size:1.25rem; font-weight:800; color:#0f172a; }
-    .report-management-load-card__units { font-size:0.85rem; font-weight:600; color:#64748b; }
-    .report-management-progress__text { color:#475569; font-size:0.9rem; font-weight:500; }
+    /* Switches */
+    .custom-switch .custom-control-label::before {
+        height: 1.25rem;
+        width: 2.25rem;
+        border-radius: 2rem;
+        border-color: #cbd5e1;
+        background-color: #e2e8f0;
+    }
+    .custom-switch .custom-control-label::after {
+        width: calc(1.25rem - 4px);
+        height: calc(1.25rem - 4px);
+        border-radius: 2rem;
+        background-color: #ffffff;
+    }
+    .custom-control-input:checked ~ .custom-control-label::before {
+        border-color: #0f172a;
+        background-color: #0f172a;
+    }
 
-    .report-management-bulkbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; padding:1rem 1.25rem; border-radius:16px; background:#ffffff; border:1px solid rgba(148, 163, 184, 0.14); box-shadow:0 8px 20px -18px rgba(15,23,42,0.18); }
-    .report-management-bulkbar .form-check-label { font-weight:600; color:#1e293b; cursor: pointer; }
-    .report-management-bulkbar__hint { font-size:0.85rem; font-weight:500; color:#64748b; }
+    /* Summary Bar */
+    .report-management-summary-bar {
+        background: #f8fafc;
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        box-shadow: none;
+        padding: 1rem 1.25rem !important;
+    }
+    .report-management-action-buttons {
+        gap: 8px;
+    }
+    .report-management-primary-btn {
+        border: 0;
+        border-radius: 8px !important;
+        font-weight: 600;
+        padding: 0.5rem 1.25rem;
+        background: #0f172a;
+        color: #ffffff;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+        transition: all 0.15s ease;
+    }
+    .report-management-primary-btn:hover:not(:disabled) {
+        background: #1e293b;
+        color: #ffffff;
+    }
+    .report-management-outline-btn {
+        border-radius: 8px !important;
+        font-weight: 600;
+        padding: 0.5rem 1.25rem;
+        border: 1px solid #ef4444;
+        color: #ef4444;
+        background: #ffffff;
+        transition: all 0.15s ease;
+    }
+    .report-management-outline-btn:hover:not(:disabled) {
+        background: #fef2f2;
+        color: #b91c1t;
+        border-color: #b91c1c;
+    }
+    .report-management-outline-btn:disabled {
+        opacity: 0.5;
+        border-color: #fca5a5;
+        color: #fca5a5;
+        background: #ffffff;
+    }
 
-    .report-management-table-wrap { border:1px solid rgba(148, 163, 184, 0.18); border-radius:16px; overflow:hidden; background:#fff; box-shadow:0 8px 18px -18px rgba(15,23,42,0.22); }
-    .report-management-table thead th { background:#f8fafc; border-bottom:1px solid rgba(226,232,240,0.8); color:#475569; font-size:0.8rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; padding:1rem 1.25rem; }
-    .report-management-table tbody td { padding:1rem 1.25rem; border-top:1px solid rgba(226,232,240,0.5); vertical-align:middle; color:#334155; font-size: 0.95rem; }
-    .report-management-col-check { width:60px; }
-    .report-management-primary { color:#0f172a; font-weight:600; }
-    .report-management-count { display:inline-flex; align-items:center; justify-content:center; min-width:60px; padding:0.35rem 0.75rem; border-radius:999px; background:#eff6ff; color:#0f4cba; font-size: 0.85rem; font-weight:700; border: 1px solid #bfdbfe; }
+    .report-management-notice {
+        padding: 1rem 1.25rem;
+        border-radius: 8px;
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        color: #0369a1;
+        font-size: 0.88rem;
+        font-weight: 600;
+        line-height: 1.5;
+        box-shadow: none;
+    }
 
-    .report-management-period-row td { padding:0.75rem 1.25rem !important; background:#f8fafc !important; border-top:1px solid rgba(226,232,240,0.8) !important; border-bottom:1px solid rgba(226,232,240,0.8) !important; }
-    .report-management-period-card { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
-    .report-management-period-card__title { font-size:0.95rem; font-weight:700; color:#1e293b; }
-    .report-management-period-card__meta { font-size:0.85rem; font-weight:600; color:#64748b; }
-    .report-management-period-card__toggle { display:inline-flex; align-items:center; gap:0.5rem; margin:0; padding:0.4rem 0.85rem; border-radius:999px; background:#ffffff; border: 1px solid rgba(226,232,240,0.8); color:#475569; font-size: 0.85rem; font-weight:600; cursor:pointer; transition: all 0.2s; }
-    .report-management-period-card__toggle:hover { background: #f1f5f9; color: #0f172a; }
+    /* Progress Cards */
+    .report-management-load-card {
+        padding: 1.25rem 1.5rem;
+        border-radius: 10px;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+        overflow: hidden;
+        position: relative;
+    }
+    .report-management-load-card::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: #0f3976;
+    }
+    .report-management-load-card__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 1rem;
+    }
+    .report-management-load-card__eyebrow {
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #64748b;
+        margin-bottom: 0.25rem;
+    }
+    .report-management-load-card__title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1.2;
+    }
+    .report-management-load-card__stage {
+        padding: 0.25rem 0.75rem;
+        border-radius: 6px;
+        background: #f1f5f9;
+        color: #334155;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        border: 1px solid #cbd5e1;
+    }
+    
+    .report-management-progress {
+        height: 8px;
+        background: #f1f5f9;
+        border-radius: 999px;
+        overflow: hidden;
+        margin: 1rem 0 0.75rem;
+    }
+    .report-management-progress__bar {
+        background: #0f3976;
+        transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        border-radius: 999px;
+    }
+    .report-management-progress__bar--indeterminate {
+        background: linear-gradient(90deg, #0f3976 25%, #3b82f6 50%, #0f3976 75%);
+        background-size: 200% 100%;
+        animation: reportManagementProgressShift 1.5s infinite linear;
+    }
 
-    .management-data-row { cursor:pointer; transition:background-color 0.15s ease; }
-    .management-data-row.is-selected { background-color: #eff6ff; }
-    .management-data-row:hover { background-color: #f8fafc; }
+    .report-management-load-card__meta-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .report-management-progress__value {
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #0f172a;
+    }
+    .report-management-load-card__units {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #64748b;
+    }
+    .report-management-progress__text {
+        color: #475569;
+        font-size: 0.88rem;
+        font-weight: 500;
+    }
 
-    .report-management-pagination { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-top:1.5rem; padding: 0 0.5rem; }
-    .report-management-pagination__meta { font-size:0.9rem; font-weight:500; color:#64748b; }
-    .report-management-pagination__actions { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
-    .report-management-page-btn { display:inline-flex; align-items:center; justify-content:center; min-width:36px; height:36px; padding:0 0.75rem; border:1px solid rgba(226,232,240,0.8); border-radius:8px; background:#ffffff; color:#475569; font-weight:600; font-size: 0.9rem; transition: all 0.2s; }
-    .report-management-page-btn:hover:not(:disabled) { background: #f8fafc; border-color: #cbd5e1; }
-    .report-management-page-btn.is-active { background:#0f4cba; border-color:#0f4cba; color:#ffffff; }
-    .report-management-page-btn:disabled { opacity:0.5; cursor:not-allowed; }
+    /* Bulk Bar */
+    .report-management-bulkbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        padding: 0.85rem 1.25rem;
+        border-radius: 10px;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        box-shadow: none;
+    }
+    .report-management-bulkbar .form-check-label {
+        font-weight: 600;
+        color: #1e293b;
+        cursor: pointer;
+    }
+    .report-management-bulkbar__hint {
+        font-size: 0.82rem;
+        font-weight: 500;
+        color: #64748b;
+    }
 
-    .report-management-selection-toast-shell { position:fixed; right:2rem; bottom:2rem; z-index:1080; display:flex; justify-content:flex-end; align-items:flex-end; width:min(400px,calc(100vw - 4rem)); max-width:calc(100vw - 4rem); pointer-events:none; }
-    .report-management-selection-toast { position:relative; display:flex; align-items:center; justify-content:space-between; gap:1rem; width:100%; padding:1.25rem; border-radius:16px; background:#1e293b; color:#ffffff; box-shadow:0 10px 25px -5px rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); pointer-events:auto; }
-    .report-management-selection-toast__body { min-width:0; }
-    .report-management-selection-toast__eyebrow { font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#94a3b8; margin-bottom: 0.25rem; }
-    .report-management-selection-toast__text { font-size:1rem; font-weight:700; line-height:1.4; color: #f8fafc; }
-    .report-management-selection-toast__subtext { font-size:0.85rem; font-weight:500; color:#cbd5e1; }
-    .report-management-selection-toast__actions { display:flex; align-items:center; gap:0.5rem; }
-    .report-management-selection-toast__btn { border-radius:10px; font-weight:600; padding:0.6rem 1rem; font-size: 0.9rem; transition: all 0.2s; }
-    .report-management-selection-toast__btn--ghost { background:transparent; border:1px solid rgba(255,255,255,0.2); color:#f8fafc; }
-    .report-management-selection-toast__btn--ghost:hover:not(:disabled) { background:rgba(255,255,255,0.1); }
-    .report-management-selection-toast__btn--danger { background:#ef4444; border:1px solid #ef4444; color:#ffffff; }
-    .report-management-selection-toast__btn--danger:hover:not(:disabled) { background:#dc2626; }
+    /* Table Wrap & Grid */
+    .report-management-table-wrap {
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fff;
+        box-shadow: none;
+    }
+    .report-management-table thead th {
+        background: #f8fafc;
+        border-bottom: 2px solid #cbd5e1;
+        color: #475569;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        padding: 0.85rem 1.25rem;
+    }
+    .report-management-table tbody td {
+        padding: 0.85rem 1.25rem;
+        border-top: 1px solid #cbd5e1;
+        vertical-align: middle;
+        color: #334155;
+        font-size: 0.9rem;
+    }
+    .report-management-col-check { width: 60px; }
+    .report-management-primary { color: #0f172a; font-weight: 600; }
+    .report-management-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 54px;
+        padding: 0.25rem 0.6rem;
+        border-radius: 6px;
+        background: #f1f5f9;
+        color: #334155;
+        font-size: 0.82rem;
+        font-weight: 700;
+        border: 1px solid #cbd5e1;
+    }
 
-    @keyframes reportManagementProgressShift { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }
+    .report-management-period-row td {
+        padding: 0.65rem 1.25rem !important;
+        background: #f8fafc !important;
+        border-top: 1px solid #cbd5e1 !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+    }
+    .report-management-period-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    .report-management-period-card__title {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #0f172a;
+    }
+    .report-management-period-card__meta {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #64748b;
+    }
+    .report-management-period-card__toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        margin: 0;
+        padding: 0.35rem 0.75rem;
+        border-radius: 6px;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        color: #475569;
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    .report-management-period-card__toggle:hover {
+        background: #f1f5f9;
+        color: #0f172a;
+        border-color: #94a3b8;
+    }
 
-    .swal-modern-popup { border-radius:16px; padding:1.5rem; box-shadow:0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1); }
-    .swal-modern-title { color:#0f172a; font-weight:700; font-size: 1.25rem; }
-    .swal-modern-html { color:#475569; font-size:0.95rem; line-height:1.6; }
-    .swal-modern-confirm, .swal-modern-cancel { border-radius:10px; font-weight:600; padding:0.75rem 1.5rem; font-size: 0.95rem; }
-    .swal-modern-confirm { background:#0f4cba; color:#ffffff; }
-    .swal-modern-cancel { background:#f1f5f9; color:#475569; }
+    .management-data-row {
+        cursor: pointer;
+        transition: background-color 0.1s ease;
+    }
+    .management-data-row.is-selected {
+        background-color: #f1f5f9 !important;
+    }
+    .management-data-row:hover {
+        background-color: #f8fafc;
+    }
 
-    @media (max-width:991.98px) {
+    /* Actions buttons per row */
+    .report-management-table tbody td .btn-sm {
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.82rem;
+        padding: 0.3rem 0.75rem;
+    }
+
+    .report-management-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-top: 1.25rem;
+        padding: 0 0.25rem;
+    }
+    .report-management-pagination__meta {
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: #64748b;
+    }
+    .report-management-pagination__actions {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+    }
+    .report-management-page-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 32px;
+        height: 32px;
+        padding: 0 0.6rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #475569;
+        font-weight: 600;
+        font-size: 0.85rem;
+        transition: all 0.15s ease;
+    }
+    .report-management-page-btn:hover:not(:disabled) {
+        background: #f8fafc;
+        border-color: #94a3b8;
+        color: #0f172a;
+    }
+    .report-management-page-btn.is-active {
+        background: #0f172a;
+        border-color: #0f172a;
+        color: #ffffff;
+    }
+    .report-management-page-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* Selection Toast */
+    .report-management-selection-toast-shell {
+        position: fixed;
+        right: 2rem;
+        bottom: 2rem;
+        z-index: 1080;
+        display: flex;
+        justify-content: flex-end;
+        align-items: flex-end;
+        width: min(380px, calc(100vw - 4rem));
+        pointer-events: none;
+    }
+    .report-management-selection-toast {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        width: 100%;
+        padding: 1rem 1.25rem;
+        border-radius: 10px;
+        background: #0f1e36;
+        color: #ffffff;
+        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        pointer-events: auto;
+    }
+    .report-management-selection-toast__eyebrow {
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #94a3b8;
+        margin-bottom: 0.15rem;
+    }
+    .report-management-selection-toast__text {
+        font-size: 0.95rem;
+        font-weight: 700;
+        line-height: 1.3;
+        color: #f8fafc;
+    }
+    .report-management-selection-toast__subtext {
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: #cbd5e1;
+    }
+    .report-management-selection-toast__actions {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    .report-management-selection-toast__btn {
+        border-radius: 6px;
+        font-weight: 600;
+        padding: 0.45rem 0.85rem;
+        font-size: 0.85rem;
+        transition: all 0.15s ease;
+    }
+    .report-management-selection-toast__btn--ghost {
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #f8fafc;
+    }
+    .report-management-selection-toast__btn--ghost:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.08);
+    }
+    .report-management-selection-toast__btn--danger {
+        background: #ef4444;
+        border: 1px solid #ef4444;
+        color: #ffffff;
+    }
+    .report-management-selection-toast__btn--danger:hover:not(:disabled) {
+        background: #dc2626;
+    }
+
+    @keyframes reportManagementProgressShift { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    @media (max-width: 991.98px) {
         .report-management-top-grid > div { margin-bottom: 1rem; }
         .report-management-top-grid > div:last-child { margin-bottom: 0; }
     }
 
-    @media (max-width:767.98px) {
-        .report-management-hero, .import-upload-card__header { padding-left:1.25rem; padding-right:1.25rem; }
-        .import-upload-card__body { padding:1.25rem 1.25rem 6rem; }
+    @media (max-width: 767.98px) {
+        .report-management-hero, .import-upload-card__header { padding-left: 1.25rem; padding-right: 1.25rem; }
+        .import-upload-card__body { padding: 1.25rem 1.25rem 6rem; }
         .report-management-stat { flex-direction: row; gap: 1rem; }
         .report-management-stat__icon { width: 40px; height: 40px; font-size: 1rem; }
         .report-management-summary-bar { align-items: stretch !important; }
-        .report-management-action-buttons { width: 100%; flex-direction: column; align-items: stretch !important; }
+        .report-management-action-buttons { width: 100%; flex-direction: column; align-items: stretch !important; gap: 8px; }
         .report-management-action-buttons .btn { width: 100%; min-width: 0; }
-        .report-management-selection-toast-shell { left:1rem; right:1rem; bottom:1rem; width:calc(100vw - 2rem); max-width:calc(100vw - 2rem); }
-        .report-management-selection-toast { flex-direction:column; align-items: stretch; text-align: center; }
+        .report-management-selection-toast-shell { left: 1rem; right: 1rem; bottom: 1rem; width: calc(100vw - 2rem); max-width: calc(100vw - 2rem); }
+        .report-management-selection-toast { flex-direction: column; align-items: stretch; text-align: center; }
         .report-management-selection-toast__actions { justify-content: center; margin-top: 0.5rem; }
     }
 </style>

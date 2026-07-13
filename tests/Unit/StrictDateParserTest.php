@@ -24,6 +24,9 @@ class StrictDateParserTest extends TestCase
     {
         $this->assertSame('2026-04-14', StrictDateParser::normalize('14 April 2026'));
         $this->assertSame('2026-04-14', StrictDateParser::normalize('14 Apr 2026'));
+        $this->assertSame('2026-07-13', StrictDateParser::normalize('13 Jul 26'));
+        $this->assertSame('2026-07-13', StrictDateParser::normalize('13-Jul-26'));
+        $this->assertSame('2026-07-13', StrictDateParser::normalize('13 Juli 26'));
     }
 
     public function test_locale_month_names_can_be_disabled_for_scoped_imports(): void
@@ -51,5 +54,7 @@ class StrictDateParserTest extends TestCase
 
         $this->assertStringContainsString("%e %M %Y", $expression);
         $this->assertStringContainsString("%e %b %Y", $expression);
+        $this->assertStringContainsString("%e %M %y", $expression);
+        $this->assertStringContainsString("%e %b %y", $expression);
     }
 }

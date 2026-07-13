@@ -16,12 +16,10 @@ return new class extends Migration
                 $table->string('uniqueid_namareport', 255)->primary();
                 $table->date('month_day_year_of_posisi')->nullable()->index();
                 $table->string('kanca_konsolidasi', 100)->nullable();
-                $table->string('jenis_unit_kerja', 100)->nullable();
                 $table->string('kode_unit_kerja', 50)->nullable();
                 $table->string('unit_kerja', 150)->nullable();
-                $table->string('keterangan_1', 150)->nullable();
-                $table->string('keterangan_2', 255)->nullable();
-                $table->decimal('nominal', 24, 2)->nullable();
+                $table->string('keterangan', 150)->nullable();
+                $table->decimal('saldo', 24, 2)->nullable();
                 $table->timestamps();
             });
         }

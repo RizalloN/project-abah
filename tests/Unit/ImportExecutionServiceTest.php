@@ -186,7 +186,7 @@ class ImportExecutionServiceTest extends TestCase
         Bus::assertDispatched(RunImportJob::class, function (RunImportJob $job) use ($jobId): bool {
             return $job->jobId === $jobId
                 && $job->connection === 'database'
-                && $job->queue === 'imports-high';
+                && $job->queue === 'imports-daily-loan';
         });
     }
 
@@ -309,7 +309,7 @@ class ImportExecutionServiceTest extends TestCase
         Bus::assertDispatched(RunImportJob::class, function (RunImportJob $job) use ($jobId): bool {
             return $job->jobId === $jobId
                 && $job->connection === 'database'
-                && $job->queue === 'imports-high';
+                && $job->queue === 'imports-daily-loan';
         });
     }
 

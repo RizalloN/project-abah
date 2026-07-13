@@ -13,6 +13,7 @@ class SchedulerCentralizationTest extends TestCase
 
         $this->assertStringNotContainsString('$schedule->command(', $kernel);
         $this->assertSame(1, substr_count($consoleRoutes, 'queue:ensure-running --once'));
+        $this->assertSame(1, substr_count($consoleRoutes, "if (config('services.public_access_health.enabled', false))"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('network:update-duckdns'"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('network:public-health --fix'"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('reports:ensure-fresh-snapshots'"));
@@ -41,11 +42,15 @@ class SchedulerCentralizationTest extends TestCase
             $consoleRoutes
         );
         $this->assertStringContainsString(
+            "DuckDNS update dinonaktifkan karena akses publik memakai Cloudflare Tunnel.",
+            $consoleRoutes
+        );
+        $this->assertStringContainsString(
             "Artisan::command('network:public-health",
             $consoleRoutes
         );
         $this->assertMatchesRegularExpression(
-            "/Schedule::command\\('network:public-health --fix'\\)\\s*->everyMinute\\(\\)\\s*->withoutOverlapping\\(2\\)\\s*->runInBackground\\(\\);/s",
+            "/if \\(config\\('services\\.public_access_health\\.enabled', false\\)\\) \\{\\s*Schedule::command\\('network:update-duckdns'\\).*?Schedule::command\\('network:public-health --fix'\\)\\s*->everyMinute\\(\\)\\s*->withoutOverlapping\\(2\\)\\s*->runInBackground\\(\\);\\s*\\}/s",
             $consoleRoutes
         );
         $this->assertStringContainsString(

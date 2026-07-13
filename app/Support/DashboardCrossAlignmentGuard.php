@@ -163,6 +163,10 @@ class DashboardCrossAlignmentGuard
                         continue;
                     }
 
+                    if (($row['scope_level'] ?? 'kanca') !== 'kanca') {
+                        continue;
+                    }
+
                     $branchName = self::getStandardBranch($row['branch'] ?? '');
                     if (!$branchName) {
                         continue;
@@ -316,7 +320,7 @@ class DashboardCrossAlignmentGuard
                 'Giro' => 'giro_wholesale',
                 'Tabungan' => 'tabungan_wholesale',
                 'Deposito' => 'deposito_wholesale',
-                'CASA' => 'giro_wholesale',
+                'CASA' => 'casa_wholesale',
                 'TOTAL CABANG' => 'simpanan_wholesale',
                 default => null,
             };
@@ -372,8 +376,12 @@ class DashboardCrossAlignmentGuard
         }
 
         if ($key === 'casa_all') {
-            return self::getHarianMetric($harianRows, null, 'casa_ritel', $type) +
-                   self::getHarianMetric($harianRows, null, 'casa_mikro', $type);
+            return self::getHarianMetric($harianRows, null, 'giro_ritel', $type) +
+                   self::getHarianMetric($harianRows, null, 'tabungan_ritel', $type) +
+                   self::getHarianMetric($harianRows, null, 'giro_mikro', $type) +
+                   self::getHarianMetric($harianRows, null, 'tabungan_mikro', $type) +
+                   self::getHarianMetric($harianRows, null, 'giro_wholesale', $type) +
+                   self::getHarianMetric($harianRows, null, 'tabungan_wholesale', $type);
         }
 
         $row = collect($harianRows)->firstWhere('key', $key);

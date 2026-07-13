@@ -853,6 +853,98 @@
         padding-right: 0 !important;
     }
 
+    @media (max-width: 991.98px), (max-height: 760px) {
+        .loan-dashboard {
+            padding-top: 0.75rem !important;
+        }
+
+        .loan-title-hero {
+            margin-bottom: 0.65rem;
+            padding: 0.8rem 0.75rem;
+        }
+
+        .loan-title-hero__title {
+            font-size: clamp(1.15rem, 4vw, 1.45rem);
+            line-height: 1.12;
+        }
+
+        .loan-title-hero__desc {
+            display: -webkit-box;
+            overflow: hidden;
+            margin-top: 0.25rem;
+            font-size: 0.74rem;
+            line-height: 1.35;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 1;
+        }
+
+        .loan-shell,
+        .loan-table-shell {
+            margin-bottom: 0.85rem !important;
+        }
+
+        .loan-shell .card-body,
+        .loan-table-shell .card-body {
+            padding: 0.85rem !important;
+        }
+
+        .loan-filter-grid .form-group {
+            min-height: auto;
+            padding: 0.58rem 0.68rem;
+        }
+
+        .loan-filter-label {
+            margin-bottom: 0.25rem;
+            font-size: 0.62rem;
+            letter-spacing: 0.05em;
+        }
+
+        .loan-filter-control {
+            min-height: 34px !important;
+            height: 34px !important;
+            font-size: 0.76rem;
+        }
+
+        .loan-section-header {
+            margin-top: 0.75rem;
+            gap: 0.65rem;
+        }
+
+        .loan-section-header h3 {
+            font-size: clamp(0.98rem, 3.2vw, 1.15rem);
+            line-height: 1.15;
+        }
+
+        .loan-matrix-wrap,
+        .loan-summary-table-wrap {
+            max-height: calc(100vh - 220px);
+            overflow: auto;
+        }
+    }
+
+    @media (orientation: landscape) and (max-height: 640px) {
+        .loan-title-hero__badge,
+        .loan-title-hero__desc,
+        .loan-section-header .legend-box span {
+            display: none !important;
+        }
+
+        .loan-title-hero {
+            padding-top: 0.55rem;
+            padding-bottom: 0.55rem;
+        }
+
+        .loan-shell .card-body,
+        .loan-table-shell .card-body {
+            padding: 0.65rem !important;
+        }
+
+        .loan-matrix-wrap,
+        .loan-summary-table-wrap {
+            max-height: calc(100vh - 150px);
+        }
+    }
+
     @media (max-width: 768px) {
         .loan-mismatch-summary {
             grid-template-columns: repeat(2, 1fr);

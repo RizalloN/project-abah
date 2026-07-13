@@ -257,13 +257,13 @@ class KinerjaPtpReportService
 
     private function aggregateRows(string $table, string $amountColumn, string $level, string $period): Collection
     {
-        $billingSql = "UPPER(TRIM(COALESCE(billing, '')))";
-        $ptpSql = "UPPER(TRIM(COALESCE(ptp, '')))";
-        $nowKolSql = "UPPER(TRIM(COALESCE(now_kol, '')))";
-        $accountSql = "NULLIF(TRIM(COALESCE(no_rekening, '')), '')";
-        $amountSql = "COALESCE(`{$amountColumn}`, 0)";
-        $wbaSql = 'COALESCE(wba, 0)';
-        $nowOsSql = 'COALESCE(now_os, 0)';
+        $billingSql = 'src.billing_status';
+        $ptpSql = 'src.ptp_status';
+        $nowKolSql = 'src.now_kol_status';
+        $accountSql = 'src.account_key';
+        $amountSql = 'src.amount_value';
+        $wbaSql = 'src.wba_value';
+        $nowOsSql = 'src.now_os_value';
         $billingSudah = "{$billingSql} = 'SUDAH'";
         $billingBelumToday = "{$billingSql} IN ('BELUM', 'TODAY')";
         $billingSudahToday = "{$billingSql} IN ('SUDAH', 'TODAY')";
@@ -271,16 +271,33 @@ class KinerjaPtpReportService
         $paidRekCondition = "{$billingSudah} AND ({$ptpSql} IN ('TETAP', 'MEMBAIK', 'LUNAS') OR {$nowKolSql} = 'LUNAS')";
         $unpaidCondition = "{$billingSudah} AND NOT ({$ptpSql} IN ('TETAP', 'MEMBAIK', 'LUNAS') OR {$nowKolSql} = 'LUNAS')";
 
-        $query = DB::table($table)
-            ->whereDate('periode', $period)
-            ->whereNotNull('uker')
-            ->whereRaw("TRIM(COALESCE(uker, '')) <> ''")
-            ->whereRaw("UPPER(TRIM(COALESCE(uker, ''))) NOT IN ('KC', 'KCP')")
-            ->whereRaw("UPPER(TRIM(COALESCE(uker, ''))) NOT LIKE 'KC %'")
-            ->whereRaw("UPPER(TRIM(COALESCE(uker, ''))) NOT LIKE 'KCP %'");
+        $source = $this->baseQuery($table)
+            ->whereDate('ptp.periode', $period)
+            ->whereNotNull('ptp.uker')
+            ->whereRaw("TRIM(COALESCE(ptp.uker, '')) <> ''")
+            ->whereRaw("UPPER(TRIM(COALESCE(ptp.uker, ''))) NOT IN ('KC', 'KCP')")
+            ->whereRaw("UPPER(TRIM(COALESCE(ptp.uker, ''))) NOT LIKE 'KC %'")
+            ->whereRaw("UPPER(TRIM(COALESCE(ptp.uker, ''))) NOT LIKE 'KCP %'");
 
-        foreach (self::GROUPS[$level] as $alias => $column) {
-            $query->selectRaw("COALESCE(NULLIF(TRIM({$column}), ''), '-') as {$alias}");
+        $groupAliases = array_keys(self::GROUPS[$level]);
+
+        foreach ($groupAliases as $alias) {
+            $source->selectRaw($this->groupExpression($alias) . " as {$alias}");
+        }
+
+        $source
+            ->selectRaw("NULLIF(TRIM(COALESCE(ptp.no_rekening, '')), '') as account_key")
+            ->selectRaw("UPPER(TRIM(COALESCE(ptp.billing, ''))) as billing_status")
+            ->selectRaw("UPPER(TRIM(COALESCE(ptp.ptp, ''))) as ptp_status")
+            ->selectRaw("UPPER(TRIM(COALESCE(ptp.now_kol, ''))) as now_kol_status")
+            ->selectRaw("COALESCE(ptp.`{$amountColumn}`, 0) as amount_value")
+            ->selectRaw('COALESCE(ptp.wba, 0) as wba_value')
+            ->selectRaw('COALESCE(ptp.now_os, 0) as now_os_value');
+
+        $query = DB::query()->fromSub($source, 'src');
+
+        foreach ($groupAliases as $alias) {
+            $query->selectRaw("src.{$alias} as {$alias}");
         }
 
         $query
@@ -298,12 +315,12 @@ class KinerjaPtpReportService
             ->selectRaw("SUM(CASE WHEN {$unpaidCondition} THEN {$nowOsSql} ELSE 0 END) as belum_bayar_rupiah")
             ->selectRaw("COUNT(CASE WHEN {$billingToday} THEN {$accountSql} END) as today_rek")
             ->selectRaw("SUM(CASE WHEN {$billingToday} THEN {$amountSql} ELSE 0 END) as today_rupiah")
-            ->groupBy(...array_values(self::GROUPS[$level]))
-            ->orderBy('bo');
+            ->groupBy(...array_map(fn (string $alias): string => "src.{$alias}", $groupAliases))
+            ->orderBy('src.bo');
 
-        foreach (array_keys(self::GROUPS[$level]) as $alias) {
+        foreach ($groupAliases as $alias) {
             if ($alias !== 'bo') {
-                $query->orderBy($alias);
+                $query->orderBy("src.{$alias}");
             }
         }
 
@@ -314,29 +331,37 @@ class KinerjaPtpReportService
 
     private function detailQuery(string $table, string $level, string $period, array $dimensions, string $metric, array $columns)
     {
-        $query = DB::table($table)
-            ->select($columns)
-            ->whereDate('periode', $period)
-            ->whereNotNull('uker')
-            ->whereRaw("TRIM(COALESCE(uker, '')) <> ''")
-            ->whereRaw("UPPER(TRIM(COALESCE(uker, ''))) NOT IN ('KC', 'KCP')")
-            ->whereRaw("UPPER(TRIM(COALESCE(uker, ''))) NOT LIKE 'KC %'")
-            ->whereRaw("UPPER(TRIM(COALESCE(uker, ''))) NOT LIKE 'KCP %'");
+        $query = $this->baseQuery($table)
+            ->whereDate('ptp.periode', $period)
+            ->whereNotNull('ptp.uker')
+            ->whereRaw("TRIM(COALESCE(ptp.uker, '')) <> ''")
+            ->whereRaw("UPPER(TRIM(COALESCE(ptp.uker, ''))) NOT IN ('KC', 'KCP')")
+            ->whereRaw("UPPER(TRIM(COALESCE(ptp.uker, ''))) NOT LIKE 'KC %'")
+            ->whereRaw("UPPER(TRIM(COALESCE(ptp.uker, ''))) NOT LIKE 'KCP %'");
 
-        foreach (self::GROUPS[$level] as $alias => $column) {
+        foreach ($columns as $column) {
+            if ($column === 'mbm') {
+                $query->selectRaw($this->groupExpression('mbm') . ' as mbm');
+                continue;
+            }
+
+            $query->addSelect("ptp.{$column}");
+        }
+
+        foreach (array_keys(self::GROUPS[$level]) as $alias) {
             $value = trim((string) ($dimensions[$alias] ?? ''));
-            $query->whereRaw("COALESCE(NULLIF(TRIM({$column}), ''), '-') = ?", [$value !== '' ? $value : '-']);
+            $query->whereRaw($this->groupExpression($alias) . ' = ?', [$value !== '' ? $value : '-']);
         }
 
         $this->applyMetricConstraint($query, $metric);
 
-        foreach (self::GROUPS[$level] as $column) {
-            $query->orderBy($column);
+        foreach (array_keys(self::GROUPS[$level]) as $alias) {
+            $query->orderByRaw($this->groupExpression($alias));
         }
 
         $identityColumn = in_array('no_rekening', $columns, true) ? 'no_rekening' : ($columns[0] ?? null);
         if ($identityColumn !== null) {
-            $query->orderBy($identityColumn);
+            $query->orderBy("ptp.{$identityColumn}");
         }
 
         return $query;
@@ -344,9 +369,9 @@ class KinerjaPtpReportService
 
     private function applyMetricConstraint($query, string $metric): void
     {
-        $billingSql = "UPPER(TRIM(COALESCE(billing, '')))";
-        $ptpSql = "UPPER(TRIM(COALESCE(ptp, '')))";
-        $nowKolSql = "UPPER(TRIM(COALESCE(now_kol, '')))";
+        $billingSql = "UPPER(TRIM(COALESCE(ptp.billing, '')))";
+        $ptpSql = "UPPER(TRIM(COALESCE(ptp.ptp, '')))";
+        $nowKolSql = "UPPER(TRIM(COALESCE(ptp.now_kol, '')))";
         $billingSudah = "{$billingSql} = 'SUDAH'";
         $billingBelumToday = "{$billingSql} IN ('BELUM', 'TODAY')";
         $billingSudahToday = "{$billingSql} IN ('SUDAH', 'TODAY')";
@@ -387,6 +412,34 @@ class KinerjaPtpReportService
             self::DETAIL_COLUMNS,
             fn (string $column): bool => isset($available[$column])
         ));
+    }
+
+    private function baseQuery(string $table)
+    {
+        $query = DB::table($table . ' as ptp');
+
+        if ($this->usesMbmMaster()) {
+            $query->leftJoin('wilayah_mbm as wm', 'wm.bc', '=', 'ptp.bc');
+        }
+
+        return $query;
+    }
+
+    private function groupExpression(string $alias): string
+    {
+        return match ($alias) {
+            'mbm' => $this->usesMbmMaster()
+                ? "COALESCE(NULLIF(TRIM(ptp.mbm), ''), NULLIF(TRIM(wm.nama_mbm), ''), '-')"
+                : "COALESCE(NULLIF(TRIM(ptp.mbm), ''), '-')",
+            default => "COALESCE(NULLIF(TRIM(ptp." . self::GROUPS['per_mantri'][$alias] . "), ''), '-')",
+        };
+    }
+
+    private function usesMbmMaster(): bool
+    {
+        return Schema::hasTable('wilayah_mbm')
+            && Schema::hasColumn('wilayah_mbm', 'bc')
+            && Schema::hasColumn('wilayah_mbm', 'nama_mbm');
     }
 
     private function decorateRow(array $row): array

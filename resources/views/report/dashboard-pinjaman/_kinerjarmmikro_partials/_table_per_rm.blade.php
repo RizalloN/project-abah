@@ -1,12 +1,23 @@
-<div class="rm-mikro-table-wrap">
+@php
+    $realisasiDebMax = max(1, (float) $rows->max('realisasi_deb'));
+    $realisasiOsMax = max(1, (float) $rows->max('realisasi_os'));
+@endphp
+
+<div class="rm-mikro-table-wrap table-container">
     <table class="rm-mikro-table">
         <thead>
             <tr>
-                <th rowspan="2">No</th><th rowspan="2">Kanca</th><th rowspan="2">PN</th><th rowspan="2">Nama</th><th rowspan="2">BC UKER</th><th rowspan="2">UKER</th>
-                <th colspan="8" class="group-head">Kelola Posisi {{ $selectedPeriodLabel }}</th><th colspan="2" class="group-head">Realisasi s.d {{ $selectedPeriodShortLabel }}</th>
+                <th rowspan="3">No</th><th rowspan="3">Kanca</th><th rowspan="3">PN</th><th rowspan="3">Nama</th><th rowspan="3">BC UKER</th><th rowspan="3">UKER</th>
+                <th colspan="8" class="group-head">Kelola Posisi {{ $selectedPeriodLabel }}</th><th colspan="2" rowspan="2" class="group-head">Realisasi s.d {{ $selectedPeriodShortLabel }}</th>
             </tr>
             <tr>
-                <th>Lancar Deb</th><th>OS Juta</th><th>SML Deb</th><th>OS Juta</th><th>NPL Deb</th><th>OS Juta</th><th>Total Deb</th><th>OS Juta</th><th>Deb</th><th>Plafon Juta</th>
+                <th colspan="2">Lancar</th>
+                <th colspan="2">SML</th>
+                <th colspan="2">NPL</th>
+                <th colspan="2">Total</th>
+            </tr>
+            <tr>
+                <th>Deb</th><th>OS Lancar</th><th>Deb</th><th>OS SML</th><th>Deb</th><th>OS NPL</th><th>Deb</th><th>OS Total</th><th>Deb</th><th>Plafon Juta</th>
             </tr>
         </thead>
         <tbody>
@@ -17,7 +28,7 @@
                     <td class="text-right">{{ $formatAmount($row['sml_deb']) }}</td><td class="text-right">{{ $formatJuta($row['sml_os']) }}</td>
                     <td class="text-right">{{ $formatAmount($row['npl_deb']) }}</td><td class="text-right">{{ $formatJuta($row['npl_os']) }}</td>
                     <td class="text-right strong">{{ $formatAmount($row['total_deb']) }}</td><td class="text-right strong">{{ $formatJuta($row['total_os']) }}</td>
-                    <td class="text-right">{{ $formatAmount($row['realisasi_deb']) }}</td><td class="text-right">{{ $formatJuta($row['realisasi_os']) }}</td>
+                    <td class="text-right {{ $gradientClass($row['realisasi_deb'], 0, $realisasiDebMax, true) }}">{{ $formatAmount($row['realisasi_deb']) }}</td><td class="text-right {{ $gradientClass($row['realisasi_os'], 0, $realisasiOsMax, true) }}">{{ $formatJuta($row['realisasi_os']) }}</td>
                 </tr>
             @empty
                 <tr><td colspan="16" class="rm-mikro-empty">Data tidak ditemukan.</td></tr>

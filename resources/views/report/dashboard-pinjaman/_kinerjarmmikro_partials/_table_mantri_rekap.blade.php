@@ -1,4 +1,17 @@
-<div class="rm-mikro-table-wrap">
+@php
+    $rekapOsPrefixes = [
+        'kaunit_pdwk',
+        'mbm_pdwk', 'mbm_override', 'mbm_total',
+        'pinca_pdwk', 'pinca_override', 'pinca_total',
+        'rmbh_override',
+        'total_realisasi',
+    ];
+    $rekapOsMax = collect($rekapOsPrefixes)->mapWithKeys(fn ($prefix) => [
+        $prefix => max(1, (float) $rows->max($prefix . '_os')),
+    ])->all();
+@endphp
+
+<div class="rm-mikro-table-wrap table-container">
     <table class="rm-mikro-table" style="min-width: 3000px;">
         <thead>
             <tr>
@@ -26,17 +39,17 @@
             @forelse ($rows as $index => $row)
                 <tr>
                     <td class="text-center">{{ $index + 1 }}</td><td>{{ $row['bc'] }}</td><td class="strong">{{ $row['cabang'] }}</td><td>{{ $row['boh'] }}</td><td class="text-right">{{ $formatAmount($row['jumlah_unit'] ?? 0) }}</td><td class="text-right">{{ $formatAmount($row['jumlah_mantri'] ?? 0) }}</td>
-                    <td class="text-right">{{ $formatAmount($row['kaunit_pdwk_deb'] ?? 0) }}</td><td class="text-right">{{ $formatJuta($row['kaunit_pdwk_os'] ?? 0) }}</td><td class="text-right {{ $gradientClass($row['kaunit_pdwk_ratio'] ?? 0, 0, $payload['max_values']['ratio'], false) }}">{{ $formatPercent($row['kaunit_pdwk_ratio'] ?? 0) }}</td>
+                    <td class="text-right">{{ $formatAmount($row['kaunit_pdwk_deb'] ?? 0) }}</td><td class="text-right {{ $gradientClass($row['kaunit_pdwk_os'] ?? 0, 0, $rekapOsMax['kaunit_pdwk'] ?? 1, true) }}">{{ $formatJuta($row['kaunit_pdwk_os'] ?? 0) }}</td><td class="text-right {{ $gradientClass($row['kaunit_pdwk_ratio'] ?? 0, 0, $payload['max_values']['ratio'], false) }}">{{ $formatPercent($row['kaunit_pdwk_ratio'] ?? 0) }}</td>
                     @foreach (['mbm_pdwk', 'mbm_override', 'mbm_total'] as $prefix)
-                        <td class="text-right">{{ $formatAmount($row[$prefix . '_deb'] ?? 0) }}</td><td class="text-right">{{ $formatJuta($row[$prefix . '_os'] ?? 0) }}</td>
+                        <td class="text-right">{{ $formatAmount($row[$prefix . '_deb'] ?? 0) }}</td><td class="text-right {{ $gradientClass($row[$prefix . '_os'] ?? 0, 0, $rekapOsMax[$prefix] ?? 1, true) }}">{{ $formatJuta($row[$prefix . '_os'] ?? 0) }}</td>
                     @endforeach
                     <td class="text-right {{ $gradientClass($row['mbm_total_ratio'] ?? 0, 0, $payload['max_values']['ratio'], true) }}">{{ $formatPercent($row['mbm_total_ratio'] ?? 0) }}</td>
                     @foreach (['pinca_pdwk', 'pinca_override', 'pinca_total'] as $prefix)
-                        <td class="text-right">{{ $formatAmount($row[$prefix . '_deb'] ?? 0) }}</td><td class="text-right">{{ $formatJuta($row[$prefix . '_os'] ?? 0) }}</td>
+                        <td class="text-right">{{ $formatAmount($row[$prefix . '_deb'] ?? 0) }}</td><td class="text-right {{ $gradientClass($row[$prefix . '_os'] ?? 0, 0, $rekapOsMax[$prefix] ?? 1, true) }}">{{ $formatJuta($row[$prefix . '_os'] ?? 0) }}</td>
                     @endforeach
                     <td class="text-right {{ $gradientClass($row['pinca_total_ratio'] ?? 0, 0, $payload['max_values']['ratio'], true) }}">{{ $formatPercent($row['pinca_total_ratio'] ?? 0) }}</td>
-                    <td class="text-right">{{ $formatAmount($row['rmbh_override_deb'] ?? 0) }}</td><td class="text-right">{{ $formatJuta($row['rmbh_override_os'] ?? 0) }}</td><td class="text-right">{{ $formatPercent($row['rmbh_override_ratio'] ?? 0) }}</td>
-                    <td class="text-right strong">{{ $formatAmount($row['total_realisasi_deb'] ?? 0) }}</td><td class="text-right strong">{{ $formatJuta($row['total_realisasi_os'] ?? 0) }}</td>
+                    <td class="text-right">{{ $formatAmount($row['rmbh_override_deb'] ?? 0) }}</td><td class="text-right {{ $gradientClass($row['rmbh_override_os'] ?? 0, 0, $rekapOsMax['rmbh_override'] ?? 1, true) }}">{{ $formatJuta($row['rmbh_override_os'] ?? 0) }}</td><td class="text-right">{{ $formatPercent($row['rmbh_override_ratio'] ?? 0) }}</td>
+                    <td class="text-right strong">{{ $formatAmount($row['total_realisasi_deb'] ?? 0) }}</td><td class="text-right strong {{ $gradientClass($row['total_realisasi_os'] ?? 0, 0, $rekapOsMax['total_realisasi'] ?? 1, true) }}">{{ $formatJuta($row['total_realisasi_os'] ?? 0) }}</td>
                     <td class="text-right {{ $gradientClass($row['tiket_size'] ?? 0, 0, $payload['max_values']['tiket_size'], true) }}">{{ $formatAmount($row['tiket_size'] ?? 0, 1) }}</td>
                     <td class="text-right {{ $gradientClass($row['ratas_mantri_hk'] ?? 0, 0, $payload['max_values']['ratas_mantri_hk'], true) }}">{{ $formatAmount($row['ratas_mantri_hk'] ?? 0, 1) }}</td>
                 </tr>

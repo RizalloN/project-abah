@@ -32,9 +32,9 @@ class KinerjaRmMikroReportController extends Controller
     ];
 
     private const MANTRI_REPORT_CATEGORIES = [
-        'unit_pemutus' => 'Unit per Pemutus',
-        'kuadran' => 'Kuadran',
         'produktivitas_mantri' => 'Produktivitas per Mantri',
+        'kuadran' => 'Kuadran',
+        'unit_pemutus' => 'Unit per Pemutus',
         'pdwk_override' => 'PDWK - Override',
         'extreme_low_mantri' => 'Extreme Low Mantri',
         'rekap_mantri' => 'Rekap Mantri',
@@ -301,8 +301,14 @@ class KinerjaRmMikroReportController extends Controller
             [$pn, $name] = $this->splitRm((string) $row['rm']);
             $totalOs = array_sum(array_map(fn ($week) => (float) ($row[$week . '_realisasi_os'] ?? 0), ['w1', 'w2', 'w3', 'w4']));
             $totalDeb = array_sum(array_map(fn ($week) => (int) ($row[$week . '_realisasi_deb'] ?? 0), ['w1', 'w2', 'w3', 'w4']));
+            $weeklyAliases = [];
 
-            return array_merge($row, [
+            foreach (['w1', 'w2', 'w3', 'w4'] as $week) {
+                $weeklyAliases[$week . '_deb'] = (int) ($row[$week . '_realisasi_deb'] ?? 0);
+                $weeklyAliases[$week . '_os'] = (float) ($row[$week . '_realisasi_os'] ?? 0);
+            }
+
+            return array_merge($row, $weeklyAliases, [
                 'pn' => $pn,
                 'nama' => $name,
                 'total_deb' => $totalDeb,
@@ -394,7 +400,7 @@ class KinerjaRmMikroReportController extends Controller
                 $query->selectRaw('rm');
             }
 
-            return $query
+            $snapshotRows = $query
                 ->selectRaw($this->sumSnapshotColumn('lancar_deb'))
                 ->selectRaw('SUM(COALESCE(lancar_os, 0)) as lancar_os')
                 ->selectRaw($this->sumSnapshotColumn('sml_deb'))
@@ -420,18 +426,171 @@ class KinerjaRmMikroReportController extends Controller
                 ->groupBy(...$this->snapshotGroupExpressions($group))
                 ->get()
                 ->mapWithKeys(fn ($row) => [$this->rowKey((array) $row, $group) => (array) $row]);
+
+            if ($snapshotRows->isNotEmpty()) {
+                return $snapshotRows;
+            }
+
+            return $this->sourceKurMikroAggregates($period, $group);
         });
+    }
+
+    private function sourceKurMikroAggregates(string $period, array $group): Collection
+    {
+        if (!Schema::hasTable(self::SOURCE_TABLE)) {
+            return collect();
+        }
+
+        $requiredColumns = [
+            'periode',
+            'segmen_kinerja',
+            'produk_kinerja',
+            'pn_pengelola1',
+            'plafon',
+            'baki_debet1',
+            'tgl_realisasi',
+            'nomor_rekening1',
+            'description',
+            'cabang_normalized',
+            'cabang1',
+            'unit_normalized',
+            'unit1',
+            'branch_normalized',
+            'branch1',
+            'rm_normalized',
+        ];
+
+        foreach ($requiredColumns as $column) {
+            if (!Schema::hasColumn(self::SOURCE_TABLE, $column)) {
+                return collect();
+            }
+        }
+
+        $periodDate = Carbon::parse($period);
+        $periodStart = $periodDate->copy()->startOfMonth()->toDateString();
+        $weekRanges = $this->weeklyRanges($periodDate);
+        $kolExpr = $this->sourceKolExpression();
+        $loanOsExpr = $this->sourceKurMikroLoanOsExpression();
+
+        $expressions = $this->sourceGroupExpressions($group);
+        $baseQuery = DB::table(self::SOURCE_TABLE . ' as d')
+            ->where('d.periode', $period)
+            ->where('d.segmen_kinerja', 'MICRO')
+            ->whereIn('d.produk_kinerja', ['KURMIKRO', 'KURKECIL'])
+            ->whereRaw(
+                "{$this->normalizedSql('d.description')} = ?",
+                [$this->normalizeToken(self::KUR_RITEL_DESCRIPTION)]
+            )
+            ->whereNotNull('d.pn_pengelola1')
+            ->where('d.pn_pengelola1', '<>', '');
+
+        foreach ($expressions as $alias => $expression) {
+            $baseQuery->selectRaw("{$expression} as {$alias}");
+        }
+
+        $baseQuery
+            ->selectRaw('d.nomor_rekening1 as rekening')
+            ->selectRaw("{$kolExpr} as kolek")
+            ->selectRaw("{$loanOsExpr} as loan_os", [$this->normalizeToken(self::KUR_RITEL_DESCRIPTION)])
+            ->selectRaw('COALESCE(d.plafon, 0) as plafon')
+            ->selectRaw('d.tgl_realisasi');
+
+        $query = DB::query()->fromSub($baseQuery, 'x');
+
+        foreach (array_keys($expressions) as $alias) {
+            $query->selectRaw("x.{$alias}");
+        }
+
+        $query
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.kolek = 1 THEN x.rekening END) as lancar_deb')
+            ->selectRaw('SUM(CASE WHEN x.kolek = 1 THEN x.loan_os ELSE 0 END) as lancar_os')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.kolek = 2 THEN x.rekening END) as sml_deb')
+            ->selectRaw('SUM(CASE WHEN x.kolek = 2 THEN x.loan_os ELSE 0 END) as sml_os')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.kolek > 2 THEN x.rekening END) as npl_deb')
+            ->selectRaw('SUM(CASE WHEN x.kolek > 2 THEN x.loan_os ELSE 0 END) as npl_os')
+            ->selectRaw('COUNT(DISTINCT x.rekening) as total_deb')
+            ->selectRaw('SUM(x.loan_os) as total_os')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.rekening END) as realisasi_deb', [$periodStart, $period])
+            ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.plafon ELSE 0 END) as realisasi_os', [$periodStart, $period])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.rekening END) as w1_realisasi_deb', $weekRanges['w1'])
+            ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.plafon ELSE 0 END) as w1_realisasi_os', $weekRanges['w1'])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.rekening END) as w2_realisasi_deb', $weekRanges['w2'])
+            ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.plafon ELSE 0 END) as w2_realisasi_os', $weekRanges['w2'])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.rekening END) as w3_realisasi_deb', $weekRanges['w3'])
+            ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.plafon ELSE 0 END) as w3_realisasi_os', $weekRanges['w3'])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.rekening END) as w4_realisasi_deb', $weekRanges['w4'])
+            ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.plafon ELSE 0 END) as w4_realisasi_os', $weekRanges['w4'])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon < 250000000 THEN x.rekening END) as lt_250_realisasi_deb', [$periodStart, $period])
+            ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon < 250000000 THEN x.plafon ELSE 0 END) as lt_250_realisasi_os', [$periodStart, $period])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon > 250000000 THEN x.rekening END) as gt_250_realisasi_deb', [$periodStart, $period])
+            ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon > 250000000 THEN x.plafon ELSE 0 END) as gt_250_realisasi_os', [$periodStart, $period])
+            ->groupBy(...array_map(fn (string $alias) => "x.{$alias}", array_keys($expressions)));
+
+        return $query->get()
+            ->mapWithKeys(fn ($row) => [$this->rowKey((array) $row, $group) => (array) $row]);
+    }
+
+    private function sourceGroupExpressions(array $group): array
+    {
+        $expressions = [
+            'cabang' => "COALESCE(NULLIF(d.cabang_normalized, ''), UPPER(TRIM(COALESCE(d.cabang1, ''))))",
+            'unit' => "COALESCE(NULLIF(d.unit_normalized, ''), UPPER(TRIM(COALESCE(d.unit1, ''))))",
+            'branch_code' => "COALESCE(NULLIF(d.branch_normalized, ''), UPPER(TRIM(COALESCE(d.branch1, ''))))",
+        ];
+
+        if (in_array('rm', $group, true)) {
+            $expressions['rm'] = "COALESCE(NULLIF(d.rm_normalized, ''), UPPER(TRIM(COALESCE(d.pn_pengelola1, ''))))";
+        }
+
+        return $expressions;
+    }
+
+    private function sourceKolExpression(): string
+    {
+        if (Schema::hasColumn(self::SOURCE_TABLE, 'kolek') && Schema::hasColumn(self::SOURCE_TABLE, 'kol_adk1')) {
+            return 'COALESCE(d.kolek, d.kol_adk1, 0)';
+        }
+
+        if (Schema::hasColumn(self::SOURCE_TABLE, 'kolek')) {
+            return 'COALESCE(d.kolek, 0)';
+        }
+
+        if (Schema::hasColumn(self::SOURCE_TABLE, 'kol_adk1')) {
+            return 'COALESCE(d.kol_adk1, 0)';
+        }
+
+        return '0';
+    }
+
+    private function sourceKurMikroLoanOsExpression(): string
+    {
+        return "CASE WHEN {$this->normalizedSql('d.description')} = ? THEN COALESCE(d.plafon, 0) ELSE COALESCE(d.baki_debet1, 0) END";
+    }
+
+    private function weeklyRanges(Carbon $periodDate): array
+    {
+        $ranges = [
+            'w1' => [$periodDate->copy()->startOfMonth(), $periodDate->copy()->startOfMonth()->addDays(6)],
+            'w2' => [$periodDate->copy()->startOfMonth()->addDays(7), $periodDate->copy()->startOfMonth()->addDays(13)],
+            'w3' => [$periodDate->copy()->startOfMonth()->addDays(14), $periodDate->copy()->startOfMonth()->addDays(20)],
+            'w4' => [$periodDate->copy()->startOfMonth()->addDays(21), $periodDate->copy()],
+        ];
+
+        return array_map(
+            fn (array $range): array => [
+                $range[0]->toDateString(),
+                $range[1]->greaterThan($periodDate) ? $periodDate->toDateString() : $range[1]->toDateString(),
+            ],
+            $ranges
+        );
     }
 
     private function fetchAvailablePeriods(): Collection
     {
-        return Cache::remember('kinerja_rm_mikro_periods_v1:' . $this->reportCacheVersion(), 600, function () {
+        return Cache::remember('kinerja_rm_mikro_periods_v2:' . $this->reportCacheVersion(), 600, function () {
             $periods = $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode', function ($query): void {
                     $query->where('segmen', 'MICRO')->where('produk', 'KUR-MIKRO');
                 })
-                ->merge($this->fetchPeriodList(self::SOURCE_TABLE, 'periode', function ($query): void {
-                    $query->where('segmen_kinerja', 'MICRO')->where('produk_kinerja', 'KURMIKRO');
-                }))
                 ->unique()
                 ->values();
 
@@ -590,7 +749,7 @@ class KinerjaRmMikroReportController extends Controller
             return ['rows' => [], 'total' => [], 'working_days' => 0];
         }
 
-        return Cache::remember('kinerja_rm_mikro_mantri_v9:' . $this->reportCacheVersion() . ':' . $period . ':' . $category, 600, function () use ($category, $period): array {
+        return Cache::remember('kinerja_rm_mikro_mantri_v10:' . $this->reportCacheVersion() . ':' . $period . ':' . $category, 600, function () use ($category, $period): array {
             return match ($category) {
                 'kuadran' => $this->mantriKuadranPayload($period),
                 'produktivitas_mantri' => $this->mantriProductivityPayload($period),
@@ -647,26 +806,27 @@ class KinerjaRmMikroReportController extends Controller
 
     private function mantriKuadranPayload(string $period): array
     {
-        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
-        $workingDays = $this->networkDays($periodStart, $period);
-        $rows = DB::query()
-            ->fromSub($this->mantriSourceQuery($period), 'x')
-            ->selectRaw('bc, unit, cabang')
-            ->selectRaw("COUNT(DISTINCT CASE WHEN pn_pengelola <> '' THEN pn_pengelola END) as jumlah_mantri")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN rekening END) as realisasi_deb", [$periodStart, $period])
-            ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os", [$periodStart, $period])
-            ->groupBy('bc', 'unit', 'cabang')
-            ->get()
-            ->map(function ($row) use ($workingDays): array {
-                $data = $this->decorateMantriUnitRow((array) $row);
-                $realisasiJuta = ((float) $data['realisasi_os']) / 1000000;
-                $deb = (int) $data['realisasi_deb'];
-                $mantri = max(1, (int) $data['jumlah_mantri']);
-                $data['tiket_size'] = $deb > 0 ? $realisasiJuta / $deb : 0;
-                $data['ratas_mantri_hk'] = $workingDays > 0 ? ($realisasiJuta / $mantri) / $workingDays : 0;
-                $data['ket'] = $this->kuadranLabel($data['ratas_mantri_hk'], $data['tiket_size']);
+        $productivity = $this->mantriProductivityPayload($period);
+        $rows = collect($productivity['rows'] ?? [])
+            ->groupBy(fn (array $row): string => implode('|', [
+                (string) ($row['cabang'] ?? ''),
+                (string) ($row['bc'] ?? ''),
+                (string) ($row['unit'] ?? ''),
+            ]))
+            ->map(function (Collection $mantriRows): array {
+                $first = (array) $mantriRows->first();
+                $quadrants = $mantriRows->countBy(fn (array $row): string => (string) ($row['ket'] ?? 'KUADRAN 4'));
 
-                return $data;
+                return [
+                    'cabang' => (string) ($first['cabang'] ?? '-'),
+                    'bc' => (string) ($first['bc'] ?? '-'),
+                    'unit' => (string) ($first['unit'] ?? '-'),
+                    'jumlah_mantri' => $mantriRows->count(),
+                    'kuadran_1' => (int) ($quadrants['KUADRAN 1'] ?? 0),
+                    'kuadran_2' => (int) ($quadrants['KUADRAN 2'] ?? 0),
+                    'kuadran_3' => (int) ($quadrants['KUADRAN 3'] ?? 0),
+                    'kuadran_4' => (int) ($quadrants['KUADRAN 4'] ?? 0),
+                ];
             })
             ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['unit'])
             ->values();
@@ -675,10 +835,12 @@ class KinerjaRmMikroReportController extends Controller
             'rows' => $rows->all(),
             'total' => [
                 'jumlah_mantri' => $rows->sum('jumlah_mantri'),
-                'realisasi_deb' => $rows->sum('realisasi_deb'),
-                'realisasi_os' => $rows->sum('realisasi_os'),
+                'kuadran_1' => $rows->sum('kuadran_1'),
+                'kuadran_2' => $rows->sum('kuadran_2'),
+                'kuadran_3' => $rows->sum('kuadran_3'),
+                'kuadran_4' => $rows->sum('kuadran_4'),
             ],
-            'working_days' => $workingDays,
+            'working_days' => $productivity['working_days'] ?? 0,
             'message' => '',
         ];
     }
@@ -699,8 +861,10 @@ class KinerjaRmMikroReportController extends Controller
                 $data = $this->decorateMantriUnitRow((array) $row);
                 $realisasiJuta = ((float) $data['realisasi_os']) / 1000000;
                 $deb = (int) $data['realisasi_deb'];
+                $pnPengelola = (string) ($data['pn_pengelola'] ?? '');
                 $data['jumlah_mantri'] = 1;
-                $data['nama_mantri'] = (string) ($data['pn_pengelola'] ?? '-');
+                $data['nama_mantri'] = $this->displayMantriName($pnPengelola);
+                $data['pn_mantri'] = $this->displayMantriPn($pnPengelola);
                 $data['tiket_size'] = $deb > 0 ? $realisasiJuta / $deb : 0;
                 $data['ratas_mantri_hk'] = $workingDays > 0 ? $realisasiJuta / $workingDays : 0;
                 $data['ket'] = $this->kuadranLabel($data['ratas_mantri_hk'], $data['tiket_size']);
@@ -1107,6 +1271,34 @@ class KinerjaRmMikroReportController extends Controller
         }
 
         return $this->normalizeToken($value);
+    }
+
+    private function displayMantriPn(?string $value): string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return '-';
+        }
+
+        $identifier = trim(explode('-', $value, 2)[0]);
+        $digits = preg_replace('/\D+/', '', $identifier) ?? '';
+
+        return $digits !== ''
+            ? str_pad(substr($digits, 0, 8), 8, '0', STR_PAD_LEFT)
+            : '-';
+    }
+
+    private function displayMantriName(?string $value): string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return '-';
+        }
+
+        $parts = explode('-', $value, 2);
+        $name = trim($parts[1] ?? $value);
+
+        return $name !== '' ? $name : '-';
     }
 
     private function ratioPercent(int|float $part, int|float $whole): float

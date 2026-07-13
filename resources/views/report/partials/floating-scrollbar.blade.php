@@ -71,9 +71,19 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const floatScroll = document.getElementById('global-floating-scrollbar');
-    const floatContent = floatScroll.querySelector('.floating-scrollbar-content');
+    const floatContent = floatScroll ? floatScroll.querySelector('.floating-scrollbar-content') : null;
     let activeContainer = null;
     let isSyncing = false;
+
+    console.log("Floating scrollbar initial check:", {
+        floatScroll: floatScroll,
+        floatContent: floatContent
+    });
+
+    if (!floatScroll || !floatContent) {
+        console.error("Floating scrollbar elements not found!");
+        return;
+    }
 
     function syncPositions(source, target) {
         if (isSyncing) return;
@@ -86,8 +96,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const containers = document.querySelectorAll('.kinerja-table-container, .table-container');
         let currentBest = null;
 
+        console.log("updateFloatingScroll running. Containers count: " + containers.length);
+
         containers.forEach(container => {
-            if (container.offsetParent === null) return; // Hidden by tabs etc.
+            if (container.offsetParent === null) {
+                console.log("Container is hidden (offsetParent is null):", container);
+                return; // Hidden by tabs etc.
+            }
 
             const rect = container.getBoundingClientRect();
             const windowHeight = window.innerHeight;
@@ -96,12 +111,26 @@ document.addEventListener('DOMContentLoaded', function() {
             const needsScroll = container.scrollWidth > container.clientWidth + 5;
             const realScrollbarHidden = rect.bottom > windowHeight - 10;
 
+            console.log("Container check: ", {
+                el: container,
+                className: container.className,
+                rectTop: rect.top,
+                rectBottom: rect.bottom,
+                windowHeight: windowHeight,
+                isVisible: isVisible,
+                needsScroll: needsScroll,
+                scrollWidth: container.scrollWidth,
+                clientWidth: container.clientWidth,
+                realScrollbarHidden: realScrollbarHidden
+            });
+
             if (isVisible && needsScroll && realScrollbarHidden) {
                 if (!currentBest) currentBest = container;
             }
         });
 
         if (currentBest) {
+            console.log("updateFloatingScroll: selected container", currentBest);
             activeContainer = currentBest;
             const rect = activeContainer.getBoundingClientRect();
             
@@ -143,7 +172,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }, true);
 
     // Global scroll/resize
-    window.addEventListener('scroll', updateFloatingScroll, { passive: true });
+    document.addEventListener('scroll', function(e) {
+        if (e.target === floatScroll) return;
+        updateFloatingScroll();
+    }, true);
     window.addEventListener('resize', updateFloatingScroll);
     
     // Bootstrap Events

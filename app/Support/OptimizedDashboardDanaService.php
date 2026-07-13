@@ -24,7 +24,7 @@ class OptimizedDashboardDanaService extends DashboardDanaService
     private const SNAPSHOT_TABLE = 'ssa_simpanan_snapshots';
     private const RAW_TABLE = 'ssa_simpanan';
 
-    public function getDashboardData(?string $selectedPeriod, ?string $category, ?string $rkaPeriod = null): array
+    public function getDashboardData(?string $selectedPeriod, ?string $category, ?string $rkaPeriod = null, ?string $selectedBranch = null): array
     {
         if (!$selectedPeriod) {
             return [
@@ -32,6 +32,11 @@ class OptimizedDashboardDanaService extends DashboardDanaService
                 'total' => [],
                 'header_dates' => [],
             ];
+        }
+
+        $branchScope = strtolower(trim((string) $selectedBranch));
+        if ($branchScope !== '' && !in_array($branchScope, ['all', 'area6', 'area 6'], true)) {
+            return parent::getDashboardData($selectedPeriod, $category, $rkaPeriod, $selectedBranch);
         }
 
         $periods = $this->calculatePeriodReferences($selectedPeriod);

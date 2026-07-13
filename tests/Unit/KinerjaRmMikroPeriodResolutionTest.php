@@ -99,14 +99,15 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         Cache::forget('report_cache_version:simpanan');
     }
 
-    public function test_period_options_include_micro_kur_daily_loan_source_periods(): void
+    public function test_period_options_use_micro_kur_snapshot_periods_without_scanning_daily_loan_source(): void
     {
         DB::table('daily_loan_dinamis')->insert([
-            ['periode' => '2026-05-06', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO'],
-            ['periode' => '2026-05-04', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO'],
-            ['periode' => '2026-05-05', 'segmen_kinerja' => 'CONSUMER', 'produk_kinerja' => 'KPR'],
+            ['periode' => '2026-05-06', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO', 'description' => 'Kredit Mikro - KUR Ritel 2015'],
+            ['periode' => '2026-05-04', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO', 'description' => 'KUR Mikro Baru'],
+            ['periode' => '2026-05-05', 'segmen_kinerja' => 'CONSUMER', 'produk_kinerja' => 'KPR', 'description' => null],
         ]);
         DB::table('performance_rm_snapshots')->insert([
+            ['periode' => '2026-05-06', 'segmen' => 'MICRO', 'produk' => 'KUR-MIKRO'],
             ['periode' => '2026-04-30', 'segmen' => 'MICRO', 'produk' => 'KUR-MIKRO'],
         ]);
 
@@ -115,12 +116,20 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame(['2026-05-06', '2026-04-30'], $periods->all());
     }
 
+    public function test_mantri_defaults_to_productivity_report(): void
+    {
+        $categories = (new ReflectionClass(KinerjaRmMikroReportController::class))
+            ->getConstant('MANTRI_REPORT_CATEGORIES');
+
+        $this->assertSame('produktivitas_mantri', array_key_first($categories));
+    }
+
     public function test_requested_mid_month_uses_latest_micro_kur_period_in_that_month(): void
     {
-        DB::table('daily_loan_dinamis')->insert([
-            ['periode' => '2026-05-15', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO'],
-            ['periode' => '2026-05-17', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO'],
-            ['periode' => '2026-04-30', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO'],
+        DB::table('performance_rm_snapshots')->insert([
+            ['periode' => '2026-05-15', 'segmen' => 'MICRO', 'produk' => 'KUR-MIKRO'],
+            ['periode' => '2026-05-17', 'segmen' => 'MICRO', 'produk' => 'KUR-MIKRO'],
+            ['periode' => '2026-04-30', 'segmen' => 'MICRO', 'produk' => 'KUR-MIKRO'],
         ]);
 
         $controller = new KinerjaRmMikroReportController();
@@ -128,6 +137,46 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
 
         $this->assertSame(['2026-05-17', '2026-04-30'], $periods->all());
         $this->assertSame('2026-05-17', $this->invokePrivateMethod($controller, 'resolveSelectedPeriod', $periods, '2026-05-15'));
+    }
+
+    public function test_rm_mikro_kur_payload_uses_kur_ritel_2015_and_excludes_kur_mikro_baru_when_snapshot_is_missing(): void
+    {
+        $this->insertDailyLoan([
+            'periode' => '2026-05-15',
+            'produk_kinerja' => 'KURMIKRO',
+            'description' => 'KUR Mikro Baru',
+            'nomor_rekening1' => 'KUR-BARU-1',
+            'plafon' => 150000000,
+            'baki_debet1' => 120000000,
+            'tgl_realisasi' => '2026-05-15',
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-05-15',
+            'produk_kinerja' => 'KURMIKRO',
+            'description' => 'Kredit Mikro - KUR Ritel 2015',
+            'nomor_rekening1' => 'KUR-RITEL-1',
+            'plafon' => 200000000,
+            'baki_debet1' => 130000000,
+            'tgl_realisasi' => '2026-05-15',
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-05-15',
+            'produk_kinerja' => 'KURKECIL',
+            'description' => 'Kredit Mikro - KUR Ritel 2015',
+            'nomor_rekening1' => 'KUR-RITEL-2',
+            'plafon' => 300000000,
+            'baki_debet1' => 210000000,
+            'tgl_realisasi' => '2026-05-15',
+        ]);
+
+        $payload = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'perUkerPayload', '2026-05-15');
+
+        $this->assertCount(1, $payload['rows']);
+        $this->assertSame('UNIT TEST', $payload['rows'][0]['unit']);
+        $this->assertSame(2, (int) $payload['total']['total_deb']);
+        $this->assertSame(500000000.0, (float) $payload['total']['total_os']);
+        $this->assertSame(2, (int) $payload['total']['lancar_deb']);
+        $this->assertSame(500000000.0, (float) $payload['total']['realisasi_os']);
     }
 
     public function test_mantri_payload_excludes_kur_ritel_but_includes_kur_mikro_baru(): void
@@ -151,7 +200,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             'plafon' => 300000000,
         ]);
 
-        $payload = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'mantriKuadranPayload', '2026-05-06');
+        $payload = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'mantriProductivityPayload', '2026-05-06');
 
         $this->assertCount(1, $payload['rows']);
         $this->assertSame(2, (int) $payload['rows'][0]['realisasi_deb']);
@@ -189,9 +238,56 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $rows = collect($payload['rows'])->keyBy('nama_mantri');
 
         $this->assertCount(2, $payload['rows']);
-        $this->assertSame(100000000.0, (float) $rows->get('0001 - MANTRI SATU')['realisasi_os']);
-        $this->assertSame(250000000.0, (float) $rows->get('0002 - MANTRI DUA')['realisasi_os']);
+        $this->assertSame(100000000.0, (float) $rows->get('MANTRI SATU')['realisasi_os']);
+        $this->assertSame('00000001', $rows->get('MANTRI SATU')['pn_mantri']);
+        $this->assertSame(250000000.0, (float) $rows->get('MANTRI DUA')['realisasi_os']);
+        $this->assertSame('00000002', $rows->get('MANTRI DUA')['pn_mantri']);
         $this->assertSame(2, (int) $payload['total']['jumlah_mantri']);
+    }
+
+    public function test_mantri_quadrant_payload_counts_each_mantri_per_unit(): void
+    {
+        $this->insertDailyLoan([
+            'pn_pengelola1' => '0001 - Mantri Kuadran Satu',
+            'rm_normalized' => '0001 - MANTRI KUADRAN SATU',
+            'nomor_rekening1' => 'Q1-1',
+            'plafon' => 400000000,
+        ]);
+
+        foreach (range(1, 8) as $index) {
+            $this->insertDailyLoan([
+                'pn_pengelola1' => '0002 - Mantri Kuadran Dua',
+                'rm_normalized' => '0002 - MANTRI KUADRAN DUA',
+                'nomor_rekening1' => 'Q2-' . $index,
+                'plafon' => 40000000,
+            ]);
+        }
+
+        $this->insertDailyLoan([
+            'pn_pengelola1' => '0003 - Mantri Kuadran Tiga',
+            'rm_normalized' => '0003 - MANTRI KUADRAN TIGA',
+            'nomor_rekening1' => 'Q3-1',
+            'plafon' => 100000000,
+        ]);
+        $this->insertDailyLoan([
+            'pn_pengelola1' => '0004 - Mantri Kuadran Empat',
+            'rm_normalized' => '0004 - MANTRI KUADRAN EMPAT',
+            'nomor_rekening1' => 'Q4-1',
+            'plafon' => 40000000,
+        ]);
+
+        $payload = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'mantriKuadranPayload', '2026-05-06');
+
+        $this->assertCount(1, $payload['rows']);
+        $this->assertSame('KC MADIUN', $payload['rows'][0]['cabang']);
+        $this->assertSame('001', $payload['rows'][0]['bc']);
+        $this->assertSame('UNIT TEST', $payload['rows'][0]['unit']);
+        $this->assertSame(4, (int) $payload['rows'][0]['jumlah_mantri']);
+        $this->assertSame(1, (int) $payload['rows'][0]['kuadran_1']);
+        $this->assertSame(1, (int) $payload['rows'][0]['kuadran_2']);
+        $this->assertSame(1, (int) $payload['rows'][0]['kuadran_3']);
+        $this->assertSame(1, (int) $payload['rows'][0]['kuadran_4']);
+        $this->assertSame(4, (int) $payload['total']['jumlah_mantri']);
     }
 
     public function test_extreme_low_mantri_payload_starts_from_daily_loan_and_only_checks_brihc_pt_unit_status(): void
@@ -380,7 +476,105 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame(1, (int) $rekap['total']['total_rm']);
         $this->assertSame(0, (int) $rekap['total']['belum_real']);
         $this->assertSame(['RM AKTIF'], collect($seriesHarian['rows'])->pluck('nama')->all());
+        $this->assertSame(2, (int) $seriesHarian['rows'][0]['w1_deb']);
+        $this->assertSame(250000000.0, (float) $seriesHarian['rows'][0]['w1_os']);
+        $this->assertSame(0, (int) $seriesHarian['rows'][0]['w2_deb']);
+        $this->assertSame(250000000.0, (float) $seriesHarian['rows'][0]['total_os']);
         $this->assertSame(['RM AKTIF'], collect($tiering['rows'])->pluck('nama')->all());
+    }
+
+    public function test_rm_mikro_realisasi_heat_scale_keeps_quadrant_colors_unchanged(): void
+    {
+        $controller = new KinerjaRmMikroReportController();
+        $formatAmount = fn ($value, int $decimals = 0): string => $this->invokePrivateMethod($controller, 'formatAmount', $value, $decimals);
+        $formatJuta = fn ($value, int $decimals = 0): string => $this->invokePrivateMethod($controller, 'formatJuta', $value, $decimals);
+        $gradientClass = fn ($value, float $min, float $max, bool $higherIsBetter = true): string => $this->invokePrivateMethod($controller, 'gradientClass', (float) $value, $min, $max, $higherIsBetter);
+
+        $rows = collect([
+            [
+                'cabang' => 'KC TEST',
+                'pn' => '0001',
+                'nama' => 'RM RENDAH',
+                'branch_code' => '001',
+                'unit' => 'UNIT A',
+                'lancar_deb' => 0,
+                'lancar_os' => 0,
+                'sml_deb' => 0,
+                'sml_os' => 0,
+                'npl_deb' => 0,
+                'npl_os' => 0,
+                'total_deb' => 0,
+                'total_os' => 0,
+                'realisasi_deb' => 0,
+                'realisasi_os' => 0,
+            ],
+            [
+                'cabang' => 'KC TEST',
+                'pn' => '0002',
+                'nama' => 'RM TINGGI',
+                'branch_code' => '002',
+                'unit' => 'UNIT B',
+                'lancar_deb' => 0,
+                'lancar_os' => 0,
+                'sml_deb' => 0,
+                'sml_os' => 0,
+                'npl_deb' => 0,
+                'npl_os' => 0,
+                'total_deb' => 0,
+                'total_os' => 0,
+                'realisasi_deb' => 5,
+                'realisasi_os' => 500000000,
+            ],
+        ]);
+
+        $html = view('report.dashboard-pinjaman._kinerjarmmikro_partials._table_per_rm', [
+            'rows' => $rows,
+            'selectedPeriodLabel' => '31 Mei 2026',
+            'selectedPeriodShortLabel' => '31 Mei 26',
+            'formatAmount' => $formatAmount,
+            'formatJuta' => $formatJuta,
+            'gradientClass' => $gradientClass,
+        ])->render();
+
+        $this->assertStringContainsString('class="text-right heat-red">0</td><td class="text-right heat-red">0</td>', $html);
+        $this->assertStringContainsString('class="text-right heat-green">5</td><td class="text-right heat-green">500</td>', $html);
+
+        $quadrantHtml = view('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_kuadran', [
+            'rows' => collect([
+                [
+                    'cabang' => 'KC TEST',
+                    'bc' => '001',
+                    'unit' => 'UNIT A',
+                    'jumlah_mantri' => 10,
+                    'kuadran_1' => 4,
+                    'kuadran_2' => 3,
+                    'kuadran_3' => 2,
+                    'kuadran_4' => 1,
+                ],
+            ]),
+            'total' => [
+                'jumlah_mantri' => 10,
+                'kuadran_1' => 4,
+                'kuadran_2' => 3,
+                'kuadran_3' => 2,
+                'kuadran_4' => 1,
+            ],
+            'formatAmount' => $formatAmount,
+        ])->render();
+
+        $this->assertStringContainsString('class="text-right heat-green">4</td>', $quadrantHtml);
+        $this->assertStringContainsString('class="text-right heat-lime">3</td>', $quadrantHtml);
+        $this->assertStringContainsString('class="text-right heat-orange">2</td>', $quadrantHtml);
+        $this->assertStringContainsString('class="text-right heat-red">1</td>', $quadrantHtml);
+    }
+
+    public function test_rm_mikro_view_registers_sortable_header_script(): void
+    {
+        $blade = file_get_contents(resource_path('views/report/dashboard-pinjaman/kinerjarmmikro.blade.php'));
+
+        $this->assertStringContainsString('rm-mikro-sortable', $blade);
+        $this->assertStringContainsString('sortTableByColumn', $blade);
+        $this->assertStringContainsString('aria-sort', $blade);
     }
 
     private function insertDailyLoan(array $overrides): void

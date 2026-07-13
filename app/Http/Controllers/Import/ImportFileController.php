@@ -1949,20 +1949,34 @@ class ImportFileController extends Controller
 
     private function extractJumlahMerchantDuplicateKey(array $rowData): ?array
     {
-        $periode = trim((string) ($rowData['PERIODE'] ?? ''));
+        $periode = trim((string) (
+            $rowData['POSISI']
+            ?? $rowData['posisi']
+            ?? $rowData['PERIODE']
+            ?? $rowData['periode']
+            ?? ''
+        ));
         $tid = trim((string) ($rowData['TID'] ?? ''));
 
         if ($periode === '' || $tid === '') {
             return null;
         }
 
-        return [$periode, $tid];
+        return [$this->normalizeJumlahMerchantDuplicatePeriod($periode), $tid];
+    }
+
+    private function normalizeJumlahMerchantDuplicatePeriod(string $periode): string
+    {
+        $normalized = StrictDateParser::normalize($periode);
+
+        return $normalized ?? trim($periode);
     }
 
     private function buildJumlahMerchantDuplicateLookup(array $periodeTidPairs): array
     {
         $normalizedPairs = [];
         $periods = [];
+        $periodQueryValues = [];
 
         foreach ($periodeTidPairs as $pair) {
             $periode = trim((string) ($pair['periode'] ?? ''));
@@ -1971,24 +1985,46 @@ class ImportFileController extends Controller
                 continue;
             }
 
-            $normalizedPairs[$periode . '|' . $tid] = true;
-            $periods[$periode] = true;
+            $normalizedPeriod = $this->normalizeJumlahMerchantDuplicatePeriod($periode);
+            $normalizedPairs[$normalizedPeriod . '|' . $tid] = true;
+            $periods[$normalizedPeriod] = true;
+            $periodQueryValues[$periode] = true;
+            $periodQueryValues[$normalizedPeriod] = true;
+            foreach ($this->buildJumlahMerchantDuplicatePeriodVariants($normalizedPeriod) as $periodVariant) {
+                $periodQueryValues[$periodVariant] = true;
+            }
         }
 
         if (empty($normalizedPairs) || empty($periods)) {
             return [];
         }
 
+        $selectColumns = ['PERIODE', 'TID'];
+        $hasPosisiColumn = $this->cachedSchemaHasColumn('jumlah_merchant_detail', 'POSISI');
+        if ($hasPosisiColumn) {
+            $selectColumns[] = 'POSISI';
+        }
+
         $lookup = [];
         $existingRows = DB::table('jumlah_merchant_detail')
-            ->select(['PERIODE', 'TID'])
-            ->whereIn('PERIODE', array_keys($periods))
-            ->whereNotNull('PERIODE')
+            ->select($selectColumns)
             ->whereNotNull('TID')
+            ->where(function ($query) use ($periodQueryValues, $periods, $hasPosisiColumn) {
+                $query->whereIn('PERIODE', array_keys($periodQueryValues));
+
+                if ($hasPosisiColumn) {
+                    foreach (array_keys($periods) as $normalizedPeriod) {
+                        $query->orWhereDate('POSISI', $normalizedPeriod);
+                    }
+                }
+            })
             ->get();
 
         foreach ($existingRows as $existingRow) {
-            $periode = trim((string) ($existingRow->PERIODE ?? ''));
+            $rawPeriod = $hasPosisiColumn ? trim((string) ($existingRow->POSISI ?? '')) : '';
+            $rawPeriod = $rawPeriod !== '' ? $rawPeriod : trim((string) ($existingRow->PERIODE ?? ''));
+
+            $periode = $this->normalizeJumlahMerchantDuplicatePeriod($rawPeriod);
             $tid = trim((string) ($existingRow->TID ?? ''));
             $key = $periode . '|' . $tid;
 
@@ -1998,6 +2034,35 @@ class ImportFileController extends Controller
         }
 
         return $lookup;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function buildJumlahMerchantDuplicatePeriodVariants(string $periode): array
+    {
+        $normalized = StrictDateParser::normalize($periode);
+        if ($normalized === null) {
+            return [];
+        }
+
+        try {
+            $date = Carbon::parse($normalized);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter([
+            $normalized,
+            $date->format('d M y'),
+            $date->format('j M y'),
+            $date->format('d-M-y'),
+            $date->format('j-M-y'),
+            $date->format('d M Y'),
+            $date->format('j M Y'),
+            $date->format('d-M-Y'),
+            $date->format('j-M-Y'),
+        ], static fn (string $value): bool => trim($value) !== '')));
     }
 
     private function extractBrilinkSummaryDuplicateKey(array $rowData): ?array
@@ -2466,15 +2531,22 @@ class ImportFileController extends Controller
                     $periodeCandidate = $periodeIndex !== -1
                         ? ($parsedRow[$periodeIndex] ?? null)
                         : ($posisiIndex !== -1 ? ($parsedRow[$posisiIndex] ?? null) : ($parsedRow[0] ?? null));
-                    $samplePeriode = trim((string) $periodeCandidate) ?: null;
+                    $periodeCandidate = trim((string) $periodeCandidate);
+                    $samplePeriode = $periodeCandidate !== ''
+                        ? ($this->normalizeJumlahMerchantDuplicatePeriod($periodeCandidate) ?: $periodeCandidate)
+                        : null;
                 }
 
                 if ($samplePosisi === null && $posisiIndex !== -1 && isset($parsedRow[$posisiIndex])) {
-                    $samplePosisi = trim((string) $parsedRow[$posisiIndex]) ?: null;
+                    $posisiCandidate = trim((string) $parsedRow[$posisiIndex]);
+                    $samplePosisi = $posisiCandidate !== ''
+                        ? ($this->normalizeJumlahMerchantDuplicatePeriod($posisiCandidate) ?: $posisiCandidate)
+                        : null;
                 }
 
-                if ($collectDuplicatePairs && $periodeIndex !== -1 && $tidIndex !== -1) {
-                    $periodeValue = trim((string) ($parsedRow[$periodeIndex] ?? ''));
+                $duplicatePeriodIndex = $posisiIndex !== -1 ? $posisiIndex : $periodeIndex;
+                if ($collectDuplicatePairs && $duplicatePeriodIndex !== -1 && $tidIndex !== -1) {
+                    $periodeValue = $this->normalizeJumlahMerchantDuplicatePeriod(trim((string) ($parsedRow[$duplicatePeriodIndex] ?? '')));
                     $tidValue = trim((string) ($parsedRow[$tidIndex] ?? ''));
 
                     if ($periodeValue !== '' && $tidValue !== '') {
@@ -3279,6 +3351,7 @@ class ImportFileController extends Controller
             'prefetchFilterOptionsOnLoad' => false,
             'warmPreviewIndexOnLoad' => $shouldWarmPreviewIndexOnLoad,
             'disableFilterOptionsLocalCache' => $isJumlahMerchantQrisDetail,
+            'portalFilterDropdowns' => true,
             'manualPeriode' => $manualPeriode,
             'manualPeriodeInputType' => $manualPeriodeInputType,
             'manualPeriodeLabel' => $manualPeriodeLabel,
@@ -5511,8 +5584,13 @@ class ImportFileController extends Controller
         $samplePeriode = null;
 
         if (!empty($dataToInsert)) {
-            $samplePosisi = $dataToInsert[0]['POSISI'] ?? null;
-            $samplePeriode = $dataToInsert[0]['periode'] ?? ($dataToInsert[0]['POSISI'] ?? null);
+            $rawSamplePosisi = $dataToInsert[0]['POSISI'] ?? ($dataToInsert[0]['posisi'] ?? null);
+            $samplePosisi = $rawSamplePosisi !== null
+                ? $this->normalizeJumlahMerchantDuplicatePeriod((string) $rawSamplePosisi)
+                : null;
+            $samplePeriode = $dataToInsert[0]['periode']
+                ?? $dataToInsert[0]['PERIODE']
+                ?? $samplePosisi;
         }
 
         // Layer A: cross-report duplicate file check via SHA256 content fingerprint

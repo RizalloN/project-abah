@@ -69,7 +69,7 @@ class ImportStrategyFactory
             return $generic;
         }
 
-        $table = strtolower(trim((string) ($tableName ?? $report->table_name ?? 'unknown')));
+        $table = $table !== '' ? $table : 'unknown';
         throw new \RuntimeException("Import strategy khusus untuk tabel `{$table}` tidak ditemukan. Fallback generic ditolak.");
     }
 }

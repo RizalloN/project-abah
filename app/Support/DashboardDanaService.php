@@ -22,7 +22,7 @@ class DashboardDanaService
     /**
      * Get data for Dashboard Dana from ssa_simpanan with performance metrics
      */
-    public function getDashboardData(?string $selectedPeriod, ?string $category, ?string $rkaPeriod = null): array
+    public function getDashboardData(?string $selectedPeriod, ?string $category, ?string $rkaPeriod = null, ?string $selectedBranch = null): array
     {
         if (!$selectedPeriod) {
             return [
@@ -33,6 +33,11 @@ class DashboardDanaService
         }
 
         $periods = $this->calculatePeriodReferences($selectedPeriod);
+        $branchScope = $this->normalizeBranchScope($selectedBranch);
+        if ($branchScope !== 'area6') {
+            return $this->getBranchSegmentDashboardData($selectedPeriod, $branchScope, $rkaPeriod, $periods);
+        }
+
         $snapshotData = $this->getDashboardDataFromHarianSnapshot($selectedPeriod, $category, $rkaPeriod, $periods);
         if ($snapshotData !== null) {
             return DashboardCrossAlignmentGuard::alignFunds($snapshotData, $selectedPeriod, $category, $rkaPeriod);
@@ -142,6 +147,31 @@ class DashboardDanaService
         ];
 
         return DashboardCrossAlignmentGuard::alignFunds($res, $selectedPeriod, $category, $rkaPeriod);
+    }
+
+    protected function getBranchSegmentDashboardData(string $selectedPeriod, string $selectedBranch, ?string $rkaPeriod, array $periods): array
+    {
+        $branch = $this->resolveAreaBranchLabel($selectedBranch);
+        if ($branch === null) {
+            return [
+                'rows' => [],
+                'total' => [],
+                'header_dates' => [
+                    'selected' => $this->formatDateLabel($periods['selected'] ?? null),
+                    'ytd' => $this->formatDateLabel($periods['ytd'] ?? null),
+                    'mtd' => $this->formatDateLabel($periods['mtd'] ?? null),
+                ],
+                'scope' => 'branch',
+                'scope_label' => $this->normalizeBranchName($selectedBranch),
+            ];
+        }
+
+        $snapshotData = $this->getBranchSegmentDataFromHarianSnapshot($branch, $rkaPeriod ?? $selectedPeriod, $periods);
+        if ($snapshotData !== null) {
+            return $snapshotData;
+        }
+
+        return $this->getBranchSegmentDataFromRaw($branch, $rkaPeriod ?? $selectedPeriod, $periods);
     }
 
     protected function getDashboardDataFromHarianSnapshot(?string $selectedPeriod, ?string $category, ?string $rkaPeriod = null, ?array $periods = null): ?array
@@ -271,6 +301,148 @@ class DashboardDanaService
                 'mtd' => $this->formatDateLabel($periods['mtd']),
             ],
             'source_table' => self::HARIAN_SNAPSHOT_TABLE,
+        ];
+    }
+
+    private function getBranchSegmentDataFromHarianSnapshot(string $branch, string $rkaPeriod, array $periods): ?array
+    {
+        if (!Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return null;
+        }
+
+        $periodValues = array_values(array_unique(array_filter($periods)));
+        if ($periodValues === []) {
+            return null;
+        }
+
+        $hasSelectedSnapshot = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->where('snapshot_period', $periods['selected'] ?? null)
+            ->where('kanca_label', $branch)
+            ->whereColumn('kanca_key', 'unit_key')
+            ->exists();
+
+        if (!$hasSelectedSnapshot) {
+            return null;
+        }
+
+        $records = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->whereIn('snapshot_period', $periodValues)
+            ->where('kanca_label', $branch)
+            ->whereColumn('kanca_key', 'unit_key')
+            ->orderBy('snapshot_period')
+            ->get();
+
+        $dataMatrix = [];
+        foreach ($records as $record) {
+            $period = (string) $record->snapshot_period;
+            foreach ($this->segmentDefinitions() as $segmentKey => $segmentLabel) {
+                $dataMatrix[$segmentLabel][$period] = $this->mapHarianSnapshotSavingsValues($record, $segmentKey);
+            }
+        }
+
+        return $this->buildBranchSegmentDashboardResponse($dataMatrix, $branch, $periods, $rkaPeriod, self::HARIAN_SNAPSHOT_TABLE);
+    }
+
+    private function getBranchSegmentDataFromRaw(string $branch, string $rkaPeriod, array $periods): array
+    {
+        $periodValues = array_values(array_unique(array_filter($periods)));
+        $dataMatrix = [];
+
+        if ($periodValues !== [] && Schema::hasTable(self::TABLE)) {
+            $records = DB::table(self::TABLE)
+                ->whereIn('Month_Day_Year_of_Posisi', $periodValues)
+                ->whereRaw('UPPER(TRIM(nama_cabang)) = ?', [strtoupper($branch)])
+                ->select('Month_Day_Year_of_Posisi', 'segmentasi', 'produk', DB::raw('SUM(saldo) as total_saldo'))
+                ->groupBy('Month_Day_Year_of_Posisi', 'segmentasi', 'produk')
+                ->get();
+
+            foreach ($records as $record) {
+                $segmentLabel = $this->segmentLabel((string) $record->segmentasi);
+                if ($segmentLabel === null) {
+                    continue;
+                }
+
+                $product = $this->productLabel((string) $record->produk);
+                if ($product === null) {
+                    continue;
+                }
+
+                $period = (string) $record->Month_Day_Year_of_Posisi;
+                $dataMatrix[$segmentLabel][$period][$product] = ($dataMatrix[$segmentLabel][$period][$product] ?? 0) + (float) $record->total_saldo;
+                $dataMatrix[$segmentLabel][$period]['TOTAL'] = ($dataMatrix[$segmentLabel][$period]['TOTAL'] ?? 0) + (float) $record->total_saldo;
+                $dataMatrix[$segmentLabel][$period]['CASA'] = ($dataMatrix[$segmentLabel][$period]['Giro'] ?? 0) + ($dataMatrix[$segmentLabel][$period]['Tabungan'] ?? 0);
+            }
+        }
+
+        return $this->buildBranchSegmentDashboardResponse($dataMatrix, $branch, $periods, $rkaPeriod, self::TABLE);
+    }
+
+    private function buildBranchSegmentDashboardResponse(array $dataMatrix, string $branch, array $periods, string $rkaPeriod, string $sourceTable): array
+    {
+        $formattedRows = [];
+        $no = 1;
+
+        foreach ($this->segmentDefinitions() as $segmentKey => $segmentLabel) {
+            $rkaData = $this->loadRkaData($rkaPeriod, $segmentKey);
+            $segmentTotalRow = [
+                'no' => $no++,
+                'nama_cabang' => $segmentLabel,
+                'kategori' => 'TOTAL SEGMEN',
+                'is_total' => true,
+                'scope_branch' => $this->normalizeBranchName($branch),
+            ];
+
+            foreach ($periods as $pKey => $pDate) {
+                $segmentTotalRow[$pKey] = $this->getVal($dataMatrix, $segmentLabel, $pDate, 'TOTAL');
+            }
+
+            $segmentTotalRow['delta_ytd'] = $segmentTotalRow['selected'] - ($segmentTotalRow['ytd'] ?? 0);
+            $segmentTotalRow['delta_mtd'] = $segmentTotalRow['selected'] - ($segmentTotalRow['mtd'] ?? 0);
+
+            $rkaTotal = $this->getRkaVal($rkaData, $branch, 'Giro')
+                + $this->getRkaVal($rkaData, $branch, 'Tabungan')
+                + $this->getRkaVal($rkaData, $branch, 'Deposito');
+
+            $segmentTotalRow['rka_rp'] = $segmentTotalRow['selected'] - $rkaTotal;
+            $segmentTotalRow['rka_pct'] = $rkaTotal > 0 ? ($segmentTotalRow['selected'] / $rkaTotal) * 100 : 0;
+            $formattedRows[] = $segmentTotalRow;
+
+            foreach (['Giro', 'Tabungan', 'Deposito', 'CASA'] as $kategori) {
+                $row = [
+                    'no' => '',
+                    'nama_cabang' => $segmentLabel,
+                    'kategori' => $kategori,
+                    'is_total' => false,
+                    'scope_branch' => $this->normalizeBranchName($branch),
+                ];
+
+                foreach ($periods as $pKey => $pDate) {
+                    $row[$pKey] = $this->getVal($dataMatrix, $segmentLabel, $pDate, $kategori);
+                }
+
+                $selectedVal = $row['selected'] ?? 0;
+                $row['delta_ytd'] = $selectedVal - ($row['ytd'] ?? 0);
+                $row['delta_mtd'] = $selectedVal - ($row['mtd'] ?? 0);
+
+                $rkaVal = $this->getRkaVal($rkaData, $branch, $kategori);
+                $row['rka_rp'] = $selectedVal - $rkaVal;
+                $row['rka_pct'] = $rkaVal > 0 ? ($selectedVal / $rkaVal) * 100 : 0;
+
+                $formattedRows[] = $row;
+            }
+        }
+
+        return [
+            'rows' => $formattedRows,
+            'total' => $this->calculateGrandTotals($formattedRows),
+            'header_dates' => [
+                'selected' => $this->formatDateLabel($periods['selected'] ?? null),
+                'ytd' => $this->formatDateLabel($periods['ytd'] ?? null),
+                'mtd' => $this->formatDateLabel($periods['mtd'] ?? null),
+            ],
+            'scope' => 'branch',
+            'scope_label' => $this->normalizeBranchName($branch),
+            'source_table' => $sourceTable,
         ];
     }
 
@@ -606,6 +778,56 @@ class DashboardDanaService
             ->pluck('Month_Day_Year_of_Posisi');
     }
 
+    public function fetchBranches(): array
+    {
+        $branches = ['area6' => 'AREA 6'];
+
+        if (Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            $snapshotBranches = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+                ->whereIn('kanca_label', self::AREA_6_BRANCHES)
+                ->whereColumn('kanca_key', 'unit_key')
+                ->select('kanca_label')
+                ->distinct()
+                ->pluck('kanca_label')
+                ->map(fn ($branch): string => (string) $branch)
+                ->all();
+
+            foreach (self::AREA_6_BRANCHES as $branch) {
+                if (in_array($branch, $snapshotBranches, true)) {
+                    $branches[$branch] = $branch;
+                }
+            }
+
+            if (count($branches) > 1) {
+                return $branches;
+            }
+        }
+
+        if (Schema::hasTable(self::TABLE)) {
+            $rawBranches = DB::table(self::TABLE)
+                ->select('nama_cabang')
+                ->distinct()
+                ->whereNotNull('nama_cabang')
+                ->where('nama_cabang', '<>', '')
+                ->pluck('nama_cabang')
+                ->map(fn ($branch): string => $this->normalizeBranchName((string) $branch))
+                ->filter()
+                ->unique()
+                ->sort()
+                ->values()
+                ->all();
+
+            foreach ($rawBranches as $branch) {
+                $standardBranch = $this->resolveAreaBranchLabel($branch);
+                if ($standardBranch !== null) {
+                    $branches[$standardBranch] = $standardBranch;
+                }
+            }
+        }
+
+        return $branches;
+    }
+
     public function fetchCategories(): array
     {
         if (Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
@@ -619,5 +841,60 @@ class DashboardDanaService
             ->where('segmentasi', '<>', '')
             ->pluck('segmentasi')
             ->toArray();
+    }
+
+    private function normalizeBranchScope(?string $branch): string
+    {
+        $normalized = strtolower(trim((string) $branch));
+        if ($normalized === '' || in_array($normalized, ['all', 'area6', 'area 6'], true)) {
+            return 'area6';
+        }
+
+        return $this->normalizeBranchName((string) $branch);
+    }
+
+    private function resolveAreaBranchLabel(string $branch): ?string
+    {
+        $branchKey = strtoupper($this->normalizeBranchName($branch));
+        foreach (self::AREA_6_BRANCHES as $areaBranch) {
+            if (strtoupper($this->normalizeBranchName($areaBranch)) === $branchKey) {
+                return $areaBranch;
+            }
+        }
+
+        return null;
+    }
+
+    private function segmentDefinitions(): array
+    {
+        return [
+            'ritel' => 'RITEL',
+            'mikro' => 'MIKRO',
+            'wholesale' => 'WHOLESALE',
+        ];
+    }
+
+    private function segmentLabel(string $segment): ?string
+    {
+        $normalized = strtolower(trim($segment));
+
+        return match ($normalized) {
+            'ritel', 'retail' => 'RITEL',
+            'mikro', 'micro' => 'MIKRO',
+            'wholesale' => 'WHOLESALE',
+            default => null,
+        };
+    }
+
+    private function productLabel(string $product): ?string
+    {
+        $normalized = strtoupper(trim($product));
+
+        return match ($normalized) {
+            'GIRO' => 'Giro',
+            'TABUNGAN' => 'Tabungan',
+            'DEPOSITO' => 'Deposito',
+            default => null,
+        };
     }
 }

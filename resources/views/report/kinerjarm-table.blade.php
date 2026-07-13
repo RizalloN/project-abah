@@ -24,13 +24,84 @@
     };
     $formatCount = $formatCount ?? fn ($value) => number_format((int) round((float) $value), 0, ',', '.');
 
-    // Mapping segmen ke subtitle
     $segmentLabels = [
         'CONSUMER' => 'Consumer',
         'SMALL' => 'Small Business',
         'MICRO' => 'Micro Business',
     ];
     $segmentLabel = $segmentLabels[$selectedSegmen] ?? $selectedSegmen;
+    $qualityDefinitions = [
+        'os' => [
+            'title' => 'OS',
+            'subtitle' => null,
+            'component' => 'OS',
+            'show_loan_reference' => false,
+            'lower_is_better' => false,
+        ],
+        'lr' => [
+            'title' => 'LR',
+            'subtitle' => 'Lancar Restruk',
+            'component' => 'LR',
+            'show_loan_reference' => true,
+            'lower_is_better' => true,
+        ],
+        'sml_1' => [
+            'title' => 'SML 1',
+            'subtitle' => null,
+            'component' => 'SML 1',
+            'show_loan_reference' => true,
+            'lower_is_better' => true,
+        ],
+        'sml_2' => [
+            'title' => 'SML 2',
+            'subtitle' => null,
+            'component' => 'SML 2',
+            'show_loan_reference' => true,
+            'lower_is_better' => true,
+        ],
+        'sml_3' => [
+            'title' => 'SML 3',
+            'subtitle' => null,
+            'component' => 'SML 3',
+            'show_loan_reference' => true,
+            'lower_is_better' => true,
+        ],
+        'kl' => [
+            'title' => 'KL',
+            'subtitle' => null,
+            'component' => 'KL',
+            'show_loan_reference' => true,
+            'lower_is_better' => true,
+        ],
+        'd1' => [
+            'title' => 'D1',
+            'subtitle' => null,
+            'component' => 'D1',
+            'show_loan_reference' => true,
+            'lower_is_better' => true,
+        ],
+        'd2' => [
+            'title' => 'D2',
+            'subtitle' => null,
+            'component' => 'D2',
+            'show_loan_reference' => true,
+            'lower_is_better' => true,
+        ],
+        'm' => [
+            'title' => 'M',
+            'subtitle' => null,
+            'component' => 'M',
+            'show_loan_reference' => true,
+            'lower_is_better' => true,
+        ],
+        'lar' => [
+            'title' => 'LAR',
+            'subtitle' => 'LR + SML 1 + SML 2 + SML 3 + KL + D1 + D2 + M',
+            'component' => 'LAR',
+            'show_loan_reference' => true,
+            'lower_is_better' => true,
+        ],
+    ];
 @endphp
 
 <div id="kinerjaContentArea" class="animate-reveal">
@@ -38,19 +109,16 @@
         <div class="kinerja-tabs-shell">
             <div class="kinerja-tabs-header">
                 <div class="kinerja-tabs-heading">
-                    <p class="kinerja-tabs-kicker">Rincian RM - {{ $segmentLabel }}</p>
-                    <h2 class="kinerja-tabs-title">Performance OS dan Kualitas</h2>
-                    <p class="kinerja-tabs-subtitle">Pilih panel untuk berpindah antara performance dan kualitas RM tanpa memecah konteks halaman.</p>
+                    <p class="kinerja-tabs-kicker">{{ $segmentLabel }}</p>
+                    <h2 class="kinerja-tabs-title">OS & Kualitas</h2>
                 </div>
 
-                <div class="kinerja-tabs-nav" role="tablist" aria-label="Navigasi Kinerja Konsumer">
+                <div class="kinerja-tabs-nav" role="tablist" aria-label="Navigasi Kinerja RM Ritel">
                     <button type="button" id="kinerja-tab-os" class="kinerja-tab-btn active" data-kinerja-tab="os" role="tab" aria-controls="kinerja-panel-os" aria-selected="true">
-                        <span class="kinerja-tab-btn__label">Kinerja OS</span>
-                        <span class="kinerja-tab-btn__meta">Outstanding</span>
+                        <span class="kinerja-tab-btn__label">OS</span>
                     </button>
                     <button type="button" id="kinerja-tab-kualitas" class="kinerja-tab-btn" data-kinerja-tab="kualitas" role="tab" aria-controls="kinerja-panel-kualitas" aria-selected="false">
-                        <span class="kinerja-tab-btn__label">Kinerja Kualitas</span>
-                        <span class="kinerja-tab-btn__meta">SML dan NPL</span>
+                        <span class="kinerja-tab-btn__label">Kualitas</span>
                     </button>
                 </div>
             </div>
@@ -58,9 +126,9 @@
             <div class="kinerja-tabs-body">
                 <section id="kinerja-panel-os" class="kinerja-tab-panel is-active" data-kinerja-panel="os" role="tabpanel" aria-labelledby="kinerja-tab-os">
                     @include('report.kinerjarm-table-section', [
-                        'sectionTitle' => 'Performance OS Per RM',
-                        'sectionSubtitle' => 'Performance RM per branch dan produk.',
-                        'sectionMeta' => 'Satuan Akuntansi: Rp, Juta',
+                        'sectionTitle' => 'OS per RM',
+                        'sectionSubtitle' => null,
+                        'sectionMeta' => 'Rp Juta',
                         'comparisonColumns' => $comparisonColumns,
                         'rows' => $rows,
                         'total' => $total,
@@ -77,47 +145,31 @@
                 <section id="kinerja-panel-kualitas" class="kinerja-tab-panel" data-kinerja-panel="kualitas" role="tabpanel" aria-labelledby="kinerja-tab-kualitas">
                     <div class="kinerja-quality-intro">
                         <div>
-                            <p class="kinerja-quality-intro__title">Kinerja Kualitas per RM</p>
-                            <p class="kinerja-quality-intro__desc">Dua tabel berikut memisahkan kualitas berdasarkan <code>kolek</code>.</p>
+                            <p class="kinerja-quality-intro__title">Kualitas Kredit</p>
                         </div>
                         <div class="kinerja-quality-intro__chips">
-                            <span class="kinerja-report-chip">SML = kolek = 2</span>
-                            <span class="kinerja-report-chip">NPL = kolek &gt; 2</span>
+                            <span class="kinerja-report-chip">SML 1-3 = kolek 2</span>
+                            <span class="kinerja-report-chip">LR = lancar restruk</span>
+                            <span class="kinerja-report-chip">KL = kolek 3</span>
+                            <span class="kinerja-report-chip">D1-2 = kolek 4</span>
+                            <span class="kinerja-report-chip">M = kolek 5</span>
                         </div>
                     </div>
 
                     <div class="kinerja-quality-stack">
-                        @include('report.kinerjarm-table-section', [
-                            'sectionTitle' => 'SML',
-                            'sectionSubtitle' => 'Filter kualitas: kolek = 2.',
-                            'sectionMeta' => 'Filter: kolek = 2',
-                        'comparisonColumns' => $comparisonColumns,
-                        'rows' => $qualityRowsSml,
-                        'total' => $qualityTotalSml,
-                        'showTargets' => false,
-                        'showTargetColumns' => false,
-                        'showAchievementColumns' => false,
-                        'showLarColumn' => false,
-                        'compact' => true,
-                        'grandTotalLabel' => 'GRAND TOTAL SML ' . ($selectedProductLabel === 'Semua Produk' ? 'KONSUMER' : strtoupper($selectedProductLabel)),
-                        'emptyMessage' => 'Tidak ada data SML untuk kombinasi filter ini.',
-                    ])
-
-                        @include('report.kinerjarm-table-section', [
-                            'sectionTitle' => 'NPL',
-                            'sectionSubtitle' => 'Filter kualitas: kolek > 2.',
-                            'sectionMeta' => 'Filter: kolek > 2',
-                        'comparisonColumns' => $comparisonColumns,
-                        'rows' => $qualityRowsNpl,
-                        'total' => $qualityTotalNpl,
-                        'showTargets' => false,
-                        'showTargetColumns' => false,
-                        'showAchievementColumns' => false,
-                        'showLarColumn' => false,
-                        'compact' => true,
-                        'grandTotalLabel' => 'GRAND TOTAL NPL ' . ($selectedProductLabel === 'Semua Produk' ? 'KONSUMER' : strtoupper($selectedProductLabel)),
-                        'emptyMessage' => 'Tidak ada data NPL untuk kombinasi filter ini.',
-                    ])
+                        @foreach($qualityDefinitions as $qualityKey => $definition)
+                            @php $series = $qualitySeries[$qualityKey] ?? ['rows' => [], 'total' => []]; @endphp
+                            @include('report.kinerjarm-quality-series-section', [
+                                'sectionTitle' => $definition['title'],
+                                'sectionSubtitle' => $definition['subtitle'],
+                                'componentLabel' => $definition['component'],
+                                'showLoanReference' => $definition['show_loan_reference'],
+                                'lowerIsBetter' => $definition['lower_is_better'],
+                                'comparisonColumns' => $comparisonColumns,
+                                'rows' => $series['rows'],
+                                'total' => $series['total'],
+                            ])
+                        @endforeach
                     </div>
                 </section>
             </div>

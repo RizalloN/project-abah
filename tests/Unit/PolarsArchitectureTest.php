@@ -141,4 +141,20 @@ class PolarsArchitectureTest extends TestCase
 
         $this->assertInstanceOf(GenericCsvImportStrategy::class, $resolved);
     }
+
+    public function test_factory_resolves_lw321_npd_correctly(): void
+    {
+        $factory = app(ImportStrategyFactory::class);
+        $resolved = $factory->resolve(null, 'lw321_npd');
+
+        $this->assertInstanceOf(Lw321NpdImportStrategy::class, $resolved);
+    }
+
+    public function test_factory_resolves_lw321_npdd_correctly(): void
+    {
+        $factory = app(ImportStrategyFactory::class);
+        $resolved = $factory->resolve(null, 'lw321_npdd');
+
+        $this->assertInstanceOf(Lw321NpddImportStrategy::class, $resolved);
+    }
 }

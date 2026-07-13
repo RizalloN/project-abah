@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Report;
 use App\Http\Controllers\Controller;
 use App\Services\Reports\BusinessClusterReportService;
 use App\Services\Reports\KolaborasiReportService;
+use App\Services\Reports\SppgReportService;
 use Illuminate\Http\Request;
 
 /**
@@ -15,7 +16,8 @@ class KolaborasiReportController extends Controller
 {
     public function __construct(
         private readonly KolaborasiReportService $kolaborasiService,
-        private readonly BusinessClusterReportService $businessClusterService
+        private readonly BusinessClusterReportService $businessClusterService,
+        private readonly SppgReportService $sppgReportService
     ) {}
 
     public function programReferralPartnerPerusahaanAnak(Request $request)
@@ -45,5 +47,10 @@ class KolaborasiReportController extends Controller
         return view('report.business-cluster', $this->businessClusterService->buildReport(
             $request->input('branch_office')
         ));
+    }
+
+    public function sppg()
+    {
+        return view('report.sppg', $this->sppgReportService->buildReport());
     }
 }

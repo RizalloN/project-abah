@@ -16,6 +16,50 @@ class AlmafactsDashboardController extends Controller
     private const AREA_BRANCHES = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
     private const PROFIT_LABEL = '15. Laba Setelah Pajak';
     private const RKA_LABEL = 'E. LABA TOTAL';
+    private const FINANCIAL_LIABILITY_LABELS = [
+        'loan' => '33. Pinjaman',
+        'savings' => '34. Simpanan',
+        'giro' => '35. Giro',
+        'tabungan' => '36. Tabungan',
+        'deposito' => '37. Deposito',
+    ];
+    private const FINANCIAL_PNL_LABELS = [
+        'interest_income' => '01. Pendapatan Bunga',
+        'ftp_expense' => '02. Beban FTP',
+        'assets_spread' => '03. Assets Spread',
+        'interest_expense' => '04. Beban Bunga',
+        'ftp_income' => '05. Pendapatan FTP',
+        'liabilities_spread' => '06. Liabilities Spread',
+        'contribution_margin' => '07. Contibrution Margin',
+        'fee_income' => '08. Fee & Pendapatan Lainnya',
+        'overhead_cost' => '09. Overhead Cost',
+        'ppop' => '10. PPOP',
+        'ckpn_expense' => '11. Beban CKPN',
+        'other_income_expense' => '12. Pendapatan/Beban Lainnya',
+        'profit_before_tax' => '13. Laba Sebelum Pajak',
+        'tax_expense' => '14. Pajak',
+        'profit_after_tax' => '15. Laba Setelah Pajak',
+    ];
+    private const FINANCIAL_PROFITABILITY_LABELS = [
+        'yield' => '18. Yield (%)',
+        'cof' => '19. COF (%)',
+        'nim' => '22. NIM (%)',
+        'ohc' => '23. OHC (%)',
+        'credit_cost' => '25. Credit Cost (%)',
+        'roa_before_tax' => '26. ROA sebelum Pajak (%)',
+        'roa_after_tax' => '27. ROA setelah Pajak (%)',
+        'bopo' => '28. BOPO (%)',
+        'cer' => '29. CER (%)',
+    ];
+    private const FINANCIAL_LIQUIDITY_LABELS = [
+        'ldr' => '30. LDR (%)',
+        'casa' => '38. CASA (%)',
+    ];
+    private const FINANCIAL_ASSET_QUALITY_LABELS = [
+        'dpk' => '39. DPK (%)',
+        'npl' => '41. NPL (%)',
+        'lar' => '40. LAR (%)',
+    ];
     private const KPI_SPREADSHEET_ID = '1KgXJ4fi9u4-mJyaZADXF0cM9wJnVlh0f7sQBZeR8fLY';
     private const KPI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1KgXJ4fi9u4-mJyaZADXF0cM9wJnVlh0f7sQBZeR8fLY/edit?usp=sharing';
     private const KPI_RM_MIKRO_SPREADSHEET_ID = '1v1loife4UzSSsdJ9yGYl3SSuKtk_16CwtlKMj2f8dTM';
@@ -105,6 +149,41 @@ class AlmafactsDashboardController extends Controller
             'rows' => $rows,
             'showUnitColumn' => $selectedBranch !== self::AREA_KEY,
             'summary' => $this->summary($rows),
+        ]);
+    }
+
+    public function financialHighlight(Request $request)
+    {
+        $periodOptions = $this->periodOptions();
+        $selectedPeriod = $this->resolveSelectedPeriod($request->input('periode'), $periodOptions);
+        $selectedBranch = $this->resolveSelectedBranch($request->input('cabang'));
+        $unitOptions = $this->financialUnitOptions($selectedBranch);
+        $unitFilter = $this->resolveFinancialUnitFilter($request, $unitOptions);
+        $comparisonPeriods = $this->financialComparisonPeriods($selectedPeriod);
+        $snapshots = $selectedPeriod
+            ? $this->financialSnapshots($comparisonPeriods, $selectedBranch, $unitFilter)
+            : [];
+        $sections = $this->financialHighlightSections($snapshots);
+
+        return view('report.almafacts.financial-highlight', [
+            'periodOptions' => $periodOptions,
+            'selectedPeriod' => $selectedPeriod,
+            'selectedPeriodLabel' => $this->financialMonthLabel($selectedPeriod),
+            'branchOptions' => $this->branchOptions(),
+            'selectedBranch' => $selectedBranch,
+            'selectedBranchLabel' => $selectedBranch === self::AREA_KEY ? 'Area 6' : $selectedBranch,
+            'unitOptions' => $unitOptions,
+            'unitFilter' => $unitFilter,
+            'comparisonPeriods' => $comparisonPeriods,
+            'comparisonLabels' => [
+                'yoy' => $this->financialMonthLabel($comparisonPeriods['yoy'] ?? null),
+                'ytd' => $this->financialMonthLabel($comparisonPeriods['ytd'] ?? null),
+                'm1' => $this->financialMonthLabel($comparisonPeriods['m1'] ?? null),
+                'current' => $this->financialMonthLabel($selectedPeriod),
+            ],
+            'sourcePeriods' => $this->financialSourcePeriodSummary($snapshots),
+            'sections' => $sections,
+            'summaryCards' => $this->financialSummaryCards($snapshots['current'] ?? []),
         ]);
     }
 
@@ -346,7 +425,7 @@ class AlmafactsDashboardController extends Controller
             $group = null;
             $leaf = $raw;
 
-            if ($index === 0 && str_starts_with(strtoupper($raw), 'KEY PERFORMING INDICATOR')) {
+            if ($index === 0 && (str_starts_with(strtoupper($raw), 'KEY PERFORMING INDICATOR') || str_starts_with(strtoupper($raw), 'KPI'))) {
                 $title = trim(preg_replace('/\s+BO\s*$/i', '', $raw) ?? $raw);
                 $label = 'BO';
                 $leaf = 'BO';
@@ -354,7 +433,7 @@ class AlmafactsDashboardController extends Controller
 
             if ($label === '' && $currentGroup !== null) {
                 $group = $currentGroup;
-                $leaf = $currentWeight ?: 'Bobot';
+                $leaf = $currentWeight ?: 'Score';
             } elseif (preg_match('/^(.+?)\s+(PENCP|PENCAPAIAN)$/i', $label, $matches) === 1) {
                 $group = trim($matches[1]);
                 $currentGroup = $group;
@@ -365,19 +444,21 @@ class AlmafactsDashboardController extends Controller
                 $leaf = strtoupper($label);
                 $currentGroup = null;
             } elseif (preg_match('/^(.+?)\s+BOBOT\s+(.+)$/i', $label, $matches) === 1) {
-                $group = strtoupper(trim($matches[1]));
+                $metric = trim($matches[1]);
+                $weight = trim($matches[2]);
+                $group = $metric . ' (Bobot ' . $weight . ')';
                 $currentGroup = $group;
-                $currentWeight = 'Bobot ' . trim($matches[2]);
+                $currentWeight = 'Score';
                 $leaf = 'Pencapaian';
             } else {
                 $currentGroup = null;
                 $currentWeight = null;
-                $leaf = $label !== '' ? $label : 'Kolom ' . ($index + 1);
+                $leaf = $label !== '' ? $label : '';
             }
 
             $columns[] = [
-                'label' => $leaf,
-                'group' => $group,
+                'label' => $this->normalizeKpiHeaderLabel($leaf),
+                'group' => $group !== null ? $this->normalizeKpiHeaderLabel($group) : null,
                 'sortable' => true,
                 'index' => $index,
             ];
@@ -402,13 +483,17 @@ class AlmafactsDashboardController extends Controller
             $leafRaw = trim((string) ($secondHeader[$index] ?? ''));
             $label = $raw;
 
-            if ($index === 0 && str_starts_with(strtoupper($raw), 'KEY PERFORMING INDICATOR')) {
+            if ($index === 0 && (str_starts_with(strtoupper($raw), 'KEY PERFORMING INDICATOR') || str_starts_with(strtoupper($raw), 'KPI'))) {
                 $title = trim(preg_replace('/\s+BO\s*$/i', '', $raw) ?? $raw);
                 $label = 'BO';
             }
 
             if ($label !== '') {
-                $currentGroup = $label;
+                if (preg_match('/^(.+?)\s+BOBOT\s+(.+)$/i', $label, $matches) === 1) {
+                    $currentGroup = trim($matches[1]) . ' (Bobot ' . trim($matches[2]) . ')';
+                } else {
+                    $currentGroup = $label;
+                }
             }
 
             $group = null;
@@ -416,12 +501,12 @@ class AlmafactsDashboardController extends Controller
                 $group = $currentGroup;
                 $leaf = $leafRaw;
             } else {
-                $leaf = $label !== '' ? $label : ($leafRaw !== '' ? $leafRaw : 'Kolom ' . ($index + 1));
+                $leaf = $label !== '' ? $label : ($leafRaw !== '' ? $leafRaw : '');
             }
 
             $columns[] = [
-                'label' => $leaf,
-                'group' => $group,
+                'label' => $this->normalizeKpiHeaderLabel($leaf),
+                'group' => $group !== null ? $this->normalizeKpiHeaderLabel($group) : null,
                 'sortable' => true,
                 'index' => $index,
             ];
@@ -471,6 +556,70 @@ class AlmafactsDashboardController extends Controller
         }
 
         return $groups;
+    }
+
+    private function normalizeKpiHeaderLabel(string $label): string
+    {
+        $label = trim($label);
+        $upper = strtoupper($label);
+
+        if ($upper === 'PENCP' || $upper === 'PENCAPAIAN') {
+            return 'Pencapaian';
+        }
+        if ($upper === 'SCORE' || $upper === 'NILAI') {
+            return 'Score';
+        }
+        if ($upper === 'BO') {
+            return 'BO';
+        }
+        if ($upper === 'MBM') {
+            return 'MBM';
+        }
+        if ($upper === 'BC') {
+            return 'BC';
+        }
+        if ($upper === 'UKER') {
+            return 'Uker';
+        }
+        if ($upper === 'NAMA') {
+            return 'Nama';
+        }
+        if ($upper === 'BC UKER') {
+            return 'BC Uker';
+        }
+        if ($upper === 'STATUS') {
+            return 'Status';
+        }
+        if ($upper === 'TYPE BRI') {
+            return 'Type BRI';
+        }
+        if ($upper === 'NAMA MANTRI') {
+            return 'Nama Mantri';
+        }
+        if ($upper === 'RANK') {
+            return 'Rank';
+        }
+
+        return $this->titleCaseKpiHeader($label);
+    }
+
+    private function titleCaseKpiHeader(string $label): string
+    {
+        $words = explode(' ', $label);
+        $acronyms = ['KPI', 'MBM', 'KAUNIT', 'RM', 'KUR', 'SML', 'NPL', 'REC', 'DH', 'AVG', 'BO', 'BC', 'UKER', 'BRI', 'CASA', 'QRIS', 'OS', 'LR', 'FBI', 'JG', 'PH'];
+
+        foreach ($words as &$word) {
+            $cleaned = strtoupper(trim($word, "(),* \t\n\r\0\x0B"));
+            if (in_array($cleaned, $acronyms, true)) {
+                $word = strtoupper($word);
+            } else {
+                $word = preg_replace_callback('/([a-zA-Z]+)/', function ($matches) {
+                    return ucfirst(strtolower($matches[1]));
+                }, $word);
+            }
+        }
+
+        return implode(' ', $words);
     }
 
     private function isKpiSheetFilterRow(array $row): bool
@@ -580,7 +729,7 @@ class AlmafactsDashboardController extends Controller
         }
 
         return DB::table('ssa_almafacts')
-            ->where('keterangan_1', self::PROFIT_LABEL)
+            ->where('keterangan', self::PROFIT_LABEL)
             ->whereIn('kanca_konsolidasi', self::AREA_BRANCHES)
             ->select('month_day_year_of_posisi')
             ->distinct()
@@ -761,18 +910,18 @@ class AlmafactsDashboardController extends Controller
         }
 
         $query = DB::table('ssa_almafacts')
-            ->where('keterangan_1', self::PROFIT_LABEL)
+            ->where('keterangan', self::PROFIT_LABEL)
             ->whereIn('month_day_year_of_posisi', $periods)
             ->whereIn('kanca_konsolidasi', $branches);
 
         if ($areaMode) {
             $query
-                ->select('month_day_year_of_posisi', 'kanca_konsolidasi', DB::raw('SUM(nominal) as nominal'))
+                ->select('month_day_year_of_posisi', 'kanca_konsolidasi', DB::raw('SUM(saldo) as saldo'))
                 ->groupBy('month_day_year_of_posisi', 'kanca_konsolidasi');
         } else {
             $query
-                ->select('month_day_year_of_posisi', 'kanca_konsolidasi', 'jenis_unit_kerja', 'kode_unit_kerja', 'unit_kerja', DB::raw('SUM(nominal) as nominal'))
-                ->groupBy('month_day_year_of_posisi', 'kanca_konsolidasi', 'jenis_unit_kerja', 'kode_unit_kerja', 'unit_kerja');
+                ->select('month_day_year_of_posisi', 'kanca_konsolidasi', 'kode_unit_kerja', 'unit_kerja', DB::raw('SUM(saldo) as saldo'))
+                ->groupBy('month_day_year_of_posisi', 'kanca_konsolidasi', 'kode_unit_kerja', 'unit_kerja');
         }
 
         $rows = [];
@@ -782,9 +931,9 @@ class AlmafactsDashboardController extends Controller
                 'branch' => (string) $row->kanca_konsolidasi,
                 'unit_code' => $areaMode ? null : (string) $row->kode_unit_kerja,
                 'unit_name' => $areaMode ? null : (string) $row->unit_kerja,
-                'unit_type' => $areaMode ? null : $this->normalizeUnitType((string) $row->jenis_unit_kerja, (string) $row->unit_kerja),
+                'unit_type' => $areaMode ? null : $this->normalizeUnitType('', (string) $row->unit_kerja),
             ];
-            $rows[$key]['values'][(string) $row->month_day_year_of_posisi] = (float) $row->nominal;
+            $rows[$key]['values'][(string) $row->month_day_year_of_posisi] = (float) $row->saldo;
         }
 
         return $rows;
@@ -971,19 +1120,502 @@ class AlmafactsDashboardController extends Controller
         ];
     }
 
+    private function financialComparisonPeriods(?string $selectedPeriod): array
+    {
+        if (!$selectedPeriod) {
+            return ['yoy' => null, 'ytd' => null, 'm1' => null, 'current' => null];
+        }
+
+        $period = Carbon::parse($selectedPeriod)->endOfMonth();
+
+        return [
+            'yoy' => $period->copy()->subYearNoOverflow()->endOfMonth()->toDateString(),
+            'ytd' => $period->copy()->subYear()->month(12)->endOfMonth()->toDateString(),
+            'm1' => $period->copy()->subMonthNoOverflow()->endOfMonth()->toDateString(),
+            'current' => $period->toDateString(),
+        ];
+    }
+
+    private function financialUnitOptions(string $selectedBranch): array
+    {
+        if (!Schema::hasTable('ssa_almafacts')) {
+            return ['KC' => [], 'KCP' => [], 'UNIT' => []];
+        }
+
+        $branches = $selectedBranch === self::AREA_KEY ? self::AREA_BRANCHES : [$selectedBranch];
+        $rows = DB::table('ssa_almafacts')
+            ->whereIn('kanca_konsolidasi', $branches)
+            ->whereNotNull('unit_kerja')
+            ->where('unit_kerja', '<>', '')
+            ->select('kanca_konsolidasi', 'kode_unit_kerja', 'unit_kerja')
+            ->distinct()
+            ->orderBy('kanca_konsolidasi')
+            ->orderBy('unit_kerja')
+            ->get();
+
+        $options = ['KC' => [], 'KCP' => [], 'UNIT' => []];
+        $seen = [];
+        foreach ($rows as $row) {
+            $branch = trim((string) $row->kanca_konsolidasi);
+            $code = trim((string) $row->kode_unit_kerja);
+            $name = trim((string) $row->unit_kerja);
+            if ($branch === '' || $name === '') {
+                continue;
+            }
+
+            $type = $this->normalizeUnitType('', $name);
+            $value = $branch . '|' . $code . '|' . $this->normalizeUnitName($name);
+            if (isset($seen[$value]) || !isset($options[$type])) {
+                continue;
+            }
+
+            $seen[$value] = true;
+            $options[$type][] = [
+                'value' => $value,
+                'branch' => $branch,
+                'code' => $code,
+                'name' => $name,
+                'label' => ($selectedBranch === self::AREA_KEY ? $branch . ' - ' : '') . $name,
+                'type' => $type,
+            ];
+        }
+
+        return $options;
+    }
+
+    private function resolveFinancialUnitFilter(Request $request, array $unitOptions): array
+    {
+        $type = strtoupper(trim((string) $request->input('unit_type', 'ALL')));
+        if (!in_array($type, ['ALL', 'KC', 'KCP', 'UNIT'], true)) {
+            $type = 'ALL';
+        }
+
+        $available = [];
+        foreach ($unitOptions as $group => $options) {
+            foreach ($options as $option) {
+                $available[$option['value']] = $option + ['type' => $group];
+            }
+        }
+
+        $requestedValues = $request->input('unit_values', []);
+        if (!is_array($requestedValues)) {
+            $requestedValues = [$requestedValues];
+        }
+
+        $selected = [];
+        foreach ($requestedValues as $value) {
+            $value = trim((string) $value);
+            if (!isset($available[$value])) {
+                continue;
+            }
+            if ($type !== 'ALL' && ($available[$value]['type'] ?? '') !== $type) {
+                continue;
+            }
+
+            $selected[$value] = $available[$value];
+            if ($type === 'UNIT') {
+                break;
+            }
+        }
+
+        if ($type === 'ALL') {
+            $selected = [];
+        }
+
+        return [
+            'type' => $type,
+            'values' => array_keys($selected),
+            'selected' => array_values($selected),
+        ];
+    }
+
+    private function financialSnapshots(array $periods, string $selectedBranch, array $unitFilter): array
+    {
+        $branches = $selectedBranch === self::AREA_KEY ? self::AREA_BRANCHES : [$selectedBranch];
+        $snapshots = [];
+
+        foreach ($periods as $key => $targetPeriod) {
+            if (!$targetPeriod) {
+                $snapshots[$key] = $this->emptyFinancialSnapshot(null);
+                continue;
+            }
+
+            $almafactsPeriod = $this->resolveFinancialSourcePeriod('ssa_almafacts', 'month_day_year_of_posisi', $targetPeriod);
+            $liabilities = $this->fetchFinancialAlmafactsMetrics($almafactsPeriod, $branches, $unitFilter, self::FINANCIAL_LIABILITY_LABELS);
+            $pnl = $this->fetchFinancialAlmafactsMetrics($almafactsPeriod, $branches, $unitFilter, self::FINANCIAL_PNL_LABELS);
+            $profitability = $this->fetchFinancialAlmafactsMetrics($almafactsPeriod, $branches, $unitFilter, self::FINANCIAL_PROFITABILITY_LABELS, 'percent');
+            $liquidity = $this->fetchFinancialAlmafactsMetrics($almafactsPeriod, $branches, $unitFilter, self::FINANCIAL_LIQUIDITY_LABELS, 'percent');
+            $assetQuality = $this->fetchFinancialAlmafactsMetrics($almafactsPeriod, $branches, $unitFilter, self::FINANCIAL_ASSET_QUALITY_LABELS, 'percent');
+
+            $snapshots[$key] = [
+                'target_period' => $targetPeriod,
+                'source_periods' => [
+                    'ssa_almafacts' => $almafactsPeriod,
+                ],
+                'liabilities' => $liabilities,
+                'pnl' => $pnl,
+                'profitability' => $profitability,
+                'liquidity' => $liquidity,
+                'asset_quality' => $assetQuality,
+                'savings' => [
+                    'total' => $liabilities['savings'] ?? null,
+                    'giro' => $liabilities['giro'] ?? null,
+                    'tabungan' => $liabilities['tabungan'] ?? null,
+                    'deposito' => $liabilities['deposito'] ?? null,
+                ],
+                'loans' => [
+                    'total' => $liabilities['loan'] ?? null,
+                ],
+                'ratios' => array_merge($profitability, $liquidity, $assetQuality),
+            ];
+        }
+
+        return $snapshots;
+    }
+
+    private function emptyFinancialSnapshot(?string $targetPeriod): array
+    {
+        return [
+            'target_period' => $targetPeriod,
+            'source_periods' => [
+                'ssa_almafacts' => null,
+            ],
+            'liabilities' => [],
+            'pnl' => [],
+            'profitability' => [],
+            'liquidity' => [],
+            'asset_quality' => [],
+            'savings' => [
+                'total' => null,
+                'giro' => null,
+                'tabungan' => null,
+                'deposito' => null,
+            ],
+            'loans' => [
+                'total' => null,
+            ],
+            'ratios' => [],
+        ];
+    }
+
+    private function resolveFinancialSourcePeriod(string $table, string $column, string $targetPeriod): ?string
+    {
+        if (!Schema::hasTable($table)) {
+            return null;
+        }
+
+        return DB::table($table)
+            ->whereDate($column, '<=', $targetPeriod)
+            ->max($column);
+    }
+
+    private function fetchFinancialAlmafactsMetrics(?string $period, array $branches, array $unitFilter, array $labels, string $aggregate = 'sum'): array
+    {
+        if (!$period || !Schema::hasTable('ssa_almafacts')) {
+            return [];
+        }
+
+        $query = DB::table('ssa_almafacts')
+            ->whereDate('month_day_year_of_posisi', $period)
+            ->whereIn('keterangan', array_values($labels));
+
+        $this->applyFinancialFilters($query, 'kanca_konsolidasi', 'kode_unit_kerja', 'unit_kerja', $branches, $unitFilter);
+        if ($aggregate === 'percent') {
+            $this->applyFinancialPercentMetricScope($query, $branches, $unitFilter);
+        }
+
+        $rows = $query
+            ->select('keterangan', DB::raw(($aggregate === 'percent' ? 'AVG' : 'SUM') . '(saldo) as saldo'))
+            ->groupBy('keterangan')
+            ->pluck('saldo', 'keterangan');
+
+        $values = [];
+        foreach ($labels as $key => $label) {
+            $values[$key] = $rows->has($label) ? (float) $rows[$label] : null;
+        }
+
+        return $values;
+    }
+
+    private function applyFinancialPercentMetricScope($query, array $branches, array $unitFilter): void
+    {
+        $selected = $unitFilter['selected'] ?? [];
+        if ($selected !== []) {
+            return;
+        }
+
+        $type = strtoupper((string) ($unitFilter['type'] ?? 'ALL'));
+        if (!in_array($type, ['ALL', 'KC'], true)) {
+            return;
+        }
+
+        $wrappedBranch = $this->wrapColumn('kanca_konsolidasi');
+        $wrappedUnitName = $this->wrapColumn('unit_kerja');
+        $query->where(function ($query) use ($branches, $wrappedBranch, $wrappedUnitName) {
+            foreach ($branches as $branch) {
+                $normalizedBranch = $this->normalizeUnitName($branch);
+                $query->orWhere(function ($query) use ($normalizedBranch, $wrappedBranch, $wrappedUnitName) {
+                    $query
+                        ->where(function ($query) use ($normalizedBranch, $wrappedBranch) {
+                            $query
+                                ->whereRaw("UPPER(TRIM({$wrappedBranch})) = ?", [$normalizedBranch])
+                                ->orWhereRaw("UPPER(TRIM({$wrappedBranch})) LIKE ?", ['%' . $normalizedBranch . '%']);
+                        })
+                        ->whereRaw("UPPER(TRIM({$wrappedUnitName})) = ?", [$normalizedBranch]);
+                });
+            }
+        });
+    }
+
+    private function applyFinancialFilters($query, string $branchColumn, string $unitCodeColumn, string $unitNameColumn, array $branches, array $unitFilter): void
+    {
+        $wrappedBranch = $this->wrapColumn($branchColumn);
+        $query->where(function ($query) use ($branches, $wrappedBranch) {
+            foreach ($branches as $branch) {
+                $normalizedBranch = $this->normalizeUnitName($branch);
+                $query
+                    ->orWhereRaw("UPPER(TRIM({$wrappedBranch})) = ?", [$normalizedBranch])
+                    ->orWhereRaw("UPPER(TRIM({$wrappedBranch})) LIKE ?", ['%' . $normalizedBranch . '%']);
+            }
+        });
+
+        $type = strtoupper((string) ($unitFilter['type'] ?? 'ALL'));
+        if ($type === 'ALL') {
+            return;
+        }
+
+        $selected = $unitFilter['selected'] ?? [];
+        if ($selected !== []) {
+            $wrappedUnitName = $this->wrapColumn($unitNameColumn);
+            $query->where(function ($query) use ($selected, $wrappedBranch, $wrappedUnitName) {
+                foreach ($selected as $unit) {
+                    $query->orWhere(function ($query) use ($unit, $wrappedBranch, $wrappedUnitName) {
+                        $query
+                            ->where(function ($query) use ($unit, $wrappedBranch) {
+                                $normalizedBranch = $this->normalizeUnitName((string) $unit['branch']);
+                                $query
+                                    ->whereRaw("UPPER(TRIM({$wrappedBranch})) = ?", [$normalizedBranch])
+                                    ->orWhereRaw("UPPER(TRIM({$wrappedBranch})) LIKE ?", ['%' . $normalizedBranch . '%']);
+                            })
+                            ->where(function ($query) use ($unit, $wrappedUnitName) {
+                                $normalizedUnit = $this->normalizeUnitName((string) $unit['name']);
+                                $query
+                                    ->whereRaw("UPPER(TRIM({$wrappedUnitName})) = ?", [$normalizedUnit])
+                                    ->orWhereRaw("UPPER(TRIM({$wrappedUnitName})) LIKE ?", ['%' . $normalizedUnit . '%']);
+                            });
+                    });
+                }
+            });
+
+            return;
+        }
+
+        $wrappedUnitName = $this->wrapColumn($unitNameColumn);
+        if ($type === 'KC') {
+            $query->whereRaw("UPPER({$wrappedUnitName}) REGEXP '(^|[[:space:]-])KC[[:space:]]'");
+            return;
+        }
+        if ($type === 'KCP') {
+            $query->whereRaw("UPPER({$wrappedUnitName}) REGEXP '(^|[[:space:]-])KCP[[:space:]]'");
+            return;
+        }
+
+        $query->whereRaw("UPPER({$wrappedUnitName}) REGEXP '(^|[[:space:]-])UNIT[[:space:]]'");
+    }
+
+    private function wrapColumn(string $column): string
+    {
+        return '`' . str_replace('`', '``', $column) . '`';
+    }
+
+    private function financialHighlightSections(array $snapshots): array
+    {
+        $sections = [
+            [
+                'title' => 'Liabilities',
+                'icon' => 'fas fa-layer-group',
+                'rows' => [
+                    $this->financialRow('Pinjaman', 'money', 'liabilities.loan', $snapshots),
+                    $this->financialRow('Simpanan', 'money', 'liabilities.savings', $snapshots),
+                    $this->financialRow('Giro', 'money', 'liabilities.giro', $snapshots),
+                    $this->financialRow('Tabungan', 'money', 'liabilities.tabungan', $snapshots),
+                    $this->financialRow('Deposito', 'money', 'liabilities.deposito', $snapshots),
+                ],
+            ],
+            [
+                'title' => 'Profit & Loss',
+                'icon' => 'fas fa-file-invoice-dollar',
+                'rows' => [
+                    $this->financialRow('Pendapatan Bunga', 'money', 'pnl.interest_income', $snapshots),
+                    $this->financialRow('Beban FTP', 'money', 'pnl.ftp_expense', $snapshots),
+                    $this->financialRow('Assets Spread', 'money', 'pnl.assets_spread', $snapshots),
+                    $this->financialRow('Beban Bunga', 'money', 'pnl.interest_expense', $snapshots),
+                    $this->financialRow('Pendapatan FTP', 'money', 'pnl.ftp_income', $snapshots),
+                    $this->financialRow('Liabilities Spread', 'money', 'pnl.liabilities_spread', $snapshots),
+                    $this->financialRow('Contribution Margin', 'money', 'pnl.contribution_margin', $snapshots),
+                    $this->financialRow('Fee & Pendapatan Lainnya', 'money', 'pnl.fee_income', $snapshots),
+                    $this->financialRow('Overhead Cost', 'money', 'pnl.overhead_cost', $snapshots),
+                    $this->financialRow('PPOP', 'money', 'pnl.ppop', $snapshots),
+                    $this->financialRow('Biaya CKPN', 'money', 'pnl.ckpn_expense', $snapshots),
+                    $this->financialRow('Adj. Pendapatan / Beban', 'money', 'pnl.other_income_expense', $snapshots),
+                    $this->financialRow('Laba Sebelum Pajak', 'money', 'pnl.profit_before_tax', $snapshots),
+                    $this->financialRow('Beban Pajak', 'money', 'pnl.tax_expense', $snapshots),
+                    $this->financialRow('Laba Setelah Pajak', 'money', 'pnl.profit_after_tax', $snapshots),
+                ],
+            ],
+            [
+                'title' => 'Profitability',
+                'icon' => 'fas fa-chart-line',
+                'rows' => [
+                    $this->financialRow('Yield', 'percent', 'profitability.yield', $snapshots),
+                    $this->financialRow('COF', 'percent', 'profitability.cof', $snapshots),
+                    $this->financialRow('NIM', 'percent', 'profitability.nim', $snapshots),
+                    $this->financialRow('OHC', 'percent', 'profitability.ohc', $snapshots, false, true),
+                    $this->financialRow('Credit Cost', 'percent', 'profitability.credit_cost', $snapshots),
+                    $this->financialRow('ROA before Tax', 'percent', 'profitability.roa_before_tax', $snapshots),
+                    $this->financialRow('ROA after Tax', 'percent', 'profitability.roa_after_tax', $snapshots),
+                    $this->financialRow('BOPO', 'percent', 'profitability.bopo', $snapshots),
+                    $this->financialRow('CER', 'percent', 'profitability.cer', $snapshots),
+                ],
+            ],
+            [
+                'title' => 'Liquidity',
+                'icon' => 'fas fa-water',
+                'rows' => [
+                    $this->financialRow('LDR', 'percent', 'liquidity.ldr', $snapshots),
+                    $this->financialRow('CASA', 'percent', 'liquidity.casa', $snapshots),
+                ],
+            ],
+            [
+                'title' => 'Asset Quality',
+                'icon' => 'fas fa-shield-alt',
+                'rows' => [
+                    $this->financialRow('DPK', 'percent', 'asset_quality.dpk', $snapshots, true),
+                    $this->financialRow('NPL', 'percent', 'asset_quality.npl', $snapshots, true),
+                    $this->financialRow('LAR', 'percent', 'asset_quality.lar', $snapshots, true),
+                ],
+            ],
+        ];
+
+        return array_values(array_filter(array_map(function (array $section): ?array {
+            $rows = array_values(array_filter($section['rows'], fn(array $row): bool => $row['has_data']));
+            if ($rows === []) {
+                return null;
+            }
+
+            $section['rows'] = $rows;
+            return $section;
+        }, $sections)));
+    }
+
+    private function financialRow(
+        string $label,
+        string $format,
+        string $path,
+        array $snapshots,
+        bool $isQualityMetric = false,
+        bool $absoluteValue = false
+    ): array
+    {
+        $values = [
+            'yoy' => $this->financialValue($snapshots['yoy'] ?? [], $path),
+            'ytd' => $this->financialValue($snapshots['ytd'] ?? [], $path),
+            'm1' => $this->financialValue($snapshots['m1'] ?? [], $path),
+            'current' => $this->financialValue($snapshots['current'] ?? [], $path),
+        ];
+        if ($absoluteValue) {
+            foreach ($values as $key => $value) {
+                $values[$key] = $value === null ? null : abs((float) $value);
+            }
+        }
+        $current = $values['current'];
+
+        return [
+            'label' => $label,
+            'format' => $format,
+            'values' => $values,
+            'deltas' => [
+                'yoy' => $current === null || $values['yoy'] === null ? null : $current - (float) $values['yoy'],
+                'ytd' => $current === null || $values['ytd'] === null ? null : $current - (float) $values['ytd'],
+                'm1' => $current === null || $values['m1'] === null ? null : $current - (float) $values['m1'],
+            ],
+            'is_quality_metric' => $isQualityMetric,
+            'has_data' => collect($values)->contains(fn($value): bool => $value !== null),
+        ];
+    }
+
+    private function financialValue(array $snapshot, string $path): ?float
+    {
+        $value = $snapshot;
+        foreach (explode('.', $path) as $part) {
+            if (!is_array($value) || !array_key_exists($part, $value)) {
+                return null;
+            }
+
+            $value = $value[$part];
+        }
+
+        return $value === null ? null : (float) $value;
+    }
+
+    private function financialSourcePeriodSummary(array $snapshots): array
+    {
+        $summary = [];
+        foreach ($snapshots as $key => $snapshot) {
+            $summary[$key] = $snapshot['source_periods'] ?? [];
+        }
+
+        return $summary;
+    }
+
+    private function financialSummaryCards(array $snapshot): array
+    {
+        return [
+            [
+                'label' => 'Total Pinjaman',
+                'icon' => 'fas fa-hand-holding-usd',
+                'format' => 'money',
+                'value' => $snapshot['loans']['total'] ?? null,
+            ],
+            [
+                'label' => 'Total Simpanan',
+                'icon' => 'fas fa-piggy-bank',
+                'format' => 'money',
+                'value' => $snapshot['savings']['total'] ?? null,
+            ],
+            [
+                'label' => 'Laba Setelah Pajak',
+                'icon' => 'fas fa-balance-scale',
+                'format' => 'money',
+                'value' => $snapshot['pnl']['profit_after_tax'] ?? null,
+            ],
+            [
+                'label' => 'LDR',
+                'icon' => 'fas fa-percentage',
+                'format' => 'percent',
+                'value' => $snapshot['ratios']['ldr'] ?? null,
+            ],
+        ];
+    }
+
+    private function financialMonthLabel(?string $period): string
+    {
+        return $period ? Carbon::parse($period)->translatedFormat('F y') : '-';
+    }
+
     private function periodLabel(?string $period): string
     {
-        return $period ? Carbon::parse($period)->translatedFormat('d M Y') : '-';
+        return $period ? Carbon::parse($period)->translatedFormat('F y') : '-';
     }
 
     private function monthLabel(?string $period): string
     {
-        return $period ? Carbon::parse($period)->translatedFormat('M y') : '-';
+        return $period ? Carbon::parse($period)->translatedFormat('F y') : '-';
     }
 
     private function decemberLabel(?string $period): string
     {
-        return $period ? Carbon::parse($period)->month(12)->translatedFormat('M y') : '-';
+        return $period ? Carbon::parse($period)->month(12)->translatedFormat('F y') : '-';
     }
 
     public function timeseries(Request $request)
@@ -994,10 +1626,10 @@ class AlmafactsDashboardController extends Controller
 
         // Available metrics
         $metrics = DB::table('ssa_almafacts')
-            ->select('keterangan_1')
+            ->select('keterangan')
             ->distinct()
-            ->orderBy('keterangan_1')
-            ->pluck('keterangan_1')
+            ->orderBy('keterangan')
+            ->pluck('keterangan')
             ->all();
 
         // Available years
@@ -1129,7 +1761,7 @@ class AlmafactsDashboardController extends Controller
 
         // 2. Fetch Realisasi (Selected Year & Previous Year)
         $realQuery = DB::table('ssa_almafacts')
-            ->where('keterangan_1', $metric)
+            ->where('keterangan', $metric)
             ->whereIn('kanca_konsolidasi', $branches)
             ->whereBetween('month_day_year_of_posisi', ["{$prevYear}-01-01", "{$year}-12-31"])
             ->get();
@@ -1145,7 +1777,7 @@ class AlmafactsDashboardController extends Controller
             $posisiDate = Carbon::parse($row->month_day_year_of_posisi);
             $rYear = (int) $posisiDate->format('Y');
             $rMonth = (int) $posisiDate->format('n');
-            $nominal = (float) $row->nominal;
+            $nominal = (float) $row->saldo;
 
             $branchKey = $row->kanca_konsolidasi;
             $unitKey = $this->unitKey($row->kanca_konsolidasi, $row->kode_unit_kerja, $row->unit_kerja);

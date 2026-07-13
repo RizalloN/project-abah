@@ -161,7 +161,7 @@
 
     @if(!$linkTableReady)
         <div class="alert alert-warning">
-            Tabel <strong>external_report_links</strong> belum tersedia. Jalankan migration agar link KPI dapat disimpan.
+            Tabel <strong>external_report_links</strong> belum tersedia. Jalankan migration agar link dashboard dapat disimpan.
         </div>
     @endif
 
@@ -223,6 +223,113 @@
                                 <a href="{{ $link['link_url'] }}" target="_blank" rel="noopener" class="link-open-btn" title="Buka spreadsheet">
                                     <i class="fas fa-external-link-alt"></i>
                                 </a>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+
+        <div class="link-management-card">
+            <div class="link-management-card-header">
+                <i class="fas fa-seedling"></i>
+                SPPG
+            </div>
+            <table class="link-management-table">
+                <thead>
+                    <tr>
+                        <th style="width: 180px;">Dashboard</th>
+                        <th style="width: 190px;">Nama Sheet</th>
+                        <th>Link Spreadsheet</th>
+                        <th style="width: 70px;">Buka</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            <strong>{{ $sppgLink['label'] }}</strong>
+                            <div class="text-muted small">{{ $sppgLink['spreadsheet_id'] ?: 'Google Sheet Area 6' }}</div>
+                        </td>
+                        <td>
+                            <input
+                                type="text"
+                                name="sppg[sheet_name]"
+                                value="{{ old('sppg.sheet_name', $sppgLink['sheet_name']) }}"
+                                class="form-control link-field"
+                                placeholder="Area 6"
+                            >
+                        </td>
+                        <td>
+                            <input
+                                type="url"
+                                name="sppg[link_url]"
+                                value="{{ old('sppg.link_url', $sppgLink['link_url']) }}"
+                                class="form-control link-field"
+                                placeholder="https://docs.google.com/spreadsheets/d/..."
+                            >
+                        </td>
+                        <td>
+                            @if($sppgLink['link_url'])
+                                <a href="{{ $sppgLink['link_url'] }}" target="_blank" rel="noopener" class="link-open-btn" title="Buka spreadsheet">
+                                    <i class="fas fa-external-link-alt"></i>
+                                </a>
+                            @else
+                                <span class="text-muted">-</span>
+                            @endif
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="link-management-card">
+            <div class="link-management-card-header">
+                <i class="fas fa-chart-pie"></i>
+                Market Share
+            </div>
+            <table class="link-management-table">
+                <thead>
+                    <tr>
+                        <th style="width: 180px;">Dashboard</th>
+                        <th style="width: 190px;">Sheet Awal</th>
+                        <th>Link Spreadsheet</th>
+                        <th style="width: 70px;">Buka</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach(($marketShareLinks ?? []) as $key => $link)
+                        <tr>
+                            <td>
+                                <strong>{{ $link['label'] }}</strong>
+                                <div class="text-muted small">{{ $link['spreadsheet_id'] ?: 'Google Spreadsheet' }}</div>
+                            </td>
+                            <td>
+                                <input
+                                    type="text"
+                                    name="market_share[{{ $key }}][sheet_name]"
+                                    value="{{ old("market_share.$key.sheet_name", $link['sheet_name']) }}"
+                                    class="form-control link-field"
+                                    required
+                                >
+                            </td>
+                            <td>
+                                <input
+                                    type="url"
+                                    name="market_share[{{ $key }}][link_url]"
+                                    value="{{ old("market_share.$key.link_url", $link['link_url']) }}"
+                                    class="form-control link-field"
+                                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                                    required
+                                >
+                            </td>
+                            <td>
+                                @if($link['link_url'])
+                                    <a href="{{ $link['link_url'] }}" target="_blank" rel="noopener" class="link-open-btn" title="Buka spreadsheet">
+                                        <i class="fas fa-external-link-alt"></i>
+                                    </a>
+                                @else
+                                    <span class="text-muted">-</span>
+                                @endif
                             </td>
                         </tr>
                     @endforeach

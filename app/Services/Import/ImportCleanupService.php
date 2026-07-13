@@ -9,6 +9,7 @@ use App\Support\StrictDateParser;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class ImportCleanupService
 {
@@ -26,6 +27,7 @@ class ImportCleanupService
         'hourly_dpk',
         'ssa_pinjaman',
         'lw325_ph',
+        'gi405_recovery',
         'performance_pis_per_produk',
     ];
     private const LIGHTWEIGHT_SYNC_TABLES = [
@@ -40,6 +42,7 @@ class ImportCleanupService
         'ssa_simpanan' => 'Month_Day_Year_of_Posisi',
         'hourly_dpk' => 'posisi',
         'lw325_ph' => 'periode',
+        'gi405_recovery' => 'periode',
     ];
     private const USE_BATCHING = true;
 
@@ -155,8 +158,13 @@ class ImportCleanupService
         try {
             $lock->block(2, function () use ($jobId, $normalizedTableName, $periodHint, $source, $pendingKey, $rerunKey, $resolvedQueue): void {
                 if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(self::SYNC_PENDING_TTL_MINUTES))) {
-                    SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $normalizedTableName, $periodHint, $source)
-                        ->onQueue($resolvedQueue);
+                    try {
+                        SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $normalizedTableName, $periodHint, $source)
+                            ->onQueue($resolvedQueue);
+                    } catch (\Throwable $e) {
+                        Cache::forget($pendingKey);
+                        throw $e;
+                    }
                     return;
                 }
 
@@ -170,8 +178,13 @@ class ImportCleanupService
                     Cache::put($pendingKey, now()->toIso8601String(), now()->addMinutes(self::SYNC_PENDING_TTL_MINUTES));
                     Cache::forget($rerunKey);
 
-                    SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $normalizedTableName, $periodHint, $source)
-                        ->onQueue($resolvedQueue);
+                    try {
+                        SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $normalizedTableName, $periodHint, $source)
+                            ->onQueue($resolvedQueue);
+                    } catch (\Throwable $e) {
+                        Cache::forget($pendingKey);
+                        throw $e;
+                    }
 
                     Log::warning('Recovered stale snapshot sync pending marker by dispatching a fresh job.', [
                         'table_name' => $normalizedTableName,
@@ -202,7 +215,8 @@ class ImportCleanupService
 
     public function finalizeImportedJobSyncDispatch(int $jobId, ?string $tableName = null, ?string $periodHint = null, ?string $source = null): void
     {
-        $normalizedTableName = $this->normalizeSyncScopeValue($tableName);
+        $normalizedTableName = $this->normalizeSyncScopeValue($tableName)
+            ?? $this->resolveJobTableName($jobId);
         if ($normalizedTableName === null) {
             return;
         }
@@ -210,26 +224,25 @@ class ImportCleanupService
         $pendingKey = $this->syncPendingKey($normalizedTableName, $periodHint);
         $rerunKey = $this->syncRerunKey($normalizedTableName, $periodHint);
         $lock = Cache::lock($this->syncCoordinatorLockKey($normalizedTableName, $periodHint), self::SYNC_COORDINATOR_LOCK_SECONDS);
+        $rerunQueue = null;
 
         try {
-            $lock->block(2, function () use ($jobId, $tableName, $periodHint, $source, $pendingKey, $rerunKey): void {
+            $lock->block(2, function () use (&$rerunQueue, $pendingKey, $rerunKey): void {
                 $rerunQueue = Cache::pull($rerunKey);
                 $shouldRerun = $rerunQueue !== null && $rerunQueue !== false;
-
-                if ($shouldRerun) {
-                    $resolvedQueue = is_string($rerunQueue) && trim($rerunQueue) !== ''
-                        ? trim($rerunQueue)
-                        : $this->resolveSyncQueue(null, $this->normalizeSyncScopeValue($tableName), $jobId);
-
-                    SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $tableName, $periodHint, $source)
-                        ->onQueue($resolvedQueue);
-                    return;
-                }
 
                 Cache::forget($pendingKey);
             });
         } finally {
             optional($lock)->release();
+        }
+
+        if ($rerunQueue !== null && $rerunQueue !== false) {
+            $resolvedQueue = is_string($rerunQueue) && trim($rerunQueue) !== ''
+                ? trim($rerunQueue)
+                : $this->resolveSyncQueue(null, $normalizedTableName, $jobId);
+
+            $this->dispatchWithoutBatching($jobId, $normalizedTableName, $periodHint, $source, $resolvedQueue);
         }
     }
 
@@ -500,6 +513,10 @@ class ImportCleanupService
     private function hasActiveQueuedSyncJob(string $tableName, ?string $periodHint): bool
     {
         try {
+            if (!Schema::hasTable('jobs')) {
+                return false;
+            }
+
             $period = trim((string) $periodHint);
             $query = DB::table('jobs')
                 ->where('payload', 'like', '%' . class_basename(SyncImportedReportJob::class) . '%')
@@ -519,7 +536,7 @@ class ImportCleanupService
                 'message' => $e->getMessage(),
             ]);
 
-            return true;
+            return false;
         }
     }
 

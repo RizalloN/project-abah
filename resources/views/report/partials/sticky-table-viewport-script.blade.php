@@ -14,6 +14,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const mainHeader = document.querySelector('.main-header');
     let syncFrame = null;
 
+    const shouldUseCompactViewport = function () {
+        return window.matchMedia('(max-width: 1180px), (max-height: 760px)').matches;
+    };
+
     const getStickyTopOffset = function () {
         const headerHeight = mainHeader ? Math.ceil(mainHeader.getBoundingClientRect().height || 0) : 0;
         return Math.max(0, headerHeight - stickyTrim);
@@ -109,6 +113,12 @@ document.addEventListener('DOMContentLoaded', function () {
         const visibleRows = getVisibleBodyRows(table);
         const scrollbarReserve = getHorizontalScrollbarReserve(wrapper, table);
         wrapper.style.setProperty('--table-scrollbar-space', scrollbarReserve + 'px');
+
+        if (shouldUseCompactViewport()) {
+            wrapper.style.height = 'auto';
+            wrapper.style.maxHeight = 'none';
+            return;
+        }
 
         if (!visibleRows.length) {
             wrapper.style.height = 'auto';

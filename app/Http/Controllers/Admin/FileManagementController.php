@@ -26,42 +26,49 @@ class FileManagementController extends Controller
             'label' => 'Database Backups',
             'description' => 'Backup SQL penuh database untuk restore/import ulang.',
             'path' => 'private/database_backups',
+            'group' => 'database_backups',
         ],
         [
             'key' => 'excel_imports',
             'label' => 'Excel Imports',
             'description' => 'File hasil upload import Excel / daily loan.',
             'path' => 'private/excel_imports',
+            'group' => 'import_artifacts',
         ],
         [
             'key' => 'casa_brilink_imports',
             'label' => 'Casa Brilink Imports',
             'description' => 'Artefak sementara import Casa Brilink.',
             'path' => 'private/casa_brilink_imports',
+            'group' => 'import_artifacts',
         ],
         [
             'key' => 'report_ph_imports',
             'label' => 'Report PH Imports',
             'description' => 'File staging untuk report PH.',
             'path' => 'private/report_ph_imports',
+            'group' => 'import_artifacts',
         ],
         [
             'key' => 'performance_pis_imports',
             'label' => 'Performance PIS Imports',
             'description' => 'File staging untuk performance PIS per produk.',
             'path' => 'private/performance_pis_imports',
+            'group' => 'import_artifacts',
         ],
         [
             'key' => 'import_bulk',
             'label' => 'Import Bulk',
             'description' => 'Folder kerja sementara untuk proses chunked import.',
             'path' => 'import_bulk',
+            'group' => 'import_artifacts',
         ],
         [
             'key' => 'excel_stage',
             'label' => 'Excel Stage',
             'description' => 'Folder kerja staging file Excel.',
             'path' => 'excel_stage',
+            'group' => 'import_artifacts',
         ],
     ];
 
@@ -94,6 +101,7 @@ class FileManagementController extends Controller
                 'key' => $directoryConfig['key'],
                 'label' => $directoryConfig['label'],
                 'description' => $directoryConfig['description'],
+                'group' => $directoryConfig['group'] ?? 'import_artifacts',
                 'path' => $directory,
                 'exists' => is_dir($directory),
                 'files' => $entries->count(),
@@ -337,7 +345,9 @@ class FileManagementController extends Controller
         $data = $request->validate([
             'paths' => ['required', 'array', 'min:1'],
             'paths.*' => ['required', 'string', 'max:2048'],
+            'scope' => ['nullable', 'string', 'in:import_artifacts,database_backups'],
         ]);
+        $scope = (string) ($data['scope'] ?? 'import_artifacts');
 
         $deleted = [];
         $failed = [];
@@ -374,6 +384,23 @@ class FileManagementController extends Controller
                 continue;
             }
 
+            $isDatabaseBackup = $this->isDatabaseBackupPath($resolvedPath);
+            if ($isDatabaseBackup && $scope !== 'database_backups') {
+                $failed[] = [
+                    'path' => $path,
+                    'reason' => 'Backup database dipisahkan dari clear Excel/import. Buka tab Database Backup untuk menghapus file ini secara eksplisit.',
+                ];
+                continue;
+            }
+
+            if (!$isDatabaseBackup && $scope === 'database_backups') {
+                $failed[] = [
+                    'path' => $path,
+                    'reason' => 'File ini bukan backup database. Buka tab Excel / Import untuk menghapus artefak import.',
+                ];
+                continue;
+            }
+
             // Verify file exists before attempting delete
             if (!file_exists($resolvedPath)) {
                 $skipped[] = $path;
@@ -394,13 +421,15 @@ class FileManagementController extends Controller
                 $deleted[] = $resolvedPath;
                 
                 // Clean up associated import jobs
-                try {
-                    $jobCleanup = $importProgressService->deleteJobsForSourcePath($resolvedPath);
-                    if (!empty($jobCleanup['deleted_job_ids'])) {
-                        $deletedImportJobs = array_merge($deletedImportJobs, $jobCleanup['deleted_job_ids']);
+                if (!$isDatabaseBackup) {
+                    try {
+                        $jobCleanup = $importProgressService->deleteJobsForSourcePath($resolvedPath);
+                        if (!empty($jobCleanup['deleted_job_ids'])) {
+                            $deletedImportJobs = array_merge($deletedImportJobs, $jobCleanup['deleted_job_ids']);
+                        }
+                    } catch (\Throwable $e) {
+                        \Log::warning("Failed to cleanup import jobs for {$resolvedPath}: " . $e->getMessage());
                     }
-                } catch (\Throwable $e) {
-                    \Log::warning("Failed to cleanup import jobs for {$resolvedPath}: " . $e->getMessage());
                 }
 
                 // Prune empty parent directories
@@ -411,10 +440,12 @@ class FileManagementController extends Controller
                 }
 
                 // Clear stale import session
-                try {
-                    $this->clearStaleImportSessionIfMatched($resolvedPath);
-                } catch (\Throwable $e) {
-                    \Log::warning("Failed to clear stale import session for {$resolvedPath}: " . $e->getMessage());
+                if (!$isDatabaseBackup) {
+                    try {
+                        $this->clearStaleImportSessionIfMatched($resolvedPath);
+                    } catch (\Throwable $e) {
+                        \Log::warning("Failed to clear stale import session for {$resolvedPath}: " . $e->getMessage());
+                    }
                 }
             } else {
                 $failed[] = [
@@ -501,6 +532,9 @@ class FileManagementController extends Controller
                 'modified_timestamp' => $modifiedTimestamp,
                 'modified_at' => Carbon::createFromTimestamp($modifiedTimestamp)->timezone(config('app.timezone')),
                 'modified_human' => Carbon::createFromTimestamp($modifiedTimestamp)->timezone(config('app.timezone'))->format('d M Y H:i'),
+                'storage_group' => $directoryConfig['group'] ?? 'import_artifacts',
+                'storage_group_label' => ($directoryConfig['group'] ?? 'import_artifacts') === 'database_backups' ? 'Database Backup' : 'Excel / Import',
+                'is_database_backup' => ($directoryConfig['group'] ?? 'import_artifacts') === 'database_backups',
             ];
         })->filter()->values();
     }
@@ -594,6 +628,14 @@ class FileManagementController extends Controller
         }
 
         return false;
+    }
+
+    private function isDatabaseBackupPath(string $path): bool
+    {
+        $normalizedPath = strtolower(str_replace('\\', '/', $path));
+        $backupRoot = strtolower(str_replace('\\', '/', $this->resolveDirectoryPath('private/database_backups')));
+
+        return $normalizedPath === rtrim($backupRoot, '/') || str_starts_with($normalizedPath, rtrim($backupRoot, '/') . '/');
     }
 
     private function toRelativeStoragePath(string $absolutePath): string

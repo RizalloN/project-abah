@@ -3,6 +3,7 @@
     $formatPercent = $formatPercent ?? fn ($value, int $decimals = 2) => number_format((float) $value, $decimals, ',', '.');
     $detailMode = $detailMode ?? 'default';
     $historyRangeLabel = $historyRangeLabel ?? null;
+    $smallSummariesByYear = $smallSummariesByYear ?? [];
     $selectedHistoryYear = isset($selectedHistoryYear) ? (string) $selectedHistoryYear : null;
     $modalUid = 'rmh-' . substr(md5((string) ($rm ?? '') . '|' . (string) ($segmen ?? '') . '|' . $detailMode), 0, 10);
 @endphp
@@ -97,13 +98,6 @@
                         ->values();
                     $yearSummaryDetails = $yearDetails->filter(fn ($detail) => (bool) ($detail['is_summary'] ?? false));
                     $yearTotalSource = $yearSummaryDetails->isNotEmpty() ? $yearSummaryDetails : $yearDetails;
-                    $accountDetails = $yearDetails
-                        ->filter(fn ($detail) => empty($detail['is_summary']) && !empty($detail['account']))
-                        ->sortBy([
-                            ['periode_raw', 'desc'],
-                            ['surplus_plafon', 'desc'],
-                        ])
-                        ->values();
                     $totalSurplus = (float) $yearTotalSource->sum(fn ($detail) => (float) ($detail['delta_os'] ?? $detail['surplus_plafon'] ?? 0));
                     $totalDebitur = (int) $yearTotalSource->sum(fn ($detail) => (int) ($detail['debitur'] ?? 0));
                     $totalTargetDebitur = (int) $monthlyDetails->sum(fn ($detail) => (int) ($detail['target_jg_deb'] ?? 0));
@@ -201,38 +195,6 @@
                             </tfoot>
                         </table>
                     </div>
-                    @if($accountDetails->isNotEmpty())
-                        <div class="table-responsive kinerja-rm-modal__table-wrap mt-3">
-                            <table class="table table-sm mb-0 kinerja-rm-modal__table">
-                                <thead>
-                                    <tr>
-                                        <th class="text-start">Rekening</th>
-                                        <th class="text-start">Debitur</th>
-                                        <th class="text-start">Produk</th>
-                                        <th class="text-start">Jenis</th>
-                                        <th class="text-end">OS Lalu</th>
-                                        <th class="text-end">OS Ini</th>
-                                        <th class="text-end">Delta OS</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach($accountDetails as $detail)
-                                        <tr>
-                                            <td class="text-start fw-bold">{{ $detail['account'] ?: '-' }}</td>
-                                            <td class="text-start">{{ trim((string) ($detail['nama_debitur'] ?? '')) ?: '-' }}</td>
-                                            <td class="text-start">{{ $detail['produk'] ?? '-' }}</td>
-                                            <td class="text-start">{{ $detail['movement'] ?? '-' }}</td>
-                                            <td class="text-end">{{ $formatAmount($detail['previous_os'] ?? 0) }}</td>
-                                            <td class="text-end">{{ $formatAmount($detail['current_os'] ?? 0) }}</td>
-                                            <td class="text-end fw-bold {{ (float) ($detail['delta_os'] ?? 0) < 0 ? 'text-danger' : 'text-success' }}">
-                                                {{ $formatAmount($detail['delta_os'] ?? 0) }}
-                                            </td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @endif
                 </div>
             @endforeach
         </div>
@@ -309,12 +271,20 @@
             @foreach($detailsByYear as $year => $yearDetails)
                 @php
                     $isActiveYear = (string) $year === $activeHistoryYear;
+                    $smallSummary = $smallSummariesByYear[(string) $year] ?? null;
                     $totalLoanOs = (float) $yearDetails->sum(fn ($detail) => (float) ($detail['loan_os'] ?? 0));
                     $totalLarValue = (float) $yearDetails->sum(fn ($detail) => (float) ($detail['lar_value'] ?? 0));
-                    $totalRealisasiOs = (float) $yearDetails->sum(fn ($detail) => (float) ($detail['realisasi_os'] ?? 0));
-                    $totalPctLar = $totalLoanOs > 0 ? ($totalLarValue / $totalLoanOs) * 100 : 0;
-                    $totalPencRealisasi = ($totalRealisasiOs / 1000000) >= 1600 ? 'A' : 'B';
-                    $totalPencLar = $totalPctLar < 17.5 ? 'A' : 'B';
+                    $totalRealisasiOs = $smallSummary !== null
+                        ? (float) $smallSummary['realisasi_os']
+                        : (float) $yearDetails->sum(fn ($detail) => (float) ($detail['realisasi_os'] ?? 0));
+                    $totalPctLar = $smallSummary !== null
+                        ? (float) $smallSummary['pct_lar']
+                        : ($totalLoanOs > 0 ? ($totalLarValue / $totalLoanOs) * 100 : 0);
+                    $totalPencRealisasi = $smallSummary['penc_realisasi'] ?? (($totalRealisasiOs / 1000000) >= 1600 ? 'A' : 'B');
+                    $totalPencLar = $smallSummary['penc_lar'] ?? ($totalPctLar < 17.5 ? 'A' : 'B');
+                    $realisasiLabel = $smallSummary !== null ? 'Ratas Realisasi OS' : 'Realisasi OS';
+                    $larPeriodLabel = $smallSummary['closed_period_label'] ?? $year;
+                    $footerLabel = $smallSummary !== null ? 'RATAS' : 'TOTAL';
                 @endphp
                 <div
                     class="tab-pane fade {{ $isActiveYear ? 'show active' : '' }}"
@@ -324,7 +294,7 @@
                 >
                     <div class="kinerja-rm-modal__summary">
                         <div>
-                            <span>Realisasi OS {{ $year }}</span>
+                            <span>{{ $realisasiLabel }} {{ $year }}</span>
                             <strong>{{ $formatAmount($totalRealisasiOs) }}</strong>
                         </div>
                         <div>
@@ -332,7 +302,7 @@
                             <strong class="{{ $totalPencRealisasi === 'A' ? 'text-success' : 'text-danger' }}">{{ $totalPencRealisasi }}</strong>
                         </div>
                         <div>
-                            <span>% LAR {{ $year }}</span>
+                            <span>% LAR {{ $larPeriodLabel }}</span>
                             <strong>{{ $formatPercent($totalPctLar, 2) }}%</strong>
                         </div>
                         <div>
@@ -379,7 +349,7 @@
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <td colspan="3" class="text-end">TOTAL {{ $year }}</td>
+                                    <td colspan="3" class="text-end">{{ $footerLabel }} {{ $year }}</td>
                                     <td class="text-end">{{ $formatAmount($totalRealisasiOs) }}</td>
                                     <td class="text-center">
                                         <span class="kinerja-rm-modal__grade {{ $totalPencRealisasi === 'A' ? 'is-good' : 'is-bad' }}">{{ $totalPencRealisasi }}</span>

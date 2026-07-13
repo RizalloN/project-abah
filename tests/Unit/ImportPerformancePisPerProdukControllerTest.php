@@ -97,6 +97,45 @@ class ImportPerformancePisPerProdukControllerTest extends TestCase
         }
     }
 
+    public function test_preview_enables_portaled_filter_dropdowns_for_wide_table(): void
+    {
+        $controller = new ImportPerformancePisPerProdukController();
+        $relativePath = 'performance_pis_imports/pnps_portal_preview_test.csv';
+        $csvPath = Storage::path($relativePath);
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        $headers = $this->performancePisHeaders();
+        file_put_contents($csvPath, implode("\n", [
+            'posisi',
+            '30 June 2026',
+            '',
+            implode(',', $headers),
+            $this->buildPerformancePisRow([
+                'no' => '1',
+                'kode_kanca' => '45',
+                'kanca' => 'KC Madiun',
+            ]),
+        ]) . "\n");
+
+        session([
+            'performance_pis_file' => $relativePath,
+            'performance_pis_periode' => '2026-06-30',
+        ]);
+
+        try {
+            $response = $controller->preview(Request::create('/import/performance-pis/preview', 'GET', [
+                'file_path' => $relativePath,
+            ]));
+
+            $this->assertInstanceOf(\Illuminate\View\View::class, $response);
+            $this->assertTrue((bool) ($response->getData()['portalFilterDropdowns'] ?? false));
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
     public function test_build_csv_context_skips_posisi_metadata_before_header(): void
     {
         $controller = new ImportPerformancePisPerProdukController();

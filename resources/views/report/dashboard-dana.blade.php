@@ -667,6 +667,22 @@
     <div class="dana-container">
         <div class="dana-filter-bar animate-reveal stagger-3">
             <div class="filter-item">
+                <label class="filter-label">Cabang</label>
+                <div class="dana-dropdown" data-dana-dropdown="cabang">
+                    <i class="fas fa-building dana-filter-icon"></i>
+                    <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="cabang">
+                        <span class="dana-dropdown-text">Pilih Cabang</span>
+                        <i class="fas fa-chevron-down small opacity-50"></i>
+                    </button>
+                    <div class="dana-dropdown-menu" data-dana-dropdown-menu="cabang"></div>
+                    <select id="filterCabang" class="d-none">
+                        @foreach($branches as $value => $label)
+                            <option value="{{ $value }}" {{ ($selectedBranch ?? 'area6') == $value ? 'selected' : '' }}>{{ strtoupper($label) }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            </div>
+            <div class="filter-item">
                 <label class="filter-label">Periode Data</label>
                 <div class="dana-dropdown" data-dana-dropdown="periode">
                     <i class="fas fa-calendar-alt dana-filter-icon"></i>
@@ -735,7 +751,7 @@
                     <table class="dana-table">
                         <thead>
                             <tr class="group-row">
-                                <th rowspan="2" class="sticky-col" width="135" style="left: 0; z-index: 21;">Kantor Cabang</th>
+                                <th rowspan="2" class="sticky-col" width="135" style="left: 0; z-index: 21;" id="headerScope">Kantor Cabang</th>
                                 <th rowspan="2" class="text-center" width="140">Kategori</th>
                                 <th colspan="3" class="text-center border-bottom group-position">Posisi Saldo (Rp)</th>
                                 <th colspan="2" class="text-center border-bottom border-left group-delta">Delta Posisi</th>
@@ -768,12 +784,18 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
         const selects = {
+            cabang: document.getElementById('filterCabang'),
             periode: document.getElementById('filterPeriode'),
             rka: document.getElementById('filterRka'),
             kategori: document.getElementById('filterKategori')
         };
 
         const dropdowns = {
+            cabang: {
+                root: document.querySelector('[data-dana-dropdown="cabang"]'),
+                toggle: document.querySelector('[data-dana-dropdown-toggle="cabang"]'),
+                menu: document.querySelector('[data-dana-dropdown-menu="cabang"]')
+            },
             periode: {
                 root: document.querySelector('[data-dana-dropdown="periode"]'),
                 toggle: document.querySelector('[data-dana-dropdown-toggle="periode"]'),
@@ -818,7 +840,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 d.toggle.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const isOpen = d.root.classList.contains('is-open');
-                    Object.values(dropdowns).forEach(dd => dd.root.classList.remove('is-open'));
+                    Object.values(dropdowns).forEach(dd => dd.root?.classList.remove('is-open'));
                     if (!isOpen) d.root.classList.add('is-open');
                 });
 
@@ -833,7 +855,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             document.addEventListener('click', () => {
-                Object.values(dropdowns).forEach(dd => dd.root.classList.remove('is-open'));
+                Object.values(dropdowns).forEach(dd => dd.root?.classList.remove('is-open'));
             });
         };
 
@@ -886,6 +908,7 @@ document.addEventListener('DOMContentLoaded', function() {
             $('#loader').fadeIn(200);
             
             const params = {
+                cabang: selects.cabang.value,
                 periode: selects.periode.value,
                 rka_periode: selects.rka.value,
                 kategori: selects.kategori.value
@@ -896,6 +919,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 $('#headerSelectedDate').text(res.header_dates.selected);
                 $('#headerYtd').text(res.header_dates.ytd);
                 $('#headerMtd').text(res.header_dates.mtd);
+                const isBranchMode = res.scope === 'branch';
+                const scopeLabel = res.scope_label || (isBranchMode ? selects.cabang.options[selects.cabang.selectedIndex].text : 'AREA 6');
+                $('#headerScope').text(isBranchMode ? 'Segmen' : 'Kantor Cabang');
                 
                 let html = '';
                 res.rows.forEach((row, index) => {
@@ -928,7 +954,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const gt = res.total;
                 html += `
                     <tr class="grandtotal-row">
-                        <td colspan="2" class="text-center">TOTAL AREA 6</td>
+                        <td colspan="2" class="text-center">${isBranchMode ? 'TOTAL ' + scopeLabel : 'TOTAL AREA 6'}</td>
                         <td class="val-cell">${formatMoney(gt.ytd)}</td>
                         <td class="val-cell">${formatMoney(gt.mtd)}</td>
                         <td class="val-cell">${formatMoney(gt.selected)}</td>
@@ -993,7 +1019,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 ctx.font = '600 42px "Plus Jakarta Sans", "Inter", sans-serif';
                 const periode = selects.periode.value;
                 const kategori = selects.kategori.options[selects.kategori.selectedIndex].text;
-                ctx.fillText(`Periode: ${periode} | Segmen: ${kategori}`, A4_EXPORT.marginX, A4_EXPORT.marginY + 160);
+                const cabang = selects.cabang.options[selects.cabang.selectedIndex].text;
+                ctx.fillText(`Periode: ${periode} | Cabang: ${cabang} | Segmen: ${kategori}`, A4_EXPORT.marginX, A4_EXPORT.marginY + 160);
 
                 ctx.strokeStyle = '#e2e8f0';
                 ctx.lineWidth = 6;

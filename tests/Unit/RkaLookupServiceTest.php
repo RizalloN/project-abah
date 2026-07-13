@@ -310,6 +310,54 @@ class RkaLookupServiceTest extends TestCase
         $this->assertSame(['KC MADIUN' => 1000.0], $result['total_simpanan']);
     }
 
+    public function test_unit_scope_does_not_match_different_kc_kcp_kind_with_same_region_keyword(): void
+    {
+        DB::table('rka')->insert([
+            [
+                'uniqueid_namareport' => 'rka-ponorogo-kc',
+                'kanca' => 'KC Ponorogo',
+                'desc_uker' => '45-KC Ponorogo',
+                'mata_anggaran' => 'B.5.a. Briguna',
+                'may' => 1000,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+            [
+                'uniqueid_namareport' => 'rka-ponorogo-kcp',
+                'kanca' => 'KC Ponorogo',
+                'desc_uker' => '2167-KCP Sudirman Ponorogo',
+                'mata_anggaran' => 'B.5.a. Briguna',
+                'may' => 200,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+            [
+                'uniqueid_namareport' => 'rka-ponorogo-kcp-prefixed',
+                'kanca' => 'KC Ponorogo',
+                'desc_uker' => 'KC Ponorogo - KCP Sudirman Ponorogo',
+                'mata_anggaran' => 'B.5.a. Briguna',
+                'may' => 300,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+        ]);
+
+        $service = new RkaLookupService();
+        $definitions = [
+            'briguna' => [
+                'mata_anggaran' => ['B.5.a. Briguna'],
+                'uker_contains_any' => ['KC', 'KCP'],
+                'include_kanca_summary' => true,
+            ],
+        ];
+
+        $kc = $service->aggregateForScope($definitions, 'may', 'KC Ponorogo', 'KC Ponorogo', 2026);
+        $kcp = $service->aggregateForScope($definitions, 'may', 'KC Ponorogo', 'KCP Sudirman Ponorogo', 2026);
+
+        $this->assertSame(1000.0, $kc['briguna']);
+        $this->assertSame(500.0, $kcp['briguna']);
+    }
+
     public function test_kanca_summary_fallback_only_fills_zero_branch_aggregate(): void
     {
         DB::table('rka')->insert([

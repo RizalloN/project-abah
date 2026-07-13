@@ -188,8 +188,10 @@ class DashboardHarianSnapshotService
         ['key' => 'kur_kpp_npl', 'label' => 'KUR KPP', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'casa_pct', 'label' => '5. %CASA', 'type' => 'percent', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'total_casa', 'label' => 'Total CASA', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
-        ['key' => 'casa_ritel', 'label' => 'CASA Ritel', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
-        ['key' => 'casa_mikro', 'label' => 'CASA Mikro', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
+        ['key' => 'casa_non_wholesale', 'label' => 'CASA Non Wholesale', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
+        ['key' => 'casa_ritel', 'label' => 'CASA Ritel', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'casa_mikro', 'label' => 'CASA Mikro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'casa_wholesale', 'label' => 'CASA Wholesale', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
         ['key' => 'ldr_non_commercial', 'label' => '6. LDR Non Commercial', 'type' => 'percent', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'ldr_ritel_non_commercial', 'label' => 'LDR Ritel Non Commercial', 'type' => 'percent', 'depth' => 1, 'accent' => 'default'],
         ['key' => 'ldr_mikro_non_commercial', 'label' => 'LDR Mikro Non Commercial', 'type' => 'percent', 'depth' => 1, 'accent' => 'default'],
@@ -687,17 +689,20 @@ class DashboardHarianSnapshotService
         return sprintf('%04d-%02d-01', $resolvedYear, $resolvedMonth);
     }
 
-    public function resolveComparisonPeriods(string $selectedPeriod, ?string $rkaPeriod = null): array
+    public function resolveComparisonPeriods(string $selectedPeriod, ?string $rkaPeriod = null, ?string $mtmPeriod = null): array
     {
         $selected = Carbon::parse($selectedPeriod);
         $resolvedRka = $this->resolveEffectiveRkaPeriod($rkaPeriod ? substr($rkaPeriod, 0, 7) : null, $selectedPeriod);
+        $resolvedMtm = $mtmPeriod
+            ? $this->resolveEffectivePeriod($mtmPeriod)
+            : $this->resolveEffectivePeriod($selected->copy()->subMonthsNoOverflow(1)->toDateString());
 
         return [
             'current' => $selectedPeriod,
             'yoy' => $this->resolveEffectivePeriod($selected->copy()->subYearsNoOverflow(1)->endOfMonth()->toDateString()),
             'ytd' => $this->resolveEffectivePeriod($selected->copy()->subYearsNoOverflow(1)->endOfYear()->toDateString()),
             'm2' => $this->resolveEffectivePeriod($selected->copy()->subMonthsNoOverflow(2)->endOfMonth()->toDateString()),
-            'mtm' => $this->resolveEffectivePeriod($selected->copy()->subMonthsNoOverflow(1)->toDateString()),
+            'mtm' => $resolvedMtm,
             'mtd' => $this->resolveEffectivePeriod($selected->copy()->subMonthsNoOverflow(1)->endOfMonth()->toDateString()),
             'h1' => $this->resolvePreviousPeriod($selectedPeriod),
             'h2' => $this->resolvePreviousNthPeriod($selectedPeriod, 2),
@@ -717,6 +722,494 @@ class DashboardHarianSnapshotService
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($period, $selectedKanca, $selectedUnit): array {
             return $this->computeFilterOptions($period, $selectedKanca, $selectedUnit);
         });
+    }
+
+    public function buildKeragaanUkerPayload(
+        ?string $selectedPeriod,
+        ?string $rkaPeriod = null,
+        array|string|null $kancaKey = null,
+        array|string|null $unitKey = null,
+        string $dataType = 'pinjaman'
+    ): array {
+        $period = $selectedPeriod ? $this->resolveEffectivePeriod($selectedPeriod) : $this->resolveEffectivePeriod(null);
+        if (!$period) {
+            return [
+                'summary' => [
+                    'period' => null,
+                    'rka_period' => null,
+                    'data_type' => $dataType,
+                    'scope_label' => self::AREA_6_LABEL,
+                    'unit_label' => self::ALL_UNIT_LABEL,
+                ],
+                'columns' => [],
+                'metrics' => [],
+                'rows' => [],
+                'totals' => [],
+            ];
+        }
+
+        $type = in_array($dataType, ['pinjaman', 'simpanan', 'recovery'], true) ? $dataType : 'pinjaman';
+        $resolvedRka = $this->resolveEffectiveRkaPeriod($rkaPeriod ? substr($rkaPeriod, 0, 7) : null, $period);
+        $comparison = $this->resolveComparisonPeriods($period, $resolvedRka);
+        $positionKeys = ['yoy', 'ytd', 'mtm', 'mtd', 'h1', 'current'];
+        $deltaKeys = ['yoy', 'ytd', 'mtm', 'mtd', 'h1'];
+        $periods = collect($positionKeys)
+            ->mapWithKeys(fn (string $key): array => [$key => $comparison[$key] ?? null])
+            ->all();
+        $sourceRows = $this->fetchKeragaanUkerSourceRows($type, array_values(array_filter($periods)), $kancaKey, $unitKey);
+        $metrics = $this->keragaanUkerMetricDefinitions($type);
+        $monthColumn = $resolvedRka ? $this->rkaLookupService()->resolveMonthColumn(Carbon::parse($resolvedRka)) : null;
+        $rkaYear = $resolvedRka ? (int) Carbon::parse($resolvedRka)->format('Y') : null;
+        $rkaDefinitions = $this->dashboardRkaMetricDefinitions();
+
+        $rows = $sourceRows
+            ->groupBy('unit_code')
+            ->map(function (Collection $unitRows) use ($periods, $metrics, $monthColumn, $rkaYear, $rkaDefinitions): array {
+                $first = $unitRows->sortByDesc('period')->first();
+                $kancaLabel = (string) ($first['kanca_label'] ?? '');
+                $unitLabel = (string) ($first['unit_label'] ?? '');
+                $rkaMetrics = ($monthColumn && $rkaYear)
+                    ? $this->finalizeRkaMetrics($this->rkaLookupService()->aggregateForScope(
+                        $rkaDefinitions,
+                        $monthColumn,
+                        $kancaLabel !== '' ? $kancaLabel : null,
+                        $unitLabel !== '' ? $unitLabel : null,
+                        $rkaYear
+                    ))
+                    : $this->emptyMetrics();
+
+                $unit = [
+                    'unit_code' => (string) ($first['unit_code'] ?? ''),
+                    'unit_name' => $unitLabel,
+                    'kanca' => $kancaLabel,
+                    'metrics' => [],
+                ];
+
+                foreach ($metrics as $metric) {
+                    $values = [];
+                    foreach ($periods as $periodKey => $sourcePeriod) {
+                        $periodRow = $sourcePeriod
+                            ? $unitRows->firstWhere('period', $sourcePeriod)
+                            : null;
+                        $values[$periodKey] = $periodRow ? (float) ($periodRow[$metric['source_key']] ?? 0) : 0.0;
+                    }
+
+                    $current = (float) ($values['current'] ?? 0);
+                    $target = $this->keragaanUkerRkaTarget($rkaMetrics, $metric);
+                    $isLowerBetter = (bool) ($metric['lower_better'] ?? false);
+                    $deltas = [];
+
+                    foreach (['yoy', 'ytd', 'mtm', 'mtd', 'h1'] as $deltaKey) {
+                        $delta = $current - (float) ($values[$deltaKey] ?? 0);
+                        $deltas[$deltaKey] = [
+                            'value' => $delta,
+                            'tone' => $this->keragaanDeltaTone($delta, $isLowerBetter),
+                        ];
+                    }
+
+                    $achievement = $this->keragaanAchievement($current, $target, $isLowerBetter);
+
+                    $unit['metrics'][] = [
+                        'key' => $metric['key'],
+                        'label' => $metric['label'],
+                        'lower_better' => $isLowerBetter,
+                        'values' => $values,
+                        'deltas' => $deltas,
+                        'rka' => $target,
+                        'achievement' => $achievement,
+                        'achievement_tone' => $this->keragaanAchievementTone($achievement),
+                    ];
+                }
+
+                return $unit;
+            })
+            ->sortBy(fn (array $row): string => str_pad((string) ($row['unit_code'] ?? ''), 8, '0', STR_PAD_LEFT) . '|' . ($row['unit_name'] ?? ''))
+            ->values()
+            ->all();
+
+        return [
+            'summary' => [
+                'period' => $period,
+                'rka_period' => $resolvedRka,
+                'data_type' => $type,
+                'scope_label' => $this->displayFilterLabel($kancaKey, self::AREA_6_LABEL, $period, 'kanca', $kancaKey, $unitKey),
+                'unit_label' => $this->displayFilterLabel($unitKey, self::ALL_UNIT_LABEL, $period, 'unit_kerja', $kancaKey, $unitKey),
+                'value_scale' => 'million',
+            ],
+            'columns' => [
+                'positions' => collect($positionKeys)
+                    ->map(fn (string $key): array => [
+                        'key' => $key,
+                        'period' => $periods[$key] ?? null,
+                        'label' => $this->keragaanPositionLabel($key, $periods[$key] ?? null),
+                    ])
+                    ->all(),
+                'deltas' => collect($deltaKeys)
+                    ->map(fn (string $key): array => [
+                        'key' => $key,
+                        'label' => $this->keragaanPositionLabel($key, $periods[$key] ?? null),
+                    ])
+                    ->all(),
+            ],
+            'metrics' => $metrics,
+            'rows' => $rows,
+            'totals' => $this->keragaanUkerTotals($rows, $metrics, $positionKeys, $deltaKeys),
+        ];
+    }
+
+    private function keragaanUkerMetricDefinitions(string $type): array
+    {
+        return match ($type) {
+            'simpanan' => [
+                ['key' => 'simpanan', 'label' => 'Total Simpanan', 'source_key' => 'simpanan', 'rka_key' => 'total_simpanan', 'lower_better' => false],
+                ['key' => 'giro', 'label' => 'Giro', 'source_key' => 'giro', 'rka_keys' => ['giro_ritel', 'giro_mikro', 'giro_wholesale'], 'lower_better' => false],
+                ['key' => 'deposito', 'label' => 'Deposito', 'source_key' => 'deposito', 'rka_keys' => ['deposito_ritel', 'deposito_mikro', 'deposito_wholesale'], 'lower_better' => false],
+                ['key' => 'tabungan', 'label' => 'Tabungan', 'source_key' => 'tabungan', 'rka_keys' => ['tabungan_ritel', 'tabungan_mikro', 'tabungan_wholesale'], 'lower_better' => false],
+                ['key' => 'casa', 'label' => 'CASA', 'source_key' => 'casa', 'rka_key' => 'total_casa', 'lower_better' => false],
+            ],
+            'recovery' => [
+                ['key' => 'recovery', 'label' => 'Recovery DH', 'source_key' => 'recovery', 'rka_key' => 'rec_dh_total', 'lower_better' => false],
+            ],
+            default => [
+                ['key' => 'pinjaman', 'label' => 'Pinjaman', 'source_key' => 'pinjaman', 'rka_key' => 'total_os', 'lower_better' => false],
+                ['key' => 'sml', 'label' => 'SML', 'source_key' => 'sml', 'rka_key' => 'total_sml_abs_non_commercial', 'lower_better' => true],
+                ['key' => 'npl', 'label' => 'NPL', 'source_key' => 'npl', 'rka_key' => 'total_npl_abs_non_commercial', 'lower_better' => true],
+            ],
+        };
+    }
+
+    private function fetchKeragaanUkerSourceRows(string $type, array $periods, array|string|null $kancaKey, array|string|null $unitKey): Collection
+    {
+        $normalizedPeriods = collect($periods)
+            ->map(fn ($period) => $this->normalizeDate((string) $period))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($normalizedPeriods === []) {
+            return collect();
+        }
+
+        $rows = match ($type) {
+            'simpanan' => $this->fetchKeragaanUkerSavingsRows($normalizedPeriods, $kancaKey, $unitKey),
+            'recovery' => $this->fetchKeragaanUkerRecoveryRows($normalizedPeriods, $kancaKey, $unitKey),
+            default => $this->fetchKeragaanUkerLoanRows($normalizedPeriods, $kancaKey, $unitKey),
+        };
+
+        return $rows
+            ->map(fn ($row) => $this->mapKeragaanUkerRawRow($row, $type))
+            ->filter()
+            ->values();
+    }
+
+    private function fetchKeragaanUkerLoanRows(array $periods, array|string|null $kancaKey, array|string|null $unitKey): Collection
+    {
+        if (!Schema::hasTable(self::LOAN_TABLE)) {
+            return collect();
+        }
+
+        $kol = "CAST(NULLIF(TRIM(COALESCE(kolektabilitas_one_obligor, '')), '') AS UNSIGNED)";
+        $unitCodeExpression = "TRIM(COALESCE(NULLIF(id_uker, ''), REGEXP_SUBSTR(TRIM(COALESCE(nama_uker, '')), '^[0-9]+'), TRIM(COALESCE(nama_uker, ''))))";
+        $query = DB::table(self::LOAN_TABLE)
+            ->whereIn('month_day_year_of_periode', $periods);
+
+        $this->applyKeragaanUkerSourceFilters($query, 'TRIM(COALESCE(nama_cabang, \'\'))', 'TRIM(COALESCE(nama_uker, \'\'))', $kancaKey, $unitKey);
+
+        return $query
+            ->selectRaw('month_day_year_of_periode as period')
+            ->selectRaw("{$unitCodeExpression} as unit_code")
+            ->selectRaw("MAX(TRIM(COALESCE(nama_cabang, ''))) as raw_cabang")
+            ->selectRaw("MAX(TRIM(COALESCE(nama_uker, ''))) as raw_unit")
+            ->selectRaw('SUM(COALESCE(baki_debet, 0)) as pinjaman')
+            ->selectRaw("SUM(CASE WHEN {$kol} = 2 THEN COALESCE(baki_debet, 0) ELSE 0 END) as sml")
+            ->selectRaw("SUM(CASE WHEN {$kol} BETWEEN 3 AND 5 THEN COALESCE(baki_debet, 0) ELSE 0 END) as npl")
+            ->groupBy('month_day_year_of_periode', 'unit_code')
+            ->orderBy('unit_code')
+            ->get();
+    }
+
+    private function fetchKeragaanUkerSavingsRows(array $periods, array|string|null $kancaKey, array|string|null $unitKey): Collection
+    {
+        if (!Schema::hasTable(self::SAVINGS_TABLE)) {
+            return collect();
+        }
+
+        $unitCodeExpression = "TRIM(COALESCE(NULLIF(id_uker, ''), REGEXP_SUBSTR(TRIM(COALESCE(nama_uker, '')), '^[0-9]+'), TRIM(COALESCE(nama_uker, ''))))";
+        $query = DB::table(self::SAVINGS_TABLE)
+            ->whereIn('Month_Day_Year_of_Posisi', $periods);
+
+        $this->applyKeragaanUkerSourceFilters($query, 'TRIM(COALESCE(nama_cabang, \'\'))', 'TRIM(COALESCE(nama_uker, \'\'))', $kancaKey, $unitKey);
+
+        return $query
+            ->selectRaw('Month_Day_Year_of_Posisi as period')
+            ->selectRaw("{$unitCodeExpression} as unit_code")
+            ->selectRaw("MAX(TRIM(COALESCE(nama_cabang, ''))) as raw_cabang")
+            ->selectRaw("MAX(TRIM(COALESCE(nama_uker, ''))) as raw_unit")
+            ->selectRaw('SUM(COALESCE(saldo, 0)) as simpanan')
+            ->selectRaw("SUM(CASE WHEN UPPER(TRIM(COALESCE(produk, ''))) = 'GIRO' THEN COALESCE(saldo, 0) ELSE 0 END) as giro")
+            ->selectRaw("SUM(CASE WHEN UPPER(TRIM(COALESCE(produk, ''))) = 'DEPOSITO' THEN COALESCE(saldo, 0) ELSE 0 END) as deposito")
+            ->selectRaw("SUM(CASE WHEN UPPER(TRIM(COALESCE(produk, ''))) = 'TABUNGAN' THEN COALESCE(saldo, 0) ELSE 0 END) as tabungan")
+            ->selectRaw("SUM(CASE WHEN UPPER(TRIM(COALESCE(produk, ''))) IN ('GIRO', 'TABUNGAN') THEN COALESCE(saldo, 0) ELSE 0 END) as casa")
+            ->groupBy('Month_Day_Year_of_Posisi', 'unit_code')
+            ->orderBy('unit_code')
+            ->get();
+    }
+
+    private function fetchKeragaanUkerRecoveryRows(array $periods, array|string|null $kancaKey, array|string|null $unitKey): Collection
+    {
+        if (!Schema::hasTable('gi405_recovery') || !Schema::hasTable('referensi_uker')) {
+            return collect();
+        }
+
+        $query = DB::table('gi405_recovery as gr')
+            ->leftJoin('referensi_uker as ru', 'gr.kode_uker', '=', 'ru.kode_uker')
+            ->whereIn('gr.periode', $periods);
+
+        $this->applyKeragaanUkerSourceFilters($query, 'TRIM(COALESCE(ru.nama_cabang, \'\'))', 'TRIM(COALESCE(ru.nama_uker, gr.nama_uker, \'\'))', $kancaKey, $unitKey);
+
+        return $query
+            ->selectRaw('gr.periode as period')
+            ->selectRaw("TRIM(COALESCE(gr.kode_uker, '')) as unit_code")
+            ->selectRaw("MAX(TRIM(COALESCE(ru.nama_cabang, ''))) as raw_cabang")
+            ->selectRaw("MAX(TRIM(COALESCE(ru.nama_uker, gr.nama_uker, ''))) as raw_unit")
+            ->selectRaw('SUM(COALESCE(gr.pendapatan_koreksi_ppap_dr_angsuran_ph, 0) * -1) as recovery')
+            ->groupBy('gr.periode', 'unit_code')
+            ->orderBy('unit_code')
+            ->get();
+    }
+
+    private function applyKeragaanUkerSourceFilters($query, string $kancaColumn, string $unitColumn, array|string|null $kancaKey, array|string|null $unitKey): void
+    {
+        $kancas = $this->normalizeFilterValues($kancaKey);
+        if ($kancas !== []) {
+            $conditions = collect($kancas)
+                ->map(fn (string $value) => $this->buildFilterCondition($kancaColumn, $value))
+                ->filter()
+                ->all();
+
+            if ($conditions !== []) {
+                $query->where(function ($nested) use ($conditions): void {
+                    foreach ($conditions as $condition) {
+                        $nested->orWhereRaw($condition);
+                    }
+                });
+            }
+        }
+
+        $units = $this->normalizeFilterValues($unitKey);
+        if ($units !== []) {
+            $conditions = collect($units)
+                ->map(fn (string $value) => $this->buildKeragaanUkerUnitFilterCondition($unitColumn, $value))
+                ->filter()
+                ->all();
+
+            if ($conditions !== []) {
+                $query->where(function ($nested) use ($conditions): void {
+                    foreach ($conditions as $condition) {
+                        $nested->orWhereRaw($condition);
+                    }
+                });
+            }
+        }
+    }
+
+    private function buildKeragaanUkerUnitFilterCondition(string $column, string $filterValue): ?string
+    {
+        $filterValue = trim($filterValue);
+        if ($filterValue === '' || $filterValue === 'all') {
+            return null;
+        }
+
+        $parts = [];
+        if (str_contains($filterValue, '-')) {
+            $parts = array_values(array_filter(
+                explode('-', Str::lower($filterValue)),
+                fn (string $part) => $part !== '' && $part !== 'detail'
+            ));
+        } else {
+            $clean = Str::lower($this->cleanBranchValue($filterValue));
+            $parts = array_values(array_filter(explode(' ', $clean)));
+        }
+
+        if ($parts === []) {
+            return null;
+        }
+
+        $type = in_array($parts[0], ['kc', 'kcp', 'unit'], true) ? array_shift($parts) : null;
+        if ($type === null || $parts === []) {
+            return $this->buildFilterCondition($column, $filterValue);
+        }
+
+        $label = strtoupper($type . ' ' . implode(' ', $parts));
+        $upperColumn = "UPPER({$column})";
+
+        return "({$upperColumn} = '{$label}' OR {$upperColumn} LIKE '%-- {$label}%' OR {$upperColumn} LIKE '% {$label}%')";
+    }
+
+    private function mapKeragaanUkerRawRow($row, string $type): ?array
+    {
+        $period = $this->normalizeDate((string) ($row->period ?? ''));
+        $rawCabang = trim((string) ($row->raw_cabang ?? ''));
+        $rawUnit = trim((string) ($row->raw_unit ?? ''));
+        $kancaLabel = $this->normalizeKancaLabel($rawCabang ?: $rawUnit);
+        $unitLabel = $this->normalizeUnitLabel($rawUnit, $kancaLabel);
+        $unitCode = $this->extractUkerCode((string) ($row->unit_code ?? ''), $rawUnit);
+
+        if ($period === null || $kancaLabel === '' || $unitLabel === '') {
+            return null;
+        }
+
+        $mapped = [
+            'period' => $period,
+            'unit_code' => $unitCode,
+            'raw_unit' => $rawUnit,
+            'kanca_label' => $kancaLabel,
+            'unit_label' => $unitLabel,
+        ];
+
+        foreach ($this->keragaanUkerMetricDefinitions($type) as $metric) {
+            $sourceKey = $metric['source_key'];
+            $mapped[$sourceKey] = (float) ($row->{$sourceKey} ?? 0);
+        }
+
+        return $mapped;
+    }
+
+    private function keragaanUkerRkaTarget(array $rkaMetrics, array $metric): float
+    {
+        if (isset($metric['rka_keys']) && is_array($metric['rka_keys'])) {
+            return collect($metric['rka_keys'])
+                ->sum(fn (string $key): float => (float) ($rkaMetrics[$key] ?? 0));
+        }
+
+        return (float) ($rkaMetrics[$metric['rka_key'] ?? ''] ?? 0);
+    }
+
+    private function extractUkerCode(?string $code, ?string $rawUnit): string
+    {
+        $cleanCode = trim((string) $code);
+        if (preg_match('/^\d+$/', $cleanCode) === 1) {
+            return str_pad($cleanCode, 5, '0', STR_PAD_LEFT);
+        }
+
+        if (preg_match('/^\s*(\d{4,5})\b/', (string) $rawUnit, $matches) === 1) {
+            return str_pad($matches[1], 5, '0', STR_PAD_LEFT);
+        }
+
+        return $cleanCode;
+    }
+
+    private function keragaanPositionLabel(string $key, ?string $period): string
+    {
+        if (!$period) {
+            return '-';
+        }
+
+        $date = Carbon::parse($period);
+
+        return in_array($key, ['yoy', 'ytd'], true)
+            ? $date->translatedFormat('M y')
+            : $date->translatedFormat('d M y');
+    }
+
+    private function keragaanDeltaTone(float $delta, bool $lowerBetter): string
+    {
+        if (abs($delta) < 0.00001) {
+            return 'flat';
+        }
+
+        $isGood = $lowerBetter ? $delta < 0 : $delta > 0;
+
+        return $isGood ? 'good' : 'bad';
+    }
+
+    private function keragaanAchievement(float $current, float $target, bool $lowerBetter): float
+    {
+        if ($lowerBetter) {
+            if ($current <= 0.0) {
+                return $target > 0.0 ? 999.99 : 0.0;
+            }
+
+            return ($target / $current) * 100;
+        }
+
+        if ($target <= 0.0) {
+            return 0.0;
+        }
+
+        return ($current / $target) * 100;
+    }
+
+    private function keragaanAchievementTone(float $achievement): string
+    {
+        if ($achievement > 100.0) {
+            return 'good';
+        }
+
+        if ($achievement > 90.0) {
+            return 'flat';
+        }
+
+        return 'bad';
+    }
+
+    private function keragaanUkerTotals(array $rows, array $metrics, array $positionKeys, array $deltaKeys): array
+    {
+        if ($rows === []) {
+            return [];
+        }
+
+        $totals = [
+            'unit_code' => '',
+            'unit_name' => 'TOTAL',
+            'kanca' => '',
+            'metrics' => [],
+        ];
+
+        foreach ($metrics as $metric) {
+            $values = array_fill_keys($positionKeys, 0.0);
+            $target = 0.0;
+
+            foreach ($rows as $row) {
+                $metricRow = collect($row['metrics'] ?? [])->firstWhere('key', $metric['key']);
+                if (!$metricRow) {
+                    continue;
+                }
+
+                foreach ($positionKeys as $positionKey) {
+                    $values[$positionKey] += (float) ($metricRow['values'][$positionKey] ?? 0);
+                }
+
+                $target += (float) ($metricRow['rka'] ?? 0);
+            }
+
+            $current = (float) ($values['current'] ?? 0);
+            $isLowerBetter = (bool) ($metric['lower_better'] ?? false);
+            $deltas = [];
+
+            foreach ($deltaKeys as $deltaKey) {
+                $delta = $current - (float) ($values[$deltaKey] ?? 0);
+                $deltas[$deltaKey] = [
+                    'value' => $delta,
+                    'tone' => $this->keragaanDeltaTone($delta, $isLowerBetter),
+                ];
+            }
+
+            $achievement = $this->keragaanAchievement($current, $target, $isLowerBetter);
+            $totals['metrics'][] = [
+                'key' => $metric['key'],
+                'label' => $metric['label'],
+                'lower_better' => $isLowerBetter,
+                'values' => $values,
+                'deltas' => $deltas,
+                'rka' => $target,
+                'achievement' => $achievement,
+                'achievement_tone' => $this->keragaanAchievementTone($achievement),
+            ];
+        }
+
+        return $totals;
     }
 
     private function computeFilterOptions(?string $period, array|string|null $selectedKanca, array|string|null $selectedUnit): array
@@ -821,7 +1314,7 @@ class DashboardHarianSnapshotService
         ];
     }
 
-    public function buildDashboardPayload(?string $selectedPeriod, ?string $rkaPeriod = null, array|string|null $kancaKey = null, array|string|null $unitKey = null): array
+    public function buildDashboardPayload(?string $selectedPeriod, ?string $rkaPeriod = null, array|string|null $kancaKey = null, array|string|null $unitKey = null, ?string $mtmPeriod = null): array
     {
         if (!$selectedPeriod) {
             return [
@@ -848,7 +1341,7 @@ class DashboardHarianSnapshotService
         // instead of issuing one COUNT/EXISTS round-trip per period.
         $this->prewarmSnapshotExistenceCache();
 
-        $comparisonPeriods = $this->resolveComparisonPeriods($selectedPeriod, $rkaPeriod);
+        $comparisonPeriods = $this->resolveComparisonPeriods($selectedPeriod, $rkaPeriod, $mtmPeriod);
         $periodKeys = array_values(array_unique(array_filter(array_values($comparisonPeriods))));
         $metricsByPeriod = $this->loadMetricsForPeriods($periodKeys, $kancaKey, $unitKey);
 
@@ -1807,24 +2300,81 @@ class DashboardHarianSnapshotService
     private function fetchRecoveryAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
     {
         $normalizedPeriod = $this->normalizeDate($period);
+        $primaryRows = collect();
 
         // Tier 1: Check if gi405_recovery table exists and has data for the period
         if ($normalizedPeriod && Schema::hasTable('gi405_recovery')) {
             $exists = DB::table('gi405_recovery')->where('periode', $normalizedPeriod)->exists();
             if ($exists) {
-                return $this->fetchGi405RecoveryAggregates($normalizedPeriod, $kancaKey, $unitKey);
+                $primaryRows = $this->fetchGi405RecoveryAggregates($normalizedPeriod, $kancaKey, $unitKey);
             }
         }
 
         // Tier 2: Check Cognos Recovery Table
-        if ($normalizedPeriod && Schema::hasTable('cognos_recovery')) {
+        if ($primaryRows->isEmpty() && $normalizedPeriod && Schema::hasTable('cognos_recovery')) {
             $exists = DB::table('cognos_recovery')->where('periode', $normalizedPeriod)->exists();
             if ($exists) {
-                return $this->fetchCognosRecoveryAggregates($normalizedPeriod, $kancaKey, $unitKey);
+                $primaryRows = $this->fetchCognosRecoveryAggregates($normalizedPeriod, $kancaKey, $unitKey);
             }
         }
 
-        return collect();
+        $phRows = $normalizedPeriod
+            ? $this->fetchPhAggregates($normalizedPeriod, $kancaKey, $unitKey)
+            : collect();
+
+        if ($primaryRows->isEmpty()) {
+            return $phRows;
+        }
+
+        return $this->overlayPhRecoveryAggregates($primaryRows, $phRows);
+    }
+
+    private function overlayPhRecoveryAggregates(Collection $primaryRows, Collection $phRows): Collection
+    {
+        if ($phRows->isEmpty()) {
+            return $primaryRows;
+        }
+
+        $rowsByKey = collect();
+
+        foreach ($primaryRows as $row) {
+            $rowsByKey->put($this->recoveryAggregateMergeKey($row), $row);
+        }
+
+        foreach ($phRows as $phRow) {
+            $key = $this->recoveryAggregateMergeKey($phRow);
+            $row = $rowsByKey->get($key);
+
+            if (!$row) {
+                $row = (object) [
+                    'raw_kanca' => $phRow->raw_kanca ?? null,
+                    'raw_unit' => $phRow->raw_unit ?? null,
+                    'rec_dh_small' => 0.0,
+                    'rec_dh_consumer' => 0.0,
+                    'rec_dh_micro' => 0.0,
+                    'rec_dh_total' => 0.0,
+                    'ph_tupok' => 0.0,
+                    'ph_lunas' => 0.0,
+                ];
+            }
+
+            $row->ph_tupok = (float) ($row->ph_tupok ?? 0) + (float) ($phRow->ph_tupok ?? 0);
+            $row->ph_lunas = (float) ($row->ph_lunas ?? 0) + (float) ($phRow->ph_lunas ?? 0);
+            $rowsByKey->put($key, $row);
+        }
+
+        return $rowsByKey->values();
+    }
+
+    private function recoveryAggregateMergeKey(object $row): string
+    {
+        $rawKanca = $row->raw_kanca ?? null;
+        $kancaLabel = $this->normalizeKancaLabel($rawKanca);
+        $rawUnit = $row->raw_unit ?? null;
+        $unitLabel = $this->normalizeUnitLabel($rawUnit, $kancaLabel);
+        $unitKey = $this->resolveDetailUnitKey($rawUnit, $unitLabel, $kancaLabel);
+
+        return $this->makeBucketKey($kancaLabel, $unitLabel, $unitKey);
     }
 
     private function overlayDlyKapPriorityLoanAggregates(string $period, Collection $ssaRows, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
@@ -2570,7 +3120,9 @@ class DashboardHarianSnapshotService
         }
         $final['casa_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'];
         $final['casa_mikro'] = $final['giro_mikro'] + $final['tabungan_mikro'];
-        $final['total_casa'] = $final['casa_ritel'] + $final['casa_mikro'];
+        $final['casa_wholesale'] = $this->casaWholesaleFromComponents($final);
+        $final['casa_non_wholesale'] = $this->casaNonWholesaleFromComponents($final);
+        $final['total_casa'] = $final['casa_non_wholesale'] + $final['casa_wholesale'];
         
         // Compute KECIL from subsegments (kecil_non_cashcoll + cashcoll)
         $final['kecil_os'] = $final['kecil_non_cashcoll_os'] + $final['cashcoll_os'];
@@ -2607,9 +3159,28 @@ class DashboardHarianSnapshotService
         $final['ldr_ritel_non_commercial'] = $this->safePercent($final['sme_os'] + $final['consumer_os'], $final['simpanan_ritel']);
         $final['ldr_mikro_non_commercial'] = $this->safePercent($final['micro_os'], $final['simpanan_mikro']);
         $final['casa_pct'] = $this->safePercent($final['total_casa'], $final['total_simpanan']);
-        $final['rec_dh_total'] = $final['rec_dh_small'] + $final['rec_dh_consumer'] + $final['rec_dh_micro'];
+        $this->rollupRecoveryDhForDisplayedSegments($final);
 
         return $final;
+    }
+
+    private function totalCasaFromComponents(array $metrics): float
+    {
+        return $this->casaNonWholesaleFromComponents($metrics) + $this->casaWholesaleFromComponents($metrics);
+    }
+
+    private function casaNonWholesaleFromComponents(array $metrics): float
+    {
+        return (float) ($metrics['giro_ritel'] ?? 0)
+            + (float) ($metrics['tabungan_ritel'] ?? 0)
+            + (float) ($metrics['giro_mikro'] ?? 0)
+            + (float) ($metrics['tabungan_mikro'] ?? 0);
+    }
+
+    private function casaWholesaleFromComponents(array $metrics): float
+    {
+        return (float) ($metrics['giro_wholesale'] ?? 0)
+            + (float) ($metrics['tabungan_wholesale'] ?? 0);
     }
 
     private function buildRkaMetrics(?string $rkaPeriod, ?string $filterPeriod, array|string|null $kancaKey, array|string|null $unitKey, bool $useDecember): array
@@ -2754,7 +3325,9 @@ class DashboardHarianSnapshotService
 
         $final['casa_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'];
         $final['casa_mikro'] = $final['giro_mikro'] + $final['tabungan_mikro'];
-        $final['total_casa'] = $final['casa_ritel'] + $final['casa_mikro'];
+        $final['casa_wholesale'] = $this->casaWholesaleFromComponents($final);
+        $final['casa_non_wholesale'] = $this->casaNonWholesaleFromComponents($final);
+        $final['total_casa'] = $final['casa_non_wholesale'] + $final['casa_wholesale'];
         $final['commercial_os'] = 0.0;
         $final['kecil_os'] = $final['kecil_non_cashcoll_os'] + $final['cashcoll_os'];
         $final['sme_os'] = $final['kecil_os'];
@@ -2782,7 +3355,9 @@ class DashboardHarianSnapshotService
         }
         $final['casa_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'];
         $final['casa_mikro'] = $final['giro_mikro'] + $final['tabungan_mikro'];
-        $final['total_casa'] = $final['casa_ritel'] + $final['casa_mikro'];
+        $final['casa_wholesale'] = $this->casaWholesaleFromComponents($final);
+        $final['casa_non_wholesale'] = $this->casaNonWholesaleFromComponents($final);
+        $final['total_casa'] = $final['casa_non_wholesale'] + $final['casa_wholesale'];
         $final['commercial_os'] = 0.0;
         $final['casa_pct'] = $this->safePercent($final['total_casa'], $final['total_simpanan']);
         // RKA LDR follows loan / savings, consistent with the live snapshot metrics.
@@ -2790,13 +3365,27 @@ class DashboardHarianSnapshotService
         $final['ldr_ritel_non_commercial'] = $this->safePercent($final['sme_os'] + $final['consumer_os'], $final['simpanan_ritel']);
         $final['ldr_mikro_non_commercial'] = $this->safePercent($final['micro_os'], $final['simpanan_mikro']);
         
-        // If rec_dh_total was explicitly loaded from RKA, keep it. 
-        // Otherwise fallback to sum of segments.
-        if ((float) ($final['rec_dh_total'] ?? 0) <= 0) {
-            $final['rec_dh_total'] = $final['rec_dh_small'] + $final['rec_dh_consumer'] + $final['rec_dh_micro'];
-        }
+        $this->rollupRecoveryDhForDisplayedSegments($final, true);
 
         return $final;
+    }
+
+    private function rollupRecoveryDhForDisplayedSegments(array &$metrics, bool $preserveExplicitTotal = false): void
+    {
+        $small = (float) ($metrics['rec_dh_small'] ?? 0);
+        $consumer = (float) ($metrics['rec_dh_consumer'] ?? 0);
+        $micro = (float) ($metrics['rec_dh_micro'] ?? 0);
+        $currentTotal = (float) ($metrics['rec_dh_total'] ?? 0);
+        $alreadyRolledToDisplayedRitel = $consumer > 0.0 && abs($currentTotal - ($small + $micro)) < 0.000001;
+
+        $displayedRitel = $alreadyRolledToDisplayedRitel ? $small : $small + $consumer;
+        $displayedTotal = $displayedRitel + $micro;
+
+        if (!$preserveExplicitTotal || $currentTotal <= 0.0) {
+            $metrics['rec_dh_total'] = $displayedTotal;
+        }
+
+        $metrics['rec_dh_small'] = $displayedRitel;
     }
 
     private function emptyMetrics(): array
@@ -2818,6 +3407,9 @@ class DashboardHarianSnapshotService
         foreach (self::METRIC_COLUMNS as $column) {
             $metrics[$column] = 0.0;
         }
+
+        $metrics['casa_non_wholesale'] = 0.0;
+        $metrics['casa_wholesale'] = 0.0;
 
         return $metrics;
     }
@@ -3302,6 +3894,10 @@ class DashboardHarianSnapshotService
             foreach ($this->resolveAffectedSnapshotPeriodsForPh($phPeriod) as $snapshotPeriod) {
                 $candidates[] = $snapshotPeriod;
             }
+        }
+
+        foreach ($this->resolveRecentSourcePeriods('gi405_recovery', 'periode') as $period) {
+            $candidates[] = $period;
         }
 
         $latestPhPeriod = $this->resolveLatestSourcePeriod('lw325_ph', 'periode');
@@ -4046,7 +4642,7 @@ class DashboardHarianSnapshotService
                 "{$microSegment} AND {$productDashboard} = 'CASH COLLATERAL'"
             ],
             'kur_mikro' => "{$microSegment} AND {$productDashboard} = 'KUR-MIKRO' AND {$product} = 'KUR MIKRO'",
-            'kur_kecil' => "{$microSegment} AND {$productDashboard} = 'KUR-MIKRO' AND {$product} IN ('KUR KECIL', 'KREDIT MIKRO - KUR RITEL 2015')",
+            'kur_kecil' => "{$microSegment} AND {$productDashboard} IN ('KUR-MIKRO', 'KUR-KECIL') AND {$product} IN ('KUR KECIL', 'KREDIT MIKRO - KUR RITEL 2015')",
             'kur_kpp' => "{$microSegment} AND {$productDashboard} = 'KPR'",
         ];
     }
@@ -4197,9 +4793,35 @@ class DashboardHarianSnapshotService
         return app(RkaLookupService::class);
     }
 
-    public function fetchTimeseriesTrend(array $months, string $category, array|string|null $kancaKey = null, array|string|null $unitKey = null, string $segment = 'total'): array
+    public function fetchTimeseriesTrend(
+        array $months,
+        string $category,
+        array|string|null $kancaKey = null,
+        array|string|null $unitKey = null,
+        string $segment = 'total',
+        ?string $recoverySegment = null,
+        ?string $recoveryProduct = null
+    ): array
     {
-        if (!$this->canUseSnapshotMetrics() || $months === []) {
+        if ($months === []) {
+            return [
+                'series' => [],
+                'area_total' => [],
+            ];
+        }
+
+        if ($category === 'recovery') {
+            return $this->fetchRecoveryTimeseriesTrend(
+                $months,
+                $kancaKey,
+                $unitKey,
+                $segment,
+                $recoverySegment,
+                $recoveryProduct
+            );
+        }
+
+        if (!$this->canUseSnapshotMetrics()) {
             return [
                 'series' => [],
                 'area_total' => [],
@@ -4250,10 +4872,12 @@ class DashboardHarianSnapshotService
                     $metric = 'casa_mikro';
                 } elseif ($segment === 'giro') {
                     $metric = '(COALESCE(giro_ritel, 0) + COALESCE(giro_mikro, 0) + COALESCE(giro_wholesale, 0))';
+                } elseif ($segment === 'wholesale') {
+                    $metric = '(COALESCE(giro_wholesale, 0) + COALESCE(tabungan_wholesale, 0))';
                 } elseif ($segment === 'non_wholesale') {
-                    $metric = '(COALESCE(casa_ritel, 0) + COALESCE(casa_mikro, 0))';
+                    $metric = '(COALESCE(giro_ritel, 0) + COALESCE(tabungan_ritel, 0) + COALESCE(giro_mikro, 0) + COALESCE(tabungan_mikro, 0))';
                 } else {
-                    $metric = 'total_casa';
+                    $metric = '(COALESCE(giro_ritel, 0) + COALESCE(tabungan_ritel, 0) + COALESCE(giro_mikro, 0) + COALESCE(tabungan_mikro, 0) + COALESCE(giro_wholesale, 0) + COALESCE(tabungan_wholesale, 0))';
                 }
             } elseif ($category === 'pinjaman') {
                 if ($segment === 'small') {
@@ -4376,5 +5000,233 @@ class DashboardHarianSnapshotService
             'area_total' => $finalAreaTotal,
             'value_type' => $valueType,
         ];
+    }
+
+    public function fetchRecoveryDimensionOptions(): array
+    {
+        return [
+            'segments' => ['Ritel', 'Mikro'],
+            'products' => [],
+            'products_by_segment' => [],
+        ];
+    }
+
+    private function fetchRecoveryTimeseriesTrend(
+        array $months,
+        array|string|null $kancaKey,
+        array|string|null $unitKey,
+        string $recoveryType,
+        ?string $recoverySegment,
+        ?string $recoveryProduct
+    ): array {
+        if (!Schema::hasTable('gi405_recovery') || !Schema::hasTable('referensi_uker')) {
+            return [
+                'series' => [],
+                'area_total' => [],
+                'value_type' => 'currency',
+            ];
+        }
+
+        $type = in_array(strtolower($recoveryType), ['ritel', 'micro'], true)
+            ? strtolower($recoveryType)
+            : 'ritel';
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        $normalizedUnit = $this->resolveRecoveryUnitLabels($this->normalizeFilterValues($unitKey));
+        $series = [];
+        $areaTotal = [];
+
+        foreach ($months as $month) {
+            if (preg_match('/^\d{4}-\d{2}$/', (string) $month) !== 1) {
+                continue;
+            }
+
+            try {
+                $monthStart = Carbon::createFromFormat('Y-m-d', $month . '-01')->startOfDay();
+            } catch (Throwable) {
+                continue;
+            }
+
+            $monthEnd = $monthStart->copy()->endOfMonth()->toDateString();
+            $rows = $this->fetchGi405RecoveryTimeseriesMonthRows(
+                $monthStart->toDateString(),
+                $monthEnd,
+                $type,
+                $normalizedKanca,
+                $normalizedUnit
+            );
+
+            $cumulativeByKanca = [];
+            foreach ($rows as $row) {
+                $period = $this->normalizeDate((string) ($row->snapshot_period ?? ''));
+                $kanca = $this->normalizeKancaLabel($row->raw_kanca ?? null);
+                $kodeUker = trim((string) ($row->kode_uker ?? ''));
+                if ($period === null || $kanca === '' || $kodeUker === '') {
+                    continue;
+                }
+
+                $cumulativeByKanca[$kanca][$kodeUker][$period] =
+                    ($cumulativeByKanca[$kanca][$kodeUker][$period] ?? 0.0) + (float) ($row->cumulative_value ?? 0);
+            }
+
+            foreach ($cumulativeByKanca as $kanca => $ukerValues) {
+                $dailyValues = [];
+
+                foreach ($ukerValues as $periodValues) {
+                    ksort($periodValues);
+
+                    foreach ($periodValues as $period => $currentValue) {
+                        if ($period < $monthStart->toDateString() || $period > $monthEnd) {
+                            continue;
+                        }
+
+                        $previousPeriod = Carbon::parse($period)->subDay()->toDateString();
+                        if (!array_key_exists($previousPeriod, $periodValues)) {
+                            continue;
+                        }
+
+                        $dailyValues[$period] = ($dailyValues[$period] ?? 0.0)
+                            + $currentValue
+                            - $periodValues[$previousPeriod];
+                    }
+                }
+
+                foreach ($dailyValues as $period => $dailyValue) {
+                    $day = (int) substr($period, 8, 2);
+                    if ($day < 1 || $day > 31) {
+                        continue;
+                    }
+
+                    $scaledValue = $dailyValue / 1000000;
+                    $series[$kanca][$month] ??= array_fill(1, 31, null);
+                    $series[$kanca][$month][$day] = $scaledValue;
+                    $areaTotal[$month] ??= array_fill(1, 31, null);
+                    $areaTotal[$month][$day] = ($areaTotal[$month][$day] ?? 0) + $scaledValue;
+                }
+            }
+        }
+
+        $finalSeries = [];
+        foreach ($series as $kanca => $monthData) {
+            foreach ($monthData as $month => $days) {
+                $finalSeries[$kanca][$month] = array_values($days);
+            }
+        }
+
+        $finalAreaTotal = [];
+        foreach ($areaTotal as $month => $days) {
+            $finalAreaTotal[$month] = array_values($days);
+        }
+
+        return [
+            'series' => $finalSeries,
+            'area_total' => $finalAreaTotal,
+            'value_type' => 'currency_million',
+        ];
+    }
+
+    private function fetchGi405RecoveryTimeseriesMonthRows(
+        string $monthStart,
+        string $monthEnd,
+        string $type,
+        array $kancas,
+        array $units
+    ): Collection {
+        $query = DB::table('gi405_recovery as gr')
+            ->join('referensi_uker as ru', 'gr.kode_uker', '=', 'ru.kode_uker')
+            ->whereBetween('gr.periode', [Carbon::parse($monthStart)->subDay()->toDateString(), $monthEnd]);
+
+        $this->applyGi405RecoveryTimeseriesFilters($query, $kancas, $units, $type);
+
+        return $query
+            ->selectRaw('gr.periode as snapshot_period')
+            ->selectRaw('gr.kode_uker as kode_uker')
+            ->selectRaw('ru.nama_cabang as raw_kanca')
+            ->selectRaw('SUM(COALESCE(gr.pendapatan_koreksi_ppap_dr_angsuran_ph, 0) * -1) as cumulative_value')
+            ->groupBy('gr.periode', 'gr.kode_uker', 'ru.nama_cabang')
+            ->orderBy('gr.periode')
+            ->orderBy('ru.nama_cabang')
+            ->get();
+    }
+
+    private function applyGi405RecoveryTimeseriesFilters(
+        $query,
+        array $kancas,
+        array $units,
+        string $type
+    ): void {
+        if ($kancas !== []) {
+            $conditions = collect($kancas)
+                ->map(fn (string $value) => $this->buildFilterCondition('ru.nama_cabang', $value))
+                ->filter()
+                ->all();
+
+            if ($conditions !== []) {
+                $query->where(function ($nested) use ($conditions): void {
+                    foreach ($conditions as $condition) {
+                        $nested->orWhereRaw($condition);
+                    }
+                });
+            }
+        }
+
+        if ($units !== []) {
+            $conditions = collect($units)
+                ->map(fn (string $value) => $this->buildFilterCondition('ru.nama_uker', $value))
+                ->filter()
+                ->all();
+
+            if ($conditions !== []) {
+                $query->where(function ($nested) use ($conditions): void {
+                    foreach ($conditions as $condition) {
+                        $nested->orWhereRaw($condition);
+                    }
+                });
+            }
+        }
+
+        $unitNameExpression = "UPPER(TRIM(COALESCE(ru.nama_uker, gr.nama_uker, '')))";
+        if ($type === 'micro') {
+            $query->where(function ($nested) use ($unitNameExpression): void {
+                $nested->whereRaw("{$unitNameExpression} LIKE 'UNIT%'")
+                    ->orWhereRaw("{$unitNameExpression} LIKE '%-- UNIT%'");
+            });
+        } else {
+            $query->whereRaw("{$unitNameExpression} NOT LIKE 'UNIT%'")
+                ->whereRaw("{$unitNameExpression} NOT LIKE '%-- UNIT%'");
+        }
+    }
+
+    private function resolveRecoveryUnitLabels(array $units): array
+    {
+        if ($units === []) {
+            return [];
+        }
+
+        $labels = collect($units)
+            ->filter(fn (string $value): bool => preg_match('/^(KC|KCP|UNIT)\b/i', $value) === 1)
+            ->values();
+
+        if (Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            $unitKeys = collect($units)
+                ->map(fn (string $value): string => $this->slugKey($value))
+                ->unique()
+                ->all();
+
+            $labels = $labels->merge(
+                DB::table(self::SNAPSHOT_TABLE)
+                    ->whereIn('unit_key', $unitKeys)
+                    ->whereColumn('unit_key', '<>', 'kanca_key')
+                    ->select('unit_label')
+                    ->distinct()
+                    ->pluck('unit_label')
+            );
+        }
+
+        return $labels
+            ->map(fn ($value): string => trim((string) $value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 }

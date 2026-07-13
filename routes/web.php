@@ -5,7 +5,7 @@ use App\Http\Controllers\DashboardHarianController;
 use App\Http\Controllers\DashboardSimpananController;
 use App\Http\Controllers\Report\AlmafactsDashboardController;
 use App\Http\Controllers\Report\DigitalPerformanceController;
-use App\Http\Controllers\Report\KejarLabaReportController;
+use App\Http\Controllers\Report\DataPhReportController;
 use App\Http\Controllers\Report\KinerjaRmReportController;
 use App\Http\Controllers\Report\KinerjaRmMikroReportController;
 use App\Http\Controllers\Report\KinerjaNonPtpReportController;
@@ -35,6 +35,7 @@ use App\Http\Controllers\Admin\FileManagementDownloadController;
 use App\Http\Controllers\Admin\FileManagementController;
 use App\Http\Controllers\Admin\LinkManagementController;
 use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\PublicWorkbookController;
 use App\Http\Controllers\RasioCasaDebiturController;
 use App\Http\Controllers\RekeningDormantController;
 use Illuminate\Support\Facades\Route;
@@ -47,6 +48,15 @@ Route::get('/', function () {
     return app(AuthenticatedSessionController::class)->create();
 })->name('home');
 
+Route::get('/workbooks/market-share.xlsx', [PublicWorkbookController::class, 'marketShare'])
+    ->name('public-workbooks.market-share');
+Route::get('/workbooks/market-share/{token}/market-share.xlsx', [PublicWorkbookController::class, 'marketShare'])
+    ->name('public-workbooks.market-share.token');
+Route::get('/workbooks/market-share-mapping.xlsx', [PublicWorkbookController::class, 'marketShareMapping'])
+    ->name('public-workbooks.market-share-mapping');
+Route::get('/workbooks/market-share-mapping/{token}/market-share-mapping.xlsx', [PublicWorkbookController::class, 'marketShareMapping'])
+    ->name('public-workbooks.market-share-mapping.token');
+
 Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(function () {
     Route::get('/dashboard-harian', [DashboardHarianController::class, 'index'])
         ->name('dashboard.harian');
@@ -54,6 +64,10 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('dashboard.harian.timeseries');
     Route::get('/dashboard-harian/timeseries/data', [DashboardHarianController::class, 'timeseriesData'])
         ->name('dashboard.harian.timeseries.data');
+    Route::get('/dashboard-harian/keragaan-uker', [DashboardHarianController::class, 'keragaanUker'])
+        ->name('dashboard.harian.keragaan-uker');
+    Route::get('/dashboard-harian/keragaan-uker/data', [DashboardHarianController::class, 'keragaanUkerData'])
+        ->name('dashboard.harian.keragaan-uker.data');
     Route::get('/dashboard-harian/data', [DashboardHarianController::class, 'data'])
         ->name('dashboard.harian.data');
     Route::get('/dashboard-harian/export', [DashboardHarianController::class, 'exportExcel'])
@@ -119,8 +133,14 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.realisasi-6-bulan-menunggak.data');
     Route::get('/report/dashboard-pinjaman/realisasi-6-bulan-menunggak/export', [DashboardPinjamanReportController::class, 'sixMonthArrearsExport'])
         ->name('report.dashboard-pinjaman.realisasi-6-bulan-menunggak.export');
-    Route::get('/report/dashboard-pinjaman/kejar-laba', [KejarLabaReportController::class, 'index'])
-        ->name('report.dashboard-pinjaman.kejar-laba');
+    Route::get('/report/dashboard-pinjaman/analisa-ug-npl', [DashboardPinjamanReportController::class, 'ugNplIndex'])
+        ->name('report.dashboard-pinjaman.analisa-ug-npl');
+    Route::get('/report/dashboard-pinjaman/analisa-ug-npl/data', [DashboardPinjamanReportController::class, 'ugNplData'])
+        ->name('report.dashboard-pinjaman.analisa-ug-npl.data');
+    Route::get('/report/dashboard-pinjaman/data-ph', [DataPhReportController::class, 'index'])
+        ->name('report.dashboard-pinjaman.data-ph');
+    Route::get('/report/dashboard-pinjaman/data-ph/nominatif', [DataPhReportController::class, 'nominatif'])
+        ->name('report.dashboard-pinjaman.data-ph.nominatif');
     Route::get('/report/dashboard-pinjaman/kinerjarm', [KinerjaRmReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerjarm');
     Route::get('/report/dashboard-pinjaman/kinerjarm/history', [KinerjaRmReportController::class, 'historyDetails'])
@@ -135,6 +155,8 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kinerja-ptp.detail');
     Route::get('/report/dashboard-pinjaman/kinerja-non-ptp', [KinerjaNonPtpReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerja-non-ptp');
+    Route::get('/report/dashboard-almafacts/financial-highlight', [AlmafactsDashboardController::class, 'financialHighlight'])
+        ->name('report.dashboard-almafacts.financial-highlight');
     Route::get('/report/dashboard-almafacts/kinerja-laba-rugi', [AlmafactsDashboardController::class, 'labaRugi'])
         ->name('report.dashboard-almafacts.kinerja-laba-rugi');
     Route::get('/report/dashboard-almafacts/kpi/{sheet?}', [AlmafactsDashboardController::class, 'kpi'])
@@ -159,6 +181,7 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
     Route::get('/report/kolaborasi-perusahaan-anak/program-referral-partner-perusahaan-anak', [KolaborasiReportController::class, 'programReferralPartnerPerusahaanAnak'])->name('report.kolaborasi.referral');
     Route::get('/report/kolaborasi-perusahaan-anak/nasabah-prioritas-bod-boc', [KolaborasiReportController::class, 'nasabahPrioritasBodBoc'])->name('report.kolaborasi.bodboc');
     Route::get('/report/kolaborasi-perusahaan-anak/business-cluster', [KolaborasiReportController::class, 'businessCluster'])->name('report.kolaborasi.business-cluster');
+    Route::get('/report/kolaborasi-perusahaan-anak/business-cluster/sppg', [KolaborasiReportController::class, 'sppg'])->name('report.kolaborasi.sppg');
 
     Route::get('/report/rekening-transaksi-debitur', [RasioCasaDebiturController::class, 'index'])->name('report.rasiocasa.debitur');
     Route::post('/report/data/rasiocasa', [RasioCasaDebiturController::class, 'fetchData'])->name('report.data.rasiocasa');
@@ -175,6 +198,13 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
     // Dashboard Dana (ssa_simpanan)
     Route::get('/report/dashboard-dana', [DashboardSimpananController::class, 'dashboardDanaIndex'])->name('report.dashboard-dana');
     Route::get('/report/dashboard-dana/data', [DashboardSimpananController::class, 'dashboardDanaData'])->name('report.dashboard-dana.data');
+    Route::get('/report/dashboard-dana/hourly-dpk', [DashboardSimpananController::class, 'hourlyDpkIndex'])->name('report.dashboard-dana.hourly-dpk');
+    Route::get('/report/dashboard-dana/hourly-dpk/export-pdf', [DashboardSimpananController::class, 'hourlyDpkExportPdf'])->name('report.dashboard-dana.hourly-dpk.export-pdf');
+    Route::get('/report/dashboard-dana/market-share', [DashboardSimpananController::class, 'marketShareIndex'])->name('report.dashboard-dana.market-share');
+    Route::get('/report/dashboard-dana/market-share/mapping', [DashboardSimpananController::class, 'marketShareMappingIndex'])->name('report.dashboard-dana.market-share.mapping');
+    Route::get('/report/dashboard-dana/market-share/area-6', [DashboardSimpananController::class, 'marketShareArea6Index'])->name('report.dashboard-dana.market-share.area6');
+    Route::get('/report/dashboard-dana/market-share/instansi', [DashboardSimpananController::class, 'marketShareInstansiIndex'])->name('report.dashboard-dana.market-share.instansi');
+    Route::get('/report/dashboard-dana/market-share/instansi/data', [DashboardSimpananController::class, 'marketShareInstansiData'])->name('report.dashboard-dana.market-share.instansi.data');
 });
 
 Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(function () {
@@ -343,6 +373,9 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
 
     Route::prefix('import-csv/simpanan-multipn')->group(function () {
         Route::post('/upload', [ImportSimpananMultiPnCsvController::class, 'upload'])->name('import.simpanan.csv.upload');
+        Route::post('/upload-chunk/init', [ImportSimpananMultiPnCsvController::class, 'initChunkUpload'])->name('import.simpanan.csv.upload-chunk.init');
+        Route::post('/upload-chunk', [ImportSimpananMultiPnCsvController::class, 'uploadChunk'])->name('import.simpanan.csv.upload-chunk');
+        Route::post('/upload-chunk/finalize', [ImportSimpananMultiPnCsvController::class, 'finalizeChunkUpload'])->name('import.simpanan.csv.upload-chunk.finalize');
         Route::get('/preview', [ImportSimpananMultiPnCsvController::class, 'preview'])->name('import.simpanan.csv.preview');
         Route::get('/prepare-preview', [ImportSimpananMultiPnCsvController::class, 'preparePreviewStream'])->name('import.simpanan.csv.prepare-preview');
         Route::post('/init', [ImportSimpananMultiPnCsvController::class, 'initImport'])->name('import.simpanan.csv.init');

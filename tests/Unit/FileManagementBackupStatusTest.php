@@ -6,6 +6,8 @@ use App\Http\Controllers\Admin\FileManagementController;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\File;
+use Illuminate\Http\Request;
 use Tests\TestCase;
 
 class FileManagementBackupStatusTest extends TestCase
@@ -24,6 +26,64 @@ class FileManagementBackupStatusTest extends TestCase
         Carbon::setTestNow();
 
         parent::tearDown();
+    }
+
+    public function test_import_scope_delete_does_not_remove_database_backup_file(): void
+    {
+        $backupDirectory = storage_path('app/private/database_backups');
+        File::ensureDirectoryExists($backupDirectory);
+        $backupPath = $backupDirectory . DIRECTORY_SEPARATOR . 'backup_scope_guard_test.sql';
+        File::put($backupPath, 'database backup');
+
+        $request = Request::create('/file-management/delete', 'POST', [
+            'paths' => ['private/database_backups/backup_scope_guard_test.sql'],
+            'scope' => 'import_artifacts',
+        ], [], [], [
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
+        ]);
+
+        try {
+            $response = (new FileManagementController())->destroy($request);
+            $payload = $response->getData(true);
+
+            $this->assertSame(207, $response->getStatusCode());
+            $this->assertSame('partial', $payload['status']);
+            $this->assertSame(0, $payload['deleted_count']);
+            $this->assertSame(1, $payload['failed_count']);
+            $this->assertFileExists($backupPath);
+            $this->assertStringContainsString('Backup database dipisahkan', $payload['failed_items'][0]['reason']);
+        } finally {
+            File::delete($backupPath);
+        }
+    }
+
+    public function test_database_backup_scope_can_delete_database_backup_file(): void
+    {
+        $backupDirectory = storage_path('app/private/database_backups');
+        File::ensureDirectoryExists($backupDirectory);
+        $backupPath = $backupDirectory . DIRECTORY_SEPARATOR . 'backup_scope_delete_test.sql';
+        File::put($backupPath, 'database backup');
+
+        $request = Request::create('/file-management/delete', 'POST', [
+            'paths' => ['private/database_backups/backup_scope_delete_test.sql'],
+            'scope' => 'database_backups',
+        ], [], [], [
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
+        ]);
+
+        try {
+            $response = (new FileManagementController())->destroy($request);
+            $payload = $response->getData(true);
+
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertSame('success', $payload['status']);
+            $this->assertSame(1, $payload['deleted_count']);
+            $this->assertFileDoesNotExist($backupPath);
+        } finally {
+            File::delete($backupPath);
+        }
     }
 
     public function test_recent_backup_meta_returns_starting_status_when_progress_cache_is_not_ready(): void

@@ -235,7 +235,8 @@
     }
 
     #loanDashboardCaptureArea .loan-table-container {
-        min-width: 1420px;
+        width: max-content;
+        min-width: 1680px;
     }
 
     @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -255,6 +256,95 @@
 
         .btn-loan-modern-submit {
             min-width: 0;
+        }
+    }
+
+    @media (max-width: 1180px), (max-height: 760px) {
+        .loan-dashboard {
+            padding-top: .75rem !important;
+        }
+
+        .loan-title-hero {
+            margin-bottom: .5rem;
+            padding: .75rem .25rem;
+        }
+
+        .loan-title-hero__title {
+            font-size: 1.25rem;
+            line-height: 1.12;
+        }
+
+        .loan-title-hero__desc {
+            margin-top: .25rem;
+            font-size: .75rem;
+            line-height: 1.35;
+        }
+
+        .loan-shell {
+            margin-bottom: 1rem !important;
+        }
+
+        .loan-shell .card-body {
+            padding: .85rem !important;
+        }
+
+        .loan-filter-modern {
+            gap: .75rem;
+            margin-bottom: 1rem;
+            padding: .85rem;
+            border-radius: 12px;
+        }
+
+        .loan-filter-modern .loan-filter-label {
+            margin-left: .25rem;
+            font-size: .65rem;
+            letter-spacing: .06em;
+        }
+
+        .loan-dropdown-toggle,
+        .btn-loan-modern-submit {
+            height: 44px;
+            border-radius: 10px;
+            font-size: .78rem;
+        }
+
+        .loan-dropdown-toggle {
+            padding-left: 2.45rem;
+            padding-right: .85rem;
+        }
+
+        .loan-dropdown-icon {
+            left: .85rem;
+            font-size: .9rem;
+        }
+
+        .loan-section-block {
+            margin-bottom: 1rem !important;
+        }
+    }
+
+    @media (orientation: landscape) and (max-height: 540px) and (min-width: 760px) {
+        .loan-filter-modern {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(160px, auto);
+            align-items: end;
+        }
+
+        .loan-title-hero__desc {
+            display: none;
+        }
+    }
+
+    @media (orientation: landscape) and (max-height: 540px) and (max-width: 759.98px) {
+        .loan-filter-modern {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .loan-filter-modern > div:last-child {
+            grid-column: 1 / -1;
+        }
+
+        .loan-title-hero__desc {
+            display: none;
         }
     }
 
@@ -323,12 +413,15 @@
         margin-bottom: 2rem !important;
         background-color: #ffffff !important;
         overflow-x: auto !important;
+        overflow-y: visible !important;
     }
 
     .loan-summary-table {
         border-collapse: collapse !important;
         border: 1px solid #94a3b8 !important;
-        width: 100% !important;
+        width: max-content !important;
+        min-width: 1680px !important;
+        table-layout: auto !important;
     }
 
     /* Excel Corporate Header Styling */
@@ -344,6 +437,9 @@
         border: 1px solid #334155 !important;
         text-align: center !important;
         vertical-align: middle !important;
+        line-height: 1.2 !important;
+        white-space: normal !important;
+        min-width: 92px;
     }
 
     .loan-summary-table thead th.sub-head {
@@ -367,6 +463,9 @@
         vertical-align: middle !important;
         text-align: right !important; /* Right aligned numbers */
         font-variant-numeric: tabular-nums !important; /* Perfect alignment of digits */
+        line-height: 1.22 !important;
+        white-space: nowrap !important;
+        min-width: 92px;
     }
 
     /* Text & Label Alignments */
@@ -375,6 +474,10 @@
         text-align: left !important;
         font-weight: 600 !important;
         color: #334155 !important;
+        min-width: 150px;
+        max-width: 280px;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
     }
 
     .loan-summary-table td.text-center-important {
@@ -407,13 +510,13 @@
     }
 
     .loan-summary-table tbody tr.loan-branch-subtotal,
-    .loan-summary-table tbody tr:last-child {
+    .loan-summary-table tbody tr.loan-grand-total {
         background-color: transparent;
     }
 
     /* Accounting Double-Underline Excel Grand Total Styling (Removes dark blackout bg) */
-    .loan-summary-table tbody tr:last-child,
-    .loan-summary-table tbody tr:last-child td {
+    .loan-summary-table tbody tr.loan-grand-total,
+    .loan-summary-table tbody tr.loan-grand-total td {
         background-color: #cbd5e1 !important; /* Excel total row solid steel color */
         color: #0f172a !important;
         font-weight: 800 !important;
@@ -436,6 +539,27 @@
     .achieve-neutral {
         color: #d97706 !important; /* Distinct premium amber */
         font-weight: 700 !important;
+    }
+
+    .loan-summary-table td.loan-delta-cell {
+        font-weight: 800 !important;
+        border-left-color: rgba(15, 23, 42, 0.18) !important;
+        border-right-color: rgba(15, 23, 42, 0.18) !important;
+    }
+
+    .loan-summary-table td.loan-delta-cell.delta-positive {
+        background-color: #dcfce7 !important;
+        color: #15803d !important;
+    }
+
+    .loan-summary-table td.loan-delta-cell.delta-negative {
+        background-color: #fee2e2 !important;
+        color: #b91c1c !important;
+    }
+
+    .loan-summary-table td.loan-delta-cell.delta-neutral {
+        background-color: #fef3c7 !important;
+        color: #b45309 !important;
     }
 
     /* Excel-Style Conditional formatting pastel data bars */
@@ -547,13 +671,303 @@
         background-color: #e2e8f0 !important;
     }
 
-    .loan-summary-table tbody tr:last-child td.sticky-cabang-cell {
+    .loan-summary-table tbody tr.loan-grand-total td.sticky-cabang-cell {
         background-color: #cbd5e1 !important;
+    }
+
+    @media (max-width: 991.98px), (max-height: 760px) {
+        #loanDashboardCaptureArea > .d-flex:first-of-type {
+            gap: 0.65rem;
+            margin-bottom: 0.85rem !important;
+        }
+
+        .loan-page-title {
+            margin-bottom: 0.15rem !important;
+            font-size: clamp(1.15rem, 4vw, 1.45rem) !important;
+            line-height: 1.12 !important;
+        }
+
+        #loanDashboardCaptureArea > .d-flex:first-of-type p {
+            display: -webkit-box;
+            overflow: hidden;
+            max-width: 68ch;
+            font-size: 0.74rem;
+            line-height: 1.35;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 1;
+        }
+
+        .btn-capture-all {
+            min-height: 34px;
+            padding: 0.4rem 0.65rem !important;
+            font-size: 0.7rem !important;
+        }
+
+        .loan-filter-modern {
+            gap: 0.6rem !important;
+            padding: 0.7rem !important;
+            margin-bottom: 0.85rem !important;
+        }
+
+        .loan-filter-modern .loan-filter-label {
+            margin-left: 0 !important;
+            font-size: 0.62rem !important;
+        }
+
+        .loan-dropdown-toggle,
+        .btn-loan-modern-submit {
+            height: 38px !important;
+            min-height: 38px !important;
+            font-size: 0.72rem !important;
+        }
+
+        .loan-dropdown-menu {
+            max-height: min(48vh, 320px);
+        }
+
+        .loan-summary-table-wrap {
+            max-height: calc(100vh - 235px) !important;
+            overflow-y: auto !important;
+        }
+    }
+
+    @media (orientation: landscape) and (max-height: 640px) {
+        #loanDashboardCaptureArea > .d-flex:first-of-type p,
+        #loanDashboardCaptureArea .legend-box span {
+            display: none !important;
+        }
+
+        .loan-filter-modern {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(150px, auto) !important;
+        }
+
+        .loan-summary-table-wrap {
+            max-height: calc(100vh - 170px) !important;
+        }
+    }
+
+    #loanDashboardCaptureArea.loan-credit-dashboard {
+        max-width: 100%;
+        padding-top: 1rem !important;
+    }
+
+    #loanDashboardCaptureArea .loan-credit-header {
+        gap: 0.75rem;
+        margin-bottom: 1rem !important;
+    }
+
+    #loanDashboardCaptureArea .loan-credit-header > div {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    #loanDashboardCaptureArea .loan-credit-header .loan-page-title {
+        margin-bottom: 0.2rem;
+        font-size: clamp(1.35rem, 2.4vw, 2rem);
+        line-height: 1.1;
+        max-width: 100%;
+        white-space: normal !important;
+        overflow-wrap: break-word;
+    }
+
+    #loanDashboardCaptureArea .loan-credit-header p {
+        max-width: 54rem;
+        font-size: 0.86rem;
+        line-height: 1.35;
+        overflow-wrap: break-word;
+    }
+
+    #loanDashboardCaptureArea .loan-shell {
+        border-radius: 8px !important;
+        margin-bottom: 1rem !important;
+    }
+
+    #loanDashboardCaptureArea .loan-shell::before {
+        height: 4px;
+    }
+
+    #loanDashboardCaptureArea .loan-shell .card-body {
+        padding: 1rem !important;
+    }
+
+    #loanDashboardCaptureArea .loan-filter-modern {
+        display: grid !important;
+        grid-template-columns: repeat(3, minmax(160px, 1fr)) minmax(188px, 0.82fr) !important;
+        align-items: end !important;
+        gap: 0.85rem !important;
+        margin-bottom: 0 !important;
+        padding: 0 !important;
+        background: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+    }
+
+    #loanDashboardCaptureArea .loan-filter-item {
+        gap: 0.42rem !important;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    #loanDashboardCaptureArea .loan-filter-modern .loan-filter-label {
+        margin: 0 !important;
+        color: #475569 !important;
+        font-size: 0.66rem !important;
+        letter-spacing: 0.075em !important;
+        line-height: 1.2;
+    }
+
+    #loanDashboardCaptureArea .loan-dropdown-toggle,
+    #loanDashboardCaptureArea .btn-loan-modern-submit {
+        height: 42px !important;
+        min-height: 42px !important;
+        border-radius: 8px !important;
+        font-size: 0.78rem !important;
+        line-height: 1.15 !important;
+    }
+
+    #loanDashboardCaptureArea .loan-dropdown,
+    #loanDashboardCaptureArea .loan-dropdown-toggle {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    #loanDashboardCaptureArea .loan-dropdown-toggle {
+        padding: 0 0.75rem 0 2.45rem !important;
+        overflow: hidden;
+    }
+
+    #loanDashboardCaptureArea .loan-dropdown-text {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #loanDashboardCaptureArea .loan-dropdown-icon {
+        left: 0.85rem !important;
+        font-size: 0.86rem !important;
+    }
+
+    #loanDashboardCaptureArea .loan-dropdown-menu {
+        top: calc(100% + 6px) !important;
+        min-width: min(320px, calc(100vw - 2rem)) !important;
+        max-height: min(52vh, 340px) !important;
+        border-radius: 8px !important;
+        padding: 0.35rem !important;
+    }
+
+    #loanDashboardCaptureArea .loan-dropdown-option {
+        min-height: 34px;
+        padding: 0.48rem 0.65rem !important;
+        border-radius: 6px !important;
+        gap: 0.55rem !important;
+    }
+
+    #loanDashboardCaptureArea .loan-dropdown-check {
+        width: 1.05rem;
+        height: 1.05rem;
+        border-radius: 4px;
+        flex: 0 0 auto;
+    }
+
+    #loanDashboardCaptureArea .loan-filter-action {
+        align-self: end;
+        min-width: 0;
+    }
+
+    #loanDashboardCaptureArea .btn-loan-modern-submit {
+        min-width: 0 !important;
+        padding: 0 0.85rem !important;
+        white-space: nowrap;
+    }
+
+    @media (max-width: 1199.98px) {
+        #loanDashboardCaptureArea.loan-credit-dashboard {
+            padding-left: 0.75rem !important;
+            padding-right: 0.75rem !important;
+        }
+
+        #loanDashboardCaptureArea .loan-filter-modern {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+
+        #loanDashboardCaptureArea .loan-filter-action {
+            grid-column: auto;
+        }
+
+        #loanDashboardCaptureArea .btn-loan-modern-submit {
+            width: 100%;
+        }
+    }
+
+    @media (max-width: 767.98px) {
+        #loanDashboardCaptureArea .loan-credit-header {
+            align-items: stretch !important;
+        }
+
+        #loanDashboardCaptureArea .loan-credit-header > div {
+            width: 100%;
+        }
+
+        #loanDashboardCaptureArea .loan-credit-header .loan-page-title {
+            font-size: 1.2rem;
+            line-height: 1.18;
+        }
+
+        #loanDashboardCaptureArea .loan-credit-header p {
+            max-width: 100%;
+        }
+
+        #loanDashboardCaptureArea .loan-credit-header .btn-capture-all {
+            width: 100%;
+            justify-content: center;
+            min-width: 0;
+            white-space: normal;
+        }
+
+        #loanDashboardCaptureArea .loan-filter-modern {
+            grid-template-columns: 1fr !important;
+        }
+
+        #loanDashboardCaptureArea .loan-dropdown-menu {
+            width: 100%;
+            min-width: 0 !important;
+        }
+
+        #loanDashboardCaptureArea .btn-loan-modern-submit {
+            white-space: normal;
+            line-height: 1.18 !important;
+        }
+    }
+
+    @media (max-height: 700px) and (min-width: 768px) {
+        #loanDashboardCaptureArea.loan-credit-dashboard {
+            padding-top: 0.6rem !important;
+        }
+
+        #loanDashboardCaptureArea .loan-credit-header {
+            margin-bottom: 0.65rem !important;
+        }
+
+        #loanDashboardCaptureArea .loan-credit-header p {
+            display: none;
+        }
+
+        #loanDashboardCaptureArea .loan-shell .card-body {
+            padding: 0.75rem !important;
+        }
+
+        #loanDashboardCaptureArea .loan-filter-modern {
+            gap: 0.65rem !important;
+        }
     }
 </style>
 
-<div class="loan-dashboard pt-4 px-3" id="loanDashboardCaptureArea">
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4">
+<div class="loan-dashboard loan-credit-dashboard pt-4 px-3" id="loanDashboardCaptureArea">
+    <div class="loan-credit-header d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4">
         <div>
             <h1 class="loan-page-title">Dashboard Pinjaman Kredit</h1>
             <p class="text-muted mb-0">Analisis performa portofolio berdasarkan segmen dan kategori.</p>
@@ -640,7 +1054,7 @@
                     </div>
                 </div>
 
-                <div>
+                <div class="loan-filter-action">
                     <button type="button" class="btn-loan-modern-submit w-100" id="btnLoadData">
                         <i class="fas fa-sync-alt"></i> PERBARUI DASHBOARD
                     </button>
@@ -843,7 +1257,28 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function isQualityType(type) {
         const typeUpper = (type || '').toUpperCase();
-        return typeUpper.includes('SML') || typeUpper.includes('NPL');
+        return typeUpper.includes('SML')
+            || typeUpper.includes('NPL')
+            || typeUpper.includes('LAR')
+            || typeUpper.includes('LR');
+    }
+
+    function getPositionDeltaClass(value, type) {
+        const num = parseFloat(value) || 0;
+
+        if (num === 0) {
+            return 'loan-delta-cell delta-neutral achieve-neutral';
+        }
+
+        if (isQualityType(type)) {
+            return num < 0
+                ? 'loan-delta-cell delta-positive achieve-positive'
+                : 'loan-delta-cell delta-negative achieve-negative';
+        }
+
+        return num > 0
+            ? 'loan-delta-cell delta-positive achieve-positive'
+            : 'loan-delta-cell delta-negative achieve-negative';
     }
 
     function getConditionalClass(value, type, isRka = false) {
@@ -876,6 +1311,193 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         return rkaNum > 0 ? (selectedNum / rkaNum) * 100 : 0;
+    }
+
+    function getCaptureScale(width = 0, height = 0) {
+        const preferredScale = Math.min(4, Math.max(3, Math.ceil((window.devicePixelRatio || 1) * 2)));
+        const maxEdge = Math.max(width, height, 1);
+        const browserSafeScale = Math.max(2, Math.min(preferredScale, 16000 / maxEdge));
+
+        return Number(browserSafeScale.toFixed(2));
+    }
+
+    function getFullCaptureWidth(section) {
+        const widths = [
+            section.scrollWidth || 0,
+            section.offsetWidth || 0,
+            section.getBoundingClientRect().width || 0
+        ];
+
+        section.querySelectorAll('.loan-summary-table-wrap, .loan-summary-table, table').forEach(el => {
+            widths.push(el.scrollWidth || 0, el.offsetWidth || 0, el.getBoundingClientRect().width || 0);
+        });
+
+        return Math.ceil(Math.max(...widths, 1680));
+    }
+
+    function setCaptureStyle(el, property, value) {
+        el.style.setProperty(property, value, 'important');
+    }
+
+    function getFullCaptureHeight(clone) {
+        const heights = [
+            clone.scrollHeight || 0,
+            clone.offsetHeight || 0,
+            clone.getBoundingClientRect().height || 0
+        ];
+
+        clone.querySelectorAll('.loan-summary-table-wrap, .loan-summary-table, table').forEach(el => {
+            const rect = el.getBoundingClientRect();
+            const cloneRect = clone.getBoundingClientRect();
+            heights.push(
+                el.scrollHeight || 0,
+                el.offsetHeight || 0,
+                rect.height || 0,
+                (rect.bottom - cloneRect.top) || 0
+            );
+        });
+
+        return Math.ceil(Math.max(...heights, 1));
+    }
+
+    function prepareLoanCaptureElement(section) {
+        const fullWidth = getFullCaptureWidth(section);
+        const captureHost = document.createElement('div');
+        const clone = section.cloneNode(true);
+
+        captureHost.className = 'loan-capture-host';
+        setCaptureStyle(captureHost, 'position', 'fixed');
+        setCaptureStyle(captureHost, 'left', '0');
+        setCaptureStyle(captureHost, 'top', '0');
+        setCaptureStyle(captureHost, 'width', `${fullWidth}px`);
+        setCaptureStyle(captureHost, 'max-width', 'none');
+        setCaptureStyle(captureHost, 'height', 'auto');
+        setCaptureStyle(captureHost, 'max-height', 'none');
+        setCaptureStyle(captureHost, 'overflow', 'visible');
+        setCaptureStyle(captureHost, 'pointer-events', 'none');
+        setCaptureStyle(captureHost, 'background', '#ffffff');
+        setCaptureStyle(captureHost, 'z-index', '0');
+
+        clone.id = `${section.id || 'loan-section'}CaptureClone`;
+        clone.classList.add('loan-capture-clone');
+        setCaptureStyle(clone, 'position', 'relative');
+        setCaptureStyle(clone, 'left', '0');
+        setCaptureStyle(clone, 'top', '0');
+        setCaptureStyle(clone, 'width', `${fullWidth}px`);
+        setCaptureStyle(clone, 'max-width', 'none');
+        setCaptureStyle(clone, 'min-width', `${fullWidth}px`);
+        setCaptureStyle(clone, 'height', 'auto');
+        setCaptureStyle(clone, 'max-height', 'none');
+        setCaptureStyle(clone, 'overflow', 'visible');
+        setCaptureStyle(clone, 'overflow-x', 'visible');
+        setCaptureStyle(clone, 'overflow-y', 'visible');
+        setCaptureStyle(clone, 'background', '#ffffff');
+        setCaptureStyle(clone, 'z-index', '0');
+
+        clone.querySelectorAll('.btn-snapshot, .btn-capture-all').forEach(btn => {
+            btn.remove();
+        });
+
+        clone.querySelectorAll('.loan-section-header').forEach(header => {
+            setCaptureStyle(header, 'width', `${fullWidth}px`);
+            setCaptureStyle(header, 'max-width', 'none');
+            setCaptureStyle(header, 'height', 'auto');
+            setCaptureStyle(header, 'max-height', 'none');
+            setCaptureStyle(header, 'overflow', 'visible');
+        });
+
+        clone.querySelectorAll('.loan-summary-table-wrap').forEach(wrap => {
+            const table = wrap.querySelector('.loan-summary-table, table');
+            const tableWidth = Math.ceil(Math.max(fullWidth, wrap.scrollWidth || 0, table?.scrollWidth || 0));
+
+            wrap.classList.remove('table-responsive');
+            setCaptureStyle(wrap, 'overflow', 'visible');
+            setCaptureStyle(wrap, 'overflow-x', 'visible');
+            setCaptureStyle(wrap, 'overflow-y', 'visible');
+            setCaptureStyle(wrap, 'width', `${tableWidth}px`);
+            setCaptureStyle(wrap, 'max-width', 'none');
+            setCaptureStyle(wrap, 'height', 'auto');
+            setCaptureStyle(wrap, 'max-height', 'none');
+
+            if (table) {
+                setCaptureStyle(table, 'width', `${tableWidth}px`);
+                setCaptureStyle(table, 'min-width', `${tableWidth}px`);
+                setCaptureStyle(table, 'max-width', 'none');
+                setCaptureStyle(table, 'height', 'auto');
+                setCaptureStyle(table, 'max-height', 'none');
+                setCaptureStyle(table, 'overflow', 'visible');
+            }
+        });
+
+        captureHost.appendChild(clone);
+        document.body.appendChild(captureHost);
+
+        const captureWidth = Math.ceil(Math.max(fullWidth, clone.scrollWidth || 0));
+        const captureHeight = getFullCaptureHeight(clone);
+
+        return { clone, host: captureHost, width: captureWidth, height: captureHeight };
+    }
+
+    async function renderLoanSectionCanvas(section) {
+        if (document.fonts && document.fonts.ready) {
+            await document.fonts.ready;
+        }
+
+        const prepared = prepareLoanCaptureElement(section);
+
+        try {
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+            return await html2canvas(prepared.clone, {
+                scale: getCaptureScale(prepared.width, prepared.height),
+                backgroundColor: '#ffffff',
+                logging: false,
+                useCORS: true,
+                width: prepared.width,
+                height: prepared.height,
+                windowWidth: prepared.width,
+                windowHeight: prepared.height,
+                scrollX: 0,
+                scrollY: 0
+            });
+        } finally {
+            prepared.host.remove();
+        }
+    }
+
+    function downloadCanvasAsPng(canvas, filename) {
+        return new Promise(resolve => {
+            canvas.toBlob(blob => {
+                if (!blob) {
+                    const fallback = document.createElement('a');
+                    fallback.download = filename;
+                    fallback.href = canvas.toDataURL('image/png');
+                    fallback.click();
+                    resolve();
+                    return;
+                }
+
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.download = filename;
+                link.href = url;
+                link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                resolve();
+            }, 'image/png');
+        });
+    }
+
+    function resetCaptureBackdrop() {
+        if (!window.jQuery) return;
+
+        window.jQuery(captureModal).modal('hide');
+        window.jQuery('.modal-backdrop').remove();
+        window.jQuery('body').removeClass('modal-open').css('padding-right', '');
+    }
+
+    function closeCaptureModalSoon(delay = 900) {
+        window.setTimeout(resetCaptureBackdrop, delay);
     }
 
     function formatRkaGapCell(gapValue, pctValue, type) {
@@ -939,26 +1561,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 const kategoriStr = $kategoriSel.val().trim().toUpperCase();
 
                 for (const [index, sec] of sections.entries()) {
-                    if (progressText) progressText.innerText = `Memproses ${sec.label} (${index + 1}/3)...`;
+                    if (progressText) progressText.innerText = `Memproses ${sec.label} (${index + 1}/${sections.length})...`;
                     await new Promise(r => setTimeout(r, 600));
 
                     const el = document.getElementById(sec.id);
                     if (!el) continue;
 
-                    const snapBtn = el.querySelector('.btn-snapshot');
-                    if (snapBtn) snapBtn.style.visibility = 'hidden';
-
-                    const tableCanvas = await html2canvas(el, { 
-                        scale: 2, 
-                        backgroundColor: '#ffffff',
-                        logging: false,
-                        useCORS: true
-                    });
-
-                    if (snapBtn) snapBtn.style.visibility = 'visible';
+                    const tableCanvas = await renderLoanSectionCanvas(el);
 
                     const finalCanvas = document.createElement('canvas');
-                    const headerHeight = 220;
+                    const headerHeight = Math.round(220 * getCaptureScale(tableCanvas.width, tableCanvas.height));
                     finalCanvas.width = tableCanvas.width;
                     finalCanvas.height = tableCanvas.height + headerHeight;
                     const ctx = finalCanvas.getContext('2d');
@@ -988,20 +1600,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     ctx.drawImage(tableCanvas, 0, headerHeight);
 
-                    const link = document.createElement('a');
-                    link.download = `Capture_DashboardKredit_${sec.code}_${kategoriStr}-${dateStr}.jpg`;
-                    link.href = finalCanvas.toDataURL('image/jpeg', 0.9);
-                    link.click();
+                    await downloadCanvasAsPng(finalCanvas, `Capture_DashboardKredit_${sec.code}_${kategoriStr}-${dateStr}.png`);
                     
                     await new Promise(r => setTimeout(r, 300));
                 }
 
                 document.getElementById('captureProgressUI').classList.add('d-none');
                 document.getElementById('captureSuccessUI').classList.remove('d-none');
+                closeCaptureModalSoon();
             } catch (err) {
                 console.error('Capture process failed:', err);
                 document.getElementById('captureProgressUI').classList.add('d-none');
                 document.getElementById('captureErrorUI').classList.remove('d-none');
+                closeCaptureModalSoon(1600);
             } finally {
                 captureAllBtn.disabled = false;
                 captureAllBtn.innerHTML = '<i class="fas fa-file-image"></i> EXPORT A4 PORTRAIT';
@@ -1027,23 +1638,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         try {
-            const snapBtn = el.querySelector('.btn-snapshot');
-            if (snapBtn) snapBtn.style.visibility = 'hidden';
-
-            const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', logging: false });
-            
-            if (snapBtn) snapBtn.style.visibility = 'visible';
-
-            const link = document.createElement('a');
-            link.download = `Capture_DashboardKredit_${sectionCode}_${kategoriStr}-${dateStr}.jpg`;
-            link.href = canvas.toDataURL('image/jpeg', 0.95);
-            link.click();
+            const canvas = await renderLoanSectionCanvas(el);
+            await downloadCanvasAsPng(canvas, `Capture_DashboardKredit_${sectionCode}_${kategoriStr}-${dateStr}.png`);
 
             document.getElementById('captureProgressUI').classList.add('d-none');
             document.getElementById('captureSuccessUI').classList.remove('d-none');
+            closeCaptureModalSoon();
         } catch (err) {
             document.getElementById('captureProgressUI').classList.add('d-none');
             document.getElementById('captureErrorUI').classList.remove('d-none');
+            closeCaptureModalSoon(1600);
         }
     };
 
@@ -1051,9 +1655,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-dismiss="modal"]').forEach(btn => {
         btn.addEventListener('click', function() {
             if (window.jQuery) {
-                window.jQuery(captureModal).modal('hide');
-                window.jQuery('.modal-backdrop').remove();
-                window.jQuery('body').removeClass('modal-open').css('padding-right', '');
+                resetCaptureBackdrop();
             }
         });
     });
@@ -1119,9 +1721,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td>${formatCurrency(d.mtm)}</td>
                 <td>${formatCurrency(d.mtd)}</td>
                 <td style="background: ${isBold ? 'rgba(224, 242, 254, 0.3)' : '#f0f7ff'}; color: #003d7c; font-weight: 800;">${formatCurrency(d.selected)}</td>
-                <td class="${getConditionalClass(d.delta_ytd, type)}">${formatCurrency(d.delta_ytd)}</td>
-                <td class="${getConditionalClass(d.delta_mom, type)}">${formatCurrency(d.delta_mom)}</td>
-                <td class="${getConditionalClass(d.delta_mtd, type)}">${formatCurrency(d.delta_mtd)}</td>
+                <td class="${getPositionDeltaClass(d.delta_ytd, type)}">${formatCurrency(d.delta_ytd)}</td>
+                <td class="${getPositionDeltaClass(d.delta_mom, type)}">${formatCurrency(d.delta_mom)}</td>
+                <td class="${getPositionDeltaClass(d.delta_mtd, type)}">${formatCurrency(d.delta_mtd)}</td>
                 <td>${formatCurrency(d.rka_current)}</td>
                 <td>${formatCurrency(d.rka_m1)}</td>
                 <td class="${getConditionalClass(d.penc_cur_rp, type, true)}">${formatCurrency(d.penc_cur_rp)}</td>
@@ -1140,7 +1742,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     <th rowspan="2" style="width: 250px;">URAIAN KONSOLIDASI AREA 6</th>
                     <th colspan="5" class="sub-head">PERIODE</th>
                     <th colspan="3" class="accent-head">DELTA (Δ) PERIODE</th>
-                    <th colspan="2" class="sub-head">RKA-KP</th>
+                    <th colspan="2" class="sub-head">RKAP</th>
                     <th colspan="4" class="accent-head">PENCAPAIAN RKA</th>
                 </tr>
                 <tr>
@@ -1208,15 +1810,18 @@ document.addEventListener('DOMContentLoaded', function () {
         const typePrefix = typeLabel.toUpperCase();
         const rkaM1Label = rkaLabels && rkaLabels.m1 ? rkaLabels.m1 : '';
         const rkaCurrentLabel = rkaLabels && rkaLabels.current ? rkaLabels.current : '';
+        const totalRow = data.find(row => row.is_total);
+        const dataRows = data.filter(row => !row.is_total);
+        const scopeHeaderLabel = dataRows.some(row => row.scope_level === 'unit') ? 'KCP / UNIT KERJA' : 'KANTOR CABANG';
 
         let html = `<table class="loan-summary-table">
             <thead>
                 <tr>
-                    <th rowspan="2" class="sticky-cabang-header" style="width: 140px;">KANTOR CABANG</th>
+                    <th rowspan="2" class="sticky-cabang-header" style="width: 140px;">${scopeHeaderLabel}</th>
                     <th rowspan="2" style="width: 150px;">KATEGORI ${segmentName}</th>
                     <th colspan="5" class="sub-head">${typePrefix} PERIODE</th>
                     <th colspan="3" class="accent-head">DELTA (Δ) PERIODE</th>
-                    <th colspan="2" class="sub-head">RKA-KP</th>
+                    <th colspan="2" class="sub-head">RKAP</th>
                     <th colspan="4" class="accent-head">PENCAPAIAN RKA</th>
                 </tr>
                 <tr>
@@ -1238,8 +1843,6 @@ document.addEventListener('DOMContentLoaded', function () {
             </thead>
             <tbody>`;
 
-        const totalRow = data.find(row => row.is_total);
-        const dataRows = data.filter(row => !row.is_total);
         const groups = {};
         dataRows.forEach(row => {
             const branch = row.branch || 'Unknown';
@@ -1284,37 +1887,55 @@ document.addEventListener('DOMContentLoaded', function () {
             const shortBranchName = branchName.replace(/KC Madiun/gi, 'KC MDN').replace(/KC Magetan/gi, 'KC MGT').replace(/KC Ngawi/gi, 'KC NGWI').replace(/KC Ponorogo/gi, 'KC PNRG');
             const sub_m1_pct = calculateRkaPercentage(subtotal.selected, subtotal.rka_m1, typeLabel);
             const sub_cur_pct = calculateRkaPercentage(subtotal.selected, subtotal.rka_current, typeLabel);
-            
-            html += `<tr class="loan-branch-subtotal">
-                <td rowspan="${groupRows.length + 1}" class="text-center-v text-start-important merged-branch-cell sticky-cabang-cell" style="border-bottom: 2px solid #cbd5e1;">${branchName}</td>
-                <td class="text-center-v text-center-important" style="font-size: 0.68rem; letter-spacing: 0.05em; background: rgba(255,255,255,0.05); font-weight: 900; border-right: 1px solid rgba(255,255,255,0.1);">TOTAL ${shortBranchName.toUpperCase()}</td>
-                <td>${formatCurrency(subtotal.ytd)}</td>
-                <td>${formatCurrency(subtotal.m2)}</td>
-                <td>${formatCurrency(subtotal.mtm)}</td>
-                <td>${formatCurrency(subtotal.mtd)}</td>
-                <td style="background: rgba(224, 242, 254, 0.15); color: #7dd3fc;">${formatCurrency(subtotal.selected)}</td>
-                <td class="${getConditionalClass(subtotal.d_ytd, typeLabel)}">${formatCurrency(subtotal.d_ytd)}</td>
-                <td class="${getConditionalClass(subtotal.d_mom, typeLabel)}">${formatCurrency(subtotal.d_mom)}</td>
-                <td class="${getConditionalClass(subtotal.d_mtd, typeLabel)}">${formatCurrency(subtotal.d_mtd)}</td>
-                <td>${formatCurrency(subtotal.rka_current)}</td>
-                <td>${formatCurrency(subtotal.rka_m1)}</td>
-                <td class="${getConditionalClass(subtotal.penc_cur_rp, typeLabel, true)}">${formatCurrency(subtotal.penc_cur_rp)}</td>
-                <td>${formatPctBadge(sub_cur_pct, typeLabel)}</td>
-                <td class="${getConditionalClass(subtotal.penc_m1_rp, typeLabel, true)}">${formatCurrency(subtotal.penc_m1_rp)}</td>
-                <td>${formatPctBadge(sub_m1_pct, typeLabel)}</td>
-            </tr>`;
-            
-            groupRows.forEach(row => { 
+            const showBranchSubtotal = segmentName !== 'Mikro';
+
+            if (showBranchSubtotal) {
+                html += `<tr class="loan-branch-subtotal">
+                    <td rowspan="${groupRows.length + 1}" class="text-center-v text-start-important merged-branch-cell sticky-cabang-cell" style="border-bottom: 2px solid #cbd5e1;">${branchName}</td>
+                    <td class="text-center-v text-center-important" style="font-size: 0.68rem; letter-spacing: 0.05em; background: rgba(255,255,255,0.05); font-weight: 900; border-right: 1px solid rgba(255,255,255,0.1);">TOTAL ${shortBranchName.toUpperCase()}</td>
+                    <td>${formatCurrency(subtotal.ytd)}</td>
+                    <td>${formatCurrency(subtotal.m2)}</td>
+                    <td>${formatCurrency(subtotal.mtm)}</td>
+                    <td>${formatCurrency(subtotal.mtd)}</td>
+                    <td style="background: rgba(224, 242, 254, 0.15); color: #7dd3fc;">${formatCurrency(subtotal.selected)}</td>
+                    <td class="${getPositionDeltaClass(subtotal.d_ytd, typeLabel)}">${formatCurrency(subtotal.d_ytd)}</td>
+                    <td class="${getPositionDeltaClass(subtotal.d_mom, typeLabel)}">${formatCurrency(subtotal.d_mom)}</td>
+                    <td class="${getPositionDeltaClass(subtotal.d_mtd, typeLabel)}">${formatCurrency(subtotal.d_mtd)}</td>
+                    <td>${formatCurrency(subtotal.rka_current)}</td>
+                    <td>${formatCurrency(subtotal.rka_m1)}</td>
+                    <td class="${getConditionalClass(subtotal.penc_cur_rp, typeLabel, true)}">${formatCurrency(subtotal.penc_cur_rp)}</td>
+                    <td>${formatPctBadge(sub_cur_pct, typeLabel)}</td>
+                    <td class="${getConditionalClass(subtotal.penc_m1_rp, typeLabel, true)}">${formatCurrency(subtotal.penc_m1_rp)}</td>
+                    <td>${formatPctBadge(sub_m1_pct, typeLabel)}</td>
+                </tr>`;
+            }
+
+            groupRows.forEach((row, index) => {
+                const isMikroTotalRow = segmentName === 'Mikro' && row.category === 'Micro';
+                const categoryLabel = isMikroTotalRow
+                    ? 'TOTAL MICRO'
+                    : (row.category || '');
+                const categoryCellClass = isMikroTotalRow
+                    ? 'text-start-important loan-mikro-total-label'
+                    : 'text-start-important text-muted';
+                const categoryCellStyle = isMikroTotalRow
+                    ? 'font-size: 0.82rem; font-weight: 900; letter-spacing: 0.04em; color: #003d7c; background: #dbeafe;'
+                    : 'font-size: 0.75rem;';
+                const branchCell = !showBranchSubtotal && index === 0
+                    ? `<td rowspan="${groupRows.length}" class="text-center-v text-start-important merged-branch-cell sticky-cabang-cell" style="border-bottom: 2px solid #cbd5e1;">${branchName}</td>`
+                    : '';
+
                 html += `<tr>
-                    <td class="text-start-important text-muted" style="font-size: 0.75rem;">${row.category || ''}</td>
+                    ${branchCell}
+                    <td class="${categoryCellClass}" style="${categoryCellStyle}">${categoryLabel}</td>
                     <td>${formatCurrency(row.ytd)}</td>
                     <td>${formatCurrency(row.m2)}</td>
                     <td>${formatCurrency(row.mtm)}</td>
                     <td>${formatCurrency(row.mtd)}</td>
                     <td style="background: #f0f7ff; color: #003d7c; font-weight: 800;">${formatCurrency(row.selected)}</td>
-                    <td class="${getConditionalClass(row.delta_ytd, typeLabel)}">${formatCurrency(row.delta_ytd)}</td>
-                    <td class="${getConditionalClass(row.delta_mom, typeLabel)}">${formatCurrency(row.delta_mom)}</td>
-                    <td class="${getConditionalClass(row.delta_mtd, typeLabel)}">${formatCurrency(row.delta_mtd)}</td>
+                    <td class="${getPositionDeltaClass(row.delta_ytd, typeLabel)}">${formatCurrency(row.delta_ytd)}</td>
+                    <td class="${getPositionDeltaClass(row.delta_mom, typeLabel)}">${formatCurrency(row.delta_mom)}</td>
+                    <td class="${getPositionDeltaClass(row.delta_mtd, typeLabel)}">${formatCurrency(row.delta_mtd)}</td>
                     <td>${formatCurrency(row.rka_current)}</td>
                     <td>${formatCurrency(row.rka_m1)}</td>
                     <td class="${getConditionalClass(row.penc_cur_rp, typeLabel, true)}">${formatCurrency(row.penc_cur_rp)}</td>
@@ -1326,16 +1947,16 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         if (totalRow) {
-            html += `<tr style="background: #1e293b; color: #ffffff; font-weight: 900;">
+            html += `<tr class="loan-grand-total" style="background: #1e293b; color: #ffffff; font-weight: 900;">
                 <td colspan="2" class="text-center-important sticky-cabang-cell" style="letter-spacing: 0.1em; color: #ffffff; border-right: 1px solid rgba(255,255,255,0.2); font-weight: 800;">GRAND TOTAL</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.ytd)}</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.m2)}</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.mtm)}</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.mtd)}</td>
                 <td style="background: #0f172a; color: #ffffff;">${formatCurrency(totalRow.selected)}</td>
-                <td class="${getConditionalClass(totalRow.delta_ytd, typeLabel)}">${formatCurrency(totalRow.delta_ytd)}</td>
-                <td class="${getConditionalClass(totalRow.delta_mom, typeLabel)}">${formatCurrency(totalRow.delta_mom)}</td>
-                <td class="${getConditionalClass(totalRow.delta_mtd, typeLabel)}">${formatCurrency(totalRow.delta_mtd)}</td>
+                <td class="${getPositionDeltaClass(totalRow.delta_ytd, typeLabel)}">${formatCurrency(totalRow.delta_ytd)}</td>
+                <td class="${getPositionDeltaClass(totalRow.delta_mom, typeLabel)}">${formatCurrency(totalRow.delta_mom)}</td>
+                <td class="${getPositionDeltaClass(totalRow.delta_mtd, typeLabel)}">${formatCurrency(totalRow.delta_mtd)}</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.rka_current)}</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.rka_m1)}</td>
                 <td class="${getConditionalClass(totalRow.penc_cur_rp, typeLabel, true)}">${formatCurrency(totalRow.penc_cur_rp)}</td>
@@ -1351,7 +1972,8 @@ document.addEventListener('DOMContentLoaded', function () {
     function showSpinners(kategori) {
         const stub = (label) => `<div class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary mb-3" role="status"><span class="sr-only">Loading...</span></div><p><strong>Memproses data ${label}</strong></p><p style="font-size: 0.85rem;">Untuk Segmen ${kategori}...</p></div>`;
         osTableContainer.innerHTML = stub('Outstanding');
-        consolidationTableContainer.innerHTML = stub('Konsolidasi');
+        consolidationSection.classList.add('d-none');
+        consolidationTableContainer.innerHTML = '';
         smlTableContainer.innerHTML = stub('SML');
         nplTableContainer.innerHTML = stub('NPL');
     }
@@ -1396,17 +2018,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 const payloadKancaLabel = data.kanca_label || kancaLabel;
                 dashboardMeta.textContent = `Menampilkan dashboard kredit ${kategori} - ${payloadKancaLabel} per ${formatDate(periode)}.`;
                 
-                // Consolidation Table (Shown for all, but specifically requested for Mikro)
-                const osTotal = data.os.find(r => r.is_total);
-                const smlTotal = data.sml.find(r => r.is_total);
-                const nplTotal = data.npl.find(r => r.is_total);
-                
-                if (kategori === 'Mikro' && (osTotal || smlTotal || nplTotal)) {
-                    consolidationSection.classList.remove('d-none');
-                    consolidationTableContainer.innerHTML = buildConsolidationTable(data.os, data.sml, data.npl, data.header_dates, kategori, data.rka_labels);
-                } else {
-                    consolidationSection.classList.add('d-none');
-                }
+                consolidationSection.classList.add('d-none');
+                consolidationTableContainer.innerHTML = '';
 
                 document.getElementById('osTitle').innerText = `A. OUTSTANDING (OS) - ${kategori}`;
                 osTableContainer.innerHTML = buildTable(data.os, data.header_dates, 'Outstanding', kategori, data.rka_labels);

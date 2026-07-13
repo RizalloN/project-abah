@@ -341,9 +341,9 @@ class ImportProgressServiceTest extends TestCase
     public function test_has_active_processing_jobs_detects_processing_import_rows(): void
     {
         $query = Mockery::mock();
-        $query->shouldReceive('where')
+        $query->shouldReceive('whereIn')
             ->once()
-            ->with('status', 'processing')
+            ->with('status', ['staging', 'processing'])
             ->andReturnSelf();
         $query->shouldReceive('exists')
             ->once()
@@ -395,7 +395,7 @@ class ImportProgressServiceTest extends TestCase
     {
         $query = Mockery::mock();
         $query->shouldReceive('where')->times(5)->andReturnSelf();
-        $query->shouldReceive('whereIn')->once()->with('status', ['queued', 'processing'])->andReturnSelf();
+        $query->shouldReceive('whereIn')->once()->with('status', ['queued', 'staging', 'processing'])->andReturnSelf();
         $query->shouldReceive('orderByDesc')->once()->with('updated_at')->andReturnSelf();
         $query->shouldReceive('get')
             ->once()
@@ -425,6 +425,76 @@ class ImportProgressServiceTest extends TestCase
         ]);
 
         $this->assertSame(321, $createdId);
+    }
+
+    public function test_get_status_payload_recovers_completed_direct_load_audit(): void
+    {
+        if (!Schema::hasTable('import_jobs')) {
+            Schema::create('import_jobs', function ($table): void {
+                $table->id();
+                $table->unsignedInteger('id_report')->nullable();
+                $table->string('file_name')->nullable();
+                $table->string('folder_path')->nullable();
+                $table->string('status')->nullable();
+                $table->unsignedInteger('total_files')->default(0);
+                $table->unsignedInteger('total_success')->default(0);
+                $table->unsignedInteger('total_failed')->default(0);
+                $table->string('message')->nullable();
+                $table->json('job_context')->nullable();
+                $table->string('job_fingerprint')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        if (!Schema::hasTable('jobs')) {
+            Schema::create('jobs', function ($table): void {
+                $table->id();
+                $table->string('queue')->nullable();
+                $table->longText('payload');
+                $table->unsignedTinyInteger('attempts')->default(0);
+                $table->unsignedInteger('reserved_at')->nullable();
+                $table->unsignedInteger('available_at');
+                $table->unsignedInteger('created_at');
+            });
+        }
+
+        DB::table('import_jobs')->insert([
+            'id' => 43,
+            'id_report' => 9,
+            'file_name' => 'simpanan.txt',
+            'folder_path' => storage_path('app/private/excel_imports'),
+            'status' => 'processing',
+            'total_files' => 545909,
+            'total_success' => 0,
+            'total_failed' => 0,
+            'job_context' => json_encode([
+                'table_name' => 'simpanan_multipn',
+                'direct_load_audit' => [
+                    'source_rows' => 545909,
+                    'load_inserted_rows' => 545907,
+                    'insert_shortfall' => 2,
+                    'total_rows' => 545909,
+                    'total_success' => 545907,
+                    'total_failed' => 2,
+                    'completed_at' => now()->toDateTimeString(),
+                ],
+            ]),
+            'job_fingerprint' => 'abc',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $payload = app(ImportProgressService::class)->getStatusPayload(43);
+        $job = DB::table('import_jobs')->where('id', 43)->first();
+
+        $this->assertSame('failed_partial', $payload['status']);
+        $this->assertSame(545909, $payload['processed_rows']);
+        $this->assertSame(545907, $payload['total_success']);
+        $this->assertSame(2, $payload['total_failed']);
+        $this->assertSame('failed_partial', $job->status);
+        $this->assertSame(545907, (int) $job->total_success);
+        $this->assertSame(2, (int) $job->total_failed);
+        $this->assertNull($job->job_fingerprint);
     }
 
     public function test_get_status_payload_reconciles_stale_queued_jobs_to_failed_state(): void

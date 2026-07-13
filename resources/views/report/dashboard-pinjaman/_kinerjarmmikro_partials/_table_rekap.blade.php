@@ -1,4 +1,9 @@
-<div class="rm-mikro-table-wrap">
+@php
+    $realisasiDebMax = max(1, (float) $rows->max('realisasi_deb'));
+    $realisasiOsMax = max(1, (float) $rows->max('realisasi_os'));
+@endphp
+
+<div class="rm-mikro-table-wrap table-container">
     <table class="rm-mikro-table" style="min-width: 1200px;">
         <thead>
             <tr><th rowspan="2">No</th><th rowspan="2">BC</th><th rowspan="2">Cabang</th><th rowspan="2">Pembina</th><th colspan="3" class="group-head">Jumlah RM Mikro</th><th colspan="4" class="group-head">Produktivitas {{ $selectedMonthLabel }}</th></tr>
@@ -9,7 +14,7 @@
                 <tr>
                     <td class="text-center">{{ $index + 1 }}</td><td>{{ $row['bc'] }}</td><td class="strong">{{ $row['cabang'] }}</td><td>{{ $row['pembina'] }}</td>
                     <td class="text-right">{{ $formatAmount($row['total_rm']) }}</td><td class="text-right">{{ $formatAmount($row['sudah_real']) }}</td><td class="text-right">{{ $formatAmount($row['belum_real']) }}</td>
-                    <td class="text-right">{{ $formatAmount($row['realisasi_deb']) }}</td><td class="text-right">{{ $formatJuta($row['realisasi_os']) }}</td><td class="text-right">{{ $formatJuta($row['target_os']) }}</td><td class="{{ $achievementClass($row['realisasi_os'], $row['target_os']) }} text-right">{{ $formatPercent($row['pct_target']) }}</td>
+                    <td class="text-right {{ $gradientClass($row['realisasi_deb'], 0, $realisasiDebMax, true) }}">{{ $formatAmount($row['realisasi_deb']) }}</td><td class="text-right {{ $gradientClass($row['realisasi_os'], 0, $realisasiOsMax, true) }}">{{ $formatJuta($row['realisasi_os']) }}</td><td class="text-right">{{ $formatJuta($row['target_os']) }}</td><td class="{{ $achievementClass($row['realisasi_os'], $row['target_os']) }} text-right">{{ $formatPercent($row['pct_target']) }}</td>
                 </tr>
             @empty
                 <tr><td colspan="11" class="rm-mikro-empty">Data tidak ditemukan.</td></tr>

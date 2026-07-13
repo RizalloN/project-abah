@@ -31,7 +31,7 @@ class ExcelQueuedImportService
             $activeFilters = [];
         }
         $strategy = ($callbacks['resolve_import_strategy'])($tableName);
-        if (in_array(strtolower(trim($tableName)), ['lw321_npd', 'lw321_npdd', 'hourly_dpk'], true)) {
+        if (in_array(strtolower(trim($tableName)), ['hourly_dpk'], true)) {
             $normalizedHeaders = array_values($strategy->transformHeaders($normalizedHeaders));
         }
         $relativePath = (string) ($params['file_path'] ?? '');
@@ -671,6 +671,10 @@ class ExcelQueuedImportService
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
             ]);
+
+            if (str_starts_with($e->getMessage(), 'Import Hourly DPK dibatalkan:')) {
+                return $fail($e->getMessage());
+            }
 
             return $fail('Fatal Error: ' . $e->getMessage() . ' (line ' . $e->getLine() . ')');
         }

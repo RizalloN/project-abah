@@ -173,6 +173,167 @@
         background: linear-gradient(135deg, var(--ptp-c-blue-sub) 0%, #032d66 100%);
     }
 
+    .ptp-insight-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.85rem;
+        margin-bottom: 1rem;
+    }
+
+    .ptp-insight-card,
+    .ptp-reading-panel {
+        border: 1px solid var(--ptp-c-border);
+        border-radius: var(--ptp-r-lg);
+        background: #ffffff;
+        box-shadow: var(--ptp-shadow-sm);
+    }
+
+    .ptp-insight-card {
+        position: relative;
+        overflow: hidden;
+        padding: 1rem;
+        border-top: 3px solid var(--accent, var(--ptp-c-blue));
+    }
+
+    .ptp-insight-card::after {
+        content: "";
+        position: absolute;
+        right: -2.8rem;
+        top: -3rem;
+        width: 7rem;
+        height: 7rem;
+        border-radius: 50%;
+        background: rgba(8, 87, 195, 0.08);
+    }
+
+    .ptp-insight-label {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: var(--ptp-c-muted);
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+
+    .ptp-insight-value {
+        position: relative;
+        z-index: 1;
+        margin-top: 0.55rem;
+        color: var(--ptp-c-dark);
+        font-size: 1.25rem;
+        font-weight: 900;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+    }
+
+    .ptp-insight-note {
+        position: relative;
+        z-index: 1;
+        margin-top: 0.35rem;
+        color: #64748b;
+        font-size: 0.74rem;
+        font-weight: 700;
+    }
+
+    .ptp-reading-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .ptp-reading-panel {
+        padding: 1rem;
+    }
+
+    .ptp-section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.85rem;
+        color: var(--ptp-c-dark);
+        font-size: 0.84rem;
+        font-weight: 900;
+        letter-spacing: -0.01em;
+    }
+
+    .ptp-section-title span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+    }
+
+    .ptp-rank-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.75rem;
+        align-items: center;
+        padding: 0.72rem 0;
+        border-top: 1px solid #edf2f7;
+    }
+
+    .ptp-rank-row:first-of-type {
+        border-top: none;
+        padding-top: 0;
+    }
+
+    .ptp-rank-name {
+        color: #1e293b;
+        font-size: 0.8rem;
+        font-weight: 850;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .ptp-rank-meta {
+        margin-top: 0.18rem;
+        color: #64748b;
+        font-size: 0.69rem;
+        font-weight: 700;
+    }
+
+    .ptp-rank-value {
+        color: #0f172a;
+        font-size: 0.8rem;
+        font-weight: 900;
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .ptp-meter {
+        height: 0.42rem;
+        margin-top: 0.48rem;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e5edf6;
+    }
+
+    .ptp-meter-fill {
+        height: 100%;
+        width: var(--bar-width, 0%);
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--accent, var(--ptp-c-blue)), #7fb7f2);
+    }
+
+    .ptp-split-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.85rem;
+    }
+
+    .ptp-list-title {
+        margin-bottom: 0.55rem;
+        color: #475569;
+        font-size: 0.72rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
     /* Clean Excel-Style Table Wrapper matching .dana-card */
     /* Clean Excel-Style Table Wrapper matching .dana-card */
     .ptp-table-wrap {
@@ -466,6 +627,12 @@
         .ptp-title {
             font-size: 1.1rem;
         }
+
+        .ptp-insight-grid,
+        .ptp-reading-grid,
+        .ptp-split-list {
+            grid-template-columns: 1fr;
+        }
     }
 
     /* Premium PDF Export button */
@@ -550,6 +717,48 @@
             return 'background-color: #dcfce7 !important; color: #166534 !important; font-weight: 700;';
         }
     };
+
+    $rowsCollection = collect($rows);
+    $rowLabel = static function (array $row) use ($dimensionHeaders): string {
+        foreach (array_reverse(array_keys($dimensionHeaders)) as $key) {
+            $value = trim((string) ($row[$key] ?? ''));
+            if ($value !== '' && $value !== '-') {
+                return $value;
+            }
+        }
+
+        return '-';
+    };
+    $rowMeta = static function (array $row): string {
+        $parts = array_filter([
+            trim((string) ($row['bo'] ?? '')),
+            trim((string) ($row['uker'] ?? '')),
+            trim((string) ($row['mbm'] ?? '')),
+        ], static fn (string $value): bool => $value !== '' && $value !== '-');
+
+        return implode(' | ', array_slice(array_unique($parts), 0, 2)) ?: '-';
+    };
+    $barWidth = static fn (mixed $value): string => number_format(max(0, min(100, (float) $value)), 2, '.', '') . '%';
+    $totalRek = (float) ($total['total_rek'] ?? 0);
+    $sudahBillingRek = (float) ($total['sudah_billing_rek'] ?? 0);
+    $belumMunculRek = (float) ($total['belum_muncul_rek'] ?? 0);
+    $belumBayarRek = (float) ($total['belum_bayar_rek'] ?? 0);
+    $billingCoverageRate = $totalRek > 0 ? ($sudahBillingRek / $totalRek) * 100 : 0.0;
+    $belumMunculRate = $totalRek > 0 ? ($belumMunculRek / $totalRek) * 100 : 0.0;
+    $belumBayarRate = $sudahBillingRek > 0 ? ($belumBayarRek / $sudahBillingRek) * 100 : 0.0;
+    $successRate = (float) ($total['success_rate'] ?? 0);
+    $topSuccessRows = $rowsCollection
+        ->sortByDesc(fn (array $row): float => (float) ($row['success_rate'] ?? 0))
+        ->take(3)
+        ->values();
+    $riskRows = $rowsCollection
+        ->sortBy(fn (array $row): float => (float) ($row['success_rate'] ?? 0))
+        ->take(3)
+        ->values();
+    $focusRows = $rowsCollection
+        ->sortByDesc(fn (array $row): float => (float) ($row['belum_bayar_rupiah'] ?? 0))
+        ->take(4)
+        ->values();
 @endphp
 
 <div class="ptp-page">
@@ -617,6 +826,101 @@
             </form>
         </div>
     </div>
+
+    @if ($rows->isNotEmpty())
+        <div class="ptp-insight-grid">
+            <div class="ptp-insight-card" style="--accent: #0857c3;">
+                <div class="ptp-insight-label"><i class="fas fa-layer-group"></i>Total Kelolaan</div>
+                <div class="ptp-insight-value">{{ $formatCount($total['total_rek'] ?? 0) }} rek</div>
+                <div class="ptp-insight-note">Rp {{ $formatJuta($total['total_rupiah'] ?? 0) }} Jt posisi sumber</div>
+                <div class="ptp-meter" style="--accent: #0857c3;">
+                    <div class="ptp-meter-fill" style="--bar-width: 100%;"></div>
+                </div>
+            </div>
+            <div class="ptp-insight-card" style="--accent: #0f766e;">
+                <div class="ptp-insight-label"><i class="fas fa-check-circle"></i>Sudah Billing</div>
+                <div class="ptp-insight-value">{{ $formatPercent($billingCoverageRate) }}</div>
+                <div class="ptp-insight-note">{{ $formatCount($total['sudah_billing_rek'] ?? 0) }} rek | Rp {{ $formatJuta($total['sudah_billing_rupiah'] ?? 0) }} Jt</div>
+                <div class="ptp-meter" style="--accent: #0f766e;">
+                    <div class="ptp-meter-fill" style="--bar-width: {{ $barWidth($billingCoverageRate) }};"></div>
+                </div>
+            </div>
+            <div class="ptp-insight-card" style="--accent: #d97706;">
+                <div class="ptp-insight-label"><i class="fas fa-hourglass-half"></i>Belum Muncul</div>
+                <div class="ptp-insight-value">{{ $formatPercent($belumMunculRate) }}</div>
+                <div class="ptp-insight-note">{{ $formatCount($total['belum_muncul_rek'] ?? 0) }} rek | Rp {{ $formatJuta($total['belum_muncul_rupiah'] ?? 0) }} Jt</div>
+                <div class="ptp-meter" style="--accent: #d97706;">
+                    <div class="ptp-meter-fill" style="--bar-width: {{ $barWidth($belumMunculRate) }};"></div>
+                </div>
+            </div>
+            <div class="ptp-insight-card" style="--accent: #dc2626;">
+                <div class="ptp-insight-label"><i class="fas fa-bullseye"></i>Success Rate</div>
+                <div class="ptp-insight-value">{{ $formatPercent($successRate) }}</div>
+                <div class="ptp-insight-note">Belum bayar {{ $formatPercent($belumBayarRate) }} dari billing</div>
+                <div class="ptp-meter" style="--accent: #dc2626;">
+                    <div class="ptp-meter-fill" style="--bar-width: {{ $barWidth($successRate) }};"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="ptp-reading-grid">
+            <div class="ptp-reading-panel">
+                <div class="ptp-section-title">
+                    <span><i class="fas fa-exclamation-triangle text-warning"></i> Fokus Belum Bayar Terbesar</span>
+                    <small class="text-muted font-weight-bold">Rp Juta</small>
+                </div>
+                @foreach ($focusRows as $row)
+                    @php
+                        $rowBillingRupiah = (float) ($row['sudah_billing_rupiah'] ?? 0);
+                        $rowUnpaidRupiah = (float) ($row['belum_bayar_rupiah'] ?? 0);
+                        $rowUnpaidRate = $rowBillingRupiah > 0 ? ($rowUnpaidRupiah / $rowBillingRupiah) * 100 : 0.0;
+                    @endphp
+                    <div class="ptp-rank-row">
+                        <div>
+                            <div class="ptp-rank-name">{{ $rowLabel($row) }}</div>
+                            <div class="ptp-rank-meta">{{ $rowMeta($row) }} | {{ $formatCount($row['belum_bayar_rek'] ?? 0) }} rek belum bayar</div>
+                            <div class="ptp-meter" style="--accent: #dc2626;">
+                                <div class="ptp-meter-fill" style="--bar-width: {{ $barWidth($rowUnpaidRate) }};"></div>
+                            </div>
+                        </div>
+                        <div class="ptp-rank-value">{{ $formatJuta($row['belum_bayar_rupiah'] ?? 0) }}</div>
+                    </div>
+                @endforeach
+            </div>
+            <div class="ptp-reading-panel">
+                <div class="ptp-section-title">
+                    <span><i class="fas fa-tachometer-alt text-primary"></i> Pembacaan Cepat</span>
+                    <small class="text-muted font-weight-bold">{{ $formatCount($rows->count()) }} baris</small>
+                </div>
+                <div class="ptp-split-list">
+                    <div>
+                        <div class="ptp-list-title">Tertinggi</div>
+                        @foreach ($topSuccessRows as $row)
+                            <div class="ptp-rank-row">
+                                <div>
+                                    <div class="ptp-rank-name">{{ $rowLabel($row) }}</div>
+                                    <div class="ptp-rank-meta">{{ $rowMeta($row) }}</div>
+                                </div>
+                                <div class="ptp-rank-value text-success">{{ $formatPercent($row['success_rate'] ?? 0) }}</div>
+                            </div>
+                        @endforeach
+                    </div>
+                    <div>
+                        <div class="ptp-list-title">Perlu Dorongan</div>
+                        @foreach ($riskRows as $row)
+                            <div class="ptp-rank-row">
+                                <div>
+                                    <div class="ptp-rank-name">{{ $rowLabel($row) }}</div>
+                                    <div class="ptp-rank-meta">{{ $rowMeta($row) }}</div>
+                                </div>
+                                <div class="ptp-rank-value text-danger">{{ $formatPercent($row['success_rate'] ?? 0) }}</div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
 
     <!-- Premium Table Card -->
     <div class="ptp-panel">

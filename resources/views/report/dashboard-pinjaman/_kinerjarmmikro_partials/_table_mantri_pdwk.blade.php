@@ -1,4 +1,16 @@
-<div class="rm-mikro-table-wrap">
+@php
+    $pdwkPrefixes = [
+        'kaunit_pdwk', 'kaunit_override',
+        'mbm_pdwk', 'mbm_override', 'mbm_total',
+        'pinca_pdwk', 'pinca_override', 'pinca_total',
+        'rmbh_override', 'total_realisasi',
+    ];
+    $pdwkOsMax = collect($pdwkPrefixes)->mapWithKeys(fn ($prefix) => [
+        $prefix => max(1, (float) $rows->max($prefix . '_os')),
+    ])->all();
+@endphp
+
+<div class="rm-mikro-table-wrap table-container">
     <table class="rm-mikro-table" style="min-width: 2600px;">
         <thead>
             <tr>
@@ -32,7 +44,7 @@
                         'rmbh_override', 'total_realisasi',
                     ] as $prefix)
                         <td class="text-right">{{ $formatAmount($row[$prefix . '_deb'] ?? 0) }}</td>
-                        <td class="text-right">{{ $formatJuta($row[$prefix . '_os'] ?? 0) }}</td>
+                        <td class="text-right {{ $gradientClass($row[$prefix . '_os'] ?? 0, 0, $pdwkOsMax[$prefix] ?? 1, true) }}">{{ $formatJuta($row[$prefix . '_os'] ?? 0) }}</td>
                     @endforeach
                 </tr>
             @empty

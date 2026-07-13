@@ -9,6 +9,7 @@ use App\Services\Import\ImportCleanupService;
 use App\Services\Import\ImportDuplicateGuardService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Mockery;
 use ReflectionClass;
 use ReflectionMethod;
@@ -673,6 +674,89 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         ]]);
     }
 
+    public function test_simpanan_stream_uses_hash_for_locking_without_global_file_rejection(): void
+    {
+        $source = file_get_contents(base_path('app/Http/Controllers/Import/ImportSimpananMultiPnCsvController.php'));
+
+        $this->assertStringNotContainsString('assertFileNotImportedAnywhere(', $source);
+        $this->assertStringContainsString("acquireAdvisoryLock('simpanan_multipn', ['content' => \$contentHash])", $source);
+        $this->assertStringContainsString("assertSlotEmpty('simpanan_multipn', \$slot)", $source);
+    }
+
+    public function test_simpanan_chunk_upload_reassembles_large_csv_and_opens_preview_stream(): void
+    {
+        $controller = app(ImportSimpananMultiPnCsvController::class);
+        $testingDirectory = storage_path('framework/testing');
+        if (!is_dir($testingDirectory)) {
+            @mkdir($testingDirectory, 0777, true);
+        }
+
+        $firstPart = str_repeat('A', 8 * 1024 * 1024);
+        $secondPart = "B\n";
+        $totalSize = strlen($firstPart) + strlen($secondPart);
+        $originalName = 'multipn_large.csv';
+        $uploadId = '';
+        $finalPath = '';
+
+        try {
+            $initRequest = \Illuminate\Http\Request::create('/', 'POST', [
+                'original_name' => $originalName,
+                'total_size' => $totalSize,
+                'total_chunks' => 2,
+            ]);
+            $initPayload = $controller->initChunkUpload($initRequest)->getData(true);
+            $this->assertSame('success', $initPayload['status']);
+            $uploadId = (string) $initPayload['upload_id'];
+
+            foreach ([$firstPart, $secondPart] as $index => $contents) {
+                $partPath = $testingDirectory . DIRECTORY_SEPARATOR . 'simpanan_chunk_' . $index . '.bin';
+                file_put_contents($partPath, $contents);
+                $uploadedFile = new \Illuminate\Http\UploadedFile(
+                    $partPath,
+                    $originalName . '.part' . $index,
+                    'application/octet-stream',
+                    null,
+                    true
+                );
+                $chunkRequest = \Illuminate\Http\Request::create('/', 'POST', [
+                    'upload_id' => $uploadId,
+                    'chunk_index' => $index,
+                    'total_chunks' => 2,
+                ], [], ['file' => $uploadedFile]);
+                $chunkPayload = $controller->uploadChunk($chunkRequest)->getData(true);
+                $this->assertSame('success', $chunkPayload['status']);
+            }
+
+            $finalizeRequest = \Illuminate\Http\Request::create('/', 'POST', [
+                'upload_id' => $uploadId,
+                'total_chunks' => 2,
+                'original_name' => $originalName,
+            ]);
+            $finalPayload = $controller->finalizeChunkUpload($finalizeRequest)->getData(true);
+            $this->assertSame('success', $finalPayload['status']);
+            $this->assertSame(route('import.simpanan.csv.prepare-preview'), $finalPayload['redirect']);
+
+            $finalPath = Storage::path((string) session('excel_path'));
+            $this->assertFileExists($finalPath);
+            $this->assertSame($totalSize, filesize($finalPath));
+            $this->assertSame(hash('sha256', $firstPart . $secondPart), hash_file('sha256', $finalPath));
+        } finally {
+            if ($finalPath !== '' && is_file($finalPath)) {
+                @unlink($finalPath);
+            }
+
+            if ($uploadId !== '') {
+                $chunkDirectory = storage_path('app/chunk_uploads/' . $uploadId);
+                foreach (glob($chunkDirectory . DIRECTORY_SEPARATOR . '*') ?: [] as $path) {
+                    if (is_file($path)) {
+                        @unlink($path);
+                    }
+                }
+                @rmdir($chunkDirectory);
+            }
+        }
+    }
+
     public function test_duplicate_cleanup_query_uses_window_ranked_rows(): void
     {
         $controller = app(ImportIndexController::class);
@@ -758,6 +842,45 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         $this->assertSame($csvPath, $result['path'] ?? null);
         $this->assertSame('raw', $result['backend'] ?? null);
         $this->assertFalse((bool) ($result['cleanup'] ?? true));
+        $this->assertSame(2, $result['written_rows'] ?? null);
+        $this->assertSame(2, $result['total_rows'] ?? null);
+    }
+
+    public function test_prepare_simpanan_direct_load_source_ignores_trailing_delimiter_only_rows_in_raw_source(): void
+    {
+        $controller = new class extends ImportSimpananMultiPnCsvController {
+            protected function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
+            {
+                return 'simpanan_multipn';
+            }
+        };
+
+        config()->set('import.direct_load.validation_sample_rows', 1);
+
+        $csvPath = storage_path('framework/testing/simpanan_trailing_delimiter_rows.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'No;Posisi;CIFNO;No Rekening;Status;Jenis Simpanan;Saldo IDR',
+            '1;30-06-2026;CIF001;636001000001;1;TABUNGAN;1000',
+            '2;30-06-2026;CIF002;636001000002;1;GIRO;2500',
+            ';;;;;;',
+            ';;;;;;',
+        ]) . "\n");
+
+        try {
+            $result = $this->invokeMethod($controller, 'prepareSimpananMultiPnDirectLoadSource', [$csvPath, ';']);
+        } finally {
+            @unlink($csvPath);
+            if (!empty($result['path'] ?? '') && file_exists((string) $result['path']) && ($result['cleanup'] ?? false)) {
+                @unlink((string) $result['path']);
+            }
+        }
+
+        $this->assertSame($csvPath, $result['path'] ?? null);
+        $this->assertSame('raw', $result['backend'] ?? null);
         $this->assertSame(2, $result['written_rows'] ?? null);
         $this->assertSame(2, $result['total_rows'] ?? null);
     }

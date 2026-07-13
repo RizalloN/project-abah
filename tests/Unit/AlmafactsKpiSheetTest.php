@@ -31,7 +31,7 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertSame('mbm', $data['selectedSheetKey']);
         $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'mantri'], array_keys($data['sheetOptions']));
         $this->assertSame('KPI MBM', $data['selectedSheet']['sheet']);
-        $this->assertSame(['BO', 'MBM', 'SCORE'], $data['header']);
+        $this->assertSame(['BO', 'MBM', 'Score'], $data['header']);
         $this->assertCount(3, $data['header']);
         $this->assertCount(3, $data['rows'][0]);
         $this->assertSame('NUR', $data['rows'][0][1]);
@@ -55,12 +55,12 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertSame('ka-unit', $data['selectedSheetKey']);
         $this->assertSame('KPI Kaunit', $data['selectedSheet']['sheet']);
         $this->assertSame(
-            ['BO', 'MBM', 'BC', 'UNIT KERJA', 'Pencapaian', 'Bobot 10%', 'Pencapaian', 'Bobot 25%'],
+            ['BO', 'MBM', 'BC', 'Unit Kerja', 'Pencapaian', 'Score', 'Pencapaian', 'Score'],
             $data['header']
         );
         $this->assertCount(8, $data['header']);
         $this->assertCount(8, $data['rows'][0]);
-        $this->assertSame(['BO', 'MBM', 'BC', 'UNIT KERJA', 'LR', 'OS'], array_column($data['headerGroups'], 'label'));
+        $this->assertSame(['BO', 'MBM', 'BC', 'Unit Kerja', 'LR (Bobot 10%)', 'OS (Bobot 25%)'], array_column($data['headerGroups'], 'label'));
         $this->assertSame('UNIT TEST', $data['rows'][0][1]);
         $this->assertSame(1, $data['summary']['row_count']);
         $this->assertSame('KEY PERFORMING INDICATOR UNIT 31 MEI 2026 KAUNIT', $data['summary']['sheet_title']);
@@ -77,7 +77,7 @@ class AlmafactsKpiSheetTest extends TestCase
 
         $this->assertSame('mbm', $data['selectedSheetKey']);
         $this->assertSame('KPI MBM', $data['selectedSheet']['sheet']);
-        $this->assertSame(['BO', 'MBM', 'SCORE'], $data['header']);
+        $this->assertSame(['BO', 'MBM', 'Score'], $data['header']);
         $this->assertCount(3, $data['header']);
         $this->assertCount(3, $data['rows'][0]);
         $this->assertSame('NUR', $data['rows'][0][1]);
@@ -101,16 +101,16 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertSame('rank', $data['selectedSheet']['sheet']);
         $this->assertSame('rank', $data['summary']['sheet_name']);
         $this->assertSame(
-            ['KPI RM KUR KECIL KANCA', 'NAMA', 'BC UKER', 'UKER', 'JG', 'LAMA DI UKER 2026', 'PENCP', 'NILAI'],
+            ['BO', 'Nama', 'BC Uker', 'Uker', 'JG', 'Lama Di UKER 2026', 'Pencapaian', 'Score'],
             array_slice($data['header'], 0, 8)
         );
         $this->assertCount(20, $data['header']);
         $this->assertCount(20, $data['rows'][0]);
         $this->assertSame(
-            ['KPI RM KUR KECIL KANCA', 'NAMA', 'BC UKER', 'UKER', 'JG', 'LAMA DI UKER 2026', 'NETT DISBURSEMENT KUR', 'DEBITUR MIKRO'],
+            ['BO', 'Nama', 'BC Uker', 'Uker', 'JG', 'Lama Di UKER 2026', 'Nett Disbursement KUR', 'Debitur Mikro'],
             array_slice(array_column($data['headerGroups'], 'label'), 0, 8)
         );
-        $this->assertContains('RANK', array_column($data['headerGroups'], 'label'));
+        $this->assertContains('Rank', array_column($data['headerGroups'], 'label'));
         $this->assertSame('00172695 - Sugiyono', $data['rows'][0][1]);
         $this->assertSame(1, $data['summary']['row_count']);
     }
@@ -132,17 +132,17 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertSame('RANK KPI', $data['selectedSheet']['sheet']);
         $this->assertSame('RANK KPI', $data['summary']['sheet_name']);
         $this->assertSame(
-            ['KEY', 'BO', 'MBM', 'UKER', 'TYPE BRI', 'BC', 'NAMA MANTRI', 'STATUS', 'JG', 'LAMA DI UKER 2026', 'PENCP', 'SCORE'],
+            ['Key', 'BO', 'MBM', 'Uker', 'Type BRI', 'BC', 'Nama Mantri', 'Status', 'JG', 'Lama Di UKER 2026', 'Pencapaian', 'Score'],
             array_slice($data['header'], 0, 12)
         );
         $this->assertCount(31, $data['header']);
         $this->assertCount(31, $data['rows'][0]);
         $this->assertSame(
-            ['KEY', 'BO', 'MBM', 'UKER', 'TYPE BRI', 'BC', 'NAMA MANTRI', 'STATUS', 'JG', 'LAMA DI UKER 2026', 'NETT DISBURSEMENT KUPEDES', 'NETT DISBURSEMENT KUR'],
+            ['Key', 'BO', 'MBM', 'Uker', 'Type BRI', 'BC', 'Nama Mantri', 'Status', 'JG', 'Lama Di UKER 2026', 'Nett Disbursement Kupedes', 'Nett Disbursement KUR'],
             array_slice(array_column($data['headerGroups'], 'label'), 0, 12)
         );
-        $this->assertContains('RANK AREA', array_column($data['headerGroups'], 'label'));
-        $this->assertContains('RANK CABANG', array_column($data['headerGroups'], 'label'));
+        $this->assertContains('Rank Area', array_column($data['headerGroups'], 'label'));
+        $this->assertContains('Rank Cabang', array_column($data['headerGroups'], 'label'));
         $this->assertSame('Nur Elfiana', $data['rows'][0][2]);
         $this->assertSame(1, $data['summary']['row_count']);
     }

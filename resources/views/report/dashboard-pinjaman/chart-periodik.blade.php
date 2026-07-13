@@ -38,6 +38,38 @@
         z-index: 10;
     }
 
+    .loan-dashboard .card.loan-shell {
+        z-index: 3000;
+    }
+
+    .loan-dashboard .card.loan-shell .card-body,
+    .loan-dashboard .loan-filter-toolbar,
+    .loan-dashboard .loan-filter-item,
+    .loan-dashboard .loan-dropdown-shell {
+        position: relative;
+    }
+
+    .loan-dashboard .card.loan-shell .card-body {
+        z-index: 3010;
+        overflow: visible !important;
+    }
+
+    .loan-dashboard .loan-filter-toolbar {
+        z-index: 3020;
+    }
+
+    .loan-dashboard .loan-filter-item {
+        z-index: 3030;
+    }
+
+    .loan-dashboard .loan-dropdown-shell {
+        z-index: 3040;
+    }
+
+    .loan-dashboard .loan-dropdown-menu {
+        z-index: 3050;
+    }
+
     .loan-filter-label {
         font-size: 0.72rem;
         font-weight: 800;

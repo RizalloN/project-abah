@@ -144,11 +144,205 @@
         overflow-y: auto;
     }
 
+    .rm-mikro-table-wrap.table-container {
+        overflow-y: auto !important;
+    }
+
+    .rm-mikro-table-wrap--mantri-productivity {
+        position: relative !important;
+        top: auto !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow-y: visible !important;
+    }
+
+    .rm-mikro-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: .75rem;
+        padding: .75rem 1rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: #f8fbff;
+        color: #475569;
+        font-size: .78rem;
+        font-weight: 700;
+    }
+
+    .rm-mikro-pagination__summary,
+    .rm-mikro-pagination__controls {
+        display: flex;
+        align-items: center;
+        gap: .55rem;
+    }
+
+    .rm-mikro-pagination__summary strong {
+        color: #0857c3;
+        font-weight: 800;
+    }
+
+    .rm-mikro-pagination__select {
+        min-height: 34px;
+        padding: .25rem 1.8rem .25rem .65rem;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #0f172a;
+        font-weight: 700;
+    }
+
+    .rm-mikro-pagination__button {
+        display: inline-flex;
+        width: 34px;
+        height: 34px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #0857c3;
+        cursor: pointer;
+    }
+
+    .rm-mikro-pagination__button:disabled {
+        cursor: not-allowed;
+        opacity: .4;
+    }
+
+    .rm-mikro-pagination__page {
+        min-width: 62px;
+        text-align: center;
+        color: #0f172a;
+    }
+
+    @media (max-width: 767.98px) {
+        .rm-mikro-pagination {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .rm-mikro-pagination__controls {
+            width: 100%;
+            flex-wrap: wrap;
+        }
+    }
+
+    @media (max-width: 1180px), (max-height: 760px) {
+        .loan-dashboard {
+            padding-top: .75rem !important;
+        }
+
+        .rm-mikro-hero {
+            margin-bottom: .75rem;
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
+        }
+
+        .rm-mikro-hero h1 {
+            font-size: 1.35rem;
+            line-height: 1.12;
+        }
+
+        .rm-mikro-hero p {
+            margin-top: .25rem;
+            font-size: .82rem;
+        }
+
+        .loan-shell {
+            margin-bottom: .85rem !important;
+        }
+
+        .loan-shell .card-body,
+        .loan-table-shell .card-body {
+            padding: .9rem !important;
+        }
+
+        .loan-filter-grid {
+            row-gap: .65rem;
+        }
+
+        .rm-mikro-tabs {
+            gap: .35rem;
+        }
+
+        .rm-mikro-tab {
+            padding: .42rem .85rem !important;
+            font-size: .72rem !important;
+        }
+
+        .rm-mikro-info-badge {
+            padding: .45rem .8rem;
+            font-size: .72rem;
+        }
+    }
+
+    @media (orientation: landscape) and (max-height: 540px) {
+        .rm-mikro-hero p {
+            display: none;
+        }
+    }
+
+    @media (max-width: 991.98px), (max-height: 760px) {
+        .rm-mikro-hero {
+            margin-bottom: 0.75rem;
+            padding: 0.85rem 1rem;
+            border-radius: 12px;
+        }
+
+        .rm-mikro-hero h1 {
+            font-size: clamp(1.15rem, 4vw, 1.45rem);
+            line-height: 1.12;
+        }
+
+        .rm-mikro-hero p {
+            margin-top: 0.22rem;
+            font-size: 0.74rem;
+            line-height: 1.35;
+        }
+
+        .rm-mikro-tabs {
+            gap: 0.32rem;
+        }
+
+        .rm-mikro-tab {
+            padding: 0.38rem 0.72rem !important;
+            font-size: 0.7rem !important;
+        }
+
+        .rm-mikro-info-badge {
+            padding: 0.42rem 0.72rem;
+            border-radius: 10px;
+            font-size: 0.72rem;
+        }
+
+        .rm-mikro-table-wrap {
+            max-height: calc(100vh - 250px) !important;
+        }
+    }
+
+    @media (orientation: landscape) and (max-height: 640px) {
+        .rm-mikro-hero {
+            padding-top: 0.65rem;
+            padding-bottom: 0.65rem;
+        }
+
+        .rm-mikro-hero p,
+        .rm-mikro-info-badge {
+            display: none !important;
+        }
+
+        .rm-mikro-table-wrap {
+            max-height: calc(100vh - 170px) !important;
+        }
+    }
+
     .rm-mikro-table,
     .mantri-monitoring-table {
         border-collapse: separate !important;
         border-spacing: 0 !important;
-        font-size: 0.8rem !important;
+        font-size: 0.74rem !important;
         color: #334155 !important;
         background: #ffffff !important;
         width: 100%;
@@ -159,10 +353,10 @@
         background: #002d62 !important; /* Nusantara Deep Navy */
         color: #ffffff !important;
         font-weight: 800 !important;
-        font-size: 0.72rem !important;
+        font-size: 0.68rem !important;
         letter-spacing: 0.04em !important;
         text-transform: uppercase !important;
-        padding: 0.75rem 0.85rem !important;
+        padding: 0.45rem 0.6rem !important;
         border-right: 1px solid #0857c3 !important;
         border-bottom: 2px solid #0857c3 !important;
         text-align: center !important;
@@ -170,9 +364,56 @@
         white-space: nowrap !important;
     }
 
+    .rm-mikro-table th.rm-mikro-sortable,
+    .mantri-monitoring-table th.rm-mikro-sortable {
+        cursor: pointer;
+        padding-right: 1.45rem !important;
+        user-select: none;
+    }
+
+    .rm-mikro-table th.rm-mikro-sortable::before,
+    .rm-mikro-table th.rm-mikro-sortable::after,
+    .mantri-monitoring-table th.rm-mikro-sortable::before,
+    .mantri-monitoring-table th.rm-mikro-sortable::after {
+        content: '';
+        position: absolute;
+        right: .45rem;
+        width: 0;
+        height: 0;
+        border-left: 4px solid transparent;
+        border-right: 4px solid transparent;
+        opacity: .38;
+    }
+
+    .rm-mikro-table th.rm-mikro-sortable::before,
+    .mantri-monitoring-table th.rm-mikro-sortable::before {
+        top: calc(50% - 7px);
+        border-bottom: 5px solid #ffffff;
+    }
+
+    .rm-mikro-table th.rm-mikro-sortable::after,
+    .mantri-monitoring-table th.rm-mikro-sortable::after {
+        top: calc(50% + 2px);
+        border-top: 5px solid #ffffff;
+    }
+
+    .rm-mikro-table th.rm-mikro-sortable.sort-asc::before,
+    .rm-mikro-table th.rm-mikro-sortable.sort-desc::after,
+    .mantri-monitoring-table th.rm-mikro-sortable.sort-asc::before,
+    .mantri-monitoring-table th.rm-mikro-sortable.sort-desc::after {
+        opacity: 1;
+    }
+
+    .rm-mikro-table th.rm-mikro-sortable.sort-asc::after,
+    .rm-mikro-table th.rm-mikro-sortable.sort-desc::before,
+    .mantri-monitoring-table th.rm-mikro-sortable.sort-asc::after,
+    .mantri-monitoring-table th.rm-mikro-sortable.sort-desc::before {
+        opacity: .14;
+    }
+
     .rm-mikro-table td,
     .mantri-monitoring-table td {
-        padding: 0.6rem 0.8rem !important;
+        padding: 0.35rem 0.55rem !important;
         border-right: 1px solid #cbd5e1 !important;
         border-bottom: 1px solid #cbd5e1 !important;
         background: #ffffff;
@@ -258,6 +499,19 @@
     .heat-lime { background: #dcfce7 !important; color: #15803d !important; font-weight: 700 !important; border-color: #86efac !important; }
     .heat-green { background: #bbf7d0 !important; color: #166534 !important; font-weight: 800 !important; border-color: #4ade80 !important; }
     .heat-muted { background: #f1f5f9 !important; color: #64748b !important; border-color: #cbd5e1 !important; }
+
+    .loan-dashboard .rm-mikro-table td.heat-red,
+    .loan-dashboard .mantri-monitoring-table td.heat-red { background: #fee2e2 !important; color: #b91c1c !important; font-weight: 700 !important; border-color: #fca5a5 !important; }
+    .loan-dashboard .rm-mikro-table td.heat-orange,
+    .loan-dashboard .mantri-monitoring-table td.heat-orange { background: #ffedd5 !important; color: #ea580c !important; font-weight: 700 !important; border-color: #fdba74 !important; }
+    .loan-dashboard .rm-mikro-table td.heat-yellow,
+    .loan-dashboard .mantri-monitoring-table td.heat-yellow { background: #fef9c3 !important; color: #a16207 !important; font-weight: 700 !important; border-color: #fde047 !important; }
+    .loan-dashboard .rm-mikro-table td.heat-lime,
+    .loan-dashboard .mantri-monitoring-table td.heat-lime { background: #dcfce7 !important; color: #15803d !important; font-weight: 700 !important; border-color: #86efac !important; }
+    .loan-dashboard .rm-mikro-table td.heat-green,
+    .loan-dashboard .mantri-monitoring-table td.heat-green { background: #bbf7d0 !important; color: #166534 !important; font-weight: 800 !important; border-color: #4ade80 !important; }
+    .loan-dashboard .rm-mikro-table td.heat-muted,
+    .loan-dashboard .mantri-monitoring-table td.heat-muted { background: #f1f5f9 !important; color: #64748b !important; border-color: #cbd5e1 !important; }
 
     .mantri-monitoring-table {
         min-width: 1780px;
@@ -410,7 +664,7 @@
                 @if ($selectedReportCategory === 'unit_pemutus')
                     @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_unit_pemutus', ['rows' => $rows])
                 @elseif ($selectedReportCategory === 'kuadran')
-                    @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_kuadran', ['rows' => $rows])
+                    @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_kuadran', ['rows' => $rows, 'total' => $total])
                 @elseif ($selectedReportCategory === 'produktivitas_mantri')
                     @include('report.dashboard-pinjaman._partials._styles')
                     @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_produktivitas', ['rows' => $rows])
@@ -444,6 +698,240 @@
         document.querySelectorAll('.rm-mikro-table-wrap').forEach(el => {
             el.classList.add('table-container');
         });
+
+        document.querySelectorAll('[data-mantri-pagination]').forEach(function(pagination) {
+            const tableWrap = pagination.nextElementSibling;
+            const table = tableWrap ? tableWrap.querySelector('table') : null;
+            let rows = tableWrap
+                ? Array.from(tableWrap.querySelectorAll('tbody tr[data-mantri-row]'))
+                : [];
+            const pageSizeSelect = pagination.querySelector('[data-mantri-page-size]');
+            const previousButton = pagination.querySelector('[data-mantri-prev]');
+            const nextButton = pagination.querySelector('[data-mantri-next]');
+            const pageLabel = pagination.querySelector('[data-mantri-page]');
+            const rangeLabel = pagination.querySelector('[data-mantri-range]');
+            let currentPage = 1;
+
+            if (!pageSizeSelect || !previousButton || !nextButton || !pageLabel || !rangeLabel) {
+                return;
+            }
+
+            const syncRows = function() {
+                rows = tableWrap
+                    ? Array.from(tableWrap.querySelectorAll('tbody tr[data-mantri-row]'))
+                    : [];
+            };
+
+            const renderPage = function() {
+                syncRows();
+                const selectedSize = pageSizeSelect.value;
+                const pageSize = selectedSize === 'all' ? Math.max(rows.length, 1) : Number(selectedSize);
+                const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+                currentPage = Math.min(currentPage, totalPages);
+                const startIndex = (currentPage - 1) * pageSize;
+                const endIndex = Math.min(startIndex + pageSize, rows.length);
+
+                rows.forEach(function(row, index) {
+                    row.hidden = index < startIndex || index >= endIndex;
+                });
+
+                rangeLabel.textContent = rows.length === 0
+                    ? '0 baris'
+                    : (startIndex + 1).toLocaleString('id-ID') + '-' + endIndex.toLocaleString('id-ID') + ' baris';
+                pageLabel.textContent = currentPage + ' / ' + totalPages;
+                previousButton.disabled = currentPage <= 1;
+                nextButton.disabled = currentPage >= totalPages;
+            };
+
+            const resetPage = function() {
+                currentPage = 1;
+                renderPage();
+            };
+
+            if (table) {
+                table.__rmMikroPagination = {
+                    refresh: resetPage
+                };
+            }
+
+            pageSizeSelect.addEventListener('change', function() {
+                resetPage();
+            });
+
+            previousButton.addEventListener('click', function() {
+                if (currentPage > 1) {
+                    currentPage -= 1;
+                    renderPage();
+                }
+            });
+
+            nextButton.addEventListener('click', function() {
+                const selectedSize = pageSizeSelect.value;
+                const pageSize = selectedSize === 'all' ? Math.max(rows.length, 1) : Number(selectedSize);
+                const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+
+                if (currentPage < totalPages) {
+                    currentPage += 1;
+                    renderPage();
+                }
+            });
+
+            renderPage();
+        });
+
+        const parseSortValue = function(cell) {
+            const raw = (cell && cell.dataset.sortValue ? cell.dataset.sortValue : (cell ? cell.textContent : '')).trim();
+            const compact = raw.replace(/\s+/g, ' ');
+            const numericCandidate = compact
+                .replace(/%/g, '')
+                .replace(/\./g, '')
+                .replace(/,/g, '.')
+                .replace(/[^0-9.-]/g, '');
+            const looksNumeric = numericCandidate !== ''
+                && /^-?\d+(\.\d+)?$/.test(numericCandidate)
+                && /^[\s\d.,%+-]+$/.test(compact);
+
+            if (looksNumeric) {
+                return {
+                    type: 'number',
+                    value: Number(numericCandidate)
+                };
+            }
+
+            return {
+                type: 'text',
+                value: compact.toLocaleLowerCase('id-ID')
+            };
+        };
+
+        const buildHeaderColumnMap = function(table) {
+            const map = new Map();
+            const occupied = [];
+            const headerRows = Array.from(table.tHead ? table.tHead.rows : []);
+
+            headerRows.forEach(function(row, rowIndex) {
+                occupied[rowIndex] = occupied[rowIndex] || [];
+                let columnIndex = 0;
+
+                Array.from(row.cells).forEach(function(cell) {
+                    while (occupied[rowIndex][columnIndex]) {
+                        columnIndex += 1;
+                    }
+
+                    const rowSpan = Math.max(1, cell.rowSpan || 1);
+                    const colSpan = Math.max(1, cell.colSpan || 1);
+
+                    for (let rowOffset = 0; rowOffset < rowSpan; rowOffset += 1) {
+                        occupied[rowIndex + rowOffset] = occupied[rowIndex + rowOffset] || [];
+
+                        for (let colOffset = 0; colOffset < colSpan; colOffset += 1) {
+                            occupied[rowIndex + rowOffset][columnIndex + colOffset] = true;
+                        }
+                    }
+
+                    if (colSpan === 1 && !cell.classList.contains('group-head')) {
+                        map.set(cell, columnIndex);
+                    }
+
+                    columnIndex += colSpan;
+                });
+            });
+
+            return map;
+        };
+
+        const rowIsPinned = function(row) {
+            return row.classList.contains('rm-mikro-total')
+                || row.classList.contains('row-total')
+                || row.classList.contains('row-total-blue')
+                || Boolean(row.querySelector('.rm-mikro-empty'));
+        };
+
+        const sortTableByColumn = function(table, header, columnIndex) {
+            const tbody = table.tBodies && table.tBodies.length ? table.tBodies[0] : null;
+
+            if (!tbody) {
+                return;
+            }
+
+            const rows = Array.from(tbody.rows).filter(function(row) {
+                return !rowIsPinned(row);
+            });
+
+            if (rows.length < 2) {
+                return;
+            }
+
+            const nextDirection = header.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
+            const directionFactor = nextDirection === 'asc' ? 1 : -1;
+
+            table.querySelectorAll('thead th.rm-mikro-sortable').forEach(function(cell) {
+                cell.classList.remove('sort-asc', 'sort-desc');
+                cell.dataset.sortDirection = '';
+                cell.setAttribute('aria-sort', 'none');
+            });
+
+            header.classList.add(nextDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+            header.dataset.sortDirection = nextDirection;
+            header.setAttribute('aria-sort', nextDirection === 'asc' ? 'ascending' : 'descending');
+
+            rows.sort(function(leftRow, rightRow) {
+                const left = parseSortValue(leftRow.cells[columnIndex]);
+                const right = parseSortValue(rightRow.cells[columnIndex]);
+                let comparison = 0;
+
+                if (left.type === 'number' && right.type === 'number') {
+                    comparison = left.value - right.value;
+                } else {
+                    comparison = String(left.value).localeCompare(String(right.value), 'id-ID', {
+                        numeric: true,
+                        sensitivity: 'base'
+                    });
+                }
+
+                if (comparison === 0) {
+                    comparison = Number(leftRow.dataset.originalIndex || 0) - Number(rightRow.dataset.originalIndex || 0);
+                }
+
+                return comparison * directionFactor;
+            });
+
+            const pinnedRows = Array.from(tbody.rows).filter(rowIsPinned);
+            rows.forEach(function(row) {
+                tbody.appendChild(row);
+            });
+            pinnedRows.forEach(function(row) {
+                tbody.appendChild(row);
+            });
+
+            if (table.__rmMikroPagination && typeof table.__rmMikroPagination.refresh === 'function') {
+                table.__rmMikroPagination.refresh();
+            }
+
+            window.dispatchEvent(new Event('resize'));
+        };
+
+        document.querySelectorAll('.rm-mikro-table').forEach(function(table) {
+            const headerMap = buildHeaderColumnMap(table);
+            Array.from(table.tBodies && table.tBodies.length ? table.tBodies[0].rows : []).forEach(function(row, index) {
+                row.dataset.originalIndex = String(index);
+            });
+
+            headerMap.forEach(function(columnIndex, header) {
+                header.classList.add('rm-mikro-sortable');
+                header.setAttribute('aria-sort', 'none');
+                header.setAttribute('tabindex', '0');
+                header.addEventListener('click', function() {
+                    sortTableByColumn(table, header, columnIndex);
+                });
+                header.addEventListener('keydown', function(event) {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        sortTableByColumn(table, header, columnIndex);
+                    }
+                });
+            });
+        });
     });
 </script>
 
@@ -458,7 +946,5 @@
     'tableSelector' => '.mantri-monitoring-table',
     'visibleRowLimit' => 100
 ])
-
-@include('report.partials.floating-scrollbar')
 @endsection
 @endsection

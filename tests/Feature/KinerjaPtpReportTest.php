@@ -11,6 +11,7 @@ beforeEach(function (): void {
 
     Schema::dropIfExists('lw321_npd');
     Schema::dropIfExists('lw321_npdd');
+    Schema::dropIfExists('wilayah_mbm');
     Schema::dropIfExists('users');
 
     Schema::create('users', function (Blueprint $table): void {
@@ -25,6 +26,7 @@ beforeEach(function (): void {
 
     createKinerjaPtpTable('lw321_npd', 'm_min_1_os');
     createKinerjaPtpTable('lw321_npdd', 'os');
+    createWilayahMbmTable();
 });
 
 afterEach(function (): void {
@@ -32,6 +34,7 @@ afterEach(function (): void {
 
     Schema::dropIfExists('lw321_npd');
     Schema::dropIfExists('lw321_npdd');
+    Schema::dropIfExists('wilayah_mbm');
     Schema::dropIfExists('users');
 });
 
@@ -69,8 +72,28 @@ function createKinerjaPtpTable(string $tableName, string $amountColumn): void
     });
 }
 
+function createWilayahMbmTable(): void
+{
+    Schema::create('wilayah_mbm', function (Blueprint $table): void {
+        $table->string('uniqueid_mbm')->primary();
+        $table->string('bc')->nullable();
+        $table->string('nama_uker')->nullable();
+        $table->string('cabang')->nullable();
+        $table->string('nama_mbm')->nullable();
+        $table->timestamps();
+    });
+}
+
 function seedKinerjaPtpRows(): void
 {
+    DB::table('wilayah_mbm')->insert([
+        'uniqueid_mbm' => 'wm-3883',
+        'bc' => '3883',
+        'nama_uker' => 'UNIT A',
+        'cabang' => 'KC Madiun',
+        'nama_mbm' => 'MBM Updated',
+    ]);
+
     DB::table('lw321_npd')->insert([
         ptpRow('npd-1', 'Belum', 'Tetap', '1', 'UNIT A', 1000, 100, 900),
         ptpRow('npd-2', 'Today', 'Today', '1', 'UNIT A', 2000, 200, 2000),
@@ -141,6 +164,20 @@ it('aggregates kinerja ptp npd by mbm using the requested billing buckets', func
         ->and((float) $row['success_rate'])->toBe(60.0)
         ->and((int) $row['today_rek'])->toBe(1)
         ->and((float) $row['today_rupiah'])->toBe(2000.0);
+});
+
+it('uses mbm and mantri names from the ptp source before wilayah mbm fallback', function (): void {
+    seedKinerjaPtpRows();
+
+    $service = app(KinerjaPtpReportService::class);
+
+    $npdMbmRow = $service->payload('npd', 'per_mbm', '2026-05-06')['rows']->first();
+    $npddMbmRow = $service->payload('npdd', 'per_mbm', '2026-05-06')['rows']->first();
+    $mantriRow = $service->payload('npd', 'per_mantri', '2026-05-06')['rows']->first();
+
+    expect($npdMbmRow['mbm'])->toBe('MBM One')
+        ->and($npddMbmRow['mbm'])->toBe('MBM One')
+        ->and($mantriRow['mantri'])->toBe('Mantri One');
 });
 
 it('renders the kinerja ptp view with npdd selector', function (): void {

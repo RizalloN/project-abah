@@ -45,21 +45,21 @@ class DashboardPinjamanKreditService
         $segment = $this->normalizeSegment($segment);
         $periods = $this->calculatePeriodReferences($selectedPeriod);
 
-        // Find all branches across these periods
-        $branches = $this->getDynamicBranches(array_filter($periods), $selectedBranches);
+        // Find the visible branch/unit scopes across these periods.
+        $scopes = $this->getDynamicScopes(array_filter($periods), $selectedBranches, $segment);
 
         // Load ALL data for ALL periods, ALL branches, and ALL types in ONE query
-        $this->loadBulkSnapshotData(array_filter($periods), $branches);
+        $this->loadBulkSnapshotData(array_filter($periods), $scopes);
 
         // Load RKA data for the segment
-        $rkaData = $this->loadRkaForSegment($selectedPeriod, $segment, $branches);
+        $rkaData = $this->loadRkaForSegment($selectedPeriod, $segment, $scopes);
 
         $categories = $this->getCategoriesForSegment($segment);
 
         $res = [
-            'os' => $this->formatSegmentType($periods, $branches, $categories, $segment, 'os', $rkaData),
-            'sml' => $this->formatSegmentType($periods, $branches, $categories, $segment, 'sml', $rkaData),
-            'npl' => $this->formatSegmentType($periods, $branches, $categories, $segment, 'npl', $rkaData),
+            'os' => $this->formatSegmentType($periods, $scopes, $categories, $segment, 'os', $rkaData),
+            'sml' => $this->formatSegmentType($periods, $scopes, $categories, $segment, 'sml', $rkaData),
+            'npl' => $this->formatSegmentType($periods, $scopes, $categories, $segment, 'npl', $rkaData),
             'header_dates' => $periods,
             'rka_labels' => $this->calculateRkaLabels($selectedPeriod),
         ];
@@ -70,23 +70,25 @@ class DashboardPinjamanKreditService
     /**
      * Helper to format data for a specific type (os/sml/npl)
      */
-    private function formatSegmentType(array $periods, array $branches, array $categories, string $segment, string $type, array $rkaData = []): array
+    private function formatSegmentType(array $periods, array $scopes, array $categories, string $segment, string $type, array $rkaData = []): array
     {
         $data = [];
         $rowNo = 1;
 
-        foreach ($branches as $branch) {
+        foreach ($scopes as $scope) {
             foreach ($categories as $category) {
                 $row = [
                     'no' => $rowNo++,
-                    'branch' => $branch,
-                    'area_head' => $this->mapAreaHead($branch),
+                    'branch' => $scope['label'],
+                    'parent_branch' => $scope['kanca_label'],
+                    'scope_level' => $scope['is_detail'] ? 'unit' : 'kanca',
+                    'area_head' => $this->mapAreaHead($scope['kanca_label']),
                     'category' => $category,
                 ];
 
                 // Values for each period
                 foreach ($periods as $pKey => $pDate) {
-                    $row[$pKey] = $this->getSnapshotValueFromCache($branch, $category, $pDate, $type, $segment);
+                    $row[$pKey] = $this->getSnapshotValueFromCache($scope, $category, $pDate, $type, $segment);
                 }
 
                 // Deltas
@@ -96,7 +98,7 @@ class DashboardPinjamanKreditService
                 $row['delta_mtd'] = $selected - ($row['mtd'] ?? 0);
 
                 // RKA fields
-                $branchKey = $this->normalizeBranchForRka($branch);
+                $branchKey = $this->scopeRkaKey($scope);
                 $rka_m1 = $rkaData[$type][$category][$branchKey]['m1'] ?? 0;
                 $rka_current = $rkaData[$type][$category][$branchKey]['current'] ?? 0;
 
@@ -156,11 +158,24 @@ class DashboardPinjamanKreditService
     }
 
     /**
-     * Get branches found in the snapshot table for the given periods
+     * Get visible branch/unit scopes found in the snapshot table for the given periods.
+     *
+     * Area 6 view stays at KC rollup level. A selected KC drills down to the
+     * KCP/unit rows under that KC so users can see the portfolio composition.
+     *
+     * @return array<int, array{label: string, kanca_label: string, unit_label: string, unit_key: ?string, is_detail: bool}>
      */
-    private function getDynamicBranches(array $periods, array|string|null $selectedBranches = null): array
+    private function getDynamicScopes(array $periods, array|string|null $selectedBranches = null, string $segment = 'SME'): array
     {
         $branchScope = $this->resolveBranchScope($selectedBranches);
+        $singleBranchSelected = $this->hasExplicitSingleBranchSelection($selectedBranches) && count($branchScope) === 1;
+
+        if ($singleBranchSelected && $segment !== 'Mikro') {
+            $detailScopes = $this->getDetailScopesForBranch($periods, $branchScope[0], $segment);
+            if ($detailScopes !== []) {
+                return $detailScopes;
+            }
+        }
 
         $availableBranches = DB::table(self::SNAPSHOT_TABLE)
             ->whereIn('snapshot_period', $periods)
@@ -171,10 +186,110 @@ class DashboardPinjamanKreditService
             ->pluck('kanca_label')
             ->toArray();
 
-        return array_values(array_filter(
-            $branchScope,
-            fn (string $branch) => in_array($branch, $availableBranches, true)
-        ));
+        return collect($branchScope)
+            ->filter(fn (string $branch): bool => in_array($branch, $availableBranches, true))
+            ->map(fn (string $branch): array => $this->makeSummaryScope($branch))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{label: string, kanca_label: string, unit_label: string, unit_key: ?string, is_detail: bool}>
+     */
+    private function getDetailScopesForBranch(array $periods, string $branch, string $segment): array
+    {
+        $metricColumns = $this->metricColumnsForSegment($segment);
+        $selectColumns = array_values(array_unique(array_merge([
+            'kanca_key',
+            'unit_key',
+            'kanca_label',
+            'unit_label',
+        ], $metricColumns)));
+
+        $records = DB::table(self::SNAPSHOT_TABLE)
+            ->select($selectColumns)
+            ->whereIn('snapshot_period', $periods)
+            ->where('kanca_label', $branch)
+            ->whereNotNull('unit_key')
+            ->whereNotNull('unit_label')
+            ->whereColumn('kanca_key', '<>', 'unit_key')
+            ->orderBy('unit_label')
+            ->get();
+
+        $scopes = [];
+
+        foreach ($records as $record) {
+            $unitKey = trim((string) ($record->unit_key ?? ''));
+            $unitLabel = trim((string) ($record->unit_label ?? ''));
+            $kancaLabel = trim((string) ($record->kanca_label ?? $branch));
+
+            if ($unitKey === '' || $unitLabel === '') {
+                continue;
+            }
+
+            if (!$this->recordHasAnyMetricValue($record, $metricColumns)) {
+                continue;
+            }
+
+            $scopeKey = $kancaLabel . '|' . $unitKey;
+            $scopes[$scopeKey] = [
+                'label' => $unitLabel,
+                'kanca_label' => $kancaLabel,
+                'unit_label' => $unitLabel,
+                'unit_key' => $unitKey,
+                'is_detail' => true,
+            ];
+        }
+
+        $scopes = array_values($scopes);
+        usort($scopes, function (array $left, array $right): int {
+            return [$this->scopeDisplayRank($left['label']), $left['label']]
+                <=> [$this->scopeDisplayRank($right['label']), $right['label']];
+        });
+
+        return $scopes;
+    }
+
+    /**
+     * @return array{label: string, kanca_label: string, unit_label: string, unit_key: ?string, is_detail: bool}
+     */
+    private function makeSummaryScope(string $branch): array
+    {
+        return [
+            'label' => $branch,
+            'kanca_label' => $branch,
+            'unit_label' => $branch,
+            'unit_key' => null,
+            'is_detail' => false,
+        ];
+    }
+
+    private function hasExplicitSingleBranchSelection(array|string|null $selectedBranches): bool
+    {
+        $values = is_array($selectedBranches) ? $selectedBranches : [$selectedBranches];
+
+        return collect($values)
+            ->map(fn ($branch): string => trim((string) $branch))
+            ->filter(fn (string $branch): bool => $branch !== '' && strtolower($branch) !== 'all')
+            ->count() === 1;
+    }
+
+    private function scopeDisplayRank(string $label): int
+    {
+        $upper = strtoupper(trim($label));
+        if (str_starts_with($upper, 'KC ')) {
+            return 0;
+        }
+
+        if (str_starts_with($upper, 'KCP ')) {
+            return 1;
+        }
+
+        if (str_starts_with($upper, 'UNIT ')) {
+            return 2;
+        }
+
+        return 3;
     }
 
     /**
@@ -203,13 +318,15 @@ class DashboardPinjamanKreditService
      * Load all required columns for all branches and periods in one query
      * Optimized: Select only needed columns and use index hints
      */
-    private function loadBulkSnapshotData(array $periods, array $branches): void
+    private function loadBulkSnapshotData(array $periods, array $scopes): void
     {
-        if (empty($periods) || empty($branches)) return;
+        if (empty($periods) || empty($scopes)) return;
 
         // Select only essential columns to reduce memory footprint
         $requiredColumns = [
             'snapshot_period',
+            'kanca_key',
+            'unit_key',
             'kanca_label',
             'unit_label',
             'kecil_non_cashcoll_os',
@@ -247,35 +364,72 @@ class DashboardPinjamanKreditService
             'kur_kpp_npl',
         ];
 
-        $query = DB::table(self::SNAPSHOT_TABLE)
-            ->select($requiredColumns)
-            ->whereIn('snapshot_period', $periods)
-            ->whereIn('kanca_label', $branches)
-            ->whereColumn('kanca_key', 'unit_key') // Only aggregate rows
-            ->orderBy('snapshot_period');
+        $summaryScopes = array_values(array_filter($scopes, fn (array $scope): bool => !$scope['is_detail']));
+        $detailScopes = array_values(array_filter($scopes, fn (array $scope): bool => $scope['is_detail']));
 
-        if (in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
-            $query->orderByRaw("FIELD(kanca_label, '" . implode("','", array_map(
-                static fn (string $branch): string => str_replace("'", "''", $branch),
-                $branches
-            )) . "')");
-        } else {
-            $query->orderBy('kanca_label');
+        if ($summaryScopes !== []) {
+            $branches = array_values(array_unique(array_column($summaryScopes, 'kanca_label')));
+            $query = DB::table(self::SNAPSHOT_TABLE)
+                ->select($requiredColumns)
+                ->whereIn('snapshot_period', $periods)
+                ->whereIn('kanca_label', $branches)
+                ->whereColumn('kanca_key', 'unit_key')
+                ->orderBy('snapshot_period');
+
+            if (in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+                $query->orderByRaw("FIELD(kanca_label, '" . implode("','", array_map(
+                    static fn (string $branch): string => str_replace("'", "''", $branch),
+                    $branches
+                )) . "')");
+            } else {
+                $query->orderBy('kanca_label');
+            }
+
+            foreach ($query->get() as $record) {
+                $scope = $this->makeSummaryScope((string) $record->kanca_label);
+                $this->snapshotCache[$record->snapshot_period . '|' . $this->scopeCacheKey($scope)] = $record;
+            }
         }
 
-        $records = $query->get();
+        if ($detailScopes === []) {
+            return;
+        }
+
+        $detailBranches = array_values(array_unique(array_column($detailScopes, 'kanca_label')));
+        $detailUnitKeys = array_values(array_unique(array_filter(array_column($detailScopes, 'unit_key'))));
+
+        if ($detailBranches === [] || $detailUnitKeys === []) {
+            return;
+        }
+
+        $records = DB::table(self::SNAPSHOT_TABLE)
+            ->select($requiredColumns)
+            ->whereIn('snapshot_period', $periods)
+            ->whereIn('kanca_label', $detailBranches)
+            ->whereIn('unit_key', $detailUnitKeys)
+            ->whereColumn('kanca_key', '<>', 'unit_key')
+            ->orderBy('snapshot_period')
+            ->orderBy('unit_label')
+            ->get();
 
         foreach ($records as $record) {
-            $key = "{$record->snapshot_period}|{$record->kanca_label}";
-            $this->snapshotCache[$key] = $record;
+            $scope = [
+                'label' => (string) ($record->unit_label ?? ''),
+                'kanca_label' => (string) ($record->kanca_label ?? ''),
+                'unit_label' => (string) ($record->unit_label ?? ''),
+                'unit_key' => (string) ($record->unit_key ?? ''),
+                'is_detail' => true,
+            ];
+
+            $this->snapshotCache[$record->snapshot_period . '|' . $this->scopeCacheKey($scope)] = $record;
         }
     }
 
-    private function getSnapshotValueFromCache(string $branch, string $category, ?string $period, string $type, string $segment): float
+    private function getSnapshotValueFromCache(array $scope, string $category, ?string $period, string $type, string $segment): float
     {
         if (!$period) return 0;
         
-        $key = "{$period}|{$branch}";
+        $key = "{$period}|" . $this->scopeCacheKey($scope);
         $record = $this->snapshotCache[$key] ?? null;
         if (!$record) return 0;
 
@@ -311,6 +465,56 @@ class DashboardPinjamanKreditService
 
         $slug = strtolower(str_replace(' ', '_', $category));
         return "{$slug}_{$type}";
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function metricColumnsForSegment(string $segment): array
+    {
+        $columns = [];
+
+        foreach (['os', 'sml', 'npl'] as $type) {
+            foreach ($this->getCategoriesForSegment($segment) as $category) {
+                if ($category === 'Micro') {
+                    foreach (['briguna_mikro', 'kupedes', 'kur_mikro', 'kur_kecil', 'kur_kpp'] as $prefix) {
+                        $columns[] = "{$prefix}_{$type}";
+                    }
+                    continue;
+                }
+
+                $columns[] = $this->mapCategoryToColumn($category, $type);
+            }
+        }
+
+        return array_values(array_unique($columns));
+    }
+
+    private function recordHasAnyMetricValue(object $record, array $columns): bool
+    {
+        foreach ($columns as $column) {
+            if (abs((float) ($record->{$column} ?? 0)) > 0.0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function scopeCacheKey(array $scope): string
+    {
+        if ($scope['is_detail'] ?? false) {
+            return 'unit|' . ($scope['kanca_label'] ?? '') . '|' . ($scope['unit_key'] ?? $scope['unit_label'] ?? $scope['label'] ?? '');
+        }
+
+        return 'kanca|' . ($scope['kanca_label'] ?? $scope['label'] ?? '');
+    }
+
+    private function scopeRkaKey(array $scope): string
+    {
+        return $this->normalizeBranchForRka(
+            (string) (($scope['is_detail'] ?? false) ? ($scope['unit_label'] ?? $scope['label'] ?? '') : ($scope['kanca_label'] ?? $scope['label'] ?? ''))
+        );
     }
 
     private function mapAreaHead(string $branch): string
@@ -404,9 +608,9 @@ class DashboardPinjamanKreditService
      * IMPORTANT: Madiun/Ngawi/Magetan are stored in desc_uker under KC Ponorogo
      * Need to handle regional sub-unit lookups via desc_uker patterns
      */
-    private function loadRkaForSegment(string $selectedPeriod, string $segment, array $branches): array
+    private function loadRkaForSegment(string $selectedPeriod, string $segment, array $scopes): array
     {
-        $cacheKey = 'sme_segment_rka_v9_harian_scope_december_rka:' . md5($selectedPeriod . '|' . $segment . '|' . implode(',', $branches));
+        $cacheKey = 'sme_segment_rka_v14_strict_uker_kind_detail_rka:' . md5($selectedPeriod . '|' . $segment . '|' . json_encode($scopes));
 
         // Check local cache first
         if (isset($this->rkaCache[$cacheKey])) {
@@ -437,8 +641,8 @@ class DashboardPinjamanKreditService
 
             $kancaFilters = [];
 
-            foreach ($branches as $branch) {
-                $normalized = $this->normalizeBranchForRka($branch);
+            foreach ($scopes as $scope) {
+                $normalized = $this->normalizeBranchForRka((string) ($scope['kanca_label'] ?? ''));
                 if ($normalized === '') continue;
 
                 $kancaFilters[] = $normalized;
@@ -447,7 +651,7 @@ class DashboardPinjamanKreditService
             $kancaFilters = array_values(array_unique($kancaFilters));
 
             \Log::debug('RKA Branch Mapping', [
-                'original_branches' => $branches,
+                'original_scopes' => $scopes,
                 'kanca_filters' => $kancaFilters,
                 'period' => $selectedPeriod,
                 'segment' => $segment,
@@ -463,32 +667,36 @@ class DashboardPinjamanKreditService
                         $rkaData[$type][$category] = $rkaData[$type][$category] ?? [];
                     }
 
-                    foreach ($branches as $branch) {
-                        $branchKey = $this->normalizeBranchForRka($branch);
-                        if ($branchKey === '') {
+                    foreach ($scopes as $scope) {
+                        $scopeKey = $this->scopeRkaKey($scope);
+                        if ($scopeKey === '') {
                             continue;
                         }
+                        $branch = (string) ($scope['kanca_label'] ?? '');
+                        $unit = ($scope['is_detail'] ?? false) ? (string) ($scope['unit_label'] ?? $scope['label'] ?? '') : null;
 
-                        $rkaM1 = $this->getRkaLookupService()->aggregateForScope(
+                        $rkaM1 = $this->aggregateRkaForCreditScope(
                             $definitions,
+                            $segment,
                             $decemberMonth,
                             $branch,
-                            null,
+                            $unit,
                             $decemberYear
                         );
 
-                        $rkaCurrent = $this->getRkaLookupService()->aggregateForScope(
+                        $rkaCurrent = $this->aggregateRkaForCreditScope(
                             $definitions,
+                            $segment,
                             $currentMonth,
                             $branch,
-                            null,
+                            $unit,
                             $currentYear
                         );
 
                         foreach ($categories as $category) {
                             $definitionKey = $this->getCategoryToDefinitionKey($segment, $category, $type);
 
-                            $rkaData[$type][$category][$branchKey] = [
+                            $rkaData[$type][$category][$scopeKey] = [
                                 'm1' => (float) ($rkaM1[$definitionKey] ?? 0),
                                 'current' => (float) ($rkaCurrent[$definitionKey] ?? 0),
                             ];
@@ -510,6 +718,67 @@ class DashboardPinjamanKreditService
             // Return empty RKA data structure on error
             return $this->getEmptyRkaDataStructure();
         }
+    }
+
+    private function aggregateRkaForCreditScope(
+        array $definitions,
+        string $segment,
+        string $monthColumn,
+        string $branch,
+        ?string $unit,
+        int $year
+    ): array {
+        if ($unit !== null && trim($unit) !== '') {
+            return $this->getRkaLookupService()->aggregateForScope(
+                $definitions,
+                $monthColumn,
+                $branch,
+                $unit,
+                $year
+            );
+        }
+
+        $detailGroups = $this->getRkaLookupService()->aggregateByGroup(
+            $this->detailFirstRkaDefinitions($definitions, $segment),
+            $monthColumn,
+            [$branch],
+            [],
+            'kanca',
+            $year
+        );
+        $branchKey = $this->normalizeBranchForRka($branch);
+
+        $summaryMetrics = $this->getRkaLookupService()->aggregateForScope(
+            $definitions,
+            $monthColumn,
+            $branch,
+            $branch,
+            $year
+        );
+
+        $metrics = [];
+        foreach (array_keys($definitions) as $definitionKey) {
+            $detailValue = (float) ($detailGroups[$definitionKey][$branchKey] ?? 0);
+            $summaryValue = (float) ($summaryMetrics[$definitionKey] ?? 0);
+            $metrics[$definitionKey] = abs($detailValue) > 0.0 ? $detailValue : $summaryValue;
+        }
+
+        return $metrics;
+    }
+
+    private function detailFirstRkaDefinitions(array $definitions, string $segment): array
+    {
+        return array_map(function (array $definition) use ($segment): array {
+            unset($definition['include_kanca_summary']);
+
+            if (empty($definition['uker_contains_any'])) {
+                $definition['uker_contains_any'] = strtoupper($segment) === 'MIKRO'
+                    ? ['UNIT']
+                    : ['KC', 'KCP'];
+            }
+
+            return $definition;
+        }, $definitions);
     }
 
     private function getEmptyRkaDataStructure(): array

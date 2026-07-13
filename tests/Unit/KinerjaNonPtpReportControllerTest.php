@@ -41,4 +41,20 @@ class KinerjaNonPtpReportControllerTest extends TestCase
         $this->assertStringContainsString("'NON PTP'", $sql);
         $this->assertStringContainsString("'PTP'", $sql);
     }
+
+    public function test_repayment_pattern_uses_principal_and_interest_frequency_for_bulanan(): void
+    {
+        $controller = new KinerjaNonPtpReportController();
+        $reflection = new ReflectionClass($controller);
+        $method = $reflection->getMethod('repaymentPatternSql');
+        $method->setAccessible(true);
+
+        $sql = $method->invoke($controller, 'd');
+
+        $this->assertStringContainsString('d.freq_payment', $sql);
+        $this->assertStringContainsString('d.freq_int_payment', $sql);
+        $this->assertStringContainsString("THEN 'BULANAN'", $sql);
+        $this->assertStringContainsString("THEN '1 X ANGSURAN'", $sql);
+        $this->assertStringNotContainsString("freq_payment, 0) AS UNSIGNED) = 1 THEN 'BULANAN'", $sql);
+    }
 }

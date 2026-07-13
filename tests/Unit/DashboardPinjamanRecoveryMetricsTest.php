@@ -29,11 +29,51 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
         Schema::create('lw325_ph', function (Blueprint $table): void {
             $table->date('periode')->index();
             $table->string('acctno')->nullable();
+            $table->string('kanca')->nullable();
+            $table->string('unit')->nullable();
+            $table->string('segmen_dashboard')->nullable();
             $table->decimal('pokok', 20, 2)->nullable();
         });
 
         Schema::create('daily_loan_dinamis', function (Blueprint $table): void {
             $table->date('periode')->index();
+            $table->string('nomor_rekening1')->nullable();
+            $table->decimal('baki_debet1', 20, 2)->nullable();
+            $table->string('kolek_detail')->nullable();
+            $table->integer('umur_tunggakan')->nullable();
+            $table->string('flag_restruk')->nullable();
+            $table->string('kolek')->nullable();
+            $table->string('status_rekening1')->nullable();
+            $table->string('ln_type')->nullable();
+            $table->date('tgl_jatuh_tempo')->nullable();
+            $table->date('next_pmt_date')->nullable();
+            $table->date('next_pmt_int_date')->nullable();
+            $table->string('segmen_dashboard')->nullable();
+            $table->string('produk_dashboard')->nullable();
+            $table->string('cabang1')->nullable();
+            $table->string('unit1')->nullable();
+            $table->string('nama_debitur1')->nullable();
+            $table->decimal('plafon', 20, 2)->nullable();
+            $table->decimal('tunggakan_pokok', 20, 2)->nullable();
+            $table->decimal('tunggakan_bunga', 20, 2)->nullable();
+            $table->decimal('tunggakan_penalti', 20, 2)->nullable();
+            $table->decimal('npb_pokok_la', 20, 2)->nullable();
+            $table->decimal('npb_bunga_la', 20, 2)->nullable();
+            $table->decimal('payment_amount', 20, 2)->nullable();
+            $table->decimal('pmtamt', 20, 2)->nullable();
+            $table->integer('freq_payment')->nullable();
+            $table->integer('freq_int_payment')->nullable();
+        });
+
+        Schema::create('dashboard_pinjaman_snapshots', function (Blueprint $table): void {
+            $table->date('periode')->index();
+            $table->string('account_number')->nullable();
+            $table->decimal('loan_balance', 20, 2)->nullable();
+            $table->string('quality_bucket')->nullable();
+            $table->string('segmen_dashboard')->nullable();
+            $table->string('produk_dashboard')->nullable();
+            $table->string('cabang1')->nullable();
+            $table->string('unit1')->nullable();
         });
     }
 
@@ -54,6 +94,17 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
             ['periode' => '2026-04-30', 'acctno' => '649201027193100', 'pokok' => 1000000],
             ['periode' => '2026-04-30', 'acctno' => '650501027193101', 'pokok' => 2000000],
             ['periode' => '2026-04-30', 'acctno' => '650501027193102', 'pokok' => 3000000],
+        ]);
+
+        $this->assertTrue($this->invokeShouldUseLw325RecoveryMetrics('2026-04-30'));
+    }
+
+    public function test_recovery_metrics_accepts_clean_duplicate_lw325_accounts(): void
+    {
+        DB::table('lw325_ph')->insert([
+            ['periode' => '2026-04-30', 'acctno' => '649201027193100', 'pokok' => 1000000],
+            ['periode' => '2026-04-30', 'acctno' => '649201027193100', 'pokok' => 500000],
+            ['periode' => '2026-04-30', 'acctno' => '650501027193101', 'pokok' => 2000000],
         ]);
 
         $this->assertTrue($this->invokeShouldUseLw325RecoveryMetrics('2026-04-30'));
@@ -129,6 +180,371 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
         $this->assertContains('2026-05-10', $periods);
         $this->assertContains('2026-04-15', $periods);
         $this->assertNotContains('2026-06-01', $periods);
+    }
+
+    public function test_matrix_filter_options_are_derived_from_covering_dimension_pairs(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['periode' => '2026-06-20', 'segmen_dashboard' => 'MICRO', 'produk_dashboard' => 'KUR MIKRO', 'cabang1' => 'KC Madiun', 'unit1' => 'Unit A'],
+            ['periode' => '2026-06-20', 'segmen_dashboard' => 'MICRO', 'produk_dashboard' => 'KUPEDES', 'cabang1' => 'KC Magetan', 'unit1' => 'Unit B'],
+            ['periode' => '2026-06-20', 'segmen_dashboard' => 'CONSUMER', 'produk_dashboard' => 'BRIGUNA', 'cabang1' => 'KC Madiun', 'unit1' => 'Unit C'],
+            ['periode' => '2026-06-20', 'segmen_dashboard' => 'SMALL', 'produk_dashboard' => 'KMK', 'cabang1' => 'KC Ngawi', 'unit1' => 'Unit D'],
+        ]);
+
+        $controller = new DashboardPinjamanReportController();
+        $method = new ReflectionMethod(DashboardPinjamanReportController::class, 'buildPeriodFilterOptions');
+        $method->setAccessible(true);
+
+        $options = $method->invoke($controller, '2026-06-20', [
+            'segmen' => ['micro'],
+            'produk' => ['kur mikro'],
+            'cabang' => ['kc madiun'],
+            'unit' => [],
+        ], true);
+
+        $this->assertSame(['CONSUMER', 'MICRO', 'SMALL'], $options['segments']->all());
+        $this->assertSame(['KUPEDES', 'KUR MIKRO'], $options['products']->all());
+        $this->assertSame(['KC Madiun', 'KC Magetan', 'KC Ngawi'], $options['branches']->all());
+        $this->assertSame(['Unit A', 'Unit C'], $options['units']->all());
+    }
+
+    public function test_matrix_ph_uses_current_daily_loan_status_five_balance(): void
+    {
+        DB::table('dashboard_pinjaman_snapshots')->insert([
+            [
+                'periode' => '2026-05-31',
+                'account_number' => 'A1',
+                'loan_balance' => 181492538,
+                'quality_bucket' => 'D1',
+            ],
+            [
+                'periode' => '2026-05-31',
+                'account_number' => 'A2',
+                'loan_balance' => 3993097,
+                'quality_bucket' => 'M',
+            ],
+            [
+                'periode' => '2026-05-31',
+                'account_number' => 'A4',
+                'loan_balance' => 0,
+                'quality_bucket' => 'L',
+            ],
+        ]);
+
+        DB::table('daily_loan_dinamis')->insert([
+            [
+                'periode' => '2026-06-20',
+                'nomor_rekening1' => 'A1',
+                'baki_debet1' => 181492538,
+                'status_rekening1' => '5',
+            ],
+            [
+                'periode' => '2026-06-20',
+                'nomor_rekening1' => 'A2',
+                'baki_debet1' => 3993097,
+                'status_rekening1' => '5',
+            ],
+            [
+                'periode' => '2026-06-20',
+                'nomor_rekening1' => 'A3',
+                'baki_debet1' => 999999999,
+                'status_rekening1' => '1',
+            ],
+            [
+                'periode' => '2026-06-20',
+                'nomor_rekening1' => 'A4',
+                'baki_debet1' => 0,
+                'status_rekening1' => '5',
+            ],
+        ]);
+
+        $controller = new DashboardPinjamanReportController();
+        $method = new ReflectionMethod(DashboardPinjamanReportController::class, 'buildDailyLoanPhMetricQuery');
+        $method->setAccessible(true);
+
+        $rows = $method->invoke($controller, '2026-06-20', '2026-05-31', [
+            'segmen' => [],
+            'produk' => [],
+            'cabang' => [],
+            'unit' => [],
+        ], true)->get()->keyBy('before_bucket');
+
+        $this->assertSame(18149253800, (int) $rows->get('D1')->amount_cents);
+        $this->assertSame(399309700, (int) $rows->get('M')->amount_cents);
+        $this->assertSame(0, (int) $rows->get('L')->amount_cents);
+        $this->assertCount(3, $rows);
+    }
+
+    public function test_matrix_exit_metrics_use_current_ph_pokok_for_previous_daily_loan_accounts(): void
+    {
+        DB::table('dashboard_pinjaman_snapshots')->insert([
+            [
+                'periode' => '2026-04-30',
+                'account_number' => 'A1',
+                'loan_balance' => 500,
+                'quality_bucket' => 'L',
+            ],
+            [
+                'periode' => '2026-04-30',
+                'account_number' => '000649201027193100',
+                'loan_balance' => 250,
+                'quality_bucket' => 'D1',
+            ],
+            [
+                'periode' => '2026-04-30',
+                'account_number' => 'A3',
+                'loan_balance' => 125,
+                'quality_bucket' => 'L',
+            ],
+            [
+                'periode' => '2026-05-31',
+                'account_number' => 'A1',
+                'loan_balance' => 450,
+                'quality_bucket' => 'L',
+            ],
+        ]);
+
+        DB::table('lw325_ph')->insert([
+            [
+                'periode' => '2026-05-31',
+                'acctno' => '649201027193100',
+                'kanca' => 'KC Old',
+                'unit' => 'Unit Old',
+                'segmen_dashboard' => 'Micro',
+                'pokok' => 175,
+            ],
+        ]);
+
+        $controller = new DashboardPinjamanReportController();
+        $exitMethod = new ReflectionMethod(DashboardPinjamanReportController::class, 'buildDailyLoanExitMetricQuery');
+        $exitMethod->setAccessible(true);
+
+        $rows = $exitMethod->invoke($controller, '2026-05-31', '2026-04-30', [
+            'segmen' => [],
+            'produk' => [],
+            'cabang' => [],
+            'unit' => [],
+        ], true, true)->get();
+
+        $totalExitCents = (int) $rows->sum('amount_cents');
+        $rows = $rows->mapWithKeys(fn ($row) => [$row->before_bucket . ':' . $row->metric_type => $row]);
+
+        $this->assertSame(12500, (int) $rows->get('L:lunas')->amount_cents);
+        $this->assertSame(17500, (int) $rows->get('D1:ph')->amount_cents);
+        $this->assertSame(30000, $totalExitCents);
+    }
+
+    public function test_matrix_exit_ph_uses_latest_same_month_ph_period_when_daily_loan_is_month_end(): void
+    {
+        DB::table('dashboard_pinjaman_snapshots')->insert([
+            [
+                'periode' => '2026-05-31',
+                'account_number' => '649201027193100',
+                'loan_balance' => 250,
+                'quality_bucket' => 'D1',
+            ],
+        ]);
+
+        DB::table('lw325_ph')->insert([
+            [
+                'periode' => '2026-05-31',
+                'acctno' => '649201027193100',
+                'kanca' => 'KC Old',
+                'unit' => 'Unit Old',
+                'segmen_dashboard' => 'Micro',
+                'pokok' => 250,
+            ],
+            [
+                'periode' => '2026-06-29',
+                'acctno' => '649201027193100',
+                'kanca' => 'KC Old',
+                'unit' => 'Unit Old',
+                'segmen_dashboard' => 'Micro',
+                'pokok' => 175,
+            ],
+        ]);
+
+        $controller = new DashboardPinjamanReportController();
+        $exitMethod = new ReflectionMethod(DashboardPinjamanReportController::class, 'buildDailyLoanExitMetricQuery');
+        $exitMethod->setAccessible(true);
+
+        $rows = $exitMethod->invoke($controller, '2026-06-30', '2026-05-31', [
+            'segmen' => [],
+            'produk' => [],
+            'cabang' => [],
+            'unit' => [],
+        ], true, true)->get()->keyBy(fn ($row) => $row->before_bucket . ':' . $row->metric_type);
+
+        $this->assertSame(17500, (int) $rows->get('D1:ph')->amount_cents);
+    }
+
+    public function test_lw325_recovery_metrics_lookup_current_period_by_account_only(): void
+    {
+        DB::table('dashboard_pinjaman_snapshots')->insert([
+            [
+                'periode' => '2026-05-31',
+                'account_number' => 'A1',
+                'loan_balance' => 1000,
+                'quality_bucket' => 'L',
+                'cabang1' => 'KC Old',
+                'unit1' => 'Unit Old',
+            ],
+            [
+                'periode' => '2026-05-31',
+                'account_number' => 'A2',
+                'loan_balance' => 500,
+                'quality_bucket' => 'L',
+                'cabang1' => 'KC Old',
+                'unit1' => 'Unit Old',
+            ],
+        ]);
+
+        DB::table('lw325_ph')->insert([
+            [
+                'periode' => '2026-05-31',
+                'acctno' => 'A1',
+                'kanca' => 'KC Old',
+                'unit' => 'Unit Old',
+                'segmen_dashboard' => 'Micro',
+                'pokok' => 1000000.75,
+            ],
+            [
+                'periode' => '2026-06-10',
+                'acctno' => '000A1',
+                'kanca' => 'KC New',
+                'unit' => 'Unit New',
+                'segmen_dashboard' => 'Micro',
+                'pokok' => 999701.25,
+            ],
+            [
+                'periode' => '2026-05-31',
+                'acctno' => 'A2',
+                'kanca' => 'KC Old',
+                'unit' => 'Unit Old',
+                'segmen_dashboard' => 'Micro',
+                'pokok' => 1500000.90,
+            ],
+        ]);
+
+        $controller = new DashboardPinjamanReportController();
+        $method = new ReflectionMethod(DashboardPinjamanReportController::class, 'buildLw325RecoveryMetricQuery');
+        $method->setAccessible(true);
+
+        $query = $method->invoke($controller, '2026-06-10', '2026-05-31', [
+            'segmen' => [],
+            'produk' => [],
+            'cabang' => ['KC Old'],
+            'unit' => [],
+        ], true);
+
+        $rows = collect($query->get())->keyBy('metric_type');
+
+        $this->assertSame(29900, (int) $rows->get('principal_reduction')->amount_cents);
+        $this->assertFalse($rows->has('lunas'));
+    }
+
+    public function test_ug_npl_rows_use_revised_arrears_rules_for_due_periodic_general_and_dl_loans(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            [
+                'periode' => '2026-06-28',
+                'nomor_rekening1' => 'DUE-01',
+                'nama_debitur1' => 'Debitur Jatuh Tempo',
+                'ln_type' => 'A4',
+                'tgl_jatuh_tempo' => '2026-06-27',
+                'kolek' => '3',
+                'flag_restruk' => null,
+                'umur_tunggakan' => 120,
+                'plafon' => 100000000,
+                'baki_debet1' => 90000000,
+                'tunggakan_pokok' => 3000000,
+                'tunggakan_bunga' => 500000,
+                'tunggakan_penalti' => 100000,
+                'freq_payment' => 3,
+                'freq_int_payment' => 3,
+            ],
+            [
+                'periode' => '2026-06-28',
+                'nomor_rekening1' => 'PER-01',
+                'nama_debitur1' => 'Debitur Periodik',
+                'ln_type' => 'A4',
+                'tgl_jatuh_tempo' => '2027-06-28',
+                'kolek' => '3',
+                'flag_restruk' => null,
+                'umur_tunggakan' => 120,
+                'plafon' => 100000000,
+                'baki_debet1' => 80000000,
+                'tunggakan_pokok' => 3000000,
+                'tunggakan_bunga' => 500000,
+                'tunggakan_penalti' => 100000,
+                'freq_payment' => 3,
+                'freq_int_payment' => 1,
+            ],
+            [
+                'periode' => '2026-06-28',
+                'nomor_rekening1' => 'GEN-01',
+                'nama_debitur1' => 'Debitur Umum',
+                'ln_type' => 'A4',
+                'tgl_jatuh_tempo' => '2027-06-28',
+                'kolek' => '5',
+                'flag_restruk' => null,
+                'umur_tunggakan' => 360,
+                'plafon' => 100000000,
+                'baki_debet1' => 70000000,
+                'tunggakan_pokok' => 50000000,
+                'tunggakan_bunga' => 20000000,
+                'tunggakan_penalti' => 5000000,
+                'freq_payment' => 12,
+                'freq_int_payment' => 12,
+            ],
+            [
+                'periode' => '2026-06-28',
+                'nomor_rekening1' => 'DL-01',
+                'nama_debitur1' => 'Debitur DL',
+                'ln_type' => 'DL',
+                'tgl_jatuh_tempo' => '2027-06-28',
+                'kolek' => '3',
+                'flag_restruk' => null,
+                'umur_tunggakan' => 270,
+                'plafon' => 100000000,
+                'baki_debet1' => 60000000,
+                'tunggakan_pokok' => 50000000,
+                'tunggakan_bunga' => 20000000,
+                'tunggakan_penalti' => 5000000,
+                'freq_payment' => 3,
+                'freq_int_payment' => 1,
+            ],
+        ]);
+
+        $controller = new DashboardPinjamanReportController();
+        $fetchMethod = new ReflectionMethod(DashboardPinjamanReportController::class, 'fetchUgNplRows');
+        $fetchMethod->setAccessible(true);
+        $mapMethod = new ReflectionMethod(DashboardPinjamanReportController::class, 'mapUgNplRow');
+        $mapMethod->setAccessible(true);
+
+        $rows = collect(iterator_to_array($fetchMethod->invoke($controller, '2026-06-28', [], [])))
+            ->map(fn ($row): array => $mapMethod->invoke($controller, $row, 0))
+            ->keyBy('nomor_rekening1');
+
+        $this->assertSame('due_lancar', $rows['DUE-01']['action_key']);
+        $this->assertSame(3600000.0, $rows['DUE-01']['estimated_payment']);
+        $this->assertSame(3000000.0, $rows['DUE-01']['estimated_principal']);
+
+        $this->assertSame('periodic_lancar', $rows['PER-01']['action_key']);
+        $this->assertSame(3600000.0, $rows['PER-01']['estimated_payment']);
+        $this->assertSame('Lancar', $rows['PER-01']['target_bucket']);
+
+        $this->assertSame('general_sml3', $rows['GEN-01']['action_key']);
+        $this->assertSame(12, $rows['GEN-01']['effective_months']);
+        $this->assertSame(10, $rows['GEN-01']['cycles']);
+        $this->assertEqualsWithDelta(63333333.33, $rows['GEN-01']['estimated_payment'], 0.01);
+        $this->assertSame('SML 3', $rows['GEN-01']['target_bucket']);
+
+        $this->assertSame('dl_sml3', $rows['DL-01']['action_key']);
+        $this->assertSame(9, $rows['DL-01']['effective_months']);
+        $this->assertSame(7, $rows['DL-01']['cycles']);
+        $this->assertSame(0.0, $rows['DL-01']['estimated_principal']);
+        $this->assertEqualsWithDelta(20555555.56, $rows['DL-01']['estimated_payment'], 0.01);
     }
 
     private function invokeShouldUseLw325RecoveryMetrics(string $period): bool

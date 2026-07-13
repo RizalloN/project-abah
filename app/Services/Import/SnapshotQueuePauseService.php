@@ -172,7 +172,7 @@ class SnapshotQueuePauseService
 
         try {
             return (int) DB::table('import_jobs')
-                ->where('status', 'processing')
+                ->whereIn('status', ['staging', 'processing'])
                 ->count();
         } catch (\Throwable) {
             return 0;

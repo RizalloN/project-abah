@@ -613,6 +613,7 @@
             initForm.append('_token', csrfToken);
             initForm.append('original_name', file.name);
             initForm.append('total_size', String(file.size));
+            initForm.append('total_chunks', String(totalChunks));
 
             const initResponse = await fetch(initUrl, {
                 method: 'POST',
@@ -721,6 +722,76 @@
             }
 
             if (finalizePayload.redirect) {
+                if (String(finalizePayload.redirect).includes('prepare-preview')) {
+                    await new Promise((resolve, reject) => {
+                        const eventSource = new EventSource(finalizePayload.redirect);
+                        let settled = false;
+
+                        const failPreview = (message) => {
+                            if (settled) {
+                                return;
+                            }
+                            settled = true;
+                            eventSource.close();
+                            reject(new Error(message || 'Gagal menyiapkan preview file.'));
+                        };
+
+                        eventSource.addEventListener('progress', function(event) {
+                            let progressData = {};
+                            try { progressData = JSON.parse(event.data); } catch (_) {}
+
+                            const previewPercent = Number(progressData.percent);
+                            const percent = Number.isFinite(previewPercent)
+                                ? Math.max(96, Math.min(99, 96 + Math.round((previewPercent / 100) * 3)))
+                                : 96;
+
+                            if (uploadProgressBar) {
+                                uploadProgressBar.style.width = percent + '%';
+                                uploadProgressBar.innerText = percent + '%';
+                            }
+                            const progressPercent = document.getElementById('swal-progress-percent');
+                            if (progressPercent) {
+                                progressPercent.textContent = percent + '%';
+                            }
+                            if (uploadProgressText) {
+                                uploadProgressText.innerText = progressData.message || 'Menyiapkan preview file...';
+                            }
+                        });
+
+                        eventSource.addEventListener('ready', function(event) {
+                            let readyData = {};
+                            try { readyData = JSON.parse(event.data); } catch (_) {}
+                            if (!readyData.redirect) {
+                                failPreview('Server tidak mengembalikan alamat halaman preview.');
+                                return;
+                            }
+
+                            settled = true;
+                            eventSource.close();
+                            if (uploadProgressBar) {
+                                uploadProgressBar.style.width = '100%';
+                                uploadProgressBar.innerText = '100%';
+                            }
+                            if (typeof window.showRouteLoading === 'function') {
+                                window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
+                            }
+                            window.location.href = readyData.redirect;
+                            resolve();
+                        });
+
+                        eventSource.addEventListener('error_msg', function(event) {
+                            let errorData = {};
+                            try { errorData = JSON.parse(event.data); } catch (_) {}
+                            failPreview(errorData.message || 'Gagal menyiapkan preview file.');
+                        });
+
+                        eventSource.onerror = function() {
+                            failPreview('Koneksi progress preview terputus.');
+                        };
+                    });
+                    return;
+                }
+
                 if (typeof window.showRouteLoading === 'function') {
                     window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
                 }
@@ -1509,6 +1580,16 @@
             formImport.dataset.preparePreviewUrl = isCsvLike
                 ? "{{ route('import.simpanan.csv.prepare-preview') }}"
                 : "{{ route('import.simpanan.prepare-preview') }}";
+            formImport.dataset.chunkedUpload = isCsvLike ? '1' : '';
+            formImport.dataset.chunkInitUrl = isCsvLike
+                ? "{{ route('import.simpanan.csv.upload-chunk.init') }}"
+                : '';
+            formImport.dataset.chunkUploadUrl = isCsvLike
+                ? "{{ route('import.simpanan.csv.upload-chunk') }}"
+                : '';
+            formImport.dataset.chunkFinalizeUrl = isCsvLike
+                ? "{{ route('import.simpanan.csv.upload-chunk.finalize') }}"
+                : '';
 
             applyButtonState(
                 isCsvLike ? 'csv' : 'excel',

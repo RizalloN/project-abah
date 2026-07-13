@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Report Recovery')
+@section('title', 'Data PH')
 
 @section('content')
 <style>
@@ -131,7 +131,7 @@
     /* ── Compact Flat Selectors ── */
     .loan-filter-modern {
         display: grid;
-        grid-template-columns: repeat(4, 1fr) auto;
+        grid-template-columns: repeat(3, 1fr) auto;
         gap: 0.75rem;
         background: #ffffff;
         padding: 1rem;
@@ -160,7 +160,6 @@
     .loan-filter-item:nth-child(1) { z-index: 40; }
     .loan-filter-item:nth-child(2) { z-index: 30; }
     .loan-filter-item:nth-child(3) { z-index: 20; }
-    .loan-filter-item:nth-child(4) { z-index: 10; }
 
     .loan-filter-modern .loan-filter-label {
         font-size: 0.72rem;
@@ -583,6 +582,14 @@
         'tableSelector' => '.kejar-laba-table'
     ])
 
+    .kejar-laba-table-shell {
+        height: auto !important;
+        max-height: none !important;
+        overflow-x: auto !important;
+        overflow-y: visible !important;
+        overscroll-behavior: auto !important;
+    }
+
     .kejar-laba-table {
         width: 100%;
         border-collapse: separate !important;
@@ -629,7 +636,7 @@
     }
 
     /* Thicker dividing border below each branch group */
-    .kejar-laba-table tbody td[rowspan="4"],
+    .kejar-laba-table tbody td[rowspan],
     .kejar-laba-table tbody tr.total-row td {
         border-bottom: 2px solid #94a3b8 !important;
     }
@@ -681,6 +688,64 @@
     .zero-value { color: var(--text-muted); opacity: 0.6; }
 
     .currency-symbol { font-size: 0.65rem; margin-right: 2px; color: var(--text-muted); font-weight: normal; }
+
+    .ph-nominatif-trigger {
+        cursor: zoom-in;
+    }
+
+    .ph-nominatif-modal .modal-dialog {
+        max-width: min(96vw, 1480px);
+    }
+
+    .ph-nominatif-modal .modal-content {
+        border-radius: 8px;
+        border: 1px solid #dbe3ef;
+    }
+
+    .ph-nominatif-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+        color: #475569;
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+
+    .ph-nominatif-summary span {
+        border: 1px solid #dbe3ef;
+        border-radius: 999px;
+        padding: 0.25rem 0.65rem;
+        background: #f8fafc;
+    }
+
+    .ph-nominatif-table-wrap {
+        max-height: 68vh;
+        overflow: auto;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+    }
+
+    .ph-nominatif-table {
+        width: max-content;
+        min-width: 100%;
+        margin-bottom: 0;
+        font-size: 0.76rem;
+    }
+
+    .ph-nominatif-table th {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: #0f3f86;
+        color: #ffffff;
+        white-space: nowrap;
+    }
+
+    .ph-nominatif-table td {
+        white-space: nowrap;
+        vertical-align: middle;
+    }
 </style>
 
 <div class="kejar-laba-wrapper pt-4">
@@ -689,10 +754,10 @@
             <div class="kejar-laba-title-wrap">
                 <div class="kejar-laba-title-badge">
                     <i class="fas fa-university"></i>
-                    <span>BRI Recovery Performance</span>
+                    <span>BRI Data PH Performance</span>
                 </div>
-                <h1 class="kejar-laba-title">REPORT RECOVERY</h1>
-                <div class="kejar-laba-subtitle">Monitoring pencapaian Recovery secara ringkas dan komprehensif.</div>
+                <h1 class="kejar-laba-title">DATA PH</h1>
+                <div class="kejar-laba-subtitle">Monitoring pencapaian Data PH secara ringkas dan komprehensif.</div>
             </div>
             <div class="d-flex align-items-center gap-2">
                 <span class="badge px-3 py-2 kejar-laba-date-badge">
@@ -706,7 +771,7 @@
         @endphp
 
         <div class="filter-section p-4">
-            <form action="{{ route('report.dashboard-pinjaman.kejar-laba') }}" method="GET" id="filterForm">
+            <form action="{{ route('report.dashboard-pinjaman.data-ph') }}" method="GET" id="filterForm">
                 <div class="loan-filter-modern">
                     {{-- Periode --}}
                     <div class="loan-filter-item">
@@ -782,31 +847,6 @@
                         </div>
                     </div>
 
-                    {{-- Posisi RKA --}}
-                    <div class="loan-filter-item">
-                        <label class="loan-filter-label">Posisi RKA</label>
-                        <div class="loan-dropdown" data-loan-dropdown="rka">
-                            <i class="fas fa-chart-line loan-dropdown-icon"></i>
-                            <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="rka">
-                                <span class="loan-dropdown-text">Pilih Posisi</span>
-                                <i class="fas fa-chevron-down small opacity-50"></i>
-                            </button>
-                            <div class="loan-dropdown-menu" data-loan-dropdown-menu="rka">
-                                @foreach($posisi_rka_options as $opt)
-                                    <div class="loan-dropdown-option {{ (isset($selectedRka) && $selectedRka === $opt['value']) ? 'is-active' : '' }}" data-value="{{ $opt['value'] }}">
-                                        <div class="loan-dropdown-check"><i class="fas fa-check"></i></div>
-                                        <span>{{ $opt['label'] }}</span>
-                                    </div>
-                                @endforeach
-                            </div>
-                            <select name="rka_period" id="rkaInput" class="d-none">
-                                @foreach($posisi_rka_options as $opt)
-                                    <option value="{{ $opt['value'] }}" {{ (isset($selectedRka) && $selectedRka === $opt['value']) ? 'selected' : '' }}>{{ $opt['label'] }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                    </div>
-
                     <div>
                         <button type="submit" class="btn-loan-modern-submit w-100">
                             <i class="fas fa-search"></i> Telusuri
@@ -840,8 +880,8 @@
                         });
                     });
 
-                    // Standard Select Sync (Periode & RKA)
-                    ['periode', 'rka'].forEach(type => {
+                    // Standard Select Sync
+                    ['periode'].forEach(type => {
                         const parent = document.querySelector(`[data-loan-dropdown="${type}"]`);
                         if (!parent) return;
                         const select = parent.querySelector('select');
@@ -1010,13 +1050,24 @@
                 }
         </script>
 
-        <div class="kejar-laba-table-shell">
-            <table class="kejar-laba-table">
+        @php
+            $phSegmentRows = [
+                ['key' => 'micro', 'label' => 'MICRO'],
+                ['key' => 'small', 'label' => 'SMALL'],
+                ['key' => 'consumer_briguna', 'label' => 'KONSUMER - BRIGUNA'],
+                ['key' => 'consumer_kpr', 'label' => 'KONSUMER - KPR'],
+                ['key' => 'total', 'label' => 'TOTAL'],
+            ];
+        @endphp
+
+        <div class="kejar-laba-table-shell" data-abah-no-table-guard="1">
+            <table class="kejar-laba-table" data-abah-no-table-guard="1">
                 <thead>
                     <tr>
                         <th rowspan="2" class="sticky-col" style="z-index: 50 !important;">No</th>
                         <th rowspan="2" class="sticky-col" style="left: 64px; z-index: 50 !important;">{{ $isArea6AllSelected ? 'Kantor Cabang' : 'Unit Kerja' }}</th>
                         <th rowspan="2" style="z-index: 30 !important;">Segmen</th>
+                        <th rowspan="2" class="text-center">SISA PH<br>{{ strtoupper($selectedPeriodLabel) }}</th>
                         <th colspan="4" class="text-center">POSISI RECOVERY</th>
                         <th colspan="3" class="text-center">DELTA PERBANDINGAN</th>
                     </tr>
@@ -1036,17 +1087,24 @@
                     @forelse($rows as $branchIndex => $row)
                         @php
                             $blockBg = $branchIndex % 2 === 0 ? '#ffffff' : '#f8fafc';
+                            $phScopeLabel = $isArea6AllSelected ? ($row['kanca'] ?? '') : ($row['unit'] ?? '');
+                            $phUnitFilter = $isArea6AllSelected ? 'all' : ($row['unit'] ?? 'all');
                         @endphp
                         {{-- MICRO --}}
-                        <tr style="background-color: {{ $blockBg }};">
-                            <td rowspan="4" class="text-center sticky-col font-weight-bold" style="background-color: {{ $blockBg }} !important; z-index: 20;">
+                        <tr class="ph-nominatif-trigger" data-ph-nominatif-row data-period="{{ $selectedPeriod }}" data-segment="micro" data-segment-label="MICRO" data-kanca="{{ $row['kanca'] ?? '' }}" data-unit="{{ $phUnitFilter }}" data-scope-label="{{ $phScopeLabel }}" style="background-color: {{ $blockBg }};">
+                            <td rowspan="5" class="text-center sticky-col font-weight-bold" style="background-color: {{ $blockBg }} !important; z-index: 20;">
                                 {{ $row['no'] }}
                             </td>
-                            <td rowspan="4" class="sticky-col font-weight-bold" style="left: 64px; background-color: {{ $blockBg }} !important; color: var(--primary-blue-dark); z-index: 20;">
+                            <td rowspan="5" class="sticky-col font-weight-bold" style="left: 64px; background-color: {{ $blockBg }} !important; color: var(--primary-blue-dark); z-index: 20;">
                                 {{ $isArea6AllSelected ? $row['kanca'] : $row['unit'] }}
                             </td>
                             <td class="font-weight-bold text-uppercase" style="background-color: {{ $blockBg }}; color: #475569;">
                                 MICRO
+                            </td>
+
+                            {{-- SISA PH --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['sisa_ph']['micro'] != 0 ? number_format($row['sisa_ph']['micro'], 0, ',', '.') : '-' }}
                             </td>
                             
                             {{-- POSISI YoY --}}
@@ -1098,9 +1156,14 @@
                         </tr>
 
                         {{-- SMALL --}}
-                        <tr style="background-color: {{ $blockBg }};">
+                        <tr class="ph-nominatif-trigger" data-ph-nominatif-row data-period="{{ $selectedPeriod }}" data-segment="small" data-segment-label="SMALL" data-kanca="{{ $row['kanca'] ?? '' }}" data-unit="{{ $phUnitFilter }}" data-scope-label="{{ $phScopeLabel }}" style="background-color: {{ $blockBg }};">
                             <td class="font-weight-bold text-uppercase" style="background-color: {{ $blockBg }}; color: #475569;">
                                 SMALL
+                            </td>
+
+                            {{-- SISA PH --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['sisa_ph']['small'] != 0 ? number_format($row['sisa_ph']['small'], 0, ',', '.') : '-' }}
                             </td>
                             
                             {{-- POSISI YoY --}}
@@ -1151,54 +1214,110 @@
                             </td>
                         </tr>
 
-                        {{-- CONSUMER --}}
-                        <tr style="background-color: {{ $blockBg }};">
+                        {{-- KONSUMER - BRIGUNA --}}
+                        <tr class="ph-nominatif-trigger" data-ph-nominatif-row data-period="{{ $selectedPeriod }}" data-segment="consumer_briguna" data-segment-label="KONSUMER - BRIGUNA" data-kanca="{{ $row['kanca'] ?? '' }}" data-unit="{{ $phUnitFilter }}" data-scope-label="{{ $phScopeLabel }}" style="background-color: {{ $blockBg }};">
                             <td class="font-weight-bold text-uppercase" style="background-color: {{ $blockBg }}; color: #475569;">
-                                CONSUMER
+                                KONSUMER - BRIGUNA
+                            </td>
+
+                            {{-- SISA PH --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['sisa_ph']['consumer_briguna'] != 0 ? number_format($row['sisa_ph']['consumer_briguna'], 0, ',', '.') : '-' }}
                             </td>
                             
                             {{-- POSISI YoY --}}
                             <td class="text-right" style="background-color: {{ $blockBg }};">
-                                {{ $row['recovery_yoy']['consumer'] != 0 ? number_format($row['recovery_yoy']['consumer'], 0, ',', '.') : '-' }}
+                                {{ $row['recovery_yoy']['consumer_briguna'] != 0 ? number_format($row['recovery_yoy']['consumer_briguna'], 0, ',', '.') : '-' }}
                             </td>
                             
                             {{-- POSISI YTD --}}
                             <td class="text-right" style="background-color: {{ $blockBg }};">
-                                {{ $row['recovery_ytd']['consumer'] != 0 ? number_format($row['recovery_ytd']['consumer'], 0, ',', '.') : '-' }}
+                                {{ $row['recovery_ytd']['consumer_briguna'] != 0 ? number_format($row['recovery_ytd']['consumer_briguna'], 0, ',', '.') : '-' }}
                             </td>
                             
                             {{-- POSISI M-1 --}}
                             <td class="text-right" style="background-color: {{ $blockBg }};">
-                                {{ $row['recovery_m1']['consumer'] != 0 ? number_format($row['recovery_m1']['consumer'], 0, ',', '.') : '-' }}
+                                {{ $row['recovery_m1']['consumer_briguna'] != 0 ? number_format($row['recovery_m1']['consumer_briguna'], 0, ',', '.') : '-' }}
                             </td>
                             
                             {{-- POSISI M Terakhir --}}
                             <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
-                                {{ $row['recovery_curr']['consumer'] != 0 ? number_format($row['recovery_curr']['consumer'], 0, ',', '.') : '-' }}
+                                {{ $row['recovery_curr']['consumer_briguna'] != 0 ? number_format($row['recovery_curr']['consumer_briguna'], 0, ',', '.') : '-' }}
                             </td>
                             
                             {{-- DELTA YoY --}}
-                            <td class="text-right {{ $row['delta_yoy']['consumer'] < 0 ? 'negative-value' : ($row['delta_yoy']['consumer'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
-                                @if($row['delta_yoy']['consumer'] != 0)
-                                    {{ $row['delta_yoy']['consumer'] > 0 ? '+' : '' }}{{ number_format($row['delta_yoy']['consumer'], 0, ',', '.') }}
+                            <td class="text-right {{ $row['delta_yoy']['consumer_briguna'] < 0 ? 'negative-value' : ($row['delta_yoy']['consumer_briguna'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_yoy']['consumer_briguna'] != 0)
+                                    {{ $row['delta_yoy']['consumer_briguna'] > 0 ? '+' : '' }}{{ number_format($row['delta_yoy']['consumer_briguna'], 0, ',', '.') }}
                                 @else
                                     -
                                 @endif
                             </td>
                             
                             {{-- DELTA YTD --}}
-                            <td class="text-right {{ $row['delta_ytd']['consumer'] < 0 ? 'negative-value' : ($row['delta_ytd']['consumer'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
-                                @if($row['delta_ytd']['consumer'] != 0)
-                                    {{ $row['delta_ytd']['consumer'] > 0 ? '+' : '' }}{{ number_format($row['delta_ytd']['consumer'], 0, ',', '.') }}
+                            <td class="text-right {{ $row['delta_ytd']['consumer_briguna'] < 0 ? 'negative-value' : ($row['delta_ytd']['consumer_briguna'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_ytd']['consumer_briguna'] != 0)
+                                    {{ $row['delta_ytd']['consumer_briguna'] > 0 ? '+' : '' }}{{ number_format($row['delta_ytd']['consumer_briguna'], 0, ',', '.') }}
                                 @else
                                     -
                                 @endif
                             </td>
                             
                             {{-- DELTA M-1 --}}
-                            <td class="text-right {{ $row['delta_m1']['consumer'] < 0 ? 'negative-value' : ($row['delta_m1']['consumer'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
-                                @if($row['delta_m1']['consumer'] != 0)
-                                    {{ $row['delta_m1']['consumer'] > 0 ? '+' : '' }}{{ number_format($row['delta_m1']['consumer'], 0, ',', '.') }}
+                            <td class="text-right {{ $row['delta_m1']['consumer_briguna'] < 0 ? 'negative-value' : ($row['delta_m1']['consumer_briguna'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_m1']['consumer_briguna'] != 0)
+                                    {{ $row['delta_m1']['consumer_briguna'] > 0 ? '+' : '' }}{{ number_format($row['delta_m1']['consumer_briguna'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                        </tr>
+
+                        {{-- KONSUMER - KPR --}}
+                        <tr class="ph-nominatif-trigger" data-ph-nominatif-row data-period="{{ $selectedPeriod }}" data-segment="consumer_kpr" data-segment-label="KONSUMER - KPR" data-kanca="{{ $row['kanca'] ?? '' }}" data-unit="{{ $phUnitFilter }}" data-scope-label="{{ $phScopeLabel }}" style="background-color: {{ $blockBg }};">
+                            <td class="font-weight-bold text-uppercase" style="background-color: {{ $blockBg }}; color: #475569;">
+                                KONSUMER - KPR
+                            </td>
+
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['sisa_ph']['consumer_kpr'] != 0 ? number_format($row['sisa_ph']['consumer_kpr'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['recovery_yoy']['consumer_kpr'] != 0 ? number_format($row['recovery_yoy']['consumer_kpr'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['recovery_ytd']['consumer_kpr'] != 0 ? number_format($row['recovery_ytd']['consumer_kpr'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ $row['recovery_m1']['consumer_kpr'] != 0 ? number_format($row['recovery_m1']['consumer_kpr'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
+                                {{ $row['recovery_curr']['consumer_kpr'] != 0 ? number_format($row['recovery_curr']['consumer_kpr'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            <td class="text-right {{ $row['delta_yoy']['consumer_kpr'] < 0 ? 'negative-value' : ($row['delta_yoy']['consumer_kpr'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_yoy']['consumer_kpr'] != 0)
+                                    {{ $row['delta_yoy']['consumer_kpr'] > 0 ? '+' : '' }}{{ number_format($row['delta_yoy']['consumer_kpr'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+
+                            <td class="text-right {{ $row['delta_ytd']['consumer_kpr'] < 0 ? 'negative-value' : ($row['delta_ytd']['consumer_kpr'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_ytd']['consumer_kpr'] != 0)
+                                    {{ $row['delta_ytd']['consumer_kpr'] > 0 ? '+' : '' }}{{ number_format($row['delta_ytd']['consumer_kpr'], 0, ',', '.') }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+
+                            <td class="text-right {{ $row['delta_m1']['consumer_kpr'] < 0 ? 'negative-value' : ($row['delta_m1']['consumer_kpr'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
+                                @if($row['delta_m1']['consumer_kpr'] != 0)
+                                    {{ $row['delta_m1']['consumer_kpr'] > 0 ? '+' : '' }}{{ number_format($row['delta_m1']['consumer_kpr'], 0, ',', '.') }}
                                 @else
                                     -
                                 @endif
@@ -1206,9 +1325,14 @@
                         </tr>
 
                         {{-- TOTAL --}}
-                        <tr class="total-row" style="background-color: #eff6ff; font-weight: bold;">
+                        <tr class="total-row ph-nominatif-trigger" data-ph-nominatif-row data-period="{{ $selectedPeriod }}" data-segment="total" data-segment-label="TOTAL" data-kanca="{{ $row['kanca'] ?? '' }}" data-unit="{{ $phUnitFilter }}" data-scope-label="{{ $phScopeLabel }}" style="background-color: #eff6ff; font-weight: bold;">
                             <td class="font-weight-bold text-uppercase" style="background-color: #eff6ff; color: #1e3a8a;">
                                 TOTAL
+                            </td>
+
+                            {{-- SISA PH --}}
+                            <td class="text-right" style="background-color: #eff6ff; color: #1e3a8a;">
+                                {{ $row['sisa_ph']['total'] != 0 ? number_format($row['sisa_ph']['total'], 0, ',', '.') : '-' }}
                             </td>
                             
                             {{-- POSISI YoY --}}
@@ -1260,21 +1384,228 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="10" class="text-center py-5 text-muted">
+                            <td colspan="11" class="text-center py-5 text-muted">
                                 <i class="fas fa-info-circle mr-2"></i> Tidak ada data untuk periode yang dipilih.
                             </td>
                         </tr>
                     @endforelse
+
+                    @if(!empty($grandTotals))
+                        @foreach($phSegmentRows as $grandIndex => $segment)
+                            @php
+                                $segmentKey = $segment['key'];
+                                $isGrandTotalRow = $segmentKey === 'total';
+                                $grandBg = $isGrandTotalRow ? '#dbeafe' : '#eef6ff';
+                                $grandStickyBg = $isGrandTotalRow ? '#bfdbfe' : '#eaf2ff';
+                                $grandTextColor = '#0f3f86';
+                                $sisaValue = (float) data_get($grandTotals, "sisa_ph.$segmentKey", 0);
+                                $recoveryYoy = (float) data_get($grandTotals, "recovery_yoy.$segmentKey", 0);
+                                $recoveryYtd = (float) data_get($grandTotals, "recovery_ytd.$segmentKey", 0);
+                                $recoveryM1 = (float) data_get($grandTotals, "recovery_m1.$segmentKey", 0);
+                                $recoveryCurr = (float) data_get($grandTotals, "recovery_curr.$segmentKey", 0);
+                                $deltaYoy = (float) data_get($grandTotals, "delta_yoy.$segmentKey", 0);
+                                $deltaYtd = (float) data_get($grandTotals, "delta_ytd.$segmentKey", 0);
+                                $deltaM1 = (float) data_get($grandTotals, "delta_m1.$segmentKey", 0);
+                            @endphp
+
+                            <tr class="{{ $isGrandTotalRow ? 'total-row' : '' }}" style="background-color: {{ $grandBg }}; font-weight: {{ $isGrandTotalRow ? '800' : '700' }};">
+                                @if($grandIndex === 0)
+                                    <td rowspan="{{ count($phSegmentRows) }}" class="text-center sticky-col font-weight-bold" style="background-color: {{ $grandStickyBg }} !important; color: {{ $grandTextColor }}; z-index: 20;">
+                                        GT
+                                    </td>
+                                    <td rowspan="{{ count($phSegmentRows) }}" class="sticky-col font-weight-bold text-uppercase" style="left: 64px; background-color: {{ $grandStickyBg }} !important; color: {{ $grandTextColor }}; z-index: 20;">
+                                        {{ $isArea6AllSelected ? 'Grand Total Area 6' : 'Grand Total Tampilan' }}
+                                    </td>
+                                @endif
+
+                                <td class="font-weight-bold text-uppercase" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
+                                    {{ $segment['label'] }}
+                                </td>
+                                <td class="text-right" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
+                                    {{ $sisaValue != 0 ? number_format($sisaValue, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="text-right" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
+                                    {{ $recoveryYoy != 0 ? number_format($recoveryYoy, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="text-right" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
+                                    {{ $recoveryYtd != 0 ? number_format($recoveryYtd, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="text-right" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
+                                    {{ $recoveryM1 != 0 ? number_format($recoveryM1, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="text-right font-weight-bold" style="background-color: {{ $isGrandTotalRow ? '#bfdbfe' : $grandBg }}; color: {{ $grandTextColor }};">
+                                    {{ $recoveryCurr != 0 ? number_format($recoveryCurr, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="text-right {{ $deltaYoy < 0 ? 'negative-value' : ($deltaYoy > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $grandBg }};">
+                                    @if($deltaYoy != 0)
+                                        {{ $deltaYoy > 0 ? '+' : '' }}{{ number_format($deltaYoy, 0, ',', '.') }}
+                                    @else
+                                        -
+                                    @endif
+                                </td>
+                                <td class="text-right {{ $deltaYtd < 0 ? 'negative-value' : ($deltaYtd > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $grandBg }};">
+                                    @if($deltaYtd != 0)
+                                        {{ $deltaYtd > 0 ? '+' : '' }}{{ number_format($deltaYtd, 0, ',', '.') }}
+                                    @else
+                                        -
+                                    @endif
+                                </td>
+                                <td class="text-right {{ $deltaM1 < 0 ? 'negative-value' : ($deltaM1 > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $grandBg }};">
+                                    @if($deltaM1 != 0)
+                                        {{ $deltaM1 > 0 ? '+' : '' }}{{ number_format($deltaM1, 0, ',', '.') }}
+                                    @else
+                                        -
+                                    @endif
+                                </td>
+                            </tr>
+                        @endforeach
+                    @endif
                 </tbody>
             </table>
         </div>
 
-        @include('report.partials.sticky-table-viewport-script', [
-            'wrapperSelector' => '.kejar-laba-table-shell',
-            'tableSelector' => '.kejar-laba-table',
-            'visibleRowLimit' => 30
-        ])
     </div>
 </div>
+
+<div class="modal fade ph-nominatif-modal" id="phNominatifModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title mb-1" id="phNominatifTitle">Nominatif PH</h5>
+                    <div class="text-muted small" id="phNominatifMeta">-</div>
+                </div>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Tutup">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="ph-nominatif-summary" id="phNominatifSummary"></div>
+                <div class="ph-nominatif-table-wrap">
+                    <table class="table table-sm table-bordered ph-nominatif-table mb-0">
+                        <thead id="phNominatifHead">
+                            <tr><th>Memuat</th></tr>
+                        </thead>
+                        <tbody id="phNominatifBody">
+                            <tr><td class="text-center text-muted py-4">Double-click baris segmen untuk melihat nominatif.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const nominatifUrl = @json(route('report.dashboard-pinjaman.data-ph.nominatif'));
+        const modal = document.getElementById('phNominatifModal');
+        const title = document.getElementById('phNominatifTitle');
+        const meta = document.getElementById('phNominatifMeta');
+        const summary = document.getElementById('phNominatifSummary');
+        const head = document.getElementById('phNominatifHead');
+        const body = document.getElementById('phNominatifBody');
+        const numberFormatter = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 });
+
+        const escapeHtml = function (value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        };
+
+        const formatCell = function (value, column) {
+            if (value === null || value === undefined || value === '') {
+                return '-';
+            }
+
+            if (column.type === 'number' && !Number.isNaN(Number(value))) {
+                return numberFormatter.format(Number(value));
+            }
+
+            return escapeHtml(value);
+        };
+
+        const openModal = function () {
+            if (window.jQuery && modal) {
+                window.jQuery(modal).modal('show');
+            }
+        };
+
+        const renderLoading = function (trigger) {
+            title.textContent = 'Nominatif PH - ' + (trigger.dataset.segmentLabel || '-');
+            meta.textContent = [trigger.dataset.scopeLabel || '-', trigger.dataset.period || '-'].filter(Boolean).join(' | ');
+            summary.innerHTML = '<span>Memuat data LW325 PH...</span>';
+            head.innerHTML = '<tr><th>Memuat</th></tr>';
+            body.innerHTML = '<tr><td class="text-center text-muted py-4">Mengambil nominatif...</td></tr>';
+        };
+
+        const renderPayload = function (payload) {
+            const columns = payload.columns || [];
+            const rows = payload.rows || [];
+            const totalCount = Number(payload.total_count || 0);
+            const displayCount = Number(payload.display_count || rows.length);
+            const totalPokok = Number(payload.total_pokok || 0);
+
+            summary.innerHTML = [
+                '<span>Rekening: ' + numberFormatter.format(totalCount) + '</span>',
+                '<span>Ditampilkan: ' + numberFormatter.format(displayCount) + '</span>',
+                '<span>Total Pokok: ' + numberFormatter.format(totalPokok) + '</span>'
+            ].join('');
+
+            if (!columns.length || !rows.length) {
+                head.innerHTML = '<tr><th>Nominatif</th></tr>';
+                body.innerHTML = '<tr><td class="text-center text-muted py-4">Tidak ada nominatif untuk scope ini.</td></tr>';
+                return;
+            }
+
+            head.innerHTML = '<tr>' + columns.map(function (column) {
+                return '<th>' + escapeHtml(column.label || column.key) + '</th>';
+            }).join('') + '</tr>';
+
+            body.innerHTML = rows.map(function (row) {
+                return '<tr>' + columns.map(function (column) {
+                    const align = column.type === 'number' ? ' text-right' : '';
+                    return '<td class="' + align.trim() + '">' + formatCell(row[column.key], column) + '</td>';
+                }).join('') + '</tr>';
+            }).join('');
+        };
+
+        document.querySelectorAll('[data-ph-nominatif-row]').forEach(function (row) {
+            row.addEventListener('dblclick', function () {
+                const params = new URLSearchParams({
+                    periode: row.dataset.period || '',
+                    segment: row.dataset.segment || 'total',
+                    kanca: row.dataset.kanca || '',
+                    unit_kerja: row.dataset.unit || 'all'
+                });
+
+                renderLoading(row);
+                openModal();
+
+                fetch(nominatifUrl + '?' + params.toString(), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                    .then(function (response) {
+                        if (!response.ok) {
+                            return response.text().then(function (text) {
+                                throw new Error(text || 'Gagal mengambil nominatif PH.');
+                            });
+                        }
+
+                        return response.json();
+                    })
+                    .then(renderPayload)
+                    .catch(function (error) {
+                        summary.innerHTML = '<span>Gagal memuat</span>';
+                        head.innerHTML = '<tr><th>Error</th></tr>';
+                        body.innerHTML = '<tr><td class="text-center text-danger py-4">' + escapeHtml(error.message || error) + '</td></tr>';
+                    });
+            });
+        });
+    });
+</script>
 @endsection
 

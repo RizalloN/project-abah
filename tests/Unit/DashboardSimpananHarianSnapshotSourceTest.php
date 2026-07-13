@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Http\Controllers\DashboardSimpananController;
 use App\Support\DashboardDanaService;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -172,6 +173,68 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $this->assertEqualsWithDelta(1_100_000_000, $madiunTotal['selected'], 0.01);
         $this->assertSame('2026-05-19', $service->fetchPeriods()->first());
         $this->assertSame(['Ritel', 'Mikro', 'Wholesale'], $service->fetchCategories());
+    }
+
+    public function test_dashboard_dana_branch_scope_groups_rows_by_segment(): void
+    {
+        DB::table('dashboard_harian_snapshots')->insert([
+            $this->summaryRow('2025-12-31', 'KC Madiun', 0, 0, 9, 0, [
+                'giro_ritel' => 10,
+                'tabungan_ritel' => 20,
+                'deposito_ritel' => 30,
+                'simpanan_ritel' => 60,
+                'giro_mikro' => 1,
+                'tabungan_mikro' => 2,
+                'deposito_mikro' => 3,
+                'simpanan_mikro' => 6,
+                'giro_wholesale' => 4,
+                'tabungan_wholesale' => 0,
+                'deposito_wholesale' => 5,
+                'simpanan_wholesale' => 9,
+            ]),
+            $this->summaryRow('2026-04-30', 'KC Madiun', 0, 0, 10, 0, [
+                'giro_ritel' => 100,
+                'tabungan_ritel' => 200,
+                'deposito_ritel' => 300,
+                'simpanan_ritel' => 600,
+                'giro_mikro' => 10,
+                'tabungan_mikro' => 20,
+                'deposito_mikro' => 30,
+                'simpanan_mikro' => 60,
+                'giro_wholesale' => 40,
+                'tabungan_wholesale' => 0,
+                'deposito_wholesale' => 50,
+                'simpanan_wholesale' => 90,
+            ]),
+            $this->summaryRow('2026-05-19', 'KC Madiun', 0, 0, 11, 0, [
+                'giro_ritel' => 110,
+                'tabungan_ritel' => 220,
+                'deposito_ritel' => 330,
+                'simpanan_ritel' => 660,
+                'giro_mikro' => 11,
+                'tabungan_mikro' => 22,
+                'deposito_mikro' => 33,
+                'simpanan_mikro' => 66,
+                'giro_wholesale' => 44,
+                'tabungan_wholesale' => 0,
+                'deposito_wholesale' => 55,
+                'simpanan_wholesale' => 99,
+            ]),
+        ]);
+        DB::table('dashboard_harian_snapshots')->insert($this->summaryRow('2026-05-19', 'KC Magetan', 9_999, 0, 22, 0));
+
+        $service = app(DashboardDanaService::class);
+        $payload = $service->getDashboardData('2026-05-19', 'all', null, 'KC Madiun');
+        $rows = collect($payload['rows']);
+
+        $this->assertSame('branch', $payload['scope']);
+        $this->assertSame('KC MADIUN', $payload['scope_label']);
+        $this->assertSame(['RITEL', 'MIKRO', 'WHOLESALE'], $rows->where('is_total', true)->pluck('nama_cabang')->values()->all());
+        $this->assertEqualsWithDelta(660, $rows->firstWhere('nama_cabang', 'RITEL')['selected'], 0.01);
+        $this->assertEqualsWithDelta(66, $rows->firstWhere('nama_cabang', 'MIKRO')['selected'], 0.01);
+        $this->assertEqualsWithDelta(99, $rows->firstWhere('nama_cabang', 'WHOLESALE')['selected'], 0.01);
+        $this->assertEqualsWithDelta(825, $payload['total']['selected'], 0.01);
+        $this->assertArrayHasKey('KC Madiun', $service->fetchBranches());
     }
 
     public function test_area6_portfolio_exposes_cabang_ritel_and_micro_scopes(): void
@@ -467,7 +530,22 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $cards = collect($payload['summary']['cards'])->keyBy('key');
         $series = collect($payload['timeseries']['series'])->keyBy('key');
 
-        $this->assertSame(['meta', 'assets', 'summary', 'performance_overview', 'timeseries', 'cover_card_timeseries', 'micro', 'quality', 'kts', 'digital_strategy'], array_keys($payload));
+        $this->assertSame([
+            'meta',
+            'assets',
+            'summary',
+            'performance_overview',
+            'timeseries',
+            'cover_card_timeseries',
+            'savings_breakdown',
+            'loan_products',
+            'financial_highlights',
+            'executive_summary',
+            'micro',
+            'quality',
+            'kts',
+            'digital_strategy',
+        ], array_keys($payload));
         $this->assertSame('Area 6 - Region Malang', $payload['meta']['title']);
         $this->assertSame('2026-05-19', $payload['meta']['period']);
         $this->assertTrue($cards->get('simpanan')['available']);
@@ -498,6 +576,52 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $this->assertSame([], $payload['kts']['ritel']);
         $this->assertSame([], $payload['kts']['micro']);
         $this->assertCount(8, $payload['digital_strategy']['cards']);
+    }
+
+    public function test_presentation_data_fresh_request_rebuilds_cached_payload(): void
+    {
+        DB::table('dashboard_harian_snapshots')->insert($this->summaryRow(
+            '2026-05-19',
+            'KC Madiun',
+            1_000_000_000,
+            2_000_000_000,
+            10,
+            20
+        ));
+
+        $controller = new DashboardSimpananController();
+        $cachedResponse = $controller->presentationData(Request::create('/dashboard/presentation-data', 'GET', [
+            'periode' => '2026-05-19',
+        ]));
+        $cachedPayload = $cachedResponse->getData(true);
+        $cachedCards = collect($cachedPayload['summary']['cards'])->keyBy('key');
+
+        $this->assertEqualsWithDelta(1_000_000_000, $cachedCards->get('simpanan')['value_raw'], 0.01);
+
+        DB::table('dashboard_harian_snapshots')
+            ->where('snapshot_period', '2026-05-19')
+            ->update([
+                'total_simpanan' => 1_750_000_000,
+                'tabungan_ritel' => 1_750_000_000,
+            ]);
+
+        $freshResponse = $controller->presentationData(Request::create('/dashboard/presentation-data', 'GET', [
+            'periode' => '2026-05-19',
+            'fresh' => '1',
+            '_ts' => 'test',
+        ]));
+        $freshPayload = $freshResponse->getData(true);
+        $freshCards = collect($freshPayload['summary']['cards'])->keyBy('key');
+
+        $this->assertEqualsWithDelta(1_750_000_000, $freshCards->get('simpanan')['value_raw'], 0.01);
+
+        $refreshedResponse = $controller->presentationData(Request::create('/dashboard/presentation-data', 'GET', [
+            'periode' => '2026-05-19',
+        ]));
+        $refreshedPayload = $refreshedResponse->getData(true);
+        $refreshedCards = collect($refreshedPayload['summary']['cards'])->keyBy('key');
+
+        $this->assertEqualsWithDelta(1_750_000_000, $refreshedCards->get('simpanan')['value_raw'], 0.01);
     }
 
     private function summaryRow(string $period, string $branch, int $simpanan, int $pinjaman, int $savingsRows, int $loanRows, array $extra = []): array

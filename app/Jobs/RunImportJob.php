@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Services\Import\ImportExecutionService;
+use App\Services\Import\ImportProgressService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -41,6 +42,33 @@ class RunImportJob implements ShouldQueue
             ]);
 
             throw $e;
+        }
+    }
+
+    public function failed(\Throwable $exception): void
+    {
+        try {
+            $progressService = app(ImportProgressService::class);
+            $job = $progressService->findJob($this->jobId);
+            if (!$job || in_array((string) ($job->status ?? ''), ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
+                return;
+            }
+
+            $success = (int) ($job->total_success ?? 0);
+            $failed = (int) ($job->total_failed ?? 0);
+            $progressService->markFailed(
+                $this->jobId,
+                'Worker queue berhenti sebelum import selesai: ' . $exception->getMessage(),
+                $success,
+                $failed,
+                $success > 0 || $failed > 0 ? 'failed_partial' : 'failed'
+            );
+        } catch (\Throwable $markError) {
+            Log::error('RunImportJob gagal menandai import sebagai failed.', [
+                'job_id' => $this->jobId,
+                'exception' => $markError::class,
+                'message' => $markError->getMessage(),
+            ]);
         }
     }
 }

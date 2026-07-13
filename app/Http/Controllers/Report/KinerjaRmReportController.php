@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\SyncImportedReportJob;
+use App\Support\LoanQualityBucketMapper;
 use App\Support\RkaLookupService;
 use App\Support\ReportCacheVersion;
 use App\Support\StrictDateParser;
@@ -31,6 +32,10 @@ class KinerjaRmReportController extends Controller
     
     private const AVAILABLE_SEGMENTS = ['CONSUMER', 'SMALL'];
     private const DEFAULT_SEGMENT = 'CONSUMER';
+    private const SMALL_RM_CATEGORIES = [
+        'KC' => 'RM KC',
+        'KCP' => 'RM KCP',
+    ];
     private const CONSUMER_MONTHLY_TARGETS = [
         'ARISSULISTYAWAN' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
         'ZULFAENDYCRISMANA' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
@@ -65,14 +70,35 @@ class KinerjaRmReportController extends Controller
         $selectedCabang = $this->resolveSelectedCabang($availableCabangs, $request->input('cabang1'));
 
         $selectedProduct = $this->resolveSelectedProduct($request->input('produk'), $selectedSegmen);
+        $selectedRmCategory = $this->resolveSelectedRmCategory($selectedSegmen, $request->input('kategori_rm'));
 
         $currentDate = Carbon::parse($selectedPeriod);
-        $comparisonPeriods = $this->resolveKinerjaComparisonPeriods($availablePeriods, $selectedPeriod);
+        $comparisonPeriods = $this->resolveKinerjaComparisonPeriods($this->fetchComparisonPeriods(), $selectedPeriod);
         $realisasiPeriod = $this->resolveKinerjaRealisasiPeriod($selectedPeriod, $comparisonPeriods);
 
-        $osRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $comparisonPeriods, $realisasiPeriod, $selectedCabang, $selectedProduct);
-        $smlRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $comparisonPeriods, $realisasiPeriod, $selectedCabang, $selectedProduct, 'sml');
-        $nplRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $comparisonPeriods, $realisasiPeriod, $selectedCabang, $selectedProduct, 'npl');
+        $osRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $comparisonPeriods, $realisasiPeriod, $selectedCabang, $selectedProduct, null, $selectedRmCategory);
+        $detailedQualityRows = $this->fetchDetailedQualityRows(
+            $selectedSegmen,
+            $selectedPeriod,
+            $comparisonPeriods,
+            $selectedCabang,
+            $selectedProduct,
+            $selectedRmCategory
+        );
+        $qualitySeries = ['os' => $osRows];
+        foreach (['lr', 'sml_1', 'sml_2', 'sml_3', 'kl', 'd1', 'd2', 'm', 'lar'] as $qualityType) {
+            $qualitySeries[$qualityType] = $this->fetchBranchRows(
+                $selectedSegmen,
+                $selectedPeriod,
+                $comparisonPeriods,
+                $realisasiPeriod,
+                $selectedCabang,
+                $selectedProduct,
+                $qualityType,
+                $selectedRmCategory,
+                $detailedQualityRows
+            );
+        }
         $nextMonth = $currentDate->copy()->addMonthNoOverflow();
 
         $productOptions = self::SEGMENT_PRODUCT_MAP[$selectedSegmen] ?? [];
@@ -94,6 +120,8 @@ class KinerjaRmReportController extends Controller
             'selectedCabangLabel' => $selectedCabang !== null ? $selectedCabang : 'Semua Cabang',
             'selectedProduct' => $selectedProduct,
             'selectedProductLabel' => $selectedProduct ?? 'Semua Produk',
+            'availableRmCategories' => self::SMALL_RM_CATEGORIES,
+            'selectedRmCategory' => $selectedRmCategory,
             'comparisonColumns' => array_values($comparisonPeriods),
             'comparisonPeriods' => $comparisonPeriods,
             'realisasiPeriod' => $realisasiPeriod,
@@ -102,10 +130,7 @@ class KinerjaRmReportController extends Controller
             'nextMonthLabel' => $nextMonth->format('M-y'),
             'rows' => $osRows['rows'],
             'total' => $osRows['total'],
-            'qualityRowsSml' => $smlRows['rows'],
-            'qualityTotalSml' => $smlRows['total'],
-            'qualityRowsNpl' => $nplRows['rows'],
-            'qualityTotalNpl' => $nplRows['total'],
+            'qualitySeries' => $qualitySeries,
             'formatAmount' => fn ($value, int $decimals = 1) => $this->formatAmountInJuta($value, $decimals),
             'formatSignedAmount' => fn ($value, bool $showArrow = true, int $decimals = 1) => $this->formatSignedAmountInJuta($value, $showArrow, $decimals),
             'formatCount' => fn ($value) => $this->formatCount($value),
@@ -154,6 +179,7 @@ class KinerjaRmReportController extends Controller
                     'rm' => $rm,
                     'segmen' => $segmen,
                     'details' => $smallDetails,
+                    'smallSummariesByYear' => $this->buildSmallHistorySummaries($smallDetails, (string) $selectedPeriod),
                     'historyRangeLabel' => $historyRangeLabel,
                     'selectedHistoryYear' => $selectedHistoryYear,
                     'formatAmount' => fn ($value, int $decimals = 0) => $this->formatAmountInJuta($value, $decimals),
@@ -269,6 +295,7 @@ class KinerjaRmReportController extends Controller
         $realisasiDateColumn = Schema::hasColumn(self::SOURCE_TABLE, 'tgl_realisasi1')
             ? 'tgl_realisasi1'
             : 'tgl_realisasi';
+        $realisasiDateExpression = $this->performanceRmEffectiveRealisasiDateSql($realisasiDateColumn, 'periode');
 
         $dbRows = DB::table(self::SOURCE_TABLE)
             ->whereIn('periode', $targetPeriods)
@@ -282,7 +309,7 @@ class KinerjaRmReportController extends Controller
             ->selectRaw('SUM(CASE WHEN kolek > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os')
             ->selectRaw("SUM(CASE WHEN kolek = 1 AND UPPER(TRIM(COALESCE(flag_restruk, ''))) = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
             ->selectRaw(
-                "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN DATE_FORMAT(periode, \"%Y-%m-01\") AND periode THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os"
+                "SUM(CASE WHEN {$realisasiDateExpression} BETWEEN DATE_FORMAT(periode, \"%Y-%m-01\") AND periode THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os"
             )
             ->groupBy('periode', 'cabang')
             ->get();
@@ -323,6 +350,46 @@ class KinerjaRmReportController extends Controller
         ])->values();
     }
 
+    private function buildSmallHistorySummaries(Collection $details, string $selectedPeriod): array
+    {
+        $closedThrough = $this->smallClosedThroughDate($selectedPeriod);
+
+        return $details
+            ->filter(function (array $detail) use ($closedThrough): bool {
+                $period = Carbon::parse((string) ($detail['periode_raw'] ?? ''));
+
+                return $period->lte($closedThrough) && $period->isLastOfMonth();
+            })
+            ->groupBy(fn (array $detail): string => (string) ($detail['year'] ?? Carbon::parse($detail['periode_raw'])->year))
+            ->map(function (Collection $yearDetails): array {
+                $monthlyDetails = $yearDetails
+                    ->groupBy(fn (array $detail): string => (string) $detail['periode_raw'])
+                    ->sortKeys();
+                $monthCount = $monthlyDetails->count();
+                $ratasRealisasiOs = $monthCount > 0
+                    ? ((float) $monthlyDetails->sum(fn (Collection $month): float => (float) $month->sum('realisasi_os'))) / $monthCount
+                    : 0.0;
+                $lastClosedPeriod = (string) $monthlyDetails->keys()->last();
+                $lastClosedDetails = $monthlyDetails->get($lastClosedPeriod, collect());
+                $loanOs = (float) $lastClosedDetails->sum('loan_os');
+                $larValue = (float) $lastClosedDetails->sum('lar_value');
+                $larPct = $loanOs > 0 ? ($larValue / $loanOs) * 100 : 0.0;
+
+                return [
+                    'month_count' => $monthCount,
+                    'closed_period' => $lastClosedPeriod,
+                    'closed_period_label' => $lastClosedPeriod !== ''
+                        ? Carbon::parse($lastClosedPeriod)->translatedFormat('M Y')
+                        : '-',
+                    'realisasi_os' => $ratasRealisasiOs,
+                    'penc_realisasi' => ($ratasRealisasiOs / 1000000) >= 1600 ? 'A' : 'B',
+                    'pct_lar' => $larPct,
+                    'penc_lar' => $larPct < 17.5 ? 'A' : 'B',
+                ];
+            })
+            ->all();
+    }
+
     private function smallRmLookupKeys(string $rm): array
     {
         $normalized = strtoupper(trim($rm));
@@ -333,6 +400,11 @@ class KinerjaRmReportController extends Controller
         }
 
         return array_values(array_unique(array_filter($keys)));
+    }
+
+    private function performanceRmEffectiveRealisasiDateSql(string $dateColumn, string $periodColumn): string
+    {
+        return $dateColumn;
     }
 
     private function fetchConsumerNetDisbursementHistoryDetails(string $rm, string $selectedPeriod): Collection
@@ -415,13 +487,6 @@ class KinerjaRmReportController extends Controller
             }
         }
 
-        $selectedPreviousPeriod = $this->resolvePreviousMonthSourcePeriod($selectedPeriod);
-        if ($selectedPreviousPeriod !== null) {
-            $details = $details->merge(
-                $this->fetchConsumerSurplusAccountDetails($rmKeys, $selectedPeriod, $selectedPreviousPeriod, $target)
-            );
-        }
-
         return $details->sortBy([
             ['periode_raw', 'asc'],
             ['is_summary', 'desc'],
@@ -451,6 +516,7 @@ class KinerjaRmReportController extends Controller
         $realisasiDateColumn = Schema::hasColumn(self::SOURCE_TABLE, 'tgl_realisasi1')
             ? 'tgl_realisasi1'
             : 'tgl_realisasi';
+        $realisasiDateExpression = $this->performanceRmEffectiveRealisasiDateSql($realisasiDateColumn, 'periode');
 
         $currentRows = DB::table(self::SOURCE_TABLE)
             ->where('periode', $period)
@@ -470,7 +536,7 @@ class KinerjaRmReportController extends Controller
             ->selectRaw('nomor_rekening1')
             ->selectRaw('MAX(nama_debitur1) as nama_debitur1')
             ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as current_os')
-            ->selectRaw("MAX(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN 1 ELSE 0 END) as is_current_month_realization", [$periodStart, $period])
+            ->selectRaw("MAX(CASE WHEN {$realisasiDateExpression} BETWEEN ? AND ? THEN 1 ELSE 0 END) as is_current_month_realization", [$periodStart, $period])
             ->groupByRaw("COALESCE(cabang_normalized, UPPER(TRIM(cabang1)), ''), COALESCE(unit_normalized, UPPER(TRIM(unit1)), ''), COALESCE(branch_normalized, ''), COALESCE(rm_normalized, UPPER(TRIM(pn_pengelola1)), ''), {$productSql}, UPPER(TRIM(nomor_rekening1)), nomor_rekening1")
             ->get();
 
@@ -589,6 +655,19 @@ class KinerjaRmReportController extends Controller
         });
     }
 
+    private function fetchComparisonPeriods(): Collection
+    {
+        $cacheKey = 'kinerja_rm_comparison_periods_v1:' . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, 600, function () {
+            return $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode')
+                ->merge($this->fetchPeriodList(self::SOURCE_TABLE, 'periode'))
+                ->unique()
+                ->sortDesc()
+                ->values();
+        });
+    }
+
     private function fetchAvailableCabangsBySegmen(string $segmen): Collection
     {
         $cacheKey = 'kinerja_rm_cabangs_v3:' . $this->reportCacheVersion() . ':' . $segmen;
@@ -690,6 +769,33 @@ class KinerjaRmReportController extends Controller
         return null;
     }
 
+    private function resolveSelectedRmCategory(string $segmen, ?string $requestedCategory): ?string
+    {
+        if ($segmen !== 'SMALL') {
+            return null;
+        }
+
+        $normalized = strtoupper(trim((string) $requestedCategory));
+
+        return array_key_exists($normalized, self::SMALL_RM_CATEGORIES)
+            ? $normalized
+            : null;
+    }
+
+    private function resolveSmallRmCategory(?string $unit): string
+    {
+        return str_starts_with(strtoupper(trim((string) $unit)), 'KCP') ? 'KCP' : 'KC';
+    }
+
+    private function kinerjaRmGroupKey(string $rmName, ?string $rmCategory, ?string $rmUnit = null): string
+    {
+        if ($rmUnit !== null && trim($rmUnit) !== '') {
+            return $rmName . '|' . strtoupper(trim($rmUnit));
+        }
+
+        return $rmCategory !== null ? $rmName . '|' . $rmCategory : $rmName;
+    }
+
     private function resolveClosestPeriod(Collection $periods, Carbon $target): ?string
     {
         $targetDate = $target->toDateString();
@@ -720,9 +826,8 @@ class KinerjaRmReportController extends Controller
     {
         $currentDate = Carbon::parse($selectedPeriod);
         $definitions = [
+            'yoy' => ['target' => $currentDate->copy()->subYearNoOverflow(), 'same_month' => true],
             'ytd' => ['label' => 'YTD', 'target' => $currentDate->copy()->subYear()->endOfYear(), 'same_month' => false],
-            'm4' => ['label' => 'M-4', 'target' => $currentDate->copy()->subMonthsNoOverflow(4)->endOfMonth(), 'same_month' => true],
-            'm3' => ['label' => 'M-3', 'target' => $currentDate->copy()->subMonthsNoOverflow(3)->endOfMonth(), 'same_month' => true],
             'm2' => ['label' => 'M-2', 'target' => $currentDate->copy()->subMonthsNoOverflow(2)->endOfMonth(), 'same_month' => true],
             'm1' => ['label' => 'M-1', 'target' => $currentDate->copy()->subMonthNoOverflow()->endOfMonth(), 'same_month' => true],
         ];
@@ -759,7 +864,9 @@ class KinerjaRmReportController extends Controller
         string $realisasiPeriod,
         ?string $selectedCabang = null,
         ?string $selectedProduct = null,
-        ?string $qualityType = null
+        ?string $qualityType = null,
+        ?string $selectedRmCategory = null,
+        ?Collection $detailedQualityRows = null
     ): array
     {
         $comparisonPeriodValues = collect($comparisonPeriods)
@@ -768,7 +875,7 @@ class KinerjaRmReportController extends Controller
         $comparisonKeys = array_keys($comparisonPeriodValues);
         $emptyComparisonValues = array_fill_keys($comparisonKeys, 0.0);
 
-        $cacheKey = 'kinerja_rm_rows_v18-consumer-account-os-delta:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_rows_v23-quality-series-without-realisasi-filter:' . $this->reportCacheVersion() . ':' . md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'comparisons' => $comparisonPeriodValues,
@@ -776,9 +883,11 @@ class KinerjaRmReportController extends Controller
             'cabang' => $selectedCabang,
             'produk' => $selectedProduct,
             'quality' => $qualityType,
+            'rm_category' => $selectedRmCategory,
+            'quality_source' => $detailedQualityRows !== null ? 'daily-loan-bucket-v1' : 'snapshot',
         ]));
 
-        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $comparisonPeriodValues, $comparisonKeys, $emptyComparisonValues, $realisasiPeriod, $selectedCabang, $selectedProduct, $qualityType) {
+        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $comparisonPeriodValues, $comparisonKeys, $emptyComparisonValues, $realisasiPeriod, $selectedCabang, $selectedProduct, $qualityType, $selectedRmCategory, $detailedQualityRows) {
             if ($segmen === 'CONSUMER'
                 && Schema::hasTable(self::SOURCE_TABLE)
                 && Schema::hasColumn(self::SOURCE_TABLE, 'segmen_kinerja')
@@ -792,6 +901,7 @@ class KinerjaRmReportController extends Controller
                         'rm' => 'TOTAL',
                         'curr' => 0.0,
                         'curr_deb' => 0,
+                        'loan_os_reference' => 0.0,
                         'yoy' => 0.0,
                         'ytd' => 0.0,
                         'mtd' => 0.0,
@@ -811,9 +921,11 @@ class KinerjaRmReportController extends Controller
                 ];
             }
 
-            $averagePeriods = in_array($segmen, ['SMALL', 'CONSUMER'], true)
-                ? $this->resolveAveragePeriodsInScope($realisasiPeriod, $segmen, $selectedCabang, $selectedProduct)
-                : [$realisasiPeriod];
+            $averagePeriods = match ($segmen) {
+                'SMALL' => $this->resolveSmallClosedPeriodsInScope($realisasiPeriod, $segmen, $selectedCabang, $selectedProduct),
+                'CONSUMER' => $this->resolveAveragePeriodsInScope($realisasiPeriod, $segmen, $selectedCabang, $selectedProduct),
+                default => [$realisasiPeriod],
+            };
             if ($segmen === 'CONSUMER'
                 && Schema::hasTable(self::SOURCE_TABLE)
                 && Schema::hasColumn(self::SOURCE_TABLE, 'segmen_kinerja')
@@ -823,8 +935,9 @@ class KinerjaRmReportController extends Controller
                     fn (string $period): bool => $this->resolvePreviousMonthSourcePeriod($period) !== null
                 ));
             }
+            $lastAveragePeriod = $averagePeriods !== [] ? $averagePeriods[array_key_last($averagePeriods)] : null;
             $larPeriod = $segmen === 'SMALL'
-                ? $this->resolveLatestPeriodInYearScope($selectedPeriod, $segmen, $selectedCabang, $selectedProduct)
+                ? $lastAveragePeriod
                 : ($this->resolveLatestPeriodInScope($selectedPeriod, $segmen, $selectedCabang, $selectedProduct) ?? $selectedPeriod);
             $periods = array_values(array_unique(array_filter([
                 $selectedPeriod,
@@ -836,7 +949,7 @@ class KinerjaRmReportController extends Controller
 
             $selectedProductValues = $this->snapshotProductFilterValues($selectedProduct, $segmen);
 
-            $dbRows = DB::table(self::SNAPSHOT_TABLE)
+            $dbRows = $detailedQualityRows ?? DB::table(self::SNAPSHOT_TABLE)
                 ->whereIn('periode', $periods)
                 ->where('segmen', $segmen)
                 ->when($selectedProductValues !== [], function ($query) use ($selectedProductValues) {
@@ -844,6 +957,12 @@ class KinerjaRmReportController extends Controller
                 })
                 ->when($selectedCabang !== null, function ($query) use ($selectedCabang) {
                     $query->where('cabang', $selectedCabang);
+                })
+                ->when($segmen === 'SMALL' && $selectedRmCategory === 'KCP', function ($query) {
+                    $query->whereRaw("UPPER(TRIM(COALESCE(unit, ''))) LIKE 'KCP%'");
+                })
+                ->when($segmen === 'SMALL' && $selectedRmCategory === 'KC', function ($query) {
+                    $query->whereRaw("UPPER(TRIM(COALESCE(unit, ''))) NOT LIKE 'KCP%'");
                 })
                 ->get();
 
@@ -858,6 +977,7 @@ class KinerjaRmReportController extends Controller
             $branches = [];
             $grandTotals = [
                 'curr' => 0.0, 'curr_deb' => 0, 'yoy' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
+                'loan_os_reference' => 0.0,
                 'comparison_values' => $emptyComparisonValues,
                 'target_jg_deb' => 0, 'target_jg_os' => 0.0,
                 'ach_deb' => 0, 'ach_os' => 0.0,
@@ -871,20 +991,35 @@ class KinerjaRmReportController extends Controller
                 $cabKey = $this->normalizeCabangKey($row->cabang);
                 $rmKey = trim(strtoupper((string)$row->rm));
                 $prodKey = $this->normalizeProductLabel((string) $row->produk, $segmen) ?? strtoupper(trim((string) $row->produk));
-                $key = "{$cabKey}|{$rmKey}|{$prodKey}";
+                $rmUnit = $segmen === 'SMALL' ? strtoupper(trim((string) ($row->unit ?? ''))) : null;
+                $rmCategory = $segmen === 'SMALL' ? $this->resolveSmallRmCategory($rmUnit) : null;
+                $key = "{$cabKey}|{$rmUnit}|{$rmKey}|{$prodKey}";
 
-                $val = (float) match($qualityType) {
+                $val = (float) match ($qualityType) {
+                    'sml_1' => $row->sml_1_os ?? 0,
+                    'sml_2' => $row->sml_2_os ?? 0,
+                    'sml_3' => $row->sml_3_os ?? 0,
+                    'kl' => $row->kl_os ?? 0,
+                    'd1' => $row->d1_os ?? 0,
+                    'd2' => $row->d2_os ?? 0,
+                    'm' => $row->m_os ?? 0,
+                    'lancar_non_restruk' => (float) $row->lancar_os - (float) $row->restruk_os,
+                    'lr' => $row->restruk_os,
                     'sml' => $row->sml_os,
                     'npl' => $row->npl_os,
-                    default => $row->loan_os
+                    'lar' => (float) $row->restruk_os + (float) $row->sml_os + (float) $row->npl_os,
+                    default => $row->loan_os,
                 };
 
                 $pivoted[$key] ??= [
                     'cabang' => $row->cabang,
                     'rm' => $row->rm,
+                    'rm_category' => $rmCategory,
+                    'rm_unit' => $rmUnit,
                     'produk' => $row->produk,
                     'quadrant' => null,
                     'curr' => 0.0, 'curr_deb' => 0, 'yoy' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
+                    'loan_os_reference' => 0.0,
                     'comparison_values' => $emptyComparisonValues,
                     'realisasi_deb' => 0, 'realisasi_os' => 0.0,
                     'realisasi_deb_sum' => 0.0, 'realisasi_os_sum' => 0.0,
@@ -897,6 +1032,7 @@ class KinerjaRmReportController extends Controller
                 if ($row->periode === $selectedPeriod) {
                     $pivoted[$key]['curr'] += $val;
                     $pivoted[$key]['curr_deb'] += (int)$row->total_deb;
+                    $pivoted[$key]['loan_os_reference'] += (float) $row->loan_os;
                     $quadrant = $row->quadrant ?? null;
                     $pivoted[$key]['quadrant'] ??= $quadrant;
                 }
@@ -921,7 +1057,7 @@ class KinerjaRmReportController extends Controller
                     $pivoted[$key]['quadrant_realisasi_os_sum'] += $realisasiOs;
                     $quadrant = $row->quadrant ?? null;
 
-                    if ($quadrant !== null && $row->periode === end($averagePeriods)) {
+                    if ($quadrant !== null && $row->periode === $lastAveragePeriod) {
                         $pivoted[$key]['quadrant'] = $quadrant;
                     }
                 }
@@ -948,15 +1084,25 @@ class KinerjaRmReportController extends Controller
             }
 
             $smallQuadrantsByRm = $segmen === 'SMALL'
-                ? $this->calculateSmallQuadrantsByRm($pivoted, $selectedPeriod)
+                ? $this->calculateSmallQuadrantsByRm($pivoted, count($averagePeriods))
                 : [];
 
             foreach ($pivoted as $data) {
                 $cabangName = $data['cabang'];
                 $rmName = $this->mapRmName($data['rm']);
+                $rmCategory = $data['rm_category'] ?? null;
+                $rmUnit = $data['rm_unit'] ?? null;
+                $rmGroupKey = $this->kinerjaRmGroupKey($rmName, $rmCategory, $rmUnit);
                 $productLabel = $this->normalizeProductLabel($data['produk'], $segmen);
 
                 if ($rmName === '' || $productLabel === null) continue;
+
+                if ($qualityType === null
+                    && $segmen === 'SMALL'
+                    && abs((float) ($data['realisasi_os_sum'] ?? 0)) <= 0.001
+                    && abs((float) ($data['realisasi_deb_sum'] ?? 0)) <= 0.001) {
+                    continue;
+                }
 
                 // Check if all performance OS values are strictly zero
                 $hasPerformanceValue = abs((float) $data['curr']) > 0.001;
@@ -974,7 +1120,7 @@ class KinerjaRmReportController extends Controller
                 }
 
                 $quadrant = $segmen === 'SMALL'
-                    ? ($smallQuadrantsByRm[$rmName] ?? $data['quadrant'])
+                    ? ($smallQuadrantsByRm[$rmGroupKey] ?? $data['quadrant'])
                     : $data['quadrant'];
 
                 $cabangKey = $this->normalizeCabangKey($cabangName);
@@ -984,6 +1130,7 @@ class KinerjaRmReportController extends Controller
                         'rms' => [],
                         'subtotal' => [
                             'curr' => 0.0, 'curr_deb' => 0, 'yoy' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
+                            'loan_os_reference' => 0.0,
                             'comparison_values' => $emptyComparisonValues,
                             'target_jg_deb' => 0, 'target_jg_os' => 0.0,
                             'ach_deb' => 0, 'ach_os' => 0.0,
@@ -994,9 +1141,11 @@ class KinerjaRmReportController extends Controller
                     ];
                 }
 
-                if (!isset($branches[$cabangKey]['rms'][$rmName])) {
-                    $branches[$cabangKey]['rms'][$rmName] = [
+                if (!isset($branches[$cabangKey]['rms'][$rmGroupKey])) {
+                    $branches[$cabangKey]['rms'][$rmGroupKey] = [
                         'rm' => $rmName,
+                        'rm_category' => $rmCategory,
+                        'rm_unit' => $rmUnit,
                         'items' => [],
                         'rm_rowspan' => 0,
                         'quadrant' => $quadrant,
@@ -1008,10 +1157,16 @@ class KinerjaRmReportController extends Controller
                 $target = $this->resolveManualTargetForProduct($manualTargets, $productLabel, $nameOnly);
                 $tDeb = (int) ($target['target_jg_deb'] ?? 0);
                 $tOs = (float) ($target['target_jg_os'] ?? 0.0);
-                $realisasiDivisor = in_array($segmen, ['SMALL', 'CONSUMER'], true)
-                    ? max(1, Carbon::parse($realisasiPeriod)->month)
-                    : $data['realisasi_period_count'];
-                $hasAchievementData = in_array($segmen, ['SMALL', 'CONSUMER'], true) || $data['realisasi_period_count'] > 0;
+                $realisasiDivisor = match ($segmen) {
+                    'SMALL' => count($averagePeriods),
+                    'CONSUMER' => max(1, Carbon::parse($realisasiPeriod)->month),
+                    default => $data['realisasi_period_count'],
+                };
+                $hasAchievementData = match ($segmen) {
+                    'SMALL' => $realisasiDivisor > 0,
+                    'CONSUMER' => true,
+                    default => $data['realisasi_period_count'] > 0,
+                };
                 $achDeb = $hasAchievementData
                     ? (int) round($data['realisasi_deb_sum'] / max(1, $realisasiDivisor))
                     : null;
@@ -1020,7 +1175,7 @@ class KinerjaRmReportController extends Controller
                     : null;
                 if ($segmen === 'CONSUMER') {
                     $quadrant = $this->calculateConsumerQuadrant($achOs, $tOs);
-                    $branches[$cabangKey]['rms'][$rmName]['quadrant'] = $quadrant;
+                    $branches[$cabangKey]['rms'][$rmGroupKey]['quadrant'] = $quadrant;
                 }
                 $comparisonDeltas = [];
                 foreach ($comparisonKeys as $periodKey) {
@@ -1032,12 +1187,13 @@ class KinerjaRmReportController extends Controller
                     'product' => $productLabel,
                     'curr' => $data['curr'],
                     'curr_deb' => $data['curr_deb'],
+                    'loan_os_reference' => $data['loan_os_reference'],
                     'comparison_values' => $data['comparison_values'],
                     'comparison_deltas' => $comparisonDeltas,
-                    'yoy' => $data['comparison_values']['m4'] ?? 0.0,
+                    'yoy' => $data['comparison_values']['yoy'] ?? 0.0,
                     'ytd' => $data['comparison_values']['ytd'] ?? 0.0,
                     'mtd' => $data['comparison_values']['m1'] ?? 0.0,
-                    'delta_yoy' => $comparisonDeltas['m4'] ?? $data['curr'],
+                    'delta_yoy' => $comparisonDeltas['yoy'] ?? $data['curr'],
                     'delta_ytd' => $comparisonDeltas['ytd'] ?? $data['curr'],
                     'delta_mtd' => $comparisonDeltas['m1'] ?? $data['curr'],
                     'target_jg_deb' => $tDeb,
@@ -1049,17 +1205,18 @@ class KinerjaRmReportController extends Controller
                     'lar_has_data' => $data['lar_has_data'],
                 ];
 
-                $branches[$cabangKey]['rms'][$rmName]['items'][] = $item;
-                $branches[$cabangKey]['rms'][$rmName]['rm_rowspan']++;
+                $branches[$cabangKey]['rms'][$rmGroupKey]['items'][] = $item;
+                $branches[$cabangKey]['rms'][$rmGroupKey]['rm_rowspan']++;
                 $branches[$cabangKey]['branch_rowspan']++;
 
                 // Update Branch Subtotal
                 $branches[$cabangKey]['subtotal']['curr'] += $data['curr'];
                 $branches[$cabangKey]['subtotal']['curr_deb'] += $data['curr_deb'];
+                $branches[$cabangKey]['subtotal']['loan_os_reference'] += $data['loan_os_reference'];
                 foreach ($comparisonKeys as $periodKey) {
                     $branches[$cabangKey]['subtotal']['comparison_values'][$periodKey] += $data['comparison_values'][$periodKey] ?? 0.0;
                 }
-                $branches[$cabangKey]['subtotal']['yoy'] = $branches[$cabangKey]['subtotal']['comparison_values']['m4'] ?? 0.0;
+                $branches[$cabangKey]['subtotal']['yoy'] = $branches[$cabangKey]['subtotal']['comparison_values']['yoy'] ?? 0.0;
                 $branches[$cabangKey]['subtotal']['ytd'] = $branches[$cabangKey]['subtotal']['comparison_values']['ytd'] ?? 0.0;
                 $branches[$cabangKey]['subtotal']['mtd'] = $branches[$cabangKey]['subtotal']['comparison_values']['m1'] ?? 0.0;
                 $branches[$cabangKey]['subtotal']['target_jg_deb'] += $tDeb;
@@ -1078,10 +1235,11 @@ class KinerjaRmReportController extends Controller
                 // Grand Totals
                 $grandTotals['curr'] += $data['curr'];
                 $grandTotals['curr_deb'] += $data['curr_deb'];
+                $grandTotals['loan_os_reference'] += $data['loan_os_reference'];
                 foreach ($comparisonKeys as $periodKey) {
                     $grandTotals['comparison_values'][$periodKey] += $data['comparison_values'][$periodKey] ?? 0.0;
                 }
-                $grandTotals['yoy'] = $grandTotals['comparison_values']['m4'] ?? 0.0;
+                $grandTotals['yoy'] = $grandTotals['comparison_values']['yoy'] ?? 0.0;
                 $grandTotals['ytd'] = $grandTotals['comparison_values']['ytd'] ?? 0.0;
                 $grandTotals['mtd'] = $grandTotals['comparison_values']['m1'] ?? 0.0;
                 $grandTotals['target_jg_deb'] += $tDeb;
@@ -1105,7 +1263,7 @@ class KinerjaRmReportController extends Controller
                 foreach ($comparisonKeys as $periodKey) {
                     $branches[$key]['subtotal']['comparison_deltas'][$periodKey] = $b_curr - ($branches[$key]['subtotal']['comparison_values'][$periodKey] ?? 0.0);
                 }
-                $branches[$key]['subtotal']['delta_yoy'] = $branches[$key]['subtotal']['comparison_deltas']['m4'] ?? $b_curr;
+                $branches[$key]['subtotal']['delta_yoy'] = $branches[$key]['subtotal']['comparison_deltas']['yoy'] ?? $b_curr;
                 $branches[$key]['subtotal']['delta_ytd'] = $branches[$key]['subtotal']['comparison_deltas']['ytd'] ?? $b_curr;
                 $branches[$key]['subtotal']['delta_mtd'] = $branches[$key]['subtotal']['comparison_deltas']['m1'] ?? $b_curr;
                 $branches[$key]['subtotal']['ach_deb'] = ($branches[$key]['subtotal']['ach_count'] ?? 0) > 0
@@ -1143,12 +1301,13 @@ class KinerjaRmReportController extends Controller
                 'rm' => 'TOTAL',
                 'curr' => $grandTotals['curr'],
                 'curr_deb' => $grandTotals['curr_deb'],
+                'loan_os_reference' => $grandTotals['loan_os_reference'],
                 'yoy' => $grandTotals['yoy'],
                 'ytd' => $grandTotals['ytd'],
                 'mtd' => $grandTotals['mtd'],
                 'comparison_values' => $grandTotals['comparison_values'],
                 'comparison_deltas' => $grandTotals['comparison_deltas'],
-                'delta_yoy' => $grandTotals['comparison_deltas']['m4'] ?? $grandTotals['curr'],
+                'delta_yoy' => $grandTotals['comparison_deltas']['yoy'] ?? $grandTotals['curr'],
                 'delta_ytd' => $grandTotals['comparison_deltas']['ytd'] ?? $grandTotals['curr'],
                 'delta_mtd' => $grandTotals['comparison_deltas']['m1'] ?? $grandTotals['curr'],
                 'target_jg_deb' => $grandTotals['target_jg_deb'],
@@ -1165,6 +1324,196 @@ class KinerjaRmReportController extends Controller
                 'total' => $totalRecord,
             ];
         });
+    }
+
+    private function fetchDetailedQualityRows(
+        string $segmen,
+        string $selectedPeriod,
+        array $comparisonPeriods,
+        ?string $selectedCabang = null,
+        ?string $selectedProduct = null,
+        ?string $selectedRmCategory = null
+    ): Collection {
+        $requiredColumns = [
+            'periode',
+            'nomor_rekening1',
+            'baki_debet1',
+            'kolek_detail',
+            'kolek',
+            'umur_tunggakan',
+            'flag_restruk',
+            'next_pmt_date',
+            'next_pmt_int_date',
+            'segmen_kinerja',
+            'produk_kinerja',
+            'cabang_normalized',
+            'unit_normalized',
+            'branch_normalized',
+            'rm_normalized',
+        ];
+
+        if (!Schema::hasTable(self::SOURCE_TABLE)) {
+            return collect();
+        }
+
+        foreach ($requiredColumns as $column) {
+            if (!Schema::hasColumn(self::SOURCE_TABLE, $column)) {
+                return collect();
+            }
+        }
+
+        $periods = collect($comparisonPeriods)
+            ->pluck('period')
+            ->push($selectedPeriod)
+            ->filter()
+            ->map(fn ($period): ?string => $this->normalizeDate((string) $period))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($periods->isEmpty()) {
+            return collect();
+        }
+
+        $sourceProducts = $this->sourceQualityProductValues($segmen, $selectedProduct);
+        if ($sourceProducts === []) {
+            return collect();
+        }
+
+        $cacheKey = 'kinerja_rm_quality_detail_v1:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+            'segmen' => $segmen,
+            'periods' => $periods->all(),
+            'cabang' => $selectedCabang,
+            'produk' => $selectedProduct,
+            'rm_category' => $selectedRmCategory,
+        ]));
+
+        return Cache::remember($cacheKey, 300, function () use ($segmen, $periods, $sourceProducts, $selectedCabang, $selectedRmCategory): Collection {
+            $bucketExpression = LoanQualityBucketMapper::buildSqlExpression('d');
+            $bucketRows = DB::table(self::SOURCE_TABLE . ' as d')
+                ->whereIn('d.periode', $periods->all())
+                ->where('d.segmen_kinerja', $segmen)
+                ->whereIn('d.produk_kinerja', $sourceProducts)
+                ->whereNotNull('d.rm_normalized')
+                ->where('d.rm_normalized', '<>', '')
+                ->when($selectedCabang !== null, function ($query) use ($selectedCabang) {
+                    $query->where('d.cabang_normalized', $this->normalizeCabangKey($selectedCabang));
+                })
+                ->when($segmen === 'SMALL' && $selectedRmCategory === 'KCP', function ($query) {
+                    $query->whereRaw("UPPER(TRIM(COALESCE(d.unit_normalized, ''))) LIKE 'KCP%'");
+                })
+                ->when($segmen === 'SMALL' && $selectedRmCategory === 'KC', function ($query) {
+                    $query->whereRaw("UPPER(TRIM(COALESCE(d.unit_normalized, ''))) NOT LIKE 'KCP%'");
+                })
+                ->selectRaw('d.periode')
+                ->selectRaw("COALESCE(d.cabang_normalized, '') as cabang")
+                ->selectRaw("COALESCE(d.unit_normalized, '') as unit")
+                ->selectRaw("COALESCE(d.branch_normalized, '') as branch_code")
+                ->selectRaw("COALESCE(d.rm_normalized, '') as rm")
+                ->selectRaw("COALESCE(d.produk_kinerja, '') as produk")
+                ->selectRaw("{$bucketExpression} as quality_bucket")
+                ->selectRaw('SUM(COALESCE(d.baki_debet1, 0)) as quality_os')
+                ->selectRaw('COUNT(DISTINCT d.nomor_rekening1) as quality_deb')
+                ->groupBy(
+                    'd.periode',
+                    'd.cabang_normalized',
+                    'd.unit_normalized',
+                    'd.branch_normalized',
+                    'd.rm_normalized',
+                    'd.produk_kinerja',
+                    'quality_bucket'
+                )
+                ->get();
+
+            $rows = [];
+            foreach ($bucketRows as $bucketRow) {
+                $key = implode('|', [
+                    (string) $bucketRow->periode,
+                    (string) $bucketRow->cabang,
+                    (string) $bucketRow->unit,
+                    (string) $bucketRow->branch_code,
+                    (string) $bucketRow->rm,
+                    (string) $bucketRow->produk,
+                ]);
+
+                $rows[$key] ??= (object) [
+                    'periode' => (string) $bucketRow->periode,
+                    'cabang' => (string) $bucketRow->cabang,
+                    'unit' => (string) $bucketRow->unit,
+                    'branch_code' => (string) $bucketRow->branch_code,
+                    'rm' => (string) $bucketRow->rm,
+                    'segmen' => $segmen,
+                    'produk' => (string) $bucketRow->produk,
+                    'loan_os' => 0.0,
+                    'lancar_os' => 0.0,
+                    'sml_os' => 0.0,
+                    'npl_os' => 0.0,
+                    'restruk_os' => 0.0,
+                    'sml_1_os' => 0.0,
+                    'sml_2_os' => 0.0,
+                    'sml_3_os' => 0.0,
+                    'kl_os' => 0.0,
+                    'd1_os' => 0.0,
+                    'd2_os' => 0.0,
+                    'm_os' => 0.0,
+                    'total_deb' => 0,
+                    'realisasi_deb' => 0,
+                    'realisasi_os' => 0.0,
+                    'quadrant' => null,
+                ];
+
+                $amount = (float) $bucketRow->quality_os;
+                $rows[$key]->loan_os += $amount;
+                $rows[$key]->total_deb += (int) $bucketRow->quality_deb;
+
+                $bucketColumn = match (strtoupper(trim((string) $bucketRow->quality_bucket))) {
+                    'DPK 1' => 'sml_1_os',
+                    'DPK 2' => 'sml_2_os',
+                    'DPK 3' => 'sml_3_os',
+                    'KL' => 'kl_os',
+                    'D1' => 'd1_os',
+                    'D2' => 'd2_os',
+                    'M' => 'm_os',
+                    default => null,
+                };
+
+                if ($bucketColumn !== null) {
+                    $rows[$key]->{$bucketColumn} += $amount;
+                }
+
+                $normalizedBucket = strtoupper(trim((string) $bucketRow->quality_bucket));
+                if (in_array($normalizedBucket, ['DPK 1', 'DPK 2', 'DPK 3'], true)) {
+                    $rows[$key]->sml_os += $amount;
+                } elseif (in_array($normalizedBucket, ['KL', 'D1', 'D2', 'M'], true)) {
+                    $rows[$key]->npl_os += $amount;
+                } elseif (in_array($normalizedBucket, ['L', 'LR'], true)) {
+                    $rows[$key]->lancar_os += $amount;
+                    if ($normalizedBucket === 'LR') {
+                        $rows[$key]->restruk_os += $amount;
+                    }
+                }
+            }
+
+            return collect(array_values($rows));
+        });
+    }
+
+    private function sourceQualityProductValues(string $segmen, ?string $selectedProduct): array
+    {
+        $normalizedProduct = $selectedProduct !== null
+            ? $this->normalizeProductLabel($selectedProduct, $segmen)
+            : null;
+
+        return match ($segmen) {
+            'CONSUMER' => ['BRIGUNAKONSUMER', 'KPR'],
+            'SMALL' => match ($normalizedProduct) {
+                'COMMERCIAL' => ['COMMERCIAL'],
+                'CASHCALL' => ['CASHCALL'],
+                'CASHCOLLATERAL' => ['CASHCOLLATERAL'],
+                default => ['COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL'],
+            },
+            default => [],
+        };
     }
 
     private function sortKinerjaRmBranches(array $branches, string $segmen): array
@@ -1242,6 +1591,7 @@ class KinerjaRmReportController extends Controller
         $realisasiDateColumn = Schema::hasColumn(self::SOURCE_TABLE, 'tgl_realisasi1')
             ? 'tgl_realisasi1'
             : 'tgl_realisasi';
+        $realisasiDateExpression = $this->performanceRmEffectiveRealisasiDateSql($realisasiDateColumn, 'periode');
         $sourceProducts = $selectedProduct !== null
             ? $this->sourceProductValues($selectedProduct)
             : collect(self::SEGMENT_PRODUCT_MAP[$segmen] ?? [])
@@ -1249,6 +1599,8 @@ class KinerjaRmReportController extends Controller
                 ->unique()
                 ->values()
                 ->all();
+
+        $realisasiAmountSql = 'COALESCE(plafon, 0)';
 
         return DB::table(self::SOURCE_TABLE)
             ->whereIn('periode', $periods->all())
@@ -1274,10 +1626,10 @@ class KinerjaRmReportController extends Controller
             ->selectRaw("SUM(CASE WHEN kolek = 1 AND UPPER(TRIM(COALESCE(flag_restruk, ''))) = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
             ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
             ->selectRaw(
-                "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN DATE_FORMAT(periode, \"%Y-%m-01\") AND periode THEN nomor_rekening1 END) as realisasi_deb"
+                "COUNT(DISTINCT CASE WHEN {$realisasiDateExpression} BETWEEN DATE_FORMAT(periode, \"%Y-%m-01\") AND periode THEN nomor_rekening1 END) as realisasi_deb"
             )
             ->selectRaw(
-                "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN DATE_FORMAT(periode, \"%Y-%m-01\") AND periode THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os"
+                "SUM(CASE WHEN {$realisasiDateExpression} BETWEEN DATE_FORMAT(periode, \"%Y-%m-01\") AND periode THEN {$realisasiAmountSql} ELSE 0 END) as realisasi_os"
             )
             ->selectRaw('0 as total_deposit')
             ->selectRaw('NULL as quadrant')
@@ -1457,6 +1809,33 @@ class KinerjaRmReportController extends Controller
         return array_values($periodsByMonth);
     }
 
+    private function resolveSmallClosedPeriodsInScope(
+        string $selectedPeriod,
+        string $segmen,
+        ?string $selectedCabang = null,
+        ?string $selectedProduct = null
+    ): array {
+        $closedThrough = $this->smallClosedThroughDate($selectedPeriod);
+
+        return array_values(array_filter(
+            $this->resolveAveragePeriodsInScope($selectedPeriod, $segmen, $selectedCabang, $selectedProduct),
+            function (string $period) use ($closedThrough): bool {
+                $periodDate = Carbon::parse($period);
+
+                return $periodDate->lte($closedThrough) && $periodDate->isLastOfMonth();
+            }
+        ));
+    }
+
+    private function smallClosedThroughDate(string $selectedPeriod): Carbon
+    {
+        $selectedDate = Carbon::parse($selectedPeriod)->startOfDay();
+
+        return $selectedDate->isLastOfMonth()
+            ? $selectedDate
+            : $selectedDate->copy()->startOfMonth()->subDay();
+    }
+
     private function resolveLatestPeriodInYearScope(
         string $selectedPeriod,
         string $segmen,
@@ -1518,6 +1897,7 @@ class KinerjaRmReportController extends Controller
         $realisasiDateColumn = Schema::hasColumn(self::SOURCE_TABLE, 'tgl_realisasi1')
             ? 'tgl_realisasi1'
             : 'tgl_realisasi';
+        $realisasiDateExpression = $this->performanceRmEffectiveRealisasiDateSql($realisasiDateColumn, 'periode');
 
         $snapshotHasRealisasi = DB::table(self::SNAPSHOT_TABLE)
             ->where('periode', $period)
@@ -1534,7 +1914,7 @@ class KinerjaRmReportController extends Controller
         $date = Carbon::parse($period);
         return DB::table(self::SOURCE_TABLE)
             ->where('periode', $period)
-            ->whereBetween($realisasiDateColumn, [
+            ->whereRaw("{$realisasiDateExpression} BETWEEN ? AND ?", [
                 $date->copy()->startOfMonth()->toDateString(),
                 $period,
             ])
@@ -1854,19 +2234,22 @@ class KinerjaRmReportController extends Controller
         return in_array($quadrantValue, [1, 2, 3, 4], true) ? $quadrantValue : null;
     }
 
-    private function calculateSmallQuadrantsByRm(array $pivoted, string $selectedPeriod): array
+    private function calculateSmallQuadrantsByRm(array $pivoted, int $periodCount): array
     {
         $inputs = [];
 
         foreach ($pivoted as $data) {
             $rmName = $this->mapRmName((string) ($data['rm'] ?? ''));
+            $rmCategory = $data['rm_category'] ?? null;
+            $rmUnit = $data['rm_unit'] ?? null;
+            $rmGroupKey = $this->kinerjaRmGroupKey($rmName, $rmCategory, $rmUnit);
             $productLabel = $this->normalizeProductLabel((string) ($data['produk'] ?? ''), 'SMALL');
 
             if ($rmName === '' || $productLabel === null) {
                 continue;
             }
 
-            $inputs[$rmName] ??= [
+            $inputs[$rmGroupKey] ??= [
                 'snapshot_quadrant' => null,
                 'realisasi_os_sum' => 0.0,
                 'lar_loan_os' => 0.0,
@@ -1874,27 +2257,24 @@ class KinerjaRmReportController extends Controller
                 'lar_has_data' => false,
             ];
 
-            $inputs[$rmName]['snapshot_quadrant'] ??= $this->normalizeQuadrant($data['quadrant'] ?? null);
-            $inputs[$rmName]['realisasi_os_sum'] += (float) ($data['quadrant_realisasi_os_sum'] ?? 0);
-            $inputs[$rmName]['lar_loan_os'] += (float) ($data['lar_loan_os'] ?? 0);
-            $inputs[$rmName]['lar_value'] += (float) ($data['lar_value'] ?? 0);
-            $inputs[$rmName]['lar_has_data'] = $inputs[$rmName]['lar_has_data'] || (bool) ($data['lar_has_data'] ?? false);
+            $inputs[$rmGroupKey]['snapshot_quadrant'] ??= $this->normalizeQuadrant($data['quadrant'] ?? null);
+            $inputs[$rmGroupKey]['realisasi_os_sum'] += (float) ($data['quadrant_realisasi_os_sum'] ?? 0);
+            $inputs[$rmGroupKey]['lar_loan_os'] += (float) ($data['lar_loan_os'] ?? 0);
+            $inputs[$rmGroupKey]['lar_value'] += (float) ($data['lar_value'] ?? 0);
+            $inputs[$rmGroupKey]['lar_has_data'] = $inputs[$rmGroupKey]['lar_has_data'] || (bool) ($data['lar_has_data'] ?? false);
         }
 
         $quadrants = [];
-        $month = max(1, Carbon::parse($selectedPeriod)->month);
-
         foreach ($inputs as $rmName => $input) {
-            if ($input['snapshot_quadrant'] !== null) {
-                $quadrants[$rmName] = $input['snapshot_quadrant'];
+            if ($periodCount <= 0 || !$input['lar_has_data'] || (float) $input['lar_loan_os'] <= 0) {
+                if ($input['snapshot_quadrant'] !== null) {
+                    $quadrants[$rmName] = $input['snapshot_quadrant'];
+                }
+
                 continue;
             }
 
-            if (!$input['lar_has_data'] || (float) $input['lar_loan_os'] <= 0) {
-                continue;
-            }
-
-            $ratasOs = (float) $input['realisasi_os_sum'] / $month;
+            $ratasOs = (float) $input['realisasi_os_sum'] / $periodCount;
             $larPct = ((float) $input['lar_value'] / (float) $input['lar_loan_os']) * 100;
             $quadrants[$rmName] = $this->calculateSmallQuadrant($ratasOs, $larPct);
         }

@@ -14,9 +14,8 @@
     $emptyMessage = $emptyMessage ?? 'Silakan pilih parameter filter yang berbeda.';
     $tableClass = 'kinerja-konsumer-table' . ($compact ? ' kinerja-konsumer-table--compact' : '');
     $comparisonColumns = collect($comparisonColumns ?? [
+        ['key' => 'yoy', 'label' => $yoyShortLabel ?? '-', 'short_label' => $yoyShortLabel ?? '-'],
         ['key' => 'ytd', 'label' => $ytdShortLabel ?? '-', 'short_label' => $ytdShortLabel ?? '-'],
-        ['key' => 'm4', 'label' => $yoyShortLabel ?? '-', 'short_label' => $yoyShortLabel ?? '-'],
-        ['key' => 'm3', 'label' => '-', 'short_label' => '-'],
         ['key' => 'm2', 'label' => '-', 'short_label' => '-'],
         ['key' => 'm1', 'label' => $mtdShortLabel ?? '-', 'short_label' => $mtdShortLabel ?? '-'],
     ])->values();
@@ -165,11 +164,14 @@
                         @endif
                     </tr>
 
-                    @foreach($branch['rms'] as $rmName => $rmData)
+                    @foreach($branch['rms'] as $rmKey => $rmData)
                         @php
+                            $rmName = (string) ($rmData['rm'] ?? $rmKey);
                             if (trim((string) $rmName) === '00385844 -') {
                                 $rmName = '00385844 - Glagah Mahestya Yahya';
                             }
+                            $rmCategory = $rmData['rm_category'] ?? null;
+                            $rmUnit = $rmData['rm_unit'] ?? null;
                             $isFirstRmRow = true;
                             $isFirstRmRowForQuad = true;
                         @endphp
@@ -185,8 +187,11 @@
                                         style="cursor: pointer; transition: all 0.2s; position: relative; left: 94px;">
                                         <div class="d-flex align-items-center">
                                             <i class="fas fa-info-circle me-1 text-primary" style="font-size: 0.65rem; opacity: 0.6;"></i>
-                                            {{ $rmName }}
+                                            <span>{{ $rmName }}</span>
                                         </div>
+                                        @if($rmCategory !== null)
+                                            <span class="kinerja-rm-scope-badge {{ $rmCategory === 'KCP' ? 'is-kcp' : 'is-kc' }}">{{ $rmUnit ?: 'RM ' . $rmCategory }}</span>
+                                        @endif
                                     </td>
                                     @php $isFirstRmRow = false; @endphp
                                 @endif

@@ -557,7 +557,9 @@
         let rowClickTimer = null;
         let isNavigatingAway = false;
         let filterReloadTimer = null;
+        let filterCascadeTimer = null;
         let isRefreshingFilters = false;
+        const filterOptionsCache = new Map();
 
         const filterSelects = [
             { element: segmenSelect, placeholder: 'Semua Segmen' },
@@ -594,6 +596,7 @@
             if (activeFilterController) activeFilterController.abort();
             if (activeDrillController) activeDrillController.abort();
             window.clearTimeout(filterReloadTimer);
+            window.clearTimeout(filterCascadeTimer);
         }
 
         function releaseLoadingUi() {
@@ -823,7 +826,7 @@
             window.location.href = `${exportUrl}?${params.toString()}`;
         }
 
-        async function loadFilterOptions() {
+        async function loadFilterOptions(forceRefresh = false) {
             if (activeFilterController) activeFilterController.abort();
             const requestId = ++activeFilterRequestId;
             if (!periodInput.value) {
@@ -838,7 +841,8 @@
                 return;
             }
 
-            activeFilterController = new AbortController();
+            const filterController = new AbortController();
+            activeFilterController = filterController;
             const params = new URLSearchParams();
             params.set('periode', periodInput.value);
 
@@ -853,29 +857,68 @@
                 }
             });
 
+            const cacheKey = params.toString();
+            if (!forceRefresh && filterOptionsCache.has(cacheKey)) {
+                applyFilterOptions(filterOptionsCache.get(cacheKey));
+                activeFilterController = null;
+                return;
+            }
+
+            let timeoutId = null;
+            let didTimeout = false;
             try {
-                console.log('Fetching filter options with params:', params.toString());
-                const response = await fetch(`${filtersUrl}?${params.toString()}`, { signal: activeFilterController.signal });
+                if (forceRefresh) params.set('refresh', '1');
+                timeoutId = window.setTimeout(() => {
+                    didTimeout = true;
+                    filterController.abort();
+                }, 15000);
+                const response = await fetch(`${filtersUrl}?${params.toString()}`, { signal: filterController.signal });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
                 const payload = await response.json();
                 if (requestId !== activeFilterRequestId) return;
 
-                console.log('Filter options response:', payload);
-
-                activePeriodMeta.textContent = formatMatrixPeriodDate(payload.selected_period);
-                comparisonPeriodMeta.textContent = formatMatrixPeriodDate(payload.comparison_period);
-                if (currentHeadLabel) currentHeadLabel.textContent = formatMatrixPeriodDate(payload.selected_period);
-                if (comparisonHeadLabel) comparisonHeadLabel.textContent = formatMatrixPeriodDate(payload.comparison_period);
-
-                isRefreshingFilters = true;
-                setSelectOptions(segmenSelect, payload.segments || [], 'Semua Segmen');
-                setSelectOptions(produkSelect, payload.products || [], 'Semua Produk');
-                setSelectOptions(cabangSelect, payload.branches || [], 'Semua Kantor Cabang');
-                console.log(`Setting unit options. Backend returned ${(payload.units || []).length} units`);
-                setSelectOptions(unitSelect, payload.units || [], 'Semua Unit Kerja');
-                isRefreshingFilters = false;
+                filterOptionsCache.set(cacheKey, payload);
+                applyFilterOptions(payload);
             } catch (e) {
-                console.error('Filter load error:', e);
+                if (requestId === activeFilterRequestId && (e.name !== 'AbortError' || didTimeout)) {
+                    renderFilterLoadError();
+                    console.error('Filter load error:', e);
+                }
+            } finally {
+                if (timeoutId) window.clearTimeout(timeoutId);
+                if (requestId === activeFilterRequestId) {
+                    activeFilterController = null;
+                    isRefreshingFilters = false;
+                }
             }
+        }
+
+        function applyFilterOptions(payload) {
+            activePeriodMeta.textContent = formatMatrixPeriodDate(payload.selected_period);
+            comparisonPeriodMeta.textContent = formatMatrixPeriodDate(payload.comparison_period);
+            if (currentHeadLabel) currentHeadLabel.textContent = formatMatrixPeriodDate(payload.selected_period);
+            if (comparisonHeadLabel) comparisonHeadLabel.textContent = formatMatrixPeriodDate(payload.comparison_period);
+
+            isRefreshingFilters = true;
+            setSelectOptions(segmenSelect, payload.segments || [], 'Semua Segmen');
+            setSelectOptions(produkSelect, payload.products || [], 'Semua Produk');
+            setSelectOptions(cabangSelect, payload.branches || [], 'Semua Kantor Cabang');
+            setSelectOptions(unitSelect, payload.units || [], 'Semua Unit Kerja');
+            isRefreshingFilters = false;
+        }
+
+        function renderFilterLoadError() {
+            document.querySelectorAll('[data-loan-dropdown-menu]:not([data-loan-dropdown-menu="periode"])').forEach(menu => {
+                if (menu.children.length > 0 && !menu.querySelector('.fa-spinner')) return;
+                menu.innerHTML = '<button type="button" class="btn btn-link btn-sm btn-block text-danger" data-loan-filter-retry><i class="fas fa-redo mr-2"></i>Gagal memuat. Coba lagi</button>';
+            });
+        }
+
+        function scheduleFilterOptionsReload() {
+            window.clearTimeout(filterCascadeTimer);
+            filterCascadeTimer = window.setTimeout(() => loadFilterOptions(), 180);
         }
 
         function setSelectOptions(select, items, placeholder) {
@@ -1038,12 +1081,8 @@
             initMultiSelect(element, placeholder);
             window.jQuery(element).on('change', () => {
                 syncSelectedDataset(element);
-                const selectedValue = window.jQuery(element).val();
-                const elementId = element.id;
-                console.log(`Filter changed: ${elementId} =`, selectedValue);
-                if (!isRefreshingFilters) {
-                    console.log(`Loading filter options due to ${elementId} change...`);
-                    loadFilterOptions();
+                if (!isRefreshingFilters && (element === segmenSelect || element === cabangSelect)) {
+                    scheduleFilterOptionsReload();
                 }
             });
         });
@@ -1072,6 +1111,9 @@
                     const isOpen = parent.classList.contains('is-open');
                     document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
                     if (!isOpen) parent.classList.add('is-open');
+                    if (conf.key !== 'periode' && select.options.length === 0 && !activeFilterController) {
+                        loadFilterOptions();
+                    }
                 });
 
                 // Update UI when select changes (manual or from original script)
@@ -1143,6 +1185,12 @@
         }
 
         const periodDisplay = document.getElementById('loanPeriodeDisplay');
+        document.addEventListener('click', event => {
+            if (event.target.closest('[data-loan-filter-retry]')) {
+                event.stopPropagation();
+                loadFilterOptions(true);
+            }
+        });
         initModernDropdowns();
 
         if (periodInput.value) loadFilterOptions();

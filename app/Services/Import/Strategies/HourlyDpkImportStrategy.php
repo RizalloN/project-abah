@@ -28,7 +28,7 @@ class HourlyDpkImportStrategy implements ImportStrategyInterface
             'posisi',
             'mbname',
             'brname',
-            'segmen',
+            'segmen2',
             'produk',
             'saldo',
         ];
@@ -53,10 +53,11 @@ class HourlyDpkImportStrategy implements ImportStrategyInterface
             $normalized = trim((string) $normalized, '_');
 
             return match ($normalized) {
-                'MONTH_DAY_YEAR_OF_POSISI', 'POSISI' => 'posisi',
+                'MONTH_DAY_YEAR_OF_POSISI', 'MINUTE_OF_POSISI', 'POSISI' => 'posisi',
                 'MBNAME' => 'mbname',
                 'BRNAME' => 'brname',
-                'SEGMEN', 'SEGMENTASI', 'SEGMEN2' => 'segmen',
+                'SEGMEN', 'SEGMENTASI' => 'segmen',
+                'SEGMEN2' => 'segmen2',
                 'PRODUK' => 'produk',
                 'SALDO' => 'saldo',
                 default => (string) $header,

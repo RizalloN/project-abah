@@ -22,6 +22,12 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Artisan::command('network:update-duckdns', function () {
+    if (!config('services.public_access_health.enabled', false)) {
+        $this->line('DuckDNS update dinonaktifkan karena akses publik memakai Cloudflare Tunnel.');
+
+        return 0;
+    }
+
     $lock = Cache::lock('network:duckdns-update', 120);
     if (!$lock->get()) {
         $this->warn('DuckDNS update sedang berjalan di proses lain.');
@@ -62,6 +68,24 @@ Artisan::command('network:update-duckdns', function () {
 })->purpose('Update DuckDNS public IP for asixdashboard.duckdns.org');
 
 Artisan::command('network:public-health {--fix} {--force} {--json}', function () {
+    if (!config('services.public_access_health.enabled', false)) {
+        $status = [
+            'healthy' => true,
+            'disabled' => true,
+            'message' => 'Public access health dinonaktifkan karena akses publik memakai Cloudflare Tunnel.',
+        ];
+
+        if ($this->option('json')) {
+            $this->line(json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+            return 0;
+        }
+
+        $this->line($status['message']);
+
+        return 0;
+    }
+
     $status = app(PublicAccessHealthService::class)->check(
         fix: (bool) $this->option('fix'),
         force: (bool) $this->option('force')
@@ -263,15 +287,17 @@ Schedule::command('queue:health-sweep')
     ->withoutOverlapping(2)
     ->runInBackground();
 
-Schedule::command('network:update-duckdns')
-    ->everyFiveMinutes()
-    ->withoutOverlapping(10)
-    ->runInBackground();
+if (config('services.public_access_health.enabled', false)) {
+    Schedule::command('network:update-duckdns')
+        ->everyFiveMinutes()
+        ->withoutOverlapping(10)
+        ->runInBackground();
 
-Schedule::command('network:public-health --fix')
-    ->everyMinute()
-    ->withoutOverlapping(2)
-    ->runInBackground();
+    Schedule::command('network:public-health --fix')
+        ->everyMinute()
+        ->withoutOverlapping(2)
+        ->runInBackground();
+}
 
 Schedule::command('logs:maintenance')
     ->everyThirtyMinutes()

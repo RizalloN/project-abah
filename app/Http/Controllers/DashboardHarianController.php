@@ -31,13 +31,16 @@ class DashboardHarianController extends Controller
         [$selectedKanca, $selectedUnit] = $this->resolveKeragaanFilters($request);
         $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
+        // Custom MtM is a page-local easter egg; reloads must always return to default MtM.
+        $selectedMtm = null;
         $baseUrl = rtrim($request->getSchemeAndHttpHost() . $request->getBaseUrl(), '/');
         $dataUrl = $baseUrl . '/dashboard-harian/data';
         $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
+        $filters['mtm_period'] = $filters['posisi_terakhir'] ?? [];
         $initialData = null;
 
         if ($selectedPeriod) {
-            $initialData = $this->payload($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit)
+            $initialData = $this->payload($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit, $selectedMtm)
                 + ['available_filters' => $filters];
         }
 
@@ -52,6 +55,7 @@ class DashboardHarianController extends Controller
                 'unit_kerja' => $selectedUnit ?? 'all',
                 'posisi_terakhir' => $selectedPeriod,
                 'posisi_rka' => $selectedRka ? substr($selectedRka, 0, 7) : null,
+                'mtm_period' => $selectedMtm,
             ],
             'initialData' => $initialData,
         ];
@@ -65,6 +69,11 @@ class DashboardHarianController extends Controller
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
         $selectedCategory = $request->input('category', 'simpanan'); // Default to simpanan
         $selectedSegment = $request->input('segment', 'total'); // Default to total
+        if ($selectedCategory === 'recovery' && !in_array($selectedSegment, ['ritel', 'micro'], true)) {
+            $selectedSegment = 'ritel';
+        }
+        $selectedRecoverySegment = trim((string) $request->input('recovery_segment', ''));
+        $selectedRecoveryProduct = trim((string) $request->input('recovery_product', ''));
         $monthOptions = $this->timeseriesMonthOptions();
         $selectedMonth = $this->resolveTimeseriesMonth($request->input('period_month'), $monthOptions);
 
@@ -75,6 +84,7 @@ class DashboardHarianController extends Controller
 
         $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions(null, $selectedKanca, $selectedUnit);
         $filters['period_month'] = $monthOptions;
+        $filters['recovery_dimensions'] = $this->dashboardHarianSnapshotService->fetchRecoveryDimensionOptions();
 
         $dashboardPage = [
             'routes' => [
@@ -86,9 +96,19 @@ class DashboardHarianController extends Controller
                 'unit_kerja' => $selectedUnit ?? 'all',
                 'category' => $selectedCategory,
                 'segment' => $selectedSegment,
+                'recovery_segment' => $selectedRecoverySegment,
+                'recovery_product' => $selectedRecoveryProduct,
                 'period_month' => $selectedMonth,
             ],
-            'initialData' => $this->timeseriesPayload($selectedCategory, $selectedKanca, $selectedUnit, $selectedMonth, $selectedSegment),
+            'initialData' => $this->timeseriesPayload(
+                $selectedCategory,
+                $selectedKanca,
+                $selectedUnit,
+                $selectedMonth,
+                $selectedSegment,
+                $selectedRecoverySegment,
+                $selectedRecoveryProduct
+            ),
         ];
 
         return view('report.dashboard-harian-timeseries', compact('dashboardPage'));
@@ -100,6 +120,11 @@ class DashboardHarianController extends Controller
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
         $category = $request->input('category', 'simpanan');
         $segment = $request->input('segment', 'total');
+        if ($category === 'recovery' && !in_array($segment, ['ritel', 'micro'], true)) {
+            $segment = 'ritel';
+        }
+        $recoverySegment = trim((string) $request->input('recovery_segment', ''));
+        $recoveryProduct = trim((string) $request->input('recovery_product', ''));
         $monthOptions = $this->timeseriesMonthOptions();
         $selectedMonth = $this->resolveTimeseriesMonth($request->input('period_month'), $monthOptions);
 
@@ -108,7 +133,77 @@ class DashboardHarianController extends Controller
             $selectedKanca = ['KC Madiun', 'KC Ngawi', 'KC Magetan', 'KC Ponorogo'];
         }
 
-        return response()->json($this->timeseriesPayload($category, $selectedKanca, $selectedUnit, $selectedMonth, $segment));
+        return response()->json($this->timeseriesPayload(
+            $category,
+            $selectedKanca,
+            $selectedUnit,
+            $selectedMonth,
+            $segment,
+            $recoverySegment,
+            $recoveryProduct
+        ));
+    }
+
+    public function keragaanUker(Request $request): View
+    {
+        [$selectedKanca, $selectedUnit] = $this->resolveKeragaanUkerFilters($request);
+        $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
+        $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
+        $selectedData = $this->resolveKeragaanUkerDataType($request->input('data_type'));
+        $filters = $this->keragaanUkerFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
+
+        $dashboardPage = [
+            'routes' => [
+                'data' => route('dashboard.harian.keragaan-uker.data'),
+            ],
+            'filters' => $filters,
+            'selected' => [
+                'kanca' => $selectedKanca ?? [],
+                'unit_kerja' => $selectedUnit ?? 'all',
+                'posisi_terakhir' => $selectedPeriod,
+                'posisi_rka' => $selectedRka ? substr($selectedRka, 0, 7) : null,
+                'data_type' => $selectedData,
+            ],
+            'dataTypes' => $this->keragaanUkerDataTypes(),
+            'initialData' => ($selectedPeriod && $selectedKanca !== null)
+                ? $this->keragaanUkerPayload($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit, $selectedData)
+                    + ['available_filters' => $filters]
+                : null,
+        ];
+
+        return view('report.dashboard-harian-keragaan-uker', compact('dashboardPage'));
+    }
+
+    public function keragaanUkerData(Request $request): JsonResponse
+    {
+        [$selectedKanca, $selectedUnit] = $this->resolveKeragaanUkerFilters($request);
+        $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
+        $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
+        $selectedData = $this->resolveKeragaanUkerDataType($request->input('data_type'));
+        $filters = $this->keragaanUkerFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
+
+        if ($selectedKanca === null) {
+            return response()->json([
+                'summary' => [
+                    'period' => $selectedPeriod,
+                    'rka_period' => $selectedRka,
+                    'data_type' => $selectedData,
+                    'scope_label' => 'Pilih cabang',
+                    'unit_label' => 'Semua Unit Kerja',
+                    'value_scale' => 'million',
+                ],
+                'columns' => [],
+                'metrics' => [],
+                'rows' => [],
+                'totals' => [],
+                'available_filters' => $filters,
+            ]);
+        }
+
+        return response()->json(
+            $this->keragaanUkerPayload($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit, $selectedData)
+            + ['available_filters' => $filters]
+        );
     }
 
     public function data(Request $request): JsonResponse
@@ -116,10 +211,13 @@ class DashboardHarianController extends Controller
         [$selectedKanca, $selectedUnit] = $this->resolveKeragaanFilters($request);
         $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
+        $selectedMtm = $this->resolveOptionalMtmPeriod($request->input('mtm_period'), $selectedPeriod);
+        $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
+        $filters['mtm_period'] = $filters['posisi_terakhir'] ?? [];
 
         return response()->json(
-            $this->payload($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit)
-            + ['available_filters' => $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit)]
+            $this->payload($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit, $selectedMtm)
+            + ['available_filters' => $filters]
         );
     }
 
@@ -130,6 +228,7 @@ class DashboardHarianController extends Controller
         [$selectedKanca, $selectedUnit] = $this->resolveKeragaanFilters($request);
         $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
+        $selectedMtm = $this->resolveOptionalMtmPeriod($request->input('mtm_period'), $selectedPeriod);
 
         abort_if(!$selectedPeriod, 422, 'Periode Dashboard Harian belum tersedia.');
 
@@ -137,7 +236,8 @@ class DashboardHarianController extends Controller
             $selectedPeriod,
             $selectedRka,
             $selectedKanca,
-            $selectedUnit
+            $selectedUnit,
+            $selectedMtm
         );
 
         $filename = sprintf(
@@ -162,53 +262,121 @@ class DashboardHarianController extends Controller
         ]);
     }
 
-    private function payload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit): array
+    private function payload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit, ?string $selectedMtm = null): array
     {
         $cacheKey = 'dashboard_harian:payload:' . md5(json_encode([
-            'schema' => 'penc-pct-v20-rka-ldr-noncommercial-denominator',
+            'schema' => 'penc-pct-v21-rka-ldr-noncommercial-denominator-mtm-override',
+            'version' => $this->reportCacheVersion(),
+            'period' => $selectedPeriod,
+            'rka' => $selectedRka,
+            'mtm' => $selectedMtm,
+            'kanca' => $selectedKanca,
+            'unit' => $selectedUnit,
+        ]));
+
+        return $this->rememberDashboardPayload($cacheKey, function () use ($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit, $selectedMtm) {
+            return $this->dashboardHarianSnapshotService->buildDashboardPayload(
+                $selectedPeriod,
+                $selectedRka,
+                $selectedKanca,
+                $selectedUnit,
+                $selectedMtm
+            );
+        });
+    }
+
+    private function keragaanUkerPayload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit, string $dataType): array
+    {
+        $cacheKey = 'dashboard_harian:keragaan_uker:' . md5(json_encode([
+            'schema' => 'v2-gi405-direct-cache-version',
             'version' => $this->reportCacheVersion(),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,
             'kanca' => $selectedKanca,
             'unit' => $selectedUnit,
+            'data_type' => $dataType,
         ]));
 
-        return $this->rememberDashboardPayload($cacheKey, function () use ($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit) {
-            return $this->dashboardHarianSnapshotService->buildDashboardPayload(
+        return $this->rememberDashboardPayload($cacheKey, function () use ($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit, $dataType) {
+            return $this->dashboardHarianSnapshotService->buildKeragaanUkerPayload(
                 $selectedPeriod,
                 $selectedRka,
                 $selectedKanca,
-                $selectedUnit
+                $selectedUnit,
+                $dataType
             );
         });
     }
 
-    private function timeseriesPayload(string $category, array|string|null $selectedKanca, array|string|null $selectedUnit, ?string $selectedMonth = null, string $segment = 'total'): array
+    private function keragaanUkerDataTypes(): array
+    {
+        return [
+            ['value' => 'pinjaman', 'label' => 'Pinjaman'],
+            ['value' => 'simpanan', 'label' => 'Simpanan'],
+            ['value' => 'recovery', 'label' => 'Recovery DH'],
+        ];
+    }
+
+    private function resolveKeragaanUkerDataType(mixed $value): string
+    {
+        $normalized = strtolower(trim((string) $value));
+
+        return in_array($normalized, ['pinjaman', 'simpanan', 'recovery'], true)
+            ? $normalized
+            : 'pinjaman';
+    }
+
+    private function keragaanUkerFilterOptions(?string $selectedPeriod, array|string|null $selectedKanca, array|string|null $selectedUnit): array
+    {
+        $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
+        $filters['kanca'] = collect($filters['kanca'] ?? [])
+            ->reject(fn (array $option): bool => (string) ($option['value'] ?? '') === 'all')
+            ->values()
+            ->all();
+
+        return $filters;
+    }
+
+    private function timeseriesPayload(
+        string $category,
+        array|string|null $selectedKanca,
+        array|string|null $selectedUnit,
+        ?string $selectedMonth = null,
+        string $segment = 'total',
+        ?string $recoverySegment = null,
+        ?string $recoveryProduct = null
+    ): array
     {
         $monthOptions = $this->timeseriesMonthOptions();
         $resolvedMonth = $this->resolveTimeseriesMonth($selectedMonth, $monthOptions);
 
         $cacheKey = 'dashboard_harian:timeseries:' . md5(json_encode([
-            'schema' => 'v4-segment-timeseries-trend-v1',
+            'schema' => 'v7-gi405-daily-recovery-rp-million',
             'version' => $this->reportCacheVersion(),
             'category' => $category,
             'kanca' => $selectedKanca,
             'unit' => $selectedUnit,
             'period_month' => $resolvedMonth,
             'segment' => $segment,
+            'recovery_segment' => $recoverySegment,
+            'recovery_product' => $recoveryProduct,
         ]));
 
-        return $this->rememberDashboardPayload($cacheKey, function () use ($category, $selectedKanca, $selectedUnit, $monthOptions, $resolvedMonth, $segment) {
+        return $this->rememberDashboardPayload($cacheKey, function () use ($category, $selectedKanca, $selectedUnit, $monthOptions, $resolvedMonth, $segment, $recoverySegment, $recoveryProduct) {
             $emptyPayload = [
                 'months' => [],
                 'series' => [],
                 'labels' => range(1, 31),
                 'area_total' => [],
-                'value_type' => $category === 'sml' ? 'percent' : 'currency',
-                'source' => DashboardHarianSnapshotService::SNAPSHOT_TABLE,
+                'value_type' => $category === 'sml'
+                    ? 'percent'
+                    : ($category === 'recovery' ? 'currency_million' : 'currency'),
+                'source' => $category === 'recovery' ? 'gi405_recovery' : DashboardHarianSnapshotService::SNAPSHOT_TABLE,
                 'selected_month' => $resolvedMonth,
                 'available_months' => $monthOptions,
                 'segment' => $segment,
+                'recovery_segment' => $recoverySegment,
+                'recovery_product' => $recoveryProduct,
             ];
 
             $months = $this->timeseriesWindowMonths($resolvedMonth, $monthOptions);
@@ -221,7 +389,9 @@ class DashboardHarianController extends Controller
                 $category,
                 $selectedKanca,
                 $selectedUnit,
-                $segment
+                $segment,
+                $recoverySegment,
+                $recoveryProduct
             );
 
             return [
@@ -229,11 +399,15 @@ class DashboardHarianController extends Controller
                 'series' => $data['series'],
                 'labels' => range(1, 31),
                 'area_total' => $data['area_total'],
-                'value_type' => $data['value_type'] ?? ($category === 'sml' ? 'percent' : 'currency'),
-                'source' => DashboardHarianSnapshotService::SNAPSHOT_TABLE,
+                'value_type' => $data['value_type'] ?? ($category === 'sml'
+                    ? 'percent'
+                    : ($category === 'recovery' ? 'currency_million' : 'currency')),
+                'source' => $category === 'recovery' ? 'gi405_recovery' : DashboardHarianSnapshotService::SNAPSHOT_TABLE,
                 'selected_month' => $resolvedMonth,
                 'available_months' => $monthOptions,
                 'segment' => $segment,
+                'recovery_segment' => $recoverySegment,
+                'recovery_product' => $recoveryProduct,
             ];
         });
     }
@@ -366,20 +540,45 @@ class DashboardHarianController extends Controller
         $sheet->setCellValue('D4', 'Satuan');
         $sheet->setCellValue('E4', 'Nominal dalam Rp Juta, persentase dalam angka %');
 
-        $headerRow = 6;
+        $headerGroupRow = 6;
+        $headerRow = 7;
+        $dataStartRow = 8;
+        $headerGroups = $this->dashboardHarianExportHeaderGroups($payload, $headers);
+        foreach ($headerGroups as $group) {
+            $startColumn = Coordinate::stringFromColumnIndex($group['start']);
+            $endColumn = Coordinate::stringFromColumnIndex($group['end']);
+
+            if ($group['start'] === $group['end']) {
+                $sheet->mergeCells("{$startColumn}{$headerGroupRow}:{$startColumn}{$headerRow}");
+            } else {
+                $sheet->mergeCells("{$startColumn}{$headerGroupRow}:{$endColumn}{$headerGroupRow}");
+            }
+
+            $sheet->setCellValue("{$startColumn}{$headerGroupRow}", $group['label']);
+        }
+
         foreach ($headers as $index => $header) {
+            if ($index === 0) {
+                continue;
+            }
+
             $sheet->setCellValue(Coordinate::stringFromColumnIndex($index + 1) . $headerRow, $header);
         }
 
-        $rowIndex = $headerRow + 1;
+        $rowIndex = $dataStartRow;
+        $qualityRows = [];
+        $ldrRows = [];
+        $blockRows = [];
+        $segmentRows = [];
         foreach (($payload['rows'] ?? []) as $row) {
             $values = $row['values'] ?? [];
             $deltas = $row['deltas'] ?? [];
             $rkaComparison = $this->dashboardHarianRkaComparison($row);
             $type = $row['type'] ?? 'currency';
+            $label = (string) ($row['label'] ?? '');
 
             $rowValues = [
-                $row['label'] ?? '',
+                $label,
                 $this->dashboardHarianExportValue($values['yoy'] ?? 0, $type),
                 $this->dashboardHarianExportValue($values['ytd'] ?? 0, $type),
                 $this->dashboardHarianExportValue($values['m2'] ?? 0, $type),
@@ -412,41 +611,108 @@ class DashboardHarianController extends Controller
 
             $numberFormat = ($row['type'] ?? 'currency') === 'percent' ? '#,##0.00' : '#,##0';
             $sheet->getStyle("B{$rowIndex}:{$lastColumn}{$rowIndex}")->getNumberFormat()->setFormatCode($numberFormat);
+            $rowKey = (string) ($row['key'] ?? '');
+            $qualityRows[$rowIndex] = $this->isDashboardHarianQualityTarget($rowKey)
+                || $this->isDashboardHarianLdrTarget($rowKey);
+            $ldrRows[$rowIndex] = $this->isDashboardHarianLdrTarget($rowKey);
+            $blockRows[$rowIndex] = $this->isDashboardHarianExportBlockLabel($label);
+            $segmentRows[$rowIndex] = $this->isDashboardHarianExportSegmentLabel($label);
             $rowIndex++;
         }
 
         $lastRow = max($rowIndex - 1, $headerRow);
-        $sheet->freezePane('B7');
+        $sheet->freezePane('B' . $dataStartRow);
         $sheet->getStyle("A1:{$lastColumn}1")->applyFromArray([
-            'font' => ['bold' => true, 'size' => 14, 'color' => ['rgb' => 'FFFFFF']],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '004685']],
+            'font' => ['bold' => true, 'size' => 16, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '003B70']],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
-        $sheet->getStyle("A{$headerRow}:{$lastColumn}{$headerRow}")->applyFromArray([
+        $sheet->getStyle("A2:{$lastColumn}4")->applyFromArray([
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F8FBFF']],
+            'font' => ['color' => ['rgb' => '334155']],
+            'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
+        ]);
+        $sheet->getStyle('A2:A4')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => '00529C']],
+        ]);
+        $sheet->getStyle('D2:D4')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => '00529C']],
+        ]);
+        $sheet->getStyle("A{$headerGroupRow}:{$lastColumn}{$headerRow}")->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '00529C']],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER, 'wrapText' => true],
         ]);
-        $sheet->getStyle("A{$headerRow}:{$lastColumn}{$lastRow}")->applyFromArray([
+
+        foreach ($headerGroups as $group) {
+            $startColumn = Coordinate::stringFromColumnIndex($group['start']);
+            $endColumn = Coordinate::stringFromColumnIndex($group['end']);
+            $sheet->getStyle("{$startColumn}{$headerGroupRow}:{$endColumn}{$headerGroupRow}")->applyFromArray([
+                'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $group['color']]],
+            ]);
+            $sheet->getStyle("{$startColumn}{$headerRow}:{$endColumn}{$headerRow}")->applyFromArray([
+                'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $group['detail_color']]],
+            ]);
+        }
+
+        $sheet->getStyle("A{$headerGroupRow}:{$lastColumn}{$lastRow}")->applyFromArray([
             'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D9E2EC']]],
         ]);
-        $sheet->getStyle("A7:A{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
-        $sheet->getStyle("B7:{$lastColumn}{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-        $this->applyDashboardHarianExportConditionalFormatting($sheet, $lastRow, $hasH1);
+        $sheet->setAutoFilter("A{$headerRow}:{$lastColumn}{$lastRow}");
+        $sheet->getRowDimension(1)->setRowHeight(26);
+        $sheet->getRowDimension($headerGroupRow)->setRowHeight(28);
+        $sheet->getRowDimension($headerRow)->setRowHeight(44);
+        $sheet->getColumnDimension('A')->setWidth(34);
+
+        if ($lastRow >= $dataStartRow) {
+            $sheet->getStyle("A{$dataStartRow}:A{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle("B{$dataStartRow}:{$lastColumn}{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle("A{$dataStartRow}:{$lastColumn}{$lastRow}")->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+            $sheet->getStyle("A{$dataStartRow}:A{$lastRow}")->getFont()->setBold(true);
+
+            for ($rowNumber = $dataStartRow; $rowNumber <= $lastRow; $rowNumber++) {
+                $fillColor = $rowNumber % 2 === 0 ? 'F8FBFF' : 'FFFFFF';
+                $sheet->getStyle("A{$rowNumber}:{$lastColumn}{$rowNumber}")->applyFromArray([
+                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $fillColor]],
+                ]);
+
+                if ($blockRows[$rowNumber] ?? false) {
+                    $sheet->getStyle("A{$rowNumber}:{$lastColumn}{$rowNumber}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '0F4C97']],
+                    ]);
+                } elseif ($segmentRows[$rowNumber] ?? false) {
+                    $sheet->getStyle("A{$rowNumber}:{$lastColumn}{$rowNumber}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => '003B70']],
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'DDEBFF']],
+                    ]);
+                }
+            }
+        }
+
+        $sheet->getStyle("A{$headerGroupRow}:{$lastColumn}{$lastRow}")->getAlignment()->setWrapText(true);
+        $this->applyDashboardHarianExportConditionalFormatting($sheet, $lastRow, $hasH1, $qualityRows, $ldrRows, $dataStartRow);
 
         foreach (range(1, count($headers)) as $columnIndex) {
-            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($columnIndex))->setAutoSize(true);
+            $column = Coordinate::stringFromColumnIndex($columnIndex);
+            if ($column === 'A') {
+                continue;
+            }
+
+            $sheet->getColumnDimension($column)->setAutoSize(true);
         }
     }
 
-    private function applyDashboardHarianExportConditionalFormatting(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $lastRow, bool $hasH1): void
+    private function applyDashboardHarianExportConditionalFormatting(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $lastRow, bool $hasH1, array $qualityRows = [], array $ldrRows = [], int $dataStartRow = 7): void
     {
-        if ($lastRow < 7) {
+        if ($lastRow < $dataStartRow) {
             return;
         }
 
         $downStyle = $this->dashboardHarianConditionalStyle('B91C1C', 'FEE2E2');
         $upStyle = $this->dashboardHarianConditionalStyle('15803D', 'DCFCE7');
+        $flatStyle = $this->dashboardHarianConditionalStyle('92400E', 'FEF3C7');
+        $qualityBadStyle = $downStyle;
+        $qualityGoodStyle = $upStyle;
         $deltaStart = $hasH1 ? 9 : 8;
         $deltaEnd = $deltaStart + 4;
         $rkaDelta = $deltaEnd + 2;
@@ -454,26 +720,46 @@ class DashboardHarianController extends Controller
         $rkaDecDelta = $deltaEnd + 5;
         $rkaDecAchievement = $deltaEnd + 6;
 
-        foreach ([
-            Coordinate::stringFromColumnIndex($deltaStart) . '7:' . Coordinate::stringFromColumnIndex($deltaEnd) . $lastRow,
-            Coordinate::stringFromColumnIndex($rkaDelta) . '7:' . Coordinate::stringFromColumnIndex($rkaDelta) . $lastRow,
-            Coordinate::stringFromColumnIndex($rkaDecDelta) . '7:' . Coordinate::stringFromColumnIndex($rkaDecDelta) . $lastRow,
-        ] as $range) {
-            $sheet->getStyle($range)->setConditionalStyles([
-                $downStyle(Conditional::OPERATOR_LESSTHAN, '0'),
-                $upStyle(Conditional::OPERATOR_GREATERTHAN, '0'),
-            ]);
+        for ($rowNumber = $dataStartRow; $rowNumber <= $lastRow; $rowNumber++) {
+            $isQualityRow = (bool) ($qualityRows[$rowNumber] ?? false);
+            $conditionalStyles = $isQualityRow
+                ? [
+                    $qualityBadStyle(Conditional::OPERATOR_GREATERTHAN, '0'),
+                    $flatStyle(Conditional::OPERATOR_EQUAL, '0'),
+                    $qualityGoodStyle(Conditional::OPERATOR_LESSTHAN, '0'),
+                ]
+                : [
+                    $downStyle(Conditional::OPERATOR_LESSTHAN, '0'),
+                    $upStyle(Conditional::OPERATOR_GREATERTHAN, '0'),
+                ];
+
+            foreach ([
+                Coordinate::stringFromColumnIndex($deltaStart) . $rowNumber . ':' . Coordinate::stringFromColumnIndex($deltaEnd) . $rowNumber,
+                Coordinate::stringFromColumnIndex($rkaDelta) . $rowNumber . ':' . Coordinate::stringFromColumnIndex($rkaDelta) . $rowNumber,
+                Coordinate::stringFromColumnIndex($rkaDecDelta) . $rowNumber . ':' . Coordinate::stringFromColumnIndex($rkaDecDelta) . $rowNumber,
+            ] as $range) {
+                $sheet->getStyle($range)->setConditionalStyles($conditionalStyles);
+            }
         }
 
-        foreach ([
-            Coordinate::stringFromColumnIndex($rkaAchievement) . '7:' . Coordinate::stringFromColumnIndex($rkaAchievement) . $lastRow,
-            Coordinate::stringFromColumnIndex($rkaDecAchievement) . '7:' . Coordinate::stringFromColumnIndex($rkaDecAchievement) . $lastRow,
-        ] as $range) {
-            $sheet->getStyle($range)->getNumberFormat()->setFormatCode('#,##0.00');
-            $sheet->getStyle($range)->setConditionalStyles([
-                $downStyle(Conditional::OPERATOR_LESSTHAN, '100'),
-                $upStyle(Conditional::OPERATOR_GREATERTHANOREQUAL, '100'),
-            ]);
+        for ($rowNumber = $dataStartRow; $rowNumber <= $lastRow; $rowNumber++) {
+            $isLdrRow = (bool) ($ldrRows[$rowNumber] ?? false);
+            $achievementStyles = $isLdrRow
+                ? [
+                    $downStyle(Conditional::OPERATOR_LESSTHAN, '100'),
+                    $flatStyle(Conditional::OPERATOR_EQUAL, '100'),
+                    $upStyle(Conditional::OPERATOR_GREATERTHAN, '100'),
+                ]
+                : [
+                    $downStyle(Conditional::OPERATOR_LESSTHAN, '100'),
+                    $upStyle(Conditional::OPERATOR_GREATERTHANOREQUAL, '100'),
+                ];
+
+            foreach ([$rkaAchievement, $rkaDecAchievement] as $achievementColumn) {
+                $cell = Coordinate::stringFromColumnIndex($achievementColumn) . $rowNumber;
+                $sheet->getStyle($cell)->getNumberFormat()->setFormatCode('#,##0.00"%"');
+                $sheet->getStyle($cell)->setConditionalStyles($achievementStyles);
+            }
         }
     }
 
@@ -525,6 +811,71 @@ class DashboardHarianController extends Controller
         ]);
     }
 
+    /**
+     * @param array<int, string> $headers
+     * @return array<int, array{label: string, start: int, end: int, color: string, detail_color: string}>
+     */
+    private function dashboardHarianExportHeaderGroups(array $payload, array $headers): array
+    {
+        $periods = $payload['comparison_periods'] ?? [];
+        $hasH1 = !empty($periods['h1']['period']);
+        $positionEnd = $hasH1 ? 8 : 7;
+        $deltaStart = $positionEnd + 1;
+        $deltaEnd = $deltaStart + 4;
+        $rkaStart = $deltaEnd + 1;
+        $rkaEnd = $rkaStart + 2;
+        $rkaDecStart = $rkaEnd + 1;
+        $lastColumn = count($headers);
+
+        return [
+            [
+                'label' => 'KETERANGAN',
+                'start' => 1,
+                'end' => 1,
+                'color' => '003B70',
+                'detail_color' => '003B70',
+            ],
+            [
+                'label' => 'POSISI',
+                'start' => 2,
+                'end' => $positionEnd,
+                'color' => '0070C0',
+                'detail_color' => '005B9F',
+            ],
+            [
+                'label' => 'DELTA (SELISIH DIBANDING POSISI TERPILIH)',
+                'start' => $deltaStart,
+                'end' => $deltaEnd,
+                'color' => '1E293B',
+                'detail_color' => '334155',
+            ],
+            [
+                'label' => 'RKA TERPILIH',
+                'start' => $rkaStart,
+                'end' => $rkaEnd,
+                'color' => '00529C',
+                'detail_color' => '0F4C97',
+            ],
+            [
+                'label' => 'RKA DES TAHUN BERJALAN',
+                'start' => $rkaDecStart,
+                'end' => $lastColumn,
+                'color' => '475569',
+                'detail_color' => '64748B',
+            ],
+        ];
+    }
+
+    private function isDashboardHarianExportBlockLabel(string $label): bool
+    {
+        return preg_match('/^\s*\d+\.\s+/u', $label) === 1;
+    }
+
+    private function isDashboardHarianExportSegmentLabel(string $label): bool
+    {
+        return preg_match('/^\s*[A-Z]\.\s+/u', $label) === 1;
+    }
+
     private function dashboardHarianExportValue(mixed $value, string $type): float
     {
         $numeric = (float) $value;
@@ -535,9 +886,13 @@ class DashboardHarianController extends Controller
     private function dashboardHarianRkaComparison(array $row): array
     {
         $currentValue = (float) ($row['values']['current'] ?? 0);
-        $reverse = $this->isDashboardHarianQualityTarget($row['key'] ?? '');
-        $compare = function (float $targetValue) use ($currentValue, $reverse): array {
-            $delta = $reverse ? ($targetValue - $currentValue) : ($currentValue - $targetValue);
+        $rowKey = (string) ($row['key'] ?? '');
+        $reverse = $this->isDashboardHarianQualityTarget($rowKey) || $this->isDashboardHarianLdrTarget($rowKey);
+        $useCurrentMinusTargetDelta = $this->isDashboardHarianLdrTarget($rowKey);
+        $compare = function (float $targetValue) use ($currentValue, $reverse, $useCurrentMinusTargetDelta): array {
+            $delta = $useCurrentMinusTargetDelta
+                ? ($currentValue - $targetValue)
+                : ($reverse ? ($targetValue - $currentValue) : ($currentValue - $targetValue));
             $achievement = 0.0;
 
             if ($reverse) {
@@ -564,6 +919,11 @@ class DashboardHarianController extends Controller
             || str_contains($rowKey, '_npl')
             || str_starts_with($rowKey, 'total_sml_')
             || str_starts_with($rowKey, 'total_npl_');
+    }
+
+    private function isDashboardHarianLdrTarget(string $rowKey): bool
+    {
+        return str_starts_with($rowKey, 'ldr_');
     }
 
     private function formatExportDate(mixed $value): string
@@ -600,6 +960,24 @@ class DashboardHarianController extends Controller
         $sanitized = trim($sanitized, '-');
 
         return $sanitized !== '' ? strtolower($sanitized) : 'export';
+    }
+
+    private function resolveOptionalMtmPeriod(mixed $value, ?string $selectedPeriod): ?string
+    {
+        $raw = trim((string) $value);
+        if ($raw === '' || !$selectedPeriod) {
+            return null;
+        }
+
+        try {
+            $candidate = \Carbon\Carbon::parse(substr($raw, 0, 10))->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $resolved = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($candidate);
+
+        return $resolved && $resolved !== $selectedPeriod ? $resolved : null;
     }
 
     private function normalizeFilter($value): array|string|null
@@ -644,6 +1022,18 @@ class DashboardHarianController extends Controller
         $selectedKanca = $this->defaultArea6KancaWhenAll($selectedKanca, $selectedUnit);
 
         if ($this->isArea6KancaScope($selectedKanca)) {
+            $selectedUnit = null;
+        }
+
+        return [$selectedKanca, $selectedUnit];
+    }
+
+    private function resolveKeragaanUkerFilters(Request $request): array
+    {
+        $selectedKanca = $this->normalizeFilter($request->input('kanca'));
+        $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
+
+        if ($selectedKanca === null) {
             $selectedUnit = null;
         }
 

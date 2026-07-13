@@ -386,6 +386,37 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   gap: 0.55rem;
   padding: 0.75rem 0.95rem 0.95rem;
 }
+.landing-decision-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  padding: 0.75rem 0.95rem 0;
+}
+.landing-decision-chip {
+  min-width: 0;
+  border: 1px solid #dbeafe;
+  background: linear-gradient(180deg, #f8fbff 0%, #eff6ff 100%);
+  border-radius: var(--r-md);
+  padding: 0.5rem 0.62rem;
+}
+.landing-decision-chip span {
+  display: block;
+  color: #64748b;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+.landing-decision-chip strong {
+  display: block;
+  margin-top: 0.15rem;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .landing-branch-row,
 .landing-decision-row,
 .landing-segment-row {
@@ -498,6 +529,24 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 }
 .landing-progress-bar.bg-blue {
   background-color: #3b82f6 !important;
+}
+.landing-decision-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 0.1rem;
+  padding: 0.17rem 0.45rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: var(--c-blue);
+  font-size: 0.56rem;
+  font-weight: 850;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .landing-scope-caption {
   margin: 0.85rem 0.95rem 0;
@@ -3250,6 +3299,657 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
     padding-right: 0.55rem;
   }
 }
+
+/* Landing page tablet and constrained-width guard */
+.db-shell,
+.db-shell * {
+  box-sizing: border-box;
+}
+.db-shell {
+  overflow-x: clip;
+}
+.db-shell :where(.kpi-card, .area6-card-premium, .area6-card, .chart-panel, .digital-panel, .dc, .area6-segment-card, .total-composition-card) {
+  max-width: 100%;
+}
+.area6-card-premium {
+  min-width: 0;
+}
+.ap-header {
+  min-width: 0;
+  padding-left: 3.15rem;
+  padding-right: 0.75rem;
+}
+.ap-header-title {
+  width: 100%;
+  max-width: 100%;
+  line-height: 1.08;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+.ap-body,
+.ap-metric-col,
+.ap-delta-item,
+.dc,
+.dc-stat,
+.dc-foot {
+  min-width: 0;
+}
+.ap-metric-val,
+.ap-metric-pct-val,
+.ap-metric-gap-val,
+.dc-val,
+.dc-stat-val {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.chart-panel canvas {
+  height: 360px !important;
+  min-height: 0;
+}
+
+@media (min-width: 768px) and (max-width: 1399.98px) {
+  .db-shell {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .db-header,
+  .landing-summary,
+  .area6-panel,
+  .main-grid {
+    width: 100%;
+    max-width: 100%;
+  }
+  .landing-summary-head,
+  .area6-head {
+    padding: 0.95rem 1rem;
+  }
+  .landing-summary-grid,
+  .area6-panel .area6-card-grid,
+  .area6-card-grid,
+  .area6-segment-container,
+  .area6-ranking-grid {
+    padding: 1rem;
+    gap: 0.9rem;
+  }
+  .area6-panel .area6-card-grid,
+  .area6-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+  .area6-card-premium {
+    border-radius: var(--r-lg);
+  }
+  .ap-header {
+    height: 40px;
+  }
+  .ap-header-title {
+    font-size: 0.68rem;
+    letter-spacing: 0.02em;
+  }
+  .ap-badge {
+    width: 38px;
+    height: 38px;
+    top: -10px;
+    left: 10px;
+    font-size: 0.95rem;
+  }
+  .ap-body {
+    padding: 1rem 0.9rem 0.85rem;
+  }
+  .ap-metric-label,
+  .ap-delta-label {
+    font-size: 0.62rem;
+  }
+  .ap-metric-val,
+  .ap-metric-pct-val,
+  .ap-metric-gap-val {
+    font-size: 1.12rem;
+    letter-spacing: 0;
+  }
+  .ap-metric-sub {
+    font-size: 0.58rem;
+  }
+  .ap-delta-val {
+    font-size: 0.68rem;
+  }
+  .ap-delta-arrow {
+    font-size: 0.8rem;
+  }
+  .main-grid {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.25fr);
+    gap: 0.9rem;
+  }
+  .chart-panel,
+  .digital-panel {
+    padding: 1rem;
+    border-radius: var(--r-lg);
+  }
+  .chart-panel {
+    min-height: 0;
+  }
+  .chart-panel canvas {
+    height: 340px !important;
+  }
+  .dp-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.75rem;
+  }
+  .dc {
+    min-height: 0;
+    padding: 0.9rem;
+  }
+  .dc-val {
+    font-size: 1.35rem;
+    letter-spacing: 0;
+  }
+  .dc-stats {
+    gap: 0.45rem;
+  }
+  .dc-stat {
+    padding: 0.5rem;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1100px) {
+  .area6-panel .area6-card-grid,
+  .area6-card-grid,
+  .main-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .ap-header-title {
+    font-size: 0.72rem;
+  }
+  .chart-panel canvas {
+    height: 300px !important;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .db-shell {
+    overflow-x: hidden;
+  }
+  .landing-summary-grid,
+  .area6-panel .area6-card-grid,
+  .area6-card-grid,
+  .area6-segment-container,
+  .area6-ranking-grid,
+  .main-grid,
+  .dp-grid {
+    width: 100%;
+    max-width: 100%;
+    grid-template-columns: 1fr !important;
+  }
+  .ap-header {
+    height: auto;
+    min-height: 38px;
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+  }
+  .ap-header-title {
+    font-size: 0.66rem;
+    letter-spacing: 0.02em;
+  }
+  .ap-body {
+    padding: 0.9rem 0.85rem 0.8rem;
+  }
+  .ap-metric-val,
+  .ap-metric-pct-val,
+  .ap-metric-gap-val,
+  .dc-val {
+    font-size: 1.18rem;
+    letter-spacing: 0;
+  }
+  .chart-panel canvas {
+    height: 240px !important;
+  }
+}
+
+/* Container-aware landing system. JS toggles these classes from the real content width. */
+.db-shell.landing-compact {
+  max-width: 100% !important;
+}
+.db-shell.landing-compact .db-header,
+.db-shell.landing-compact .landing-summary,
+.db-shell.landing-compact .area6-panel,
+.db-shell.landing-compact .main-grid {
+  border-radius: var(--r-lg);
+}
+.db-shell.landing-compact .kpi-strip {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+  gap: 0.65rem;
+}
+.db-shell.landing-compact .kpi-card {
+  min-height: 92px;
+  padding: 0.85rem 0.95rem;
+}
+.db-shell.landing-compact .area6-head {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.db-shell.landing-compact .area6-head-actions,
+.db-shell.landing-compact .area6-periods {
+  align-items: flex-start;
+  justify-content: flex-start;
+  width: 100%;
+}
+.db-shell.landing-compact .area6-scope-toggle {
+  max-width: 100%;
+}
+.db-shell.landing-compact .area6-panel .area6-card-grid,
+.db-shell.landing-compact .area6-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+  gap: 0.85rem !important;
+  padding: 0.95rem !important;
+}
+.db-shell.landing-compact .area6-card-premium {
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+}
+.db-shell.landing-compact .ap-header {
+  min-height: 38px;
+  height: auto;
+  padding: 0.48rem 0.7rem 0.48rem 3rem;
+}
+.db-shell.landing-compact .ap-header-title {
+  font-size: 0.78rem !important;
+  line-height: 1.14 !important;
+  letter-spacing: 0 !important;
+}
+.db-shell.landing-compact .ap-badge {
+  width: 36px;
+  height: 36px;
+  top: -8px;
+  left: 10px;
+  border-width: 2px;
+  font-size: 0.9rem;
+}
+.db-shell.landing-compact .ap-body {
+  padding: 0.9rem 0.85rem 0.8rem !important;
+}
+.db-shell.landing-compact .ap-grid-2 {
+  gap: 0.25rem;
+}
+.db-shell.landing-compact .ap-metric-col {
+  padding: 0.35rem 0.2rem;
+}
+.db-shell.landing-compact .ap-metric-label,
+.db-shell.landing-compact .ap-delta-label {
+  font-size: 0.6rem !important;
+  line-height: 1.2;
+}
+.db-shell.landing-compact .ap-metric-val,
+.db-shell.landing-compact .ap-metric-pct-val,
+.db-shell.landing-compact .ap-metric-gap-val {
+  font-size: 1.08rem !important;
+  line-height: 1.12 !important;
+  letter-spacing: 0 !important;
+}
+.db-shell.landing-compact .ap-metric-sub {
+  font-size: 0.56rem !important;
+}
+.db-shell.landing-compact .ap-dashed-divider {
+  margin: 0.55rem 0;
+}
+.db-shell.landing-compact .ap-deltas {
+  gap: 0.3rem;
+}
+.db-shell.landing-compact .ap-delta-val {
+  font-size: 0.66rem !important;
+}
+.db-shell.landing-compact .ap-delta-arrow {
+  font-size: 0.78rem !important;
+}
+.db-shell.landing-compact .area6-segment-container {
+  grid-template-columns: 1fr !important;
+  padding: 0 0.95rem 0.95rem !important;
+}
+.db-shell.landing-compact .main-grid {
+  grid-template-columns: 1fr !important;
+  gap: 0.9rem;
+}
+.db-shell.landing-compact .chart-panel {
+  min-height: 0 !important;
+}
+.db-shell.landing-compact .chart-panel canvas {
+  height: 280px !important;
+}
+.db-shell.landing-compact .dp-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+  gap: 0.7rem;
+}
+.db-shell.landing-compact .dc {
+  min-height: 0 !important;
+  padding: 0.85rem !important;
+}
+.db-shell.landing-compact .dc-val {
+  font-size: 1.25rem !important;
+  letter-spacing: 0 !important;
+}
+.db-shell.landing-compact .dc-stats {
+  gap: 0.4rem;
+}
+.db-shell.landing-compact .dc-stat {
+  min-width: 0;
+  padding: 0.45rem !important;
+}
+.db-shell.landing-narrow .kpi-strip,
+.db-shell.landing-narrow .landing-summary-grid,
+.db-shell.landing-narrow .area6-panel .area6-card-grid,
+.db-shell.landing-narrow .area6-card-grid,
+.db-shell.landing-narrow .dp-grid,
+.db-shell.landing-narrow .main-grid {
+  grid-template-columns: 1fr !important;
+}
+.db-shell.landing-narrow .db-header,
+.db-shell.landing-narrow .landing-summary-head,
+.db-shell.landing-narrow .area6-head,
+.db-shell.landing-narrow .chart-panel,
+.db-shell.landing-narrow .digital-panel {
+  padding-left: 0.8rem !important;
+  padding-right: 0.8rem !important;
+}
+.db-shell.landing-narrow .chart-panel canvas {
+  height: 220px !important;
+}
+.db-shell.landing-narrow .dc-stats,
+.db-shell.landing-narrow .ap-deltas {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+/* Final landing density system: desktop / tablet / mobile / short viewport */
+body.dashboard-landing-page .content-wrapper .container-fluid {
+  max-width: 100%;
+}
+.db-shell.landing-tablet,
+.db-shell.landing-mobile,
+.db-shell.landing-short {
+  --landing-space: 0.85rem;
+  --landing-card-radius: 12px;
+  --landing-panel-pad: 0.95rem;
+}
+.db-shell.landing-tablet .db-header,
+.db-shell.landing-mobile .db-header,
+.db-shell.landing-short .db-header {
+  padding: 0.9rem 1rem !important;
+  margin-bottom: 0.85rem !important;
+  border-radius: var(--landing-card-radius) !important;
+}
+.db-shell.landing-tablet .kpi-strip,
+.db-shell.landing-mobile .kpi-strip,
+.db-shell.landing-short .kpi-strip {
+  gap: 0.65rem !important;
+  margin-bottom: 0.75rem !important;
+}
+.db-shell.landing-tablet .kpi-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+.db-shell.landing-mobile .kpi-strip {
+  grid-template-columns: 1fr !important;
+}
+.db-shell.landing-tablet .kpi-card,
+.db-shell.landing-mobile .kpi-card,
+.db-shell.landing-short .kpi-card {
+  min-height: 0 !important;
+  padding: 0.8rem 0.9rem !important;
+}
+.db-shell.landing-tablet .kpi-card .kc-label,
+.db-shell.landing-mobile .kpi-card .kc-label,
+.db-shell.landing-short .kpi-card .kc-label {
+  font-size: 0.58rem !important;
+  letter-spacing: 0.035em !important;
+}
+.db-shell.landing-tablet .kpi-card .kc-val,
+.db-shell.landing-mobile .kpi-card .kc-val,
+.db-shell.landing-short .kpi-card .kc-val {
+  font-size: 1.05rem !important;
+  line-height: 1.12 !important;
+  letter-spacing: 0 !important;
+}
+.db-shell.landing-tablet .landing-summary,
+.db-shell.landing-tablet .area6-panel,
+.db-shell.landing-tablet .chart-panel,
+.db-shell.landing-tablet .digital-panel,
+.db-shell.landing-mobile .landing-summary,
+.db-shell.landing-mobile .area6-panel,
+.db-shell.landing-mobile .chart-panel,
+.db-shell.landing-mobile .digital-panel,
+.db-shell.landing-short .landing-summary,
+.db-shell.landing-short .area6-panel,
+.db-shell.landing-short .chart-panel,
+.db-shell.landing-short .digital-panel {
+  margin: 0.8rem 0 !important;
+  border-radius: var(--landing-card-radius) !important;
+}
+.db-shell.landing-tablet .landing-summary-head,
+.db-shell.landing-tablet .area6-head,
+.db-shell.landing-mobile .landing-summary-head,
+.db-shell.landing-mobile .area6-head,
+.db-shell.landing-short .landing-summary-head,
+.db-shell.landing-short .area6-head {
+  padding: 0.85rem var(--landing-panel-pad) !important;
+  gap: 0.65rem !important;
+}
+.db-shell.landing-tablet .landing-summary-title,
+.db-shell.landing-tablet .area6-title,
+.db-shell.landing-tablet .cp-title,
+.db-shell.landing-tablet .dp-title,
+.db-shell.landing-mobile .landing-summary-title,
+.db-shell.landing-mobile .area6-title,
+.db-shell.landing-mobile .cp-title,
+.db-shell.landing-mobile .dp-title,
+.db-shell.landing-short .landing-summary-title,
+.db-shell.landing-short .area6-title,
+.db-shell.landing-short .cp-title,
+.db-shell.landing-short .dp-title {
+  font-size: 0.98rem !important;
+  line-height: 1.18 !important;
+  letter-spacing: 0 !important;
+}
+.db-shell.landing-tablet .area6-scope-toggle,
+.db-shell.landing-mobile .area6-scope-toggle,
+.db-shell.landing-short .area6-scope-toggle {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  width: 100% !important;
+  border-radius: 12px !important;
+  overflow: visible !important;
+}
+.db-shell.landing-tablet .area6-scope-btn,
+.db-shell.landing-mobile .area6-scope-btn,
+.db-shell.landing-short .area6-scope-btn {
+  flex: 1 1 8rem !important;
+  min-height: 32px !important;
+  padding: 0.34rem 0.58rem !important;
+  text-align: center !important;
+}
+.db-shell.landing-tablet .area6-periods,
+.db-shell.landing-mobile .area6-periods,
+.db-shell.landing-short .area6-periods {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+  width: 100% !important;
+  gap: 0.38rem !important;
+}
+.db-shell.landing-tablet .area6-pill,
+.db-shell.landing-mobile .area6-pill,
+.db-shell.landing-short .area6-pill {
+  min-width: 0 !important;
+  justify-content: center !important;
+  white-space: normal !important;
+  text-align: center !important;
+  border-radius: 10px !important;
+  font-size: 0.6rem !important;
+}
+.db-shell.landing-tablet .area6-panel .area6-card-grid,
+.db-shell.landing-tablet .area6-card-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.8rem !important;
+  padding: var(--landing-panel-pad) !important;
+}
+.db-shell.landing-mobile .area6-panel .area6-card-grid,
+.db-shell.landing-mobile .area6-card-grid {
+  grid-template-columns: 1fr !important;
+  gap: 0.7rem !important;
+  padding: 0.75rem !important;
+}
+.db-shell.landing-short .area6-panel .area6-card-grid,
+.db-shell.landing-short .area6-card-grid {
+  gap: 0.7rem !important;
+}
+.db-shell.landing-tablet .area6-card-premium,
+.db-shell.landing-mobile .area6-card-premium,
+.db-shell.landing-short .area6-card-premium {
+  overflow: hidden !important;
+  min-height: 0 !important;
+  border-radius: var(--landing-card-radius) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+.db-shell.landing-tablet .area6-card-premium:hover,
+.db-shell.landing-mobile .area6-card-premium:hover,
+.db-shell.landing-short .area6-card-premium:hover {
+  transform: none !important;
+}
+.db-shell.landing-tablet .ap-badge,
+.db-shell.landing-mobile .ap-badge,
+.db-shell.landing-short .ap-badge {
+  width: 30px !important;
+  height: 30px !important;
+  top: 7px !important;
+  left: 8px !important;
+  border-width: 0 !important;
+  box-shadow: none !important;
+  font-size: 0.78rem !important;
+}
+.db-shell.landing-tablet .ap-header,
+.db-shell.landing-mobile .ap-header,
+.db-shell.landing-short .ap-header {
+  min-height: 44px !important;
+  height: auto !important;
+  justify-content: flex-start !important;
+  padding: 0.52rem 0.65rem 0.52rem 2.85rem !important;
+  border-radius: 0 !important;
+}
+.db-shell.landing-tablet .ap-header-title,
+.db-shell.landing-mobile .ap-header-title,
+.db-shell.landing-short .ap-header-title {
+  font-size: 0.82rem !important;
+  line-height: 1.1 !important;
+  letter-spacing: 0 !important;
+  text-align: left !important;
+  text-wrap: balance;
+}
+.db-shell.landing-tablet .ap-body,
+.db-shell.landing-mobile .ap-body,
+.db-shell.landing-short .ap-body {
+  padding: 0.75rem !important;
+}
+.db-shell.landing-tablet .ap-grid-2,
+.db-shell.landing-mobile .ap-grid-2,
+.db-shell.landing-short .ap-grid-2 {
+  gap: 0.2rem !important;
+}
+.db-shell.landing-tablet .ap-metric-col,
+.db-shell.landing-mobile .ap-metric-col,
+.db-shell.landing-short .ap-metric-col {
+  padding: 0.3rem 0.15rem !important;
+}
+.db-shell.landing-tablet .ap-metric-label,
+.db-shell.landing-tablet .ap-delta-label,
+.db-shell.landing-mobile .ap-metric-label,
+.db-shell.landing-mobile .ap-delta-label,
+.db-shell.landing-short .ap-metric-label,
+.db-shell.landing-short .ap-delta-label {
+  font-size: 0.58rem !important;
+  line-height: 1.18 !important;
+}
+.db-shell.landing-tablet .ap-metric-val,
+.db-shell.landing-tablet .ap-metric-pct-val,
+.db-shell.landing-tablet .ap-metric-gap-val,
+.db-shell.landing-mobile .ap-metric-val,
+.db-shell.landing-mobile .ap-metric-pct-val,
+.db-shell.landing-mobile .ap-metric-gap-val,
+.db-shell.landing-short .ap-metric-val,
+.db-shell.landing-short .ap-metric-pct-val,
+.db-shell.landing-short .ap-metric-gap-val {
+  font-size: 0.98rem !important;
+  line-height: 1.1 !important;
+  letter-spacing: 0 !important;
+}
+.db-shell.landing-tablet .ap-metric-sub,
+.db-shell.landing-mobile .ap-metric-sub,
+.db-shell.landing-short .ap-metric-sub {
+  font-size: 0.54rem !important;
+}
+.db-shell.landing-tablet .ap-deltas,
+.db-shell.landing-short .ap-deltas {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 0.24rem !important;
+}
+.db-shell.landing-mobile .ap-deltas {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+.db-shell.landing-tablet .ap-delta-val,
+.db-shell.landing-mobile .ap-delta-val,
+.db-shell.landing-short .ap-delta-val {
+  font-size: 0.62rem !important;
+}
+.db-shell.landing-tablet .main-grid,
+.db-shell.landing-mobile .main-grid,
+.db-shell.landing-short .main-grid {
+  grid-template-columns: 1fr !important;
+  gap: 0.8rem !important;
+}
+.db-shell.landing-tablet .chart-panel,
+.db-shell.landing-tablet .digital-panel,
+.db-shell.landing-mobile .chart-panel,
+.db-shell.landing-mobile .digital-panel,
+.db-shell.landing-short .chart-panel,
+.db-shell.landing-short .digital-panel {
+  padding: var(--landing-panel-pad) !important;
+}
+.db-shell.landing-tablet .chart-panel canvas {
+  height: 260px !important;
+}
+.db-shell.landing-mobile .chart-panel canvas,
+.db-shell.landing-short .chart-panel canvas {
+  height: 210px !important;
+}
+.db-shell.landing-tablet .dp-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.7rem !important;
+}
+.db-shell.landing-mobile .dp-grid {
+  grid-template-columns: 1fr !important;
+}
+.db-shell.landing-tablet .dc,
+.db-shell.landing-mobile .dc,
+.db-shell.landing-short .dc {
+  min-height: 0 !important;
+  padding: 0.75rem !important;
+  border-radius: var(--landing-card-radius) !important;
+}
+.db-shell.landing-tablet .dc-val,
+.db-shell.landing-mobile .dc-val,
+.db-shell.landing-short .dc-val {
+  font-size: 1.15rem !important;
+  line-height: 1.12 !important;
+  letter-spacing: 0 !important;
+}
+.db-shell.landing-tablet .dc-stats,
+.db-shell.landing-mobile .dc-stats,
+.db-shell.landing-short .dc-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 0.38rem !important;
+}
+.db-shell.landing-mobile .dc-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+.db-shell.landing-tablet .dc-stat,
+.db-shell.landing-mobile .dc-stat,
+.db-shell.landing-short .dc-stat {
+  padding: 0.42rem !important;
+}
 </style>
 
 <div class="db-shell pt-2">
@@ -4239,6 +4939,16 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
           <div class="landing-card-period">{{ data_get($landingDecision, 'period_label', 'Belum ada data') }}</div>
         </div>
         @if(data_get($landingDecision, 'available'))
+          <div class="landing-decision-summary-strip">
+            <div class="landing-decision-chip">
+              <span>Total Putusan</span>
+              <strong>{{ data_get($landingDecision, 'total_deb_fmt', '0 deb') }} | {{ data_get($landingDecision, 'total_nominal_fmt', 'Rp0') }}</strong>
+            </div>
+            <div class="landing-decision-chip">
+              <span>KUR Ritel 2015</span>
+              <strong>{{ data_get($landingDecision, 'kur_ritel_deb_fmt', '0 deb') }} | {{ data_get($landingDecision, 'kur_ritel_nominal_fmt', 'Rp0') }}</strong>
+            </div>
+          </div>
           <div class="landing-decision-list">
             @php
               $decisionItems = collect(data_get($landingDecision, 'items', []));
@@ -4260,6 +4970,12 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
                   <div class="landing-progress-container">
                     <div class="landing-progress-bar bg-success" style="width: {{ $pctContribution }}%;"></div>
                   </div>
+                  @if(data_get($item, 'kur_ritel_note'))
+                    <div class="landing-decision-note">
+                      <i class="fas fa-check-circle"></i>
+                      <span>{{ data_get($item, 'kur_ritel_note') }}</span>
+                    </div>
+                  @endif
                 </div>
                 <div class="landing-row-value">{{ data_get($item, 'nominal_fmt', 'Rp0') }}</div>
               </div>
@@ -4470,6 +5186,72 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   window.addEventListener('load', relocateLoaders);
 })();
 
+// Keep the landing page proportional to the actual available content width,
+// not only to the device viewport. This covers tablet landscape + open sidebar.
+(function() {
+  const shell = document.querySelector('.db-shell');
+  if (!shell) return;
+
+  document.body.classList.add('dashboard-landing-page');
+
+  let raf = null;
+
+  const syncLandingDensity = () => {
+    const shellWidth = shell.getBoundingClientRect().width || window.innerWidth || 0;
+    const viewportWidth = window.visualViewport?.width || window.innerWidth || shellWidth;
+    const viewportHeight = window.visualViewport?.height || window.innerHeight || 0;
+    const effectiveWidth = Math.min(shellWidth, viewportWidth);
+    const coarseQuery = window.matchMedia ? window.matchMedia('(pointer: coarse)') : null;
+    const isTouch = coarseQuery ? coarseQuery.matches : false;
+    const isShort = viewportHeight > 0 && viewportHeight <= 760;
+    const isMobile = effectiveWidth <= 700;
+    const isTablet = !isMobile && (effectiveWidth <= 1280 || (isTouch && effectiveWidth <= 1680));
+    const isCompact = isMobile || isTablet || isShort || effectiveWidth <= 1500;
+    const isNarrow = isMobile || effectiveWidth <= 880;
+
+    shell.classList.toggle('landing-compact', isCompact);
+    shell.classList.toggle('landing-narrow', isNarrow);
+    shell.classList.toggle('landing-tablet', isTablet);
+    shell.classList.toggle('landing-mobile', isMobile);
+    shell.classList.toggle('landing-short', isShort && !isMobile);
+    shell.dataset.landingWidth = String(Math.round(effectiveWidth));
+    shell.dataset.landingHeight = String(Math.round(viewportHeight));
+
+    const chartCanvas = document.getElementById('timeseriesChart');
+    if (chartCanvas) {
+      const chartHeight = isMobile ? 210 : (isTablet || isShort ? 260 : (isCompact ? 300 : 360));
+      chartCanvas.style.setProperty('height', `${chartHeight}px`, 'important');
+    }
+
+    if (window.timeseriesArea6Chart && typeof window.timeseriesArea6Chart.resize === 'function') {
+      window.timeseriesArea6Chart.resize();
+    }
+  };
+
+  const scheduleSync = () => {
+    if (raf) window.cancelAnimationFrame(raf);
+    raf = window.requestAnimationFrame(syncLandingDensity);
+  };
+
+  scheduleSync();
+  window.addEventListener('resize', scheduleSync, { passive: true });
+  window.addEventListener('orientationchange', scheduleSync, { passive: true });
+  window.setTimeout(scheduleSync, 250);
+  window.setTimeout(scheduleSync, 900);
+
+  if (window.ResizeObserver) {
+    const observer = new ResizeObserver(scheduleSync);
+    observer.observe(shell);
+    const wrapper = document.querySelector('.content-wrapper');
+    if (wrapper) observer.observe(wrapper);
+  }
+
+  if (window.MutationObserver) {
+    const mutationObserver = new MutationObserver(scheduleSync);
+    mutationObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+  }
+})();
+
 document.addEventListener('DOMContentLoaded', function() {
   const pptOverlay = document.getElementById('ppt-loading-overlay');
   const globalLoader = document.getElementById('dashboard-global-loader');
@@ -4619,7 +5401,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     try {
-      const chart = new Chart(ctx.getContext('2d'), {
+      const chart = window.timeseriesArea6Chart = new Chart(ctx.getContext('2d'), {
         type: 'line',
         data: {
           labels: labels,
@@ -4882,13 +5664,17 @@ document.addEventListener('DOMContentLoaded', function() {
   const PRESENTATION_DATA_URL = @json(route('dashboard.presentation-data'));
   const SELECTED_PRESENTATION_PERIOD = @json($selectedPeriod);
 
-  const buildPresentationPayloadUrl = (period = SELECTED_PRESENTATION_PERIOD, warmOnly = false) => {
+  const buildPresentationPayloadUrl = (period = SELECTED_PRESENTATION_PERIOD, options = {}) => {
     const url = new URL(PRESENTATION_DATA_URL, window.location.origin);
     if (period) {
       url.searchParams.set('periode', period);
     }
-    if (warmOnly) {
+    if (options.warmOnly) {
       url.searchParams.set('warm', '1');
+    }
+    if (options.fresh) {
+      url.searchParams.set('fresh', '1');
+      url.searchParams.set('_ts', String(Date.now()));
     }
     return url;
   };
@@ -4926,7 +5712,7 @@ document.addEventListener('DOMContentLoaded', function() {
   };
 
   const fetchPresentationPayload = async () => {
-    const url = buildPresentationPayloadUrl();
+    const url = buildPresentationPayloadUrl(SELECTED_PRESENTATION_PERIOD, { fresh: true });
 
     const response = await fetch(url.toString(), {
       headers: { 'Accept': 'application/json' },
@@ -4938,7 +5724,13 @@ document.addEventListener('DOMContentLoaded', function() {
       throw new Error(`Gagal mengambil data presentasi (${response.status}).`);
     }
 
-    return response.json();
+    const payload = await response.json();
+
+    if (!payload || typeof payload !== 'object' || !payload.meta) {
+      throw new Error('Payload presentasi tidak valid.');
+    }
+
+    return payload;
   };
 
   const imageToDataUri = async (url) => {
@@ -6126,7 +6918,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
   if (exportBtn) {
     exportBtn.addEventListener('click', async function() {
+      const originalLabel = exportBtn.innerHTML;
       if (loadingOverlay) loadingOverlay.classList.add('active');
+      exportBtn.disabled = true;
+      exportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Menyiapkan PPT...</span>';
 
       try {
         await exportPresentationDeck();
@@ -6367,6 +7162,8 @@ document.addEventListener('DOMContentLoaded', function() {
         alert("Terjadi kesalahan saat menyusun PPT: " + err.message);
       } finally {
         if (loadingOverlay) loadingOverlay.classList.remove('active');
+        exportBtn.disabled = false;
+        exportBtn.innerHTML = originalLabel;
       }
     });
   }

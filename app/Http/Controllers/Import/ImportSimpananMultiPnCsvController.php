@@ -21,6 +21,8 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
     private const PREVIEW_UNIQUE_SCAN_LIMIT = 250;
     private const PREVIEW_MAX_UNIQUE_VALUES = 120;
     private const ROW_COUNT_ESTIMATE_SAMPLE_BYTES = 1048576;
+    private const CHUNK_SIZE_BYTES = 8388608;
+    private const CHUNK_UPLOAD_TEMP_DIR = 'app/chunk_uploads';
 
     private function useSimpananReport(Request $request): Request
     {
@@ -99,6 +101,185 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         }
 
         return redirect()->route('import.simpanan.csv.preview');
+    }
+
+    public function initChunkUpload(Request $request)
+    {
+        $request->validate([
+            'original_name' => 'required|string',
+            'total_size' => 'required|integer|min:1',
+            'total_chunks' => 'required|integer|min:1',
+        ]);
+
+        $originalName = trim((string) $request->input('original_name'));
+        $extension = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['csv', 'txt'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Format file Simpanan Multi PN harus CSV atau TXT.',
+            ], 422);
+        }
+
+        $totalSize = (int) $request->input('total_size');
+        $totalChunks = (int) $request->input('total_chunks');
+        $expectedChunks = max(1, (int) ceil($totalSize / self::CHUNK_SIZE_BYTES));
+        if ($totalChunks !== $expectedChunks) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Jumlah potongan file tidak sesuai dengan ukuran upload.',
+            ], 422);
+        }
+
+        $uploadId = 'simpanan_' . Str::uuid()->toString();
+        $directory = $this->ensureSimpananChunkUploadDirectory($uploadId);
+        file_put_contents($directory . DIRECTORY_SEPARATOR . 'meta.json', json_encode([
+            'original_name' => $originalName,
+            'total_size' => $totalSize,
+            'total_chunks' => $totalChunks,
+            'created_at' => now()->toIso8601String(),
+            'user_id' => auth()->id(),
+        ], JSON_PRETTY_PRINT));
+
+        return response()->json([
+            'status' => 'success',
+            'upload_id' => $uploadId,
+        ]);
+    }
+
+    public function uploadChunk(Request $request)
+    {
+        $request->validate([
+            'upload_id' => ['required', 'string', 'regex:/^simpanan_[0-9a-f-]{36}$/'],
+            'chunk_index' => 'required|integer|min:0',
+            'total_chunks' => 'required|integer|min:1',
+            'file' => 'required|file',
+        ]);
+
+        $uploadId = trim((string) $request->input('upload_id'));
+        $directory = $this->simpananChunkUploadDirectory($uploadId);
+        $meta = $this->readSimpananChunkUploadMeta($directory);
+        if ($meta === null) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Sesi upload Simpanan Multi PN tidak ditemukan. Silakan upload ulang.',
+            ], 404);
+        }
+
+        if (!$this->ownsSimpananChunkUpload($meta)) {
+            return response()->json(['status' => 'error', 'message' => 'Sesi upload tidak sesuai pengguna.'], 403);
+        }
+
+        $chunkIndex = (int) $request->input('chunk_index');
+        $totalChunks = (int) $request->input('total_chunks');
+        if ($totalChunks !== (int) ($meta['total_chunks'] ?? 0) || $chunkIndex >= $totalChunks) {
+            return response()->json(['status' => 'error', 'message' => 'Urutan potongan file tidak valid.'], 422);
+        }
+
+        $chunkFile = $request->file('file');
+        if (!$chunkFile || !$chunkFile->isValid() || (int) $chunkFile->getSize() > self::CHUNK_SIZE_BYTES) {
+            return response()->json(['status' => 'error', 'message' => 'Potongan file upload tidak valid.'], 422);
+        }
+
+        $targetName = sprintf('part_%06d.bin', $chunkIndex);
+        $targetPath = $directory . DIRECTORY_SEPARATOR . $targetName;
+        if (is_file($targetPath)) {
+            @unlink($targetPath);
+        }
+        $chunkFile->move($directory, $targetName);
+
+        return response()->json([
+            'status' => 'success',
+            'chunk_index' => $chunkIndex,
+        ]);
+    }
+
+    public function finalizeChunkUpload(Request $request)
+    {
+        $request->validate([
+            'upload_id' => ['required', 'string', 'regex:/^simpanan_[0-9a-f-]{36}$/'],
+            'total_chunks' => 'required|integer|min:1',
+            'original_name' => 'required|string',
+        ]);
+
+        $uploadId = trim((string) $request->input('upload_id'));
+        $directory = $this->simpananChunkUploadDirectory($uploadId);
+        $meta = $this->readSimpananChunkUploadMeta($directory);
+        if ($meta === null) {
+            return response()->json(['status' => 'error', 'message' => 'Folder upload chunk tidak ditemukan.'], 404);
+        }
+
+        if (!$this->ownsSimpananChunkUpload($meta)) {
+            return response()->json(['status' => 'error', 'message' => 'Sesi upload tidak sesuai pengguna.'], 403);
+        }
+
+        $totalChunks = (int) $request->input('total_chunks');
+        $originalName = trim((string) ($meta['original_name'] ?? ''));
+        if (
+            $totalChunks !== (int) ($meta['total_chunks'] ?? 0)
+            || $originalName !== trim((string) $request->input('original_name'))
+        ) {
+            return response()->json(['status' => 'error', 'message' => 'Metadata upload tidak sesuai.'], 422);
+        }
+
+        $extension = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['csv', 'txt'], true)) {
+            return response()->json(['status' => 'error', 'message' => 'Format file harus CSV atau TXT.'], 422);
+        }
+
+        if (!file_exists(Storage::path('excel_imports'))) {
+            Storage::makeDirectory('excel_imports');
+        }
+
+        $safeOriginalName = Str::slug(pathinfo($originalName, PATHINFO_FILENAME));
+        $relativePath = 'excel_imports/' . date('Ymd_His') . '_' . Str::random(6)
+            . '_' . ($safeOriginalName ?: 'simpanan-multipn') . '.' . $extension;
+        $absolutePath = Storage::path($relativePath);
+        $outputHandle = fopen($absolutePath, 'wb');
+        if ($outputHandle === false) {
+            return response()->json(['status' => 'error', 'message' => 'Gagal menyiapkan file upload final.'], 500);
+        }
+
+        try {
+            for ($index = 0; $index < $totalChunks; $index++) {
+                $partPath = $directory . DIRECTORY_SEPARATOR . sprintf('part_%06d.bin', $index);
+                $inputHandle = is_file($partPath) ? fopen($partPath, 'rb') : false;
+                if ($inputHandle === false) {
+                    throw new \RuntimeException('Potongan file ke-' . ($index + 1) . ' belum lengkap.');
+                }
+
+                stream_copy_to_stream($inputHandle, $outputHandle);
+                fclose($inputHandle);
+            }
+        } catch (\Throwable $e) {
+            fclose($outputHandle);
+            @unlink($absolutePath);
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        fclose($outputHandle);
+        if ((int) @filesize($absolutePath) !== (int) ($meta['total_size'] ?? 0)) {
+            @unlink($absolutePath);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ukuran file hasil upload tidak sesuai. Silakan upload ulang.',
+            ], 422);
+        }
+
+        $this->cleanupSimpananChunkUploadDirectory($directory);
+        $cacheKey = 'excel_preview_' . md5($relativePath . '|simpanan_csv|' . (auth()->id() ?? 'guest') . '|' . microtime(true));
+        session([
+            'excel_path' => $relativePath,
+            'active_id_report' => self::REPORT_ID,
+            'excel_preview_key' => $cacheKey,
+            'excel_import_source' => 'simpanan_csv',
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'cache_key' => $cacheKey,
+            'redirect' => route('import.simpanan.csv.prepare-preview'),
+        ]);
     }
 
     public function preparePreviewStream(Request $request)
@@ -792,7 +973,8 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                             'content_hash' => $contentHash,
                             'table_name' => 'simpanan_multipn',
                         ]);
-                        $guard->assertFileNotImportedAnywhere($contentHash, $jobId > 0 ? $jobId : 0);
+                        // A file hash is only used for concurrency locking and audit metadata.
+                        // Actual duplicates are rejected by the posisi + kantor_cabang slot check below.
                         $advisoryLockName = $guard->acquireAdvisoryLock('simpanan_multipn', ['content' => $contentHash]);
                         Log::info('Simpanan MultiPN: Advisory lock acquired', [
                             'job_id' => $jobId,
@@ -972,6 +1154,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         'validation_written_rows' => $expectedLoadRows,
                         'validation_skipped_count' => $validationSkipped,
                         'validation_duplicate_count' => (int) ($loadPlan['validation_duplicate_count'] ?? 0),
+                        'validation_trailing_blank_count' => (int) ($loadPlan['validation_trailing_blank_count'] ?? 0),
                         'load_inserted_rows' => $inserted,
                         'insert_shortfall' => $insertShortfall,
                         'total_rows' => $finalTotalRows,
@@ -1452,6 +1635,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $validationBackend = trim((string) ($sourceMeta['backend'] ?? ''));
         $validationSkippedCount = (int) ($sourceMeta['skipped_count'] ?? 0);
         $validationDuplicateCount = (int) ($sourceMeta['duplicate_count'] ?? 0);
+        $validationTrailingBlankCount = (int) ($sourceMeta['trailing_blank_rows'] ?? 0);
         $periodHints = array_values(array_unique(array_filter(array_map(
             static fn ($value): string => trim((string) $value),
             (array) ($sourceMeta['period_hints'] ?? [])
@@ -1469,6 +1653,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             $validationBackend = trim((string) ($preparedSource['backend'] ?? ''));
             $validationSkippedCount = (int) ($preparedSource['skipped_count'] ?? 0);
             $validationDuplicateCount = (int) ($preparedSource['duplicate_count'] ?? 0);
+            $validationTrailingBlankCount = (int) ($preparedSource['trailing_blank_rows'] ?? 0);
             $sourceHeaders = array_values(array_filter(array_map(
                 static fn ($value): string => trim((string) $value),
                 (array) ($preparedSource['headers'] ?? [])
@@ -1524,6 +1709,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             $validationBackend = trim((string) ($loadSource['backend'] ?? 'php'));
             $validationSkippedCount = (int) ($loadSource['skipped_count'] ?? 0);
             $validationDuplicateCount = (int) ($loadSource['duplicate_count'] ?? 0);
+            $validationTrailingBlankCount = (int) ($loadSource['trailing_blank_rows'] ?? 0);
             $sourceHeaders = array_values(array_filter(array_map(
                 static fn ($value): string => trim((string) $value),
                 (array) ($loadSource['headers'] ?? [])
@@ -1656,6 +1842,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             'validation_backend' => $validationBackend !== '' ? $validationBackend : ($assumeCleanSource ? 'polars' : 'php'),
             'validation_skipped_count' => $validationSkippedCount,
             'validation_duplicate_count' => $validationDuplicateCount,
+            'validation_trailing_blank_count' => $validationTrailingBlankCount,
             'validation_written_rows' => $sourceRows,
             'import_batch_token' => $importBatchToken,
             'unique_id_column' => $uniqueIdColumn,
@@ -2703,5 +2890,57 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 'mysql_thread_id' => $mysqlThreadId,
             ]);
         }
+    }
+
+    private function simpananChunkUploadDirectory(string $uploadId): string
+    {
+        return storage_path(self::CHUNK_UPLOAD_TEMP_DIR . DIRECTORY_SEPARATOR . $uploadId);
+    }
+
+    private function ensureSimpananChunkUploadDirectory(string $uploadId): string
+    {
+        $directory = $this->simpananChunkUploadDirectory($uploadId);
+        if (!is_dir($directory) && !@mkdir($directory, 0777, true) && !is_dir($directory)) {
+            throw new \RuntimeException('Gagal menyiapkan folder upload bertahap Simpanan Multi PN.');
+        }
+
+        return $directory;
+    }
+
+    private function readSimpananChunkUploadMeta(string $directory): ?array
+    {
+        $metaPath = $directory . DIRECTORY_SEPARATOR . 'meta.json';
+        if (!is_file($metaPath)) {
+            return null;
+        }
+
+        $meta = json_decode((string) file_get_contents($metaPath), true);
+        return is_array($meta) ? $meta : null;
+    }
+
+    private function ownsSimpananChunkUpload(array $meta): bool
+    {
+        $ownerId = $meta['user_id'] ?? null;
+        return $ownerId === null || (string) $ownerId === (string) auth()->id();
+    }
+
+    private function cleanupSimpananChunkUploadDirectory(string $directory): void
+    {
+        if (!is_dir($directory)) {
+            return;
+        }
+
+        foreach (scandir($directory) ?: [] as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+
+            $path = $directory . DIRECTORY_SEPARATOR . $item;
+            if (is_file($path)) {
+                @unlink($path);
+            }
+        }
+
+        @rmdir($directory);
     }
 }

@@ -882,11 +882,421 @@
             -webkit-overflow-scrolling: touch;
         }
 
+        .content-wrapper .abah-table-scroll,
+        .content-wrapper .table-responsive,
+        .content-wrapper .table-container,
+        .content-wrapper [class*="table-wrap"],
+        .content-wrapper [class*="table-scroll"] {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            max-height: min(72vh, 820px);
+            overflow-x: auto;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            scrollbar-gutter: stable both-edges;
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 #ffffff;
+        }
+
+        .content-wrapper .abah-table-scroll {
+            position: relative;
+            border-radius: 10px;
+        }
+
+        .content-wrapper .abah-table-scroll::-webkit-scrollbar,
+        .content-wrapper .table-responsive::-webkit-scrollbar,
+        .content-wrapper .table-container::-webkit-scrollbar,
+        .content-wrapper [class*="table-wrap"]::-webkit-scrollbar,
+        .content-wrapper [class*="table-scroll"]::-webkit-scrollbar {
+            width: 11px;
+            height: 12px;
+        }
+
+        .content-wrapper .abah-table-scroll::-webkit-scrollbar-track,
+        .content-wrapper .table-responsive::-webkit-scrollbar-track,
+        .content-wrapper .table-container::-webkit-scrollbar-track,
+        .content-wrapper [class*="table-wrap"]::-webkit-scrollbar-track,
+        .content-wrapper [class*="table-scroll"]::-webkit-scrollbar-track {
+            background: #ffffff;
+            border-radius: 999px;
+            box-shadow: inset 0 0 0 1px #e2e8f0;
+        }
+
+        .content-wrapper .abah-table-scroll::-webkit-scrollbar-thumb,
+        .content-wrapper .table-responsive::-webkit-scrollbar-thumb,
+        .content-wrapper .table-container::-webkit-scrollbar-thumb,
+        .content-wrapper [class*="table-wrap"]::-webkit-scrollbar-thumb,
+        .content-wrapper [class*="table-scroll"]::-webkit-scrollbar-thumb {
+            min-width: 64px;
+            border: 3px solid #ffffff;
+            border-radius: 999px;
+            background: #cbd5e1;
+            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.3);
+        }
+
+        .content-wrapper .abah-table-scroll:hover::-webkit-scrollbar-thumb,
+        .content-wrapper .table-responsive:hover::-webkit-scrollbar-thumb,
+        .content-wrapper .table-container:hover::-webkit-scrollbar-thumb,
+        .content-wrapper [class*="table-wrap"]:hover::-webkit-scrollbar-thumb,
+        .content-wrapper [class*="table-scroll"]:hover::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+        }
+
+        .content-wrapper .abah-table-managed {
+            width: max-content;
+            min-width: 100%;
+            margin-bottom: 0;
+        }
+
+        .content-wrapper .abah-table-managed thead th {
+            position: sticky;
+            top: var(--abah-table-head-top, 0px);
+            z-index: 30;
+            background-clip: padding-box;
+            box-shadow:
+                inset 0 -1px 0 rgba(148, 163, 184, 0.28),
+                0 8px 18px -18px rgba(15, 23, 42, 0.55);
+        }
+
+        .content-wrapper .abah-table-managed thead th.sticky-col,
+        .content-wrapper .abah-table-managed thead th[class*="sticky"] {
+            z-index: 45;
+        }
+
+        .content-wrapper .abah-table-managed th,
+        .content-wrapper .abah-table-managed td {
+            vertical-align: middle;
+            max-width: min(42vw, 420px);
+        }
+
+        .content-wrapper .abah-table-managed th:not(.text-wrap):not(.text-break),
+        .content-wrapper .abah-table-managed td:not(.text-wrap):not(.text-break) {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         .content-wrapper .btn,
         .content-wrapper .form-control,
         .content-wrapper .custom-select,
         .content-wrapper .select2-container--default .select2-selection--single {
             max-width: 100%;
+        }
+
+        .content-wrapper .loan-title-hero,
+        .content-wrapper .rm-mikro-hero,
+        .content-wrapper .kpi-hero,
+        .content-wrapper .fh-hero,
+        .content-wrapper .daily-panel-head,
+        .content-wrapper :where(
+            .dashboard-hero,
+            .area6-hero,
+            .report-hero,
+            .import-hero,
+            .admin-hero,
+            .market-hero,
+            .hourly-hero,
+            .dana-hero,
+            .casa-hero,
+            .dormant-hero,
+            .payroll-hero,
+            .kinerja-konsumer-hero,
+            .kinerja-header,
+            .dashboard-header,
+            [class*="-hero"],
+            [class*="hero-"],
+            [class*="-banner"],
+            [class*="banner-"]
+        ) {
+            max-width: 100%;
+        }
+
+        .content-wrapper .loan-title-hero__desc,
+        .content-wrapper .rm-mikro-hero p,
+        .content-wrapper .kpi-hero p,
+        .content-wrapper .fh-hero p,
+        .content-wrapper .daily-panel-desc,
+        .content-wrapper :where(
+            .dashboard-subtitle,
+            .report-subtitle,
+            .page-subtitle,
+            .hero-subtitle,
+            .hero-description,
+            .hero-desc,
+            .panel-subtitle,
+            .section-subtitle,
+            .kinerja-report-card__subtitle,
+            [class*="-subtitle"],
+            [class*="-description"],
+            [class*="-desc"]
+        ) {
+            display: -webkit-box;
+            overflow: hidden;
+            max-width: 78ch;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            text-overflow: ellipsis;
+        }
+
+        .content-wrapper .loan-filter-modern,
+        .content-wrapper .fh-filter,
+        .content-wrapper .kpi-toolbar,
+        .content-wrapper .daily-filter-shell,
+        .content-wrapper .report-filter-card .card-body,
+        .content-wrapper .loan-filter-grid,
+        .content-wrapper :where(
+            .lux-filter-card,
+            .lux-filter-grid,
+            .kinerja-konsumer-filters,
+            .market-filter-panel,
+            .hourly-filter-shell,
+            .dana-filter-card,
+            .casa-shell,
+            .dormant-shell,
+            .import-filter-card,
+            .import-toolbar,
+            .report-toolbar,
+            .admin-toolbar,
+            .filter-card,
+            .filter-panel,
+            .filter-shell,
+            .filter-toolbar,
+            .filter-bar,
+            [class*="-filter-"],
+            [class*="filter-"],
+            [class*="-toolbar"],
+            [class*="toolbar-"]
+        ) {
+            max-width: 100%;
+        }
+
+        .content-wrapper .loan-filter-label,
+        .content-wrapper .daily-filter-label,
+        .content-wrapper .report-filter-label,
+        .content-wrapper .fh-field label,
+        .content-wrapper :where(
+            .filter-label,
+            .import-label,
+            .casa-filter-label,
+            .dormant-filter-label,
+            .kinerja-filter-label,
+            [class*="-filter-label"],
+            [class*="filter-label"]
+        ) {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        @media (max-height: 760px), (max-width: 991.98px) {
+            .content-wrapper .loan-title-hero,
+            .content-wrapper .rm-mikro-hero,
+            .content-wrapper .kpi-hero,
+            .content-wrapper .fh-hero,
+            .content-wrapper .daily-panel-head,
+            .content-wrapper :where(
+                .dashboard-hero,
+                .area6-hero,
+                .report-hero,
+                .import-hero,
+                .admin-hero,
+                .market-hero,
+                .hourly-hero,
+                .dana-hero,
+                .casa-hero,
+                .dormant-hero,
+                .payroll-hero,
+                .kinerja-konsumer-hero,
+                .kinerja-header,
+                .dashboard-header,
+                [class*="-hero"],
+                [class*="hero-"],
+                [class*="-banner"],
+                [class*="banner-"]
+            ) {
+                margin-bottom: 0.75rem !important;
+                padding: 0.85rem 1rem !important;
+                border-radius: 12px !important;
+            }
+
+            .content-wrapper .loan-title-hero__title,
+            .content-wrapper .rm-mikro-hero h1,
+            .content-wrapper .kpi-hero h1,
+            .content-wrapper .fh-hero h1,
+            .content-wrapper .daily-panel-title,
+            .content-wrapper :where(
+                .page-title,
+                .report-title,
+                .dashboard-title,
+                .hero-title,
+                .section-title,
+                .kinerja-report-card__title,
+                [class*="-title"]
+            ) {
+                font-size: clamp(1.12rem, 4.4vw, 1.45rem) !important;
+                line-height: 1.12 !important;
+            }
+
+            .content-wrapper .loan-title-hero__badge,
+            .content-wrapper .kpi-eyebrow,
+            .content-wrapper .fh-eyebrow,
+            .content-wrapper .daily-title-badge {
+                margin-bottom: 0.25rem !important;
+                font-size: 0.6rem !important;
+            }
+
+            .content-wrapper .loan-title-hero__desc,
+            .content-wrapper .rm-mikro-hero p,
+            .content-wrapper .kpi-hero p,
+            .content-wrapper .fh-hero p,
+            .content-wrapper .daily-panel-desc,
+            .content-wrapper :where(
+                .dashboard-subtitle,
+                .report-subtitle,
+                .page-subtitle,
+                .hero-subtitle,
+                .hero-description,
+                .hero-desc,
+                .panel-subtitle,
+                .section-subtitle,
+                .kinerja-report-card__subtitle,
+                [class*="-subtitle"],
+                [class*="-description"],
+                [class*="-desc"]
+            ) {
+                margin-top: 0.25rem !important;
+                font-size: 0.74rem !important;
+                line-height: 1.35 !important;
+                -webkit-line-clamp: 1;
+            }
+
+            .content-wrapper .loan-filter-modern,
+            .content-wrapper .fh-filter,
+            .content-wrapper .kpi-toolbar,
+            .content-wrapper .daily-filter-shell,
+            .content-wrapper .card.loan-shell .card-body,
+            .content-wrapper .report-filter-card .card-body,
+            .content-wrapper :where(
+                .lux-filter-card,
+                .kinerja-konsumer-filters,
+                .market-filter-panel,
+                .hourly-filter-shell,
+                .dana-filter-card,
+                .casa-shell .card-body,
+                .dormant-shell .card-body,
+                .import-filter-card,
+                .import-toolbar,
+                .report-toolbar,
+                .admin-toolbar,
+                .filter-card,
+                .filter-panel,
+                .filter-shell,
+                .filter-toolbar,
+                .filter-bar,
+                [class*="-filter-"],
+                [class*="filter-"],
+                [class*="-toolbar"],
+                [class*="toolbar-"]
+            ) {
+                margin-bottom: 0.85rem !important;
+                padding: 0.75rem !important;
+                border-radius: 12px !important;
+            }
+
+            .content-wrapper :where(
+                .form-group,
+                .input-group,
+                .filter-group,
+                .kinerja-filter-group,
+                [class*="-filter-group"],
+                [class*="filter-group"]
+            ) {
+                min-width: 0;
+                margin-bottom: 0.55rem !important;
+            }
+
+            .content-wrapper :where(
+                .form-control,
+                .custom-select,
+                .select2-container--default .select2-selection--single,
+                .btn
+            ) {
+                min-height: 34px !important;
+                font-size: 0.8rem !important;
+            }
+
+            .content-wrapper .abah-table-scroll,
+            .content-wrapper .table-responsive,
+            .content-wrapper .table-container,
+            .content-wrapper [class*="table-wrap"],
+            .content-wrapper [class*="table-scroll"] {
+                max-height: min(76vh, 760px);
+            }
+        }
+
+        @media (orientation: landscape) and (max-height: 640px) {
+            .content-wrapper .loan-title-hero__desc,
+            .content-wrapper .rm-mikro-hero p,
+            .content-wrapper .kpi-hero p,
+            .content-wrapper .fh-hero p,
+            .content-wrapper .daily-panel-desc,
+            .content-wrapper :where(
+                .dashboard-subtitle,
+                .report-subtitle,
+                .page-subtitle,
+                .hero-subtitle,
+                .hero-description,
+                .hero-desc,
+                .panel-subtitle,
+                .section-subtitle,
+                .kinerja-report-card__subtitle,
+                [class*="-subtitle"],
+                [class*="-description"],
+                [class*="-desc"]
+            ),
+            .content-wrapper .fh-hint,
+            .content-wrapper .kpi-table-title span,
+            .content-wrapper .fh-subtitle {
+                display: none !important;
+            }
+
+            .content-wrapper :where(
+                .filter-card,
+                .filter-panel,
+                .filter-shell,
+                .filter-toolbar,
+                .filter-bar,
+                .lux-filter-card,
+                .kinerja-konsumer-filters,
+                .market-filter-panel,
+                .hourly-filter-shell,
+                .dana-filter-card,
+                .import-toolbar,
+                .report-toolbar,
+                .admin-toolbar
+            ) {
+                padding-top: 0.55rem !important;
+                padding-bottom: 0.55rem !important;
+            }
+
+            .content-wrapper .kpi-meta-grid,
+            .content-wrapper .daily-kpi-grid {
+                gap: 0.5rem !important;
+                margin-bottom: 0.65rem !important;
+            }
+
+            .content-wrapper .kpi-meta,
+            .content-wrapper .daily-kpi {
+                padding: 0.55rem 0.7rem !important;
+            }
+
+            .content-wrapper .abah-table-scroll,
+            .content-wrapper .table-responsive,
+            .content-wrapper .table-container,
+            .content-wrapper [class*="table-wrap"],
+            .content-wrapper [class*="table-scroll"] {
+                max-height: calc(100vh - 118px);
+            }
         }
 
         @media (min-width: 1800px) {
@@ -934,6 +1344,19 @@
             .content-wrapper .container-fluid {
                 padding-left: 0.65rem;
                 padding-right: 0.65rem;
+            }
+
+            .content-wrapper .abah-table-managed th,
+            .content-wrapper .abah-table-managed td {
+                max-width: min(68vw, 300px);
+            }
+
+            .content-wrapper .abah-table-scroll,
+            .content-wrapper .table-responsive,
+            .content-wrapper .table-container,
+            .content-wrapper [class*="table-wrap"],
+            .content-wrapper [class*="table-scroll"] {
+                max-height: 68vh;
             }
 
             .modern-navbar .menu-toggle,
@@ -1083,6 +1506,121 @@
             theme: 'bootstrap4',
             width: '100%'
         });
+    });
+</script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const root = document.querySelector('.content-wrapper');
+        if (!root) {
+            return;
+        }
+
+        const wrapperSelector = [
+            '.abah-table-scroll',
+            '.table-responsive',
+            '.table-container',
+            '.kinerja-table-container',
+            '[class*="table-wrap"]',
+            '[class*="table-scroll"]'
+        ].join(',');
+        const skipSelector = [
+            '[data-abah-no-table-guard]',
+            '.no-abah-table-guard',
+            '.select2-results',
+            '.fc',
+            '.fc-scrollgrid'
+        ].join(',');
+        let syncFrame = null;
+
+        const shouldSkipTable = function (table) {
+            return table.closest(skipSelector)
+                || table.closest('.dropdown-menu')
+                || table.closest('.note-editor')
+                || table.classList.contains('dataTable')
+                || table.dataset.abahNoTableGuard === '1';
+        };
+
+        const ensureWrapper = function (table) {
+            if (table.closest(wrapperSelector)) {
+                return;
+            }
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'abah-table-scroll';
+            wrapper.dataset.abahAutoTableScroll = '1';
+            table.parentNode.insertBefore(wrapper, table);
+            wrapper.appendChild(table);
+        };
+
+        const syncHeaderOffsets = function (table) {
+            const rows = table.tHead ? Array.from(table.tHead.rows) : [];
+            let top = 0;
+
+            rows.forEach(function (row) {
+                Array.from(row.cells).forEach(function (cell) {
+                    cell.style.setProperty('--abah-table-head-top', top + 'px');
+                });
+
+                top += Math.ceil(row.getBoundingClientRect().height || 0);
+            });
+        };
+
+        const syncReadableCellTitles = function (table) {
+            table.querySelectorAll('th, td').forEach(function (cell) {
+                if (cell.hasAttribute('title') || cell.closest('[data-abah-no-cell-title]')) {
+                    return;
+                }
+
+                const text = (cell.textContent || '').replace(/\s+/g, ' ').trim();
+                if (text.length > 18) {
+                    cell.setAttribute('title', text);
+                }
+            });
+        };
+
+        const enhanceTable = function (table) {
+            if (!(table instanceof HTMLTableElement) || shouldSkipTable(table)) {
+                return;
+            }
+
+            ensureWrapper(table);
+            table.classList.add('abah-table-managed');
+            syncHeaderOffsets(table);
+            syncReadableCellTitles(table);
+        };
+
+        const enhanceTables = function () {
+            syncFrame = null;
+            root.querySelectorAll('table').forEach(enhanceTable);
+        };
+
+        const scheduleEnhance = function () {
+            if (syncFrame !== null) {
+                return;
+            }
+
+            syncFrame = window.requestAnimationFrame(enhanceTables);
+        };
+
+        const observer = new MutationObserver(scheduleEnhance);
+        observer.observe(root, {
+            childList: true,
+            subtree: true
+        });
+
+        window.addEventListener('resize', scheduleEnhance);
+        window.addEventListener('load', scheduleEnhance);
+        document.addEventListener('shown.bs.tab', scheduleEnhance);
+        document.addEventListener('shown.bs.collapse', scheduleEnhance);
+        document.addEventListener('shown.bs.modal', scheduleEnhance);
+
+        if ('ResizeObserver' in window) {
+            const resizeObserver = new ResizeObserver(scheduleEnhance);
+            resizeObserver.observe(root);
+        }
+
+        scheduleEnhance();
     });
 </script>
 

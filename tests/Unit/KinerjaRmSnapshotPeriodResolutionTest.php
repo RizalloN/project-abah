@@ -264,7 +264,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $result = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
             'CONSUMER',
             '2026-04-20',
-            $this->comparisonPeriods('2025-12-31', '2025-03-31', null, null, '2026-03-31'),
+            $this->comparisonPeriods('2025-03-31', '2025-12-31', null, '2026-03-31'),
             '2026-04-20',
             null,
             null,
@@ -286,7 +286,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
 
         $resolved = $this->invokePrivateMethod($controller, 'resolveKinerjaRealisasiPeriod', [
             '2026-05-15',
-            $this->comparisonPeriods('2025-12-31', '2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30'),
+            $this->comparisonPeriods('2025-05-15', '2025-12-31', '2026-03-31', '2026-04-30'),
         ]);
 
         $this->assertSame('2026-05-15', $resolved);
@@ -305,7 +305,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $result = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
             'CONSUMER',
             '2026-05-20',
-            $this->comparisonPeriods('2026-05-20', '2026-05-20', null, null, '2026-05-20'),
+            $this->comparisonPeriods('2026-05-20', '2026-05-20', null, '2026-05-20'),
             '2026-05-20',
             null,
             null,
@@ -336,15 +336,248 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $result = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
             'SMALL',
             '2026-02-28',
-            $this->comparisonPeriods('2026-01-31', '2026-01-31', null, null, '2026-01-31'),
+            $this->comparisonPeriods('2026-01-31', '2026-01-31', null, '2026-01-31'),
             '2026-02-28',
             null,
             null,
             null,
         ]);
 
-        $this->assertSame(4, $result['rows'][0]['rms']['RM A']['quadrant']);
-        $this->assertSame(50000000.0, $result['rows'][0]['rms']['RM A']['items'][0]['ach_os']);
+        $rm = collect($result['rows'][0]['rms'])->first();
+        $this->assertSame(4, $rm['quadrant']);
+        $this->assertSame(50000000.0, $rm['items'][0]['ach_os']);
+    }
+
+    public function test_kinerja_rm_small_uses_closed_month_ratas_and_last_closed_lar(): void
+    {
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-01-31', 1000000000, 1, 2750000000, [
+                'segmen' => 'SMALL', 'produk' => 'SMALL', 'quadrant' => 4,
+            ]),
+            $this->snapshotRow('2026-02-28', 1000000000, 1, 2500000000, [
+                'segmen' => 'SMALL', 'produk' => 'SMALL', 'quadrant' => 4,
+            ]),
+            $this->snapshotRow('2026-03-31', 1000000000, 1, 5150000000, [
+                'segmen' => 'SMALL', 'produk' => 'SMALL', 'quadrant' => 4,
+            ]),
+            $this->snapshotRow('2026-04-30', 1000000000, 1, 10900000000, [
+                'segmen' => 'SMALL', 'produk' => 'SMALL', 'quadrant' => 4,
+            ]),
+            $this->snapshotRow('2026-05-31', 1000000000, 1, 2350000000, [
+                'segmen' => 'SMALL', 'produk' => 'SMALL', 'sml_os' => 130700000, 'quadrant' => 4,
+            ]),
+            $this->snapshotRow('2026-06-20', 1000000000, 1, 2500000000, [
+                'segmen' => 'SMALL', 'produk' => 'SMALL', 'sml_os' => 300000000, 'quadrant' => 4,
+            ]),
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $result = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
+            'SMALL',
+            '2026-06-20',
+            $this->comparisonPeriods('2026-01-31', '2026-01-31', '2026-03-31', '2026-05-31'),
+            '2026-06-20',
+            null,
+            null,
+            null,
+        ]);
+
+        $rm = collect($result['rows'][0]['rms'])->first();
+        $this->assertSame(1, $rm['quadrant']);
+        $this->assertSame(4730000000.0, $rm['items'][0]['ach_os']);
+        $this->assertEqualsWithDelta(13.07, $rm['items'][0]['lar_pct'], 0.0001);
+    }
+
+    public function test_kinerja_rm_comparison_periods_resolve_yoy_ytd_m2_and_m1(): void
+    {
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $periods = collect([
+            '2026-06-20',
+            '2026-05-31',
+            '2026-04-30',
+            '2025-12-31',
+            '2025-06-18',
+        ]);
+
+        $resolved = $this->invokePrivateMethod($controller, 'resolveKinerjaComparisonPeriods', [
+            $periods,
+            '2026-06-20',
+        ]);
+
+        $this->assertSame(['yoy', 'ytd', 'm2', 'm1'], array_keys($resolved));
+        $this->assertSame('2025-06-18', $resolved['yoy']['period']);
+        $this->assertSame('2025-12-31', $resolved['ytd']['period']);
+        $this->assertSame('2026-04-30', $resolved['m2']['period']);
+        $this->assertSame('2026-05-31', $resolved['m1']['period']);
+        $this->assertSame('18 Jun 25', $resolved['yoy']['short_label']);
+        $this->assertSame('31 Dec 25', $resolved['ytd']['short_label']);
+    }
+
+    public function test_kinerja_rm_quality_series_uses_detailed_daily_loan_buckets(): void
+    {
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2025-06-20', 800000000, 0, 0, [
+                'lancar_os' => 600000000,
+                'restruk_os' => 100000000,
+                'sml_os' => 120000000,
+                'npl_os' => 80000000,
+            ]),
+            $this->snapshotRow('2025-12-31', 900000000, 0, 0, [
+                'lancar_os' => 680000000,
+                'restruk_os' => 90000000,
+                'sml_os' => 130000000,
+                'npl_os' => 90000000,
+            ]),
+            $this->snapshotRow('2026-04-30', 950000000, 0, 0, [
+                'lancar_os' => 710000000,
+                'restruk_os' => 80000000,
+                'sml_os' => 140000000,
+                'npl_os' => 100000000,
+            ]),
+            $this->snapshotRow('2026-05-31', 980000000, 0, 0, [
+                'lancar_os' => 730000000,
+                'restruk_os' => 70000000,
+                'sml_os' => 150000000,
+                'npl_os' => 100000000,
+            ]),
+            $this->snapshotRow('2026-06-20', 1000000000, 0, 0, [
+                'lancar_os' => 750000000,
+                'restruk_os' => 60000000,
+                'sml_os' => 140000000,
+                'npl_os' => 110000000,
+            ]),
+        ]);
+
+        $qualityRows = collect([
+            ['periode' => '2025-06-20', 'sml_1_os' => 10000000, 'sml_2_os' => 20000000, 'sml_3_os' => 30000000, 'kl_os' => 40000000, 'd1_os' => 50000000, 'd2_os' => 60000000, 'm_os' => 70000000],
+            ['periode' => '2025-12-31', 'sml_1_os' => 11000000, 'sml_2_os' => 21000000, 'sml_3_os' => 31000000, 'kl_os' => 41000000, 'd1_os' => 51000000, 'd2_os' => 61000000, 'm_os' => 71000000],
+            ['periode' => '2026-04-30', 'sml_1_os' => 12000000, 'sml_2_os' => 22000000, 'sml_3_os' => 32000000, 'kl_os' => 42000000, 'd1_os' => 52000000, 'd2_os' => 62000000, 'm_os' => 72000000],
+            ['periode' => '2026-05-31', 'sml_1_os' => 13000000, 'sml_2_os' => 23000000, 'sml_3_os' => 33000000, 'kl_os' => 43000000, 'd1_os' => 53000000, 'd2_os' => 63000000, 'm_os' => 73000000],
+            ['periode' => '2026-06-20', 'sml_1_os' => 15000000, 'sml_2_os' => 25000000, 'sml_3_os' => 35000000, 'kl_os' => 45000000, 'd1_os' => 55000000, 'd2_os' => 65000000, 'm_os' => 75000000],
+        ])->map(function (array $values): object {
+            return (object) array_merge([
+                'cabang' => 'KC MADIUN',
+                'unit' => 'UNIT A',
+                'rm' => 'RM A',
+                'segmen' => 'CONSUMER',
+                'produk' => 'BRIGUNAKONSUMER',
+                'loan_os' => 1000000000,
+                'lancar_os' => 700000000,
+                'sml_os' => 75000000,
+                'npl_os' => 225000000,
+                'restruk_os' => 0,
+                'total_deb' => 1,
+                'realisasi_deb' => 0,
+                'realisasi_os' => 0,
+                'quadrant' => null,
+            ], $values);
+        });
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $periods = $this->comparisonPeriods('2025-06-20', '2025-12-31', '2026-04-30', '2026-05-31');
+        $currentFor = function (string $qualityType) use ($controller, $periods, $qualityRows): array {
+            $result = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
+                'CONSUMER',
+                '2026-06-20',
+                $periods,
+                '2026-06-20',
+                null,
+                null,
+                $qualityType,
+                null,
+                $qualityRows,
+            ]);
+
+            return $result['rows'][0]['rms']['RM A']['items'][0];
+        };
+
+        $this->assertSame(15000000.0, $currentFor('sml_1')['curr']);
+        $this->assertSame(25000000.0, $currentFor('sml_2')['curr']);
+        $this->assertSame(35000000.0, $currentFor('sml_3')['curr']);
+        $this->assertSame(45000000.0, $currentFor('kl')['curr']);
+        $this->assertSame(55000000.0, $currentFor('d1')['curr']);
+        $this->assertSame(65000000.0, $currentFor('d2')['curr']);
+
+        $macet = $currentFor('m');
+        $this->assertSame(75000000.0, $macet['curr']);
+        $this->assertSame(1000000000.0, $macet['loan_os_reference']);
+        $this->assertSame(2000000.0, $macet['comparison_deltas']['m1']);
+    }
+
+    public function test_kinerja_rm_small_separates_same_rm_between_kc_and_kcp(): void
+    {
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-06-20', 400000000, 0, 0, [
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'unit' => 'KC MADIUN',
+                'rm' => 'RM BERSAMA',
+            ]),
+            $this->snapshotRow('2026-06-20', 250000000, 0, 0, [
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'unit' => 'KCP CARUBAN',
+                'rm' => 'RM BERSAMA',
+            ]),
+            $this->snapshotRow('2026-06-20', 150000000, 0, 0, [
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'unit' => 'KCP DOLOPO',
+                'rm' => 'RM BERSAMA',
+            ]),
+            $this->snapshotRow('2026-05-31', 400000000, 1, 100000000, [
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'unit' => 'KC MADIUN',
+                'rm' => 'RM BERSAMA',
+            ]),
+            $this->snapshotRow('2026-05-31', 250000000, 1, 100000000, [
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'unit' => 'KCP CARUBAN',
+                'rm' => 'RM BERSAMA',
+            ]),
+            $this->snapshotRow('2026-05-31', 150000000, 1, 100000000, [
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'unit' => 'KCP DOLOPO',
+                'rm' => 'RM BERSAMA',
+            ]),
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $periods = $this->comparisonPeriods(null, null, null, null);
+
+        $all = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
+            'SMALL', '2026-06-20', $periods, '2026-06-20', null, null, null, null,
+        ]);
+        $rms = $all['rows'][0]['rms'];
+
+        $this->assertCount(3, $rms);
+        $this->assertSame(['KC MADIUN', 'KCP CARUBAN', 'KCP DOLOPO'], collect($rms)->pluck('rm_unit')->sort()->values()->all());
+        $this->assertSame(800000000.0, $all['total']['curr']);
+
+        $kc = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
+            'SMALL', '2026-06-20', $periods, '2026-06-20', null, null, null, 'KC',
+        ]);
+        $this->assertSame(400000000.0, $kc['total']['curr']);
+        $this->assertSame('KC', collect($kc['rows'][0]['rms'])->first()['rm_category']);
+
+        $kcp = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
+            'SMALL', '2026-06-20', $periods, '2026-06-20', null, null, null, 'KCP',
+        ]);
+        $this->assertSame(400000000.0, $kcp['total']['curr']);
+        $this->assertSame(['KCP CARUBAN', 'KCP DOLOPO'], collect($kcp['rows'][0]['rms'])->pluck('rm_unit')->sort()->values()->all());
+    }
+
+    public function test_kinerja_rm_category_filter_only_applies_to_small(): void
+    {
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        $this->assertSame('KC', $this->invokePrivateMethod($controller, 'resolveSelectedRmCategory', ['SMALL', 'kc']));
+        $this->assertSame('KCP', $this->invokePrivateMethod($controller, 'resolveSelectedRmCategory', ['SMALL', 'KCP']));
+        $this->assertNull($this->invokePrivateMethod($controller, 'resolveSelectedRmCategory', ['SMALL', 'ALL']));
+        $this->assertNull($this->invokePrivateMethod($controller, 'resolveSelectedRmCategory', ['CONSUMER', 'KCP']));
     }
 
     private function snapshotRow(
@@ -377,17 +610,11 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         ], $overrides);
     }
 
-    private function comparisonPeriods(
-        ?string $ytd,
-        ?string $m4,
-        ?string $m3,
-        ?string $m2,
-        ?string $m1
-    ): array {
+    private function comparisonPeriods(?string $yoy, ?string $ytd, ?string $m2, ?string $m1): array
+    {
         return [
+            'yoy' => ['key' => 'yoy', 'label' => $yoy ?? '-', 'period' => $yoy, 'short_label' => $yoy ?? '-'],
             'ytd' => ['key' => 'ytd', 'label' => 'YTD', 'period' => $ytd, 'short_label' => $ytd ?? '-'],
-            'm4' => ['key' => 'm4', 'label' => 'M-4', 'period' => $m4, 'short_label' => $m4 ?? '-'],
-            'm3' => ['key' => 'm3', 'label' => 'M-3', 'period' => $m3, 'short_label' => $m3 ?? '-'],
             'm2' => ['key' => 'm2', 'label' => 'M-2', 'period' => $m2, 'short_label' => $m2 ?? '-'],
             'm1' => ['key' => 'm1', 'label' => 'M-1', 'period' => $m1, 'short_label' => $m1 ?? '-'],
         ];

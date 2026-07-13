@@ -10,13 +10,13 @@
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-    position: sticky;
-    top: var(--table-sticky-top);
+    position: relative;
+    top: auto;
     background: #ffffff;
     border: 1px solid #e2e8f0;
     border-radius: 14px;
     box-shadow: 0 10px 24px -20px rgba(15, 23, 42, 0.28);
-    z-index: 10;
+    z-index: 1;
     scrollbar-width: thin;
     scrollbar-color: #cbd5e1 transparent;
     scrollbar-gutter: stable both-edges;
@@ -64,4 +64,16 @@
 {{ $wrapperSelector }} {{ $tableSelector }} tbody tr:nth-child(even):not(.row-total):not(.row-total-blue) td,
 {{ $wrapperSelector }} {{ $tableSelector }} tbody tr:nth-child(even):not(.row-total):not(.row-total-blue) th {
     background-color: rgba(248, 250, 252, 0.96);
+}
+
+@media (max-width: 1180px), (max-height: 760px) {
+    {{ $wrapperSelector }} {
+        position: relative;
+        top: auto;
+        height: auto !important;
+        max-height: none !important;
+        overflow-x: auto;
+        overflow-y: visible;
+        overscroll-behavior: auto;
+    }
 }

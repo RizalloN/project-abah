@@ -1,4 +1,11 @@
-<div class="rm-mikro-table-wrap">
+@php
+    $monthOsMax = collect($payload['months'] ?? [])->mapWithKeys(fn ($month) => [
+        $month['key'] => max(1, (float) $rows->max(fn ($row) => (float) data_get($row, 'months.' . $month['key'] . '.os', 0))),
+    ])->all();
+    $totalOsMax = max(1, (float) $rows->max('total_os'));
+@endphp
+
+<div class="rm-mikro-table-wrap table-container">
     <table class="rm-mikro-table" style="min-width: 1900px;">
         <thead>
             <tr>
@@ -22,10 +29,10 @@
                     @foreach (($payload['months'] ?? []) as $month)
                         @php $monthData = $row['months'][$month['key']] ?? ['deb' => 0, 'os' => 0]; @endphp
                         <td class="text-right">{{ $formatAmount($monthData['deb']) }}</td>
-                        <td class="text-right {{ $achievementClass(($monthData['os'] ?? 0) / 1000000, $targetMonthlyJuta) }}">{{ $formatJuta($monthData['os']) }}</td>
+                        <td class="text-right {{ $gradientClass($monthData['os'] ?? 0, 0, $monthOsMax[$month['key']] ?? 1, true) }}">{{ $formatJuta($monthData['os']) }}</td>
                     @endforeach
                     <td class="text-right strong">{{ $formatAmount($row['total_deb']) }}</td>
-                    <td class="text-right {{ $achievementClass(($row['total_os'] ?? 0) / 1000000, $targetMonthlyJuta) }}">{{ $formatJuta($row['total_os']) }}</td>
+                    <td class="text-right {{ $gradientClass($row['total_os'] ?? 0, 0, $totalOsMax, true) }}">{{ $formatJuta($row['total_os']) }}</td>
                 </tr>
             @empty
                 <tr><td colspan="34" class="rm-mikro-empty">Data tidak ditemukan.</td></tr>

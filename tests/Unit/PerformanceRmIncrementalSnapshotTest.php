@@ -291,6 +291,66 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $this->assertSame(1, (int) $snapshot->npl_deb);
     }
 
+    public function test_small_realisasi_uses_stored_realisasi_month_without_swapping_ambiguous_dates(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        $this->insertDailyLoanRow(
+            'SMALL-CURRENT',
+            'COMMERCIAL',
+            1000000000,
+            900000000,
+            'S001',
+            '2026-01-31',
+            'SMALL',
+            1,
+            1,
+            '',
+            '2026-01-12'
+        );
+        $this->insertDailyLoanRow(
+            'SMALL-SWAPPED',
+            'COMMERCIAL',
+            500000000,
+            450000000,
+            'S002',
+            '2026-01-31',
+            'SMALL',
+            1,
+            1,
+            '',
+            '2026-12-01'
+        );
+        $this->insertDailyLoanRow(
+            'SMALL-OLD',
+            'COMMERCIAL',
+            500000000,
+            450000000,
+            'S003',
+            '2026-01-31',
+            'SMALL',
+            1,
+            1,
+            '',
+            '2025-12-01'
+        );
+
+        $builder->rebuildPerformanceRm('2026-01-31', true);
+
+        $snapshot = DB::table('performance_rm_snapshots')
+            ->where('periode', '2026-01-31')
+            ->where('segmen', 'SMALL')
+            ->where('produk', 'SMALL')
+            ->first();
+
+        $this->assertNotNull($snapshot);
+        $this->assertSame(1, (int) $snapshot->realisasi_deb);
+        $this->assertSame(1000000000.0, (float) $snapshot->realisasi_os);
+        $this->assertSame(0, (int) $snapshot->w1_realisasi_deb);
+        $this->assertSame(1, (int) $snapshot->w2_realisasi_deb);
+        $this->assertSame(1000000000.0, (float) $snapshot->w2_realisasi_os);
+    }
+
     private function createTables(): void
     {
         Schema::create('daily_loan_dinamis', function (Blueprint $table): void {

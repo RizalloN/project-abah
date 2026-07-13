@@ -60,8 +60,6 @@ class ImportIndexController extends Controller
         'simpanan_multipn',
         'lw325_ph',
         'daily_loan_dinamis',
-        'lw321_npd',
-        'lw321_npdd',
     ];
 
     private const DELETE_INDEX_HINTS = [
@@ -135,20 +133,6 @@ class ImportIndexController extends Controller
             'index' => 'idx_lw321pn_period_kanca_uker',
             'period' => 'periode',
             'kanca' => 'kode_kanca',
-            'identity' => 'uniqueid_namareport',
-            'chunk_size' => 50000,
-        ],
-        'lw321_npd' => [
-            'index' => 'idx_lw321_npd_period_kanca_uker',
-            'period' => 'periode',
-            'kanca' => 'kanca',
-            'identity' => 'uniqueid_namareport',
-            'chunk_size' => 50000,
-        ],
-        'lw321_npdd' => [
-            'index' => 'idx_lw321_npdd_period_kanca_uker',
-            'period' => 'periode',
-            'kanca' => 'kanca',
             'identity' => 'uniqueid_namareport',
             'chunk_size' => 50000,
         ],
@@ -4023,7 +4007,50 @@ class ImportIndexController extends Controller
             return;
         }
 
+        $normalizedDate = StrictDateParser::normalize($normalizedFilter);
+        if ($normalizedDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $normalizedDate) === 1) {
+            $safeColumn = str_replace('`', '``', $periodColumn);
+            $periodVariants = $this->buildManagedExactDatePeriodVariants($normalizedDate);
+            $query->where(function ($periodQuery) use ($periodColumn, $safeColumn, $normalizedDate, $normalizedFilter, $periodVariants) {
+                $periodQuery
+                    ->where($periodColumn, $normalizedFilter)
+                    ->orWhere($periodColumn, $normalizedDate)
+                    ->orWhereRaw("DATE(`{$safeColumn}`) = ?", [$normalizedDate]);
+
+                if ($periodVariants !== []) {
+                    $periodQuery->orWhereIn($periodColumn, $periodVariants);
+                }
+            });
+            return;
+        }
+
         $query->where($periodColumn, $periodFilter);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function buildManagedExactDatePeriodVariants(string $normalizedDate): array
+    {
+        try {
+            $date = Carbon::parse($normalizedDate);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter([
+            $date->format('Y-m-d'),
+            $date->format('d M y'),
+            $date->format('j M y'),
+            $date->format('d-M-y'),
+            $date->format('j-M-y'),
+            $date->format('d M Y'),
+            $date->format('j M Y'),
+            $date->format('d-M-Y'),
+            $date->format('j-M-Y'),
+            $date->format('d/m/Y'),
+            $date->format('j/n/Y'),
+        ], static fn (string $value): bool => trim($value) !== '')));
     }
 
     /**
@@ -5149,13 +5176,6 @@ LIMIT {$limit}
                 $hasKancaEqualityConstraint = true;
                 continue;
             }
-        }
-
-        if (in_array($normalizedTable, ['lw321_npd', 'lw321_npdd'], true)) {
-            return $periodColumn !== null
-                && $kancaColumn !== null
-                && $hasPeriodEqualityConstraint
-                && $hasKancaEqualityConstraint;
         }
 
         if ($normalizedTable !== 'simpanan_multipn') {

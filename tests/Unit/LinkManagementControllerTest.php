@@ -40,6 +40,8 @@ class LinkManagementControllerTest extends TestCase
     {
         $view = (new LinkManagementController())->index();
         $links = $view->getData()['kpiLinks'];
+        $sppgLink = $view->getData()['sppgLink'];
+        $marketShareLinks = $view->getData()['marketShareLinks'];
 
         $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'mantri'], array_keys($links));
         $this->assertSame('KPI RM Mikro', $links['rm-mikro']['label']);
@@ -48,6 +50,16 @@ class LinkManagementControllerTest extends TestCase
         $this->assertSame(
             'https://docs.google.com/spreadsheets/d/1v1loife4UzSSsdJ9yGYl3SSuKtk_16CwtlKMj2f8dTM/edit?usp=sharing',
             $links['rm-mikro']['link_url']
+        );
+        $this->assertSame('SPPG', $sppgLink['label']);
+        $this->assertSame('Area 6', $sppgLink['sheet_name']);
+        $this->assertSame(['mapping'], array_keys($marketShareLinks));
+        $this->assertSame('Mapping Market Share', $marketShareLinks['mapping']['label']);
+        $this->assertSame('DASHBOARD', $marketShareLinks['mapping']['sheet_name']);
+        $this->assertSame('18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY', $marketShareLinks['mapping']['spreadsheet_id']);
+        $this->assertSame(
+            'https://docs.google.com/spreadsheets/d/18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY/edit?usp=sharing',
+            $marketShareLinks['mapping']['link_url']
         );
     }
 
@@ -81,5 +93,35 @@ class LinkManagementControllerTest extends TestCase
             'link_key' => 'rm-mikro',
             'sheet_name' => 'rank',
         ]);
+    }
+
+    public function test_market_share_mapping_replaces_legacy_sharepoint_link_with_google_sheet(): void
+    {
+        DB::table('external_report_links')->insert([
+            'uniqueid_link' => 'market_share_mapping',
+            'group_key' => 'market_share',
+            'link_key' => 'mapping',
+            'label' => 'Mapping Market Share',
+            'sheet_name' => 'DASHBOARD',
+            'spreadsheet_id' => 'old-sharepoint',
+            'link_url' => 'https://lin20912662-my.sharepoint.com/:x:/g/personal/rizallon_officeoriku_com/IQAIGE-zAu8USKWHKx7iL4nXAQAKpSprz5FQWYWMldddDPs?e=GRPhfF',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        (new LinkManagementController())->index();
+
+        $row = DB::table('external_report_links')
+            ->where('group_key', 'market_share')
+            ->where('link_key', 'mapping')
+            ->first();
+
+        $this->assertSame('DASHBOARD', $row->sheet_name);
+        $this->assertSame('18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY', $row->spreadsheet_id);
+        $this->assertSame(
+            'https://docs.google.com/spreadsheets/d/18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY/edit?usp=sharing',
+            $row->link_url
+        );
     }
 }

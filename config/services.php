@@ -35,4 +35,37 @@ return [
         ],
     ],
 
+    'public_access_health' => [
+        'enabled' => env('PUBLIC_ACCESS_HEALTH_ENABLED', false),
+    ],
+
+    'market_share' => [
+        'title' => env('MARKET_SHARE_WORKBOOK_TITLE', 'Market Share Office 365'),
+        'source_url' => env('MARKET_SHARE_SOURCE_URL'),
+        'public_token' => env('MARKET_SHARE_PUBLIC_TOKEN'),
+        'cache_path' => env('MARKET_SHARE_CACHE_PATH', 'app/public_workbooks/market-share.xlsx'),
+        'cache_minutes' => env('MARKET_SHARE_CACHE_MINUTES', 15),
+        'timeout_seconds' => env('MARKET_SHARE_TIMEOUT_SECONDS', 90),
+        'workbook_url' => env(
+            'MARKET_SHARE_WORKBOOK_URL',
+            'https://lin20912662-my.sharepoint.com/:x:/g/personal/rizallon_officeoriku_com/IQANZEs7qfDURKnDfvvRwvtHAaP4z-PSUVSkA4YGnS6Gpio?e=EJGqRy'
+        ),
+    ],
+
+    'market_share_mapping' => [
+        'title' => env('MARKET_SHARE_MAPPING_TITLE', 'Mapping Market Share Google Sheets'),
+        'source_url' => env('MARKET_SHARE_MAPPING_SOURCE_URL'),
+        'public_token' => env('MARKET_SHARE_MAPPING_PUBLIC_TOKEN'),
+        'cache_path' => env('MARKET_SHARE_MAPPING_CACHE_PATH', 'app/public_workbooks/market-share-mapping.xlsx'),
+        'cache_minutes' => env('MARKET_SHARE_MAPPING_CACHE_MINUTES', 15),
+        'timeout_seconds' => env('MARKET_SHARE_MAPPING_TIMEOUT_SECONDS', 90),
+        'workbook_url' => env(
+            'MARKET_SHARE_MAPPING_WORKBOOK_URL',
+            env(
+                'MARKET_SHARE_MAPPING_URL',
+                'https://docs.google.com/spreadsheets/d/18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY/edit?usp=sharing'
+            )
+        ),
+    ],
+
 ];

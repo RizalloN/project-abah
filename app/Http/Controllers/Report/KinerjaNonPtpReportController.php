@@ -119,6 +119,7 @@ class KinerjaNonPtpReportController extends Controller
             'tgl_realisasi',
             'segmen_kinerja',
             'freq_payment',
+            'freq_int_payment',
             'jangka_waktu1',
         ];
 
@@ -254,7 +255,6 @@ class KinerjaNonPtpReportController extends Controller
     {
         $query = DB::table(self::DAILY_LOAN_TABLE . ' as d')
             ->where('d.periode', $period)
-            ->where('d.freq_payment', 1)
             ->whereRaw($this->activePtpScopeSql('d', $period));
 
         if ($segment !== 'ALL') {
@@ -555,8 +555,7 @@ class KinerjaNonPtpReportController extends Controller
             ->where('p.periode', '=', $comparisonPeriod);
             })
             ->where('d.periode', $period)
-            ->where('d.freq_payment', 1)
-            ->where('p.freq_payment', 1)
+            ->whereRaw("{$this->repaymentPatternSql('p')} = 'BULANAN'")
             ->whereRaw($this->activePtpScopeSql('d', $period));
 
         if ($segment !== 'ALL') {
@@ -669,7 +668,8 @@ class KinerjaNonPtpReportController extends Controller
     private function repaymentPatternSql(string $alias): string
     {
         return "CASE
-            WHEN CAST(COALESCE({$alias}.freq_payment, 0) AS UNSIGNED) = 1 THEN 'BULANAN'
+            WHEN CAST(COALESCE({$alias}.freq_payment, 0) AS UNSIGNED) > 0
+                AND CAST(COALESCE({$alias}.freq_payment, 0) AS UNSIGNED) = CAST(COALESCE({$alias}.freq_int_payment, 0) AS UNSIGNED) THEN 'BULANAN'
             WHEN CAST(COALESCE({$alias}.freq_payment, 0) AS UNSIGNED) = CAST(NULLIF(REGEXP_REPLACE(COALESCE({$alias}.jangka_waktu1, ''), '[^0-9]', ''), '') AS UNSIGNED) THEN '1 X ANGSURAN'
             ELSE 'PERIODIK'
         END";

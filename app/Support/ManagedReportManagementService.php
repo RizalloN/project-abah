@@ -153,10 +153,10 @@ class ManagedReportManagementService
             'kanca' => ['instansi', 'bod_boc', 'nama_nasabah'],
         ],
         'jumlah_merchant_detail' => [
-            'period_priority' => ['posisi', 'periode'],
+            'period_priority' => ['posisi', 'month_day_year_of_posisi', 'Month_Day_Year_of_Posisi', 'month_day_year_of_periode', 'Month_Day_Year_of_Periode', 'periode'],
         ],
         'jumlah_merchant_qris_detail' => [
-            'period_priority' => ['POSISI', 'PERIODE'],
+            'period_priority' => ['POSISI', 'Month_Day_Year_of_Posisi', 'month_day_year_of_posisi', 'Month_Day_Year_of_Periode', 'month_day_year_of_periode', 'PERIODE'],
             'kanca_priority' => ['MBDESC', 'BRDESC'],
         ],
         'sv_merchant' => [

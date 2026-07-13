@@ -549,7 +549,7 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             'CASHCALL' => ['CASHCALL'],
             'BRIGUNA-MIKRO' => ['BRIGUNAMIKRO'],
             'KUPEDES' => ['KUPEDES'],
-            'KUR-MIKRO' => ['KURMIKRO'],
+            'KUR-MIKRO' => ['KURMIKRO', 'KURKECIL'],
             'CASHCOLLATERAL' => ['CASHCOLLATERAL', 'CASHCOLL'],
             'KUR-SMALL' => ['KURSMALL'],
             default => [$this->normalizeToken($product)],

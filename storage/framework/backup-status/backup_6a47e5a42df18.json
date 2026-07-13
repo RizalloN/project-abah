@@ -1,0 +1,16 @@
+{
+    "status": "completed",
+    "progress_percent": 100,
+    "current_table_index": 1,
+    "total_tables": 1,
+    "message": "Backup database selesai.",
+    "updated_at": 1783097632,
+    "file": {
+        "name": "project_abah_full_20260703_233900.sql.gz",
+        "relative_path": "private/database_backups/project_abah_full_20260703_233900.sql.gz",
+        "download_url": "https://asixdashboard.online/file-management/download?path=private%2Fdatabase_backups%2Fproject_abah_full_20260703_233900.sql.gz",
+        "size": 8114481531,
+        "size_human": "7.56 GB"
+    },
+    "backup_id": "backup_6a47e5a42df18"
+}

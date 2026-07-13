@@ -80,10 +80,6 @@ return new class extends Migration
         // User Brimo RPT v2 - Duplicate Key
         // ───────────────────────────────────────────────────────────────
         if (Schema::hasTable('user_brimo_rpt_v2')) {
-            $this->ensureIndexExists('user_brimo_rpt_v2', 'idx_unique_id', [
-                'uniqueid_namareport',
-            ], isUnique: false);
-
             $this->ensureIndexExists('user_brimo_rpt_v2', 'idx_periode_uid', [
                 'periode',
                 'uniqueid_namareport',
@@ -109,10 +105,6 @@ return new class extends Migration
         // Simpanan Multi PN - Duplicate Key
         // ───────────────────────────────────────────────────────────────
         if (Schema::hasTable('simpanan_multipn')) {
-            $this->ensureIndexExists('simpanan_multipn', 'idx_unique_id', [
-                'uniqueid_SMPN',
-            ], isUnique: false);
-
             // Covering index untuk posisi + uniqueid queries
             $this->ensureIndexExists('simpanan_multipn', 'idx_posisi_uid', [
                 'posisi',
@@ -144,9 +136,9 @@ return new class extends Migration
             'sv_merchant' => ['idx_periode_uid', 'idx_posisi_periode_uid', 'idx_nama_branch_uid'],
             'jumlah_merchant_qris' => ['idx_periode_uid', 'idx_posisi_uid'],
             'merchant_qris_volume' => ['idx_periode_uid'],
-            'user_brimo_rpt_v2' => ['idx_unique_id', 'idx_periode_uid'],
+            'user_brimo_rpt_v2' => ['idx_periode_uid'],
             'brimo_fin' => ['idx_periode_uid', 'idx_posisi_uid'],
-            'simpanan_multipn' => ['idx_unique_id', 'idx_posisi_uid'],
+            'simpanan_multipn' => ['idx_posisi_uid'],
             'pinjaman' => ['idx_periode_uid', 'idx_posisi_uid'],
         ];
 

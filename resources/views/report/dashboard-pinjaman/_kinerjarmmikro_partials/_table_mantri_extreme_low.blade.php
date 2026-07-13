@@ -97,7 +97,7 @@
     </style>
 @endonce
 
-<div class="rm-mikro-table-wrap">
+<div class="rm-mikro-table-wrap table-container">
     <table class="table table-sm rm-mikro-table mantri-monitoring-table">
         <thead>
             <tr>

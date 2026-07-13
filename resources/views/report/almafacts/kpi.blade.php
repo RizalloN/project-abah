@@ -79,6 +79,13 @@
     .kpi-page {
         padding: 1.25rem;
         color: #0f172a;
+        min-width: 0;
+    }
+
+    .kpi-page *,
+    .kpi-page *::before,
+    .kpi-page *::after {
+        box-sizing: border-box;
     }
 
     .kpi-hero {
@@ -97,6 +104,10 @@
         color: #fff;
     }
 
+    .kpi-hero > div:first-child {
+        min-width: 0;
+    }
+
     .kpi-eyebrow {
         margin-bottom: .4rem;
         color: rgba(255,255,255,.78);
@@ -108,7 +119,7 @@
 
     .kpi-hero h1 {
         margin: 0;
-        font-size: clamp(1.35rem, 2.4vw, 2.35rem);
+        font-size: 1.75rem;
         font-weight: 900;
         letter-spacing: 0;
     }
@@ -123,6 +134,7 @@
 
     .kpi-hero-card {
         min-width: 220px;
+        max-width: min(340px, 38vw);
         padding: 1rem;
         border: 1px solid rgba(255,255,255,.22);
         border-radius: 14px;
@@ -143,6 +155,9 @@
         margin-top: .25rem;
         font-size: 1.6rem;
         font-weight: 900;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .kpi-toolbar {
@@ -163,6 +178,7 @@
         display: flex;
         flex-wrap: wrap;
         gap: .5rem;
+        min-width: 0;
     }
 
     .kpi-tab,
@@ -180,6 +196,7 @@
         font-weight: 900;
         text-decoration: none;
         box-shadow: 0 12px 22px -22px rgba(15, 23, 42, .22);
+        max-width: 100%;
     }
 
     .kpi-tab.active {
@@ -192,6 +209,7 @@
         display: flex;
         flex-wrap: wrap;
         gap: .5rem;
+        min-width: 0;
     }
 
     .kpi-action:hover,
@@ -218,6 +236,7 @@
         border: 1px solid #dbe5ef;
         border-radius: 14px;
         background: linear-gradient(180deg, #fff, #f8fbff);
+        min-width: 0;
     }
 
     .kpi-meta span {
@@ -234,6 +253,7 @@
         color: #0f172a;
         font-size: 1.1rem;
         font-weight: 900;
+        overflow-wrap: anywhere;
     }
 
     .kpi-table-panel {
@@ -268,13 +288,15 @@
         font-weight: 700;
     }
 
-    .kpi-excel-wrap {
+    .kpi-excel-wrap.table-container {
         width: 100%;
-        max-height: calc(100vh - 300px);
-        overflow: auto;
+        max-height: var(--kpi-table-max-height, calc(100dvh - 285px));
+        overflow-x: auto !important;
+        overflow-y: auto !important;
         background: #f8fafc;
         scrollbar-width: thin;
         scrollbar-color: #9aa8bd #eef3f9;
+        -webkit-overflow-scrolling: touch;
     }
 
     .kpi-excel-table {
@@ -288,13 +310,13 @@
 
     .kpi-excel-table th,
     .kpi-excel-table td {
-        min-width: 92px;
+        min-width: 80px;
         max-width: 240px;
-        padding: .48rem .55rem;
+        padding: .3rem .45rem;
         border-right: 1px solid #dbe5ef;
         border-bottom: 1px solid #dbe5ef;
         color: #102a4c;
-        font-size: .75rem;
+        font-size: .72rem;
         line-height: 1.25;
         white-space: nowrap;
         text-align: right;
@@ -310,16 +332,16 @@
 
     .kpi-excel-table thead tr:nth-child(2) th {
         position: sticky;
-        top: 31px; /* Height of row 1 th */
+        top: 28px; /* Height of row 1 th fallback */
         z-index: 4;
         background: #004a8d;
-        font-size: .65rem;
+        font-size: .62rem;
         box-shadow: inset 0 -1px 0 rgba(255,255,255,.15);
     }
 
     .kpi-excel-table th {
         color: #fff;
-        font-size: .7rem;
+        font-size: .68rem;
         font-weight: 900;
         text-align: center;
         text-transform: uppercase;
@@ -358,20 +380,34 @@
         color: #fff;
     }
 
+    .kpi-excel-table th.kpi-sortable::after {
+        content: "\21C5";
+    }
+
+    .kpi-excel-table th.kpi-sortable.sorted-asc::after {
+        content: "\2191";
+    }
+
+    .kpi-excel-table th.kpi-sortable.sorted-desc::after {
+        content: "\2193";
+    }
+
     .kpi-sticky-col-0 {
         position: sticky !important;
         left: 0 !important;
         z-index: 5;
-        min-width: 86px;
+        width: 80px;
+        min-width: 80px;
+        max-width: 80px;
         text-align: center;
     }
 
     .kpi-sticky-col-1 {
         position: sticky !important;
-        left: 86px !important;
+        left: 80px !important;
         z-index: 5;
-        min-width: 245px;
-        max-width: 320px;
+        min-width: 150px;
+        max-width: 180px;
         text-align: left;
         white-space: normal;
     }
@@ -388,21 +424,17 @@
         font-weight: 900;
     }
 
-    .kpi-table-mantri .kpi-sticky-col-0 {
-        width: 270px;
-        min-width: 270px;
-        max-width: 270px;
-        padding-left: .65rem;
-        text-align: left;
-        white-space: normal;
-        overflow-wrap: anywhere;
+    /* Hide KEY column in Mantri table */
+    .kpi-table-mantri th:first-child,
+    .kpi-table-mantri td:first-child {
+        display: none !important;
     }
 
     .kpi-table-mantri .kpi-sticky-col-1 {
-        left: 270px !important;
-        width: 92px;
-        min-width: 92px;
-        max-width: 92px;
+        left: 0 !important;
+        width: 80px;
+        min-width: 80px;
+        max-width: 80px;
         text-align: center;
         white-space: normal;
         overflow-wrap: anywhere;
@@ -410,9 +442,9 @@
 
     .kpi-table-mantri thead tr:first-child th:nth-child(3),
     .kpi-table-mantri tbody td:nth-child(3) {
-        width: 170px;
-        min-width: 170px;
-        max-width: 190px;
+        width: 130px;
+        min-width: 130px;
+        max-width: 150px;
         text-align: left;
         white-space: normal;
         overflow-wrap: anywhere;
@@ -420,9 +452,9 @@
 
     .kpi-table-mantri thead tr:first-child th:nth-child(4),
     .kpi-table-mantri tbody td:nth-child(4) {
-        width: 250px;
-        min-width: 250px;
-        max-width: 290px;
+        width: 160px;
+        min-width: 160px;
+        max-width: 180px;
         text-align: left;
         white-space: normal;
         overflow-wrap: anywhere;
@@ -430,9 +462,9 @@
 
     .kpi-table-mantri thead tr:first-child th:nth-child(7),
     .kpi-table-mantri tbody td:nth-child(7) {
-        width: 280px;
-        min-width: 280px;
-        max-width: 320px;
+        width: 200px;
+        min-width: 200px;
+        max-width: 220px;
         text-align: left;
         white-space: normal;
         overflow-wrap: anywhere;
@@ -440,9 +472,9 @@
 
     .kpi-table-mantri thead tr:first-child th:nth-child(8),
     .kpi-table-mantri tbody td:nth-child(8) {
-        width: 180px;
-        min-width: 180px;
-        max-width: 220px;
+        width: 120px;
+        min-width: 120px;
+        max-width: 140px;
         text-align: left;
         white-space: normal;
         overflow-wrap: anywhere;
@@ -450,27 +482,27 @@
 
     .kpi-table-mantri thead tr:first-child th:nth-child(10),
     .kpi-table-mantri tbody td:nth-child(10) {
-        width: 118px;
-        min-width: 118px;
-        max-width: 130px;
+        width: 70px;
+        min-width: 70px;
+        max-width: 80px;
         white-space: normal;
         overflow-wrap: anywhere;
     }
 
     .kpi-table-rm-mikro .kpi-sticky-col-0 {
-        width: 122px;
-        min-width: 122px;
-        max-width: 122px;
+        width: 100px;
+        min-width: 100px;
+        max-width: 100px;
         text-align: center;
         white-space: normal;
         overflow-wrap: anywhere;
     }
 
     .kpi-table-rm-mikro .kpi-sticky-col-1 {
-        left: 122px !important;
-        width: 260px;
-        min-width: 260px;
-        max-width: 300px;
+        left: 100px !important;
+        width: 180px;
+        min-width: 180px;
+        max-width: 200px;
         text-align: left;
         white-space: normal;
         overflow-wrap: anywhere;
@@ -478,9 +510,9 @@
 
     .kpi-table-rm-mikro thead tr:first-child th:nth-child(4),
     .kpi-table-rm-mikro tbody td:nth-child(4) {
-        width: 240px;
-        min-width: 240px;
-        max-width: 280px;
+        width: 160px;
+        min-width: 160px;
+        max-width: 180px;
         text-align: left;
         white-space: normal;
         overflow-wrap: anywhere;
@@ -488,9 +520,19 @@
 
     .kpi-table-rm-mikro thead tr:first-child th:nth-child(6),
     .kpi-table-rm-mikro tbody td:nth-child(6) {
-        width: 118px;
-        min-width: 118px;
-        max-width: 130px;
+        width: 70px;
+        min-width: 70px;
+        max-width: 80px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .kpi-table-ka-unit thead tr:first-child th:nth-child(4),
+    .kpi-table-ka-unit tbody td:nth-child(4) {
+        width: 160px;
+        min-width: 160px;
+        max-width: 180px;
+        text-align: left;
         white-space: normal;
         overflow-wrap: anywhere;
     }
@@ -532,7 +574,152 @@
         .kpi-page { padding: .85rem; }
         .kpi-hero { flex-direction: column; }
         .kpi-meta-grid { grid-template-columns: 1fr; }
-        .kpi-excel-wrap { max-height: calc(100vh - 260px); }
+        .kpi-excel-wrap.table-container { max-height: var(--kpi-table-max-height, calc(100dvh - 240px)); }
+        .kpi-hero-card { max-width: 100%; width: 100%; }
+
+        /* Disable sticky columns on mobile for better horizontal scrollability */
+        .kpi-sticky-col-0,
+        .kpi-sticky-col-1,
+        .kpi-excel-table th.kpi-sticky-col-0,
+        .kpi-excel-table th.kpi-sticky-col-1,
+        .kpi-excel-table td.kpi-sticky-col-0,
+        .kpi-excel-table td.kpi-sticky-col-1 {
+            position: static !important;
+            left: auto !important;
+            z-index: auto !important;
+            background: inherit !important;
+            width: auto !important;
+            min-width: auto !important;
+            max-width: auto !important;
+        }
+    }
+
+    @media (max-width: 991.98px), (max-height: 760px) {
+        .kpi-page {
+            padding: 0.85rem;
+        }
+
+        .kpi-hero {
+            align-items: flex-start;
+            gap: 0.65rem;
+            margin-bottom: 0.75rem;
+            padding: 0.85rem 1rem;
+            border-radius: 12px;
+        }
+
+        .kpi-hero h1 {
+            font-size: 1.32rem;
+            line-height: 1.12;
+        }
+
+        .kpi-hero p {
+            margin-top: 0.28rem;
+            font-size: 0.76rem;
+            line-height: 1.35;
+            -webkit-line-clamp: 1;
+        }
+
+        .kpi-hero-card {
+            min-width: 0;
+            max-width: min(300px, 42vw);
+            padding: 0.65rem 0.75rem;
+            border-radius: 10px;
+        }
+
+        .kpi-hero-card strong {
+            margin-top: 0.15rem;
+            font-size: 1.05rem;
+        }
+
+        .kpi-toolbar,
+        .kpi-meta-grid {
+            margin-bottom: 0.75rem;
+        }
+
+        .kpi-toolbar {
+            padding: 0.65rem;
+            border-radius: 12px;
+            align-items: stretch;
+        }
+
+        .kpi-tabs,
+        .kpi-actions {
+            width: 100%;
+        }
+
+        .kpi-tab,
+        .kpi-action {
+            flex: 1 1 150px;
+            justify-content: center;
+        }
+
+        .kpi-tab,
+        .kpi-action {
+            min-height: 34px;
+            padding: 0.42rem 0.62rem;
+            border-radius: 9px;
+            font-size: 0.74rem;
+        }
+
+        .kpi-meta {
+            padding: 0.58rem 0.75rem;
+            border-radius: 11px;
+        }
+
+        .kpi-meta span {
+            font-size: 0.64rem;
+        }
+
+        .kpi-meta strong {
+            font-size: 0.92rem;
+        }
+
+        .kpi-table-title {
+            padding: 0.6rem 0.75rem;
+        }
+
+        .kpi-excel-wrap.table-container {
+            max-height: var(--kpi-table-max-height, calc(100dvh - 235px));
+        }
+    }
+
+    @media (min-width: 768px) and (max-width: 1180px) {
+        .kpi-hero {
+            align-items: flex-start;
+        }
+
+        .kpi-meta-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .kpi-excel-table th,
+        .kpi-excel-table td {
+            min-width: 72px;
+            padding: 0.28rem 0.38rem;
+        }
+    }
+
+    @media (max-width: 767px) {
+        .kpi-hero-card {
+            max-width: 100%;
+            width: 100%;
+        }
+    }
+
+    @media (orientation: landscape) and (max-height: 640px) {
+        .kpi-hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+        }
+
+        .kpi-hero p,
+        .kpi-meta-grid {
+            display: none !important;
+        }
+
+        .kpi-excel-wrap.table-container {
+            max-height: var(--kpi-table-max-height, calc(100dvh - 165px));
+        }
     }
 </style>
 
@@ -608,7 +795,7 @@
                 Data sheet belum tersedia.
             </div>
         @else
-            <div class="kpi-excel-wrap">
+            <div class="kpi-excel-wrap table-container">
                 <table class="kpi-excel-table kpi-table-{{ $selectedSheetKey }}">
                     <thead>
                         <tr>
@@ -674,11 +861,67 @@
 </div>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const tableWraps = Array.from(document.querySelectorAll('.kpi-excel-wrap'));
+    let resizeFrame = null;
+
+    const syncTableHeights = function () {
+        resizeFrame = null;
+
+        tableWraps.forEach(function (wrap) {
+            const rect = wrap.getBoundingClientRect();
+            const bottomGap = window.matchMedia('(max-width: 767px)').matches ? 18 : 24;
+            const minHeight = window.matchMedia('(max-width: 767px)').matches ? 260 : 320;
+            const availableHeight = Math.floor(window.innerHeight - rect.top - bottomGap);
+            const maxHeight = Math.max(minHeight, availableHeight);
+            wrap.style.setProperty('--kpi-table-max-height', maxHeight + 'px');
+        });
+    };
+
+    const scheduleTableHeights = function () {
+        if (resizeFrame !== null) {
+            return;
+        }
+
+        resizeFrame = window.requestAnimationFrame(syncTableHeights);
+    };
+
+    scheduleTableHeights();
+    window.addEventListener('resize', scheduleTableHeights);
+    window.addEventListener('orientationchange', scheduleTableHeights);
+    window.addEventListener('load', scheduleTableHeights);
+
     document.querySelectorAll('.kpi-excel-table').forEach(function (table) {
         const tbody = table.querySelector('tbody');
         if (!tbody) {
             return;
         }
+
+        const adjustStickyHeaders = function () {
+            scheduleTableHeights();
+
+            if (window.innerWidth < 768) {
+                table.querySelectorAll('thead tr:nth-child(2) th').forEach(function (th) {
+                    th.style.top = '';
+                });
+                return;
+            }
+
+            const firstRow = table.querySelector('thead tr:first-child');
+            const secondRow = table.querySelector('thead tr:nth-child(2)');
+            if (firstRow && secondRow) {
+                const firstRowHeight = firstRow.offsetHeight;
+                secondRow.querySelectorAll('th').forEach(function (th) {
+                    th.style.top = (firstRowHeight - 1) + 'px';
+                });
+            }
+        };
+
+        // Run adjustments
+        adjustStickyHeaders();
+        window.addEventListener('resize', adjustStickyHeaders);
+
+        // Also run once images/fonts are fully loaded
+        window.addEventListener('load', adjustStickyHeaders);
 
         const parseValue = function (value) {
             const text = String(value || '').trim();
@@ -743,6 +986,16 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         });
     });
+
+    // Trigger floating scrollbar update on initialization
+    setTimeout(function() {
+        window.dispatchEvent(new Event('resize'));
+        window.dispatchEvent(new Event('scroll'));
+    }, 150);
+    setTimeout(function() {
+        window.dispatchEvent(new Event('resize'));
+        window.dispatchEvent(new Event('scroll'));
+    }, 600);
 });
 </script>
 @endsection

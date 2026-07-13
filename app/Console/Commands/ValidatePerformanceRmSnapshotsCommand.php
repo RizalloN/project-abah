@@ -125,7 +125,7 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             WHEN segmen_kinerja = 'SMALL' AND produk_kinerja IN ('COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL', 'SMALL') THEN 'SMALL'
             WHEN segmen_kinerja = 'MICRO' AND produk_kinerja = 'BRIGUNAMIKRO' THEN 'BRIGUNA-MIKRO'
             WHEN segmen_kinerja = 'MICRO' AND produk_kinerja = 'KUPEDES' THEN 'KUPEDES'
-            WHEN segmen_kinerja = 'MICRO' AND produk_kinerja = 'KURMIKRO' THEN 'KUR-MIKRO'
+            WHEN segmen_kinerja = 'MICRO' AND produk_kinerja IN ('KURMIKRO', 'KURKECIL') THEN 'KUR-MIKRO'
             WHEN segmen_kinerja = 'MICRO' AND produk_kinerja IN ('CASHCOLLATERAL', 'CASHCOLL') THEN 'CASHCOLLATERAL'
             WHEN segmen_kinerja = 'MICRO' AND produk_kinerja = 'KPR' THEN 'KPR'
             WHEN segmen_kinerja = 'MICRO' AND produk_kinerja = 'KURSMALL' THEN 'KUR-SMALL'
@@ -152,7 +152,7 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
                     })
                     ->orWhere(function ($rule) use ($descriptionSql): void {
                         $rule->where('segmen_kinerja', 'MICRO')
-                            ->where('produk_kinerja', 'KURMIKRO')
+                            ->whereIn('produk_kinerja', ['KURMIKRO', 'KURKECIL'])
                             ->whereRaw("{$descriptionSql} = ?", ['KREDITMIKROKURRITEL2015']);
                     });
             })
@@ -164,7 +164,7 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             ->selectRaw("{$productSql} as produk")
             ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
             ->selectRaw(
-                "SUM(CASE WHEN segmen_kinerja = 'MICRO' AND produk_kinerja = 'KURMIKRO' AND {$descriptionSql} = ? THEN COALESCE(plafon, 0) ELSE COALESCE(baki_debet1, 0) END) as loan_os",
+                "SUM(CASE WHEN segmen_kinerja = 'MICRO' AND produk_kinerja IN ('KURMIKRO', 'KURKECIL') AND {$descriptionSql} = ? THEN COALESCE(plafon, 0) ELSE COALESCE(baki_debet1, 0) END) as loan_os",
                 ['KREDITMIKROKURRITEL2015']
             )
             ->selectRaw('SUM(CASE WHEN kolek = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
@@ -382,7 +382,7 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             'MICRO' => match ($product) {
                 'BRIGUNAMIKRO' => 'BRIGUNA-MIKRO',
                 'KUPEDES' => 'KUPEDES',
-                'KURMIKRO' => 'KUR-MIKRO',
+                'KURMIKRO', 'KURKECIL' => 'KUR-MIKRO',
                 'CASHCOLLATERAL', 'CASHCOLL' => 'CASHCOLLATERAL',
                 'KPR' => 'KPR',
                 'KURSMALL' => 'KUR-SMALL',
@@ -602,7 +602,7 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             'SMALL' => ['SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL'],
             'BRIGUNA-MIKRO' => ['BRIGUNAMIKRO'],
             'KUPEDES' => ['KUPEDES'],
-            'KUR-MIKRO' => ['KURMIKRO'],
+            'KUR-MIKRO' => ['KURMIKRO', 'KURKECIL'],
             'CASHCOLLATERAL' => ['CASHCOLLATERAL', 'CASHCOLL'],
             'KUR-SMALL' => ['KURSMALL'],
             default => [$product],

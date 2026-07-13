@@ -19,7 +19,6 @@ return new class extends Migration
             $table->timestamp('last_updated_at')->nullable();
             $table->timestamps();
 
-            $table->index('period');
             $table->index('updated_at');
         });
 

@@ -69,8 +69,8 @@ class ImportDuplicateGuardService
         ],
         'hourly_dpk' => [
             'slot_table'       => 'hourly_dpk',
-            'slot_columns'     => ['posisi'],
-            'slot_label'       => 'posisi',
+            'slot_columns'     => ['posisi', 'posisi_jam'],
+            'slot_label'       => 'posisi/jam',
         ],
         'ssa_pinjaman' => [
             'slot_table'       => 'ssa_pinjaman',
@@ -122,7 +122,7 @@ class ImportDuplicateGuardService
 
         $query = DB::table('import_jobs')
             ->where('job_content_hash', $contentHash)
-            ->whereIn('status', ['completed', 'processing'])
+            ->whereIn('status', ['completed', 'staging', 'processing'])
             ->orderByDesc('id')
             ->limit(1);
 

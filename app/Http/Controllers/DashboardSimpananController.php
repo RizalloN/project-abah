@@ -12,10 +12,16 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use App\Support\SimpananMultiPnSnapshotGate;
 use App\Support\DashboardDanaService;
+use App\Support\HourlyDpkDashboardService;
+use App\Support\MarketShareArea6Report;
 use App\Support\ReportCacheVersion;
 use App\Support\DashboardHarianSnapshotService;
 use Illuminate\Http\Request;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 use Throwable;
+use XMLReader;
 
 class DashboardSimpananController extends Controller
 {
@@ -26,11 +32,17 @@ class DashboardSimpananController extends Controller
     private const DIGITAL_PERFORMANCE_CACHE_MINUTES = 1440;
     private const LOAN_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
     private const HARIAN_SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
-    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v18';
+    private const EXTERNAL_REPORT_LINK_TABLE = 'external_report_links';
+    private const MARKET_SHARE_LINK_GROUP = 'market_share';
+    private const MARKET_SHARE_MAPPING_LINK_KEY = 'mapping';
+    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v19';
     private const CACHE_LOCK_SECONDS = 20;
     private const SNAPSHOT_SUMMARY_TABLE = 'dashboard_simpanan_snapshots';
     private const SNAPSHOT_BRANCH_TABLE = 'dashboard_simpanan_branch_snapshots';
     private const AREA_6_BRANCH_LABELS = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+    private const MAPPING_WORKBOOK_MAX_ROWS = 500;
+    private const MAPPING_WORKBOOK_MAX_COLUMNS = 90;
+    private const OFFICE_VIEWER_MAX_BYTES = 25 * 1024 * 1024;
     private array $snapshotExistsMemo = [];
     private array $snapshotPeriodMemo = [];
 
@@ -80,18 +92,22 @@ class DashboardSimpananController extends Controller
         $service = app(DashboardDanaService::class);
         $periods = $service->fetchPeriods();
         $categories = $service->fetchCategories();
+        $branches = $service->fetchBranches();
         $rkaPeriods = $service->fetchRkaPeriods();
 
         $selectedPeriod = $request->input('periode') ?? $periods->first();
         $selectedCategory = $request->input('kategori') ?? 'all';
+        $selectedBranch = $request->input('cabang') ?? 'area6';
         $selectedRka = $request->input('rka_periode') ?? $rkaPeriods->first();
 
         return view('report.dashboard-dana', [
             'periods' => $periods,
             'categories' => $categories,
+            'branches' => $branches,
             'rkaPeriods' => $rkaPeriods,
             'selectedPeriod' => $selectedPeriod,
             'selectedCategory' => $selectedCategory,
+            'selectedBranch' => $selectedBranch,
             'selectedRka' => $selectedRka,
         ]);
     }
@@ -101,17 +117,2534 @@ class DashboardSimpananController extends Controller
         $service = app(DashboardDanaService::class);
         $period = $request->input('periode');
         $category = $request->input('kategori');
+        $branch = $request->input('cabang');
         $rkaPeriod = $request->input('rka_periode');
 
-        $data = $service->getDashboardData($period, $category, $rkaPeriod);
+        $data = $service->getDashboardData($period, $category, $rkaPeriod, $branch);
 
         return response()->json($data);
+    }
+
+    public function hourlyDpkIndex(Request $request): View
+    {
+        $service = app(HourlyDpkDashboardService::class);
+        $filters = $service->filters();
+        $selectedBranch = (string) $request->query('cabang', 'all');
+        $selectedProduct = (string) $request->query('jenis', 'all');
+        $selectedSegment = (string) $request->query('segmen', 'all');
+        $payload = $service->payload($selectedBranch, $selectedProduct, $selectedSegment);
+
+        return view('report.dashboard-dana-hourly-dpk', [
+            'filters' => $filters,
+            'payload' => $payload,
+            'selectedBranch' => $payload['selectedBranch'] ?? $selectedBranch,
+            'selectedProduct' => $payload['selectedProduct'] ?? $selectedProduct,
+            'selectedSegment' => $payload['selectedSegment'] ?? $selectedSegment,
+            'dateFormatter' => fn (?string $date): string => $service->formatDateLabel($date),
+        ]);
+    }
+
+    public function hourlyDpkExportPdf(Request $request): View
+    {
+        $service = app(HourlyDpkDashboardService::class);
+        $filters = $service->filters();
+        $selectedBranch = (string) $request->query('cabang', 'all');
+        $selectedSegment = (string) $request->query('segmen', 'all');
+        $export = $service->exportPayload($selectedBranch, $selectedSegment);
+
+        return view('report.dashboard-dana-hourly-dpk-pdf', [
+            'filters' => $filters,
+            'export' => $export,
+            'selectedBranch' => $export['selectedBranch'] ?? $selectedBranch,
+            'selectedSegment' => $export['selectedSegment'] ?? $selectedSegment,
+            'dateFormatter' => fn (?string $date): string => $service->formatDateLabel($date),
+        ]);
+    }
+
+    public function marketShareIndex(Request $request): View
+    {
+        $workbookUrl = $this->officeViewerUrlForPublicWorkbook(
+            $request,
+            'public-workbooks.market-share.token',
+            'market_share',
+            trim((string) config('services.market_share.workbook_url', ''))
+        );
+
+        $downloadUrl = '';
+        $token = trim((string) config('services.market_share.public_token', ''));
+        if ($token !== '') {
+            $downloadUrl = route('public-workbooks.market-share.token', ['token' => $token]);
+        }
+
+        $showDownloadPanel = false;
+        $cachePath = trim((string) config("services.market_share.cache_path", 'app/public_workbooks/market-share.xlsx'), '/\\');
+        $filePath = storage_path($cachePath);
+        if (is_file($filePath) && filesize($filePath) >= self::OFFICE_VIEWER_MAX_BYTES) {
+            $showDownloadPanel = true;
+        }
+
+        if (!$showDownloadPanel) {
+            $lowerUrl = strtolower($workbookUrl);
+            if (str_contains($lowerUrl, 'sharepoint.com')
+                && str_contains($lowerUrl, '/_layouts/15/doc.aspx')
+                && !str_contains($lowerUrl, '/:x:/')
+            ) {
+                $showDownloadPanel = true;
+            }
+        }
+
+        return view('report.dashboard-dana-market-share', [
+            'pageTitle' => 'Market Share',
+            'pageIcon' => 'fas fa-chart-pie',
+            'workbookTitle' => (string) config('services.market_share.title', 'Market Share Office 365'),
+            'workbookUrl' => $workbookUrl,
+            'workbookUrlIsComplete' => $workbookUrl !== '' && !str_contains($workbookUrl, '...'),
+            'emptyMessage' => 'Workbook Market Share belum dikonfigurasi.',
+            'warningMessage' => 'Link workbook belum terlihat lengkap. Isi `MARKET_SHARE_WORKBOOK_URL` dengan link SharePoint penuh agar workbook bisa tampil langsung.',
+            'frameTitle' => 'Workbook Market Share Office 365',
+            'downloadUrl' => $downloadUrl,
+            'showDownloadPanel' => $showDownloadPanel,
+            'nativeMarketShare' => $this->marketShareNativePayload(),
+        ]);
+    }
+
+    public function marketShareMappingIndex(Request $request): View
+    {
+        $managedLink = $this->marketShareMappingManagedLink();
+        $configuredWorkbookUrl = trim((string) ($managedLink['link_url'] ?? ''));
+        $configuredSheetName = trim((string) ($managedLink['sheet_name'] ?? ''));
+        $token = trim((string) config('services.market_share_mapping.public_token', ''));
+        $googleWorkbookUrl = $this->googleSpreadsheetPreviewUrl($configuredWorkbookUrl, $configuredSheetName);
+        if ($googleWorkbookUrl === '') {
+            $configuredWorkbookUrl = trim((string) config('services.market_share_mapping.workbook_url', ''));
+            $configuredSheetName = '';
+            $googleWorkbookUrl = $this->googleSpreadsheetPreviewUrl($configuredWorkbookUrl);
+        }
+
+        $directSharePointEmbedUrl = $this->sharePointEmbedUrl($configuredWorkbookUrl);
+        if ($directSharePointEmbedUrl === '') {
+            $directSharePointEmbedUrl = $this->sharePointEmbedUrl(trim((string) config('services.market_share_mapping.source_url', '')));
+        }
+
+        $workbookUrl = $googleWorkbookUrl !== ''
+            ? $googleWorkbookUrl
+            : $this->officeViewerUrlForPublicWorkbook(
+            $request,
+            'public-workbooks.market-share-mapping.token',
+            'market_share_mapping',
+            $configuredWorkbookUrl
+        );
+        $excelWorkbookUrl = $workbookUrl;
+        if ($googleWorkbookUrl !== '') {
+            $excelWorkbookUrl = $googleWorkbookUrl;
+        } elseif ($token === '') {
+            $excelWorkbookUrl = $this->sharePointEmbedUrl($configuredWorkbookUrl);
+            if ($excelWorkbookUrl === '') {
+                $excelWorkbookUrl = $this->sharePointEmbedUrl(trim((string) config('services.market_share_mapping.source_url', '')));
+            }
+        }
+        if ($excelWorkbookUrl === '') {
+            $excelWorkbookUrl = $workbookUrl;
+        }
+
+        $downloadUrl = '';
+        if ($token !== '') {
+            $downloadUrl = route('public-workbooks.market-share-mapping.token', ['token' => $token]);
+        }
+
+        $showDownloadPanel = false;
+        $cachePath = trim((string) config("services.market_share_mapping.cache_path", 'app/public_workbooks/market-share-mapping.xlsx'), '/\\');
+        $filePath = storage_path($cachePath);
+        if (is_file($filePath) && filesize($filePath) >= self::OFFICE_VIEWER_MAX_BYTES) {
+            $showDownloadPanel = true;
+        }
+
+        if (!$showDownloadPanel && $googleWorkbookUrl === '') {
+            $lowerUrl = strtolower($workbookUrl);
+            if (str_contains($lowerUrl, 'sharepoint.com')
+                && str_contains($lowerUrl, '/_layouts/15/doc.aspx')
+                && !str_contains($lowerUrl, '/:x:/')
+            ) {
+                $showDownloadPanel = true;
+            }
+        }
+
+        if ($showDownloadPanel && $directSharePointEmbedUrl !== '') {
+            $workbookUrl = $directSharePointEmbedUrl;
+            $excelWorkbookUrl = $directSharePointEmbedUrl;
+            $showDownloadPanel = false;
+        }
+
+        $nativeWorkbook = $token !== '' ? $this->marketShareMappingNativePayload($request) : ['ready' => false];
+        $excelWorkbookSheetUrls = $googleWorkbookUrl !== '' ? [] : $this->officeWorkbookSheetUrls(
+            $excelWorkbookUrl,
+            $nativeWorkbook['sheetNames'] ?? [],
+        );
+        $selectedWorkbookSheet = $this->selectedWorkbookSheet(
+            trim((string) $request->query('sheet', '')),
+            array_keys($excelWorkbookSheetUrls),
+            (string) ($nativeWorkbook['selectedSheet'] ?? ''),
+        );
+        if ($selectedWorkbookSheet !== '' && isset($excelWorkbookSheetUrls[$selectedWorkbookSheet])) {
+            $excelWorkbookUrl = $excelWorkbookSheetUrls[$selectedWorkbookSheet];
+            $workbookUrl = $showDownloadPanel ? $workbookUrl : $excelWorkbookUrl;
+        }
+
+        return view('report.dashboard-dana-market-share', [
+            'pageTitle' => 'Mapping',
+            'pageIcon' => 'fas fa-map-marked-alt',
+            'workbookTitle' => (string) config('services.market_share_mapping.title', 'Mapping Market Share Google Sheets'),
+            'workbookUrl' => $workbookUrl,
+            'workbookUrlIsComplete' => $workbookUrl !== '' && !str_contains($workbookUrl, '...'),
+            'emptyMessage' => 'Workbook Mapping belum dikonfigurasi.',
+            'warningMessage' => 'Link mapping belum terlihat lengkap. Isi link Google Spreadsheet penuh agar workbook bisa tampil langsung.',
+            'frameTitle' => 'Workbook Mapping Market Share Google Sheets',
+            'downloadUrl' => $downloadUrl,
+            'showDownloadAction' => false,
+            'showDownloadPanel' => $showDownloadPanel,
+            'excelWorkbookUrl' => $excelWorkbookUrl,
+            'excelWorkbookSheetUrls' => $excelWorkbookSheetUrls,
+            'excelWorkbookSelectedSheet' => $selectedWorkbookSheet,
+            'nativeWorkbook' => $nativeWorkbook,
+            'workbookProvider' => 'Google Sheets',
+        ]);
+    }
+
+    public function marketShareInstansiIndex(Request $request): View
+    {
+        $sheetName = 'DATA INSTANSI';
+        $branchOptions = $this->marketShareInstansiBranchOptions();
+
+        $selectedBranch = (string) $request->query('cabang', 'kc-madiun');
+        if (!array_key_exists($selectedBranch, $branchOptions)) {
+            $selectedBranch = 'kc-madiun';
+        }
+
+        $selectedOption = $branchOptions[$selectedBranch];
+        $workbookUrl = $selectedBranch === 'area6'
+            ? ''
+            : $this->googleSpreadsheetSheetHtmlUrl($selectedOption['url'], $sheetName);
+
+        return view('report.dashboard-dana-market-share', [
+            'pageTitle' => 'Marketshare Instansi',
+            'pageIcon' => 'fas fa-building',
+            'workbookTitle' => $selectedOption['label'] . ' - Sheet ' . $sheetName,
+            'workbookUrl' => $workbookUrl,
+            'workbookUrlIsComplete' => $selectedBranch === 'area6' || $workbookUrl !== '',
+            'emptyMessage' => 'Spreadsheet Marketshare Instansi belum bisa dimuat.',
+            'warningMessage' => 'Link spreadsheet Marketshare Instansi belum valid.',
+            'frameTitle' => 'Marketshare Instansi ' . $selectedOption['label'],
+            'downloadUrl' => '',
+            'showDownloadAction' => false,
+            'showDownloadPanel' => false,
+            'workbookProvider' => 'Google Sheets',
+            'instansiBranchOptions' => $branchOptions,
+            'selectedInstansiBranch' => $selectedBranch,
+            'selectedInstansiBranchLabel' => $selectedOption['label'],
+            'selectedInstansiSourceUrl' => $selectedOption['url'] ?? '',
+            'selectedInstansiSheetName' => $sheetName,
+            'instansiDataUrl' => route('report.dashboard-dana.market-share.instansi.data', ['cabang' => $selectedBranch]),
+            'instansiNativeTable' => true,
+        ]);
+    }
+
+    public function marketShareArea6Index(Request $request): View
+    {
+        return view('report.dashboard-dana-market-share-area6', [
+            'pageTitle' => 'Marketshare - Area 6',
+            'marketShareArea6' => MarketShareArea6Report::payload((string) $request->query('segmen', '')),
+        ]);
+    }
+
+    public function marketShareInstansiData(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $sheetName = 'DATA INSTANSI';
+        $branchOptions = $this->marketShareInstansiBranchOptions();
+        $selectedBranch = (string) $request->query('cabang', 'kc-madiun');
+        if (!array_key_exists($selectedBranch, $branchOptions)) {
+            $selectedBranch = 'kc-madiun';
+        }
+
+        $selectedOption = $branchOptions[$selectedBranch];
+        if ($selectedBranch === 'area6') {
+            $cacheKey = 'marketshare_instansi_data:v2:area6';
+
+            try {
+                $payload = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($branchOptions, $sheetName): array {
+                    $columns = [];
+                    $rows = [];
+
+                    foreach ($branchOptions as $branchKey => $branchOption) {
+                        if ($branchKey === 'area6') {
+                            continue;
+                        }
+
+                        $branchPayload = $this->readMarketShareInstansiSheet($branchOption['url'], $branchOption['label'], $sheetName);
+                        if ($columns === []) {
+                            $columns = array_merge(['Cabang'], $branchPayload['columns']);
+                        }
+
+                        foreach ($branchPayload['rows'] as $row) {
+                            $rows[] = array_merge([$branchOption['label']], $row);
+                        }
+                    }
+
+                    return [
+                        'ready' => true,
+                        'message' => 'OK',
+                        'branch' => 'Area 6 Konsolidasi',
+                        'sheet' => $sheetName,
+                        'columns' => $columns,
+                        'rows' => $rows,
+                        'rowCount' => count($rows),
+                        'columnCount' => count($columns),
+                        'fetchedAt' => now()->toDateTimeString(),
+                    ];
+                });
+
+                return response()->json($payload);
+            } catch (Throwable $e) {
+                Log::warning('Marketshare Instansi konsolidasi gagal membaca Google Sheet.', [
+                    'message' => $e->getMessage(),
+                ]);
+
+                return response()->json([
+                    'ready' => false,
+                    'message' => 'Data konsolidasi Area 6 belum bisa dibaca. Pastikan akses seluruh spreadsheet dibuka untuk viewer.',
+                    'columns' => [],
+                    'rows' => [],
+                ], 502);
+            }
+        }
+
+        $csvUrl = $this->googleSpreadsheetSheetCsvUrl($selectedOption['url'], $sheetName);
+        if ($csvUrl === '') {
+            return response()->json([
+                'ready' => false,
+                'message' => 'Link spreadsheet tidak valid.',
+                'columns' => [],
+                'rows' => [],
+            ], 422);
+        }
+
+        $cacheKey = 'marketshare_instansi_data:v1:' . $selectedBranch . ':' . md5($csvUrl);
+
+        try {
+            $payload = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($selectedOption, $sheetName): array {
+                $sheetPayload = $this->readMarketShareInstansiSheet($selectedOption['url'], $selectedOption['label'], $sheetName);
+
+                return [
+                    'ready' => true,
+                    'message' => 'OK',
+                    'branch' => $selectedOption['label'],
+                    'sheet' => $sheetName,
+                    'columns' => $sheetPayload['columns'],
+                    'rows' => $sheetPayload['rows'],
+                    'rowCount' => count($sheetPayload['rows']),
+                    'columnCount' => count($sheetPayload['columns']),
+                    'fetchedAt' => now()->toDateTimeString(),
+                ];
+            });
+
+            return response()->json($payload);
+        } catch (Throwable $e) {
+            Log::warning('Marketshare Instansi gagal membaca Google Sheet.', [
+                'branch' => $selectedBranch,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'ready' => false,
+                'message' => 'Data spreadsheet belum bisa dibaca. Pastikan akses sheet dibuka untuk viewer.',
+                'columns' => [],
+                'rows' => [],
+            ], 502);
+        }
+    }
+
+    /**
+     * @return array<string, array{label: string, url: string}>
+     */
+    private function marketShareInstansiBranchOptions(): array
+    {
+        return [
+            'area6' => [
+                'label' => 'Area 6 Konsolidasi',
+                'url' => '',
+            ],
+            'kc-madiun' => [
+                'label' => 'KC Madiun',
+                'url' => 'https://docs.google.com/spreadsheets/d/1_HRbgKXKy6Rv9gi56x0rpKaJEQgXbOlkeupqAa_XACo/edit?usp=sharing',
+            ],
+            'kc-magetan' => [
+                'label' => 'KC Magetan',
+                'url' => 'https://docs.google.com/spreadsheets/d/1uTvCIxznFkqbzgfJdLbCUUtUOTrURkqaiCxiJWFLbQ8/edit?usp=sharing',
+            ],
+            'kc-ngawi' => [
+                'label' => 'KC Ngawi',
+                'url' => 'https://docs.google.com/spreadsheets/d/1Xdq0tjkUuKkD5rC4Zo0RJDeHy33bCOPDp0-98489v28/edit?usp=sharing',
+            ],
+            'kc-ponorogo' => [
+                'label' => 'KC Ponorogo',
+                'url' => 'https://docs.google.com/spreadsheets/d/16bJoKksVdWUloplXOk07LDnZGPzh5inRKuSOdYTbEQA/edit?usp=sharing',
+            ],
+        ];
+    }
+
+    /**
+     * @return array{columns: array<int, string>, rows: array<int, array<int, string|null>>}
+     */
+    private function readMarketShareInstansiSheet(string $url, string $branchLabel, string $sheetName): array
+    {
+        $csvUrl = $this->googleSpreadsheetSheetCsvUrl($url, $sheetName);
+        if ($csvUrl === '') {
+            throw new \RuntimeException("Link spreadsheet {$branchLabel} tidak valid.");
+        }
+
+        $response = \Illuminate\Support\Facades\Http::timeout(25)
+            ->retry(1, 250)
+            ->get($csvUrl);
+
+        if (!$response->successful()) {
+            throw new \RuntimeException("Google Sheet {$branchLabel} mengembalikan status " . $response->status());
+        }
+
+        $parsedRows = $this->parseCsvText((string) $response->body());
+        $parsedRows = array_values(array_filter($parsedRows, function (array $row): bool {
+            return collect($row)->contains(fn ($value): bool => trim((string) $value) !== '');
+        }));
+
+        $columns = array_values(array_map(
+            fn ($value): string => trim((string) $value),
+            $parsedRows[0] ?? []
+        ));
+        if ($columns === []) {
+            throw new \RuntimeException("Sheet {$sheetName} {$branchLabel} kosong atau belum terbaca.");
+        }
+
+        $rows = array_slice($parsedRows, 1);
+        $columnCount = count($columns);
+        $rows = array_map(function (array $row) use ($columnCount): array {
+            $row = array_values($row);
+            if (count($row) < $columnCount) {
+                $row = array_pad($row, $columnCount, '');
+            }
+
+            return array_slice($row, 0, $columnCount);
+        }, $rows);
+
+        return [
+            'columns' => $columns,
+            'rows' => $rows,
+        ];
+    }
+
+    /**
+     * @param array<int, string> $sheetNames
+     * @return array<string, string>
+     */
+    private function officeWorkbookSheetUrls(string $workbookUrl, array $sheetNames): array
+    {
+        if ($workbookUrl === '' || $sheetNames === []) {
+            return [];
+        }
+
+        $sheetUrls = [];
+        foreach ($sheetNames as $sheetName) {
+            $sheetName = trim((string) $sheetName);
+            if ($sheetName === '') {
+                continue;
+            }
+
+            $sheetUrls[$sheetName] = $this->officeWorkbookUrlForSheet($workbookUrl, $sheetName);
+        }
+
+        return $sheetUrls;
+    }
+
+    /**
+     * @param array<int, string> $sheetNames
+     */
+    private function selectedWorkbookSheet(string $requestedSheet, array $sheetNames, string $fallbackSheet): string
+    {
+        if ($sheetNames === []) {
+            return '';
+        }
+
+        if ($requestedSheet !== '' && in_array($requestedSheet, $sheetNames, true)) {
+            return $requestedSheet;
+        }
+
+        if ($fallbackSheet !== '' && in_array($fallbackSheet, $sheetNames, true)) {
+            return $fallbackSheet;
+        }
+
+        return $sheetNames[0];
+    }
+
+    private function officeWorkbookUrlForSheet(string $workbookUrl, string $sheetName): string
+    {
+        $parts = parse_url($workbookUrl);
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+            return $workbookUrl;
+        }
+
+        parse_str((string) ($parts['query'] ?? ''), $query);
+        $query['ActiveCell'] = "'" . str_replace("'", "''", $sheetName) . "'!A1";
+
+        return $this->buildUrl($parts, $query);
+    }
+
+    private function officeViewerUrlForPublicWorkbook(
+        Request $request,
+        string $routeName,
+        string $configKey,
+        string $fallbackUrl
+    ): string {
+        $token = trim((string) config("services.{$configKey}.public_token", ''));
+        $sourceUrl = trim((string) config("services.{$configKey}.source_url", ''));
+
+        $useDirectSharePoint = $token === '';
+
+        if ($useDirectSharePoint) {
+            $sourceUrl = trim((string) config("services.{$configKey}.source_url", ''));
+            $directEmbedUrl = '';
+            if (str_contains($sourceUrl, '/:x:/')) {
+                $directEmbedUrl = $this->sharePointEmbedUrl($sourceUrl);
+            }
+
+            if ($directEmbedUrl === '') {
+                $directEmbedUrl = $this->sharePointEmbedUrl($fallbackUrl);
+            }
+
+            if ($directEmbedUrl !== '') {
+                return $directEmbedUrl;
+            }
+
+            return $fallbackUrl;
+        }
+
+        $publicWorkbookPath = route($routeName, [
+            'token' => $token,
+        ], false);
+        $publicWorkbookPath .= '?v=' . $this->publicWorkbookVersion($configKey);
+        $publicOrigin = rtrim((string) config('app.url', $request->getSchemeAndHttpHost()), '/');
+        $publicWorkbookUrl = $publicOrigin . $publicWorkbookPath;
+
+        return 'https://view.officeapps.live.com/op/embed.aspx?src='
+            . rawurlencode($publicWorkbookUrl)
+            . '&wdAllowInteractivity=True&wdAllowTyping=False&wdDownloadButton=True';
+    }
+
+    private function publicWorkbookVersion(string $configKey): string
+    {
+        $cachePath = trim((string) config("services.{$configKey}.cache_path", 'app/public_workbooks/' . $configKey . '.xlsx'), '/\\');
+        $filePath = storage_path($cachePath);
+
+        if (is_file($filePath)) {
+            return (string) filemtime($filePath);
+        }
+
+        return now()->format('YmdHi');
+    }
+
+    private function marketShareNativePayload(): array
+    {
+        $cachePath = trim((string) config('services.market_share.cache_path', 'app/public_workbooks/market-share.xlsx'), '/\\');
+        $path = storage_path($cachePath);
+
+        if (!is_file($path) || filesize($path) < 1024) {
+            return ['ready' => false];
+        }
+
+        $cacheKey = 'market_share_native_payload:v2:' . md5($path . '|' . filemtime($path) . '|' . filesize($path));
+
+        return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($path): array {
+            try {
+                $reader = IOFactory::createReaderForFile($path);
+                $reader->setReadDataOnly(true);
+                $spreadsheet = $reader->load($path);
+                $simpanan = $this->marketShareSavingsPayload(
+                    $spreadsheet->getSheetByName('MS Simpanan Per AH') ?? $spreadsheet->getActiveSheet()
+                );
+                $pinjamanSheet = $spreadsheet->getSheetByName('Series Pinjaman UMKM, Kons AH');
+                $pinjaman = $pinjamanSheet ? $this->marketShareLoanPayload($pinjamanSheet) : null;
+
+                $spreadsheet->disconnectWorksheets();
+
+                return [
+                    'ready' => true,
+                    'periods' => $simpanan['periods'] ?? [],
+                    'sections' => $simpanan['sections'] ?? [],
+                    'branchRows' => $simpanan['branchRows'] ?? [],
+                    'modes' => array_filter([
+                        'simpanan' => $simpanan,
+                        'pinjaman' => $pinjaman,
+                    ]),
+                ];
+            } catch (Throwable $exception) {
+                Log::warning('Market Share native payload failed.', [
+                    'message' => $exception->getMessage(),
+                ]);
+
+                return ['ready' => false];
+            }
+        });
+    }
+
+    private function marketShareMappingNativePayload(Request $request): array
+    {
+        $cachePath = trim((string) config('services.market_share_mapping.cache_path', 'app/public_workbooks/market-share-mapping.xlsx'), '/\\');
+        $path = storage_path($cachePath);
+
+        if (!is_file($path) || filesize($path) < 1024) {
+            return ['ready' => false];
+        }
+
+        $requestedSheet = trim((string) $request->query('sheet', ''));
+        $cacheKey = 'market_share_mapping_native_workbook:v7:'
+            . md5($path . '|' . filemtime($path) . '|' . filesize($path) . '|' . $requestedSheet);
+
+        return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($path, $requestedSheet): array {
+            try {
+                $payload = $this->readMarketShareMappingWorkbookPreview($path, $requestedSheet);
+
+                return [
+                    'ready' => true,
+                    'sheetNames' => $payload['sheetNames'],
+                    'selectedSheet' => $payload['selectedSheet'],
+                    'columnLabels' => $payload['columnLabels'],
+                    'columnWidths' => $payload['columnWidths'],
+                    'summary' => $payload['summary'],
+                    'rows' => $this->trimTrailingEmptyWorkbookRows($payload['rows']),
+                    'rowCount' => $payload['rowCount'],
+                    'columnCount' => $payload['columnCount'],
+                    'maxRows' => self::MAPPING_WORKBOOK_MAX_ROWS,
+                    'maxColumns' => self::MAPPING_WORKBOOK_MAX_COLUMNS,
+                    'truncated' => $payload['rowCount'] > self::MAPPING_WORKBOOK_MAX_ROWS
+                        || $payload['columnCount'] > self::MAPPING_WORKBOOK_MAX_COLUMNS,
+                    'updatedAt' => date('d M Y H:i', filemtime($path)),
+                ];
+            } catch (Throwable $exception) {
+                Log::warning('Market Share Mapping native workbook failed.', [
+                    'message' => $exception->getMessage(),
+                ]);
+
+                return ['ready' => false];
+            }
+        });
+    }
+
+    private function readMarketShareMappingWorkbookPreview(string $path, string $requestedSheet): array
+    {
+        $workbook = $this->readXlsxWorkbookSheets($path);
+        $sheetNames = array_column($workbook, 'name');
+        $selectedSheet = in_array($requestedSheet, $sheetNames, true)
+            ? $requestedSheet
+            : $this->defaultMarketShareMappingSheet($sheetNames);
+        $sheetEntry = collect($workbook)->firstWhere('name', $selectedSheet);
+
+        if (!$sheetEntry || empty($sheetEntry['path'])) {
+            throw new \RuntimeException('Sheet mapping workbook tidak ditemukan.');
+        }
+
+        $preview = $this->readXlsxSheetPreview($path, (string) $sheetEntry['path']);
+        $sharedStrings = $this->readXlsxSharedStrings($path, $preview['sharedStringIndexes']);
+        $styleDefinitions = $this->readXlsxStyleDefinitions($path);
+        [$mergeStarts, $mergeCovered] = $this->xlsxMergeMaps(
+            $preview['mergedCells'],
+            self::MAPPING_WORKBOOK_MAX_ROWS,
+            $preview['renderColumns']
+        );
+
+        $rows = [];
+        foreach ($preview['rows'] as $rowNumber => $rowCells) {
+            $cells = [];
+            for ($column = 1; $column <= $preview['renderColumns']; $column++) {
+                $mergeKey = $rowNumber . ':' . $column;
+                if (isset($mergeCovered[$mergeKey])) {
+                    $cells[] = ['skip' => true];
+                    continue;
+                }
+
+                $cell = $rowCells[$column] ?? ['type' => 'blank', 'value' => ''];
+                $styleId = (int) ($cell['style'] ?? 0);
+                $display = $this->formatXlsxPreviewCell($cell, $sharedStrings, $styleDefinitions);
+                $merge = $mergeStarts[$mergeKey] ?? ['rowspan' => 1, 'colspan' => 1];
+
+                $cells[] = [
+                    'value' => $display,
+                    'style' => $styleDefinitions['cellStyles'][$styleId] ?? '',
+                    'rowspan' => $merge['rowspan'],
+                    'colspan' => $merge['colspan'],
+                    'empty' => trim($display) === '',
+                ];
+            }
+
+            $rows[] = [
+                'number' => $rowNumber,
+                'style' => $this->xlsxRowStyle($preview['rowHeights'][$rowNumber] ?? null),
+                'cells' => $cells,
+            ];
+        }
+
+        $columnLabels = [];
+        $columnWidths = [];
+        for ($column = 1; $column <= $preview['renderColumns']; $column++) {
+            $columnLabels[] = Coordinate::stringFromColumnIndex($column);
+            $columnWidths[] = $this->xlsxColumnStyle($preview['columnWidths'][$column] ?? null);
+        }
+
+        $summary = $this->mappingWorkbookSummaryPayload($rows, $selectedSheet);
+        if (!empty($summary['ready'])) {
+            $summary['charts'] = $this->readXlsxDashboardCharts($path, (string) $sheetEntry['path']);
+        }
+
+        return [
+            'sheetNames' => $sheetNames,
+            'selectedSheet' => $selectedSheet,
+            'columnLabels' => $columnLabels,
+            'columnWidths' => $columnWidths,
+            'summary' => $summary,
+            'rows' => $rows,
+            'rowCount' => $preview['rowCount'],
+            'columnCount' => $preview['columnCount'],
+        ];
+    }
+
+    private function mappingWorkbookSummaryPayload(array $rows, string $selectedSheet): array
+    {
+        if (strtoupper(trim($selectedSheet)) !== 'DASHBOARD') {
+            return ['ready' => false];
+        }
+
+        $cellValue = function (int $rowNumber, int $columnNumber) use ($rows): string {
+            foreach ($rows as $row) {
+                if ((int) ($row['number'] ?? 0) !== $rowNumber) {
+                    continue;
+                }
+
+                $cell = $row['cells'][$columnNumber - 1] ?? null;
+                if (!is_array($cell) || !empty($cell['skip'])) {
+                    return '';
+                }
+
+                return trim((string) ($cell['value'] ?? ''));
+            }
+
+            return '';
+        };
+
+        $headlineMetrics = [];
+        foreach ([2, 4, 6, 8, 10, 12] as $columnNumber) {
+            $label = $cellValue(8, $columnNumber);
+            $value = $cellValue(9, $columnNumber);
+            if ($label === '' && $value === '') {
+                continue;
+            }
+
+            $headlineMetrics[] = [
+                'label' => $label !== '' ? $label : 'KPI',
+                'value' => $value !== '' ? $value : '-',
+                'icon' => $this->mappingSummaryMetricIcon($label),
+            ];
+        }
+
+        $totalMetrics = [];
+        foreach ([1, 4, 7, 10, 13] as $columnNumber) {
+            $label = $cellValue(12, $columnNumber);
+            $value = $cellValue(13, $columnNumber);
+            if ($label === '' && $value === '') {
+                continue;
+            }
+
+            $totalMetrics[] = [
+                'label' => $label !== '' ? $label : 'Total',
+                'value' => $value !== '' ? $value : '-',
+                'icon' => $this->mappingSummaryMetricIcon($label),
+            ];
+        }
+
+        $sectors = [];
+        foreach ([17, 22] as $rowNumber) {
+            foreach ([1, 4, 7, 10, 13] as $columnNumber) {
+                $label = $cellValue($rowNumber, $columnNumber + 1);
+                $conversion = $cellValue($rowNumber + 2, $columnNumber);
+                if ($label === '' || $conversion === '') {
+                    continue;
+                }
+
+                $sectors[] = [
+                    'label' => $label,
+                    'conversion' => $conversion,
+                    'icon' => $this->mappingSummarySectorIcon($label),
+                    'tone' => $this->mappingSummarySectorTone($label),
+                ];
+            }
+        }
+        $sectorDetails = $this->mappingWorkbookSectorDetailsPayload($rows, $headlineMetrics, $sectors);
+
+        return [
+            'ready' => $headlineMetrics !== [] || $totalMetrics !== [] || $sectors !== [],
+            'title' => $cellValue(1, 1) ?: 'Dashboard Sektor Potensi & Debitur',
+            'subtitle' => $cellValue(2, 1) ?: 'Ringkasan sektor utama dari workbook Mapping Market Share.',
+            'selectedSector' => $cellValue(5, 3) ?: '-',
+            'headlineMetrics' => $headlineMetrics,
+            'totalMetrics' => $totalMetrics,
+            'sectors' => $sectors,
+            'sectorDetails' => $sectorDetails,
+        ];
+    }
+
+    private function mappingWorkbookSectorDetailsPayload(array $rows, array $headlineMetrics, array $sectors): array
+    {
+        $headerRow = null;
+        $headerRowNumber = 0;
+        foreach ($rows as $row) {
+            if ((int) ($row['number'] ?? 0) < 30) {
+                continue;
+            }
+
+            $values = array_map(function (array $cell): string {
+                return !empty($cell['skip']) ? '' : trim((string) ($cell['value'] ?? ''));
+            }, $row['cells'] ?? []);
+
+            $normalizedValues = array_map(fn (string $value): string => $this->mappingSummaryDataKey($value), $values);
+            if (
+                in_array('SEKTOR', $normalizedValues, true)
+                && in_array('POTENSI', $normalizedValues, true)
+                && in_array('DEBITUR', $normalizedValues, true)
+            ) {
+                $headerRow = $values;
+                $headerRowNumber = (int) ($row['number'] ?? 0);
+                break;
+            }
+        }
+
+        if ($headerRow === null) {
+            return [];
+        }
+
+        $headerIndexes = [];
+        foreach ($headerRow as $index => $label) {
+            $key = $this->mappingSummaryDataKey($label);
+            if ($key !== '' && !isset($headerIndexes[$key])) {
+                $headerIndexes[$key] = $index;
+            }
+        }
+
+        $sectorIndex = $headerIndexes['SEKTOR'] ?? null;
+        if ($sectorIndex === null) {
+            return [];
+        }
+
+        $sectorConversions = [];
+        foreach ($sectors as $sector) {
+            $label = (string) ($sector['label'] ?? '');
+            $key = $this->mappingSummaryDataKey($label);
+            if ($key !== '') {
+                $sectorConversions[$key] = (string) ($sector['conversion'] ?? '');
+            }
+        }
+
+        $details = [];
+        foreach ($rows as $row) {
+            if ((int) ($row['number'] ?? 0) <= $headerRowNumber) {
+                continue;
+            }
+
+            $cells = $row['cells'] ?? [];
+            $sectorLabel = isset($cells[$sectorIndex]) && is_array($cells[$sectorIndex])
+                ? trim((string) ($cells[$sectorIndex]['value'] ?? ''))
+                : '';
+            $sectorKey = $this->mappingSummaryDataKey($sectorLabel);
+
+            if ($sectorKey === '' || str_contains($sectorKey, 'TOTAL')) {
+                continue;
+            }
+
+            $metrics = [];
+            foreach ($headlineMetrics as $metric) {
+                $metricLabel = (string) ($metric['label'] ?? '');
+                $metricKey = $this->mappingSummaryDataKey($metricLabel);
+                $sourceKey = $this->mappingWorkbookSectorDetailSourceKey($metricLabel);
+                $sourceIndex = $headerIndexes[$sourceKey] ?? null;
+
+                if ($metricKey === '' || $sourceIndex === null) {
+                    continue;
+                }
+
+                $cell = $cells[$sourceIndex] ?? null;
+                if (!is_array($cell) || !empty($cell['skip'])) {
+                    continue;
+                }
+
+                $value = trim((string) ($cell['value'] ?? ''));
+                if ($value !== '') {
+                    $metrics[$metricKey] = $value;
+                }
+            }
+
+            if ($metrics === []) {
+                continue;
+            }
+
+            $details[$sectorKey] = [
+                'label' => $sectorLabel,
+                'conversion' => $sectorConversions[$sectorKey] ?? ($metrics['KONVERSI'] ?? ''),
+                'metrics' => $metrics,
+            ];
+        }
+
+        return $details;
+    }
+
+    private function mappingWorkbookSectorDetailSourceKey(string $label): string
+    {
+        $normalized = $this->mappingSummaryDataKey($label);
+
+        return match (true) {
+            $normalized === 'OSLANCAR' => 'LANCAR',
+            $normalized === 'OSNPL' => 'NPL',
+            default => $normalized,
+        };
+    }
+
+    private function mappingSummaryDataKey(string $value): string
+    {
+        return (string) preg_replace('/[^A-Z0-9]+/', '', strtoupper(trim($value)));
+    }
+
+    private function mappingSummaryMetricIcon(string $label): string
+    {
+        $normalized = strtoupper($label);
+
+        return match (true) {
+            str_contains($normalized, 'POTENSI') => 'fas fa-seedling',
+            str_contains($normalized, 'DEBITUR') => 'fas fa-users',
+            str_contains($normalized, 'KONVERSI') => 'fas fa-bolt',
+            str_contains($normalized, 'NPL') => 'fas fa-shield-alt',
+            str_contains($normalized, 'OS') => 'fas fa-chart-line',
+            default => 'fas fa-chart-pie',
+        };
+    }
+
+    private function mappingSummarySectorIcon(string $label): string
+    {
+        $normalized = strtoupper($label);
+
+        return match (true) {
+            str_contains($normalized, 'PERTANIAN') => 'fas fa-seedling',
+            str_contains($normalized, 'PERDAGANGAN') => 'fas fa-store',
+            str_contains($normalized, 'PERKEBUNAN') => 'fas fa-leaf',
+            str_contains($normalized, 'PERIKANAN') => 'fas fa-water',
+            str_contains($normalized, 'PETERNAKAN') => 'fas fa-warehouse',
+            str_contains($normalized, 'JASA') => 'fas fa-handshake',
+            str_contains($normalized, 'INDUSTRI') => 'fas fa-industry',
+            str_contains($normalized, 'PERTAMBANGAN') => 'fas fa-gem',
+            default => 'fas fa-cubes',
+        };
+    }
+
+    private function mappingSummarySectorTone(string $label): string
+    {
+        $tones = ['emerald', 'blue', 'green', 'cyan', 'orange', 'violet', 'slate', 'amber', 'gray'];
+        $index = abs(crc32(strtoupper($label))) % count($tones);
+
+        return $tones[$index];
+    }
+
+    private function readXlsxDashboardCharts(string $path, string $sheetEntry): array
+    {
+        $drawingPath = $this->xlsxWorksheetDrawingPath($path, $sheetEntry);
+        if ($drawingPath === '') {
+            return [];
+        }
+
+        $chartRelationships = $this->xlsxDrawingChartRelationships($path, $drawingPath);
+        if ($chartRelationships === []) {
+            return [];
+        }
+
+        $anchors = $this->xlsxDrawingChartAnchors($path, $drawingPath, $chartRelationships);
+        $charts = [];
+        foreach ($anchors as $anchor) {
+            $chart = $this->readXlsxChartPayload($path, $anchor['path']);
+            if (empty($chart['ready'])) {
+                continue;
+            }
+
+            $chart['fromRow'] = $anchor['fromRow'];
+            $chart['fromColumn'] = $anchor['fromColumn'];
+            $charts[] = $chart;
+        }
+
+        usort($charts, function (array $left, array $right): int {
+            return [$left['fromRow'], $left['fromColumn']] <=> [$right['fromRow'], $right['fromColumn']];
+        });
+
+        return array_values(array_filter(array_slice($charts, 0, 3), function (array $chart): bool {
+            $title = strtoupper((string) ($chart['title'] ?? ''));
+
+            return str_contains($title, 'POTENSI')
+                || str_contains($title, 'SHARE')
+                || str_contains($title, 'NPL');
+        }));
+    }
+
+    private function xlsxWorksheetDrawingPath(string $path, string $sheetEntry): string
+    {
+        $relsPath = dirname($sheetEntry) . '/_rels/' . basename($sheetEntry) . '.rels';
+        $reader = $this->xlsxXmlReader($path, $relsPath, false);
+        if (!$reader) {
+            return '';
+        }
+
+        $drawingPath = '';
+        while ($reader->read()) {
+            if ($reader->nodeType !== XMLReader::ELEMENT || $reader->localName !== 'Relationship') {
+                continue;
+            }
+
+            $type = (string) $reader->getAttribute('Type');
+            if (!str_contains($type, '/drawing')) {
+                continue;
+            }
+
+            $drawingPath = $this->resolveXlsxRelativePath($sheetEntry, (string) $reader->getAttribute('Target'));
+            break;
+        }
+        $reader->close();
+
+        return $drawingPath;
+    }
+
+    private function xlsxDrawingChartRelationships(string $path, string $drawingPath): array
+    {
+        $relsPath = dirname($drawingPath) . '/_rels/' . basename($drawingPath) . '.rels';
+        $reader = $this->xlsxXmlReader($path, $relsPath, false);
+        if (!$reader) {
+            return [];
+        }
+
+        $relationships = [];
+        while ($reader->read()) {
+            if ($reader->nodeType !== XMLReader::ELEMENT || $reader->localName !== 'Relationship') {
+                continue;
+            }
+
+            $type = (string) $reader->getAttribute('Type');
+            if (!str_contains($type, '/chart')) {
+                continue;
+            }
+
+            $id = (string) $reader->getAttribute('Id');
+            $target = (string) $reader->getAttribute('Target');
+            if ($id === '' || $target === '') {
+                continue;
+            }
+
+            $relationships[$id] = $this->resolveXlsxRelativePath($drawingPath, $target);
+        }
+        $reader->close();
+
+        return $relationships;
+    }
+
+    private function xlsxDrawingChartAnchors(string $path, string $drawingPath, array $chartRelationships): array
+    {
+        $zip = new \ZipArchive();
+        if ($zip->open($path) !== true) {
+            return [];
+        }
+
+        $drawingXml = $zip->getFromName($drawingPath);
+        $zip->close();
+
+        if (!is_string($drawingXml) || trim($drawingXml) === '') {
+            return [];
+        }
+
+        $dom = new \DOMDocument();
+        if (!@$dom->loadXML($drawingXml)) {
+            return [];
+        }
+
+        $xdrNamespace = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing';
+        $chartNamespace = 'http://schemas.openxmlformats.org/drawingml/2006/chart';
+        $relationshipNamespace = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+        $xpath = new \DOMXPath($dom);
+        $xpath->registerNamespace('xdr', $xdrNamespace);
+        $xpath->registerNamespace('c', $chartNamespace);
+        $anchors = [];
+
+        foreach ($xpath->query('//xdr:twoCellAnchor') ?: [] as $anchor) {
+            if (!$anchor instanceof \DOMElement) {
+                continue;
+            }
+
+            $chartNode = $xpath->query('.//c:chart', $anchor)->item(0);
+            if (!$chartNode instanceof \DOMElement) {
+                continue;
+            }
+
+            $relationId = $chartNode->getAttributeNS($relationshipNamespace, 'id');
+            if ($relationId === '' || !isset($chartRelationships[$relationId])) {
+                continue;
+            }
+
+            $fromColumnNode = $xpath->query('./xdr:from/xdr:col', $anchor)->item(0);
+            $fromRowNode = $xpath->query('./xdr:from/xdr:row', $anchor)->item(0);
+            $fromColumn = $fromColumnNode ? ((int) $fromColumnNode->textContent) + 1 : 1;
+            $fromRow = $fromRowNode ? ((int) $fromRowNode->textContent) + 1 : 1;
+
+            $anchors[] = [
+                'path' => $chartRelationships[$relationId],
+                'fromColumn' => $fromColumn,
+                'fromRow' => $fromRow,
+            ];
+        }
+
+        return $anchors;
+    }
+
+    private function readXlsxChartPayload(string $path, string $chartEntry): array
+    {
+        $zip = new \ZipArchive();
+        if ($zip->open($path) !== true) {
+            return ['ready' => false];
+        }
+
+        $chartXml = $zip->getFromName($chartEntry);
+        $zip->close();
+
+        if (!is_string($chartXml) || trim($chartXml) === '') {
+            return ['ready' => false];
+        }
+
+        $dom = new \DOMDocument();
+        if (!@$dom->loadXML($chartXml)) {
+            return ['ready' => false];
+        }
+
+        $chartNamespace = 'http://schemas.openxmlformats.org/drawingml/2006/chart';
+        $drawingNamespace = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+        $xpath = new \DOMXPath($dom);
+        $xpath->registerNamespace('c', $chartNamespace);
+        $xpath->registerNamespace('a', $drawingNamespace);
+
+        $titleNode = $xpath->query('//c:chart/c:title//a:t')->item(0);
+        $title = $titleNode ? trim($titleNode->textContent) : 'Chart';
+        $type = $this->xlsxChartTypeFromDom($xpath);
+        $seriesNodes = $xpath->query('//c:ser') ?: [];
+
+        $categories = [];
+        $series = [];
+        $maxValue = 0.0;
+        foreach ($seriesNodes as $seriesNode) {
+            if (!$seriesNode instanceof \DOMElement) {
+                continue;
+            }
+
+            $seriesName = $this->xlsxChartFirstDomValue($xpath, $seriesNode, './/c:tx//c:v') ?: 'Series';
+            $seriesCategories = $this->xlsxChartDomPointValues($xpath, $seriesNode, './/c:cat//c:pt', false);
+            $values = $this->xlsxChartDomPointValues($xpath, $seriesNode, './/c:val//c:pt', true);
+
+            if ($categories === [] && $seriesCategories !== []) {
+                $categories = array_map(fn (array $point): string => (string) $point['value'], $seriesCategories);
+            }
+
+            $numericValues = array_map(fn (array $point): float => (float) $point['value'], $values);
+            if ($numericValues !== []) {
+                $maxValue = max($maxValue, max(array_map('abs', $numericValues)));
+            }
+
+            $series[] = [
+                'name' => $seriesName,
+                'values' => $numericValues,
+            ];
+        }
+
+        $normalizedTitle = strtoupper($title);
+        if (str_contains($normalizedTitle, 'NPL') && str_contains($normalizedTitle, 'RATIO')) {
+            foreach ($series as $chartSeries) {
+                if (!str_contains(strtoupper((string) ($chartSeries['name'] ?? '')), 'NPL RATIO')) {
+                    continue;
+                }
+
+                $series = [$chartSeries];
+                $seriesValues = array_map('abs', array_map('floatval', $chartSeries['values'] ?? []));
+                $maxValue = $seriesValues !== [] ? max($seriesValues) : $maxValue;
+                break;
+            }
+        }
+
+        return [
+            'ready' => $series !== [] && $categories !== [],
+            'title' => $title,
+            'type' => $type,
+            'categories' => $categories,
+            'series' => $series,
+            'maxValue' => $maxValue > 0 ? $maxValue : 1.0,
+        ];
+    }
+
+    private function xlsxChartTypeFromDom(\DOMXPath $xpath): string
+    {
+        if (($xpath->query('//c:doughnutChart')->length ?? 0) > 0 || ($xpath->query('//c:pieChart')->length ?? 0) > 0) {
+            return 'doughnut';
+        }
+
+        $barChart = $xpath->query('//c:barChart')->item(0);
+        if ($barChart instanceof \DOMElement) {
+            $barDir = $xpath->query('./c:barDir', $barChart)->item(0);
+            $direction = $barDir instanceof \DOMElement ? $barDir->getAttribute('val') : '';
+
+            return $direction === 'bar' ? 'bar-horizontal' : 'bar-column';
+        }
+
+        return 'bar-column';
+    }
+
+    private function xlsxChartFirstDomValue(\DOMXPath $xpath, \DOMNode $node, string $query): string
+    {
+        $valueNode = $xpath->query($query, $node)->item(0);
+
+        return $valueNode ? trim($valueNode->textContent) : '';
+    }
+
+    private function xlsxChartDomPointValues(\DOMXPath $xpath, \DOMNode $node, string $query, bool $numeric): array
+    {
+        $points = $xpath->query($query, $node) ?: [];
+        $values = [];
+
+        foreach ($points as $point) {
+            if (!$point instanceof \DOMElement) {
+                continue;
+            }
+
+            $valueNode = $xpath->query('./c:v', $point)->item(0);
+            if (!$valueNode) {
+                continue;
+            }
+
+            $value = trim($valueNode->textContent);
+            $values[] = [
+                'index' => (int) ($point->getAttribute('idx') !== '' ? $point->getAttribute('idx') : count($values)),
+                'value' => $numeric && is_numeric($value) ? (float) $value : $value,
+            ];
+        }
+
+        usort($values, fn (array $left, array $right): int => $left['index'] <=> $right['index']);
+
+        return $values;
+    }
+
+    private function readXlsxWorkbookSheets(string $path): array
+    {
+        $relationships = [];
+        $rels = $this->xlsxXmlReader($path, 'xl/_rels/workbook.xml.rels');
+        while ($rels->read()) {
+            if ($rels->nodeType !== XMLReader::ELEMENT || $rels->localName !== 'Relationship') {
+                continue;
+            }
+
+            $id = (string) $rels->getAttribute('Id');
+            $target = (string) $rels->getAttribute('Target');
+            if ($id === '' || $target === '') {
+                continue;
+            }
+
+            $relationships[$id] = $this->resolveXlsxWorkbookRelationshipTarget($target);
+        }
+        $rels->close();
+
+        $sheets = [];
+        $workbook = $this->xlsxXmlReader($path, 'xl/workbook.xml');
+        while ($workbook->read()) {
+            if ($workbook->nodeType !== XMLReader::ELEMENT || $workbook->localName !== 'sheet') {
+                continue;
+            }
+
+            $name = trim((string) $workbook->getAttribute('name'));
+            $relationId = (string) $workbook->getAttributeNs('id', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships');
+            if ($name === '' || !isset($relationships[$relationId])) {
+                continue;
+            }
+
+            $sheets[] = [
+                'name' => $name,
+                'path' => $this->normalizeXlsxEntryPath($relationships[$relationId]),
+            ];
+        }
+        $workbook->close();
+
+        return $sheets;
+    }
+
+    private function readXlsxSheetPreview(string $path, string $sheetEntry): array
+    {
+        $rows = [];
+        $columnWidths = [];
+        $rowHeights = [];
+        $mergedCells = [];
+        $sharedStringIndexes = [];
+        $rowCount = 1;
+        $columnCount = 1;
+        $reader = $this->xlsxXmlReader($path, $sheetEntry);
+
+        while ($reader->read()) {
+            if ($reader->nodeType !== XMLReader::ELEMENT) {
+                continue;
+            }
+
+            if ($reader->localName === 'dimension') {
+                [$rowCount, $columnCount] = $this->parseXlsxDimension((string) $reader->getAttribute('ref'));
+                continue;
+            }
+
+            if ($reader->localName === 'col') {
+                $min = max(1, (int) $reader->getAttribute('min'));
+                $max = max($min, (int) $reader->getAttribute('max'));
+                $width = (float) $reader->getAttribute('width');
+                if ($width > 0) {
+                    for ($column = $min; $column <= min($max, self::MAPPING_WORKBOOK_MAX_COLUMNS); $column++) {
+                        $columnWidths[$column] = $width;
+                    }
+                }
+                continue;
+            }
+
+            if ($reader->localName === 'row') {
+                $rowNumber = (int) $reader->getAttribute('r');
+                $height = (float) $reader->getAttribute('ht');
+                if ($rowNumber > 0 && $height > 0) {
+                    $rowHeights[$rowNumber] = $height;
+                }
+                continue;
+            }
+
+            if ($reader->localName === 'mergeCell') {
+                $ref = trim((string) $reader->getAttribute('ref'));
+                if ($ref !== '') {
+                    $mergedCells[] = $ref;
+                }
+                continue;
+            }
+
+            if ($reader->localName !== 'c') {
+                continue;
+            }
+
+            $cellReference = (string) $reader->getAttribute('r');
+            [$columnIndex, $rowNumber] = $this->parseXlsxCellReference($cellReference);
+            if ($columnIndex < 1 || $rowNumber < 1) {
+                continue;
+            }
+
+            $rowCount = max($rowCount, $rowNumber);
+            $columnCount = max($columnCount, $columnIndex);
+
+            if ($rowNumber > self::MAPPING_WORKBOOK_MAX_ROWS || $columnIndex > self::MAPPING_WORKBOOK_MAX_COLUMNS) {
+                continue;
+            }
+
+            $type = (string) $reader->getAttribute('t');
+            $value = $this->readXlsxCellRawValue($reader);
+            $rows[$rowNumber][$columnIndex] = [
+                'type' => $type,
+                'value' => $value,
+                'style' => (int) ((string) $reader->getAttribute('s') ?: 0),
+            ];
+
+            if ($type === 's' && is_numeric($value)) {
+                $sharedStringIndexes[(int) $value] = true;
+            }
+        }
+        $reader->close();
+
+        ksort($rows);
+
+        return [
+            'rows' => $rows,
+            'sharedStringIndexes' => array_keys($sharedStringIndexes),
+            'columnWidths' => $columnWidths,
+            'rowHeights' => $rowHeights,
+            'mergedCells' => $mergedCells,
+            'rowCount' => $rowCount,
+            'columnCount' => $columnCount,
+            'renderColumns' => min(max(1, $columnCount), self::MAPPING_WORKBOOK_MAX_COLUMNS),
+        ];
+    }
+
+    private function readXlsxCellRawValue(XMLReader $reader): string
+    {
+        if ($reader->isEmptyElement) {
+            return '';
+        }
+
+        $depth = $reader->depth;
+        $value = '';
+
+        while ($reader->read()) {
+            if ($reader->nodeType === XMLReader::END_ELEMENT && $reader->depth === $depth && $reader->localName === 'c') {
+                break;
+            }
+
+            if ($reader->nodeType === XMLReader::ELEMENT && in_array($reader->localName, ['v', 't'], true)) {
+                $value .= (string) $reader->readString();
+            }
+        }
+
+        return trim($value);
+    }
+
+    private function readXlsxSharedStrings(string $path, array $neededIndexes): array
+    {
+        if ($neededIndexes === []) {
+            return [];
+        }
+
+        $needed = array_fill_keys(array_map('intval', $neededIndexes), true);
+        $strings = [];
+        $index = -1;
+        $reader = $this->xlsxXmlReader($path, 'xl/sharedStrings.xml', false);
+        if (!$reader) {
+            return [];
+        }
+
+        while ($reader->read()) {
+            if ($reader->nodeType !== XMLReader::ELEMENT || $reader->localName !== 'si') {
+                continue;
+            }
+
+            $index++;
+            if (!isset($needed[$index])) {
+                continue;
+            }
+
+            $strings[$index] = $this->readXlsxSharedStringItem($reader);
+            if (count($strings) === count($needed)) {
+                break;
+            }
+        }
+        $reader->close();
+
+        return $strings;
+    }
+
+    private function readXlsxSharedStringItem(XMLReader $reader): string
+    {
+        if ($reader->isEmptyElement) {
+            return '';
+        }
+
+        $depth = $reader->depth;
+        $value = '';
+        while ($reader->read()) {
+            if ($reader->nodeType === XMLReader::END_ELEMENT && $reader->depth === $depth && $reader->localName === 'si') {
+                break;
+            }
+
+            if ($reader->nodeType === XMLReader::ELEMENT && $reader->localName === 't') {
+                $value .= (string) $reader->readString();
+            }
+        }
+
+        return trim($value);
+    }
+
+    private function formatXlsxPreviewCell(array $cell, array $sharedStrings, array $styleDefinitions = []): string
+    {
+        $type = (string) ($cell['type'] ?? '');
+        $value = (string) ($cell['value'] ?? '');
+
+        if ($value === '') {
+            return '';
+        }
+
+        if ($type === 's') {
+            return trim((string) ($sharedStrings[(int) $value] ?? ''));
+        }
+
+        if ($type === 'inlineStr' || $type === 'str') {
+            return trim($value);
+        }
+
+        $styleId = (int) ($cell['style'] ?? 0);
+        $formatCode = (string) ($styleDefinitions['numberFormats'][$styleId] ?? '');
+        if (is_numeric($value) && $formatCode !== '') {
+            return $this->formatXlsxNumberByFormat((float) $value, $formatCode);
+        }
+
+        return $this->formatMappingWorkbookScalar($value);
+    }
+
+    private function readXlsxStyleDefinitions(string $path): array
+    {
+        $zip = new \ZipArchive();
+        if ($zip->open($path) !== true) {
+            return ['cellStyles' => [], 'numberFormats' => []];
+        }
+
+        $stylesXml = $zip->getFromName('xl/styles.xml');
+        $zip->close();
+
+        if (!is_string($stylesXml) || trim($stylesXml) === '') {
+            return ['cellStyles' => [], 'numberFormats' => []];
+        }
+
+        $xml = @simplexml_load_string($stylesXml);
+        if (!$xml) {
+            return ['cellStyles' => [], 'numberFormats' => []];
+        }
+
+        $themeColors = $this->readXlsxThemeColors($path);
+        $customFormats = [];
+        foreach (($xml->numFmts->numFmt ?? []) as $numFmt) {
+            $customFormats[(int) $numFmt['numFmtId']] = html_entity_decode((string) $numFmt['formatCode'], ENT_QUOTES | ENT_XML1);
+        }
+
+        $fonts = [];
+        foreach (($xml->fonts->font ?? []) as $font) {
+            $fontCss = [];
+            if (isset($font->b)) {
+                $fontCss[] = 'font-weight:700';
+            }
+            if (isset($font->i)) {
+                $fontCss[] = 'font-style:italic';
+            }
+            if (isset($font->sz['val'])) {
+                $fontCss[] = 'font-size:' . round(((float) $font->sz['val']) * 1.333, 2) . 'px';
+            }
+            if (isset($font->name['val'])) {
+                $fontCss[] = 'font-family:"' . str_replace('"', '', (string) $font->name['val']) . '", Arial, sans-serif';
+            }
+            $color = $this->xlsxColorToCss($font->color ?? null, $themeColors);
+            if ($color !== null) {
+                $fontCss[] = 'color:' . $color;
+            }
+
+            $fonts[] = $fontCss;
+        }
+
+        $fills = [];
+        foreach (($xml->fills->fill ?? []) as $fill) {
+            $fillCss = [];
+            $patternFill = $fill->patternFill ?? null;
+            $patternType = $patternFill ? (string) $patternFill['patternType'] : '';
+            if ($patternFill && !in_array($patternType, ['', 'none', 'gray125'], true)) {
+                $color = $this->xlsxColorToCss($patternFill->fgColor ?? null, $themeColors)
+                    ?? $this->xlsxColorToCss($patternFill->bgColor ?? null, $themeColors);
+                if ($color !== null) {
+                    $fillCss[] = 'background-color:' . $color;
+                }
+            }
+
+            $fills[] = $fillCss;
+        }
+
+        $borders = [];
+        foreach (($xml->borders->border ?? []) as $border) {
+            $borderCss = [];
+            foreach (['left', 'right', 'top', 'bottom'] as $side) {
+                if (!isset($border->{$side})) {
+                    continue;
+                }
+
+                $style = (string) $border->{$side}['style'];
+                if ($style === '') {
+                    continue;
+                }
+
+                $width = in_array($style, ['medium', 'thick', 'double'], true) ? '2px' : '1px';
+                $color = $this->xlsxColorToCss($border->{$side}->color ?? null, $themeColors) ?? '#d7dee8';
+                $borderCss[] = "border-{$side}:{$width} solid {$color}";
+            }
+
+            $borders[] = $borderCss;
+        }
+
+        $cellStyles = [];
+        $numberFormats = [];
+        $styleIndex = 0;
+        foreach (($xml->cellXfs->xf ?? []) as $xf) {
+            $fontId = (int) ($xf['fontId'] ?? 0);
+            $fillId = (int) ($xf['fillId'] ?? 0);
+            $borderId = (int) ($xf['borderId'] ?? 0);
+            $numFmtId = (int) ($xf['numFmtId'] ?? 0);
+
+            $css = array_merge(
+                $fills[$fillId] ?? [],
+                $fonts[$fontId] ?? [],
+                $borders[$borderId] ?? []
+            );
+
+            if (isset($xf->alignment)) {
+                $horizontal = (string) ($xf->alignment['horizontal'] ?? '');
+                $vertical = (string) ($xf->alignment['vertical'] ?? '');
+                if (in_array($horizontal, ['left', 'center', 'right'], true)) {
+                    $css[] = 'text-align:' . $horizontal;
+                } elseif ($horizontal === 'centerContinuous') {
+                    $css[] = 'text-align:center';
+                }
+                if ($vertical !== '') {
+                    $css[] = 'vertical-align:' . ($vertical === 'center' ? 'middle' : $vertical);
+                }
+                if ((string) ($xf->alignment['wrapText'] ?? '') === '1') {
+                    $css[] = 'white-space:normal';
+                }
+            }
+
+            $cellStyles[$styleIndex] = $css === [] ? '' : implode(';', array_unique($css)) . ';';
+            $numberFormats[$styleIndex] = $customFormats[$numFmtId]
+                ?? $this->builtinXlsxNumberFormat($numFmtId);
+            $styleIndex++;
+        }
+
+        return [
+            'cellStyles' => $cellStyles,
+            'numberFormats' => $numberFormats,
+        ];
+    }
+
+    private function readXlsxThemeColors(string $path): array
+    {
+        $zip = new \ZipArchive();
+        if ($zip->open($path) !== true) {
+            return [];
+        }
+
+        $themeXml = $zip->getFromName('xl/theme/theme1.xml');
+        $zip->close();
+
+        if (!is_string($themeXml) || trim($themeXml) === '') {
+            return [];
+        }
+
+        $xml = @simplexml_load_string($themeXml);
+        if (!$xml) {
+            return [];
+        }
+
+        $namespace = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+        $theme = $xml->children($namespace);
+        $scheme = $theme->themeElements->clrScheme ?? null;
+        if (!$scheme) {
+            return [];
+        }
+
+        $themeSlots = [
+            'lt1',
+            'dk1',
+            'lt2',
+            'dk2',
+            'accent1',
+            'accent2',
+            'accent3',
+            'accent4',
+            'accent5',
+            'accent6',
+            'hlink',
+            'folHlink',
+        ];
+
+        $colors = [];
+        foreach ($themeSlots as $index => $slot) {
+            if (!isset($scheme->{$slot})) {
+                continue;
+            }
+
+            $children = $scheme->{$slot}->children($namespace);
+            $hex = '';
+            if (isset($children->srgbClr)) {
+                $hex = (string) $children->srgbClr['val'];
+            } elseif (isset($children->sysClr)) {
+                $hex = (string) ($children->sysClr['lastClr'] ?: $children->sysClr['val']);
+            }
+
+            $hex = strtoupper($hex);
+            if (preg_match('/^[0-9A-F]{6}$/', $hex) === 1) {
+                $colors[$index] = '#' . $hex;
+            }
+        }
+
+        return $colors;
+    }
+
+    private function formatXlsxNumberByFormat(float $number, string $formatCode): string
+    {
+        $format = trim(str_replace('\\', '', $formatCode));
+
+        if (str_contains($format, '%')) {
+            $decimals = $this->xlsxFormatDecimalPlaces($format);
+            return number_format($number * 100, $decimals, '.', ',') . '%';
+        }
+
+        $scale = 1;
+        $suffix = '';
+        if (str_contains($format, ',,')) {
+            $scale = 1000000;
+            $suffix = str_contains($format, 'M') ? ' M' : '';
+        } elseif (preg_match('/0(?:\.0+)?,(?:[^\d#]|$)/', $format) === 1) {
+            $scale = 1000;
+        }
+
+        $decimals = $this->xlsxFormatDecimalPlaces($format);
+        $scaled = $number / $scale;
+
+        if ($decimals === 0 && abs($scaled - round($scaled)) > 0.0000001 && str_contains($format, '.0')) {
+            $decimals = 1;
+        }
+
+        return number_format($scaled, $decimals, '.', ',') . $suffix;
+    }
+
+    private function xlsxFormatDecimalPlaces(string $format): int
+    {
+        if (preg_match('/0\.([0]+)/', $format, $matches) !== 1) {
+            return 0;
+        }
+
+        return strlen($matches[1]);
+    }
+
+    private function builtinXlsxNumberFormat(int $numFmtId): string
+    {
+        return match ($numFmtId) {
+            3 => '#,##0',
+            4 => '#,##0.00',
+            9 => '0%',
+            10 => '0.00%',
+            11 => '0.00E+00',
+            12 => '# ?/?',
+            13 => '# ??/??',
+            37 => '#,##0;(#,##0)',
+            38 => '#,##0;[Red](#,##0)',
+            39 => '#,##0.00;(#,##0.00)',
+            40 => '#,##0.00;[Red](#,##0.00)',
+            43 => '_(* #,##0.00_);_(* (#,##0.00);_(* "-"??_);_(@_)',
+            default => '',
+        };
+    }
+
+    private function xlsxColorToCss(mixed $colorNode, array $themeColors = []): ?string
+    {
+        if ($colorNode === null) {
+            return null;
+        }
+
+        $rgb = strtoupper((string) ($colorNode['rgb'] ?? ''));
+        if ($rgb !== '') {
+            $rgb = strlen($rgb) === 8 ? substr($rgb, 2) : $rgb;
+            return preg_match('/^[0-9A-F]{6}$/', $rgb) === 1 ? '#' . $rgb : null;
+        }
+
+        $indexed = (string) ($colorNode['indexed'] ?? '');
+        if ($indexed !== '') {
+            return $this->xlsxIndexedColor((int) $indexed);
+        }
+
+        $theme = (string) ($colorNode['theme'] ?? '');
+        if ($theme !== '') {
+            return $this->xlsxThemeColor((int) $theme, (float) ($colorNode['tint'] ?? 0), $themeColors);
+        }
+
+        return null;
+    }
+
+    private function xlsxThemeColor(int $theme, float $tint = 0.0, array $themeColors = []): string
+    {
+        $colors = [
+            0 => '#FFFFFF',
+            1 => '#000000',
+            2 => '#EEECE1',
+            3 => '#1F497D',
+            4 => '#4F81BD',
+            5 => '#C0504D',
+            6 => '#9BBB59',
+            7 => '#8064A2',
+            8 => '#4BACC6',
+            9 => '#F79646',
+        ];
+
+        return $this->applyXlsxTint($themeColors[$theme] ?? $colors[$theme] ?? '#000000', $tint);
+    }
+
+    private function xlsxIndexedColor(int $indexed): ?string
+    {
+        $colors = [
+            0 => '#000000',
+            1 => '#FFFFFF',
+            2 => '#FF0000',
+            3 => '#00FF00',
+            4 => '#0000FF',
+            5 => '#FFFF00',
+            6 => '#FF00FF',
+            7 => '#00FFFF',
+            8 => '#000000',
+            9 => '#FFFFFF',
+            64 => null,
+            65 => null,
+        ];
+
+        return $colors[$indexed] ?? null;
+    }
+
+    private function applyXlsxTint(string $hex, float $tint): string
+    {
+        if (abs($tint) < 0.0001 || preg_match('/^#[0-9A-Fa-f]{6}$/', $hex) !== 1) {
+            return $hex;
+        }
+
+        $red = hexdec(substr($hex, 1, 2));
+        $green = hexdec(substr($hex, 3, 2));
+        $blue = hexdec(substr($hex, 5, 2));
+
+        foreach (['red', 'green', 'blue'] as $channel) {
+            $value = $$channel;
+            $$channel = $tint < 0
+                ? (int) round($value * (1 + $tint))
+                : (int) round($value + (255 - $value) * $tint);
+            $$channel = max(0, min(255, $$channel));
+        }
+
+        return sprintf('#%02X%02X%02X', $red, $green, $blue);
+    }
+
+    private function xlsxMergeMaps(array $mergedCells, int $maxRows, int $maxColumns): array
+    {
+        $starts = [];
+        $covered = [];
+
+        foreach ($mergedCells as $ref) {
+            if (!str_contains($ref, ':')) {
+                continue;
+            }
+
+            [$start, $end] = explode(':', $ref, 2);
+            [$startColumn, $startRow] = $this->parseXlsxCellReference($start);
+            [$endColumn, $endRow] = $this->parseXlsxCellReference($end);
+            if ($startColumn < 1 || $startRow < 1 || $endColumn < $startColumn || $endRow < $startRow) {
+                continue;
+            }
+
+            if ($startRow > $maxRows || $startColumn > $maxColumns) {
+                continue;
+            }
+
+            $endRow = min($endRow, $maxRows);
+            $endColumn = min($endColumn, $maxColumns);
+            $starts[$startRow . ':' . $startColumn] = [
+                'rowspan' => max(1, $endRow - $startRow + 1),
+                'colspan' => max(1, $endColumn - $startColumn + 1),
+            ];
+
+            for ($row = $startRow; $row <= $endRow; $row++) {
+                for ($column = $startColumn; $column <= $endColumn; $column++) {
+                    if ($row === $startRow && $column === $startColumn) {
+                        continue;
+                    }
+
+                    $covered[$row . ':' . $column] = true;
+                }
+            }
+        }
+
+        return [$starts, $covered];
+    }
+
+    private function xlsxColumnStyle(?float $width): string
+    {
+        if ($width === null || $width <= 0) {
+            return 'width:96px;min-width:96px;';
+        }
+
+        $pixels = max(42, min(240, (int) round($width * 7 + 5)));
+
+        return "width:{$pixels}px;min-width:{$pixels}px;";
+    }
+
+    private function xlsxRowStyle(?float $height): string
+    {
+        if ($height === null || $height <= 0) {
+            return '';
+        }
+
+        $pixels = max(18, min(96, (int) round($height * 1.333)));
+
+        return "height:{$pixels}px;";
+    }
+
+    private function parseXlsxDimension(string $dimension): array
+    {
+        if ($dimension === '') {
+            return [1, 1];
+        }
+
+        $lastCell = str_contains($dimension, ':') ? substr(strrchr($dimension, ':'), 1) : $dimension;
+        [$column, $row] = $this->parseXlsxCellReference((string) $lastCell);
+
+        return [max(1, $row), max(1, $column)];
+    }
+
+    private function parseXlsxCellReference(string $reference): array
+    {
+        if (preg_match('/^([A-Z]+)(\d+)$/i', $reference, $matches) !== 1) {
+            return [0, 0];
+        }
+
+        return [
+            Coordinate::columnIndexFromString(strtoupper($matches[1])),
+            (int) $matches[2],
+        ];
+    }
+
+    private function xlsxXmlReader(string $path, string $entry, bool $throw = true): ?XMLReader
+    {
+        $reader = new XMLReader();
+        $uri = 'zip://' . str_replace('\\', '/', $path) . '#' . $this->normalizeXlsxEntryPath($entry);
+
+        if (@$reader->open($uri)) {
+            return $reader;
+        }
+
+        if ($throw) {
+            throw new \RuntimeException("Gagal membaca entry XLSX: {$entry}");
+        }
+
+        return null;
+    }
+
+    private function resolveXlsxWorkbookRelationshipTarget(string $target): string
+    {
+        $target = str_replace('\\', '/', trim($target));
+        if ($target === '') {
+            return '';
+        }
+
+        if (str_starts_with($target, '/')) {
+            return $this->normalizeXlsxEntryPath($target);
+        }
+
+        if (str_starts_with($target, 'xl/')) {
+            return $this->normalizeXlsxEntryPath($target);
+        }
+
+        while (str_starts_with($target, '../')) {
+            $target = substr($target, 3);
+        }
+
+        return $this->normalizeXlsxEntryPath('xl/' . $target);
+    }
+
+    private function resolveXlsxRelativePath(string $baseEntry, string $target): string
+    {
+        $target = str_replace('\\', '/', trim($target));
+        if ($target === '') {
+            return '';
+        }
+
+        if (str_starts_with($target, '/')) {
+            return $this->normalizeXlsxEntryPath($target);
+        }
+
+        $baseDirectory = dirname($this->normalizeXlsxEntryPath($baseEntry));
+        $parts = explode('/', $this->normalizeXlsxEntryPath($baseDirectory . '/' . $target));
+        $resolved = [];
+        foreach ($parts as $part) {
+            if ($part === '' || $part === '.') {
+                continue;
+            }
+
+            if ($part === '..') {
+                array_pop($resolved);
+                continue;
+            }
+
+            $resolved[] = $part;
+        }
+
+        return implode('/', $resolved);
+    }
+
+    private function normalizeXlsxEntryPath(string $entry): string
+    {
+        $entry = str_replace('\\', '/', $entry);
+        $entry = preg_replace('#/+#', '/', $entry) ?? $entry;
+
+        return ltrim($entry, '/');
+    }
+
+    private function defaultMarketShareMappingSheet(array $sheetNames): string
+    {
+        $preferredNames = ['DASHBOARD', 'MAPING', 'MAPPING'];
+        foreach ($preferredNames as $preferredName) {
+            foreach ($sheetNames as $sheetName) {
+                if (strtoupper(trim((string) $sheetName)) === $preferredName) {
+                    return (string) $sheetName;
+                }
+            }
+        }
+
+        return (string) ($sheetNames[0] ?? '');
+    }
+
+    private function mappingWorkbookCellDisplay($cell): string
+    {
+        $rawValue = $cell->getValue();
+
+        if (is_string($rawValue) && str_starts_with($rawValue, '=')) {
+            $rawValue = method_exists($cell, 'getOldCalculatedValue')
+                ? $cell->getOldCalculatedValue()
+                : null;
+
+            return $this->formatMappingWorkbookScalar($rawValue);
+        }
+
+        try {
+            return trim((string) $cell->getFormattedValue());
+        } catch (Throwable) {
+            return $this->formatMappingWorkbookScalar($rawValue);
+        }
+    }
+
+    private function formatMappingWorkbookScalar(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'TRUE' : 'FALSE';
+        }
+
+        if (is_numeric($value)) {
+            $number = (float) $value;
+
+            if (abs($number) >= 1000) {
+                return number_format($number, 0, '.', ',');
+            }
+
+            if (abs($number - round($number)) < 0.0000001) {
+                return number_format($number, 0, ',', '.');
+            }
+
+            return rtrim(rtrim(number_format($number, 4, ',', '.'), '0'), ',');
+        }
+
+        return trim((string) $value);
+    }
+
+    private function trimTrailingEmptyWorkbookRows(array $rows): array
+    {
+        while ($rows !== []) {
+            $last = end($rows);
+            $cells = $last['cells'] ?? [];
+            $hasValue = false;
+
+            foreach ($cells as $cell) {
+                if (!empty($cell['skip'])) {
+                    continue;
+                }
+
+                $value = is_array($cell) ? (string) ($cell['value'] ?? '') : (string) $cell;
+                if (trim($value) !== '') {
+                    $hasValue = true;
+                    break;
+                }
+            }
+
+            if ($hasValue) {
+                break;
+            }
+
+            array_pop($rows);
+        }
+
+        return array_values($rows);
+    }
+
+    private function marketShareSavingsPayload($sheet): array
+    {
+        $blocks = [
+            ['key' => 'total', 'label' => 'Total Simpanan', 'icon' => 'fas fa-landmark', 'row' => 7, 'start' => 3, 'end' => 6],
+            ['key' => 'giro', 'label' => 'Giro', 'icon' => 'fas fa-money-check-alt', 'row' => 16, 'start' => 12, 'end' => 15],
+            ['key' => 'tabungan', 'label' => 'Tabungan', 'icon' => 'fas fa-wallet', 'row' => 25, 'start' => 21, 'end' => 24],
+            ['key' => 'deposito', 'label' => 'Deposito', 'icon' => 'fas fa-piggy-bank', 'row' => 34, 'start' => 30, 'end' => 33],
+            ['key' => 'casa', 'label' => 'CASA', 'icon' => 'fas fa-layer-group', 'row' => 43, 'start' => 39, 'end' => 42],
+        ];
+
+        $periods = [
+            'yoy' => $this->marketShareDateLabel($sheet->getCell('D2')->getValue()),
+            'ytd' => $this->marketShareDateLabel($sheet->getCell('E2')->getValue()),
+            'current' => $this->marketShareDateLabel($sheet->getCell('F2')->getValue()),
+        ];
+
+        $sections = [];
+        foreach ($blocks as $block) {
+            $summary = $this->marketShareRowPayload($sheet, $block['row']);
+            $branches = [];
+            for ($row = $block['start']; $row <= $block['end']; $row++) {
+                $branches[] = $this->marketShareRowPayload($sheet, $row);
+            }
+
+            $sections[$block['key']] = [
+                'key' => $block['key'],
+                'label' => $block['label'],
+                'icon' => $block['icon'],
+                'summary' => $summary,
+                'branches' => $branches,
+            ];
+        }
+
+        $sections = $this->marketShareAttachComposition($sections);
+
+        return [
+            'key' => 'simpanan',
+            'label' => 'Simpanan',
+            'total_label' => 'Total Simpanan Area 6',
+            'panel_label' => 'Market Share Simpanan Per Cabang',
+            'periods' => $periods,
+            'sections' => $sections,
+            'branchRows' => $sections['total']['branches'] ?? [],
+            'components' => ['giro', 'tabungan', 'deposito', 'casa'],
+        ];
+    }
+
+    private function marketShareLoanPayload($sheet): array
+    {
+        $blocks = [
+            ['key' => 'total', 'label' => 'Total Pinjaman', 'icon' => 'fas fa-hand-holding-usd', 'row' => 8, 'start' => 4, 'end' => 7],
+            ['key' => 'umkm', 'label' => 'Pinjaman UMKM', 'icon' => 'fas fa-store', 'row' => 17, 'start' => 13, 'end' => 16],
+            ['key' => 'konsumer', 'label' => 'Pinjaman Konsumer', 'icon' => 'fas fa-user-tie', 'row' => 43, 'start' => 39, 'end' => 42],
+            ['key' => 'kpr', 'label' => 'Pinjaman KPR', 'icon' => 'fas fa-home', 'row' => 26, 'start' => 22, 'end' => 25],
+            ['key' => 'briguna', 'label' => 'Pinjaman BRIGUNA', 'icon' => 'fas fa-briefcase', 'row' => 35, 'start' => 31, 'end' => 34],
+        ];
+
+        $periods = [
+            'yoy' => $this->marketShareDateLabel($sheet->getCell('D3')->getValue()),
+            'ytd' => $this->marketShareDateLabel($sheet->getCell('X3')->getValue()),
+            'current' => $this->marketShareDateLabel($sheet->getCell('AB3')->getValue()),
+        ];
+
+        $sections = [];
+        foreach ($blocks as $block) {
+            $summary = $this->marketShareLoanRowPayload($sheet, $block['row']);
+            $branches = [];
+            for ($row = $block['start']; $row <= $block['end']; $row++) {
+                $branches[] = $this->marketShareLoanRowPayload($sheet, $row);
+            }
+
+            $sections[$block['key']] = [
+                'key' => $block['key'],
+                'label' => $block['label'],
+                'icon' => $block['icon'],
+                'summary' => $summary,
+                'branches' => $branches,
+            ];
+        }
+
+        $sections = $this->marketShareAttachComposition($sections);
+
+        return [
+            'key' => 'pinjaman',
+            'label' => 'Pinjaman',
+            'total_label' => 'Total Pinjaman Area 6',
+            'panel_label' => 'Market Share Pinjaman Per Cabang',
+            'periods' => $periods,
+            'sections' => $sections,
+            'branchRows' => $sections['total']['branches'] ?? [],
+            'components' => ['umkm', 'konsumer', 'kpr', 'briguna'],
+        ];
+    }
+
+    private function marketShareAttachComposition(array $sections): array
+    {
+        $totalCurrent = (float) ($sections['total']['summary']['bri_current'] ?? 0);
+        foreach ($sections as $key => $section) {
+            $sections[$key]['composition_pct'] = $key === 'total'
+                ? 1.0
+                : $this->marketShareSafeDivide((float) $section['summary']['bri_current'], $totalCurrent);
+        }
+
+        return $sections;
+    }
+
+    private function marketShareRowPayload($sheet, int $row): array
+    {
+        return [
+            'branch' => trim((string) $sheet->getCell('B' . $row)->getFormattedValue()),
+            'bri_yoy' => (float) $sheet->getCell('D' . $row)->getCalculatedValue(),
+            'bri_ytd' => (float) $sheet->getCell('E' . $row)->getCalculatedValue(),
+            'bri_current' => (float) $sheet->getCell('F' . $row)->getCalculatedValue(),
+            'bri_delta_ytd' => (float) $sheet->getCell('G' . $row)->getCalculatedValue(),
+            'industry_current' => (float) $sheet->getCell('K' . $row)->getCalculatedValue(),
+            'outside_current' => (float) $sheet->getCell('P' . $row)->getCalculatedValue(),
+            'share_yoy' => (float) $sheet->getCell('S' . $row)->getCalculatedValue(),
+            'share_ytd' => (float) $sheet->getCell('T' . $row)->getCalculatedValue(),
+            'share_current' => (float) $sheet->getCell('U' . $row)->getCalculatedValue(),
+            'share_delta_yoy' => (float) $sheet->getCell('V' . $row)->getCalculatedValue(),
+            'share_delta_ytd' => (float) $sheet->getCell('W' . $row)->getCalculatedValue(),
+        ];
+    }
+
+    private function marketShareLoanRowPayload($sheet, int $row): array
+    {
+        $briCurrent = (float) $sheet->getCell('AB' . $row)->getCalculatedValue();
+        $industryCurrent = (float) $sheet->getCell('BF' . $row)->getCalculatedValue();
+
+        return [
+            'branch' => trim((string) ($sheet->getCell('A' . $row)->getFormattedValue() ?: $sheet->getCell('B' . $row)->getFormattedValue())),
+            'bri_yoy' => (float) $sheet->getCell('D' . $row)->getCalculatedValue(),
+            'bri_ytd' => (float) $sheet->getCell('X' . $row)->getCalculatedValue(),
+            'bri_current' => $briCurrent,
+            'bri_delta_ytd' => (float) $sheet->getCell('AE' . $row)->getCalculatedValue(),
+            'industry_current' => $industryCurrent,
+            'outside_current' => $industryCurrent - $briCurrent,
+            'share_yoy' => (float) $sheet->getCell('BK' . $row)->getCalculatedValue(),
+            'share_ytd' => (float) $sheet->getCell('CE' . $row)->getCalculatedValue(),
+            'share_current' => (float) $sheet->getCell('CI' . $row)->getCalculatedValue(),
+            'share_delta_yoy' => (float) $sheet->getCell('CJ' . $row)->getCalculatedValue(),
+            'share_delta_ytd' => (float) $sheet->getCell('CK' . $row)->getCalculatedValue(),
+        ];
+    }
+
+    private function marketShareDateLabel(mixed $value): string
+    {
+        if (is_numeric($value)) {
+            return ExcelDate::excelToDateTimeObject((float) $value)->format('M Y');
+        }
+
+        return trim((string) $value);
+    }
+
+    private function marketShareSafeDivide(float $value, float $total): float
+    {
+        return abs($total) > 0.000001 ? $value / $total : 0.0;
+    }
+
+    private function marketShareMappingManagedLink(): ?array
+    {
+        if (!$this->hasTable(self::EXTERNAL_REPORT_LINK_TABLE)) {
+            return null;
+        }
+
+        $query = DB::table(self::EXTERNAL_REPORT_LINK_TABLE)
+            ->where('group_key', self::MARKET_SHARE_LINK_GROUP)
+            ->where('link_key', self::MARKET_SHARE_MAPPING_LINK_KEY);
+
+        if ($this->hasColumn(self::EXTERNAL_REPORT_LINK_TABLE, 'is_active')) {
+            $query->where('is_active', true);
+        }
+
+        $row = $query->first();
+        if (!$row || trim((string) ($row->link_url ?? '')) === '') {
+            return null;
+        }
+
+        $linkUrl = trim((string) $row->link_url);
+        $sheetName = trim((string) ($row->sheet_name ?? ''));
+        if (str_contains($linkUrl, '1Wlf7Wv5SR8DhtDlRgYwzhAHDSdwIsooa')
+            || $this->googleSpreadsheetPreviewUrl($linkUrl, $sheetName) === ''
+        ) {
+            return null;
+        }
+
+        return [
+            'link_url' => $linkUrl,
+            'sheet_name' => $sheetName,
+        ];
+    }
+
+    private function googleSpreadsheetPreviewUrl(string $url, string $sheetName = ''): string
+    {
+        $url = $this->extractIframeSource($url);
+        if ($url === '' || str_contains($url, '...')) {
+            return '';
+        }
+
+        $parts = parse_url($url);
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host']) || empty($parts['path'])) {
+            return '';
+        }
+
+        $host = strtolower((string) $parts['host']);
+        if ($host !== 'docs.google.com') {
+            return '';
+        }
+
+        $path = (string) $parts['path'];
+        if (!preg_match('~/spreadsheets/d/([^/]+)~', $path, $matches)) {
+            return '';
+        }
+
+        parse_str((string) ($parts['query'] ?? ''), $sourceQuery);
+        $query = [
+            'usp' => 'sharing',
+        ];
+
+        if (!empty($sourceQuery['gid'])) {
+            $query['gid'] = (string) $sourceQuery['gid'];
+        } elseif ($sheetName !== '' && ctype_digit($sheetName)) {
+            $query['gid'] = $sheetName;
+        }
+
+        return 'https://docs.google.com/spreadsheets/d/'
+            . rawurlencode((string) $matches[1])
+            . '/edit?'
+            . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+    }
+
+    private function googleSpreadsheetSheetHtmlUrl(string $url, string $sheetName): string
+    {
+        $url = $this->extractIframeSource($url);
+        if ($url === '' || str_contains($url, '...')) {
+            return '';
+        }
+
+        $parts = parse_url($url);
+        if ($parts === false || empty($parts['host']) || empty($parts['path'])) {
+            return '';
+        }
+
+        if (strtolower((string) $parts['host']) !== 'docs.google.com') {
+            return '';
+        }
+
+        if (!preg_match('~/spreadsheets/d/([^/]+)~', (string) $parts['path'], $matches)) {
+            return '';
+        }
+
+        return 'https://docs.google.com/spreadsheets/d/'
+            . rawurlencode((string) $matches[1])
+            . '/gviz/tq?'
+            . http_build_query([
+                'tqx' => 'out:html',
+                'sheet' => $sheetName,
+            ], '', '&', PHP_QUERY_RFC3986);
+    }
+
+    private function googleSpreadsheetSheetCsvUrl(string $url, string $sheetName): string
+    {
+        $url = $this->extractIframeSource($url);
+        if ($url === '' || str_contains($url, '...')) {
+            return '';
+        }
+
+        $parts = parse_url($url);
+        if ($parts === false || empty($parts['host']) || empty($parts['path'])) {
+            return '';
+        }
+
+        if (strtolower((string) $parts['host']) !== 'docs.google.com') {
+            return '';
+        }
+
+        if (!preg_match('~/spreadsheets/d/([^/]+)~', (string) $parts['path'], $matches)) {
+            return '';
+        }
+
+        return 'https://docs.google.com/spreadsheets/d/'
+            . rawurlencode((string) $matches[1])
+            . '/gviz/tq?'
+            . http_build_query([
+                'tqx' => 'out:csv',
+                'sheet' => $sheetName,
+            ], '', '&', PHP_QUERY_RFC3986);
+    }
+
+    /**
+     * @return array<int, array<int, string|null>>
+     */
+    private function parseCsvText(string $csv): array
+    {
+        $stream = fopen('php://temp', 'r+');
+        if ($stream === false) {
+            return [];
+        }
+
+        fwrite($stream, $csv);
+        rewind($stream);
+
+        $rows = [];
+        while (($row = fgetcsv($stream)) !== false) {
+            $rows[] = $row;
+        }
+
+        fclose($stream);
+
+        return $rows;
+    }
+
+    private function sharePointEmbedUrl(string $url): string
+    {
+        $url = $this->extractIframeSource($url);
+        if ($url === '' || str_contains($url, '...')) {
+            return '';
+        }
+
+        $url = str_replace(['{', '}'], ['%7B', '%7D'], $url);
+
+        $parts = parse_url($url);
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+            return '';
+        }
+
+        $host = strtolower((string) $parts['host']);
+        $path = (string) ($parts['path'] ?? '');
+        $lowerPath = strtolower($path);
+        if (!str_ends_with($host, 'sharepoint.com')) {
+            return '';
+        }
+
+        if (!str_contains($lowerPath, '/_layouts/15/doc.aspx') && !str_contains($lowerPath, '/:x:/')) {
+            return '';
+        }
+
+        parse_str((string) ($parts['query'] ?? ''), $query);
+
+        if (str_contains($lowerPath, '/:x:/')) {
+            $docEmbed = $this->sharePointDocEmbedParts($parts);
+            if ($docEmbed !== null) {
+                $parts['path'] = $docEmbed['path'];
+                unset($parts['fragment']);
+
+                return $this->buildUrl($parts, [
+                    'sourcedoc' => '{' . $docEmbed['sourceDoc'] . '}',
+                    'action' => 'embedview',
+                    'wdAllowInteractivity' => 'True',
+                    'wdAllowTyping' => 'True',
+                    'wdHideHeaders' => 'False',
+                    'wdHideGridlines' => 'False',
+                    'wdHideSheetTabs' => 'False',
+                ]);
+            }
+
+            unset($query['download']);
+            unset($query['action']);
+            $query['web'] = '1';
+
+            return $this->buildUrl($parts, $query);
+        }
+
+        $query['action'] = 'embedview';
+        $query['wdAllowInteractivity'] = 'True';
+        $query['wdAllowTyping'] = 'True';
+        $query['wdHideHeaders'] = 'False';
+        $query['wdHideGridlines'] = 'False';
+        $query['wdHideSheetTabs'] = 'False';
+
+        return $this->buildUrl($parts, $query);
+    }
+
+    /**
+     * @param array<string, mixed> $parts
+     * @return array{path: string, sourceDoc: string}|null
+     */
+    private function sharePointDocEmbedParts(array $parts): ?array
+    {
+        $path = trim((string) ($parts['path'] ?? ''), '/');
+        if ($path === '') {
+            return null;
+        }
+
+        $segments = array_values(array_filter(explode('/', $path), fn (string $segment): bool => $segment !== ''));
+        $normalizedSegments = array_map('strtolower', $segments);
+        $shareToken = (string) end($segments);
+        $sourceDoc = $this->sharePointSourceDocFromSharingToken($shareToken);
+        if ($sourceDoc === '') {
+            return null;
+        }
+
+        foreach (['personal', 'sites', 'teams'] as $rootSegment) {
+            $rootIndex = array_search($rootSegment, $normalizedSegments, true);
+            if ($rootIndex === false || !isset($segments[$rootIndex + 1])) {
+                continue;
+            }
+
+            return [
+                'path' => '/' . $segments[$rootIndex] . '/' . $segments[$rootIndex + 1] . '/_layouts/15/Doc.aspx',
+                'sourceDoc' => $sourceDoc,
+            ];
+        }
+
+        return null;
+    }
+
+    private function sharePointSourceDocFromSharingToken(string $token): string
+    {
+        $token = trim($token);
+        if ($token === '') {
+            return '';
+        }
+
+        $padding = str_repeat('=', (4 - strlen($token) % 4) % 4);
+        $decoded = base64_decode(strtr($token . $padding, '-_', '+/'), true);
+        if (!is_string($decoded) || strlen($decoded) < 18) {
+            return '';
+        }
+
+        $guidBytes = substr($decoded, 2, 16);
+        $hex = bin2hex($guidBytes);
+        if (strlen($hex) !== 32) {
+            return '';
+        }
+
+        return strtolower(
+            substr($hex, 6, 2) . substr($hex, 4, 2) . substr($hex, 2, 2) . substr($hex, 0, 2)
+            . '-'
+            . substr($hex, 10, 2) . substr($hex, 8, 2)
+            . '-'
+            . substr($hex, 14, 2) . substr($hex, 12, 2)
+            . '-'
+            . substr($hex, 16, 4)
+            . '-'
+            . substr($hex, 20, 12)
+        );
+    }
+
+    private function extractIframeSource(string $url): string
+    {
+        $url = trim($url);
+
+        if (preg_match('/<iframe\b[^>]*\bsrc=["\']([^"\']+)["\']/i', $url, $matches) === 1) {
+            $url = $matches[1];
+        }
+
+        return html_entity_decode(trim($url), ENT_QUOTES | ENT_HTML5);
+    }
+
+    /**
+     * @param array<string, mixed> $parts
+     * @param array<string, mixed> $query
+     */
+    private function buildUrl(array $parts, array $query): string
+    {
+        $rebuilt = $parts['scheme'] . '://' . $parts['host'];
+        $rebuilt .= isset($parts['port']) ? ':' . $parts['port'] : '';
+        $rebuilt .= (string) ($parts['path'] ?? '');
+
+        if ($query !== []) {
+            $rebuilt .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+        }
+
+        if (isset($parts['fragment'])) {
+            $rebuilt .= '#' . $parts['fragment'];
+        }
+
+        return $rebuilt;
     }
 
     public function presentationData(Request $request)
     {
         $period = $this->resolvePresentationPeriod($request->query('periode'));
-        $payload = $this->cachedPresentationPayload($period);
+        $forceFresh = $request->boolean('fresh')
+            || $request->boolean('refresh')
+            || $request->has('_ts');
+        $payload = $forceFresh
+            ? $this->freshPresentationPayload($period)
+            : $this->cachedPresentationPayload($period);
 
         if ($request->boolean('warm')) {
             return response()->noContent();
@@ -165,6 +2698,19 @@ class DashboardSimpananController extends Controller
         });
     }
 
+    private function freshPresentationPayload(?string $period): array
+    {
+        $payload = $this->buildPresentationPayload($period, true);
+
+        Cache::put(
+            $this->presentationPayloadCacheKey($period),
+            $payload,
+            now()->addMinutes(self::PAYLOAD_CACHE_MINUTES)
+        );
+
+        return $payload;
+    }
+
     private function cachedPresentationPayloadIfAvailable(?string $period): ?array
     {
         $cacheKey = $this->presentationPayloadCacheKey($period);
@@ -191,7 +2737,7 @@ class DashboardSimpananController extends Controller
         return 'dashboard_simpanan:presentation_payload:'
             . ($period ?? 'null') . ':'
             . self::LANDING_SOURCE_CACHE_VERSION . ':v'
-            . $this->reportCacheVersion() . ':lazy_kts_v1';
+            . $this->reportCacheVersion() . ':ppt_deck_v2';
     }
 
     private function resolvePresentationPeriod(mixed $requestedPeriod, ?Collection $periods = null): ?string
@@ -209,22 +2755,25 @@ class DashboardSimpananController extends Controller
                 : null);
     }
 
-    private function buildPresentationPayload(?string $selectedPeriod): array
+    private function buildPresentationPayload(?string $selectedPeriod, bool $forceFresh = false): array
     {
-        $dashboard = $this->buildDashboardPayload($selectedPeriod);
+        $dashboard = $forceFresh
+            ? $this->buildDashboardPayloadFresh($selectedPeriod, true)
+            : $this->buildDashboardPayload($selectedPeriod);
         $dashboardPeriod = (string) data_get($dashboard, 'period', $selectedPeriod);
         $loanPeriods = $this->resolveLoanDashboardPeriods($dashboardPeriod ?: $selectedPeriod);
         $loanPeriod = $loanPeriods[0] ?? null;
         $dailyLoanPeriod = $this->resolveArea6DailyLoanPeriod($loanPeriod ?? $dashboardPeriod ?: null);
         $area6Portfolio = data_get($dashboard, 'area6_portfolio', []);
+        $presentationPeriod = (string) (data_get($area6Portfolio, 'period') ?: $dashboardPeriod ?: $selectedPeriod);
         $digitalPerformance = data_get($dashboard, 'digital_performance', []);
 
         return [
             'meta' => [
                 'title' => 'Area 6 - Region Malang',
                 'subtitle' => 'Materi Pendukung Asistensi',
-                'period' => $dashboardPeriod ?: null,
-                'period_label' => $this->formatPeriodLabel($dashboardPeriod ?: null),
+                'period' => $presentationPeriod ?: null,
+                'period_label' => $this->formatPeriodLabel($presentationPeriod ?: null),
                 'loan_period' => $loanPeriod,
                 'loan_period_label' => $this->formatPeriodLabel($loanPeriod),
                 'daily_loan_period' => $dailyLoanPeriod,
@@ -233,10 +2782,14 @@ class DashboardSimpananController extends Controller
                 'source_note' => 'Angka diambil dari payload landing dan tabel snapshot/report existing; tidak memakai angka dummy.',
             ],
             'assets' => $this->buildPresentationAssets(),
-            'summary' => $this->buildPresentationSummary($dashboard, $dashboardPeriod ?: null, $loanPeriod),
-            'performance_overview' => $this->buildPresentationPerformanceOverview($area6Portfolio, $dashboardPeriod ?: null),
-            'timeseries' => $this->buildPresentationTimeseries($dashboardPeriod ?: null),
-            'cover_card_timeseries' => $this->buildPresentationCoverCardTimeseries($dashboardPeriod ?: null, $dailyLoanPeriod),
+            'summary' => $this->buildPresentationSummary($dashboard, $presentationPeriod ?: null, $loanPeriod),
+            'performance_overview' => $this->buildPresentationPerformanceOverview($area6Portfolio, $presentationPeriod ?: null),
+            'timeseries' => $this->buildPresentationTimeseries($presentationPeriod ?: null),
+            'cover_card_timeseries' => $this->buildPresentationCoverCardTimeseries($presentationPeriod ?: null, $dailyLoanPeriod),
+            'savings_breakdown' => $this->buildPresentationSavingsBreakdown($presentationPeriod ?: null),
+            'loan_products' => $this->buildPresentationLoanProducts($presentationPeriod ?: null),
+            'financial_highlights' => $this->buildPresentationFinancialHighlights($presentationPeriod ?: null),
+            'executive_summary' => $this->buildLandingExecutiveSummary($dailyLoanPeriod ?? $loanPeriod, $area6Portfolio),
             'micro' => $this->buildPresentationMicro($dailyLoanPeriod),
             'quality' => $this->buildPresentationQuality($area6Portfolio),
             'kts' => $this->buildPresentationKtsSummary($dailyLoanPeriod),
@@ -250,6 +2803,237 @@ class DashboardSimpananController extends Controller
             'bri_logo' => asset('images/bri-logo-template.png'),
             'danantara_logo' => asset('images/danantara-logo-template.png'),
             'cover_base' => asset('images/ppt-template/cover-base.png'),
+            'branch_building' => asset('images/bri-area6-building.png'),
+        ];
+    }
+
+    private function buildPresentationSavingsBreakdown(?string $period): array
+    {
+        $empty = [
+            'available' => false,
+            'period' => $period,
+            'period_label' => $this->formatPeriodLabel($period),
+            'cards' => [],
+        ];
+
+        if (!$period || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return $empty;
+        }
+
+        $row = $this->area6HarianSnapshotSummaryQuery()
+            ->where('snapshot_period', $period)
+            ->selectRaw('COALESCE(SUM(COALESCE(total_simpanan, 0)), 0) as total_simpanan')
+            ->selectRaw('COALESCE(SUM(COALESCE(giro_ritel, 0) + COALESCE(giro_mikro, 0) + COALESCE(giro_wholesale, 0)), 0) as giro')
+            ->selectRaw('COALESCE(SUM(COALESCE(tabungan_ritel, 0) + COALESCE(tabungan_mikro, 0) + COALESCE(tabungan_wholesale, 0)), 0) as tabungan')
+            ->selectRaw('COALESCE(SUM(COALESCE(deposito_ritel, 0) + COALESCE(deposito_mikro, 0) + COALESCE(deposito_wholesale, 0)), 0) as deposito')
+            ->selectRaw('COALESCE(SUM(COALESCE(total_casa, 0)), 0) as casa')
+            ->first();
+
+        if (!$row) {
+            return $empty;
+        }
+
+        $total = (float) ($row->total_simpanan ?? 0.0);
+        $items = [
+            'total_simpanan' => ['label' => 'Total Simpanan', 'value' => $total, 'tone' => '#0857c3', 'icon' => 'fas fa-piggy-bank'],
+            'giro' => ['label' => 'Giro', 'value' => (float) ($row->giro ?? 0.0), 'tone' => '#307fe2', 'icon' => 'fas fa-building-columns'],
+            'tabungan' => ['label' => 'Tabungan', 'value' => (float) ($row->tabungan ?? 0.0), 'tone' => '#71c5e8', 'icon' => 'fas fa-wallet'],
+            'deposito' => ['label' => 'Deposito', 'value' => (float) ($row->deposito ?? 0.0), 'tone' => '#ccad95', 'icon' => 'fas fa-vault'],
+            'casa' => ['label' => 'CASA', 'value' => (float) ($row->casa ?? 0.0), 'tone' => '#059669', 'icon' => 'fas fa-layer-group'],
+        ];
+
+        $cards = collect($items)
+            ->map(function (array $item, string $key) use ($total): array {
+                $pct = $key === 'total_simpanan' ? 100.0 : $this->percentOf($item['value'], $total);
+
+                return [
+                    'key' => $key,
+                    'label' => $item['label'],
+                    'value_raw' => $item['value'],
+                    'value' => $this->formatCurrencyCompact($item['value']),
+                    'pct_raw' => $pct,
+                    'pct' => $this->formatPercentTwo($pct),
+                    'tone' => $item['tone'],
+                    'icon' => $item['icon'],
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'available' => $total > 0.0,
+            'period' => $period,
+            'period_label' => $this->formatPeriodLabel($period),
+            'cards' => $cards,
+        ];
+    }
+
+    private function buildPresentationLoanProducts(?string $period): array
+    {
+        $empty = [
+            'available' => false,
+            'period' => $period,
+            'period_label' => $this->formatPeriodLabel($period),
+            'rows' => [],
+        ];
+
+        if (!$period || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return $empty;
+        }
+
+        $row = $this->area6HarianSnapshotSummaryQuery()
+            ->where('snapshot_period', $period)
+            ->selectRaw('COALESCE(SUM(COALESCE(kupedes_os, 0)), 0) as kupedes_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(kupedes_sml, 0)), 0) as kupedes_sml')
+            ->selectRaw('COALESCE(SUM(COALESCE(kupedes_npl, 0)), 0) as kupedes_npl')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_mikro_os, 0)), 0) as kur_mikro_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_mikro_sml, 0)), 0) as kur_mikro_sml')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_mikro_npl, 0)), 0) as kur_mikro_npl')
+            ->selectRaw('COALESCE(SUM(COALESCE(briguna_mikro_os, 0)), 0) as briguna_mikro_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(briguna_mikro_sml, 0)), 0) as briguna_mikro_sml')
+            ->selectRaw('COALESCE(SUM(COALESCE(briguna_mikro_npl, 0)), 0) as briguna_mikro_npl')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_kpp_os, 0)), 0) as kur_kpp_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_kpp_sml, 0)), 0) as kur_kpp_sml')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_kpp_npl, 0)), 0) as kur_kpp_npl')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_kecil_os, 0)), 0) as kur_kecil_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_kecil_sml, 0)), 0) as kur_kecil_sml')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_kecil_npl, 0)), 0) as kur_kecil_npl')
+            ->first();
+
+        if (!$row) {
+            return $empty;
+        }
+
+        $definitions = [
+            ['key' => 'kupedes', 'label' => 'Kupedes', 'os' => 'kupedes_os', 'sml' => 'kupedes_sml', 'npl' => 'kupedes_npl', 'icon' => 'fas fa-users'],
+            ['key' => 'kur_mikro', 'label' => 'KUR Mikro', 'os' => 'kur_mikro_os', 'sml' => 'kur_mikro_sml', 'npl' => 'kur_mikro_npl', 'icon' => 'fas fa-store'],
+            ['key' => 'briguna_mikro', 'label' => 'Briguna Mikro', 'os' => 'briguna_mikro_os', 'sml' => 'briguna_mikro_sml', 'npl' => 'briguna_mikro_npl', 'icon' => 'fas fa-id-card'],
+            ['key' => 'kpp', 'label' => 'KPP', 'os' => 'kur_kpp_os', 'sml' => 'kur_kpp_sml', 'npl' => 'kur_kpp_npl', 'icon' => 'fas fa-briefcase'],
+            ['key' => 'kur_kecil', 'label' => 'KUR Kecil', 'os' => 'kur_kecil_os', 'sml' => 'kur_kecil_sml', 'npl' => 'kur_kecil_npl', 'icon' => 'fas fa-building'],
+        ];
+
+        $rows = collect($definitions)
+            ->map(function (array $definition) use ($row): array {
+                $os = (float) ($row->{$definition['os']} ?? 0.0);
+                $sml = (float) ($row->{$definition['sml']} ?? 0.0);
+                $npl = (float) ($row->{$definition['npl']} ?? 0.0);
+
+                return [
+                    'key' => $definition['key'],
+                    'label' => $definition['label'],
+                    'icon' => $definition['icon'],
+                    'os_raw' => $os,
+                    'sml_raw' => $sml,
+                    'npl_raw' => $npl,
+                    'os' => $this->formatCurrencyCompact($os),
+                    'sml' => $this->formatCurrencyCompact($sml),
+                    'npl' => $this->formatCurrencyCompact($npl),
+                    'sml_pct' => $os > 0 ? $this->formatPercentTwo(($sml / $os) * 100) : '-',
+                    'npl_pct' => $os > 0 ? $this->formatPercentTwo(($npl / $os) * 100) : '-',
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'available' => collect($rows)->contains(fn (array $item): bool => (float) $item['os_raw'] > 0.0),
+            'period' => $period,
+            'period_label' => $this->formatPeriodLabel($period),
+            'rows' => $rows,
+        ];
+    }
+
+    private function buildPresentationFinancialHighlights(?string $targetPeriod): array
+    {
+        $empty = [
+            'available' => false,
+            'period' => null,
+            'period_label' => 'Belum ada data',
+            'cards' => [],
+            'branches' => [],
+        ];
+
+        if (!$this->hasTable('ssa_almafacts')) {
+            return $empty;
+        }
+
+        $periodQuery = DB::table('ssa_almafacts')
+            ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS);
+
+        if ($targetPeriod) {
+            $periodQuery->whereDate('month_day_year_of_posisi', '<=', $targetPeriod);
+        }
+
+        $period = $periodQuery->max('month_day_year_of_posisi');
+        if (!$period) {
+            return $empty;
+        }
+
+        $metricLabels = [
+            'profit_after_tax' => ['label' => 'Laba Setelah Pajak', 'source' => '15. Laba Setelah Pajak', 'type' => 'money', 'tone' => '#0857c3'],
+            'ppop' => ['label' => 'PPOP', 'source' => '10. PPOP', 'type' => 'money', 'tone' => '#307fe2'],
+            'nim' => ['label' => 'NIM', 'source' => '22. NIM (%)', 'type' => 'percent', 'tone' => '#059669'],
+            'bopo' => ['label' => 'BOPO', 'source' => '28. BOPO (%)', 'type' => 'percent', 'tone' => '#dc2626'],
+            'cer' => ['label' => 'CER', 'source' => '29. CER (%)', 'type' => 'percent', 'tone' => '#f59e0b'],
+            'roa_before_tax' => ['label' => 'ROA Before Tax', 'source' => '26. ROA sebelum Pajak (%)', 'type' => 'percent', 'tone' => '#0f766e'],
+            'roa_after_tax' => ['label' => 'ROA After Tax', 'source' => '27. ROA setelah Pajak (%)', 'type' => 'percent', 'tone' => '#7c3aed'],
+            'casa' => ['label' => 'CASA', 'source' => '38. CASA (%)', 'type' => 'percent', 'tone' => '#00aeef'],
+        ];
+
+        $rows = DB::table('ssa_almafacts')
+            ->whereDate('month_day_year_of_posisi', $period)
+            ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
+            ->whereIn('keterangan', collect($metricLabels)->pluck('source')->all())
+            ->select('keterangan')
+            ->selectRaw('SUM(COALESCE(saldo, 0)) as sum_saldo')
+            ->selectRaw('AVG(COALESCE(saldo, 0)) as avg_saldo')
+            ->groupBy('keterangan')
+            ->get()
+            ->keyBy('keterangan');
+
+        $cards = collect($metricLabels)
+            ->map(function (array $metric, string $key) use ($rows): array {
+                $row = $rows->get($metric['source']);
+                $raw = $metric['type'] === 'percent'
+                    ? (float) ($row->avg_saldo ?? 0.0)
+                    : (float) ($row->sum_saldo ?? 0.0);
+
+                return [
+                    'key' => $key,
+                    'label' => $metric['label'],
+                    'value_raw' => $raw,
+                    'value' => $metric['type'] === 'percent' ? $this->formatPercentTwo($raw) : $this->formatCurrencyCompact($raw),
+                    'type' => $metric['type'],
+                    'tone' => $metric['tone'],
+                ];
+            })
+            ->values()
+            ->all();
+
+        $branchRows = DB::table('ssa_almafacts')
+            ->whereDate('month_day_year_of_posisi', $period)
+            ->where('keterangan', '15. Laba Setelah Pajak')
+            ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
+            ->select('kanca_konsolidasi', DB::raw('SUM(COALESCE(saldo, 0)) as nominal'))
+            ->groupBy('kanca_konsolidasi')
+            ->get()
+            ->keyBy('kanca_konsolidasi');
+
+        $branches = collect(self::AREA_6_BRANCH_LABELS)
+            ->map(fn (string $branch): array => [
+                'name' => $branch,
+                'value_raw' => (float) data_get($branchRows->get($branch), 'nominal', 0.0),
+                'value' => $this->formatCurrencyCompact((float) data_get($branchRows->get($branch), 'nominal', 0.0)),
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'available' => collect($cards)->contains(fn (array $card): bool => (float) $card['value_raw'] !== 0.0),
+            'period' => $period,
+            'period_label' => $this->formatPeriodLabel($period),
+            'cards' => $cards,
+            'branches' => $branches,
         ];
     }
 
@@ -1148,7 +3932,7 @@ class DashboardSimpananController extends Controller
 
         try {
             $period = DB::table('ssa_almafacts')
-                ->where('keterangan_1', '15. Laba Setelah Pajak')
+                ->where('keterangan', '15. Laba Setelah Pajak')
                 ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
                 ->max('month_day_year_of_posisi');
 
@@ -1157,9 +3941,9 @@ class DashboardSimpananController extends Controller
             }
 
             $rows = DB::table('ssa_almafacts')
-                ->select('kanca_konsolidasi', DB::raw('SUM(nominal) as nominal'))
+                ->select('kanca_konsolidasi', DB::raw('SUM(saldo) as nominal'))
                 ->where('month_day_year_of_posisi', $period)
-                ->where('keterangan_1', '15. Laba Setelah Pajak')
+                ->where('keterangan', '15. Laba Setelah Pajak')
                 ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
                 ->groupBy('kanca_konsolidasi')
                 ->get()
@@ -1180,16 +3964,16 @@ class DashboardSimpananController extends Controller
 
             $total = array_sum(array_column($branches, 'nominal'));
             $previousPeriod = DB::table('ssa_almafacts')
-                ->where('keterangan_1', '15. Laba Setelah Pajak')
+                ->where('keterangan', '15. Laba Setelah Pajak')
                 ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
                 ->where('month_day_year_of_posisi', '<', $period)
                 ->max('month_day_year_of_posisi');
             $previousTotal = $previousPeriod
                 ? (float) DB::table('ssa_almafacts')
                     ->where('month_day_year_of_posisi', $previousPeriod)
-                    ->where('keterangan_1', '15. Laba Setelah Pajak')
+                    ->where('keterangan', '15. Laba Setelah Pajak')
                     ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
-                    ->sum('nominal')
+                    ->sum('saldo')
                 : 0.0;
             $delta = $this->percentChange($total, $previousTotal);
 
@@ -1222,27 +4006,34 @@ class DashboardSimpananController extends Controller
 
         $payload = $this->invokeKinerjaRmMikroPayload('unit_pemutus', $period, true);
         $total = (array) data_get($payload, 'total', []);
+        $kurRitelTotals = $this->buildLandingKurRitelDecisionTotals($period);
 
         $items = [
             [
-                'key' => 'boh',
-                'label' => 'BOH/RMBH',
-                'deb' => (int) ($total['rmbh_mtd_deb'] ?? 0),
-                'nominal' => (float) ($total['rmbh_mtd_os'] ?? 0.0),
+                'key' => 'pinca_boh',
+                'label' => 'Pinca/BOH',
+                'deb' => (int) ($total['pinca_mtd_deb'] ?? 0) + (int) data_get($kurRitelTotals, 'pinca.deb', 0),
+                'nominal' => (float) ($total['pinca_mtd_os'] ?? 0.0) + (float) data_get($kurRitelTotals, 'pinca.nominal', 0.0),
+                'kur_ritel_deb' => (int) data_get($kurRitelTotals, 'pinca.deb', 0),
+                'kur_ritel_nominal' => (float) data_get($kurRitelTotals, 'pinca.nominal', 0.0),
                 'icon' => 'fas fa-user-tie',
             ],
             [
                 'key' => 'k_unit',
                 'label' => 'K Unit',
-                'deb' => (int) ($total['kaunit_mtd_deb'] ?? 0),
-                'nominal' => (float) ($total['kaunit_mtd_os'] ?? 0.0),
+                'deb' => (int) ($total['kaunit_mtd_deb'] ?? 0) + (int) data_get($kurRitelTotals, 'kaunit.deb', 0),
+                'nominal' => (float) ($total['kaunit_mtd_os'] ?? 0.0) + (float) data_get($kurRitelTotals, 'kaunit.nominal', 0.0),
+                'kur_ritel_deb' => (int) data_get($kurRitelTotals, 'kaunit.deb', 0),
+                'kur_ritel_nominal' => (float) data_get($kurRitelTotals, 'kaunit.nominal', 0.0),
                 'icon' => 'fas fa-store-alt',
             ],
             [
                 'key' => 'mbm',
                 'label' => 'MBM',
-                'deb' => (int) ($total['mbm_mtd_deb'] ?? 0),
-                'nominal' => (float) ($total['mbm_mtd_os'] ?? 0.0),
+                'deb' => (int) ($total['mbm_mtd_deb'] ?? 0) + (int) data_get($kurRitelTotals, 'mbm.deb', 0),
+                'nominal' => (float) ($total['mbm_mtd_os'] ?? 0.0) + (float) data_get($kurRitelTotals, 'mbm.nominal', 0.0),
+                'kur_ritel_deb' => (int) data_get($kurRitelTotals, 'mbm.deb', 0),
+                'kur_ritel_nominal' => (float) data_get($kurRitelTotals, 'mbm.nominal', 0.0),
                 'icon' => 'fas fa-user-shield',
             ],
         ];
@@ -1251,20 +4042,115 @@ class DashboardSimpananController extends Controller
             ->map(function (array $item): array {
                 $item['nominal_fmt'] = $this->formatCurrencyCompact((float) $item['nominal']);
                 $item['deb_fmt'] = $this->formatInteger((int) $item['deb']) . ' deb';
+                $item['kur_ritel_nominal_fmt'] = $this->formatCurrencyCompact((float) $item['kur_ritel_nominal']);
+                $item['kur_ritel_deb_fmt'] = $this->formatInteger((int) $item['kur_ritel_deb']) . ' deb';
+                $item['kur_ritel_note'] = (int) $item['kur_ritel_deb'] > 0
+                    ? 'KUR Ritel 2015: ' . $item['kur_ritel_deb_fmt'] . ' | ' . $item['kur_ritel_nominal_fmt']
+                    : null;
 
                 return $item;
             })
             ->all();
 
+        $kurRitelDeb = array_sum(array_column($items, 'kur_ritel_deb'));
+        $kurRitelNominal = array_sum(array_column($items, 'kur_ritel_nominal'));
+
         return [
             'available' => collect($items)->contains(fn (array $item) => (int) $item['deb'] > 0 || (float) $item['nominal'] !== 0.0),
             'period' => $period,
             'period_label' => $this->formatPeriodLabel($period),
-            'source' => 'Kinerja RM Mikro - Unit per Pemutus',
+            'source' => 'Kinerja RM Mikro - Unit per Pemutus, termasuk KUR Ritel 2015',
             'items' => $items,
             'total_deb' => array_sum(array_column($items, 'deb')),
             'total_nominal' => array_sum(array_column($items, 'nominal')),
+            'total_deb_fmt' => $this->formatInteger((int) array_sum(array_column($items, 'deb'))) . ' deb',
+            'total_nominal_fmt' => $this->formatCurrencyCompact((float) array_sum(array_column($items, 'nominal'))),
+            'kur_ritel_deb' => $kurRitelDeb,
+            'kur_ritel_nominal' => $kurRitelNominal,
+            'kur_ritel_deb_fmt' => $this->formatInteger((int) $kurRitelDeb) . ' deb',
+            'kur_ritel_nominal_fmt' => $this->formatCurrencyCompact((float) $kurRitelNominal),
+            'note' => 'Termasuk KUR Ritel 2015 pada bucket Pinca/BOH, K Unit, dan MBM.',
         ];
+    }
+
+    private function buildLandingKurRitelDecisionTotals(string $period): array
+    {
+        $blank = [
+            'pinca' => ['deb' => 0, 'nominal' => 0.0],
+            'kaunit' => ['deb' => 0, 'nominal' => 0.0],
+            'mbm' => ['deb' => 0, 'nominal' => 0.0],
+        ];
+
+        if (!$this->hasTable('daily_loan_dinamis')) {
+            return $blank;
+        }
+
+        $requiredColumns = ['periode', 'segmen_kinerja', 'produk_kinerja', 'description', 'tgl_realisasi', 'plafon'];
+        foreach ($requiredColumns as $column) {
+            if (!$this->hasColumn('daily_loan_dinamis', $column)) {
+                return $blank;
+            }
+        }
+
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+        $descriptionSql = $this->normalizedSql('d.description');
+        $kurRitelToken = $this->normalizeToken('Kredit Mikro - KUR Ritel 2015');
+        $pemutusSql = $this->hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')
+            ? "NULLIF(d.pn_pemutus_normalized, '')"
+            : "NULLIF(TRIM(LEADING '0' FROM TRIM(SUBSTRING_INDEX(COALESCE(d.pn_pemutus1, ''), '-', 1))), '')";
+        $rekeningSql = $this->hasColumn('daily_loan_dinamis', 'nomor_rekening1')
+            ? "COALESCE(NULLIF(d.nomor_rekening1, ''), CONCAT(COALESCE(d.branch1, ''), '-', COALESCE(d.pn_pengelola1, ''), '-', COALESCE(d.plafon, ''), '-', COALESCE(d.tgl_realisasi, '')))"
+            : "CONCAT(COALESCE(d.branch1, ''), '-', COALESCE(d.pn_pengelola1, ''), '-', COALESCE(d.plafon, ''), '-', COALESCE(d.tgl_realisasi, ''))";
+        $jabatanSql = $this->hasTable('brihc')
+            ? "UPPER(TRIM(COALESCE(b.jabatan, '')))"
+            : "''";
+        $roleSql = "CASE"
+            . " WHEN {$jabatanSql} LIKE '%BOH%' OR {$jabatanSql} LIKE '%PINCA%' OR {$jabatanSql} LIKE '%PIMPINAN CABANG%' THEN 'pinca'"
+            . " WHEN {$jabatanSql} LIKE '%RMBH%' THEN 'rmbh'"
+            . " WHEN {$jabatanSql} LIKE '%MBM%' THEN 'mbm'"
+            . " WHEN {$jabatanSql} LIKE '%KAUNIT%' OR {$jabatanSql} LIKE '%KEPALA UNIT%' THEN 'kaunit'"
+            . " WHEN COALESCE(d.plafon, 0) <= 100000000 THEN 'kaunit'"
+            . " WHEN COALESCE(d.plafon, 0) <= 250000000 THEN 'mbm'"
+            . " ELSE 'pinca' END";
+
+        $base = DB::table('daily_loan_dinamis as d')
+            ->where('d.periode', $period)
+            ->where('d.segmen_kinerja', 'MICRO')
+            ->where('d.produk_kinerja', 'KURMIKRO')
+            ->whereRaw("{$descriptionSql} = ?", [$kurRitelToken])
+            ->whereBetween('d.tgl_realisasi', [$periodStart, $period]);
+
+        if ($this->hasTable('brihc')) {
+            $base->leftJoin('brihc as b', function ($join) use ($pemutusSql): void {
+                $join->on('b.pn', '=', DB::raw($pemutusSql));
+            });
+        }
+
+        $rows = $base
+            ->selectRaw("{$roleSql} as role_key")
+            ->selectRaw("{$rekeningSql} as rekening_key")
+            ->selectRaw('COALESCE(d.plafon, 0) as nominal')
+            ->get();
+
+        foreach ($rows as $row) {
+            $roleKey = (string) ($row->role_key ?? '');
+            if (!isset($blank[$roleKey])) {
+                continue;
+            }
+
+            $nominal = (float) ($row->nominal ?? 0.0);
+            $rekening = trim((string) ($row->rekening_key ?? ''));
+
+            $blank[$roleKey]['nominal'] += $nominal;
+            $blank[$roleKey]['rekening_keys'][$rekening] = true;
+        }
+
+        foreach ($blank as $key => $row) {
+            $blank[$key]['deb'] = count($row['rekening_keys'] ?? []);
+            unset($blank[$key]['rekening_keys']);
+        }
+
+        return $blank;
     }
 
     private function buildLandingSegmentRealizationSummary(array $area6Portfolio): array
@@ -1904,7 +4790,7 @@ class DashboardSimpananController extends Controller
         });
     }
 
-    private function buildDashboardPayloadFresh(?string $selectedPeriod = null): array
+    private function buildDashboardPayloadFresh(?string $selectedPeriod = null, bool $forceFresh = false): array
     {
         if (!Schema::hasTable('simpanan_multipn') && !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
             return $this->emptyDashboard();
@@ -1917,15 +4803,15 @@ class DashboardSimpananController extends Controller
             return $this->emptyDashboard();
         }
 
-        $currentSummary = $this->buildPeriodSummary($currentPeriod);
-        $previousSummary = $previousPeriod ? $this->buildPeriodSummary($previousPeriod) : $this->emptySummary();
-        $yoySummary = $yoyPeriod ? $this->buildPeriodSummary($yoyPeriod) : $this->emptySummary();
+        $currentSummary = $this->buildPeriodSummary($currentPeriod, $forceFresh);
+        $previousSummary = $previousPeriod ? $this->buildPeriodSummary($previousPeriod, $forceFresh) : $this->emptySummary();
+        $yoySummary = $yoyPeriod ? $this->buildPeriodSummary($yoyPeriod, $forceFresh) : $this->emptySummary();
         $loanCurrentSummary = $loanCurrentPeriod ? $this->buildLoanSummary($loanCurrentPeriod) : $this->emptyLoanSummary();
         $loanPreviousSummary = $loanPreviousPeriod ? $this->buildLoanSummary($loanPreviousPeriod) : $this->emptyLoanSummary();
         $loanYoySummary = $loanYoyPeriod ? $this->buildLoanSummary($loanYoyPeriod) : $this->emptyLoanSummary();
 
-        $topBranches = $this->fetchTopBranches($currentPeriod);
-        $loanTopBranches = $loanCurrentPeriod ? $this->fetchLoanTopBranches($loanCurrentPeriod) : collect();
+        $topBranches = $this->fetchTopBranches($currentPeriod, $forceFresh);
+        $loanTopBranches = $loanCurrentPeriod ? $this->fetchLoanTopBranches($loanCurrentPeriod, $forceFresh) : collect();
         $composition = $this->buildComposition($currentSummary);
         $latestUpdatedAt = $currentSummary['source_updated_at'] ?? null;
         $topBranchLabel = data_get($topBranches->first(), 'label', 'Cabang belum tersedia');
@@ -1947,7 +4833,7 @@ class DashboardSimpananController extends Controller
         ));
         $digitalPerformance = $this->buildDigitalPerformance();
         $timeseries = $this->buildTimeseriesPayload($currentPeriod, $loanCurrentPeriod);
-        $area6Portfolio = $this->buildArea6PortfolioLanding($loanCurrentPeriod);
+        $area6Portfolio = $this->buildArea6PortfolioLanding($loanCurrentPeriod, $forceFresh);
         $landingSummary = $this->buildLandingExecutiveSummary($loanCurrentPeriod, $area6Portfolio);
         $simpananSourceDetail = $this->buildLandingSourceDetail(
             'Simpanan Realtime',
@@ -2224,12 +5110,21 @@ class DashboardSimpananController extends Controller
         ];
     }
 
-    private function buildPeriodSummary(string $period): array
+    private function buildPeriodSummary(string $period, bool $forceFresh = false): array
     {
         $cacheKey = 'dashboard_simpanan:summary:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $this->reportCacheVersion() . ':' . $period;
         $latestKey = $cacheKey . ':latest';
         $ttl = now()->addMinutes(self::SUMMARY_CACHE_MINUTES);
         $latestTtl = now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES);
+
+        if ($forceFresh) {
+            $summary = $this->queryPeriodSummary($period);
+            Cache::put($cacheKey, $summary, $ttl);
+            Cache::put($latestKey, $summary, $latestTtl);
+
+            return $summary;
+        }
+
         $cached = Cache::get($cacheKey);
         if (is_array($cached)) {
             return $cached;
@@ -2306,11 +5201,11 @@ class DashboardSimpananController extends Controller
         ];
     }
 
-    private function fetchTopBranches(string $period): Collection
+    private function fetchTopBranches(string $period, bool $forceFresh = false): Collection
     {
         $cacheKey = 'dashboard_simpanan:top_branches:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $this->reportCacheVersion() . ':' . $period;
 
-        $rows = Cache::remember($cacheKey, now()->addMinutes(self::TOP_BRANCH_CACHE_MINUTES), function () use ($period) {
+        $builder = function () use ($period) {
             $harianRows = $this->queryTopBranchesFromHarianSnapshot($period);
             if ($harianRows !== null) {
                 return $harianRows;
@@ -2330,7 +5225,14 @@ class DashboardSimpananController extends Controller
                 ->orderByDesc('total_balance')
                 ->limit(5)
                 ->get();
-        });
+        };
+
+        if ($forceFresh) {
+            $rows = $builder();
+            Cache::put($cacheKey, $rows, now()->addMinutes(self::TOP_BRANCH_CACHE_MINUTES));
+        } else {
+            $rows = Cache::remember($cacheKey, now()->addMinutes(self::TOP_BRANCH_CACHE_MINUTES), $builder);
+        }
 
         return collect($rows)->map(function ($row) {
             $balance = (float) ($row->total_balance ?? 0);
@@ -2374,13 +5276,23 @@ class DashboardSimpananController extends Controller
         ];
     }
 
-    private function buildArea6PortfolioLanding(?string $loanPeriod): array
+    private function buildArea6PortfolioLanding(?string $loanPeriod, bool $forceFresh = false): array
     {
         $dailyLoanPeriod = $this->resolveArea6DailyLoanPeriod($loanPeriod);
         $cacheVersion = $this->reportCacheVersion();
         $cacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none');
         $latestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none');
         $stableLatestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:stable:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none');
+
+        if ($forceFresh) {
+            $freshPayload = $this->buildArea6PortfolioLandingFresh($loanPeriod, $dailyLoanPeriod);
+            Cache::put($cacheKey, $freshPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
+            Cache::put($latestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
+            Cache::put($stableLatestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
+
+            return $freshPayload;
+        }
+
         $cachedPayload = Cache::get($cacheKey);
 
         if (is_array($cachedPayload)) {
@@ -2815,6 +5727,7 @@ class DashboardSimpananController extends Controller
         return [
             'title' => 'Kinerja Area 6',
             'subtitle' => 'Ringkasan cepat dari snapshot Dashboard Harian dan Pinjaman. Area 6 mencakup seluruh cabang dan seluruh segmen.',
+            'period' => $harian['period'],
             'period_label' => $periodLabel,
             'loan_period_label' => $loanPeriodLabel,
             'loan_detail_period_label' => $dailyLoanPeriodLabel,
@@ -3643,6 +6556,7 @@ class DashboardSimpananController extends Controller
         return [
             'title' => 'Ringkasan Area 6',
             'subtitle' => 'Data lintas report belum tersedia.',
+            'period' => null,
             'period_label' => 'Belum ada data',
             'loan_period_label' => 'Belum ada data',
             'loan_detail_period_label' => 'Belum ada data',
@@ -4585,11 +7499,11 @@ class DashboardSimpananController extends Controller
         ];
     }
 
-    private function fetchLoanTopBranches(string $period): Collection
+    private function fetchLoanTopBranches(string $period, bool $forceFresh = false): Collection
     {
         $cacheKey = 'dashboard_pinjaman:top_branches:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $this->reportCacheVersion() . ':' . $period;
 
-        $rows = Cache::remember($cacheKey, now()->addMinutes(self::TOP_BRANCH_CACHE_MINUTES), function () use ($period) {
+        $builder = function () use ($period) {
             $harianRows = $this->queryLoanTopBranchesFromHarianSnapshot($period);
             if ($harianRows !== null) {
                 return $harianRows;
@@ -4630,7 +7544,14 @@ class DashboardSimpananController extends Controller
                 ->orderByDesc('total_balance')
                 ->limit(5)
                 ->get();
-        });
+        };
+
+        if ($forceFresh) {
+            $rows = $builder();
+            Cache::put($cacheKey, $rows, now()->addMinutes(self::TOP_BRANCH_CACHE_MINUTES));
+        } else {
+            $rows = Cache::remember($cacheKey, now()->addMinutes(self::TOP_BRANCH_CACHE_MINUTES), $builder);
+        }
 
         return collect($rows)->map(function ($row) {
             $balance = (float) ($row->total_balance ?? 0);
@@ -6099,6 +9020,16 @@ class DashboardSimpananController extends Controller
         static $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
 
         return $branches;
+    }
+
+    private function normalizedSql(string $column): string
+    {
+        return "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE({$column}, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))";
+    }
+
+    private function normalizeToken(?string $value): string
+    {
+        return preg_replace('/[^A-Z0-9]/', '', strtoupper(trim((string) $value))) ?? '';
     }
 
     private function percentChange(float|int $current, float|int $previous): float

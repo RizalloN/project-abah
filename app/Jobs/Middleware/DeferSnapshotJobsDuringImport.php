@@ -84,7 +84,7 @@ class DeferSnapshotJobsDuringImport
             $cutoff = now()->subHours(self::STUCK_IMPORT_THRESHOLD_HOURS);
 
             return DB::table('import_jobs')
-                ->where('status', 'processing')
+                ->whereIn('status', ['staging', 'processing'])
                 ->where('updated_at', '<', $cutoff)
                 ->orderByDesc('updated_at')
                 ->first();

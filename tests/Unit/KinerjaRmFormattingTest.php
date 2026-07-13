@@ -162,6 +162,74 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringNotContainsString('Gap vs Posisi', $html);
     }
 
+    public function test_kinerjarm_quality_series_renders_actual_period_labels_and_loan_reference(): void
+    {
+        $comparisonColumns = [
+            ['key' => 'yoy', 'short_label' => '20 Jun 25'],
+            ['key' => 'ytd', 'short_label' => '31 Des 25'],
+            ['key' => 'm2', 'short_label' => '30 Apr 26'],
+            ['key' => 'm1', 'short_label' => '31 Mei 26'],
+        ];
+        $item = [
+            'product' => 'CONSUMER',
+            'loan_os_reference' => 1000000000,
+            'comparison_values' => [
+                'yoy' => 300000000,
+                'ytd' => 290000000,
+                'm2' => 280000000,
+                'm1' => 320000000,
+            ],
+            'comparison_deltas' => [
+                'yoy' => 10000000,
+                'ytd' => 20000000,
+                'm2' => 30000000,
+                'm1' => -10000000,
+            ],
+            'curr' => 310000000,
+        ];
+        $subtotal = array_merge($item, ['loan_os_reference' => 1000000000]);
+
+        $html = view('report.kinerjarm-quality-series-section', [
+            'selectedPeriodShortLabel' => '20 Jun 26',
+            'sectionTitle' => 'LAR',
+            'componentLabel' => 'LAR',
+            'showLoanReference' => true,
+            'lowerIsBetter' => true,
+            'comparisonColumns' => $comparisonColumns,
+            'rows' => [[
+                'cabang' => 'KC TEST',
+                'branch_rowspan' => 2,
+                'subtotal' => $subtotal,
+                'rms' => [
+                    'RM TEST' => [
+                        'rm' => 'RM TEST',
+                        'rm_category' => 'KCP',
+                        'rm_unit' => 'KCP CARUBAN',
+                        'rm_rowspan' => 1,
+                        'items' => [$item],
+                    ],
+                ],
+            ]],
+            'total' => $subtotal,
+        ])->render();
+
+        $this->assertStringContainsString('Nama RM', $html);
+        $this->assertStringContainsString('KCP CARUBAN', $html);
+        $this->assertStringContainsString('kinerja-rm-scope-badge is-kcp', $html);
+        $this->assertStringContainsString('OS Pinjaman', $html);
+        $this->assertStringContainsString('Series LAR', $html);
+        $this->assertStringContainsString('20 Jun 25', $html);
+        $this->assertStringContainsString('31 Des 25', $html);
+        $this->assertStringContainsString('30 Apr 26', $html);
+        $this->assertStringContainsString('31 Mei 26', $html);
+        $this->assertStringContainsString('20 Jun 26', $html);
+        $this->assertStringNotContainsString('>YoY<', $html);
+        $this->assertStringNotContainsString('>YTD<', $html);
+        $this->assertStringNotContainsString('>M-1<', $html);
+        $this->assertStringContainsString('cell-pos', $html);
+        $this->assertStringContainsString('cell-neg', $html);
+    }
+
     public function test_kinerjarm_history_modal_renders_million_format_for_realisasi_os(): void
     {
         $html = view('report.kinerjarm-detail-modal', [
@@ -183,6 +251,38 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringContainsString('Realisasi OS (Rp Juta)', $html);
         $this->assertStringContainsString('1.600,0', $html);
         $this->assertStringContainsString('12,35%', $html);
+    }
+
+    public function test_kinerjarm_small_history_modal_uses_closed_month_summary(): void
+    {
+        $details = collect([
+            ['periode' => 'Jan 2026', 'periode_raw' => '2026-01-31', 'year' => 2026, 'cabang' => 'KC PONOROGO', 'loan_os' => 1000000000, 'lar_value' => 160000000, 'realisasi_os' => 2750000000, 'penc_realisasi' => 'A', 'pct_lar' => 16.0, 'penc_lar' => 'A'],
+            ['periode' => 'Feb 2026', 'periode_raw' => '2026-02-28', 'year' => 2026, 'cabang' => 'KC PONOROGO', 'loan_os' => 1000000000, 'lar_value' => 190000000, 'realisasi_os' => 2500000000, 'penc_realisasi' => 'A', 'pct_lar' => 19.0, 'penc_lar' => 'B'],
+            ['periode' => 'Mar 2026', 'periode_raw' => '2026-03-31', 'year' => 2026, 'cabang' => 'KC PONOROGO', 'loan_os' => 1000000000, 'lar_value' => 140000000, 'realisasi_os' => 5150000000, 'penc_realisasi' => 'A', 'pct_lar' => 14.0, 'penc_lar' => 'A'],
+            ['periode' => 'Apr 2026', 'periode_raw' => '2026-04-30', 'year' => 2026, 'cabang' => 'KC PONOROGO', 'loan_os' => 1000000000, 'lar_value' => 120000000, 'realisasi_os' => 10900000000, 'penc_realisasi' => 'A', 'pct_lar' => 12.0, 'penc_lar' => 'A'],
+            ['periode' => 'Mei 2026', 'periode_raw' => '2026-05-31', 'year' => 2026, 'cabang' => 'KC PONOROGO', 'loan_os' => 1000000000, 'lar_value' => 130700000, 'realisasi_os' => 2350000000, 'penc_realisasi' => 'A', 'pct_lar' => 13.07, 'penc_lar' => 'A'],
+            ['periode' => 'Jun 2026', 'periode_raw' => '2026-06-20', 'year' => 2026, 'cabang' => 'KC PONOROGO', 'loan_os' => 1000000000, 'lar_value' => 300000000, 'realisasi_os' => 2500000000, 'penc_realisasi' => 'A', 'pct_lar' => 30.0, 'penc_lar' => 'B'],
+        ]);
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $summaries = $this->invokePrivateMethod($controller, 'buildSmallHistorySummaries', [$details, '2026-06-20']);
+
+        $html = view('report.kinerjarm-detail-modal', [
+            'rm' => '00063020 - ANTON PURWANTO',
+            'segmen' => 'SMALL',
+            'details' => $details,
+            'smallSummariesByYear' => $summaries,
+            'selectedHistoryYear' => 2026,
+            'formatAmount' => fn ($value, int $decimals = 0) => number_format(((float) $value) / 1000000, $decimals, ',', '.'),
+            'formatPercent' => fn ($value, int $decimals = 2) => number_format((float) $value, $decimals, ',', '.'),
+        ])->render();
+
+        $this->assertSame(4730000000.0, $summaries['2026']['realisasi_os']);
+        $this->assertEqualsWithDelta(13.07, $summaries['2026']['pct_lar'], 0.0001);
+        $this->assertStringContainsString('Ratas Realisasi OS 2026', $html);
+        $this->assertStringContainsString('4.730', $html);
+        $this->assertStringContainsString('% LAR May 2026', $html);
+        $this->assertStringContainsString('13,07%', $html);
+        $this->assertStringContainsString('RATAS 2026', $html);
     }
 
     public function test_kinerjarm_consumer_history_modal_renders_target_and_pg(): void
@@ -299,6 +399,26 @@ class KinerjaRmFormattingTest extends TestCase
 
         $this->assertStringContainsString('<td class="text-center-important">0</td>', $html);
         $this->assertStringContainsString('<td>0,0</td>', $html);
+    }
+
+    public function test_kinerjarm_view_uses_kinerja_rm_ritel_label(): void
+    {
+        $view = file_get_contents(resource_path('views/report/kinerjarm.blade.php'));
+        $table = file_get_contents(resource_path('views/report/kinerjarm-table.blade.php'));
+        $sidebar = file_get_contents(resource_path('views/layouts/sidebar.blade.php'));
+
+        $this->assertStringContainsString("@section('title', 'Kinerja RM Ritel')", $view);
+        $this->assertStringContainsString('Kinerja RM Ritel', $view);
+        $this->assertStringContainsString('Kinerja-RM-Ritel', $view);
+        $this->assertStringContainsString('.rm-ritel-page .kinerja-table-container::-webkit-scrollbar-thumb', $view);
+        $this->assertStringContainsString('scrollbar-color: #cbd5e1 #ffffff', $view);
+        $this->assertStringNotContainsString('scrollbar-color: #1d4ed8 #dbeafe', $view);
+        $this->assertStringContainsString('OS & Kualitas', $table);
+        $this->assertStringContainsString('Navigasi Kinerja RM Ritel', $table);
+        $this->assertStringContainsString('<p>Kinerja RM Ritel</p>', $sidebar);
+        $this->assertStringNotContainsString('Dashboard RM Ritel', $view);
+        $this->assertStringNotContainsString('Kinerja RM Performance Report', $view);
+        $this->assertStringNotContainsString('Report RM Performance', $view);
     }
 
     private function invokePrivateMethod(object $object, string $method, array $arguments = []): mixed

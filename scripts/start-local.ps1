@@ -105,27 +105,8 @@ $queueWorkerMaxJobs = Get-IntSetting -Value $WorkerMaxJobs -EnvName 'ABAH_WORKER
 $queueWorkerMaxTime = Get-IntSetting -Value $WorkerMaxTime -EnvName 'ABAH_WORKER_MAX_TIME' -Default 3600
 $startupMigrateTimeout = Get-IntSetting -Value $null -EnvName 'ABAH_START_MIGRATE_TIMEOUT' -Default 240
 $startupQueueRestartTimeout = Get-IntSetting -Value $null -EnvName 'ABAH_START_QUEUE_RESTART_TIMEOUT' -Default 60
-$startupDdnsTimeout = Get-IntSetting -Value $null -EnvName 'ABAH_START_DDNS_TIMEOUT' -Default 90
 
 Write-Host ("Worker policy: memory {0}MB, max-jobs {1}, max-time {2}s." -f $queueWorkerMemory, $queueWorkerMaxJobs, $queueWorkerMaxTime)
-
-Write-Host ("Memeriksa akses publik dan DuckDNS (timeout {0}s)..." -f $startupDdnsTimeout)
-try {
-    $networkHealthResult = Invoke-ProcessWithTimeout `
-        -FilePath 'php' `
-        -ArgumentList @('artisan', 'network:public-health', '--fix', '--force') `
-        -TimeoutSeconds $startupDdnsTimeout
-
-    if ($networkHealthResult.TimedOut) {
-        Write-Warning ("Public health check melewati timeout {0}s. Scheduler Laravel akan mencoba lagi berkala." -f $startupDdnsTimeout)
-    } elseif ($networkHealthResult.ExitCode -eq 0) {
-        Write-Host 'Akses publik dan DuckDNS sehat.'
-    } else {
-        Write-Warning ("Public health check keluar dengan kode {0}. Scheduler Laravel akan mencoba lagi berkala." -f $networkHealthResult.ExitCode)
-    }
-} catch {
-    Write-Warning ("Tidak dapat menjalankan public health check: {0}" -f $_.Exception.Message)
-}
 
 # Ensure schema is current before spawning workers. Critical for snapshot dirty-period
 # triggers (migration 2026_05_12_000002_create_dirty_marker_triggers.php) which let

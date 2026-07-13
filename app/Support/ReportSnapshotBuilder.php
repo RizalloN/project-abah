@@ -43,7 +43,7 @@ class ReportSnapshotBuilder
         ],
         'MICRO' => [
             ['source_segment' => 'MICRO', 'products' => ['BRIGUNA-MIKRO', 'KUPEDES', 'CASHCOLLATERAL', 'KPR']],
-            ['source_segment' => 'MICRO', 'products' => ['KUR-MIKRO'], 'descriptions' => ['Kredit Mikro - KUR Ritel 2015']],
+            ['source_segment' => 'MICRO', 'products' => ['KUR-MIKRO', 'KUR-KECIL'], 'descriptions' => ['Kredit Mikro - KUR Ritel 2015']],
         ],
     ];
 
@@ -2415,8 +2415,10 @@ class ReportSnapshotBuilder
         $periodStart = $periodDate->copy()->startOfMonth()->toDateString();
         $kurRitelDescriptionSql = $this->buildKinerjaRmNormalizedSql('d.description');
         $kurRitelDescriptionToken = $this->normalizeKinerjaRmToken('Kredit Mikro - KUR Ritel 2015');
-        $realisasiDateColumn = 'd.' . $this->resolvePerformanceRmRealisasiDateColumn();
-        $currentCifRealisasiDateColumn = 'd2.' . $this->resolvePerformanceRmRealisasiDateColumn();
+        $rawRealisasiDateColumn = 'd.' . $this->resolvePerformanceRmRealisasiDateColumn();
+        $rawCurrentCifRealisasiDateColumn = 'd2.' . $this->resolvePerformanceRmRealisasiDateColumn();
+        $realisasiDateColumn = $this->performanceRmEffectiveRealisasiDateSql($rawRealisasiDateColumn, 'd.periode');
+        $currentCifRealisasiDateColumn = $this->performanceRmEffectiveRealisasiDateSql($rawCurrentCifRealisasiDateColumn, 'd2.periode');
         $consumerPreviousPeriod = $segment === 'CONSUMER'
             ? $this->resolvePreviousMonthPerformanceRmPeriod($period)
             : null;
@@ -2594,7 +2596,7 @@ class ReportSnapshotBuilder
             '? as segmen',
             "{$canonicalProductSql} as produk",
             'SUM(COALESCE(d.plafon, 0)) as plafon',
-            "SUM(CASE WHEN d.segmen_kinerja = 'MICRO' AND d.produk_kinerja = 'KURMIKRO' AND {$kurRitelDescriptionSql} = ? THEN COALESCE(d.plafon, 0) ELSE COALESCE(d.baki_debet1, 0) END) as loan_os",
+            "SUM(CASE WHEN d.segmen_kinerja = 'MICRO' AND d.produk_kinerja IN ('KURMIKRO', 'KURKECIL') AND {$kurRitelDescriptionSql} = ? THEN COALESCE(d.plafon, 0) ELSE COALESCE(d.baki_debet1, 0) END) as loan_os",
             'SUM(CASE WHEN d.kolek = 1 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as lancar_os',
             'SUM(CASE WHEN d.kolek = 2 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as sml_os',
             'SUM(CASE WHEN d.kolek > 2 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as npl_os',
@@ -2602,6 +2604,8 @@ class ReportSnapshotBuilder
             'COUNT(DISTINCT d.nomor_rekening1) as total_deb'
         );
         array_push($bindings, $segment, $kurRitelDescriptionToken);
+
+        $realisasiAmountSql = 'COALESCE(d.plafon, 0)';
 
         $metricSelects = [
             'lancar_deb' => 'COUNT(DISTINCT CASE WHEN d.kolek = 1 THEN d.nomor_rekening1 END) as lancar_deb',
@@ -2612,19 +2616,19 @@ class ReportSnapshotBuilder
                 : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as realisasi_deb",
             'realisasi_os' => $segment === 'CONSUMER'
                 ? ($hasConsumerSurplusBase ? 'COALESCE(MAX(consumer_surplus.surplus_os), 0) as realisasi_os' : '0 as realisasi_os')
-                : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as realisasi_os",
+                : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN {$realisasiAmountSql} ELSE 0 END) as realisasi_os",
             'w1_realisasi_deb' => $segment === 'CONSUMER' ? '0 as w1_realisasi_deb' : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w1_realisasi_deb",
-            'w1_realisasi_os' => $segment === 'CONSUMER' ? '0 as w1_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w1_realisasi_os",
+            'w1_realisasi_os' => $segment === 'CONSUMER' ? '0 as w1_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN {$realisasiAmountSql} ELSE 0 END) as w1_realisasi_os",
             'w2_realisasi_deb' => $segment === 'CONSUMER' ? '0 as w2_realisasi_deb' : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w2_realisasi_deb",
-            'w2_realisasi_os' => $segment === 'CONSUMER' ? '0 as w2_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w2_realisasi_os",
+            'w2_realisasi_os' => $segment === 'CONSUMER' ? '0 as w2_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN {$realisasiAmountSql} ELSE 0 END) as w2_realisasi_os",
             'w3_realisasi_deb' => $segment === 'CONSUMER' ? '0 as w3_realisasi_deb' : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w3_realisasi_deb",
-            'w3_realisasi_os' => $segment === 'CONSUMER' ? '0 as w3_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w3_realisasi_os",
+            'w3_realisasi_os' => $segment === 'CONSUMER' ? '0 as w3_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN {$realisasiAmountSql} ELSE 0 END) as w3_realisasi_os",
             'w4_realisasi_deb' => $segment === 'CONSUMER' ? '0 as w4_realisasi_deb' : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w4_realisasi_deb",
-            'w4_realisasi_os' => $segment === 'CONSUMER' ? '0 as w4_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w4_realisasi_os",
+            'w4_realisasi_os' => $segment === 'CONSUMER' ? '0 as w4_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN {$realisasiAmountSql} ELSE 0 END) as w4_realisasi_os",
             'lt_250_realisasi_deb' => $segment === 'CONSUMER' ? '0 as lt_250_realisasi_deb' : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) < 250000000 THEN d.nomor_rekening1 END) as lt_250_realisasi_deb",
-            'lt_250_realisasi_os' => $segment === 'CONSUMER' ? '0 as lt_250_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) < 250000000 THEN COALESCE(d.plafon, 0) ELSE 0 END) as lt_250_realisasi_os",
+            'lt_250_realisasi_os' => $segment === 'CONSUMER' ? '0 as lt_250_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) < 250000000 THEN {$realisasiAmountSql} ELSE 0 END) as lt_250_realisasi_os",
             'gt_250_realisasi_deb' => $segment === 'CONSUMER' ? '0 as gt_250_realisasi_deb' : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) > 250000000 THEN d.nomor_rekening1 END) as gt_250_realisasi_deb",
-            'gt_250_realisasi_os' => $segment === 'CONSUMER' ? '0 as gt_250_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) > 250000000 THEN COALESCE(d.plafon, 0) ELSE 0 END) as gt_250_realisasi_os",
+            'gt_250_realisasi_os' => $segment === 'CONSUMER' ? '0 as gt_250_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) > 250000000 THEN {$realisasiAmountSql} ELSE 0 END) as gt_250_realisasi_os",
         ];
         $metricBindings = [
             'realisasi_deb' => $segment === 'CONSUMER' ? [] : [$periodStart, $period],
@@ -2776,7 +2780,10 @@ class ReportSnapshotBuilder
         }
 
         $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
-        $realisasiDateColumn = $this->resolvePerformanceRmRealisasiDateColumn();
+        $realisasiDateColumn = $this->performanceRmEffectiveRealisasiDateSql(
+            $this->resolvePerformanceRmRealisasiDateColumn(),
+            'periode'
+        );
 
         $currentRows = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
@@ -2788,7 +2795,7 @@ class ReportSnapshotBuilder
             ->where('nomor_rekening1', '<>', '')
             ->whereNotNull('cifno')
             ->where('cifno', '<>', '')
-            ->whereBetween($realisasiDateColumn, [$periodStart, $period])
+            ->whereRaw("{$realisasiDateColumn} BETWEEN ? AND ?", [$periodStart, $period])
             ->selectRaw("COALESCE(cabang_normalized, '') as cabang")
             ->selectRaw("COALESCE(unit_normalized, '') as unit")
             ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
@@ -2969,7 +2976,7 @@ class ReportSnapshotBuilder
         return match (strtoupper(trim($segment))) {
             'CONSUMER' => "CASE {$column} WHEN 'BRIGUNAKONSUMER' THEN 'BRIGUNA-KONSUMER' WHEN 'KPR' THEN 'KPR' ELSE UPPER(TRIM(COALESCE({$column}, ''))) END",
             'SMALL' => "CASE {$column} WHEN 'COMMERCIAL' THEN 'SMALL' WHEN 'CASHCALL' THEN 'SMALL' WHEN 'CASHCOLLATERAL' THEN 'SMALL' WHEN 'CASHCOLL' THEN 'SMALL' WHEN 'SMALL' THEN 'SMALL' ELSE UPPER(TRIM(COALESCE({$column}, ''))) END",
-            'MICRO' => "CASE {$column} WHEN 'BRIGUNAMIKRO' THEN 'BRIGUNA-MIKRO' WHEN 'KUPEDES' THEN 'KUPEDES' WHEN 'KURMIKRO' THEN 'KUR-MIKRO' WHEN 'CASHCOLLATERAL' THEN 'CASHCOLLATERAL' WHEN 'CASHCOLL' THEN 'CASHCOLLATERAL' WHEN 'KPR' THEN 'KPR' WHEN 'KURSMALL' THEN 'KUR-SMALL' ELSE UPPER(TRIM(COALESCE({$column}, ''))) END",
+            'MICRO' => "CASE {$column} WHEN 'BRIGUNAMIKRO' THEN 'BRIGUNA-MIKRO' WHEN 'KUPEDES' THEN 'KUPEDES' WHEN 'KURMIKRO' THEN 'KUR-MIKRO' WHEN 'KURKECIL' THEN 'KUR-MIKRO' WHEN 'CASHCOLLATERAL' THEN 'CASHCOLLATERAL' WHEN 'CASHCOLL' THEN 'CASHCOLLATERAL' WHEN 'KPR' THEN 'KPR' WHEN 'KURSMALL' THEN 'KUR-SMALL' ELSE UPPER(TRIM(COALESCE({$column}, ''))) END",
             default => "UPPER(TRIM(COALESCE({$column}, '')))",
         };
     }
@@ -2980,61 +2987,135 @@ class ReportSnapshotBuilder
             return;
         }
 
-        $snapshotTable = $this->quoteIdentifier($snapshotTable ?? self::PERFORMANCE_RM_SNAPSHOT_TABLE);
-        $dateObj = Carbon::parse($period);
-        $yearStart = $dateObj->copy()->startOfYear()->toDateString();
-        $periodStart = $dateObj->copy()->startOfMonth()->toDateString();
-        $month = max(1, $dateObj->month);
+        $targetTable = $snapshotTable ?? self::PERFORMANCE_RM_SNAPSHOT_TABLE;
+        $rmKeys = DB::table($targetTable)
+            ->where('periode', $period)
+            ->where('segmen', 'SMALL')
+            ->distinct()
+            ->pluck('rm')
+            ->map(fn ($rm): string => (string) $rm)
+            ->all();
 
-        $this->statementWithConcurrencyRetry('performance rm quadrant update', fn (): bool => DB::statement(
-            "
-            UPDATE {$snapshotTable} p
-            INNER JOIN (
-                SELECT
-                    curr.rm,
-                    curr.loan_os,
-                    curr.sml_os,
-                    curr.npl_os,
-                    curr.restruk_os,
-                    curr.realisasi_os,
-                    COALESCE(hist.history_realisasi_os, 0) as history_realisasi_os
-                FROM (
-                    SELECT
-                        rm,
-                        SUM(COALESCE(loan_os, 0)) as loan_os,
-                        SUM(COALESCE(sml_os, 0)) as sml_os,
-                        SUM(COALESCE(npl_os, 0)) as npl_os,
-                        SUM(COALESCE(restruk_os, 0)) as restruk_os,
-                        SUM(COALESCE(realisasi_os, 0)) as realisasi_os
-                    FROM {$snapshotTable}
-                    WHERE periode = ?
-                        AND segmen = 'SMALL'
-                    GROUP BY rm
-                ) curr
-                LEFT JOIN (
-                    SELECT
-                        rm,
-                        SUM(COALESCE(realisasi_os, 0)) as history_realisasi_os
-                    FROM {$snapshotTable}
-                    WHERE segmen = 'SMALL'
-                        AND produk IN ('SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL')
-                        AND periode >= ?
-                        AND periode < ?
-                    GROUP BY rm
-                ) hist ON hist.rm = curr.rm
-            ) grade ON grade.rm = p.rm
-            SET p.quadrant = CASE
-                WHEN (((grade.history_realisasi_os + grade.realisasi_os) / ?) / 1000000) >= 1600
-                    AND (CASE WHEN grade.loan_os > 0 THEN ((grade.restruk_os + grade.sml_os + grade.npl_os) / grade.loan_os) * 100 ELSE 0 END) < 17.5 THEN 1
-                WHEN (((grade.history_realisasi_os + grade.realisasi_os) / ?) / 1000000) >= 1600 THEN 2
-                WHEN (CASE WHEN grade.loan_os > 0 THEN ((grade.restruk_os + grade.sml_os + grade.npl_os) / grade.loan_os) * 100 ELSE 0 END) < 17.5 THEN 3
-                ELSE 4
-            END
-            WHERE p.periode = ?
-                AND p.segmen = 'SMALL'
-            ",
-            [$period, $yearStart, $periodStart, $month, $month, $period]
-        ));
+        if ($rmKeys === []) {
+            return;
+        }
+
+        $closedPeriods = $this->resolveSmallClosedMonthlySnapshotPeriods($period);
+        if ($closedPeriods === []) {
+            DB::table($targetTable)
+                ->where('periode', $period)
+                ->where('segmen', 'SMALL')
+                ->update(['quadrant' => null]);
+
+            return;
+        }
+
+        $realisasiByRm = array_fill_keys($rmKeys, 0.0);
+        $historicalPeriods = array_values(array_filter($closedPeriods, fn (string $closedPeriod): bool => $closedPeriod !== $period));
+
+        if ($historicalPeriods !== []) {
+            DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+                ->whereIn('rm', $rmKeys)
+                ->where('segmen', 'SMALL')
+                ->whereIn('produk', ['SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL'])
+                ->whereIn('periode', $historicalPeriods)
+                ->selectRaw('rm, SUM(COALESCE(realisasi_os, 0)) as total_realisasi_os')
+                ->groupBy('rm')
+                ->get()
+                ->each(function ($row) use (&$realisasiByRm): void {
+                    $realisasiByRm[(string) $row->rm] = (float) $row->total_realisasi_os;
+                });
+        }
+
+        if (in_array($period, $closedPeriods, true)) {
+            DB::table($targetTable)
+                ->whereIn('rm', $rmKeys)
+                ->where('periode', $period)
+                ->where('segmen', 'SMALL')
+                ->selectRaw('rm, SUM(COALESCE(realisasi_os, 0)) as total_realisasi_os')
+                ->groupBy('rm')
+                ->get()
+                ->each(function ($row) use (&$realisasiByRm): void {
+                    $rm = (string) $row->rm;
+                    $realisasiByRm[$rm] = ($realisasiByRm[$rm] ?? 0.0) + (float) $row->total_realisasi_os;
+                });
+        }
+
+        $lastClosedPeriod = $closedPeriods[array_key_last($closedPeriods)];
+        $larTable = $lastClosedPeriod === $period ? $targetTable : self::PERFORMANCE_RM_SNAPSHOT_TABLE;
+        $larByRm = DB::table($larTable)
+            ->whereIn('rm', $rmKeys)
+            ->where('periode', $lastClosedPeriod)
+            ->where('segmen', 'SMALL')
+            ->selectRaw('rm, SUM(COALESCE(loan_os, 0)) as loan_os')
+            ->selectRaw('SUM(COALESCE(restruk_os, 0) + COALESCE(sml_os, 0) + COALESCE(npl_os, 0)) as lar_value')
+            ->groupBy('rm')
+            ->get()
+            ->keyBy(fn ($row): string => (string) $row->rm);
+        $periodCount = count($closedPeriods);
+
+        foreach ($rmKeys as $rm) {
+            $lar = $larByRm->get($rm);
+            $loanOs = (float) ($lar->loan_os ?? 0);
+            $quadrant = null;
+
+            if ($loanOs > 0) {
+                $ratasOs = (float) ($realisasiByRm[$rm] ?? 0.0) / $periodCount;
+                $larPct = ((float) ($lar->lar_value ?? 0.0) / $loanOs) * 100;
+                $quadrant = $this->calculateSmallPerformanceRmQuadrant($ratasOs, $larPct);
+            }
+
+            DB::table($targetTable)
+                ->where('periode', $period)
+                ->where('segmen', 'SMALL')
+                ->where('rm', $rm)
+                ->update(['quadrant' => $quadrant]);
+        }
+    }
+
+    private function resolveSmallClosedMonthlySnapshotPeriods(string $period): array
+    {
+        $selectedDate = Carbon::parse($period)->startOfDay();
+        $closedThrough = $selectedDate->isLastOfMonth()
+            ? $selectedDate
+            : $selectedDate->copy()->startOfMonth()->subDay();
+
+        if ($closedThrough->year !== $selectedDate->year) {
+            return [];
+        }
+
+        $periods = DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+            ->where('segmen', 'SMALL')
+            ->whereBetween('periode', [
+                $selectedDate->copy()->startOfYear()->toDateString(),
+                $closedThrough->toDateString(),
+            ])
+            ->distinct()
+            ->orderBy('periode')
+            ->pluck('periode')
+            ->map(fn ($snapshotPeriod): string => (string) $snapshotPeriod)
+            ->filter(fn (string $snapshotPeriod): bool => Carbon::parse($snapshotPeriod)->isLastOfMonth())
+            ->values()
+            ->all();
+
+        if ($selectedDate->isLastOfMonth() && !in_array($period, $periods, true)) {
+            $periods[] = $period;
+        }
+
+        return array_values(array_unique($periods));
+    }
+
+    private function calculateSmallPerformanceRmQuadrant(float $ratasOs, float $larPct): int
+    {
+        $isRatasA = ($ratasOs / 1000000) >= 1600;
+        $isLarA = $larPct < 17.5;
+
+        return match (true) {
+            $isRatasA && $isLarA => 1,
+            $isRatasA => 2,
+            $isLarA => 3,
+            default => 4,
+        };
     }
 
     private function syncPerformanceRmSnapshotRowsFromTemp(string $period, string $tempTable): void
@@ -3472,7 +3553,10 @@ class ReportSnapshotBuilder
         $periodDate = Carbon::parse($period);
         $kurRitelDescriptionSql = $this->buildKinerjaRmNormalizedSql('description');
         $kurRitelDescriptionToken = $this->normalizeKinerjaRmToken('Kredit Mikro - KUR Ritel 2015');
-        $realisasiDateColumn = $this->resolvePerformanceRmRealisasiDateColumn();
+        $realisasiDateColumn = $this->performanceRmEffectiveRealisasiDateSql(
+            $this->resolvePerformanceRmRealisasiDateColumn(),
+            'periode'
+        );
         $weekRanges = [
             'w1' => [$periodDate->copy()->startOfMonth(), $periodDate->copy()->startOfMonth()->addDays(6)],
             'w2' => [$periodDate->copy()->startOfMonth()->addDays(7), $periodDate->copy()->startOfMonth()->addDays(13)],
@@ -3486,6 +3570,7 @@ class ReportSnapshotBuilder
             ],
             $weekRanges
         );
+        $realisasiAmountSql = 'COALESCE(plafon, 0)';
 
         $query = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
@@ -3515,8 +3600,8 @@ class ReportSnapshotBuilder
             ])
             ->selectRaw("SUM(COALESCE(plafon, 0)) as plafon")
             ->selectRaw(
-                "SUM(CASE WHEN segmen_kinerja = ? AND produk_kinerja = ? AND {$kurRitelDescriptionSql} = ? THEN COALESCE(plafon, 0) ELSE COALESCE(baki_debet1, 0) END) as loan_os",
-                ['MICRO', 'KURMIKRO', $kurRitelDescriptionToken]
+                "SUM(CASE WHEN segmen_kinerja = ? AND produk_kinerja IN (?, ?) AND {$kurRitelDescriptionSql} = ? THEN COALESCE(plafon, 0) ELSE COALESCE(baki_debet1, 0) END) as loan_os",
+                ['MICRO', 'KURMIKRO', 'KURKECIL', $kurRitelDescriptionToken]
             )
             ->selectRaw("SUM(CASE WHEN kolek = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os")
             ->selectRaw("COUNT(DISTINCT CASE WHEN kolek = 1 THEN nomor_rekening1 END) as lancar_deb")
@@ -3527,19 +3612,19 @@ class ReportSnapshotBuilder
             ->selectRaw("SUM(CASE WHEN kolek = 1 AND COALESCE(flag_restruk, '') = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
             ->selectRaw("COUNT(DISTINCT nomor_rekening1) as total_deb")
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as realisasi_deb", [$periodStart, $period])
-            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os", [$periodStart, $period])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN {$realisasiAmountSql} ELSE 0 END) as realisasi_os", [$periodStart, $period])
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as w1_realisasi_deb", $weekRanges['w1'])
-            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as w1_realisasi_os", $weekRanges['w1'])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN {$realisasiAmountSql} ELSE 0 END) as w1_realisasi_os", $weekRanges['w1'])
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as w2_realisasi_deb", $weekRanges['w2'])
-            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as w2_realisasi_os", $weekRanges['w2'])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN {$realisasiAmountSql} ELSE 0 END) as w2_realisasi_os", $weekRanges['w2'])
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as w3_realisasi_deb", $weekRanges['w3'])
-            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as w3_realisasi_os", $weekRanges['w3'])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN {$realisasiAmountSql} ELSE 0 END) as w3_realisasi_os", $weekRanges['w3'])
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as w4_realisasi_deb", $weekRanges['w4'])
-            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as w4_realisasi_os", $weekRanges['w4'])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN {$realisasiAmountSql} ELSE 0 END) as w4_realisasi_os", $weekRanges['w4'])
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) < 250000000 THEN nomor_rekening1 END) as lt_250_realisasi_deb", [$periodStart, $period])
-            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) < 250000000 THEN COALESCE(plafon, 0) ELSE 0 END) as lt_250_realisasi_os", [$periodStart, $period])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) < 250000000 THEN {$realisasiAmountSql} ELSE 0 END) as lt_250_realisasi_os", [$periodStart, $period])
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) > 250000000 THEN nomor_rekening1 END) as gt_250_realisasi_deb", [$periodStart, $period])
-            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) > 250000000 THEN COALESCE(plafon, 0) ELSE 0 END) as gt_250_realisasi_os", [$periodStart, $period])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) > 250000000 THEN {$realisasiAmountSql} ELSE 0 END) as gt_250_realisasi_os", [$periodStart, $period])
             // Keep full alphanumeric CIF intact for downstream snapshot matching.
             ->selectRaw(DB::getDriverName() === 'sqlite'
                 ? 'GROUP_CONCAT(DISTINCT UPPER(TRIM(cifno))) as cifno_list'
@@ -3595,7 +3680,10 @@ class ReportSnapshotBuilder
         }
 
         $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
-        $realisasiDateColumn = $this->resolvePerformanceRmRealisasiDateColumn();
+        $realisasiDateColumn = $this->performanceRmEffectiveRealisasiDateSql(
+            $this->resolvePerformanceRmRealisasiDateColumn(),
+            'periode'
+        );
 
         $currentAccountKeys = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
@@ -3648,7 +3736,7 @@ class ReportSnapshotBuilder
             ->where('nomor_rekening1', '<>', '')
             ->whereNotNull('cifno')
             ->where('cifno', '<>', '')
-            ->whereBetween($realisasiDateColumn, [$periodStart, $period])
+            ->whereRaw("{$realisasiDateColumn} BETWEEN ? AND ?", [$periodStart, $period])
             ->select([
                 'cabang_normalized',
                 'unit_normalized',
@@ -3768,33 +3856,58 @@ class ReportSnapshotBuilder
             return $grades;
         }
 
-        $dateObj = Carbon::parse($period);
-        $year = $dateObj->year;
-        $month = $dateObj->month;
-        $periodStart = $dateObj->copy()->startOfMonth()->toDateString();
+        $closedPeriods = $this->resolveSmallClosedMonthlySnapshotPeriods($period);
+        if ($closedPeriods === []) {
+            return $grades;
+        }
 
-        // Batch query untuk semua RM sekaligus (bukan N individual queries)
-        $historySums = DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
-            ->whereIn('rm', $rmKeys)
-            ->where('segmen', 'SMALL')
-            ->whereIn('produk', ['SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL'])
-            ->whereYear('periode', $year)
-            ->where('periode', '<', $periodStart)
-            ->selectRaw('rm, SUM(realisasi_os) as total')
-            ->groupBy('rm')
-            ->pluck('total', 'rm')
-            ->all();
+        $historicalPeriods = array_values(array_filter($closedPeriods, fn (string $closedPeriod): bool => $closedPeriod !== $period));
+        $historySums = $historicalPeriods !== []
+            ? DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+                ->whereIn('rm', $rmKeys)
+                ->where('segmen', 'SMALL')
+                ->whereIn('produk', ['SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL'])
+                ->whereIn('periode', $historicalPeriods)
+                ->selectRaw('rm, SUM(realisasi_os) as total')
+                ->groupBy('rm')
+                ->pluck('total', 'rm')
+                ->all()
+            : [];
+        $lastClosedPeriod = $closedPeriods[array_key_last($closedPeriods)];
+        $larByRm = $lastClosedPeriod !== $period
+            ? DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+                ->whereIn('rm', $rmKeys)
+                ->where('segmen', 'SMALL')
+                ->where('periode', $lastClosedPeriod)
+                ->selectRaw('rm, SUM(loan_os) as loan_os')
+                ->selectRaw('SUM(restruk_os + sml_os + npl_os) as lar_value')
+                ->groupBy('rm')
+                ->get()
+                ->keyBy(fn ($row): string => (string) $row->rm)
+            : collect();
+        $periodCount = count($closedPeriods);
 
         foreach ($rmKeys as $rm) {
             $historySum = (float) ($historySums[$rm] ?? 0);
-            $ratasInMillion = (($historySum + $rmTotals[$rm]['realisasi_os']) / max(1, $month)) / 1000000;
-            $isRatasA = $ratasInMillion >= 1600;
+            if (in_array($period, $closedPeriods, true)) {
+                $historySum += (float) $rmTotals[$rm]['realisasi_os'];
+            }
 
-            $larValue = $rmTotals[$rm]['restruk'] + $rmTotals[$rm]['sml'] + $rmTotals[$rm]['npl'];
-            $pctLar = $rmTotals[$rm]['loan'] > 0 ? ($larValue / $rmTotals[$rm]['loan']) * 100 : 0;
-            $isLarA = $pctLar < 17.5;
+            $lar = $lastClosedPeriod === $period ? null : $larByRm->get($rm);
+            $loanOs = $lastClosedPeriod === $period
+                ? (float) $rmTotals[$rm]['loan']
+                : (float) ($lar->loan_os ?? 0);
+            $larValue = $lastClosedPeriod === $period
+                ? (float) $rmTotals[$rm]['restruk'] + (float) $rmTotals[$rm]['sml'] + (float) $rmTotals[$rm]['npl']
+                : (float) ($lar->lar_value ?? 0);
 
-            $grades[$rm] = ($isRatasA && $isLarA) ? 1 : (($isRatasA && !$isLarA) ? 2 : ((!$isRatasA && $isLarA) ? 3 : 4));
+            if ($loanOs <= 0) {
+                continue;
+            }
+
+            $ratasOs = $historySum / $periodCount;
+            $larPct = ($larValue / $loanOs) * 100;
+            $grades[$rm] = $this->calculateSmallPerformanceRmQuadrant($ratasOs, $larPct);
         }
 
         return $grades;
@@ -3805,6 +3918,11 @@ class ReportSnapshotBuilder
         return Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi1')
             ? 'tgl_realisasi1'
             : 'tgl_realisasi';
+    }
+
+    private function performanceRmEffectiveRealisasiDateSql(string $dateColumn, string $periodColumn): string
+    {
+        return $dateColumn;
     }
 
     private function buildKinerjaRmNormalizedSql(string $column): string
@@ -3875,6 +3993,7 @@ class ReportSnapshotBuilder
                 'BRIGUNAMIKRO' => 'BRIGUNA-MIKRO',
                 'KUPEDES' => 'KUPEDES',
                 'KURMIKRO' => 'KUR-MIKRO',
+                'KURKECIL' => 'KUR-MIKRO',
                 'CASHCOLLATERAL' => 'CASHCOLLATERAL',
                 'CASHCOLL' => 'CASHCOLLATERAL',
                 'KPR' => 'KPR',

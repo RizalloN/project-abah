@@ -210,6 +210,48 @@ def is_gi405_recovery_table(table_name) -> bool:
     return str(table_name or '').strip().lower() == 'gi405_recovery'
 
 
+def is_hourly_dpk_table(table_name) -> bool:
+    return str(table_name or '').strip().lower() == 'hourly_dpk'
+
+
+def is_hourly_dpk_position_header(header_name) -> bool:
+    return canonicalize_header(header_name) in {'POSISI', 'MONTH_DAY_YEAR_OF_POSISI', 'MINUTE_OF_POSISI'}
+
+
+def normalize_hourly_dpk_datetime(value):
+    import math
+
+    if value is None:
+        return None
+
+    if isinstance(value, float) and math.isnan(value):
+        return None
+
+    if isinstance(value, datetime):
+        return value.strftime('%Y-%m-%d %H:%M:%S')
+
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day).strftime('%Y-%m-%d %H:%M:%S')
+
+    value_str = str(value).strip()
+    if value_str.lower() in NULL_STRS:
+        return None
+
+    try:
+        num = float(value_str)
+        d = datetime(1899, 12, 30) + timedelta(days=num)
+        return d.strftime('%Y-%m-%d %H:%M:%S')
+    except (ValueError, OverflowError, TypeError):
+        pass
+
+    try:
+        from dateutil import parser as dateutil_parser
+        normalized_date_text = normalize_locale_date_text(re.sub(r'\s+at\s+', ' ', value_str, flags=re.IGNORECASE))
+        return dateutil_parser.parse(normalized_date_text).strftime('%Y-%m-%d %H:%M:%S')
+    except Exception:
+        return None
+
+
 def normalize_decimal_value(value):
     if value is None:
         return None
@@ -508,9 +550,14 @@ def _run_process_inner(config):
     for row_list in row_values:
         mapped_data = {}
         pass_filter = True
+        hourly_position_raw = None
 
         for filter_idx, (original_index, h_name) in enumerate(valid_headers):
-            val = row_list[original_index] if original_index < len(row_list) else None
+            raw_val = row_list[original_index] if original_index < len(row_list) else None
+            if is_hourly_dpk_table(table_name) and is_hourly_dpk_position_header(h_name) and hourly_position_raw is None:
+                hourly_position_raw = raw_val
+
+            val = raw_val
             val = normalize_value(h_name, val, table_name)
 
             filter_key = str(filter_idx)
@@ -543,6 +590,13 @@ def _run_process_inner(config):
             if manual_col.lower() in skip_cols:
                 continue
             final_row[manual_col] = manual_value
+
+        if is_hourly_dpk_table(table_name):
+            posisi_jam_col = table_columns_map.get('posisi_jam', 'posisi_jam')
+            if (not table_columns or 'posisi_jam' in table_columns_map) and posisi_jam_col.lower() not in skip_cols:
+                posisi_jam = normalize_hourly_dpk_datetime(hourly_position_raw)
+                if posisi_jam is not None:
+                    final_row[posisi_jam_col] = posisi_jam
 
         if is_simpanan_multipn and not is_valid_simpanan_import_row(final_row):
             continue
@@ -639,7 +693,10 @@ def run_stage(config):
 
             for original_index, header_name in valid_headers:
                 val = row_list[original_index] if original_index < len(row_list) else None
-                val = normalize_value(header_name, val, table_name)
+                if is_hourly_dpk_table(table_name) and is_hourly_dpk_position_header(header_name):
+                    val = normalize_hourly_dpk_datetime(val) or normalize_value(header_name, val, table_name)
+                else:
+                    val = normalize_value(header_name, val, table_name)
                 if val is not None and str(val).strip() != '':
                     has_value = True
                 output_row.append(r'\N' if val is None else val)

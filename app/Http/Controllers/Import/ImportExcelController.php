@@ -267,24 +267,43 @@ class ImportExcelController extends Controller
 
     private function forceSsaAlmafactsPositionHeadersByIndex(array $headers): array
     {
-        if (count($headers) < 8) {
+        if (count($headers) < 6) {
             return $headers;
         }
 
         foreach ([
             0 => 'month_day_year_of_posisi',
             1 => 'kanca_konsolidasi',
-            2 => 'jenis_unit_kerja',
-            3 => 'kode_unit_kerja',
-            4 => 'unit_kerja',
-            5 => 'keterangan_1',
-            6 => 'keterangan_2',
-            7 => 'nominal',
+            2 => 'kode_unit_kerja',
+            3 => 'unit_kerja',
+            4 => 'keterangan',
+            5 => 'saldo',
         ] as $index => $header) {
             $headers[$index] = $header;
         }
 
         return $headers;
+    }
+
+    private function normalizeSsaAlmafactsForwardFillRow(array $row, array &$lastValues): array
+    {
+        foreach ([0, 1, 2, 3, 5] as $index) {
+            $value = $row[$index] ?? null;
+            $text = trim((string) ($value ?? ''));
+            $columnLetter = chr(65 + $index);
+            $isFormulaReference = $text !== '' && preg_match('/^=' . preg_quote($columnLetter, '/') . '\d+$/i', $text) === 1;
+
+            if (($text === '' || $isFormulaReference) && array_key_exists($index, $lastValues)) {
+                $row[$index] = $lastValues[$index];
+                continue;
+            }
+
+            if ($text !== '' && !$isFormulaReference) {
+                $lastValues[$index] = $value;
+            }
+        }
+
+        return $row;
     }
 
     private function forceLw321NpdPositionHeadersByIndex(array $headers): array
@@ -468,8 +487,6 @@ class ImportExcelController extends Controller
             'daily_loan_dinamis' => 'Daily Loan Dinamis',
             'simpanan_multipn' => 'Simpanan MultiPN',
             'lw321pn' => 'LW321PN - Kolektibilitas dan Tunggakan Per AO',
-            'lw321_npd' => 'LW321 NPD Micro',
-            'lw321_npdd' => 'LW321 NPDD Micro',
             'gi405_recovery' => 'GI405 Recovery',
             L1133CsvImporter::TABLE => 'L1133 - Laporan Harian Pinjaman Kanwil',
             default => $this->resolveActiveReport()?->nama_report ?? 'Preview Data',
@@ -713,7 +730,7 @@ class ImportExcelController extends Controller
     {
         $resolvedTable = strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName())));
 
-        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'lw321pn', 'lw321_npd', 'lw321_npdd'], true);
+        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'lw321pn'], true);
     }
 
     private function normalizeImportActiveFilters(array $filters, ?string $tableName = null): array
@@ -3036,6 +3053,8 @@ class ImportExcelController extends Controller
             $normalizedHeaders = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
         }
 
+        $this->assertValidHourlyDpkHeaders($tableName, $normalizedHeaders);
+
         $cacheKey = $tableName . '|' . sha1(json_encode([
             'headers' => array_values($normalizedHeaders),
             'filters' => $activeFilters,
@@ -3142,7 +3161,7 @@ class ImportExcelController extends Controller
         $integerColumnsLookup = $this->getExcelIntegerColumnsLookup();
         if ($this->isSsaAlmafactsTable($tableName)) {
             $dateColumnsLookup['MONTH_DAY_YEAR_OF_POSISI'] = true;
-            $decimalColumnsLookup['NOMINAL'] = true;
+            $decimalColumnsLookup['SALDO'] = true;
         }
         if ($this->isLw321PnTable($tableName)) {
             foreach ([
@@ -3263,6 +3282,15 @@ class ImportExcelController extends Controller
                 $this->resolveMappedDatabaseCandidates($headerName, $tableColumnsLookup, $tableColumnsByLower),
                 static fn ($candidateColumn): bool => !isset($skipColumnsLookup[strtolower((string) $candidateColumn)])
             ));
+            $decimalScale = null;
+            foreach ($mappedDbCandidates as $candidateColumn) {
+                $candidateMeta = $tableColumnMetaByLower[strtolower((string) $candidateColumn)] ?? null;
+                $candidateScale = is_array($candidateMeta) ? ($candidateMeta['scale'] ?? null) : null;
+                if (is_int($candidateScale) && $candidateScale >= 0) {
+                    $decimalScale = $candidateScale;
+                    break;
+                }
+            }
 
             $filterLookup = $filterLookups[$filterIdx] ?? null;
 
@@ -3280,7 +3308,7 @@ class ImportExcelController extends Controller
                 'is_date' => isset($dateColumnsLookup[$normalizedHeader]),
                 'is_decimal' => isset($decimalColumnsLookup[$normalizedHeader]),
                 'is_integer' => isset($integerColumnsLookup[$normalizedHeader]),
-                'comma_is_thousands' => $this->isSsaAlmafactsTable($tableName) && $normalizedHeader === 'NOMINAL',
+                'decimal_scale' => $decimalScale,
                 'month_name_first_date' => $this->isSsaAlmafactsTable($tableName) && $normalizedHeader === 'MONTH_DAY_YEAR_OF_POSISI',
                 'filter_lookup' => $filterLookup,
                 'db_candidates' => $mappedDbCandidates,
@@ -3675,6 +3703,13 @@ class ImportExcelController extends Controller
             }
 
             $columns[] = $context['table_columns_by_lower'][$manualColumnLower] ?? $manualColumnLower;
+        }
+
+        if (
+            strtolower(trim($tableName)) === 'hourly_dpk'
+            && isset($context['table_columns_lookup']['posisi_jam'])
+        ) {
+            $columns[] = $context['table_columns_by_lower']['posisi_jam'] ?? 'posisi_jam';
         }
 
         return array_values(array_unique($columns));
@@ -4939,6 +4974,7 @@ class ImportExcelController extends Controller
                 'skipped_rows' => [],
                 'skipped_count' => 0,
                 'duplicate_count' => 0,
+                'trailing_blank_rows' => (int) ($rawSource['trailing_blank_rows'] ?? 0),
                 'written_rows' => (int) ($rawSource['written_rows'] ?? 0),
                 'total_rows' => (int) ($rawSource['total_rows'] ?? 0),
                 'balance_total_cents' => null,
@@ -4960,6 +4996,7 @@ class ImportExcelController extends Controller
             'skipped_rows' => $normalized['skipped_rows'] ?? [],
             'skipped_count' => (int) ($normalized['skipped_count'] ?? 0),
             'duplicate_count' => (int) ($normalized['duplicate_count'] ?? 0),
+            'trailing_blank_rows' => (int) ($normalized['trailing_blank_rows'] ?? 0),
             'written_rows' => (int) ($normalized['written_rows'] ?? 0),
             'total_rows' => (int) ($normalized['total_rows'] ?? 0),
             'balance_total_cents' => $normalized['balance_total_cents'] ?? null,
@@ -4981,7 +5018,8 @@ class ImportExcelController extends Controller
             }
 
             $expectedColumns = count($headers);
-            $totalRows = $this->countCsvPhysicalDataRows($csvPath);
+            $trailingBlankRows = $this->countTrailingBlankCsvDataRows($csvPath, $delimiter);
+            $totalRows = max(0, $this->countCsvPhysicalDataRows($csvPath) - $trailingBlankRows);
             $sampleLimit = max(1, (int) config('import.direct_load.validation_sample_rows', 5000));
             $scannedRows = 0;
             $periodHints = [];
@@ -5033,6 +5071,7 @@ class ImportExcelController extends Controller
                 'usable' => true,
                 'total_rows' => $totalRows,
                 'written_rows' => $totalRows,
+                'trailing_blank_rows' => $trailingBlankRows,
                 'sampled_rows' => $scannedRows,
                 'headers' => array_values(array_map(
                     static fn ($value): string => trim((string) $value),
@@ -5042,6 +5081,43 @@ class ImportExcelController extends Controller
             ];
         } finally {
             fclose($handle);
+        }
+    }
+
+    protected function countTrailingBlankCsvDataRows(string $csvPath, string $delimiter): int
+    {
+        try {
+            $file = new \SplFileObject($csvPath, 'r');
+            $file->seek(PHP_INT_MAX);
+            $lineIndex = $file->key();
+            $blankRows = 0;
+
+            while ($lineIndex > 0) {
+                $line = (string) $file->current();
+                if (trim($line) === '') {
+                    $lineIndex--;
+                    $file->seek($lineIndex);
+                    continue;
+                }
+
+                $row = str_getcsv($line, $delimiter, '"', '\\');
+                $isBlankCsvRow = empty(array_filter(
+                    (array) $row,
+                    static fn ($value): bool => trim((string) $value) !== ''
+                ));
+
+                if (!$isBlankCsvRow) {
+                    break;
+                }
+
+                $blankRows++;
+                $lineIndex--;
+                $file->seek($lineIndex);
+            }
+
+            return $blankRows;
+        } catch (\Throwable) {
+            return 0;
         }
     }
 
@@ -6312,7 +6388,9 @@ class ImportExcelController extends Controller
     private function buildDirectLoadTextExpression(string $columnExpression, bool $preserveText = false): string
     {
         if ($preserveText) {
-            return "NULLIF(NULLIF({$columnExpression}, ''), '\\\\N')";
+            $normalizedLineBreaks = "REPLACE(REPLACE(COALESCE({$columnExpression}, ''), CHAR(13), ''), CHAR(10), '')";
+
+            return "NULLIF(NULLIF({$normalizedLineBreaks}, ''), '\\\\N')";
         }
 
         $normalizedWhitespace = "REPLACE(REPLACE(REPLACE(COALESCE({$columnExpression}, ''), CHAR(13), ''), CHAR(10), ''), CHAR(9), ' ')";
@@ -6401,6 +6479,32 @@ class ImportExcelController extends Controller
         return "CASE "
             . "WHEN {$localeExpression} REGEXP '^[A-Za-z]+ [0-9]{1,2}, [0-9]{4}$' "
                 . "THEN STR_TO_DATE({$localeExpression}, '%M %e, %Y') "
+            . "ELSE {$fallbackExpression} END";
+    }
+
+    private function buildDirectLoadHourlyDpkPositionDateExpression(string $columnExpression): string
+    {
+        $dateTimeExpression = $this->buildDirectLoadHourlyDpkPositionDateTimeExpression($columnExpression);
+
+        return "CASE WHEN {$dateTimeExpression} IS NULL THEN NULL ELSE DATE({$dateTimeExpression}) END";
+    }
+
+    private function buildDirectLoadHourlyDpkPositionDateTimeExpression(string $columnExpression): string
+    {
+        $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
+        $localeExpression = $this->buildLocaleDateTextExpression($textExpression);
+        $normalizedExpression = "REPLACE({$localeExpression}, ' at ', ' ')";
+        $fallbackExpression = StrictDateParser::buildMySqlCaseExpression($localeExpression);
+
+        return "CASE "
+            . "WHEN {$normalizedExpression} REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$' "
+                . "THEN STR_TO_DATE({$normalizedExpression}, '%Y-%m-%d %H:%i:%s') "
+            . "WHEN {$normalizedExpression} REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}$' "
+                . "THEN STR_TO_DATE({$normalizedExpression}, '%Y-%m-%d %H:%i') "
+            . "WHEN {$normalizedExpression} REGEXP '^[a-z]+ [0-9]{1,2}, [0-9]{4} [0-9]{1,2}:[0-9]{2} (am|pm)$' "
+                . "THEN STR_TO_DATE({$normalizedExpression}, '%M %e, %Y %h:%i %p') "
+            . "WHEN {$normalizedExpression} REGEXP '^[a-z]+ [0-9]{1,2}, [0-9]{4} [0-9]{1,2}:[0-9]{2}:[0-9]{2}$' "
+                . "THEN STR_TO_DATE({$normalizedExpression}, '%M %e, %Y %H:%i:%s') "
             . "ELSE {$fallbackExpression} END";
     }
 
@@ -6785,9 +6889,16 @@ class ImportExcelController extends Controller
             $setClauses[] = "`{$context['unique_id_col']}` = CONCAT(@generic_import_unique_prefix, LPAD((@generic_import_rownum := @generic_import_rownum + 1), {$uniquePadLength}, '0'), '{$context['suffix']}')";
         }
 
+        $isHourlyDpkImport = strtolower(trim($tableName)) === 'hourly_dpk';
+        $hourlyDpkPositionVariable = null;
+
         foreach ($normalizedHeaders as $index => $header) {
             $variable = '@csv_col_' . $index;
             $fieldVariables[] = $variable;
+
+            if ($isHourlyDpkImport && $this->isHourlyDpkPositionHeader($header)) {
+                $hourlyDpkPositionVariable = $variable;
+            }
 
             $rule = $context['header_rules'][$index] ?? null;
             if (!$rule) {
@@ -6814,9 +6925,20 @@ class ImportExcelController extends Controller
                 continue;
             }
 
-            $expression = $this->buildDirectLoadSqlExpression($rule, $variable, $dbColumn, $context);
+            $expression = $isHourlyDpkImport && strtolower($dbColumn) === 'posisi'
+                ? $this->buildDirectLoadHourlyDpkPositionDateExpression($variable)
+                : $this->buildDirectLoadSqlExpression($rule, $variable, $dbColumn, $context);
             $expression = $this->applySqlColumnConstraints($expression, $dbColumn, $context);
             $setClauses[] = $this->quoteSqlIdentifier($dbColumn) . " = {$expression}";
+        }
+
+        if (
+            $isHourlyDpkImport
+            && $hourlyDpkPositionVariable !== null
+            && isset($context['table_columns_lookup']['posisi_jam'])
+        ) {
+            $setClauses[] = $this->quoteSqlIdentifier($context['table_columns_by_lower']['posisi_jam'] ?? 'posisi_jam')
+                . ' = ' . $this->buildDirectLoadHourlyDpkPositionDateTimeExpression($hourlyDpkPositionVariable);
         }
 
         foreach ((array) ($context['manual_column_values'] ?? []) as $manualColumn => $manualValue) {
@@ -6852,12 +6974,103 @@ class ImportExcelController extends Controller
             throw new \RuntimeException("Tidak ada mapping kolom {$tableName} yang bisa dipakai untuk direct import.");
         }
 
+        $hourlyDpkSlots = strtolower(trim($tableName)) === 'hourly_dpk'
+            ? $this->collectHourlyDpkSlotsFromCsv($absolutePath, $delimiter, $normalizedHeaders)
+            : ['dates' => [], 'datetimes' => []];
+
         return [
             'delimiter' => $delimiter,
             'field_variables' => $fieldVariables,
             'set_clauses' => $setClauses,
             'unique_id_prefix' => (string) ($context['unique_id_prefix'] ?? 'imp'),
+            'hourly_dpk_slots' => $hourlyDpkSlots,
         ];
+    }
+
+    private function collectHourlyDpkSlotsFromCsv(string $csvPath, string $delimiter, array $normalizedHeaders): array
+    {
+        $positionIndex = null;
+        foreach ($normalizedHeaders as $index => $header) {
+            if ($this->isHourlyDpkPositionHeader($header)) {
+                $positionIndex = (int) $index;
+                break;
+            }
+        }
+
+        if ($positionIndex === null) {
+            return ['dates' => [], 'datetimes' => []];
+        }
+
+        $handle = @fopen($csvPath, 'rb');
+        if ($handle === false) {
+            return ['dates' => [], 'datetimes' => []];
+        }
+
+        $dates = [];
+        $datetimes = [];
+        try {
+            $headerRow = fgetcsv($handle, 0, $delimiter);
+            if (
+                $delimiter !== ','
+                && is_array($headerRow)
+                && count($headerRow) <= 1
+                && str_contains((string) ($headerRow[0] ?? ''), ',')
+            ) {
+                return $this->collectHourlyDpkSlotsFromCsv($csvPath, ',', $normalizedHeaders);
+            }
+
+            while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+                $rawPosition = $row[$positionIndex] ?? null;
+                $positionDateTime = $this->normalizeHourlyDpkDateTime($rawPosition);
+                if ($positionDateTime === null) {
+                    continue;
+                }
+
+                $datetimes[$positionDateTime] = true;
+                $dates[Carbon::parse($positionDateTime)->toDateString()] = true;
+
+                if (count($datetimes) > 24) {
+                    break;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return [
+            'dates' => array_values(array_keys($dates)),
+            'datetimes' => array_values(array_keys($datetimes)),
+        ];
+    }
+
+    private function appendHourlyDpkSlotFromMappedRow(array &$slots, array $row): void
+    {
+        $positionDateTime = $this->normalizeHourlyDpkDateTime($row['posisi_jam'] ?? null);
+        if ($positionDateTime === null) {
+            $positionDateTime = $this->normalizeHourlyDpkDateTime($row['posisi'] ?? null);
+        }
+
+        if ($positionDateTime !== null) {
+            $slots['datetimes'][$positionDateTime] = true;
+            $slots['dates'][Carbon::parse($positionDateTime)->toDateString()] = true;
+            return;
+        }
+
+        $positionDate = $this->normalizeImportDateValue($row['posisi'] ?? null, true);
+        if ($positionDate !== null) {
+            $slots['dates'][$positionDate] = true;
+        }
+    }
+
+    private function buildHourlyDpkBeforeLoadCallback(array $slots, ?callable $beforeLoad = null): \Closure
+    {
+        return function (\PDO $pdo) use ($slots, $beforeLoad): void {
+            if ($beforeLoad !== null) {
+                $beforeLoad($pdo);
+            }
+
+            $this->deleteExistingHourlyDpkSlotsBeforeLoad($pdo, $slots);
+        };
     }
 
     private function executeDirectDailyLoanCsvLoad(string $absolutePath, array $loadPlan): int
@@ -7037,6 +7250,7 @@ class ImportExcelController extends Controller
         $quotedDelimiter = addslashes($loadPlan['delimiter']);
         $setClause = implode(",\n", $loadPlan['set_clauses']);
         $uniquePrefix = (string) ($loadPlan['unique_id_prefix'] ?? 'imp');
+        $hourlyDpkSlots = (array) ($loadPlan['hourly_dpk_slots'] ?? []);
         $originalSqlMode = null;
         $lockAcquired = false;
         $affected = false;
@@ -7053,6 +7267,10 @@ class ImportExcelController extends Controller
             $pdo->exec('SET @skip_snapshot_invalidation = 1');
             $pdo->exec('SET @generic_import_rownum = 0');
             $pdo->exec('SET @generic_import_unique_prefix = ' . $pdo->quote($uniquePrefix . '_'));
+
+            if ($tableName === 'hourly_dpk') {
+                $this->deleteExistingHourlyDpkSlotsBeforeLoad($pdo, $hourlyDpkSlots);
+            }
 
             $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `{$tableName}` "
                 . "CHARACTER SET utf8mb4 "
@@ -7098,6 +7316,44 @@ class ImportExcelController extends Controller
         }
 
         return (int) $affected;
+    }
+
+    private function deleteExistingHourlyDpkSlotsBeforeLoad(\PDO $pdo, array $slots): void
+    {
+        $datetimes = $this->normalizeHourlyDpkSlotValues((array) ($slots['datetimes'] ?? []));
+
+        if ($datetimes !== []) {
+            $quotedDatetimes = array_map(static fn (string $value): string => $pdo->quote($value), $datetimes);
+            $pdo->exec('DELETE FROM `hourly_dpk` WHERE `posisi_jam` IN (' . implode(', ', $quotedDatetimes) . ')');
+
+            return;
+        }
+
+        $dates = $this->normalizeHourlyDpkSlotValues((array) ($slots['dates'] ?? []));
+
+        if ($dates === []) {
+            return;
+        }
+
+        $quotedDates = array_map(static fn (string $value): string => $pdo->quote($value), $dates);
+        $pdo->exec('DELETE FROM `hourly_dpk` WHERE `posisi` IN (' . implode(', ', $quotedDates) . ') AND `posisi_jam` IS NULL');
+    }
+
+    private function normalizeHourlyDpkSlotValues(array $values): array
+    {
+        $normalized = [];
+
+        foreach ($values as $key => $value) {
+            $candidate = is_bool($value) ? (string) $key : (string) $value;
+            $candidate = trim($candidate);
+            if ($candidate === '') {
+                continue;
+            }
+
+            $normalized[$candidate] = true;
+        }
+
+        return array_values(array_keys($normalized));
     }
 
     private function buildLw325PhBulkImportSqlParts(array $context, string $stagingTable): array
@@ -8707,11 +8963,11 @@ class ImportExcelController extends Controller
                 break;
             }
 
-            if (count($headers) < 8) {
-                throw new \RuntimeException('Header SSA Almafacts tidak lengkap. Dibutuhkan 8 kolom.');
+            if (count($headers) < 6) {
+                throw new \RuntimeException('Header SSA Almafacts tidak lengkap. Dibutuhkan 6 kolom.');
             }
 
-            $headers = array_slice($headers, 0, 8);
+            $headers = array_slice($headers, 0, 6);
             foreach (array_keys($headers) as $index) {
                 $uniqueValues[$index] = [];
             }
@@ -8721,8 +8977,8 @@ class ImportExcelController extends Controller
                     continue;
                 }
 
-                $row = $this->normalizeCsvRow($row, $delimiter, 8);
-                $row = array_slice($row, 0, 8);
+                $row = $this->normalizeCsvRow($row, $delimiter, 6);
+                $row = array_slice($row, 0, 6);
                 $rowsScanned++;
 
                 if (count($preview) < $previewLimit) {
@@ -9182,6 +9438,7 @@ class ImportExcelController extends Controller
                 'formattedUniqueValues' => $formattedUniqueValues,
                 'preview' => $preview,
                 'sourceHeaders' => $resolvedSourceHeaders,
+                'display_filter_map' => $this->buildPreviewDisplayFilterMap($headers, $resolvedSourceHeaders),
             ];
         }
 
@@ -9194,6 +9451,7 @@ class ImportExcelController extends Controller
                 'formattedUniqueValues' => $formattedUniqueValues,
                 'preview' => $preview,
                 'sourceHeaders' => $resolvedSourceHeaders,
+                'display_filter_map' => $this->buildPreviewDisplayFilterMap($headers, $resolvedSourceHeaders),
             ];
         }
 
@@ -9257,6 +9515,7 @@ class ImportExcelController extends Controller
                 'formattedUniqueValues' => $formattedUniqueValues,
                 'preview' => $this->rebuildPreviewRowsForHeaders($headers, $preview),
                 'sourceHeaders' => $resolvedSourceHeaders,
+                'display_filter_map' => $this->buildPreviewDisplayFilterMap($headers, $resolvedSourceHeaders),
             ];
         }
 
@@ -9265,7 +9524,44 @@ class ImportExcelController extends Controller
             'formattedUniqueValues' => $reordered['formattedUniqueValues'],
             'preview' => $reordered['preview'],
             'sourceHeaders' => $reordered['headers'],
+            'display_filter_map' => $this->buildPreviewDisplayFilterMap($reordered['headers'], $resolvedSourceHeaders),
         ];
+    }
+
+    private function buildPreviewDisplayFilterMap(array $displayHeaders, array $sourceHeaders): array
+    {
+        $map = [];
+        $usedSourceIndexes = [];
+
+        foreach (array_values($displayHeaders) as $displayIndex => $displayHeader) {
+            foreach (array_values($sourceHeaders) as $sourceIndex => $sourceHeader) {
+                if (isset($usedSourceIndexes[$sourceIndex])) {
+                    continue;
+                }
+
+                if ($this->previewHeadersMatch((string) $displayHeader, (string) $sourceHeader)) {
+                    $map[$displayIndex] = $sourceIndex;
+                    $usedSourceIndexes[$sourceIndex] = true;
+                    break;
+                }
+            }
+
+            if (!array_key_exists($displayIndex, $map)) {
+                $map[$displayIndex] = $displayIndex;
+            }
+        }
+
+        return $map;
+    }
+
+    private function previewHeadersMatch(string $displayHeader, string $sourceHeader): bool
+    {
+        if ($this->normalizeHeaderForDatabase($displayHeader) === $this->normalizeHeaderForDatabase($sourceHeader)) {
+            return true;
+        }
+
+        return $this->isHourlyDpkPositionHeader($displayHeader)
+            && $this->isHourlyDpkPositionHeader($sourceHeader);
     }
 
     protected function rebuildPreviewRowsForHeaders(array $headers, array $preview): array
@@ -9314,9 +9610,14 @@ class ImportExcelController extends Controller
             }
 
             $rawValue = $row[$originalIndex] ?? '';
-            
-            // OPTIMIZED: Use cached normalized value if available (during CSV streaming)
-            if ($this->currentStreamNormalizedValueCache !== null) {
+
+            if ($this->isSsaAlmafactsSaldoRule($context, $rule)) {
+                $value = $this->normalizeSsaAlmafactsSaldoValue(
+                    $rawValue,
+                    $this->resolveSsaAlmafactsKeteranganFromRow($row, $context),
+                    $this->resolveDecimalScaleFromRule($rule)
+                );
+            } elseif ($this->currentStreamNormalizedValueCache !== null) {
                 $cacheKey = $originalIndex . '|' . $rawValue;
                 if (!isset($this->currentStreamNormalizedValueCache[$cacheKey])) {
                     $this->currentStreamNormalizedValueCache[$cacheKey] = $this->normalizeExcelValueByRule($rule, $rawValue);
@@ -9395,6 +9696,10 @@ class ImportExcelController extends Controller
             $finalRow = $this->applyDerivedRkaValues($finalRow, $context);
         }
 
+        if (($context['table_name'] ?? '') === 'hourly_dpk') {
+            $finalRow = $this->applyDerivedHourlyDpkValues($finalRow, $row, $normalizedHeaders, $context);
+        }
+
         $minimumColumns = 0;
         foreach (['created_at', 'updated_at'] as $systemColumn) {
             if (isset($context['table_columns_lookup'][$systemColumn])) {
@@ -9432,6 +9737,78 @@ class ImportExcelController extends Controller
         return count($finalRow) > $minimumColumns ? $finalRow : null;
     }
 
+    private function isSsaAlmafactsSaldoRule(array $context, array $rule): bool
+    {
+        if (($context['table_name'] ?? '') !== 'ssa_almafacts') {
+            return false;
+        }
+
+        foreach ((array) ($rule['db_candidates'] ?? []) as $candidateColumn) {
+            if (strtolower((string) $candidateColumn) === 'saldo') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function resolveDecimalScaleFromRule(array $rule): int
+    {
+        $scale = $rule['decimal_scale'] ?? null;
+        if (is_int($scale) && $scale >= 0) {
+            return $scale;
+        }
+
+        $headerName = strtoupper(trim((string) ($rule['header_name'] ?? '')));
+
+        return $headerName === 'RATE' ? 6 : 2;
+    }
+
+    private function resolveSsaAlmafactsKeteranganFromRow(array $row, array $context): string
+    {
+        foreach ((array) ($context['header_rules'] ?? []) as $index => $rule) {
+            foreach ((array) ($rule['db_candidates'] ?? []) as $candidateColumn) {
+                if (strtolower((string) $candidateColumn) !== 'keterangan') {
+                    continue;
+                }
+
+                return $this->normalizeImportTextValue($this->normalizeQuotedCsvCellValue($row[(int) $index] ?? ''));
+            }
+        }
+
+        return '';
+    }
+
+    private function normalizeSsaAlmafactsSaldoValue($value, string $keterangan, int $scale): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $isPercentMetric = $this->isSsaAlmafactsPercentMetric($keterangan);
+        $hasPercentSign = is_scalar($value) && str_contains((string) $value, '%');
+
+        if (!$isPercentMetric && is_scalar($value)) {
+            $value = str_replace(',', '', (string) $value);
+        }
+
+        $normalized = $this->normalizeDecimalValue($value, $scale);
+        if ($normalized === null) {
+            return null;
+        }
+
+        if ($isPercentMetric && $hasPercentSign) {
+            return number_format(((float) $normalized) / 100, $scale, '.', '');
+        }
+
+        return $normalized;
+    }
+
+    private function isSsaAlmafactsPercentMetric(string $keterangan): bool
+    {
+        return str_contains($keterangan, '(%)');
+    }
+
     private function hasRequiredHourlyDpkImportData(array $row): bool
     {
         return !empty($row['posisi'])
@@ -9440,11 +9817,158 @@ class ImportExcelController extends Controller
             && trim((string) $row['saldo']) !== '';
     }
 
+    private function assertValidHourlyDpkHeaders(string $tableName, array $normalizedHeaders): void
+    {
+        if (!$this->isHourlyDpkTable($tableName)) {
+            return;
+        }
+
+        $headerLookup = [];
+        $headerCounts = [];
+        foreach ($normalizedHeaders as $header) {
+            $normalized = $this->isHourlyDpkPositionHeader($header)
+                ? 'posisi'
+                : $this->normalizeImportColumnName((string) $header);
+            if ($normalized === '' || str_starts_with($normalized, 'col_')) {
+                continue;
+            }
+
+            $headerLookup[$normalized] = true;
+            $headerCounts[$normalized] = ($headerCounts[$normalized] ?? 0) + 1;
+        }
+
+        $required = [
+            'posisi' => 'POSISI',
+            'mbname' => 'MBNAME',
+            'brname' => 'BRNAME',
+            'segmen2' => 'SEGMEN2',
+            'produk' => 'PRODUK',
+            'saldo' => 'SALDO',
+        ];
+
+        $missing = [];
+        foreach ($required as $normalized => $label) {
+            if (!isset($headerLookup[$normalized])) {
+                $missing[] = $label;
+            }
+        }
+
+        if ($missing === []) {
+            return;
+        }
+
+        $message = 'Import Hourly DPK dibatalkan: struktur header file tidak sesuai. '
+            . 'Kolom wajib yang belum ditemukan: ' . implode(', ', $missing) . '.';
+
+        if (in_array('SALDO', $missing, true)) {
+            $message .= ' Kolom nominal harus bernama SALDO. '
+                . 'Jika kolom nominal tertulis PRODUK, ubah header tersebut menjadi SALDO; '
+                . 'kolom PRODUK tetap khusus berisi jenis produk seperti DEP/GIRO/TABUNGAN.';
+
+            if (($headerCounts['produk'] ?? 0) > 1) {
+                $message .= ' Terdeteksi lebih dari satu header PRODUK, sehingga salah satunya kemungkinan adalah kolom SALDO.';
+            }
+        }
+
+        throw new \RuntimeException($message);
+    }
+
+    private function applyDerivedHourlyDpkValues(array $finalRow, array $row, array $normalizedHeaders, array $context): array
+    {
+        if (!isset($context['table_columns_lookup']['posisi_jam'])) {
+            return $finalRow;
+        }
+
+        $rawPosition = null;
+        foreach ($normalizedHeaders as $index => $header) {
+            if ($this->isHourlyDpkPositionHeader($header)) {
+                $rawPosition = $row[(int) $index] ?? null;
+                break;
+            }
+        }
+
+        $positionDateTime = $this->normalizeHourlyDpkDateTime($rawPosition);
+        if ($positionDateTime === null && !empty($finalRow['posisi'])) {
+            $positionDateTime = $this->normalizeHourlyDpkDateTime($finalRow['posisi']);
+        }
+
+        if ($positionDateTime !== null) {
+            $finalRow[$context['table_columns_by_lower']['posisi_jam'] ?? 'posisi_jam'] = $positionDateTime;
+        }
+
+        return $finalRow;
+    }
+
+    private function isHourlyDpkPositionHeader($header): bool
+    {
+        $normalized = preg_replace('/[^A-Z0-9]+/', '_', strtoupper(trim((string) $header)));
+        $normalized = trim((string) $normalized, '_');
+
+        return in_array($normalized, ['POSISI', 'MONTH_DAY_YEAR_OF_POSISI', 'MINUTE_OF_POSISI'], true);
+    }
+
+    private function normalizeHourlyDpkDateTime($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            try {
+                return ExcelDate::excelToDateTimeObject((float) $value)->format('Y-m-d H:i:s');
+            } catch (\Throwable) {
+                return null;
+            }
+        }
+
+        $text = trim($this->normalizeQuotedCsvCellValue($value));
+        if ($text === '') {
+            return null;
+        }
+
+        foreach (['F j, Y \a\t g:i A', 'F j, Y g:i A', 'F j, Y H:i:s', 'Y-m-d H:i:s', 'Y-m-d H:i'] as $format) {
+            try {
+                return Carbon::createFromFormat($format, $text)->format('Y-m-d H:i:s');
+            } catch (\Throwable) {
+                //
+            }
+        }
+
+        $text = preg_replace('/\s+at\s+/i', ' ', $text) ?? $text;
+
+        foreach (['F j, Y g:i A', 'F j, Y H:i:s'] as $format) {
+            try {
+                return Carbon::createFromFormat($format, $text)->format('Y-m-d H:i:s');
+            } catch (\Throwable) {
+                //
+            }
+        }
+
+        try {
+            return Carbon::parse($text)->format('Y-m-d H:i:s');
+        } catch (\Throwable) {
+            try {
+                return Carbon::parse($this->translateIndonesianMonthText($text))->format('Y-m-d H:i:s');
+            } catch (\Throwable) {
+                return null;
+            }
+        }
+    }
+
+    private function translateIndonesianMonthText(string $value): string
+    {
+        return str_ireplace(
+            ['Januari', 'Februari', 'Maret', 'Mei', 'Juni', 'Juli', 'Agustus', 'Oktober', 'Desember'],
+            ['January', 'February', 'March', 'May', 'June', 'July', 'August', 'October', 'December'],
+            $value
+        );
+    }
+
     private function hasRequiredSsaAlmafactsImportData(array $row): bool
     {
         return !empty($row['month_day_year_of_posisi'])
             && !empty($row['kode_unit_kerja'])
-            && !empty($row['keterangan_1']);
+            && !empty($row['keterangan']);
     }
 
     private function applyDerivedRkaValues(array $finalRow, array $context): array
@@ -9615,13 +10139,14 @@ class ImportExcelController extends Controller
         // normalizeExcelValue already handles decimal columns via is_decimal lookup
         // No need to call it again here
         if (!empty($rule['is_decimal'])) {
-            if (!empty($rule['comma_is_thousands']) && is_scalar($value)) {
-                $value = str_replace(',', '', (string) $value);
+            $scale = $rule['decimal_scale'] ?? null;
+            if (!is_int($scale) || $scale < 0) {
+                $scale = strtoupper(trim($headerName)) === 'RATE' ? 6 : 2;
             }
 
             return $this->normalizeDecimalValue(
                 $value,
-                strtoupper(trim($headerName)) === 'RATE' ? 6 : 2
+                $scale
             );
         }
         
@@ -10430,7 +10955,7 @@ class ImportExcelController extends Controller
             'headers' => $reorderedPayload['headers'],
             'preview' => $reorderedPayload['preview'],
             'formattedUniqueValues' => $reorderedPayload['formattedUniqueValues'],
-            'displayFilterMap' => $reorderedPayload['displayFilterMap'] ?? [],
+            'displayFilterMap' => $reorderedPayload['display_filter_map'] ?? [],
             'path' => $relativePath,
             'stagedCsvPath' => null,
             'headerIndex' => (int) ($nativePreview['header_index'] ?? 0),
@@ -10981,6 +11506,15 @@ class ImportExcelController extends Controller
 
                 if (!$this->isDailyLoanTable()) {
                     $cached['formattedUniqueValues'] = $filtersDisabled ? [] : ($cached['formattedUniqueValues'] ?? []);
+                    try {
+                        $this->assertValidHourlyDpkHeaders($activeTableName, (array) ($cached['headers'] ?? []));
+                    } catch (\RuntimeException $e) {
+                        return redirect()->route('import.index')->with('sweet_warning', [
+                            'title' => 'Header Hourly DPK Tidak Sesuai',
+                            'text' => $e->getMessage(),
+                        ]);
+                    }
+
                     $cached['initRoute'] = $initRoute;
                     $cached['streamRoute'] = $streamRoute;
                     $cached['previewStateKey'] = $previewStateKey;
@@ -11022,6 +11556,15 @@ class ImportExcelController extends Controller
                 $reorderedPayload,
                 array_values((array) ($csvPayload['sourceHeaders'] ?? $csvPayload['headers']))
             );
+
+            try {
+                $this->assertValidHourlyDpkHeaders($tableName, $reorderedPayload['headers']);
+            } catch (\RuntimeException $e) {
+                return redirect()->route('import.index')->with('sweet_warning', [
+                    'title' => 'Header Hourly DPK Tidak Sesuai',
+                    'text' => $e->getMessage(),
+                ]);
+            }
 
             $previewStateKey = 'excel_preview_' . md5($relativePath . '|csv_direct|' . microtime(true));
             $previewMeta = [
@@ -11130,6 +11673,15 @@ class ImportExcelController extends Controller
         );
         $reorderedPayload = $this->applyManualPreviewColumns($tableName, $reorderedPayload, array_values($headers));
 
+        try {
+            $this->assertValidHourlyDpkHeaders($tableName, $reorderedPayload['headers']);
+        } catch (\RuntimeException $e) {
+            return redirect()->route('import.index')->with('sweet_warning', [
+                'title' => 'Header Hourly DPK Tidak Sesuai',
+                'text' => $e->getMessage(),
+            ]);
+        }
+
         $previewStateKey = 'excel_preview_' . md5($relativePath . '|fallback|' . microtime(true));
         $previewMeta = [
             'path' => $relativePath,
@@ -11137,14 +11689,14 @@ class ImportExcelController extends Controller
             'header_index' => $headerIndex,
             'normalized_headers' => $reorderedPayload['headers'],
             'source_headers' => $reorderedPayload['sourceHeaders'],
-            'total_rows' => $csvPayload['total_rows'] ?? null,
-            'delimiter' => $csvPayload['delimiter'] ?? null,
+            'total_rows' => isset($nativePreview['total_rows']) ? (int) $nativePreview['total_rows'] : null,
+            'delimiter' => null,
         ];
         $this->excelImportJobService()->putPreviewState($previewStateKey, [
             'id_report' => $activeIdReport,
             'table_name' => $activeTableName,
             'path' => $relativePath,
-            'displayFilterMap' => $reorderedPayload['displayFilterMap'] ?? [],
+            'displayFilterMap' => $reorderedPayload['display_filter_map'] ?? [],
             'previewMeta' => $previewMeta,
         ]);
 
@@ -11498,8 +12050,22 @@ class ImportExcelController extends Controller
             ) {
                 try {
                     $stageResult = $this->stageExcelToCsv(
-                        static function (string $event, array $data): void {
-                            // init phase does not stream progress
+                        function (string $event, array $data) use ($jobId): void {
+                            if ($event !== 'progress' || $jobId <= 0) {
+                                return;
+                            }
+
+                            $sourcePercent = max(0, min(100, (int) ($data['percent'] ?? 0)));
+                            $this->progressService()->updateJob($jobId, [], [
+                                'status' => 'staging',
+                                'phase' => 'staging_csv',
+                                'mode' => 'excel_stage',
+                                'percent' => min(7, max(3, 3 + (int) floor($sourcePercent / 25))),
+                                'message' => (string) ($data['message'] ?? 'Worker menyiapkan CSV staging...'),
+                                'processed_rows' => (int) ($data['rows_done'] ?? 0),
+                                'total_rows' => (int) ($data['total'] ?? 0),
+                                'speed' => (int) ($data['speed'] ?? 0),
+                            ]);
                         },
                         $path,
                         $headerIndex,
@@ -11610,7 +12176,7 @@ class ImportExcelController extends Controller
                     'status' => 'queued',
                     'phase' => 'polars',
                     'mode' => 'polars',
-                    'percent' => 2,
+                    'percent' => 7,
                     'message' => 'Fase Polars siap diproses.',
                     'total_rows' => (int) $totalRows,
                     'processed_rows' => 0,
@@ -11787,14 +12353,17 @@ class ImportExcelController extends Controller
                     'text' => 'Gagal menyiapkan CSV L1133: ' . $e->getMessage(),
                 ], 422);
             }
-        } elseif (($this->isLw321NpdTable($tableName) || $this->isLw321NpddTable($tableName)) && !$this->isCsvFile($path)) {
+        } elseif (($this->isLw321PnTable($tableName) || $this->isLw321NpdTable($tableName) || $this->isLw321NpddTable($tableName)) && !$this->isCsvFile($path)) {
+            $isPn = $this->isLw321PnTable($tableName);
             $isNpd = $this->isLw321NpdTable($tableName);
-            $reportLabel = $isNpd ? 'LW321 NPD' : 'LW321 NPDD';
+            $reportLabel = $isPn ? 'LW321PN' : ($isNpd ? 'LW321 NPD' : 'LW321 NPDD');
 
             try {
-                $stage = $isNpd
-                    ? $this->stageLw321NpdExcelToCsv($path, null, false)
-                    : $this->stageLw321NpddExcelToCsv($path, null, false);
+                $stage = $isPn
+                    ? $this->stageLw321PnExcelToCsv($path, null, false)
+                    : ($isNpd
+                        ? $this->stageLw321NpdExcelToCsv($path, null, false)
+                        : $this->stageLw321NpddExcelToCsv($path, null, false));
                 $stagedCsvPath = (string) ($stage['absolute_path'] ?? '');
                 $lw321VariantStagedHeaders = array_values((array) ($stage['headers'] ?? []));
 
@@ -11831,7 +12400,7 @@ class ImportExcelController extends Controller
 
         $initialHeaders = $this->isDlyKapResegmentasiTable($tableName)
             ? DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS
-            : (($this->isLw321NpdTable($tableName) || $this->isLw321NpddTable($tableName)) && $lw321VariantStagedHeaders !== []
+            : (($this->isLw321PnTable($tableName) || $this->isLw321NpdTable($tableName) || $this->isLw321NpddTable($tableName)) && $lw321VariantStagedHeaders !== []
                 ? $lw321VariantStagedHeaders
                 : (($this->isLw321PnTable($tableName) || $this->isLw321NpdTable($tableName) || $this->isLw321NpddTable($tableName))
                 ? array_values((array) (
@@ -12275,14 +12844,13 @@ class ImportExcelController extends Controller
         if ($this->isDlyKapResegmentasiTable($tableName)) {
             $normalizedHeaders = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
         }
-
         $estimatedTotalRows = $estimatedTotalRows !== null
             ? max(0, $estimatedTotalRows)
             : $this->countCsvDataRows($csvPath);
 
         $bulkLoadColumns = $this->buildBulkLoadColumns($tableName, $normalizedHeaders, $activeFilters, $importOptions);
 
-        if ($fullVectorization && $forceDirectLoad) {
+        if ($fullVectorization && $forceDirectLoad && !$this->isSsaAlmafactsTable($tableName)) {
             $send('progress', [
                 'percent' => 18,
                 'message' => 'Staging Polars mendeteksi mode full vectorization. Menyiapkan direct load...',
@@ -12397,6 +12965,8 @@ class ImportExcelController extends Controller
             $reservedGapIds = [];
             $reservedGapIdOffset = 0;
             $dailyLoanImportPeriods = [];
+            $hourlyDpkReplaceSlots = ['dates' => [], 'datetimes' => []];
+            $ssaAlmafactsForwardFillValues = [];
 
             if ($this->usesGapIdReuse($tableName) && $estimatedTotalRows > 0) {
                 $reservedGapIds = $this->findSmallestAvailableIds($tableName, $estimatedTotalRows);
@@ -12419,6 +12989,10 @@ class ImportExcelController extends Controller
 
                 if ($tableName === 'simpanan_multipn') {
                     $row = $this->stripLeadingRowNumberForSimpananMultiPnRow($normalizedHeaders, (array) $row);
+                }
+
+                if ($this->isSsaAlmafactsTable($tableName)) {
+                    $row = $this->normalizeSsaAlmafactsForwardFillRow((array) $row, $ssaAlmafactsForwardFillValues);
                 }
 
                 // OPTIMIZED: Inline padRow untuk menghindari function call overhead
@@ -12445,6 +13019,10 @@ class ImportExcelController extends Controller
                     if ($periodValue !== '') {
                         $dailyLoanImportPeriods[$periodValue] = true;
                     }
+                }
+
+                if ($tableName === 'hourly_dpk') {
+                    $this->appendHourlyDpkSlotFromMappedRow($hourlyDpkReplaceSlots, $finalRow);
                 }
 
                 // OPTIMIZED: Build output row dengan single pass
@@ -12574,6 +13152,14 @@ class ImportExcelController extends Controller
                         }
                     }
 
+                    $directLoadBeforeLoad = $beforeDirectLoad;
+                    if ($tableName === 'hourly_dpk') {
+                        $directLoadBeforeLoad = $this->buildHourlyDpkBeforeLoadCallback(
+                            $hourlyDpkReplaceSlots,
+                            $beforeDirectLoad
+                        );
+                    }
+
                     $send('progress', [
                         'percent' => 96,
                         'message' => 'CSV hasil filter siap. Memuat data ke MySQL via LOAD DATA LOCAL INFILE...',
@@ -12589,9 +13175,18 @@ class ImportExcelController extends Controller
                         $directLoadSourcePath,
                         $tableName,
                         $bulkLoadColumns,
-                        $beforeDirectLoad
+                        $directLoadBeforeLoad
                     );
                 } else {
+                    if ($tableName === 'hourly_dpk') {
+                        DB::transaction(function () use ($hourlyDpkReplaceSlots): void {
+                            $this->deleteExistingHourlyDpkSlotsBeforeLoad(
+                                DB::connection()->getPdo(),
+                                $hourlyDpkReplaceSlots
+                            );
+                        });
+                    }
+
                     $inserted = $this->loadCsvIntoMysqlChunked(
                         $outputCsvPath,
                         $tableName,
@@ -13165,6 +13760,10 @@ class ImportExcelController extends Controller
         }
 
         if ($this->isDlyKapResegmentasiTable($tableName)) {
+            return true;
+        }
+
+        if ($tableName === 'hourly_dpk') {
             return true;
         }
 

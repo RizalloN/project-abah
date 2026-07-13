@@ -170,7 +170,7 @@ class DashboardPinjamanReportController extends Controller
         $kreditService = app(DashboardPinjamanKreditService::class);
         $periodReferences = $kreditService->calculatePeriodReferences($selectedPeriod);
 
-        $cacheKey = 'dashboard_pinjaman_kredit_unified:v12-quality-rka-direction:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_kredit_unified:v18-strict-uker-kind-rka-cache-refresh:' . md5(json_encode([
             'cache_version' => $this->kreditCacheVersion(),
             'snapshot_signature' => $this->kreditSnapshotSignature($periodReferences, $selectedKanca),
             'periode' => $selectedPeriod,
@@ -385,6 +385,77 @@ class DashboardPinjamanReportController extends Controller
             ),
             $forceRefresh,
             fn () => $this->emptySixMonthArrearsPayload($selectedPeriod, $branchSelection['effective_branches'], $effectiveUnits, $branchSelection['is_area_all'], $months)
+        );
+
+        return response()->json($payload);
+    }
+
+    public function ugNplIndex(Request $request)
+    {
+        $availablePeriods = $this->fetchPeriods();
+        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
+        $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
+        $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
+        $unitOptions = $branchSelection['is_area_all']
+            ? collect()
+            : collect([self::SMALL_ARREARS_ALL_UKER])->merge($this->fetchSmallArrearsDistinctValues('unit1', $selectedPeriod, $branchSelection['effective_branches']))->values();
+
+        return view('report.dashboard-pinjaman.analisa-ug-npl', [
+            'availablePeriods' => $availablePeriods,
+            'selectedPeriod' => $selectedPeriod,
+            'selectedBranches' => $branchSelection['selected_values'],
+            'effectiveBranches' => $branchSelection['effective_branches'],
+            'isAreaAllSelected' => $branchSelection['is_area_all'],
+            'selectedUnits' => $unitSelection['selected_values'],
+            'branchOptions' => $this->smallArrearsBranchOptions(),
+            'unitOptions' => $unitOptions,
+            'selectedAction' => $this->resolveUgNplAction($request->input('action')),
+            'selectedHorizonDays' => $this->resolveUgNplHorizonDays($request->input('horizon_days')),
+            'actionOptions' => $this->ugNplActionOptions(),
+            'horizonOptions' => $this->ugNplHorizonOptions(),
+        ]);
+    }
+
+    public function ugNplData(Request $request)
+    {
+        @set_time_limit(0);
+        DB::connection()->disableQueryLog();
+        $this->releaseSessionLockIfNeeded();
+
+        $availablePeriods = $this->fetchPeriods();
+        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
+        $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
+        $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
+        $selectedAction = $this->resolveUgNplAction($request->input('action'));
+        $horizonDays = $this->resolveUgNplHorizonDays($request->input('horizon_days'));
+        $forceRefresh = $request->boolean('refresh');
+
+        if (!$selectedPeriod) {
+            return response()->json($this->emptyUgNplPayload(null, $selectedAction, $horizonDays));
+        }
+
+        $cacheKey = 'dashboard_pinjaman_ug_npl:v3-ug-npl-pl-arrears:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'periode' => $selectedPeriod,
+            'cabang1' => $branchSelection['selected_values'],
+            'unit1' => $unitSelection['selected_values'],
+            'action' => $selectedAction,
+            'horizon_days' => $horizonDays,
+        ]));
+
+        $payload = $this->rememberPayload(
+            $cacheKey,
+            now()->addMinutes(5),
+            fn () => $this->buildUgNplPayload(
+                $selectedPeriod,
+                $branchSelection['effective_branches'],
+                $unitSelection['effective_units'],
+                $branchSelection['is_area_all'],
+                $selectedAction,
+                $horizonDays
+            ),
+            $forceRefresh,
+            fn () => $this->emptyUgNplPayload($selectedPeriod, $selectedAction, $horizonDays)
         );
 
         return response()->json($payload);
@@ -709,6 +780,7 @@ class DashboardPinjamanReportController extends Controller
         if (
             Schema::hasColumn('dashboard_harian_snapshots', 'kanca_key')
             && Schema::hasColumn('dashboard_harian_snapshots', 'unit_key')
+            && $selectedKanca === 'all'
         ) {
             $query->whereColumn('kanca_key', 'unit_key');
         }
@@ -716,6 +788,7 @@ class DashboardPinjamanReportController extends Controller
         $rows = $query
             ->orderBy('snapshot_period')
             ->orderBy('kanca_label')
+            ->when(Schema::hasColumn('dashboard_harian_snapshots', 'unit_key'), fn ($query) => $query->orderBy('unit_key'))
             ->get($columns)
             ->map(static fn ($row): array => (array) $row)
             ->all();
@@ -811,28 +884,14 @@ class DashboardPinjamanReportController extends Controller
             ]);
         }
 
-        $cacheKey = 'dashboard_pinjaman_filters:v2:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_filters:v3-combination-map:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'filters' => $filters,
         ]));
 
-        $payload = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod, $filters) {
-            return [
-                'segments' => $this->fetchPeriodDistinctValues('segmen_dashboard', $selectedPeriod, $filters),
-                'products' => $this->fetchPeriodDistinctValues('produk_dashboard', $selectedPeriod, $filters, function (Builder $query) use ($filters) {
-                    $this->applyFilterConstraint($query, 'segmen_dashboard', $filters['segmen']);
-                }),
-                'branches' => $this->fetchPeriodDistinctValues('cabang1', $selectedPeriod, $filters, function (Builder $query) use ($filters) {
-                    $this->applyFilterConstraint($query, 'segmen_dashboard', $filters['segmen']);
-                    $this->applyFilterConstraint($query, 'produk_dashboard', $filters['produk']);
-                }),
-                'units' => $this->fetchPeriodDistinctValues('unit1', $selectedPeriod, $filters, function (Builder $query) use ($filters) {
-                    $this->applyFilterConstraint($query, 'segmen_dashboard', $filters['segmen']);
-                    $this->applyFilterConstraint($query, 'produk_dashboard', $filters['produk']);
-                    $this->applyFilterConstraint($query, 'cabang1', $filters['cabang']);
-                }),
-            ];
+        $payload = $this->rememberPayload($cacheKey, now()->addMinutes(5), function () use ($selectedPeriod, $filters, $forceRefresh) {
+            return $this->buildPeriodFilterOptions($selectedPeriod, $filters, $forceRefresh);
         }, $forceRefresh, fn () => [
             'status' => 'warming',
             'segments' => collect(),
@@ -870,7 +929,7 @@ class DashboardPinjamanReportController extends Controller
 
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
 
-        $cacheKey = 'dashboard_pinjaman_matrix_direct:v4-excel-os-helper:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_matrix_direct:v9-cras-exit-metrics:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'comparison' => $comparisonPeriod,
@@ -1224,6 +1283,7 @@ class DashboardPinjamanReportController extends Controller
 
         $bucketMap = [];
         $metricMap = [];
+        $metricSeen = array_fill_keys(['principal_reduction', 'suplesi', 'ph', 'lunas'], false);
 
         // Optimize: Set read-only connection mode for better database optimization
         try {
@@ -1268,7 +1328,7 @@ class DashboardPinjamanReportController extends Controller
             $metricRowsRaw = $useLw325RecoveryMetrics
                 ? $this->buildRecoveryMetricAggregateQuery(
                     $this->buildLw325RecoveryMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useComparisonSnapshot)
-                        ->unionAll($this->buildDailyLoanPhMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useComparisonSnapshot))
+                        ->unionAll($this->buildDailyLoanExitMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useCurrentSnapshot, $useComparisonSnapshot))
                 )->get()
                 : $this->buildMovementMetricAggregateQuery(
                     $selectedPeriod,
@@ -1287,11 +1347,17 @@ class DashboardPinjamanReportController extends Controller
                 $metric = (string) ($row->metric_type ?? '');
                 $amountCents = (int) ($row->amount_cents ?? 0);
 
-                if (!in_array($before, self::BEFORE_ROWS, true) || !in_array($metric, ['principal_reduction', 'suplesi', 'ph', 'lunas'], true) || $amountCents <= 0) {
+                if (
+                    !in_array($before, self::BEFORE_ROWS, true)
+                    || !in_array($metric, ['principal_reduction', 'suplesi', 'ph', 'lunas'], true)
+                    || $amountCents < 0
+                    || ($amountCents === 0 && $metric !== 'ph')
+                ) {
                     continue;
                 }
 
                 $metricMap[$before][$metric] = ($metricMap[$before][$metric] ?? 0) + $amountCents;
+                $metricSeen[$metric] = true;
             }
         } catch (Throwable $e) {
             Log::error('Dashboard pinjaman matrix query failed.', [
@@ -1322,8 +1388,9 @@ class DashboardPinjamanReportController extends Controller
 
             foreach ($metricNames as $metricName) {
                 $metricCents = (int) ($metricMap[$beforeLabel][$metricName] ?? 0);
+                $hasMetric = array_key_exists($metricName, $metricMap[$beforeLabel] ?? []);
                 $metricTotals[$metricName] += $metricCents;
-                $rowMetrics[$metricName] = $metricCents > 0 ? $this->centsToAmount($metricCents) : null;
+                $rowMetrics[$metricName] = $hasMetric ? $this->centsToAmount($metricCents) : null;
             }
 
             $grandTotalCents += $rowTotalCents;
@@ -1336,15 +1403,19 @@ class DashboardPinjamanReportController extends Controller
             ];
         }
 
+        $metricGrandTotals = [];
+        foreach ($metricTotals as $metricName => $metricCents) {
+            $metricGrandTotals[$metricName] = ($metricSeen[$metricName] ?? false)
+                ? $this->centsToAmount($metricCents)
+                : null;
+        }
+
         $grandTotals = [
             'matrix' => array_map(
                 fn (int $columnTotalCents) => $columnTotalCents > 0 ? $this->centsToAmount($columnTotalCents) : null,
                 $matrixGrandTotals
             ),
-            'metrics' => array_map(
-                fn (int $metricCents) => $metricCents > 0 ? $this->centsToAmount($metricCents) : null,
-                $metricTotals
-            ),
+            'metrics' => $metricGrandTotals,
         ];
 
         Log::info('Dashboard pinjaman matrix query aggregated.', [
@@ -1531,7 +1602,11 @@ class DashboardPinjamanReportController extends Controller
             ->groupByRaw("COALESCE(prev.bucket, 'New Account'), curr.bucket");
 
         return DB::query()
-            ->fromSub($joinedCurrent->unionAll($this->buildAnonymousCurrentMovementQuery($selectedPeriod, $filters)), 'movement_matrix')
+            ->fromSub(
+                $joinedCurrent
+                    ->unionAll($this->buildAnonymousCurrentMovementQuery($selectedPeriod, $filters)),
+                'movement_matrix'
+            )
             ->selectRaw('before_bucket, after_bucket, SUM(amount_cents) as amount_cents')
             ->groupBy('before_bucket', 'after_bucket');
     }
@@ -1646,27 +1721,8 @@ class DashboardPinjamanReportController extends Controller
 
         $movementMetrics = $joinedMetrics->unionAll($anonMetrics);
 
-        if (!$useLw325RecoveryMetrics) {
-            // Exit metrics (PH and Lunas) - separate since it's a different join pattern.
-            $exitMetrics = DB::query()
-                ->fromSub($previousSnapshot, 'prev')
-                ->leftJoinSub($currentSnapshot, 'curr', function ($join) {
-                    $join->on('prev.account_number', '=', 'curr.account_number');
-                })
-                ->selectRaw("
-                    prev.bucket as before_bucket,
-                    'lunas' as metric_type,
-                    prev.balance_cents as amount_cents
-                ")
-                ->whereNull('curr.account_number')
-                ->whereNotNull('prev.bucket')
-                ->whereIn('prev.bucket', self::BEFORE_ROWS);
-
-            $movementMetrics->unionAll($exitMetrics);
-        }
-
         $movementMetrics->unionAll(
-            $this->buildDailyLoanPhMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useComparisonSnapshot)
+            $this->buildDailyLoanExitMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useCurrentSnapshot, $useComparisonSnapshot)
         );
 
         if ($useLw325RecoveryMetrics) {
@@ -1685,8 +1741,77 @@ class DashboardPinjamanReportController extends Controller
             ->selectRaw('before_bucket, metric_type, SUM(amount_cents) as amount_cents')
             ->whereNotNull('metric_type')
             ->whereIn('before_bucket', self::BEFORE_ROWS)
-            ->where('amount_cents', '>', 0)
+            ->where(function (Builder $query): void {
+                $query->where('amount_cents', '>', 0)
+                    ->orWhere('metric_type', 'ph');
+            })
             ->groupBy('before_bucket', 'metric_type');
+    }
+
+    private function buildDailyLoanExitMetricQuery(
+        string $selectedPeriod,
+        ?string $comparisonPeriod,
+        array $filters,
+        ?bool $useCurrentSnapshot = null,
+        ?bool $useComparisonSnapshot = null
+    ): Builder {
+        if (!$comparisonPeriod) {
+            return DB::query()
+                ->selectRaw("'New Account' as before_bucket, 'lunas' as metric_type, 0 as amount_cents")
+                ->whereRaw('1 = 0');
+        }
+
+        $currentSnapshot = $this->buildAggregatedLoanSnapshotQuery($selectedPeriod, $filters, 'curr_exit_metric', $useCurrentSnapshot);
+        $previousSnapshot = $this->buildAggregatedLoanSnapshotQuery($comparisonPeriod, $filters, 'prev_exit_metric', $useComparisonSnapshot);
+        $currentPhPeriod = $this->resolveCurrentMonthPhPeriod($selectedPeriod);
+        $hasCurrentPhData = $currentPhPeriod !== null && $this->hasUsableLw325RecoveryPeriod($currentPhPeriod);
+
+        $exitQuery = DB::query()
+            ->fromSub($previousSnapshot, 'prev_exit_metric')
+            ->leftJoinSub($currentSnapshot, 'curr_exit_metric', function ($join) {
+                $join->on('prev_exit_metric.account_number', '=', 'curr_exit_metric.account_number');
+            })
+            ->whereNull('curr_exit_metric.account_number')
+            ->whereNotNull('prev_exit_metric.bucket')
+            ->whereIn('prev_exit_metric.bucket', self::BEFORE_ROWS);
+
+        if ($hasCurrentPhData) {
+            $phAccountKey = $this->phAccountKeySql('ph');
+            $previousAccountKey = $this->accountKeySql('prev_exit_metric.account_number');
+            $phAmount = $this->buildPhRecoveryIntegerAmountExpression('ph.pokok');
+            $phAccounts = DB::table('lw325_ph as ph')
+                ->where('ph.periode', $currentPhPeriod)
+                ->whereNotNull('ph.acctno')
+                ->where('ph.acctno', '<>', '')
+                ->where('ph.pokok', '>', 0)
+                ->selectRaw("{$phAccountKey} as account_number")
+                ->selectRaw("CAST(ROUND(SUM(COALESCE({$phAmount}, 0)) * 100, 0) AS SIGNED) as ph_amount_cents")
+                ->groupByRaw($phAccountKey);
+
+            $exitQuery
+                ->leftJoinSub($phAccounts, 'current_ph_accounts', function ($join) use ($previousAccountKey) {
+                    $join->on(DB::raw($previousAccountKey), '=', 'current_ph_accounts.account_number');
+                })
+                ->selectRaw("
+                    prev_exit_metric.bucket as before_bucket,
+                    CASE
+                        WHEN current_ph_accounts.account_number IS NOT NULL THEN 'ph'
+                        ELSE 'lunas'
+                    END as metric_type,
+                    CASE
+                        WHEN current_ph_accounts.account_number IS NOT NULL THEN current_ph_accounts.ph_amount_cents
+                        ELSE prev_exit_metric.balance_cents
+                    END as amount_cents
+                ");
+        } else {
+            $exitQuery->selectRaw("
+                prev_exit_metric.bucket as before_bucket,
+                'lunas' as metric_type,
+                prev_exit_metric.balance_cents as amount_cents
+            ");
+        }
+
+        return $exitQuery;
     }
 
     private function buildDailyLoanPhMetricQuery(
@@ -1727,8 +1852,7 @@ class DashboardPinjamanReportController extends Controller
 
         return DB::query()
             ->fromSub($query, 'daily_loan_ph_metrics')
-            ->selectRaw('before_bucket, metric_type, amount_cents')
-            ->where('amount_cents', '>', 0);
+            ->selectRaw('before_bucket, metric_type, amount_cents');
     }
 
     private function buildLw325RecoveryMetricQuery(
@@ -1737,7 +1861,7 @@ class DashboardPinjamanReportController extends Controller
         array $filters,
         ?bool $useComparisonSnapshot = null
     ) {
-        $currentPhPeriod = $this->resolveExactPhPeriod($selectedPeriod);
+        $currentPhPeriod = $this->resolveCurrentMonthPhPeriod($selectedPeriod);
         $previousPhPeriod = $currentPhPeriod ? $this->resolvePreviousMonthPhPeriod($currentPhPeriod) : null;
 
         if (
@@ -1754,51 +1878,38 @@ class DashboardPinjamanReportController extends Controller
         }
 
         $previousSnapshot = $this->buildPreviousBucketLookupQuery($comparisonPeriod, $filters, 'prev_recovery', $useComparisonSnapshot);
+        $oldPokok = $this->buildPhRecoveryIntegerAmountExpression('o.pokok');
+        $currentPokok = $this->buildPhRecoveryIntegerAmountExpression('n.pokok');
+        $currentAccountKey = $this->phAccountKeySql('n');
+        $previousAccountKey = $this->phAccountKeySql('o');
+        $previousBucketAccountKey = $this->accountKeySql('prev_bucket.account_number');
 
         $tupokQuery = DB::table('lw325_ph as n')
-            ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $currentPhPeriod) {
-                $join->on('n.acctno', '=', 'o.acctno')
-                    ->on('n.kanca', '=', 'o.kanca')
-                    ->on('n.unit', '=', 'o.unit')
+            ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $currentPhPeriod, $currentAccountKey, $previousAccountKey) {
+                $join->on(DB::raw($currentAccountKey), '=', DB::raw($previousAccountKey))
                     ->whereRaw('n.periode = ?', [$currentPhPeriod])
                     ->whereRaw('o.periode = ?', [$previousPhPeriod]);
             })
-            ->leftJoinSub($previousSnapshot, 'prev_bucket', function ($join) {
-                $join->on('o.acctno', '=', 'prev_bucket.account_number');
+            ->leftJoinSub($previousSnapshot, 'prev_bucket', function ($join) use ($previousAccountKey, $previousBucketAccountKey) {
+                $join->on(DB::raw($previousAccountKey), '=', DB::raw($previousBucketAccountKey));
             })
             ->selectRaw("COALESCE(prev_bucket.bucket, 'New Account') as before_bucket")
             ->selectRaw("'principal_reduction' as metric_type")
-            ->selectRaw("CAST(ROUND((COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) * 100, 0) AS SIGNED) as amount_cents")
-            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
+            ->selectRaw("CAST(ROUND(({$oldPokok} - {$currentPokok}) * 100, 0) AS SIGNED) as amount_cents")
+            ->whereRaw("({$oldPokok} - {$currentPokok}) > 0")
             ->whereNotNull('n.acctno')
             ->where('n.acctno', '<>', '')
             ->whereNotNull('o.acctno')
             ->where('o.acctno', '<>', '');
 
-        $this->applyLw325RecoveryFilters($tupokQuery, 'n', $filters);
+        $this->applyLw325RecoveryFilters($tupokQuery, 'o', $filters);
 
-        $previousSnapshotForLunas = $this->buildPreviousBucketLookupQuery($comparisonPeriod, $filters, 'prev_recovery_lunas', $useComparisonSnapshot);
-        $lunasQuery = DB::table('lw325_ph as o')
-            ->leftJoin('lw325_ph as n', function ($join) use ($currentPhPeriod) {
-                $join->on('o.acctno', '=', 'n.acctno')
-                    ->on('o.kanca', '=', 'n.kanca')
-                    ->on('o.unit', '=', 'n.unit')
-                    ->whereRaw('n.periode = ?', [$currentPhPeriod]);
-            })
-            ->leftJoinSub($previousSnapshotForLunas, 'prev_bucket', function ($join) {
-                $join->on('o.acctno', '=', 'prev_bucket.account_number');
-            })
-            ->where('o.periode', $previousPhPeriod)
-            ->whereNull('n.acctno')
-            ->whereNotNull('o.acctno')
-            ->where('o.acctno', '<>', '')
-            ->selectRaw("COALESCE(prev_bucket.bucket, 'New Account') as before_bucket")
-            ->selectRaw("'lunas' as metric_type")
-            ->selectRaw("CAST(ROUND(COALESCE(o.pokok, 0) * 100, 0) AS SIGNED) as amount_cents");
+        return $tupokQuery;
+    }
 
-        $this->applyLw325RecoveryFilters($lunasQuery, 'o', $filters);
-
-        return $tupokQuery->unionAll($lunasQuery);
+    private function buildPhRecoveryIntegerAmountExpression(string $column): string
+    {
+        return $this->buildExcelSnapshotOsHelperExpression($column);
     }
 
     private function buildAggregatedLoanSnapshotQuery(string $period, array $filters, string $alias, ?bool $useSnapshot = null)
@@ -1956,19 +2067,23 @@ class DashboardPinjamanReportController extends Controller
 
     private function buildExcelSnapshotOsHelperExpression(string $column): string
     {
-        $wholeRupiah = "TRUNCATE(COALESCE({$column}, 0), 0)";
+        $wholeRupiah = DB::connection()->getDriverName() === 'sqlite'
+            ? "CAST(COALESCE({$column}, 0) AS INTEGER)"
+            : "TRUNCATE(COALESCE({$column}, 0), 0)";
+        $absolute = "ABS({$wholeRupiah})";
+        $sign = "CASE WHEN {$wholeRupiah} < 0 THEN -1 ELSE 1 END";
 
         // Mirrors the Excel snapshot helper "OS BARU/OS LAMA" without storing
         // helper columns in daily_loan_dinamis.
         return "
             CASE
-                WHEN ABS({$wholeRupiah}) >= 1000
-                    AND ABS({$wholeRupiah}) < 1000000
-                    AND MOD(ABS({$wholeRupiah}), 10) = 0
-                    THEN SIGN({$wholeRupiah}) * CASE
-                        WHEN MOD(ABS({$wholeRupiah}), 1000) = 0 THEN ABS({$wholeRupiah}) / 1000
-                        WHEN MOD(ABS({$wholeRupiah}), 100) = 0 THEN ABS({$wholeRupiah}) / 100
-                        ELSE ABS({$wholeRupiah}) / 10
+                WHEN {$absolute} >= 1000
+                    AND {$absolute} < 1000000
+                    AND ({$absolute} % 10) = 0
+                    THEN ({$sign}) * CASE
+                        WHEN ({$absolute} % 1000) = 0 THEN {$absolute} / 1000
+                        WHEN ({$absolute} % 100) = 0 THEN {$absolute} / 100
+                        ELSE {$absolute} / 10
                     END
                 ELSE {$wholeRupiah}
             END
@@ -2153,6 +2268,99 @@ class DashboardPinjamanReportController extends Controller
         } catch (Throwable) {
             return collect();
         }
+    }
+
+    /**
+     * Build selector options from the two existing covering indexes. Keeping the
+     * dimensions in pairs avoids expensive table-row lookups on the 4 GB source.
+     *
+     * @return array{segments: Collection, products: Collection, branches: Collection, units: Collection}
+     */
+    private function buildPeriodFilterOptions(string $period, array $filters, bool $forceRefresh = false): array
+    {
+        $cacheKey = 'dashboard_pinjaman_filter_dimensions:v2-covering-pairs:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'periode' => $period,
+        ]));
+
+        $dimensions = $this->rememberPayload(
+            $cacheKey,
+            now()->addMinutes(10),
+            function () use ($period): array {
+                $segmentProductSource = $this->qualifyIndexedSource(
+                    'daily_loan_dinamis',
+                    'filter_sp',
+                    [self::LOAN_FILTER_INDEX]
+                );
+                $branchUnitSource = $this->qualifyIndexedSource(
+                    'daily_loan_dinamis',
+                    'filter_bu',
+                    [self::LOAN_CABANG_UNIT_INDEX]
+                );
+
+                return [
+                    'segment_products' => DB::table(DB::raw($segmentProductSource))
+                        ->where('filter_sp.periode', $period)
+                        ->select(['filter_sp.segmen_dashboard', 'filter_sp.produk_dashboard'])
+                        ->distinct()
+                        ->get(),
+                    'branch_units' => DB::table(DB::raw($branchUnitSource))
+                        ->where('filter_bu.periode', $period)
+                        ->select(['filter_bu.cabang1', 'filter_bu.unit1'])
+                        ->distinct()
+                        ->get(),
+                ];
+            },
+            $forceRefresh,
+            fn () => ['segment_products' => collect(), 'branch_units' => collect()]
+        );
+
+        $segmentProducts = $dimensions['segment_products'] ?? collect();
+        $branchUnits = $dimensions['branch_units'] ?? collect();
+
+        return [
+            'segments' => $this->filterOptionsFromCombinations($segmentProducts, 'segmen_dashboard'),
+            'products' => $this->filterOptionsFromCombinations($segmentProducts, 'produk_dashboard', [
+                'segmen_dashboard' => $filters['segmen'] ?? [],
+            ]),
+            'branches' => $this->filterOptionsFromCombinations($branchUnits, 'cabang1'),
+            'units' => $this->filterOptionsFromCombinations($branchUnits, 'unit1', [
+                'cabang1' => $filters['cabang'] ?? [],
+            ]),
+        ];
+    }
+
+    private function filterOptionsFromCombinations(Collection $combinations, string $column, array $constraints = []): Collection
+    {
+        $normalizedConstraints = [];
+        foreach ($constraints as $constraintColumn => $selectedValues) {
+            $normalizedConstraints[$constraintColumn] = array_map(
+                fn ($value): string => mb_strtoupper(trim((string) $value)),
+                $selectedValues
+            );
+        }
+
+        return $combinations
+            ->filter(function ($row) use ($normalizedConstraints): bool {
+                foreach ($normalizedConstraints as $constraintColumn => $selectedValues) {
+                    if ($selectedValues === []) {
+                        continue;
+                    }
+
+                    $rowValue = mb_strtoupper(trim((string) ($row->{$constraintColumn} ?? '')));
+
+                    if (!in_array($rowValue, $selectedValues, true)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            })
+            ->map(fn ($row): string => (string) ($row->{$column} ?? ''))
+            ->filter(fn (string $value): bool => trim($value) !== '')
+            ->unique()
+            ->sort(fn (string $left, string $right): int => strnatcasecmp($left, $right))
+            ->values();
     }
 
     private function fetchPeriods(): Collection
@@ -2719,9 +2927,9 @@ class DashboardPinjamanReportController extends Controller
         }
 
         try {
-            $normalizedPeriod = Carbon::parse($selectedPeriod)->format('Y-m-d');
+            $normalizedPeriod = $this->resolveCurrentMonthPhPeriod($selectedPeriod);
 
-            return $this->hasUsableLw325RecoveryPeriod($normalizedPeriod);
+            return $normalizedPeriod !== null && $this->hasUsableLw325RecoveryPeriod($normalizedPeriod);
         } catch (Throwable) {
             return false;
         }
@@ -2739,6 +2947,26 @@ class DashboardPinjamanReportController extends Controller
             return DB::table('lw325_ph')->where('periode', $normalizedPeriod)->exists()
                 ? $normalizedPeriod
                 : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function resolveCurrentMonthPhPeriod(?string $selectedPeriod): ?string
+    {
+        if (!$selectedPeriod || !Schema::hasTable('lw325_ph')) {
+            return null;
+        }
+
+        try {
+            $period = Carbon::parse($selectedPeriod);
+
+            return DB::table('lw325_ph')
+                ->whereBetween('periode', [
+                    $period->copy()->startOfMonth()->toDateString(),
+                    $period->toDateString(),
+                ])
+                ->max('periode');
         } catch (Throwable) {
             return null;
         }
@@ -2805,7 +3033,7 @@ class DashboardPinjamanReportController extends Controller
 
             $usable = $rowCount > 0
                 && $scientificAccountCount === 0
-                && ($distinctAccountCount / max($rowCount, 1)) >= self::PH_RECOVERY_MIN_ACCOUNT_DISTINCT_RATIO;
+                && $distinctAccountCount > 0;
 
             return $this->lw325RecoveryPeriodQuality[$period] = $usable;
         } catch (Throwable) {
@@ -3419,6 +3647,330 @@ class DashboardPinjamanReportController extends Controller
         });
     }
 
+    private function ugNplActionOptions(): array
+    {
+        return [
+            'all' => 'Semua Analisa',
+            'due_lancar' => 'Jatuh Tempo -> Lancar',
+            'periodic_lancar' => 'Periodik -> Lancar',
+            'general_lancar' => 'Umum -> Lancar',
+            'general_sml3' => 'Umum NPL -> SML 3',
+            'dl_lancar' => 'DL / RK -> Lancar',
+            'dl_sml3' => 'DL / RK -> SML 3',
+        ];
+    }
+
+    private function ugNplHorizonOptions(): array
+    {
+        return [
+            0 => 'Hari Ini',
+            7 => '7 Hari',
+            30 => '30 Hari',
+        ];
+    }
+
+    private function resolveUgNplAction($value): string
+    {
+        $action = trim((string) (is_array($value) ? ($value[0] ?? '') : $value));
+
+        return array_key_exists($action, $this->ugNplActionOptions()) ? $action : 'all';
+    }
+
+    private function resolveUgNplHorizonDays($value): int
+    {
+        $days = (int) (is_array($value) ? ($value[0] ?? 0) : ($value ?? 0));
+
+        return array_key_exists($days, $this->ugNplHorizonOptions()) ? $days : 30;
+    }
+
+    private function emptyUgNplPayload(?string $selectedPeriod, string $selectedAction, int $horizonDays): array
+    {
+        return [
+            'selected_period' => $selectedPeriod,
+            'selected_action' => $selectedAction,
+            'horizon_days' => $horizonDays,
+            'summary' => $this->emptyUgNplSummary(),
+            'actions' => $this->emptyUgNplActionSummaries(),
+            'rows' => [],
+            'row_limit' => 250,
+            'row_count' => 0,
+        ];
+    }
+
+    private function emptyUgNplSummary(): array
+    {
+        return [
+            'accounts' => 0,
+            'outstanding' => 0.0,
+            'current_arrears' => 0.0,
+            'estimated_payment' => 0.0,
+            'estimated_principal' => 0.0,
+            'estimated_interest' => 0.0,
+            'estimated_penalty' => 0.0,
+            'cycles' => 0,
+        ];
+    }
+
+    private function emptyUgNplActionSummaries(): array
+    {
+        $summaries = [];
+        foreach ($this->ugNplActionOptions() as $key => $label) {
+            if ($key === 'all') {
+                continue;
+            }
+            $summaries[$key] = array_merge($this->emptyUgNplSummary(), [
+                'key' => $key,
+                'label' => $label,
+            ]);
+        }
+
+        return $summaries;
+    }
+
+    private function buildUgNplPayload(
+        string $selectedPeriod,
+        array $selectedBranches,
+        array $selectedUnits,
+        bool $isAreaAll,
+        string $selectedAction,
+        int $horizonDays
+    ): array {
+        $summary = $this->emptyUgNplSummary();
+        $actions = $this->emptyUgNplActionSummaries();
+        $rows = [];
+        $rowLimit = 250;
+
+        foreach ($this->fetchUgNplRows($selectedPeriod, $selectedBranches, $selectedUnits) as $row) {
+            $analysis = $this->mapUgNplRow($row, $horizonDays);
+            if ($analysis === null) {
+                continue;
+            }
+
+            $this->accumulateUgNplSummary($summary, $analysis);
+            if (isset($actions[$analysis['action_key']])) {
+                $this->accumulateUgNplSummary($actions[$analysis['action_key']], $analysis);
+            }
+
+            if ($selectedAction === 'all' || $selectedAction === $analysis['action_key']) {
+                $rows[] = $analysis;
+            }
+        }
+
+        usort($rows, fn (array $a, array $b): int => $b['estimated_payment'] <=> $a['estimated_payment']);
+        $rows = array_slice($rows, 0, $rowLimit);
+
+        return [
+            'selected_period' => $selectedPeriod,
+            'selected_action' => $selectedAction,
+            'horizon_days' => $horizonDays,
+            'scope_label' => $isAreaAll ? 'Area 6 - All' : implode(', ', $selectedBranches),
+            'unit_label' => $selectedUnits === [] ? 'ALL UKER' : implode(', ', $selectedUnits),
+            'summary' => $summary,
+            'actions' => array_values($actions),
+            'rows' => $rows,
+            'row_limit' => $rowLimit,
+            'row_count' => count($rows),
+        ];
+    }
+
+    private function fetchUgNplRows(string $selectedPeriod, array $selectedBranches, array $selectedUnits): \Generator
+    {
+        $query = DB::table(DB::raw($this->qualifyIndexedSource('daily_loan_dinamis', 'd', [self::LOAN_REKENING_INDEX])))
+            ->where('d.periode', $selectedPeriod)
+            ->whereNotNull('d.nomor_rekening1')
+            ->where('d.nomor_rekening1', '<>', '')
+            ->whereRaw("CAST(TRIM(COALESCE(d.kolek, '0')) AS UNSIGNED) BETWEEN 2 AND 5")
+            ->whereRaw('(COALESCE(d.tunggakan_pokok, 0) + COALESCE(d.tunggakan_bunga, 0) + COALESCE(d.tunggakan_penalti, 0)) > 0')
+            ->when($selectedBranches !== [], fn (Builder $query) => $query->whereIn('d.cabang1', $selectedBranches))
+            ->when($selectedUnits !== [], fn (Builder $query) => $query->whereIn('d.unit1', $selectedUnits))
+            ->select([
+                'd.periode',
+                'd.cabang1',
+                'd.unit1',
+                'd.nomor_rekening1',
+                'd.nama_debitur1',
+                'd.ln_type',
+                'd.kolek',
+                'd.flag_restruk',
+                'd.umur_tunggakan',
+                'd.tgl_jatuh_tempo',
+                'd.plafon',
+                'd.baki_debet1',
+                'd.tunggakan_pokok',
+                'd.tunggakan_bunga',
+                'd.tunggakan_penalti',
+                'd.npb_pokok_la',
+                'd.npb_bunga_la',
+                'd.freq_payment',
+                'd.freq_int_payment',
+                'd.next_pmt_date',
+                'd.next_pmt_int_date',
+            ])
+            ->orderByDesc('d.baki_debet1');
+
+        foreach ($query->cursor() as $row) {
+            yield $row;
+        }
+    }
+
+    private function mapUgNplRow($row, int $horizonDays): ?array
+    {
+        $bucket = $this->kolekDetailFromFormula($row->kolek ?? null, $row->flag_restruk ?? null, $row->umur_tunggakan ?? null);
+        $age = $this->normalizeUmurTunggakanValue($row->umur_tunggakan ?? null) ?? 0;
+        $ageForDecision = max(0, $age + $horizonDays);
+        $effectiveMonths = $this->ugNplEffectiveOverdueMonths($ageForDecision);
+        $principalArrears = (float) ($row->tunggakan_pokok ?? 0);
+        $interestArrears = (float) ($row->tunggakan_bunga ?? 0);
+        $estimatedPenalty = (float) ($row->tunggakan_penalti ?? 0);
+        $totalArrears = $principalArrears + $interestArrears + $estimatedPenalty;
+        $loanType = strtoupper(trim((string) ($row->ln_type ?? '')));
+        $isDlLoan = $loanType === 'DL';
+        $freqPayment = (int) ($row->freq_payment ?? 0);
+        $freqIntPayment = (int) ($row->freq_int_payment ?? 0);
+        $isPeriodic = $freqPayment > 0 && $freqIntPayment > 0 && $freqPayment !== $freqIntPayment;
+        $isPastDue = $this->isUgNplPastDue($row->periode ?? null, $row->tgl_jatuh_tempo ?? null);
+        $isNplBucket = in_array($bucket, ['KL', 'D1', 'D2', 'M'], true);
+
+        $cycles = 1;
+        $targetBucket = 'Lancar';
+        $estimatedPrincipal = 0.0;
+        $estimatedInterest = 0.0;
+        $paymentRule = '';
+
+        if ($isPastDue) {
+            $actionKey = 'due_lancar';
+            $actionLabel = 'Jatuh Tempo -> Lancar';
+            $estimatedPrincipal = $principalArrears;
+            $estimatedInterest = $interestArrears;
+            $paymentRule = 'Jatuh tempo: pokok + bunga + penalti';
+        } elseif ($isDlLoan) {
+            $cycles = $isNplBucket ? $this->ugNplPaymentsToSml3($effectiveMonths) : 1;
+            $targetBucket = $isNplBucket ? 'SML 3' : 'Lancar';
+            $actionKey = $isNplBucket ? 'dl_sml3' : 'dl_lancar';
+            $actionLabel = $isNplBucket ? 'DL / RK -> SML 3' : 'DL / RK -> Lancar';
+            $estimatedInterest = $isNplBucket
+                ? $this->ugNplProratedArrears($interestArrears, $effectiveMonths, $cycles)
+                : $interestArrears;
+            $paymentRule = $isNplBucket
+                ? 'DL belum jatuh tempo: bunga proporsional + penalti'
+                : 'DL belum jatuh tempo: bunga + penalti';
+        } elseif ($isPeriodic) {
+            $actionKey = 'periodic_lancar';
+            $actionLabel = 'Periodik -> Lancar';
+            $estimatedPrincipal = $principalArrears;
+            $estimatedInterest = $interestArrears;
+            $paymentRule = 'Periodik: pokok + bunga + penalti';
+        } elseif ($isNplBucket) {
+            $cycles = $this->ugNplPaymentsToSml3($effectiveMonths);
+            $targetBucket = 'SML 3';
+            $actionKey = 'general_sml3';
+            $actionLabel = 'Umum NPL -> SML 3';
+            $estimatedPrincipal = $this->ugNplProratedArrears($principalArrears, $effectiveMonths, $cycles);
+            $estimatedInterest = $this->ugNplProratedArrears($interestArrears, $effectiveMonths, $cycles);
+            $paymentRule = 'Umum NPL: (pokok + bunga) proporsional + penalti';
+        } else {
+            $actionKey = 'general_lancar';
+            $actionLabel = 'Umum -> Lancar';
+            $estimatedPrincipal = $principalArrears;
+            $estimatedInterest = $interestArrears;
+            $paymentRule = 'Umum SML: pokok + bunga + penalti';
+        }
+
+        if ($isDlLoan && !$isPastDue) {
+            $estimatedPrincipal = 0.0;
+        }
+
+        $installment = $cycles > 0
+            ? ($estimatedPrincipal + $estimatedInterest) / $cycles
+            : ($estimatedPrincipal + $estimatedInterest);
+        $estimatedPayment = $estimatedPrincipal + $estimatedInterest + $estimatedPenalty;
+
+        if ($estimatedPayment <= 0) {
+            return null;
+        }
+
+        return [
+            'action_key' => $actionKey,
+            'action_label' => $actionLabel,
+            'target_bucket' => $targetBucket,
+            'periode' => (string) ($row->periode ?? ''),
+            'cabang1' => (string) ($row->cabang1 ?? ''),
+            'unit1' => (string) ($row->unit1 ?? ''),
+            'nomor_rekening1' => (string) ($row->nomor_rekening1 ?? ''),
+            'nama_debitur1' => (string) ($row->nama_debitur1 ?? ''),
+            'current_bucket' => $bucket,
+            'kolek' => (string) ($row->kolek ?? ''),
+            'loan_type' => $loanType,
+            'payment_rule' => $paymentRule,
+            'freq_payment' => $freqPayment,
+            'freq_int_payment' => $freqIntPayment,
+            'tgl_jatuh_tempo' => $row->tgl_jatuh_tempo ?? null,
+            'is_past_due' => $isPastDue,
+            'effective_months' => $effectiveMonths,
+            'umur_tunggakan' => $age,
+            'cycles' => $cycles,
+            'installment' => $installment,
+            'npb_pokok_la' => 0.0,
+            'npb_bunga_la' => 0.0,
+            'estimated_principal' => $estimatedPrincipal,
+            'estimated_interest' => $estimatedInterest,
+            'estimated_penalty' => $estimatedPenalty,
+            'estimated_payment' => $estimatedPayment,
+            'current_arrears' => $totalArrears,
+            'outstanding' => (float) ($row->baki_debet1 ?? 0),
+            'plafon' => (float) ($row->plafon ?? 0),
+            'next_pmt_date' => $row->next_pmt_date ?? null,
+            'next_pmt_int_date' => $row->next_pmt_int_date ?? null,
+        ];
+    }
+
+    private function ugNplEffectiveOverdueMonths(int $age): int
+    {
+        return max(1, (int) ceil(max(1, $age) / 30));
+    }
+
+    private function ugNplPaymentsToSml3(int $effectiveMonths): int
+    {
+        return max(1, $effectiveMonths - 3 + 1);
+    }
+
+    private function ugNplProratedArrears(float $amount, int $effectiveMonths, int $cycles): float
+    {
+        if ($amount <= 0) {
+            return 0.0;
+        }
+
+        return ($amount / max(1, $effectiveMonths)) * max(1, $cycles);
+    }
+
+    private function isUgNplPastDue($period, $maturityDate): bool
+    {
+        if ($period === null || $maturityDate === null || trim((string) $maturityDate) === '') {
+            return false;
+        }
+
+        try {
+            $periodDate = Carbon::parse($period)->startOfDay();
+            $dueDate = Carbon::parse($maturityDate)->startOfDay();
+        } catch (Throwable) {
+            return false;
+        }
+
+        return $periodDate->gt($dueDate);
+    }
+
+    private function accumulateUgNplSummary(array &$summary, array $analysis): void
+    {
+        $summary['accounts']++;
+        $summary['outstanding'] += $analysis['outstanding'];
+        $summary['current_arrears'] += $analysis['current_arrears'];
+        $summary['estimated_payment'] += $analysis['estimated_payment'];
+        $summary['estimated_principal'] += $analysis['estimated_principal'];
+        $summary['estimated_interest'] += $analysis['estimated_interest'];
+        $summary['estimated_penalty'] += $analysis['estimated_penalty'];
+        $summary['cycles'] += $analysis['cycles'];
+    }
+
     private function emptySixMonthArrearsPayload(?string $selectedPeriod, array $selectedBranches, array $selectedUnits, bool $isAreaAll, int $months = 6): array
     {
         return [
@@ -3603,6 +4155,15 @@ class DashboardPinjamanReportController extends Controller
         }
 
         return "TRIM(LEADING '0' FROM TRIM(COALESCE({$alias}.acctno, '')))";
+    }
+
+    private function accountKeySql(string $column): string
+    {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return "LTRIM(TRIM(COALESCE({$column}, '')), '0')";
+        }
+
+        return "TRIM(LEADING '0' FROM TRIM(COALESCE({$column}, '')))";
     }
 
     private function applyTrimmedInConstraint(Builder $query, string $column, array $values): void

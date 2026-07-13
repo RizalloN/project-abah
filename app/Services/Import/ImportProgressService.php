@@ -12,6 +12,8 @@ use Illuminate\Support\Carbon;
 
 class ImportProgressService
 {
+    private const ACTIVE_IMPORT_STATUSES = ['staging', 'processing'];
+
     private const CACHE_PREFIX = 'import_job_progress:';
     private const STATE_PREFIX = 'excel_import_job:';
     private const TERMINATE_PREFIX = 'import_job_terminate:';
@@ -436,7 +438,7 @@ class ImportProgressService
         }
 
         $query = DB::table('import_jobs')
-            ->where('status', 'processing');
+            ->whereIn('status', self::ACTIVE_IMPORT_STATUSES);
 
         if ($exceptJobId !== null && $exceptJobId > 0) {
             $query->where('id', '!=', $exceptJobId);
@@ -460,7 +462,7 @@ class ImportProgressService
 
         $query = DB::table('import_jobs as ij')
             ->leftJoin('nama_report as nr', 'nr.id_report', '=', 'ij.id_report')
-            ->where('ij.status', 'processing')
+            ->whereIn('ij.status', self::ACTIVE_IMPORT_STATUSES)
             ->where(function ($builder) use ($normalizedTable, $hasImportJobTableName): void {
                 $builder->whereRaw('LOWER(TRIM(COALESCE(nr.table_name, ""))) = ?', [$normalizedTable]);
 
@@ -526,7 +528,7 @@ class ImportProgressService
     {
         $cutoff = now()->subHours(self::STALE_PROCESSING_HOURS);
         $staleJobs = DB::table('import_jobs')
-            ->where('status', 'processing')
+            ->whereIn('status', ['staging', 'processing'])
             ->where('updated_at', '<', $cutoff)
             ->orderBy('updated_at')
             ->get(['id', 'total_success', 'total_failed']);
@@ -881,7 +883,7 @@ class ImportProgressService
             ->where('file_name', $fileName)
             ->where('folder_path', $folderPath)
             ->where('created_by', $createdBy)
-            ->whereIn('status', ['queued', 'processing'])
+            ->whereIn('status', ['queued', 'staging', 'processing'])
             ->orderByDesc('updated_at');
 
         if ($fingerprint !== '') {
@@ -1012,6 +1014,15 @@ class ImportProgressService
             return $this->findJob($jobId);
         }
 
+        if ($status === 'processing') {
+            $auditedTotals = $this->resolveTerminalTotalsFromDirectLoadAudit($job);
+            if ($auditedTotals !== null) {
+                $this->finalizeProcessingJobFromDirectLoadAudit($jobId, $auditedTotals);
+
+                return $this->findJob($jobId);
+            }
+        }
+
         $sourcePath = $this->resolveJobSourcePath($job);
         $sourceExists = $sourcePath !== null && is_file($sourcePath);
 
@@ -1093,6 +1104,69 @@ class ImportProgressService
         }
 
         return 'completed';
+    }
+
+    /**
+     * Recover direct LOAD DATA imports that finished writing rows but failed
+     * before the final import_jobs status update was persisted.
+     *
+     * @return array{success:int, failed:int, total_rows:int, status:string}|null
+     */
+    private function resolveTerminalTotalsFromDirectLoadAudit(object $job): ?array
+    {
+        $context = json_decode((string) ($job->job_context ?? ''), true);
+        if (!is_array($context)) {
+            return null;
+        }
+
+        $audit = $context['direct_load_audit'] ?? null;
+        if (!is_array($audit) || trim((string) ($audit['completed_at'] ?? '')) === '') {
+            return null;
+        }
+
+        $success = max(0, (int) ($audit['total_success'] ?? $audit['load_inserted_rows'] ?? 0));
+        $failed = max(0, (int) ($audit['total_failed'] ?? $audit['insert_shortfall'] ?? 0));
+        $totalRows = max(
+            0,
+            (int) ($audit['total_rows'] ?? 0),
+            (int) ($audit['source_rows'] ?? 0),
+            $success + $failed
+        );
+
+        if ($totalRows <= 0 || ($success + $failed) < $totalRows) {
+            return null;
+        }
+
+        return [
+            'success' => $success,
+            'failed' => $failed,
+            'total_rows' => $totalRows,
+            'status' => $failed > 0 ? ($success > 0 ? 'failed_partial' : 'failed') : 'completed',
+        ];
+    }
+
+    /**
+     * @param array{success:int, failed:int, total_rows:int, status:string} $totals
+     */
+    private function finalizeProcessingJobFromDirectLoadAudit(int $jobId, array $totals): void
+    {
+        $status = $totals['status'];
+        $success = $totals['success'];
+        $failed = $totals['failed'];
+        $totalRows = $totals['total_rows'];
+
+        $this->updateTotals($jobId, $success, $failed, $totalRows, $status, [
+            'status' => $status,
+            'phase' => $status === 'completed' ? 'completed' : 'failed_partial',
+            'message' => $status === 'completed'
+                ? 'Fast import selesai. Status dipulihkan dari audit LOAD DATA.'
+                : 'Fast import selesai dengan kegagalan parsial. Status dipulihkan dari audit LOAD DATA.',
+            'total_success' => $success,
+            'total_failed' => $failed,
+            'total_rows' => $totalRows,
+            'processed_rows' => $success + $failed,
+            'percent' => 100,
+        ]);
     }
 
     private function finalizeProcessingJobFromTotals(

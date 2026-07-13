@@ -4,6 +4,8 @@ return [
     'cache_store' => env('IMPORT_CACHE_STORE', 'file'),
 
     'queue' => [
+        'import_queue' => env('IMPORT_QUEUE', 'imports-high'),
+        'daily_loan_queue' => env('IMPORT_DAILY_LOAN_QUEUE', 'imports-daily-loan'),
         'inline_fallback_grace_seconds' => env('IMPORT_QUEUE_INLINE_FALLBACK_GRACE_SECONDS', 0),
         'zero_progress_recovery_minutes' => env('IMPORT_ZERO_PROGRESS_RECOVERY_MINUTES', 5),
         'inline_start_tables' => array_values(array_filter(array_map(
@@ -27,6 +29,7 @@ return [
         ), static fn (string $value): bool => $value !== '')),
     ],
 
+    'excel_init_timeout_seconds' => env('IMPORT_EXCEL_INIT_TIMEOUT_SECONDS', 60),
     'excel_stage_idle_timeout_seconds' => env('IMPORT_EXCEL_STAGE_IDLE_TIMEOUT_SECONDS', 300),
 
     'direct_load' => [
