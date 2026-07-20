@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Support\UserBranchScope;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -90,7 +91,7 @@ class KolaborasiReportService
                 ->whereIn('CIFNO', $cifList->all())
                 ->groupBy('CIFNO');
 
-            $simpananRows = DB::table('simpanan_multipn as sm')
+            $simpananRowsQuery = DB::table('simpanan_multipn as sm')
                 ->joinSub($latestPosisiQuery, 'latest', function ($join) {
                     $join->on('sm.CIFNO', '=', 'latest.CIFNO')
                          ->on('sm.posisi', '=', 'latest.max_posisi');
@@ -99,8 +100,14 @@ class KolaborasiReportService
                 ->selectRaw('DATE(sm.posisi) as posisi')
                 ->selectRaw("MAX(COALESCE(NULLIF(TRIM(sm.kantor_cabang), ''), 'Branch Office Belum Terpetakan')) as kantor_cabang")
                 ->selectRaw('SUM(COALESCE(sm.saldo_idr, 0)) as saldo_idr')
-                ->groupBy(DB::raw('TRIM(sm.CIFNO)'), DB::raw('DATE(sm.posisi)'))
-                ->get();
+                ->groupBy(DB::raw('TRIM(sm.CIFNO)'), DB::raw('DATE(sm.posisi)'));
+            $userBranchScope = UserBranchScope::current();
+            if ($userBranchScope !== null) {
+                $simpananRowsQuery->whereRaw("UPPER(TRIM(COALESCE(sm.kantor_cabang, ''))) LIKE ?", [
+                    '%' . $userBranchScope['upper_label'] . '%',
+                ]);
+            }
+            $simpananRows = $simpananRowsQuery->get();
 
             foreach ($simpananRows as $simpananRow) {
                 $cif = trim((string) ($simpananRow->cif ?? ''));
@@ -132,6 +139,14 @@ class KolaborasiReportService
                 $row->status_nasabah  = trim((string) ($row->status_nasabah ?? ''));
 
                 return $row;
+            })
+            ->when(UserBranchScope::current() !== null, function ($items) {
+                $branch = strtoupper((string) UserBranchScope::current()['label']);
+
+                return $items->filter(fn ($row): bool => str_contains(
+                    strtoupper((string) ($row->kantor_cabang ?? '')),
+                    $branch
+                ));
             })
             ->filter(fn ($row) => !empty($row->bucket_periode))
             ->sortBy([['kantor_cabang', 'asc'], ['bucket_periode', 'asc']])

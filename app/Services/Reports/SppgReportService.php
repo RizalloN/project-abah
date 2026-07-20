@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Support\UserBranchScope;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -75,7 +76,8 @@ class SppgReportService
 
     private function readSpreadsheet(array $link): array
     {
-        $cacheKey = 'report:sppg:v1:' . md5(($link['link_url'] ?? '') . '|' . ($link['sheet_name'] ?? self::DEFAULT_SHEET_NAME));
+        $cacheKey = 'report:sppg:v1:' . UserBranchScope::cacheKey() . ':'
+            . md5(($link['link_url'] ?? '') . '|' . ($link['sheet_name'] ?? self::DEFAULT_SHEET_NAME));
 
         return Cache::remember($cacheKey, now()->addMinute(), function () use ($link): array {
             try {
@@ -136,6 +138,17 @@ class SppgReportService
         }
 
         $rows = $rows
+            ->when(UserBranchScope::current() !== null, function ($items) {
+                $scope = UserBranchScope::current();
+                $branch = strtoupper((string) $scope['label']);
+                $plainBranch = strtoupper((string) $scope['plain_label']);
+
+                return $items->filter(function (array $row) use ($branch, $plainBranch): bool {
+                    $value = strtoupper((string) ($row['branch_office'] ?? ''));
+
+                    return str_contains($value, $branch) || str_contains($value, $plainBranch);
+                });
+            })
             ->sortBy([
                 fn ($row) => Str::lower($row['branch_office'] ?? ''),
                 fn ($row) => Str::lower($row['nama_yayasan'] ?? ''),

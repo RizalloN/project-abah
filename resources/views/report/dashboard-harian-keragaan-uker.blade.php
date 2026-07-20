@@ -300,7 +300,7 @@
             <div class="uker-filters">
                 <div class="uker-filter">
                     <label for="kancaFilter">Cabang</label>
-                    <select id="kancaFilter" class="uker-control"></select>
+                    <select id="kancaFilter" name="kanca" class="uker-control"></select>
                 </div>
                 <div class="uker-filter">
                     <label for="unitFilter">Unit Kerja</label>

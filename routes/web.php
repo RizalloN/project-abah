@@ -57,7 +57,7 @@ Route::get('/workbooks/market-share-mapping.xlsx', [PublicWorkbookController::cl
 Route::get('/workbooks/market-share-mapping/{token}/market-share-mapping.xlsx', [PublicWorkbookController::class, 'marketShareMapping'])
     ->name('public-workbooks.market-share-mapping.token');
 
-Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(function () {
+Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttle:240,1'])->group(function () {
     Route::get('/dashboard-harian', [DashboardHarianController::class, 'index'])
         ->name('dashboard.harian');
     Route::get('/dashboard-harian/timeseries', [DashboardHarianController::class, 'timeseries'])
@@ -203,7 +203,7 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
     Route::get('/report/dashboard-dana/market-share/instansi/data', [DashboardSimpananController::class, 'marketShareInstansiData'])->name('report.dashboard-dana.market-share.instansi.data');
 });
 
-Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(function () {
+Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.lock'])->group(function () {
     Route::get('/input-data', [InputRekananController::class, 'index'])->name('input.index');
     Route::post('/input-data', [InputRekananController::class, 'store'])->name('input.store');
     Route::post('/input-data/import-template', [InputRekananController::class, 'importTemplate'])->name('input.import-template');

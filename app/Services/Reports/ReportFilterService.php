@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Support\UserBranchScope;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -23,7 +24,7 @@ class ReportFilterService
     {
         $cacheKey = 'report_filter:branch_uker:' . sha1(json_encode([$table, $branchColumn, $ukerColumn]));
 
-        return Cache::remember($cacheKey, now()->addHours(6), function () use ($table, $branchColumn, $ukerColumn) {
+        $options = Cache::remember($cacheKey, now()->addHours(6), function () use ($table, $branchColumn, $ukerColumn) {
             $branchUkerRows = DB::table($table)
                 ->selectRaw("TRIM($branchColumn) as branch_name")
                 ->selectRaw("TRIM($ukerColumn) as uker_name")
@@ -53,6 +54,8 @@ class ReportFilterService
                     }),
             ];
         });
+
+        return $this->scopeBranchOptions($options);
     }
 
     /**
@@ -62,7 +65,7 @@ class ReportFilterService
     {
         $cacheKey = 'report_filter:branch_options:' . sha1(json_encode([$table, $branchColumn]));
 
-        return [
+        return $this->scopeBranchOptions([
             'branchOptions' => Cache::remember($cacheKey, now()->addHours(6), function () use ($table, $branchColumn) {
                 return DB::table($table)
                     ->selectRaw("TRIM($branchColumn) as branch_name")
@@ -74,7 +77,7 @@ class ReportFilterService
                     ->filter()
                     ->values();
             }),
-        ];
+        ]);
     }
 
     /**
@@ -83,7 +86,7 @@ class ReportFilterService
      */
     public function buildBrilinkFilterOptions(): array
     {
-        return Cache::remember('report_filter:brilink_options', now()->addHours(6), function () {
+        $options = Cache::remember('report_filter:brilink_options', now()->addHours(6), function () {
             $rows = collect([
                 DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
                     ->selectRaw('TRIM(cabang) as branch_name')
@@ -142,6 +145,8 @@ class ReportFilterService
                     }),
             ];
         });
+
+        return $this->scopeBranchOptions($options);
     }
 
     /**
@@ -182,5 +187,25 @@ class ReportFilterService
                 ->values()
                 ->all();
         });
+    }
+
+    private function scopeBranchOptions(array $options): array
+    {
+        $scope = UserBranchScope::current();
+        if ($scope === null) {
+            return $options;
+        }
+
+        $matchesScope = fn ($branch): bool => strtoupper(trim((string) $branch)) === $scope['upper_label'];
+        $options['branchOptions'] = collect($options['branchOptions'] ?? [])
+            ->filter($matchesScope)
+            ->values();
+
+        if (array_key_exists('branchUkerMap', $options)) {
+            $options['branchUkerMap'] = collect($options['branchUkerMap'] ?? [])
+                ->filter(fn ($ukers, $branch): bool => $matchesScope($branch));
+        }
+
+        return $options;
     }
 }

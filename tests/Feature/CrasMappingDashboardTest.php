@@ -112,6 +112,31 @@ beforeEach(function (): void {
             'tunggakan_kecil' => '2,000',
             'tunggakan_pokok' => '20,000',
         ],
+        [
+            'cras_uuid' => 'magetan-industri',
+            'cras_periode' => '2026-06-30',
+            'ket_kanca' => 'KC Magetan',
+            'br_number' => '03410',
+            'ket_unit_kerja' => 'UNIT MAGETAN',
+            'sektor_ekonomi' => 'INDUSTRI',
+            'sub_sektor_ekonomi' => 'PENGOLAHAN',
+            'loan_type' => 'KUPEDES',
+            'segmen' => 'MIKRO',
+            'ket_produk_tiering' => 'TIER 1',
+            'kualitas' => '1',
+            'plafond' => '900,000',
+            'baki_debet' => '750,000',
+            'jumlah_debitur' => '1',
+            'jumlah_rekening' => '1',
+            'biaya_ckpn' => '30,000',
+            'ckpn_mo' => '25,000',
+            'realisasi_ph' => '10,000',
+            'recovery_total' => '5,000',
+            'saldo_ph' => '4,000',
+            'tunggakan_bunga' => '2,000',
+            'tunggakan_kecil' => '500',
+            'tunggakan_pokok' => '6,000',
+        ],
     ]);
 });
 
@@ -175,6 +200,23 @@ it('aggregates text metrics and applies all CRAS portfolio filters', function ()
         ->assertJsonPath('metrics.tunggakan_kecil', 1000)
         ->assertJsonPath('metrics.tunggakan_pokok', 15000)
         ->assertJsonPath('metrics.total_tunggakan', 21000);
+});
+
+it('forces a restricted user to their own CRAS branch', function (): void {
+    $user = User::factory()->create(['pn' => '0049']);
+
+    $response = $this->actingAs($user)->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', [
+        'wilayah' => 'ponorogo',
+    ]));
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('ready', true)
+        ->assertJsonPath('filters.selected.wilayah', 'magetan')
+        ->assertJsonPath('coverage.source_row_count', 1)
+        ->assertJsonPath('metrics.plafond', 900000)
+        ->assertJsonPath('metrics.baki_debet', 750000)
+        ->assertJsonPath('units.0.branch', 'KC Magetan');
 });
 
 it('keeps responsive map and table guardrails in the CRAS view', function (): void {

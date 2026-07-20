@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Support\UserBranchScope;
 use App\Support\RkaLookupService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -34,6 +35,13 @@ class NewPayrollReportService
             ->orderBy('branch_name')
             ->orderBy('uker_name')
             ->get();
+
+        $scope = UserBranchScope::current();
+        if ($scope !== null) {
+            $branchUkerRows = $branchUkerRows
+                ->filter(fn ($row): bool => strtoupper(trim((string) ($row->branch_name ?? ''))) === $scope['upper_label'])
+                ->values();
+        }
 
         return [
             'branchOptions' => $branchUkerRows

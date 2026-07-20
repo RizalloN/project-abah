@@ -44,6 +44,12 @@ class LinkManagementController extends Controller
             'spreadsheet_id' => '11dzu4edTyp9UFBicNDughtJ43bzvZguh',
             'link_url' => 'https://docs.google.com/spreadsheets/d/11dzu4edTyp9UFBicNDughtJ43bzvZguh/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
+        'rm-sme' => [
+            'label' => 'KPI RM SME',
+            'sheet_name' => 'KPI RM SME',
+            'spreadsheet_id' => '1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+        ],
         'mantri' => [
             'label' => 'KPI Mantri',
             'sheet_name' => 'KPI',
@@ -164,9 +170,13 @@ class LinkManagementController extends Controller
             );
 
             if ($oldSppg) {
-                Cache::forget('report:sppg:v1:' . md5(($oldSppg->link_url ?? '') . '|' . ($oldSppg->sheet_name ?? 'Area 6')));
+                foreach (['area6', 'madiun', 'magetan', 'ngawi', 'ponorogo'] as $scopeKey) {
+                    Cache::forget('report:sppg:v1:' . $scopeKey . ':' . md5(($oldSppg->link_url ?? '') . '|' . ($oldSppg->sheet_name ?? 'Area 6')));
+                }
             }
-            Cache::forget('report:sppg:v1:' . md5($sppgLinkUrl . '|' . $sppgSheetName));
+            foreach (['area6', 'madiun', 'magetan', 'ngawi', 'ponorogo'] as $scopeKey) {
+                Cache::forget('report:sppg:v1:' . $scopeKey . ':' . md5($sppgLinkUrl . '|' . $sppgSheetName));
+            }
 
             foreach (($validated['market_share'] ?? []) as $key => $payload) {
                 if (!array_key_exists($key, self::MARKET_SHARE_DEFAULTS)) {

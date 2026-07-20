@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\UserBranchScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -69,8 +70,9 @@ class UserManagementController extends Controller
             'admins' => User::where('role', 'admin')->count(),
             'users'  => User::where('role', 'user')->count(),
         ];
+        $branchScopeOptions = UserBranchScope::options();
 
-        return view('admin.user-management', compact('users', 'stats'));
+        return view('admin.user-management', compact('users', 'stats', 'branchScopeOptions'));
     }
 
     public function loginHistory(User $user): \Illuminate\Http\JsonResponse
@@ -114,10 +116,13 @@ class UserManagementController extends Controller
             'name'     => ['required', 'string', 'min:3', 'max:60', 'regex:' . self::NAME_REGEX],
             'pn'       => ['required', 'string', 'regex:' . self::PN_REGEX, 'unique:users,pn'],
             'role'     => ['required', Rule::in(['admin', 'user'])],
+            'branch_scope' => ['required', Rule::in(array_keys(UserBranchScope::options()))],
             'password' => ['required', 'string', 'min:8'],
         ], [
             'name.regex'     => 'Nama hanya boleh mengandung huruf dan spasi (tanpa gelar asing atau karakter khusus).',
             'pn.regex'       => 'PN harus berupa 4–10 digit angka (contoh: 90179583).',
+            'branch_scope.required' => 'Wilayah binaan wajib dipilih.',
+            'branch_scope.in' => 'Wilayah binaan yang dipilih tidak valid.',
             'password.min'   => 'Password minimal 8 karakter.',
         ])->validateWithBag('createUser');
 
@@ -134,11 +139,15 @@ class UserManagementController extends Controller
             'name'     => trim($data['name']),
             'pn'       => trim($data['pn']),
             'role'     => $data['role'],
+            'branch_scope' => $data['branch_scope'],
             'password' => Hash::make($data['password']),
         ]);
 
         // ── Audit log ──
-        $this->writeAuditLog('create', $newUser, $currentAdmin);
+        $this->writeAuditLog('create', $newUser, $currentAdmin, [
+            'role' => $data['role'],
+            'branch_scope' => $data['branch_scope'],
+        ]);
 
         return back()->with('success', 'User baru berhasil ditambahkan.');
     }
@@ -149,10 +158,13 @@ class UserManagementController extends Controller
             'name'     => ['required', 'string', 'min:3', 'max:60', 'regex:' . self::NAME_REGEX],
             'pn'       => ['required', 'string', 'regex:' . self::PN_REGEX, Rule::unique('users', 'pn')->ignore($user->getKey())],
             'role'     => ['required', Rule::in(['admin', 'user'])],
+            'branch_scope' => ['required', Rule::in(array_keys(UserBranchScope::options()))],
             'password' => ['nullable', 'string', 'min:8'],
         ], [
             'name.regex'   => 'Nama hanya boleh mengandung huruf dan spasi (tanpa gelar asing atau karakter khusus).',
             'pn.regex'     => 'PN harus berupa 4–10 digit angka (contoh: 90179583).',
+            'branch_scope.required' => 'Wilayah binaan wajib dipilih.',
+            'branch_scope.in' => 'Wilayah binaan yang dipilih tidak valid.',
             'password.min' => 'Password minimal 8 karakter.',
         ]);
 
@@ -186,9 +198,11 @@ class UserManagementController extends Controller
         }
 
         $oldRole = $user->role;
+        $oldBranchScope = $user->branch_scope ?: UserBranchScope::AREA_SCOPE;
         $user->name = trim($data['name']);
         $user->pn   = trim($data['pn']);
         $user->role = $data['role'];
+        $user->branch_scope = $data['branch_scope'];
 
         if (!empty($data['password'])) {
             $user->password = Hash::make($data['password']);
@@ -200,6 +214,8 @@ class UserManagementController extends Controller
         $this->writeAuditLog('update', $user, $currentUser, [
             'old_role' => $oldRole,
             'new_role' => $data['role'],
+            'old_branch_scope' => $oldBranchScope,
+            'new_branch_scope' => $data['branch_scope'],
             'password_changed' => !empty($data['password']),
         ]);
 

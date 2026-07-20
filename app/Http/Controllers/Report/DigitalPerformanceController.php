@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
+use App\Support\UserBranchScope;
 use Illuminate\Support\Facades\DB;
 use App\Services\Reports\EdcReportService;
 use App\Services\Reports\QrisReportService;
@@ -32,7 +33,7 @@ class DigitalPerformanceController extends Controller
 
     public function performanceEdc(): \Illuminate\View\View
     {
-        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $branches = $this->visibleBranches();
         ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->filterService->buildBranchUkerFilterOptions(
             'jumlah_merchant_detail',
             'NAMA_KANCA',
@@ -44,7 +45,7 @@ class DigitalPerformanceController extends Controller
 
     public function performanceQris(): \Illuminate\View\View
     {
-        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $branches = $this->visibleBranches();
         ['branchOptions' => $branchOptions] = $this->filterService->buildBranchOptions(
             'jumlah_merchant_qris_detail',
             'MBDESC',
@@ -76,7 +77,7 @@ class DigitalPerformanceController extends Controller
 
     public function performanceBrilink(): \Illuminate\View\View
     {
-        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $branches = $this->visibleBranches();
         ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->filterService->buildBrilinkFilterOptions();
 
         return view('report.performance-brilink', compact('branches', 'branchOptions', 'branchUkerMap'));
@@ -84,7 +85,7 @@ class DigitalPerformanceController extends Controller
 
     public function performanceQlola(): \Illuminate\View\View
     {
-        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $branches = $this->visibleBranches();
         ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->qlolaService->buildFilterOptions();
 
         return view('report.performance-qlola', compact('branches', 'branchOptions', 'branchUkerMap'));
@@ -110,5 +111,14 @@ class DigitalPerformanceController extends Controller
             default
                 => response()->json(['status' => 'error', 'message' => "Unknown tab: {$tab}"], 422),
         };
+    }
+
+    private function visibleBranches(): array
+    {
+        $scope = UserBranchScope::current();
+
+        return $scope !== null
+            ? [$scope['upper_label']]
+            : ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
     }
 }

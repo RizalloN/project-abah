@@ -7,7 +7,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h2 class="h4 font-weight-bold text-dark mb-0"><i class="fas fa-users-cog text-primary mr-2"></i> User Management</h2>
-            <span class="text-muted small">Kelola akun internal, role akses, dan reset password.</span>
+            <span class="text-muted small">Kelola akun internal, role, wilayah binaan, dan reset password.</span>
         </div>
         <span class="badge badge-light border border-primary text-primary px-3 py-2" style="border-radius: 8px;"><i class="fas fa-user-shield mr-1"></i> Admin Only</span>
     </div>
@@ -47,6 +47,16 @@
                                 <option value="admin" {{ old('role') === 'admin' ? 'selected' : '' }}>Admin</option>
                             </select>
                             @error('role', 'createUser')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
+                        <div class="form-group mb-3">
+                            <label class="small font-weight-bold text-dark" for="branch_scope">Wilayah Binaan</label>
+                            <select id="branch_scope" name="branch_scope" data-user-scope-admin-control class="form-control @error('branch_scope', 'createUser') is-invalid @enderror" required style="border-radius: 8px;">
+                                @foreach($branchScopeOptions as $scopeKey => $scopeLabel)
+                                    <option value="{{ $scopeKey }}" {{ old('branch_scope', \App\Support\UserBranchScope::AREA_SCOPE) === $scopeKey ? 'selected' : '' }}>{{ $scopeLabel }}</option>
+                                @endforeach
+                            </select>
+                            @error('branch_scope', 'createUser')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            <small class="text-muted d-block mt-1">Area 6 dapat melihat semua cabang. Pilihan KC membatasi seluruh dashboard ke cabang tersebut.</small>
                         </div>
                         <div class="form-group mb-4">
                             <label class="small font-weight-bold text-dark" for="password">Password Awal</label>
@@ -91,6 +101,7 @@
                                 <th class="border-top-0 border-bottom-0 pl-4">Pengguna</th>
                                 <th class="border-top-0 border-bottom-0">PN</th>
                                 <th class="border-top-0 border-bottom-0">Role</th>
+                                <th class="border-top-0 border-bottom-0">Wilayah Binaan</th>
                                 <th class="border-top-0 border-bottom-0">Terakhir Login</th>
                                 <th class="text-center border-top-0 border-bottom-0 pr-4">Aksi</th>
                             </tr>
@@ -115,6 +126,15 @@
                                             {{ strtoupper($userItem->role) }}
                                         </span>
                                     </td>
+                                    @php
+                                        $userScopeKey = $userItem->branch_scope
+                                            ?: (\App\Support\UserBranchScope::forUser($userItem)['key'] ?? \App\Support\UserBranchScope::AREA_SCOPE);
+                                    @endphp
+                                    <td class="align-middle">
+                                        <span class="badge badge-light border px-2 py-1" style="border-radius: 6px;">
+                                            <i class="fas fa-map-marker-alt text-primary mr-1"></i>{{ $branchScopeOptions[$userScopeKey] ?? 'Area 6 (Semua Cabang)' }}
+                                        </span>
+                                    </td>
                                     <td class="align-middle text-dark">
                                         @if($userItem->last_login_at)
                                             <div class="font-weight-bold" style="font-size: 0.85rem;">{{ \Carbon\Carbon::parse($userItem->last_login_at)->diffForHumans() }}</div>
@@ -137,7 +157,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="5" class="text-center text-muted py-5">Belum ada user terdaftar.</td></tr>
+                                <tr><td colspan="6" class="text-center text-muted py-5">Belum ada user terdaftar.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -154,6 +174,16 @@
 </div>
 
 @foreach ($users as $userItem)
+    @php
+        $editRole = session('open_edit_user') == $userItem->id
+            ? old('role', $userItem->role)
+            : $userItem->role;
+        $storedScopeKey = $userItem->branch_scope
+            ?: (\App\Support\UserBranchScope::forUser($userItem)['key'] ?? \App\Support\UserBranchScope::AREA_SCOPE);
+        $editScopeKey = session('open_edit_user') == $userItem->id
+            ? old('branch_scope', $storedScopeKey)
+            : $storedScopeKey;
+    @endphp
     <div class="modal fade user-management-edit-modal" id="editUserModal-{{ $userItem->id }}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-0 shadow-sm" style="border-radius: 16px;">
@@ -194,11 +224,21 @@
                                 <div class="form-group mb-3">
                                     <label class="small font-weight-bold text-dark">Role</label>
                                     <select name="role" class="form-control @if (session('open_edit_user') == $userItem->id && $errors->updateUser->has('role')) is-invalid @endif" required style="border-radius: 8px;">
-                                        @php($editRole = session('open_edit_user') == $userItem->id ? old('role', $userItem->role) : $userItem->role)
                                         <option value="user" {{ $editRole === 'user' ? 'selected' : '' }}>User</option>
                                         <option value="admin" {{ $editRole === 'admin' ? 'selected' : '' }}>Admin</option>
                                     </select>
                                     @if (session('open_edit_user') == $userItem->id) @error('role', 'updateUser')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror @endif
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label class="small font-weight-bold text-dark">Wilayah Binaan</label>
+                                    <select name="branch_scope" data-user-scope-admin-control class="form-control @if (session('open_edit_user') == $userItem->id && $errors->updateUser->has('branch_scope')) is-invalid @endif" required style="border-radius: 8px;">
+                                        @foreach($branchScopeOptions as $scopeKey => $scopeLabel)
+                                            <option value="{{ $scopeKey }}" {{ $editScopeKey === $scopeKey ? 'selected' : '' }}>{{ $scopeLabel }}</option>
+                                        @endforeach
+                                    </select>
+                                    @if (session('open_edit_user') == $userItem->id) @error('branch_scope', 'updateUser')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror @endif
                                 </div>
                             </div>
                             <div class="col-md-6">

@@ -829,6 +829,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => 'rm-sme']) }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi') && request()->route('sheet') === 'rm-sme' ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>KPI RM SME</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => 'mantri']) }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi') && request()->route('sheet') === 'mantri' ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>KPI Mantri</p>

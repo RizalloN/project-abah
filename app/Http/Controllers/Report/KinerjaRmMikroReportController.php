@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Report;
 use App\Http\Controllers\Controller;
 use App\Jobs\SyncImportedReportJob;
 use App\Support\ReportCacheVersion;
+use App\Support\UserBranchScope;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -343,6 +344,7 @@ class KinerjaRmMikroReportController extends Controller
                 ->selectRaw('cabang')
                 ->selectRaw('unit')
                 ->selectRaw($this->snapshotSelectColumn('branch_code', "''") . ' as branch_code');
+            $this->scopeQueryToCurrentBranch($query, 'cabang');
 
             if (in_array('rm', $group, true)) {
                 $query->selectRaw('rm');
@@ -431,6 +433,7 @@ class KinerjaRmMikroReportController extends Controller
             )
             ->whereNotNull('d.pn_pengelola1')
             ->where('d.pn_pengelola1', '<>', '');
+        $this->scopeQueryToCurrentBranch($baseQuery, 'd.cabang1');
 
         foreach ($expressions as $alias => $expression) {
             $baseQuery->selectRaw("{$expression} as {$alias}");
@@ -908,7 +911,7 @@ class KinerjaRmMikroReportController extends Controller
     {
         $view = $view === 'per_cabang' ? 'per_cabang' : 'per_unit_kerja';
         $emptyTotal = $this->finalizeExtremeLowMantriRow([
-            'branch_office' => 'AREA 6',
+            'branch_office' => UserBranchScope::current()['upper_label'] ?? 'AREA 6',
             'total_mantri' => 0,
             'buckets' => $this->blankExtremeLowBuckets(),
         ]);
@@ -927,7 +930,7 @@ class KinerjaRmMikroReportController extends Controller
         $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
         $rosterRows = $this->cachedExtremeLowMantriRosterRows($period);
         $total = [
-            'branch_office' => 'AREA 6',
+            'branch_office' => UserBranchScope::current()['upper_label'] ?? 'AREA 6',
             'total_mantri' => 0,
             'buckets' => $this->blankExtremeLowBuckets(),
         ];
@@ -1016,7 +1019,7 @@ class KinerjaRmMikroReportController extends Controller
     {
         $grouped = [];
 
-        DB::table('daily_loan_dinamis as d')
+        $query = DB::table('daily_loan_dinamis as d')
             ->where('d.periode', $period)
             ->where('d.segmen_kinerja', 'MICRO')
             ->whereIn('d.produk_kinerja', self::MANTRI_PRODUCTS)
@@ -1025,7 +1028,10 @@ class KinerjaRmMikroReportController extends Controller
             ->select('d.pn_pengelola1', 'd.unit1', 'd.cabang1')
             ->selectRaw('COUNT(*) as rekening_count')
             ->selectRaw('SUM(COALESCE(d.baki_debet1, 0)) as portfolio_os')
-            ->groupBy('d.pn_pengelola1', 'd.unit1', 'd.cabang1')
+            ->groupBy('d.pn_pengelola1', 'd.unit1', 'd.cabang1');
+        $this->scopeQueryToCurrentBranch($query, 'd.cabang1');
+
+        $query
             ->get()
             ->each(function ($row) use (&$grouped): void {
                 $mantriKey = $this->mantriPnKey((string) ($row->pn_pengelola1 ?? ''));
@@ -1095,8 +1101,12 @@ class KinerjaRmMikroReportController extends Controller
         }
 
         $ptUnitKeys = [];
-        DB::table('brihc_pemasar')
-            ->select($columns)
+        $query = DB::table('brihc_pemasar')->select($columns);
+        if (in_array('psadesc', $columns, true)) {
+            $this->scopeQueryToCurrentBranch($query, 'psadesc');
+        }
+
+        $query
             ->get()
             ->each(function ($row) use (&$ptUnitKeys): void {
                 if (!str_contains($this->normalizeKey($this->brihcPemasarValue($row, 'esgdesc')), 'PT')) {
@@ -1122,7 +1132,7 @@ class KinerjaRmMikroReportController extends Controller
 
     private function mantriMonthlyRealizationsByPn(string $period, string $periodStart): array
     {
-        return DB::table('daily_loan_dinamis as d')
+        $query = DB::table('daily_loan_dinamis as d')
             ->where('d.periode', $period)
             ->where('d.segmen_kinerja', 'MICRO')
             ->whereIn('d.produk_kinerja', self::MANTRI_PRODUCTS)
@@ -1133,7 +1143,10 @@ class KinerjaRmMikroReportController extends Controller
             )
             ->select('d.pn_pengelola1', 'd.rm_normalized')
             ->selectRaw('SUM(COALESCE(d.plafon, 0)) as realisasi_os')
-            ->groupBy('d.pn_pengelola1', 'd.rm_normalized')
+            ->groupBy('d.pn_pengelola1', 'd.rm_normalized');
+        $this->scopeQueryToCurrentBranch($query, 'd.cabang1');
+
+        return $query
             ->get()
             ->reduce(function (array $carry, $row): array {
                 $key = $this->mantriPnKey((string) ($row->pn_pengelola1 ?? ''))
@@ -1329,7 +1342,7 @@ class KinerjaRmMikroReportController extends Controller
             $pnPemutusSql = "NULLIF(TRIM(LEADING '0' FROM TRIM(SUBSTRING_INDEX(COALESCE(d.pn_pemutus1, ''), '-', 1))), '')";
         }
 
-        return DB::table('daily_loan_dinamis as d')
+        $query = DB::table('daily_loan_dinamis as d')
             ->leftJoin('brihc as b', function ($join) use ($pnPemutusSql): void {
                 $join->on('b.pn', '=', DB::raw($pnPemutusSql));
             })
@@ -1348,6 +1361,10 @@ class KinerjaRmMikroReportController extends Controller
             ->selectRaw('d.plafon, d.baki_debet1, d.kolek, d.tgl_realisasi')
             ->selectRaw("{$actualSql} as actual_level")
             ->selectRaw("{$expectedSql} as expected_level");
+
+        $this->scopeQueryToCurrentBranch($query, 'd.cabang1');
+
+        return $query;
     }
 
     private function decorateMantriUnitRow(array $row): array
@@ -1607,8 +1624,19 @@ class KinerjaRmMikroReportController extends Controller
         ]);
     }
 
-    private function reportCacheVersion(): int
+    private function scopeQueryToCurrentBranch($query, string $column): void
     {
-        return ReportCacheVersion::composite(['pinjaman', 'simpanan']);
+        $scope = UserBranchScope::current();
+        if ($scope === null) {
+            return;
+        }
+
+        $query->whereRaw("UPPER(TRIM(COALESCE({$column}, ''))) LIKE ?", ['%' . $scope['upper_label'] . '%']);
+    }
+
+    private function reportCacheVersion(): string
+    {
+        return ReportCacheVersion::composite(['pinjaman', 'simpanan'])
+            . ':scope:' . UserBranchScope::cacheKey();
     }
 }

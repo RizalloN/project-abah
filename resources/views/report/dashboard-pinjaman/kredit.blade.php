@@ -998,7 +998,7 @@
                                 </div>
                             @endforeach
                         </div>
-                        <select id="kancaSelector" class="d-none">
+                        <select id="kancaSelector" name="kanca" class="d-none">
                             @foreach($kancaOptions as $option)
                                 <option value="{{ $option['value'] }}" @selected($option['value'] === $selectedKanca)>{{ $option['label'] }}</option>
                             @endforeach

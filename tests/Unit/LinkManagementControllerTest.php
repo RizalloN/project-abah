@@ -43,8 +43,15 @@ class LinkManagementControllerTest extends TestCase
         $sppgLink = $view->getData()['sppgLink'];
         $marketShareLinks = $view->getData()['marketShareLinks'];
 
-        $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'mantri', 'consumer'], array_keys($links));
+        $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'rm-sme', 'mantri', 'consumer'], array_keys($links));
         $this->assertSame('KPI RM Mikro', $links['rm-mikro']['label']);
+        $this->assertSame('KPI RM SME', $links['rm-sme']['label']);
+        $this->assertSame('KPI RM SME', $links['rm-sme']['sheet_name']);
+        $this->assertSame('1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs', $links['rm-sme']['spreadsheet_id']);
+        $this->assertSame(
+            'https://docs.google.com/spreadsheets/d/1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            $links['rm-sme']['link_url']
+        );
         $this->assertSame('KPI Konsumer', $links['consumer']['label']);
         $this->assertSame('KPI', $links['consumer']['sheet_name']);
         $this->assertSame('1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM', $links['consumer']['spreadsheet_id']);

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
+use App\Support\UserBranchScope;
 use App\Support\RkaLookupService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,10 @@ class DataPhReportController extends Controller
     public function index(Request $request): View
     {
         $area6Branches = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+        $userBranchScope = UserBranchScope::current();
+        if ($userBranchScope !== null) {
+            $area6Branches = [$userBranchScope['label']];
+        }
 
         $phPeriods = Schema::hasTable('lw325_ph')
             ? DB::table('lw325_ph')->select('periode')->distinct()->pluck('periode')

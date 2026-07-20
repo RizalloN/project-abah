@@ -107,7 +107,7 @@
         </tbody>
         <tfoot>
             <tr class="rm-mikro-total">
-                <td class="text-center" colspan="{{ $isBranchView ? 2 : 3 }}">AREA 6</td>
+                <td class="text-center" colspan="{{ $isBranchView ? 2 : 3 }}">{{ $total['branch_office'] ?? ($userBranchScope['upper_label'] ?? 'AREA 6') }}</td>
                 <td class="text-right">{{ $formatAmount($total['total_mantri'] ?? 0) }}</td>
                 @foreach (['el_0_100', 'el_100_200', 'el_200_400'] as $bucketKey)
                     <td class="text-right cell-extreme">{{ $formatAmount($total['buckets'][$bucketKey]['deb'] ?? 0) }}</td>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
 use App\Support\ReportCacheVersion;
+use App\Support\UserBranchScope;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Http\Request;
@@ -204,6 +205,11 @@ class KinerjaNonPtpReportController extends Controller
 
     private function branchOptions(): array
     {
+        $scope = UserBranchScope::current();
+        if ($scope !== null) {
+            return [$scope['label'] => $scope['label']];
+        }
+
         return ['all' => 'Area 6'] + array_combine(self::AREA_6_BRANCHES, self::AREA_6_BRANCHES);
     }
 

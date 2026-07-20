@@ -172,6 +172,19 @@
             color: var(--bri-nusantara);
         }
 
+        .user-branch-scope-lock {
+            border-color: #cbd5e1 !important;
+            background-color: #f1f5f9 !important;
+            color: #334155 !important;
+            cursor: not-allowed !important;
+            opacity: 1 !important;
+        }
+
+        button.user-branch-scope-lock .fa-chevron-down,
+        button.user-branch-scope-lock .dropdown-toggle-icon {
+            display: none !important;
+        }
+
         .modern-navbar .dropdown-toggle::after {
             display: none;
         }
@@ -1556,7 +1569,9 @@
                     <span class="modern-user-badge mr-3">{{ strtoupper(substr(Auth::user()->name, 0, 2)) }}</span>
                     <span class="d-none d-sm-block">
                         <span class="d-block font-weight-bold modern-user-name">{{ Auth::user()->pn }} - {{ Auth::user()->name }}</span>
-                        <span class="d-block text-uppercase font-weight-bold modern-user-caption">A-Six Account</span>
+                        <span class="d-block text-uppercase font-weight-bold modern-user-caption">
+                            {{ !empty($userBranchScope) ? 'Akses ' . $userBranchScope['label'] : 'Akses Area 6' }}
+                        </span>
                     </span>
                     <i class="fas fa-chevron-down ml-3" style="font-size: 0.75rem; color: #71c5e8;"></i>
                 </a>
@@ -1934,6 +1949,281 @@
 
 @stack('scripts')
 @yield('scripts')
+
+@if(!empty($userBranchScope))
+<script>
+    (function () {
+        const scope = @json($userBranchScope);
+        const branchFieldNames = new Set([
+            'cabang',
+            'cabang1',
+            'kanca',
+            'mismatch_cabang1',
+            'wilayah',
+            'branch_office',
+            'kantor_cabang'
+        ]);
+        const branchChoiceSelector = [
+            'input[type="checkbox"][name]',
+            'input[type="radio"][name]',
+            '.filter-branch-checkbox',
+            '.dormant-branch-checkbox'
+        ].join(',');
+        const branchToggleSelector = [
+            '#filterBranchDropdown',
+            '#businessClusterBranchDropdown',
+            '#dormantBranchDropdown',
+            '#cabangDropdownToggle',
+            '[data-loan-dropdown-toggle="kanca"]',
+            '[data-loan-dropdown-toggle="cabang"]',
+            '[data-dana-dropdown-toggle="cabang"]',
+            '[data-daily-dropdown-toggle="kanca"]'
+        ].join(',');
+        const branchMenuSelector = [
+            '#filterBranchMenu',
+            '#businessClusterBranchMenu',
+            '#dormantBranchMenu',
+            '#cabangDropdownMenu',
+            '[data-loan-dropdown-menu="kanca"]',
+            '[data-loan-dropdown-menu="cabang"]',
+            '[data-dana-dropdown-menu="cabang"]',
+            '[data-daily-dropdown-menu="kanca"]'
+        ].join(',');
+        const branchOptionSelector = [
+            '#cabangOptions .filter-single-option',
+            '[data-loan-dropdown="kanca"] .loan-dropdown-option',
+            '[data-loan-dropdown="cabang"] .loan-dropdown-option',
+            '[data-dana-dropdown-menu="cabang"] [data-value]',
+            '[data-kanca-option]'
+        ].join(',');
+        const normalizedTargets = [scope.label, scope.upper_label, scope.plain_label, scope.key, scope.slug, scope.code4, scope.code5]
+            .map(normalizeBranchToken)
+            .filter(Boolean);
+
+        function normalizeBranchToken(value) {
+            return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        }
+
+        function isBranchField(element) {
+            if (element.hasAttribute('data-user-scope-admin-control')) {
+                return false;
+            }
+
+            const name = String(element.getAttribute('name') || '').replace(/\[\]$/, '');
+            if (branchFieldNames.has(name)) {
+                return true;
+            }
+
+            if (element.matches && element.matches('.filter-branch-checkbox, .dormant-branch-checkbox')) {
+                return true;
+            }
+
+            if (!['SELECT', 'INPUT'].includes(element.tagName)) {
+                return false;
+            }
+
+            const id = normalizeBranchToken([
+                element.id,
+                element.getAttribute('aria-label'),
+                element.getAttribute('data-filter'),
+                element.getAttribute('data-field')
+            ].join(' '));
+            return ['CABANG', 'KANCA', 'BRANCH', 'WILAYAH'].some(function (token) {
+                return id.includes(token);
+            });
+        }
+
+        function isScopeOption(element) {
+            const token = normalizeBranchToken((element.value || '') + ' ' + (element.textContent || ''));
+            return normalizedTargets.some(function (target) {
+                return target.length >= 4 && token.includes(target);
+            });
+        }
+
+        function lockSelect(select) {
+            if (!isBranchField(select) || select.dataset.userBranchLocked === '1') {
+                return;
+            }
+
+            const options = Array.from(select.options || []);
+            const match = options.find(isScopeOption);
+            if (!match) {
+                return;
+            }
+
+            options.forEach(function (option) {
+                option.selected = option === match;
+                option.hidden = option !== match;
+            });
+            select.disabled = true;
+            select.dataset.userBranchLocked = '1';
+            select.classList.add('user-branch-scope-lock');
+            select.title = 'Akses data dikunci untuk ' + scope.label;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+
+            if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
+                window.jQuery(select).trigger('change.select2');
+            }
+        }
+
+        function lockChoice(input) {
+            if (!isBranchField(input) || input.dataset.userBranchLocked === '1') {
+                return;
+            }
+
+            const label = input.id ? document.querySelector('label[for="' + CSS.escape(input.id) + '"]') : null;
+            input.checked = isScopeOption({
+                value: input.value,
+                textContent: label ? label.textContent : ''
+            });
+            input.disabled = true;
+            input.dataset.userBranchLocked = '1';
+            input.classList.add('user-branch-scope-lock');
+
+            const item = input.closest('label, .dropdown-item');
+            if (item) {
+                item.hidden = !input.checked;
+            }
+        }
+
+        function lockCustomOption(option) {
+            const match = isScopeOption({
+                value: option.getAttribute('data-value') || option.getAttribute('data-kanca-option') || '',
+                textContent: option.getAttribute('data-label') || option.textContent || ''
+            });
+
+            option.hidden = !match;
+            option.setAttribute('aria-disabled', 'true');
+            option.dataset.userBranchLocked = '1';
+            option.classList.toggle('active', match);
+            option.classList.toggle('is-active', match);
+        }
+
+        function lockBranchToggle(toggle) {
+            toggle.disabled = true;
+            toggle.setAttribute('aria-disabled', 'true');
+            toggle.setAttribute('aria-expanded', 'false');
+            toggle.dataset.userBranchLocked = '1';
+            toggle.classList.add('user-branch-scope-lock');
+            toggle.title = 'Akses data dikunci untuk ' + scope.label;
+
+            const label = toggle.querySelector([
+                '.branch-dropdown-label',
+                '.casa-dropdown-label',
+                '.dana-dropdown-text',
+                '.daily-dropdown-toggle-text',
+                '.loan-dropdown-text',
+                '.loan-dropdown-label'
+            ].join(','));
+            if (label) {
+                label.textContent = scope.label;
+            }
+
+            const root = toggle.closest([
+                '.branch-filter-dropdown',
+                '.loan-dropdown',
+                '.loan-dropdown-shell',
+                '.dana-dropdown',
+                '.daily-dropdown',
+                '.dormant-filter-dropdown'
+            ].join(','));
+            if (root) {
+                root.classList.remove('show', 'open', 'is-open');
+                root.querySelectorAll('.show').forEach(function (element) {
+                    element.classList.remove('show');
+                });
+            }
+        }
+
+        function closeBranchMenu(menu) {
+            menu.classList.remove('show', 'open', 'is-open');
+            menu.setAttribute('aria-hidden', 'true');
+        }
+
+        function lockBranchControls(root) {
+            const target = root && root.querySelectorAll ? root : document;
+            const elements = [];
+            const nativeSelector = 'select, ' + branchChoiceSelector;
+            if (target.matches && target.matches(nativeSelector)) {
+                elements.push(target);
+            }
+            target.querySelectorAll(nativeSelector).forEach(function (element) {
+                elements.push(element);
+            });
+
+            elements.forEach(function (element) {
+                if (element.tagName === 'SELECT') {
+                    lockSelect(element);
+                } else {
+                    lockChoice(element);
+                }
+            });
+
+            const customOptions = [];
+            if (target.matches && target.matches(branchOptionSelector)) {
+                customOptions.push(target);
+            }
+            target.querySelectorAll(branchOptionSelector).forEach(function (option) {
+                customOptions.push(option);
+            });
+            customOptions.forEach(lockCustomOption);
+
+            const toggles = [];
+            if (target.matches && target.matches(branchToggleSelector)) {
+                toggles.push(target);
+            }
+            target.querySelectorAll(branchToggleSelector).forEach(function (toggle) {
+                toggles.push(toggle);
+            });
+            toggles.forEach(lockBranchToggle);
+
+            const menus = [];
+            if (target.matches && target.matches(branchMenuSelector)) {
+                menus.push(target);
+            }
+            target.querySelectorAll(branchMenuSelector).forEach(function (menu) {
+                menus.push(menu);
+            });
+            menus.forEach(closeBranchMenu);
+
+            document.querySelectorAll('#filter_branch_office_label, #businessClusterBranchLabel, #kancaLabel, #cabangDropdownLabel').forEach(function (label) {
+                label.textContent = scope.label;
+            });
+        }
+
+        lockBranchControls(document);
+        document.addEventListener('DOMContentLoaded', function () {
+            lockBranchControls(document);
+        });
+
+        document.addEventListener('click', function (event) {
+            const target = event.target instanceof Element ? event.target : null;
+            if (!target || (!target.closest(branchToggleSelector) && !target.closest(branchOptionSelector))) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            lockBranchControls(document);
+        }, true);
+
+        const observer = new MutationObserver(function (mutations) {
+            mutations.forEach(function (mutation) {
+                mutation.addedNodes.forEach(function (node) {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        lockBranchControls(node);
+                        const parentSelect = node.closest ? node.closest('select') : null;
+                        if (parentSelect) {
+                            lockSelect(parentSelect);
+                        }
+                    }
+                });
+            });
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    })();
+</script>
+@endif
 
 @stack('modals')
     @include('report.partials.floating-scrollbar')

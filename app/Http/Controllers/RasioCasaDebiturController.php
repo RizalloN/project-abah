@@ -7,6 +7,7 @@ use App\Services\Import\ImportProgressService;
 use App\Support\ReportSnapshotBuilder;
 use App\Support\ReportIndexHintResolver;
 use App\Support\ReportCacheVersion;
+use App\Support\UserBranchScope;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -39,12 +40,15 @@ class RasioCasaDebiturController extends Controller
     public function index()
     {
         $defaultPeriod = $this->resolveAvailableLoanPeriod(null) ?: now()->toDateString();
-        $branches = collect(self::PRIORITY_BRANCHES)
+        $priorityBranches = UserBranchScope::current() !== null
+            ? [strtoupper(UserBranchScope::current()['plain_label'])]
+            : self::PRIORITY_BRANCHES;
+        $branches = collect($priorityBranches)
             ->map(fn (string $branch) => $this->formatBranchLabel($branch))
             ->all();
         ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->buildRasioFilterOptions();
         $unitBranchOptions = collect($branchOptions)
-            ->filter(fn ($branch) => in_array($this->normalizeBranchKey((string) $branch), self::PRIORITY_BRANCHES, true))
+            ->filter(fn ($branch) => in_array($this->normalizeBranchKey((string) $branch), $priorityBranches, true))
             ->values();
 
         return view('report.Rasiocasadebitur', compact(
@@ -422,14 +426,16 @@ class RasioCasaDebiturController extends Controller
         $cacheKey = 'rasio_casa_per_rm_filters:branches:v' . $this->reportCacheVersion() . ':' . $loanPeriod;
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($loanPeriod, $branchColumn) {
-            return DB::table('daily_loan_dinamis')
+            $query = DB::table('daily_loan_dinamis')
                 ->where('periode', $loanPeriod)
                 ->whereNotNull($branchColumn)
                 ->whereRaw("TRIM({$branchColumn}) <> ''")
                 ->selectRaw("UPPER(TRIM({$branchColumn})) as branch_name")
                 ->distinct()
-                ->orderBy('branch_name')
-                ->pluck('branch_name')
+                ->orderBy('branch_name');
+            $this->scopeQueryToCurrentBranch($query, $branchColumn);
+
+            return $query->pluck('branch_name')
                 ->filter()
                 ->values()
                 ->all();
@@ -723,7 +729,7 @@ class RasioCasaDebiturController extends Controller
         $cacheKey = 'rasio_casa_filter_options:v' . $this->reportCacheVersion() . ':' . $loanPeriod;
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($loanPeriod, $branchColumn, $ukerColumn) {
-            $rows = DB::table('daily_loan_dinamis')
+            $query = DB::table('daily_loan_dinamis')
                 ->where('periode', $loanPeriod)
                 ->whereNotNull($branchColumn)
                 ->whereNotNull($ukerColumn)
@@ -733,8 +739,9 @@ class RasioCasaDebiturController extends Controller
                 ->selectRaw("UPPER(TRIM({$ukerColumn})) as uker_name")
                 ->distinct()
                 ->orderBy('branch_name')
-                ->orderBy('uker_name')
-                ->get();
+                ->orderBy('uker_name');
+            $this->scopeQueryToCurrentBranch($query, $branchColumn);
+            $rows = $query->get();
 
             $branchOptions = $rows->pluck('branch_name')
                 ->filter()
@@ -1483,6 +1490,7 @@ class RasioCasaDebiturController extends Controller
 
         try {
             $query = DB::table('daily_loan_dinamis');
+            $this->scopeQueryToCurrentBranch($query, 'cabang1');
 
             if ($targetDate) {
                 $normalizedTarget = Carbon::parse($targetDate)->toDateString();
@@ -1491,7 +1499,10 @@ class RasioCasaDebiturController extends Controller
             } else {
                 $cacheKeyExternal = 'rasio_casa_latest_loan_period:v' . $this->reportCacheVersion();
                 $period = Cache::remember($cacheKeyExternal, now()->addMinutes(10), function () {
-                    return DB::table('daily_loan_dinamis')->max('periode');
+                    $query = DB::table('daily_loan_dinamis');
+                    $this->scopeQueryToCurrentBranch($query, 'cabang1');
+
+                    return $query->max('periode');
                 });
 
                 return $this->availableLoanPeriodMemo[$cacheKey] = $period;
@@ -1536,9 +1547,9 @@ class RasioCasaDebiturController extends Controller
         }
 
         try {
-            $exists = DB::table('simpanan_multipn')
-                ->where('posisi', $normalizedTarget)
-                ->exists();
+            $query = DB::table('simpanan_multipn')->where('posisi', $normalizedTarget);
+            $this->scopeQueryToCurrentBranch($query, 'kantor_cabang');
+            $exists = $query->exists();
 
             return $this->availableCasaPeriodMemo[$cacheKey] = $exists ? $normalizedTarget : null;
         } catch (Throwable) {
@@ -2296,9 +2307,22 @@ class RasioCasaDebiturController extends Controller
         return [$rows, $total];
     }
 
-    private function reportCacheVersion(): int
+    private function scopeQueryToCurrentBranch($query, string $column): void
     {
-        return ReportCacheVersion::composite(['pinjaman', 'simpanan']);
+        $scope = UserBranchScope::current();
+        if ($scope === null) {
+            return;
+        }
+
+        $query->whereRaw("UPPER(TRIM(COALESCE({$column}, ''))) LIKE ?", [
+            '%' . $scope['upper_label'] . '%',
+        ]);
+    }
+
+    private function reportCacheVersion(): string
+    {
+        return ReportCacheVersion::composite(['pinjaman', 'simpanan'])
+            . ':scope:' . UserBranchScope::cacheKey();
     }
 
     private function qualifyIndexedSource(string $table, ?string $alias = null, array $preferredIndexes = []): string

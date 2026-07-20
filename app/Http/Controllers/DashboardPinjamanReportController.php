@@ -8,6 +8,7 @@ use App\Support\ReportIndexHintResolver;
 use App\Support\ReportCacheVersion;
 use App\Support\LoanQualityBucketMapper;
 use App\Support\DashboardPinjamanKreditService;
+use App\Support\UserBranchScope;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
@@ -804,6 +805,14 @@ class DashboardPinjamanReportController extends Controller
      */
     private function kreditBranchOptions(): array
     {
+        $scope = UserBranchScope::current();
+        if ($scope !== null) {
+            return [[
+                'value' => $scope['label'],
+                'label' => $scope['label'],
+            ]];
+        }
+
         return array_merge(
             [['value' => 'all', 'label' => 'Area 6']],
             array_map(
@@ -1128,6 +1137,13 @@ class DashboardPinjamanReportController extends Controller
                 ->unique()
                 ->values();
         });
+
+        $scope = UserBranchScope::current();
+        if ($scope !== null) {
+            $branches = $branches
+                ->filter(fn ($branch): bool => strcasecmp(trim((string) $branch), $scope['label']) === 0)
+                ->values();
+        }
 
         return response()->json([
             'selected_period' => $selectedPeriod,
@@ -2545,6 +2561,11 @@ class DashboardPinjamanReportController extends Controller
 
     private function smallArrearsBranchOptions(): Collection
     {
+        $scope = UserBranchScope::current();
+        if ($scope !== null) {
+            return collect([$scope['label']]);
+        }
+
         return collect([self::SMALL_ARREARS_AREA_ALL, ...self::SMALL_ARREARS_AREA_BRANCHES]);
     }
 

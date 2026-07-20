@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
 use App\Services\Reports\NewPayrollReportService;
+use App\Support\UserBranchScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -19,7 +20,10 @@ class NewPayrollReportController extends Controller
 
     public function index(): \Illuminate\View\View
     {
-        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $scope = UserBranchScope::current();
+        $branches = $scope !== null
+            ? [$scope['upper_label']]
+            : ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
         ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap]
             = $this->newPayrollService->buildFilterOptions();
 

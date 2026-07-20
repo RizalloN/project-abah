@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\DashboardSimpananController;
+use App\Models\User;
 use App\Support\DashboardDanaService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
@@ -452,6 +453,24 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $resolved = $this->invokePrivate($controller, 'resolveArea6DailyLoanPeriod', ['2026-05-19']);
 
         $this->assertSame('2026-05-17', $resolved);
+    }
+
+    public function test_daily_loan_period_is_resolved_inside_the_signed_in_branch(): void
+    {
+        $this->createDailyLoanTable();
+        $this->actingAs(new User(['pn' => '0049']));
+
+        DB::table('daily_loan_dinamis')->insert([
+            ['periode' => '2026-05-16', 'cabang1' => 'KC Magetan', 'unit1' => 'UNIT MAGETAN'],
+            ['periode' => '2026-05-17', 'cabang1' => 'KC Madiun', 'unit1' => 'UNIT MADIUN'],
+            ['periode' => '2026-05-20', 'cabang1' => 'KC Ngawi', 'unit1' => 'UNIT NGAWI'],
+        ]);
+
+        $controller = new DashboardSimpananController();
+
+        $resolved = $this->invokePrivate($controller, 'resolveArea6DailyLoanPeriod', ['2026-05-19']);
+
+        $this->assertSame('2026-05-16', $resolved);
     }
 
     public function test_digital_landing_cards_prefer_available_snapshot_tables(): void

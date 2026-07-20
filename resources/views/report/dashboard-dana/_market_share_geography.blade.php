@@ -19,7 +19,7 @@
     <div class="market-geo-toolbar">
         <label class="market-geo-field" for="marketGeoBranch">
             <span class="market-geo-field-label">Kanca</span>
-            <select id="marketGeoBranch" data-market-geo-branch>
+            <select id="marketGeoBranch" name="cabang" data-market-geo-branch>
                 <option value="all">Seluruh Area 6</option>
                 @foreach(($geoPayload['branches'] ?? []) as $branch)
                     <option value="{{ $branch['key'] ?? '' }}">{{ $branch['label'] ?? '-' }}</option>

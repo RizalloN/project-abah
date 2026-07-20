@@ -257,7 +257,7 @@
             </div>
             <div>
                 <label for="sppgBranchFilter" class="sppg-control-label">Branch Office</label>
-                <select id="sppgBranchFilter" class="sppg-control">
+                <select id="sppgBranchFilter" name="branch_office" class="sppg-control">
                     <option value="">Semua Branch Office</option>
                     @foreach($branchOptions as $branch)
                         <option value="{{ $branch }}">{{ $branch }}</option>

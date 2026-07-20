@@ -34,6 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
             'release.session.lock' => \App\Http\Middleware\ReleaseSessionLockMiddleware::class,
+            'user.branch.scope' => \App\Http\Middleware\EnforceUserBranchScope::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

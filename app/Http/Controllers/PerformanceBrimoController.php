@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\UserBranchScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Services\Reports\BrimoReportService;
@@ -19,8 +20,16 @@ class PerformanceBrimoController extends Controller
 
     public function index()
     {
-        $branches    = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $scope = UserBranchScope::current();
+        $branches = $scope !== null
+            ? [$scope['upper_label']]
+            : ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
         $filterPairs = $this->getBrimoFilterPairs();
+        if ($scope !== null) {
+            $filterPairs = $filterPairs
+                ->filter(fn ($row): bool => ($row->branch_name ?? '') === $scope['upper_label'])
+                ->values();
+        }
 
         $branchOptions = $filterPairs->pluck('branch_name')->filter()->unique()->values();
         $branchUkerMap = $filterPairs->groupBy('branch_name')

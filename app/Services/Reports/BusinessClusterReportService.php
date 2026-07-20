@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Support\UserBranchScope;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -23,6 +24,14 @@ class BusinessClusterReportService
     public function buildReport(array|string|null $branchOffices = null): array
     {
         $branchOptions = collect(array_keys(self::KANCA_ORDER));
+        $scope = UserBranchScope::current();
+        if ($scope !== null) {
+            $branchOptions = $branchOptions
+                ->filter(fn (string $branch): bool => $branch === $scope['label'])
+                ->values();
+            $branchOffices = [$scope['label']];
+        }
+
         $selectedBranches = $this->normalizeSelectedBranches($branchOffices);
         $scopeLabel = $selectedBranches->isEmpty()
             ? self::AREA_ALL_LABEL

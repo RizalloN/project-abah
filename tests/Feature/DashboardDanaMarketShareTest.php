@@ -295,6 +295,20 @@ it('renders cached market share as a native dashboard instead of raw excel', fun
         ->assertDontSee('https://wrong.example/workbook.xlsx', false);
 });
 
+it('limits the static area market share rows to the signed in branch', function (): void {
+    $user = User::factory()->create(['pn' => '0049']);
+
+    $this->actingAs($user)
+        ->get(route('report.dashboard-dana.market-share.area6'))
+        ->assertOk()
+        ->assertSee('Marketshare - KC Magetan')
+        ->assertSee('KC Magetan')
+        ->assertDontSee('KC Madiun')
+        ->assertDontSee('KC Ngawi')
+        ->assertDontSee('KC Ponorogo')
+        ->assertDontSee('>Area 6<', false);
+});
+
 it('renders market share mapping as a separate office 365 workbook view', function (): void {
     config()->set('services.market_share_mapping.title', 'Mapping Test');
     config()->set('services.market_share_mapping.public_token', 'abc');

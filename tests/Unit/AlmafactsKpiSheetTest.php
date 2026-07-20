@@ -30,7 +30,7 @@ class AlmafactsKpiSheetTest extends TestCase
         $data = $view->getData();
 
         $this->assertSame('mbm', $data['selectedSheetKey']);
-        $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'mantri', 'consumer'], array_keys($data['sheetOptions']));
+        $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'rm-sme', 'mantri', 'consumer'], array_keys($data['sheetOptions']));
         $this->assertSame('KPI MBM', $data['selectedSheet']['sheet']);
         $this->assertSame('175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame(['BO', 'MBM', 'Score'], $data['header']);
@@ -117,6 +117,38 @@ class AlmafactsKpiSheetTest extends TestCase
         );
         $this->assertContains('Rank', array_column($data['headerGroups'], 'label'));
         $this->assertSame('00172695 - Sugiyono', $data['rows'][0][1]);
+        $this->assertSame(1, $data['summary']['row_count']);
+    }
+
+    public function test_kpi_page_can_open_rm_sme_sheet_with_weighted_two_row_header(): void
+    {
+        Http::fake([
+            'docs.google.com/*' => Http::response(
+                "\"KEY PERFORMING INDICATOR RM SME BO\",\"UKER\",\"JG\",\"Avg Balance Small\",\"\",\"Posisi OS Small\",\"\",\"SCORE\"\n"
+                . "\"\",\"\",\"\",\"10%\",\"\",\"15%\",\"\",\"100%\"\n"
+                . "\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\"\n"
+                . "\"00045 -- KC Madiun\",\"00061445 - Unung\",\"JG07\",\"108.17%\",\"10.82\",\"100.46%\",\"15.07\",\"95.89%\"\n"
+                . "\"BO\",\"UKER\",\"JG\",\"\",\"\",\"\",\"\",\"\"\n"
+                . "\"\",\"\",\"\",\"10%\",\"\",\"15%\",\"\",\"100%\"\n"
+                . "\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\"",
+                200
+            ),
+        ]);
+
+        $view = (new AlmafactsDashboardController())->kpi(Request::create('/report/dashboard-almafacts/kpi/rm-sme', 'GET'), 'rm-sme');
+        $data = $view->getData();
+
+        $this->assertSame('rm-sme', $data['selectedSheetKey']);
+        $this->assertSame('KPI RM SME', $data['selectedSheet']['sheet']);
+        $this->assertSame('1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame(['BO', 'Uker', 'JG', 'Pencapaian', 'Score', 'Pencapaian', 'Score', 'Score'], $data['header']);
+        $this->assertSame(
+            ['BO', 'Uker', 'JG', 'AVG Balance Small (Bobot 10%)', 'Posisi OS Small (Bobot 15%)', 'Score'],
+            array_column($data['headerGroups'], 'label')
+        );
+        $this->assertSame([2, 2, 2, 1, 1, 2], array_column($data['headerGroups'], 'rowspan'));
+        $this->assertSame(2, $data['headerGroups'][3]['colspan']);
+        $this->assertSame(['00045 -- KC Madiun', '00061445 - Unung', 'JG07', '108.17%', '10.82', '100.46%', '15.07', '95.89%'], $data['rows'][0]);
         $this->assertSame(1, $data['summary']['row_count']);
     }
 

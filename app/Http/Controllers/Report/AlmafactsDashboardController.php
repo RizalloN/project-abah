@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
+use App\Support\UserBranchScope;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -98,6 +99,8 @@ class AlmafactsDashboardController extends Controller
     private const KPI_MANTRI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1h7XMo46a10a3gC1f_CPtsBUT2V1PcxAE/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
     private const KPI_CONSUMER_SPREADSHEET_ID = '1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM';
     private const KPI_CONSUMER_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_RM_SME_SPREADSHEET_ID = '1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs';
+    private const KPI_RM_SME_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
     private const KPI_LINK_TABLE = 'external_report_links';
     private const KPI_LINK_GROUP = 'almafacts_kpi';
     private const KPI_SHEETS = [
@@ -125,6 +128,17 @@ class AlmafactsDashboardController extends Controller
             'spreadsheet_url' => self::KPI_RM_MIKRO_SPREADSHEET_URL,
             'expected_header_any' => ['NETT DISBURSEMENT KUR', 'DEBITUR MIKRO', 'RANK'],
             'icon' => 'fas fa-chart-bar',
+        ],
+        'rm-sme' => [
+            'label' => 'KPI RM SME',
+            'title' => 'KPI RM SME',
+            'sheet' => 'KPI RM SME',
+            'spreadsheet_id' => self::KPI_RM_SME_SPREADSHEET_ID,
+            'spreadsheet_url' => self::KPI_RM_SME_SPREADSHEET_URL,
+            'expected_header_any' => ['AVG BALANCE SMALL', 'POSISI OS SMALL', 'PRODUKTIVITAS RM SME'],
+            'force_two_row_header' => true,
+            'weighted_metric_pairs' => true,
+            'icon' => 'fas fa-briefcase',
         ],
         'mantri' => [
             'label' => 'KPI Mantri',
@@ -376,13 +390,21 @@ class AlmafactsDashboardController extends Controller
 
         $header = array_shift($rows) ?? [];
         $secondHeader = null;
-        if (isset($rows[0]) && $this->isKpiSheetSecondHeaderRow($rows[0])) {
+        if (isset($rows[0]) && (
+            !empty(self::KPI_SHEETS[$sheetKey]['force_two_row_header'])
+            || $this->isKpiSheetSecondHeaderRow($rows[0])
+        )) {
             $secondHeader = array_shift($rows);
+        }
+
+        if ($secondHeader !== null && isset($rows[0]) && $this->isKpiSheetOrdinalHeaderRow($rows[0])) {
+            array_shift($rows);
         }
 
         $rows = array_values(array_filter(
             $rows,
             fn (array $row): bool => !$this->isKpiSheetFilterRow($row)
+                && !$this->isKpiSheetSupplementalHeaderRow($row, $sheetKey)
                 && collect($row)->contains(fn ($value): bool => !$this->isKpiSheetBlankDataCell($value))
         ));
         [$header, $secondHeader, $rows] = $this->trimKpiSheetTrailingBlankColumns($header, $secondHeader, $rows);
@@ -522,6 +544,10 @@ class AlmafactsDashboardController extends Controller
 
     private function buildKpiSheetTwoRowHeaderMeta(array $rawHeader, array $secondHeader, string $sheetKey): array
     {
+        if (!empty(self::KPI_SHEETS[$sheetKey]['weighted_metric_pairs'])) {
+            return $this->buildKpiSheetWeightedPairHeaderMeta($rawHeader, $secondHeader, $sheetKey);
+        }
+
         $columns = [];
         $title = '';
         $currentGroup = null;
@@ -555,6 +581,63 @@ class AlmafactsDashboardController extends Controller
             $columns[] = [
                 'label' => $this->normalizeKpiHeaderLabel($leaf),
                 'group' => $group !== null ? $this->normalizeKpiHeaderLabel($group) : null,
+                'sortable' => true,
+                'index' => $index,
+            ];
+        }
+
+        return [
+            'header' => array_map(static fn (array $column): string => $column['label'], $columns),
+            'columns' => $columns,
+            'groups' => $this->collapseKpiHeaderGroups($columns),
+            'title' => $title ?: (self::KPI_SHEETS[$sheetKey]['title'] ?? ''),
+        ];
+    }
+
+    private function buildKpiSheetWeightedPairHeaderMeta(array $rawHeader, array $secondHeader, string $sheetKey): array
+    {
+        $columns = [];
+        $title = '';
+        $columnCount = max(count($rawHeader), count($secondHeader));
+
+        for ($index = 0; $index < $columnCount; $index++) {
+            $raw = trim((string) ($rawHeader[$index] ?? ''));
+            $weight = trim((string) ($secondHeader[$index] ?? ''));
+
+            if ($index === 0 && (str_starts_with(strtoupper($raw), 'KEY PERFORMING INDICATOR') || str_starts_with(strtoupper($raw), 'KPI'))) {
+                $title = trim(preg_replace('/\s+BO\s*$/i', '', $raw) ?? $raw);
+                $columns[] = [
+                    'label' => 'BO',
+                    'group' => null,
+                    'sortable' => true,
+                    'index' => $index,
+                ];
+                continue;
+            }
+
+            $nextHeader = trim((string) ($rawHeader[$index + 1] ?? ''));
+            if ($raw !== '' && strtoupper($raw) !== 'SCORE' && $nextHeader === '') {
+                $group = $raw . ($weight !== '' ? ' (Bobot ' . $weight . ')' : '');
+                $columns[] = [
+                    'label' => 'Pencapaian',
+                    'group' => $this->normalizeKpiHeaderLabel($group),
+                    'sortable' => true,
+                    'index' => $index,
+                ];
+                $columns[] = [
+                    'label' => 'Score',
+                    'group' => $this->normalizeKpiHeaderLabel($group),
+                    'sortable' => true,
+                    'index' => $index + 1,
+                ];
+                $index++;
+                continue;
+            }
+
+            $label = $raw !== '' ? $raw : $weight;
+            $columns[] = [
+                'label' => $this->normalizeKpiHeaderLabel($label),
+                'group' => null,
                 'sortable' => true,
                 'index' => $index,
             ];
@@ -698,6 +781,57 @@ class AlmafactsDashboardController extends Controller
         })->count();
 
         return $headerTokenCount >= 2;
+    }
+
+    private function isKpiSheetOrdinalHeaderRow(array $row): bool
+    {
+        $values = array_values(array_filter(
+            array_map(static fn ($value): string => trim((string) $value), $row),
+            static fn (string $value): bool => $value !== ''
+        ));
+
+        if (count($values) < 3) {
+            return false;
+        }
+
+        foreach ($values as $index => $value) {
+            if (!ctype_digit($value) || (int) $value !== $index + 1) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function isKpiSheetSupplementalHeaderRow(array $row, string $sheetKey): bool
+    {
+        if (empty(self::KPI_SHEETS[$sheetKey]['force_two_row_header'])) {
+            return false;
+        }
+
+        if ($this->isKpiSheetOrdinalHeaderRow($row)) {
+            return true;
+        }
+
+        $firstThree = array_map(
+            static fn ($value): string => strtoupper(trim((string) $value)),
+            array_slice($row, 0, 3)
+        );
+        if ($firstThree === ['BO', 'UKER', 'JG']) {
+            return true;
+        }
+
+        if (collect($firstThree)->contains(static fn (string $value): bool => $value !== '')) {
+            return false;
+        }
+
+        $weightCells = array_values(array_filter(
+            array_map(static fn ($value): string => trim((string) $value), array_slice($row, 3)),
+            static fn (string $value): bool => $value !== ''
+        ));
+
+        return $weightCells !== []
+            && collect($weightCells)->every(static fn (string $value): bool => preg_match('/^\d+(?:[.,]\d+)?%$/', $value) === 1);
     }
 
     private function kpiTableSections(array $payload, array $sheet): array
@@ -908,6 +1042,11 @@ class AlmafactsDashboardController extends Controller
 
     private function branchOptions(): array
     {
+        $scope = UserBranchScope::current();
+        if ($scope !== null) {
+            return [$scope['label'] => $scope['label']];
+        }
+
         return array_merge([self::AREA_KEY => 'Area 6'], array_combine(self::AREA_BRANCHES, self::AREA_BRANCHES));
     }
 

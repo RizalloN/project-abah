@@ -19,6 +19,7 @@ use App\Support\HourlyDpkDashboardService;
 use App\Support\MarketShareArea6Report;
 use App\Support\ReportCacheVersion;
 use App\Support\DashboardHarianSnapshotService;
+use App\Support\UserBranchScope;
 use Illuminate\Http\Request;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -166,6 +167,7 @@ class DashboardSimpananController extends Controller
 
     public function marketShareIndex(Request $request): View
     {
+        $userBranchScope = UserBranchScope::current();
         $workbookUrl = $this->officeViewerUrlForPublicWorkbook(
             $request,
             'public-workbooks.market-share.token',
@@ -196,6 +198,12 @@ class DashboardSimpananController extends Controller
             }
         }
 
+        if ($userBranchScope !== null) {
+            $workbookUrl = '';
+            $downloadUrl = '';
+            $showDownloadPanel = false;
+        }
+
         return view('report.dashboard-dana-market-share', [
             'pageTitle' => 'Market Share',
             'pageIcon' => 'fas fa-chart-pie',
@@ -207,7 +215,7 @@ class DashboardSimpananController extends Controller
             'frameTitle' => 'Workbook Market Share Office 365',
             'downloadUrl' => $downloadUrl,
             'showDownloadPanel' => $showDownloadPanel,
-            'nativeMarketShare' => $this->marketShareNativePayload(),
+            'nativeMarketShare' => $this->scopeMarketShareNativePayload($this->marketShareNativePayload()),
         ]);
     }
 
@@ -279,10 +287,30 @@ class DashboardSimpananController extends Controller
             $showDownloadPanel = false;
         }
 
-        $marketShareGeography = $this->marketShareMappingGeographyPayload($workbookPath);
+        $marketShareGeography = $this->scopeMarketShareGeographyPayload(
+            $this->marketShareMappingGeographyPayload($workbookPath)
+        );
         $nativeWorkbook = $token !== '' || !empty($marketShareGeography['ready'])
             ? $this->marketShareMappingNativePayload($request, $workbookPath)
             : ['ready' => false];
+
+        if (UserBranchScope::current() !== null && !empty($marketShareGeography['ready'])) {
+            $workbookUrl = '';
+            $excelWorkbookUrl = '';
+            $downloadUrl = '';
+            $showDownloadPanel = true;
+            $nativeWorkbook = [
+                'ready' => true,
+                'summary' => ['ready' => false],
+                'sheetNames' => [],
+                'selectedSheet' => '',
+                'columnLabels' => [],
+                'columnWidths' => [],
+                'rows' => [],
+                'rowCount' => 0,
+                'columnCount' => 0,
+            ];
+        }
         $excelWorkbookSheetUrls = $googleWorkbookUrl !== '' ? [] : $this->officeWorkbookSheetUrls(
             $excelWorkbookUrl,
             $nativeWorkbook['sheetNames'] ?? [],
@@ -338,8 +366,13 @@ class DashboardSimpananController extends Controller
     {
         $sheetName = 'DATA INSTANSI';
         $branchOptions = $this->marketShareInstansiBranchOptions();
+        $userBranchScope = UserBranchScope::current();
 
-        $selectedBranch = (string) $request->query('cabang', 'kc-madiun');
+        if ($userBranchScope !== null) {
+            $branchOptions = array_intersect_key($branchOptions, [$userBranchScope['slug'] => true]);
+        }
+
+        $selectedBranch = $userBranchScope['slug'] ?? (string) $request->query('cabang', 'kc-madiun');
         if (!array_key_exists($selectedBranch, $branchOptions)) {
             $selectedBranch = 'kc-madiun';
         }
@@ -374,9 +407,20 @@ class DashboardSimpananController extends Controller
 
     public function marketShareArea6Index(Request $request): View
     {
+        $payload = MarketShareArea6Report::payload((string) $request->query('segmen', ''));
+        $userBranchScope = UserBranchScope::current();
+        if ($userBranchScope !== null) {
+            $payload['title'] = 'Marketshare - ' . $userBranchScope['label'];
+            $payload['subtitle'] = 'Cuplikan market share untuk ' . $userBranchScope['label'] . '.';
+            $payload['rows'] = array_values(array_filter(
+                $payload['rows'] ?? [],
+                fn (array $row): bool => $this->normalizeToken((string) ($row['branch'] ?? '')) === $this->normalizeToken($userBranchScope['label'])
+            ));
+        }
+
         return view('report.dashboard-dana-market-share-area6', [
-            'pageTitle' => 'Marketshare - Area 6',
-            'marketShareArea6' => MarketShareArea6Report::payload((string) $request->query('segmen', '')),
+            'pageTitle' => $payload['title'],
+            'marketShareArea6' => $payload,
         ]);
     }
 
@@ -384,7 +428,12 @@ class DashboardSimpananController extends Controller
     {
         $sheetName = 'DATA INSTANSI';
         $branchOptions = $this->marketShareInstansiBranchOptions();
-        $selectedBranch = (string) $request->query('cabang', 'kc-madiun');
+        $userBranchScope = UserBranchScope::current();
+        if ($userBranchScope !== null) {
+            $branchOptions = array_intersect_key($branchOptions, [$userBranchScope['slug'] => true]);
+        }
+
+        $selectedBranch = $userBranchScope['slug'] ?? (string) $request->query('cabang', 'kc-madiun');
         if (!array_key_exists($selectedBranch, $branchOptions)) {
             $selectedBranch = 'kc-madiun';
         }
@@ -716,6 +765,43 @@ class DashboardSimpananController extends Controller
         });
     }
 
+    private function scopeMarketShareNativePayload(array $payload): array
+    {
+        $scope = UserBranchScope::current();
+        if ($scope === null || empty($payload['ready'])) {
+            return $payload;
+        }
+
+        $filterMode = function (array $mode) use ($scope): array {
+            foreach (($mode['sections'] ?? []) as $key => $section) {
+                $branches = array_values(array_filter(
+                    $section['branches'] ?? [],
+                    fn (array $row): bool => $this->normalizeToken((string) ($row['branch'] ?? '')) === $this->normalizeToken($scope['label'])
+                ));
+                $mode['sections'][$key]['branches'] = $branches;
+                $mode['sections'][$key]['summary'] = $branches[0] ?? [];
+            }
+
+            $mode['branchRows'] = $mode['sections']['total']['branches'] ?? [];
+            $mode['total_label'] = str_replace('Area 6', $scope['label'], (string) ($mode['total_label'] ?? ''));
+            $mode['panel_label'] = str_replace('Per Cabang', $scope['label'], (string) ($mode['panel_label'] ?? ''));
+
+            return $mode;
+        };
+
+        foreach (($payload['modes'] ?? []) as $key => $mode) {
+            $payload['modes'][$key] = $filterMode($mode);
+        }
+
+        $simpanan = $payload['modes']['simpanan'] ?? null;
+        if (is_array($simpanan)) {
+            $payload['sections'] = $simpanan['sections'] ?? [];
+            $payload['branchRows'] = $simpanan['branchRows'] ?? [];
+        }
+
+        return $payload;
+    }
+
     private function marketShareMappingNativePayload(Request $request, ?string $workbookPath = null): array
     {
         $cachePath = trim((string) config('services.market_share_mapping.cache_path', 'app/public_workbooks/market-share-mapping.xlsx'), '/\\');
@@ -968,6 +1054,52 @@ class DashboardSimpananController extends Controller
                 return ['ready' => false];
             }
         });
+    }
+
+    private function scopeMarketShareGeographyPayload(array $payload): array
+    {
+        $scope = UserBranchScope::current();
+        if ($scope === null || empty($payload['ready'])) {
+            return $payload;
+        }
+
+        $payload['branches'] = array_values(array_filter(
+            $payload['branches'] ?? [],
+            fn (array $branch): bool => (string) ($branch['key'] ?? '') === $scope['key']
+        ));
+        $payload['units'] = array_values(array_filter(
+            $payload['units'] ?? [],
+            fn (array $unit): bool => (string) ($unit['branch'] ?? '') === $scope['key']
+        ));
+
+        $districtCodes = collect($payload['units'])
+            ->pluck('district_codes')
+            ->flatten()
+            ->map(fn ($code): string => trim((string) $code))
+            ->filter()
+            ->unique()
+            ->values();
+        $payload['geojson']['features'] = array_values(array_filter(
+            $payload['geojson']['features'] ?? [],
+            fn (array $feature): bool => $districtCodes->contains(trim((string) data_get($feature, 'properties.KDCPUM', '')))
+        ));
+
+        $branchTotals = (array) data_get($payload, 'branches.0.totals', []);
+        $payload['area_totals'] = [
+            'potential' => (float) ($branchTotals['potential'] ?? 0),
+            'existing' => (float) ($branchTotals['existing'] ?? 0),
+            'penetration' => (float) ($branchTotals['penetration'] ?? 0),
+        ];
+        $payload['coverage'] = array_merge($payload['coverage'] ?? [], [
+            'unit_count' => count($payload['units']),
+            'mapped_unit_count' => count(array_filter($payload['units'], fn (array $unit): bool => ($unit['district_codes'] ?? []) !== [])),
+            'district_count' => count($payload['geojson']['features']),
+            'mapped_district_count' => count($payload['geojson']['features']),
+        ]);
+        $payload['title'] = 'Peta Potensi & Penetrasi ' . $scope['label'];
+        $payload['subtitle'] = 'Visualisasi wilayah layanan unit kerja ' . $scope['label'] . '.';
+
+        return $payload;
     }
 
     private function freshMarketShareMappingWorkbookPath(): ?string
@@ -3170,7 +3302,7 @@ class DashboardSimpananController extends Controller
 
         return $periods->first()
             ?: (Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)
-                ? DB::table(self::HARIAN_SNAPSHOT_TABLE)->max('snapshot_period')
+                ? $this->area6HarianSnapshotSummaryQuery()->max('snapshot_period')
                 : null);
     }
 
@@ -3377,7 +3509,7 @@ class DashboardSimpananController extends Controller
         }
 
         $periodQuery = DB::table('ssa_almafacts')
-            ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS);
+            ->whereIn('kanca_konsolidasi', $this->dashboardBranchDisplayNames());
 
         if ($targetPeriod) {
             $periodQuery->whereDate('month_day_year_of_posisi', '<=', $targetPeriod);
@@ -3401,7 +3533,7 @@ class DashboardSimpananController extends Controller
 
         $rows = DB::table('ssa_almafacts')
             ->whereDate('month_day_year_of_posisi', $period)
-            ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
+            ->whereIn('kanca_konsolidasi', $this->dashboardBranchDisplayNames())
             ->whereIn('keterangan', collect($metricLabels)->pluck('source')->all())
             ->select('keterangan')
             ->selectRaw('SUM(COALESCE(saldo, 0)) as sum_saldo')
@@ -3432,13 +3564,13 @@ class DashboardSimpananController extends Controller
         $branchRows = DB::table('ssa_almafacts')
             ->whereDate('month_day_year_of_posisi', $period)
             ->where('keterangan', '15. Laba Setelah Pajak')
-            ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
+            ->whereIn('kanca_konsolidasi', $this->dashboardBranchDisplayNames())
             ->select('kanca_konsolidasi', DB::raw('SUM(COALESCE(saldo, 0)) as nominal'))
             ->groupBy('kanca_konsolidasi')
             ->get()
             ->keyBy('kanca_konsolidasi');
 
-        $branches = collect(self::AREA_6_BRANCH_LABELS)
+        $branches = collect($this->dashboardBranchDisplayNames())
             ->map(fn (string $branch): array => [
                 'name' => $branch,
                 'value_raw' => (float) data_get($branchRows->get($branch), 'nominal', 0.0),
@@ -3604,7 +3736,7 @@ class DashboardSimpananController extends Controller
             'area6' => $this->formatPresentationMatrixRows($branchRows, $comparisonPeriods, $currentPeriod, true),
         ];
 
-        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+        foreach ($this->dashboardBranchDisplayNames() as $branchName) {
             $branchKey = strtoupper(trim($branchName));
             $branchUnitRows = $unitRows->filter(function ($row) use ($branchKey): bool {
                 return strtoupper(trim((string) ($row->branch_label ?? ''))) === $branchKey;
@@ -3620,7 +3752,7 @@ class DashboardSimpananController extends Controller
             'metrics' => $empty['metrics'],
             'scope_options' => array_merge(
                 [['key' => 'area6', 'label' => 'Area 6 Konsol']],
-                collect(self::AREA_6_BRANCH_LABELS)
+                collect($this->dashboardBranchDisplayNames())
                     ->map(fn (string $branch): array => [
                         'key' => strtoupper(trim($branch)),
                         'label' => $branch,
@@ -3638,7 +3770,7 @@ class DashboardSimpananController extends Controller
         $sameDatePreviousMonth = Carbon::parse($current)->subMonthNoOverflow()->toDateString();
         $prevYearEnd = Carbon::parse($current)->subYear()->endOfYear()->toDateString();
 
-        $ytdPeriod = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+        $ytdPeriod = $this->area6HarianSnapshotSummaryQuery()
             ->where('snapshot_period', '<=', $prevYearEnd)
             ->orderBy('snapshot_period', 'desc')
             ->value('snapshot_period') ?: $prevYearEnd;
@@ -4352,7 +4484,7 @@ class DashboardSimpananController extends Controller
         try {
             $period = DB::table('ssa_almafacts')
                 ->where('keterangan', '15. Laba Setelah Pajak')
-                ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
+                ->whereIn('kanca_konsolidasi', $this->dashboardBranchDisplayNames())
                 ->max('month_day_year_of_posisi');
 
             if (!$period) {
@@ -4363,12 +4495,12 @@ class DashboardSimpananController extends Controller
                 ->select('kanca_konsolidasi', DB::raw('SUM(saldo) as nominal'))
                 ->where('month_day_year_of_posisi', $period)
                 ->where('keterangan', '15. Laba Setelah Pajak')
-                ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
+                ->whereIn('kanca_konsolidasi', $this->dashboardBranchDisplayNames())
                 ->groupBy('kanca_konsolidasi')
                 ->get()
                 ->keyBy('kanca_konsolidasi');
 
-            $branches = collect(self::AREA_6_BRANCH_LABELS)
+            $branches = collect($this->dashboardBranchDisplayNames())
                 ->map(function (string $branchName) use ($rows): array {
                     $nominal = (float) data_get($rows->get($branchName), 'nominal', 0.0);
 
@@ -4384,14 +4516,14 @@ class DashboardSimpananController extends Controller
             $total = array_sum(array_column($branches, 'nominal'));
             $previousPeriod = DB::table('ssa_almafacts')
                 ->where('keterangan', '15. Laba Setelah Pajak')
-                ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
+                ->whereIn('kanca_konsolidasi', $this->dashboardBranchDisplayNames())
                 ->where('month_day_year_of_posisi', '<', $period)
                 ->max('month_day_year_of_posisi');
             $previousTotal = $previousPeriod
                 ? (float) DB::table('ssa_almafacts')
                     ->where('month_day_year_of_posisi', $previousPeriod)
                     ->where('keterangan', '15. Laba Setelah Pajak')
-                    ->whereIn('kanca_konsolidasi', self::AREA_6_BRANCH_LABELS)
+                    ->whereIn('kanca_konsolidasi', $this->dashboardBranchDisplayNames())
                     ->sum('saldo')
                 : 0.0;
             $delta = $this->percentChange($total, $previousTotal);
@@ -4846,7 +4978,7 @@ class DashboardSimpananController extends Controller
 
             $baseQuery = DB::table('daily_loan_dinamis')
                 ->where('periode', $period)
-                ->whereIn('cabang1', self::AREA_6_BRANCH_LABELS)
+                ->whereIn('cabang1', $this->dashboardBranchDisplayNames())
                 ->whereIn('status_rekening1', ['1', '3'])
                 ->where('baki_debet1', '>', 0)
                 ->whereIn('kolek', ['1', '2', '3', '4', '5'])
@@ -4880,7 +5012,7 @@ class DashboardSimpananController extends Controller
 
             $detailLimitPerBranch = 30;
             $branchesData = [];
-            foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+            foreach ($this->dashboardBranchDisplayNames() as $branchName) {
                 $branchTotal = $branchTotals->get($branchName);
                 $branchTotalCount = (int) ($branchTotal->mismatch_count ?? 0);
                 $branchTotalOs = (float) ($branchTotal->outstanding_balance ?? 0);
@@ -4996,7 +5128,7 @@ class DashboardSimpananController extends Controller
 
             return DB::table('daily_loan_dinamis')
                 ->whereIn('periode', $periods)
-                ->whereIn('cabang1', self::AREA_6_BRANCH_LABELS)
+                ->whereIn('cabang1', $this->dashboardBranchDisplayNames())
                 ->whereIn('status_rekening1', ['1', '3'])
                 ->where('baki_debet1', '>', 0)
                 ->whereRaw($presentationScopeSql)
@@ -5047,7 +5179,7 @@ class DashboardSimpananController extends Controller
         foreach (['retail', 'unit'] as $scope) {
             $query = DB::table('daily_loan_dinamis')
                 ->where('periode', $period)
-                ->whereIn('cabang1', self::AREA_6_BRANCH_LABELS)
+                ->whereIn('cabang1', $this->dashboardBranchDisplayNames())
                 ->whereIn('status_rekening1', ['1', '3'])
                 ->where('baki_debet1', '>', 0)
                 ->whereIn('kolek', ['1', '2', '3', '4', '5'])
@@ -5215,6 +5347,7 @@ class DashboardSimpananController extends Controller
             return $this->emptyDashboard();
         }
 
+        $scopeLabel = $this->dashboardScopeLabel();
         [$currentPeriod, $previousPeriod, $yoyPeriod] = $this->resolveDashboardPeriods($selectedPeriod);
         [$loanCurrentPeriod, $loanPreviousPeriod, $loanYoyPeriod] = $this->resolveLoanDashboardPeriods($selectedPeriod);
 
@@ -5297,8 +5430,8 @@ class DashboardSimpananController extends Controller
             'yoy_period' => $yoyPeriod,
             'hero' => [
                 'title' => 'A-SIX',
-                'kicker' => 'DASHBOARD AREA 6',
-                'subtitle' => 'Ringkasan posisi keuangan Area 6 secara realtime.',
+                'kicker' => 'DASHBOARD ' . strtoupper($scopeLabel),
+                'subtitle' => 'Ringkasan posisi keuangan ' . $scopeLabel . ' secara realtime.',
                 'badge' => 'A-SIX LIVE PORTFOLIO',
                 'updated_label' => $latestCombinedLabel,
                 'stats' => [
@@ -5588,6 +5721,7 @@ class DashboardSimpananController extends Controller
 
         $summary = DB::table('simpanan_multipn')
             ->where('posisi', $period)
+            ->whereIn(DB::raw('UPPER(TRIM(kantor_cabang))'), $this->dashboardBranchNames())
             ->selectRaw('COALESCE(SUM(COALESCE(saldo_idr, 0)), 0) as total_balance')
             ->selectRaw('COUNT(DISTINCT no_rekening) as account_count')
             ->selectRaw('COUNT(DISTINCT CIFNO) as cif_count')
@@ -5637,6 +5771,7 @@ class DashboardSimpananController extends Controller
 
             return DB::table('simpanan_multipn')
                 ->where('posisi', $period)
+                ->whereIn(DB::raw('UPPER(TRIM(kantor_cabang))'), $this->dashboardBranchNames())
                 ->whereNotNull('kantor_cabang')
                 ->where('kantor_cabang', '<>', '')
                 ->selectRaw('kantor_cabang, COALESCE(SUM(COALESCE(saldo_idr, 0)), 0) as total_balance')
@@ -5929,7 +6064,7 @@ class DashboardSimpananController extends Controller
         $totalArea6Pinjaman = 0.0;
         $totalArea6SmlAbs = 0.0;
         $totalArea6NplAbs = 0.0;
-        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+        foreach ($this->dashboardBranchDisplayNames() as $branchName) {
             $key = strtoupper(trim($branchName));
             $row = $branchesIndexed->get($key);
             $totalArea6Simpanan += $row ? (float) $row->total_simpanan : 0.0;
@@ -5943,7 +6078,7 @@ class DashboardSimpananController extends Controller
             try {
                 $restrukByBranch = DB::table('daily_loan_dinamis')
                     ->where('periode', $period)
-                    ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), array_map('strtoupper', self::AREA_6_BRANCH_LABELS))
+                    ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), $this->dashboardBranchNames())
                     ->where('kolek', 1)
                     ->where(DB::raw("UPPER(TRIM(COALESCE(flag_restruk, '')))"), 'Y')
                     ->selectRaw('UPPER(TRIM(cabang1)) as branch_key')
@@ -5958,7 +6093,7 @@ class DashboardSimpananController extends Controller
         }
 
         $branchesData = [];
-        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+        foreach ($this->dashboardBranchDisplayNames() as $branchName) {
             $key = strtoupper(trim($branchName));
             $row = $branchesIndexed->get($key);
 
@@ -6041,7 +6176,7 @@ class DashboardSimpananController extends Controller
             ];
         }
 
-        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+        foreach ($this->dashboardBranchDisplayNames() as $branchName) {
             $branchesData[$branchName]['sml_width'] = $maxSmlNominal > 0 ? ($branchesData[$branchName]['sml_abs'] / $maxSmlNominal) * 100 : 0;
             $branchesData[$branchName]['npl_width'] = $maxNplNominal > 0 ? ($branchesData[$branchName]['npl_abs'] / $maxNplNominal) * 100 : 0;
             $branchesData[$branchName]['sml_pct_width'] = $maxSmlPct > 0 ? ($branchesData[$branchName]['sml_pct'] / $maxSmlPct) * 100 : 0;
@@ -6065,7 +6200,7 @@ class DashboardSimpananController extends Controller
         $maxNplPctRetail = 0.0;
 
         $retailBranchesData = [];
-        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+        foreach ($this->dashboardBranchDisplayNames() as $branchName) {
             $key = strtoupper(trim($branchName));
             $branchRetailRows = array_filter($retailRows, function ($r) use ($key) {
                 return strtoupper(trim($r['branch'])) === $key;
@@ -6121,7 +6256,7 @@ class DashboardSimpananController extends Controller
             ];
         }
 
-        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+        foreach ($this->dashboardBranchDisplayNames() as $branchName) {
             $retailBranchesData[$branchName]['simpanan_width'] = $maxSimpananRetail > 0 ? ($retailBranchesData[$branchName]['simpanan'] / $maxSimpananRetail) * 100 : 0;
             $retailBranchesData[$branchName]['pinjaman_width'] = $maxPinjamanRetail > 0 ? ($retailBranchesData[$branchName]['pinjaman'] / $maxPinjamanRetail) * 100 : 0;
             $retailBranchesData[$branchName]['sml_width'] = $maxSmlNominalRetail > 0 ? ($retailBranchesData[$branchName]['sml_abs'] / $maxSmlNominalRetail) * 100 : 0;
@@ -6418,7 +6553,7 @@ class DashboardSimpananController extends Controller
         $maxNplPct = 0.0;
 
         $branches = [];
-        foreach (self::AREA_6_BRANCH_LABELS as $branchName) {
+        foreach ($this->dashboardBranchDisplayNames() as $branchName) {
             $row = $rows->get(strtoupper(trim($branchName)));
             $pinjaman = (float) ($row->pinjaman ?? 0.0);
             $smlAbs = (float) ($row->sml_abs ?? 0.0);
@@ -6489,7 +6624,7 @@ class DashboardSimpananController extends Controller
         $date2 = $mtmPeriod ?: $this->resolveHarianSnapshotPeriodOnOrBefore($sameDatePreviousMonth) ?: $sameDatePreviousMonth;
         
         $prevYearEnd = Carbon::parse($date4)->subYear()->endOfYear()->format('Y-m-d');
-        $date1 = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+        $date1 = $this->area6HarianSnapshotSummaryQuery()
             ->where('snapshot_period', '<=', $prevYearEnd)
             ->orderBy('snapshot_period', 'desc')
             ->value('snapshot_period') ?? '2025-12-31';
@@ -6996,6 +7131,7 @@ class DashboardSimpananController extends Controller
 
         return Cache::remember($cacheKey, now()->addMinutes(2), function () use ($requestedPeriod) {
             $query = DB::table('daily_loan_dinamis');
+            $this->applyDashboardBranchScope($query, 'cabang1');
 
             if ($requestedPeriod) {
                 $period = $query
@@ -7041,7 +7177,7 @@ class DashboardSimpananController extends Controller
             return $empty;
         }
 
-        $period = DB::table(self::HARIAN_SNAPSHOT_TABLE)->max('snapshot_period');
+        $period = $this->area6HarianSnapshotSummaryQuery()->max('snapshot_period');
         if (!$period) {
             return $empty;
         }
@@ -7472,7 +7608,7 @@ class DashboardSimpananController extends Controller
 
             $baseQuery = DB::table('daily_loan_dinamis')
                 ->where('periode', $period)
-                ->whereIn('cabang1', self::AREA_6_BRANCH_LABELS)
+                ->whereIn('cabang1', $this->dashboardBranchDisplayNames())
                 ->whereIn('status_rekening1', ['1', '3'])
                 ->where('baki_debet1', '>', 0)
                 ->whereIn('kolek', ['1', '2', '3', '4', '5'])
@@ -7547,7 +7683,7 @@ class DashboardSimpananController extends Controller
             $groupColumns = $scope === 'branch' ? ['cabang1'] : ['cabang1', 'unit1'];
             $query = DB::table('daily_loan_dinamis')
                 ->where('periode', $period)
-                ->whereIn('cabang1', self::AREA_6_BRANCH_LABELS)
+                ->whereIn('cabang1', $this->dashboardBranchDisplayNames())
                 ->whereRaw("({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000")
                 ->select($groupColumns)
                 ->selectRaw('SUM(' . $totalExpression . ') as total_amount');
@@ -7571,7 +7707,7 @@ class DashboardSimpananController extends Controller
 
             $total = DB::table('daily_loan_dinamis')
                 ->where('periode', $period)
-                ->whereIn('cabang1', self::AREA_6_BRANCH_LABELS)
+                ->whereIn('cabang1', $this->dashboardBranchDisplayNames())
                 ->whereRaw("({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000")
                 ->selectRaw(($accountColumn !== null ? "COUNT(DISTINCT {$accountColumn})" : 'COUNT(*)') . ' as total_count')
                 ->selectRaw('SUM(' . $totalExpression . ') as total_amount')
@@ -7680,13 +7816,15 @@ class DashboardSimpananController extends Controller
 
     private function emptyDashboard(bool $includeDigitalPerformance = true): array
     {
+        $scopeLabel = $this->dashboardScopeLabel();
+
         return [
             'period' => null,
             'previous_period' => null,
             'yoy_period' => null,
             'hero' => [
                 'title' => 'A-SIX',
-                'kicker' => 'DASHBOARD AREA 6',
+                'kicker' => 'DASHBOARD ' . strtoupper($scopeLabel),
                 'subtitle' => 'Data simpanan belum tersedia untuk ditampilkan.',
                 'badge' => 'A-SIX OVERVIEW',
                 'updated_label' => 'Belum ada data',
@@ -7810,7 +7948,9 @@ class DashboardSimpananController extends Controller
                 return [null, null, null];
             }
 
-            $latestPeriod = DB::table('daily_loan_dinamis')->max('periode');
+            $periodQuery = DB::table('daily_loan_dinamis');
+            $this->applyDashboardBranchScope($periodQuery, 'cabang1');
+            $latestPeriod = (clone $periodQuery)->max('periode');
             if (!$latestPeriod) {
                 return [null, null, null];
             }
@@ -7819,11 +7959,11 @@ class DashboardSimpananController extends Controller
             $previousCandidate = Carbon::parse($currentPeriod)->subMonthNoOverflow()->endOfMonth()->toDateString();
             $yoyCandidate = Carbon::parse($currentPeriod)->subYearNoOverflow()->endOfMonth()->toDateString();
 
-            $previousPeriod = DB::table('daily_loan_dinamis')
+            $previousPeriod = (clone $periodQuery)
                 ->where('periode', '<=', $previousCandidate)
                 ->max('periode');
 
-            $yoyPeriod = DB::table('daily_loan_dinamis')
+            $yoyPeriod = (clone $periodQuery)
                 ->where('periode', '<=', $yoyCandidate)
                 ->max('periode');
 
@@ -7862,6 +8002,7 @@ class DashboardSimpananController extends Controller
 
         $summary = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
+            ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), $this->dashboardBranchNames())
             ->selectRaw('COALESCE(SUM(COALESCE(baki_debet1, 0)), 0) as total_balance')
             ->selectRaw($accountCountExpression . ' as account_count')
             ->selectRaw('COUNT(DISTINCT cabang1) as branch_count')
@@ -7895,6 +8036,7 @@ class DashboardSimpananController extends Controller
 
         $row = DB::table(self::LOAN_SNAPSHOT_TABLE)
             ->where('periode', $period)
+            ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), $this->dashboardBranchNames())
             ->selectRaw('COALESCE(SUM(COALESCE(loan_balance, 0)), 0) as total_balance')
             ->selectRaw('COUNT(DISTINCT account_number) as account_count')
             ->selectRaw('COUNT(DISTINCT cabang1) as branch_count')
@@ -7936,6 +8078,7 @@ class DashboardSimpananController extends Controller
             ) {
                 return DB::table(self::LOAN_SNAPSHOT_TABLE)
                     ->where('periode', $period)
+                    ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), $this->dashboardBranchNames())
                     ->whereNotNull('cabang1')
                     ->where('cabang1', '<>', '')
                     ->selectRaw('cabang1, COALESCE(SUM(COALESCE(loan_balance, 0)), 0) as total_balance')
@@ -7956,6 +8099,7 @@ class DashboardSimpananController extends Controller
 
             return DB::table('daily_loan_dinamis')
                 ->where('periode', $period)
+                ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), $this->dashboardBranchNames())
                 ->whereNotNull('cabang1')
                 ->where('cabang1', '<>', '')
                 ->selectRaw('cabang1, COALESCE(SUM(COALESCE(baki_debet1, 0)), 0) as total_balance')
@@ -7986,6 +8130,10 @@ class DashboardSimpananController extends Controller
 
     private function queryPeriodSummaryFromSnapshot(string $period): ?array
     {
+        if (UserBranchScope::current() !== null) {
+            return null;
+        }
+
         if (!$this->hasSimpananSnapshot($period)) {
             return null;
         }
@@ -8049,6 +8197,7 @@ class DashboardSimpananController extends Controller
 
         $rows = DB::table(self::SNAPSHOT_BRANCH_TABLE)
             ->where('snapshot_period', $period)
+            ->whereIn(DB::raw('UPPER(TRIM(kantor_cabang))'), $this->dashboardBranchNames())
             ->orderBy('rank_order')
             ->limit(5)
             ->get();
@@ -8195,7 +8344,9 @@ class DashboardSimpananController extends Controller
                 return [null, null, null];
             }
 
-            $latestPeriod = DB::table('simpanan_multipn')->max('posisi');
+            $periodQuery = DB::table('simpanan_multipn');
+            $this->applyDashboardBranchScope($periodQuery, 'kantor_cabang');
+            $latestPeriod = (clone $periodQuery)->max('posisi');
             if (!$latestPeriod) {
                 return [null, null, null];
             }
@@ -8204,11 +8355,11 @@ class DashboardSimpananController extends Controller
             $previousCandidate = Carbon::parse($currentPeriod)->subMonthNoOverflow()->endOfMonth()->toDateString();
             $yoyCandidate = Carbon::parse($currentPeriod)->subYearNoOverflow()->endOfMonth()->toDateString();
 
-            $previousPeriod = DB::table('simpanan_multipn')
+            $previousPeriod = (clone $periodQuery)
                 ->where('posisi', '<=', $previousCandidate)
                 ->max('posisi');
 
-            $yoyPeriod = DB::table('simpanan_multipn')
+            $yoyPeriod = (clone $periodQuery)
                 ->where('posisi', '<=', $yoyCandidate)
                 ->max('posisi');
 
@@ -8937,15 +9088,25 @@ class DashboardSimpananController extends Controller
                 ];
             }
 
+            $branchColumn = collect(['branch_label', 'cabang', 'kanca', 'kantor_cabang', 'branch_office'])
+                ->first(fn (string $column): bool => Schema::hasColumn($tableName, $column));
+            if (UserBranchScope::current() !== null && $branchColumn === null) {
+                return null;
+            }
+
             // Cari kolom periode
             $periodCol = Schema::hasColumn($tableName, 'posisi') ? 'posisi'
                 : (Schema::hasColumn($tableName, 'periode') ? 'periode' : 'created_at');
-            $latestPeriod = DB::table($tableName)->max($periodCol);
+            $sourceQuery = DB::table($tableName);
+            if ($branchColumn !== null) {
+                $this->applyDashboardBranchScope($sourceQuery, $branchColumn);
+            }
+            $latestPeriod = (clone $sourceQuery)->max($periodCol);
             if (!$latestPeriod) {
                 return null;
             }
 
-            $row = DB::table($tableName)
+            $row = (clone $sourceQuery)
                 ->where($periodCol, $latestPeriod)
                 ->selectRaw('COUNT(*) as total_debitur')
                 ->selectRaw('SUM(CASE WHEN COALESCE(flag_casa, 0) = 1 THEN 1 ELSE 0 END) as casa_count')
@@ -8995,14 +9156,15 @@ class DashboardSimpananController extends Controller
             return null;
         }
 
-        $latestPeriod = DB::table('rasio_casa_debitur_snapshots')->max('loan_period');
+        $sourceQuery = DB::table('rasio_casa_debitur_snapshots');
+        $this->applyDashboardBranchScope($sourceQuery, 'branch_label');
+        $latestPeriod = (clone $sourceQuery)->max('loan_period');
         if (!$latestPeriod) {
             return null;
         }
 
-        $summary = DB::table('rasio_casa_debitur_snapshots')
+        $summary = (clone $sourceQuery)
             ->whereDate('loan_period', $latestPeriod)
-            ->whereIn(DB::raw('UPPER(TRIM(branch_label))'), $this->dashboardBranchNames())
             ->selectRaw('COALESCE(SUM(COALESCE(os_amount, 0)), 0) as os_amount')
             ->selectRaw('COALESCE(SUM(COALESCE(casa_amount, 0)), 0) as casa_amount')
             ->selectRaw('COALESCE(SUM(COALESCE(source_row_count, 0)), 0) as source_row_count')
@@ -9241,10 +9403,12 @@ class DashboardSimpananController extends Controller
                         ? $current->toDateString()
                         : $current->copy()->subMonthsNoOverflow($offset)->endOfMonth()->toDateString();
 
-                    $actualPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($p)
-                        ?? (Schema::hasTable('simpanan_multipn')
-                            ? DB::table('simpanan_multipn')->where('posisi', '<=', $p)->max('posisi')
-                            : null);
+                    $actualPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($p);
+                    if (!$actualPeriod && Schema::hasTable('simpanan_multipn')) {
+                        $periodQuery = DB::table('simpanan_multipn')->where('posisi', '<=', $p);
+                        $this->applyDashboardBranchScope($periodQuery, 'kantor_cabang');
+                        $actualPeriod = $periodQuery->max('posisi');
+                    }
                     if ($actualPeriod) {
                         $sum = $this->buildPeriodSummary($actualPeriod);
                         $simpananTimeline[] = round((float) ($sum['total_balance'] ?? 0) / 1e12, 3);
@@ -9272,9 +9436,11 @@ class DashboardSimpananController extends Controller
                         $table = Schema::hasTable(self::LOAN_SNAPSHOT_TABLE)
                             ? self::LOAN_SNAPSHOT_TABLE
                             : (Schema::hasTable('daily_loan_dinamis') ? 'daily_loan_dinamis' : null);
-                        $actualPeriod = $table
-                            ? DB::table($table)->where('periode', '<=', $p)->max('periode')
-                            : null;
+                        if ($table) {
+                            $periodQuery = DB::table($table)->where('periode', '<=', $p);
+                            $this->applyDashboardBranchScope($periodQuery, 'cabang1');
+                            $actualPeriod = $periodQuery->max('periode');
+                        }
                     }
                     if ($actualPeriod) {
                         $sum = $this->buildLoanSummary($actualPeriod);
@@ -9436,9 +9602,38 @@ class DashboardSimpananController extends Controller
 
     private function dashboardBranchNames(): array
     {
+        $scope = UserBranchScope::current();
+        if ($scope !== null) {
+            return [$scope['upper_label']];
+        }
+
         static $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
 
         return $branches;
+    }
+
+    private function dashboardBranchDisplayNames(): array
+    {
+        $scope = UserBranchScope::current();
+
+        return $scope !== null ? [$scope['label']] : self::AREA_6_BRANCH_LABELS;
+    }
+
+    private function dashboardScopeLabel(): string
+    {
+        return UserBranchScope::current()['label'] ?? 'Area 6';
+    }
+
+    private function applyDashboardBranchScope($query, string $column): void
+    {
+        $scope = UserBranchScope::current();
+        if ($scope === null) {
+            return;
+        }
+
+        $query->whereRaw("UPPER(TRIM(COALESCE({$column}, ''))) LIKE ?", [
+            '%' . $scope['upper_label'] . '%',
+        ]);
     }
 
     private function normalizedSql(string $column): string
@@ -9554,8 +9749,9 @@ class DashboardSimpananController extends Controller
         return $badgeCompatible ? 'badge-secondary' : 'text-muted';
     }
 
-    private function reportCacheVersion(): int
+    private function reportCacheVersion(): string
     {
-        return ReportCacheVersion::composite(['simpanan', 'pinjaman', 'harian']);
+        return ReportCacheVersion::composite(['simpanan', 'pinjaman', 'harian'])
+            . ':scope:' . UserBranchScope::cacheKey();
     }
 }

@@ -33,7 +33,7 @@
         @if ($rows->isNotEmpty())
             <tfoot>
                 <tr class="rm-mikro-total">
-                    <th colspan="4">TOTAL AREA 6</th>
+                    <th colspan="4">TOTAL {{ $userBranchScope['upper_label'] ?? 'AREA 6' }}</th>
                     <td class="text-right">{{ $formatAmount($total['jumlah_mantri'] ?? 0) }}</td>
                     <td class="text-right">{{ $formatAmount($total['kuadran_1'] ?? 0) }}</td>
                     <td class="text-right">{{ $formatAmount($total['kuadran_2'] ?? 0) }}</td>

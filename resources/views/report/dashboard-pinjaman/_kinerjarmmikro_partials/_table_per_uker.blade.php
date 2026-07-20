@@ -40,7 +40,7 @@
             @endforelse
             @if ($rows->isNotEmpty() && $total)
                 <tr class="rm-mikro-total">
-                    <td class="text-center">{{ $rows->count() + 1 }}</td><td>AREA 6</td><td>GRAND TOTAL</td><td>AREA 6</td><td>-</td>
+                    <td class="text-center">{{ $rows->count() + 1 }}</td><td>{{ $userBranchScope['upper_label'] ?? 'AREA 6' }}</td><td>GRAND TOTAL</td><td>{{ $userBranchScope['upper_label'] ?? 'AREA 6' }}</td><td>-</td>
                     <td class="text-right">{{ $formatAmount($total['lancar_deb'] ?? 0) }}</td><td class="text-right">{{ $formatJuta($total['lancar_os'] ?? 0) }}</td>
                     <td class="text-right">{{ $formatAmount($total['sml_deb'] ?? 0) }}</td><td class="text-right">{{ $formatJuta($total['sml_os'] ?? 0) }}</td>
                     <td class="text-right">{{ $formatAmount($total['npl_deb'] ?? 0) }}</td><td class="text-right">{{ $formatJuta($total['npl_os'] ?? 0) }}</td>

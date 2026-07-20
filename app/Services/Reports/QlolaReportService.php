@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Support\UserBranchScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -18,7 +19,7 @@ class QlolaReportService
 
     public function buildFilterOptions(): array
     {
-        return Cache::remember('report_filter:qlola_options', now()->addHours(6), function () {
+        $options = Cache::remember('report_filter:qlola_options', now()->addHours(6), function () {
             $rows = collect([
                 DB::table('ibbisniz_corp')
                     ->selectRaw('TRIM(cabang) as branch_name')
@@ -56,6 +57,19 @@ class QlolaReportService
                     ->map(fn ($items) => $items->pluck('uker_name')->unique()->values()->all()),
             ];
         });
+
+        $scope = UserBranchScope::current();
+        if ($scope === null) {
+            return $options;
+        }
+
+        return [
+            'branchOptions' => collect($options['branchOptions'] ?? [])
+                ->filter(fn ($branch): bool => strtoupper(trim((string) $branch)) === $scope['upper_label'])
+                ->values(),
+            'branchUkerMap' => collect($options['branchUkerMap'] ?? [])
+                ->filter(fn ($ukers, $branch): bool => strtoupper(trim((string) $branch)) === $scope['upper_label']),
+        ];
     }
 
     public function handle(Request $request): JsonResponse

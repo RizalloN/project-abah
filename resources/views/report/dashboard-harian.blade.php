@@ -2409,7 +2409,7 @@
                                         <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
                                     </button>
                                     <div class="daily-dropdown-menu" data-daily-dropdown-menu="kanca"></div>
-                                    <select id="filter-kanca" class="form-control daily-filter-native" multiple></select>
+                                    <select id="filter-kanca" name="kanca" class="form-control daily-filter-native" multiple></select>
                                 </div>
                             </div>
                         </div>

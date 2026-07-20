@@ -4078,11 +4078,11 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
   <section class="area6-panel">
     <div class="area6-head">
       <div>
-        <div class="area6-title">{{ data_get($area6Portfolio, 'title', 'Ringkasan Area 6') }}</div>
-        <div class="area6-sub">{{ data_get($area6Portfolio, 'subtitle', 'Ringkasan lintas report Area 6.') }}</div>
+        <div class="area6-title">{{ !empty($userBranchScope) ? 'Kinerja ' . $userBranchScope['label'] : data_get($area6Portfolio, 'title', 'Ringkasan Area 6') }}</div>
+        <div class="area6-sub">{{ !empty($userBranchScope) ? 'Ringkasan posisi dan kinerja ' . $userBranchScope['label'] . '.' : data_get($area6Portfolio, 'subtitle', 'Ringkasan lintas report Area 6.') }}</div>
       </div>
       <div class="area6-head-actions">
-        @if(!empty($area6RankingModes))
+        @if(!empty($area6RankingModes) && empty($userBranchScope))
         <div class="area6-scope-toggle" role="group" aria-label="Pilihan level ranking Area 6">
           @foreach($area6RankingModes as $scopeKey => $scopePayload)
           <button type="button"
@@ -4685,6 +4685,16 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
         @if(!empty(data_get($scopePayload, 'branches', [])))
           @php
             $branches = data_get($scopePayload, 'branches', []);
+            if (!empty($userBranchScope)) {
+                $userBranchLabel = strtolower($userBranchScope['label']);
+                $userBranchPlain = strtolower($userBranchScope['plain_label'] ?? '');
+                $branches = array_values(array_filter($branches, function($b) use ($userBranchLabel, $userBranchPlain) {
+                    $bName = strtolower(data_get($b, 'name', ''));
+                    return $bName === $userBranchLabel
+                        || $bName === $userBranchPlain
+                        || str_contains($bName, $userBranchPlain);
+                }));
+            }
             $hideSimpananPanel = (bool) data_get($scopePayload, 'hide_simpanan', false);
             $scopeDescription = data_get($scopePayload, 'description', '');
           @endphp

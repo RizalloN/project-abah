@@ -854,7 +854,7 @@
                             <i class="fas fa-chevron-down small opacity-50"></i>
                         </button>
                         <div class="dana-dropdown-menu" data-dana-dropdown-menu="cabang"></div>
-                        <select id="filterCabang" class="d-none">
+                        <select id="filterCabang" name="cabang" class="d-none">
                             @foreach($branches as $value => $label)
                                 <option value="{{ $value }}" {{ ($selectedBranch ?? 'area6') == $value ? 'selected' : '' }}>{{ strtoupper($label) }}</option>
                             @endforeach

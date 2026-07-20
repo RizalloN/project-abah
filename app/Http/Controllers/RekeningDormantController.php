@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\EnsureRekeningDormantSnapshotJob;
 use App\Support\ReportIndexHintResolver;
 use App\Support\ReportCacheVersion;
+use App\Support\UserBranchScope;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
@@ -38,10 +39,11 @@ class RekeningDormantController extends Controller
     public function index()
     {
         $latestPeriod = $this->latestPeriod();
+        $scope = UserBranchScope::current();
 
         return view('report.rekening-dormant', [
             'defaultPeriod' => $latestPeriod ?: now()->toDateString(),
-            'selectedBranches' => [],
+            'selectedBranches' => $scope !== null ? [$scope['label']] : [],
             'selectedUnits' => [],
         ]);
     }
@@ -299,6 +301,7 @@ class RekeningDormantController extends Controller
     {
         try {
             $query = DB::table('simpanan_multipn');
+            $this->scopeSourceQueryToCurrentBranch($query);
 
             if ($targetDate) {
                 $query->where('posisi', '<=', Carbon::parse($targetDate)->toDateString());
@@ -330,10 +333,11 @@ class RekeningDormantController extends Controller
             $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth()->toDateString();
             $monthEnd = Carbon::createFromFormat('Y-m', $month)->endOfMonth()->toDateString();
 
-            $sourcePeriod = DB::table('simpanan_multipn')
+            $sourceQuery = DB::table('simpanan_multipn')
                 ->whereBetween('posisi', [$monthStart, $monthEnd])
-                ->where('status', '9')
-                ->max('posisi');
+                ->where('status', '9');
+            $this->scopeSourceQueryToCurrentBranch($sourceQuery);
+            $sourcePeriod = $sourceQuery->max('posisi');
 
             if ($sourcePeriod) {
                 return Carbon::parse($sourcePeriod)->toDateString();
@@ -383,9 +387,10 @@ class RekeningDormantController extends Controller
             }
 
             // Fallback to source table
-            return DB::table('simpanan_multipn')
-                ->where('status', '9')
-                ->max('posisi');
+            $sourceQuery = DB::table('simpanan_multipn')->where('status', '9');
+            $this->scopeSourceQueryToCurrentBranch($sourceQuery);
+
+            return $sourceQuery->max('posisi');
         });
     }
 
@@ -404,7 +409,9 @@ class RekeningDormantController extends Controller
 
     private function fetchAvailableBranches(string $period, bool $forceRefresh = false): Collection
     {
-        return collect(self::AREA_BRANCHES);
+        $scope = UserBranchScope::current();
+
+        return collect($scope !== null ? [$scope['label']] : self::AREA_BRANCHES);
     }
 
     private function fetchAvailableUnits(string $period, Collection $branches, bool $forceRefresh = false): Collection
@@ -934,7 +941,15 @@ class RekeningDormantController extends Controller
             return $query->whereRaw('1 = 0');
         }
 
-        return $query->where('snapshot_version', self::DORMANT_SNAPSHOT_VERSION);
+        $query->where('snapshot_version', self::DORMANT_SNAPSHOT_VERSION);
+        $scope = UserBranchScope::current();
+        if ($scope !== null && Schema::hasColumn(self::SNAPSHOT_TABLE, 'branch_label')) {
+            $query->whereRaw("UPPER(TRIM(COALESCE(branch_label, ''))) LIKE ?", [
+                '%' . $scope['upper_label'] . '%',
+            ]);
+        }
+
+        return $query;
     }
 
     private function buildLabels(?string $currentPeriod, ?string $mtdPeriod, ?string $m2Period, ?string $ytdPeriod): array
@@ -1103,9 +1118,21 @@ class RekeningDormantController extends Controller
         return 'id';
     }
 
-    private function reportCacheVersion(): int
+    private function scopeSourceQueryToCurrentBranch($query): void
     {
-        return ReportCacheVersion::get('simpanan');
+        $scope = UserBranchScope::current();
+        if ($scope === null) {
+            return;
+        }
+
+        $query->whereRaw("UPPER(TRIM(COALESCE(kantor_cabang, ''))) LIKE ?", [
+            '%' . $scope['upper_label'] . '%',
+        ]);
+    }
+
+    private function reportCacheVersion(): string
+    {
+        return ReportCacheVersion::get('simpanan') . ':scope:' . UserBranchScope::cacheKey();
     }
 
     private function qualifyIndexedSource(string $table, ?string $alias = null, array $preferredIndexes = []): string
