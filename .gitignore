@@ -44,3 +44,7 @@ snippet*.txt
 # Jangan commit dump SQL eksperimen/backup lokal
 /scratch/*.sql
 /storage/backups/*.sql
+
+# File spreadsheet yang ditempatkan sementara di public/ jangan ikut ke repo
+/public/**/*.xls
+/public/**/*.xlsx
