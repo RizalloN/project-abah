@@ -7,6 +7,8 @@ use App\Http\Controllers\Import\ImportExcelController;
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Services\Import\ImportCleanupService;
 use App\Services\Import\ImportDuplicateGuardService;
+use App\Services\Import\ImportExecutionService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -21,6 +23,28 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
     {
         Mockery::close();
         parent::tearDown();
+    }
+
+    public function test_browser_stream_only_monitors_worker_owned_simpanan_import(): void
+    {
+        $request = Request::create('/import-csv/simpanan-multipn/stream', 'GET', [
+            'job_id' => 249,
+        ]);
+        $request->setLaravelSession(app('session.store'));
+        $this->app->instance('request', $request);
+
+        $streamResponse = response()->stream(static function (): void {});
+        $executionService = Mockery::mock(ImportExecutionService::class);
+        $executionService->shouldReceive('dispatch')->once()->with(249)->andReturnTrue();
+        $executionService->shouldReceive('streamStatus')
+            ->once()
+            ->with($request, 249, false)
+            ->andReturn($streamResponse);
+        $this->app->instance(ImportExecutionService::class, $executionService);
+
+        $response = app(ImportSimpananMultiPnCsvController::class)->processImportStream($request);
+
+        $this->assertSame($streamResponse, $response);
     }
 
     public function test_csv_physical_data_rows_are_counted_exactly_for_large_preview_totals(): void

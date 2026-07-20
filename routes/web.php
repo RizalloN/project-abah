@@ -9,13 +9,13 @@ use App\Http\Controllers\Report\DataPhReportController;
 use App\Http\Controllers\Report\KinerjaRmReportController;
 use App\Http\Controllers\Report\KinerjaRmMikroReportController;
 use App\Http\Controllers\Report\KinerjaNonPtpReportController;
-use App\Http\Controllers\Report\KinerjaPtpReportController;
 use App\Http\Controllers\Report\KolaborasiReportController;
 use App\Http\Controllers\Report\NewPayrollReportController;
 use App\Http\Controllers\Import\ImportCasaBrilinkController;
 use App\Http\Controllers\Import\ImportCognosPhController;
 use App\Http\Controllers\Import\ImportCognosRecoveryController;
 use App\Http\Controllers\Import\ImportCleanupController;
+use App\Http\Controllers\Import\ImportCrasController;
 use App\Http\Controllers\Import\ImportDailyLoanBackendController;
 use App\Http\Controllers\Import\ImportFileBrimoController;
 use App\Http\Controllers\Import\ImportFileController;
@@ -147,12 +147,6 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kinerjarm.history');
     Route::get('/report/dashboard-pinjaman/kinerjarmmikro', [KinerjaRmMikroReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerjarmmikro');
-    Route::get('/report/dashboard-pinjaman/kinerjarmmikro/mantri-extreme-low-detail', [KinerjaRmMikroReportController::class, 'mantriExtremeLowDetail'])
-        ->name('report.dashboard-pinjaman.kinerjarmmikro.mantri-extreme-low-detail');
-    Route::get('/report/dashboard-pinjaman/kinerja-ptp', [KinerjaPtpReportController::class, 'index'])
-        ->name('report.dashboard-pinjaman.kinerja-ptp');
-    Route::get('/report/dashboard-pinjaman/kinerja-ptp/detail', [KinerjaPtpReportController::class, 'detail'])
-        ->name('report.dashboard-pinjaman.kinerja-ptp.detail');
     Route::get('/report/dashboard-pinjaman/kinerja-non-ptp', [KinerjaNonPtpReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerja-non-ptp');
     Route::get('/report/dashboard-almafacts/financial-highlight', [AlmafactsDashboardController::class, 'financialHighlight'])
@@ -202,6 +196,8 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
     Route::get('/report/dashboard-dana/hourly-dpk/export-pdf', [DashboardSimpananController::class, 'hourlyDpkExportPdf'])->name('report.dashboard-dana.hourly-dpk.export-pdf');
     Route::get('/report/dashboard-dana/market-share', [DashboardSimpananController::class, 'marketShareIndex'])->name('report.dashboard-dana.market-share');
     Route::get('/report/dashboard-dana/market-share/mapping', [DashboardSimpananController::class, 'marketShareMappingIndex'])->name('report.dashboard-dana.market-share.mapping');
+    Route::get('/report/dashboard-dana/market-share/mapping-cras', [DashboardSimpananController::class, 'marketShareCrasMappingIndex'])->name('report.dashboard-dana.market-share.mapping-cras');
+    Route::get('/report/dashboard-dana/market-share/mapping-cras/data', [DashboardSimpananController::class, 'marketShareCrasMappingData'])->name('report.dashboard-dana.market-share.mapping-cras.data');
     Route::get('/report/dashboard-dana/market-share/area-6', [DashboardSimpananController::class, 'marketShareArea6Index'])->name('report.dashboard-dana.market-share.area6');
     Route::get('/report/dashboard-dana/market-share/instansi', [DashboardSimpananController::class, 'marketShareInstansiIndex'])->name('report.dashboard-dana.market-share.instansi');
     Route::get('/report/dashboard-dana/market-share/instansi/data', [DashboardSimpananController::class, 'marketShareInstansiData'])->name('report.dashboard-dana.market-share.instansi.data');
@@ -283,6 +279,16 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::get('/import/preview/warm-index', [ImportFileController::class, 'previewWarmIndex'])->name('import.preview.warm-index');
     Route::get('/import/preview/dynamic-filter-options', [ImportFileController::class, 'previewDynamicFilterOptions'])->name('import.preview.dynamic-filter-options');
     Route::get('/import/preview/filtered-rows', [ImportFileController::class, 'previewFilteredRows'])->name('import.preview.filtered-rows');
+    Route::post('/import/cras/upload', [ImportCrasController::class, 'upload'])->name('import.cras.upload');
+    Route::post('/import/cras/upload-chunk/init', [ImportCrasController::class, 'initChunkUpload'])->name('import.cras.upload-chunk.init');
+    Route::post('/import/cras/upload-chunk', [ImportCrasController::class, 'uploadChunk'])->name('import.cras.upload-chunk');
+    Route::post('/import/cras/upload-chunk/finalize', [ImportCrasController::class, 'finalizeChunkUpload'])->name('import.cras.upload-chunk.finalize');
+    Route::get('/import/cras/prepare-preview', [ImportCrasController::class, 'preparePreviewStream'])->name('import.cras.prepare-preview');
+    Route::get('/import/cras/preview', [ImportCrasController::class, 'preview'])->name('import.cras.preview');
+    Route::get('/import/cras/preview/filter-options', [ImportCrasController::class, 'previewFilterOptions'])->name('import.cras.filter-options');
+    Route::get('/import/cras/preview/filtered-rows', [ImportCrasController::class, 'previewFilteredRows'])->name('import.cras.filtered-rows');
+    Route::post('/import/cras/init', [ImportCrasController::class, 'initImport'])->name('import.cras.init');
+    Route::get('/import/cras/stream', [ImportCrasController::class, 'processImportStream'])->name('import.cras.stream');
     Route::post('/import/casa-brilink/upload', [ImportCasaBrilinkController::class, 'upload'])->name('import.casabrilink.upload');
     Route::get('/import/casa-brilink/preview', [ImportCasaBrilinkController::class, 'preview'])->name('import.casabrilink.preview');
     Route::post('/import/casa-brilink/preview', [ImportCasaBrilinkController::class, 'preview'])->name('import.casabrilink.preview.refresh');

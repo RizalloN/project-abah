@@ -2,6 +2,12 @@
 
 @section('title', $pageTitle ?? 'Market Share')
 
+@section('styles')
+    @if(!empty($marketShareGeography['ready']))
+        <link rel="stylesheet" href="{{ asset('vendor/leaflet-1.9.4/leaflet.css') }}">
+    @endif
+@endsection
+
 @section('content')
 <style>
     :root {
@@ -43,6 +49,11 @@
         align-items: center;
         min-width: 0;
         gap: 0.75rem;
+    }
+
+    .market-workbook-copy {
+        flex: 1 1 auto;
+        min-width: 0;
     }
 
     .market-workbook-icon {
@@ -1496,6 +1507,33 @@
             padding: 0.85rem;
         }
 
+        .market-workbook-header {
+            align-items: stretch;
+            flex-direction: column;
+            padding: 0.85rem;
+        }
+
+        .market-workbook-brand,
+        .market-workbook-actions {
+            width: 100%;
+            min-width: 0;
+        }
+
+        .market-workbook-title,
+        .market-workbook-subtitle {
+            overflow-wrap: anywhere;
+        }
+
+        .market-workbook-actions {
+            justify-content: stretch;
+        }
+
+        .market-workbook-actions .market-workbook-button {
+            width: 100%;
+            min-width: 0;
+            white-space: normal;
+        }
+
         .market-workbook-frame-shell {
             height: 700px;
             height: max(700px, calc(100svh - 116px));
@@ -1595,7 +1633,7 @@
             <div class="market-workbook-icon">
                 <i class="{{ $pageIcon ?? 'fas fa-chart-pie' }}"></i>
             </div>
-            <div>
+            <div class="market-workbook-copy">
                 <h1 class="market-workbook-title">{{ $pageTitle ?? 'Market Share' }}</h1>
                 <div class="market-workbook-subtitle">{{ $workbookTitle }}</div>
             </div>
@@ -1676,7 +1714,8 @@
         @php
             $mappingSummary = $nativeWorkbook['summary'] ?? ['ready' => false];
             $hasMappingSummary = !empty($mappingSummary['ready']);
-            $defaultWorkbookMode = $hasMappingSummary ? 'summary' : 'excel';
+            $hasGeography = !empty($marketShareGeography['ready']);
+            $defaultWorkbookMode = $hasGeography ? 'geography' : ($hasMappingSummary ? 'summary' : 'excel');
             $excelWorkbookUrl = $excelWorkbookUrl ?? $workbookUrl ?? '';
             $workbookProvider = $workbookProvider ?? ((string) ($pageTitle ?? '') === 'Mapping' ? 'Google Sheets' : 'Excel 365');
             $excelModeTitle = $workbookProvider === 'Google Sheets' ? 'Google Spreadsheet' : 'Excel Workbook';
@@ -1701,8 +1740,21 @@
         @endphp
 
         <div class="market-mapping-workspace">
-            @if($hasMappingSummary)
+            @if($hasMappingSummary || $hasGeography)
                 <div class="market-native-switch" role="tablist" aria-label="Pilih tampilan workbook mapping">
+                    @if($hasGeography)
+                        <button
+                            type="button"
+                            class="market-native-switch-button {{ $defaultWorkbookMode === 'geography' ? 'active' : '' }}"
+                            data-market-workbook-mode-trigger="geography"
+                            role="tab"
+                            aria-selected="{{ $defaultWorkbookMode === 'geography' ? 'true' : 'false' }}"
+                        >
+                            <i class="fas fa-map-marked-alt"></i>
+                            Peta Wilayah
+                        </button>
+                    @endif
+                    @if($hasMappingSummary)
                     <button
                         type="button"
                         class="market-native-switch-button {{ $defaultWorkbookMode === 'summary' ? 'active' : '' }}"
@@ -1713,6 +1765,7 @@
                         <i class="fas fa-layer-group"></i>
                         Summary
                     </button>
+                    @endif
                     <button
                         type="button"
                         class="market-native-switch-button {{ $defaultWorkbookMode === 'excel' ? 'active' : '' }}"
@@ -1723,6 +1776,14 @@
                         <i class="fas fa-file-excel"></i>
                         {{ $workbookProvider === 'Google Sheets' ? 'Google Sheet' : 'Excel' }}
                     </button>
+                </div>
+            @endif
+
+            @if($hasGeography)
+                <div class="market-mapping-mode {{ $defaultWorkbookMode === 'geography' ? 'active' : '' }}" data-market-workbook-mode-panel="geography">
+                    @include('report.dashboard-dana._market_share_geography', [
+                        'marketShareGeography' => $marketShareGeography,
+                    ])
                 </div>
             @endif
 

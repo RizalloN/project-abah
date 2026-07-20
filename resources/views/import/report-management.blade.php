@@ -1302,6 +1302,9 @@
         box-shadow: none;
     }
     .report-management-bulkbar .form-check-label {
+        display: inline-flex;
+        align-items: center;
+        min-height: 38px;
         font-weight: 600;
         color: #1e293b;
         cursor: pointer;

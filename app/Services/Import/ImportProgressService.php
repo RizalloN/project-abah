@@ -1021,6 +1021,19 @@ class ImportProgressService
 
                 return $this->findJob($jobId);
             }
+
+            if ($this->isOrphanedSimpananMultiPnDirectLoad($job)) {
+                $message = 'Koneksi LOAD DATA MULTIPN terputus sebelum selesai. Transaksi sudah rollback dan file aman untuk diimport ulang.';
+                $this->markFailed($jobId, $message, $success, $failed, 'failed');
+                $this->releaseSimpananMultiPnStreamLock($jobId);
+
+                Log::warning('Orphaned Simpanan MultiPN LOAD DATA job reconciled.', [
+                    'job_id' => $jobId,
+                    'mysql_thread_id' => $this->resolveJobContext($job)['mysql_thread_id'] ?? null,
+                ]);
+
+                return $this->findJob($jobId);
+            }
         }
 
         $sourcePath = $this->resolveJobSourcePath($job);
@@ -1087,6 +1100,87 @@ class ImportProgressService
         }
 
         return $job;
+    }
+
+    private function isOrphanedSimpananMultiPnDirectLoad(object $job): bool
+    {
+        $context = $this->resolveJobContext($job);
+        if (strtolower(trim((string) ($context['table_name'] ?? ''))) !== 'simpanan_multipn') {
+            return false;
+        }
+
+        if (is_array($context['direct_load_audit'] ?? null)) {
+            return false;
+        }
+
+        $threadId = (int) ($context['mysql_thread_id'] ?? 0);
+        $startedAt = trim((string) ($context['direct_load_started_at'] ?? ''));
+        if ($startedAt === '') {
+            $progress = $this->getCachedProgress((int) ($job->id ?? 0));
+            $phase = strtolower(trim((string) ($progress['phase'] ?? '')));
+            $percent = (int) ($progress['percent'] ?? 0);
+            if ($percent >= 50 && in_array($phase, ['loading', 'preparing_load_plan'], true)) {
+                $startedAt = trim((string) ($job->updated_at ?? ''));
+            }
+        }
+
+        if ($threadId <= 0 || $startedAt === '') {
+            return false;
+        }
+
+        try {
+            $graceSeconds = max(60, (int) config(
+                'import.direct_load.simpanan_multipn.orphan_grace_seconds',
+                180
+            ));
+            if (Carbon::parse($startedAt)->gt(now()->subSeconds($graceSeconds))) {
+                return false;
+            }
+
+            foreach (DB::select('SHOW FULL PROCESSLIST') as $process) {
+                if ((int) ($process->Id ?? 0) === $threadId) {
+                    return false;
+                }
+            }
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::debug('Skip MULTIPN orphan reconciliation because MySQL thread state is unavailable.', [
+                'job_id' => (int) ($job->id ?? 0),
+                'mysql_thread_id' => $threadId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    private function resolveJobContext(object $job): array
+    {
+        $context = $job->job_context ?? null;
+        if (is_array($context)) {
+            return $context;
+        }
+
+        if (!is_string($context) || trim($context) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($context, true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function releaseSimpananMultiPnStreamLock(int $jobId): void
+    {
+        try {
+            Cache::lock('import_excel_stream_job_' . $jobId, 1)->forceRelease();
+        } catch (\Throwable $e) {
+            Log::warning('Failed to release orphaned Simpanan MultiPN stream lock.', [
+                'job_id' => $jobId,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function resolveTerminalStatusFromTotals(int $success, int $failed, int $totalRows): ?string

@@ -5,6 +5,8 @@
 @section('content')
 @php
     $filtersDisabled = !empty($filtersDisabled);
+    $lockColumnSelection = !empty($lockColumnSelection);
+    $preserveFilterValueWhitespace = !empty($preserveFilterValueWhitespace);
     $previewReportTitle = $previewBannerTitle ?? $pageTitle ?? 'Preview Data Import';
     $previewModeLabel = $filtersDisabled ? 'Import full' : 'Preview dengan filter';
 @endphp
@@ -31,7 +33,7 @@
                             : \Carbon\Carbon::parse($manualPeriode)->format('Y-m-d'))
                         : '';
                 @endphp
-                <form action="{{ $previewRoute ?? (session('import_type') === 'brimo' ? route('import.brimo.preview') : route('import.preview')) }}" method="POST" class="form-inline">
+                <form action="{{ $previewRoute ?? (session('import_type') === 'brimo' ? route('import.brimo.preview') : route('import.preview')) }}" method="POST" class="form-inline import-preview-settings-form">
                     @csrf
                     <input type="hidden" name="file_path" value="{{ $filePath }}">
                     @if(!empty($lockDelimiterSelector))
@@ -54,7 +56,7 @@
                         <label class="mr-2 mt-2 mt-md-0" for="periode_preview">Periode:</label>
                         <input type="{{ $manualPeriodeInputType }}" name="periode" id="periode_preview" value="{{ $manualPeriodeValue }}" class="form-control mr-3 mt-2 mt-md-0" style="min-width: 220px;">
                     @endif
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary import-preview-settings-submit">
                         <i class="fas fa-sync-alt"></i> Terapkan Ulang
                     </button>
                 </form>
@@ -142,10 +144,13 @@
                                             <div class="d-flex justify-content-between align-items-center">
 
                                                 <div class="custom-control custom-checkbox mr-2">
+                                                    @if($lockColumnSelection)
+                                                        <input type="hidden" name="selected_columns[]" value="{{ $index }}">
+                                                    @endif
                                                     <input class="custom-control-input" type="checkbox"
                                                            id="col_{{ $index }}"
                                                            name="selected_columns[]"
-                                                           value="{{ $index }}" checked>
+                                                           value="{{ $index }}" checked {{ $lockColumnSelection ? 'disabled' : '' }}>
                                                     <label for="col_{{ $index }}" class="custom-control-label font-weight-bold text-dark">
                                                         {{ $header }}
                                                     </label>
@@ -177,7 +182,9 @@
                                                         <div class="p-2 bg-white" id="list_container_{{ $index }}" style="max-height: 250px; overflow-y: auto;" data-col="{{ $index }}">
                                                             @foreach(array_slice($formattedUniqueValues[$index] ?? [], 0, 200) as $filterValueIndex => $filterValue)
                                                                 @php
-                                                                    $filterValueString = trim((string) $filterValue);
+                                                                    $filterValueString = $preserveFilterValueWhitespace
+                                                                        ? (string) $filterValue
+                                                                        : trim((string) $filterValue);
                                                                     $filterInputId = 'filter_' . $index . '_initial_' . $filterValueIndex;
                                                                 @endphp
                                                                 <div class="custom-control custom-checkbox filter-item-container mb-1">
@@ -212,7 +219,7 @@
                                         <td class="text-center text-muted">{{ $rowIndex + 1 }}</td>
                                         @foreach($headers as $colIndex => $header)
                                             <td class="text-truncate col-data-{{ $colIndex }}"
-                                                data-val="{{ trim($row[$colIndex] ?? '') }}"
+                                                data-val="{{ $preserveFilterValueWhitespace ? (string) ($row[$colIndex] ?? '') : trim($row[$colIndex] ?? '') }}"
                                                 style="max-width: 250px;"
                                                 title="{{ $row[$colIndex] ?? '' }}">
                                                 {{ isset($row[$colIndex]) ? $row[$colIndex] : '-' }}
@@ -283,6 +290,7 @@
         const deferDependentFilterRefresh = @json(!empty($deferDependentFilterRefresh));
         const initialFilterOptionsAreComplete = @json(!empty($initialFilterOptionsAreComplete));
         const portalFilterDropdowns = @json($portalFilterDropdowns ?? true);
+        const preserveFilterValueWhitespace = @json($preserveFilterValueWhitespace);
         const filePathValue = importFormElement?.querySelector('input[name="file_path"]')?.value || '';
         const previewStateKey = importFormElement?.querySelector('input[name="preview_state_key"]')?.value || '';
         const delimiterValue = importFormElement?.querySelector('input[name="delimiter"]')?.value || 'auto';
@@ -384,6 +392,7 @@
 
         const previewBannerTitle = @json($previewBannerTitle ?? '');
         const isDailyLoanPreview = /daily loan/i.test(previewBannerTitle);
+        const isCrasPreview = /cras/i.test(previewBannerTitle);
 
         function resolveLoadingCopy() {
             if (isDailyLoanPreview) {
@@ -392,6 +401,15 @@
                     description: 'Memeriksa file dan menyiapkan sanitasi CSV Daily Loan.',
                     phase: 'Menyiapkan sanitasi CSV Daily Loan...',
                     status: 'Menyiapkan sanitasi CSV Daily Loan...',
+                };
+            }
+
+            if (isCrasPreview) {
+                return {
+                    title: 'Import CRAS',
+                    description: 'Sistem memvalidasi nilai sumber lalu memuatnya ke MySQL tanpa normalisasi isi.',
+                    phase: 'Validasi data persis sumber...',
+                    status: 'Menyiapkan staging CRAS...',
                 };
             }
 
@@ -488,7 +506,8 @@
         }
 
         function normalizeFilterValue(value) {
-            return String(value ?? '').trim();
+            const normalized = String(value ?? '');
+            return preserveFilterValueWhitespace ? normalized : normalized.trim();
         }
 
         function normalizeFilterValues(values) {
@@ -642,7 +661,7 @@
 
             const visibleCheckboxes = Array.from(document.querySelectorAll('.filter-checkbox[data-col="' + col + '"]'));
             const visibleValues = visibleCheckboxes.map(function (checkbox) {
-                return String(checkbox.value || '').trim();
+                return normalizeFilterValue(checkbox.value || '');
             });
             const comparisonValues = visibleValues.length ? visibleValues : filteredValues;
 
@@ -670,7 +689,7 @@
             }
 
             document.querySelectorAll('.filter-checkbox[data-col="' + col + '"]').forEach(function (checkbox) {
-                checkbox.checked = state.selectedValues.has(String(checkbox.value || '').trim());
+                checkbox.checked = state.selectedValues.has(normalizeFilterValue(checkbox.value || ''));
             });
         }
 
@@ -1275,7 +1294,7 @@
                 return;
             }
 
-            const value = e.target.value.trim();
+            const value = normalizeFilterValue(e.target.value);
             if (e.target.checked) {
                 state.selectedValues.add(value);
             } else {
@@ -1563,7 +1582,7 @@
 
             if (elapsedInfo && importProgressStartedAt) {
                 const elapsedSeconds = (Date.now() - importProgressStartedAt) / 1000;
-                elapsedInfo.innerText = 'Durasi: ' + formatDuration(elapsedSeconds);
+                elapsedInfo.innerText = formatDuration(elapsedSeconds);
             }
 
             if (etaInfo) {
@@ -1574,14 +1593,14 @@
                 const speedLabel = String(importProgressSnapshot.speedLabel || '');
 
                 if (speedLabel === 'record') {
-                    etaInfo.innerText = 'Estimasi sisa: tahap sanitasi sedang memproses batch data...';
+                    etaInfo.innerText = 'Tahap sanitasi';
                 } else if (totalRows <= 0) {
-                    etaInfo.innerText = 'Estimasi sisa: menunggu total baris terkonfirmasi...';
+                    etaInfo.innerText = 'Menunggu total';
                 } else if (speed > 0 && totalRows > rowsDone) {
                     const remainingRows = totalRows - rowsDone;
-                    etaInfo.innerText = 'Estimasi sisa: ' + formatDuration(remainingRows / speed);
+                    etaInfo.innerText = 'Sisa ' + formatDuration(remainingRows / speed);
                 } else if (percent >= 96 && percent < 100) {
-                    etaInfo.innerText = 'Estimasi sisa: menunggu proses MySQL menyelesaikan tahap akhir...';
+                    etaInfo.innerText = 'Tahap akhir';
                 } else {
                     etaInfo.innerText = '';
                 }
@@ -1734,7 +1753,6 @@
                     <div class="swal-import-shell">
                         <div class="swal-import-head">
                             <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
-                            <div class="swal-import-title">${loadingCopy.title}</div>
                             <div class="swal-import-desc">${loadingCopy.description}</div>
                         </div>
                         <div class="swal-import-card">
@@ -1812,7 +1830,6 @@
                 <div class="swal-import-shell">
                     <div class="swal-import-head">
                         <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
-                        <div class="swal-import-title">${loadingCopy.title}</div>
                         <div class="swal-import-desc">${loadingCopy.description}</div>
                         <div class="swal-import-phase">${loadingCopy.phase}</div>
                     </div>
@@ -1908,7 +1925,9 @@
                     12,
                     isDailyLoanPreview
                         ? 'Menyiapkan sanitasi CSV Daily Loan... (' + Number(initResult.total_rows || 0).toLocaleString('id-ID') + ' record)'
-                        : 'Fase Polars siap. Membuka koneksi progress...',
+                        : (isCrasPreview
+                            ? 'Job CRAS siap. Membuka koneksi progress...'
+                            : 'Fase Polars siap. Membuka koneksi progress...'),
                     0,
                     initResult.total_rows || 0,
                     0,
@@ -2908,6 +2927,340 @@
         color: #64748b;
         font-size: 0.72rem;
         line-height: 1.35;
+    }
+
+    /* Quiet operational workspace: neutral surfaces, one primary action, and dense data controls. */
+    .import-preview-settings,
+    .import-preview-card {
+        border: 1px solid #dbe3ec !important;
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 8px 22px -20px rgba(15, 23, 42, 0.42) !important;
+    }
+
+    .import-preview-settings .card-header,
+    .import-preview-card__header {
+        padding: 0.9rem 1rem;
+        background: #ffffff !important;
+        border-bottom: 1px solid #e5eaf0 !important;
+    }
+
+    .import-preview-settings .card-title {
+        color: #172033;
+        font-size: 0.95rem;
+        letter-spacing: 0;
+    }
+
+    .import-preview-settings .card-title .text-primary,
+    .import-preview-heading__title .text-success {
+        color: #0b5cab !important;
+    }
+
+    .import-preview-settings .card-body {
+        padding: 0.8rem 1rem !important;
+        background: #f8fafc;
+    }
+
+    .import-preview-settings-form {
+        display: flex !important;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 0.55rem 0.75rem;
+    }
+
+    .import-preview-settings-form > label {
+        flex: 1 1 300px;
+        margin: 0 0 0.42rem !important;
+        color: #475569;
+        font-size: 0.82rem;
+        font-weight: 600;
+    }
+
+    .import-preview-settings-form > .form-control {
+        flex: 1 1 220px;
+        min-width: 0 !important;
+        height: 38px;
+        margin: 0 !important;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #1e293b;
+        box-shadow: none;
+    }
+
+    .import-preview-settings-form > label[for="periode_preview"] {
+        flex: 0 0 auto;
+        margin: 0 0 0.42rem !important;
+        color: #64748b;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+    }
+
+    .import-preview-settings-submit {
+        flex: 0 0 auto;
+        min-height: 38px;
+        padding: 0.5rem 0.8rem;
+        border: 1px solid #0b5cab !important;
+        border-radius: 6px;
+        background: #0b5cab !important;
+        box-shadow: none !important;
+        font-size: 0.8rem;
+    }
+
+    .import-preview-card__header {
+        align-items: center;
+    }
+
+    .import-preview-heading__eyebrow {
+        min-height: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: #64748b;
+        font-size: 0.7rem;
+        letter-spacing: 0.08em;
+    }
+
+    .import-preview-heading__title {
+        margin: 0.3rem 0 0;
+        color: #172033;
+        font-size: 1.1rem;
+        line-height: 1.35;
+    }
+
+    .import-preview-heading__meta {
+        margin-top: 0.55rem;
+        gap: 0.35rem;
+    }
+
+    .import-preview-heading__meta span {
+        min-height: 24px;
+        padding: 0.2rem 0.45rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        background: #f8fafc;
+        color: #526174;
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+
+    .import-preview-submit {
+        min-height: 38px;
+        padding: 0.5rem 0.85rem;
+        border: 1px solid #0b5cab;
+        border-radius: 6px;
+        background: #0b5cab !important;
+        box-shadow: none !important;
+        font-size: 0.82rem;
+    }
+
+    .import-preview-submit:hover,
+    .import-preview-submit:focus,
+    .import-preview-settings-submit:hover,
+    .import-preview-settings-submit:focus {
+        background: #084a88 !important;
+        border-color: #084a88 !important;
+        box-shadow: none !important;
+    }
+
+    .import-preview-notice {
+        margin: 0.9rem 1rem !important;
+        padding: 0.7rem 0.8rem;
+        border: 1px solid #e2e8f0;
+        border-left: 3px solid #0b5cab;
+        border-radius: 6px;
+        background: #f8fafc;
+        color: #475569;
+        font-size: 0.82rem;
+        line-height: 1.5;
+    }
+
+    .import-preview-notice .text-info {
+        color: #0b5cab !important;
+    }
+
+    .import-preview-card .alert {
+        margin-right: 1rem !important;
+        margin-left: 1rem !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 6px;
+        background: #f8fafc !important;
+        color: #475569;
+        font-size: 0.82rem;
+    }
+
+    .import-preview-table-shell {
+        min-height: 420px;
+        max-height: 620px;
+        border-top: 1px solid #e2e8f0;
+        background: #ffffff;
+    }
+
+    .import-preview-table {
+        font-size: 0.82rem;
+    }
+
+    .import-preview-table thead th {
+        background: #f1f5f9 !important;
+        border-color: #dbe3ec !important;
+        color: #334155;
+        font-size: 0.74rem;
+        font-weight: 700;
+    }
+
+    .import-preview-table tbody td {
+        border-color: #e8edf3;
+        color: #334155;
+    }
+
+    .import-preview-table tbody tr:hover td {
+        background: #f8fafc;
+    }
+
+    .import-preview-table .filter-btn {
+        min-width: 28px;
+        min-height: 28px;
+        border-color: #d5dde7;
+        border-radius: 5px;
+        background: #ffffff;
+        box-shadow: none;
+    }
+
+    .import-preview-filter-menu-portal {
+        border-color: #cbd5e1 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 18px 36px -24px rgba(15, 23, 42, 0.34) !important;
+    }
+
+    .import-preview-footer {
+        padding: 0.8rem 1rem;
+        border-top-color: #e5eaf0;
+    }
+
+    .import-preview-footer .btn {
+        min-height: 36px;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .swal-modern-popup {
+        border-color: #dbe3ec;
+        border-radius: 8px;
+        box-shadow: 0 24px 56px -30px rgba(15, 23, 42, 0.44);
+    }
+
+    .swal-modern-title,
+    .swal-import-title,
+    .swal-import-stat__value {
+        letter-spacing: 0;
+    }
+
+    .swal-import-badge,
+    .swal-import-card,
+    .swal-import-stat,
+    .swal-modern-confirm {
+        border-radius: 6px;
+    }
+
+    .swal-import-card,
+    .swal-import-stat {
+        background: #f8fafc;
+        box-shadow: none;
+    }
+
+    .swal-import-progress__bar,
+    .swal-modern-confirm {
+        background: #0b5cab;
+        animation: none;
+    }
+
+    /* Compact progress modal: keep live import details readable at desktop widths. */
+    .swal-modern-popup {
+        width: min(520px, calc(100vw - 24px)) !important;
+        padding: 0.95rem !important;
+    }
+
+    .swal-modern-title {
+        margin: 0.15rem 0 0.3rem;
+        font-size: 1.35rem;
+        line-height: 1.25;
+    }
+
+    .swal-import-shell {
+        gap: 0.7rem;
+    }
+
+    .swal-import-head {
+        gap: 0.3rem;
+    }
+
+    .swal-import-desc {
+        font-size: 0.84rem;
+        line-height: 1.4;
+    }
+
+    .swal-import-phase {
+        font-size: 0.68rem;
+    }
+
+    .swal-import-card {
+        padding: 0.8rem;
+        border-radius: 6px;
+    }
+
+    .swal-import-stats--compact {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+
+    .swal-import-stats--compact .swal-import-stat {
+        min-height: 76px;
+        gap: 0.3rem;
+        justify-content: center;
+        padding: 0.65rem 0.7rem;
+        border-radius: 6px;
+    }
+
+    .swal-import-stats--compact .swal-import-stat__label {
+        margin-bottom: 0;
+        font-size: 0.64rem;
+    }
+
+    .swal-import-stats--compact .swal-import-stat__value {
+        font-size: 0.86rem;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+    }
+
+    .swal-import-stats--compact .swal-import-stat__detail {
+        display: none;
+    }
+
+    @media (max-width: 767.98px) {
+        .import-preview-settings-form > label,
+        .import-preview-settings-form > .form-control,
+        .import-preview-settings-submit {
+            flex-basis: 100%;
+            width: 100%;
+        }
+
+        .import-preview-settings-form > label[for="periode_preview"] {
+            margin-bottom: -0.3rem !important;
+        }
+
+        .import-preview-card__header {
+            padding: 0.85rem;
+        }
+
+        .import-preview-heading__meta {
+            display: none;
+        }
+
+        .import-preview-table-shell {
+            min-height: 360px;
+        }
     }
 </style>
 @endsection

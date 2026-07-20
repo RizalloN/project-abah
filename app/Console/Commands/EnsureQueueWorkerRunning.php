@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\PhpExecutableFinder;
@@ -13,6 +14,7 @@ class EnsureQueueWorkerRunning extends Command
                           {--queues= : Queues to monitor}
                           {--timeout= : Queue worker timeout in seconds (0 = unlimited)}
                           {--memory= : Queue worker memory limit in MB}
+                          {--workers= : Desired worker count for an explicit queue set}
                           {--max-jobs= : Maximum jobs before restart (0 = unlimited)}
                           {--max-time= : Maximum seconds before restart (0 = unlimited)}
                           {--check-interval=60 : How often to check if worker is running}
@@ -23,49 +25,73 @@ class EnsureQueueWorkerRunning extends Command
     public function handle(): int
     {
         $checkInterval = (int) $this->option('check-interval');
-        $queues = $this->normalizeQueues((string) ($this->option('queues') ?: config('queue.worker_queues', 'imports-high,imports-daily-loan,snapshots-parallel,default,reports-low,shadow-backfill')));
         $timeout = (string) ($this->option('timeout') ?? config('queue.worker_timeout', 0));
         $memory = (string) ($this->option('memory') ?? config('queue.worker_memory', 512));
         $maxJobs = (int) ($this->option('max-jobs') ?? config('queue.worker_max_jobs', 25));
         $maxTime = (int) ($this->option('max-time') ?? config('queue.worker_max_time', 3600));
+        $pools = $this->resolveWorkerPools();
 
         if ((bool) $this->option('once')) {
-            $this->checkAndEnsureWorker($queues, $timeout, $memory, $maxJobs, $maxTime);
+            foreach ($pools as $poolName => $pool) {
+                $this->checkAndEnsureWorker(
+                    $poolName,
+                    $pool['queues'],
+                    $pool['workers'],
+                    $timeout,
+                    $memory,
+                    $maxJobs,
+                    $maxTime
+                );
+            }
 
             return 0;
         }
 
         $this->info('Queue worker monitor started.');
-        $this->line("Monitoring queues: {$queues}");
+        foreach ($pools as $poolName => $pool) {
+            $this->line("Pool {$poolName}: {$pool['queues']} ({$pool['workers']} worker)");
+        }
         $this->line("Check interval: {$checkInterval} seconds");
         $this->newLine();
 
         while (true) {
-            $this->checkAndEnsureWorker($queues, $timeout, $memory, $maxJobs, $maxTime);
+            foreach ($pools as $poolName => $pool) {
+                $this->checkAndEnsureWorker(
+                    $poolName,
+                    $pool['queues'],
+                    $pool['workers'],
+                    $timeout,
+                    $memory,
+                    $maxJobs,
+                    $maxTime
+                );
+            }
             sleep($checkInterval);
         }
 
         return 0;
     }
 
-    private function checkAndEnsureWorker(string $queues, string $timeout, string $memory, int $maxJobs, int $maxTime): void
+    private function checkAndEnsureWorker(
+        string $poolName,
+        string $queues,
+        int $desiredWorkers,
+        string $timeout,
+        string $memory,
+        int $maxJobs,
+        int $maxTime
+    ): void
     {
+        $poolLock = Cache::lock('queue:worker-pool:ensure:' . sha1($poolName), 15);
+        if (!$poolLock->get()) {
+            return;
+        }
+
         try {
             $queueNames = $this->queueNames($queues);
             $now = time();
             $retryAfter = $this->queueRetryAfterSeconds();
             $staleReservedCutoff = $now - $retryAfter;
-            $pendingQueueNames = DB::table('jobs')
-                ->whereIn('queue', $queueNames)
-                ->where('available_at', '<=', $now)
-                ->where(function ($query) use ($staleReservedCutoff): void {
-                    $query->whereNull('reserved_at')
-                        ->orWhere('reserved_at', '<=', $staleReservedCutoff);
-                })
-                ->distinct()
-                ->pluck('queue')
-                ->map(static fn ($queue): string => (string) $queue)
-                ->all();
             $pendingJobs = DB::table('jobs')
                 ->whereIn('queue', $queueNames)
                 ->where('available_at', '<=', $now)
@@ -74,75 +100,102 @@ class EnsureQueueWorkerRunning extends Command
                         ->orWhere('reserved_at', '<=', $staleReservedCutoff);
                 })
                 ->count();
+            $oldestReadyJobCreatedAt = DB::table('jobs')
+                ->whereIn('queue', $queueNames)
+                ->where('available_at', '<=', $now)
+                ->whereNull('reserved_at')
+                ->min('created_at');
             $staleReservedJobs = DB::table('jobs')
                 ->whereIn('queue', $queueNames)
                 ->whereNotNull('reserved_at')
                 ->where('reserved_at', '<=', $staleReservedCutoff)
                 ->count();
-            $isRunning = $this->isQueueWorkerRunning(implode(',', $pendingQueueNames ?: $queueNames), $retryAfter);
-
             if ($pendingJobs === 0) {
                 // No jobs ready to process, don't need worker.
                 return;
             }
 
-            if (!$isRunning) {
-                $this->warn("[" . now()->toDateTimeString() . "] Queue worker not running with {$pendingJobs} pending jobs!");
-                $this->info("Attempting to start queue worker...");
+            $freshReservedWorkers = DB::table('jobs')
+                ->whereIn('queue', $queueNames)
+                ->whereNotNull('reserved_at')
+                ->where('reserved_at', '>', $staleReservedCutoff)
+                ->count();
+            $pendingWaitSeconds = $oldestReadyJobCreatedAt !== null
+                ? max(0, $now - (int) $oldestReadyJobCreatedAt)
+                : 0;
+            $leasedWorkers = $pendingWaitSeconds <= 15
+                ? (int) Cache::get($this->workerLeaseKey($poolName), 0)
+                : 0;
+            $knownWorkers = max($leasedWorkers, $freshReservedWorkers);
+            $detectedWorkers = $knownWorkers < $desiredWorkers
+                ? $this->queueWorkerProcessCount($queues)
+                : 0;
+            $activeWorkers = max($leasedWorkers, $detectedWorkers, $freshReservedWorkers);
+            $workersToStart = max(0, $desiredWorkers - $activeWorkers);
 
-                $this->startQueueWorker($queues, $timeout, $memory, $maxJobs, $maxTime);
-                $this->info("Queue worker started.");
+            if ($workersToStart > 0) {
+                $this->warn("[" . now()->toDateTimeString() . "] Pool {$poolName} needs {$workersToStart} worker(s) for {$pendingJobs} ready job(s).");
+
+                $startedWorkers = 0;
+                for ($workerNumber = 1; $workerNumber <= $workersToStart; $workerNumber++) {
+                    if ($this->startQueueWorker($poolName, $queues, $timeout, $memory, $maxJobs, $maxTime, $workerNumber)) {
+                        $startedWorkers++;
+                    }
+                }
+
+                if ($startedWorkers > 0) {
+                    Cache::put(
+                        $this->workerLeaseKey($poolName),
+                        min($desiredWorkers, $activeWorkers + $startedWorkers),
+                        now()->addSeconds(max(60, $maxTime + 60))
+                    );
+                }
+
+                $this->info("Pool {$poolName}: {$startedWorkers} worker(s) started.");
 
                 Log::warning('Queue worker was not running. Automatically restarted.', [
+                    'pool' => $poolName,
                     'pending_jobs' => $pendingJobs,
                     'stale_reserved_jobs' => $staleReservedJobs,
                     'queues' => $queues,
+                    'desired_workers' => $desiredWorkers,
+                    'active_workers_before_start' => $activeWorkers,
+                    'started_workers' => $startedWorkers,
                     'timestamp' => now(),
                 ]);
             } else {
-                // Worker is running, just log the status
-                $this->line("[" . now()->toDateTimeString() . "] Queue worker running ({$pendingJobs} ready jobs)");
+                $this->line("[" . now()->toDateTimeString() . "] Pool {$poolName} ready ({$activeWorkers} worker, {$pendingJobs} ready jobs)");
             }
         } catch (\Throwable $e) {
-            $this->error("Error during queue check: " . $e->getMessage());
+            $this->error("Error during queue check for {$poolName}: " . $e->getMessage());
             Log::error('Queue worker monitor error', [
+                'pool' => $poolName,
                 'exception' => $e::class,
                 'message' => $e->getMessage(),
             ]);
+        } finally {
+            $poolLock->release();
         }
     }
 
-    private function isQueueWorkerRunning(string $queues, ?int $retryAfter = null): bool
+    private function queueWorkerProcessCount(string $queues): int
     {
-        // Only fresh reservations prove a worker is active. Stale reserved rows
-        // are retryable jobs and must not suppress auto-start.
         $queueNames = $this->queueNames($queues);
-        $activeReservedCutoff = time() - ($retryAfter ?? $this->queueRetryAfterSeconds());
-        $reservedCount = DB::table('jobs')
-            ->whereIn('queue', $queueNames)
-            ->whereNotNull('reserved_at')
-            ->where('reserved_at', '>', $activeReservedCutoff)
-            ->count();
-        if ($reservedCount > 0) {
-            return true;
+        $output = $this->phpProcessCommandLines();
+        if ($output === '') {
+            return 0;
         }
 
-        // On Windows, only count php.exe processes that actually run queue workers/listeners.
-        $output = $this->phpProcessCommandLines();
-        if ($output !== '') {
-            foreach (preg_split('/\R+/', trim($output)) ?: [] as $commandLine) {
-                $normalized = strtolower((string) preg_replace('/\s+/', ' ', $commandLine));
-                if (!$this->commandLineLooksLikeQueueWorker($normalized)) {
-                    continue;
-                }
-
-                if ($this->commandLineCoversQueues($normalized, $queueNames)) {
-                    return true;
-                }
+        $workers = 0;
+        foreach (preg_split('/\R+/', trim($output)) ?: [] as $commandLine) {
+            $normalized = strtolower((string) preg_replace('/\s+/', ' ', $commandLine));
+            if ($this->commandLineLooksLikeQueueWorker($normalized)
+                && $this->commandLineCoversQueues($normalized, $queueNames)) {
+                $workers++;
             }
         }
 
-        return false;
+        return $workers;
     }
 
     private function queueRetryAfterSeconds(): int
@@ -170,11 +223,20 @@ class EnsureQueueWorkerRunning extends Command
         return shell_exec('powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ' . escapeshellarg($encoded) . ' 2>NUL') ?? '';
     }
 
-    private function startQueueWorker(string $queues, string $timeout, string $memory, int $maxJobs, int $maxTime): void
+    private function startQueueWorker(
+        string $poolName,
+        string $queues,
+        string $timeout,
+        string $memory,
+        int $maxJobs,
+        int $maxTime,
+        int $workerNumber
+    ): bool
     {
         $php = (new PhpExecutableFinder())->find(false) ?: PHP_BINARY ?: 'php';
         $artisan = base_path('artisan');
-        $logBase = storage_path('logs/queue-worker-' . now()->format('Ymd-His') . '-' . getmypid());
+        $safePoolName = preg_replace('/[^a-z0-9_-]+/i', '-', $poolName) ?: 'pool';
+        $logBase = storage_path('logs/queue-worker-' . now()->format('Ymd-His') . '-' . $safePoolName . '-' . getmypid() . '-' . $workerNumber);
 
         $workerArgs = [
             $artisan,
@@ -182,6 +244,7 @@ class EnsureQueueWorkerRunning extends Command
             '--queue=' . $queues,
             '--timeout=' . $timeout,
             '--memory=' . $memory,
+            '--sleep=' . max(0, (int) config('queue.worker_sleep', 1)),
         ];
         if ($maxJobs > 0) {
             $workerArgs[] = '--max-jobs=' . $maxJobs;
@@ -213,9 +276,18 @@ class EnsureQueueWorkerRunning extends Command
         }
 
         $process = @popen($command, 'r');
-        if (is_resource($process)) {
-            @pclose($process);
+        if (!is_resource($process)) {
+            return false;
         }
+
+        @pclose($process);
+
+        return true;
+    }
+
+    private function workerLeaseKey(string $poolName): string
+    {
+        return 'queue:worker-pool:lease:' . sha1($poolName);
     }
 
     private function powershellQuote(string $value): string
@@ -226,6 +298,53 @@ class EnsureQueueWorkerRunning extends Command
     private function normalizeQueues(string $queues): string
     {
         return implode(',', $this->queueNames($queues));
+    }
+
+    /** @return array<string, array{queues: string, workers: int}> */
+    private function resolveWorkerPools(): array
+    {
+        $explicitQueues = trim((string) $this->option('queues'));
+        if ($explicitQueues !== '') {
+            $normalizedQueues = $this->normalizeQueues($explicitQueues);
+            $poolName = 'explicit-' . substr(sha1($normalizedQueues), 0, 8);
+            foreach ((array) config('queue.worker_pools', []) as $configuredName => $configuredPool) {
+                if ($this->normalizeQueues((string) ($configuredPool['queues'] ?? '')) === $normalizedQueues) {
+                    $poolName = (string) $configuredName;
+                    break;
+                }
+            }
+
+            return [
+                $poolName => [
+                    'queues' => $normalizedQueues,
+                    'workers' => max(1, (int) ($this->option('workers') ?: 1)),
+                ],
+            ];
+        }
+
+        $resolved = [];
+        foreach ((array) config('queue.worker_pools', []) as $poolName => $pool) {
+            $queues = $this->normalizeQueues((string) ($pool['queues'] ?? ''));
+            if ($queues === '') {
+                continue;
+            }
+
+            $resolved[(string) $poolName] = [
+                'queues' => $queues,
+                'workers' => max(1, (int) ($pool['workers'] ?? 1)),
+            ];
+        }
+
+        if ($resolved !== []) {
+            return $resolved;
+        }
+
+        return [
+            'default' => [
+                'queues' => $this->normalizeQueues((string) config('queue.worker_queues', 'default')),
+                'workers' => 1,
+            ],
+        ];
     }
 
     private function queueNames(string $queues): array
@@ -251,6 +370,9 @@ class EnsureQueueWorkerRunning extends Command
 
         $workerQueues = $this->queueNames(trim($matches[1], '"\''));
 
-        return count(array_intersect($queueNames, $workerQueues)) > 0;
+        sort($queueNames);
+        sort($workerQueues);
+
+        return $queueNames === $workerQueues;
     }
 }

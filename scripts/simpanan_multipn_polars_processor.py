@@ -18,6 +18,7 @@ import csv
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import sys
@@ -269,6 +270,30 @@ def normalize_header_name(header_name: str) -> str:
     }
 
     return aliases.get(normalized, normalized.lower())
+
+
+def excel_cell_to_source_text(value: object) -> str:
+    """Serialize an Excel cell without applying business normalization."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, datetime):
+        return value.isoformat(sep=" ")
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return ""
+        if value.is_integer():
+            return str(int(value))
+        return repr(value)
+
+    return str(value)
 
 
 def parse_csv_text(text: str, delimiter: str) -> list[str]:
@@ -978,9 +1003,120 @@ def write_with_polars(df, path: str, delimiter: str) -> None:
     raise RuntimeError(f"Gagal menulis CSV hasil Polars: {last_error}")
 
 
+def stage_excel_source(config: dict) -> None:
+    """Stream XLSX rows to a position-safe CSV without mutating source text."""
+    from openpyxl import load_workbook
+
+    source_path = str(config["file_path"])
+    output_csv_path = str(config["output_csv_path"])
+    header_index = int(config.get("header_index", 0))
+    configured_headers = config.get("normalized_headers") or []
+
+    if isinstance(configured_headers, dict):
+        configured_headers = [
+            configured_headers[key]
+            for key in sorted(configured_headers.keys(), key=lambda value: int(value))
+        ]
+
+    headers = [str(value) for value in configured_headers]
+    if not headers:
+        raise RuntimeError("Header Simpanan MultiPN tidak tersedia untuk staging Excel.")
+
+    os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
+    workbook = None
+    rows_done = 0
+    started_at = time.perf_counter()
+
+    try:
+        send_progress(5, "Membuka Excel Simpanan MultiPN dalam mode streaming...", 0, 0, 0, "baris/detik", "xlsx_stream")
+        workbook = load_workbook(source_path, read_only=True, data_only=True)
+        worksheet = workbook.active
+        total_rows = int(worksheet.max_row or 0)
+        total_data_rows = max(0, total_rows - (header_index + 1))
+
+        with open(output_csv_path, "w", encoding="utf-8", newline="") as output_handle:
+            writer = csv.writer(
+                output_handle,
+                delimiter=",",
+                quotechar='"',
+                quoting=csv.QUOTE_MINIMAL,
+                lineterminator="\n",
+                doublequote=True,
+            )
+            writer.writerow(headers)
+
+            for excel_row, row in enumerate(worksheet.iter_rows(values_only=True), start=1):
+                if excel_row <= header_index + 1:
+                    continue
+
+                values = [
+                    excel_cell_to_source_text(row[index] if index < len(row) else None)
+                    for index in range(len(headers))
+                ]
+                if not any(value != "" for value in values):
+                    continue
+
+                writer.writerow(values)
+                rows_done += 1
+
+                if rows_done % 5000 == 0:
+                    elapsed = max(time.perf_counter() - started_at, 0.001)
+                    speed = int(rows_done / elapsed)
+                    percent = (
+                        min(95, 8 + int((rows_done / max(total_data_rows, 1)) * 87))
+                        if total_data_rows > 0
+                        else min(90, 8 + int(elapsed / 3))
+                    )
+                    send_progress(
+                        percent,
+                        f"Mengonversi Excel tanpa mengubah nilai sumber... ({speed:,} baris/detik)",
+                        rows_done,
+                        total_data_rows,
+                        speed,
+                        "baris/detik",
+                        "xlsx_stream",
+                    )
+
+                    job_id = int(config.get("job_id") or 0)
+                    db_config = config.get("db_config") or {}
+                    if job_id and db_config and check_termination(job_id, db_config):
+                        raise RuntimeError("Proses import dihentikan oleh pengguna.")
+
+        elapsed = max(time.perf_counter() - started_at, 0.001)
+        speed = int(rows_done / elapsed)
+        send_event(
+            "done",
+            {
+                "csv_path": output_csv_path,
+                "total_rows": rows_done,
+                "written_rows": rows_done,
+                "headers": headers,
+                "backend": "openpyxl-stream",
+                "full_vectorization": False,
+                "speed": speed,
+            },
+        )
+    except Exception:
+        try:
+            if os.path.exists(output_csv_path):
+                os.unlink(output_csv_path)
+        except Exception:
+            pass
+        raise
+    finally:
+        if workbook is not None:
+            workbook.close()
+        DBConnectionPool.get_instance().close()
+
+
 def stage_simpanan_multipn(config: dict) -> None:
     source_path = config["file_path"]
     output_csv_path = config["output_csv_path"]
+
+    if Path(source_path).suffix.lower() in {".xlsx", ".xlsm", ".xltx", ".xltm"}:
+        stage_excel_source(config)
+        return
+
     delimiter = config.get("delimiter") or detect_delimiter(source_path, ",")
 
     send_progress(5, "Membaca dan menyiapkan CSV Simpanan MultiPN dengan Polars...", 0, 0, 0, "", "polars")

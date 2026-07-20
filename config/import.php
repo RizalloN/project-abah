@@ -48,6 +48,7 @@ return [
             'max_rows' => env('IMPORT_DIRECT_LOAD_SIMPANAN_MULTIPN_MAX_ROWS', 0),
             'balance_crosscheck_max_rows' => env('IMPORT_DIRECT_LOAD_SIMPANAN_MULTIPN_BALANCE_CROSSCHECK_MAX_ROWS', 50000),
             'content_lock_seconds' => env('IMPORT_DIRECT_LOAD_SIMPANAN_MULTIPN_CONTENT_LOCK_SECONDS', 1800),
+            'orphan_grace_seconds' => env('IMPORT_DIRECT_LOAD_SIMPANAN_MULTIPN_ORPHAN_GRACE_SECONDS', 180),
         ],
         'ssa_simpanan' => [
             'enabled' => env('IMPORT_DIRECT_LOAD_SSA_SIMPANAN_ENABLED', true),

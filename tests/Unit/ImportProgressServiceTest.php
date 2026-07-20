@@ -497,6 +497,52 @@ class ImportProgressServiceTest extends TestCase
         $this->assertNull($job->job_fingerprint);
     }
 
+    public function test_detects_orphaned_simpanan_multipn_load_when_mysql_thread_is_gone(): void
+    {
+        config()->set('import.direct_load.simpanan_multipn.orphan_grace_seconds', 60);
+        DB::shouldReceive('select')
+            ->once()
+            ->with('SHOW FULL PROCESSLIST')
+            ->andReturn([]);
+
+        $job = (object) [
+            'id' => 249,
+            'job_context' => json_encode([
+                'table_name' => 'simpanan_multipn',
+                'mysql_thread_id' => 958,
+                'direct_load_started_at' => now()->subMinutes(5)->toIso8601String(),
+            ]),
+        ];
+
+        $service = app(ImportProgressService::class);
+        $method = new \ReflectionMethod($service, 'isOrphanedSimpananMultiPnDirectLoad');
+
+        $this->assertTrue($method->invoke($service, $job));
+    }
+
+    public function test_keeps_simpanan_multipn_processing_while_mysql_thread_is_alive(): void
+    {
+        config()->set('import.direct_load.simpanan_multipn.orphan_grace_seconds', 60);
+        DB::shouldReceive('select')
+            ->once()
+            ->with('SHOW FULL PROCESSLIST')
+            ->andReturn([(object) ['Id' => 958]]);
+
+        $job = (object) [
+            'id' => 249,
+            'job_context' => json_encode([
+                'table_name' => 'simpanan_multipn',
+                'mysql_thread_id' => 958,
+                'direct_load_started_at' => now()->subMinutes(5)->toIso8601String(),
+            ]),
+        ];
+
+        $service = app(ImportProgressService::class);
+        $method = new \ReflectionMethod($service, 'isOrphanedSimpananMultiPnDirectLoad');
+
+        $this->assertFalse($method->invoke($service, $job));
+    }
+
     public function test_get_status_payload_reconciles_stale_queued_jobs_to_failed_state(): void
     {
         $progressService = Mockery::mock(ImportProgressService::class)->makePartial();

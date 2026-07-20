@@ -72,7 +72,7 @@
                 </div>
 
                 <div class="card-body p-0">
-                    <div class="table-responsive import-preview-table-shell" style="min-height: 450px; max-height: 600px; overflow-y: auto; overflow-x: auto;">
+                    <div class="table-responsive import-preview-table-shell">
                         <table class="table table-bordered table-hover m-0 import-preview-table">
                             <thead class="thead-light sticky-top" style="z-index: 2;">
                                 <tr>
@@ -1108,7 +1108,6 @@ document.addEventListener('DOMContentLoaded', function () {
             <div class="swal-import-shell">
                 <div class="swal-import-head">
                     <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
-                    <div class="swal-import-title">${loadingCopy.title}</div>
                     <div class="swal-import-desc">${loadingCopy.description}</div>
                 </div>
                 <div class="swal-import-card">
@@ -1831,6 +1830,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     .import-preview-table-shell {
         position: relative;
+        min-height: clamp(320px, 52dvh, 450px);
+        max-height: min(68dvh, 680px);
+        overflow-x: auto;
+        overflow-y: auto;
         background: #ffffff;
     }
 
@@ -1925,6 +1928,11 @@ document.addEventListener('DOMContentLoaded', function () {
         .import-preview-actions {
             flex-direction: column;
             align-items: stretch !important;
+        }
+
+        .import-preview-table-shell {
+            min-height: 360px;
+            max-height: max(420px, calc(100dvh - 150px));
         }
 
         .import-preview-back,
@@ -2098,6 +2106,38 @@ document.addEventListener('DOMContentLoaded', function () {
         color: #0f172a;
         font-size: 0.94rem;
         font-weight: 800;
+    }
+
+    .swal-modern-popup {
+        width: min(520px, calc(100vw - 24px)) !important;
+        padding: 0.95rem !important;
+        border-radius: 8px;
+    }
+
+    .swal-import-shell {
+        gap: 0.7rem;
+    }
+
+    .swal-import-head {
+        gap: 0.3rem;
+    }
+
+    .swal-import-desc {
+        font-size: 0.84rem;
+        line-height: 1.4;
+    }
+
+    .swal-import-card,
+    .swal-import-stat {
+        padding: 0.75rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        background: #f8fafc;
+        box-shadow: none;
+    }
+
+    .swal-import-progress__bar {
+        background: #0b5cab;
     }
 </style>
 @endsection

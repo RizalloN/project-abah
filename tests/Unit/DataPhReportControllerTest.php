@@ -249,6 +249,15 @@ class DataPhReportControllerTest extends TestCase
         $this->assertStringContainsString('segment: row.dataset.segment', $view);
     }
 
+    public function test_data_ph_uses_direct_period_predicates_so_the_ph_period_index_can_be_used(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/Report/DataPhReportController.php'));
+
+        $this->assertIsString($controller);
+        $this->assertStringNotContainsString('whereDate(', $controller);
+        $this->assertStringContainsString("->where('periode', \$period)", $controller);
+    }
+
     private function invokePrivate(string $methodName, array $arguments = [])
     {
         $controller = new DataPhReportController();

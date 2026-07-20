@@ -99,12 +99,14 @@ class NewPayrollReportService
             ]);
         }
 
-        $currStart   = $selectedDate->copy()->startOfMonth()->toDateString();
+        $currStart   = $selectedDate->copy()->startOfYear()->toDateString();
         $currEnd     = $selectedDate->copy()->endOfMonth()->toDateString();
-        $prevStart   = $selectedDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
-        $prevEnd     = Carbon::parse($prevStart)->endOfMonth()->toDateString();
-        $yoyStart    = $selectedDate->copy()->subYearNoOverflow()->startOfMonth()->toDateString();
-        $yoyEnd      = Carbon::parse($yoyStart)->endOfMonth()->toDateString();
+        $prevEndDate = $selectedDate->copy()->subMonthNoOverflow()->endOfMonth();
+        $prevStart   = $prevEndDate->copy()->startOfYear()->toDateString();
+        $prevEnd     = $prevEndDate->toDateString();
+        $yoyDate     = $selectedDate->copy()->subYearNoOverflow();
+        $yoyStart    = $yoyDate->copy()->startOfYear()->toDateString();
+        $yoyEnd      = $yoyDate->copy()->endOfMonth()->toDateString();
 
         $prevSnapshot = DB::table('performance_pis_per_produk')
             ->whereDate('posisi', '<=', $prevEnd)
@@ -338,10 +340,15 @@ class NewPayrollReportService
         $yoy  = $selectedDate->copy()->subYearNoOverflow();
 
         return [
-            'curr'     => $curr->format('M-y'),
-            'prev'     => $prev->format('M-y'),
-            'yoy_prev' => $yoy->format('M-y'),
+            'curr'     => $this->formatYearToDateLabel($curr),
+            'prev'     => $this->formatYearToDateLabel($prev),
+            'yoy_prev' => $this->formatYearToDateLabel($yoy),
             'rka'      => 'RKA ' . $curr->format('M') . ' - ' . $curr->format('y'),
         ];
+    }
+
+    private function formatYearToDateLabel(Carbon $date): string
+    {
+        return $date->copy()->startOfYear()->format('M') . '-' . $date->format('M y');
     }
 }

@@ -190,7 +190,7 @@ class ImportExecutionServiceTest extends TestCase
         });
     }
 
-    public function test_dispatch_skips_generic_queue_for_simpanan_multipn_csv_stream_jobs(): void
+    public function test_dispatch_queues_simpanan_multipn_csv_on_import_worker(): void
     {
         Bus::fake();
         Cache::flush();
@@ -208,10 +208,13 @@ class ImportExecutionServiceTest extends TestCase
             ->once()
             ->with('import_excel_dispatched_job_' . $jobId)
             ->andReturn(false);
-        Cache::shouldReceive('put')->never();
-        Cache::shouldReceive('forget')
+        Cache::shouldReceive('put')
             ->once()
-            ->with('import_excel_dispatched_job_' . $jobId);
+            ->with(
+                'import_excel_dispatched_job_' . $jobId,
+                true,
+                Mockery::type(\DateTimeInterface::class)
+            );
 
         $progressService = Mockery::mock(ImportProgressService::class);
         $progressService->shouldReceive('findJob')
@@ -219,7 +222,7 @@ class ImportExecutionServiceTest extends TestCase
             ->with($jobId)
             ->andReturn((object) [
                 'id' => $jobId,
-                'id_report' => 9,
+                'id_report' => 0,
                 'status' => 'queued',
                 'updated_at' => now()->toDateTimeString(),
                 'total_success' => 0,
@@ -236,12 +239,21 @@ class ImportExecutionServiceTest extends TestCase
                 ],
             ]);
         $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with($jobId);
-        $progressService->shouldReceive('markQueued')->never();
+        $progressService->shouldReceive('markQueued')
+            ->once()
+            ->with($jobId, Mockery::on(static function (array $payload): bool {
+                return ($payload['status'] ?? null) === 'queued'
+                    && ($payload['queue'] ?? null) === 'imports-high';
+            }));
 
         $service = new ImportExecutionService($progressService);
 
-        $this->assertFalse($service->dispatch($jobId));
-        Bus::assertNotDispatched(RunImportJob::class);
+        $this->assertTrue($service->dispatch($jobId));
+        Bus::assertDispatched(RunImportJob::class, function (RunImportJob $job) use ($jobId): bool {
+            return $job->jobId === $jobId
+                && $job->connection === 'database'
+                && $job->queue === 'imports-high';
+        });
     }
 
     public function test_dispatch_recovers_zero_progress_stale_processing_job_before_queueing(): void
@@ -435,7 +447,7 @@ class ImportExecutionServiceTest extends TestCase
         $service->run(99);
     }
 
-    public function test_run_skips_generic_execution_for_simpanan_multipn_csv_stream_jobs(): void
+    public function test_run_executes_simpanan_multipn_through_dedicated_worker_request(): void
     {
         Cache::flush();
 
@@ -449,18 +461,22 @@ class ImportExecutionServiceTest extends TestCase
         $progressService = Mockery::mock(ImportProgressService::class);
         $progressService->shouldReceive('purgeStaleProcessingJobs')->once()->andReturn(0);
         $progressService->shouldReceive('isTerminationRequested')->once()->with($jobId)->andReturnFalse();
+        $queuedJob = (object) [
+            'id' => $jobId,
+            'id_report' => 0,
+            'status' => 'queued',
+            'updated_at' => now()->toDateTimeString(),
+            'total_success' => 0,
+            'total_failed' => 0,
+            'total_files' => 100,
+        ];
+        $failedJob = clone $queuedJob;
+        $failedJob->status = 'failed';
+
         $progressService->shouldReceive('findJob')
-            ->once()
+            ->twice()
             ->with($jobId)
-            ->andReturn((object) [
-                'id' => $jobId,
-                'id_report' => 0,
-                'status' => 'queued',
-                'updated_at' => now()->toDateTimeString(),
-                'total_success' => 0,
-                'total_failed' => 0,
-                'total_files' => 100,
-            ]);
+            ->andReturn($queuedJob, $failedJob);
         $progressService->shouldReceive('getJobState')
             ->once()
             ->with($jobId)
@@ -473,9 +489,18 @@ class ImportExecutionServiceTest extends TestCase
                 ],
                 'headers' => ['POSISI', 'KANTOR_CABANG', 'NO_REKENING'],
             ]);
-        $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with($jobId);
         $progressService->shouldReceive('markProcessing')->never();
         $progressService->shouldReceive('markFailed')->never();
+
+        $controller = Mockery::mock(ImportSimpananMultiPnCsvController::class);
+        $controller->shouldReceive('processImportStream')
+            ->once()
+            ->with(Mockery::on(static function ($request) use ($jobId): bool {
+                return (int) $request->query('job_id') === $jobId
+                    && $request->attributes->getBoolean('import_worker_execution');
+            }))
+            ->andReturn(response()->stream(static function (): void {}));
+        $this->app->instance(ImportSimpananMultiPnCsvController::class, $controller);
 
         $service = new ImportExecutionService($progressService);
         $service->run($jobId);

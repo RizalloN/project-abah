@@ -3283,12 +3283,15 @@ class ImportExcelController extends Controller
                 static fn ($candidateColumn): bool => !isset($skipColumnsLookup[strtolower((string) $candidateColumn)])
             ));
             $decimalScale = null;
+            $hasTextualTarget = false;
             foreach ($mappedDbCandidates as $candidateColumn) {
                 $candidateMeta = $tableColumnMetaByLower[strtolower((string) $candidateColumn)] ?? null;
+                if (is_array($candidateMeta) && !empty($candidateMeta['is_textual'])) {
+                    $hasTextualTarget = true;
+                }
                 $candidateScale = is_array($candidateMeta) ? ($candidateMeta['scale'] ?? null) : null;
                 if (is_int($candidateScale) && $candidateScale >= 0) {
                     $decimalScale = $candidateScale;
-                    break;
                 }
             }
 
@@ -3314,6 +3317,15 @@ class ImportExcelController extends Controller
                 'db_candidates' => $mappedDbCandidates,
                 'source_pre_normalized' => $fastSourcePreNormalized,
                 'allow_locale_date_text' => $this->allowsLocaleDateTextForImport($tableName),
+                'preserve_source_text' => $normalizedTableName === 'simpanan_multipn'
+                    && $hasTextualTarget
+                    && !isset($dateColumnsLookup[$normalizedHeader])
+                    && !isset($decimalColumnsLookup[$normalizedHeader])
+                    && !isset($integerColumnsLookup[$normalizedHeader]),
+                'cache_normalized_value' => !(
+                    $normalizedTableName === 'simpanan_multipn'
+                    && in_array($normalizedHeader, ['CIFNO', 'NO_REKENING', 'SALDO_IDR'], true)
+                ),
             ];
         }
 
@@ -9617,7 +9629,11 @@ class ImportExcelController extends Controller
                     $this->resolveSsaAlmafactsKeteranganFromRow($row, $context),
                     $this->resolveDecimalScaleFromRule($rule)
                 );
-            } elseif ($this->currentStreamNormalizedValueCache !== null) {
+            } elseif (!empty($rule['preserve_source_text'])) {
+                $value = ($rawValue === null || $rawValue === '\\N')
+                    ? null
+                    : (string) $rawValue;
+            } elseif ($this->currentStreamNormalizedValueCache !== null && ($rule['cache_normalized_value'] ?? true)) {
                 $cacheKey = $originalIndex . '|' . $rawValue;
                 if (!isset($this->currentStreamNormalizedValueCache[$cacheKey])) {
                     $this->currentStreamNormalizedValueCache[$cacheKey] = $this->normalizeExcelValueByRule($rule, $rawValue);
@@ -12077,6 +12093,7 @@ class ImportExcelController extends Controller
                     if (!empty($stageResult['staged_csv_path']) && file_exists((string) $stageResult['staged_csv_path'])) {
                         $stagedCsvPath = (string) $stageResult['staged_csv_path'];
                         $totalRows = max(1, ((int) ($stageResult['total_rows'] ?? 0)) + 1);
+                        $dataRowsCount = max(0, $totalRows - 1);
                         $delimiter = ',';
                     }
                 } catch (\Throwable $e) {

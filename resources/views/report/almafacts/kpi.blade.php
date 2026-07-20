@@ -71,6 +71,11 @@
             'index' => $index,
         ]
     )->all();
+    $tableSections = $tableSections ?? [[
+        'key' => 'all',
+        'title' => $summary['sheet_title'] ?? $selectedSheet['sheet'] ?? '-',
+        'rows' => $rows,
+    ]];
 @endphp
 
 @section('content')
@@ -262,6 +267,10 @@
         background: #fff;
         box-shadow: 0 14px 30px -24px rgba(15, 23, 42, .22);
         overflow: hidden;
+    }
+
+    .kpi-table-panel + .kpi-table-panel {
+        margin-top: 1rem;
     }
 
     .kpi-table-title {
@@ -778,11 +787,16 @@
         </div>
     </div>
 
-    <div class="kpi-table-panel">
+    @foreach($tableSections as $section)
+        @php
+            $sectionRows = $section['rows'] ?? [];
+            $sectionTitle = $section['title'] ?? ($summary['sheet_title'] ?? $selectedSheet['sheet'] ?? '-');
+        @endphp
+    <div class="kpi-table-panel" data-kpi-section="{{ $section['key'] ?? 'all' }}">
         <div class="kpi-table-title">
             <div>
-                <strong>{{ $summary['sheet_title'] ?? $selectedSheet['sheet'] ?? '-' }}</strong>
-                <span>{{ $summary['row_count'] ?? 0 }} baris dari spreadsheet sumber.</span>
+                <strong>{{ $sectionTitle }}</strong>
+                <span>{{ count($sectionRows) }} baris dari spreadsheet sumber.</span>
             </div>
             <span class="kpi-action">
                 <i class="fas fa-table"></i>
@@ -790,13 +804,13 @@
             </span>
         </div>
 
-        @if($displayColumns === [] || $rows === [])
+        @if($displayColumns === [] || $sectionRows === [])
             <div class="kpi-empty">
                 Data sheet belum tersedia.
             </div>
         @else
             <div class="kpi-excel-wrap table-container">
-                <table class="kpi-excel-table kpi-table-{{ $selectedSheetKey }}">
+                <table class="kpi-excel-table kpi-table-{{ $selectedSheetKey }}-{{ $section['key'] ?? 'all' }}">
                     <thead>
                         <tr>
                             @forelse($headerGroups as $group)
@@ -840,7 +854,7 @@
                         @endif
                     </thead>
                     <tbody>
-                        @foreach($rows as $row)
+                        @foreach($sectionRows as $row)
                             <tr>
                                 @foreach($displayColumns as $column)
                                     @php
@@ -858,6 +872,7 @@
             </div>
         @endif
     </div>
+    @endforeach
 </div>
 <script>
 document.addEventListener('DOMContentLoaded', function () {

@@ -359,6 +359,7 @@
     .btn-export-jpg {
         width: 32px;
         height: 32px;
+        flex: 0 0 32px;
         border-radius: 8px;
         border: 1px solid #e2e8f0;
         background: #ffffff;
@@ -382,6 +383,18 @@
 
     .btn-export-jpg i {
         font-size: 0.85rem;
+    }
+
+    .chart-header > .d-flex {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .chart-header .unit-badge {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     /* Capture Status Modal Premium Styles */
@@ -641,6 +654,75 @@
         border-radius: 0.5rem;
     }
 
+    .filter-mobile-toggle {
+        display: none;
+        width: 100%;
+        background: #ffffff;
+        border-bottom: 1px solid rgba(8, 87, 195, 0.1);
+        border-radius: 1.25rem 1.25rem 0 0;
+        padding: 0.35rem 0.5rem;
+    }
+
+    .btn-filter-toggle {
+        background: transparent;
+        border: none;
+        padding: 0.42rem 0.62rem;
+        width: 100%;
+        text-align: left;
+        color: #00529C;
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .btn-filter-toggle:focus {
+        outline: none;
+        box-shadow: none;
+    }
+
+    .btn-filter-toggle .toggle-arrow-icon {
+        transition: transform 0.2s ease;
+        color: #8b9eb7;
+    }
+
+    .filter-card.is-open .toggle-arrow-icon {
+        transform: rotate(180deg);
+    }
+
+    @media (max-width: 1399.98px) {
+        .filter-mobile-toggle {
+            display: flex !important;
+        }
+
+        .filter-card .card-body {
+            display: none !important;
+            padding: 0.75rem 1rem 0.95rem !important;
+        }
+
+        .filter-card.is-open .card-body {
+            display: block !important;
+        }
+
+        .category-btn {
+            padding: 0.45rem 0.85rem !important;
+            font-size: 0.78rem !important;
+            border-radius: 0.75rem !important;
+        }
+
+        .filter-label {
+            font-size: 0.68rem !important;
+            margin-bottom: 0.25rem !important;
+        }
+
+        .branch-dropdown-toggle,
+        #applyFilters {
+            height: 34px !important;
+            min-height: 34px !important;
+            font-size: 0.78rem !important;
+            padding: 0.25rem 0.62rem !important;
+        }
+    }
+
     @media (max-width: 767.98px) {
         .dashboard-timeseries > .d-flex,
         .dashboard-timeseries > .timeseries-hero {
@@ -727,6 +809,13 @@
 
     <!-- Filters -->
     <div class="card filter-card">
+        <div class="filter-mobile-toggle">
+            <button type="button" class="btn btn-filter-toggle d-flex align-items-center justify-content-between w-100" id="btn-toggle-filters">
+                <span class="btn-toggle-text text-truncate font-weight-bold"><i class="fas fa-sliders-h mr-2"></i> FILTER DATA</span>
+                <span class="active-filters-badge text-truncate text-muted small" id="filter-summary-badge">Simpanan | Area 6</span>
+                <i class="fas fa-chevron-down toggle-arrow-icon ml-2"></i>
+            </button>
+        </div>
         <div class="card-body p-4">
             <!-- Row 1: Metrik & Segmen selectors -->
             <div class="row mb-4">
@@ -1535,8 +1624,32 @@
                         opt.classList.add('selected');
                         
                         closeAllDropdowns();
+                        updateTimeseriesFilterSummary();
                     });
                 });
+            }
+
+            function updateTimeseriesFilterSummary() {
+                const catBtn = document.querySelector('#categorySelector .category-btn.active');
+                const categoryText = catBtn ? catBtn.textContent.trim() : 'Simpanan';
+                const kancaText = kancaLabel ? kancaLabel.textContent.trim() : 'Semua Cabang';
+                const unitText = unitLabel ? unitLabel.textContent.trim() : 'Semua Unit';
+                const periodText = periodLabel ? periodLabel.textContent.trim() : '';
+
+                const summarySpan = document.getElementById('filter-summary-badge');
+                if (summarySpan) {
+                    let summaryParts = [categoryText];
+                    if (kancaText && kancaText !== 'Semua Kantor Cabang' && kancaText !== 'Semua Cabang Dipilih') {
+                        summaryParts.push(kancaText);
+                    }
+                    if (unitText && unitText !== 'Semua Unit Kerja') {
+                        summaryParts.push(unitText);
+                    }
+                    if (periodText && periodText !== 'Pilih Periode') {
+                        summaryParts.push(periodText);
+                    }
+                    summarySpan.innerText = summaryParts.join(' | ');
+                }
             }
 
             // --- Kantor Cabang Logic ---
@@ -1585,6 +1698,7 @@
                 }
 
                 rebuildUnitOptions();
+                updateTimeseriesFilterSummary();
             }
 
             // --- Unit Dropdown Logic ---
@@ -1652,6 +1766,7 @@
                         o.classList.toggle('selected', o.getAttribute('data-value') === value);
                     });
                 }
+                updateTimeseriesFilterSummary();
             }
 
             // --- Core Logic ---
@@ -2102,6 +2217,7 @@
                         this.classList.add('active');
                         currentSegment = this.getAttribute('data-value');
                         fetchData();
+                        updateTimeseriesFilterSummary();
                     });
                 });
             }
@@ -2115,6 +2231,7 @@
                     currentCategory = this.getAttribute('data-value');
                     renderSegmentSelector();
                     fetchData();
+                    updateTimeseriesFilterSummary();
                 });
             });
 
@@ -2140,6 +2257,22 @@
             if (periodMonthSelect) {
                 periodMonthSelect.addEventListener('change', fetchData);
             }
+
+            const toggleBtn = document.getElementById('btn-toggle-filters');
+            const filterCard = document.querySelector('.filter-card');
+            if (toggleBtn && filterCard) {
+                toggleBtn.addEventListener('click', function () {
+                    filterCard.classList.toggle('is-open');
+                    const isOpen = filterCard.classList.contains('is-open');
+                    const toggleText = toggleBtn.querySelector('.btn-toggle-text');
+                    if (toggleText) {
+                        toggleText.innerHTML = isOpen
+                            ? '<i class="fas fa-times mr-2"></i> SEMBUNYIKAN'
+                            : '<i class="fas fa-sliders-h mr-2"></i> FILTER DATA';
+                    }
+                });
+            }
+            updateTimeseriesFilterSummary();
 
             // Initial Initialization
             renderSegmentSelector();

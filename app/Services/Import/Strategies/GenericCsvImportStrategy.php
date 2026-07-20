@@ -5,6 +5,7 @@ namespace App\Services\Import\Strategies;
 class GenericCsvImportStrategy implements ImportStrategyInterface
 {
     private const SPECIALIZED_TABLES = [
+        'cras',
         'daily_loan_dinamis',
         'simpanan_multipn',
         'gi405_recovery',
@@ -13,8 +14,6 @@ class GenericCsvImportStrategy implements ImportStrategyInterface
         'hourly_dpk',
         'l1133',
         'lw321pn',
-        'lw321_npd',
-        'lw321_npdd',
         'lw325_ph',
         'cognos_ph',
         'cognos_recovery',

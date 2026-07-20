@@ -66,6 +66,7 @@
     }
 
     .rm-mikro-tab {
+        min-height: 38px;
         border: 1px solid #cbd5e1 !important;
         border-radius: 999px !important;
         padding: 0.5rem 1.25rem !important;
@@ -268,6 +269,7 @@
         }
 
         .rm-mikro-tab {
+            min-height: 38px;
             padding: .42rem .85rem !important;
             font-size: .72rem !important;
         }

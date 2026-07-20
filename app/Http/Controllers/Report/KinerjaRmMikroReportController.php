@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SyncImportedReportJob;
 use App\Support\ReportCacheVersion;
 use Carbon\Carbon;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -75,20 +74,23 @@ class KinerjaRmMikroReportController extends Controller
 
     public function index(Request $request): View
     {
-        $availablePeriods = $this->fetchAvailablePeriods();
-        $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $request->input('periode'));
-        $this->queueDailyLoanSnapshotSyncIfNeeded($selectedPeriod, static::class . '::index');
         $selectedRmCategory = array_key_exists((string) $request->input('kategori_rm'), self::RM_CATEGORIES)
             ? (string) $request->input('kategori_rm')
             : 'rm_mikro_kur';
+        $availablePeriods = $this->fetchAvailablePeriods($selectedRmCategory === 'mantri');
+        $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $request->input('periode'));
+        $this->queueDailyLoanSnapshotSyncIfNeeded($selectedPeriod, static::class . '::index');
         $reportCategories = $selectedRmCategory === 'mantri' ? self::MANTRI_REPORT_CATEGORIES : self::REPORT_CATEGORIES;
         $selectedReportCategory = array_key_exists((string) $request->input('kategori_report'), $reportCategories)
             ? (string) $request->input('kategori_report')
             : array_key_first($reportCategories);
+        $selectedExtremeLowView = in_array((string) $request->input('extreme_low_view'), ['per_unit_kerja', 'per_cabang'], true)
+            ? (string) $request->input('extreme_low_view')
+            : 'per_unit_kerja';
 
         $periodDate = $selectedPeriod ? Carbon::parse($selectedPeriod) : null;
         $payload = $selectedRmCategory === 'mantri'
-            ? $this->buildMantriPayload($selectedReportCategory, $selectedPeriod)
+            ? $this->buildMantriPayload($selectedReportCategory, $selectedPeriod, $selectedExtremeLowView)
             : $this->buildReportPayload($selectedReportCategory, $selectedPeriod);
 
         // Pre-calculate max values for gradients to offload from Blade
@@ -107,6 +109,7 @@ class KinerjaRmMikroReportController extends Controller
             'selectedMonthLabel' => $periodDate?->locale('id')->translatedFormat('M y') ?? '-',
             'selectedRmCategory' => $selectedRmCategory,
             'selectedReportCategory' => $selectedReportCategory,
+            'selectedExtremeLowView' => $selectedExtremeLowView,
             'rmCategories' => self::RM_CATEGORIES,
             'reportCategories' => $reportCategories,
             'targetMonthlyJuta' => self::TARGET_MONTHLY_JUTA,
@@ -117,61 +120,6 @@ class KinerjaRmMikroReportController extends Controller
             'formatPercent' => fn ($value, int $decimals = 1) => $this->formatPercent($value, $decimals),
             'achievementClass' => fn ($value, float $target) => $this->achievementClass((float) $value, $target),
             'gradientClass' => fn ($value, float $min, float $max, bool $higherIsBetter = true) => $this->gradientClass((float) $value, $min, $max, $higherIsBetter),
-        ]);
-    }
-
-    public function mantriExtremeLowDetail(Request $request): JsonResponse
-    {
-        $period = trim((string) $request->query('periode', ''));
-        $branch = $this->normalizeKey((string) $request->query('branch', ''));
-        $unit = $this->normalizeKey((string) $request->query('unit', ''));
-
-        if ($period === '' || $branch === '' || $unit === '') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Parameter periode, branch, dan unit wajib diisi.',
-            ], 422);
-        }
-
-        $rows = $this->cachedExtremeLowMantriRosterRows($period)
-            ->filter(fn (array $row): bool => $row['branch_office'] === $branch && $row['nama_uker'] === $unit)
-            ->sortBy(fn (array $row): string => $row['bucket_key'] . '|' . $row['nama_mantri'] . '|' . $row['pn_mantri'])
-            ->values();
-
-        $totalMantri = $rows->count();
-        $buckets = [];
-
-        foreach (self::EXTREME_LOW_BUCKETS as $key => $meta) {
-            $bucketRows = $rows->where('bucket_key', $key)->values();
-            $buckets[$key] = [
-                'key' => $key,
-                'label' => $meta['label'],
-                'group' => $meta['group'],
-                'deb' => $bucketRows->count(),
-                'pct' => $this->ratioPercent($bucketRows->count(), $totalMantri),
-                'rows' => $bucketRows->all(),
-            ];
-        }
-
-        $under800Keys = ['el_0_100', 'el_100_200', 'el_200_400', 'low_400_600', 'low_600_800'];
-        $under800Rows = $rows
-            ->filter(fn (array $row): bool => in_array($row['bucket_key'], $under800Keys, true))
-            ->values();
-
-        return response()->json([
-            'status' => 'success',
-            'periode' => $period,
-            'branch_office' => $branch,
-            'nama_uker' => $unit,
-            'total_mantri' => $totalMantri,
-            'buckets' => $buckets,
-            'under_800' => [
-                'key' => 'under_800',
-                'label' => 'Total Under 800 Juta',
-                'deb' => $under800Rows->count(),
-                'pct' => $this->ratioPercent($under800Rows->count(), $totalMantri),
-                'rows' => $under800Rows->all(),
-            ],
         ]);
     }
 
@@ -585,14 +533,27 @@ class KinerjaRmMikroReportController extends Controller
         );
     }
 
-    private function fetchAvailablePeriods(): Collection
+    private function fetchAvailablePeriods(bool $includeMantriSourcePeriods = false): Collection
     {
-        return Cache::remember('kinerja_rm_mikro_periods_v2:' . $this->reportCacheVersion(), 600, function () {
+        $cacheKey = 'kinerja_rm_mikro_periods_v3:' . $this->reportCacheVersion() . ':' . ($includeMantriSourcePeriods ? 'mantri' : 'rm');
+
+        return Cache::remember($cacheKey, 600, function () use ($includeMantriSourcePeriods) {
             $periods = $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode', function ($query): void {
                     $query->where('segmen', 'MICRO')->where('produk', 'KUR-MIKRO');
                 })
                 ->unique()
                 ->values();
+
+            if ($includeMantriSourcePeriods) {
+                $periods = $periods
+                    ->merge($this->fetchPeriodList(self::SOURCE_TABLE, 'periode', function ($query): void {
+                        $query
+                            ->where('segmen_kinerja', 'MICRO')
+                            ->whereIn('produk_kinerja', self::MANTRI_PRODUCTS);
+                    }))
+                    ->unique()
+                    ->values();
+            }
 
             return $this->latestPeriodPerMonth($periods)
                 ->sortDesc()
@@ -743,18 +704,22 @@ class KinerjaRmMikroReportController extends Controller
         return count($parts) === 2 ? [$parts[0], $parts[1]] : ['-', $rm !== '' ? $rm : '-'];
     }
 
-    private function buildMantriPayload(string $category, ?string $period): array
+    private function buildMantriPayload(string $category, ?string $period, string $extremeLowView = 'per_unit_kerja'): array
     {
         if ($period === null) {
             return ['rows' => [], 'total' => [], 'working_days' => 0];
         }
 
-        return Cache::remember('kinerja_rm_mikro_mantri_v10:' . $this->reportCacheVersion() . ':' . $period . ':' . $category, 600, function () use ($category, $period): array {
+        $cacheFingerprint = $category === 'extreme_low_mantri'
+            ? ':' . $this->dailyLoanPeriodCacheFingerprint($period)
+            : '';
+
+        return Cache::remember('kinerja_rm_mikro_mantri_v11:' . $this->reportCacheVersion() . ':' . $period . ':' . $category . ':' . $extremeLowView . $cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
             return match ($category) {
                 'kuadran' => $this->mantriKuadranPayload($period),
                 'produktivitas_mantri' => $this->mantriProductivityPayload($period),
                 'pdwk_override' => $this->mantriPdwkOverridePayload($period),
-                'extreme_low_mantri' => $this->mantriExtremeLowPayload($period),
+                'extreme_low_mantri' => $this->mantriExtremeLowPayload($period, $extremeLowView),
                 'rekap_mantri' => $this->mantriRekapPayload($period),
                 default => $this->mantriUnitPemutusPayload($period),
             };
@@ -939,68 +904,73 @@ class KinerjaRmMikroReportController extends Controller
         ];
     }
 
-    private function mantriExtremeLowPayload(string $period): array
+    private function mantriExtremeLowPayload(string $period, string $view = 'per_unit_kerja'): array
     {
+        $view = $view === 'per_cabang' ? 'per_cabang' : 'per_unit_kerja';
+        $emptyTotal = $this->finalizeExtremeLowMantriRow([
+            'branch_office' => 'AREA 6',
+            'total_mantri' => 0,
+            'buckets' => $this->blankExtremeLowBuckets(),
+        ]);
+
         if (!Schema::hasTable('brihc_pemasar')) {
             return [
                 'rows' => [],
-                'total' => $this->finalizeExtremeLowMantriRow([
-                    'branch_office' => 'AREA 6',
-                    'nama_uker' => 'TOTAL',
-                    'total_mantri' => 0,
-                    'buckets' => $this->blankExtremeLowBuckets(),
-                ]),
+                'total' => $emptyTotal,
                 'working_days' => 0,
                 'bucket_meta' => self::EXTREME_LOW_BUCKETS,
+                'view' => $view,
                 'message' => '',
             ];
         }
 
         $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
         $rosterRows = $this->cachedExtremeLowMantriRosterRows($period);
-        $groups = [];
         $total = [
             'branch_office' => 'AREA 6',
-            'nama_uker' => 'TOTAL',
             'total_mantri' => 0,
             'buckets' => $this->blankExtremeLowBuckets(),
         ];
+        $groups = [];
 
         foreach ($rosterRows as $detail) {
+            $bucketKey = (string) $detail['bucket_key'];
+            $total['total_mantri']++;
+            $total['buckets'][$bucketKey]['deb']++;
+
             $branch = (string) $detail['branch_office'];
             $unit = (string) $detail['nama_uker'];
-            $groupKey = $branch . '|' . $unit;
+            $groupKey = $view === 'per_cabang' ? $branch : $branch . '|' . $unit;
             if (!isset($groups[$groupKey])) {
                 $groups[$groupKey] = [
                     'branch_office' => $branch,
-                    'nama_uker' => $unit,
+                    'nama_uker' => $view === 'per_cabang' ? null : $unit,
                     'total_mantri' => 0,
                     'buckets' => $this->blankExtremeLowBuckets(),
                 ];
             }
 
-            $bucketKey = (string) $detail['bucket_key'];
             $groups[$groupKey]['total_mantri']++;
             $groups[$groupKey]['buckets'][$bucketKey]['deb']++;
-            $total['total_mantri']++;
-            $total['buckets'][$bucketKey]['deb']++;
         }
 
         $rows = collect($groups)
             ->map(fn (array $row): array => $this->finalizeExtremeLowMantriRow($row))
-            ->sortBy(fn (array $row): string => $this->branchSortKey($row['branch_office']) . '|' . $row['nama_uker'])
-            ->values()
-            ->map(function (array $row, int $index): array {
-                $row['no'] = $index + 1;
+            ->sortBy(fn (array $row): string => $this->branchSortKey($row['branch_office']) . '|' . ($row['nama_uker'] ?? ''))
+            ->values();
 
-                return $row;
-            });
+        $rows = $rows->map(function (array $row, int $index): array {
+            $row['no'] = $index + 1;
+
+            return $row;
+        });
 
         return [
             'rows' => $rows->all(),
             'total' => $this->finalizeExtremeLowMantriRow($total),
             'working_days' => $this->networkDays($periodStart, $period),
             'bucket_meta' => self::EXTREME_LOW_BUCKETS,
+            'view' => $view,
             'message' => '',
         ];
     }
@@ -1036,7 +1006,7 @@ class KinerjaRmMikroReportController extends Controller
     private function cachedExtremeLowMantriRosterRows(string $period): Collection
     {
         return Cache::remember(
-            'kinerja_rm_mikro_extreme_low_roster_v4:' . $this->reportCacheVersion() . ':' . $period,
+            'kinerja_rm_mikro_extreme_low_roster_v5:' . $this->reportCacheVersion() . ':' . $period . ':' . $this->dailyLoanPeriodCacheFingerprint($period),
             600,
             fn (): Collection => $this->extremeLowMantriRosterRows($period)
         );
@@ -1194,6 +1164,8 @@ class KinerjaRmMikroReportController extends Controller
 
         $under800Deb = (int) collect(['el_0_100', 'el_100_200', 'el_200_400', 'low_400_600', 'low_600_800'])
             ->sum(fn (string $key): int => (int) ($buckets[$key]['deb'] ?? 0));
+        $extremeLowDeb = (int) collect(['el_0_100', 'el_100_200', 'el_200_400'])
+            ->sum(fn (string $key): int => (int) ($buckets[$key]['deb'] ?? 0));
 
         return array_merge($row, [
             'total_mantri' => $totalMantri,
@@ -1202,6 +1174,11 @@ class KinerjaRmMikroReportController extends Controller
                 'label' => 'Total Under 800 Juta',
                 'deb' => $under800Deb,
                 'pct' => $this->ratioPercent($under800Deb, $totalMantri),
+            ],
+            'extreme_low' => [
+                'label' => 'Total Mantri Extreme Low',
+                'deb' => $extremeLowDeb,
+                'pct' => $this->ratioPercent($extremeLowDeb, $totalMantri),
             ],
         ]);
     }
@@ -1573,7 +1550,7 @@ class KinerjaRmMikroReportController extends Controller
         }
 
         $pendingKey = 'snapshot:daily_loan:auto-sync:view:kinerja_rm_mikro:' . $period;
-        if (!Cache::add($pendingKey, true, now()->addMinutes(10))) {
+        if (!Cache::add($pendingKey, true, now()->addMinutes(2))) {
             return;
         }
 
@@ -1582,7 +1559,7 @@ class KinerjaRmMikroReportController extends Controller
             self::SOURCE_TABLE,
             $period,
             $source
-        )->onQueue((string) config('queue.report_queue', 'default'));
+        )->onQueue('snapshots-parallel');
     }
 
     private function dailyLoanSourceUpdatedAfter(string $period, Carbon $snapshotUpdatedAt): bool
@@ -1606,6 +1583,28 @@ class KinerjaRmMikroReportController extends Controller
                 }
             })
             ->exists();
+    }
+
+    private function dailyLoanPeriodCacheFingerprint(string $period): string
+    {
+        if (!Schema::hasTable(self::SOURCE_TABLE)) {
+            return 'missing';
+        }
+
+        $query = DB::table(self::SOURCE_TABLE)->where('periode', $period);
+        $hasUpdatedAt = Schema::hasColumn(self::SOURCE_TABLE, 'updated_at');
+        $hasCreatedAt = Schema::hasColumn(self::SOURCE_TABLE, 'created_at');
+        $metadata = $query
+            ->selectRaw('COUNT(*) as row_count')
+            ->selectRaw($hasUpdatedAt ? 'MAX(updated_at) as last_updated' : 'NULL as last_updated')
+            ->selectRaw($hasCreatedAt ? 'MAX(created_at) as last_created' : 'NULL as last_created')
+            ->first();
+
+        return implode(':', [
+            (int) ($metadata->row_count ?? 0),
+            (string) ($metadata->last_updated ?? ''),
+            (string) ($metadata->last_created ?? ''),
+        ]);
     }
 
     private function reportCacheVersion(): int

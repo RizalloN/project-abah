@@ -140,6 +140,10 @@ class ManagedReportManagementService
     ];
 
     private const MANAGEMENT_SCOPE_COLUMN_OVERRIDES = [
+        'cras' => [
+            'period_priority' => ['cras_periode'],
+            'kanca_priority' => ['ket_kanca'],
+        ],
         'daily_loan_dinamis' => [
             'period_priority' => ['periode'],
             'kanca_priority' => ['cabang1'],

@@ -379,11 +379,14 @@ def is_valid_simpanan_import_row(final_row):
 
 def run_init(config):
     file_path = config['file_path']
+    total_rows = 0
+    wb = None
 
     try:
         from openpyxl import load_workbook
         wb = load_workbook(file_path, read_only=True, data_only=True)
         ws = wb.active
+        total_rows = int(ws.max_row or 0)
         scan_rows = []
         for row in ws.iter_rows(min_row=1, max_row=200, values_only=True):
             scan_rows.append(list(row))
@@ -430,16 +433,6 @@ def run_init(config):
                 'message': 'Header utama tidak ditemukan dalam 200 baris pertama.',
             }), flush=True)
             sys.exit(1)
-
-    # Total baris via openpyxl read-only (cepat, dari metadata XML)
-    total_rows = 0
-    try:
-        from openpyxl import load_workbook
-        wb         = load_workbook(file_path, read_only=True, data_only=True)
-        total_rows = wb.active.max_row or 0
-        wb.close()
-    except Exception:
-        total_rows = 0
 
     print(json.dumps({
         'status':        'ok',

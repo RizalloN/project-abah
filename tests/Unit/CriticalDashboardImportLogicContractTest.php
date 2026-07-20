@@ -77,25 +77,4 @@ class CriticalDashboardImportLogicContractTest extends TestCase
         $this->assertStringContainsString("'KURKECIL' => 'KUR-MIKRO'", $source);
     }
 
-    public function test_lw321_npd_and_npdd_excel_preview_uses_dedicated_staging_paths(): void
-    {
-        $source = file_get_contents(base_path('app/Http/Controllers/Import/ImportExcelController.php'));
-
-        $this->assertMatchesRegularExpression('/private function isLw321PnTable\(.*?lw321pn/s', $source);
-        $this->assertMatchesRegularExpression('/private function isLw321NpdTable\(.*?lw321_npd/s', $source);
-        $this->assertMatchesRegularExpression('/private function isLw321NpddTable\(.*?lw321_npdd/s', $source);
-        $this->assertStringContainsString('$this->stageLw321PnExcelToCsv($path, null, false)', $source);
-        $this->assertStringContainsString(
-            'REPLACE(REPLACE(COALESCE({$columnExpression}, \'\'), CHAR(13), \'\'), CHAR(10), \'\')',
-            $source
-        );
-        $this->assertStringNotContainsString('private function isLw321NpdTable(?string $tableName = null): bool
-    {
-        return false;
-    }', $source);
-        $this->assertStringNotContainsString('private function isLw321NpddTable(?string $tableName = null): bool
-    {
-        return false;
-    }', $source);
-    }
 }

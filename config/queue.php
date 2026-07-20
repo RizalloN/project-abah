@@ -24,9 +24,32 @@ return [
         'imports-high,imports-daily-loan,snapshots-parallel,default,reports-low,shadow-backfill'
     ),
 
+    // Keep latency-sensitive imports isolated from long snapshot/report jobs.
+    // Workers are started on demand by queue:ensure-running.
+    'worker_pools' => [
+        'imports-high' => [
+            'queues' => 'imports-high',
+            'workers' => (int) env('QUEUE_IMPORT_WORKERS', 2),
+        ],
+        'imports-daily-loan' => [
+            'queues' => 'imports-daily-loan',
+            'workers' => (int) env('QUEUE_DAILY_LOAN_WORKERS', 1),
+        ],
+        'snapshots' => [
+            'queues' => 'snapshots-parallel',
+            'workers' => (int) env('QUEUE_SNAPSHOT_WORKERS', 3),
+        ],
+        'background' => [
+            'queues' => 'default,reports-low,shadow-backfill',
+            'workers' => (int) env('QUEUE_BACKGROUND_WORKERS', 1),
+        ],
+    ],
+
     'worker_timeout' => (int) env('QUEUE_WORKER_TIMEOUT', 0),
 
     'worker_memory' => (int) env('QUEUE_WORKER_MEMORY', 512),
+
+    'worker_sleep' => (int) env('QUEUE_WORKER_SLEEP', 1),
 
     'worker_max_jobs' => (int) env('QUEUE_WORKER_MAX_JOBS', 25),
 

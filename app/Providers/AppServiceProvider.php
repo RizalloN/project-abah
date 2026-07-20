@@ -134,28 +134,46 @@ class AppServiceProvider extends ServiceProvider
             }
 
             $queue = trim((string) ($event->queue ?: 'default'));
-            $monitoredQueues = array_values(array_filter(array_map(
-                static fn (string $name): string => trim($name),
-                explode(',', (string) config('queue.worker_queues', 'imports-high,imports-daily-loan,snapshots-parallel,default,reports-low,shadow-backfill'))
-            )));
-
-            if (!in_array($queue, $monitoredQueues, true)) {
+            $workerPool = $this->queueWorkerPoolFor($queue);
+            if ($workerPool === null) {
                 return;
             }
 
-            if (!Cache::add('queue_worker_auto_ensure:throttle', true, now()->addSeconds(10))) {
+            if (!Cache::add('queue_worker_auto_ensure:throttle:' . sha1($workerPool['name']), true, now()->addSeconds(10))) {
                 return;
             }
 
             try {
                 Artisan::call('queue:ensure-running', [
                     '--once' => true,
-                    '--queues' => implode(',', $monitoredQueues),
+                    '--queues' => $workerPool['queues'],
+                    '--workers' => $workerPool['workers'],
                 ]);
             } catch (\Throwable $e) {
                 report($e);
             }
         });
+    }
+
+    /** @return array{name: string, queues: string, workers: int}|null */
+    private function queueWorkerPoolFor(string $queue): ?array
+    {
+        foreach ((array) config('queue.worker_pools', []) as $poolName => $pool) {
+            $queues = array_values(array_filter(array_map(
+                static fn (string $name): string => trim($name),
+                explode(',', (string) ($pool['queues'] ?? ''))
+            )));
+
+            if (in_array($queue, $queues, true)) {
+                return [
+                    'name' => (string) $poolName,
+                    'queues' => implode(',', $queues),
+                    'workers' => max(1, (int) ($pool['workers'] ?? 1)),
+                ];
+            }
+        }
+
+        return null;
     }
 
     private function registerCustomQueueExtensions(): void

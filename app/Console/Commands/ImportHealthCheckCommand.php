@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Import\ImportProgressService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -13,13 +14,14 @@ class ImportHealthCheckCommand extends Command
 
     protected $description = 'Health check for stuck/stale import jobs and snapshot deferral queue blockage';
 
-    public function handle(): int
+    public function handle(ImportProgressService $progressService): int
     {
         try {
             $hoursThreshold = max(1, (int) $this->option('hours'));
             $shouldFix = (bool) $this->option('fix');
 
             $this->info('Running import health check...');
+            $this->reconcileProcessingJobs($progressService);
 
             $stuckJobs = $this->findStuckImportJobs($hoursThreshold);
             $deferredSnapshots = $this->countDeferredSnapshots();
@@ -43,6 +45,19 @@ class ImportHealthCheckCommand extends Command
             $this->error('Health check failed: ' . $e->getMessage());
             Log::error('ImportHealthCheckCommand failed', ['exception' => $e->getMessage()]);
             return self::FAILURE;
+        }
+    }
+
+    private function reconcileProcessingJobs(ImportProgressService $progressService): void
+    {
+        $jobIds = DB::table('import_jobs')
+            ->where('status', 'processing')
+            ->orderBy('updated_at')
+            ->limit(100)
+            ->pluck('id');
+
+        foreach ($jobIds as $jobId) {
+            $progressService->getStatusPayload((int) $jobId);
         }
     }
 

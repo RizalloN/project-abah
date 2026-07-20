@@ -4,6 +4,7 @@ namespace App\Services\Import;
 
 use App\Services\Import\Strategies\DailyLoanImportStrategy;
 use App\Services\Import\Strategies\ConfiguredExcelImportStrategy;
+use App\Services\Import\Strategies\CrasImportStrategy;
 use App\Services\Import\Strategies\CognosPhImportStrategy;
 use App\Services\Import\Strategies\CognosRecoveryImportStrategy;
 use App\Services\Import\Strategies\DlyKapResegmentasiImportStrategy;
@@ -12,8 +13,6 @@ use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\HourlyDpkImportStrategy;
 use App\Services\Import\Strategies\ImportStrategyInterface;
 use App\Services\Import\Strategies\L1133ImportStrategy;
-use App\Services\Import\Strategies\Lw321NpdImportStrategy;
-use App\Services\Import\Strategies\Lw321NpddImportStrategy;
 use App\Services\Import\Strategies\Lw321PnImportStrategy;
 use App\Services\Import\Strategies\Lw325PhImportStrategy;
 use App\Services\Import\Strategies\PerformancePisImportStrategy;
@@ -29,6 +28,7 @@ class ImportStrategyFactory
     public function all(): array
     {
         return [
+            app(CrasImportStrategy::class),
             app(DailyLoanImportStrategy::class),
             app(SimpananMultiPnImportStrategy::class),
             app(Gi405RecDhImportStrategy::class),
@@ -37,8 +37,6 @@ class ImportStrategyFactory
             app(HourlyDpkImportStrategy::class),
             app(L1133ImportStrategy::class),
             app(Lw321PnImportStrategy::class),
-            app(Lw321NpdImportStrategy::class),
-            app(Lw321NpddImportStrategy::class),
             app(Lw325PhImportStrategy::class),
             app(DlyKapResegmentasiImportStrategy::class),
             app(CognosPhImportStrategy::class),

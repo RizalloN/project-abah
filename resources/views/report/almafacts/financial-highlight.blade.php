@@ -152,7 +152,7 @@
                         <th class="blue-header current-header">{{ $comparisonLabels['current'] }}</th>
                         <th class="grey-header">YOY</th>
                         <th class="grey-header">YTD</th>
-                        <th class="grey-header">MOM</th>
+                        <th class="grey-header">MTD</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -592,10 +592,6 @@
         background-color: #f8fafc;
     }
 
-    .fh-table tr:hover td {
-        background-color: #f1f5f9 !important;
-    }
-
     .fh-table td.metric-col {
         text-align: left;
         font-weight: 600;
@@ -618,10 +614,6 @@
     .fh-table tr.summary-row td {
         font-weight: 800 !important;
         background-color: #f1f5f9;
-    }
-
-    .fh-table tr.summary-row:hover td {
-        background-color: #e2e8f0 !important;
     }
 
     .fh-table td.delta {

@@ -37,6 +37,31 @@
         padding: 0 0.5rem !important;
     }
 
+    /* Keep the primary dashboard groups in the requested navigation order. */
+    .main-sidebar .nav-sidebar > .sidebar-dashboard-marketshare {
+        order: -6;
+    }
+
+    .main-sidebar .nav-sidebar > .sidebar-dashboard-almafacts {
+        order: -5;
+    }
+
+    .main-sidebar .nav-sidebar > .sidebar-dashboard-harian {
+        order: -4;
+    }
+
+    .main-sidebar .nav-sidebar > .sidebar-dashboard-simpanan {
+        order: -3;
+    }
+
+    .main-sidebar .nav-sidebar > .sidebar-dashboard-pinjaman {
+        order: -2;
+    }
+
+    .main-sidebar .nav-sidebar > .sidebar-dashboard-kpi {
+        order: -1;
+    }
+
     /* Brand Header Panel - Bright elegant white with subtle blue border */
     .sidebar-brand-link {
         background: #ffffff !important;
@@ -483,9 +508,14 @@
         width: 4.8rem !important;
     }
 
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .brand-link {
+    .sidebar-mini.sidebar-collapse .main-sidebar .brand-link,
+    .sidebar-mini.sidebar-collapse .main-sidebar:hover .brand-link,
+    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .brand-link {
         padding: 1rem 0.5rem !important;
         justify-content: center !important;
+        transition: none !important;
+        transform: none !important;
+        width: 4.8rem !important;
     }
 
     .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-user-panel {
@@ -503,10 +533,14 @@
         margin: 0 auto 0.25rem auto !important;
     }
 
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-brand-badge,
+    .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-brand-badge,
+    .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-badge,
+    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-brand-badge,
     .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-user-avatar,
     .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-icon {
         margin-right: 0 !important;
+        transition: none !important;
+        transform: none !important;
     }
 
     .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-brand-text,
@@ -518,11 +552,11 @@
         display: none !important;
     }
 
-    /* Expanded collapsed Hover states */
+    /* Expanded collapsed Hover states (Disabled to prevent layout bugs) */
     .sidebar-mini.sidebar-collapse .main-sidebar:hover,
     .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused {
-        width: 280px !important;
-        box-shadow: 18px 0 45px rgba(8, 87, 195, 0.08) !important;
+        width: 4.8rem !important;
+        box-shadow: none !important;
     }
 
     .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-text,
@@ -530,44 +564,37 @@
     .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-user-info,
     .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-user-info,
     .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar p,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar p {
-        display: flex !important;
-        animation: sidebarFadeIn 0.25s ease-in-out;
-    }
-
+    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar p,
     .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .right,
     .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar .right,
     .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-header,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-header {
-        display: block !important;
-        animation: sidebarFadeIn 0.25s ease-in-out;
-    }
-
-    @keyframes sidebarFadeIn {
-        from { opacity: 0; transform: translateX(-4px); }
-        to { opacity: 1; transform: translateX(0); }
+    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-header,
+    .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .nav-treeview,
+    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-treeview {
+        display: none !important;
     }
 
     .sidebar-mini.sidebar-collapse .main-sidebar:hover .brand-link,
     .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .brand-link {
-        justify-content: flex-start !important;
-        padding: 1.5rem 1rem !important;
+        padding: 1rem 0.5rem !important;
+        justify-content: center !important;
     }
 
     .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-user-panel,
     .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-user-panel {
-        padding: 0.72rem 0.8rem !important;
-        justify-content: flex-start !important;
-        width: calc(100% - 0.8rem) !important;
-        margin-left: 0.4rem !important;
-        margin-right: 0.4rem !important;
+        padding: 0.6rem 0.3rem !important;
+        justify-content: center !important;
+        margin-left: 0.3rem !important;
+        margin-right: 0.3rem !important;
+        width: calc(100% - 0.6rem) !important;
     }
 
     .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar > .nav-item > .nav-link,
     .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar > .nav-item > .nav-link {
-        padding: 0.75rem 0.95rem !important;
-        justify-content: flex-start !important;
-        width: 100% !important;
+        padding: 0.65rem 0 !important;
+        justify-content: center !important;
+        width: calc(100% - 0.8rem) !important;
+        margin: 0 auto 0.25rem auto !important;
     }
 
     .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-badge,
@@ -576,12 +603,7 @@
     .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-user-avatar,
     .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-icon,
     .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-icon {
-        margin-right: 0.85rem !important;
-    }
-
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .nav-treeview,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar .nav-treeview {
-        display: block !important;
+        margin-right: 0 !important;
     }
 </style>
 
@@ -622,7 +644,7 @@
             <ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu" data-accordion="false">
                 
                 {{-- FIX DASHBOARD HARIAN DROPDOWN BUG --}}
-                <li class="nav-item {{ request()->is('dashboard-harian*') ? 'menu-open' : '' }}">
+                <li class="nav-item sidebar-dashboard-harian {{ request()->is('dashboard-harian*') ? 'menu-open' : '' }}">
                     <a href="#" class="nav-link {{ request()->is('dashboard-harian*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-calendar-day"></i>
                         <p>
@@ -652,7 +674,7 @@
                     </ul>
                 </li>
 
-                <li class="nav-item {{ request()->routeIs('dashboard', 'report.dashboard-dana', 'report.dashboard-dana.hourly-dpk') ? 'menu-open' : '' }}">
+                <li class="nav-item sidebar-dashboard-simpanan {{ request()->routeIs('dashboard', 'report.dashboard-dana', 'report.dashboard-dana.hourly-dpk') ? 'menu-open' : '' }}">
                     <a href="#" class="nav-link {{ request()->routeIs('dashboard', 'report.dashboard-dana', 'report.dashboard-dana.hourly-dpk') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-university"></i>
                         <p>
@@ -682,7 +704,7 @@
                     </ul>
                 </li>
 
-                <li class="nav-item {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
+                <li class="nav-item sidebar-dashboard-pinjaman {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
                     <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-line"></i>
                         <p>
@@ -739,24 +761,7 @@
                                 <p>Data PH</p>
                             </a>
                         </li>
-                        <li class="nav-item">
-                            <a href="{{ route('report.dashboard-pinjaman.kinerjarm') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerjarm') ? 'active' : '' }}">
-                                <i class="far fa-circle nav-icon"></i>
-                                <p>Kinerja RM Ritel</p>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a href="{{ route('report.dashboard-pinjaman.kinerjarmmikro') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerjarmmikro') ? 'active' : '' }}">
-                                <i class="far fa-circle nav-icon"></i>
-                                <p>Kinerja RM Mikro</p>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a href="{{ route('report.dashboard-pinjaman.kinerja-ptp') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerja-ptp') ? 'active' : '' }}">
-                                <i class="far fa-circle nav-icon"></i>
-                                <p>Kinerja PTP</p>
-                            </a>
-                        </li>
+
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.kinerja-non-ptp') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerja-non-ptp') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
@@ -766,7 +771,7 @@
                     </ul>
                 </li>
 
-                <li class="nav-item {{ request()->routeIs('report.dashboard-almafacts.financial-highlight', 'report.dashboard-almafacts.kinerja-laba-rugi', 'report.dashboard-almafacts.timeseries', 'report.dashboard-almafacts.timeseries.data') ? 'menu-open' : '' }}">
+                <li class="nav-item sidebar-dashboard-almafacts {{ request()->routeIs('report.dashboard-almafacts.financial-highlight', 'report.dashboard-almafacts.kinerja-laba-rugi', 'report.dashboard-almafacts.timeseries', 'report.dashboard-almafacts.timeseries.data') ? 'menu-open' : '' }}">
                     <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.financial-highlight', 'report.dashboard-almafacts.kinerja-laba-rugi', 'report.dashboard-almafacts.timeseries', 'report.dashboard-almafacts.timeseries.data') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-balance-scale"></i>
                         <p>
@@ -796,8 +801,8 @@
                     </ul>
                 </li>
 
-                <li class="nav-item {{ request()->routeIs('report.dashboard-almafacts.kpi') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi') ? 'active' : '' }}">
+                <li class="nav-item sidebar-dashboard-kpi {{ request()->routeIs('report.dashboard-almafacts.kpi', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kinerjarmmikro') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kinerjarmmikro') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-line"></i>
                         <p>
                             KPI
@@ -829,11 +834,29 @@
                                 <p>KPI Mantri</p>
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => 'consumer']) }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi') && request()->route('sheet') === 'consumer' ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>KPI Konsumer</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.kinerjarm') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerjarm') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Kinerja RM Ritel</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.kinerjarmmikro') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerjarmmikro') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Kinerja RM Mikro</p>
+                            </a>
+                        </li>
                     </ul>
                 </li>
 
-                <li class="nav-item {{ request()->routeIs('report.dashboard-dana.market-share', 'report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.instansi') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share', 'report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.instansi') ? 'active' : '' }}">
+                <li class="nav-item sidebar-dashboard-marketshare {{ request()->routeIs('report.dashboard-dana.market-share', 'report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.mapping-cras', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.instansi') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share', 'report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.mapping-cras', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.instansi') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-pie"></i>
                         <p>
                             Marketshare
@@ -851,6 +874,12 @@
                             <a href="{{ route('report.dashboard-dana.market-share.mapping') }}" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share.mapping') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Mapping</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-dana.market-share.mapping-cras') }}" class="nav-link sidebar-nav-compact {{ request()->routeIs('report.dashboard-dana.market-share.mapping-cras') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Mapping CRAS</p>
                             </a>
                         </li>
                         <li class="nav-item">

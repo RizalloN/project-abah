@@ -116,6 +116,25 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame(['2026-05-06', '2026-04-30'], $periods->all());
     }
 
+    public function test_mantri_period_options_include_latest_daily_loan_period_when_snapshot_lags(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-07-14',
+            'segmen_kinerja' => 'MICRO',
+            'produk_kinerja' => 'KUPEDES',
+            'description' => 'Kupedes',
+        ]);
+        DB::table('performance_rm_snapshots')->insert([
+            'periode' => '2026-07-12',
+            'segmen' => 'MICRO',
+            'produk' => 'KUR-MIKRO',
+        ]);
+
+        $periods = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'fetchAvailablePeriods', true);
+
+        $this->assertSame(['2026-07-14'], $periods->all());
+    }
+
     public function test_mantri_defaults_to_productivity_report(): void
     {
         $categories = (new ReflectionClass(KinerjaRmMikroReportController::class))
@@ -393,33 +412,47 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             'plafon' => 999000000,
         ]);
 
-        $payload = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'mantriExtremeLowPayload', '2026-05-31');
-        $row = collect($payload['rows'])->firstWhere('nama_uker', 'UNIT TEST');
+        $payload = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'mantriExtremeLowPayload', '2026-05-31', 'per_unit_kerja');
+        $unitRow = collect($payload['rows'])->firstWhere('nama_uker', 'UNIT TEST');
 
-        $this->assertNotNull($row);
-        $this->assertSame(4, (int) $row['total_mantri']);
-        $this->assertSame(3, (int) $row['buckets']['el_0_100']['deb']);
-        $this->assertSame(1, (int) $row['buckets']['el_200_400']['deb']);
-        $this->assertSame(4, (int) $row['under_800']['deb']);
-        $this->assertEqualsWithDelta(75.0, $row['buckets']['el_0_100']['pct'], 0.0001);
-        $this->assertEqualsWithDelta(100.0, $row['under_800']['pct'], 0.0001);
+        $this->assertSame('per_unit_kerja', $payload['view']);
+        $this->assertCount(1, $payload['rows']);
+        $this->assertNotNull($unitRow);
+        $this->assertSame(4, (int) $unitRow['total_mantri']);
+        $this->assertSame(3, (int) $unitRow['buckets']['el_0_100']['deb']);
+        $this->assertSame(1, (int) $unitRow['buckets']['el_200_400']['deb']);
+        $this->assertSame(4, (int) $unitRow['extreme_low']['deb']);
         $this->assertSame(4, (int) $payload['total']['total_mantri']);
-        $this->assertSame(1, (int) $payload['total']['buckets']['el_200_400']['deb']);
+        $this->assertSame(4, (int) $payload['total']['extreme_low']['deb']);
 
-        $detailResponse = (new KinerjaRmMikroReportController())->mantriExtremeLowDetail(Request::create('/', 'GET', [
-            'periode' => '2026-05-31',
-            'branch' => 'KC MADIUN',
-            'unit' => 'UNIT TEST',
-        ]));
-        $detail = $detailResponse->getData(true);
+        $branchPayload = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'mantriExtremeLowPayload', '2026-05-31', 'per_cabang');
+        $branchRow = collect($branchPayload['rows'])->firstWhere('branch_office', 'KC MADIUN');
 
-        $this->assertSame('success', $detail['status']);
-        $this->assertSame(4, (int) $detail['total_mantri']);
-        $this->assertSame(3, (int) $detail['buckets']['el_0_100']['deb']);
-        $this->assertSame(1, (int) $detail['buckets']['el_200_400']['deb']);
-        $this->assertSame(4, (int) $detail['under_800']['deb']);
-        $this->assertSame(['Mantri Nol', 'Mantri Satu', 'Pengelola Lima'], collect($detail['buckets']['el_0_100']['rows'])->pluck('nama_mantri')->sort()->values()->all());
-        $this->assertSame(['Mantri Dua'], collect($detail['buckets']['el_200_400']['rows'])->pluck('nama_mantri')->all());
+        $this->assertSame('per_cabang', $branchPayload['view']);
+        $this->assertNotNull($branchRow);
+        $this->assertSame(4, (int) $branchRow['total_mantri']);
+        $this->assertSame(3, (int) $branchRow['buckets']['el_0_100']['deb']);
+        $this->assertSame(1, (int) $branchRow['buckets']['el_200_400']['deb']);
+        $this->assertSame(4, (int) $branchRow['extreme_low']['deb']);
+        $this->assertSame(4, (int) $branchRow['under_800']['deb']);
+        $this->assertEqualsWithDelta(75.0, $branchRow['buckets']['el_0_100']['pct'], 0.0001);
+        $this->assertEqualsWithDelta(100.0, $branchRow['extreme_low']['pct'], 0.0001);
+        $this->assertEqualsWithDelta(100.0, $branchRow['under_800']['pct'], 0.0001);
+    }
+
+    public function test_extreme_low_mantri_view_offers_unit_kerja_and_branch_modes_without_click_detail(): void
+    {
+        $view = file_get_contents(resource_path('views/report/dashboard-pinjaman/_kinerjarmmikro_partials/_table_mantri_extreme_low.blade.php'));
+
+        $this->assertIsString($view);
+        $this->assertStringContainsString('extreme_low_view', $view);
+        $this->assertStringContainsString('Unit Kerja', $view);
+        $this->assertStringContainsString('Cabang', $view);
+        $this->assertStringContainsString('Total Mantri Extreme Low', $view);
+        $this->assertStringContainsString('Jumlah Mantri pada setiap kategori realisasi', $view);
+        $this->assertStringNotContainsString('Per Mantri', $view);
+        $this->assertStringNotContainsString('data-mantri-extreme-detail', $view);
+        $this->assertStringNotContainsString("row.addEventListener('click'", $view);
     }
 
     public function test_rm_mikro_kur_payload_hides_rm_with_zero_monthly_realisasi(): void

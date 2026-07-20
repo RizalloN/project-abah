@@ -43,12 +43,15 @@ class LinkManagementControllerTest extends TestCase
         $sppgLink = $view->getData()['sppgLink'];
         $marketShareLinks = $view->getData()['marketShareLinks'];
 
-        $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'mantri'], array_keys($links));
+        $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'mantri', 'consumer'], array_keys($links));
         $this->assertSame('KPI RM Mikro', $links['rm-mikro']['label']);
-        $this->assertSame('rank', $links['rm-mikro']['sheet_name']);
-        $this->assertSame('1v1loife4UzSSsdJ9yGYl3SSuKtk_16CwtlKMj2f8dTM', $links['rm-mikro']['spreadsheet_id']);
+        $this->assertSame('KPI Konsumer', $links['consumer']['label']);
+        $this->assertSame('KPI', $links['consumer']['sheet_name']);
+        $this->assertSame('1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM', $links['consumer']['spreadsheet_id']);
+        $this->assertSame('KPI RM Mikro', $links['rm-mikro']['sheet_name']);
+        $this->assertSame('11dzu4edTyp9UFBicNDughtJ43bzvZguh', $links['rm-mikro']['spreadsheet_id']);
         $this->assertSame(
-            'https://docs.google.com/spreadsheets/d/1v1loife4UzSSsdJ9yGYl3SSuKtk_16CwtlKMj2f8dTM/edit?usp=sharing',
+            'https://docs.google.com/spreadsheets/d/11dzu4edTyp9UFBicNDughtJ43bzvZguh/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
             $links['rm-mikro']['link_url']
         );
         $this->assertSame('SPPG', $sppgLink['label']);
@@ -56,9 +59,9 @@ class LinkManagementControllerTest extends TestCase
         $this->assertSame(['mapping'], array_keys($marketShareLinks));
         $this->assertSame('Mapping Market Share', $marketShareLinks['mapping']['label']);
         $this->assertSame('DASHBOARD', $marketShareLinks['mapping']['sheet_name']);
-        $this->assertSame('18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY', $marketShareLinks['mapping']['spreadsheet_id']);
+        $this->assertSame('1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE', $marketShareLinks['mapping']['spreadsheet_id']);
         $this->assertSame(
-            'https://docs.google.com/spreadsheets/d/18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY/edit?usp=sharing',
+            'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/edit?usp=sharing',
             $marketShareLinks['mapping']['link_url']
         );
     }
@@ -91,7 +94,7 @@ class LinkManagementControllerTest extends TestCase
         $this->assertDatabaseHas('external_report_links', [
             'group_key' => 'almafacts_kpi',
             'link_key' => 'rm-mikro',
-            'sheet_name' => 'rank',
+            'sheet_name' => 'KPI RM Mikro',
         ]);
     }
 
@@ -118,9 +121,9 @@ class LinkManagementControllerTest extends TestCase
             ->first();
 
         $this->assertSame('DASHBOARD', $row->sheet_name);
-        $this->assertSame('18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY', $row->spreadsheet_id);
+        $this->assertSame('1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE', $row->spreadsheet_id);
         $this->assertSame(
-            'https://docs.google.com/spreadsheets/d/18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY/edit?usp=sharing',
+            'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/edit?usp=sharing',
             $row->link_url
         );
     }

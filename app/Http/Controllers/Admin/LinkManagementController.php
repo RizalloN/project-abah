@@ -29,34 +29,40 @@ class LinkManagementController extends Controller
         'mbm' => [
             'label' => 'KPI MBM',
             'sheet_name' => 'KPI MBM',
-            'spreadsheet_id' => '1KgXJ4fi9u4-mJyaZADXF0cM9wJnVlh0f7sQBZeR8fLY',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/1KgXJ4fi9u4-mJyaZADXF0cM9wJnVlh0f7sQBZeR8fLY/edit?usp=sharing',
+            'spreadsheet_id' => '175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
         'ka-unit' => [
             'label' => 'KPI KA Unit',
             'sheet_name' => 'KPI Kaunit',
-            'spreadsheet_id' => '1KgXJ4fi9u4-mJyaZADXF0cM9wJnVlh0f7sQBZeR8fLY',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/1KgXJ4fi9u4-mJyaZADXF0cM9wJnVlh0f7sQBZeR8fLY/edit?usp=sharing',
+            'spreadsheet_id' => '1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
         'rm-mikro' => [
             'label' => 'KPI RM Mikro',
-            'sheet_name' => 'rank',
-            'spreadsheet_id' => '1v1loife4UzSSsdJ9yGYl3SSuKtk_16CwtlKMj2f8dTM',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/1v1loife4UzSSsdJ9yGYl3SSuKtk_16CwtlKMj2f8dTM/edit?usp=sharing',
+            'sheet_name' => 'KPI RM Mikro',
+            'spreadsheet_id' => '11dzu4edTyp9UFBicNDughtJ43bzvZguh',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/11dzu4edTyp9UFBicNDughtJ43bzvZguh/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
         'mantri' => [
             'label' => 'KPI Mantri',
-            'sheet_name' => 'RANK KPI',
-            'spreadsheet_id' => '1qiek9zPfsd7NSGSSWoQQZAhIFD9hNnfoeLvQEoz1few',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/1qiek9zPfsd7NSGSSWoQQZAhIFD9hNnfoeLvQEoz1few/edit?usp=sharing',
+            'sheet_name' => 'KPI',
+            'spreadsheet_id' => '1h7XMo46a10a3gC1f_CPtsBUT2V1PcxAE',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1h7XMo46a10a3gC1f_CPtsBUT2V1PcxAE/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+        ],
+        'consumer' => [
+            'label' => 'KPI Konsumer',
+            'sheet_name' => 'KPI',
+            'spreadsheet_id' => '1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
     ];
     private const MARKET_SHARE_DEFAULTS = [
         'mapping' => [
             'label' => 'Mapping Market Share',
             'sheet_name' => 'DASHBOARD',
-            'spreadsheet_id' => '18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY/edit?usp=sharing',
+            'spreadsheet_id' => '1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/edit?usp=sharing',
         ],
     ];
 
@@ -130,7 +136,7 @@ class LinkManagementController extends Controller
                     ]
                 );
 
-                foreach (['v5', 'v6'] as $cacheVersion) {
+                foreach (['v5', 'v6', 'v7'] as $cacheVersion) {
                     Cache::forget('dashboard_almafacts:kpi_sheet:' . $cacheVersion . ':' . $key . ':' . md5($spreadsheetId . '|' . $sheetName));
                 }
             }
@@ -394,6 +400,7 @@ class LinkManagementController extends Controller
         $lowerUrl = strtolower($url);
 
         return str_contains($url, '1Wlf7Wv5SR8DhtDlRgYwzhAHDSdwIsooa')
+            || str_contains($url, '18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY')
             || str_contains($lowerUrl, 'sharepoint.com')
             || !str_contains($lowerUrl, 'docs.google.com/spreadsheets/d/');
     }

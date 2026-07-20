@@ -4,84 +4,80 @@
 
 @section('content')
 
-<div class="card border-0 mb-4 shadow-sm import-template-card">
-    <div class="card-body p-4 import-template-card__body">
-        <div class="row align-items-center">
-            <div class="col-lg-6 mb-3 mb-lg-0">
-                <span class="import-template-card__eyebrow">Download Template</span>
-                <h5 class="font-weight-bold text-dark mb-1 import-template-card__title" style="display: flex; align-items: center; gap: 8px;">
-                    <i class="fas fa-file-download text-primary"></i> Template Import
-                </h5>
-                <p class="import-template-card__text mb-0">Pilih report untuk mengunduh format template.</p>
-            </div>
-            <div class="col-lg-6">
-                <div class="import-template-actions">
-                    <div class="import-template-select">
-                        <select id="download-template-select" class="form-control select2" data-placeholder="Cari Report">
-                            <option value="">Cari Report</option>
-                            @foreach($downloadTemplates as $key => $template)
-                                <option value="{{ $key }}" data-filename="{{ $template['filename'] }}">{{ $template['label'] }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <button type="button"
-                       id="btn-download-template"
-                       class="btn btn-primary disabled import-template-button"
-                       aria-disabled="true"
-                       data-route-template="{{ route('import.template') }}">
-                        Unduh
-                    </button>
+<div class="import-page">
+    <div class="card border-0 mb-3 shadow-sm import-template-card import-template-bar">
+        <div class="card-body import-template-card__body">
+            <div class="import-template-bar__intro">
+                <i class="fas fa-file-download import-template-bar__icon"></i>
+                <div>
+                    <div class="import-template-bar__title">Template report</div>
+                    <div class="import-template-card__text">Unduh format referensi sebelum menyiapkan file.</div>
                 </div>
+            </div>
+            <div class="import-template-actions">
+                <div class="import-template-select">
+                    <select id="download-template-select" class="form-control select2" data-placeholder="Cari Report">
+                        <option value="">Cari report template</option>
+                        @foreach($downloadTemplates as $key => $template)
+                            <option value="{{ $key }}" data-filename="{{ $template['filename'] }}">{{ $template['label'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <button type="button"
+                   id="btn-download-template"
+                   class="btn btn-primary disabled import-template-button"
+                   aria-disabled="true"
+                   data-route-template="{{ route('import.template') }}">
+                    <i class="fas fa-download mr-1"></i> Unduh
+                </button>
             </div>
         </div>
     </div>
-</div>
 
 <div id="download-toast-stack" class="download-toast-stack" aria-live="polite" aria-atomic="true"></div>
 
-<div class="card border-0 mb-4 shadow-sm import-upload-card">
-    <div class="card-header border-0 bg-transparent px-4 pt-4 pb-0 import-upload-card__header">
-        <span class="import-upload-card__eyebrow">Import report</span>
-        <div class="d-flex flex-wrap align-items-start justify-content-between" style="gap: 1rem;">
+    <div class="card border-0 mb-4 shadow-sm import-upload-card import-workspace">
+        <div class="card-header border-0 bg-transparent import-upload-card__header">
             <div>
-                <h5 class="font-weight-bold text-dark mb-1 import-upload-card__title" style="display: flex; align-items: center; gap: 8px;">
-                    <i class="fas fa-cloud-upload-alt text-primary"></i> Upload Data
+                <span class="import-upload-card__eyebrow">Import data</span>
+                <h5 class="font-weight-bold text-dark mb-1 import-upload-card__title">
+                    Siapkan file import
                 </h5>
-                <p class="import-upload-card__subtitle mb-0">Pilih report, unggah file sesuai formatnya, lalu lanjutkan ke preview sebelum import.</p>
+                <p class="import-upload-card__subtitle mb-0">Pilih report, isi konteks yang diperlukan, lalu pilih file untuk menuju preview.</p>
             </div>
-            <div class="import-upload-card__badge">
-                <i class="fas fa-shield-alt mr-1"></i> Preview dulu
+            <div class="import-workspace__context" aria-live="polite">
+                <div class="import-workspace__context-item import-workspace__context-item--report">
+                    <span>Report</span>
+                    <strong id="summary-report-name">Belum dipilih</strong>
+                </div>
+                <div class="import-workspace__context-item">
+                    <span>Format</span>
+                    <strong id="summary-upload-type">-</strong>
+                </div>
+                <div class="import-workspace__context-item">
+                    <span>Periode</span>
+                    <strong id="summary-periode-status">Otomatis</strong>
+                </div>
+                <div class="import-workspace__context-item">
+                    <span>Target</span>
+                    <strong id="summary-target-table">-</strong>
+                </div>
             </div>
         </div>
-    </div>
 
     <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data" data-prepare-preview-url="" data-upload-limits-url="{{ route('import.upload-limits') }}" data-chunked-upload="" data-chunk-init-url="" data-chunk-upload-url="" data-chunk-finalize-url="" data-no-route-loading>
         @csrf
 
-        <div class="card-body p-4 import-upload-card__body">
-            <!-- Simplified Summary Bar -->
-            <div class="import-report-summary mb-4">
-                <div class="import-report-summary__item import-report-summary__item--primary">
-                    <span class="import-report-summary__label">Report dipilih</span>
-                    <strong id="summary-report-name">-</strong>
-                </div>
-                <div class="import-report-summary__item">
-                    <span class="import-report-summary__label">Format</span>
-                    <strong id="summary-upload-type">-</strong>
-                </div>
-                <div class="import-report-summary__item">
-                    <span class="import-report-summary__label">Periode</span>
-                    <strong id="summary-periode-status">Auto</strong>
-                </div>
-                <div class="import-report-summary__item">
-                    <span class="import-report-summary__label">Target tabel</span>
-                    <strong id="summary-target-table">-</strong>
-                </div>
-            </div>
-
-            <div class="row">
-                <!-- Left Column: Settings -->
-                <div class="col-lg-5 pr-lg-4 mb-4 mb-lg-0">
+        <div class="card-body import-upload-card__body">
+            <div class="import-workflow">
+                <section class="import-workflow__section import-workflow__section--details">
+                    <div class="import-workflow__heading">
+                        <span class="import-workflow__step">1</span>
+                        <div>
+                            <h6>Konfigurasi report</h6>
+                            <p>Gunakan report yang sesuai dengan file sumber.</p>
+                        </div>
+                    </div>
                     <div class="form-group mb-4">
                         <label class="font-weight-bold text-dark mb-2">Pilih Report</label>
                         <select name="id_report" class="form-control select2" required>
@@ -124,11 +120,16 @@
                         <input type="url" id="business_cluster_link_url" name="link_url" class="form-control" placeholder="https://docs.google.com/spreadsheets/d/...">
                         <small id="business-cluster-link-help" class="text-muted">Tempel link spreadsheet Business Cluster yang sudah bisa diakses.</small>
                     </div>
-                </div>
+                </section>
 
-                <!-- Right Column: File Upload -->
-                <div class="col-lg-7 pl-lg-4" style="border-left: 1px dashed #e2e8f0;">
-                    <!-- Hidden native inputs kept for JS logic -->
+                <section class="import-workflow__section import-workflow__section--file">
+                    <div class="import-workflow__heading">
+                        <span class="import-workflow__step">2</span>
+                        <div>
+                            <h6>Pilih file</h6>
+                            <p>Format file akan mengikuti report yang dipilih.</p>
+                        </div>
+                    </div>
                     <div id="form-rar" class="form-group mb-3 d-none">
                         <input type="file" id="file_rar" name="file" class="custom-file-input" accept=".rar" required>
                     </div>
@@ -144,7 +145,6 @@
                         <small id="csv-help" class="d-none"></small>
                     </div>
 
-                    <!-- Modern Dropzone area -->
                     <div id="import-dropzone" class="import-dropzone d-flex flex-column align-items-center justify-content-center" tabindex="0" role="button" aria-label="Area upload file">
                         <div class="import-dropzone__icon mb-3">
                             <i class="fas fa-cloud-upload-alt"></i>
@@ -175,17 +175,21 @@
                             <i class="fas fa-trash-alt"></i>
                         </button>
                     </div>
-                </div>
+                </section>
             </div>
         </div>
 
-        <div class="card-footer bg-transparent border-0 px-4 pb-4 pt-0 text-right import-upload-card__footer">
-            <hr class="mt-0 mb-4" style="border-top: 1px solid #f1f5f9;">
+        <div class="card-footer bg-transparent border-0 import-upload-card__footer">
+            <div class="import-workflow__footer-note">
+                <span class="import-workflow__step">3</span>
+                <span>Periksa data pada halaman preview sebelum menjalankan import.</span>
+            </div>
             <button type="submit" id="btn-submit" class="btn btn-primary font-weight-bold import-upload-card__submit">
-                <i class="fas fa-file-archive mr-2"></i> Upload Sekarang
+                <i class="fas fa-arrow-right mr-2"></i> Lanjut ke Preview
             </button>
         </div>
     </form>
+    </div>
 </div>
 
 @if(!empty($showReportManagementPanel))
@@ -489,6 +493,7 @@
         const btnManagementFilter = document.getElementById('btn-management-filter');
         const managementTableBody = document.getElementById('management-table-body');
         let uploadLimitsPromise = null;
+        let activeUploadLimits = null;
 
         function formatBytes(bytes) {
             if (!bytes || bytes <= 0) {
@@ -555,13 +560,16 @@
             .then(async (response) => {
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok || payload.status !== 'success') {
+                    activeUploadLimits = null;
                     applyUploadLimitHints(null);
                     return null;
                 }
+                activeUploadLimits = payload;
                 applyUploadLimitHints(payload);
                 return payload;
             })
             .catch(() => {
+                activeUploadLimits = null;
                 applyUploadLimitHints(null);
                 return null;
             });
@@ -581,19 +589,14 @@
 
             const limits = await getUploadLimits();
             const maxBytes = Number(limits?.effective_max_upload_bytes || 0);
-            if (maxBytes > 0 && file.size > maxBytes) {
+            const chunkedUploadEnabled = formImport?.dataset.chunkedUpload === '1';
+            if (maxBytes > 0 && file.size > maxBytes && !chunkedUploadEnabled) {
                 const limitLabel = formatBytes(maxBytes);
-                const shouldWarnOnly = maxBytes <= (128 * 1024 * 1024);
-
-                if (shouldWarnOnly) {
-                    console.warn('Upload limit endpoint masih mengembalikan nilai kecil:', limits);
-                    return true;
-                }
 
                 themedSwal({
                     icon: 'error',
                     title: 'Ukuran File Terlalu Besar',
-                    html: `Ukuran file <b>${escapeHtml(file.name)}</b> adalah <b>${formatBytes(file.size)}</b>.<br>Batas upload server saat ini <b>${limitLabel}</b>.`
+                    html: `Ukuran file <b>${escapeHtml(file.name)}</b> adalah <b>${formatBytes(file.size)}</b>.<br>Batas upload server saat ini <b>${limitLabel}</b>.<br><small>Upload belum dijalankan agar koneksi tidak ditolak oleh server.</small>`
                 });
                 return false;
             }
@@ -1288,6 +1291,7 @@
                 rar: 'btn btn-primary font-weight-bold import-upload-card__submit',
                 excel: 'btn btn-success font-weight-bold import-upload-card__submit',
                 csv: 'btn btn-info font-weight-bold import-upload-card__submit',
+                cras: 'btn btn-primary font-weight-bold import-upload-card__submit',
                 link: 'btn btn-primary font-weight-bold import-upload-card__submit',
             };
 
@@ -1627,6 +1631,7 @@
             const isDlyKapResegmentasi = tableName === 'dly_kap_resegmentasi';
             const isL1133 = tableName === 'l1133';
             const isLw321Pn = tableName === 'lw321pn';
+            const isCras = tableName === 'cras' || importController.includes('ImportCrasController');
             const isIbbiz = tableName === 'ibbisniz_corp' || tableName === 'usak_ibbiz_uker';
             const usesGenericExcelFlow = importController.includes('ImportExcelController') && !isDailyLoan && !isSimpanan;
 
@@ -1688,6 +1693,27 @@
 
                 importFilePreview?.classList.add('d-none');
                 applyButtonState('link', '<i class="fas fa-link"></i> Simpan Link');
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (isCras) {
+                formCsv.style.display = 'block';
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.csv,.txt,.xlsx');
+                formImport.action = "{{ route('import.cras.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.cras.prepare-preview') }}";
+                formImport.dataset.chunkedUpload = '1';
+                formImport.dataset.chunkInitUrl = "{{ route('import.cras.upload-chunk.init') }}";
+                formImport.dataset.chunkUploadUrl = "{{ route('import.cras.upload-chunk') }}";
+                formImport.dataset.chunkFinalizeUrl = "{{ route('import.cras.upload-chunk.finalize') }}";
+                csvLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File SSA CRAS (.csv, .txt, .xlsx)';
+                csvHelp.textContent = 'CSV/TXT UTF-16LE dan XLSX diproses tanpa membulatkan atau menormalisasi nilai sumber. Periode dibaca dari file.';
+                applyButtonState('cras', '<i class="fas fa-file-upload"></i> Upload CRAS');
+                configurePeriodeInput({ visible: false });
+                configureKancaInput({ visible: false });
                 updateReportSummary();
                 updateFileSelectionUI();
                 return;
@@ -2162,7 +2188,7 @@
                 ? 'Proses Excel'
                 : uploadKind === 'csv'
                     ? 'Proses CSV'
-                    : (uploadKind === 'link' ? 'Simpan Link' : 'Proses Import');
+                    : (uploadKind === 'cras' ? 'Proses CRAS' : (uploadKind === 'link' ? 'Simpan Link' : 'Proses Import'));
             const descText = hasAsyncPreview
                 ? (isPolarsFlow ? 'File sedang diproses menuju fase Polars.' : 'File sedang diproses untuk preview.')
                 : (uploadKind === 'link'
@@ -2175,7 +2201,6 @@
                 <div class="swal-import-shell">
                     <div class="swal-import-head">
                         <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
-                        <div class="swal-import-title">${titleText}</div>
                         <div class="swal-import-desc" id="swal-desc-text">${descText}</div>
                         <div class="swal-import-phase" id="swal-progress-phase">${initialPhaseText}</div>
                     </div>
@@ -2383,6 +2408,7 @@
                     }
 
                     const uploadRequest = new XMLHttpRequest();
+                    let nativeUploadFallbackStarted = false;
                     uploadRequest.open('POST', formImport.action, true);
                     uploadRequest.setRequestHeader('Accept', 'application/json');
                     uploadRequest.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
@@ -2656,10 +2682,24 @@
                     });
 
                     uploadRequest.addEventListener('error', function() {
+                        const configuredLimit = Number(activeUploadLimits?.effective_max_upload_bytes || 0);
+                        const exceedsConfiguredLimit = selectedFile && configuredLimit > 0 && selectedFile.size > configuredLimit;
+
+                        if (!exceedsConfiguredLimit && selectedFile && uploadRequest.status === 0 && !nativeUploadFallbackStarted) {
+                            nativeUploadFallbackStarted = true;
+                            updateProgressSurface(3, 'Mencoba jalur upload standar...', null, null, null, '', 'upload');
+                            window.setTimeout(function () {
+                                HTMLFormElement.prototype.submit.call(formImport);
+                            }, 80);
+                            return;
+                        }
+
                         themedSwal({
                             icon: 'error',
                             title: 'Upload Error',
-                            text: 'Koneksi upload terputus sebelum file selesai dikirim.'
+                            text: exceedsConfiguredLimit
+                                ? 'Ukuran file melebihi batas upload server. Upload tidak dapat dimulai.'
+                                : 'Server belum dapat menerima upload. Periksa koneksi ke server lalu coba lagi.'
                         });
                         resetSubmitButton();
                     });
@@ -3667,6 +3707,519 @@
 
     .select2-container--open .select2-dropdown {
         animation: selectDropdownReveal 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* Quiet upload workspace: compact, neutral, and centered on the next action. */
+    .import-template-card,
+    .import-upload-card {
+        border: 1px solid #dbe3ec !important;
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 8px 22px -20px rgba(15, 23, 42, 0.42) !important;
+    }
+
+    .import-template-card__body,
+    .import-upload-card__body {
+        padding: 1rem !important;
+    }
+
+    .import-template-card__eyebrow,
+    .import-upload-card__eyebrow {
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: #64748b;
+        font-size: 0.68rem;
+        letter-spacing: 0.08em;
+    }
+
+    .import-template-card__title,
+    .import-upload-card__title {
+        color: #172033 !important;
+        font-size: 1.05rem;
+    }
+
+    .import-template-card__title .text-primary,
+    .import-upload-card__title .text-primary {
+        color: #0b5cab !important;
+    }
+
+    .import-template-card__text,
+    .import-upload-card__subtitle {
+        color: #64748b;
+        font-size: 0.88rem;
+        line-height: 1.45;
+    }
+
+    .import-template-select .select2-container--bootstrap4 .select2-selection--single,
+    .import-upload-card__body .form-control,
+    .import-upload-card__body .select2-container--default .select2-selection--single,
+    select.form-control:not(.select2-hidden-accessible) {
+        min-height: 40px !important;
+        height: 40px !important;
+        padding: 0 0.8rem !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+        background-color: #ffffff !important;
+        box-shadow: none !important;
+        color: #334155 !important;
+        font-size: 0.88rem !important;
+        font-weight: 600 !important;
+    }
+
+    .import-upload-card__header {
+        padding: 1rem !important;
+        background: #ffffff !important;
+        border-bottom: 1px solid #e5eaf0 !important;
+    }
+
+    .import-upload-card__badge {
+        padding: 0.38rem 0.6rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 5px;
+        background: #f8fafc;
+        color: #475569;
+        font-size: 0.7rem;
+        box-shadow: none;
+    }
+
+    .import-report-summary {
+        gap: 0.6rem;
+        margin-bottom: 1rem !important;
+    }
+
+    .import-report-summary__item,
+    .import-report-summary__item:nth-child(n) {
+        padding: 0.7rem 0.8rem;
+        border: 1px solid #e2e8f0;
+        border-left: 3px solid #94a3b8;
+        border-radius: 6px;
+        background: #f8fafc;
+        box-shadow: none;
+        transform: none;
+    }
+
+    .import-report-summary__item:nth-child(1) {
+        border-left-color: #0b5cab;
+    }
+
+    .import-report-summary__item:hover {
+        box-shadow: none;
+        transform: none;
+    }
+
+    .import-report-summary__item .import-report-summary__label,
+    .import-report-summary__item:nth-child(n) .import-report-summary__label {
+        color: #64748b;
+        font-size: 0.64rem;
+    }
+
+    .import-report-summary__item strong {
+        color: #1e293b;
+        font-size: 0.88rem;
+    }
+
+    .import-upload-card__body .form-group label {
+        margin-bottom: 0.4rem;
+        color: #334155 !important;
+        font-size: 0.82rem;
+    }
+
+    .import-dropzone {
+        min-height: 170px;
+        margin-top: 0;
+        padding: 1.1rem;
+        border: 1px dashed #94a3b8 !important;
+        border-radius: 8px !important;
+        background: #f8fafc;
+        box-shadow: none;
+    }
+
+    .import-dropzone:hover,
+    .import-dropzone:focus,
+    .import-dropzone.is-dragover {
+        transform: none;
+        border-color: #0b5cab !important;
+        background: #f1f5f9;
+        box-shadow: 0 0 0 3px rgba(11, 92, 171, 0.1);
+    }
+
+    .import-dropzone__icon,
+    .import-dropzone.has-file .import-dropzone__icon {
+        width: 46px;
+        height: 46px;
+        border-radius: 6px;
+        background: #e2e8f0;
+        color: #0b5cab !important;
+    }
+
+    .import-dropzone__title {
+        font-size: 0.98rem;
+    }
+
+    .import-dropzone__text {
+        font-size: 0.82rem;
+    }
+
+    .import-dropzone__hint {
+        margin-top: 0.6rem;
+    }
+
+    .import-dropzone__hint span {
+        min-height: 24px;
+        padding: 0.2rem 0.45rem;
+        border-radius: 4px;
+        background: #ffffff;
+        font-size: 0.68rem;
+    }
+
+    .import-file-preview {
+        padding: 0.7rem 0.8rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px !important;
+        background: #f8fafc;
+        box-shadow: none;
+    }
+
+    .import-file-preview__icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 5px;
+        background: #e2e8f0;
+        color: #0b5cab;
+    }
+
+    .import-file-preview__clear {
+        padding: 0.45rem 0.55rem;
+        border-radius: 5px;
+        background: #f1f5f9;
+        color: #475569;
+    }
+
+    .import-upload-card__footer {
+        padding: 0 1rem 1rem;
+        background: #ffffff;
+    }
+
+    .import-template-button,
+    .import-upload-card__submit,
+    .import-upload-card__submit.btn-primary,
+    .import-upload-card__submit.btn-success,
+    .import-upload-card__submit.btn-info {
+        min-height: 40px;
+        padding: 0.5rem 0.85rem;
+        border: 1px solid #0b5cab;
+        border-radius: 6px;
+        background: #0b5cab;
+        box-shadow: none;
+        font-size: 0.82rem;
+    }
+
+    .import-template-button:hover,
+    .import-upload-card__submit.btn-primary:hover,
+    .import-upload-card__submit.btn-success:hover,
+    .import-upload-card__submit.btn-info:hover {
+        transform: none;
+        border-color: #084a88;
+        background: #084a88;
+        box-shadow: none;
+    }
+
+    .swal-modern-popup {
+        width: min(520px, calc(100vw - 24px)) !important;
+        padding: 0.95rem !important;
+        border-color: #dbe3ec;
+        border-radius: 8px;
+        box-shadow: 0 24px 56px -30px rgba(15, 23, 42, 0.44);
+    }
+
+    .swal-modern-title {
+        margin: 0.15rem 0 0.3rem;
+        color: #172033;
+        font-size: 1.35rem;
+        letter-spacing: 0;
+    }
+
+    .swal-import-shell,
+    .swal-import-head {
+        gap: 0.55rem;
+    }
+
+    .swal-import-desc {
+        font-size: 0.84rem;
+        line-height: 1.4;
+    }
+
+    .swal-import-card,
+    .swal-import-metrics,
+    .swal-import-stat {
+        padding: 0.75rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        background: #f8fafc;
+        box-shadow: none;
+    }
+
+    .swal-import-progress__bar,
+    .swal-modern-confirm {
+        background: #0b5cab;
+        animation: none;
+    }
+
+    .swal-import-stats--compact {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+
+    .swal-import-stats--compact .swal-import-stat {
+        min-height: 68px;
+    }
+
+    /* Workflow layout: one clear path from report selection to file preview. */
+    .import-page {
+        display: grid;
+        gap: 0.85rem;
+    }
+
+    .import-page .import-template-bar,
+    .import-page .import-workspace {
+        margin: 0 !important;
+    }
+
+    .import-template-bar .import-template-card__body {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .import-template-bar__intro {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        min-width: 0;
+    }
+
+    .import-template-bar__icon {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 5px;
+        background: #e2e8f0;
+        color: #0b5cab;
+        flex: 0 0 auto;
+    }
+
+    .import-template-bar__title {
+        color: #1e293b;
+        font-size: 0.84rem;
+        font-weight: 700;
+    }
+
+    .import-template-bar .import-template-card__text {
+        margin-top: 0.1rem;
+        font-size: 0.76rem;
+    }
+
+    .import-template-bar .import-template-actions {
+        flex: 0 1 440px;
+        width: 100%;
+    }
+
+    .import-workspace {
+        overflow: hidden;
+    }
+
+    .import-workspace .import-upload-card__header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(330px, 0.9fr);
+        align-items: end;
+        gap: 1.25rem;
+    }
+
+    .import-workspace__context {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        border-top: 1px solid #e5eaf0;
+        border-left: 1px solid #e5eaf0;
+    }
+
+    .import-workspace__context-item {
+        min-width: 0;
+        padding: 0.45rem 0.6rem;
+        border-right: 1px solid #e5eaf0;
+        border-bottom: 1px solid #e5eaf0;
+        background: #ffffff;
+    }
+
+    .import-workspace__context-item span {
+        display: block;
+        margin-bottom: 0.15rem;
+        color: #64748b;
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    .import-workspace__context-item strong {
+        display: block;
+        overflow: hidden;
+        color: #334155;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .import-workspace__context-item--report strong {
+        color: #0b5cab;
+    }
+
+    .import-workflow {
+        display: grid;
+        grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+        min-height: 300px;
+    }
+
+    .import-workflow__section {
+        min-width: 0;
+        padding: 1rem;
+    }
+
+    .import-workflow__section--details {
+        border-right: 1px solid #e5eaf0;
+    }
+
+    .import-workflow__section--file {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .import-workflow__heading {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.6rem;
+        margin-bottom: 1rem;
+    }
+
+    .import-workflow__heading h6 {
+        margin: 0;
+        color: #1e293b;
+        font-size: 0.9rem;
+        font-weight: 700;
+    }
+
+    .import-workflow__heading p {
+        margin: 0.12rem 0 0;
+        color: #64748b;
+        font-size: 0.78rem;
+        line-height: 1.4;
+    }
+
+    .import-workflow__step {
+        display: inline-grid;
+        width: 22px;
+        height: 22px;
+        place-items: center;
+        border-radius: 50%;
+        background: #0b5cab;
+        color: #ffffff;
+        font-size: 0.7rem;
+        font-weight: 800;
+        flex: 0 0 auto;
+    }
+
+    .import-workflow__section--details .form-group {
+        margin-bottom: 1rem !important;
+    }
+
+    .import-workflow__section--file .import-dropzone {
+        flex: 1 1 auto;
+    }
+
+    .import-workspace .import-upload-card__footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        min-height: 60px;
+        border-top: 1px solid #e5eaf0;
+    }
+
+    .import-workflow__footer-note {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #64748b;
+        font-size: 0.76rem;
+        line-height: 1.35;
+    }
+
+    .import-workflow__footer-note .import-workflow__step {
+        width: 20px;
+        height: 20px;
+        background: #64748b;
+        font-size: 0.64rem;
+    }
+
+    @media (max-width: 767.98px) {
+        .import-template-card__body,
+        .import-upload-card__body,
+        .import-upload-card__header {
+            padding: 0.85rem !important;
+        }
+
+        .import-upload-card__footer {
+            padding: 0 0.85rem 0.85rem;
+        }
+
+        .import-upload-card__badge,
+        .import-template-button,
+        .import-upload-card__submit {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .import-template-bar .import-template-card__body,
+        .import-workspace .import-upload-card__header,
+        .import-workspace .import-upload-card__footer {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .import-template-bar .import-template-actions {
+            flex-basis: auto;
+        }
+
+        .import-template-bar .import-template-select {
+            flex: 1 1 100%;
+            width: 100%;
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .import-template-bar .import-template-select .select2-container {
+            width: 100% !important;
+            min-width: 0;
+        }
+
+        .import-workspace__context,
+        .import-workflow {
+            grid-template-columns: 1fr;
+        }
+
+        .import-workflow__section--details {
+            border-right: 0;
+            border-bottom: 1px solid #e5eaf0;
+        }
+
+        .import-workspace .import-upload-card__footer {
+            align-items: stretch;
+        }
     }
 </style>
 

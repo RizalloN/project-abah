@@ -4,7 +4,7 @@
 
 @section('content')
 <div class="container-fluid pt-3 pb-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="job-page-heading d-flex justify-content-between align-items-center mb-3">
         <h2 class="h4 font-weight-bold text-dark mb-0"><i class="fas fa-tasks text-primary mr-2"></i> Job Management</h2>
         <span class="text-muted small">Monitor realtime queue import & snapshot.</span>
     </div>
@@ -25,9 +25,9 @@
         data-purge-queue-jobs-url="{{ route('job-management.queue.purge') }}">
 
         <!-- Toolbar & Stats -->
-        <div class="card-header bg-white border-bottom py-3 px-4">
+        <div class="card-header bg-white border-bottom py-3 px-4 job-management-toolbar">
             <div class="row align-items-center">
-                <div class="col-lg-5 d-flex justify-content-between pr-4 border-right">
+                <div class="col-lg-5 d-flex justify-content-between pr-4 border-right job-summary-grid">
                     <div class="text-center">
                         <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Aktif</div>
                         <div class="h5 mb-0 text-primary font-weight-bold" id="summary-active">0</div>
@@ -45,8 +45,8 @@
                         <div class="h5 mb-0 text-info font-weight-bold" id="summary-today">0</div>
                     </div>
                 </div>
-                <div class="col-lg-7 pl-4">
-                    <div class="d-flex align-items-center justify-content-end flex-wrap gap-2">
+                <div class="col-lg-7 pl-4 job-filter-panel">
+                    <div class="d-flex align-items-center justify-content-end flex-wrap gap-2 job-filter-controls">
                         <select id="job-filter-status" class="form-control form-control-sm" style="width: auto; border-radius: 6px;">
                             <option value="all">Semua Status</option>
                             <option value="queued">Queued</option>
@@ -303,5 +303,76 @@ document.addEventListener('DOMContentLoaded', function () {
 .job-page-btn.is-active { background: #2563eb; color: #fff; border-color: #2563eb; }
 
 .raw-queue-table-wrap { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #fff; }
+
+@media (max-width: 767.98px) {
+    .job-page-heading {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.25rem;
+        align-items: start !important;
+    }
+
+    .job-page-heading h2,
+    .job-page-heading > span {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .job-management-toolbar {
+        padding: 0.85rem !important;
+    }
+
+    .job-summary-grid {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+        padding-right: 0 !important;
+        border-right: 0 !important;
+    }
+
+    .job-summary-grid > div {
+        min-width: 0;
+        padding: 0.45rem 0.35rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        background: #f8fafc;
+    }
+
+    .job-filter-panel {
+        padding-left: 0 !important;
+        margin-top: 0.75rem;
+    }
+
+    .job-filter-controls {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+        justify-content: stretch !important;
+    }
+
+    #job-filter-status,
+    #job-filter-search {
+        grid-column: 1 / -1;
+        width: 100% !important;
+        min-width: 0;
+        margin: 0 !important;
+    }
+
+    .job-filter-controls .custom-control {
+        min-width: 0;
+        margin: 0 !important;
+    }
+
+    #btn-job-refresh,
+    #btn-job-clear {
+        width: 100%;
+        min-height: 38px;
+        margin: 0 !important;
+    }
+
+    #job-management-card > .card-body {
+        padding: 0.85rem !important;
+    }
+}
 </style>
 @endsection

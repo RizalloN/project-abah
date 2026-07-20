@@ -60,12 +60,44 @@ class AlmafactsDashboardController extends Controller
         'npl' => '41. NPL (%)',
         'lar' => '40. LAR (%)',
     ];
-    private const KPI_SPREADSHEET_ID = '1KgXJ4fi9u4-mJyaZADXF0cM9wJnVlh0f7sQBZeR8fLY';
-    private const KPI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1KgXJ4fi9u4-mJyaZADXF0cM9wJnVlh0f7sQBZeR8fLY/edit?usp=sharing';
-    private const KPI_RM_MIKRO_SPREADSHEET_ID = '1v1loife4UzSSsdJ9yGYl3SSuKtk_16CwtlKMj2f8dTM';
-    private const KPI_RM_MIKRO_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1v1loife4UzSSsdJ9yGYl3SSuKtk_16CwtlKMj2f8dTM/edit?usp=sharing';
-    private const KPI_MANTRI_SPREADSHEET_ID = '1qiek9zPfsd7NSGSSWoQQZAhIFD9hNnfoeLvQEoz1few';
-    private const KPI_MANTRI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1qiek9zPfsd7NSGSSWoQQZAhIFD9hNnfoeLvQEoz1few/edit?usp=sharing';
+    private const FINANCIAL_CALCULATION_LABELS = [
+        'interest_income' => '01. Pendapatan Bunga',
+        'assets_spread' => '03. Assets Spread',
+        'interest_expense' => '04. Beban Bunga',
+        'ftp_income' => '05. Pendapatan FTP',
+        'liabilities_spread' => '06. Liabilities Spread',
+        'contribution_margin' => '07. Contibrution Margin',
+        'fee_income' => '08. Fee & Pendapatan Lainnya',
+        'overhead_cost' => '09. Overhead Cost',
+        'ckpn_expense' => '11. Beban CKPN',
+        'profit_before_tax' => '13. Laba Sebelum Pajak',
+        'profit_after_tax' => '15. Laba Setelah Pajak',
+        'operating_income' => '16. Pendapatan Operasional',
+        'operating_expense' => '17. Beban Operasional',
+        'average_loans' => '31. Ratas Pinjaman',
+        'average_savings' => '32. Ratas Simpanan',
+        'loans' => '33. Pinjaman',
+        'savings' => '34. Simpanan',
+        'giro' => '35. Giro',
+        'tabungan' => '36. Tabungan',
+    ];
+    private const FINANCIAL_ASSET_QUALITY_SOURCE_LABELS = [
+        'loans' => '33. Pinjaman',
+        'savings' => '34. Simpanan',
+        'dpk_ratio' => '39. DPK (%)',
+        'lar_ratio' => '40. LAR (%)',
+        'npl_ratio' => '41. NPL (%)',
+    ];
+    private const KPI_SPREADSHEET_ID = '175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU';
+    private const KPI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_KA_UNIT_SPREADSHEET_ID = '1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK';
+    private const KPI_KA_UNIT_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_RM_MIKRO_SPREADSHEET_ID = '11dzu4edTyp9UFBicNDughtJ43bzvZguh';
+    private const KPI_RM_MIKRO_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/11dzu4edTyp9UFBicNDughtJ43bzvZguh/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_MANTRI_SPREADSHEET_ID = '1h7XMo46a10a3gC1f_CPtsBUT2V1PcxAE';
+    private const KPI_MANTRI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1h7XMo46a10a3gC1f_CPtsBUT2V1PcxAE/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_CONSUMER_SPREADSHEET_ID = '1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM';
+    private const KPI_CONSUMER_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
     private const KPI_LINK_TABLE = 'external_report_links';
     private const KPI_LINK_GROUP = 'almafacts_kpi';
     private const KPI_SHEETS = [
@@ -73,18 +105,22 @@ class AlmafactsDashboardController extends Controller
             'label' => 'KPI MBM',
             'title' => 'KPI MBM',
             'sheet' => 'KPI MBM',
+            'spreadsheet_id' => self::KPI_SPREADSHEET_ID,
+            'spreadsheet_url' => self::KPI_SPREADSHEET_URL,
             'icon' => 'fas fa-users-cog',
         ],
         'ka-unit' => [
             'label' => 'KPI KA Unit',
             'title' => 'KPI KA UNIT',
             'sheet' => 'KPI Kaunit',
+            'spreadsheet_id' => self::KPI_KA_UNIT_SPREADSHEET_ID,
+            'spreadsheet_url' => self::KPI_KA_UNIT_SPREADSHEET_URL,
             'icon' => 'fas fa-user-tie',
         ],
         'rm-mikro' => [
             'label' => 'KPI RM Mikro',
             'title' => 'KPI RM MIKRO',
-            'sheet' => 'rank',
+            'sheet' => 'KPI RM Mikro',
             'spreadsheet_id' => self::KPI_RM_MIKRO_SPREADSHEET_ID,
             'spreadsheet_url' => self::KPI_RM_MIKRO_SPREADSHEET_URL,
             'expected_header_any' => ['NETT DISBURSEMENT KUR', 'DEBITUR MIKRO', 'RANK'],
@@ -93,11 +129,21 @@ class AlmafactsDashboardController extends Controller
         'mantri' => [
             'label' => 'KPI Mantri',
             'title' => 'KPI MANTRI',
-            'sheet' => 'RANK KPI',
+            'sheet' => 'KPI',
             'spreadsheet_id' => self::KPI_MANTRI_SPREADSHEET_ID,
             'spreadsheet_url' => self::KPI_MANTRI_SPREADSHEET_URL,
             'expected_header_any' => ['JG', 'LAMA DI UKER', 'NETT DISBURSEMENT', 'RANK CABANG'],
             'icon' => 'fas fa-user-check',
+        ],
+        'consumer' => [
+            'label' => 'KPI Konsumer',
+            'title' => 'KPI KONSUMER',
+            'sheet' => 'KPI',
+            'spreadsheet_id' => self::KPI_CONSUMER_SPREADSHEET_ID,
+            'spreadsheet_url' => self::KPI_CONSUMER_SPREADSHEET_URL,
+            'expected_header_any' => ['SEGMEN', 'KPR', 'BRIGUNA'],
+            'split_by_segment' => true,
+            'icon' => 'fas fa-user-friends',
         ],
     ];
     private const MONTH_COLUMNS = [
@@ -214,6 +260,7 @@ class AlmafactsDashboardController extends Controller
             'headerColumns' => $payload['header_columns'] ?? [],
             'headerGroups' => $payload['header_groups'] ?? [],
             'rows' => $payload['rows'] ?? [],
+            'tableSections' => $this->kpiTableSections($payload, $selectedSheet),
             'summary' => $payload['summary'] ?? [],
             'error' => $payload['error'] ?? null,
             'fetchedAt' => $payload['fetched_at'] ?? null,
@@ -310,7 +357,7 @@ class AlmafactsDashboardController extends Controller
                 str_getcsv($line)
             );
 
-            if (collect($cells)->every(static fn (string $value): bool => $value === '')) {
+            if (collect($cells)->every(fn (string $value): bool => $this->isKpiSheetBlankDataCell($value))) {
                 continue;
             }
 
@@ -336,6 +383,7 @@ class AlmafactsDashboardController extends Controller
         $rows = array_values(array_filter(
             $rows,
             fn (array $row): bool => !$this->isKpiSheetFilterRow($row)
+                && collect($row)->contains(fn ($value): bool => !$this->isKpiSheetBlankDataCell($value))
         ));
         [$header, $secondHeader, $rows] = $this->trimKpiSheetTrailingBlankColumns($header, $secondHeader, $rows);
 
@@ -643,12 +691,50 @@ class AlmafactsDashboardController extends Controller
         }
 
         $headerTokenCount = $nonBlank->filter(static function (string $value): bool {
-            return in_array($value, ['PENCP', 'PENCAPAIAN', 'SCORE', 'BOBOT'], true)
+            return in_array($value, ['PENCP', 'PENCAPAIAN', 'SCORE', 'NILAI', 'VALUE', 'BOBOT'], true)
                 || str_contains($value, 'PENCP')
-                || str_contains($value, 'SCORE');
+                || str_contains($value, 'SCORE')
+                || str_contains($value, 'NILAI');
         })->count();
 
         return $headerTokenCount >= 2;
+    }
+
+    private function kpiTableSections(array $payload, array $sheet): array
+    {
+        $rows = array_values($payload['rows'] ?? []);
+        if (empty($sheet['split_by_segment'])) {
+            return [[
+                'key' => 'all',
+                'title' => (string) ($payload['summary']['sheet_title'] ?? $sheet['sheet'] ?? '-'),
+                'rows' => $rows,
+            ]];
+        }
+
+        $segmentIndex = collect($payload['header'] ?? [])
+            ->search(fn ($header): bool => strtoupper(trim((string) $header)) === 'SEGMEN');
+        if ($segmentIndex === false) {
+            return [[
+                'key' => 'all',
+                'title' => (string) ($payload['summary']['sheet_title'] ?? $sheet['sheet'] ?? '-'),
+                'rows' => $rows,
+            ]];
+        }
+
+        $sectionRows = ['briguna' => [], 'kpr' => []];
+        foreach ($rows as $row) {
+            $segment = strtoupper(trim((string) ($row[$segmentIndex] ?? '')));
+            if (str_contains($segment, 'BRIGUNA')) {
+                $sectionRows['briguna'][] = $row;
+            } elseif (str_contains($segment, 'KPR')) {
+                $sectionRows['kpr'][] = $row;
+            }
+        }
+
+        return [
+            ['key' => 'briguna', 'title' => 'KPI Briguna', 'rows' => $sectionRows['briguna']],
+            ['key' => 'kpr', 'title' => 'KPI KPR', 'rows' => $sectionRows['kpr']],
+        ];
     }
 
     private function kpiSheetPayloadMatches(array $parsed, array $sheet): bool
@@ -688,7 +774,7 @@ class AlmafactsDashboardController extends Controller
         $sheetName = $sheet['sheet'] ?? $sheetKey;
         $spreadsheetId = $sheet['spreadsheet_id'] ?? self::KPI_SPREADSHEET_ID;
 
-        return 'dashboard_almafacts:kpi_sheet:v6:' . $sheetKey . ':' . md5($spreadsheetId . '|' . $sheetName);
+        return 'dashboard_almafacts:kpi_sheet:v7:' . $sheetKey . ':' . md5($spreadsheetId . '|' . $sheetName);
     }
 
     private function kpiSheetConfig(string $sheetKey): array
@@ -1243,9 +1329,21 @@ class AlmafactsDashboardController extends Controller
             $almafactsPeriod = $this->resolveFinancialSourcePeriod('ssa_almafacts', 'month_day_year_of_posisi', $targetPeriod);
             $liabilities = $this->fetchFinancialAlmafactsMetrics($almafactsPeriod, $branches, $unitFilter, self::FINANCIAL_LIABILITY_LABELS);
             $pnl = $this->fetchFinancialAlmafactsMetrics($almafactsPeriod, $branches, $unitFilter, self::FINANCIAL_PNL_LABELS);
-            $profitability = $this->fetchFinancialAlmafactsMetrics($almafactsPeriod, $branches, $unitFilter, self::FINANCIAL_PROFITABILITY_LABELS, 'percent');
-            $liquidity = $this->fetchFinancialAlmafactsMetrics($almafactsPeriod, $branches, $unitFilter, self::FINANCIAL_LIQUIDITY_LABELS, 'percent');
-            $assetQuality = $this->fetchFinancialAlmafactsMetrics($almafactsPeriod, $branches, $unitFilter, self::FINANCIAL_ASSET_QUALITY_LABELS, 'percent');
+            $calculationMetrics = $this->fetchFinancialAlmafactsMetrics(
+                $almafactsPeriod,
+                $branches,
+                $unitFilter,
+                self::FINANCIAL_CALCULATION_LABELS
+            );
+            $assetQualityNominals = $this->financialAssetQualityNominals($almafactsPeriod, $branches, $unitFilter);
+            $ratios = $this->calculateFinancialRatios(
+                $calculationMetrics,
+                $assetQualityNominals,
+                $this->financialAnnualizationFactor($almafactsPeriod)
+            );
+            $profitability = $ratios['profitability'];
+            $liquidity = $ratios['liquidity'];
+            $assetQuality = $ratios['asset_quality'];
 
             $snapshots[$key] = [
                 'target_period' => $targetPeriod,
@@ -1337,6 +1435,148 @@ class AlmafactsDashboardController extends Controller
         return $values;
     }
 
+    private function financialAnnualizationFactor(?string $period): ?float
+    {
+        if (!$period) {
+            return null;
+        }
+
+        $month = (int) Carbon::parse($period)->format('n');
+
+        return $month > 0 ? 12 / $month : null;
+    }
+
+    private function financialAssetQualityNominals(?string $period, array $branches, array $unitFilter): array
+    {
+        if (!$period || !Schema::hasTable('ssa_almafacts')) {
+            return [
+                'dpk_weighted_numerator' => null,
+                'dpk_weight' => null,
+                'npl_nominal' => null,
+                'lar_nominal' => null,
+            ];
+        }
+
+        $query = DB::table('ssa_almafacts')
+            ->whereDate('month_day_year_of_posisi', $period)
+            ->whereIn('keterangan', array_values(self::FINANCIAL_ASSET_QUALITY_SOURCE_LABELS));
+
+        $this->applyFinancialFilters($query, 'kanca_konsolidasi', 'kode_unit_kerja', 'unit_kerja', $branches, $unitFilter);
+
+        $rows = $query
+            ->select('kanca_konsolidasi', 'kode_unit_kerja', 'unit_kerja', 'keterangan', 'saldo')
+            ->get();
+        $metricsByUnit = [];
+        $labelMap = array_flip(self::FINANCIAL_ASSET_QUALITY_SOURCE_LABELS);
+
+        foreach ($rows as $row) {
+            $key = implode('|', [
+                $this->normalizeUnitName((string) $row->kanca_konsolidasi),
+                trim((string) $row->kode_unit_kerja),
+                $this->normalizeUnitName((string) $row->unit_kerja),
+            ]);
+            $metric = $labelMap[(string) $row->keterangan] ?? null;
+            if ($metric !== null) {
+                $metricsByUnit[$key][$metric] = (float) $row->saldo;
+            }
+        }
+
+        $nominals = [
+            'dpk_weighted_numerator' => 0.0,
+            'dpk_weight' => 0.0,
+            'npl_nominal' => 0.0,
+            'lar_nominal' => 0.0,
+        ];
+        $hasDpk = false;
+        $hasNpl = false;
+        $hasLar = false;
+        foreach ($metricsByUnit as $metrics) {
+            $loan = $metrics['loans'] ?? null;
+            if ($loan === null || $loan <= 0) {
+                continue;
+            }
+
+            $savings = $metrics['savings'] ?? null;
+            if (array_key_exists('dpk_ratio', $metrics) && $savings !== null && $savings > 0) {
+                $nominals['dpk_weighted_numerator'] += (float) $metrics['dpk_ratio'] * $savings;
+                $nominals['dpk_weight'] += $savings;
+                $hasDpk = true;
+            }
+            if (array_key_exists('npl_ratio', $metrics)) {
+                $nominals['npl_nominal'] += max(0.0, (float) $metrics['npl_ratio']) * $loan;
+                $hasNpl = true;
+            }
+            if (array_key_exists('lar_ratio', $metrics)) {
+                $nominals['lar_nominal'] += max(0.0, (float) $metrics['lar_ratio']) * $loan;
+                $hasLar = true;
+            }
+        }
+
+        return [
+            'dpk_weighted_numerator' => $hasDpk ? $nominals['dpk_weighted_numerator'] : null,
+            'dpk_weight' => $hasDpk ? $nominals['dpk_weight'] : null,
+            'npl_nominal' => $hasNpl ? $nominals['npl_nominal'] : null,
+            'lar_nominal' => $hasLar ? $nominals['lar_nominal'] : null,
+        ];
+    }
+
+    private function calculateFinancialRatios(
+        array $current,
+        array $assetQualityNominals,
+        ?float $annualizationFactor
+    ): array {
+        $ratio = static function (?float $numerator, ?float $denominator, float $multiplier = 1.0): ?float {
+            if ($numerator === null || $denominator === null || abs($denominator) < 0.000001) {
+                return null;
+            }
+
+            return $numerator / $denominator * $multiplier;
+        };
+        $value = static fn (array $metrics, string $key): ?float => array_key_exists($key, $metrics) && $metrics[$key] !== null
+            ? (float) $metrics[$key]
+            : null;
+
+        $annualization = $annualizationFactor ?? 1.0;
+        $averageLoans = $value($current, 'average_loans');
+        $averageSavings = $value($current, 'average_savings');
+        $loans = $value($current, 'loans');
+        $savings = $value($current, 'savings');
+        $cerBase = ($value($current, 'contribution_margin') ?? 0.0) + ($value($current, 'fee_income') ?? 0.0);
+
+        return [
+            'profitability' => [
+                'yield' => $ratio($value($current, 'interest_income'), $averageLoans, $annualization),
+                'cof' => $ratio(abs($value($current, 'interest_expense') ?? 0.0), $averageSavings, $annualization),
+                'nim' => $ratio(
+                    ($value($current, 'assets_spread') ?? 0.0) + ($value($current, 'liabilities_spread') ?? 0.0),
+                    $averageLoans,
+                    $annualization
+                ),
+                'ohc' => $ratio(abs($value($current, 'overhead_cost') ?? 0.0), $averageLoans, $annualization),
+                'credit_cost' => $ratio(abs($value($current, 'ckpn_expense') ?? 0.0), $averageLoans, $annualization),
+                'roa_before_tax' => $ratio($value($current, 'profit_before_tax'), $averageLoans, $annualization),
+                'roa_after_tax' => $ratio($value($current, 'profit_after_tax'), $averageLoans, $annualization),
+                'bopo' => $ratio(abs($value($current, 'operating_expense') ?? 0.0), $value($current, 'operating_income')),
+                'cer' => $ratio(abs($value($current, 'overhead_cost') ?? 0.0), $cerBase),
+                'fee_to_income' => $ratio(
+                    $value($current, 'fee_income'),
+                    ($value($current, 'interest_income') ?? 0.0)
+                        + ($value($current, 'ftp_income') ?? 0.0)
+                        + ($value($current, 'fee_income') ?? 0.0)
+                ),
+            ],
+            'liquidity' => [
+                'ldr' => $ratio($loans, $savings),
+                'casa' => $ratio(($value($current, 'giro') ?? 0.0) + ($value($current, 'tabungan') ?? 0.0), $savings),
+            ],
+            'asset_quality' => [
+                'dpk' => $ratio($assetQualityNominals['dpk_weighted_numerator'] ?? null, $assetQualityNominals['dpk_weight'] ?? null),
+                'npl' => $ratio($assetQualityNominals['npl_nominal'] ?? null, $loans),
+                'lar' => $ratio($assetQualityNominals['lar_nominal'] ?? null, $loans),
+            ],
+        ];
+    }
+
     private function applyFinancialPercentMetricScope($query, array $branches, array $unitFilter): void
     {
         $selected = $unitFilter['selected'] ?? [];
@@ -1386,17 +1626,25 @@ class AlmafactsDashboardController extends Controller
 
         $selected = $unitFilter['selected'] ?? [];
         if ($selected !== []) {
+            $wrappedUnitCode = $this->wrapColumn($unitCodeColumn);
             $wrappedUnitName = $this->wrapColumn($unitNameColumn);
-            $query->where(function ($query) use ($selected, $wrappedBranch, $wrappedUnitName) {
+            $query->where(function ($query) use ($selected, $wrappedBranch, $wrappedUnitCode, $wrappedUnitName) {
                 foreach ($selected as $unit) {
-                    $query->orWhere(function ($query) use ($unit, $wrappedBranch, $wrappedUnitName) {
+                    $query->orWhere(function ($query) use ($unit, $wrappedBranch, $wrappedUnitCode, $wrappedUnitName) {
                         $query
                             ->where(function ($query) use ($unit, $wrappedBranch) {
                                 $normalizedBranch = $this->normalizeUnitName((string) $unit['branch']);
                                 $query
                                     ->whereRaw("UPPER(TRIM({$wrappedBranch})) = ?", [$normalizedBranch])
                                     ->orWhereRaw("UPPER(TRIM({$wrappedBranch})) LIKE ?", ['%' . $normalizedBranch . '%']);
-                            })
+                            });
+
+                        $code = trim((string) ($unit['code'] ?? ''));
+                        if ($code !== '') {
+                            $query->whereRaw("TRIM({$wrappedUnitCode}) = ?", [$code]);
+                        }
+
+                        $query
                             ->where(function ($query) use ($unit, $wrappedUnitName) {
                                 $normalizedUnit = $this->normalizeUnitName((string) $unit['name']);
                                 $query
@@ -1447,16 +1695,16 @@ class AlmafactsDashboardController extends Controller
                 'icon' => 'fas fa-file-invoice-dollar',
                 'rows' => [
                     $this->financialRow('Pendapatan Bunga', 'money', 'pnl.interest_income', $snapshots),
-                    $this->financialRow('Beban FTP', 'money', 'pnl.ftp_expense', $snapshots),
+                    $this->financialRow('Beban FTP', 'money', 'pnl.ftp_expense', $snapshots, true),
                     $this->financialRow('Assets Spread', 'money', 'pnl.assets_spread', $snapshots),
-                    $this->financialRow('Beban Bunga', 'money', 'pnl.interest_expense', $snapshots),
+                    $this->financialRow('Beban Bunga', 'money', 'pnl.interest_expense', $snapshots, true),
                     $this->financialRow('Pendapatan FTP', 'money', 'pnl.ftp_income', $snapshots),
                     $this->financialRow('Liabilities Spread', 'money', 'pnl.liabilities_spread', $snapshots),
                     $this->financialRow('Contribution Margin', 'money', 'pnl.contribution_margin', $snapshots),
                     $this->financialRow('Fee & Pendapatan Lainnya', 'money', 'pnl.fee_income', $snapshots),
-                    $this->financialRow('Overhead Cost', 'money', 'pnl.overhead_cost', $snapshots),
+                    $this->financialRow('Overhead Cost', 'money', 'pnl.overhead_cost', $snapshots, true),
                     $this->financialRow('PPOP', 'money', 'pnl.ppop', $snapshots),
-                    $this->financialRow('Biaya CKPN', 'money', 'pnl.ckpn_expense', $snapshots),
+                    $this->financialRow('Biaya CKPN', 'money', 'pnl.ckpn_expense', $snapshots, true),
                     $this->financialRow('Adj. Pendapatan / Beban', 'money', 'pnl.other_income_expense', $snapshots),
                     $this->financialRow('Laba Sebelum Pajak', 'money', 'pnl.profit_before_tax', $snapshots),
                     $this->financialRow('Beban Pajak', 'money', 'pnl.tax_expense', $snapshots),
@@ -1468,14 +1716,15 @@ class AlmafactsDashboardController extends Controller
                 'icon' => 'fas fa-chart-line',
                 'rows' => [
                     $this->financialRow('Yield', 'percent', 'profitability.yield', $snapshots),
-                    $this->financialRow('COF', 'percent', 'profitability.cof', $snapshots),
+                    $this->financialRow('COF', 'percent', 'profitability.cof', $snapshots, true),
                     $this->financialRow('NIM', 'percent', 'profitability.nim', $snapshots),
-                    $this->financialRow('OHC', 'percent', 'profitability.ohc', $snapshots, false, true),
+                    $this->financialRow('OHC', 'percent', 'profitability.ohc', $snapshots, true, true),
                     $this->financialRow('Credit Cost', 'percent', 'profitability.credit_cost', $snapshots),
                     $this->financialRow('ROA before Tax', 'percent', 'profitability.roa_before_tax', $snapshots),
                     $this->financialRow('ROA after Tax', 'percent', 'profitability.roa_after_tax', $snapshots),
-                    $this->financialRow('BOPO', 'percent', 'profitability.bopo', $snapshots),
+                    $this->financialRow('BOPO', 'percent', 'profitability.bopo', $snapshots, true),
                     $this->financialRow('CER', 'percent', 'profitability.cer', $snapshots),
+                    $this->financialRow('Fee to Income', 'percent', 'profitability.fee_to_income', $snapshots),
                 ],
             ],
             [

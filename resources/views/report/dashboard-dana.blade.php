@@ -602,53 +602,224 @@
         border-radius: 0 !important;
     }
 
-    /* Modernized Classic Excel Table Grid styling - BRI Corporate Color Scheme */
-    .dana-dashboard .dana-table thead th,
-    .dana-dashboard .dana-table thead .group-position,
-    .dana-dashboard .dana-table thead .group-delta,
-    .dana-dashboard .dana-table thead .group-rka {
-        background: linear-gradient(180deg, #0857c3 0%, #06469c 100%) !important;
-        border: 1px solid #1e40af !important;
+    /* Modernized Sleek Table Grid styling - BRI Corporate Color Scheme */
+    .dana-dashboard .dana-table {
+        border-collapse: separate !important;
+        border-spacing: 0 !important;
+        border: none !important;
+    }
+
+    .dana-dashboard .dana-table thead th {
+        background: #0857c3 !important; /* Biru Nusantara */
         color: #ffffff !important;
-        font-size: 0.7rem !important;
+        font-size: 0.72rem !important;
         font-weight: 700 !important;
-        letter-spacing: 0.04em !important;
+        letter-spacing: 0.05em !important;
         text-transform: uppercase !important;
-        padding: 0.5rem 0.3rem !important;
+        padding: 0.65rem 0.5rem !important;
+        border: none !important;
+        border-bottom: 2px solid #06469c !important;
+        text-align: center !important;
+    }
+
+    /* Header column group dividers (semi-transparent white) */
+    .dana-dashboard .dana-table thead tr.group-row th:nth-child(4),
+    .dana-dashboard .dana-table thead tr.group-row th:nth-child(5),
+    .dana-dashboard .dana-table thead tr:not(.group-row) th:nth-child(4),
+    .dana-dashboard .dana-table thead tr:not(.group-row) th:nth-child(6) {
+        border-left: 1px solid rgba(255, 255, 255, 0.18) !important;
     }
 
     .dana-dashboard .dana-table tbody td {
-        border: 1px solid #cbd5e1 !important;
-        background-clip: padding-box;
-        padding: 0.4rem 0.5rem !important;
+        border: none !important;
+        border-bottom: 1px solid #f1f5f9 !important; /* Very soft bottom border, no vertical borders */
+        padding: 0.55rem 0.65rem !important;
         font-size: 0.72rem !important;
         font-weight: 500 !important;
+        background: #ffffff;
+        color: #334155 !important;
+        transition: all 0.2s ease;
     }
 
-    .dana-dashboard .subtotal-row,
-    .dana-dashboard .subtotal-row td {
-        background: #eef6ff !important;
+    /* Body column group dividers (subtle grey) */
+    .dana-dashboard .dana-table tbody tr:not(.grandtotal-row) td:nth-child(6),
+    .dana-dashboard .dana-table tbody tr:not(.grandtotal-row) td:nth-child(8) {
+        border-left: 1.5px solid #e2e8f0 !important;
+    }
+
+    /* Elegant row hover effect */
+    .dana-dashboard .dana-table tbody tr:not(.subtotal-row):not(.grandtotal-row):hover td {
+        background-color: #f8fafc !important;
         color: #0857c3 !important;
-        font-weight: 700 !important;
-        border-color: #cfe0f4 !important;
     }
 
-    .dana-dashboard .grandtotal-row,
-    .dana-dashboard .grandtotal-row td {
-        background: linear-gradient(90deg, #0857c3 0%, #06469c 100%) !important;
+    /* Modern Subtotal Rows (Total per Cabang) */
+    .dana-dashboard .subtotal-row td {
+        background: #eef6ff !important; /* Soft accent blue tint */
+        color: #0857c3 !important;
+        font-weight: 800 !important;
+        border-top: 1.5px solid #b9d5fd !important;
+        border-bottom: 2px solid #b9d5fd !important;
+    }
+
+    /* Premium Grand Total Row */
+    .dana-dashboard .dana-table tbody tr.grandtotal-row td {
+        background: #0b1a30 !important; /* Deep Premium Navy */
         color: #ffffff !important;
-        font-weight: 700 !important;
+        font-weight: 800 !important;
         font-size: 0.8rem !important;
-        border-color: #1e40af !important;
+        padding: 0.85rem 0.65rem !important;
+        border: none !important;
+        border-top: 3px double #3b82f6 !important; /* Distinct blue double border */
     }
 
-    .dana-dashboard .sticky-col,
+    .dana-dashboard .dana-table tbody tr.grandtotal-row td.text-pos {
+        color: #34d399 !important; /* Soft bright green for dark bg */
+    }
+
+    .dana-dashboard .dana-table tbody tr.grandtotal-row td.text-neg {
+        color: #f87171 !important; /* Soft bright red for dark bg */
+    }
+
+    .dana-dashboard .dana-table tbody tr.grandtotal-row td:nth-child(6),
+    .dana-dashboard .dana-table tbody tr.grandtotal-row td:nth-child(8) {
+        border-left: 1px solid rgba(255, 255, 255, 0.15) !important;
+    }
+
+    /* Sticky branch column styling with sleek left accent bar and soft grey-blue BG */
     .dana-dashboard .branch-cell {
-        border-color: #cbd5e1 !important;
+        background: #f8fafc !important;
+        font-weight: 800 !important;
+        color: #0857c3 !important;
+        border-left: 4px solid #0857c3 !important; /* Primary blue left bar */
+        border-right: 1.5px solid #cbd5e1 !important;
+        box-shadow: 4px 0 10px rgba(8, 87, 195, 0.03) !important;
+        text-align: center !important;
+        vertical-align: middle !important;
+    }
+
+    .dana-dashboard .subtotal-row .branch-cell {
+        background: #f8fafc !important;
+    }
+
+    .dana-dashboard .dana-table tbody tr.grandtotal-row .branch-cell {
+        background: #0b1a30 !important;
+        color: #ffffff !important;
+        border-left: 4px solid #3b82f6 !important;
+        border-right: 1.5px solid #1e3a8a !important;
     }
 
     .text-pos { color: #047857 !important; }
     .text-neg { color: #b91c1c !important; }
+
+    /* Collapsible Filter Bar styles for Mobile & Tablet */
+    .dana-filter-shell {
+        position: relative;
+        z-index: 100;
+        margin-bottom: 2.5rem;
+    }
+
+    .dana-filter-mobile-toggle {
+        display: none;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+    }
+
+    .btn-filter-toggle {
+        background: transparent;
+        border: none;
+        padding: 0.65rem 0.95rem;
+        width: 100%;
+        text-align: left;
+        color: #0f4c81; /* --dana-primary */
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .btn-filter-toggle:focus {
+        outline: none;
+        box-shadow: none;
+    }
+
+    .btn-filter-toggle .toggle-arrow-icon {
+        transition: transform 0.2s ease;
+        color: #94a3b8;
+    }
+
+    .dana-filter-shell.is-open .toggle-arrow-icon {
+        transform: rotate(180deg);
+    }
+
+    .active-filters-badge {
+        font-size: 0.75rem;
+        color: #64748b;
+        font-weight: 500;
+        margin-left: auto;
+        margin-right: 0.5rem;
+    }
+
+    @media (max-width: 1399.98px) {
+        .dana-hero {
+            padding: 0.75rem 1rem !important;
+            margin-bottom: 1rem !important;
+        }
+        .dana-hero h1 {
+            font-size: 1.15rem !important;
+        }
+        .dana-container {
+            padding: 0 0.75rem !important;
+        }
+        .dana-filter-shell {
+            margin-bottom: 1rem !important;
+        }
+
+        .dana-filter-mobile-toggle {
+            display: flex !important;
+        }
+
+        .dana-dashboard .dana-filter-bar {
+            display: none !important;
+            flex-direction: column !important;
+            align-items: stretch !important;
+            gap: 1rem !important;
+            padding: 1.25rem !important;
+            margin-bottom: 0 !important;
+            border-top: none !important;
+            border-left: 1px solid #e2e8f0 !important;
+            border-right: 1px solid #e2e8f0 !important;
+            border-bottom: 1px solid #e2e8f0 !important;
+            border-radius: 0 0 12px 12px !important;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.02) !important;
+            background: #ffffff !important;
+        }
+
+        .dana-filter-shell.is-open .dana-filter-bar {
+            display: flex !important;
+        }
+
+        .dana-filter-shell.is-open .dana-filter-mobile-toggle {
+            border-bottom: 1px solid #f1f5f9;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .filter-item {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 0 !important;
+        }
+
+        .dana-dashboard .btn-dana-refresh {
+            width: 100% !important;
+            height: 42px !important;
+            margin-top: 0.5rem;
+        }
+    }
 
 </style>
 
@@ -665,77 +836,86 @@
     </div>
 
     <div class="dana-container">
-        <div class="dana-filter-bar animate-reveal stagger-3">
-            <div class="filter-item">
-                <label class="filter-label">Cabang</label>
-                <div class="dana-dropdown" data-dana-dropdown="cabang">
-                    <i class="fas fa-building dana-filter-icon"></i>
-                    <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="cabang">
-                        <span class="dana-dropdown-text">Pilih Cabang</span>
-                        <i class="fas fa-chevron-down small opacity-50"></i>
-                    </button>
-                    <div class="dana-dropdown-menu" data-dana-dropdown-menu="cabang"></div>
-                    <select id="filterCabang" class="d-none">
-                        @foreach($branches as $value => $label)
-                            <option value="{{ $value }}" {{ ($selectedBranch ?? 'area6') == $value ? 'selected' : '' }}>{{ strtoupper($label) }}</option>
-                        @endforeach
-                    </select>
-                </div>
+        <div class="dana-filter-shell animate-reveal stagger-3">
+            <div class="dana-filter-mobile-toggle">
+                <button type="button" class="btn btn-filter-toggle d-flex align-items-center justify-content-between w-100" id="btn-toggle-filters">
+                    <span class="btn-toggle-text text-truncate font-weight-bold"><i class="fas fa-sliders-h mr-2"></i> FILTER DATA</span>
+                    <span class="active-filters-badge text-truncate text-muted small" id="filter-summary-badge">Area 6</span>
+                    <i class="fas fa-chevron-down toggle-arrow-icon ml-2"></i>
+                </button>
             </div>
-            <div class="filter-item">
-                <label class="filter-label">Periode Data</label>
-                <div class="dana-dropdown" data-dana-dropdown="periode">
-                    <i class="fas fa-calendar-alt dana-filter-icon"></i>
-                    <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="periode">
-                        <span class="dana-dropdown-text">Pilih Periode</span>
-                        <i class="fas fa-chevron-down small opacity-50"></i>
-                    </button>
-                    <div class="dana-dropdown-menu" data-dana-dropdown-menu="periode"></div>
-                    <select id="filterPeriode" class="d-none">
-                        @foreach($periods as $p)
-                            <option value="{{ $p }}" {{ $selectedPeriod == $p ? 'selected' : '' }}>{{ $p }}</option>
-                        @endforeach
-                    </select>
+            <div class="dana-filter-bar">
+                <div class="filter-item">
+                    <label class="filter-label">Cabang</label>
+                    <div class="dana-dropdown" data-dana-dropdown="cabang">
+                        <i class="fas fa-building dana-filter-icon"></i>
+                        <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="cabang">
+                            <span class="dana-dropdown-text">Pilih Cabang</span>
+                            <i class="fas fa-chevron-down small opacity-50"></i>
+                        </button>
+                        <div class="dana-dropdown-menu" data-dana-dropdown-menu="cabang"></div>
+                        <select id="filterCabang" class="d-none">
+                            @foreach($branches as $value => $label)
+                                <option value="{{ $value }}" {{ ($selectedBranch ?? 'area6') == $value ? 'selected' : '' }}>{{ strtoupper($label) }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                 </div>
-            </div>
-            <div class="filter-item">
-                <label class="filter-label">Periode RKA</label>
-                <div class="dana-dropdown" data-dana-dropdown="rka">
-                    <i class="fas fa-bullseye dana-filter-icon"></i>
-                    <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="rka">
-                        <span class="dana-dropdown-text">Pilih RKA</span>
-                        <i class="fas fa-chevron-down small opacity-50"></i>
-                    </button>
-                    <div class="dana-dropdown-menu" data-dana-dropdown-menu="rka"></div>
-                    <select id="filterRka" class="d-none">
-                        @foreach($rkaPeriods as $p)
-                            <option value="{{ $p }}" {{ $selectedRka == $p ? 'selected' : '' }}>
-                                {{ strtoupper(\Carbon\Carbon::parse($p)->translatedFormat('F Y')) }}
-                            </option>
-                        @endforeach
-                    </select>
+                <div class="filter-item">
+                    <label class="filter-label">Periode Data</label>
+                    <div class="dana-dropdown" data-dana-dropdown="periode">
+                        <i class="fas fa-calendar-alt dana-filter-icon"></i>
+                        <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="periode">
+                            <span class="dana-dropdown-text">Pilih Periode</span>
+                            <i class="fas fa-chevron-down small opacity-50"></i>
+                        </button>
+                        <div class="dana-dropdown-menu" data-dana-dropdown-menu="periode"></div>
+                        <select id="filterPeriode" class="d-none">
+                            @foreach($periods as $p)
+                                <option value="{{ $p }}" {{ $selectedPeriod == $p ? 'selected' : '' }}>{{ $p }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                 </div>
-            </div>
-            <div class="filter-item">
-                <label class="filter-label">Segmentasi</label>
-                <div class="dana-dropdown" data-dana-dropdown="kategori">
-                    <i class="fas fa-layer-group dana-filter-icon"></i>
-                    <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="kategori">
-                        <span class="dana-dropdown-text">Pilih Segmen</span>
-                        <i class="fas fa-chevron-down small opacity-50"></i>
-                    </button>
-                    <div class="dana-dropdown-menu" data-dana-dropdown-menu="kategori"></div>
-                    <select id="filterKategori" class="d-none">
-                        <option value="all">SEMUA SEGMEN</option>
-                        @foreach($categories as $c)
-                            <option value="{{ $c }}" {{ $selectedCategory == $c ? 'selected' : '' }}>{{ strtoupper($c) }}</option>
-                        @endforeach
-                    </select>
+                <div class="filter-item">
+                    <label class="filter-label">Periode RKA</label>
+                    <div class="dana-dropdown" data-dana-dropdown="rka">
+                        <i class="fas fa-bullseye dana-filter-icon"></i>
+                        <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="rka">
+                            <span class="dana-dropdown-text">Pilih RKA</span>
+                            <i class="fas fa-chevron-down small opacity-50"></i>
+                        </button>
+                        <div class="dana-dropdown-menu" data-dana-dropdown-menu="rka"></div>
+                        <select id="filterRka" class="d-none">
+                            @foreach($rkaPeriods as $p)
+                                <option value="{{ $p }}" {{ $selectedRka == $p ? 'selected' : '' }}>
+                                    {{ strtoupper(\Carbon\Carbon::parse($p)->translatedFormat('F Y')) }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
                 </div>
+                <div class="filter-item">
+                    <label class="filter-label">Segmentasi</label>
+                    <div class="dana-dropdown" data-dana-dropdown="kategori">
+                        <i class="fas fa-layer-group dana-filter-icon"></i>
+                        <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="kategori">
+                            <span class="dana-dropdown-text">Pilih Segmen</span>
+                            <i class="fas fa-chevron-down small opacity-50"></i>
+                        </button>
+                        <div class="dana-dropdown-menu" data-dana-dropdown-menu="kategori"></div>
+                        <select id="filterKategori" class="d-none">
+                            <option value="all">SEMUA SEGMEN</option>
+                            @foreach($categories as $c)
+                                <option value="{{ $c }}" {{ $selectedCategory == $c ? 'selected' : '' }}>{{ strtoupper($c) }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <button id="btnRefresh" class="btn-dana-refresh">
+                    <i class="fas fa-sync-alt"></i> Tampilkan
+                </button>
             </div>
-            <button id="btnRefresh" class="btn-dana-refresh">
-                <i class="fas fa-sync-alt"></i> Tampilkan
-            </button>
         </div>
 
         <div class="dana-card">
@@ -753,8 +933,8 @@
                             <tr class="group-row">
                                 <th rowspan="2" class="sticky-col" width="135" style="left: 0; z-index: 21;" id="headerScope">Kantor Cabang</th>
                                 <th rowspan="2" class="text-center" width="140">Kategori</th>
-                                <th colspan="3" class="text-center border-bottom group-position">Posisi Saldo (Rp)</th>
-                                <th colspan="2" class="text-center border-bottom border-left group-delta">Delta Posisi</th>
+                                <th colspan="3" class="text-center border-bottom group-position">Posisi Saldo (Rp Juta)</th>
+                                <th colspan="2" class="text-center border-bottom border-left group-delta">Delta Posisi (Rp Juta)</th>
                                 <th colspan="2" class="text-center border-bottom border-left group-rka">Performa RKA</th>
                             </tr>
                             <tr>
@@ -763,7 +943,7 @@
                                 <th class="text-right group-position" id="headerSelectedDate">Posisi</th>
                                 <th class="text-right border-left group-delta">YTD</th>
                                 <th class="text-right group-delta">MTD</th>
-                                <th class="text-right border-left group-rka">Rp</th>
+                                <th class="text-right border-left group-rka">Rp Juta</th>
                                 <th class="text-center group-rka">%</th>
                             </tr>
                         </thead>
@@ -813,6 +993,36 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         };
 
+        const updateFilterSummary = function () {
+            const cabangText = document.querySelector('[data-dana-dropdown-toggle="cabang"] .dana-dropdown-text')?.innerText || 'Pilih Cabang';
+            const periodeText = document.querySelector('[data-dana-dropdown-toggle="periode"] .dana-dropdown-text')?.innerText || 'Pilih Periode';
+            const rkaText = document.querySelector('[data-dana-dropdown-toggle="rka"] .dana-dropdown-text')?.innerText || 'Pilih RKA';
+            const kategoriText = document.querySelector('[data-dana-dropdown-toggle="kategori"] .dana-dropdown-text')?.innerText || 'Pilih Segmen';
+            
+            const summarySpan = document.getElementById('filter-summary-badge');
+            if (summarySpan) {
+                let summaryParts = [];
+                if (cabangText && cabangText !== 'Pilih Cabang') {
+                    summaryParts.push(cabangText);
+                }
+                if (kategoriText && kategoriText !== 'SEMUA SEGMEN' && kategoriText !== 'Pilih Segmen') {
+                    summaryParts.push(kategoriText);
+                }
+                if (periodeText && periodeText !== 'Pilih Periode') {
+                    summaryParts.push(periodeText);
+                }
+                if (rkaText && rkaText !== 'Pilih RKA') {
+                    summaryParts.push('RKA: ' + rkaText.split(' ')[0]);
+                }
+                
+                if (summaryParts.length === 0) {
+                    summarySpan.innerText = 'Area 6';
+                } else {
+                    summarySpan.innerText = summaryParts.join(' | ');
+                }
+            }
+        };
+
         const initDanaDropdowns = () => {
             Object.keys(dropdowns).forEach(key => {
                 const d = dropdowns[key];
@@ -833,6 +1043,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     const activeOpt = options.find(o => o.selected);
                     d.toggle.querySelector('.dana-dropdown-text').textContent = activeOpt ? activeOpt.text : 'Pilih...';
+                    
+                    // Update filter summary badge
+                    updateFilterSummary();
                 };
 
                 updateMenu();
@@ -861,8 +1074,23 @@ document.addEventListener('DOMContentLoaded', function() {
 
         initDanaDropdowns();
 
+        const toggleBtn = document.getElementById('btn-toggle-filters');
+        const filterShell = document.querySelector('.dana-filter-shell');
+        if (toggleBtn && filterShell) {
+            toggleBtn.addEventListener('click', function () {
+                filterShell.classList.toggle('is-open');
+                const isOpen = filterShell.classList.contains('is-open');
+                const toggleText = toggleBtn.querySelector('.btn-toggle-text');
+                if (toggleText) {
+                    toggleText.innerHTML = isOpen 
+                        ? '<i class="fas fa-times mr-2"></i> SEMBUNYIKAN' 
+                        : '<i class="fas fa-sliders-h mr-2"></i> FILTER DATA';
+                }
+            });
+        }
+
         const formatMoney = (val) => {
-            const num = parseFloat(val) || 0;
+            const num = (parseFloat(val) || 0) / 1000000;
             const formatted = new Intl.NumberFormat('id-ID', {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 0
@@ -920,8 +1148,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 $('#headerYtd').text(res.header_dates.ytd);
                 $('#headerMtd').text(res.header_dates.mtd);
                 const isBranchMode = res.scope === 'branch';
+                const isUnitScope = res.scope_dimension === 'unit_kerja';
+                const isMixedScope = res.scope_dimension === 'unit_kerja_dan_segmen';
                 const scopeLabel = res.scope_label || (isBranchMode ? selects.cabang.options[selects.cabang.selectedIndex].text : 'AREA 6');
-                $('#headerScope').text(isBranchMode ? 'Segmen' : 'Kantor Cabang');
+                $('#headerScope').text(isUnitScope ? 'Unit Kerja' : (isMixedScope ? 'Unit Kerja / Segmen' : (isBranchMode ? 'Segmen' : 'Kantor Cabang')));
                 
                 let html = '';
                 res.rows.forEach((row, index) => {

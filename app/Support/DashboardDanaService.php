@@ -35,7 +35,7 @@ class DashboardDanaService
         $periods = $this->calculatePeriodReferences($selectedPeriod);
         $branchScope = $this->normalizeBranchScope($selectedBranch);
         if ($branchScope !== 'area6') {
-            return $this->getBranchSegmentDashboardData($selectedPeriod, $branchScope, $rkaPeriod, $periods);
+            return $this->getBranchSegmentDashboardData($selectedPeriod, $branchScope, $category, $rkaPeriod, $periods);
         }
 
         $snapshotData = $this->getDashboardDataFromHarianSnapshot($selectedPeriod, $category, $rkaPeriod, $periods);
@@ -149,7 +149,7 @@ class DashboardDanaService
         return DashboardCrossAlignmentGuard::alignFunds($res, $selectedPeriod, $category, $rkaPeriod);
     }
 
-    protected function getBranchSegmentDashboardData(string $selectedPeriod, string $selectedBranch, ?string $rkaPeriod, array $periods): array
+    protected function getBranchSegmentDashboardData(string $selectedPeriod, string $selectedBranch, ?string $category, ?string $rkaPeriod, array $periods): array
     {
         $branch = $this->resolveAreaBranchLabel($selectedBranch);
         if ($branch === null) {
@@ -166,12 +166,292 @@ class DashboardDanaService
             ];
         }
 
+        $normalizedCategory = $this->normalizeDanaCategory($category);
+        if ($normalizedCategory === 'ritel') {
+            $snapshotData = $this->getBranchRetailUnitDataFromHarianSnapshot($branch, $rkaPeriod ?? $selectedPeriod, $periods);
+            if ($snapshotData !== null) {
+                return $snapshotData;
+            }
+
+            return $this->getBranchRetailUnitDataFromRaw($branch, $rkaPeriod ?? $selectedPeriod, $periods);
+        }
+
         $snapshotData = $this->getBranchSegmentDataFromHarianSnapshot($branch, $rkaPeriod ?? $selectedPeriod, $periods);
         if ($snapshotData !== null) {
+            if ($normalizedCategory === null) {
+                $retailData = $this->getBranchRetailUnitDataFromHarianSnapshot($branch, $rkaPeriod ?? $selectedPeriod, $periods);
+
+                return $retailData === null
+                    ? $snapshotData
+                    : $this->mergeBranchRetailUnitsIntoAllSegments($snapshotData, $retailData);
+            }
+
             return $snapshotData;
         }
 
-        return $this->getBranchSegmentDataFromRaw($branch, $rkaPeriod ?? $selectedPeriod, $periods);
+        $rawData = $this->getBranchSegmentDataFromRaw($branch, $rkaPeriod ?? $selectedPeriod, $periods);
+        if ($normalizedCategory === null) {
+            $retailData = $this->getBranchRetailUnitDataFromRaw($branch, $rkaPeriod ?? $selectedPeriod, $periods);
+
+            return $this->mergeBranchRetailUnitsIntoAllSegments($rawData, $retailData);
+        }
+
+        return $rawData;
+    }
+
+    private function mergeBranchRetailUnitsIntoAllSegments(array $segmentData, array $retailData): array
+    {
+        if (($retailData['rows'] ?? []) === []) {
+            return $segmentData;
+        }
+
+        $nonRetailRows = array_values(array_filter(
+            $segmentData['rows'] ?? [],
+            fn (array $row): bool => strtoupper((string) ($row['nama_cabang'] ?? '')) !== 'RITEL'
+        ));
+        $rows = array_merge($retailData['rows'], $nonRetailRows);
+
+        $segmentData['rows'] = $rows;
+        $segmentData['total'] = $this->calculateGrandTotals($rows);
+        $segmentData['scope_dimension'] = 'unit_kerja_dan_segmen';
+
+        return $segmentData;
+    }
+
+    private function getBranchRetailUnitDataFromHarianSnapshot(string $branch, string $rkaPeriod, array $periods): ?array
+    {
+        if (!Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return null;
+        }
+
+        $periodValues = array_values(array_unique(array_filter($periods)));
+        if ($periodValues === []) {
+            return null;
+        }
+
+        $records = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->whereIn('snapshot_period', $periodValues)
+            ->where('kanca_label', $branch)
+            ->whereColumn('unit_key', '<>', 'kanca_key')
+            ->where(function ($query): void {
+                $query->whereRaw('UPPER(TRIM(unit_label)) LIKE ?', ['KC %'])
+                    ->orWhereRaw('UPPER(TRIM(unit_label)) LIKE ?', ['KCP %']);
+            })
+            ->orderBy('snapshot_period')
+            ->orderBy('unit_label')
+            ->get();
+
+        $selectedPeriod = (string) ($periods['selected'] ?? '');
+        $units = [];
+        $dataMatrix = [];
+
+        foreach ($records as $record) {
+            $unitKey = (string) $record->unit_key;
+            $unitLabel = $this->normalizeBranchName((string) $record->unit_label);
+            $period = (string) $record->snapshot_period;
+            if ($unitKey === '' || !$this->isRetailUnitLabel($unitLabel)) {
+                continue;
+            }
+
+            $dataMatrix[$unitKey][$period] = $this->mapHarianSnapshotSavingsValues($record, 'ritel');
+            if ($period === $selectedPeriod) {
+                $units[$unitKey] = $unitLabel;
+            }
+        }
+
+        if ($units === []) {
+            return null;
+        }
+
+        $units = $this->sortRetailUnits($units);
+
+        return $this->buildBranchRetailUnitDashboardResponse(
+            $dataMatrix,
+            $units,
+            $branch,
+            $periods,
+            $rkaPeriod,
+            self::HARIAN_SNAPSHOT_TABLE
+        );
+    }
+
+    private function getBranchRetailUnitDataFromRaw(string $branch, string $rkaPeriod, array $periods): array
+    {
+        $periodValues = array_values(array_unique(array_filter($periods)));
+        $selectedPeriod = (string) ($periods['selected'] ?? '');
+        $units = [];
+        $dataMatrix = [];
+
+        if ($periodValues !== [] && Schema::hasColumns(self::TABLE, [
+            'Month_Day_Year_of_Posisi',
+            'nama_cabang',
+            'nama_uker',
+            'segmentasi',
+            'produk',
+            'saldo',
+        ])) {
+            $records = DB::table(self::TABLE)
+                ->whereIn('Month_Day_Year_of_Posisi', $periodValues)
+                ->whereRaw('UPPER(TRIM(nama_cabang)) = ?', [strtoupper($branch)])
+                ->whereRaw('LOWER(TRIM(segmentasi)) = ?', ['ritel'])
+                ->select('Month_Day_Year_of_Posisi', 'nama_uker', 'produk', DB::raw('SUM(saldo) as total_saldo'))
+                ->groupBy('Month_Day_Year_of_Posisi', 'nama_uker', 'produk')
+                ->get();
+
+            foreach ($records as $record) {
+                $unitLabel = $this->normalizeBranchName((string) $record->nama_uker);
+                if (!$this->isRetailUnitLabel($unitLabel)) {
+                    continue;
+                }
+
+                $product = $this->productLabel((string) $record->produk);
+                if ($product === null) {
+                    continue;
+                }
+
+                $unitKey = strtolower((string) preg_replace('/[^A-Z0-9]+/i', '-', trim($unitLabel), -1));
+                $unitKey = trim($unitKey, '-');
+                $period = (string) $record->Month_Day_Year_of_Posisi;
+                $dataMatrix[$unitKey][$period][$product] = ($dataMatrix[$unitKey][$period][$product] ?? 0) + (float) $record->total_saldo;
+                $dataMatrix[$unitKey][$period]['TOTAL'] = ($dataMatrix[$unitKey][$period]['TOTAL'] ?? 0) + (float) $record->total_saldo;
+                $dataMatrix[$unitKey][$period]['CASA'] = ($dataMatrix[$unitKey][$period]['Giro'] ?? 0) + ($dataMatrix[$unitKey][$period]['Tabungan'] ?? 0);
+
+                if ($period === $selectedPeriod) {
+                    $units[$unitKey] = $unitLabel;
+                }
+            }
+        }
+
+        return $this->buildBranchRetailUnitDashboardResponse(
+            $dataMatrix,
+            $this->sortRetailUnits($units),
+            $branch,
+            $periods,
+            $rkaPeriod,
+            self::TABLE
+        );
+    }
+
+    private function buildBranchRetailUnitDashboardResponse(
+        array $dataMatrix,
+        array $units,
+        string $branch,
+        array $periods,
+        string $rkaPeriod,
+        string $sourceTable
+    ): array {
+        $formattedRows = [];
+        $no = 1;
+
+        foreach ($units as $unitKey => $unitLabel) {
+            $rkaData = $this->loadRetailUnitRkaData($rkaPeriod, $branch, $unitLabel);
+            $totalRow = [
+                'no' => $no++,
+                'nama_cabang' => $unitLabel,
+                'kategori' => 'TOTAL UNIT KERJA',
+                'is_total' => true,
+                'scope_branch' => $this->normalizeBranchName($branch),
+            ];
+
+            foreach ($periods as $periodKey => $periodDate) {
+                $totalRow[$periodKey] = $this->getVal($dataMatrix, $unitKey, $periodDate, 'TOTAL');
+            }
+
+            $totalRow['delta_ytd'] = $totalRow['selected'] - ($totalRow['ytd'] ?? 0);
+            $totalRow['delta_mtd'] = $totalRow['selected'] - ($totalRow['mtd'] ?? 0);
+            $rkaTotal = $rkaData['Giro'] + $rkaData['Tabungan'] + $rkaData['Deposito'];
+            $totalRow['rka_rp'] = $totalRow['selected'] - $rkaTotal;
+            $totalRow['rka_pct'] = $rkaTotal > 0 ? ($totalRow['selected'] / $rkaTotal) * 100 : 0;
+            $formattedRows[] = $totalRow;
+
+            foreach (['Giro', 'Tabungan', 'Deposito', 'CASA'] as $kategori) {
+                $row = [
+                    'no' => '',
+                    'nama_cabang' => $unitLabel,
+                    'kategori' => $kategori,
+                    'is_total' => false,
+                    'scope_branch' => $this->normalizeBranchName($branch),
+                ];
+
+                foreach ($periods as $periodKey => $periodDate) {
+                    $row[$periodKey] = $this->getVal($dataMatrix, $unitKey, $periodDate, $kategori);
+                }
+
+                $selectedValue = $row['selected'] ?? 0;
+                $row['delta_ytd'] = $selectedValue - ($row['ytd'] ?? 0);
+                $row['delta_mtd'] = $selectedValue - ($row['mtd'] ?? 0);
+                $rkaValue = $rkaData[$kategori] ?? 0;
+                $row['rka_rp'] = $selectedValue - $rkaValue;
+                $row['rka_pct'] = $rkaValue > 0 ? ($selectedValue / $rkaValue) * 100 : 0;
+                $formattedRows[] = $row;
+            }
+        }
+
+        return [
+            'rows' => $formattedRows,
+            'total' => $this->calculateGrandTotals($formattedRows),
+            'header_dates' => [
+                'selected' => $this->formatDateLabel($periods['selected'] ?? null),
+                'ytd' => $this->formatDateLabel($periods['ytd'] ?? null),
+                'mtd' => $this->formatDateLabel($periods['mtd'] ?? null),
+            ],
+            'scope' => 'branch',
+            'scope_dimension' => 'unit_kerja',
+            'scope_label' => $this->normalizeBranchName($branch),
+            'source_table' => $sourceTable,
+        ];
+    }
+
+    private function loadRetailUnitRkaData(string $period, string $branch, string $unit): array
+    {
+        $empty = ['Giro' => 0.0, 'Tabungan' => 0.0, 'Deposito' => 0.0, 'CASA' => 0.0];
+        if (!Schema::hasTable('rka')) {
+            return $empty;
+        }
+
+        $service = app(RkaLookupService::class);
+        try {
+            $date = Carbon::parse($period);
+            $year = $date->year;
+            $monthColumn = $service->resolveMonthColumn($date);
+            $availableYears = $service->availableYears();
+            if (!in_array($year, $availableYears, true)) {
+                $year = $availableYears !== [] ? max($availableYears) : null;
+            }
+
+            if (!$year) {
+                return $empty;
+            }
+
+            $definitions = [
+                'Giro' => ['mata_anggaran' => ['Giro Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+                'Tabungan' => ['mata_anggaran' => ['Tabungan Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+                'Deposito' => ['mata_anggaran' => ['Deposito Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+            ];
+            $values = $service->aggregateForScope($definitions, $monthColumn, $branch, $unit, $year);
+            $values['CASA'] = (float) ($values['Giro'] ?? 0) + (float) ($values['Tabungan'] ?? 0);
+
+            return array_replace($empty, array_map('floatval', $values));
+        } catch (Throwable) {
+            return $empty;
+        }
+    }
+
+    private function isRetailUnitLabel(string $unitLabel): bool
+    {
+        return (bool) preg_match('/^(KC|KCP)\b/i', trim($unitLabel));
+    }
+
+    private function sortRetailUnits(array $units): array
+    {
+        uasort($units, function (string $left, string $right): int {
+            $leftRank = str_starts_with(strtoupper($left), 'KC ') ? 0 : 1;
+            $rightRank = str_starts_with(strtoupper($right), 'KC ') ? 0 : 1;
+
+            return $leftRank <=> $rightRank ?: strnatcasecmp($left, $right);
+        });
+
+        return $units;
     }
 
     protected function getDashboardDataFromHarianSnapshot(?string $selectedPeriod, ?string $category, ?string $rkaPeriod = null, ?array $periods = null): ?array

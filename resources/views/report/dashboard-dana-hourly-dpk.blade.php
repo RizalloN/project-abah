@@ -428,7 +428,7 @@
 
     @media (max-width: 900px) {
         .hourly-filter-grid {
-            grid-template-columns: 1fr;
+            grid-template-columns: minmax(0, 1fr);
         }
         .hourly-filter-actions {
             grid-column: span 1;
@@ -445,6 +445,34 @@
 
         .hourly-table-shell {
             max-height: calc(100vh - 360px);
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .hourly-dpk-container {
+            padding-right: 0.5rem;
+            padding-left: 0.5rem;
+        }
+
+        .hourly-filter-grid,
+        .hourly-filter-field,
+        .hourly-select,
+        .hourly-select-toggle,
+        .hourly-filter-actions {
+            width: 100%;
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .hourly-filter-actions {
+            flex-direction: column;
+            white-space: normal;
+        }
+
+        .hourly-filter-actions .hourly-submit,
+        .hourly-filter-actions .hourly-export-pdf {
+            width: 100%;
+            flex: 0 0 auto;
         }
     }
 </style>

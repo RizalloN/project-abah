@@ -35,6 +35,39 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
         $this->assertStringContainsString('max-height: calc(100vh - 118px)', $layout);
     }
 
+    public function test_admin_layout_uses_device_safe_contracts_without_broad_component_wildcards(): void
+    {
+        $layout = file_get_contents(resource_path('views/layouts/admin.blade.php'));
+
+        $this->assertStringContainsString('viewport-fit=cover', $layout);
+        $this->assertStringContainsString('interactive-widget=resizes-content', $layout);
+        $this->assertStringContainsString('--app-safe-left: env(safe-area-inset-left, 0px);', $layout);
+        $this->assertMatchesRegularExpression('/body\s*\{\s*min-width:\s*0;/', $layout);
+        $this->assertStringContainsString('[data-ui="hero"]', $layout);
+        $this->assertStringContainsString('[data-ui="filter"]', $layout);
+        $this->assertStringContainsString('[data-ui="actions"]', $layout);
+        $this->assertStringContainsString('@media (max-width: 359.98px)', $layout);
+        $this->assertStringContainsString('@media (pointer: coarse)', $layout);
+        $this->assertStringContainsString('max-height: max(420px, calc(100dvh - 150px));', $layout);
+        $this->assertStringContainsString('.swal2-popup', $layout);
+        $this->assertStringContainsString('.modal-body', $layout);
+        $this->assertStringNotContainsString('[class*="-filter-"]', $layout);
+        $this->assertStringNotContainsString('[class*="filter-"]', $layout);
+        $this->assertStringNotContainsString('[class*="-title"]', $layout);
+        $this->assertStringNotContainsString('min-width: 320px;', $layout);
+    }
+
+    public function test_fixed_height_operational_surfaces_follow_the_dynamic_viewport(): void
+    {
+        $excelPreview = file_get_contents(resource_path('views/import/preview_excel.blade.php'));
+        $marketMap = file_get_contents(resource_path('views/report/dashboard-dana/_market_share_geography.blade.php'));
+
+        $this->assertStringNotContainsString('style="min-height: 450px; max-height: 600px; overflow-y: auto; overflow-x: auto;"', $excelPreview);
+        $this->assertStringContainsString('min-height: clamp(320px, 52dvh, 450px);', $excelPreview);
+        $this->assertStringContainsString('min-height: clamp(480px, 68dvh, 720px);', $marketMap);
+        $this->assertStringContainsString('@media (max-width: 359.98px)', $marketMap);
+    }
+
     public function test_sticky_table_partial_keeps_only_table_headers_sticky(): void
     {
         $style = file_get_contents(resource_path('views/report/partials/sticky-table-viewport-style.blade.php'));

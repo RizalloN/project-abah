@@ -5069,8 +5069,8 @@ class ImportFileController extends Controller
 
                 if ($this->supportsNativeBulkLoad()) {
                     $sendWithCacheSync('progress', [
-                        'percent' => 15,
-                        'message' => 'Worker menyiapkan CSV staging...',
+                        'percent' => 14,
+                        'message' => 'Menambahkan tahap staging ke antrean prioritas...',
                         'rows_done' => 0,
                         'total' => $totalRows,
                         'speed' => 0,
@@ -5104,22 +5104,33 @@ class ImportFileController extends Controller
                     $cache->put("csv_import_params_{$jobId}", $stagingParams, now()->addHours(2));
 
                     \App\Jobs\PrepareCsvStagingJob::dispatch($jobId)->onQueue('imports-high');
+                    $progressService->markQueued($jobId, [
+                        'status' => 'queued',
+                        'phase' => 'staging_queued',
+                        'mode' => 'queue',
+                        'percent' => 14,
+                        'message' => 'Menunggu worker staging prioritas...',
+                        'processed_rows' => 0,
+                        'total_rows' => $totalRows,
+                    ]);
 
                     $pollingStart = microtime(true);
                     while (true) {
                         usleep(400_000); // 400ms
 
                         $cached = $progressService->getCachedProgress($jobId);
-                        $status = $cached['status'] ?? 'staging';
+                        $status = strtolower((string) ($cached['status'] ?? 'staging'));
+
+                        // A terminal result is authoritative. Sending another progress event
+                        // would overwrite the completed/failed database status as processing.
+                        if (in_array($status, ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
+                            break;
+                        }
 
                         try {
                             $sendWithCacheSync('progress', $cached);
                         } catch (\Throwable $e) {
                             Log::warning('Failed to send progress during staging job polling: ' . $e->getMessage());
-                        }
-
-                        if (in_array($status, ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
-                            break;
                         }
 
                         if (microtime(true) - $pollingStart > 7200) {

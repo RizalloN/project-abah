@@ -63,6 +63,13 @@ class ImportIndexController extends Controller
     ];
 
     private const DELETE_INDEX_HINTS = [
+        'cras' => [
+            'index' => 'idx_cras_period_branch_uuid',
+            'period' => 'cras_periode',
+            'kanca' => 'ket_kanca',
+            'identity' => 'cras_uuid',
+            'chunk_size' => 50000,
+        ],
         'daily_loan_dinamis' => [
             'index' => 'idx_loan_periode_cab_unit',
             'indexes' => ['idx_loan_periode_cab_unit', 'idx_dld_periode_cabang_unit'],
@@ -4288,6 +4295,7 @@ class ImportIndexController extends Controller
     private function resolveIdentityColumn(array $tableColumns): ?string
     {
         return $this->resolveColumnName($tableColumns, [
+            'cras_uuid',
             'uniqueid_namareport',
             'uniqueid_SMPN',
             'uniqueid_dly_kap',

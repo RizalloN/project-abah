@@ -1267,12 +1267,14 @@ class ReportSnapshotBuilder
         $force = $force || $this->purgeSnapshotPeriodIfAnomalous(self::NEW_PAYROLL_SNAPSHOT_TABLE, $snapshotPosisi);
 
         $snapshotDate = Carbon::parse($snapshotPosisi);
-        $currStart = $snapshotDate->copy()->startOfMonth()->toDateString();
+        $currStart = $snapshotDate->copy()->startOfYear()->toDateString();
         $currEnd = $snapshotDate->copy()->endOfMonth()->toDateString();
-        $prevStart = $snapshotDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
-        $prevEnd = Carbon::parse($prevStart)->endOfMonth()->toDateString();
-        $yoyStart = $snapshotDate->copy()->subYearNoOverflow()->startOfMonth()->toDateString();
-        $yoyEnd = Carbon::parse($yoyStart)->endOfMonth()->toDateString();
+        $prevEndDate = $snapshotDate->copy()->subMonthNoOverflow()->endOfMonth();
+        $prevStart = $prevEndDate->copy()->startOfYear()->toDateString();
+        $prevEnd = $prevEndDate->toDateString();
+        $yoyDate = $snapshotDate->copy()->subYearNoOverflow();
+        $yoyStart = $yoyDate->copy()->startOfYear()->toDateString();
+        $yoyEnd = $yoyDate->copy()->endOfMonth()->toDateString();
 
         $prevSnapshot = DB::table('performance_pis_per_produk')
             ->whereDate('posisi', '<=', $prevEnd)

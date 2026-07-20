@@ -918,7 +918,7 @@
         padding-top: 0 !important;
         padding-bottom: 0 !important;
     }
-    
+
     .btn-primary {
         background-color: var(--bri-blue-main);
         border-color: var(--bri-blue-main);
@@ -1916,6 +1916,445 @@
             grid-column: auto !important;
         }
     }
+
+    /* Responsive hardening: keeps Keragaan Harian controls predictable on desktop, tablet portrait, and phone. */
+    #daily-dashboard-root.daily-dashboard {
+        container-type: inline-size;
+        overflow-x: clip;
+    }
+
+    #daily-dashboard-root .daily-panel-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.6rem 0.85rem;
+    }
+
+    #daily-dashboard-root .daily-panel-title-group {
+        flex: 1 1 320px;
+        min-width: 0;
+    }
+
+    #daily-dashboard-root .daily-panel-actions {
+        flex: 0 1 auto;
+        min-width: min(100%, 260px);
+        gap: 0.45rem;
+    }
+
+    #daily-dashboard-root .daily-panel-actions .btn-export-all {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 126px;
+        min-height: 34px;
+        margin: 0 !important;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    #daily-dashboard-root .daily-filter-shell {
+        overflow: visible !important;
+        padding: clamp(0.62rem, 1.1vw, 0.85rem) !important;
+    }
+
+    #daily-dashboard-root .daily-filter-grid {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(126px, 0.58fr) !important;
+        grid-template-areas: "kanca unit posisi rka action";
+        align-items: stretch !important;
+        gap: 0.58rem !important;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        overflow: visible !important;
+    }
+
+    #daily-dashboard-root .daily-filter-grid > .daily-filter-item:nth-child(1) { grid-area: kanca; }
+    #daily-dashboard-root .daily-filter-grid > .daily-filter-item:nth-child(2) { grid-area: unit; }
+    #daily-dashboard-root .daily-filter-grid > .daily-filter-item:nth-child(3) { grid-area: posisi; }
+    #daily-dashboard-root .daily-filter-grid > .daily-filter-item:nth-child(4) { grid-area: rka; }
+    #daily-dashboard-root .daily-filter-grid > .daily-filter-item:nth-child(5) { grid-area: action; }
+
+    #daily-dashboard-root .daily-filter-item,
+    #daily-dashboard-root .daily-filter-card,
+    #daily-dashboard-root .daily-filter-content,
+    #daily-dashboard-root .daily-filter-action-body {
+        min-width: 0 !important;
+        max-width: 100% !important;
+    }
+
+    #daily-dashboard-root .daily-filter-card {
+        display: flex !important;
+        height: auto !important;
+        min-height: 66px !important;
+        max-height: none !important;
+        padding: 0.54rem 0.6rem !important;
+        overflow: visible !important;
+    }
+
+    #daily-dashboard-root .daily-filter-content,
+    #daily-dashboard-root .daily-filter-action-body {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-end !important;
+        min-height: 0 !important;
+        width: 100%;
+    }
+
+    #daily-dashboard-root .daily-filter-card .daily-filter-label {
+        display: block !important;
+        margin: 0 0 0.3rem !important;
+        min-height: auto !important;
+        line-height: 1.12 !important;
+        white-space: nowrap;
+    }
+
+    #daily-dashboard-root .daily-filter-control,
+    #daily-dashboard-root .daily-filter-action-button-wrap {
+        height: auto !important;
+        min-height: 38px !important;
+        margin: 0 !important;
+    }
+
+    #daily-dashboard-root .daily-dropdown,
+    #daily-dashboard-root .daily-dropdown-toggle {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+    }
+
+    #daily-dashboard-root .daily-dropdown-toggle,
+    #daily-dashboard-root .daily-apply-button {
+        display: flex !important;
+        align-items: center !important;
+        min-height: 38px !important;
+        height: auto !important;
+        max-height: none !important;
+        line-height: 1.15 !important;
+        font-size: 0.8rem !important;
+    }
+
+    #daily-dashboard-root .daily-dropdown-toggle {
+        padding: 0.48rem 0.76rem 0.48rem 2.12rem !important;
+    }
+
+    #daily-dashboard-root .daily-dropdown-toggle-text {
+        min-width: 0;
+    }
+
+    #daily-dashboard-root .daily-dropdown.is-open {
+        z-index: 10060 !important;
+    }
+
+    #daily-dashboard-root .daily-dropdown-menu {
+        z-index: 10070 !important;
+        max-height: min(46vh, 320px);
+    }
+
+    #daily-dashboard-root .daily-filter-card--action {
+        justify-content: flex-end !important;
+    }
+
+    #daily-dashboard-root .daily-filter-card--action .daily-filter-label {
+        display: none !important;
+    }
+
+    #daily-dashboard-root .daily-filter-card--action,
+    #daily-dashboard-root .daily-filter-card--action .daily-filter-action-body,
+    #daily-dashboard-root .daily-filter-card--action .daily-filter-action-button-wrap {
+        height: auto !important;
+        max-height: none !important;
+    }
+
+    #daily-dashboard-root .daily-apply-button {
+        justify-content: center !important;
+        width: 100% !important;
+        padding-left: 0.72rem !important;
+        padding-right: 0.72rem !important;
+        white-space: nowrap !important;
+    }
+
+    #daily-dashboard-root .daily-table-panel {
+        overflow: hidden;
+    }
+
+    #daily-dashboard-root .daily-table-region,
+    #daily-dashboard-root .daily-table-wrap {
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    #daily-dashboard-root .daily-table-wrap {
+        overflow: auto !important;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x pan-y;
+    }
+
+    .daily-filter-mobile-toggle {
+        display: none;
+        width: 100%;
+        background: #ffffff;
+        border: 1px solid rgba(219, 229, 239, 0.9);
+        border-radius: 10px;
+        padding: 0.35rem 0.5rem;
+        margin-bottom: 0.25rem;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+    }
+
+    .btn-filter-toggle {
+        background: transparent;
+        border: none;
+        padding: 0.42rem 0.62rem;
+        width: 100%;
+        text-align: left;
+        color: #00529C;
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .btn-filter-toggle:focus {
+        outline: none;
+        box-shadow: none;
+    }
+
+    .btn-filter-toggle .toggle-arrow-icon {
+        transition: transform 0.2s ease;
+        color: #8b9eb7;
+    }
+
+    .daily-filter-shell.is-open .toggle-arrow-icon {
+        transform: rotate(180deg);
+    }
+
+    @media (max-width: 1399.98px) {
+        #daily-dashboard-root .daily-panel-head {
+            padding: 0.35rem 0.75rem !important;
+            min-height: 40px !important;
+            flex-wrap: nowrap !important;
+        }
+
+        #daily-dashboard-root .daily-panel-title-group {
+            flex: 0 1 auto !important;
+            width: auto !important;
+            min-width: 0 !important;
+        }
+
+        #daily-dashboard-root .daily-panel-title {
+            font-size: 0.95rem !important;
+            font-weight: 800 !important;
+            white-space: nowrap;
+        }
+
+        #daily-dashboard-root .daily-panel-actions {
+            flex: 0 1 auto !important;
+            width: auto !important;
+            min-width: 0 !important;
+            justify-content: flex-end !important;
+            gap: 0.35rem !important;
+        }
+
+        #daily-dashboard-root .daily-panel-actions .btn-export-all {
+            min-width: auto !important;
+            min-height: 36px !important;
+            height: 36px !important;
+            font-size: 0.72rem !important;
+            padding: 0.2rem 0.5rem !important;
+        }
+
+        .daily-filter-mobile-toggle {
+            display: flex !important;
+        }
+
+        #daily-dashboard-root .daily-filter-grid {
+            display: none !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            grid-template-areas:
+                "kanca unit"
+                "posisi rka"
+                "action action" !important;
+            gap: 0.5rem !important;
+            margin-top: 0.5rem;
+        }
+
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-grid {
+            display: grid !important;
+        }
+
+        #daily-dashboard-root .daily-filter-card {
+            min-height: 52px !important;
+            padding: 0.35rem 0.45rem !important;
+        }
+
+        #daily-dashboard-root .daily-filter-label {
+            font-size: 0.68rem !important;
+            margin-bottom: 0.15rem !important;
+        }
+
+        #daily-dashboard-root .daily-filter-control,
+        #daily-dashboard-root .daily-filter-control-icon,
+        #daily-dashboard-root .daily-dropdown-toggle,
+        #daily-dashboard-root .daily-apply-button {
+            min-height: 32px !important;
+            height: 32px !important;
+            font-size: 0.76rem !important;
+        }
+
+        #daily-dashboard-root .daily-dropdown-toggle {
+            padding: 0.2rem 0.62rem 0.2rem 1.62rem !important;
+        }
+
+        #daily-dashboard-root .daily-filter-control-icon {
+            left: 0.45rem !important;
+            top: 50% !important;
+            transform: translateY(-50%) !important;
+            font-size: 0.72rem !important;
+        }
+
+        #daily-dashboard-root .daily-filter-card--action {
+            min-height: 36px !important;
+            padding: 0 !important;
+            border: 0 !important;
+            background: transparent !important;
+        }
+
+        #daily-dashboard-root .daily-apply-button {
+            min-height: 32px !important;
+            white-space: normal !important;
+        }
+
+        #daily-dashboard-root .daily-table-panel {
+            padding: 0.4rem 0.5rem !important;
+        }
+    }
+
+    @media (max-width: 640px) {
+        #daily-dashboard-root .daily-panel-head {
+            flex-wrap: wrap !important;
+            padding: 0.5rem !important;
+            min-height: auto !important;
+        }
+
+        #daily-dashboard-root .daily-panel-title-group,
+        #daily-dashboard-root .daily-panel-actions {
+            flex: 1 1 100% !important;
+            width: 100% !important;
+        }
+
+        #daily-dashboard-root .daily-panel-title {
+            max-width: 100%;
+            font-size: clamp(0.82rem, 5.2vw, 0.95rem) !important;
+            line-height: 1.25 !important;
+            white-space: normal !important;
+            overflow-wrap: anywhere;
+        }
+
+        #daily-dashboard-root .daily-panel-actions {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            justify-content: stretch !important;
+            margin-top: 0.4rem;
+        }
+
+        #daily-dashboard-root .daily-panel-actions .btn-export-all {
+            width: 100% !important;
+            min-height: 36px !important;
+            height: 36px !important;
+        }
+
+        #daily-dashboard-root .daily-filter-grid {
+            grid-template-columns: 1fr !important;
+            grid-template-areas:
+                "kanca"
+                "unit"
+                "posisi"
+                "rka"
+                "action" !important;
+            gap: 0.45rem !important;
+        }
+
+        #daily-dashboard-root .daily-filter-card {
+            min-height: 52px !important;
+            padding: 0.35rem 0.45rem !important;
+        }
+    }
+
+    /* Use the compact filter summary on every viewport. Desktop expands only on demand. */
+    #daily-dashboard-root .daily-filter-mobile-toggle {
+        display: flex !important;
+        margin-bottom: 0;
+    }
+
+    #daily-dashboard-root .btn-filter-toggle {
+        min-height: 42px;
+        padding: 0.45rem 0.68rem;
+        border-radius: 8px;
+    }
+
+    #daily-dashboard-root .active-filters-badge {
+        min-width: 0;
+        max-width: min(58vw, 720px);
+        margin-left: auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #daily-dashboard-root .daily-filter-grid {
+        display: none !important;
+    }
+
+    #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-grid {
+        display: grid !important;
+        align-items: start !important;
+    }
+
+    @media (min-width: 1400px) {
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(164px, 0.72fr) !important;
+            grid-template-areas: "kanca unit posisi rka action" !important;
+            margin-top: 0.58rem;
+        }
+
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-card {
+            height: 58px !important;
+            min-height: 58px !important;
+            max-height: 58px !important;
+            padding: 0.36rem 0.48rem !important;
+        }
+
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-content,
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-action-body {
+            display: block !important;
+            height: auto !important;
+        }
+
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-card .daily-filter-label {
+            margin: 0 0 0.16rem !important;
+            font-size: 0.58rem !important;
+            line-height: 1 !important;
+        }
+
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-control,
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-action-button-wrap,
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-dropdown-toggle,
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-apply-button {
+            height: 30px !important;
+            min-height: 30px !important;
+            max-height: 30px !important;
+        }
+
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-item--action {
+            min-width: 164px !important;
+        }
+
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-card--action,
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-card--action .daily-filter-action-body,
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-card--action .daily-filter-action-button-wrap,
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-apply-button {
+            width: 100% !important;
+        }
+    }
 </style>
 @endsection
 
@@ -1934,7 +2373,7 @@
                     <i class="fas fa-file-image mr-1"></i> EXPORT A4
                 </button>
             </div>
-            
+
             <!-- Hidden elements to preserve JS functionality -->
             <div class="d-none">
                 <span data-source-label></span>
@@ -1950,7 +2389,14 @@
         </div>
 
         <div class="daily-filter-shell">
-            <div class="daily-filter-grid">
+            <div class="daily-filter-mobile-toggle">
+                <button type="button" class="btn btn-filter-toggle d-flex align-items-center justify-content-between w-100" id="btn-toggle-filters" aria-expanded="false" aria-controls="daily-filter-grid">
+                    <span class="btn-toggle-text text-truncate font-weight-bold"><i class="fas fa-sliders-h mr-2"></i> FILTER DATA</span>
+                    <span class="active-filters-badge text-truncate text-muted small" id="filter-summary-badge">Area 6</span>
+                    <i class="fas fa-chevron-down toggle-arrow-icon ml-2"></i>
+                </button>
+            </div>
+            <div class="daily-filter-grid" id="daily-filter-grid">
                 <div class="daily-filter-item">
                     <div class="daily-filter-card daily-filter-card--kanca">
                         <div class="daily-filter-content">
@@ -2447,7 +2893,13 @@
                 ? window.visualViewport.height
                 : window.innerHeight;
             const tableTop = Math.max(0, tableWrap.getBoundingClientRect().top);
-            const availableHeight = Math.max(260, viewportHeight - tableTop - 14);
+
+            // Force the table to occupy at least 68% of the viewport height on tablet & mobile screens
+            const isSmallScreen = window.innerWidth < 1399.98;
+            const minHeightRatio = isSmallScreen ? 0.68 : 0.45;
+            const minTableHeight = Math.ceil(viewportHeight * minHeightRatio);
+
+            const availableHeight = Math.max(minTableHeight, viewportHeight - tableTop - 16);
             const contentHeight = headerHeight + bodyHeight + 2;
             const desiredHeight = Math.min(availableHeight, contentHeight);
 
@@ -2523,6 +2975,47 @@
             dropdown.toggle.setAttribute('aria-expanded', 'true');
         };
 
+        let responsiveViewportFrame = null;
+        const closeAllDropdowns = function () {
+            Object.keys(dropdowns).forEach(closeDropdown);
+        };
+
+        const handleResponsiveViewportChange = function () {
+            closeAllDropdowns();
+
+            if (responsiveViewportFrame) {
+                cancelAnimationFrame(responsiveViewportFrame);
+            }
+
+            responsiveViewportFrame = requestAnimationFrame(function () {
+                responsiveViewportFrame = null;
+                syncTableViewport();
+            });
+        };
+
+        const updateFilterSummary = function () {
+            const kancaText = document.querySelector('[data-daily-dropdown-toggle="kanca"] .daily-dropdown-toggle-text')?.innerText || 'Area 6';
+            const unitText = document.querySelector('[data-daily-dropdown-toggle="unit"] .daily-dropdown-toggle-text')?.innerText || 'Semua Unit';
+            const posisiText = document.querySelector('[data-daily-dropdown-toggle="posisi"] .daily-dropdown-toggle-text')?.innerText || '';
+            const rkaText = document.querySelector('[data-daily-dropdown-toggle="rka"] .daily-dropdown-toggle-text')?.innerText || '';
+
+            const summarySpan = document.getElementById('filter-summary-badge');
+            if (summarySpan) {
+                let summaryParts = [];
+                if (kancaText) summaryParts.push(kancaText);
+                if (unitText && unitText !== 'Semua Unit Kerja' && unitText !== 'Tidak tersedia untuk Area 6') {
+                    summaryParts.push(unitText);
+                }
+                if (posisiText && posisiText !== 'Belum ada data') {
+                    summaryParts.push('Posisi: ' + posisiText.split(' ')[0]);
+                }
+                if (rkaText && rkaText !== 'Belum ada data') {
+                    summaryParts.push('RKA: ' + rkaText.split(' ')[0]);
+                }
+                summarySpan.innerText = summaryParts.join(' | ');
+            }
+        };
+
         const updateDropdownToggleText = function (key, text) {
             const dropdown = dropdowns[key];
             const textNode = dropdown && dropdown.toggle
@@ -2533,6 +3026,7 @@
                 textNode.textContent = text;
                 dropdown.toggle.setAttribute('title', text);
             }
+            updateFilterSummary();
         };
 
         const getSelectedKancaValues = function () {
@@ -3792,9 +4286,39 @@ if (window.jQuery && captureModal) {
             scheduleTableViewportSync();
         }
 
-        if (applyButton) {
-            applyButton.addEventListener('click', fetchData);
+        const toggleBtn = document.getElementById('btn-toggle-filters');
+        const filterShell = document.querySelector('.daily-filter-shell');
+        const setFilterPanelOpen = function (isOpen) {
+            if (!toggleBtn || !filterShell) {
+                return;
+            }
+
+            filterShell.classList.toggle('is-open', isOpen);
+            toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+
+            const toggleText = toggleBtn.querySelector('.btn-toggle-text');
+            if (toggleText) {
+                toggleText.innerHTML = isOpen
+                    ? '<i class="fas fa-times mr-2"></i> SEMBUNYIKAN'
+                    : '<i class="fas fa-sliders-h mr-2"></i> FILTER DATA';
+            }
+        };
+
+        if (toggleBtn && filterShell) {
+            toggleBtn.addEventListener('click', function () {
+                setFilterPanelOpen(!filterShell.classList.contains('is-open'));
+            });
+
+            setFilterPanelOpen(false);
         }
+
+        if (applyButton) {
+            applyButton.addEventListener('click', function () {
+                setFilterPanelOpen(false);
+                fetchData();
+            });
+        }
+        updateFilterSummary();
 
         document.querySelectorAll('[data-mtm-toggle]').forEach(function (node) {
             node.addEventListener('dblclick', function (event) {
@@ -3970,9 +4494,10 @@ if (window.jQuery && captureModal) {
             }
         });
 
-        window.addEventListener('resize', scheduleTableViewportSync);
+        window.addEventListener('resize', handleResponsiveViewportChange);
+        window.addEventListener('orientationchange', handleResponsiveViewportChange);
         if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', scheduleTableViewportSync);
+            window.visualViewport.addEventListener('resize', handleResponsiveViewportChange);
             window.visualViewport.addEventListener('scroll', scheduleTableViewportSync);
         }
         scheduleTableViewportSync();

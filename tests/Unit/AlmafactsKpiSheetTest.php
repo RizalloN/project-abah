@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Models\User;
 use App\Http\Controllers\Report\AlmafactsDashboardController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -29,8 +30,9 @@ class AlmafactsKpiSheetTest extends TestCase
         $data = $view->getData();
 
         $this->assertSame('mbm', $data['selectedSheetKey']);
-        $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'mantri'], array_keys($data['sheetOptions']));
+        $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'mantri', 'consumer'], array_keys($data['sheetOptions']));
         $this->assertSame('KPI MBM', $data['selectedSheet']['sheet']);
+        $this->assertSame('175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame(['BO', 'MBM', 'Score'], $data['header']);
         $this->assertCount(3, $data['header']);
         $this->assertCount(3, $data['rows'][0]);
@@ -54,6 +56,7 @@ class AlmafactsKpiSheetTest extends TestCase
 
         $this->assertSame('ka-unit', $data['selectedSheetKey']);
         $this->assertSame('KPI Kaunit', $data['selectedSheet']['sheet']);
+        $this->assertSame('1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame(
             ['BO', 'MBM', 'BC', 'Unit Kerja', 'Pencapaian', 'Score', 'Pencapaian', 'Score'],
             $data['header']
@@ -77,6 +80,7 @@ class AlmafactsKpiSheetTest extends TestCase
 
         $this->assertSame('mbm', $data['selectedSheetKey']);
         $this->assertSame('KPI MBM', $data['selectedSheet']['sheet']);
+        $this->assertSame('175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame(['BO', 'MBM', 'Score'], $data['header']);
         $this->assertCount(3, $data['header']);
         $this->assertCount(3, $data['rows'][0]);
@@ -84,7 +88,7 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertSame(1, $data['summary']['row_count']);
     }
 
-    public function test_kpi_page_can_open_rm_mikro_sheet_with_rank_sheet(): void
+    public function test_kpi_page_can_open_rm_mikro_sheet(): void
     {
         Http::fake([
             'docs.google.com/*' => Http::response(
@@ -98,8 +102,9 @@ class AlmafactsKpiSheetTest extends TestCase
         $data = $view->getData();
 
         $this->assertSame('rm-mikro', $data['selectedSheetKey']);
-        $this->assertSame('rank', $data['selectedSheet']['sheet']);
-        $this->assertSame('rank', $data['summary']['sheet_name']);
+        $this->assertSame('KPI RM Mikro', $data['selectedSheet']['sheet']);
+        $this->assertSame('11dzu4edTyp9UFBicNDughtJ43bzvZguh', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('KPI RM Mikro', $data['summary']['sheet_name']);
         $this->assertSame(
             ['BO', 'Nama', 'BC Uker', 'Uker', 'JG', 'Lama Di UKER 2026', 'Pencapaian', 'Score'],
             array_slice($data['header'], 0, 8)
@@ -129,8 +134,9 @@ class AlmafactsKpiSheetTest extends TestCase
         $data = $view->getData();
 
         $this->assertSame('mantri', $data['selectedSheetKey']);
-        $this->assertSame('RANK KPI', $data['selectedSheet']['sheet']);
-        $this->assertSame('RANK KPI', $data['summary']['sheet_name']);
+        $this->assertSame('KPI', $data['selectedSheet']['sheet']);
+        $this->assertSame('1h7XMo46a10a3gC1f_CPtsBUT2V1PcxAE', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('KPI', $data['summary']['sheet_name']);
         $this->assertSame(
             ['Key', 'BO', 'MBM', 'Uker', 'Type BRI', 'BC', 'Nama Mantri', 'Status', 'JG', 'Lama Di UKER 2026', 'Pencapaian', 'Score'],
             array_slice($data['header'], 0, 12)
@@ -145,5 +151,78 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertContains('Rank Cabang', array_column($data['headerGroups'], 'label'));
         $this->assertSame('Nur Elfiana', $data['rows'][0][2]);
         $this->assertSame(1, $data['summary']['row_count']);
+    }
+
+    public function test_kpi_consumer_splits_briguna_and_kpr_rows_and_skips_blank_rows(): void
+    {
+        Http::fake([
+            'docs.google.com/*' => Http::response(
+                "\"NO\",\"KANCA\",\"BC\",\"UKER\",\"SEGMEN\",\"PN PENGELOLA SINGLEPN\",\"SCORE\"\n"
+                . "\"1\",\"KC Madiun\",\"45\",\"KC Madiun\",\"BRIGUNA\",\"001 - Briguna\",\"95.50\"\n"
+                . "\"\",\"\",\"\",\"\",\"\",\"\",\"\"\n"
+                . "\"2\",\"KC Madiun\",\"45\",\"KC Madiun\",\"KPR\",\"002 - KPR\",\"88.25\"",
+                200
+            ),
+        ]);
+
+        $view = (new AlmafactsDashboardController())->kpi(Request::create('/report/dashboard-almafacts/kpi/consumer', 'GET'), 'consumer');
+        $data = $view->getData();
+
+        $this->assertSame('consumer', $data['selectedSheetKey']);
+        $this->assertSame('KPI Konsumer', $data['selectedSheet']['label']);
+        $this->assertSame('KPI', $data['selectedSheet']['sheet']);
+        $this->assertSame('1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame(2, $data['summary']['row_count']);
+        $this->assertSame(['briguna', 'kpr'], array_column($data['tableSections'], 'key'));
+        $this->assertSame('KPI Briguna', $data['tableSections'][0]['title']);
+        $this->assertSame('KPI KPR', $data['tableSections'][1]['title']);
+        $this->assertCount(1, $data['tableSections'][0]['rows']);
+        $this->assertCount(1, $data['tableSections'][1]['rows']);
+        $this->assertSame('BRIGUNA', $data['tableSections'][0]['rows'][0][4]);
+        $this->assertSame('KPR', $data['tableSections'][1]['rows'][0][4]);
+
+        $this->actingAs(new User([
+            'name' => 'KPI Test',
+            'pn' => 'test-kpi-consumer',
+        ]));
+        $html = $view->render();
+        $this->assertStringContainsString('data-kpi-section="briguna"', $html);
+        $this->assertStringContainsString('data-kpi-section="kpr"', $html);
+        $this->assertStringContainsString('KPI Briguna', $html);
+        $this->assertStringContainsString('KPI KPR', $html);
+    }
+
+    public function test_kpi_page_reads_two_row_header_with_pencp_and_nilai_as_sortable_columns(): void
+    {
+        Http::fake([
+            'docs.google.com/*' => Http::response(
+                "\"KPI RM MIKRO\",\"NAMA\",\"NETT DISBURSEMENT KUR\",\"\",\"RANK\"\n"
+                . "\"BO\",\"\",\"PENCP\",\"NILAI\",\"\"\n"
+                . "\"MADIUN\",\"RM UJI\",\"103.48%\",\"36.22%\",\"1\"",
+                200
+            ),
+        ]);
+
+        $view = (new AlmafactsDashboardController())->kpi(Request::create('/report/dashboard-almafacts/kpi/rm-mikro', 'GET'), 'rm-mikro');
+        $data = $view->getData();
+
+        $this->assertSame(['BO', 'Nama', 'Pencapaian', 'Score', 'Rank'], $data['header']);
+        $this->assertSame(
+            ['BO', 'Nama', 'Nett Disbursement KUR', 'Rank'],
+            array_column($data['headerGroups'], 'label')
+        );
+        $this->assertSame([2, 2, 1, 2], array_column($data['headerGroups'], 'rowspan'));
+        $this->assertSame(2, $data['headerGroups'][2]['colspan']);
+        $this->assertSame(['MADIUN', 'RM UJI', '103.48%', '36.22%', '1'], $data['rows'][0]);
+
+        $this->actingAs(new User([
+            'pn' => 'test-kpi',
+            'name' => 'KPI Test',
+            'role' => 'admin',
+        ]));
+
+        $rendered = $view->render();
+        $this->assertStringContainsString('data-sort-column="2"', $rendered);
+        $this->assertStringContainsString("header.addEventListener('click'", $rendered);
     }
 }

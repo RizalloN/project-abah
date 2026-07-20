@@ -54,16 +54,20 @@ return [
 
     'market_share_mapping' => [
         'title' => env('MARKET_SHARE_MAPPING_TITLE', 'Mapping Market Share Google Sheets'),
-        'source_url' => env('MARKET_SHARE_MAPPING_SOURCE_URL'),
+        'source_url' => env(
+            'MARKET_SHARE_MAPPING_SOURCE_URL',
+            'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/export?format=xlsx'
+        ),
         'public_token' => env('MARKET_SHARE_MAPPING_PUBLIC_TOKEN'),
-        'cache_path' => env('MARKET_SHARE_MAPPING_CACHE_PATH', 'app/public_workbooks/market-share-mapping.xlsx'),
+        'cache_path' => env('MARKET_SHARE_MAPPING_CACHE_PATH', 'app/cache/market-share-mapping.xlsx'),
+        'fallback_cache_path' => env('MARKET_SHARE_MAPPING_FALLBACK_CACHE_PATH', 'app/public_workbooks/market-share-mapping.xlsx'),
         'cache_minutes' => env('MARKET_SHARE_MAPPING_CACHE_MINUTES', 15),
-        'timeout_seconds' => env('MARKET_SHARE_MAPPING_TIMEOUT_SECONDS', 90),
+        'timeout_seconds' => env('MARKET_SHARE_MAPPING_TIMEOUT_SECONDS', 30),
         'workbook_url' => env(
             'MARKET_SHARE_MAPPING_WORKBOOK_URL',
             env(
                 'MARKET_SHARE_MAPPING_URL',
-                'https://docs.google.com/spreadsheets/d/18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY/edit?usp=sharing'
+                'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/edit?usp=sharing'
             )
         ),
     ],

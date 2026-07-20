@@ -13,6 +13,12 @@ use Illuminate\View\View;
 
 class DataPhReportController extends Controller
 {
+    /** @var array<string, bool> */
+    private array $phPeriodRowAvailability = [];
+
+    /** @var array<string, string|null> */
+    private array $previousPhPeriodByPeriod = [];
+
     public function index(Request $request): View
     {
         $area6Branches = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
@@ -272,7 +278,7 @@ class DataPhReportController extends Controller
         ));
 
         $baseQuery = DB::table('lw325_ph')
-            ->whereDate('periode', $period);
+            ->where('periode', $period);
 
         if ($kancas !== []) {
             $baseQuery->whereIn('kanca', $kancas);
@@ -441,7 +447,7 @@ class DataPhReportController extends Controller
                 ->whereIn('kanca', $area6Branches);
 
             if ($period) {
-                $query->whereDate('periode', $period);
+                $query->where('periode', $period);
             }
 
             $options = $query
@@ -476,7 +482,7 @@ class DataPhReportController extends Controller
                 ->where('unit', '<>', '');
 
             if ($period) {
-                $query->whereDate('periode', $period);
+                $query->where('periode', $period);
             }
 
             $options = $query
@@ -511,7 +517,7 @@ class DataPhReportController extends Controller
                 ->where('unit', '<>', '');
 
             if ($period) {
-                $query->whereDate('periode', $period);
+                $query->where('periode', $period);
             }
             if (!empty($selectedKanca)) {
                 $query->whereIn('kanca', $selectedKanca);
@@ -818,8 +824,17 @@ class DataPhReportController extends Controller
             return false;
         }
 
+        $cacheKey = implode('|', [
+            $period,
+            implode(',', $kancas),
+            $unit,
+        ]);
+        if (array_key_exists($cacheKey, $this->phPeriodRowAvailability)) {
+            return $this->phPeriodRowAvailability[$cacheKey];
+        }
+
         $query = DB::table('lw325_ph')
-            ->whereDate('periode', $period)
+            ->where('periode', $period)
             ->whereNotNull('acctno')
             ->where('acctno', '<>', '');
 
@@ -831,7 +846,7 @@ class DataPhReportController extends Controller
             $query->where(DB::raw('TRIM(UPPER(unit))'), $this->normalizeUnitName($unit));
         }
 
-        return $query->exists();
+        return $this->phPeriodRowAvailability[$cacheKey] = $query->exists();
     }
 
     private function phAccountKeySql(string $alias): string
@@ -846,7 +861,7 @@ class DataPhReportController extends Controller
     private function getBranchOfficeRecoveryMetricsFromCognos(string $period, array $branchOffices = []): array
     {
         $query = DB::table('cognos_recovery')
-            ->whereDate('periode', $period)
+            ->where('periode', $period)
             ->whereIn('cabang', $branchOffices)
             ->select('cabang', 'segmen_2', 'produk')
             ->selectRaw('SUM(total_recovery) as total_recovery')
@@ -895,7 +910,7 @@ class DataPhReportController extends Controller
         $previousAccountKey = $this->phAccountKeySql('o');
 
         $currentRows = DB::table('lw325_ph as n')
-            ->whereDate('n.periode', $period)
+            ->where('n.periode', $period)
             ->whereNotNull('n.acctno')
             ->where('n.acctno', '<>', '')
             ->selectRaw("{$currentAccountKey} as account_key")
@@ -903,7 +918,7 @@ class DataPhReportController extends Controller
             ->groupByRaw($currentAccountKey);
 
         $previousRows = DB::table('lw325_ph as o')
-            ->whereDate('o.periode', $m1Period)
+            ->where('o.periode', $m1Period)
             ->whereNotNull('o.acctno')
             ->where('o.acctno', '<>', '')
             ->selectRaw("{$previousAccountKey} as account_key")
@@ -959,7 +974,7 @@ class DataPhReportController extends Controller
         if (!Schema::hasTable('lw325_ph')) return $metrics;
 
         $results = DB::table('lw325_ph')
-            ->whereDate('periode', $period)
+            ->where('periode', $period)
             ->when(!empty($branchOffices), fn($query) => $query->whereIn('kanca', $branchOffices))
             ->select('kanca', 'segmen_dashboard', 'produk_dashboard')
             ->selectRaw('SUM(COALESCE(pokok, 0)) as total')
@@ -994,7 +1009,7 @@ class DataPhReportController extends Controller
         $previousAccountKey = $this->phAccountKeySql('o');
 
         $currentRows = DB::table('lw325_ph as n')
-            ->whereDate('n.periode', $period)
+            ->where('n.periode', $period)
             ->whereNotNull('n.acctno')
             ->where('n.acctno', '<>', '')
             ->selectRaw("{$currentAccountKey} as account_key")
@@ -1002,7 +1017,7 @@ class DataPhReportController extends Controller
             ->groupByRaw($currentAccountKey);
 
         $previousRows = DB::table('lw325_ph as o')
-            ->whereDate('o.periode', $m1Period)
+            ->where('o.periode', $m1Period)
             ->whereNotNull('o.acctno')
             ->where('o.acctno', '<>', '')
             ->selectRaw("{$previousAccountKey} as account_key")
@@ -1062,7 +1077,7 @@ class DataPhReportController extends Controller
         if (!Schema::hasTable('lw325_ph')) return $metrics;
 
         $query = DB::table('lw325_ph')
-            ->whereDate('periode', $period)
+            ->where('periode', $period)
             ->select('kanca', 'unit', 'segmen_dashboard', 'produk_dashboard')
             ->selectRaw('SUM(COALESCE(pokok, 0)) as total')
             ->groupBy('kanca', 'unit', 'segmen_dashboard', 'produk_dashboard');
@@ -1090,7 +1105,7 @@ class DataPhReportController extends Controller
     {
         $area6 = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
         $query = DB::table('cognos_recovery')
-            ->whereDate('periode', $period)
+            ->where('periode', $period)
             ->whereIn('cabang', $area6)
             ->select('cabang', 'unit_kerja', 'segmen_2', 'produk')
             ->selectRaw('SUM(total_recovery) as total_recovery')
@@ -1132,6 +1147,10 @@ class DataPhReportController extends Controller
             return null;
         }
 
+        if (array_key_exists($period, $this->previousPhPeriodByPeriod)) {
+            return $this->previousPhPeriodByPeriod[$period];
+        }
+
         try {
             $previousMonthEnd = Carbon::parse($period)
                 ->startOfMonth()
@@ -1141,12 +1160,12 @@ class DataPhReportController extends Controller
                 ->startOfMonth()
                 ->toDateString();
 
-            return DB::table('lw325_ph')
+            return $this->previousPhPeriodByPeriod[$period] = DB::table('lw325_ph')
                 ->whereBetween('periode', [$previousMonthStart, $previousMonthEnd])
                 ->orderByDesc('periode')
                 ->value('periode');
         } catch (\Throwable) {
-            return null;
+            return $this->previousPhPeriodByPeriod[$period] = null;
         }
     }
 }

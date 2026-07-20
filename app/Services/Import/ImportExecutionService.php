@@ -24,6 +24,7 @@ class ImportExecutionService
     private const STALE_QUEUED_MINUTES = 10;
     private const TERMINATION_EXCEPTION_PREFIX = 'import_job_terminated_by_request:';
     private const ZERO_PROGRESS_RECOVERABLE_TABLES = [
+        'cras',
         'daily_loan_dinamis',
         'ssa_simpanan',
         'ssa_pinjaman',
@@ -72,17 +73,6 @@ class ImportExecutionService
             }
 
             if ($cache->has($this->dispatchedKey($jobId)) && !$this->shouldRedispatchQueuedJob($job)) {
-                return false;
-            }
-
-            if ($this->isSimpananMultiPnCsvStreamJob($jobId, $job)) {
-                $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
-                $this->releaseDispatchMarker($jobId);
-
-                Log::info('Simpanan MultiPN CSV import kept on dedicated stream executor; generic queue dispatch skipped.', [
-                    'job_id' => $jobId,
-                ]);
-
                 return false;
             }
 
@@ -359,14 +349,24 @@ class ImportExecutionService
         }
 
         if ($this->isSimpananMultiPnCsvStreamJob($jobId, $job, $params)) {
-            $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
-            $this->releaseDispatchMarker($jobId);
-
-            Log::info('Generic import worker skipped Simpanan MultiPN CSV job because it must run through the dedicated stream executor.', [
+            Log::info('Import worker menjalankan dedicated Simpanan MultiPN CSV executor.', [
                 'job_id' => $jobId,
                 'table_name' => $tableName,
             ]);
 
+            $this->runSimpananMultiPnCsvStreamJob($jobId);
+            $job = $this->progressService->findJob($jobId);
+            if ($job && !in_array((string) ($job->status ?? ''), ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
+                $this->progressService->markFailed(
+                    $jobId,
+                    'Worker MULTIPN berhenti tanpa status akhir. File tetap aman untuk diimport ulang.',
+                    (int) ($job->total_success ?? 0),
+                    (int) ($job->total_failed ?? 0),
+                    'failed'
+                );
+            }
+
+            $this->releaseDispatchMarker($jobId);
             return;
         }
 
@@ -803,6 +803,7 @@ class ImportExecutionService
         $request = Request::create('/import-csv/simpanan-multipn/stream', 'GET', [
             'job_id' => $jobId,
         ]);
+        $request->attributes->set('import_worker_execution', true);
 
         try {
             $session = app('session.store');

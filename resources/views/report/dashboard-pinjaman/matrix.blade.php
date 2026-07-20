@@ -274,6 +274,154 @@
         font-weight: 600;
         line-height: 1.45;
     }
+
+    .loan-filter-shell {
+        position: relative;
+        z-index: 1000;
+        margin-bottom: 0.75rem;
+        overflow: visible;
+        border: 1px solid #dbe5ef;
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
+    }
+
+    .loan-filter-summary-bar {
+        width: 100%;
+        min-height: 48px;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.5rem 0.75rem;
+        border: 0;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #12345b;
+        text-align: left;
+    }
+
+    .loan-filter-summary-bar:focus-visible {
+        outline: 2px solid #0b67b2;
+        outline-offset: 2px;
+    }
+
+    .loan-filter-summary-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        white-space: nowrap;
+        color: #075a9c;
+        font-size: 0.78rem;
+        font-weight: 800;
+    }
+
+    .loan-filter-summary-copy {
+        min-width: 0;
+        overflow: hidden;
+        color: #52657b;
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .loan-filter-summary-copy strong {
+        color: #162b45;
+        font-weight: 800;
+    }
+
+    .loan-filter-summary-separator {
+        margin: 0 0.35rem;
+        color: #a2b1c1;
+    }
+
+    .loan-filter-summary-arrow {
+        color: #7d91a8;
+        transition: transform 0.2s ease;
+    }
+
+    .loan-filter-shell.is-open .loan-filter-summary-arrow {
+        transform: rotate(180deg);
+    }
+
+    .loan-filter-panel {
+        display: none;
+        padding: 0.75rem;
+        border-top: 1px solid #e5edf5;
+        overflow: visible;
+    }
+
+    .loan-filter-shell.is-open .loan-filter-panel {
+        display: block;
+    }
+
+    .loan-filter-shell .loan-filter-modern {
+        grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(120px, auto);
+        gap: 0.65rem;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        backdrop-filter: none;
+    }
+
+    .loan-filter-shell .loan-filter-label {
+        margin-left: 0;
+        letter-spacing: 0;
+    }
+
+    .loan-filter-shell .loan-dropdown-toggle,
+    .loan-filter-shell .btn-loan-modern-submit {
+        height: 44px;
+        border-radius: 8px;
+    }
+
+    .loan-filter-shell .loan-dropdown-toggle {
+        padding-right: 0.8rem;
+        padding-left: 2.7rem;
+        font-size: 0.82rem;
+    }
+
+    .loan-filter-shell .loan-dropdown-icon {
+        left: 1rem;
+    }
+
+    .loan-filter-shell .loan-dropdown-menu {
+        border-radius: 8px;
+    }
+
+    @media (max-width: 1399.98px) {
+        .loan-filter-shell .loan-filter-modern {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 767.98px) {
+        .loan-filter-summary-bar {
+            grid-template-columns: auto minmax(0, 1fr) auto;
+        }
+
+        .loan-filter-summary-title span {
+            display: none;
+        }
+
+        .loan-filter-summary-bar .loan-loading-chip {
+            display: none !important;
+        }
+
+        .loan-filter-shell .loan-filter-modern {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .loan-filter-shell .loan-filter-modern {
+            grid-template-columns: minmax(0, 1fr);
+        }
+    }
 </style>
 
 <div class="loan-dashboard pt-4 px-3">
@@ -286,7 +434,24 @@
         <div class="card loan-shell mb-4 animate-reveal">
             <div class="card-body p-4">
                 <form id="loanFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.matrix') }}">
-                    <div class="loan-filter-modern animate-reveal stagger-1">
+                    <div id="loanFilterShell" class="loan-filter-shell animate-reveal stagger-1">
+                        <button id="loanFilterToggle" type="button" class="loan-filter-summary-bar" aria-expanded="false" aria-controls="loanFilterPanel">
+                            <span class="loan-filter-summary-title"><i class="fas fa-sliders-h"></i><span>FILTER DATA</span></span>
+                            <span class="loan-filter-summary-copy">
+                                Posisi <strong id="loanActivePeriodMeta">{{ $formatMatrixPeriod($selectedPeriod) }}</strong>
+                                <span class="loan-filter-summary-separator">|</span>
+                                Delta <strong id="loanComparisonPeriodMeta">{{ $formatMatrixPeriod($comparisonPeriod) }}</strong>
+                                <span class="loan-filter-summary-separator">|</span>
+                                <span id="loanFilterSelectionSummary">Semua portofolio</span>
+                            </span>
+                            <span id="loanLoadingChip" class="loan-loading-chip d-none">
+                                <span class="loan-loading-dot"></span>
+                                MEMUAT...
+                            </span>
+                            <i class="fas fa-chevron-down loan-filter-summary-arrow"></i>
+                        </button>
+                        <div id="loanFilterPanel" class="loan-filter-panel">
+                            <div class="loan-filter-modern">
                         <div class="loan-filter-item">
                             <label class="loan-filter-label">Posisi Laporan</label>
                             <div class="loan-dropdown" data-loan-dropdown="periode">
@@ -358,21 +523,12 @@
                             </div>
                         </div>
 
-                        <div class="d-flex align-items-end" style="margin-bottom: 2px;">
-                            <button id="loanSubmitButton" type="submit" class="btn-loan-modern-submit w-100">
-                                <i class="fas fa-search"></i> FILTER
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-4 pb-3 border-bottom">
-                        <div class="loan-filter-meta">
-                            <span>Posisi Data: <strong id="loanActivePeriodMeta">{{ $formatMatrixPeriod($selectedPeriod) }}</strong></span>
-                            <span>Delta MTD: <strong id="loanComparisonPeriodMeta">{{ $formatMatrixPeriod($comparisonPeriod) }}</strong></span>
-                        </div>
-                        <div id="loanLoadingChip" class="loan-loading-chip d-none">
-                            <span class="loan-loading-dot"></span>
-                            MENYIAPKAN DATA...
+                                <div class="d-flex align-items-end" style="margin-bottom: 2px;">
+                                    <button id="loanSubmitButton" type="submit" class="btn-loan-modern-submit w-100">
+                                        <i class="fas fa-filter"></i> TERAPKAN
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -535,6 +691,9 @@
         const drillLoadMoreButton = document.getElementById('loanDrillLoadMoreButton');
         const drillExportButton = document.getElementById('loanDrillExportButton');
         const drillFooterNote = document.getElementById('loanDrillFooterNote');
+        const filterShell = document.getElementById('loanFilterShell');
+        const filterToggle = document.getElementById('loanFilterToggle');
+        const filterSelectionSummary = document.getElementById('loanFilterSelectionSummary');
 
         const filtersUrl = @json(route('report.dashboard-pinjaman.filters'));
         const dataUrl = @json(route('report.dashboard-pinjaman.data'));
@@ -547,6 +706,8 @@
         let activeFilterController = null;
         let activeController = null;
         let activeMatrixRequestId = 0;
+        let snapshotWarmTimer = null;
+        let snapshotWarmAttempts = 0;
         let activeFilterRequestId = 0;
         let activeDrillController = null;
         let activeDrillRequestId = 0;
@@ -591,12 +752,44 @@
             return `Posisi ${formatMatrixPeriodDate(selectedPeriod)} | Delta MTD ${formatMatrixPeriodDate(comparisonPeriod)}`;
         }
 
+        function setFilterPanelOpen(open) {
+            if (!filterShell || !filterToggle) return;
+            filterShell.classList.toggle('is-open', open);
+            filterToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (!open) {
+                document.querySelectorAll('.loan-dropdown').forEach(dropdown => dropdown.classList.remove('is-open'));
+            }
+        }
+
+        function summarizeFilterSelection(select, singularLabel) {
+            const selected = Array.from(select?.selectedOptions || []).filter(option => option.value !== '');
+            if (selected.length === 0) return null;
+            if (selected.length === 1) return selected[0].text;
+            return `${selected.length} ${singularLabel}`;
+        }
+
+        function updateFilterSummary() {
+            if (!filterSelectionSummary) return;
+            const selectedFilters = [
+                summarizeFilterSelection(segmenSelect, 'segmen'),
+                summarizeFilterSelection(produkSelect, 'produk'),
+                summarizeFilterSelection(cabangSelect, 'cabang'),
+                summarizeFilterSelection(unitSelect, 'unit'),
+            ].filter(Boolean);
+
+            filterSelectionSummary.textContent = selectedFilters.length > 0
+                ? selectedFilters.join(' · ')
+                : 'Semua portofolio';
+            filterToggle?.setAttribute('title', filterSelectionSummary.textContent);
+        }
+
         function abortInFlightRequests() {
             if (activeController) activeController.abort();
             if (activeFilterController) activeFilterController.abort();
             if (activeDrillController) activeDrillController.abort();
             window.clearTimeout(filterReloadTimer);
             window.clearTimeout(filterCascadeTimer);
+            window.clearTimeout(snapshotWarmTimer);
         }
 
         function releaseLoadingUi() {
@@ -940,18 +1133,41 @@
             $select.val(selected).trigger('change');
         }
 
-        async function loadMatrix(pushHistory = false) {
+        async function loadMatrix(pushHistory = false, isSnapshotRetry = false) {
             if (activeController) activeController.abort();
             activeController = new AbortController();
             const requestId = ++activeMatrixRequestId;
             const params = new URLSearchParams(new FormData(form));
             params.set('_ts', Date.now());
 
-            startLoadingProgress();
+            if (!isSnapshotRetry) {
+                window.clearTimeout(snapshotWarmTimer);
+                snapshotWarmAttempts = 0;
+                startLoadingProgress();
+            }
             try {
                 const response = await fetch(`${dataUrl}?${params.toString()}`, { signal: activeController.signal });
                 const payload = await response.json();
                 if (requestId !== activeMatrixRequestId) return;
+
+                if (payload.status === 'warming') {
+                    snapshotWarmAttempts += 1;
+                    const periodLabel = (payload.warming_periods || [])
+                        .map(formatMatrixPeriodDate)
+                        .join(', ');
+
+                    if (snapshotWarmAttempts >= 24) {
+                        body.innerHTML = `<tr><td colspan="${qualityColumns.length + outputColumns.length + 2}" class="text-center text-muted py-4">Snapshot periode ${escapeHtml(periodLabel)} masih diproses. Silakan muat ulang beberapa saat lagi.</td></tr>`;
+                        releaseLoadingUi();
+                        return;
+                    }
+
+                    updateLoadingProgress(28, 'Menyiapkan Snapshot', `Menyiapkan data ${periodLabel}. Memuat ulang otomatis...`);
+                    snapshotWarmTimer = window.setTimeout(() => {
+                        if (requestId === activeMatrixRequestId) loadMatrix(false, true);
+                    }, Number(payload.retry_after_ms) || 5000);
+                    return;
+                }
 
                 renderRows(payload.matrix_rows);
                 renderFoot(payload.grand_totals, payload.grand_total_value);
@@ -1049,8 +1265,14 @@
             foot.innerHTML = html;
         }
 
-        form.addEventListener('submit', e => { e.preventDefault(); loadMatrix(true); });
+        form.addEventListener('submit', e => {
+            e.preventDefault();
+            updateFilterSummary();
+            setFilterPanelOpen(false);
+            loadMatrix(true);
+        });
         periodInput.addEventListener('change', () => {
+            updateFilterSummary();
             loadFilterOptions();
         });
         periodInput.addEventListener('input', () => {
@@ -1182,6 +1404,8 @@
             } else {
                 textSpan.textContent = `${selectedValues.length} Terpilih`;
             }
+
+            updateFilterSummary();
         }
 
         const periodDisplay = document.getElementById('loanPeriodeDisplay');
@@ -1192,6 +1416,16 @@
             }
         });
         initModernDropdowns();
+
+        if (filterToggle) {
+            filterToggle.addEventListener('click', event => {
+                event.stopPropagation();
+                setFilterPanelOpen(!filterShell.classList.contains('is-open'));
+            });
+        }
+
+        updateFilterSummary();
+        setFilterPanelOpen(false);
 
         if (periodInput.value) loadFilterOptions();
     });

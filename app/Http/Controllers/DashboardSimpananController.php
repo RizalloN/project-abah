@@ -8,10 +8,13 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use App\Support\SimpananMultiPnSnapshotGate;
 use App\Support\DashboardDanaService;
+use App\Support\CrasMappingService;
 use App\Support\HourlyDpkDashboardService;
 use App\Support\MarketShareArea6Report;
 use App\Support\ReportCacheVersion;
@@ -210,6 +213,7 @@ class DashboardSimpananController extends Controller
 
     public function marketShareMappingIndex(Request $request): View
     {
+        $workbookPath = $this->freshMarketShareMappingWorkbookPath();
         $managedLink = $this->marketShareMappingManagedLink();
         $configuredWorkbookUrl = trim((string) ($managedLink['link_url'] ?? ''));
         $configuredSheetName = trim((string) ($managedLink['sheet_name'] ?? ''));
@@ -254,7 +258,7 @@ class DashboardSimpananController extends Controller
 
         $showDownloadPanel = false;
         $cachePath = trim((string) config("services.market_share_mapping.cache_path", 'app/public_workbooks/market-share-mapping.xlsx'), '/\\');
-        $filePath = storage_path($cachePath);
+        $filePath = $workbookPath ?? storage_path($cachePath);
         if (is_file($filePath) && filesize($filePath) >= self::OFFICE_VIEWER_MAX_BYTES) {
             $showDownloadPanel = true;
         }
@@ -275,7 +279,10 @@ class DashboardSimpananController extends Controller
             $showDownloadPanel = false;
         }
 
-        $nativeWorkbook = $token !== '' ? $this->marketShareMappingNativePayload($request) : ['ready' => false];
+        $marketShareGeography = $this->marketShareMappingGeographyPayload($workbookPath);
+        $nativeWorkbook = $token !== '' || !empty($marketShareGeography['ready'])
+            ? $this->marketShareMappingNativePayload($request, $workbookPath)
+            : ['ready' => false];
         $excelWorkbookSheetUrls = $googleWorkbookUrl !== '' ? [] : $this->officeWorkbookSheetUrls(
             $excelWorkbookUrl,
             $nativeWorkbook['sheetNames'] ?? [],
@@ -306,8 +313,25 @@ class DashboardSimpananController extends Controller
             'excelWorkbookSheetUrls' => $excelWorkbookSheetUrls,
             'excelWorkbookSelectedSheet' => $selectedWorkbookSheet,
             'nativeWorkbook' => $nativeWorkbook,
+            'marketShareGeography' => $marketShareGeography,
             'workbookProvider' => 'Google Sheets',
         ]);
+    }
+
+    public function marketShareCrasMappingIndex(Request $request): View
+    {
+        $payload = app(CrasMappingService::class)->payload($request->query());
+
+        return view('report.dashboard-dana-cras-mapping', [
+            'pageTitle' => 'Mapping CRAS',
+            'crasMapping' => $payload,
+            'crasMappingDataUrl' => route('report.dashboard-dana.market-share.mapping-cras.data'),
+        ]);
+    }
+
+    public function marketShareCrasMappingData(Request $request): \Illuminate\Http\JsonResponse
+    {
+        return response()->json(app(CrasMappingService::class)->payload($request->query()));
     }
 
     public function marketShareInstansiIndex(Request $request): View
@@ -692,10 +716,10 @@ class DashboardSimpananController extends Controller
         });
     }
 
-    private function marketShareMappingNativePayload(Request $request): array
+    private function marketShareMappingNativePayload(Request $request, ?string $workbookPath = null): array
     {
         $cachePath = trim((string) config('services.market_share_mapping.cache_path', 'app/public_workbooks/market-share-mapping.xlsx'), '/\\');
-        $path = storage_path($cachePath);
+        $path = $workbookPath ?? storage_path($cachePath);
 
         if (!is_file($path) || filesize($path) < 1024) {
             return ['ready' => false];
@@ -733,6 +757,400 @@ class DashboardSimpananController extends Controller
                 return ['ready' => false];
             }
         });
+    }
+
+    private function marketShareMappingGeographyPayload(?string $workbookPath = null): array
+    {
+        $cachePath = trim((string) config('services.market_share_mapping.cache_path', 'app/public_workbooks/market-share-mapping.xlsx'), '/\\');
+        $workbookPath = $workbookPath ?? storage_path($cachePath);
+        $source = (array) config('marketshare-geography.source', []);
+        $geoJsonRelativePath = trim((string) ($source['geojson_path'] ?? 'data/marketshare-area6-kecamatan.geojson'), '/\\');
+        $geoJsonPath = public_path($geoJsonRelativePath);
+
+        if (!is_file($workbookPath) || filesize($workbookPath) < 1024 || !is_file($geoJsonPath)) {
+            return ['ready' => false];
+        }
+
+        $unitDistricts = (array) config('marketshare-geography.unit_districts', []);
+        $branchDefinitions = (array) config('marketshare-geography.branches', []);
+        $cacheKey = 'market_share_mapping_geography:v2:' . md5(implode('|', [
+            $workbookPath,
+            (string) filemtime($workbookPath),
+            (string) filesize($workbookPath),
+            (string) filemtime($geoJsonPath),
+            (string) filesize($geoJsonPath),
+            json_encode([$unitDistricts, $branchDefinitions]),
+        ]));
+
+        return Cache::remember($cacheKey, now()->addMinutes(30), function () use (
+            $workbookPath,
+            $geoJsonPath,
+            $geoJsonRelativePath,
+            $unitDistricts,
+            $branchDefinitions,
+            $source
+        ): array {
+            try {
+                $preview = $this->readMarketShareMappingWorkbookPreview($workbookPath, 'REKAP');
+                $sectorColumns = [
+                    'pertanian' => ['label' => 'Pertanian', 'potential' => 6, 'existing' => 17, 'penetration' => 28],
+                    'perdagangan' => ['label' => 'Perdagangan', 'potential' => 7, 'existing' => 18, 'penetration' => 29],
+                    'perkebunan' => ['label' => 'Perkebunan', 'potential' => 8, 'existing' => 19, 'penetration' => 30],
+                    'perikanan' => ['label' => 'Perikanan', 'potential' => 9, 'existing' => 20, 'penetration' => 31],
+                    'peternakan' => ['label' => 'Peternakan', 'potential' => 10, 'existing' => 21, 'penetration' => 32],
+                    'jasa' => ['label' => 'Jasa', 'potential' => 11, 'existing' => 22, 'penetration' => 33],
+                    'consumer_briguna' => ['label' => 'Consumer Briguna', 'potential' => 12, 'existing' => 23, 'penetration' => 34],
+                    'industri' => ['label' => 'Industri', 'potential' => 13, 'existing' => 24, 'penetration' => 35],
+                    'pertambangan' => ['label' => 'Pertambangan', 'potential' => 14, 'existing' => 25, 'penetration' => 36],
+                    'lainnya' => ['label' => 'Lainnya', 'potential' => 15, 'existing' => 26, 'penetration' => 37],
+                ];
+
+                $units = [];
+                $branchTotals = [];
+                foreach ($preview['rows'] as $row) {
+                    $values = $this->marketShareGeographyRowValues((array) $row);
+                    $branchCell = trim((string) ($values[0] ?? ''));
+                    $unitCell = trim((string) ($values[1] ?? ''));
+                    if ($unitCell === '') {
+                        continue;
+                    }
+
+                    if (str_starts_with(strtoupper($unitCell), 'TOTAL -')) {
+                        $branchKey = $this->marketShareGeographyBranchKey($unitCell);
+                        if ($branchKey !== null) {
+                            $branchTotals[$branchKey] = [
+                                'potential' => $this->marketShareGeographyNumber($values[16] ?? null),
+                                'existing' => $this->marketShareGeographyNumber($values[27] ?? null),
+                                'penetration' => $this->marketShareGeographyNumber($values[38] ?? null),
+                                'source_row' => (int) ($row['number'] ?? 0),
+                            ];
+                        }
+                        continue;
+                    }
+
+                    if (!preg_match('/^\s*(\d+)\s*--\s*(.+)$/u', $unitCell, $unitMatch)) {
+                        continue;
+                    }
+
+                    $branchKey = $this->marketShareGeographyBranchKey($branchCell);
+                    if ($branchKey === null || !isset($branchDefinitions[$branchKey])) {
+                        continue;
+                    }
+
+                    $unitCode = str_pad((string) $unitMatch[1], 5, '0', STR_PAD_LEFT);
+                    $valuesBySector = [];
+                    foreach ($sectorColumns as $sectorKey => $definition) {
+                        $valuesBySector[$sectorKey] = [
+                            'potential' => $this->marketShareGeographyNumber($values[$definition['potential']] ?? null),
+                            'existing' => $this->marketShareGeographyNumber($values[$definition['existing']] ?? null),
+                            'penetration' => $this->marketShareGeographyNumber($values[$definition['penetration']] ?? null),
+                        ];
+                    }
+                    $valuesBySector['total'] = [
+                        'potential' => $this->marketShareGeographyNumber($values[16] ?? null),
+                        'existing' => $this->marketShareGeographyNumber($values[27] ?? null),
+                        'penetration' => $this->marketShareGeographyNumber($values[38] ?? null),
+                    ];
+
+                    $unitName = trim((string) $unitMatch[2]);
+                    $unitName = preg_replace('/^UNIT\s+/i', '', $unitName) ?? $unitName;
+                    $unitName = preg_replace('/\s+(MADIUN|MAGETAN|NGAWI|PONOROGO)$/i', '', $unitName) ?? $unitName;
+                    $districtCodes = array_values(array_unique(array_filter(array_map(
+                        static fn ($code): string => trim((string) $code),
+                        (array) ($unitDistricts[$unitCode] ?? [])
+                    ))));
+
+                    $units[] = [
+                        'code' => $unitCode,
+                        'name' => trim($unitName),
+                        'label' => $unitCode . ' - ' . trim($unitName),
+                        'branch' => $branchKey,
+                        'branch_label' => (string) ($branchDefinitions[$branchKey]['label'] ?? ucfirst($branchKey)),
+                        'district_codes' => $districtCodes,
+                        'source_row' => (int) ($row['number'] ?? 0),
+                        'values' => $valuesBySector,
+                    ];
+                }
+
+                $units = collect($units)
+                    ->sortBy(fn (array $unit): string => $unit['branch'] . '|' . $unit['name'])
+                    ->values()
+                    ->all();
+                $unitsByBranch = collect($units)->groupBy('branch');
+
+                $branches = [];
+                foreach ($branchDefinitions as $branchKey => $definition) {
+                    $branchUnits = $unitsByBranch->get($branchKey, collect());
+                    $calculatedPotential = (float) $branchUnits->sum(fn (array $unit): float => (float) ($unit['values']['total']['potential'] ?? 0));
+                    $calculatedExisting = (float) $branchUnits->sum(fn (array $unit): float => (float) ($unit['values']['total']['existing'] ?? 0));
+                    $totals = $branchTotals[$branchKey] ?? [
+                        'potential' => $calculatedPotential,
+                        'existing' => $calculatedExisting,
+                        'penetration' => $calculatedPotential > 0 ? ($calculatedExisting / $calculatedPotential) * 100 : 0,
+                        'source_row' => null,
+                    ];
+
+                    $branches[] = [
+                        'key' => $branchKey,
+                        'label' => (string) ($definition['label'] ?? ucfirst((string) $branchKey)),
+                        'regency_codes' => array_values((array) ($definition['regency_codes'] ?? [])),
+                        'unit_count' => $branchUnits->count(),
+                        'totals' => $totals,
+                    ];
+                }
+
+                $geoJson = json_decode((string) file_get_contents($geoJsonPath), true, 512, JSON_THROW_ON_ERROR);
+                $geoDistrictCodes = collect($geoJson['features'] ?? [])
+                    ->map(fn (array $feature): string => trim((string) ($feature['properties']['KDCPUM'] ?? '')))
+                    ->filter()
+                    ->unique()
+                    ->values();
+                $configuredDistrictCodes = collect($unitDistricts)
+                    ->flatten()
+                    ->map(fn ($code): string => trim((string) $code))
+                    ->filter()
+                    ->unique()
+                    ->values();
+                $mappedUnits = collect($units)->filter(fn (array $unit): bool => $unit['district_codes'] !== [])->count();
+                $areaPotential = (float) collect($branches)->sum(fn (array $branch): float => (float) ($branch['totals']['potential'] ?? 0));
+                $areaExisting = (float) collect($branches)->sum(fn (array $branch): float => (float) ($branch['totals']['existing'] ?? 0));
+
+                return [
+                    'ready' => $units !== [] && $geoDistrictCodes->count() > 0,
+                    'title' => 'Peta Potensi & Penetrasi Area 6',
+                    'subtitle' => 'Visualisasi wilayah layanan Unit Kerja berbasis polygon kecamatan.',
+                    'sheet' => 'REKAP',
+                    'updated_at' => date('d M Y H:i', filemtime($workbookPath)),
+                    'geojson' => $geoJson,
+                    'geojson_url' => asset($geoJsonRelativePath),
+                    'geojson_sha256' => hash_file('sha256', $geoJsonPath),
+                    'source' => [
+                        'label' => (string) ($source['label'] ?? 'Badan Informasi Geospasial'),
+                        'url' => (string) ($source['url'] ?? ''),
+                    ],
+                    'sectors' => array_merge(
+                        [['key' => 'total', 'label' => 'Total seluruh sektor']],
+                        collect($sectorColumns)
+                            ->map(fn (array $definition, string $key): array => ['key' => $key, 'label' => $definition['label']])
+                            ->values()
+                            ->all()
+                    ),
+                    'metrics' => [
+                        ['key' => 'potential', 'label' => 'Potensi Nasabah'],
+                        ['key' => 'existing', 'label' => 'Existing Nasabah'],
+                        ['key' => 'penetration', 'label' => 'Penetrasi'],
+                    ],
+                    'branches' => $branches,
+                    'units' => $units,
+                    'area_totals' => [
+                        'potential' => $areaPotential,
+                        'existing' => $areaExisting,
+                        'penetration' => $areaPotential > 0 ? ($areaExisting / $areaPotential) * 100 : 0,
+                    ],
+                    'coverage' => [
+                        'unit_count' => count($units),
+                        'mapped_unit_count' => $mappedUnits,
+                        'district_count' => $geoDistrictCodes->count(),
+                        'mapped_district_count' => $geoDistrictCodes->intersect($configuredDistrictCodes)->count(),
+                        'unmapped_unit_codes' => collect($units)
+                            ->filter(fn (array $unit): bool => $unit['district_codes'] === [])
+                            ->pluck('code')
+                            ->values()
+                            ->all(),
+                        'unknown_district_codes' => $configuredDistrictCodes->diff($geoDistrictCodes)->values()->all(),
+                    ],
+                ];
+            } catch (Throwable $exception) {
+                Log::warning('Market Share geography payload failed.', [
+                    'message' => $exception->getMessage(),
+                ]);
+
+                return ['ready' => false];
+            }
+        });
+    }
+
+    private function freshMarketShareMappingWorkbookPath(): ?string
+    {
+        $cachePath = trim((string) config('services.market_share_mapping.cache_path', 'app/cache/market-share-mapping.xlsx'), '/\\');
+        $path = storage_path($cachePath);
+        $fallbackCachePath = trim((string) config('services.market_share_mapping.fallback_cache_path', 'app/public_workbooks/market-share-mapping.xlsx'), '/\\');
+        $fallbackPath = storage_path($fallbackCachePath);
+        $cacheMinutes = max(0, (int) config('services.market_share_mapping.cache_minutes', 15));
+        $useFallback = $cachePath === 'app/cache/market-share-mapping.xlsx'
+            || $fallbackCachePath !== 'app/public_workbooks/market-share-mapping.xlsx';
+        $availableWorkbookPath = function () use ($path, $fallbackPath, $useFallback): ?string {
+            if ($this->isUsableMarketShareMappingWorkbook($path)) {
+                return $path;
+            }
+
+            return $useFallback && $this->isUsableMarketShareMappingWorkbook($fallbackPath) ? $fallbackPath : null;
+        };
+
+        if ($cacheMinutes > 0
+            && $this->isUsableMarketShareMappingWorkbook($path)
+            && filemtime($path) >= now()->subMinutes($cacheMinutes)->getTimestamp()) {
+            return $path;
+        }
+
+        $availablePath = $availableWorkbookPath();
+        if ($cacheMinutes > 0 && $availablePath !== null) {
+            $this->deferMarketShareMappingWorkbookRefresh($path);
+
+            return $availablePath;
+        }
+
+        $this->refreshMarketShareMappingWorkbook($path);
+
+        return $availableWorkbookPath();
+    }
+
+    private function deferMarketShareMappingWorkbookRefresh(string $path): void
+    {
+        $pendingKey = 'market_share_mapping_workbook_refresh:pending';
+        if (!Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
+            return;
+        }
+
+        app()->terminating(function () use ($path, $pendingKey) {
+            try {
+                $this->refreshMarketShareMappingWorkbook($path);
+            } finally {
+                Cache::forget($pendingKey);
+            }
+        });
+    }
+
+    private function refreshMarketShareMappingWorkbook(string $path): void
+    {
+        $lock = Cache::lock('market_share_mapping_workbook_refresh', 60);
+        if (!$lock->get()) {
+            return;
+        }
+
+        try {
+            $sourceUrl = $this->marketShareMappingExportUrl();
+            if ($sourceUrl === '') {
+                return;
+            }
+
+            $timeoutSeconds = max(15, (int) config('services.market_share_mapping.timeout_seconds', 30));
+            $response = Http::timeout($timeoutSeconds)
+                ->retry(2, 500)
+                ->withHeaders(['User-Agent' => 'ASIXDashboardMarketShare/1.0'])
+                ->get($sourceUrl);
+            $body = $response->body();
+
+            if (!$response->successful() || !$this->looksLikeXlsxWorkbook($body)) {
+                throw new \RuntimeException('Google Sheets tidak mengembalikan workbook XLSX yang valid.');
+            }
+
+            File::ensureDirectoryExists(dirname($path));
+            $temporaryPath = $path . '.refresh-' . bin2hex(random_bytes(6));
+            File::put($temporaryPath, $body);
+
+            if (!$this->isUsableMarketShareMappingWorkbook($temporaryPath)) {
+                File::delete($temporaryPath);
+                throw new \RuntimeException('Workbook Google Sheets hasil unduh tidak valid.');
+            }
+
+            File::move($temporaryPath, $path, true);
+        } catch (Throwable $exception) {
+            Log::warning('Market Share Mapping workbook refresh failed.', [
+                'message' => $exception->getMessage(),
+            ]);
+        } finally {
+            optional($lock)->release();
+        }
+    }
+
+    private function marketShareMappingExportUrl(): string
+    {
+        $sourceUrl = $this->extractIframeSource(trim((string) config('services.market_share_mapping.source_url', '')));
+        if ($sourceUrl === '') {
+            $sourceUrl = $this->extractIframeSource(trim((string) config('services.market_share_mapping.workbook_url', '')));
+        }
+
+        $parts = parse_url($sourceUrl);
+        if ($parts === false || strtolower((string) ($parts['host'] ?? '')) !== 'docs.google.com') {
+            return $sourceUrl;
+        }
+
+        if (!preg_match('~/spreadsheets/d/([^/]+)~', (string) ($parts['path'] ?? ''), $matches)) {
+            return '';
+        }
+
+        return 'https://docs.google.com/spreadsheets/d/'
+            . rawurlencode((string) $matches[1])
+            . '/export?format=xlsx';
+    }
+
+    private function isUsableMarketShareMappingWorkbook(string $path): bool
+    {
+        if (!is_file($path) || filesize($path) < 1024) {
+            return false;
+        }
+
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            return false;
+        }
+
+        $header = fread($handle, 4);
+        fclose($handle);
+
+        return $this->looksLikeXlsxWorkbook((string) $header, false);
+    }
+
+    private function looksLikeXlsxWorkbook(string $content, bool $checkSize = true): bool
+    {
+        if ($checkSize && strlen($content) < 1024) {
+            return false;
+        }
+
+        return str_starts_with($content, "PK\x03\x04")
+            || str_starts_with($content, "PK\x05\x06")
+            || str_starts_with($content, "PK\x07\x08");
+    }
+
+    private function marketShareGeographyRowValues(array $row): array
+    {
+        return array_map(
+            static fn (array $cell): string => !empty($cell['skip']) ? '' : trim((string) ($cell['value'] ?? '')),
+            (array) ($row['cells'] ?? [])
+        );
+    }
+
+    private function marketShareGeographyBranchKey(string $value): ?string
+    {
+        $normalized = strtoupper(trim($value));
+        foreach (array_keys((array) config('marketshare-geography.branches', [])) as $branchKey) {
+            if (str_contains($normalized, strtoupper((string) $branchKey))) {
+                return (string) $branchKey;
+            }
+        }
+
+        return null;
+    }
+
+    private function marketShareGeographyNumber(mixed $value): float
+    {
+        $normalized = preg_replace('/\s+/', '', trim((string) $value)) ?? '';
+        $normalized = str_replace('%', '', $normalized);
+        if ($normalized === '' || $normalized === '-') {
+            return 0.0;
+        }
+
+        if (preg_match('/^-?\d{1,3}(,\d{3})+(\.\d+)?$/', $normalized)) {
+            $normalized = str_replace(',', '', $normalized);
+        } elseif (preg_match('/^-?\d{1,3}(\.\d{3})+(,\d+)?$/', $normalized)) {
+            $normalized = str_replace('.', '', $normalized);
+            $normalized = str_replace(',', '.', $normalized);
+        } else {
+            $normalized = str_replace(',', '.', $normalized);
+        }
+
+        return is_numeric($normalized) ? (float) $normalized : 0.0;
     }
 
     private function readMarketShareMappingWorkbookPreview(string $path, string $requestedSheet): array
@@ -2346,6 +2764,7 @@ class DashboardSimpananController extends Controller
         $linkUrl = trim((string) $row->link_url);
         $sheetName = trim((string) ($row->sheet_name ?? ''));
         if (str_contains($linkUrl, '1Wlf7Wv5SR8DhtDlRgYwzhAHDSdwIsooa')
+            || str_contains($linkUrl, '18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY')
             || $this->googleSpreadsheetPreviewUrl($linkUrl, $sheetName) === ''
         ) {
             return null;

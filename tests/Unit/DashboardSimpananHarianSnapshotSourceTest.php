@@ -237,6 +237,81 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $this->assertArrayHasKey('KC Madiun', $service->fetchBranches());
     }
 
+    public function test_dashboard_dana_branch_ritel_scope_uses_exact_kc_and_kcp_units_with_their_own_rka(): void
+    {
+        $summary = $this->summaryRow('2026-05-19', 'KC Ponorogo', 7_260, 0, 3, 0, [
+            'giro_ritel' => 1_210,
+            'tabungan_ritel' => 2_420,
+            'deposito_ritel' => 3_630,
+            'simpanan_ritel' => 7_260,
+        ]);
+        $kc = $this->unitRow('2026-05-19', 'KC Ponorogo', 'KC Ponorogo', 660, 0, [
+            'giro_ritel' => 110,
+            'tabungan_ritel' => 220,
+            'deposito_ritel' => 330,
+            'simpanan_ritel' => 660,
+        ]);
+        $kc['unit_key'] = 'kc-ponorogo-detail';
+        $kcp = $this->unitRow('2026-05-19', 'KC Ponorogo', 'KCP Sudirman Ponorogo', 66, 0, [
+            'giro_ritel' => 11,
+            'tabungan_ritel' => 22,
+            'deposito_ritel' => 33,
+            'simpanan_ritel' => 66,
+        ]);
+        $unit = $this->unitRow('2026-05-19', 'KC Ponorogo', 'UNIT Ngrayun Ponorogo', 6_534, 0, [
+            'giro_ritel' => 1_089,
+            'tabungan_ritel' => 2_178,
+            'deposito_ritel' => 3_267,
+            'simpanan_ritel' => 6_534,
+        ]);
+
+        DB::table('dashboard_harian_snapshots')->insert([$summary, $kc, $kcp, $unit]);
+        DB::table('rka')
+            ->where('tahun', 2026)
+            ->where('kanca', 'KC Ponorogo')
+            ->whereIn('mata_anggaran', [
+                'Giro Retail Funding Total',
+                'Tabungan Retail Funding Total',
+                'Deposito Retail Funding Total',
+            ])
+            ->delete();
+        DB::table('rka')->insert([
+            $this->rkaRetailRow('rka-dana-ponorogo-kc-giro', '70-KC Ponorogo', 'Giro Retail Funding Total', 100),
+            $this->rkaRetailRow('rka-dana-ponorogo-kc-tabungan', '70-KC Ponorogo', 'Tabungan Retail Funding Total', 200),
+            $this->rkaRetailRow('rka-dana-ponorogo-kc-deposito', '70-KC Ponorogo', 'Deposito Retail Funding Total', 300),
+            $this->rkaRetailRow('rka-dana-ponorogo-kcp-giro', '2204-KCP Sudirman Ponorogo', 'Giro Retail Funding Total', 10),
+            $this->rkaRetailRow('rka-dana-ponorogo-kcp-tabungan', '2204-KCP Sudirman Ponorogo', 'Tabungan Retail Funding Total', 20),
+            $this->rkaRetailRow('rka-dana-ponorogo-kcp-deposito', '2204-KCP Sudirman Ponorogo', 'Deposito Retail Funding Total', 30),
+        ]);
+
+        $payload = app(DashboardDanaService::class)->getDashboardData('2026-05-19', 'Ritel', '2026-05-01', 'KC Ponorogo');
+        $rows = collect($payload['rows']);
+        $totalRows = $rows->where('is_total', true)->values();
+        $kcTotal = $totalRows->firstWhere('nama_cabang', 'KC PONOROGO');
+        $kcpTotal = $totalRows->firstWhere('nama_cabang', 'KCP SUDIRMAN PONOROGO');
+
+        $this->assertSame('branch', $payload['scope']);
+        $this->assertSame('unit_kerja', $payload['scope_dimension']);
+        $this->assertSame(['KC PONOROGO', 'KCP SUDIRMAN PONOROGO'], $totalRows->pluck('nama_cabang')->all());
+        $this->assertEqualsWithDelta(660, $kcTotal['selected'], 0.01);
+        $this->assertEqualsWithDelta(60, $kcTotal['rka_rp'], 0.01);
+        $this->assertEqualsWithDelta(66, $kcpTotal['selected'], 0.01);
+        $this->assertEqualsWithDelta(6, $kcpTotal['rka_rp'], 0.01);
+        $this->assertEqualsWithDelta(726, $payload['total']['selected'], 0.01);
+        $this->assertNull($totalRows->firstWhere('nama_cabang', 'UNIT NGRAYUN PONOROGO'));
+
+        $allSegmentPayload = app(DashboardDanaService::class)->getDashboardData('2026-05-19', 'all', '2026-05-01', 'KC Ponorogo');
+        $allSegmentTotalRows = collect($allSegmentPayload['rows'])->where('is_total', true)->values();
+
+        $this->assertSame('unit_kerja_dan_segmen', $allSegmentPayload['scope_dimension']);
+        $this->assertSame(
+            ['KC PONOROGO', 'KCP SUDIRMAN PONOROGO', 'MIKRO', 'WHOLESALE'],
+            $allSegmentTotalRows->pluck('nama_cabang')->all()
+        );
+        $this->assertNull($allSegmentTotalRows->firstWhere('nama_cabang', 'RITEL'));
+        $this->assertEqualsWithDelta(726, $allSegmentPayload['total']['selected'], 0.01);
+    }
+
     public function test_area6_portfolio_exposes_cabang_ritel_and_micro_scopes(): void
     {
         DB::table('dashboard_harian_snapshots')->insert($this->summaryRow('2026-05-19', 'KC Madiun', 1_000_000_000, 2_000_000_000, 10, 20, [
@@ -656,6 +731,20 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $row['unit_label'] = $unit;
 
         return $row;
+    }
+
+    private function rkaRetailRow(string $id, string $unit, string $mataAnggaran, int $may): array
+    {
+        return [
+            'uniqueid_namareport' => $id,
+            'tahun' => 2026,
+            'kanca' => 'KC Ponorogo',
+            'desc_uker' => $unit,
+            'mata_anggaran' => $mataAnggaran,
+            'may' => $may,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
     }
 
     private function createDigitalSnapshotTables(): void

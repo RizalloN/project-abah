@@ -17,9 +17,25 @@ class DashboardHarianResponsiveViewTest extends TestCase
         $this->assertStringContainsString('.daily-panel-actions {', $source);
         $this->assertStringContainsString('flex-wrap: wrap;', $source);
         $this->assertStringContainsString('@media (orientation: portrait) and (max-width: 1199.98px)', $source);
-        $this->assertStringContainsString('grid-template-columns: repeat(2, minmax(min(100%, 220px), 1fr)) !important;', $source);
+        $this->assertStringContainsString('container-type: inline-size;', $source);
+        $this->assertStringContainsString('grid-template-areas: "kanca unit posisi rka action";', $source);
+        $this->assertStringContainsString('"action action"', $source);
+        $this->assertStringContainsString('@media (max-width: 640px)', $source);
         $this->assertStringContainsString('grid-column: 1 / -1 !important;', $source);
+        $this->assertStringContainsString('white-space: normal !important;', $source);
+        $this->assertStringContainsString('font-size: clamp(0.82rem, 5.2vw, 0.95rem) !important;', $source);
         $this->assertStringContainsString('overflow-x: auto !important;', $source);
         $this->assertStringContainsString('-webkit-overflow-scrolling: touch;', $source);
+        $this->assertStringContainsString('Use the compact filter summary on every viewport.', $source);
+        $this->assertStringContainsString('@media (min-width: 1400px)', $source);
+        $this->assertStringContainsString('minmax(164px, 0.72fr)', $source);
+        $this->assertStringContainsString('height: 58px !important;', $source);
+        $this->assertStringContainsString('align-items: start !important;', $source);
+        $this->assertStringContainsString('aria-controls="daily-filter-grid"', $source);
+        $this->assertStringContainsString('const setFilterPanelOpen = function (isOpen)', $source);
+        $this->assertStringContainsString('setFilterPanelOpen(false);', $source);
+        $this->assertStringContainsString("applyButton.addEventListener('click', function ()", $source);
+        $this->assertStringContainsString('window.addEventListener(\'orientationchange\', handleResponsiveViewportChange);', $source);
+        $this->assertStringContainsString('window.visualViewport.addEventListener(\'resize\', handleResponsiveViewportChange);', $source);
     }
 }

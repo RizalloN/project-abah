@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\EnsureDashboardSnapshotJob;
-use App\Support\DashboardHarianSnapshotService;
 use App\Support\DashboardPinjamanChartPeriodikService;
 use App\Support\ReportIndexHintResolver;
 use App\Support\ReportCacheVersion;
@@ -929,7 +928,28 @@ class DashboardPinjamanReportController extends Controller
 
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
 
-        $cacheKey = 'dashboard_pinjaman_matrix_direct:v9-cras-exit-metrics:' . md5(json_encode([
+        $warmingPeriods = $this->queueMissingMatrixSnapshots([
+            $selectedPeriod,
+            $comparisonPeriod,
+        ]);
+
+        if ($warmingPeriods !== []) {
+            return response()->json([
+                'status' => 'warming',
+                'retry_after_ms' => 5000,
+                'warming_periods' => $warmingPeriods,
+                'selected_period' => $selectedPeriod,
+                'comparison_period' => $comparisonPeriod,
+                'matrix_columns' => self::QUALITY_BUCKETS,
+                'output_columns' => self::OUTPUT_COLUMNS,
+                'matrix_rows' => [],
+                'grand_totals' => [],
+                'grand_total_value' => 0.0,
+                'data_source' => 'daily_loan_dinamis',
+            ]);
+        }
+
+        $cacheKey = 'dashboard_pinjaman_matrix_direct:v10-daily-ph-and-cras-exit:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'comparison' => $comparisonPeriod,
@@ -940,7 +960,7 @@ class DashboardPinjamanReportController extends Controller
 
         [$matrixRows, $grandTotals, $grandTotalValue] = $this->rememberPayload(
             $cacheKey,
-            now()->addMinutes(3),
+            now()->addMinutes(15),
             fn () => $this->buildMatrixData($selectedPeriod, $comparisonPeriod, $filters),
             $forceRefresh,
             fn () => [[], [], 0.0]
@@ -1326,9 +1346,12 @@ class DashboardPinjamanReportController extends Controller
             }
 
             $metricRowsRaw = $useLw325RecoveryMetrics
-                ? $this->buildRecoveryMetricAggregateQuery(
-                    $this->buildLw325RecoveryMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useComparisonSnapshot)
-                        ->unionAll($this->buildDailyLoanExitMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useCurrentSnapshot, $useComparisonSnapshot))
+                ? $this->buildLw325MatrixMetricAggregateQuery(
+                    $selectedPeriod,
+                    $comparisonPeriod,
+                    $filters,
+                    $useCurrentSnapshot,
+                    $useComparisonSnapshot
                 )->get()
                 : $this->buildMovementMetricAggregateQuery(
                     $selectedPeriod,
@@ -1725,6 +1748,10 @@ class DashboardPinjamanReportController extends Controller
             $this->buildDailyLoanExitMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useCurrentSnapshot, $useComparisonSnapshot)
         );
 
+        $movementMetrics->unionAll(
+            $this->buildDailyLoanPhMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useComparisonSnapshot)
+        );
+
         if ($useLw325RecoveryMetrics) {
             $movementMetrics->unionAll(
                 $this->buildLw325RecoveryMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useComparisonSnapshot)
@@ -1746,6 +1773,42 @@ class DashboardPinjamanReportController extends Controller
                     ->orWhere('metric_type', 'ph');
             })
             ->groupBy('before_bucket', 'metric_type');
+    }
+
+    private function buildLw325MatrixMetricAggregateQuery(
+        string $selectedPeriod,
+        ?string $comparisonPeriod,
+        array $filters,
+        ?bool $useCurrentSnapshot = null,
+        ?bool $useComparisonSnapshot = null
+    ) {
+        $metrics = $this->buildLw325RecoveryMetricQuery(
+            $selectedPeriod,
+            $comparisonPeriod,
+            $filters,
+            $useComparisonSnapshot
+        );
+
+        $metrics->unionAll(
+            $this->buildDailyLoanPhMetricQuery(
+                $selectedPeriod,
+                $comparisonPeriod,
+                $filters,
+                $useComparisonSnapshot
+            )
+        );
+
+        $metrics->unionAll(
+            $this->buildDailyLoanExitMetricQuery(
+                $selectedPeriod,
+                $comparisonPeriod,
+                $filters,
+                $useCurrentSnapshot,
+                $useComparisonSnapshot
+            )
+        );
+
+        return $this->buildRecoveryMetricAggregateQuery($metrics);
     }
 
     private function buildDailyLoanExitMetricQuery(
@@ -1828,27 +1891,40 @@ class DashboardPinjamanReportController extends Controller
 
         $alias = 'ph_loan';
         $balanceExpression = $this->buildExcelSnapshotOsHelperExpression("{$alias}.baki_debet1");
+        $currentAccountKey = $this->accountKeySql("{$alias}.nomor_rekening1");
         $previousSnapshot = $comparisonPeriod
             ? $this->buildPreviousBucketLookupQuery($comparisonPeriod, $filters, 'prev_ph_loan', $useComparisonSnapshot)
             : $this->buildEmptyAggregatedLoanSnapshotQuery();
+        $previousAccountKey = $this->accountKeySql('prev_bucket.account_number');
 
-        $query = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
-            ->leftJoinSub($previousSnapshot, 'prev_bucket', function ($join) use ($alias) {
-                $join->on(DB::raw("TRIM({$alias}.nomor_rekening1)"), '=', 'prev_bucket.account_number');
+        $rows = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
+            ->leftJoinSub($previousSnapshot, 'prev_bucket', function ($join) use ($currentAccountKey, $previousAccountKey) {
+                $join->on(DB::raw($currentAccountKey), '=', DB::raw($previousAccountKey));
             })
             ->where("{$alias}.periode", $selectedPeriod)
             ->whereRaw("TRIM(COALESCE({$alias}.status_rekening1, '')) = '5'")
             ->whereNotNull("{$alias}.nomor_rekening1")
             ->where("{$alias}.nomor_rekening1", '<>', '')
+            ->selectRaw("{$currentAccountKey} as account_number")
             ->selectRaw("COALESCE(prev_bucket.bucket, 'New Account') as before_bucket")
-            ->selectRaw("'ph' as metric_type")
-            ->selectRaw("CAST(ROUND(SUM(COALESCE({$balanceExpression}, 0)) * 100, 0) AS SIGNED) as amount_cents")
-            ->groupByRaw("COALESCE(prev_bucket.bucket, 'New Account')");
+            ->selectRaw("COALESCE({$balanceExpression}, 0) as balance_amount");
 
-        $this->applyFilterConstraint($query, "{$alias}.segmen_dashboard", $filters['segmen']);
-        $this->applyFilterConstraint($query, "{$alias}.produk_dashboard", $filters['produk']);
-        $this->applyFilterConstraint($query, "{$alias}.cabang1", $filters['cabang']);
-        $this->applyFilterConstraint($query, "{$alias}.unit1", $filters['unit']);
+        $this->applyFilterConstraint($rows, "{$alias}.segmen_dashboard", $filters['segmen']);
+        $this->applyFilterConstraint($rows, "{$alias}.produk_dashboard", $filters['produk']);
+        $this->applyFilterConstraint($rows, "{$alias}.cabang1", $filters['cabang']);
+        $this->applyFilterConstraint($rows, "{$alias}.unit1", $filters['unit']);
+
+        $accounts = DB::query()
+            ->fromSub($rows, 'daily_loan_ph_rows')
+            ->selectRaw('account_number, before_bucket, MAX(balance_amount) as balance_amount')
+            ->groupBy('account_number', 'before_bucket');
+
+        $query = DB::query()
+            ->fromSub($accounts, 'daily_loan_ph_accounts')
+            ->selectRaw('before_bucket')
+            ->selectRaw("'ph' as metric_type")
+            ->selectRaw('CAST(ROUND(SUM(COALESCE(balance_amount, 0)) * 100, 0) AS SIGNED) as amount_cents')
+            ->groupBy('before_bucket');
 
         return DB::query()
             ->fromSub($query, 'daily_loan_ph_metrics')
@@ -1884,25 +1960,35 @@ class DashboardPinjamanReportController extends Controller
         $previousAccountKey = $this->phAccountKeySql('o');
         $previousBucketAccountKey = $this->accountKeySql('prev_bucket.account_number');
 
-        $tupokQuery = DB::table('lw325_ph as n')
-            ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $currentPhPeriod, $currentAccountKey, $previousAccountKey) {
-                $join->on(DB::raw($currentAccountKey), '=', DB::raw($previousAccountKey))
-                    ->whereRaw('n.periode = ?', [$currentPhPeriod])
-                    ->whereRaw('o.periode = ?', [$previousPhPeriod]);
+        $previousAccounts = DB::table('lw325_ph as o')
+            ->where('o.periode', $previousPhPeriod)
+            ->whereNotNull('o.acctno')
+            ->where('o.acctno', '<>', '')
+            ->selectRaw("{$previousAccountKey} as account_number")
+            ->selectRaw("SUM(COALESCE({$oldPokok}, 0)) as pokok_amount")
+            ->groupByRaw($previousAccountKey);
+        $this->applyLw325RecoveryFilters($previousAccounts, 'o', $filters);
+
+        $currentAccounts = DB::table('lw325_ph as n')
+            ->where('n.periode', $currentPhPeriod)
+            ->whereNotNull('n.acctno')
+            ->where('n.acctno', '<>', '')
+            ->selectRaw("{$currentAccountKey} as account_number")
+            ->selectRaw("SUM(COALESCE({$currentPokok}, 0)) as pokok_amount")
+            ->groupByRaw($currentAccountKey);
+
+        $tupokQuery = DB::query()
+            ->fromSub($previousAccounts, 'old_ph')
+            ->joinSub($currentAccounts, 'current_ph', function ($join) {
+                $join->on('old_ph.account_number', '=', 'current_ph.account_number');
             })
-            ->leftJoinSub($previousSnapshot, 'prev_bucket', function ($join) use ($previousAccountKey, $previousBucketAccountKey) {
-                $join->on(DB::raw($previousAccountKey), '=', DB::raw($previousBucketAccountKey));
+            ->leftJoinSub($previousSnapshot, 'prev_bucket', function ($join) use ($previousBucketAccountKey) {
+                $join->on('old_ph.account_number', '=', DB::raw($previousBucketAccountKey));
             })
             ->selectRaw("COALESCE(prev_bucket.bucket, 'New Account') as before_bucket")
             ->selectRaw("'principal_reduction' as metric_type")
-            ->selectRaw("CAST(ROUND(({$oldPokok} - {$currentPokok}) * 100, 0) AS SIGNED) as amount_cents")
-            ->whereRaw("({$oldPokok} - {$currentPokok}) > 0")
-            ->whereNotNull('n.acctno')
-            ->where('n.acctno', '<>', '')
-            ->whereNotNull('o.acctno')
-            ->where('o.acctno', '<>', '');
-
-        $this->applyLw325RecoveryFilters($tupokQuery, 'o', $filters);
+            ->selectRaw('CAST(ROUND((old_ph.pokok_amount - current_ph.pokok_amount) * 100, 0) AS SIGNED) as amount_cents')
+            ->whereRaw('(old_ph.pokok_amount - current_ph.pokok_amount) > 0');
 
         return $tupokQuery;
     }
@@ -3123,28 +3209,11 @@ class DashboardPinjamanReportController extends Controller
         $lock = Cache::lock('snapshot:dashboard:auto-rebuild:' . $period, 60);
         $pendingKey = 'snapshot:dashboard:auto-rebuild:pending:' . $period;
         $jobDispatched = false;
-        $built = false;
 
         try {
             if ($lock->get()) {
-                try {
-                    $builder = app(\App\Support\ReportSnapshotBuilder::class);
-                    $builder->rebuildDashboard($period, false);
-                    $builder->rebuildChartPeriodik($period, false);
-                    $builder->rebuildRasioCasa($period, false);
-                    $builder->rebuildPerformanceRm($period, false);
-
-                    app(\App\Support\DashboardHarianSnapshotService::class)->rebuild($period, false);
-
-                    $built = DB::table(self::SNAPSHOT_TABLE)
-                        ->where('periode', $period)
-                        ->exists();
-                } catch (Throwable $builderEx) {
-                    Log::warning('Synchronous rebuild dashboard pinjaman failed, falling back: ' . $builderEx->getMessage());
-                }
-
                 if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
-                        EnsureDashboardSnapshotJob::dispatch($period, static::class . '::hasDashboardSnapshot')
+                    EnsureDashboardSnapshotJob::dispatch($period, static::class . '::hasDashboardSnapshot')
                         ->onQueue((string) config('queue.report_queue', 'default'));
                     $jobDispatched = true;
                 }
@@ -3157,13 +3226,7 @@ class DashboardPinjamanReportController extends Controller
             optional($lock)->release();
         }
 
-        if ($built) {
-            Cache::put($cacheKey, true, now()->addMinutes(10));
-
-            return true;
-        }
-
-        Log::info('Dashboard snapshot unavailable; using source query fallback.', [
+        Log::info('Dashboard snapshot is being prepared asynchronously.', [
             'period' => $period,
             'job_dispatched' => $jobDispatched,
         ]);
@@ -3171,6 +3234,31 @@ class DashboardPinjamanReportController extends Controller
         Cache::put($cacheKey, false, now()->addSeconds(30));
 
         return false;
+    }
+
+    /**
+     * Queue only the missing snapshots that have source data. This keeps the
+     * matrix endpoint responsive instead of rebuilding hundreds of thousands
+     * of snapshot rows during a browser request.
+     */
+    private function queueMissingMatrixSnapshots(array $periods): array
+    {
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE) || !Schema::hasTable('daily_loan_dinamis')) {
+            return [];
+        }
+
+        $warmingPeriods = [];
+        foreach (array_values(array_unique(array_filter($periods))) as $period) {
+            if ($this->hasDashboardSnapshot($period)) {
+                continue;
+            }
+
+            if (DB::table('daily_loan_dinamis')->where('periode', $period)->exists()) {
+                $warmingPeriods[] = $period;
+            }
+        }
+
+        return $warmingPeriods;
     }
 
     private function shouldUseSnapshot(?string $period, array $filters): bool

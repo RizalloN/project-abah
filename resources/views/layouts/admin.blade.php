@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <title>@hasSection('title')@yield('title') - @endif{{ config('app.name', 'Dashboard A-Six') }}</title>
     <link rel="icon" type="image/svg+xml" href="{{ asset('images/a-six-logo.svg') }}">
 
@@ -26,6 +26,12 @@
             --bri-night: #042a5f;
             --bri-mist: #f2f7ff;
             --bri-white: #ffffff;
+            --app-safe-top: env(safe-area-inset-top, 0px);
+            --app-safe-right: env(safe-area-inset-right, 0px);
+            --app-safe-bottom: env(safe-area-inset-bottom, 0px);
+            --app-safe-left: env(safe-area-inset-left, 0px);
+            --app-page-gutter: clamp(0.75rem, 1.6vw, 1.5rem);
+            --app-control-height: 38px;
         }
 
         body {
@@ -463,9 +469,13 @@
             width: 4.8rem !important;
         }
         
+        .sidebar-mini.sidebar-collapse .main-sidebar .brand-link,
         .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .brand-link {
-            padding: 0.8rem 0.5rem !important;
+            padding: 1rem 0.5rem !important;
             justify-content: center !important;
+            transition: none !important;
+            transform: none !important;
+            width: 4.8rem !important;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-user-panel {
@@ -498,11 +508,11 @@
             display: none !important;
         }
 
-        /* Hovering over collapsed sidebar (Expands it) */
+        /* Hovering over collapsed sidebar (Keeps it collapsed to prevent layout bugs) */
         .sidebar-mini.sidebar-collapse .main-sidebar:hover,
         .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused {
-            width: 270px !important;
-            box-shadow: 18px 0 38px -24px rgba(8, 87, 195, 0.08) !important;
+            width: 4.8rem !important;
+            box-shadow: none !important;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-text,
@@ -510,44 +520,40 @@
         .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-user-info,
         .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-user-info,
         .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar p,
-        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar p {
-            display: flex !important;
-            animation: fadeIn 0.3s ease-in-out;
-        }
-
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar p,
         .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .right,
         .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar .right,
         .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-header,
-        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-header {
-            display: block !important;
-            animation: fadeIn 0.3s ease-in-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-header,
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .nav-treeview,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-treeview {
+            display: none !important;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar:hover .brand-link,
         .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .brand-link {
-            justify-content: flex-start !important;
-            padding: 1rem 0.75rem !important;
+            padding: 1rem 0.5rem !important;
+            justify-content: center !important;
+            transition: none !important;
+            transform: none !important;
+            width: 4.8rem !important;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-user-panel,
         .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-user-panel {
-            padding: 0.75rem !important;
-            justify-content: flex-start !important;
-            width: 100%;
-            margin-left: 0;
-            margin-right: 0;
+            padding: 0.6rem 0.3rem !important;
+            justify-content: center !important;
+            margin-left: 0.3rem;
+            margin-right: 0.3rem;
+            width: calc(100% - 0.6rem);
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar > .nav-item > .nav-link,
         .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar > .nav-item > .nav-link {
-            padding: 0.65rem 0.75rem !important;
-            justify-content: flex-start !important;
-            width: 100%;
+            padding: 0.6rem 0 !important;
+            justify-content: center !important;
+            width: calc(100% - 0.8rem);
+            margin: 0 auto 0.35rem auto !important;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-badge,
@@ -556,50 +562,7 @@
         .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-user-avatar,
         .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-icon,
         .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-icon {
-            margin-right: 0.75rem !important;
-        }
-
-        /* Bulletproof Sidebar Collapse Styles */
-        .main-sidebar .nav-sidebar .nav-link,
-        .main-sidebar .brand-link,
-        .main-sidebar .sidebar-user-panel,
-        .main-sidebar .nav-sidebar .nav-link p,
-        .main-sidebar .nav-sidebar .nav-treeview .nav-link {
-            white-space: nowrap !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
-        }
-
-        /* Prevent vertical wrapping of sub-menu items when sidebar is collapsed/hovered */
-        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar .nav-treeview {
-            display: none !important;
-            opacity: 0 !important;
-            visibility: hidden !important;
-        }
-
-        /* Fully restore and scale layout components on collapsed sidebar hover */
-        .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .nav-link,
-        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar .nav-link {
-            white-space: nowrap !important;
-            overflow: visible !important;
-        }
-
-        .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .nav-treeview,
-        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-treeview {
-            display: block !important;
-            opacity: 1 !important;
-            visibility: visible !important;
-            width: 100% !important;
-        }
-
-        /* Smoothly hide sub-menu text if collapse animation is playing */
-        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-link p,
-        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .brand-text,
-        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-user-info {
-            opacity: 0 !important;
-            width: 0 !important;
-            max-width: 0 !important;
-            display: none !important;
+            margin-right: 0 !important;
         }
 
 
@@ -823,10 +786,11 @@
             width: 100%;
             max-width: 100%;
             overflow-x: hidden;
+            overflow-x: clip;
         }
 
         body {
-            min-width: 320px;
+            min-width: 0;
         }
 
         .wrapper,
@@ -841,8 +805,14 @@
             max-width: 1840px;
             margin-left: auto;
             margin-right: auto;
-            padding-left: clamp(0.75rem, 1.6vw, 1.5rem);
-            padding-right: clamp(0.75rem, 1.6vw, 1.5rem);
+            padding-left: max(var(--app-page-gutter), var(--app-safe-left));
+            padding-right: max(var(--app-page-gutter), var(--app-safe-right));
+        }
+
+        .content-wrapper .container-fluid .container-fluid {
+            max-width: none;
+            padding-left: 0;
+            padding-right: 0;
         }
 
         .content-wrapper .row,
@@ -863,14 +833,75 @@
             max-width: 100%;
         }
 
-        .content-wrapper canvas {
-            height: auto;
-        }
-
         .content-wrapper .card,
         .content-wrapper .modal-content,
         .content-wrapper .alert {
             max-width: 100%;
+        }
+
+        .content-wrapper .input-group,
+        .content-wrapper .input-group > .form-control,
+        .content-wrapper .select2-container,
+        .content-wrapper .select2-selection,
+        .content-wrapper .dropdown,
+        .content-wrapper form {
+            min-width: 0;
+        }
+
+        .content-wrapper .select2-container {
+            max-width: 100%;
+        }
+
+        .content-wrapper .nav-tabs {
+            max-width: 100%;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .content-wrapper .nav-tabs .nav-item,
+        .content-wrapper .nav-tabs .nav-link {
+            flex: 0 0 auto;
+        }
+
+        .dropdown-menu {
+            max-width: calc(100vw - max(1rem, var(--app-safe-left)) - max(1rem, var(--app-safe-right)));
+            overflow-wrap: anywhere;
+        }
+
+        .modal-dialog {
+            width: auto;
+            max-width: min(720px, calc(100vw - max(1.5rem, var(--app-safe-left)) - max(1.5rem, var(--app-safe-right))));
+            margin: max(0.75rem, var(--app-safe-top)) auto max(0.75rem, var(--app-safe-bottom));
+        }
+
+        .modal-dialog.modal-lg,
+        .modal-dialog.modal-xl {
+            max-width: min(1140px, calc(100vw - max(1.5rem, var(--app-safe-left)) - max(1.5rem, var(--app-safe-right))));
+        }
+
+        .modal-content {
+            max-height: calc(100dvh - max(1.5rem, var(--app-safe-top)) - max(1.5rem, var(--app-safe-bottom)));
+            overflow: hidden;
+        }
+
+        .modal-body {
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+
+        .swal2-container {
+            padding: max(0.75rem, var(--app-safe-top)) max(0.75rem, var(--app-safe-right)) max(0.75rem, var(--app-safe-bottom)) max(0.75rem, var(--app-safe-left)) !important;
+        }
+
+        .swal2-popup {
+            max-width: calc(100vw - max(1.5rem, var(--app-safe-left)) - max(1.5rem, var(--app-safe-right))) !important;
+            max-height: calc(100dvh - max(1.5rem, var(--app-safe-top)) - max(1.5rem, var(--app-safe-bottom)));
+            overflow-x: hidden;
+            overflow-y: auto;
         }
 
         .content-wrapper .table-responsive,
@@ -891,12 +922,23 @@
             max-width: 100%;
             min-width: 0;
             max-height: min(72vh, 820px);
+            max-height: min(72dvh, 820px);
             overflow-x: auto;
             overflow-y: auto;
             overscroll-behavior: contain;
-            scrollbar-gutter: stable both-edges;
+            scrollbar-gutter: auto;
             scrollbar-width: thin;
             scrollbar-color: #cbd5e1 #ffffff;
+        }
+
+        @media (pointer: fine) {
+            .content-wrapper .abah-table-scroll,
+            .content-wrapper .table-responsive,
+            .content-wrapper .table-container,
+            .content-wrapper [class*="table-wrap"],
+            .content-wrapper [class*="table-scroll"] {
+                scrollbar-gutter: stable;
+            }
         }
 
         .content-wrapper .abah-table-scroll {
@@ -1003,10 +1045,8 @@
             .kinerja-konsumer-hero,
             .kinerja-header,
             .dashboard-header,
-            [class*="-hero"],
-            [class*="hero-"],
-            [class*="-banner"],
-            [class*="banner-"]
+            [data-ui="hero"],
+            [data-ui="banner"]
         ) {
             max-width: 100%;
         }
@@ -1026,9 +1066,7 @@
             .panel-subtitle,
             .section-subtitle,
             .kinerja-report-card__subtitle,
-            [class*="-subtitle"],
-            [class*="-description"],
-            [class*="-desc"]
+            [data-ui="description"]
         ) {
             display: -webkit-box;
             overflow: hidden;
@@ -1062,10 +1100,8 @@
             .filter-shell,
             .filter-toolbar,
             .filter-bar,
-            [class*="-filter-"],
-            [class*="filter-"],
-            [class*="-toolbar"],
-            [class*="toolbar-"]
+            [data-ui="filter"],
+            [data-ui="toolbar"]
         ) {
             max-width: 100%;
         }
@@ -1109,10 +1145,8 @@
                 .kinerja-konsumer-hero,
                 .kinerja-header,
                 .dashboard-header,
-                [class*="-hero"],
-                [class*="hero-"],
-                [class*="-banner"],
-                [class*="banner-"]
+                [data-ui="hero"],
+                [data-ui="banner"]
             ) {
                 margin-bottom: 0.75rem !important;
                 padding: 0.85rem 1rem !important;
@@ -1131,7 +1165,7 @@
                 .hero-title,
                 .section-title,
                 .kinerja-report-card__title,
-                [class*="-title"]
+                [data-ui="title"]
             ) {
                 font-size: clamp(1.12rem, 4.4vw, 1.45rem) !important;
                 line-height: 1.12 !important;
@@ -1160,9 +1194,7 @@
                 .panel-subtitle,
                 .section-subtitle,
                 .kinerja-report-card__subtitle,
-                [class*="-subtitle"],
-                [class*="-description"],
-                [class*="-desc"]
+                [data-ui="description"]
             ) {
                 margin-top: 0.25rem !important;
                 font-size: 0.74rem !important;
@@ -1193,10 +1225,8 @@
                 .filter-shell,
                 .filter-toolbar,
                 .filter-bar,
-                [class*="-filter-"],
-                [class*="filter-"],
-                [class*="-toolbar"],
-                [class*="toolbar-"]
+                [data-ui="filter"],
+                [data-ui="toolbar"]
             ) {
                 margin-bottom: 0.85rem !important;
                 padding: 0.75rem !important;
@@ -1208,8 +1238,7 @@
                 .input-group,
                 .filter-group,
                 .kinerja-filter-group,
-                [class*="-filter-group"],
-                [class*="filter-group"]
+                [data-ui="field"]
             ) {
                 min-width: 0;
                 margin-bottom: 0.55rem !important;
@@ -1250,9 +1279,7 @@
                 .panel-subtitle,
                 .section-subtitle,
                 .kinerja-report-card__subtitle,
-                [class*="-subtitle"],
-                [class*="-description"],
-                [class*="-desc"]
+                [data-ui="description"]
             ),
             .content-wrapper .fh-hint,
             .content-wrapper .kpi-table-title span,
@@ -1342,8 +1369,34 @@
             }
 
             .content-wrapper .container-fluid {
-                padding-left: 0.65rem;
-                padding-right: 0.65rem;
+                --app-page-gutter: 0.65rem;
+            }
+
+            .content-wrapper .card-header > .d-flex,
+            .content-wrapper .card-footer > .d-flex,
+            .content-wrapper .card-tools,
+            .content-wrapper [data-ui="actions"] {
+                width: 100%;
+                min-width: 0;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+            }
+
+            .content-wrapper .card-tools {
+                float: none;
+                margin-right: 0;
+            }
+
+            .modal-dialog,
+            .modal-dialog.modal-lg,
+            .modal-dialog.modal-xl {
+                max-width: calc(100vw - max(0.75rem, var(--app-safe-left)) - max(0.75rem, var(--app-safe-right)));
+                margin-top: max(0.4rem, var(--app-safe-top));
+                margin-bottom: max(0.4rem, var(--app-safe-bottom));
+            }
+
+            .modal-content {
+                max-height: calc(100dvh - max(0.8rem, var(--app-safe-top)) - max(0.8rem, var(--app-safe-bottom)));
             }
 
             .content-wrapper .abah-table-managed th,
@@ -1356,7 +1409,7 @@
             .content-wrapper .table-container,
             .content-wrapper [class*="table-wrap"],
             .content-wrapper [class*="table-scroll"] {
-                max-height: 68vh;
+                max-height: max(420px, calc(100dvh - 150px));
             }
 
             .modern-navbar .menu-toggle,
@@ -1385,6 +1438,45 @@
             .route-loading-subtitle,
             .route-loading-note {
                 font-size: 0.68rem;
+            }
+        }
+
+        @media (max-width: 359.98px) {
+            .content-wrapper .container-fluid {
+                --app-page-gutter: 0.45rem;
+            }
+
+            .main-header.modern-navbar {
+                padding-left: max(0.4rem, var(--app-safe-left));
+                padding-right: max(0.4rem, var(--app-safe-right));
+            }
+
+            .content-wrapper .card-header,
+            .content-wrapper .card-body,
+            .content-wrapper .card-footer {
+                padding-left: 0.65rem;
+                padding-right: 0.65rem;
+            }
+
+            .swal2-container {
+                padding-left: max(0.4rem, var(--app-safe-left)) !important;
+                padding-right: max(0.4rem, var(--app-safe-right)) !important;
+            }
+        }
+
+        @media (pointer: coarse) {
+            .content-wrapper :where(.form-control, .custom-select, .select2-selection--single, .btn:not(.btn-xs)) {
+                min-height: var(--app-control-height) !important;
+            }
+        }
+
+        @media (orientation: landscape) and (max-height: 640px) {
+            .content-wrapper .abah-table-scroll,
+            .content-wrapper .table-responsive,
+            .content-wrapper .table-container,
+            .content-wrapper [class*="table-wrap"],
+            .content-wrapper [class*="table-scroll"] {
+                max-height: max(180px, calc(100dvh - 118px));
             }
         }
 

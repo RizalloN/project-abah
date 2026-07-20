@@ -759,6 +759,13 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
         $sessionParams = session('excel_import_params', []);
         $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
+        if ($jobId > 0 && !$request->attributes->getBoolean('import_worker_execution')) {
+            request()->session()->save();
+            $this->executionService()->dispatch($jobId);
+
+            return $this->executionService()->streamStatus($request, $jobId, false);
+        }
+
         if ($jobId > 0) {
             $this->populateDirectImportJobState($jobId);
         }
@@ -2012,9 +2019,12 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
                 if ($send) {
                     $send('progress', [
+                        'status' => 'processing',
+                        'phase' => 'loading',
                         'percent' => 50,
                         'message' => 'Menjalankan LOAD DATA LOCAL INFILE ke tabel simpanan_multipn...',
-                        'mode' => 'raw'
+                        'mode' => 'raw',
+                        'processed_rows' => 0,
                     ]);
                 }
 
@@ -2845,6 +2855,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             }
 
             $context['mysql_thread_id'] = $mysqlThreadId;
+            $context['direct_load_started_at'] = now()->toIso8601String();
 
             $contentHash = trim((string) ($loadPlanMeta['content_hash'] ?? ''));
             if ($contentHash !== '') {
@@ -2883,7 +2894,10 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
             DB::table('import_jobs')
                 ->where('id', $jobId)
-                ->update(['job_context' => $encoded]);
+                ->update([
+                    'job_context' => $encoded,
+                    'updated_at' => now(),
+                ]);
         } catch (\Throwable $e) {
             Log::warning('Failed to store job metadata thread ID: ' . $e->getMessage(), [
                 'job_id' => $jobId,
