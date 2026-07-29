@@ -11,8 +11,8 @@ class CriticalDashboardImportLogicContractTest extends TestCase
         $source = file_get_contents(base_path('app/Services/Import/ImportExecutionService.php'));
 
         $this->assertStringContainsString('isSimpananMultiPnCsvStreamJob', $source);
-        $this->assertStringContainsString('generic queue dispatch skipped', $source);
-        $this->assertStringContainsString('Generic import worker skipped Simpanan MultiPN CSV job', $source);
+        $this->assertStringContainsString('runSimpananMultiPnCsvStreamJob', $source);
+        $this->assertStringContainsString('Import worker menjalankan dedicated Simpanan MultiPN CSV executor', $source);
     }
 
     public function test_import_preview_prevents_duplicate_submit_and_generic_force_start_for_simpanan_csv(): void
@@ -42,6 +42,9 @@ class CriticalDashboardImportLogicContractTest extends TestCase
         $this->assertStringContainsString('proc_open($cmd', $stagingSource);
         $this->assertStringContainsString("config('import.excel_init_timeout_seconds'", $stagingSource);
         $this->assertStringContainsString('terminateProcess($process, $pipes)', $stagingSource);
+        $this->assertStringContainsString("strncasecmp(PHP_OS, 'WIN', 3) === 0", $stagingSource);
+        $this->assertStringContainsString("\$configFile . '.stdout.log'", $stagingSource);
+        $this->assertStringContainsString('Worker sedang membaca struktur XLSX besar...', $stagingSource);
         $this->assertStringNotContainsString('@shell_exec($cmd)', $stagingSource);
 
         $this->assertStringContainsString('markStaging($jobId', $executionSource);

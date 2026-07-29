@@ -27,7 +27,10 @@
             item.className = `loan-dropdown-item filter-single-option ${isActive ? 'active' : ''}`;
             item.dataset.value = value;
             item.dataset.label = label;
-            item.innerHTML = `<span class="form-check-label">${label}</span>`;
+            const itemLabel = document.createElement('span');
+            itemLabel.className = 'form-check-label';
+            itemLabel.textContent = label;
+            item.appendChild(itemLabel);
             container.appendChild(item);
         });
 
@@ -46,25 +49,43 @@
         container.innerHTML = '';
         
         if (!options.length) {
-            container.innerHTML = `<div class="p-3 text-center text-muted" style="font-size: 0.85rem;">${emptyMsg}</div>`;
+            const emptyState = document.createElement('div');
+            emptyState.className = 'p-3 text-center text-muted';
+            emptyState.style.fontSize = '0.85rem';
+            emptyState.textContent = String(emptyMsg);
+            container.appendChild(emptyState);
             toggleBtn.disabled = true;
             updateMultiDropdownLabel(container, labelEl);
             return;
         }
 
-        options.forEach((option) => {
-            const isChecked = normalizedPreserved.has(String(option.value)) ? 'checked' : '';
+        options.forEach((option, index) => {
+            const optionValue = String(option.value ?? '');
+            const optionLabel = String(option.label ?? optionValue);
+            const isChecked = normalizedPreserved.has(optionValue);
             const item = document.createElement('div');
             item.className = 'loan-dropdown-item';
-            item.innerHTML = `
-                <div class="form-check">
-                    <input class="form-check-input filter-unit-checkbox" type="checkbox" 
-                        name="unit1[]" value="${option.value}" id="opt_${option.value}" ${isChecked}>
-                    <label class="form-check-label" for="opt_${option.value}">
-                        ${option.label}
-                    </label>
-                </div>
-            `;
+
+            const formCheck = document.createElement('div');
+            formCheck.className = 'form-check';
+
+            const input = document.createElement('input');
+            const inputId = `opt_${container.id || 'dropdown'}_${index}`;
+            input.className = 'form-check-input filter-unit-checkbox';
+            input.type = 'checkbox';
+            input.name = 'unit1[]';
+            input.value = optionValue;
+            input.id = inputId;
+            input.checked = isChecked;
+
+            const optionLabelElement = document.createElement('label');
+            optionLabelElement.className = 'form-check-label';
+            optionLabelElement.htmlFor = inputId;
+            optionLabelElement.textContent = optionLabel;
+
+            formCheck.appendChild(input);
+            formCheck.appendChild(optionLabelElement);
+            item.appendChild(formCheck);
             container.appendChild(item);
         });
 

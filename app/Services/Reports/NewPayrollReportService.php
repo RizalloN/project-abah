@@ -2,6 +2,8 @@
 
 namespace App\Services\Reports;
 
+use App\Support\SargableDateFilter;
+
 use App\Support\UserBranchScope;
 use App\Support\RkaLookupService;
 use Carbon\Carbon;
@@ -15,6 +17,8 @@ use Illuminate\Support\Facades\DB;
  */
 class NewPayrollReportService
 {
+    private const QUALITY_PAYROLL_MINIMUM_BALANCE = 5000000;
+
     public function __construct(
         private readonly RkaLookupService $rkaLookup
     ) {}
@@ -90,8 +94,7 @@ class NewPayrollReportService
             $isBranchFiltered
         );
 
-        $effectiveSnapshot = DB::table('performance_pis_per_produk')
-            ->whereDate('posisi', '<=', $selectedDate->toDateString())
+        $effectiveSnapshot = SargableDateFilter::apply(DB::table('performance_pis_per_produk'), 'posisi', '<=', $selectedDate->toDateString())
             ->max('posisi');
 
         $labels = $this->buildLabels($selectedDate);
@@ -115,15 +118,14 @@ class NewPayrollReportService
         $yoyDate     = $selectedDate->copy()->subYearNoOverflow();
         $yoyStart    = $yoyDate->copy()->startOfYear()->toDateString();
         $yoyEnd      = $yoyDate->copy()->endOfMonth()->toDateString();
+        $qualityMinimumBalance = self::QUALITY_PAYROLL_MINIMUM_BALANCE;
 
-        $prevSnapshot = DB::table('performance_pis_per_produk')
-            ->whereDate('posisi', '<=', $prevEnd)
+        $prevSnapshot = SargableDateFilter::apply(DB::table('performance_pis_per_produk'), 'posisi', '<=', $prevEnd)
             ->whereIn(DB::raw('UPPER(TRIM(kanca))'), array_map('strtoupper', $branches))
             ->when(!empty($selectedUkers), fn ($q) => $q->whereIn(DB::raw('UPPER(TRIM(uker))'), $selectedUkers))
             ->max('posisi') ?? $effectiveSnapshot;
 
-        $yoySnapshot = DB::table('performance_pis_per_produk')
-            ->whereDate('posisi', '<=', $yoyEnd)
+        $yoySnapshot = SargableDateFilter::apply(DB::table('performance_pis_per_produk'), 'posisi', '<=', $yoyEnd)
             ->whereIn(DB::raw('UPPER(TRIM(kanca))'), array_map('strtoupper', $branches))
             ->when(!empty($selectedUkers), fn ($q) => $q->whereIn(DB::raw('UPPER(TRIM(uker))'), $selectedUkers))
             ->max('posisi') ?? $effectiveSnapshot;
@@ -136,6 +138,9 @@ class NewPayrollReportService
             ->selectRaw('SUM(CASE WHEN posisi = ? AND tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_curr', [$effectiveSnapshot, $currStart, $currEnd])
             ->selectRaw('SUM(CASE WHEN posisi = ? AND tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev', [$prevSnapshot, $prevStart, $prevEnd])
             ->selectRaw('SUM(CASE WHEN posisi = ? AND tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev', [$yoySnapshot, $yoyStart, $yoyEnd])
+            ->selectRaw('COUNT(CASE WHEN posisi = ? AND tanggal_pembuatan_rekening BETWEEN ? AND ? AND saldo_britama_kerjasama >= ? THEN 1 END) as kualitas_curr', [$effectiveSnapshot, $currStart, $currEnd, $qualityMinimumBalance])
+            ->selectRaw('COUNT(CASE WHEN posisi = ? AND tanggal_pembuatan_rekening BETWEEN ? AND ? AND saldo_britama_kerjasama >= ? THEN 1 END) as kualitas_prev', [$prevSnapshot, $prevStart, $prevEnd, $qualityMinimumBalance])
+            ->selectRaw('COUNT(CASE WHEN posisi = ? AND tanggal_pembuatan_rekening BETWEEN ? AND ? AND saldo_britama_kerjasama >= ? THEN 1 END) as kualitas_yoy_prev', [$yoySnapshot, $yoyStart, $yoyEnd, $qualityMinimumBalance])
             ->whereIn('posisi', array_unique([$effectiveSnapshot, $prevSnapshot, $yoySnapshot]))
             ->whereIn(DB::raw('UPPER(TRIM(kanca))'), array_map('strtoupper', $branches))
             ->when(!empty($selectedUkers), fn ($q) => $q->whereIn(DB::raw('UPPER(TRIM(uker))'), $selectedUkers))
@@ -154,6 +159,9 @@ class NewPayrollReportService
         $totalSaldoCurr = 0.0;
         $totalSaldoPrev = 0.0;
         $totalSaldoYoy  = 0.0;
+        $totalKualitasCurr = 0;
+        $totalKualitasPrev = 0;
+        $totalKualitasYoy = 0;
         $totalRekeningRka = 0.0;
 
         foreach ($displayKeys as $branch) {
@@ -166,6 +174,9 @@ class NewPayrollReportService
             $saldoCurr      = (float) ($row->saldo_curr ?? 0);
             $saldoPrev      = (float) ($row->saldo_prev ?? 0);
             $saldoYoyPrev   = (float) ($row->saldo_yoy_prev ?? 0);
+            $kualitasCurr   = (int) ($row->kualitas_curr ?? 0);
+            $kualitasPrev   = (int) ($row->kualitas_prev ?? 0);
+            $kualitasYoyPrev = (int) ($row->kualitas_yoy_prev ?? 0);
             $rekeningRka    = round((float) ($newPayrollRka['rekening'][$groupKey] ?? 0), 2);
 
             $rekeningMetric = $this->calculateMetrics($rekeningCurr, $rekeningPrev, $rekeningYoyPrev);
@@ -176,7 +187,7 @@ class NewPayrollReportService
                 'branch'   => strtoupper($branch),
                 'rekening' => $rekeningMetric,
                 'saldo'    => $this->calculateMetrics($saldoCurr, $saldoPrev, $saldoYoyPrev),
-                'kualitas' => $this->emptyMetric(),
+                'kualitas' => $this->calculateMetrics($kualitasCurr, $kualitasPrev, $kualitasYoyPrev),
             ];
 
             $totalRekCurr   += $rekeningCurr;
@@ -185,6 +196,9 @@ class NewPayrollReportService
             $totalSaldoCurr += $saldoCurr;
             $totalSaldoPrev += $saldoPrev;
             $totalSaldoYoy  += $saldoYoyPrev;
+            $totalKualitasCurr += $kualitasCurr;
+            $totalKualitasPrev += $kualitasPrev;
+            $totalKualitasYoy += $kualitasYoyPrev;
             $totalRekeningRka += $rekeningRka;
         }
 
@@ -202,7 +216,7 @@ class NewPayrollReportService
                 'branch'   => $totalLabel,
                 'rekening' => $totalRekening,
                 'saldo'    => $this->calculateMetrics($totalSaldoCurr, $totalSaldoPrev, $totalSaldoYoy),
-                'kualitas' => $this->emptyMetric(),
+                'kualitas' => $this->calculateMetrics($totalKualitasCurr, $totalKualitasPrev, $totalKualitasYoy),
             ],
         ]);
     }

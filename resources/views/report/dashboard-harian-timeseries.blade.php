@@ -1006,12 +1006,21 @@
 <script>
     (function() {
         console.log('Timeseries Dashboard Script Initializing...');
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
         
         function init() {
             const routes = @json($dashboardPage['routes']);
             const initialTimeseriesData = @json($dashboardPage['initialData'] ?? []);
-            let currentCategory = '{{ $dashboardPage['selected']['category'] }}';
-            let currentSegment = '{{ $dashboardPage['selected']['segment'] ?? 'total' }}';
+            let currentCategory = @json($dashboardPage['selected']['category']);
+            let currentSegment = @json($dashboardPage['selected']['segment'] ?? 'total');
             let currentRecoverySegment = @json($dashboardPage['selected']['recovery_segment'] ?? '');
             let currentRecoveryProduct = @json($dashboardPage['selected']['recovery_product'] ?? '');
             let charts = {};
@@ -1023,7 +1032,7 @@
             const allUnitsData = @json($dashboardPage['filters']['unit_kerja']);
             const recoveryDimensions = @json($dashboardPage['filters']['recovery_dimensions'] ?? ['segments' => [], 'products' => [], 'products_by_segment' => []]);
             const selectedKancasInitial = @json($dashboardPage['selected']['kanca']);
-            const selectedUnitInitial = '{{ $dashboardPage['selected']['unit_kerja'] }}';
+            const selectedUnitInitial = @json($dashboardPage['selected']['unit_kerja']);
 
             // --- Custom Dropdown Shell Definitions ---
             const kancaToggle = document.getElementById('kancaDropdown');
@@ -1664,7 +1673,7 @@
                     opt.setAttribute('data-value', k.value);
                     opt.innerHTML = `
                         <div class="branch-checkbox-ui"><i class="fas fa-check"></i></div>
-                        <span class="branch-option-label">${k.label}</span>
+                        <span class="branch-option-label">${escapeHtml(k.label)}</span>
                     `;
                     opt.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -1725,7 +1734,7 @@
                         opt.setAttribute('data-value', unit.value);
                         opt.innerHTML = `
                             <div class="branch-checkbox-ui"><i class="fas fa-check"></i></div>
-                            <span class="branch-option-label">${unit.label}</span>
+                            <span class="branch-option-label">${escapeHtml(unit.label)}</span>
                         `;
                         
                         if (unit.value === currentUnit) {
@@ -2062,7 +2071,7 @@
                             const dimensions = [currentRecoverySegment, currentRecoveryProduct].filter(Boolean);
                             if (dimensions.length > 0) label += ' - ' + dimensions.join(' / ');
                         }
-                        titleEl.innerHTML = `<i class="fas fa-chart-area mr-2 text-primary"></i>${label}`;
+                        titleEl.innerHTML = `<i class="fas fa-chart-area mr-2 text-primary"></i>${escapeHtml(label)}`;
                     }
                 }
 
@@ -2098,10 +2107,10 @@
                         col.innerHTML = `
                             <div class="card chart-card">
                                 <div class="chart-header">
-                                    <h5 class="chart-title">${displayTitle}</h5>
+                                    <h5 class="chart-title">${escapeHtml(displayTitle)}</h5>
                                     <div class="d-flex align-items-center">
                                         <span class="unit-badge">Daily Trend</span>
-                                        <button class="btn-export-jpg ml-2" onclick="window.downloadTimeseriesChart('${branch}', 'Timeseries-${branch.replace(/[^\w-]/g, '_')}')" title="Export to JPG">
+                                        <button type="button" class="btn-export-jpg ml-2" title="Export to JPG">
                                             <i class="fas fa-camera"></i>
                                         </button>
                                     </div>
@@ -2114,6 +2123,12 @@
                             </div>
                         `;
                         container.appendChild(col);
+                        const exportButton = col.querySelector('.btn-export-jpg');
+                        if (exportButton) {
+                            exportButton.addEventListener('click', function () {
+                                window.downloadTimeseriesChart(branch, 'Timeseries-' + branch.replace(/[^\w-]/g, '_'));
+                            });
+                        }
 
                         const ctx = document.getElementById(canvasId).getContext('2d');
                         const datasets = data.months.map(month => ({
@@ -2207,7 +2222,7 @@
 
                 container.innerHTML = options.map(opt => {
                     const isActive = opt.value === currentSegment ? 'active' : '';
-                    return `<button type="button" class="category-btn segment-btn ${isActive}" data-value="${opt.value}">${opt.label}</button>`;
+                    return `<button type="button" class="category-btn segment-btn ${isActive}" data-value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</button>`;
                 }).join('');
 
                 // Add click listeners to segment buttons

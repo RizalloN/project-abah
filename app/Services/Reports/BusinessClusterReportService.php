@@ -2,7 +2,10 @@
 
 namespace App\Services\Reports;
 
+use App\Jobs\RefreshRemoteDashboardSourcesJob;
+use App\Rules\TrustedSpreadsheetUrl;
 use App\Support\UserBranchScope;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -148,44 +151,108 @@ class BusinessClusterReportService
     private function readSpreadsheet(string $namaKanca, string $linkUrl): array
     {
         $cacheKey = 'report:business_cluster:v2:' . md5($namaKanca . '|' . $linkUrl);
-
-        return Cache::remember($cacheKey, now()->addMinute(), function () use ($namaKanca, $linkUrl) {
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
             try {
-                $csvUrl = $this->toCsvUrl($linkUrl);
-                $response = Http::timeout(20)
-                    ->retry(1, 500)
-                    ->accept('text/csv')
-                    ->get($csvUrl);
-
-                if (!$response->successful()) {
-                    return [
-                        'rows' => collect(),
-                        'errors' => collect([$namaKanca . ': spreadsheet tidak bisa diakses. Pastikan link sudah public/shareable.']),
-                    ];
+                $fetchedAt = isset($cached['fetched_at']) ? Carbon::parse((string) $cached['fetched_at']) : null;
+                if ($fetchedAt === null || $fetchedAt->lt(now()->subMinutes(10))) {
+                    $this->queueSourceRefresh();
                 }
+            } catch (\Throwable) {
+                $this->queueSourceRefresh();
+            }
 
-                $body = $response->body();
-                if (str_contains(Str::lower(substr($body, 0, 500)), '<html')) {
-                    return [
-                        'rows' => collect(),
-                        'errors' => collect([$namaKanca . ': respon spreadsheet bukan CSV. Pastikan link Google Sheets sudah public/shareable.']),
-                    ];
-                }
+            return $cached;
+        }
 
-                return $this->countKategoriFromCsv($namaKanca, $body);
-            } catch (\Throwable $exception) {
+        $this->queueSourceRefresh();
+
+        return [
+            'rows' => collect(),
+            'errors' => collect([$namaKanca . ': data sedang disinkronkan di background.']),
+        ];
+    }
+
+    public function refreshSourceCaches(): array
+    {
+        if (!Schema::hasTable(self::TABLE)) {
+            return ['success' => false, 'refreshed' => 0, 'error' => 'Tabel business_cluster belum tersedia.'];
+        }
+
+        $sources = DB::table(self::TABLE)
+            ->select('nama_kanca', 'link_url')
+            ->whereNotNull('link_url')
+            ->get();
+        $refreshed = 0;
+        $errors = [];
+
+        foreach ($sources as $source) {
+            $namaKanca = (string) $source->nama_kanca;
+            $linkUrl = (string) $source->link_url;
+            $result = $this->fetchSpreadsheet($namaKanca, $linkUrl);
+            if ($result['errors']->isEmpty()) {
+                $result['fetched_at'] = now()->toDateTimeString();
+                Cache::forever('report:business_cluster:v2:' . md5($namaKanca . '|' . $linkUrl), $result);
+                $refreshed++;
+            } else {
+                $errors = array_merge($errors, $result['errors']->all());
+            }
+        }
+
+        Cache::forget('dashboard_sources:refresh:business-cluster:pending');
+
+        return ['success' => $errors === [], 'refreshed' => $refreshed, 'errors' => $errors];
+    }
+
+    private function queueSourceRefresh(): void
+    {
+        $key = 'dashboard_sources:refresh:business-cluster:pending';
+        if (Cache::add($key, now()->toIso8601String(), now()->addMinutes(10))) {
+            RefreshRemoteDashboardSourcesJob::dispatch(['business-cluster']);
+        }
+    }
+
+    private function fetchSpreadsheet(string $namaKanca, string $linkUrl): array
+    {
+        try {
+            $csvUrl = $this->toCsvUrl($linkUrl);
+            $response = Http::timeout(20)
+                ->retry(1, 500)
+                ->accept('text/csv')
+                ->get($csvUrl);
+
+            if (!$response->successful()) {
                 return [
                     'rows' => collect(),
-                    'errors' => collect([$namaKanca . ': gagal membaca spreadsheet (' . $exception->getMessage() . ').']),
+                    'errors' => collect([$namaKanca . ': spreadsheet tidak bisa diakses. Pastikan link sudah public/shareable.']),
                 ];
             }
-        });
+
+            $body = $response->body();
+            if (str_contains(Str::lower(substr($body, 0, 500)), '<html')) {
+                return [
+                    'rows' => collect(),
+                    'errors' => collect([$namaKanca . ': respon spreadsheet bukan CSV. Pastikan link Google Sheets sudah public/shareable.']),
+                ];
+            }
+
+            return $this->countKategoriFromCsv($namaKanca, $body);
+        } catch (\Throwable $exception) {
+            return [
+                'rows' => collect(),
+                'errors' => collect([$namaKanca . ': gagal membaca spreadsheet (' . $exception->getMessage() . ').']),
+            ];
+        }
     }
 
     private function toCsvUrl(string $linkUrl): string
     {
+        if (!TrustedSpreadsheetUrl::isTrusted($linkUrl)) {
+            throw new \RuntimeException('Sumber spreadsheet tidak diizinkan.');
+        }
+
         if (!preg_match('~docs\.google\.com/spreadsheets/d/([^/]+)~', $linkUrl, $matches)) {
-            return $linkUrl;
+            throw new \RuntimeException('ID Google Sheets tidak ditemukan.');
         }
 
         $spreadsheetId = $matches[1];

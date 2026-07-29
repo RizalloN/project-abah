@@ -238,8 +238,17 @@ class DataPhReportControllerTest extends TestCase
 
         $this->assertStringContainsString('data-ph-nominatif-row', $view);
         $this->assertStringContainsString('data-abah-no-table-guard="1"', $view);
-        $this->assertStringContainsString('max-height: none !important;', $view);
-        $this->assertStringNotContainsString('sticky-table-viewport-script', $view);
+        $this->assertStringContainsString('max-height: min(72dvh, 760px) !important;', $view);
+        $this->assertStringNotContainsString('overflow-y: visible !important;', $view);
+        $this->assertStringContainsString('sticky-table-viewport-script', $view);
+        $this->assertStringContainsString('--ph-index-column-width: 64px;', $view);
+        $this->assertStringContainsString('left: var(--ph-index-column-width) !important;', $view);
+        $this->assertStringContainsString('ph-sticky-index', $view);
+        $this->assertStringContainsString('ph-sticky-scope', $view);
+        $this->assertStringContainsString('grid-template-columns: repeat(2, minmax(0, 1fr));', $view);
+        $this->assertStringContainsString('grid-template-columns: minmax(0, 1fr);', $view);
+        $this->assertStringContainsString('.filter-section.p-4 {', $view);
+        $this->assertMatchesRegularExpression('/\\.loan-dropdown-menu\\s*\\{[^}]*min-width:\\s*0;[^}]*max-width:\\s*100%;/s', $view);
         $this->assertStringContainsString('data-segment="small"', $view);
         $this->assertStringContainsString('data-period="{{ $selectedPeriod }}"', $view);
         $this->assertStringContainsString('phNominatifModal', $view);

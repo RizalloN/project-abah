@@ -1,0 +1,20 @@
+{
+  "name": "A-Six Performance Presentation",
+  "short_name": "A-Six PPT",
+  "description": "Mode presentasi kinerja Area 6 dan kantor cabang.",
+  "start_url": "/dashboard/presentation",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f8fd",
+  "theme_color": "#0857c3",
+  "icons": [
+    {
+      "src": "/images/bri-logo-template.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
+

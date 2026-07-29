@@ -138,6 +138,11 @@ class ReportDataSyncService
         }
 
         $periodHint = $this->normalizeAuditPeriodHint($periodHint);
+        $effectiveImportSource = $source ?? static::class . '::syncImportedTable';
+
+        // Persist before any deferral so queue/cache interruptions cannot lose
+        // the rebuild requirement left by an import or managed mutation.
+        $this->markSnapshotDirtyAfterSourceMutation($normalizedTable, $periodHint, $effectiveImportSource);
 
         if (!$this->isLightweightImportTable($normalizedTable) && $this->shouldDeferSnapshotSync($normalizedTable, $jobId, $deleteId, $rebuildId)) {
             $this->dispatchDeferredSnapshotSync($jobId, $normalizedTable, $periodHint, $source, $deleteId, $rebuildId);
@@ -153,8 +158,6 @@ class ReportDataSyncService
         }
 
         $this->refreshTableStatistics($normalizedTable, $periodHint, $jobId, $source);
-        $effectiveImportSource = $source ?? static::class . '::syncImportedTable';
-        $this->markSnapshotDirtyAfterSourceMutation($normalizedTable, $periodHint, $effectiveImportSource);
         ManagedReportManagementService::invalidateTableCache($normalizedTable);
         // Composite snapshots (dashboard_harian) are built from multiple sources;
         // a single source import must mark the composite period dirty so the
@@ -340,33 +343,27 @@ class ReportDataSyncService
                 ]);
 
                 $remaining = $this->countDailyLoanRowsMissingShadowColumns($normalizedPeriod);
-                $total = (int) DB::table('daily_loan_dinamis')
-                    ->where('periode', $normalizedPeriod)
-                    ->count();
-                $completion = $total > 0 ? round((100 * ($total - $remaining)) / $total, 2) : 100.0;
+                $completion = $remaining <= 0 ? 100.0 : 0.0;
 
                 $ready = $exitCode === 0 && $remaining <= 0;
 
                 $this->writeAudit('daily_loan_dinamis', $normalizedPeriod, $jobId, $source, 'shadow_backfill_pre_snapshot', $ready ? 'success' : 'failed', [
                     'duration_ms' => $this->elapsedMs($startedAt),
-                    'affected_rows' => max(0, $missing - $remaining),
                     'message' => $ready ? null : ($exitCode === 0
                         ? 'Shadow backfill finished but required shadow columns are still incomplete.'
                         : 'Shadow backfill command returned exit code ' . $exitCode),
                     'context' => [
                         'missing_before' => $missing,
                         'missing_after' => $remaining,
-                        'total_rows' => $total,
                         'completion_percentage' => $completion,
                     ],
                 ]);
 
                 if (!$ready) {
                     throw new \RuntimeException(sprintf(
-                        'Shadow column Daily Loan periode %s belum siap untuk snapshot (%.2f%% lengkap, sisa %s row).',
+                        'Shadow column Daily Loan periode %s belum siap untuk snapshot (status kelengkapan %.2f%%).',
                         $normalizedPeriod,
-                        $completion,
-                        number_format($remaining)
+                        $completion
                     ));
                 }
             });
@@ -433,9 +430,16 @@ class ReportDataSyncService
             }
         }
 
-        return (int) DB::table('daily_loan_dinamis')
+        return DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->where(function ($query) use ($requiredColumns) {
+                if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at') && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
+                    $query->whereNull('shadow_built_at')
+                        ->orWhereColumn('shadow_built_at', '<', 'updated_at');
+
+                    return;
+                }
+
                 foreach ($requiredColumns as $column) {
                     $query->orWhereNull($column);
                 }
@@ -448,13 +452,8 @@ class ReportDataSyncService
                     });
                 }
 
-                if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at') && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
-                    $query
-                        ->orWhereNull('shadow_built_at')
-                        ->orWhereColumn('shadow_built_at', '<', 'updated_at');
-                }
             })
-            ->count();
+            ->exists() ? 1 : 0;
     }
 
     private function syncSimpanan(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void

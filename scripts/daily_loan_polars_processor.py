@@ -801,6 +801,15 @@ def stage_daily_loan(config: dict) -> None:
             df = df.filter(audit_expr)
 
         written_rows = int(df.height)
+        period_hints = []
+        if "PERIODE" in df.columns:
+            period_hints = sorted(
+                {
+                    str(value).strip()
+                    for value in df.get_column("PERIODE").drop_nulls().unique().to_list()
+                    if str(value).strip()
+                }
+            )
         skipped_total = int(structural_skipped + max(0, total_data_rows - structural_skipped - written_rows))
         if skipped_total < 0:
             skipped_total = 0
@@ -819,6 +828,7 @@ def stage_daily_loan(config: dict) -> None:
                 "skipped_rows": skipped_rows[:500],
                 "rewritten": bool(rewrite_needed or structural_skipped > 0),
                 "backend": "polars",
+                "dates": period_hints,
             },
         )
     finally:

@@ -1251,7 +1251,12 @@ document.addEventListener('DOMContentLoaded', function () {
             if (isDuplicate) {
                 await showDuplicateImportModal(errorHtml, errorTitle);
             } else {
-                themedSwal({ icon: 'error', title: errorTitle, html: errorHtml, confirmButtonText: 'Tutup' });
+                themedSwal({
+                    icon: 'error',
+                    title: errorTitle,
+                    text: plainImportMessage(errorHtml),
+                    confirmButtonText: 'Tutup'
+                });
             }
             resetSubmitBtn();
             return;
@@ -1292,6 +1297,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 || text.indexOf('duplicate') !== -1;
         }
 
+        function plainImportMessage(message) {
+            var withoutTags = String(message || '')
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<[^>]*>/g, ' ');
+            var decoder = document.createElement('textarea');
+            decoder.innerHTML = withoutTags;
+
+            return decoder.value.replace(/[ \t]+/g, ' ').trim();
+        }
+
         function redirectToSelectFile() {
             window.location.replace('{{ route("import.select") }}');
         }
@@ -1299,8 +1314,8 @@ document.addEventListener('DOMContentLoaded', function () {
         async function showDuplicateImportModal(message, title) {
             await themedSwal({
                 icon: 'warning',
-                title: title || 'Data Duplikat',
-                html: message || 'Data duplikat terdeteksi.',
+                title: plainImportMessage(title || 'Data Duplikat'),
+                text: plainImportMessage(message || 'Data duplikat terdeteksi.'),
                 confirmButtonText: 'Kembali ke Import',
                 allowOutsideClick: false,
                 allowEscapeKey: false,
@@ -1320,7 +1335,7 @@ document.addEventListener('DOMContentLoaded', function () {
             themedSwal({
                 icon: failureIsDuplicate ? 'warning' : 'error',
                 title: failureTitle,
-                html: failureHtml,
+                text: plainImportMessage(failureHtml),
                 confirmButtonText: failureIsDuplicate ? 'Kembali ke Import' : 'Tutup',
                 allowOutsideClick: false,
                 allowEscapeKey: false,
@@ -1359,7 +1374,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             var skippedCount = Number(d.skipped_count || 0);
             var skippedRows = Array.isArray(d.skipped_rows) ? d.skipped_rows : [];
-            var skippedRowsText = skippedRows.length ? skippedRows.join(', ') : '';
+            var skippedRowsText = skippedRows.length ? skippedRows.map(escapeHtml).join(', ') : '';
             var skippedHtml = skippedCount > 0
                 ? '<br><small class="text-warning">Baris rusak di-skip: <b>' + skippedCount.toLocaleString('id-ID') + '</b>' +
                   (skippedRowsText ? '<br>Contoh baris: ' + skippedRowsText : '') +
@@ -1528,7 +1543,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 try { d = JSON.parse(e.data); } catch (_) {}
                 var skippedCount = Number(d.skipped_count || 0);
                 var skippedRows = Array.isArray(d.skipped_rows) ? d.skipped_rows : [];
-                var skippedRowsText = skippedRows.length ? skippedRows.join(', ') : '';
+                var skippedRowsText = skippedRows.length ? skippedRows.map(escapeHtml).join(', ') : '';
                 var skippedHtml = skippedCount > 0
                     ? '<br><small class="text-warning">Baris rusak di-skip: <b>' + skippedCount.toLocaleString('id-ID') + '</b>' +
                       (skippedRowsText ? '<br>Contoh baris: ' + skippedRowsText : '') +

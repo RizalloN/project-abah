@@ -1377,12 +1377,8 @@
                 const item = document.createElement('div');
                 const isActive = selectedValues.includes(opt.value);
                 item.className = `loan-dropdown-option ${isActive ? 'is-active' : ''}`;
-                item.innerHTML = `
-                    <div class="loan-dropdown-check">
-                        <i class="fas fa-check"></i>
-                    </div>
-                    <span>${opt.text}</span>
-                `;
+                item.innerHTML = '<div class="loan-dropdown-check"><i class="fas fa-check"></i></div><span></span>';
+                item.querySelector('span').textContent = opt.text;
                 item.addEventListener('click', (e) => {
                     e.stopPropagation();
                     if (select.hasAttribute('multiple')) {

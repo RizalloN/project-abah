@@ -4,12 +4,12 @@
 
 @section('content')
 <div class="container-fluid pt-3 pb-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
+    <div class="user-management-page-head d-flex justify-content-between align-items-center mb-3">
+        <div class="user-management-page-copy">
             <h2 class="h4 font-weight-bold text-dark mb-0"><i class="fas fa-users-cog text-primary mr-2"></i> User Management</h2>
             <span class="text-muted small">Kelola akun internal, role, wilayah binaan, dan reset password.</span>
         </div>
-        <span class="badge badge-light border border-primary text-primary px-3 py-2" style="border-radius: 8px;"><i class="fas fa-user-shield mr-1"></i> Admin Only</span>
+        <span class="user-management-admin-badge badge badge-light border border-primary text-primary px-3 py-2" style="border-radius: 8px;"><i class="fas fa-user-shield mr-1"></i> Admin Only</span>
     </div>
 
     @if (session('success'))
@@ -313,6 +313,20 @@
 
 @section('styles')
 <style>
+    .user-management-page-head {
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+    .user-management-page-copy {
+        flex: 1 1 12rem;
+        min-width: 0;
+    }
+    .user-management-admin-badge {
+        flex: 0 0 auto;
+        max-width: 100%;
+        white-space: nowrap;
+    }
+
     .modal.user-management-edit-modal { z-index: 2055; }
     .modal-backdrop.user-management-edit-backdrop { z-index: 2050; }
     

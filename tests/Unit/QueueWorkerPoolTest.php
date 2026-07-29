@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Console\Commands\EnsureQueueWorkerRunning;
 use App\Providers\AppServiceProvider;
+use Illuminate\Support\Facades\Cache;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -16,9 +17,13 @@ class QueueWorkerPoolTest extends TestCase
         $this->assertSame('imports-high', $pools['imports-high']['queues']);
         $this->assertGreaterThanOrEqual(2, $pools['imports-high']['workers']);
         $this->assertSame('imports-daily-loan', $pools['imports-daily-loan']['queues']);
+        $this->assertSame('snapshots-priority', $pools['snapshots-priority']['queues']);
+        $this->assertSame(1, $pools['snapshots-priority']['workers']);
         $this->assertSame('snapshots-parallel', $pools['snapshots']['queues']);
         $this->assertGreaterThanOrEqual(3, $pools['snapshots']['workers']);
-        $this->assertSame('default,reports-low,shadow-backfill', $pools['background']['queues']);
+        $this->assertSame('remote-sources', $pools['remote-sources']['queues']);
+        $this->assertSame('default,reports-low', $pools['background']['queues']);
+        $this->assertSame('shadow-backfill', $pools['shadow-backfill']['queues']);
         $this->assertSame(1, config('queue.worker_sleep'));
     }
 
@@ -48,6 +53,41 @@ class QueueWorkerPoolTest extends TestCase
         $this->assertSame('snapshots', $pool['name']);
         $this->assertSame('snapshots-parallel', $pool['queues']);
         $this->assertGreaterThanOrEqual(3, $pool['workers']);
+
+        $priorityPool = $method->invoke($provider, 'snapshots-priority');
+        $this->assertSame('snapshots-priority', $priorityPool['name']);
+        $this->assertSame('snapshots-priority', $priorityPool['queues']);
+        $this->assertSame(1, $priorityPool['workers']);
+    }
+
+    public function test_worker_pool_uses_only_fresh_process_heartbeats(): void
+    {
+        $now = time();
+        Cache::put('queue:worker-pool:heartbeats:' . sha1('snapshots'), [
+            '1001' => $now,
+            '1002' => $now - 10,
+            '1003' => $now - 30,
+        ], now()->addMinute());
+
+        $command = new EnsureQueueWorkerRunning();
+        $method = new ReflectionMethod($command, 'freshWorkerHeartbeatCount');
+
+        $this->assertSame(2, $method->invoke($command, 'snapshots', $now));
+    }
+
+    public function test_reserved_jobs_are_not_treated_as_live_worker_processes(): void
+    {
+        $source = file_get_contents(app_path('Console/Commands/EnsureQueueWorkerRunning.php'));
+
+        $this->assertStringNotContainsString('$heartbeatWorkers + $freshReservedWorkers', $source);
+        $this->assertStringContainsString('registeredWorkerProcessCount($poolName, $now)', $source);
+        $this->assertStringContainsString("'reserved_at' => null", $source);
+        $this->assertStringContainsString('Released snapshot jobs reserved by a dead worker process.', $source);
+        $this->assertStringContainsString("'queue:worker-pool:pids:' . sha1(\$poolName)", $source);
+        $this->assertStringContainsString("'powershell.exe'", $source);
+        $this->assertFileExists(base_path('scripts/start_queue_worker.ps1'));
+        $launcher = file_get_contents(base_path('scripts/start_queue_worker.ps1'));
+        $this->assertStringContainsString('-RedirectStandardOutput $OutputLog', $launcher);
     }
 
     public function test_staging_dispatch_reports_queued_until_worker_reserves_job(): void

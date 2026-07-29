@@ -362,6 +362,16 @@
                 || text.includes('duplicate entry');
         }
 
+        function plainImportMessage(message) {
+            const withoutTags = String(message || '')
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<[^>]*>/g, ' ');
+            const decoder = document.createElement('textarea');
+            decoder.innerHTML = withoutTags;
+
+            return decoder.value.replace(/[ \t]+/g, ' ').trim();
+        }
+
         function redirectToImportIndex() {
             if (typeof window.showRouteLoading === 'function') {
                 window.showRouteLoading('Memuat halaman', 'Menyiapkan tampilan berikutnya dengan data terbaru.');
@@ -372,8 +382,8 @@
         async function showDuplicateImportPopup(message, title = 'Data Duplikat') {
             await themedSwal({
                 icon: 'warning',
-                title: title,
-                html: message || 'Data duplikat terdeteksi.',
+                title: plainImportMessage(title),
+                text: plainImportMessage(message || 'Data duplikat terdeteksi.'),
                 confirmButtonText: 'Kembali ke Import',
             });
             redirectToImportIndex();
@@ -494,6 +504,7 @@
         const managementTableBody = document.getElementById('management-table-body');
         let uploadLimitsPromise = null;
         let activeUploadLimits = null;
+        const stagedUploadFiles = new WeakMap();
 
         function formatBytes(bytes) {
             if (!bytes || bytes <= 0) {
@@ -936,22 +947,22 @@
                                         <div class="queue-item ${defaultLoad}">
                                             <div class="queue-item__icon"><i class="fas fa-file-import"></i></div>
                                             <div class="queue-item__info">
-                                                <span class="queue-item__label">${data.queues.default.label}</span>
-                                                <span class="queue-item__value">${data.queues.default.count} <small class="text-muted font-weight-normal">menunggu</small></span>
+                                                <span class="queue-item__label">${escapeHtml(data.queues.default.label)}</span>
+                                                <span class="queue-item__value">${Number(data.queues.default.count || 0)} <small class="text-muted font-weight-normal">menunggu</small></span>
                                             </div>
                                         </div>
                                         <div class="queue-item ${highLoad}">
                                             <div class="queue-item__icon"><i class="fas fa-eraser"></i></div>
                                             <div class="queue-item__info">
-                                                <span class="queue-item__label">${data.queues['imports-high'].label}</span>
-                                                <span class="queue-item__value">${data.queues['imports-high'].count} <small class="text-muted font-weight-normal">menunggu</small></span>
+                                                <span class="queue-item__label">${escapeHtml(data.queues['imports-high'].label)}</span>
+                                                <span class="queue-item__value">${Number(data.queues['imports-high'].count || 0)} <small class="text-muted font-weight-normal">menunggu</small></span>
                                             </div>
                                         </div>
                                         <div class="queue-item ${data.failed_jobs_count > 0 ? 'queue-item--high-load' : ''}">
                                             <div class="queue-item__icon"><i class="fas fa-exclamation-triangle"></i></div>
                                             <div class="queue-item__info">
                                                 <span class="queue-item__label">Failed Jobs</span>
-                                                <span class="queue-item__value">${data.failed_jobs_count} <small class="text-muted font-weight-normal">error</small></span>
+                                                <span class="queue-item__value">${Number(data.failed_jobs_count || 0)} <small class="text-muted font-weight-normal">error</small></span>
                                             </div>
                                         </div>
                                     </div>
@@ -972,11 +983,11 @@
                                             ${data.recent_jobs.length === 0 ? '<tr><td colspan="5" class="text-center py-4 text-muted">Tidak ada job di antrean</td></tr>' : ''}
                                             ${data.recent_jobs.map(job => `
                                                 <tr>
-                                                    <td>#${job.id}</td>
-                                                    <td class="font-weight-bold">${job.name}</td>
-                                                    <td><span class="job-badge job-badge--queue">${job.queue}</span></td>
-                                                    <td><span class="job-badge ${job.status === 'Processing' ? 'job-badge--processing' : 'job-badge--waiting'}">${job.status}</span></td>
-                                                    <td>${job.created_at}</td>
+                                                    <td>#${escapeHtml(job.id)}</td>
+                                                    <td class="font-weight-bold">${escapeHtml(job.name)}</td>
+                                                    <td><span class="job-badge job-badge--queue">${escapeHtml(job.queue)}</span></td>
+                                                    <td><span class="job-badge ${job.status === 'Processing' ? 'job-badge--processing' : 'job-badge--waiting'}">${escapeHtml(job.status)}</span></td>
+                                                    <td>${escapeHtml(job.created_at)}</td>
                                                 </tr>
                                             `).join('')}
                                         </tbody>
@@ -996,10 +1007,10 @@
                                             ${data.detailed_failed_jobs.map(f => `
                                                 <tr>
                                                     <td>
-                                                        <div class="font-weight-bold mb-1">${f.name} <span class="badge badge-light border ml-1">${f.queue}</span></div>
-                                                        <code class="error-text">${f.error}...</code>
+                                                        <div class="font-weight-bold mb-1">${escapeHtml(f.name)} <span class="badge badge-light border ml-1">${escapeHtml(f.queue)}</span></div>
+                                                        <code class="error-text">${escapeHtml(f.error)}...</code>
                                                     </td>
-                                                    <td class="text-right text-muted" style="white-space:nowrap">${f.failed_at}</td>
+                                                    <td class="text-right text-muted" style="white-space:nowrap">${escapeHtml(f.failed_at)}</td>
                                                 </tr>
                                             `).join('')}
                                         </tbody>
@@ -1088,7 +1099,7 @@
             const confirm = await themedSwal({
                 icon: 'warning',
                 title: 'Hapus Data?',
-                html: `Data akan dihapus untuk <b>Periode:</b> ${period}<br><b>Kanca:</b> ${kanca}`,
+                text: `Data akan dihapus untuk Periode: ${period} dan Kanca: ${kanca}.`,
                 showCancelButton: true,
                 confirmButtonText: 'Ya, Hapus',
                 cancelButtonText: 'Batal'
@@ -1426,6 +1437,40 @@
             return null;
         }
 
+        async function stageUploadFile(input) {
+            const file = input?.files?.[0];
+            if (!file) {
+                if (input) {
+                    stagedUploadFiles.delete(input);
+                }
+                return null;
+            }
+
+            const fingerprint = [file.name, file.size, file.lastModified].join(':');
+            const cached = stagedUploadFiles.get(input);
+            if (cached?.fingerprint === fingerprint) {
+                return cached.file;
+            }
+
+            try {
+                const bytes = await file.arrayBuffer();
+                const stagedFile = new File([bytes], file.name, {
+                    type: file.type || 'application/octet-stream',
+                    lastModified: file.lastModified,
+                });
+                stagedUploadFiles.set(input, { fingerprint, file: stagedFile });
+
+                return stagedFile;
+            } catch (_) {
+                stagedUploadFiles.delete(input);
+                throw new Error('File tidak dapat dibaca dari perangkat. Salin atau unduh ulang file ke penyimpanan lokal, lalu pilih kembali.');
+            }
+        }
+
+        async function stageActiveUploadFile() {
+            return stageUploadFile(getActiveFileInput());
+        }
+
         function getActiveUploadDescriptor() {
             if (formImport.dataset.uploadKind === 'link') {
                 return {
@@ -1550,6 +1595,7 @@
                 applySimpananUploadMode();
             }
 
+            stageUploadFile(activeInput).catch(() => {});
             updateFileSelectionUI();
         }
 
@@ -2054,11 +2100,18 @@
             if (isSimpananReportSelected()) {
                 applySimpananUploadMode();
             }
+            stageUploadFile(this).catch(() => {});
             updateFileSelectionUI();
         });
 
-        inputCsv?.addEventListener('change', updateFileSelectionUI);
-        inputRar?.addEventListener('change', updateFileSelectionUI);
+        inputCsv?.addEventListener('change', function () {
+            stageUploadFile(this).catch(() => {});
+            updateFileSelectionUI();
+        });
+        inputRar?.addEventListener('change', function () {
+            stageUploadFile(this).catch(() => {});
+            updateFileSelectionUI();
+        });
 
         importDropzone?.addEventListener('click', function () {
             getActiveFileInput()?.click();
@@ -2093,6 +2146,7 @@
             [inputRar, inputExcel, inputCsv].forEach(function (input) {
                 if (input) {
                     input.value = '';
+                    stagedUploadFiles.delete(input);
                 }
             });
 
@@ -2180,6 +2234,18 @@
                 return;
             }
 
+            let stagedUploadFile;
+            try {
+                stagedUploadFile = await stageActiveUploadFile();
+            } catch (error) {
+                themedSwal({
+                    icon: 'error',
+                    title: 'File Tidak Dapat Dibaca',
+                    text: error.message || 'File tidak dapat distabilkan untuk upload.'
+                });
+                return;
+            }
+
             const hasAsyncPreview = Boolean(formImport.dataset.preparePreviewUrl);
             const directRedirect = formImport.dataset.directRedirect === '1';
             const uploadKind = formImport.dataset.uploadKind || 'rar';
@@ -2254,12 +2320,15 @@
                         btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses';
                     }
 
-                    if (!hasAsyncPreview && !directRedirect) {
+                    if (!hasAsyncPreview && !directRedirect && !stagedUploadFile) {
                         formImport.submit();
                         return;
                     }
 
                     const formData = new FormData(formImport);
+                    if (stagedUploadFile) {
+                        formData.set('file', stagedUploadFile, stagedUploadFile.name);
+                    }
                     const uploadProgressBar = document.getElementById('swal-progress-bar');
                     const uploadProgressText = document.getElementById('swal-progress-text');
                     const progressPhase = document.getElementById('swal-progress-phase');
@@ -2273,9 +2342,9 @@
                     const speedInfo = document.getElementById('swal-speed-info');
                     const speedDetail = document.getElementById('swal-speed-detail');
                     const chunkedUpload = formImport.dataset.chunkedUpload === '1';
-                    const selectedFile = !inputRar.disabled
+                    const selectedFile = stagedUploadFile || (!inputRar.disabled
                         ? inputRar?.files?.[0]
-                        : (!inputExcel.disabled ? inputExcel?.files?.[0] : inputCsv?.files?.[0]);
+                        : (!inputExcel.disabled ? inputExcel?.files?.[0] : inputCsv?.files?.[0]));
                     const processStartedAt = Date.now();
 
                     function formatDuration(seconds) {
@@ -2737,26 +2806,45 @@
             window.history.replaceState({}, document.title, currentUrl.pathname + currentUrl.search + currentUrl.hash);
         }
 
-        @if(session('sweet_success'))
+        @php
+            $sweetSuccess = session('sweet_success');
+            $sweetSuccessTitle = strip_tags((string) data_get($sweetSuccess, 'title', 'Berhasil'));
+            $sweetSuccessText = html_entity_decode(
+                strip_tags(str_ireplace(['<br>', '<br/>', '<br />'], "\n", (string) data_get($sweetSuccess, 'text', ''))),
+                ENT_QUOTES | ENT_HTML5,
+                'UTF-8'
+            );
+            $sweetWarning = session('sweet_warning');
+            $sweetWarningTitle = strip_tags((string) data_get($sweetWarning, 'title', 'Peringatan'));
+            $sweetWarningText = html_entity_decode(
+                strip_tags(str_ireplace(['<br>', '<br/>', '<br />'], "\n", (string) data_get($sweetWarning, 'text', ''))),
+                ENT_QUOTES | ENT_HTML5,
+                'UTF-8'
+            );
+        @endphp
+
+        @if($sweetSuccess)
             if (!handledNoticeFromQuery) {
+                const successTitle = @json($sweetSuccessTitle);
+                const successText = @json($sweetSuccessText);
                 themedSwal({
                     icon: 'success',
-                    title: '{!! session('sweet_success')['title'] !!}',
-                    html: '{!! session('sweet_success')['text'] !!}',
+                    title: successTitle,
+                    text: successText,
                     confirmButtonText: 'Tutup'
                 });
             }
         @endif
 
-        @if(session('sweet_warning'))
+        @if($sweetWarning)
             (async function () {
-                const warningTitle = {!! json_encode(session('sweet_warning')['title']) !!};
-                const warningText = {!! json_encode(session('sweet_warning')['text']) !!};
+                const warningTitle = @json($sweetWarningTitle);
+                const warningText = @json($sweetWarningText);
                 const isDuplicateWarning = isDuplicateImportMessage(warningTitle) || isDuplicateImportMessage(warningText);
                 await themedSwal({
                     icon: 'warning',
                     title: warningTitle,
-                    html: warningText,
+                    text: warningText,
                     confirmButtonText: isDuplicateWarning ? 'Kembali ke Import' : 'Mengerti'
                 });
                 if (isDuplicateWarning) {
@@ -2769,7 +2857,7 @@
             themedSwal({
                 icon: 'error',
                 title: 'Gagal!',
-                text: '{{ session('error') }}',
+                text: @json((string) session('error')),
                 confirmButtonText: 'Tutup'
             });
         @endif

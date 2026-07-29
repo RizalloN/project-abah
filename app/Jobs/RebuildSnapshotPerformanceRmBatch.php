@@ -19,9 +19,9 @@ use Illuminate\Support\Facades\Log;
 
 class RebuildSnapshotPerformanceRmBatch implements ShouldQueue
 {
-    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels, SnapshotJobRetryWindow;
 
-    public $tries = 2;
+    public $tries = 40;
     public $timeout = 1200;
     public $backoff = [60, 300];
 
@@ -29,7 +29,7 @@ class RebuildSnapshotPerformanceRmBatch implements ShouldQueue
         private readonly ?string $periodHint = null,
         private readonly ?string $deleteId = null
     ) {
-        $this->onQueue('snapshots-parallel');
+        $this->onQueue('snapshots-priority');
     }
 
     public function middleware(): array

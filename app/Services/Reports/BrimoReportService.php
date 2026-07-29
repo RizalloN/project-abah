@@ -2,6 +2,8 @@
 
 namespace App\Services\Reports;
 
+use App\Support\SargableDateFilter;
+
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -203,14 +205,12 @@ class BrimoReportService
 
     private function resolveEffectivePeriod(string $targetDate, array $branches): ?string
     {
-        $latestRpt = DB::table('user_brimo_rpt_v2')
+        $latestRpt = SargableDateFilter::apply(DB::table('user_brimo_rpt_v2'), 'posisi', '<=', $targetDate)
             ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branches)
-            ->whereDate('posisi', '<=', $targetDate)
             ->max('posisi');
 
-        $latestFin = DB::table('user_brimo_fin')
+        $latestFin = SargableDateFilter::apply(DB::table('user_brimo_fin'), 'posisi', '<=', $targetDate)
             ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branches)
-            ->whereDate('posisi', '<=', $targetDate)
             ->max('posisi');
 
         return collect([$latestRpt, $latestFin])

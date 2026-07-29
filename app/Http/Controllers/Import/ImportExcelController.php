@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Import\Concerns\AuthorizesSessionImportStorageFiles;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Services\Import\CsvAutoRepairService;
@@ -20,6 +21,7 @@ use App\Services\Import\L1133CsvImporter;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Support\StrictDateParser;
+use App\Support\SpreadsheetFileFormatDetector;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -68,6 +70,8 @@ class ChunkReadFilter implements IReadFilter
 
 class ImportExcelController extends Controller
 {
+    use AuthorizesSessionImportStorageFiles;
+
     use SmartCsvImportSupport;
 
     use AllocatesGapIds;
@@ -157,6 +161,7 @@ class ImportExcelController extends Controller
     private const DAILY_LOAN_REPORT_ID = 8;
     private const SIMPANAN_MULTIPN_REPORT_ID = 9;
     private const CHUNK_UPLOAD_TEMP_DIR = 'app/chunk_uploads';
+    private const CHUNK_SIZE_BYTES = 8 * 1024 * 1024;
     private const DAILY_LOAN_SOURCE_HEADERS = [
         'PERIODE','KODE_KANWIL1','KANWIL1','KODE_CABANG1','CABANG1','BRANCH1','UNIT1','CURTYP','AO_NAME','CIFNO',
         'NOMOR_REKENING1','STATUS_REKENING1','LN_TYPE','NAMA_DEBITUR1','RATE','JANGKA_WAKTU1','PLAFON','BAKI_DEBET1',
@@ -1977,6 +1982,7 @@ class ImportExcelController extends Controller
                 'headers' => $headers,
                 'rows' => $rows,
                 'formatted_unique_values' => $formattedUniqueValues,
+                'source_indexes' => array_keys($headers),
             ];
         }
 
@@ -1984,7 +1990,10 @@ class ImportExcelController extends Controller
         $filteredHeaders = [];
 
         foreach ($headers as $index => $header) {
-            if ($this->isRowNumberLikeHeader((string) $header)) {
+            if (
+                $this->isRowNumberLikeHeader((string) $header)
+                || $this->isSimpananPreviewPlaceholderColumn((string) $header)
+            ) {
                 continue;
             }
 
@@ -1997,6 +2006,7 @@ class ImportExcelController extends Controller
                 'headers' => $headers,
                 'rows' => $rows,
                 'formatted_unique_values' => $formattedUniqueValues,
+                'source_indexes' => array_keys($headers),
             ];
         }
 
@@ -2019,7 +2029,114 @@ class ImportExcelController extends Controller
             'headers' => array_values($filteredHeaders),
             'rows' => $filteredRows,
             'formatted_unique_values' => $filteredUniqueValues,
+            'source_indexes' => array_values($keptIndexes),
         ];
+    }
+
+    private function isSimpananPreviewPlaceholderColumn(string $header): bool
+    {
+        return preg_match('/^COL_\d+$/i', trim($header)) === 1;
+    }
+
+    protected function remapPreviewDisplayFilterMap(array $displayFilterMap, array $sourceIndexes): array
+    {
+        $remapped = [];
+
+        foreach ($displayFilterMap as $displayIndex => $filteredIndex) {
+            $filteredIndex = (int) $filteredIndex;
+            $remapped[$displayIndex] = $sourceIndexes[$filteredIndex] ?? $filteredIndex;
+        }
+
+        return $remapped;
+    }
+
+    protected function sanitizeSimpananMultiPnPreviewPayload(
+        array $payload,
+        ?array $sourceHeaders = null,
+        ?string $tableName = null
+    ): array
+    {
+        if (!$this->isSimpananMultiPnTable($tableName)) {
+            return $payload;
+        }
+
+        $headers = array_values((array) ($payload['headers'] ?? []));
+        if ($headers === []) {
+            return $payload;
+        }
+
+        $preview = array_values((array) ($payload['preview'] ?? []));
+        $uniqueValues = (array) ($payload['formattedUniqueValues'] ?? []);
+        $indexedUniqueValues = [];
+
+        foreach ($headers as $index => $header) {
+            $indexedUniqueValues[$index] = (array) (
+                $uniqueValues[$index]
+                ?? $uniqueValues[(string) $header]
+                ?? []
+            );
+        }
+
+        $filtered = $this->stripIgnoredPreviewColumns(
+            $headers,
+            $preview,
+            $indexedUniqueValues,
+            'simpanan_multipn'
+        );
+        $resolvedSourceHeaders = array_values($sourceHeaders ?? (array) ($payload['sourceHeaders'] ?? []));
+        if ($resolvedSourceHeaders === []) {
+            $resolvedSourceHeaders = $headers;
+        }
+
+        $payload['headers'] = $filtered['headers'];
+        $payload['preview'] = $filtered['rows'];
+        $payload['formattedUniqueValues'] = $filtered['formatted_unique_values'];
+        $payload['sourceHeaders'] = $resolvedSourceHeaders;
+        $payload['display_filter_map'] = $this->buildPreviewDisplayFilterMap(
+            $filtered['headers'],
+            $resolvedSourceHeaders
+        );
+        $payload['displayFilterMap'] = $payload['display_filter_map'];
+
+        return $payload;
+    }
+
+    protected function preparePreviewDisplayPayload(
+        array $headers,
+        array $formattedUniqueValues,
+        array $preview,
+        string $tableName
+    ): array {
+        $sourceHeaders = array_values($headers);
+        $uniqueValuesByIndex = [];
+
+        foreach ($sourceHeaders as $index => $header) {
+            $uniqueValuesByIndex[$index] = $formattedUniqueValues[$index]
+                ?? $formattedUniqueValues[$header]
+                ?? [];
+        }
+
+        $filteredPreview = $this->stripIgnoredPreviewColumns(
+            $sourceHeaders,
+            $preview,
+            $uniqueValuesByIndex,
+            $tableName
+        );
+        $orderedPreview = $this->orderPreviewColumns(
+            $filteredPreview['headers'],
+            $filteredPreview['formatted_unique_values'],
+            $filteredPreview['rows'],
+            $tableName
+        );
+
+        $orderedPreview['display_filter_map'] = $this->remapPreviewDisplayFilterMap(
+            $orderedPreview['display_filter_map'],
+            (array) ($filteredPreview['source_indexes'] ?? [])
+        );
+        $orderedPreview['formattedUniqueValues'] = $orderedPreview['formatted_unique_values'];
+        $orderedPreview['source_headers'] = $sourceHeaders;
+
+        return $orderedPreview;
     }
 
     protected function orderPreviewColumns(array $headers, array $formattedUniqueValues, array $preview, string $tableName): array
@@ -2178,19 +2295,17 @@ class ImportExcelController extends Controller
                 $formattedUniqueValues[$index] = $keys;
             }
 
-            $filteredPreview = $this->stripIgnoredPreviewColumns(
+            $tableName = $this->resolveExcelTableName();
+            $orderedPreview = $this->preparePreviewDisplayPayload(
                 $headers,
-                $cleanPreview,
                 $formattedUniqueValues,
-                $this->resolveExcelTableName()
+                $cleanPreview,
+                $tableName
             );
-
-            $orderedPreview = $this->orderPreviewColumns(
-                $filteredPreview['headers'],
-                $filteredPreview['formatted_unique_values'],
-                $filteredPreview['rows'],
-                $this->resolveExcelTableName()
-            );
+            $sourceHeaders = $orderedPreview['source_headers'];
+            $normalizedHeaders = $this->isSimpananMultiPnTable()
+                ? $sourceHeaders
+                : $orderedPreview['headers'];
 
             return [
                 'headers' => $orderedPreview['headers'],
@@ -2199,7 +2314,8 @@ class ImportExcelController extends Controller
                 'displayFilterMap' => $orderedPreview['display_filter_map'],
                 'header_index' => 0,
                 'header_row' => 1,
-                'normalized_headers' => $filteredPreview['headers'],
+                'normalized_headers' => $normalizedHeaders,
+                'sourceHeaders' => $sourceHeaders,
                 'rows_scanned' => min($rowsProcessedForUniques, $totalAvailableRows),
                 'total_sample_rows' => $totalAvailableRows,
                 'delimiter' => $delimiter,
@@ -2254,11 +2370,14 @@ class ImportExcelController extends Controller
     public function initDailyLoanChunkUpload(Request $request)
     {
         $request->validate([
-            'original_name' => 'required|string',
-            'total_size' => 'nullable|integer|min:1',
+            'original_name' => ['required', 'string', 'max:255'],
+            'total_size' => ['required', 'integer', 'min:1', 'max:' . $this->dailyLoanChunkUploadMaxBytes()],
+            'total_chunks' => ['required', 'integer', 'min:1', 'max:' . $this->dailyLoanChunkUploadMaxChunks()],
         ]);
 
         $originalName = trim((string) $request->input('original_name'));
+        $totalSize = (int) $request->input('total_size');
+        $totalChunks = (int) $request->input('total_chunks');
         $extension = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
         if (!in_array($extension, ['csv', 'txt'], true)) {
             return response()->json([
@@ -2267,15 +2386,33 @@ class ImportExcelController extends Controller
             ], 422);
         }
 
+        $expectedChunks = (int) ceil($totalSize / self::CHUNK_SIZE_BYTES);
+        if ($totalChunks !== $expectedChunks) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Metadata jumlah chunk tidak sesuai dengan ukuran file.',
+            ], 422);
+        }
+
         $uploadId = 'dailyloan_' . Str::uuid()->toString();
         $directory = $this->ensureChunkUploadDirectory($uploadId);
 
-        file_put_contents($directory . DIRECTORY_SEPARATOR . 'meta.json', json_encode([
+        $written = file_put_contents($directory . DIRECTORY_SEPARATOR . 'meta.json', json_encode([
             'original_name' => $originalName,
-            'total_size' => (int) ($request->input('total_size') ?? 0),
+            'total_size' => $totalSize,
+            'total_chunks' => $totalChunks,
             'created_at' => now()->toIso8601String(),
             'user_id' => auth()->id(),
-        ], JSON_PRETTY_PRINT));
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX);
+
+        if ($written === false) {
+            $this->cleanupChunkUploadDirectory($directory);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal menyiapkan metadata upload chunk.',
+            ], 500);
+        }
 
         return response()->json([
             'status' => 'success',
@@ -2286,10 +2423,10 @@ class ImportExcelController extends Controller
     public function uploadDailyLoanChunk(Request $request)
     {
         $request->validate([
-            'upload_id' => 'required|string',
+            'upload_id' => ['required', 'string', 'regex:/^dailyloan_[0-9a-f-]{36}$/'],
             'chunk_index' => 'required|integer|min:0',
-            'total_chunks' => 'required|integer|min:1',
-            'file' => 'required|file',
+            'total_chunks' => ['required', 'integer', 'min:1', 'max:' . $this->dailyLoanChunkUploadMaxChunks()],
+            'file' => ['required', 'file', 'max:' . (int) (self::CHUNK_SIZE_BYTES / 1024)],
         ]);
 
         $uploadId = trim((string) $request->input('upload_id'));
@@ -2302,6 +2439,23 @@ class ImportExcelController extends Controller
             ], 404);
         }
 
+        $meta = $this->readChunkUploadMeta($directory);
+        if (!$this->chunkUploadBelongsToCurrentUser($meta)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Sesi upload chunk tidak valid untuk pengguna ini.',
+            ], 403);
+        }
+
+        $chunkIndex = (int) $request->input('chunk_index');
+        $totalChunks = (int) $request->input('total_chunks');
+        if ($totalChunks !== (int) ($meta['total_chunks'] ?? 0) || $chunkIndex >= $totalChunks) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Urutan atau jumlah chunk tidak sesuai metadata upload.',
+            ], 422);
+        }
+
         $chunkFile = $request->file('file');
         if (!$chunkFile || !$chunkFile->isValid()) {
             return response()->json([
@@ -2310,7 +2464,14 @@ class ImportExcelController extends Controller
             ], 422);
         }
 
-        $chunkIndex = (int) $request->input('chunk_index');
+        $chunkSize = (int) ($chunkFile->getSize() ?: 0);
+        if ($chunkSize < 1 || $chunkSize > self::CHUNK_SIZE_BYTES) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ukuran chunk tidak valid.',
+            ], 422);
+        }
+
         $targetPath = $directory . DIRECTORY_SEPARATOR . sprintf('part_%06d.bin', $chunkIndex);
         $chunkFile->move($directory, basename($targetPath));
 
@@ -2323,9 +2484,9 @@ class ImportExcelController extends Controller
     public function finalizeDailyLoanChunkUpload(Request $request)
     {
         $request->validate([
-            'upload_id' => 'required|string',
-            'total_chunks' => 'required|integer|min:1',
-            'original_name' => 'required|string',
+            'upload_id' => ['required', 'string', 'regex:/^dailyloan_[0-9a-f-]{36}$/'],
+            'total_chunks' => ['required', 'integer', 'min:1', 'max:' . $this->dailyLoanChunkUploadMaxChunks()],
+            'original_name' => ['required', 'string', 'max:255'],
         ]);
 
         $uploadId = trim((string) $request->input('upload_id'));
@@ -2338,6 +2499,24 @@ class ImportExcelController extends Controller
                 'status' => 'error',
                 'message' => 'Folder upload chunk tidak ditemukan.',
             ], 404);
+        }
+
+        $meta = $this->readChunkUploadMeta($directory);
+        if (!$this->chunkUploadBelongsToCurrentUser($meta)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Sesi upload chunk tidak valid untuk pengguna ini.',
+            ], 403);
+        }
+
+        if (
+            $totalChunks !== (int) ($meta['total_chunks'] ?? 0)
+            || !hash_equals((string) ($meta['original_name'] ?? ''), $originalName)
+        ) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Metadata finalisasi tidak sesuai dengan sesi upload.',
+            ], 422);
         }
 
         $extension = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
@@ -2398,6 +2577,17 @@ class ImportExcelController extends Controller
         }
 
         fclose($outputHandle);
+
+        $assembledSize = (int) (@filesize($absolutePath) ?: 0);
+        if ($assembledSize !== (int) ($meta['total_size'] ?? 0)) {
+            @unlink($absolutePath);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ukuran file final tidak sesuai dengan file sumber. Silakan upload ulang.',
+            ], 422);
+        }
+
         $this->cleanupChunkUploadDirectory($directory);
 
         $cacheKey = 'excel_preview_' . md5($relativePath . '|' . (auth()->id() ?? 'guest') . '|' . microtime(true));
@@ -2938,6 +3128,10 @@ class ImportExcelController extends Controller
 
     private function chunkUploadDirectory(string $uploadId): string
     {
+        if (preg_match('/^dailyloan_[0-9a-f-]{36}$/', $uploadId) !== 1) {
+            throw new \InvalidArgumentException('ID upload chunk tidak valid.');
+        }
+
         return storage_path(self::CHUNK_UPLOAD_TEMP_DIR . DIRECTORY_SEPARATOR . $uploadId);
     }
 
@@ -2945,7 +3139,7 @@ class ImportExcelController extends Controller
     {
         $directory = $this->chunkUploadDirectory($uploadId);
         if (!is_dir($directory)) {
-            @mkdir($directory, 0777, true);
+            @mkdir($directory, 0750, true);
         }
 
         return $directory;
@@ -2953,23 +3147,64 @@ class ImportExcelController extends Controller
 
     private function cleanupChunkUploadDirectory(string $directory): void
     {
-        if (!is_dir($directory)) {
+        $root = realpath(storage_path(self::CHUNK_UPLOAD_TEMP_DIR));
+        $resolvedDirectory = realpath($directory);
+        if (
+            $root === false
+            || $resolvedDirectory === false
+            || !is_dir($resolvedDirectory)
+            || !str_starts_with(
+                strtolower(str_replace('\\', '/', $resolvedDirectory)),
+                rtrim(strtolower(str_replace('\\', '/', $root)), '/') . '/dailyloan_'
+            )
+        ) {
             return;
         }
 
-        $items = scandir($directory) ?: [];
+        $items = scandir($resolvedDirectory) ?: [];
         foreach ($items as $item) {
             if ($item === '.' || $item === '..') {
                 continue;
             }
 
-            $path = $directory . DIRECTORY_SEPARATOR . $item;
+            $path = $resolvedDirectory . DIRECTORY_SEPARATOR . $item;
             if (is_file($path)) {
                 @unlink($path);
             }
         }
 
-        @rmdir($directory);
+        @rmdir($resolvedDirectory);
+    }
+
+    private function readChunkUploadMeta(string $directory): ?array
+    {
+        $metaPath = $directory . DIRECTORY_SEPARATOR . 'meta.json';
+        if (!is_file($metaPath)) {
+            return null;
+        }
+
+        $decoded = json_decode((string) @file_get_contents($metaPath), true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    private function chunkUploadBelongsToCurrentUser(?array $meta): bool
+    {
+        $currentUserId = (int) (auth()->id() ?? 0);
+
+        return $meta !== null
+            && $currentUserId > 0
+            && (int) ($meta['user_id'] ?? 0) === $currentUserId;
+    }
+
+    private function dailyLoanChunkUploadMaxBytes(): int
+    {
+        return max(1, (int) config('import.security.upload_max_bytes', 4 * 1024 * 1024 * 1024));
+    }
+
+    private function dailyLoanChunkUploadMaxChunks(): int
+    {
+        return max(1, (int) ceil($this->dailyLoanChunkUploadMaxBytes() / self::CHUNK_SIZE_BYTES));
     }
 
     private function cleanupImportedFile(string $relativePath = '', ?string $absolutePath = null): void
@@ -6313,9 +6548,14 @@ class ImportExcelController extends Controller
         ];
     }
 
-    private function prepareDailyLoanDirectLoadSource(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
+    private function prepareDailyLoanDirectLoadSource(
+        string $csvPath,
+        ?string $delimiter = null,
+        ?callable $send = null,
+        int $jobId = 0
+    ): array
     {
-        $normalized = $this->createNormalizedDailyLoanDirectLoadCsv($csvPath, $delimiter, $send);
+        $normalized = $this->createNormalizedDailyLoanDirectLoadCsv($csvPath, $delimiter, $send, $jobId);
         $path = (string) ($normalized['path'] ?? '');
         $resolvedDelimiter = ($delimiter !== null && $delimiter !== '')
             ? $delimiter
@@ -6700,6 +6940,19 @@ class ImportExcelController extends Controller
 
         $sourceHeaders = $this->canonicalizeDailyLoanSourceHeaders($sourceHeaders);
         $normalizedHeaders = $this->canonicalizeDailyLoanSourceHeaders($normalizedHeaders);
+        $replacePeriodsRaw = $importOptions['replace_periods'] ?? $importOptions['backend_detected_periods'] ?? [];
+        $replacePeriods = $this->normalizeDailyLoanReplacePeriods((array) $replacePeriodsRaw);
+        $periodHints = $this->normalizeDailyLoanReplacePeriods(array_values(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            (array) ($preparedSource['period_hints'] ?? [])
+        ), static fn (string $value): bool => $value !== '')));
+
+        if ($periodHints === [] && $replacePeriods === []) {
+            throw new \RuntimeException(
+                'Periode Daily Loan tidak terdeteksi dari CSV hasil normalisasi. '
+                . 'Import dibatalkan sebelum LOAD DATA agar validasi duplikat tidak terlewati.'
+            );
+        }
 
         $context = $this->buildImportContext('daily_loan_dinamis', $normalizedHeaders, [], $importOptions);
         $this->assertDailyLoanRateColumnSupportsSixDecimals($context);
@@ -6752,14 +7005,7 @@ class ImportExcelController extends Controller
             throw new \RuntimeException('Tidak ada mapping kolom Daily Loan yang bisa dipakai untuk direct import.');
         }
 
-        $replacePeriodsRaw = $importOptions['replace_periods'] ?? $importOptions['backend_detected_periods'] ?? [];
-        $replacePeriods = $this->normalizeDailyLoanReplacePeriods((array) $replacePeriodsRaw);
-
         $sourcePreNormalized = (bool) ($importOptions['source_pre_normalized'] ?? ($preparedSource['source_pre_normalized'] ?? false));
-        $periodHints = array_values(array_unique(array_filter(array_map(
-            static fn ($value): string => trim((string) $value),
-            (array) ($preparedSource['period_hints'] ?? [])
-        ), static fn (string $value): bool => $value !== '')));
 
         return [
             'delimiter' => $delimiter,
@@ -8185,7 +8431,7 @@ class ImportExcelController extends Controller
             ]);
 
             $loadSource = $isDailyLoanTable
-                ? $this->prepareDailyLoanDirectLoadSource($csvPath, $delimiter, $send)
+                ? $this->prepareDailyLoanDirectLoadSource($csvPath, $delimiter, $send, $jobId)
                 : ($isGi405RecDhTable
                     ? $this->prepareGi405RecDhDirectLoadSource($csvPath, $delimiter, $send)
                     : ($isSsaPinjamanTable
@@ -10688,8 +10934,33 @@ class ImportExcelController extends Controller
 
     public function uploadExcel(Request $request, array $allowedExtensions = ['xlsx', 'xls', 'csv', 'txt'])
     {
-        $request->validate(['file' => 'required|file|mimes:' . implode(',', $allowedExtensions)]);
+        $request->validate([
+            'file' => 'required|file'
+                . '|max:' . $this->configuredSessionImportUploadMaxKilobytes(),
+            'id_report' => 'required|integer|exists:nama_report,id_report',
+        ]);
         $file = $request->file('file');
+        $originalExtension = strtolower(trim((string) $file?->getClientOriginalExtension()));
+
+        if (!in_array($originalExtension, $allowedExtensions, true)) {
+            return $this->invalidSpreadsheetUploadResponse(
+                $request,
+                'Format file tidak didukung. Gunakan ' . implode(', ', array_map(static fn (string $extension): string => '.' . $extension, $allowedExtensions)) . '.'
+            );
+        }
+
+        if (in_array($originalExtension, ['xlsx', 'xls'], true)
+            && SpreadsheetFileFormatDetector::detect((string) $file?->getRealPath()) === null) {
+            return $this->invalidSpreadsheetUploadResponse(
+                $request,
+                'File Excel tidak lengkap atau bukan workbook XLS/XLSX yang valid. Ekspor ulang file dari perangkat sumber lalu pilih kembali.'
+            );
+        }
+        if (in_array($originalExtension, ['csv', 'txt'], true)) {
+            $request->validate([
+                'file' => 'required|file|mimes:csv,txt|max:' . $this->configuredSessionImportUploadMaxKilobytes(),
+            ]);
+        }
 
         $reportId = (int) $request->input('id_report');
         $tableName = strtolower(trim((string) DB::table('nama_report')->where('id_report', $reportId)->value('table_name')));
@@ -10732,7 +11003,7 @@ class ImportExcelController extends Controller
             Storage::makeDirectory('excel_imports');
         }
 
-        $path = $file->store('excel_imports');
+        $path = $this->normalizeStoredSpreadsheetExtension($file->store('excel_imports'));
         $this->normalizeSsaAlmafactsCsvEncoding($tableName, $path);
         $cacheKey = 'excel_preview_' . md5($path . '|' . (auth()->id() ?? 'guest') . '|' . microtime(true));
 
@@ -10772,6 +11043,39 @@ class ImportExcelController extends Controller
         return redirect($previewRedirect);
     }
 
+    private function normalizeStoredSpreadsheetExtension(string $path): string
+    {
+        $detectedFormat = SpreadsheetFileFormatDetector::detect(Storage::path($path));
+        if (!in_array($detectedFormat, ['xlsx', 'xls'], true)) {
+            return $path;
+        }
+
+        $currentExtension = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+        if ($currentExtension === $detectedFormat) {
+            return $path;
+        }
+
+        $normalizedPath = pathinfo($path, PATHINFO_DIRNAME)
+            . DIRECTORY_SEPARATOR
+            . pathinfo($path, PATHINFO_FILENAME)
+            . '.' . $detectedFormat;
+
+        if (!Storage::move($path, $normalizedPath)) {
+            throw new \RuntimeException('File Excel tidak dapat dinormalisasi untuk diproses.');
+        }
+
+        return $normalizedPath;
+    }
+
+    private function invalidSpreadsheetUploadResponse(Request $request, string $message)
+    {
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json(['status' => 'error', 'message' => $message], 422);
+        }
+
+        return back()->with('error', $message);
+    }
+
     public function preparePreviewStream(Request $request)
     {
         ini_set('memory_limit', '1024M');
@@ -10780,9 +11084,27 @@ class ImportExcelController extends Controller
         $sessionPath = session('excel_path');
         $cacheKey = session('excel_preview_key');
         $activeIdReport = (int) session('active_id_report');
+        $authorizedRelativePath = null;
+        $authorizedAbsolutePath = null;
+
+        if ($sessionPath) {
+            [$authorizedRelativePath, $authorizedAbsolutePath] = $this->authorizeSessionImportStorageFile(
+                (string) $sessionPath,
+                'excel_path',
+                ['excel_imports'],
+                ['xlsx', 'xls', 'csv', 'txt']
+            );
+        }
+
         request()->session()->save();
 
-        return response()->stream(function () use ($sessionPath, $cacheKey, $activeIdReport) {
+        return response()->stream(function () use (
+            $sessionPath,
+            $cacheKey,
+            $activeIdReport,
+            $authorizedRelativePath,
+            $authorizedAbsolutePath
+        ) {
             $send = function (string $event, array $data) {
                 echo "event: {$event}\n";
                 echo 'data: ' . json_encode($data) . "\n\n";
@@ -10798,14 +11120,15 @@ class ImportExcelController extends Controller
                     return;
                 }
 
-                $path = Storage::path(urldecode($sessionPath));
-                if (!file_exists($path)) {
+                $path = $authorizedAbsolutePath;
+                if (!$path || !file_exists($path)) {
                     $this->clearDailyLoanImportSessionState();
                     $send('error_msg', ['message' => 'File tidak ditemukan di server. Silakan upload ulang.']);
                     return;
                 }
 
-                $useCacheKey = $cacheKey ?: ('excel_preview_' . md5(urldecode($sessionPath) . '|' . microtime(true)));
+                $relativePath = (string) $authorizedRelativePath;
+                $useCacheKey = $cacheKey ?: ('excel_preview_' . md5($relativePath . '|' . microtime(true)));
                 $redirect = $activeIdReport === self::DAILY_LOAN_REPORT_ID
                     ? route('import.dailyloan.preview', ['ck' => $useCacheKey])
                     : ($activeIdReport === self::SIMPANAN_MULTIPN_REPORT_ID
@@ -10813,7 +11136,7 @@ class ImportExcelController extends Controller
                         : route('import.excel.preview', ['ck' => $useCacheKey]));
 
                 $send('progress', ['percent' => 20, 'message' => 'File ditemukan. Menyiapkan preview...', 'step' => 1]);
-                $this->primeExcelPreviewCache($relativePath = urldecode($sessionPath), $path, $useCacheKey, $send);
+                $this->primeExcelPreviewCache($relativePath, $path, $useCacheKey, $send);
                 $send('progress', ['percent' => 85, 'message' => 'Mengalihkan ke halaman preview...', 'step' => 2]);
                 $send('ready', ['redirect' => $redirect]);
             } catch (\Throwable $e) {
@@ -10874,7 +11197,6 @@ class ImportExcelController extends Controller
                 $reorderedPayload,
                 array_values((array) ($csvPayload['sourceHeaders'] ?? $csvPayload['headers']))
             );
-
             Cache::put($cacheKey, [
                 'headers' => $reorderedPayload['headers'],
                 'preview' => $reorderedPayload['preview'],
@@ -10907,6 +11229,7 @@ class ImportExcelController extends Controller
                 $reorderedPayload,
                 array_values((array) ($csvPayload['sourceHeaders'] ?? $csvPayload['headers']))
             );
+            $reorderedPayload = $this->sanitizeSimpananMultiPnPreviewPayload($reorderedPayload, null, $tableName);
 
             Cache::put($cacheKey, [
                 'headers' => $reorderedPayload['headers'],
@@ -10916,7 +11239,9 @@ class ImportExcelController extends Controller
                 'path' => $relativePath,
                 'stagedCsvPath' => $csvPayload['staged_csv_path'] ?? $path,
                 'headerIndex' => (int) ($csvPayload['header_index'] ?? 0),
-                'normalizedHeaders' => $reorderedPayload['headers'],
+                'normalizedHeaders' => $this->isSimpananMultiPnTable($tableName)
+                    ? $reorderedPayload['sourceHeaders']
+                    : $reorderedPayload['headers'],
                 'sourceHeaders' => $reorderedPayload['sourceHeaders'],
                 'total_rows' => isset($csvPayload['total_rows']) ? (int) $csvPayload['total_rows'] : null,
                 'delimiter' => isset($csvPayload['delimiter']) ? (string) $csvPayload['delimiter'] : null,
@@ -10959,13 +11284,20 @@ class ImportExcelController extends Controller
             $formattedUniqueValues[$headerLabel] = array_keys($distinct);
         }
 
-        $reorderedPayload = $this->reorderPreviewPayload(
+        $previewDisplayPayload = $this->preparePreviewDisplayPayload(
             array_values($headers),
             $formattedUniqueValues,
             $previewRows,
-            $this->cachedSchemaColumnListing($tableName)
+            $tableName
         );
-        $reorderedPayload = $this->applyManualPreviewColumns($tableName, $reorderedPayload, array_values($headers));
+        $reorderedPayload = $this->applyManualPreviewColumns(
+            $tableName,
+            $previewDisplayPayload,
+            $previewDisplayPayload['source_headers']
+        );
+        $normalizedHeaders = $this->isSimpananMultiPnTable($tableName)
+            ? $previewDisplayPayload['source_headers']
+            : $reorderedPayload['headers'];
 
         Cache::put($cacheKey, [
             'headers' => $reorderedPayload['headers'],
@@ -10975,7 +11307,7 @@ class ImportExcelController extends Controller
             'path' => $relativePath,
             'stagedCsvPath' => null,
             'headerIndex' => (int) ($nativePreview['header_index'] ?? 0),
-            'normalizedHeaders' => $reorderedPayload['headers'],
+            'normalizedHeaders' => $normalizedHeaders,
             'sourceHeaders' => $reorderedPayload['sourceHeaders'],
             'total_rows' => isset($nativePreview['total_rows']) ? (int) $nativePreview['total_rows'] : null,
             'delimiter' => null,
@@ -11460,6 +11792,11 @@ class ImportExcelController extends Controller
         if ($ck) {
             $cached = Cache::get($ck);
             if ($cached && is_array($cached)) {
+                $cached = $this->sanitizeSimpananMultiPnPreviewPayload(
+                    $cached,
+                    (array) ($cached['sourceHeaders'] ?? ($cached['normalizedHeaders'] ?? [])),
+                    $activeTableName
+                );
                 $previewMeta = [
                     'path' => $cached['path'] ?? null,
                     'staged_csv_path' => $cached['stagedCsvPath'] ?? null,
@@ -11543,11 +11880,15 @@ class ImportExcelController extends Controller
             }
         }
 
-        $sessionPath = session('excel_path', $request->path);
+        $sessionPath = session('excel_path');
         if (!$sessionPath) return redirect()->route('import.index')->with('sweet_warning', ['title' => 'Sesi Berakhir', 'text' => 'Silakan upload ulang.']);
 
-        $relativePath = urldecode($sessionPath);
-        $path = Storage::path($relativePath);
+        [$relativePath, $path] = $this->authorizeSessionImportStorageFile(
+            (string) $request->query('path', $sessionPath),
+            'excel_path',
+            ['excel_imports'],
+            ['xlsx', 'xls', 'csv', 'txt']
+        );
         if (!file_exists($path)) {
             if ((int) session('active_id_report') === self::DAILY_LOAN_REPORT_ID) {
                 $this->clearDailyLoanImportSessionState();
@@ -11572,6 +11913,7 @@ class ImportExcelController extends Controller
                 $reorderedPayload,
                 array_values((array) ($csvPayload['sourceHeaders'] ?? $csvPayload['headers']))
             );
+            $reorderedPayload = $this->sanitizeSimpananMultiPnPreviewPayload($reorderedPayload, null, $tableName);
 
             try {
                 $this->assertValidHourlyDpkHeaders($tableName, $reorderedPayload['headers']);
@@ -11587,7 +11929,9 @@ class ImportExcelController extends Controller
                 'path' => $relativePath,
                 'staged_csv_path' => $csvPayload['staged_csv_path'] ?? $path,
                 'header_index' => isset($csvPayload['header_index']) ? (int) $csvPayload['header_index'] : 0,
-                'normalized_headers' => $reorderedPayload['headers'],
+                'normalized_headers' => $this->isSimpananMultiPnTable($tableName)
+                    ? $reorderedPayload['sourceHeaders']
+                    : $reorderedPayload['headers'],
                 'source_headers' => $reorderedPayload['sourceHeaders'],
                 'total_rows' => isset($csvPayload['total_rows']) ? (int) $csvPayload['total_rows'] : null,
                 'delimiter' => isset($csvPayload['delimiter']) ? (string) $csvPayload['delimiter'] : null,
@@ -11681,13 +12025,20 @@ class ImportExcelController extends Controller
             $formattedUniqueValues[$headerLabel] = array_keys($distinct);
         }
 
-        $reorderedPayload = $this->reorderPreviewPayload(
+        $previewDisplayPayload = $this->preparePreviewDisplayPayload(
             array_values($headers),
             $formattedUniqueValues,
             $previewRows,
-            $this->cachedSchemaColumnListing($tableName)
+            $tableName
         );
-        $reorderedPayload = $this->applyManualPreviewColumns($tableName, $reorderedPayload, array_values($headers));
+        $reorderedPayload = $this->applyManualPreviewColumns(
+            $tableName,
+            $previewDisplayPayload,
+            $previewDisplayPayload['source_headers']
+        );
+        $normalizedHeaders = $this->isSimpananMultiPnTable($tableName)
+            ? $previewDisplayPayload['source_headers']
+            : $reorderedPayload['headers'];
 
         try {
             $this->assertValidHourlyDpkHeaders($tableName, $reorderedPayload['headers']);
@@ -11703,7 +12054,7 @@ class ImportExcelController extends Controller
             'path' => $relativePath,
             'staged_csv_path' => null,
             'header_index' => $headerIndex,
-            'normalized_headers' => $reorderedPayload['headers'],
+            'normalized_headers' => $normalizedHeaders,
             'source_headers' => $reorderedPayload['sourceHeaders'],
             'total_rows' => isset($nativePreview['total_rows']) ? (int) $nativePreview['total_rows'] : null,
             'delimiter' => null,
@@ -12260,12 +12611,15 @@ class ImportExcelController extends Controller
             ?? ''
         );
 
-        $sessionPath = $previewPath !== '' ? $previewPath : session('excel_path', $request->path);
+        $sessionPath = session('excel_path');
         if (!$sessionPath) return response()->json(['status' => 'error', 'text' => 'Sesi berakhir.']);
 
-        $relativePath = urldecode($sessionPath);
-        $path = Storage::path($relativePath);
-        if (!file_exists($path)) return response()->json(['status' => 'error', 'text' => 'File tidak ditemukan.']);
+        [$relativePath, $path] = $this->authorizeSessionImportStorageFile(
+            $previewPath !== '' ? $previewPath : (string) $request->input('path', $sessionPath),
+            'excel_path',
+            ['excel_imports'],
+            ['xlsx', 'xls', 'csv', 'txt']
+        );
 
         $idReport = $previewIdReport > 0 ? $previewIdReport : session('active_id_report');
         $tableName = strtolower(trim((string) ($previewState['table_name'] ?? '')));
@@ -12313,7 +12667,7 @@ class ImportExcelController extends Controller
         ksort($normalizedActiveFilters);
         $normalizedActiveFilters = $this->normalizeImportActiveFilters($normalizedActiveFilters, $tableName);
 
-        $disableInlineFallback = $tableName === 'lw325_ph';
+        $disableInlineFallback = in_array($tableName, ['lw325_ph', 'daily_loan_dinamis'], true);
 
         $stagedCsvPath = '';
         $lw321VariantStagedHeaders = [];
@@ -12974,10 +13328,7 @@ class ImportExcelController extends Controller
             $cachedIsLw325Ph = $this->streamingIsLw325Ph;
             $cachedIsDailyLoan = $this->streamingIsDailyLoan;
 
-            // OPTIMIZED: Buffer rows untuk batch fputcsv (1000x lebih cepat dari per-row writes)
-            $writeBuffer = [];
             $batchFinalRows = []; // Added to store final associative rows for ID allocation
-            $bulkLoadColumnsCount = count($bulkLoadColumns);
             $headerCount = $context['header_count'];
             $reservedGapIds = [];
             $reservedGapIdOffset = 0;
@@ -13041,17 +13392,6 @@ class ImportExcelController extends Controller
                 if ($tableName === 'hourly_dpk') {
                     $this->appendHourlyDpkSlotFromMappedRow($hourlyDpkReplaceSlots, $finalRow);
                 }
-
-                // OPTIMIZED: Build output row dengan single pass
-                $outputRow = [];
-                for ($i = 0; $i < $bulkLoadColumnsCount; $i++) {
-                    $column = $bulkLoadColumns[$i];
-                    $value = $finalRow[$column] ?? null;
-                    $outputRow[] = $value === null ? '\N' : $value;
-                }
-
-                // OPTIMIZED: Buffer rows untuk batch writes
-                $writeBuffer[] = $outputRow;
 
                 // OPTIMIZED: Buffer rows for ID allocation and then batch writes
                 $batchFinalRows[] = $finalRow;
@@ -13158,15 +13498,19 @@ class ImportExcelController extends Controller
 
                     $directLoadSourcePath = $outputCsvPath;
                     if ($tableName === 'simpanan_multipn') {
-                        // File hasil staging ditulis via fputcsv default comma, jadi delimiter yang dipakai
-                        // untuk membaca ulang file staging harus mengikuti format output staging, bukan
-                        // delimiter sumber asli. Kalau delimiter sumber asli dipakai di sini, kolom bisa
-                        // bergeser dan LOAD DATA mengisi field bisnis dengan NULL.
-                        $loadSource = $this->prepareSimpananMultiPnDirectLoadSource($outputCsvPath, ',', $send);
-                        $directLoadSourcePath = (string) ($loadSource['path'] ?? $outputCsvPath);
-                        if (!empty($loadSource['cleanup']) && $directLoadSourcePath !== '') {
-                            $cleanupPaths[] = $directLoadSourcePath;
-                        }
+                        // Baris di outputCsvPath sudah dipetakan oleh mapExcelRowForInsert() ke urutan
+                        // bulkLoadColumns dan sengaja tanpa header. Membacanya lagi sebagai CSV sumber
+                        // akan menjadikan baris data pertama sebagai header serta menambah satu full pass.
+                        $send('progress', [
+                            'percent' => 95,
+                            'message' => 'Mapping Simpanan MultiPN siap. Melanjutkan langsung ke MySQL...',
+                            'rows_done' => $rowsDone,
+                            'total' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
+                            'speed' => 0,
+                            'processed_rows' => $rowsDone,
+                            'total_rows' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
+                            'mode' => 'direct_load',
+                        ]);
                     }
 
                     $directLoadBeforeLoad = $beforeDirectLoad;
@@ -13925,27 +14269,80 @@ class ImportExcelController extends Controller
 
     public function processExcelChunk(Request $request)
     {
+        $validated = $request->validate([
+            'job_id' => 'required|integer|min:1',
+            'header_index' => 'required|integer|min:0|max:2147483646',
+            'table_name' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_]+$/'],
+            'start_row' => 'required|integer|min:1|max:2147483646',
+            'chunk_size' => 'required|integer|min:1|max:10000',
+            'active_filters_json' => 'nullable|json',
+            'file_path' => 'required|string|max:1024',
+        ]);
+
+        $jobId = (int) $validated['job_id'];
+        $sessionJobId = (int) data_get(session('excel_import_params', []), 'job_id', 0);
+        abort_unless(
+            $sessionJobId > 0 && hash_equals((string) $sessionJobId, (string) $jobId),
+            403,
+            'Job import tidak sesuai dengan sesi aktif.'
+        );
+
+        $activeReport = $this->resolveActiveReport();
+        $activeReportId = (int) ($activeReport->id_report ?? 0);
+        $tableName = strtolower(trim((string) ($activeReport->table_name ?? '')));
+        $requestedTableName = strtolower(trim((string) $validated['table_name']));
+        abort_unless(
+            $activeReportId > 0
+                && $tableName !== ''
+                && hash_equals($tableName, $requestedTableName),
+            403,
+            'Target tabel import tidak sesuai dengan report aktif.'
+        );
+
+        $job = DB::table('import_jobs')->where('id', $jobId)->first();
+        abort_if(!$job, 404, 'Job import tidak ditemukan.');
+        abort_unless(
+            (string) ($job->created_by ?? '') === (string) (auth()->id() ?? '')
+                && (int) ($job->id_report ?? 0) === $activeReportId,
+            403,
+            'Job import bukan milik pengguna atau report yang sedang aktif.'
+        );
+
+        $jobState = $this->excelImportJobService()->getImportJobState($jobId);
+        $jobParams = (array) ($jobState['params'] ?? []);
+        $stateTableName = strtolower(trim((string) ($jobParams['table_name'] ?? '')));
+        $stateFilePath = trim((string) ($jobParams['file_path'] ?? ''));
+        abort_unless(
+            $stateTableName !== ''
+                && hash_equals($tableName, $stateTableName)
+                && $stateFilePath !== ''
+                && hash_equals($stateFilePath, trim((string) $validated['file_path']))
+                && array_key_exists('header_index', $jobParams)
+                && (int) $jobParams['header_index'] === (int) $validated['header_index'],
+            403,
+            'Parameter chunk tidak sesuai dengan state job import.'
+        );
+
+        [$relativePath, $path] = $this->authorizeSessionImportStorageFile(
+            $stateFilePath,
+            'excel_path',
+            ['excel_imports'],
+            ['xlsx', 'xls', 'csv', 'txt']
+        );
+
         ini_set('memory_limit', '2048M');
         set_time_limit(0);
         DB::disableQueryLog(); // Cegah memory leak dari query log
 
         try {
-            $jobId       = (int) $request->job_id;
-            $headerIndex = (int) $request->header_index;
-            $tableName   = $request->table_name;
-            $startRow    = max((int) $request->start_row, $headerIndex + 1);
-            $chunkSize   = max((int) $request->chunk_size, 1);
+            $headerIndex = (int) $jobParams['header_index'];
+            $startRow    = max((int) $validated['start_row'], $headerIndex + 1);
+            $chunkSize   = (int) $validated['chunk_size'];
             $endExclusive = $startRow + $chunkSize;
-            $activeFilters = json_decode($request->active_filters_json, true) ?: [];
+            $activeFilters = (array) ($jobParams['active_filters'] ?? []);
             $activeFilters = $this->normalizeImportActiveFilters($activeFilters, (string) $tableName);
-            $relativePath  = urldecode($request->file_path);
-            $path = Storage::path($relativePath);
 
-            if (!file_exists($path)) {
-                return response()->json(['status' => 'error', 'text' => 'File Excel tidak ditemukan di server. Silakan upload ulang.'], 422);
-            }
-
-            $normalizedHeaders = session('excel_headers', []);
+            $normalizedHeaders = array_values((array) ($jobState['headers'] ?? []));
             if (empty($normalizedHeaders)) {
                 return response()->json([
                     'status' => 'error',
@@ -14092,11 +14489,16 @@ class ImportExcelController extends Controller
                 'debug_rows_read' => $debugRowsRead,
                 'debug_passed' => $debugPassed,
             ]);
-        } catch (\Exception $e) {
-            Log::error('CHUNK PROCESS ERROR: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('CHUNK PROCESS ERROR', [
+                'job_id' => $jobId,
+                'table_name' => $tableName,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
             return response()->json([
                 'status' => 'error',
-                'message' => $e->getMessage()
+                'message' => 'Chunk import gagal diproses. Periksa log server untuk detail.',
             ], 500);
         }
     }

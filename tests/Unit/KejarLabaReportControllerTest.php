@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Http\Controllers\Report\KejarLabaReportController;
+use App\Http\Controllers\Report\DataPhReportController;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +31,7 @@ class KejarLabaReportControllerTest extends TestCase
             $table->string('kanca')->nullable();
             $table->string('unit')->nullable();
             $table->string('segmen_dashboard')->nullable();
+            $table->string('produk_dashboard')->nullable();
             $table->decimal('pokok', 20, 2)->nullable();
         });
     }
@@ -60,8 +61,8 @@ class KejarLabaReportControllerTest extends TestCase
 
         $metrics = $this->invokeBranchPhMetrics('2026-04-30', ['KC Madiun']);
 
-        $this->assertSame(0, $metrics['KC Madiun']['small']);
-        $this->assertSame(0, $metrics['KC Madiun']['total']);
+        $this->assertSame(0.0, $metrics['KC Madiun']['small']);
+        $this->assertSame(0.0, $metrics['KC Madiun']['total']);
     }
 
     public function test_ph_recovery_uses_exact_previous_month_end_period(): void
@@ -104,8 +105,8 @@ class KejarLabaReportControllerTest extends TestCase
 
     private function invokeBranchPhMetrics(string $period, array $branches): array
     {
-        $controller = new KejarLabaReportController();
-        $method = new ReflectionMethod(KejarLabaReportController::class, 'getBranchOfficeRecoveryMetricsFromPh');
+        $controller = new DataPhReportController();
+        $method = new ReflectionMethod(DataPhReportController::class, 'getBranchOfficeRecoveryMetricsFromPh');
         $method->setAccessible(true);
 
         return $method->invoke($controller, $period, $branches);

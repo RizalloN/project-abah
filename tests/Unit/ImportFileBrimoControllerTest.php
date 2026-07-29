@@ -3,6 +3,8 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportFileBrimoController;
+use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -36,6 +38,50 @@ class ImportFileBrimoControllerTest extends TestCase
                 'table_name' => 'missing_brimo_table',
             ],
         ]);
+    }
+
+    public function test_brimo_upload_returns_json_redirect_for_ajax_uploader(): void
+    {
+        $controller = new class extends ImportFileBrimoController {
+            protected function createSecureImportDirectory(): string
+            {
+                return sys_get_temp_dir();
+            }
+
+            protected function storeImportUpload(UploadedFile $file, string $directory): array
+            {
+                return [
+                    'name' => 'source.rar',
+                    'path' => __FILE__,
+                    'extension' => 'rar',
+                ];
+            }
+
+            protected function extractImportArchive(string $archivePath, string $directory): array
+            {
+                return [[
+                    'name' => 'source.csv',
+                    'path' => __FILE__,
+                ]];
+            }
+        };
+
+        $request = Request::create('/import/brimo/upload', 'POST', [
+            'id_report' => 99,
+        ], [], [
+            'file' => UploadedFile::fake()->create('source.rar', 1, 'application/vnd.rar'),
+        ], [
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
+        ]);
+
+        $response = $controller->upload($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame([
+            'status' => 'success',
+            'redirect' => route('import.select'),
+        ], $response->getData(true));
     }
 
     private function invokeMethod(object $target, string $method, array $args = [])

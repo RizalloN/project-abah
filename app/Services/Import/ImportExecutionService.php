@@ -530,20 +530,45 @@ class ImportExecutionService
                 return;
             }
 
-            $status = (string) ($result['status'] ?? 'failed');
+            $success = (int) ($result['total_success'] ?? 0);
+            $failed = (int) ($result['total_failed'] ?? 0);
+            $totalRows = (int) ($result['total_rows'] ?? 0);
+            $status = strtolower(trim((string) ($result['status'] ?? 'failed')));
+            $terminalStatuses = ['completed', 'failed', 'failed_partial', 'terminated'];
+
+            if (!in_array($status, $terminalStatuses, true)) {
+                $allRowsProcessed = $totalRows > 0 && ($success + $failed) >= $totalRows;
+
+                if ($allRowsProcessed) {
+                    $status = $failed > 0
+                        ? ($success > 0 ? 'failed_partial' : 'failed')
+                        : 'completed';
+                } else {
+                    $status = $success > 0 ? 'failed_partial' : 'failed';
+                }
+
+                Log::warning('Import handler returned a non-terminal status after execution; status normalized.', [
+                    'job_id' => $jobId,
+                    'normalized_status' => $status,
+                    'total_success' => $success,
+                    'total_failed' => $failed,
+                    'total_rows' => $totalRows,
+                ]);
+            }
+
             if ($status === 'completed') {
                 $this->progressService->markCompleted(
                     $jobId,
-                    (int) ($result['total_success'] ?? 0),
-                    (int) ($result['total_failed'] ?? 0),
-                    (int) ($result['total_rows'] ?? 0),
+                    $success,
+                    $failed,
+                    $totalRows,
                     [
                         'status' => 'completed',
                         'message' => 'Import selesai diproses.',
-                        'total_success' => (int) ($result['total_success'] ?? 0),
-                        'total_failed' => (int) ($result['total_failed'] ?? 0),
-                        'total_rows' => (int) ($result['total_rows'] ?? 0),
-                        'processed_rows' => (int) ($result['total_rows'] ?? 0),
+                        'total_success' => $success,
+                        'total_failed' => $failed,
+                        'total_rows' => $totalRows,
+                        'processed_rows' => $totalRows,
                         'percent' => 100,
                     ],
                 );
@@ -559,7 +584,7 @@ class ImportExecutionService
                 return;
             }
 
-            if ($status === 'failed_partial' && (int) ($result['total_success'] ?? 0) > 0) {
+            if ($status === 'failed_partial' && $success > 0) {
                 SyncImportedReportJob::dispatch($jobId, null, null, static::class)
                     ->onQueue($this->resolvePostImportSyncQueue($jobId, $params));
             }
@@ -567,8 +592,8 @@ class ImportExecutionService
             $this->progressService->markFailed(
                 $jobId,
                 (string) ($result['message'] ?? 'Import gagal diproses.'),
-                (int) ($result['total_success'] ?? 0),
-                (int) ($result['total_failed'] ?? 0),
+                $success,
+                $failed,
                 $status
             );
             $this->releaseDispatchMarker($jobId);
@@ -669,9 +694,12 @@ class ImportExecutionService
         }
 
         $state = $this->progressService->getJobState($jobId);
+        $params = (array) ($state['params'] ?? []);
+        $tableName = strtolower(trim((string) ($params['table_name'] ?? '')));
 
-        return (bool) (($state['params']['disable_inline_fallback'] ?? false))
-            || $this->isSimpananMultiPnCsvStreamJob($jobId, null, (array) ($state['params'] ?? []));
+        return (bool) ($params['disable_inline_fallback'] ?? false)
+            || $tableName === 'daily_loan_dinamis'
+            || $this->isSimpananMultiPnCsvStreamJob($jobId, null, $params);
     }
 
     private function inlineFallbackGraceSeconds(): int

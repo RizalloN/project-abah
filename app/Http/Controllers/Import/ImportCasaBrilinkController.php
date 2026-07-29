@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Http\Controllers\Import\Concerns\AuthorizesSessionImportStorageFiles;
 use App\Http\Controllers\Import\Concerns\GeneratesFileIdentifiers;
 use App\Services\Import\ImportNotificationSyncService;
 use App\Support\ImportPreviewErrorHandler;
 use App\Support\ReportDataSyncService;
+use App\Support\SargableDateFilter;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -18,7 +20,7 @@ use Illuminate\Support\Str;
 
 class ImportCasaBrilinkController extends Controller
 {
-    use AllocatesGapIds, GeneratesFileIdentifiers;
+    use AllocatesGapIds, AuthorizesSessionImportStorageFiles, GeneratesFileIdentifiers;
 
     private const HEADER_MAP = [
         'row_num',
@@ -42,7 +44,7 @@ class ImportCasaBrilinkController extends Controller
     {
         $request->validate([
             'id_report' => 'required|integer',
-            'file' => 'required|file|mimes:csv,txt',
+            'file' => 'required|file|mimes:csv,txt|max:' . $this->configuredSessionImportUploadMaxKilobytes(),
             'periode' => 'required|date_format:Y-m',
         ]);
 
@@ -181,17 +183,19 @@ class ImportCasaBrilinkController extends Controller
         ini_set('memory_limit', '512M');
         set_time_limit(0);
 
-        $relativePath = session('casa_brilink_file', $request->input('file_path'));
+        $relativePath = (string) session('casa_brilink_file', $request->input('file_path'));
         $periodeInput = $request->input('periode', session('casa_brilink_periode'));
 
         if (!$relativePath || !$periodeInput) {
             return redirect()->route('import.index')->with('error', 'File atau periode CASA BRILINK tidak ditemukan. Silakan upload ulang.');
         }
 
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
-            return redirect()->route('import.index')->with('error', 'File CSV CASA BRILINK tidak ditemukan di server.');
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            $relativePath,
+            'casa_brilink_file',
+            ['casa_brilink_imports'],
+            ['csv', 'txt']
+        );
 
         $currentDelimiter = $request->input('delimiter', 'auto');
 
@@ -284,15 +288,12 @@ class ImportCasaBrilinkController extends Controller
             'periode' => 'required|date_format:Y-m',
         ]);
 
-        $relativePath = $request->input('file_path');
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
-            return response()->json([
-                'status' => 'error',
-                'title' => 'Gagal!',
-                'text' => 'File CSV CASA BRILINK tidak ditemukan di server.',
-            ], 422);
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            (string) $request->input('file_path'),
+            'casa_brilink_file',
+            ['casa_brilink_imports'],
+            ['csv', 'txt']
+        );
 
         $activeReportId = (int) session('active_id_report', 0);
 
@@ -366,7 +367,7 @@ class ImportCasaBrilinkController extends Controller
             ], 422);
         }
 
-        if (DB::table($tableName)->whereDate('periode', $context['periode'])->exists()) {
+        if (SargableDateFilter::apply(DB::table($tableName), 'periode', '=', $context['periode'])->exists()) {
             $this->cleanupUploadedFile($relativePath);
 
             return response()->json([
@@ -637,15 +638,12 @@ class ImportCasaBrilinkController extends Controller
             'periode' => 'required|date_format:Y-m',
         ]);
 
-        $relativePath = $request->input('file_path');
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
-            return response()->json([
-                'status' => 'error',
-                'title' => 'Gagal!',
-                'text' => 'File CSV CASA BRILINK tidak ditemukan di server.',
-            ], 422);
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            (string) $request->input('file_path'),
+            'casa_brilink_file',
+            ['casa_brilink_imports'],
+            ['csv', 'txt']
+        );
 
         $activeReportId = (int) session('active_id_report', 0);
 
@@ -684,7 +682,7 @@ class ImportCasaBrilinkController extends Controller
             ], 422);
         }
 
-        if (DB::table($tableName)->whereDate('periode', $context['periode'])->exists()) {
+        if (SargableDateFilter::apply(DB::table($tableName), 'periode', '=', $context['periode'])->exists()) {
             $this->cleanupUploadedFile($relativePath);
 
             return response()->json([

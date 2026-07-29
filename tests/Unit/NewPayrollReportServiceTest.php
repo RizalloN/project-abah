@@ -92,6 +92,30 @@ class NewPayrollReportServiceTest extends TestCase
         $this->assertEqualsWithDelta(30.0, $row['saldo']['yoy_prev'], 0.01);
     }
 
+    public function test_payroll_berkualitas_counts_debitur_with_balance_of_at_least_five_million(): void
+    {
+        DB::table('performance_pis_per_produk')->insert([
+            $this->row('curr-qualified-exact', '2026-07-11', 'KC MADIUN', 'KC MADIUN', '2026-01-10', 5000000),
+            $this->row('curr-qualified-above', '2026-07-11', 'KC MADIUN', 'KC MADIUN', '2026-05-10', 7500000),
+            $this->row('curr-not-qualified', '2026-07-11', 'KC MADIUN', 'KC MADIUN', '2026-06-10', 4999999),
+            $this->row('prev-qualified', '2026-06-30', 'KC MADIUN', 'KC MADIUN', '2026-04-10', 5000000),
+            $this->row('yoy-qualified', '2025-07-31', 'KC MADIUN', 'KC MADIUN', '2025-03-10', 6000000),
+        ]);
+
+        $service = new NewPayrollReportService($this->fakeRkaLookup());
+        $payload = $service->fetchData(new Request([
+            'posisi' => '2026-07-11',
+            'branch_office' => ['KC MADIUN'],
+        ]))->getData(true);
+
+        $row = $payload['data'][0];
+
+        $this->assertSame(2, $row['kualitas']['curr']);
+        $this->assertSame(1, $row['kualitas']['prev']);
+        $this->assertSame(1, $row['kualitas']['yoy_prev']);
+        $this->assertSame(2, $payload['total']['kualitas']['curr']);
+    }
+
     private function fakeRkaLookup(): RkaLookupService
     {
         $mock = Mockery::mock(RkaLookupService::class);

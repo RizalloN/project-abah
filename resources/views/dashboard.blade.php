@@ -672,6 +672,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 }
 .area6-scope-btn {
   border: 0;
+  min-height: 36px;
   padding: 0.38rem 0.85rem;
   background: transparent;
   color: #475569;
@@ -3763,7 +3764,7 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
 .db-shell.landing-mobile .area6-scope-btn,
 .db-shell.landing-short .area6-scope-btn {
   flex: 1 1 8rem !important;
-  min-height: 32px !important;
+  min-height: 36px !important;
   padding: 0.34rem 0.58rem !important;
   text-align: center !important;
 }
@@ -3954,6 +3955,216 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
 .db-shell.landing-short .dc-stat {
   padding: 0.42rem !important;
 }
+
+/* Landing executive redesign */
+.db-shell {
+  --landing-ink: #0b1739;
+  --landing-blue: #0b57d0;
+  --landing-cyan: #2e9ee8;
+  --landing-recovery: #0f9f75;
+  padding: 0.5rem;
+  background:
+    radial-gradient(circle at 4% 0%, rgba(46, 158, 232, 0.12), transparent 24rem),
+    linear-gradient(180deg, #f7faff 0%, #f8fafc 42%, #f4f7fb 100%);
+  border-radius: 24px;
+}
+.db-header {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 1.15rem 1.35rem;
+  color: #ffffff;
+  background:
+    linear-gradient(118deg, rgba(7, 31, 78, 0.98) 0%, rgba(9, 79, 174, 0.96) 58%, rgba(34, 145, 210, 0.92) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-top: 0;
+  border-radius: 20px;
+  box-shadow: 0 18px 46px -28px rgba(8, 45, 112, 0.85);
+}
+.db-header::before,
+.db-header::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border-radius: 999px;
+  pointer-events: none;
+}
+.db-header::before {
+  width: 220px;
+  height: 220px;
+  top: -145px;
+  right: 18%;
+  background: rgba(255, 255, 255, 0.13);
+}
+.db-header::after {
+  width: 150px;
+  height: 150px;
+  right: -45px;
+  bottom: -105px;
+  border: 28px solid rgba(255, 255, 255, 0.09);
+}
+.db-logo {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+}
+.db-logo img {
+  width: 30px;
+  height: 30px;
+}
+.db-title {
+  color: #ffffff;
+  font-size: clamp(1rem, 1.5vw, 1.28rem);
+  letter-spacing: -0.025em;
+}
+.db-subtitle {
+  color: rgba(235, 245, 255, 0.82);
+  font-size: 0.7rem;
+}
+.db-header .db-date-picker-select {
+  min-width: 132px;
+  color: #0b469d;
+  border-color: rgba(255, 255, 255, 0.42);
+  box-shadow: 0 7px 20px -12px rgba(1, 20, 54, 0.7);
+}
+.db-header .db-meta-chip {
+  color: #e9fff6;
+  background: rgba(9, 45, 94, 0.32);
+  border-color: rgba(183, 234, 214, 0.3);
+}
+.db-header .db-now {
+  color: rgba(239, 247, 255, 0.78);
+}
+.kpi-strip {
+  gap: 0.7rem;
+}
+.kpi-card {
+  min-height: 118px;
+  border: 1px solid rgba(203, 213, 225, 0.76);
+  border-left-width: 1px !important;
+  border-radius: 16px;
+  box-shadow: 0 14px 35px -30px rgba(15, 45, 92, 0.72);
+}
+.kpi-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: #94a3b8;
+}
+.kpi-card.simpanan,
+.kpi-card.pinjaman,
+.kpi-card.portfolio {
+  border-left-width: 1px !important;
+}
+.kpi-card.simpanan::before { background: var(--landing-blue); }
+.kpi-card.pinjaman::before { background: #087eaa; }
+.kpi-card.portfolio::before { background: var(--landing-recovery); }
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 38px -26px rgba(15, 45, 92, 0.58);
+}
+.area6-panel {
+  border-color: rgba(191, 204, 224, 0.8);
+  border-radius: 22px;
+  box-shadow: 0 24px 55px -42px rgba(12, 43, 93, 0.7);
+}
+.area6-head {
+  background:
+    linear-gradient(110deg, rgba(239, 246, 255, 0.96), rgba(248, 250, 252, 0.96) 55%, rgba(236, 253, 245, 0.72));
+  border-bottom-color: rgba(191, 204, 224, 0.72);
+}
+.area6-title {
+  color: var(--landing-ink);
+  letter-spacing: -0.025em;
+}
+.area6-scope-toggle {
+  background: rgba(226, 232, 240, 0.78);
+  border-color: rgba(148, 163, 184, 0.38);
+}
+.area6-scope-btn.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #0c4fb7, #1378d3);
+  box-shadow: 0 8px 20px -12px rgba(5, 62, 148, 0.9);
+}
+.area6-panel .area6-card-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 1rem;
+}
+.area6-card-premium {
+  border-color: rgba(191, 204, 224, 0.78);
+  box-shadow: 0 16px 36px -30px rgba(8, 42, 90, 0.75);
+}
+.area6-card-premium:focus-visible {
+  outline: 3px solid rgba(46, 158, 232, 0.34);
+  outline-offset: 3px;
+}
+.ap-header {
+  min-height: 48px;
+  height: auto;
+  background-image: linear-gradient(125deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0));
+}
+.ap-header.bg-os,
+.ap-badge.bg-os {
+  background-color: #104bb5;
+}
+.ap-header.bg-sml,
+.ap-badge.bg-sml {
+  background-color: #cc7a08;
+}
+.ap-header.bg-npl,
+.ap-badge.bg-npl {
+  background-color: #cf3442;
+}
+.ap-header.bg-recovery,
+.ap-badge.bg-recovery {
+  background-color: var(--landing-recovery);
+}
+.area6-card-premium[data-metric="recovery"] .ap-body {
+  background: linear-gradient(180deg, rgba(236, 253, 245, 0.62), #ffffff 45%);
+}
+.area6-card-premium.is-entering {
+  animation: landingCardEnter 0.32s both;
+  animation-delay: var(--landing-card-delay, 0ms);
+}
+@keyframes landingCardEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (min-width: 1101px) and (max-width: 1399.98px) {
+  .area6-panel .area6-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+@media (max-width: 991.98px) {
+  .db-header {
+    align-items: stretch;
+  }
+  .db-meta {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 767.98px) {
+  .db-shell {
+    padding: 0.25rem;
+    border-radius: 16px;
+  }
+  .db-header {
+    border-radius: 16px;
+  }
+  .area6-panel .area6-card-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .area6-card-premium.is-entering {
+    animation: none;
+  }
+}
 </style>
 
 <div class="db-shell pt-2">
@@ -4108,7 +4319,7 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
     <div class="area6-scope-content {{ $contentScopeKey === $area6DefaultScope ? '' : 'd-none' }}" data-area6-content-scope="{{ $contentScopeKey }}">
     <div class="area6-card-grid">
       @forelse($contentCards as $card)
-        @if(in_array(data_get($card, 'key'), ['os', 'sml', 'npl']))
+        @if(in_array(data_get($card, 'key'), ['os', 'sml', 'npl', 'recovery']))
           @php
             $key = data_get($card, 'key');
             $pctColor = data_get($card, 'pct_color');
@@ -4117,6 +4328,8 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
           @endphp
           <button type="button"
                   class="area6-card-premium dashboard-detail-trigger"
+                  data-metric="{{ $key }}"
+                  aria-label="Lihat detail {{ data_get($card, 'header_title', strtoupper($key)) }}"
                   data-detail='@json(data_get($card, "detail_payload", []))'
                   data-link="{{ data_get($card, 'link', '#') }}"
                   data-link-label="{{ data_get($card, 'link_label', 'Lihat detail') }}">
@@ -5524,11 +5737,14 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   document.querySelectorAll('.area6-scope-btn').forEach(button => {
+    button.setAttribute('aria-pressed', button.classList.contains('active') ? 'true' : 'false');
+
     button.addEventListener('click', function() {
       const scope = this.getAttribute('data-area6-scope');
 
       document.querySelectorAll('.area6-scope-btn').forEach(item => {
         item.classList.toggle('active', item === this);
+        item.setAttribute('aria-pressed', item === this ? 'true' : 'false');
       });
 
       document.querySelectorAll('.area6-ranking-mode').forEach(panel => {
@@ -5536,7 +5752,16 @@ document.addEventListener('DOMContentLoaded', function() {
       });
 
       document.querySelectorAll('.area6-scope-content').forEach(panel => {
-        panel.classList.toggle('d-none', panel.getAttribute('data-area6-content-scope') !== scope);
+        const isActive = panel.getAttribute('data-area6-content-scope') === scope;
+        panel.classList.toggle('d-none', !isActive);
+
+        if (isActive) {
+          panel.querySelectorAll('.area6-card-premium').forEach((card, index) => {
+            card.style.setProperty('--landing-card-delay', `${index * 45}ms`);
+            card.classList.remove('is-entering');
+            window.requestAnimationFrame(() => card.classList.add('is-entering'));
+          });
+        }
       });
 
       document.querySelectorAll('.landing-realization-panel').forEach(panel => {

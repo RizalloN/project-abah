@@ -653,7 +653,7 @@ class ProgressiveBackupCommand extends Command
     private function resolveDumpBinaryPath(): string
     {
         $candidates = [
-            trim((string) env('MYSQLDUMP_BINARY', '')),
+            trim((string) config('services.system_binaries.mysqldump', '')),
             'D:\\XAMPP\\mysql\\bin\\mysqldump.exe',
             'C:\\xampp\\mysql\\bin\\mysqldump.exe',
             'C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqldump.exe',
@@ -679,7 +679,7 @@ class ProgressiveBackupCommand extends Command
     private function resolveGzipPath(): string
     {
         $candidates = [
-            trim((string) env('GZIP_BINARY', '')),
+            trim((string) config('services.system_binaries.gzip', '')),
             'C:\\Program Files\\Git\\usr\\bin\\gzip.exe',
             'C:\\Program Files (x86)\\Git\\usr\\bin\\gzip.exe',
             'D:\\XAMPP\\php\\gzip.exe',

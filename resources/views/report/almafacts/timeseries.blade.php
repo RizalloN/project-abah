@@ -1136,6 +1136,15 @@
         const allUnitsData = @json($units);
         const branchOptionsMap = @json($branchOptions);
 
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
         let charts = {};
         let activeRequestId = 0;
         let chartResizeFrame = null;
@@ -1362,7 +1371,7 @@
                             opt.setAttribute('data-label', unit.label);
                             opt.innerHTML = `
                                 <div class="branch-checkbox-ui"><i class="fas fa-check"></i></div>
-                                <span class="branch-option-label">${unit.label}</span>
+                                <span class="branch-option-label">${escapeHtml(unit.label)}</span>
                             `;
                             
                             if (unit.value === currentUnitVal) {
@@ -1674,7 +1683,7 @@
 
                     const titleEl = document.getElementById('summaryChartTitle');
                     if (titleEl) {
-                        titleEl.innerHTML = `<i class="fas fa-chart-area mr-2 text-primary"></i>${currentMetric} - Trend Analysis`;
+                        titleEl.innerHTML = `<i class="fas fa-chart-area mr-2 text-primary"></i>${escapeHtml(currentMetric)} - Trend Analysis`;
                     }
                 }
 
@@ -1699,7 +1708,7 @@
                         col.innerHTML = `
                             <div class="card chart-card">
                                 <div class="chart-header">
-                                    <h5 class="chart-title">${displayTitle}</h5>
+                                    <h5 class="chart-title">${escapeHtml(displayTitle)}</h5>
                                     <div class="d-flex align-items-center">
                                         <span class="unit-badge">Trend Bulanan</span>
                                     </div>

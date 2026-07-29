@@ -217,6 +217,41 @@
         min-width: 0;
     }
 
+    .kpi-branch-filter {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        min-width: min(100%, 230px);
+        padding: .35rem .5rem;
+        border: 1px solid #cbd8e8;
+        border-radius: 12px;
+        background: #f8fbff;
+    }
+
+    .kpi-branch-filter label {
+        margin: 0;
+        color: #475569;
+        font-size: .72rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+
+    .kpi-branch-filter select {
+        min-width: 150px;
+        height: 32px;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: #174e92;
+        font-size: .78rem;
+        font-weight: 800;
+    }
+
+    .kpi-branch-filter select:disabled {
+        color: #475569;
+        cursor: not-allowed;
+    }
+
     .kpi-action:hover,
     .kpi-tab:hover {
         text-decoration: none;
@@ -309,6 +344,8 @@
     }
 
     .kpi-excel-table {
+        --kpi-sticky-header-row-height: 28px;
+        --kpi-sticky-first-column-width: 80px;
         width: max-content;
         min-width: 100%;
         margin: 0;
@@ -341,7 +378,7 @@
 
     .kpi-excel-table thead tr:nth-child(2) th {
         position: sticky;
-        top: 28px; /* Height of row 1 th fallback */
+        top: var(--kpi-sticky-header-row-height);
         z-index: 4;
         background: #004a8d;
         font-size: .62rem;
@@ -413,7 +450,7 @@
 
     .kpi-sticky-col-1 {
         position: sticky !important;
-        left: 80px !important;
+        left: var(--kpi-sticky-first-column-width) !important;
         z-index: 5;
         min-width: 150px;
         max-width: 180px;
@@ -508,7 +545,7 @@
     }
 
     .kpi-table-rm-mikro .kpi-sticky-col-1 {
-        left: 100px !important;
+        left: var(--kpi-sticky-first-column-width) !important;
         width: 180px;
         min-width: 180px;
         max-width: 200px;
@@ -589,8 +626,6 @@
         /* Disable sticky columns on mobile for better horizontal scrollability */
         .kpi-sticky-col-0,
         .kpi-sticky-col-1,
-        .kpi-excel-table th.kpi-sticky-col-0,
-        .kpi-excel-table th.kpi-sticky-col-1,
         .kpi-excel-table td.kpi-sticky-col-0,
         .kpi-excel-table td.kpi-sticky-col-1 {
             position: static !important;
@@ -600,6 +635,26 @@
             width: auto !important;
             min-width: auto !important;
             max-width: auto !important;
+        }
+
+        .kpi-excel-table thead th.kpi-sticky-col-0,
+        .kpi-excel-table thead th.kpi-sticky-col-1 {
+            position: sticky !important;
+            left: auto !important;
+            z-index: 4 !important;
+            width: auto !important;
+            min-width: auto !important;
+            max-width: none !important;
+        }
+
+        .kpi-excel-table thead tr:first-child th.kpi-sticky-col-0,
+        .kpi-excel-table thead tr:first-child th.kpi-sticky-col-1 {
+            background: #004685 !important;
+        }
+
+        .kpi-excel-table thead tr:nth-child(2) th.kpi-sticky-col-0,
+        .kpi-excel-table thead tr:nth-child(2) th.kpi-sticky-col-1 {
+            background: #004a8d !important;
         }
     }
 
@@ -652,8 +707,14 @@
         }
 
         .kpi-tabs,
-        .kpi-actions {
+        .kpi-actions,
+        .kpi-branch-filter {
             width: 100%;
+        }
+
+        .kpi-branch-filter select {
+            flex: 1 1 auto;
+            min-width: 0;
         }
 
         .kpi-tab,
@@ -754,6 +815,18 @@
                 </a>
             @endforeach
         </div>
+        @if($kpiBranchFilter['enabled'])
+            <form method="GET" action="{{ route('report.dashboard-almafacts.kpi') }}" class="kpi-branch-filter">
+                <input type="hidden" name="sheet" value="{{ $selectedSheetKey }}">
+                <label for="kpi-branch-filter">Cabang</label>
+                <select id="kpi-branch-filter" name="cabang" {{ $kpiBranchFilter['locked'] ? 'disabled' : '' }} onchange="this.form.submit()">
+                    @foreach($kpiBranchFilter['options'] as $option)
+                        <option value="{{ $option['value'] }}" @selected($kpiBranchFilter['selected'] === $option['value'])>{{ $option['label'] }}</option>
+                    @endforeach
+                </select>
+                @if($kpiBranchFilter['locked'])<input type="hidden" name="cabang" value="{{ $kpiBranchFilter['selected'] }}">@endif
+            </form>
+        @endif
         <div class="kpi-actions">
             <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => $selectedSheetKey, 'refresh' => 1]) }}" class="kpi-action primary">
                 <i class="fas fa-sync-alt"></i>
@@ -914,29 +987,41 @@ document.addEventListener('DOMContentLoaded', function () {
         const adjustStickyHeaders = function () {
             scheduleTableHeights();
 
-            if (window.innerWidth < 768) {
-                table.querySelectorAll('thead tr:nth-child(2) th').forEach(function (th) {
-                    th.style.top = '';
-                });
-                return;
-            }
-
             const firstRow = table.querySelector('thead tr:first-child');
             const secondRow = table.querySelector('thead tr:nth-child(2)');
             if (firstRow && secondRow) {
-                const firstRowHeight = firstRow.offsetHeight;
-                secondRow.querySelectorAll('th').forEach(function (th) {
-                    th.style.top = (firstRowHeight - 1) + 'px';
-                });
+                const firstRowHeight = Math.ceil(firstRow.getBoundingClientRect().height);
+                table.style.setProperty('--kpi-sticky-header-row-height', firstRowHeight + 'px');
             }
+
+            const firstStickyBodyCell = table.querySelector('tbody tr .kpi-sticky-col-0');
+            const firstStickyHeaderCell = table.querySelector('thead .kpi-sticky-col-0');
+            const firstStickyCell = firstStickyBodyCell || firstStickyHeaderCell;
+            const firstStickyWidth = firstStickyCell
+                ? firstStickyCell.getBoundingClientRect().width
+                : 0;
+            table.style.setProperty('--kpi-sticky-first-column-width', firstStickyWidth + 'px');
         };
 
         // Run adjustments
         adjustStickyHeaders();
         window.addEventListener('resize', adjustStickyHeaders);
+        window.addEventListener('orientationchange', adjustStickyHeaders);
 
         // Also run once images/fonts are fully loaded
         window.addEventListener('load', adjustStickyHeaders);
+        if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(adjustStickyHeaders);
+        }
+
+        if ('ResizeObserver' in window) {
+            const stickyGeometryObserver = new ResizeObserver(adjustStickyHeaders);
+            const firstHeaderRow = table.querySelector('thead tr:first-child');
+            if (firstHeaderRow) {
+                stickyGeometryObserver.observe(firstHeaderRow);
+            }
+            stickyGeometryObserver.observe(table);
+        }
 
         const parseValue = function (value) {
             const text = String(value || '').trim();

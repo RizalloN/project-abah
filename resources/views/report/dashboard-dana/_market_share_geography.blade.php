@@ -512,6 +512,9 @@
 
 <style>
     .market-geo-app {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
         color: #172033;
         background: #ffffff;
         border: 1px solid #dbe5ef;
@@ -594,6 +597,8 @@
 
     .market-geo-field select {
         width: 100%;
+        max-width: 100%;
+        min-width: 0;
         height: 36px;
         padding: 0 .65rem;
         border: 1px solid #cbd5e1;
@@ -902,6 +907,15 @@
     }
 
     @media (max-width: 767.98px) {
+        .market-geo-header > div:first-child {
+            min-width: 0;
+        }
+
+        .market-geo-header h2,
+        .market-geo-header p {
+            overflow-wrap: anywhere;
+        }
+
         .market-geo-header {
             flex-direction: column;
         }

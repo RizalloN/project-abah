@@ -36,7 +36,9 @@ class ImportCrasController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Report SSA CRAS tidak ditemukan.'], 422);
         }
 
-        $request->validate(['file' => 'required|file']);
+        $request->validate([
+            'file' => 'required|file|max:' . $this->uploadMaxKilobytes(),
+        ]);
         $file = $request->file('file');
         $extension = strtolower((string) $file?->getClientOriginalExtension());
         if (!$file || !$file->isValid() || !in_array($extension, ['csv', 'txt', 'xlsx'], true)) {
@@ -63,8 +65,8 @@ class ImportCrasController extends Controller
     {
         $request->validate([
             'original_name' => 'required|string|max:255',
-            'total_size' => 'required|integer|min:1',
-            'total_chunks' => 'required|integer|min:1',
+            'total_size' => 'required|integer|min:1|max:' . $this->uploadMaxBytes(),
+            'total_chunks' => 'required|integer|min:1|max:' . $this->uploadMaxChunks(),
         ]);
 
         $report = $this->resolveReport();
@@ -87,8 +89,8 @@ class ImportCrasController extends Controller
 
         $uploadId = 'cras_' . Str::uuid();
         $directory = $this->chunkDirectory($uploadId);
-        File::ensureDirectoryExists($directory);
-        File::put($directory . DIRECTORY_SEPARATOR . 'meta.json', json_encode([
+        File::ensureDirectoryExists($directory, 0750, true);
+        $written = File::put($directory . DIRECTORY_SEPARATOR . 'meta.json', json_encode([
             'original_name' => $originalName,
             'total_size' => $totalSize,
             'total_chunks' => $totalChunks,
@@ -96,6 +98,11 @@ class ImportCrasController extends Controller
             'report_id' => (int) $report->id_report,
             'created_at' => now()->toIso8601String(),
         ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
+        if ($written === false) {
+            File::deleteDirectory($directory);
+
+            return response()->json(['status' => 'error', 'message' => 'Metadata upload CRAS gagal dibuat.'], 500);
+        }
 
         return response()->json(['status' => 'success', 'upload_id' => $uploadId]);
     }
@@ -105,8 +112,8 @@ class ImportCrasController extends Controller
         $request->validate([
             'upload_id' => ['required', 'string', 'regex:/^cras_[0-9a-f-]{36}$/'],
             'chunk_index' => 'required|integer|min:0',
-            'total_chunks' => 'required|integer|min:1',
-            'file' => 'required|file',
+            'total_chunks' => 'required|integer|min:1|max:' . $this->uploadMaxChunks(),
+            'file' => 'required|file|max:' . (int) (self::CHUNK_SIZE_BYTES / 1024),
         ]);
 
         $uploadId = (string) $request->input('upload_id');
@@ -123,7 +130,12 @@ class ImportCrasController extends Controller
         }
 
         $chunk = $request->file('file');
-        if (!$chunk || !$chunk->isValid() || (int) $chunk->getSize() > self::CHUNK_SIZE_BYTES) {
+        if (
+            !$chunk
+            || !$chunk->isValid()
+            || (int) $chunk->getSize() < 1
+            || (int) $chunk->getSize() > self::CHUNK_SIZE_BYTES
+        ) {
             return response()->json(['status' => 'error', 'message' => 'Potongan file CRAS tidak valid.'], 422);
         }
 
@@ -141,7 +153,7 @@ class ImportCrasController extends Controller
     {
         $request->validate([
             'upload_id' => ['required', 'string', 'regex:/^cras_[0-9a-f-]{36}$/'],
-            'total_chunks' => 'required|integer|min:1',
+            'total_chunks' => 'required|integer|min:1|max:' . $this->uploadMaxChunks(),
             'original_name' => 'required|string|max:255',
         ]);
 
@@ -712,6 +724,21 @@ class ImportCrasController extends Controller
         }
 
         return $selected;
+    }
+
+    private function uploadMaxBytes(): int
+    {
+        return max(1, (int) config('import.security.upload_max_bytes', 4 * 1024 * 1024 * 1024));
+    }
+
+    private function uploadMaxKilobytes(): int
+    {
+        return max(1, (int) floor($this->uploadMaxBytes() / 1024));
+    }
+
+    private function uploadMaxChunks(): int
+    {
+        return max(1, (int) ceil($this->uploadMaxBytes() / self::CHUNK_SIZE_BYTES));
     }
 
     private function chunkDirectory(string $uploadId): string

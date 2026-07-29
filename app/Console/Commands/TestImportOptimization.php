@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\SargableDateFilter;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -31,8 +32,7 @@ class TestImportOptimization extends Command
         $this->info('[PHASE 1] Pre-Import State Analysis');
         $this->line('─────────────────────────────────────────────────────────────────');
 
-        $existingCount = DB::table($testTableName)
-            ->whereDate('POSISI', $posisi)
+        $existingCount = SargableDateFilter::apply(DB::table($testTableName), 'POSISI', '=', $posisi)
             ->count();
 
         $snapshotBefore = DB::table($snapshotTableName)
@@ -100,8 +100,7 @@ class TestImportOptimization extends Command
 
         // Clear existing data
         $this->line("↳ Clearing existing data for {$posisi}...");
-        DB::table($testTableName)
-            ->whereDate('POSISI', $posisi)
+        SargableDateFilter::apply(DB::table($testTableName), 'POSISI', '=', $posisi)
             ->delete();
 
         DB::table($snapshotTableName)
@@ -189,8 +188,7 @@ class TestImportOptimization extends Command
         $this->info('[PHASE 4] Post-Import Verification');
         $this->line('─────────────────────────────────────────────────────────────────');
 
-        $importedCount = DB::table($testTableName)
-            ->whereDate('POSISI', $posisi)
+        $importedCount = SargableDateFilter::apply(DB::table($testTableName), 'POSISI', '=', $posisi)
             ->count();
 
         $snapshotAfterImport = DB::table($snapshotTableName)
@@ -225,13 +223,11 @@ class TestImportOptimization extends Command
         $this->info('[PHASE 6] Data Integrity Validation');
         $this->line('─────────────────────────────────────────────────────────────────');
 
-        $rowsSample = DB::table($testTableName)
-            ->whereDate('POSISI', $posisi)
+        $rowsSample = SargableDateFilter::apply(DB::table($testTableName), 'POSISI', '=', $posisi)
             ->limit(5)
             ->get();
 
-        $branchDistribution = DB::table($testTableName)
-            ->whereDate('POSISI', $posisi)
+        $branchDistribution = SargableDateFilter::apply(DB::table($testTableName), 'POSISI', '=', $posisi)
             ->select('NAMA_KANCA', DB::raw('COUNT(*) as count'))
             ->groupBy('NAMA_KANCA')
             ->get();

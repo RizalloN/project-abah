@@ -380,6 +380,14 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $this->assertSame('4.800', data_get($payload, 'scopes.area6.cards.0.realization_value'));
         $this->assertSame('1.400', data_get($payload, 'scopes.sme.cards.0.realization_value'));
         $this->assertSame('1.900', data_get($payload, 'scopes.micro.cards.0.realization_value'));
+
+        $area6Cards = collect(data_get($payload, 'scopes.area6.cards', []));
+        $recoveryCard = $area6Cards->firstWhere('key', 'recovery');
+
+        $this->assertCount(4, $area6Cards);
+        $this->assertNotNull($recoveryCard);
+        $this->assertSame('RECOVERY DH', $recoveryCard['header_title']);
+        $this->assertSame('33', $recoveryCard['realization_value']);
     }
 
     public function test_area6_portfolio_segment_performance(): void

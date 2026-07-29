@@ -3,6 +3,8 @@
 return [
     'cache_store' => env('IMPORT_CACHE_STORE', 'file'),
 
+    'python_binary' => env('IMPORT_PYTHON_BIN'),
+
     'queue' => [
         'import_queue' => env('IMPORT_QUEUE', 'imports-high'),
         'daily_loan_queue' => env('IMPORT_DAILY_LOAN_QUEUE', 'imports-daily-loan'),
@@ -17,11 +19,11 @@ return [
     'snapshot' => [
         'enable_analyze_table' => env('SNAPSHOT_ENABLE_ANALYZE_TABLE', false),
         'defer_seconds' => env('IMPORT_SNAPSHOT_DEFER_SECONDS', 60),
-        'max_defer_attempts' => env('IMPORT_SNAPSHOT_MAX_DEFER_ATTEMPTS', 30),
+        'retry_window_hours' => env('IMPORT_SNAPSHOT_RETRY_WINDOW_HOURS', 24),
         'pause_during_import' => env('IMPORT_SNAPSHOT_PAUSE_DURING_IMPORT', true),
         'pause_queues' => array_values(array_filter(array_map(
             static fn ($value): string => trim((string) $value),
-            explode(',', (string) env('IMPORT_SNAPSHOT_PAUSE_QUEUES', 'snapshots-parallel,shadow-backfill'))
+            explode(',', (string) env('IMPORT_SNAPSHOT_PAUSE_QUEUES', 'snapshots-priority,snapshots-parallel,shadow-backfill'))
         ), static fn (string $value): bool => $value !== '')),
         'pause_excluded_queues' => array_values(array_filter(array_map(
             static fn ($value): string => trim((string) $value),
@@ -29,8 +31,28 @@ return [
         ), static fn (string $value): bool => $value !== '')),
     ],
 
+    'health' => [
+        'lock_wait_kill_seconds' => env('IMPORT_HEALTH_LOCK_WAIT_KILL_SECONDS', 300),
+        'generic_query_kill_seconds' => env('IMPORT_HEALTH_GENERIC_QUERY_KILL_SECONDS', 3600),
+    ],
+
     'excel_init_timeout_seconds' => env('IMPORT_EXCEL_INIT_TIMEOUT_SECONDS', 60),
     'excel_stage_idle_timeout_seconds' => env('IMPORT_EXCEL_STAGE_IDLE_TIMEOUT_SECONDS', 300),
+
+    'security' => [
+        'upload_max_bytes' => env('IMPORT_UPLOAD_MAX_BYTES', 4 * 1024 * 1024 * 1024),
+        'archive_max_files' => env('IMPORT_ARCHIVE_MAX_FILES', 100),
+        'archive_max_expanded_bytes' => env('IMPORT_ARCHIVE_MAX_EXPANDED_BYTES', 8 * 1024 * 1024 * 1024),
+        'archive_timeout_seconds' => env('IMPORT_ARCHIVE_TIMEOUT_SECONDS', 300),
+        'backend_source_roots' => array_values(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            explode(',', (string) env('IMPORT_BACKEND_SOURCE_ROOTS', storage_path('app/backend-imports')))
+        ), static fn (string $value): bool => $value !== '')),
+        'seven_zip_binary' => env(
+            'IMPORT_SEVEN_ZIP_BINARY',
+            PHP_OS_FAMILY === 'Windows' ? 'C:\\Program Files\\7-Zip\\7z.exe' : '7z'
+        ),
+    ],
 
     'direct_load' => [
         'require_local_infile' => env('IMPORT_DIRECT_LOAD_REQUIRE_LOCAL_INFILE', true),

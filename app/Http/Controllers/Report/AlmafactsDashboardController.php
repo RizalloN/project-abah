@@ -4,11 +4,14 @@ namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
 use App\Support\UserBranchScope;
+use App\Support\SargableDateFilter;
+use App\Jobs\RefreshRemoteDashboardSourcesJob;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 
 class AlmafactsDashboardController extends Controller
@@ -95,10 +98,10 @@ class AlmafactsDashboardController extends Controller
     private const KPI_KA_UNIT_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
     private const KPI_RM_MIKRO_SPREADSHEET_ID = '11dzu4edTyp9UFBicNDughtJ43bzvZguh';
     private const KPI_RM_MIKRO_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/11dzu4edTyp9UFBicNDughtJ43bzvZguh/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
-    private const KPI_MANTRI_SPREADSHEET_ID = '1h7XMo46a10a3gC1f_CPtsBUT2V1PcxAE';
-    private const KPI_MANTRI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1h7XMo46a10a3gC1f_CPtsBUT2V1PcxAE/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
-    private const KPI_CONSUMER_SPREADSHEET_ID = '1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM';
-    private const KPI_CONSUMER_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_MANTRI_SPREADSHEET_ID = '160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7';
+    private const KPI_MANTRI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_CONSUMER_SPREADSHEET_ID = '14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J';
+    private const KPI_CONSUMER_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
     private const KPI_RM_SME_SPREADSHEET_ID = '1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs';
     private const KPI_RM_SME_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
     private const KPI_LINK_TABLE = 'external_report_links';
@@ -118,6 +121,7 @@ class AlmafactsDashboardController extends Controller
             'sheet' => 'KPI Kaunit',
             'spreadsheet_id' => self::KPI_KA_UNIT_SPREADSHEET_ID,
             'spreadsheet_url' => self::KPI_KA_UNIT_SPREADSHEET_URL,
+            'branch_filter_headers' => ['BO', 'KANCA'],
             'icon' => 'fas fa-user-tie',
         ],
         'rm-mikro' => [
@@ -126,6 +130,7 @@ class AlmafactsDashboardController extends Controller
             'sheet' => 'KPI RM Mikro',
             'spreadsheet_id' => self::KPI_RM_MIKRO_SPREADSHEET_ID,
             'spreadsheet_url' => self::KPI_RM_MIKRO_SPREADSHEET_URL,
+            'branch_filter_headers' => ['BO', 'KANCA'],
             'expected_header_any' => ['NETT DISBURSEMENT KUR', 'DEBITUR MIKRO', 'RANK'],
             'icon' => 'fas fa-chart-bar',
         ],
@@ -135,6 +140,7 @@ class AlmafactsDashboardController extends Controller
             'sheet' => 'KPI RM SME',
             'spreadsheet_id' => self::KPI_RM_SME_SPREADSHEET_ID,
             'spreadsheet_url' => self::KPI_RM_SME_SPREADSHEET_URL,
+            'branch_filter_headers' => ['BO', 'KANCA'],
             'expected_header_any' => ['AVG BALANCE SMALL', 'POSISI OS SMALL', 'PRODUKTIVITAS RM SME'],
             'force_two_row_header' => true,
             'weighted_metric_pairs' => true,
@@ -146,6 +152,7 @@ class AlmafactsDashboardController extends Controller
             'sheet' => 'KPI',
             'spreadsheet_id' => self::KPI_MANTRI_SPREADSHEET_ID,
             'spreadsheet_url' => self::KPI_MANTRI_SPREADSHEET_URL,
+            'branch_filter_headers' => ['BO', 'KANCA'],
             'expected_header_any' => ['JG', 'LAMA DI UKER', 'NETT DISBURSEMENT', 'RANK CABANG'],
             'icon' => 'fas fa-user-check',
         ],
@@ -155,6 +162,7 @@ class AlmafactsDashboardController extends Controller
             'sheet' => 'KPI',
             'spreadsheet_id' => self::KPI_CONSUMER_SPREADSHEET_ID,
             'spreadsheet_url' => self::KPI_CONSUMER_SPREADSHEET_URL,
+            'branch_filter_headers' => ['KANCA', 'BO'],
             'expected_header_any' => ['SEGMEN', 'KPR', 'BRIGUNA'],
             'split_by_segment' => true,
             'icon' => 'fas fa-user-friends',
@@ -254,12 +262,18 @@ class AlmafactsDashboardController extends Controller
         $selectedSheet = $this->kpiSheetConfig($selectedSheetKey);
 
         if ($request->boolean('refresh')) {
-            Cache::forget($cacheKey);
+            $this->queueKpiSourceRefresh([$selectedSheetKey]);
         }
 
-        $payload = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($selectedSheetKey): array {
-            return $this->fetchKpiSheetPayload($selectedSheetKey);
-        });
+        $payload = $this->cachedKpiSheetPayload($selectedSheetKey, $cacheKey);
+        $kpiBranchFilter = $this->kpiBranchFilter($payload, $selectedSheet, $request->input('cabang'));
+        $filteredPayload = $payload;
+        $filteredPayload['rows'] = $kpiBranchFilter['rows'];
+        $summary = $payload['summary'] ?? [];
+        if ($kpiBranchFilter['enabled']) {
+            $summary['row_count'] = count($filteredPayload['rows']);
+        }
+        unset($kpiBranchFilter['rows']);
 
         return view('report.almafacts.kpi', [
             'sheetOptions' => self::KPI_SHEETS,
@@ -273,12 +287,133 @@ class AlmafactsDashboardController extends Controller
             'header' => $payload['header'] ?? [],
             'headerColumns' => $payload['header_columns'] ?? [],
             'headerGroups' => $payload['header_groups'] ?? [],
-            'rows' => $payload['rows'] ?? [],
-            'tableSections' => $this->kpiTableSections($payload, $selectedSheet),
-            'summary' => $payload['summary'] ?? [],
+            'rows' => $filteredPayload['rows'],
+            'tableSections' => $this->kpiTableSections($filteredPayload, $selectedSheet),
+            'kpiBranchFilter' => $kpiBranchFilter,
+            'summary' => $summary,
             'error' => $payload['error'] ?? null,
             'fetchedAt' => $payload['fetched_at'] ?? null,
         ]);
+    }
+
+    /**
+     * @param  array<int, string>  $sheetKeys
+     * @return array<string, array<string, mixed>>
+     */
+    public function refreshKpiSourceCaches(array $sheetKeys = []): array
+    {
+        $keys = $sheetKeys === []
+            ? array_keys(self::KPI_SHEETS)
+            : array_values(array_filter(array_unique($sheetKeys), fn (string $key): bool => isset(self::KPI_SHEETS[$key])));
+        $results = [];
+
+        foreach ($keys as $sheetKey) {
+            $lock = Cache::lock('dashboard_sources:refresh:kpi:' . $sheetKey . ':lock', 120);
+            if (!$lock->get()) {
+                $results[$sheetKey] = [
+                    'success' => true,
+                    'skipped' => true,
+                    'error' => null,
+                ];
+                continue;
+            }
+
+            $cacheKey = $this->kpiSheetCacheKey($sheetKey);
+            try {
+                $payload = $this->fetchKpiSheetPayload($sheetKey);
+                $success = empty($payload['error']);
+
+                if ($success) {
+                    Cache::put($cacheKey, $payload, now()->addDays(2));
+                    $this->persistKpiSheetPayload($cacheKey, $payload);
+                }
+
+                $results[$sheetKey] = [
+                    'success' => $success,
+                    'row_count' => (int) data_get($payload, 'summary.row_count', 0),
+                    'fetched_at' => $payload['fetched_at'] ?? null,
+                    'error' => $payload['error'] ?? null,
+                ];
+            } finally {
+                Cache::forget('dashboard_sources:refresh:kpi:' . $sheetKey . ':pending');
+                optional($lock)->release();
+            }
+        }
+
+        Cache::forget('dashboard_sources:refresh:kpi:all:pending');
+
+        return $results;
+    }
+
+    private function cachedKpiSheetPayload(string $sheetKey, string $cacheKey): array
+    {
+        $payload = Cache::get($cacheKey);
+        if (!is_array($payload) || empty($payload['header'])) {
+            $payload = $this->readPersistedKpiSheetPayload($cacheKey);
+            if ($payload !== null) {
+                Cache::put($cacheKey, $payload, now()->addDays(2));
+            }
+        }
+
+        try {
+            $fetchedAt = isset($payload['fetched_at']) ? Carbon::parse((string) $payload['fetched_at']) : null;
+        } catch (\Throwable) {
+            $fetchedAt = null;
+        }
+        if ($fetchedAt === null || $fetchedAt->lt(now()->subMinutes(5))) {
+            $this->queueKpiSourceRefresh([$sheetKey]);
+        }
+
+        return $payload ?? $this->emptyKpiSheetPayload(
+            'Data KPI sedang disinkronkan di background. Muat ulang halaman setelah proses selesai.'
+        );
+    }
+
+    /** @param array<int, string> $sheetKeys */
+    private function queueKpiSourceRefresh(array $sheetKeys): void
+    {
+        $sheetKeys = array_values(array_filter(array_unique($sheetKeys), fn (string $key): bool => isset(self::KPI_SHEETS[$key])));
+        $pendingKey = $sheetKeys === []
+            ? 'dashboard_sources:refresh:kpi:all:pending'
+            : 'dashboard_sources:refresh:kpi:' . implode(',', $sheetKeys) . ':pending';
+
+        if (!Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
+            return;
+        }
+
+        RefreshRemoteDashboardSourcesJob::dispatch(['kpi'], $sheetKeys);
+    }
+
+    private function persistKpiSheetPayload(string $cacheKey, array $payload): void
+    {
+        if (app()->runningUnitTests()) {
+            return;
+        }
+
+        $path = $this->persistedKpiSheetPath($cacheKey);
+        File::ensureDirectoryExists(dirname($path));
+        File::replace($path, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function readPersistedKpiSheetPayload(string $cacheKey): ?array
+    {
+        if (app()->runningUnitTests()) {
+            return null;
+        }
+
+        $path = $this->persistedKpiSheetPath($cacheKey);
+        if (!File::isFile($path)) {
+            return null;
+        }
+
+        $payload = json_decode((string) File::get($path), true);
+
+        return is_array($payload) && !empty($payload['header']) ? $payload : null;
+    }
+
+    private function persistedKpiSheetPath(string $cacheKey): string
+    {
+        return storage_path('app/dashboard_sources/kpi/' . sha1($cacheKey) . '.json');
     }
 
     private function resolveKpiSheetKey(mixed $value): string
@@ -869,6 +1004,80 @@ class AlmafactsDashboardController extends Controller
             ['key' => 'briguna', 'title' => 'KPI Briguna', 'rows' => $sectionRows['briguna']],
             ['key' => 'kpr', 'title' => 'KPI KPR', 'rows' => $sectionRows['kpr']],
         ];
+    }
+
+    /** @return array{enabled: bool, locked: bool, selected: string, options: array<int, array{value: string, label: string}>, rows: array<int, array<int, string>>} */
+    private function kpiBranchFilter(array $payload, array $sheet, ?string $requestedBranch): array
+    {
+        $rows = array_values($payload['rows'] ?? []);
+        $expectedHeaders = array_map('strtoupper', $sheet['branch_filter_headers'] ?? []);
+        $branchIndex = collect($payload['header'] ?? [])
+            ->search(fn ($header): bool => in_array(strtoupper(trim((string) $header)), $expectedHeaders, true));
+
+        if ($expectedHeaders === [] || $branchIndex === false) {
+            return [
+                'enabled' => false,
+                'locked' => false,
+                'selected' => 'all',
+                'options' => [],
+                'rows' => $rows,
+            ];
+        }
+
+        $branchIndex = (int) $branchIndex;
+        $branchValues = collect($rows)
+            ->map(fn (array $row): string => trim((string) ($row[$branchIndex] ?? '')))
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values();
+        $scope = UserBranchScope::current();
+
+        if ($scope !== null) {
+            $branchValues = $branchValues
+                ->filter(fn (string $branch): bool => $this->kpiBranchMatchesScope($branch, $scope))
+                ->values();
+            $selected = (string) ($branchValues->first() ?? '');
+            $rows = array_values(array_filter($rows, fn (array $row): bool => $selected !== ''
+                && trim((string) ($row[$branchIndex] ?? '')) === $selected));
+            $options = $branchValues
+                ->map(fn (string $branch): array => ['value' => $branch, 'label' => $branch])
+                ->all();
+
+            return [
+                'enabled' => true,
+                'locked' => true,
+                'selected' => $selected,
+                'options' => $options,
+                'rows' => $rows,
+            ];
+        }
+
+        $selected = trim((string) $requestedBranch);
+        $selected = $branchValues->contains($selected) ? $selected : 'all';
+        if ($selected !== 'all') {
+            $rows = array_values(array_filter($rows, fn (array $row): bool => trim((string) ($row[$branchIndex] ?? '')) === $selected));
+        }
+
+        return [
+            'enabled' => true,
+            'locked' => false,
+            'selected' => $selected,
+            'options' => [
+                ['value' => 'all', 'label' => 'Semua Cabang'],
+                ...$branchValues->map(fn (string $branch): array => ['value' => $branch, 'label' => $branch])->all(),
+            ],
+            'rows' => $rows,
+        ];
+    }
+
+    /** @param array{plain_label: string, label: string} $scope */
+    private function kpiBranchMatchesScope(string $branch, array $scope): bool
+    {
+        $normalizedBranch = strtoupper(trim($branch));
+        $plainLabel = strtoupper(trim((string) ($scope['plain_label'] ?? '')));
+
+        return $plainLabel !== '' && str_contains($normalizedBranch, $plainLabel);
     }
 
     private function kpiSheetPayloadMatches(array $parsed, array $sheet): bool
@@ -1541,8 +1750,7 @@ class AlmafactsDashboardController extends Controller
             return null;
         }
 
-        return DB::table($table)
-            ->whereDate($column, '<=', $targetPeriod)
+        return SargableDateFilter::apply(DB::table($table), $column, '<=', $targetPeriod)
             ->max($column);
     }
 
@@ -1552,8 +1760,7 @@ class AlmafactsDashboardController extends Controller
             return [];
         }
 
-        $query = DB::table('ssa_almafacts')
-            ->whereDate('month_day_year_of_posisi', $period)
+        $query = SargableDateFilter::apply(DB::table('ssa_almafacts'), 'month_day_year_of_posisi', '=', $period)
             ->whereIn('keterangan', array_values($labels));
 
         $this->applyFinancialFilters($query, 'kanca_konsolidasi', 'kode_unit_kerja', 'unit_kerja', $branches, $unitFilter);
@@ -1596,8 +1803,7 @@ class AlmafactsDashboardController extends Controller
             ];
         }
 
-        $query = DB::table('ssa_almafacts')
-            ->whereDate('month_day_year_of_posisi', $period)
+        $query = SargableDateFilter::apply(DB::table('ssa_almafacts'), 'month_day_year_of_posisi', '=', $period)
             ->whereIn('keterangan', array_values(self::FINANCIAL_ASSET_QUALITY_SOURCE_LABELS));
 
         $this->applyFinancialFilters($query, 'kanca_konsolidasi', 'kode_unit_kerja', 'unit_kerja', $branches, $unitFilter);

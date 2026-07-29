@@ -32,8 +32,8 @@ use Throwable;
  * Daily Loan (5 jobs in parallel, ~10-15 min):
  *   Dashboard Pinjaman, Dashboard Harian, Rasio CASA, Performance RM, Chart Periodik
  *
- * All jobs run on the 'snapshots-parallel' queue.
- * Workers must listen: php artisan queue:work --queue=snapshots-parallel,imports-high,default
+ * Performance RM uses its own snapshot priority worker for import/recovery flows.
+ * Delete flows keep all jobs in one batch so their UI progress remains unchanged.
  */
 class ParallelSnapshotBatchCoordinator
 {
@@ -56,13 +56,19 @@ class ParallelSnapshotBatchCoordinator
             'jobs_count' => 5,
         ]);
 
+        $performanceJob = new RebuildSnapshotPerformanceRmBatch($periodHint, $deleteId);
         $jobs = [
             new RebuildSnapshotSimpleBatch($periodHint, $deleteId),
             new RebuildSnapshotHarianBatch($periodHint, $deleteId),
             new RebuildSnapshotDormantBatch($periodHint, $deleteId),
-            new RebuildSnapshotPerformanceRmBatch($periodHint, $deleteId),
             new RebuildSnapshotRasioBatch($periodHint, $deleteId),
         ];
+
+        if ($deleteId === null) {
+            Bus::dispatch($performanceJob->onQueue('snapshots-priority'));
+        } else {
+            array_unshift($jobs, $performanceJob->onQueue('snapshots-parallel'));
+        }
 
         $batch = Bus::batch($jobs)
             ->allowFailures()
@@ -103,13 +109,19 @@ class ParallelSnapshotBatchCoordinator
             'jobs_count' => 5,
         ]);
 
+        $performanceJob = new RebuildSnapshotPerformanceRmBatch($periodHint, $deleteId);
         $jobs = [
             new RebuildLoanDashboardSnapshotJob($periodHint, $deleteId),
-            new RebuildSnapshotHarianBatch($periodHint, $deleteId),
             new RebuildLoanChartPeriodikSnapshotJob($periodHint, $deleteId),
-            new RebuildSnapshotPerformanceRmBatch($periodHint, $deleteId),
             new RebuildSnapshotRasioBatch($periodHint, $deleteId),
+            new RebuildSnapshotHarianBatch($periodHint, $deleteId),
         ];
+
+        if ($deleteId === null) {
+            Bus::dispatch($performanceJob->onQueue('snapshots-priority'));
+        } else {
+            array_unshift($jobs, $performanceJob->onQueue('snapshots-parallel'));
+        }
 
         $batch = Bus::batch($jobs)
             ->allowFailures()

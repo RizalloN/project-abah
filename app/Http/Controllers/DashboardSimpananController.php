@@ -3,6 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\EnsureDashboardSimpananSnapshotJob;
+use App\Services\Presentation\PowerPointExportService;
+use App\Services\Presentation\PresentationExportManager;
+use App\Services\Presentation\PresentationFundingStrategyService;
+use App\Services\Presentation\PresentationNarrativeService;
+use App\Services\Presentation\PresentationScopeDataService;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
@@ -12,6 +17,9 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use App\Jobs\RefreshRemoteDashboardSourcesJob;
+use App\Jobs\WarmDashboardSimpananCacheJob;
+use App\Support\SargableDateFilter;
 use App\Support\SimpananMultiPnSnapshotGate;
 use App\Support\DashboardDanaService;
 use App\Support\CrasMappingService;
@@ -82,7 +90,23 @@ class DashboardSimpananController extends Controller
             $selectedPeriod ??= $availablePeriods->first();
         }
 
+        if ($request->filled('_area6')) {
+            $payloadCacheKey = 'dashboard_simpanan:payload:'
+                . $selectedPeriod
+                . ':'
+                . self::LANDING_SOURCE_CACHE_VERSION
+                . ':v'
+                . $this->reportCacheVersion();
+
+            Cache::forget($payloadCacheKey);
+        }
+
         $dashboard = $this->buildDashboardPayload($selectedPeriod);
+        $dashboard = $this->refreshLandingDecisionSummary(
+            $dashboard,
+            $selectedPeriod,
+            $request->filled('_area6')
+        );
 
         return view('dashboard', [
             'dashboard' => $dashboard,
@@ -441,53 +465,23 @@ class DashboardSimpananController extends Controller
         $selectedOption = $branchOptions[$selectedBranch];
         if ($selectedBranch === 'area6') {
             $cacheKey = 'marketshare_instansi_data:v2:area6';
-
-            try {
-                $payload = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($branchOptions, $sheetName): array {
-                    $columns = [];
-                    $rows = [];
-
-                    foreach ($branchOptions as $branchKey => $branchOption) {
-                        if ($branchKey === 'area6') {
-                            continue;
-                        }
-
-                        $branchPayload = $this->readMarketShareInstansiSheet($branchOption['url'], $branchOption['label'], $sheetName);
-                        if ($columns === []) {
-                            $columns = array_merge(['Cabang'], $branchPayload['columns']);
-                        }
-
-                        foreach ($branchPayload['rows'] as $row) {
-                            $rows[] = array_merge([$branchOption['label']], $row);
-                        }
-                    }
-
-                    return [
-                        'ready' => true,
-                        'message' => 'OK',
-                        'branch' => 'Area 6 Konsolidasi',
-                        'sheet' => $sheetName,
-                        'columns' => $columns,
-                        'rows' => $rows,
-                        'rowCount' => count($rows),
-                        'columnCount' => count($columns),
-                        'fetchedAt' => now()->toDateTimeString(),
-                    ];
-                });
+            $payload = Cache::get($cacheKey);
+            if (is_array($payload)) {
+                if ($this->remotePayloadIsStale($payload)) {
+                    $this->queueMarketShareInstansiRefresh();
+                }
 
                 return response()->json($payload);
-            } catch (Throwable $e) {
-                Log::warning('Marketshare Instansi konsolidasi gagal membaca Google Sheet.', [
-                    'message' => $e->getMessage(),
-                ]);
-
-                return response()->json([
-                    'ready' => false,
-                    'message' => 'Data konsolidasi Area 6 belum bisa dibaca. Pastikan akses seluruh spreadsheet dibuka untuk viewer.',
-                    'columns' => [],
-                    'rows' => [],
-                ], 502);
             }
+
+            $this->queueMarketShareInstansiRefresh();
+
+            return response()->json([
+                'ready' => false,
+                'message' => 'Data konsolidasi sedang disinkronkan di background.',
+                'columns' => [],
+                'rows' => [],
+            ], 202);
         }
 
         $csvUrl = $this->googleSpreadsheetSheetCsvUrl($selectedOption['url'], $sheetName);
@@ -502,14 +496,48 @@ class DashboardSimpananController extends Controller
 
         $cacheKey = 'marketshare_instansi_data:v1:' . $selectedBranch . ':' . md5($csvUrl);
 
-        try {
-            $payload = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($selectedOption, $sheetName): array {
-                $sheetPayload = $this->readMarketShareInstansiSheet($selectedOption['url'], $selectedOption['label'], $sheetName);
+        $payload = Cache::get($cacheKey);
+        if (is_array($payload)) {
+            if ($this->remotePayloadIsStale($payload)) {
+                $this->queueMarketShareInstansiRefresh();
+            }
 
-                return [
+            return response()->json($payload);
+        }
+
+        $this->queueMarketShareInstansiRefresh();
+
+        return response()->json([
+            'ready' => false,
+            'message' => 'Data spreadsheet sedang disinkronkan di background.',
+            'columns' => [],
+            'rows' => [],
+        ], 202);
+    }
+
+    public function refreshMarketShareInstansiSources(): array
+    {
+        $sheetName = 'DATA INSTANSI';
+        $branchOptions = $this->marketShareInstansiBranchOptions();
+        $areaColumns = [];
+        $areaRows = [];
+        $refreshed = 0;
+        $errors = [];
+
+        foreach ($branchOptions as $branchKey => $branchOption) {
+            if ($branchKey === 'area6') {
+                continue;
+            }
+
+            $csvUrl = $this->googleSpreadsheetSheetCsvUrl($branchOption['url'], $sheetName);
+            $cacheKey = 'marketshare_instansi_data:v1:' . $branchKey . ':' . md5($csvUrl);
+
+            try {
+                $sheetPayload = $this->readMarketShareInstansiSheet($branchOption['url'], $branchOption['label'], $sheetName);
+                $payload = [
                     'ready' => true,
                     'message' => 'OK',
-                    'branch' => $selectedOption['label'],
+                    'branch' => $branchOption['label'],
                     'sheet' => $sheetName,
                     'columns' => $sheetPayload['columns'],
                     'rows' => $sheetPayload['rows'],
@@ -517,21 +545,60 @@ class DashboardSimpananController extends Controller
                     'columnCount' => count($sheetPayload['columns']),
                     'fetchedAt' => now()->toDateTimeString(),
                 ];
-            });
+                Cache::forever($cacheKey, $payload);
+                $refreshed++;
+            } catch (Throwable $e) {
+                $errors[$branchKey] = $e->getMessage();
+                $payload = Cache::get($cacheKey);
+            }
 
-            return response()->json($payload);
-        } catch (Throwable $e) {
-            Log::warning('Marketshare Instansi gagal membaca Google Sheet.', [
-                'branch' => $selectedBranch,
-                'message' => $e->getMessage(),
+            if (!is_array($payload ?? null) || empty($payload['ready'])) {
+                continue;
+            }
+
+            if ($areaColumns === []) {
+                $areaColumns = array_merge(['Cabang'], (array) $payload['columns']);
+            }
+            foreach ((array) $payload['rows'] as $row) {
+                $areaRows[] = array_merge([$branchOption['label']], (array) $row);
+            }
+        }
+
+        if ($areaColumns !== []) {
+            Cache::forever('marketshare_instansi_data:v2:area6', [
+                'ready' => true,
+                'message' => 'OK',
+                'branch' => 'Area 6 Konsolidasi',
+                'sheet' => $sheetName,
+                'columns' => $areaColumns,
+                'rows' => $areaRows,
+                'rowCount' => count($areaRows),
+                'columnCount' => count($areaColumns),
+                'fetchedAt' => now()->toDateTimeString(),
             ]);
+        }
 
-            return response()->json([
-                'ready' => false,
-                'message' => 'Data spreadsheet belum bisa dibaca. Pastikan akses sheet dibuka untuk viewer.',
-                'columns' => [],
-                'rows' => [],
-            ], 502);
+        Cache::forget('dashboard_sources:refresh:market-share-instansi:pending');
+
+        return ['success' => $errors === [], 'refreshed' => $refreshed, 'errors' => $errors];
+    }
+
+    private function queueMarketShareInstansiRefresh(): void
+    {
+        $key = 'dashboard_sources:refresh:market-share-instansi:pending';
+        if (Cache::add($key, now()->toIso8601String(), now()->addMinutes(10))) {
+            RefreshRemoteDashboardSourcesJob::dispatch(['market-share-instansi']);
+        }
+    }
+
+    private function remotePayloadIsStale(array $payload, int $minutes = 10): bool
+    {
+        try {
+            $fetchedAt = isset($payload['fetchedAt']) ? Carbon::parse((string) $payload['fetchedAt']) : null;
+
+            return $fetchedAt === null || $fetchedAt->lt(now()->subMinutes($minutes));
+        } catch (Throwable) {
+            return true;
         }
     }
 
@@ -1119,54 +1186,63 @@ class DashboardSimpananController extends Controller
             return $useFallback && $this->isUsableMarketShareMappingWorkbook($fallbackPath) ? $fallbackPath : null;
         };
 
-        if ($cacheMinutes > 0
-            && $this->isUsableMarketShareMappingWorkbook($path)
-            && filemtime($path) >= now()->subMinutes($cacheMinutes)->getTimestamp()) {
-            return $path;
-        }
-
         $availablePath = $availableWorkbookPath();
-        if ($cacheMinutes > 0 && $availablePath !== null) {
-            $this->deferMarketShareMappingWorkbookRefresh($path);
+        $isFresh = $availablePath !== null
+            && $cacheMinutes > 0
+            && filemtime($availablePath) >= now()->subMinutes($cacheMinutes)->getTimestamp();
 
-            return $availablePath;
+        if (!$isFresh) {
+            $this->deferMarketShareMappingWorkbookRefresh($path);
         }
 
-        $this->refreshMarketShareMappingWorkbook($path);
-
-        return $availableWorkbookPath();
+        return $availablePath;
     }
 
     private function deferMarketShareMappingWorkbookRefresh(string $path): void
     {
-        $pendingKey = 'market_share_mapping_workbook_refresh:pending';
+        $pendingKey = 'dashboard_sources:refresh:market-share-mapping:pending';
         if (!Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
             return;
         }
 
-        app()->terminating(function () use ($path, $pendingKey) {
-            try {
-                $this->refreshMarketShareMappingWorkbook($path);
-            } finally {
-                Cache::forget($pendingKey);
-            }
-        });
+        try {
+            RefreshRemoteDashboardSourcesJob::dispatch(['market-share-mapping']);
+        } catch (Throwable $exception) {
+            Cache::forget($pendingKey);
+            Log::warning('Refresh market share mapping gagal dijadwalkan; last-good cache tetap digunakan.', [
+                'path' => $path,
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 
-    private function refreshMarketShareMappingWorkbook(string $path): void
+    public function refreshMarketShareMappingSource(): array
     {
-        $lock = Cache::lock('market_share_mapping_workbook_refresh', 60);
+        $cachePath = trim((string) config('services.market_share_mapping.cache_path', 'app/cache/market-share-mapping.xlsx'), '/\\');
+        $path = storage_path($cachePath);
+        $success = $this->refreshMarketShareMappingWorkbook($path);
+
+        return [
+            'success' => $success,
+            'path' => $path,
+            'updated_at' => $success && is_file($path) ? date('Y-m-d H:i:s', (int) filemtime($path)) : null,
+        ];
+    }
+
+    private function refreshMarketShareMappingWorkbook(string $path): bool
+    {
+        $timeoutSeconds = max(15, (int) config('services.market_share_mapping.timeout_seconds', 30));
+        $lock = Cache::lock('market_share_mapping_workbook_refresh', max(90, ($timeoutSeconds * 3) + 15));
         if (!$lock->get()) {
-            return;
+            return $this->isUsableMarketShareMappingWorkbook($path);
         }
 
         try {
             $sourceUrl = $this->marketShareMappingExportUrl();
             if ($sourceUrl === '') {
-                return;
+                return false;
             }
 
-            $timeoutSeconds = max(15, (int) config('services.market_share_mapping.timeout_seconds', 30));
             $response = Http::timeout($timeoutSeconds)
                 ->retry(2, 500)
                 ->withHeaders(['User-Agent' => 'ASIXDashboardMarketShare/1.0'])
@@ -1186,11 +1262,16 @@ class DashboardSimpananController extends Controller
                 throw new \RuntimeException('Workbook Google Sheets hasil unduh tidak valid.');
             }
 
-            File::move($temporaryPath, $path, true);
+            File::replace($path, $body);
+            File::delete($temporaryPath);
+
+            return true;
         } catch (Throwable $exception) {
             Log::warning('Market Share Mapping workbook refresh failed.', [
                 'message' => $exception->getMessage(),
             ]);
+
+            return false;
         } finally {
             optional($lock)->release();
         }
@@ -1198,13 +1279,22 @@ class DashboardSimpananController extends Controller
 
     private function marketShareMappingExportUrl(): string
     {
-        $sourceUrl = $this->extractIframeSource(trim((string) config('services.market_share_mapping.source_url', '')));
+        $managedLink = $this->marketShareMappingManagedLink();
+        $sourceUrl = $this->extractIframeSource(trim((string) ($managedLink['link_url'] ?? '')));
+        if ($sourceUrl === '') {
+            $sourceUrl = $this->extractIframeSource(trim((string) config('services.market_share_mapping.source_url', '')));
+        }
         if ($sourceUrl === '') {
             $sourceUrl = $this->extractIframeSource(trim((string) config('services.market_share_mapping.workbook_url', '')));
         }
 
         $parts = parse_url($sourceUrl);
-        if ($parts === false || strtolower((string) ($parts['host'] ?? '')) !== 'docs.google.com') {
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        if ($parts !== false && str_ends_with($host, 'sharepoint.com')) {
+            return $this->sharePointDownloadUrl($sourceUrl);
+        }
+
+        if ($parts === false || $host !== 'docs.google.com') {
             return $sourceUrl;
         }
 
@@ -1215,6 +1305,32 @@ class DashboardSimpananController extends Controller
         return 'https://docs.google.com/spreadsheets/d/'
             . rawurlencode((string) $matches[1])
             . '/export?format=xlsx';
+    }
+
+    private function sharePointDownloadUrl(string $url): string
+    {
+        $parts = parse_url(str_replace(['{', '}'], ['%7B', '%7D'], $url));
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+            return $url;
+        }
+
+        parse_str((string) ($parts['query'] ?? ''), $query);
+        $path = (string) ($parts['path'] ?? '');
+        $lowerPath = strtolower($path);
+
+        if (str_contains($lowerPath, '/_layouts/15/doc.aspx')) {
+            foreach (array_keys($query) as $key) {
+                if (str_starts_with(strtolower((string) $key), 'wd')) {
+                    unset($query[$key]);
+                }
+            }
+            $query['action'] = 'default';
+            $query['download'] = '1';
+        } elseif (str_contains($lowerPath, '/:x:/')) {
+            $query['download'] = '1';
+        }
+
+        return $this->buildUrl($parts, $query);
     }
 
     private function isUsableMarketShareMappingWorkbook(string $path): bool
@@ -3204,6 +3320,87 @@ class DashboardSimpananController extends Controller
         return response()->json($payload);
     }
 
+    public function presentationSummaryData(Request $request)
+    {
+        $period = $this->resolvePresentationPeriod($request->query('periode'));
+        $forceFresh = $request->boolean('fresh')
+            || $request->boolean('refresh')
+            || $request->has('_ts');
+        $payload = $forceFresh
+            ? $this->freshPresentationSummaryPayload($period)
+            : $this->cachedPresentationPayloadIfAvailable($period);
+
+        if (!$payload) {
+            $this->deferPresentationPayloadRefresh($period);
+            $payload = $this->cachedPresentationSummaryPayload($period);
+        }
+
+        return response()
+            ->json(['payload' => $this->presentationSummarySlice($payload)])
+            ->setPrivate()
+            ->setMaxAge(30);
+    }
+
+    public function presentationDetailData(Request $request, string $section)
+    {
+        $period = $this->resolvePresentationPeriod($request->query('periode'));
+        $sectionKeys = [
+            'performance' => ['performance_overview', 'quality'],
+            'micro' => ['micro', 'kts'],
+            'productivity' => ['productivity'],
+            'timeseries' => ['timeseries', 'cover_card_timeseries'],
+            'digital' => ['digital_strategy'],
+            'all' => [],
+        ];
+
+        abort_unless(array_key_exists($section, $sectionKeys), 404);
+
+        if ($section === 'micro') {
+            return response()
+                ->json([
+                    'section' => $section,
+                    'payload' => [
+                        'micro' => $this->presentationMicroPayloadForRequest($request, $period),
+                        'loading' => [
+                            'progressive' => true,
+                            'complete' => false,
+                            'section' => $section,
+                        ],
+                    ],
+                ])
+                ->setPrivate()
+                ->setMaxAge(30);
+        }
+
+        $payload = $this->presentationPayloadForRequest($request, $period);
+        if (!$payload) {
+            $this->deferPresentationPayloadRefresh($period);
+
+            return response()->json([
+                'pending' => true,
+                'section' => $section,
+                'retry_after_ms' => 1500,
+                'message' => 'Detail presentasi sedang disusun oleh worker.',
+            ], 202);
+        }
+
+        $detailKeys = $section === 'all' ? array_keys($payload) : $sectionKeys[$section];
+        $detail = collect($payload)->only($detailKeys)->all();
+        $detail['loading'] = [
+            'progressive' => true,
+            'complete' => $section === 'all',
+            'section' => $section,
+        ];
+
+        return response()
+            ->json([
+                'section' => $section,
+                'payload' => $detail,
+            ])
+            ->setPrivate()
+            ->setMaxAge(30);
+    }
+
     public function presentationKtsData(Request $request)
     {
         $requestedPeriod = trim((string) $request->query('periode'));
@@ -3212,6 +3409,59 @@ class DashboardSimpananController extends Controller
         return response()->json([
             'kts' => $this->cachedPresentationKtsPayload($period),
         ]);
+    }
+
+    private function presentationPayloadForRequest(Request $request, ?string $period): ?array
+    {
+        $forceFresh = $request->boolean('fresh')
+            || $request->boolean('refresh')
+            || $request->has('_ts');
+
+        return $forceFresh
+            ? $this->freshPresentationPayload($period)
+            : $this->cachedPresentationPayloadIfAvailable($period);
+    }
+
+    private function presentationMicroPayloadForRequest(Request $request, ?string $period): array
+    {
+        $cacheKey = $this->presentationMicroPayloadCacheKey($period);
+        $forceFresh = $request->boolean('fresh')
+            || $request->boolean('refresh')
+            || $request->has('_ts');
+
+        if ($forceFresh) {
+            Cache::forget($cacheKey);
+        }
+
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $payload = $this->buildPresentationMicroForPeriod($period);
+        $ttl = !empty($payload['refresh_pending'])
+            ? now()->addSeconds(30)
+            : now()->addMinutes(10);
+        Cache::put($cacheKey, $payload, $ttl);
+
+        return $payload;
+    }
+
+    private function buildPresentationMicroForPeriod(?string $period): array
+    {
+        $loanPeriods = $this->resolveLoanDashboardPeriods($period);
+        $loanPeriod = $loanPeriods[0] ?? null;
+        $dailyLoanPeriod = $this->resolveArea6DailyLoanPeriod($loanPeriod ?? $period);
+
+        return $this->buildPresentationMicro($dailyLoanPeriod);
+    }
+
+    private function presentationMicroPayloadCacheKey(?string $period): string
+    {
+        return 'dashboard_simpanan:presentation_micro_payload:'
+            . ($period ?? 'null') . ':'
+            . self::LANDING_SOURCE_CACHE_VERSION . ':v'
+            . $this->reportCacheVersion() . ':ppt_deck_v17_monthly_overlay_timeseries';
     }
 
     public function area6Data(Request $request)
@@ -3232,6 +3482,9 @@ class DashboardSimpananController extends Controller
         $periods = app(DashboardHarianSnapshotService::class)->fetchPeriods();
         $period = $this->resolvePresentationPeriod($request->query('periode'), $periods);
         $payload = $this->cachedPresentationPayloadIfAvailable($period);
+        if (!$payload) {
+            $this->deferPresentationPayloadRefresh($period);
+        }
 
         return view('presentation', [
             'selectedPeriod' => $period,
@@ -3240,13 +3493,109 @@ class DashboardSimpananController extends Controller
         ]);
     }
 
+    public function exportPowerPoint(Request $request, PowerPointExportService $exporter)
+    {
+        $validated = $this->validatedPresentationExport($request);
+
+        $period = $this->resolvePresentationPeriod($validated['periode'] ?? null);
+        $payload = $this->cachedPresentationPayload($period);
+        $validated['title'] = trim((string) ($validated['title'] ?? '')) ?: 'Performance Review - Area 6 Region 13';
+
+        set_time_limit(300);
+        $result = $exporter->export($payload, $validated);
+
+        return response()
+            ->download($result['path'], $result['filename'], [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'X-Presentation-Slides' => (string) $result['slide_count'],
+            ])
+            ->deleteFileAfterSend(true);
+    }
+
+    public function startPowerPointExport(Request $request, PresentationExportManager $manager)
+    {
+        $validated = $this->validatedPresentationExport($request);
+        $period = $this->resolvePresentationPeriod($validated['periode'] ?? null);
+        $payload = $this->cachedPresentationPayload($period);
+        $validated['title'] = trim((string) ($validated['title'] ?? '')) ?: 'Performance Review - Area 6 Region 13';
+        $validated['periode'] = $period;
+
+        $status = $manager->queue($payload, $validated, (int) $request->user()->getAuthIdentifier());
+        $token = (string) $status['token'];
+
+        return response()->json(array_merge($status, [
+            'status_url' => route('dashboard.presentation.export-pptx.status', ['token' => $token]),
+            'download_url' => null,
+        ]), 202);
+    }
+
+    public function powerPointExportStatus(Request $request, string $token, PresentationExportManager $manager)
+    {
+        $status = $manager->statusForUser($token, (int) $request->user()->getAuthIdentifier());
+        abort_unless($status, 404);
+
+        return response()->json(array_merge($status, [
+            'status_url' => route('dashboard.presentation.export-pptx.status', ['token' => $token]),
+            'download_url' => ($status['status'] ?? '') === 'completed'
+                ? route('dashboard.presentation.export-pptx.download', ['token' => $token])
+                : null,
+        ]));
+    }
+
+    public function downloadPowerPointExport(Request $request, string $token, PresentationExportManager $manager)
+    {
+        $result = $manager->downloadForUser($token, (int) $request->user()->getAuthIdentifier());
+        abort_unless($result, 404);
+
+        return response()->download($result['path'], $result['filename'], [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'X-Presentation-Slides' => (string) $result['slide_count'],
+            'X-Presentation-Renderer' => (string) $result['renderer'],
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function validatedPresentationExport(Request $request): array
+    {
+        return $request->validate([
+            'title' => ['nullable', 'string', 'max:140'],
+            'periode' => ['nullable', 'date_format:Y-m-d'],
+            'global_scope' => ['required', 'in:area6,KC Madiun,KC Magetan,KC Ngawi,KC Ponorogo'],
+            'use_prognosa' => ['nullable', 'boolean'],
+            'funding_scope' => ['required', 'in:area6,KC Madiun,KC Magetan,KC Ngawi,KC Ponorogo'],
+            'funding_product' => ['required', 'in:total,giro,tabungan,deposito,casa'],
+            'sme_scope' => ['required', 'in:area6,KC Madiun,KC Magetan,KC Ngawi,KC Ponorogo'],
+            'sme_product' => ['required', 'in:total,non_cashcoll,cashcoll'],
+            'consumer_scope' => ['required', 'in:area6,KC Madiun,KC Magetan,KC Ngawi,KC Ponorogo'],
+            'consumer_product' => ['required', 'in:total,briguna,kpr,kkb'],
+        ]);
+    }
+
     private function cachedPresentationPayload(?string $period): array
     {
         $cacheKey = $this->presentationPayloadCacheKey($period);
+        $stableCacheKey = $this->presentationStablePayloadCacheKey($period);
 
-        return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($period) {
-            return $this->buildPresentationPayload($period);
-        });
+        $payload = Cache::get($cacheKey);
+        if (is_array($payload)) {
+            Cache::put($stableCacheKey, $payload, now()->addDays(3));
+
+            return $payload;
+        }
+
+        $stable = Cache::get($stableCacheKey);
+        if (is_array($stable)) {
+            $this->deferPresentationPayloadRefresh($period);
+            data_set($stable, 'meta.cache_state', 'stale-refreshing');
+
+            return $stable;
+        }
+
+        $payload = $this->buildPresentationPayload($period);
+        Cache::put($cacheKey, $payload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
+        Cache::put($stableCacheKey, $payload, now()->addDays(3));
+
+        return $payload;
     }
 
     private function freshPresentationPayload(?string $period): array
@@ -3258,6 +3607,33 @@ class DashboardSimpananController extends Controller
             $payload,
             now()->addMinutes(self::PAYLOAD_CACHE_MINUTES)
         );
+        Cache::put(
+            $this->presentationStablePayloadCacheKey($period),
+            $payload,
+            now()->addDays(3)
+        );
+
+        return $payload;
+    }
+
+    private function cachedPresentationSummaryPayload(?string $period): array
+    {
+        return Cache::remember(
+            $this->presentationSummaryPayloadCacheKey($period),
+            now()->addMinutes(self::PAYLOAD_CACHE_MINUTES),
+            fn (): array => $this->buildPresentationSummaryPayload($period)
+        );
+    }
+
+    private function freshPresentationSummaryPayload(?string $period): array
+    {
+        $payload = $this->buildPresentationSummaryPayload($period);
+        Cache::put(
+            $this->presentationSummaryPayloadCacheKey($period),
+            $payload,
+            now()->addMinutes(self::PAYLOAD_CACHE_MINUTES)
+        );
+        $this->deferPresentationPayloadRefresh($period);
 
         return $payload;
     }
@@ -3265,10 +3641,22 @@ class DashboardSimpananController extends Controller
     private function cachedPresentationPayloadIfAvailable(?string $period): ?array
     {
         $cacheKey = $this->presentationPayloadCacheKey($period);
+        $payload = Cache::get($cacheKey);
+        if (is_array($payload)) {
+            Cache::put($this->presentationStablePayloadCacheKey($period), $payload, now()->addDays(3));
 
-        return Cache::has($cacheKey)
-            ? Cache::get($cacheKey)
-            : null;
+            return $payload;
+        }
+
+        $stable = Cache::get($this->presentationStablePayloadCacheKey($period));
+        if (!is_array($stable)) {
+            return null;
+        }
+
+        $this->deferPresentationPayloadRefresh($period);
+        data_set($stable, 'meta.cache_state', 'stale-refreshing');
+
+        return $stable;
     }
 
     private function cachedPresentationKtsPayload(?string $period): array
@@ -3288,7 +3676,32 @@ class DashboardSimpananController extends Controller
         return 'dashboard_simpanan:presentation_payload:'
             . ($period ?? 'null') . ':'
             . self::LANDING_SOURCE_CACHE_VERSION . ':v'
-            . $this->reportCacheVersion() . ':ppt_deck_v2';
+            . $this->reportCacheVersion() . ':ppt_deck_v17_monthly_overlay_timeseries';
+    }
+
+    private function presentationStablePayloadCacheKey(?string $period): string
+    {
+        return 'dashboard_simpanan:presentation_payload:stable:'
+            . ($period ?? 'null') . ':'
+            . self::LANDING_SOURCE_CACHE_VERSION . ':v'
+            . $this->reportCacheVersion() . ':ppt_deck_v17_monthly_overlay_timeseries';
+    }
+
+    private function presentationSummaryPayloadCacheKey(?string $period): string
+    {
+        return 'dashboard_simpanan:presentation_summary_payload:'
+            . ($period ?? 'null') . ':'
+            . self::LANDING_SOURCE_CACHE_VERSION . ':v'
+            . $this->reportCacheVersion() . ':ppt_deck_v17_monthly_overlay_timeseries';
+    }
+
+    private function deferPresentationPayloadRefresh(?string $period): void
+    {
+        WarmDashboardSimpananCacheJob::dispatch('presentation-payload', [
+            'cacheKey' => $this->presentationPayloadCacheKey($period),
+            'stableCacheKey' => $this->presentationStablePayloadCacheKey($period),
+            'period' => $period,
+        ]);
     }
 
     private function resolvePresentationPeriod(mixed $requestedPeriod, ?Collection $periods = null): ?string
@@ -3306,7 +3719,10 @@ class DashboardSimpananController extends Controller
                 : null);
     }
 
-    private function buildPresentationPayload(?string $selectedPeriod, bool $forceFresh = false): array
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildPresentationBaseContext(?string $selectedPeriod, bool $forceFresh = false): array
     {
         $dashboard = $forceFresh
             ? $this->buildDashboardPayloadFresh($selectedPeriod, true)
@@ -3318,34 +3734,195 @@ class DashboardSimpananController extends Controller
         $area6Portfolio = data_get($dashboard, 'area6_portfolio', []);
         $presentationPeriod = (string) (data_get($area6Portfolio, 'period') ?: $dashboardPeriod ?: $selectedPeriod);
         $digitalPerformance = data_get($dashboard, 'digital_performance', []);
+        $performanceOverview = $this->buildPresentationPerformanceOverview($area6Portfolio, $presentationPeriod ?: null);
+        $summary = $this->buildPresentationSummary($dashboard, $presentationPeriod ?: null, $loanPeriod);
+        $savingsBreakdown = $this->buildPresentationSavingsBreakdown($presentationPeriod ?: null);
+        $loanProducts = $this->buildPresentationLoanProducts($presentationPeriod ?: null);
+        $financialHighlights = $this->buildPresentationFinancialHighlights($presentationPeriod ?: null);
+
+        return compact(
+            'dashboard',
+            'loanPeriod',
+            'dailyLoanPeriod',
+            'area6Portfolio',
+            'presentationPeriod',
+            'digitalPerformance',
+            'performanceOverview',
+            'summary',
+            'savingsBreakdown',
+            'loanProducts',
+            'financialHighlights'
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     * @param array<string, mixed> $scopeData
+     * @return array<string, mixed>
+     */
+    private function buildPresentationBasePayload(
+        array $context,
+        array $scopeData,
+        bool $includeExecutiveSummary = true
+    ): array
+    {
+        $summary = (array) $context['summary'];
+        $savingsBreakdown = (array) $context['savingsBreakdown'];
+        $loanProducts = (array) $context['loanProducts'];
+        $financialHighlights = (array) $context['financialHighlights'];
+
+        $summary['scopes'] = (array) data_get($scopeData, 'summary_scopes', []);
+        $savingsBreakdown['scopes'] = (array) data_get($scopeData, 'savings_scopes', []);
+        $loanProducts['scopes'] = (array) data_get($scopeData, 'loan_product_scopes', []);
+        $financialHighlights['scopes'] = (array) data_get($scopeData, 'financial_scopes', []);
+        $fundingStructure = [
+            'available' => !empty(data_get($scopeData, 'funding_structure_scopes.area6')),
+            'scopes' => (array) data_get($scopeData, 'funding_structure_scopes', []),
+        ];
+        $creditStructure = [
+            'available' => !empty(data_get($scopeData, 'credit_structure_scopes.area6')),
+            'scopes' => (array) data_get($scopeData, 'credit_structure_scopes', []),
+        ];
 
         return [
             'meta' => [
                 'title' => 'Area 6 - Region Malang',
                 'subtitle' => 'Materi Pendukung Asistensi',
-                'period' => $presentationPeriod ?: null,
-                'period_label' => $this->formatPeriodLabel($presentationPeriod ?: null),
-                'loan_period' => $loanPeriod,
-                'loan_period_label' => $this->formatPeriodLabel($loanPeriod),
-                'daily_loan_period' => $dailyLoanPeriod,
-                'daily_loan_period_label' => $this->formatPeriodLabel($dailyLoanPeriod),
+                'period' => $context['presentationPeriod'] ?: null,
+                'period_label' => $this->formatPeriodLabel($context['presentationPeriod'] ?: null),
+                'loan_period' => $context['loanPeriod'],
+                'loan_period_label' => $this->formatPeriodLabel($context['loanPeriod']),
+                'daily_loan_period' => $context['dailyLoanPeriod'],
+                'daily_loan_period_label' => $this->formatPeriodLabel($context['dailyLoanPeriod']),
                 'generated_at' => now()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('Y-m-d H:i:s'),
                 'source_note' => 'Angka diambil dari payload landing dan tabel snapshot/report existing; tidak memakai angka dummy.',
             ],
+            'scope' => [
+                'default' => 'area6',
+                'options' => (array) data_get($scopeData, 'scope_options', []),
+            ],
             'assets' => $this->buildPresentationAssets(),
-            'summary' => $this->buildPresentationSummary($dashboard, $presentationPeriod ?: null, $loanPeriod),
-            'performance_overview' => $this->buildPresentationPerformanceOverview($area6Portfolio, $presentationPeriod ?: null),
-            'timeseries' => $this->buildPresentationTimeseries($presentationPeriod ?: null),
-            'cover_card_timeseries' => $this->buildPresentationCoverCardTimeseries($presentationPeriod ?: null, $dailyLoanPeriod),
-            'savings_breakdown' => $this->buildPresentationSavingsBreakdown($presentationPeriod ?: null),
-            'loan_products' => $this->buildPresentationLoanProducts($presentationPeriod ?: null),
-            'financial_highlights' => $this->buildPresentationFinancialHighlights($presentationPeriod ?: null),
-            'executive_summary' => $this->buildLandingExecutiveSummary($dailyLoanPeriod ?? $loanPeriod, $area6Portfolio),
-            'micro' => $this->buildPresentationMicro($dailyLoanPeriod),
-            'quality' => $this->buildPresentationQuality($area6Portfolio),
-            'kts' => $this->buildPresentationKtsSummary($dailyLoanPeriod),
-            'digital_strategy' => $this->buildPresentationDigitalStrategy($digitalPerformance),
+            'summary' => $summary,
+            'performance_overview' => $context['performanceOverview'],
+            'savings_breakdown' => $savingsBreakdown,
+            'funding_structure' => $fundingStructure,
+            'credit_structure' => $creditStructure,
+            'comparison' => [
+                'periods' => (array) data_get($scopeData, 'comparison_periods', []),
+                'scopes' => (array) data_get($scopeData, 'comparison_scopes', []),
+                'prognosa' => (array) data_get($scopeData, 'comparison_prognosa', []),
+            ],
+            'loan_products' => $loanProducts,
+            'financial_highlights' => $financialHighlights,
+            'executive_summary' => $includeExecutiveSummary
+                ? $this->buildLandingExecutiveSummary(
+                    $context['dailyLoanPeriod'] ?? $context['loanPeriod'],
+                    $context['area6Portfolio']
+                )
+                : $this->emptyLandingExecutiveSummary(),
+            'quality' => $this->buildPresentationQuality($context['area6Portfolio']),
+            'kts' => $this->buildPresentationKtsSummary($context['dailyLoanPeriod']),
         ];
+    }
+
+    private function buildPresentationSummaryPayload(?string $selectedPeriod): array
+    {
+        $context = $this->buildPresentationBaseContext($selectedPeriod);
+        $scopeData = app(PresentationScopeDataService::class)->buildSummary(
+            $context['presentationPeriod'] ?: null,
+            (array) data_get($context, 'performanceOverview.matrix', []),
+            $this->dashboardBranchDisplayNames()
+        );
+        $payload = $this->presentationSummarySlice(
+            $this->buildPresentationBasePayload($context, $scopeData, false)
+        );
+        data_set($payload, 'meta.cache_state', 'summary-only');
+        $payload['narrative'] = app(PresentationNarrativeService::class)->build($payload);
+
+        return $payload;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function presentationSummarySlice(array $payload): array
+    {
+        $summary = collect($payload)->only([
+            'meta',
+            'scope',
+            'assets',
+            'summary',
+            'savings_breakdown',
+            'funding_structure',
+            'credit_structure',
+            'comparison',
+            'loan_products',
+            'financial_highlights',
+            'executive_summary',
+            'quality',
+            'performance_overview',
+            'kts',
+            'narrative',
+        ])->all();
+        $summary += [
+            'micro' => ['available' => false, 'loading' => true],
+            'productivity' => ['available' => false, 'loading' => true, 'scopes' => []],
+            'timeseries' => ['available' => false, 'loading' => true, 'scopes' => [], 'groups' => []],
+            'cover_card_timeseries' => ['available' => false, 'loading' => true, 'series' => []],
+            'digital_strategy' => [
+                'available' => false,
+                'loading' => true,
+                'cards' => [],
+                'scopes' => [],
+            ],
+        ];
+        $summary['loading'] = [
+            'progressive' => true,
+            'complete' => false,
+            'deferred_sections' => ['micro', 'productivity', 'timeseries', 'digital'],
+        ];
+
+        return $summary;
+    }
+
+    private function buildPresentationPayload(?string $selectedPeriod, bool $forceFresh = false): array
+    {
+        $context = $this->buildPresentationBaseContext($selectedPeriod, $forceFresh);
+        $scopeData = app(PresentationScopeDataService::class)->build(
+            $context['presentationPeriod'] ?: null,
+            $context['dailyLoanPeriod'],
+            (array) data_get($context, 'performanceOverview.matrix', []),
+            $this->dashboardBranchDisplayNames()
+        );
+        $presentationTimeseries = (array) data_get($scopeData, 'timeseries', []);
+        if ($presentationTimeseries === []) {
+            $presentationTimeseries = $this->buildPresentationTimeseries(
+                $context['presentationPeriod'] ?: null
+            );
+        }
+
+        $payload = array_merge(
+            $this->buildPresentationBasePayload($context, $scopeData),
+            [
+                'timeseries' => $presentationTimeseries,
+                'cover_card_timeseries' => $this->buildPresentationCoverCardTimeseries(
+                    $context['presentationPeriod'] ?: null,
+                    $context['dailyLoanPeriod']
+                ),
+                'micro' => $this->buildPresentationMicro($context['dailyLoanPeriod']),
+                'productivity' => (array) data_get($scopeData, 'productivity', []),
+                'digital_strategy' => $this->buildPresentationDigitalStrategy(
+                    $context['digitalPerformance'],
+                    $context['presentationPeriod'] ?: null,
+                    $this->dashboardBranchDisplayNames()
+                ),
+            ]
+        );
+
+        $payload['narrative'] = app(PresentationNarrativeService::class)->build($payload);
+
+        return $payload;
     }
 
     private function buildPresentationAssets(): array
@@ -3512,7 +4089,7 @@ class DashboardSimpananController extends Controller
             ->whereIn('kanca_konsolidasi', $this->dashboardBranchDisplayNames());
 
         if ($targetPeriod) {
-            $periodQuery->whereDate('month_day_year_of_posisi', '<=', $targetPeriod);
+            SargableDateFilter::apply($periodQuery, 'month_day_year_of_posisi', '<=', $targetPeriod);
         }
 
         $period = $periodQuery->max('month_day_year_of_posisi');
@@ -3531,8 +4108,7 @@ class DashboardSimpananController extends Controller
             'casa' => ['label' => 'CASA', 'source' => '38. CASA (%)', 'type' => 'percent', 'tone' => '#00aeef'],
         ];
 
-        $rows = DB::table('ssa_almafacts')
-            ->whereDate('month_day_year_of_posisi', $period)
+        $rows = SargableDateFilter::apply(DB::table('ssa_almafacts'), 'month_day_year_of_posisi', '=', $period)
             ->whereIn('kanca_konsolidasi', $this->dashboardBranchDisplayNames())
             ->whereIn('keterangan', collect($metricLabels)->pluck('source')->all())
             ->select('keterangan')
@@ -3561,8 +4137,7 @@ class DashboardSimpananController extends Controller
             ->values()
             ->all();
 
-        $branchRows = DB::table('ssa_almafacts')
-            ->whereDate('month_day_year_of_posisi', $period)
+        $branchRows = SargableDateFilter::apply(DB::table('ssa_almafacts'), 'month_day_year_of_posisi', '=', $period)
             ->where('keterangan', '15. Laba Setelah Pajak')
             ->whereIn('kanca_konsolidasi', $this->dashboardBranchDisplayNames())
             ->select('kanca_konsolidasi', DB::raw('SUM(COALESCE(saldo, 0)) as nominal'))
@@ -4320,18 +4895,220 @@ class DashboardSimpananController extends Controller
 
     private function buildPresentationMicro(?string $period): array
     {
+        try {
+            $requestedPeriod = $period ? Carbon::parse($period)->toDateString() : null;
+        } catch (Throwable) {
+            $requestedPeriod = null;
+        }
+
+        $sections = [
+            'decision' => $this->buildPresentationDecisionEvaluation($requestedPeriod),
+            'pdwk' => $this->buildPresentationPdwkSummary($requestedPeriod),
+            'mantri_productivity' => $this->buildPresentationMantriProductivity($requestedPeriod),
+            'extreme_low_mantri' => $this->buildPresentationExtremeLowMantri($requestedPeriod),
+            'rm_kur_micro' => $this->buildPresentationRmKurMicro($requestedPeriod),
+            'rm_kur_tiering' => $this->buildPresentationRmKurTiering($requestedPeriod),
+        ];
+        $dataPeriods = collect($sections)
+            ->pluck('data_period')
+            ->filter()
+            ->sort()
+            ->values();
+        $dataPeriod = $dataPeriods->first() ?: $requestedPeriod;
+        $refreshPending = collect($sections)
+            ->contains(fn (array $section): bool => !empty($section['refresh_pending']));
+
+        return array_merge([
+            'period' => $dataPeriod,
+            'data_period' => $dataPeriod,
+            'requested_period' => $requestedPeriod,
+            'period_label' => $this->formatPeriodLabel($dataPeriod),
+            'refresh_pending' => $refreshPending,
+        ], $sections);
+    }
+
+    private function resolvePresentationMicroPeriod(?string $requestedPeriod): ?string
+    {
+        if (!$requestedPeriod
+            || !Schema::hasTable('daily_loan_dinamis')
+            || !Schema::hasColumn('daily_loan_dinamis', 'segmen_kinerja')
+            || !Schema::hasColumn('daily_loan_dinamis', 'produk_kinerja')) {
+            return $requestedPeriod;
+        }
+
+        $cacheKey = 'dashboard_simpanan:presentation_micro_ready_period:'
+            . self::LANDING_SOURCE_CACHE_VERSION . ':v'
+            . $this->reportCacheVersion() . ':'
+            . $requestedPeriod;
+
+        return Cache::remember($cacheKey, now()->addMinutes(2), function () use ($requestedPeriod): string {
+            $query = DB::table('daily_loan_dinamis')
+                ->where('periode', '<=', $requestedPeriod)
+                ->where('segmen_kinerja', 'MICRO')
+                ->whereNotNull('produk_kinerja')
+                ->where('produk_kinerja', '<>', '');
+
+            if (Schema::hasColumn('daily_loan_dinamis', 'rm_normalized')) {
+                $query
+                    ->whereNotNull('rm_normalized')
+                    ->where('rm_normalized', '<>', '');
+            }
+
+            $this->applyDashboardBranchScope($query, 'cabang1');
+            $readyPeriod = $query
+                ->orderByDesc('periode')
+                ->value('periode');
+
+            return $readyPeriod
+                ? Carbon::parse($readyPeriod)->toDateString()
+                : $requestedPeriod;
+        });
+    }
+
+    private function buildPresentationPdwkSummary(?string $period): array
+    {
+        $payload = $this->invokeKinerjaRmMikroPayload('rekap_mantri', $period, true);
+        $dataPeriod = data_get($payload, 'meta.data_period', $period);
+        $rows = collect($payload['rows'] ?? [])
+            ->filter(fn (array $row): bool => trim((string) ($row['cabang'] ?? '')) !== '')
+            ->values();
+
+        $buildRole = function (
+            string $key,
+            string $label,
+            float $pdwkOs,
+            int $pdwkDeb,
+            float $overrideOs,
+            int $overrideDeb,
+            float $totalOs,
+            int $totalDeb,
+            float $scopeTotalOs
+        ): array {
+            $share = $scopeTotalOs > 0 ? ($totalOs / $scopeTotalOs) * 100 : 0.0;
+            $pdwkShare = $totalOs > 0 ? ($pdwkOs / $totalOs) * 100 : 0.0;
+
+            return [
+                'key' => $key,
+                'label' => $label,
+                'pdwk_os' => $pdwkOs,
+                'pdwk_os_fmt' => $this->formatCurrencyCompact($pdwkOs),
+                'pdwk_deb' => $pdwkDeb,
+                'override_os' => $overrideOs,
+                'override_os_fmt' => $this->formatCurrencyCompact($overrideOs),
+                'override_deb' => $overrideDeb,
+                'total_os' => $totalOs,
+                'total_os_fmt' => $this->formatCurrencyCompact($totalOs),
+                'total_deb' => $totalDeb,
+                'share_pct' => $share,
+                'share_pct_fmt' => $this->formatPercentTwo($share),
+                'pdwk_share_pct' => $pdwkShare,
+                'pdwk_share_pct_fmt' => $this->formatPercentTwo($pdwkShare),
+            ];
+        };
+
+        $buildScope = function (array $data, string $label) use ($buildRole): array {
+            $scopeTotalOs = (float) ($data['total_realisasi_os'] ?? 0.0);
+            $scopeTotalDeb = (int) ($data['total_realisasi_deb'] ?? 0);
+            $bohPdwkOs = (float) ($data['pinca_pdwk_os'] ?? 0.0);
+            $bohPdwkDeb = (int) ($data['pinca_pdwk_deb'] ?? 0);
+            $bohOverrideOs = (float) ($data['pinca_override_os'] ?? 0.0)
+                + (float) ($data['rmbh_override_os'] ?? 0.0);
+            $bohOverrideDeb = (int) ($data['pinca_override_deb'] ?? 0)
+                + (int) ($data['rmbh_override_deb'] ?? 0);
+            $bohTotalOs = (float) ($data['pinca_total_os'] ?? 0.0)
+                + (float) ($data['rmbh_override_os'] ?? 0.0);
+            $bohTotalDeb = (int) ($data['pinca_total_deb'] ?? 0)
+                + (int) ($data['rmbh_override_deb'] ?? 0);
+
+            return [
+                'label' => $label,
+                'boh_name' => (string) ($data['boh'] ?? ''),
+                'total' => [
+                    'os' => $scopeTotalOs,
+                    'os_fmt' => $this->formatCurrencyCompact($scopeTotalOs),
+                    'deb' => $scopeTotalDeb,
+                    'jumlah_unit' => (int) ($data['jumlah_unit'] ?? 0),
+                    'jumlah_mantri' => (int) ($data['jumlah_mantri'] ?? 0),
+                ],
+                'roles' => [
+                    $buildRole(
+                        'kaunit',
+                        'K Unit',
+                        (float) ($data['kaunit_pdwk_os'] ?? 0.0),
+                        (int) ($data['kaunit_pdwk_deb'] ?? 0),
+                        (float) ($data['kaunit_override_os'] ?? 0.0),
+                        (int) ($data['kaunit_override_deb'] ?? 0),
+                        (float) ($data['kaunit_total_os'] ?? 0.0),
+                        (int) ($data['kaunit_total_deb'] ?? 0),
+                        $scopeTotalOs
+                    ),
+                    $buildRole(
+                        'mbm',
+                        'MBM',
+                        (float) ($data['mbm_pdwk_os'] ?? 0.0),
+                        (int) ($data['mbm_pdwk_deb'] ?? 0),
+                        (float) ($data['mbm_override_os'] ?? 0.0),
+                        (int) ($data['mbm_override_deb'] ?? 0),
+                        (float) ($data['mbm_total_os'] ?? 0.0),
+                        (int) ($data['mbm_total_deb'] ?? 0),
+                        $scopeTotalOs
+                    ),
+                    $buildRole(
+                        'boh',
+                        'BOH',
+                        $bohPdwkOs,
+                        $bohPdwkDeb,
+                        $bohOverrideOs,
+                        $bohOverrideDeb,
+                        $bohTotalOs,
+                        $bohTotalDeb,
+                        $scopeTotalOs
+                    ),
+                ],
+            ];
+        };
+
+        $total = (array) ($payload['total'] ?? []);
+        $scopes = [
+            'area6' => $buildScope($total, 'Area 6 Konsol'),
+        ];
+
+        foreach ($rows as $row) {
+            $branch = strtoupper(trim((string) ($row['cabang'] ?? '')));
+            if ($branch !== '') {
+                $scope = $buildScope($row, trim((string) ($row['cabang'] ?? $branch)));
+                $scopes[$branch] = $scope;
+            }
+        }
+        $branches = collect($this->dashboardBranchDisplayNames())
+            ->map(function (string $branchLabel) use (&$scopes, $buildScope): array {
+                $branchKey = strtoupper(trim($branchLabel));
+                $scope = $scopes[$branchKey] ?? $buildScope([], $branchLabel);
+                $scopes[$branchKey] = $scope;
+
+                return array_merge(['key' => $branchKey], $scope);
+            })
+            ->values()
+            ->all();
+
         return [
-            'period' => $period,
-            'period_label' => $this->formatPeriodLabel($period),
-            'decision' => $this->buildPresentationDecisionEvaluation($period),
-            'mantri_productivity' => $this->buildPresentationMantriProductivity($period),
-            'rm_kur_micro' => $this->buildPresentationRmKurMicro($period),
+            'available' => $rows->isNotEmpty() && (float) ($total['total_realisasi_os'] ?? 0.0) > 0,
+            'period' => $dataPeriod,
+            'data_period' => $dataPeriod,
+            'requested_period' => data_get($payload, 'meta.requested_period', $period),
+            'period_label' => $this->formatPeriodLabel($dataPeriod),
+            'refresh_pending' => (bool) data_get($payload, 'meta.refresh_pending', false),
+            'working_days' => (int) ($payload['working_days'] ?? 0),
+            'source' => 'Kinerja RM Mikro - Rekap Mantri',
+            'scopes' => $scopes,
+            'branches' => $branches,
         ];
     }
 
     private function buildPresentationDecisionEvaluation(?string $period): array
     {
         $payload = $this->invokeKinerjaRmMikroPayload('unit_pemutus', $period, true);
+        $dataPeriod = data_get($payload, 'meta.data_period', $period);
         $rows = collect($payload['rows'] ?? [])
             ->sortByDesc(fn (array $row) => (float) ($row['mtd_total_os'] ?? 0))
             ->take(24)
@@ -4352,6 +5129,10 @@ class DashboardSimpananController extends Controller
         return [
             'available' => !empty($rows),
             'source' => 'Kinerja RM Mikro - Unit per Pemutus',
+            'period' => $dataPeriod,
+            'data_period' => $dataPeriod,
+            'requested_period' => data_get($payload, 'meta.requested_period', $period),
+            'refresh_pending' => (bool) data_get($payload, 'meta.refresh_pending', false),
             'rows' => $rows,
             'total' => [
                 'total_deb' => (int) data_get($payload, 'total.mtd_total_deb', 0),
@@ -4364,6 +5145,7 @@ class DashboardSimpananController extends Controller
     private function buildPresentationMantriProductivity(?string $period): array
     {
         $payload = $this->invokeKinerjaRmMikroPayload('produktivitas_mantri', $period, true);
+        $dataPeriod = data_get($payload, 'meta.data_period', $period);
         $rows = collect($payload['rows'] ?? [])
             ->sortByDesc(fn (array $row) => (float) ($row['realisasi_os'] ?? 0))
             ->take(24)
@@ -4384,6 +5166,10 @@ class DashboardSimpananController extends Controller
         return [
             'available' => !empty($rows),
             'source' => 'Kinerja Mantri - Produktivitas per Mantri',
+            'period' => $dataPeriod,
+            'data_period' => $dataPeriod,
+            'requested_period' => data_get($payload, 'meta.requested_period', $period),
+            'refresh_pending' => (bool) data_get($payload, 'meta.refresh_pending', false),
             'working_days' => (int) data_get($payload, 'working_days', 0),
             'rows' => $rows,
             'total' => [
@@ -4395,9 +5181,100 @@ class DashboardSimpananController extends Controller
         ];
     }
 
+    private function buildPresentationExtremeLowMantri(?string $period): array
+    {
+        $payload = $this->invokeKinerjaRmMikroPayload(
+            'extreme_low_mantri',
+            $period,
+            true,
+            'per_cabang'
+        );
+        $dataPeriod = data_get($payload, 'meta.data_period', $period);
+        $categoryBucketKeys = [
+            'extreme_low' => ['el_0_100', 'el_100_200', 'el_200_400'],
+            'low' => ['low_400_600', 'low_600_800'],
+            'under_800' => ['el_0_100', 'el_100_200', 'el_200_400', 'low_400_600', 'low_600_800'],
+            'mid' => ['mid_800_1000', 'mid_1000_1200'],
+            'high' => ['high_1200'],
+        ];
+        $buildCategory = function (array $buckets, array $keys, int $totalMantri): array {
+            $mantri = (int) collect($keys)
+                ->sum(fn (string $key): int => (int) data_get($buckets, $key . '.deb', 0));
+            $percentage = $totalMantri > 0 ? ($mantri / $totalMantri) * 100 : 0.0;
+
+            return [
+                'deb' => $mantri,
+                'pct' => $percentage,
+                'pct_fmt' => $this->formatPercentTwo($percentage),
+            ];
+        };
+        $sourceRows = collect($payload['rows'] ?? [])
+            ->map(function (array $row) use ($buildCategory, $categoryBucketKeys): array {
+                $totalMantri = (int) ($row['total_mantri'] ?? 0);
+                $buckets = (array) ($row['buckets'] ?? []);
+
+                return [
+                    'cabang' => (string) ($row['branch_office'] ?? '-'),
+                    'branch_office' => (string) ($row['branch_office'] ?? '-'),
+                    'total_mantri' => $totalMantri,
+                    'extreme_low' => $buildCategory($buckets, $categoryBucketKeys['extreme_low'], $totalMantri),
+                    'low' => $buildCategory($buckets, $categoryBucketKeys['low'], $totalMantri),
+                    'under_800' => $buildCategory($buckets, $categoryBucketKeys['under_800'], $totalMantri),
+                    'mid' => $buildCategory($buckets, $categoryBucketKeys['mid'], $totalMantri),
+                    'high' => $buildCategory($buckets, $categoryBucketKeys['high'], $totalMantri),
+                    'buckets' => $buckets,
+                ];
+            })
+            ->keyBy(fn (array $row): string => strtoupper(trim($row['branch_office'])));
+        $rows = collect($this->dashboardBranchDisplayNames())
+            ->map(function (string $branchLabel) use ($sourceRows): array {
+                $branchKey = strtoupper(trim($branchLabel));
+
+                return $sourceRows->get($branchKey, [
+                    'cabang' => $branchLabel,
+                    'branch_office' => $branchLabel,
+                    'total_mantri' => 0,
+                    'extreme_low' => ['deb' => 0, 'pct' => 0.0, 'pct_fmt' => '0,00%'],
+                    'low' => ['deb' => 0, 'pct' => 0.0, 'pct_fmt' => '0,00%'],
+                    'under_800' => ['deb' => 0, 'pct' => 0.0, 'pct_fmt' => '0,00%'],
+                    'mid' => ['deb' => 0, 'pct' => 0.0, 'pct_fmt' => '0,00%'],
+                    'high' => ['deb' => 0, 'pct' => 0.0, 'pct_fmt' => '0,00%'],
+                    'buckets' => [],
+                ]);
+            })
+            ->values();
+        $total = (array) ($payload['total'] ?? []);
+        $totalMantri = (int) ($total['total_mantri'] ?? 0);
+        $totalBuckets = (array) ($total['buckets'] ?? []);
+
+        return [
+            'available' => $rows->contains(
+                fn (array $row): bool => (int) ($row['total_mantri'] ?? 0) > 0
+            ),
+            'source' => 'Kinerja Mantri - Extreme Low per Cabang',
+            'period' => $dataPeriod,
+            'data_period' => $dataPeriod,
+            'requested_period' => data_get($payload, 'meta.requested_period', $period),
+            'refresh_pending' => (bool) data_get($payload, 'meta.refresh_pending', false),
+            'view' => 'per_cabang',
+            'working_days' => (int) data_get($payload, 'working_days', 0),
+            'rows' => $rows->all(),
+            'total' => [
+                'total_mantri' => $totalMantri,
+                'extreme_low' => $buildCategory($totalBuckets, $categoryBucketKeys['extreme_low'], $totalMantri),
+                'low' => $buildCategory($totalBuckets, $categoryBucketKeys['low'], $totalMantri),
+                'under_800' => $buildCategory($totalBuckets, $categoryBucketKeys['under_800'], $totalMantri),
+                'mid' => $buildCategory($totalBuckets, $categoryBucketKeys['mid'], $totalMantri),
+                'high' => $buildCategory($totalBuckets, $categoryBucketKeys['high'], $totalMantri),
+                'buckets' => $totalBuckets,
+            ],
+        ];
+    }
+
     private function buildPresentationRmKurMicro(?string $period): array
     {
         $payload = $this->invokeKinerjaRmMikroPayload('per_rm', $period, false);
+        $dataPeriod = data_get($payload, 'meta.data_period', $period);
         $rows = collect($payload['rows'] ?? [])
             ->sortByDesc(fn (array $row) => (float) ($row['realisasi_os'] ?? 0))
             ->take(24)
@@ -4418,6 +5295,10 @@ class DashboardSimpananController extends Controller
         return [
             'available' => !empty($rows),
             'source' => 'Kinerja RM Mikro - RM KUR Mikro',
+            'period' => $dataPeriod,
+            'data_period' => $dataPeriod,
+            'requested_period' => data_get($payload, 'meta.requested_period', $period),
+            'refresh_pending' => (bool) data_get($payload, 'meta.refresh_pending', false),
             'rows' => $rows,
             'total' => [
                 'total_deb' => (int) data_get($payload, 'total.total_deb', 0),
@@ -4426,6 +5307,92 @@ class DashboardSimpananController extends Controller
                 'realisasi_deb' => (int) data_get($payload, 'total.realisasi_deb', 0),
                 'realisasi_os' => (float) data_get($payload, 'total.realisasi_os', 0.0),
                 'realisasi_os_fmt' => $this->formatCurrencyCompact((float) data_get($payload, 'total.realisasi_os', 0.0)),
+            ],
+        ];
+    }
+
+    private function buildPresentationRmKurTiering(?string $period): array
+    {
+        $payload = $this->invokeKinerjaRmMikroPayload('per_tiering', $period, false);
+        $dataPeriod = data_get($payload, 'meta.data_period', $period);
+        $sourceRows = collect($payload['rows'] ?? [])
+            ->filter(fn (array $row): bool => trim((string) ($row['cabang'] ?? '')) !== '')
+            ->groupBy(fn (array $row): string => strtoupper(trim((string) $row['cabang'])))
+            ->map(function (Collection $branchRows, string $branchKey): array {
+                $branch = trim((string) data_get($branchRows->first(), 'cabang', $branchKey));
+                $underDeb = (int) $branchRows->sum('lt_250_realisasi_deb');
+                $underOs = (float) $branchRows->sum('lt_250_realisasi_os');
+                $overDeb = (int) $branchRows->sum('gt_250_realisasi_deb');
+                $overOs = (float) $branchRows->sum('gt_250_realisasi_os');
+                $totalDeb = $underDeb + $overDeb;
+                $totalOs = $underOs + $overOs;
+
+                return [
+                    'key' => $branchKey,
+                    'cabang' => $branch !== '' ? $branch : $branchKey,
+                    'lt_250' => [
+                        'deb' => $underDeb,
+                        'os' => $underOs,
+                        'os_fmt' => $this->formatCurrencyCompact($underOs),
+                    ],
+                    'gt_250' => [
+                        'deb' => $overDeb,
+                        'os' => $overOs,
+                        'os_fmt' => $this->formatCurrencyCompact($overOs),
+                    ],
+                    'total' => [
+                        'deb' => $totalDeb,
+                        'os' => $totalOs,
+                        'os_fmt' => $this->formatCurrencyCompact($totalOs),
+                    ],
+                ];
+            })
+            ->keyBy(fn (array $row): string => strtoupper(trim($row['cabang'])));
+        $rows = collect($this->dashboardBranchDisplayNames())
+            ->map(function (string $branchLabel) use ($sourceRows): array {
+                $branchKey = strtoupper(trim($branchLabel));
+
+                return $sourceRows->get($branchKey, [
+                    'key' => $branchKey,
+                    'cabang' => $branchLabel,
+                    'lt_250' => ['deb' => 0, 'os' => 0.0, 'os_fmt' => 'Rp0'],
+                    'gt_250' => ['deb' => 0, 'os' => 0.0, 'os_fmt' => 'Rp0'],
+                    'total' => ['deb' => 0, 'os' => 0.0, 'os_fmt' => 'Rp0'],
+                ]);
+            })
+            ->values();
+
+        $totalUnderDeb = (int) $rows->sum(fn (array $row): int => (int) data_get($row, 'lt_250.deb', 0));
+        $totalUnderOs = (float) $rows->sum(fn (array $row): float => (float) data_get($row, 'lt_250.os', 0.0));
+        $totalOverDeb = (int) $rows->sum(fn (array $row): int => (int) data_get($row, 'gt_250.deb', 0));
+        $totalOverOs = (float) $rows->sum(fn (array $row): float => (float) data_get($row, 'gt_250.os', 0.0));
+
+        return [
+            'available' => $rows->contains(
+                fn (array $row): bool => (float) data_get($row, 'total.os', 0.0) > 0
+            ),
+            'source' => 'Kinerja RM Mikro - Tiering RM KUR per Cabang',
+            'period' => $dataPeriod,
+            'data_period' => $dataPeriod,
+            'requested_period' => data_get($payload, 'meta.requested_period', $period),
+            'refresh_pending' => (bool) data_get($payload, 'meta.refresh_pending', false),
+            'rows' => $rows->all(),
+            'total' => [
+                'lt_250' => [
+                    'deb' => $totalUnderDeb,
+                    'os' => $totalUnderOs,
+                    'os_fmt' => $this->formatCurrencyCompact($totalUnderOs),
+                ],
+                'gt_250' => [
+                    'deb' => $totalOverDeb,
+                    'os' => $totalOverOs,
+                    'os_fmt' => $this->formatCurrencyCompact($totalOverOs),
+                ],
+                'total' => [
+                    'deb' => $totalUnderDeb + $totalOverDeb,
+                    'os' => $totalUnderOs + $totalOverOs,
+                    'os_fmt' => $this->formatCurrencyCompact($totalUnderOs + $totalOverOs),
+                ],
             ],
         ];
     }
@@ -4441,6 +5408,54 @@ class DashboardSimpananController extends Controller
             'decision' => $this->buildLandingDecisionSummary($detailPeriod),
             'realization' => $this->buildLandingSegmentRealizationSummary($area6Portfolio),
         ];
+    }
+
+    private function refreshLandingDecisionSummary(
+        array $dashboard,
+        ?string $selectedPeriod,
+        bool $forceFresh = false
+    ): array {
+        $requestedPeriod = data_get($dashboard, 'area6_portfolio.loan_detail_period')
+            ?: data_get($dashboard, 'landing_summary.decision.requested_period')
+            ?: data_get($dashboard, 'landing_summary.decision.period')
+            ?: $this->resolveArea6DailyLoanPeriod($selectedPeriod);
+
+        if (!$requestedPeriod) {
+            return $dashboard;
+        }
+
+        $cacheKey = $this->landingDecisionSummaryCacheKey($requestedPeriod);
+
+        if ($forceFresh) {
+            Cache::forget($cacheKey);
+        }
+
+        $decision = Cache::get($cacheKey);
+        if (!is_array($decision)) {
+            $decision = $this->buildLandingDecisionSummary($requestedPeriod);
+            Cache::put(
+                $cacheKey,
+                $decision,
+                !empty($decision['refresh_pending'])
+                    ? now()->addSeconds(30)
+                    : now()->addMinutes(5)
+            );
+        }
+
+        if (!isset($dashboard['landing_summary']) || !is_array($dashboard['landing_summary'])) {
+            $dashboard['landing_summary'] = $this->emptyLandingExecutiveSummary();
+        }
+        $dashboard['landing_summary']['decision'] = $decision;
+
+        return $dashboard;
+    }
+
+    private function landingDecisionSummaryCacheKey(string $period): string
+    {
+        return 'dashboard_simpanan:landing_decision:'
+            . $period . ':'
+            . self::LANDING_SOURCE_CACHE_VERSION . ':v'
+            . $this->reportCacheVersion();
     }
 
     private function emptyLandingExecutiveSummary(): array
@@ -4556,8 +5571,18 @@ class DashboardSimpananController extends Controller
         }
 
         $payload = $this->invokeKinerjaRmMikroPayload('unit_pemutus', $period, true);
+        $dataPeriod = data_get($payload, 'meta.data_period');
+        $refreshPending = (bool) data_get($payload, 'meta.refresh_pending', false);
+        if (!$dataPeriod) {
+            return array_merge($empty, [
+                'requested_period' => $period,
+                'data_period' => null,
+                'refresh_pending' => $refreshPending,
+            ]);
+        }
+
         $total = (array) data_get($payload, 'total', []);
-        $kurRitelTotals = $this->buildLandingKurRitelDecisionTotals($period);
+        $kurRitelTotals = $this->buildLandingKurRitelDecisionTotals($dataPeriod);
 
         $items = [
             [
@@ -4608,8 +5633,11 @@ class DashboardSimpananController extends Controller
 
         return [
             'available' => collect($items)->contains(fn (array $item) => (int) $item['deb'] > 0 || (float) $item['nominal'] !== 0.0),
-            'period' => $period,
-            'period_label' => $this->formatPeriodLabel($period),
+            'period' => $dataPeriod,
+            'data_period' => $dataPeriod,
+            'requested_period' => $period,
+            'refresh_pending' => $refreshPending,
+            'period_label' => $this->formatPeriodLabel($dataPeriod),
             'source' => 'Kinerja RM Mikro - Unit per Pemutus, termasuk KUR Ritel 2015',
             'items' => $items,
             'total_deb' => array_sum(array_column($items, 'deb')),
@@ -4670,6 +5698,7 @@ class DashboardSimpananController extends Controller
             ->where('d.produk_kinerja', 'KURMIKRO')
             ->whereRaw("{$descriptionSql} = ?", [$kurRitelToken])
             ->whereBetween('d.tgl_realisasi', [$periodStart, $period]);
+        $this->applyDashboardBranchScope($base, 'd.cabang1');
 
         if ($this->hasTable('brihc')) {
             $base->leftJoin('brihc as b', function ($join) use ($pemutusSql): void {
@@ -4823,35 +5852,38 @@ class DashboardSimpananController extends Controller
         };
     }
 
-    private function invokeKinerjaRmMikroPayload(string $category, ?string $period, bool $mantri): array
+    private function invokeKinerjaRmMikroPayload(
+        string $category,
+        ?string $period,
+        bool $mantri,
+        ?string $extremeLowView = null
+    ): array
     {
         if (!$period) {
             return ['rows' => [], 'total' => []];
         }
 
-        $cacheKey = 'dashboard_simpanan:kinerja_rm_mikro:'
-            . ($mantri ? 'mantri' : 'report') . ':'
-            . $category . ':'
-            . $period . ':v'
-            . $this->reportCacheVersion();
+        try {
+            return app(\App\Http\Controllers\Report\KinerjaRmMikroReportController::class)
+                ->buildEmbeddedPayload($category, $period, $mantri, $extremeLowView);
+        } catch (Throwable $e) {
+            Log::warning('Payload presentasi Kinerja RM Mikro gagal dibaca.', [
+                'category' => $category,
+                'period' => $period,
+                'error' => $e->getMessage(),
+            ]);
 
-        return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($category, $period, $mantri) {
-            try {
-                $controller = app(\App\Http\Controllers\Report\KinerjaRmMikroReportController::class);
-                $method = new \ReflectionMethod($controller, $mantri ? 'buildMantriPayload' : 'buildReportPayload');
-                $method->setAccessible(true);
-
-                return (array) $method->invoke($controller, $category, $period);
-            } catch (Throwable $e) {
-                Log::warning('Payload presentasi Kinerja RM Mikro gagal dibaca.', [
-                    'category' => $category,
-                    'period' => $period,
-                    'error' => $e->getMessage(),
-                ]);
-
-                return ['rows' => [], 'total' => [], 'message' => 'Data belum tersedia'];
-            }
-        });
+            return [
+                'rows' => [],
+                'total' => [],
+                'message' => 'Data belum tersedia',
+                'meta' => [
+                    'requested_period' => $period,
+                    'data_period' => null,
+                    'refresh_pending' => true,
+                ],
+            ];
+        }
     }
 
     private function buildPresentationQuality(array $area6Portfolio): array
@@ -5206,12 +6238,19 @@ class DashboardSimpananController extends Controller
         return [];
     }
 
-    private function buildPresentationDigitalStrategy(array $digitalPerformance): array
+    /**
+     * @param array<int, string> $branches
+     */
+    private function buildPresentationDigitalStrategy(
+        array $digitalPerformance,
+        ?string $period,
+        array $branches
+    ): array
     {
         $cards = collect(data_get($digitalPerformance, 'cards', []))->keyBy('key');
         $order = ['edc', 'qris', 'qlola', 'brimo', 'brilink', 'casa', 'dormant', 'payroll'];
 
-        return [
+        $legacySummary = [
             'updated_at' => data_get($digitalPerformance, 'updated_at'),
             'cards' => collect($order)->map(function (string $key) use ($cards): array {
                 $card = $cards->get($key);
@@ -5242,6 +6281,11 @@ class DashboardSimpananController extends Controller
                 ];
             })->all(),
         ];
+
+        return array_merge(
+            $legacySummary,
+            app(PresentationFundingStrategyService::class)->build($period, $branches)
+        );
     }
 
     private function buildDashboardPayload(?string $selectedPeriod = null): array
@@ -5317,28 +6361,11 @@ class DashboardSimpananController extends Controller
 
     private function deferDashboardPayloadRefresh(string $payloadCacheKey, string $latestCacheKey, string $stableLatestCacheKey): void
     {
-        app()->terminating(function () use ($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey) {
-            $lock = Cache::lock($payloadCacheKey . ':lock', self::CACHE_LOCK_SECONDS);
-            $locked = false;
-
-            try {
-                $locked = $lock->get();
-
-                if (!$locked) {
-                    return;
-                }
-
-                $this->cacheFreshDashboardPayload($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey);
-            } catch (Throwable $e) {
-                Log::warning('Dashboard simpanan payload gagal dihangatkan setelah response.', [
-                    'error' => $e->getMessage(),
-                ]);
-            } finally {
-                if ($locked) {
-                    $lock->release();
-                }
-            }
-        });
+        WarmDashboardSimpananCacheJob::dispatch('dashboard-payload', compact(
+            'payloadCacheKey',
+            'latestCacheKey',
+            'stableLatestCacheKey'
+        ));
     }
 
     private function buildDashboardPayloadFresh(?string $selectedPeriod = null, bool $forceFresh = false): array
@@ -5834,9 +6861,9 @@ class DashboardSimpananController extends Controller
     {
         $dailyLoanPeriod = $this->resolveArea6DailyLoanPeriod($loanPeriod);
         $cacheVersion = $this->reportCacheVersion();
-        $cacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none');
-        $latestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none');
-        $stableLatestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:stable:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none');
+        $cacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':lr_daily_v3_recovery';
+        $latestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':lr_daily_v3_recovery';
+        $stableLatestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:stable:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':lr_daily_v3_recovery';
 
         if ($forceFresh) {
             $freshPayload = $this->buildArea6PortfolioLandingFresh($loanPeriod, $dailyLoanPeriod);
@@ -5914,31 +6941,98 @@ class DashboardSimpananController extends Controller
 
     private function deferArea6PortfolioRefresh(string $cacheKey, string $latestCacheKey, string $stableLatestCacheKey, ?string $loanPeriod, ?string $dailyLoanPeriod): void
     {
-        app()->terminating(function () use ($cacheKey, $latestCacheKey, $stableLatestCacheKey, $loanPeriod, $dailyLoanPeriod) {
-            $lock = Cache::lock($cacheKey . ':lock', self::CACHE_LOCK_SECONDS);
-            $locked = false;
+        WarmDashboardSimpananCacheJob::dispatch('area6-portfolio', compact(
+            'cacheKey',
+            'latestCacheKey',
+            'stableLatestCacheKey',
+            'loanPeriod',
+            'dailyLoanPeriod'
+        ));
+    }
 
-            try {
-                $locked = $lock->get();
-                if (!$locked) {
-                    return;
-                }
+    /** @param array<string, mixed> $context */
+    public function warmDashboardSimpananCache(string $type, array $context): void
+    {
+        $period = trim((string) ($context['period'] ?? ''));
+        $cacheKey = $type === 'micro-readiness' && $period !== ''
+            ? 'dashboard_simpanan:micro_readiness_warm:'
+                . $period . ':'
+                . self::LANDING_SOURCE_CACHE_VERSION . ':v'
+                . $this->reportCacheVersion()
+            : (string) ($context['payloadCacheKey'] ?? $context['cacheKey'] ?? '');
+        if ($cacheKey === '') {
+            return;
+        }
 
-                $freshPayload = $this->buildArea6PortfolioLandingFresh($loanPeriod, $dailyLoanPeriod);
+        $lockSeconds = $type === 'presentation-payload' ? 300 : self::CACHE_LOCK_SECONDS;
+        $lock = Cache::lock($cacheKey . ':lock', $lockSeconds);
+        if (!$lock->get()) {
+            return;
+        }
+
+        try {
+            if ($type === 'micro-readiness') {
+                $microPayload = $this->buildPresentationMicroForPeriod($period);
+                Cache::put(
+                    $this->presentationMicroPayloadCacheKey($period),
+                    $microPayload,
+                    !empty($microPayload['refresh_pending'])
+                        ? now()->addSeconds(30)
+                        : now()->addMinutes(10)
+                );
+
+                $decision = $this->buildLandingDecisionSummary($period);
+                Cache::put(
+                    $this->landingDecisionSummaryCacheKey($period),
+                    $decision,
+                    !empty($decision['refresh_pending'])
+                        ? now()->addSeconds(30)
+                        : now()->addMinutes(5)
+                );
+
+                return;
+            }
+
+            if ($type === 'dashboard-payload') {
+                $this->cacheFreshDashboardPayload(
+                    $cacheKey,
+                    (string) ($context['latestCacheKey'] ?? ''),
+                    (string) ($context['stableLatestCacheKey'] ?? '')
+                );
+
+                return;
+            }
+
+            if ($type === 'area6-portfolio') {
+                $freshPayload = $this->buildArea6PortfolioLandingFresh(
+                    $context['loanPeriod'] ?? null,
+                    $context['dailyLoanPeriod'] ?? null
+                );
                 Cache::put($cacheKey, $freshPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
-                Cache::put($latestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
-                Cache::put($stableLatestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
-            } catch (Throwable $e) {
-                Log::warning('Dashboard simpanan Area 6 gagal dihangatkan setelah response.', [
-                    'period' => $loanPeriod,
-                    'error' => $e->getMessage(),
-                ]);
-            } finally {
-                if ($locked) {
-                    $lock->release();
+                Cache::put((string) ($context['latestCacheKey'] ?? ''), $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
+                Cache::put((string) ($context['stableLatestCacheKey'] ?? ''), $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
+
+                return;
+            }
+
+            if ($type === 'presentation-payload') {
+                $freshPayload = $this->buildPresentationPayload($context['period'] ?? null, true);
+                Cache::put($cacheKey, $freshPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
+                $stableCacheKey = (string) ($context['stableCacheKey'] ?? '');
+                if ($stableCacheKey !== '') {
+                    Cache::put($stableCacheKey, $freshPayload, now()->addDays(3));
                 }
             }
-        });
+        } catch (Throwable $e) {
+            Log::warning('Dashboard simpanan background cache warm-up gagal.', [
+                'type' => $type,
+                'period' => $context['period'] ?? $context['loanPeriod'] ?? null,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        } finally {
+            $lock->release();
+        }
     }
 
     private function buildArea6PortfolioLandingFresh(?string $loanPeriod, ?string $dailyLoanPeriod = null): array
@@ -6074,10 +7168,10 @@ class DashboardSimpananController extends Controller
         }
 
         $restrukByBranch = [];
-        if ($period && $this->hasTable('daily_loan_dinamis') && $this->hasColumn('daily_loan_dinamis', 'baki_debet1') && $this->hasColumn('daily_loan_dinamis', 'cabang1')) {
+        if ($dailyLoanPeriod && $this->hasTable('daily_loan_dinamis') && $this->hasColumn('daily_loan_dinamis', 'baki_debet1') && $this->hasColumn('daily_loan_dinamis', 'cabang1')) {
             try {
                 $restrukByBranch = DB::table('daily_loan_dinamis')
-                    ->where('periode', $period)
+                    ->where('periode', $dailyLoanPeriod)
                     ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), $this->dashboardBranchNames())
                     ->where('kolek', 1)
                     ->where(DB::raw("UPPER(TRIM(COALESCE(flag_restruk, '')))"), 'Y')
@@ -6272,10 +7366,10 @@ class DashboardSimpananController extends Controller
         ];
 
         $scopePayloads = [
-            'area6' => $this->buildArea6PortfolioScopePayload('area6', $harian['period'], $periodFormat, $rkaMonthYear, null),
-            'sme' => $this->buildArea6PortfolioScopePayload('sme', $harian['period'], $periodFormat, $rkaMonthYear, null),
-            'consumer' => $this->buildArea6PortfolioScopePayload('consumer', $harian['period'], $periodFormat, $rkaMonthYear, null),
-            'micro' => $this->buildArea6PortfolioScopePayload('micro', $harian['period'], $periodFormat, $rkaMonthYear, null),
+            'area6' => $this->buildArea6PortfolioScopePayload('area6', $harian['period'], $periodFormat, $rkaMonthYear, null, $dailyLoanPeriod),
+            'sme' => $this->buildArea6PortfolioScopePayload('sme', $harian['period'], $periodFormat, $rkaMonthYear, null, $dailyLoanPeriod),
+            'consumer' => $this->buildArea6PortfolioScopePayload('consumer', $harian['period'], $periodFormat, $rkaMonthYear, null, $dailyLoanPeriod),
+            'micro' => $this->buildArea6PortfolioScopePayload('micro', $harian['period'], $periodFormat, $rkaMonthYear, null, $dailyLoanPeriod),
         ];
 
         return [
@@ -6336,7 +7430,7 @@ class DashboardSimpananController extends Controller
         ];
     }
 
-    private function buildArea6PortfolioScopePayload(string $scopeKey, ?string $period, string $periodFormat, string $rkaMonthYear, ?array $unitKeys): array
+    private function buildArea6PortfolioScopePayload(string $scopeKey, ?string $period, string $periodFormat, string $rkaMonthYear, ?array $unitKeys, ?string $dailyLoanPeriod = null): array
     {
         $service = app(DashboardHarianSnapshotService::class);
         $periodPayload = $service->buildDashboardPayload($period, null, $this->dashboardBranchNames(), $unitKeys);
@@ -6346,6 +7440,7 @@ class DashboardSimpananController extends Controller
         $osRow = $rows->firstWhere('key', $metricKeys['os_row']);
         $smlRow = $rows->firstWhere('key', $metricKeys['sml_row']);
         $nplRow = $rows->firstWhere('key', $metricKeys['npl_row']);
+        $recoveryRow = $rows->firstWhere('key', 'rec_dh_total');
         $snapshotMetrics = $this->area6ScopeSnapshotMetrics((string) $period, $scopeKey);
 
         $osRealization = (float) ($snapshotMetrics->{$metricKeys['os_metric']} ?? data_get($osRow, 'values.current', 0.0));
@@ -6362,6 +7457,11 @@ class DashboardSimpananController extends Controller
         $nplTarget = (float) data_get($nplRow, 'values.rka', 0.0);
         $nplPct = $nplRealization > 0 ? ($nplTarget / $nplRealization) * 100 : 100.0;
         $nplGap = $nplTarget - $nplRealization;
+
+        $recoveryRealization = (float) ($snapshotMetrics->rec_dh_total ?? data_get($recoveryRow, 'values.current', 0.0));
+        $recoveryTarget = (float) data_get($recoveryRow, 'values.rka', 0.0);
+        $recoveryPct = $recoveryTarget > 0 ? ($recoveryRealization / $recoveryTarget) * 100 : 0.0;
+        $recoveryGap = $recoveryRealization - $recoveryTarget;
 
         $scopeLabel = $this->area6ScopeLabel($scopeKey);
         $overallTrends = $this->buildArea6ScopeOverallTrends(
@@ -6462,7 +7562,36 @@ class DashboardSimpananController extends Controller
             ],
         ];
 
-        $segmentPerformance = $this->buildArea6ScopeSegmentPerformance($scopeKey, $rows, $snapshotMetrics, $rkaMonthYear, $periodFormat, $period, $unitKeys);
+        if ($scopeKey === 'area6') {
+            $cards[] = [
+                'key' => 'recovery',
+                'header_title' => 'RECOVERY DH',
+                'realization_value' => number_format(round($recoveryRealization / 1000000), 0, ',', '.'),
+                'realization_label' => 'Recovery per ' . $periodFormat,
+                'target_value' => number_format(round($recoveryTarget / 1000000), 0, ',', '.'),
+                'target_label' => 'RKA ' . $rkaMonthYear,
+                'pct_value' => number_format($recoveryPct, 2, ',', '.') . '%',
+                'pct_label' => '% Penc. RKA ' . $rkaMonthYear,
+                'pct_color' => $this->getArea6AchievementColor($recoveryPct, 'os'),
+                'gap_value' => $this->formatArea6CardGap($recoveryGap),
+                'gap_label' => 'Gap thd RKA ' . $rkaMonthYear,
+                'gap_color' => $recoveryGap >= 0 ? 'green' : 'red',
+                'deltas' => [
+                    'dtd' => $this->formatArea6CardDelta((float) data_get($recoveryRow, 'deltas.dtd', 0.0), 'os'),
+                    'mtd' => $this->formatArea6CardDelta((float) data_get($recoveryRow, 'deltas.mtd', 0.0), 'os'),
+                    'ytd' => $this->formatArea6CardDelta((float) data_get($recoveryRow, 'deltas.ytd', 0.0), 'os'),
+                    'mom' => $this->formatArea6CardDelta((float) data_get($recoveryRow, 'deltas.mtm', 0.0), 'os'),
+                ],
+                'tone' => 'green',
+                'icon' => 'fas fa-hand-holding-heart',
+                'detail_payload' => $this->buildLandingSourceDetail('Recovery DH Area 6', $period, self::HARIAN_SNAPSHOT_TABLE, [
+                    ['label' => 'Total Recovery DH', 'value' => $this->formatCurrencyFull($recoveryRealization), 'source' => 'SUM rec_dh_total'],
+                    ['label' => 'RKA Recovery', 'value' => $this->formatCurrencyFull($recoveryTarget), 'source' => 'RKA Recovery Ekstrakomtabel'],
+                ], 'Recovery ditampilkan pada scope Area 6 dari snapshot Dashboard Harian terbaru.'),
+            ];
+        }
+
+        $segmentPerformance = $this->buildArea6ScopeSegmentPerformance($scopeKey, $rows, $snapshotMetrics, $rkaMonthYear, $periodFormat, $period, $unitKeys, $dailyLoanPeriod);
 
         return [
             'cards' => $cards,
@@ -6699,6 +7828,10 @@ class DashboardSimpananController extends Controller
             'sme_npl' => 0.0,
             'consumer_npl' => 0.0,
             'micro_npl' => 0.0,
+            'rec_dh_total' => 0.0,
+            'rec_dh_small' => 0.0,
+            'rec_dh_consumer' => 0.0,
+            'rec_dh_micro' => 0.0,
         ];
 
         if ($period === '' || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
@@ -6723,6 +7856,10 @@ class DashboardSimpananController extends Controller
             ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(sme_npl, 0) <> 0 THEN COALESCE(sme_npl, 0) ELSE COALESCE(kecil_non_cashcoll_npl, 0) + COALESCE(cashcoll_npl, 0) END), 0) as sme_npl')
             ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(consumer_npl, 0) <> 0 THEN COALESCE(consumer_npl, 0) ELSE COALESCE(briguna_konsumer_npl, 0) + COALESCE(kpr_npl, 0) + COALESCE(kkb_npl, 0) END), 0) as consumer_npl')
             ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(micro_npl, 0) <> 0 THEN COALESCE(micro_npl, 0) ELSE COALESCE(briguna_mikro_npl, 0) + COALESCE(kupedes_npl, 0) + COALESCE(kur_mikro_npl, 0) + COALESCE(kur_kecil_npl, 0) + COALESCE(kur_kpp_npl, 0) END), 0) as micro_npl')
+            ->selectRaw('COALESCE(SUM(COALESCE(rec_dh_total, 0)), 0) as rec_dh_total')
+            ->selectRaw('COALESCE(SUM(COALESCE(rec_dh_small, 0)), 0) as rec_dh_small')
+            ->selectRaw('COALESCE(SUM(COALESCE(rec_dh_consumer, 0)), 0) as rec_dh_consumer')
+            ->selectRaw('COALESCE(SUM(COALESCE(rec_dh_micro, 0)), 0) as rec_dh_micro')
             ->first() ?: $empty;
     }
 
@@ -6747,7 +7884,7 @@ class DashboardSimpananController extends Controller
         return $metric;
     }
 
-    private function buildArea6ScopeSegmentPerformance(string $scopeKey, Collection $rows, object $snapshotMetrics, string $rkaMonthYear, string $periodFormat, ?string $period = null, ?array $unitKeys = null): array
+    private function buildArea6ScopeSegmentPerformance(string $scopeKey, Collection $rows, object $snapshotMetrics, string $rkaMonthYear, string $periodFormat, ?string $period = null, ?array $unitKeys = null, ?string $dailyLoanPeriod = null): array
     {
         $segmentDefinitions = match ($scopeKey) {
             'sme' => [
@@ -6802,9 +7939,9 @@ class DashboardSimpananController extends Controller
         
         // Fetch restruk_os (kolek 1 flag_restruk = Y)
         $restrukOs = 0.0;
-        if ($period && $this->hasTable('daily_loan_dinamis') && !in_array($scopeKey, ['sme', 'consumer', 'micro'], true)) {
+        if ($dailyLoanPeriod && $this->hasTable('daily_loan_dinamis') && !in_array($scopeKey, ['sme', 'consumer', 'micro'], true)) {
             $q = DB::table('daily_loan_dinamis')
-                ->where('periode', $period)
+                ->where('periode', $dailyLoanPeriod)
                 ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), $this->dashboardBranchNames());
             
             if (!empty($unitKeys)) {
@@ -6852,6 +7989,12 @@ class DashboardSimpananController extends Controller
                     'value' => number_format(round($nplRealization / 1000000), 0, ',', '.'),
                     'pct' => number_format($nplPct, 2, ',', '.') . '%',
                     'raw_pct' => $nplPct,
+                ],
+                'restruk' => [
+                    'value' => number_format(round($restrukOs / 1000000), 0, ',', '.'),
+                    'pct' => number_format($lrPct, 2, ',', '.') . '%',
+                    'raw_pct' => $lrPct,
+                    'raw_value' => $restrukOs,
                 ],
                 'total' => [
                     'value' => number_format(round($totalOsRealization / 1000000), 0, ',', '.'),
@@ -8468,8 +9611,7 @@ class DashboardSimpananController extends Controller
             $timeline = [];
 
             foreach ($periods as $period) {
-                $row = DB::table('jumlah_merchant_detail')
-                    ->whereDate('POSISI', $period)
+                $row = SargableDateFilter::apply(DB::table('jumlah_merchant_detail'), 'POSISI', '=', $period)
                     ->whereIn(DB::raw('UPPER(NAMA_KANCA)'), $branches)
                     ->selectRaw('COUNT(DISTINCT MID) as merchant_count')
                     ->selectRaw('COUNT(DISTINCT CASE WHEN COALESCE(SALES_VOLUME, 0) >= 15000000 THEN MID END) as productive_count')
@@ -8547,8 +9689,7 @@ class DashboardSimpananController extends Controller
 
             foreach ($periods as $period) {
                 $salesVolumeExpression = "COALESCE(CAST(NULLIF(REPLACE(AKUMULASI_SV_TOTAL, ',', ''), '') AS DECIMAL(20,2)), 0)";
-                $row = DB::table('jumlah_merchant_qris_detail')
-                    ->whereDate('POSISI', $period)
+                $row = SargableDateFilter::apply(DB::table('jumlah_merchant_qris_detail'), 'POSISI', '=', $period)
                     ->whereIn(DB::raw('UPPER(TRIM(MBDESC))'), $branches)
                     ->selectRaw('COUNT(DISTINCT STOREID) as merchant_count')
                     ->selectRaw("COUNT(DISTINCT CASE WHEN {$salesVolumeExpression} >= 50000 THEN STOREID END) as productive_count")
@@ -8628,15 +9769,13 @@ class DashboardSimpananController extends Controller
             $timeline = [];
 
             foreach ($periods as $period) {
-                $rekRow = DB::table('user_brimo_rpt_v2')
-                    ->whereDate('posisi', $period)
+                $rekRow = SargableDateFilter::apply(DB::table('user_brimo_rpt_v2'), 'posisi', '=', $period)
                     ->whereIn(DB::raw('UPPER(COALESCE(mbdesc, branch))'), $branches)
                     ->selectRaw('COALESCE(SUM(COALESCE(jumlah, 0)), 0) as total')
                     ->selectRaw('COUNT(*) as row_count')
                     ->first();
 
-                $finRow = DB::table('user_brimo_fin')
-                    ->whereDate('posisi', $period)
+                $finRow = SargableDateFilter::apply(DB::table('user_brimo_fin'), 'posisi', '=', $period)
                     ->whereIn(DB::raw('UPPER(COALESCE(mbdesc, branch))'), $branches)
                     ->selectRaw('COALESCE(SUM(COALESCE(jumlah, 0)), 0) as total')
                     ->selectRaw('COUNT(*) as row_count')
@@ -8808,8 +9947,7 @@ class DashboardSimpananController extends Controller
                 $monthStart = Carbon::parse($period)->startOfMonth()->toDateString();
                 $monthEnd = Carbon::parse($period)->endOfMonth()->toDateString();
 
-                $row = DB::table('performance_pis_per_produk')
-                    ->whereDate('posisi', $period)
+                $row = SargableDateFilter::apply(DB::table('performance_pis_per_produk'), 'posisi', '=', $period)
                     ->whereIn(DB::raw('UPPER(TRIM(kanca))'), $branches)
                     ->selectRaw('COUNT(*) as rekening_count')
                     ->selectRaw('COALESCE(SUM(COALESCE(saldo_britama_kerjasama, 0)), 0) as saldo')
@@ -8880,8 +10018,7 @@ class DashboardSimpananController extends Controller
         }
 
         $branches = $this->dashboardBranchNames();
-        $row = DB::table('performance_new_payroll_snapshots')
-            ->whereDate('snapshot_posisi', $latestPeriod)
+        $row = SargableDateFilter::apply(DB::table('performance_new_payroll_snapshots'), 'snapshot_posisi', '=', $latestPeriod)
             ->whereIn(DB::raw('UPPER(TRIM(branch))'), $branches)
             ->selectRaw('COALESCE(SUM(COALESCE(rekening_curr, 0)), 0) as rekening_curr')
             ->selectRaw('COALESCE(SUM(COALESCE(rekening_prev, 0)), 0) as rekening_prev')
@@ -8978,8 +10115,7 @@ class DashboardSimpananController extends Controller
             foreach ($periods as $period) {
                 $userCount = 0;
                 if ($this->hasTable('usak_ibbiz_uker')) {
-                    $userCount = DB::table('usak_ibbiz_uker')
-                        ->whereDate('periode', $period)
+                    $userCount = SargableDateFilter::apply(DB::table('usak_ibbiz_uker'), 'periode', '=', $period)
                         ->whereIn(DB::raw($usakBranchExpression), $branches)
                         ->whereIn(DB::raw('UPPER(TRIM(deskripsi))'), ['ACTIVE', 'ACTIVATED'])
                         ->count();
@@ -8987,8 +10123,7 @@ class DashboardSimpananController extends Controller
 
                 $volume = 0.0;
                 if ($this->hasTable('ibbisniz_corp')) {
-                    $volume = (float) DB::table('ibbisniz_corp')
-                        ->whereDate('periode', $period)
+                    $volume = (float) SargableDateFilter::apply(DB::table('ibbisniz_corp'), 'periode', '=', $period)
                         ->whereIn(DB::raw($corpBranchExpression), $branches)
                         ->sum('nominal');
                 }
@@ -9163,8 +10298,7 @@ class DashboardSimpananController extends Controller
             return null;
         }
 
-        $summary = (clone $sourceQuery)
-            ->whereDate('loan_period', $latestPeriod)
+        $summary = SargableDateFilter::apply(clone $sourceQuery, 'loan_period', '=', $latestPeriod)
             ->selectRaw('COALESCE(SUM(COALESCE(os_amount, 0)), 0) as os_amount')
             ->selectRaw('COALESCE(SUM(COALESCE(casa_amount, 0)), 0) as casa_amount')
             ->selectRaw('COALESCE(SUM(COALESCE(source_row_count, 0)), 0) as source_row_count')
@@ -9275,8 +10409,7 @@ class DashboardSimpananController extends Controller
             $timeline = [];
 
             foreach ($periods as $period) {
-                $row = DB::table($tableName)
-                    ->whereDate($periodCol, $period)
+                $row = SargableDateFilter::apply(DB::table($tableName), $periodCol, '=', $period)
                     ->whereIn(DB::raw('UPPER(TRIM(' . $branchCol . '))'), $branches)
                     ->selectRaw('COUNT(*) as dormant_count')
                     ->selectRaw('COALESCE(SUM(COALESCE(' . $saldoCol . ', 0)), 0) as saldo')
@@ -9340,8 +10473,7 @@ class DashboardSimpananController extends Controller
         $timeline = [];
 
         foreach ($periods as $period) {
-            $row = DB::table('rekening_dormant_snapshots')
-                ->whereDate('posisi', $period)
+            $row = SargableDateFilter::apply(DB::table('rekening_dormant_snapshots'), 'posisi', '=', $period)
                 ->whereIn(DB::raw('UPPER(TRIM(branch_label))'), $this->dashboardBranchNames())
                 ->selectRaw('COALESCE(SUM(COALESCE(dormant_count, 0)), 0) as dormant_count')
                 ->first();

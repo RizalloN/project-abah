@@ -17,9 +17,9 @@ use Illuminate\Support\Facades\Log;
 
 class RebuildDashboardPeriodJob implements ShouldQueue
 {
-    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels, SnapshotJobRetryWindow;
 
-    public $tries = 2;
+    public $tries = 40;
     public $timeout = 600; // 10 minutes per period
     public $backoff = [60, 300];
 
@@ -48,7 +48,7 @@ class RebuildDashboardPeriodJob implements ShouldQueue
         try {
             $this->updateProgress("Membangun snapshot Dashboard Pinjaman untuk periode {$this->period}...");
 
-            $result = $builder->buildDashboardPeriodSnapshot($this->period, $this->force);
+            $result = (int) ($builder->rebuildDashboard($this->period, $this->force)[$this->period] ?? 0);
 
             ReportDataSyncService::analyzeTable('dashboard_pinjaman_snapshots');
 

@@ -2,6 +2,7 @@
 
 namespace App\Services\Import;
 
+use App\Support\StreamedFileLineCounter;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -81,7 +82,7 @@ class L1133CsvImporter
         }
 
         if (file_exists($absolutePath) && filesize($absolutePath) > 0) {
-            $totalRows = max(0, (int) substr_count((string) file_get_contents($absolutePath), "\n") - 1);
+            $totalRows = StreamedFileLineCounter::countDataRows($absolutePath);
             return [
                 'absolute_path' => $absolutePath,
                 'relative_path' => $relativePath,

@@ -11,9 +11,11 @@
     $payload = $crasMapping ?? ['ready' => false];
     $filterOptions = data_get($payload, 'filters.options', []);
     $selectedFilters = data_get($payload, 'filters.selected', []);
-    $filterLabels = [
+    $primaryFilterLabels = [
         'periode' => 'Posisi Data',
         'wilayah' => 'Wilayah',
+    ];
+    $portfolioFilterLabels = [
         'sektor' => 'Sektor Ekonomi',
         'sub_sektor' => 'Sub Sektor Ekonomi',
         'loan_type' => 'Loan Type',
@@ -21,6 +23,9 @@
         'produk_tiering' => 'Produk Tiering',
         'kualitas' => 'Kualitas',
     ];
+    $activePortfolioFilterCount = collect(array_keys($portfolioFilterLabels))
+        ->filter(fn ($key) => ($selectedFilters[$key] ?? 'all') !== 'all')
+        ->count();
 @endphp
 
 <style>
@@ -32,6 +37,9 @@
         --cras-border: #dbe3ec;
         --cras-soft: #f5f8fc;
         --cras-white: #ffffff;
+        --cras-npl: #a61b35;
+        --cras-sml: #a45d08;
+        --cras-teal: #0f766e;
     }
 
     .cras-map-page {
@@ -92,13 +100,44 @@
 
     .cras-filter-panel {
         margin-bottom: 0.8rem;
-        padding: 0.8rem;
+        overflow: hidden;
     }
 
-    .cras-filter-grid {
+    .cras-filter-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.72rem 0.85rem;
+        border-bottom: 1px solid var(--cras-border);
+        background: #f8fafc;
+    }
+
+    .cras-filter-head h2 {
+        margin: 0;
+        color: var(--cras-ink);
+        font-size: 0.84rem;
+        font-weight: 800;
+    }
+
+    .cras-filter-head p {
+        margin: 0.12rem 0 0;
+        color: var(--cras-muted);
+        font-size: 0.68rem;
+    }
+
+    .cras-filter-status {
+        color: var(--cras-blue);
+        font-size: 0.68rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .cras-filter-primary {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 0.65rem;
+        padding: 0.8rem 0.85rem;
     }
 
     .cras-filter-field {
@@ -135,18 +174,187 @@
         box-shadow: 0 0 0 3px rgba(11, 92, 171, 0.12);
     }
 
+    .cras-filter-field select:disabled {
+        cursor: not-allowed;
+        background: #f1f5f9;
+        color: #475569;
+        opacity: 1;
+    }
+
+    .cras-focus-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        padding: 0.7rem 0.85rem;
+        border-top: 1px solid #edf1f5;
+        border-bottom: 1px solid #edf1f5;
+    }
+
+    .cras-focus-label {
+        flex: 0 0 auto;
+        color: #526174;
+        font-size: 0.68rem;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .cras-focus-options,
+    .cras-ranking-modes {
+        display: inline-flex;
+        min-width: 0;
+        padding: 2px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        background: #f1f5f9;
+    }
+
+    .cras-focus-option,
+    .cras-ranking-mode {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.32rem;
+        min-height: 34px;
+        padding: 0.35rem 0.62rem;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: #526174;
+        font-size: 0.7rem;
+        font-weight: 750;
+        white-space: nowrap;
+    }
+
+    .cras-focus-option:hover,
+    .cras-focus-option:focus,
+    .cras-ranking-mode:hover,
+    .cras-ranking-mode:focus {
+        color: var(--cras-ink);
+        outline: 0;
+    }
+
+    .cras-focus-option.is-active,
+    .cras-ranking-mode.is-active {
+        background: #ffffff;
+        color: var(--cras-blue);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14);
+    }
+
+    .cras-filter-advanced {
+        border-bottom: 1px solid #edf1f5;
+    }
+
+    .cras-filter-advanced summary {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.68rem 0.85rem;
+        color: #334155;
+        cursor: pointer;
+        font-size: 0.72rem;
+        font-weight: 800;
+        list-style: none;
+    }
+
+    .cras-filter-advanced summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .cras-filter-advanced summary::after {
+        content: '\f078';
+        margin-left: auto;
+        color: #64748b;
+        font-family: 'Font Awesome 5 Free';
+        font-size: 0.62rem;
+        font-weight: 900;
+        transition: transform 160ms ease;
+    }
+
+    .cras-filter-advanced[open] summary::after {
+        transform: rotate(180deg);
+    }
+
+    .cras-filter-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 0.35rem;
+        border-radius: 4px;
+        background: #e7eef6;
+        color: var(--cras-blue);
+        font-size: 0.64rem;
+    }
+
+    .cras-filter-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.65rem;
+        padding: 0 0.85rem 0.8rem;
+    }
+
+    .cras-active-filters {
+        display: none;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.38rem;
+        padding: 0.58rem 0.85rem;
+        border-bottom: 1px solid #edf1f5;
+        background: #fbfdff;
+    }
+
+    .cras-active-filters.has-items {
+        display: flex;
+    }
+
+    .cras-active-label {
+        margin-right: 0.15rem;
+        color: #64748b;
+        font-size: 0.66rem;
+        font-weight: 800;
+    }
+
+    .cras-filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        min-height: 26px;
+        padding: 0.25rem 0.38rem 0.25rem 0.48rem;
+        border: 1px solid #cbdced;
+        border-radius: 5px;
+        background: #eef5fb;
+        color: #24486c;
+        font-size: 0.66rem;
+        font-weight: 700;
+    }
+
+    .cras-filter-chip button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: #64748b;
+    }
+
+    .cras-filter-chip button:hover,
+    .cras-filter-chip button:focus {
+        background: #dce9f5;
+        color: #173f66;
+        outline: 0;
+    }
+
     .cras-filter-actions {
         display: flex;
         justify-content: flex-end;
         gap: 0.5rem;
-        margin-top: 0.7rem;
-        padding-top: 0.7rem;
-        border-top: 1px solid #edf1f5;
-    }
-
-    .cras-heat-field {
-        width: min(280px, 100%);
-        margin-right: auto;
+        padding: 0.7rem 0.85rem;
+        background: #f8fafc;
     }
 
     .cras-filter-button {
@@ -184,7 +392,7 @@
 
     .cras-kpi-strip {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         margin-bottom: 0.8rem;
         overflow: hidden;
     }
@@ -219,9 +427,136 @@
         overflow-wrap: anywhere;
     }
 
+    .cras-kpi-item[data-tone="npl"] .cras-kpi-label i,
+    .cras-kpi-item[data-tone="npl"] .cras-kpi-value {
+        color: var(--cras-npl);
+    }
+
+    .cras-kpi-item[data-tone="sml"] .cras-kpi-label i,
+    .cras-kpi-item[data-tone="sml"] .cras-kpi-value {
+        color: var(--cras-sml);
+    }
+
+    .cras-insight-strip {
+        margin-bottom: 0.8rem;
+        overflow: hidden;
+        border: 1px solid var(--cras-border);
+        border-radius: 6px;
+        background: #ffffff;
+    }
+
+    .cras-insight-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.65rem 0.8rem;
+        border-bottom: 1px solid var(--cras-border);
+        background: #f8fafc;
+    }
+
+    .cras-insight-head strong {
+        color: var(--cras-ink);
+        font-size: 0.78rem;
+    }
+
+    .cras-insight-head span {
+        color: var(--cras-muted);
+        font-size: 0.66rem;
+    }
+
+    .cras-insight-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .cras-insight-item {
+        display: grid;
+        grid-template-columns: 30px minmax(0, 1fr);
+        gap: 0.55rem;
+        min-width: 0;
+        padding: 0.68rem 0.75rem;
+        border: 0;
+        border-right: 1px solid var(--cras-border);
+        background: #ffffff;
+        color: #334155;
+        text-align: left;
+    }
+
+    .cras-insight-item:last-child {
+        border-right: 0;
+    }
+
+    .cras-insight-item:hover,
+    .cras-insight-item:focus {
+        background: #f6f9fc;
+        outline: 0;
+    }
+
+    .cras-insight-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border: 1px solid #c9dff2;
+        border-radius: 5px;
+        background: #eaf3fb;
+        color: var(--cras-blue);
+    }
+
+    .cras-insight-item[data-metric="npl_os"] .cras-insight-icon {
+        border-color: #efc6ce;
+        background: #fff1f3;
+        color: var(--cras-npl);
+    }
+
+    .cras-insight-item[data-metric="sml_os"] .cras-insight-icon {
+        border-color: #ecd6b6;
+        background: #fff8e8;
+        color: var(--cras-sml);
+    }
+
+    .cras-insight-item[data-metric="total_tunggakan"] .cras-insight-icon {
+        border-color: #c9ddd8;
+        background: #edf8f5;
+        color: var(--cras-teal);
+    }
+
+    .cras-insight-label,
+    .cras-insight-name,
+    .cras-insight-value {
+        display: block;
+        min-width: 0;
+    }
+
+    .cras-insight-label {
+        color: #64748b;
+        font-size: 0.62rem;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .cras-insight-name {
+        margin-top: 0.14rem;
+        overflow: hidden;
+        color: #243247;
+        font-size: 0.74rem;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .cras-insight-value {
+        margin-top: 0.1rem;
+        color: var(--cras-blue);
+        font-size: 0.7rem;
+        font-weight: 750;
+    }
+
     .cras-workspace {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 350px;
+        grid-template-columns: minmax(0, 1fr) 370px;
         min-height: 610px;
         margin-bottom: 0.8rem;
         overflow: hidden;
@@ -255,6 +590,35 @@
     }
 
     .cras-map-loading.is-hidden { display: none; }
+
+    .cras-map-toolbar {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        z-index: 450;
+    }
+
+    .cras-map-reset {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        min-height: 34px;
+        padding: 0.42rem 0.58rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.96);
+        color: #334155;
+        font-size: 0.68rem;
+        font-weight: 750;
+        box-shadow: 0 8px 18px -16px rgba(15, 23, 42, 0.55);
+    }
+
+    .cras-map-reset:hover,
+    .cras-map-reset:focus {
+        border-color: #9eb6ce;
+        color: var(--cras-blue);
+        outline: 0;
+    }
 
     .cras-map-legend {
         position: absolute;
@@ -370,6 +734,32 @@
         font-weight: 800;
     }
 
+    .cras-ranking-heading {
+        min-width: 0;
+    }
+
+    .cras-ranking-heading span {
+        display: block;
+    }
+
+    .cras-ranking-heading small {
+        display: block;
+        margin-top: 0.12rem;
+        color: var(--cras-muted);
+        font-size: 0.62rem;
+        font-weight: 600;
+    }
+
+    .cras-ranking-modes {
+        flex: 0 0 auto;
+    }
+
+    .cras-ranking-mode {
+        min-height: 32px;
+        padding: 0.26rem 0.42rem;
+        font-size: 0.62rem;
+    }
+
     .cras-ranking-list {
         max-height: 250px;
         overflow-y: auto;
@@ -415,6 +805,16 @@
     .cras-ranking-row strong {
         color: var(--cras-blue);
         font-size: 0.68rem;
+    }
+
+    .cras-ranking-meta {
+        display: block;
+        margin-top: 0.1rem;
+        overflow: hidden;
+        color: #7a8798;
+        font-size: 0.58rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .cras-detail-band {
@@ -543,6 +943,12 @@
 
     @media (max-width: 1199.98px) {
         .cras-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .cras-kpi-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .cras-kpi-item:nth-child(3) { border-right: 0; }
+        .cras-kpi-item:nth-child(-n + 3) { border-bottom: 1px solid var(--cras-border); }
+        .cras-insight-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .cras-insight-item:nth-child(2) { border-right: 0; }
+        .cras-insight-item:nth-child(-n + 2) { border-bottom: 1px solid var(--cras-border); }
         .cras-workspace { grid-template-columns: minmax(0, 1fr) 320px; min-height: 540px; }
         .cras-map-shell, #crasPortfolioMap { min-height: 540px; height: 540px; }
         .cras-secondary-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -561,12 +967,21 @@
     @media (max-width: 767.98px) {
         .cras-map-page { padding: 0.65rem; }
         .cras-map-header { align-items: flex-start; flex-direction: column; }
+        .cras-filter-head { align-items: flex-start; flex-direction: column; gap: 0.28rem; }
+        .cras-filter-primary { grid-template-columns: minmax(0, 1fr); }
         .cras-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .cras-focus-bar { align-items: flex-start; flex-direction: column; }
+        .cras-focus-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
         .cras-filter-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .cras-heat-field { grid-column: 1 / -1; width: 100%; }
         .cras-kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .cras-kpi-item:nth-child(3) { border-right: 1px solid var(--cras-border); }
         .cras-kpi-item:nth-child(2) { border-right: 0; }
-        .cras-kpi-item:nth-child(-n + 2) { border-bottom: 1px solid var(--cras-border); }
+        .cras-kpi-item:nth-child(4) { border-right: 0; }
+        .cras-kpi-item:nth-child(-n + 4) { border-bottom: 1px solid var(--cras-border); }
+        .cras-insight-grid { grid-template-columns: minmax(0, 1fr); }
+        .cras-insight-item,
+        .cras-insight-item:nth-child(2) { border-right: 0; border-bottom: 1px solid var(--cras-border); }
+        .cras-insight-item:last-child { border-bottom: 0; }
         .cras-map-shell, #crasPortfolioMap { min-height: 420px; height: 420px; }
         .cras-map-legend { width: 155px; }
         .cras-secondary-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -578,6 +993,7 @@
 
     @media (max-width: 340px) {
         .cras-filter-grid { grid-template-columns: minmax(0, 1fr); }
+        .cras-focus-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .cras-kpi-strip { grid-template-columns: minmax(0, 1fr); }
         .cras-kpi-item { border-right: 0; border-bottom: 1px solid var(--cras-border); }
         .cras-kpi-item:last-child { border-bottom: 0; }
@@ -600,11 +1016,21 @@
 
     @if(!empty($payload['ready']))
         <section class="cras-filter-panel" aria-label="Filter Mapping CRAS">
-            <div class="cras-filter-grid">
-                @foreach($filterLabels as $key => $label)
+            <div class="cras-filter-head">
+                <div>
+                    <h2><i class="fas fa-sliders-h mr-1 text-primary" aria-hidden="true"></i> Kendali Pemetaan</h2>
+                    <p>Tentukan cakupan data, lalu pilih fokus analisis yang ingin dibandingkan.</p>
+                </div>
+                <span class="cras-filter-status" data-cras-filter-status>{{ $activePortfolioFilterCount }} filter portofolio aktif</span>
+            </div>
+
+            <div class="cras-filter-primary">
+                @foreach($primaryFilterLabels as $key => $label)
                     <label class="cras-filter-field" for="crasFilter{{ Illuminate\Support\Str::studly($key) }}">
                         <span>{{ $label }}</span>
-                        <select id="crasFilter{{ Illuminate\Support\Str::studly($key) }}" data-cras-filter="{{ $key }}">
+                        <select id="crasFilter{{ Illuminate\Support\Str::studly($key) }}"
+                                data-cras-filter="{{ $key }}"
+                                @disabled($key === 'wilayah' && !empty($userBranchScope))>
                             @foreach(($filterOptions[$key] ?? []) as $option)
                                 <option value="{{ $option['value'] ?? '' }}" @selected(($selectedFilters[$key] ?? 'all') === ($option['value'] ?? ''))>
                                     {{ $option['label'] ?? '-' }}
@@ -613,10 +1039,9 @@
                         </select>
                     </label>
                 @endforeach
-            </div>
-            <div class="cras-filter-actions">
-                <label class="cras-filter-field cras-heat-field" for="crasHeatMetric">
-                    <span>Pewarnaan Peta</span>
+
+                <label class="cras-filter-field" for="crasHeatMetric">
+                    <span>Fokus Peta dan Peringkat</span>
                     <select id="crasHeatMetric" data-cras-heat-metric>
                         @foreach(data_get($payload, 'heatmap.options', []) as $metric)
                             <option value="{{ $metric['key'] ?? '' }}" @selected(data_get($payload, 'heatmap.selected') === ($metric['key'] ?? ''))>
@@ -625,6 +1050,54 @@
                         @endforeach
                     </select>
                 </label>
+            </div>
+
+            <div class="cras-focus-bar">
+                <span class="cras-focus-label">Fokus cepat</span>
+                <div class="cras-focus-options" role="group" aria-label="Fokus metrik peta">
+                    <button type="button" class="cras-focus-option" data-cras-metric-shortcut="baki_debet">
+                        <i class="fas fa-wallet" aria-hidden="true"></i>OS
+                    </button>
+                    <button type="button" class="cras-focus-option" data-cras-metric-shortcut="npl_os">
+                        <i class="fas fa-exclamation-circle" aria-hidden="true"></i>NPL
+                    </button>
+                    <button type="button" class="cras-focus-option" data-cras-metric-shortcut="sml_os">
+                        <i class="fas fa-hourglass-half" aria-hidden="true"></i>SML
+                    </button>
+                    <button type="button" class="cras-focus-option" data-cras-metric-shortcut="jumlah_debitur">
+                        <i class="fas fa-users" aria-hidden="true"></i>Debitur
+                    </button>
+                    <button type="button" class="cras-focus-option" data-cras-metric-shortcut="total_tunggakan">
+                        <i class="fas fa-coins" aria-hidden="true"></i>Tunggakan
+                    </button>
+                </div>
+            </div>
+
+            <details class="cras-filter-advanced" data-cras-advanced @if($activePortfolioFilterCount > 0) open @endif>
+                <summary>
+                    <i class="fas fa-filter text-primary" aria-hidden="true"></i>
+                    Filter Portofolio Lanjutan
+                    <span class="cras-filter-count" data-cras-filter-count>{{ $activePortfolioFilterCount }}</span>
+                </summary>
+                <div class="cras-filter-grid">
+                    @foreach($portfolioFilterLabels as $key => $label)
+                        <label class="cras-filter-field" for="crasFilter{{ Illuminate\Support\Str::studly($key) }}">
+                            <span>{{ $label }}</span>
+                            <select id="crasFilter{{ Illuminate\Support\Str::studly($key) }}" data-cras-filter="{{ $key }}">
+                                @foreach(($filterOptions[$key] ?? []) as $option)
+                                    <option value="{{ $option['value'] ?? '' }}" @selected(($selectedFilters[$key] ?? 'all') === ($option['value'] ?? ''))>
+                                        {{ $option['label'] ?? '-' }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </label>
+                    @endforeach
+                </div>
+            </details>
+
+            <div class="cras-active-filters" data-cras-active-filters aria-live="polite"></div>
+
+            <div class="cras-filter-actions">
                 <button type="button" class="cras-filter-button cras-filter-button--secondary" data-cras-reset title="Reset filter">
                     <i class="fas fa-undo-alt"></i><span>Reset</span>
                 </button>
@@ -636,20 +1109,69 @@
 
         <section class="cras-kpi-strip" aria-live="polite">
             <div class="cras-kpi-item">
+                <span class="cras-kpi-label"><i class="fas fa-wallet"></i> OS / Baki Debet</span>
+                <strong class="cras-kpi-value" data-cras-kpi="baki_debet">-</strong>
+            </div>
+            <div class="cras-kpi-item">
                 <span class="cras-kpi-label"><i class="fas fa-file-invoice-dollar"></i> Plafon</span>
                 <strong class="cras-kpi-value" data-cras-kpi="plafond">-</strong>
             </div>
-            <div class="cras-kpi-item">
-                <span class="cras-kpi-label"><i class="fas fa-wallet"></i> Baki Debet</span>
-                <strong class="cras-kpi-value" data-cras-kpi="baki_debet">-</strong>
+            <div class="cras-kpi-item" data-tone="npl">
+                <span class="cras-kpi-label"><i class="fas fa-exclamation-circle"></i> NPL</span>
+                <strong class="cras-kpi-value" data-cras-kpi="npl_os">-</strong>
+            </div>
+            <div class="cras-kpi-item" data-tone="sml">
+                <span class="cras-kpi-label"><i class="fas fa-hourglass-half"></i> SML</span>
+                <strong class="cras-kpi-value" data-cras-kpi="sml_os">-</strong>
             </div>
             <div class="cras-kpi-item">
                 <span class="cras-kpi-label"><i class="fas fa-users"></i> Debitur</span>
                 <strong class="cras-kpi-value" data-cras-kpi="jumlah_debitur">-</strong>
             </div>
             <div class="cras-kpi-item">
-                <span class="cras-kpi-label"><i class="fas fa-shield-alt"></i> CKPN MO</span>
-                <strong class="cras-kpi-value" data-cras-kpi="ckpn_mo">-</strong>
+                <span class="cras-kpi-label"><i class="fas fa-coins"></i> Total Tunggakan</span>
+                <strong class="cras-kpi-value" data-cras-kpi="total_tunggakan">-</strong>
+            </div>
+        </section>
+
+        <section class="cras-insight-strip" aria-labelledby="crasInsightTitle">
+            <div class="cras-insight-head">
+                <strong id="crasInsightTitle">Wilayah yang Perlu Dilihat</strong>
+                <span>Klik wilayah untuk menyorot polygon</span>
+            </div>
+            <div class="cras-insight-grid">
+                <button type="button" class="cras-insight-item" data-cras-insight="baki_debet" data-metric="baki_debet">
+                    <span class="cras-insight-icon"><i class="fas fa-wallet" aria-hidden="true"></i></span>
+                    <span>
+                        <span class="cras-insight-label">OS Terbesar</span>
+                        <span class="cras-insight-name" data-cras-insight-name>Menunggu peta</span>
+                        <span class="cras-insight-value" data-cras-insight-value>-</span>
+                    </span>
+                </button>
+                <button type="button" class="cras-insight-item" data-cras-insight="npl_os" data-metric="npl_os">
+                    <span class="cras-insight-icon"><i class="fas fa-exclamation-circle" aria-hidden="true"></i></span>
+                    <span>
+                        <span class="cras-insight-label">NPL Terbesar</span>
+                        <span class="cras-insight-name" data-cras-insight-name>Menunggu peta</span>
+                        <span class="cras-insight-value" data-cras-insight-value>-</span>
+                    </span>
+                </button>
+                <button type="button" class="cras-insight-item" data-cras-insight="sml_os" data-metric="sml_os">
+                    <span class="cras-insight-icon"><i class="fas fa-hourglass-half" aria-hidden="true"></i></span>
+                    <span>
+                        <span class="cras-insight-label">SML Terbesar</span>
+                        <span class="cras-insight-name" data-cras-insight-name>Menunggu peta</span>
+                        <span class="cras-insight-value" data-cras-insight-value>-</span>
+                    </span>
+                </button>
+                <button type="button" class="cras-insight-item" data-cras-insight="total_tunggakan" data-metric="total_tunggakan">
+                    <span class="cras-insight-icon"><i class="fas fa-coins" aria-hidden="true"></i></span>
+                    <span>
+                        <span class="cras-insight-label">Tunggakan Terbesar</span>
+                        <span class="cras-insight-name" data-cras-insight-name>Menunggu peta</span>
+                        <span class="cras-insight-value" data-cras-insight-value>-</span>
+                    </span>
+                </button>
             </div>
         </section>
 
@@ -657,10 +1179,19 @@
             <div class="cras-map-shell">
                 <div id="crasPortfolioMap" role="application" aria-label="Peta polygon portofolio SSA CRAS"></div>
                 <div class="cras-map-loading" data-cras-loading>Memuat polygon dan portofolio CRAS...</div>
+                <div class="cras-map-toolbar">
+                    <button type="button" class="cras-map-reset" data-cras-map-reset title="Tampilkan kembali seluruh wilayah">
+                        <i class="fas fa-expand-arrows-alt" aria-hidden="true"></i>
+                        <span>Seluruh Wilayah</span>
+                    </button>
+                </div>
                 <div class="cras-map-legend">
                     <strong data-cras-legend-title>Baki Debet</strong>
-                    <div class="cras-map-legend-scale" aria-hidden="true"></div>
-                    <div class="cras-map-legend-labels"><span>Rendah</span><span>Tinggi</span></div>
+                    <div class="cras-map-legend-scale" data-cras-legend-scale aria-hidden="true"></div>
+                    <div class="cras-map-legend-labels">
+                        <span data-cras-legend-min>Rendah</span>
+                        <span data-cras-legend-max>Tinggi</span>
+                    </div>
                 </div>
             </div>
 
@@ -672,8 +1203,14 @@
                 </div>
                 <div class="cras-detail-grid" data-cras-detail-grid></div>
                 <div class="cras-ranking-head">
-                    <span data-cras-ranking-title>Peringkat Baki Debet</span>
-                    <span data-cras-ranking-count>-</span>
+                    <div class="cras-ranking-heading">
+                        <span data-cras-ranking-title>Peringkat OS / Baki Debet</span>
+                        <small data-cras-ranking-count>-</small>
+                    </div>
+                    <div class="cras-ranking-modes" role="group" aria-label="Tingkat peringkat wilayah">
+                        <button type="button" class="cras-ranking-mode is-active" data-cras-ranking-mode="district">Kecamatan</button>
+                        <button type="button" class="cras-ranking-mode" data-cras-ranking-mode="unit">Unit</button>
+                    </div>
                 </div>
                 <div class="cras-ranking-list" data-cras-ranking></div>
             </aside>
@@ -698,8 +1235,9 @@
                         <tr>
                             <th>Unit Kerja</th>
                             <th>Wilayah</th>
-                            <th class="text-right">Plafon</th>
-                            <th class="text-right">Baki Debet</th>
+                            <th class="text-right">OS / Baki Debet</th>
+                            <th class="text-right">NPL</th>
+                            <th class="text-right">SML</th>
                             <th class="text-right">Debitur</th>
                             <th class="text-right" data-cras-table-metric-head>Metrik Peta</th>
                         </tr>
@@ -745,6 +1283,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const heatMetric = app.querySelector('[data-cras-heat-metric]');
     const applyButton = app.querySelector('[data-cras-apply]');
     const resetButton = app.querySelector('[data-cras-reset]');
+    const mapResetButton = app.querySelector('[data-cras-map-reset]');
     const loading = app.querySelector('[data-cras-loading]');
     const detailTitle = app.querySelector('[data-cras-detail-title]');
     const detailSubtitle = app.querySelector('[data-cras-detail-subtitle]');
@@ -754,14 +1293,30 @@ document.addEventListener('DOMContentLoaded', function () {
     const rankingCount = app.querySelector('[data-cras-ranking-count]');
     const tableBody = app.querySelector('[data-cras-unit-table]');
     const tableMetricHead = app.querySelector('[data-cras-table-metric-head]');
+    const activeFilters = app.querySelector('[data-cras-active-filters]');
+    const filterCount = app.querySelector('[data-cras-filter-count]');
+    const filterStatus = app.querySelector('[data-cras-filter-status]');
+    const metricShortcuts = Array.from(app.querySelectorAll('[data-cras-metric-shortcut]'));
+    const rankingModeButtons = Array.from(app.querySelectorAll('[data-cras-ranking-mode]'));
+    const insightButtons = Array.from(app.querySelectorAll('[data-cras-insight]'));
+    const legendScale = app.querySelector('[data-cras-legend-scale]');
+    const legendMinimum = app.querySelector('[data-cras-legend-min]');
+    const legendMaximum = app.querySelector('[data-cras-legend-max]');
     const metricDefinitions = () => Array.isArray(payload.metric_definitions) ? payload.metric_definitions : [];
     const metricByKey = () => new Map(metricDefinitions().map(function (metric) { return [String(metric.key), metric]; }));
-    const blueScale = ['#e8eef5', '#c8daeb', '#91b8da', '#548fc3', '#1e6bab', '#084b87'];
+    const palettes = {
+        volume: ['#e8eef5', '#c8daeb', '#91b8da', '#548fc3', '#1e6bab', '#084b87'],
+        npl: ['#fff1f3', '#fbcbd4', '#ee91a3', '#d95672', '#bd294a', '#8f1734'],
+        sml: ['#fff8e8', '#f8e4b9', '#edc878', '#d99e32', '#b97813', '#8f5209'],
+        recovery: ['#eaf7f4', '#c2e6de', '#89ccbd', '#4cac98', '#218979', '#0f6258'],
+    };
     const numberFormat = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 });
     const compactFormat = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
     let geoData = null;
     let geoLayer = null;
     let fullBounds = null;
+    let rankingMode = 'district';
+    let districtMetricCache = new Map();
 
     const map = window.L.map(mapElement, {
         zoomControl: true,
@@ -789,6 +1344,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (definition.format === 'count') {
             return numberFormat.format(Math.round(numeric));
         }
+        if (definition.format === 'percent') {
+            return compactFormat.format(numeric) + '%';
+        }
         if (!compact) {
             return 'Rp ' + numberFormat.format(Math.round(numeric));
         }
@@ -800,7 +1358,19 @@ document.addEventListener('DOMContentLoaded', function () {
         return 'Rp ' + numberFormat.format(Math.round(numeric));
     }
 
+    function metricPalette(key) {
+        const metric = String(key || '');
+        if (metric.startsWith('npl_')) return palettes.npl;
+        if (metric.startsWith('sml_')) return palettes.sml;
+        if (['realisasi_ph', 'recovery_total', 'saldo_ph'].includes(metric)) return palettes.recovery;
+        return palettes.volume;
+    }
+
     function districtMetrics(code) {
+        const cacheKey = String(code);
+        if (districtMetricCache.has(cacheKey)) {
+            return districtMetricCache.get(cacheKey);
+        }
         const totals = {};
         metricDefinitions().forEach(function (metric) { totals[metric.key] = 0; });
         (payload.units || []).forEach(function (unit) {
@@ -808,9 +1378,17 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!codes.includes(String(code))) return;
             const divisor = Math.max(1, codes.length);
             metricDefinitions().forEach(function (metric) {
+                if (metric.format === 'percent') return;
                 totals[metric.key] += Number(unit.values?.[metric.key] || 0) / divisor;
             });
         });
+        totals.npl_ratio = Number(totals.baki_debet || 0) > 0
+            ? (Number(totals.npl_os || 0) / Number(totals.baki_debet || 0)) * 100
+            : 0;
+        totals.sml_ratio = Number(totals.baki_debet || 0) > 0
+            ? (Number(totals.sml_os || 0) / Number(totals.baki_debet || 0)) * 100
+            : 0;
+        districtMetricCache.set(cacheKey, totals);
         return totals;
     }
 
@@ -823,16 +1401,49 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    function heatMaximum(features) {
-        return Math.max(0, ...features.map(function (feature) {
-            return Number(districtMetrics(String(feature.properties?.KDCPUM || ''))[currentMetric()] || 0);
-        }));
+    function districtRows() {
+        return visibleFeatures().map(function (feature) {
+            const code = String(feature.properties?.KDCPUM || '');
+            return {
+                code: code,
+                name: String(feature.properties?.WADMKC || 'Kecamatan'),
+                regency: String(feature.properties?.WADMKK || '-'),
+                feature: feature,
+                metrics: districtMetrics(code),
+                units: districtUnits(code),
+            };
+        });
     }
 
-    function heatColor(value, maximum) {
-        if (!(value > 0) || !(maximum > 0)) return blueScale[0];
-        const ratio = Math.sqrt(Math.min(1, value / maximum));
-        return blueScale[Math.min(blueScale.length - 1, Math.floor(ratio * blueScale.length))];
+    function heatContext(features) {
+        const values = features
+            .map(function (feature) {
+                return Number(districtMetrics(String(feature.properties?.KDCPUM || ''))[currentMetric()] || 0);
+            })
+            .filter(function (value) { return value > 0; })
+            .sort(function (left, right) { return left - right; });
+        const palette = metricPalette(currentMetric());
+        const thresholds = [];
+        for (let index = 1; index < palette.length; index++) {
+            const position = Math.min(values.length - 1, Math.max(0, Math.ceil((index / palette.length) * values.length) - 1));
+            thresholds.push(values.length ? values[position] : 0);
+        }
+
+        return {
+            palette: palette,
+            thresholds: thresholds,
+            minimum: values.length ? values[0] : 0,
+            maximum: values.length ? values[values.length - 1] : 0,
+        };
+    }
+
+    function heatColor(value, context) {
+        if (!(value > 0) || !(context.maximum > 0)) return '#eef2f7';
+        let index = 0;
+        while (index < context.thresholds.length && value >= context.thresholds[index]) {
+            index++;
+        }
+        return context.palette[Math.min(context.palette.length - 1, index)];
     }
 
     function districtUnits(code) {
@@ -849,7 +1460,7 @@ document.addEventListener('DOMContentLoaded', function () {
         title.textContent = String(feature.properties?.WADMKC || 'Kecamatan');
         region.textContent = String(feature.properties?.WADMKK || '-') + ' | ' + units.length + ' unit kerja';
         node.append(title, region);
-        ['plafond', 'baki_debet', 'jumlah_debitur', currentMetric()].filter(function (key, index, values) {
+        ['baki_debet', 'npl_os', 'sml_os', 'jumlah_debitur', currentMetric()].filter(function (key, index, values) {
             return values.indexOf(key) === index;
         }).forEach(function (key) {
             const row = document.createElement('span');
@@ -862,7 +1473,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderMap(fit) {
         if (!geoData) return;
         const features = visibleFeatures();
-        const maximum = heatMaximum(features);
+        const context = heatContext(features);
         if (geoLayer) map.removeLayer(geoLayer);
 
         geoLayer = window.L.geoJSON({ type: 'FeatureCollection', features: features }, {
@@ -873,7 +1484,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     color: '#ffffff',
                     weight: 1.2,
                     opacity: 1,
-                    fillColor: heatColor(value, maximum),
+                    fillColor: heatColor(value, context),
                     fillOpacity: value > 0 ? 0.93 : 0.58,
                 };
             },
@@ -909,6 +1520,24 @@ document.addEventListener('DOMContentLoaded', function () {
             loading.textContent = 'Tidak ada polygon yang sesuai dengan kombinasi filter ini.';
             loading.classList.remove('is-hidden');
         }
+        renderLegend(context);
+    }
+
+    function renderLegend(context) {
+        const palette = context?.palette || metricPalette(currentMetric());
+        if (legendScale) {
+            legendScale.style.background = 'linear-gradient(90deg, ' + palette.join(', ') + ')';
+        }
+        if (legendMinimum) {
+            legendMinimum.textContent = context?.minimum > 0
+                ? formatMetric(context.minimum, currentMetric(), true)
+                : 'Tidak ada';
+        }
+        if (legendMaximum) {
+            legendMaximum.textContent = context?.maximum > 0
+                ? formatMetric(context.maximum, currentMetric(), true)
+                : 'Tidak ada';
+        }
     }
 
     function renderDetail(title, subtitle, metrics) {
@@ -916,7 +1545,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (detailSubtitle) detailSubtitle.textContent = subtitle;
         if (!detailGrid) return;
         detailGrid.innerHTML = '';
-        ['plafond', 'baki_debet', 'jumlah_debitur', 'ckpn_mo', 'realisasi_ph', 'recovery_total', 'saldo_ph', 'total_tunggakan'].forEach(function (key) {
+        ['baki_debet', 'npl_os', 'npl_ratio', 'sml_os', 'sml_ratio', 'jumlah_debitur', 'plafond', 'total_tunggakan'].forEach(function (key) {
             const item = document.createElement('div');
             const label = document.createElement('span');
             const value = document.createElement('strong');
@@ -930,7 +1559,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function renderKpis() {
-        ['plafond', 'baki_debet', 'jumlah_debitur', 'ckpn_mo'].forEach(function (key) {
+        ['baki_debet', 'plafond', 'npl_os', 'sml_os', 'jumlah_debitur', 'total_tunggakan'].forEach(function (key) {
             const node = app.querySelector('[data-cras-kpi="' + key + '"]');
             if (!node) return;
             node.textContent = formatMetric(payload.metrics?.[key], key, true);
@@ -942,7 +1571,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const container = app.querySelector('[data-cras-secondary-metrics]');
         if (!container) return;
         container.innerHTML = '';
-        ['biaya_ckpn', 'ckpn_mo', 'realisasi_ph', 'recovery_total', 'saldo_ph', 'tunggakan_bunga', 'tunggakan_kecil', 'tunggakan_pokok', 'total_tunggakan', 'jumlah_rekening'].forEach(function (key) {
+        ['npl_debitur', 'sml_debitur', 'npl_ratio', 'sml_ratio', 'biaya_ckpn', 'ckpn_mo', 'realisasi_ph', 'recovery_total', 'saldo_ph', 'tunggakan_bunga', 'tunggakan_kecil', 'tunggakan_pokok', 'jumlah_rekening'].forEach(function (key) {
             const item = document.createElement('div');
             const label = document.createElement('span');
             const value = document.createElement('strong');
@@ -962,6 +1591,13 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    function sortedDistricts(metricKey) {
+        const key = String(metricKey || currentMetric());
+        return districtRows().sort(function (left, right) {
+            return Number(right.metrics?.[key] || 0) - Number(left.metrics?.[key] || 0);
+        });
+    }
+
     function focusUnit(unit) {
         const codes = new Set((unit.district_codes || []).map(String));
         const layers = [];
@@ -974,30 +1610,67 @@ document.addEventListener('DOMContentLoaded', function () {
         renderDetail(unit.name, unit.branch, unit.values || {});
     }
 
+    function focusDistrict(district) {
+        let targetLayer = null;
+        geoLayer?.eachLayer(function (layer) {
+            if (String(layer.feature?.properties?.KDCPUM || '') === String(district.code)) {
+                targetLayer = layer;
+            }
+        });
+        if (!targetLayer) return;
+        map.fitBounds(targetLayer.getBounds(), { padding: [26, 26], maxZoom: 11.5 });
+        renderDetail(district.name, district.regency + ' | ' + district.units.length + ' unit kerja', district.metrics || {});
+        targetLayer.openTooltip();
+    }
+
     function renderRanking() {
         if (!ranking) return;
         const key = currentMetric();
-        const units = sortedUnits().slice(0, 12);
+        const entries = rankingMode === 'unit'
+            ? sortedUnits().slice(0, 12).map(function (unit) {
+                return {
+                    name: unit.name,
+                    meta: unit.branch,
+                    value: Number(unit.values?.[key] || 0),
+                    focus: function () { focusUnit(unit); },
+                };
+            })
+            : sortedDistricts(key).slice(0, 12).map(function (district) {
+                return {
+                    name: district.name,
+                    meta: district.regency + ' | ' + district.units.length + ' unit',
+                    value: Number(district.metrics?.[key] || 0),
+                    focus: function () { focusDistrict(district); },
+                };
+            });
         ranking.innerHTML = '';
-        units.forEach(function (unit, index) {
+        entries.forEach(function (entry, index) {
             const row = document.createElement('button');
             const order = document.createElement('span');
+            const nameWrap = document.createElement('span');
             const name = document.createElement('span');
+            const meta = document.createElement('small');
             const value = document.createElement('strong');
             row.type = 'button';
             row.className = 'cras-ranking-row';
             order.className = 'cras-ranking-order';
             name.className = 'cras-ranking-name';
+            meta.className = 'cras-ranking-meta';
             order.textContent = String(index + 1);
-            name.textContent = unit.name;
-            value.textContent = formatMetric(unit.values?.[key], key, true);
-            row.title = unit.name;
-            row.append(order, name, value);
-            row.addEventListener('click', function () { focusUnit(unit); });
+            name.textContent = entry.name;
+            meta.textContent = entry.meta;
+            value.textContent = formatMetric(entry.value, key, true);
+            nameWrap.append(name, meta);
+            row.title = entry.name;
+            row.append(order, nameWrap, value);
+            row.addEventListener('click', entry.focus);
             ranking.appendChild(row);
         });
         if (rankingTitle) rankingTitle.textContent = 'Peringkat ' + metricDefinition(key).label;
-        if (rankingCount) rankingCount.textContent = units.length + ' unit';
+        if (rankingCount) rankingCount.textContent = entries.length + (rankingMode === 'unit' ? ' unit kerja' : ' kecamatan');
+        rankingModeButtons.forEach(function (button) {
+            button.classList.toggle('is-active', button.dataset.crasRankingMode === rankingMode);
+        });
     }
 
     function renderTable() {
@@ -1010,8 +1683,9 @@ document.addEventListener('DOMContentLoaded', function () {
             [
                 unit.name,
                 unit.branch,
-                formatMetric(unit.values?.plafond, 'plafond', true),
                 formatMetric(unit.values?.baki_debet, 'baki_debet', true),
+                formatMetric(unit.values?.npl_os, 'npl_os', true),
+                formatMetric(unit.values?.sml_os, 'sml_os', true),
                 formatMetric(unit.values?.jumlah_debitur, 'jumlah_debitur', true),
                 formatMetric(unit.values?.[key], key, true),
             ].forEach(function (text, index) {
@@ -1035,6 +1709,79 @@ document.addEventListener('DOMContentLoaded', function () {
         if (coverageNode) coverageNode.textContent = Number(coverage.mapped_unit_count || 0) + '/' + Number(coverage.total_unit_count || 0) + ' unit terpetakan | ' + Number(coverage.mapped_district_count || 0) + ' kecamatan';
         if (updated) updated.textContent = payload.updated_at || '-';
         if (legend) legend.textContent = metricDefinition(currentMetric()).label;
+        metricShortcuts.forEach(function (button) {
+            button.classList.toggle('is-active', button.dataset.crasMetricShortcut === currentMetric());
+        });
+    }
+
+    function renderInsights() {
+        if (!geoData) return;
+        insightButtons.forEach(function (button) {
+            const key = String(button.dataset.crasInsight || '');
+            const district = sortedDistricts(key)[0] || null;
+            const name = button.querySelector('[data-cras-insight-name]');
+            const value = button.querySelector('[data-cras-insight-value]');
+            button.__crasDistrict = district;
+            button.disabled = !district;
+            if (name) name.textContent = district?.name || 'Tidak ada data';
+            if (value) value.textContent = district
+                ? formatMetric(district.metrics?.[key], key, true)
+                : '-';
+        });
+    }
+
+    function filterLabel(select) {
+        return String(select.closest('.cras-filter-field')?.querySelector('span')?.textContent || select.dataset.crasFilter || '').trim();
+    }
+
+    function activePortfolioFilters() {
+        return filterElements.filter(function (select) {
+            return !['periode', 'wilayah'].includes(select.dataset.crasFilter)
+                && String(select.value || 'all') !== 'all';
+        });
+    }
+
+    function renderActiveFilters() {
+        const portfolioFilters = activePortfolioFilters();
+        if (filterCount) filterCount.textContent = String(portfolioFilters.length);
+        if (filterStatus) {
+            filterStatus.textContent = portfolioFilters.length + ' filter portofolio aktif';
+        }
+        if (!activeFilters) return;
+        activeFilters.innerHTML = '';
+        const selectedFilters = filterElements.filter(function (select) {
+            return select.dataset.crasFilter !== 'periode'
+                && String(select.value || 'all') !== 'all';
+        });
+        activeFilters.classList.toggle('has-items', selectedFilters.length > 0);
+        if (!selectedFilters.length) return;
+
+        const label = document.createElement('span');
+        label.className = 'cras-active-label';
+        label.textContent = 'Filter aktif:';
+        activeFilters.appendChild(label);
+
+        selectedFilters.forEach(function (select) {
+            const chip = document.createElement('span');
+            const text = document.createElement('span');
+            const remove = document.createElement('button');
+            chip.className = 'cras-filter-chip';
+            text.textContent = filterLabel(select) + ': ' + String(select.selectedOptions?.[0]?.textContent || select.value);
+            remove.type = 'button';
+            remove.title = 'Hapus filter ' + filterLabel(select);
+            remove.setAttribute('aria-label', remove.title);
+            remove.innerHTML = '<i class="fas fa-times" aria-hidden="true"></i>';
+            if (select.disabled) {
+                remove.disabled = true;
+            } else {
+                remove.addEventListener('click', function () {
+                    select.value = 'all';
+                    loadData();
+                });
+            }
+            chip.append(text, remove);
+            activeFilters.appendChild(chip);
+        });
     }
 
     function renderOverview() {
@@ -1047,13 +1794,16 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function renderAll(fit) {
+        districtMetricCache = new Map();
         renderKpis();
         renderSecondaryMetrics();
         renderOverview();
         renderRanking();
         renderTable();
         renderMeta();
+        renderActiveFilters();
         renderMap(fit);
+        renderInsights();
     }
 
     function setSelectOptions(key, options, selected) {
@@ -1075,14 +1825,23 @@ document.addEventListener('DOMContentLoaded', function () {
         Object.keys(options).forEach(function (key) { setSelectOptions(key, options[key], selected[key]); });
     }
 
+    function requestParams() {
+        const params = new URLSearchParams();
+        filterElements.forEach(function (select) {
+            params.set(select.dataset.crasFilter, select.value);
+        });
+        params.set('metric', currentMetric());
+        return params;
+    }
+
     async function loadData() {
         if (!dataUrl) return;
         loading.textContent = 'Mengagregasi portofolio CRAS...';
         loading.classList.remove('is-hidden');
         applyButton.disabled = true;
-        const params = new URLSearchParams();
-        filterElements.forEach(function (select) { params.set(select.dataset.crasFilter, select.value); });
-        params.set('metric', currentMetric());
+        const originalButtonHtml = applyButton.innerHTML;
+        applyButton.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Memuat</span>';
+        const params = requestParams();
 
         try {
             const response = await fetch(dataUrl + '?' + params.toString(), {
@@ -1094,13 +1853,14 @@ document.addEventListener('DOMContentLoaded', function () {
             payload = result;
             syncFilters();
             if (heatMetric) heatMetric.value = result.heatmap?.selected || currentMetric();
-            window.history.replaceState({}, '', window.location.pathname + '?' + params.toString());
+            window.history.replaceState({}, '', window.location.pathname + '?' + requestParams().toString());
             renderAll(true);
         } catch (error) {
             loading.textContent = error.message || 'Data Mapping CRAS gagal dimuat.';
             loading.classList.remove('is-hidden');
         } finally {
             applyButton.disabled = false;
+            applyButton.innerHTML = originalButtonHtml;
         }
     }
 
@@ -1109,12 +1869,60 @@ document.addEventListener('DOMContentLoaded', function () {
         filterElements.forEach(function (select) {
             select.value = select.dataset.crasFilter === 'periode'
                 ? String(payload.filters?.options?.periode?.[0]?.value || '')
-                : 'all';
+                : String(payload.filters?.options?.[select.dataset.crasFilter]?.[0]?.value || 'all');
         });
         if (heatMetric) heatMetric.value = 'baki_debet';
         loadData();
     });
-    heatMetric?.addEventListener('change', function () { renderAll(false); });
+    heatMetric?.addEventListener('change', function () {
+        renderAll(false);
+        window.history.replaceState({}, '', window.location.pathname + '?' + requestParams().toString());
+    });
+
+    filterElements.forEach(function (select) {
+        select.addEventListener('change', function () {
+            if (select.dataset.crasFilter === 'sektor') {
+                const subSector = filterElements.find(function (item) { return item.dataset.crasFilter === 'sub_sektor'; });
+                if (subSector) subSector.value = 'all';
+            }
+            renderActiveFilters();
+        });
+    });
+
+    metricShortcuts.forEach(function (button) {
+        button.addEventListener('click', function () {
+            if (!heatMetric) return;
+            heatMetric.value = String(button.dataset.crasMetricShortcut || 'baki_debet');
+            renderAll(false);
+            window.history.replaceState({}, '', window.location.pathname + '?' + requestParams().toString());
+        });
+    });
+
+    rankingModeButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            rankingMode = String(button.dataset.crasRankingMode || 'district');
+            renderRanking();
+        });
+    });
+
+    insightButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            const key = String(button.dataset.crasInsight || 'baki_debet');
+            const district = button.__crasDistrict;
+            if (!district || !heatMetric) return;
+            heatMetric.value = key;
+            renderAll(false);
+            focusDistrict(district);
+            window.history.replaceState({}, '', window.location.pathname + '?' + requestParams().toString());
+        });
+    });
+
+    mapResetButton?.addEventListener('click', function () {
+        if (!geoLayer || !geoLayer.getLayers().length) return;
+        const bounds = geoLayer.getBounds();
+        if (bounds.isValid()) map.fitBounds(bounds, { padding: [18, 18], maxZoom: 10.5 });
+        renderOverview();
+    });
 
     fetch(payload.source?.geojson_url || '')
         .then(function (response) {

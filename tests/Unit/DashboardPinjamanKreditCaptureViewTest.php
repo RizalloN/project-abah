@@ -52,4 +52,17 @@ class DashboardPinjamanKreditCaptureViewTest extends TestCase
         $this->assertStringNotContainsString('TOTAL MICRO - ${branchName}', $source);
         $this->assertStringContainsString('if (showBranchSubtotal) {', $source);
     }
+
+    public function test_dashboard_pinjaman_kredit_syncs_frozen_column_offsets_from_rendered_widths(): void
+    {
+        $source = file_get_contents(base_path('resources/views/report/dashboard-pinjaman/kredit.blade.php'));
+
+        $this->assertStringContainsString('--loan-sticky-cabang-width', $source);
+        $this->assertStringContainsString('--loan-sticky-kategori-width', $source);
+        $this->assertStringContainsString('--loan-sticky-kategori-left', $source);
+        $this->assertStringContainsString('--loan-sticky-total-width', $source);
+        $this->assertStringContainsString('getBoundingClientRect().width', $source);
+        $this->assertStringContainsString('function scheduleSummaryTableSync()', $source);
+        $this->assertStringContainsString("window.addEventListener('orientationchange', scheduleSummaryTableSync)", $source);
+    }
 }

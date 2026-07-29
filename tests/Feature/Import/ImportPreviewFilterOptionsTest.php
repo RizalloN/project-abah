@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     if (config('database.default') !== 'sqlite') {
@@ -87,8 +88,8 @@ it('limits merchant detail preview filters and finds area 6 branches beyond the 
         'updated_at' => now(),
     ]);
 
-    $csvDirectory = storage_path('framework/testing/import-preview');
-    File::ensureDirectoryExists($csvDirectory);
+    $csvDirectory = storage_path('app/imports/import_20260724_120010_' . Str::random(5));
+    File::ensureDirectoryExists($csvDirectory, 0750, true);
     $csvPath = $csvDirectory . DIRECTORY_SEPARATOR . 'merchant-detail-large-filter-preview.csv';
     $payload = str_repeat('X', 1100);
     $rows = ['TAHUN|NAMA_KANCA|NAMA_UKER|MERCHANT_PAYLOAD'];
@@ -110,6 +111,10 @@ it('limits merchant detail preview filters and finds area 6 branches beyond the 
         $session = app('session.store');
         $session->start();
         $session->put('active_id_report', 101);
+        $session->put('import_files', [[
+            'name' => basename($csvPath),
+            'path' => $csvPath,
+        ]]);
 
         $request = Request::create('/import/preview/direct', 'GET', [
             'file_path' => $csvPath,
@@ -130,7 +135,7 @@ it('limits merchant detail preview filters and finds area 6 branches beyond the 
         ]);
         expect($data['formattedUniqueValues'])->not->toHaveKey(3);
     } finally {
-        File::delete($csvPath);
+        File::deleteDirectory($csvDirectory);
     }
 });
 
@@ -156,8 +161,8 @@ it('loads qris detail filter options from the full file instead of the first pre
 
     expect($reportId)->toBeGreaterThan(0);
 
-    $csvDirectory = storage_path('framework/testing/import-preview');
-    File::ensureDirectoryExists($csvDirectory);
+    $csvDirectory = storage_path('app/imports/import_20260724_120011_' . Str::random(5));
+    File::ensureDirectoryExists($csvDirectory, 0750, true);
     $csvPath = $csvDirectory . DIRECTORY_SEPARATOR . 'qris-detail-filter-full-scan.csv';
 
     $rows = ['MBDESC,BRDESC,POSISI,TAHUN'];
@@ -175,6 +180,10 @@ it('loads qris detail filter options from the full file instead of the first pre
         $session = app('session.store');
         $session->start();
         $session->put('active_id_report', $reportId);
+        $session->put('import_files', [[
+            'name' => basename($csvPath),
+            'path' => $csvPath,
+        ]]);
 
         $request = Request::create('/import/preview/filter-options', 'GET', [
             'file_path' => $csvPath,
@@ -195,7 +204,7 @@ it('loads qris detail filter options from the full file instead of the first pre
         expect($payload['status'] ?? null)->toBe('success');
         expect($payload['values'] ?? null)->toBe(['UKER B 999']);
     } finally {
-        File::delete($csvPath);
+        File::deleteDirectory($csvDirectory);
     }
 });
 
@@ -215,8 +224,8 @@ it('maps sv merchant preview display filters to the correct source columns', fun
         'updated_at' => now(),
     ]);
 
-    $csvDirectory = storage_path('framework/testing/import-preview');
-    File::ensureDirectoryExists($csvDirectory);
+    $csvDirectory = storage_path('app/imports/import_20260724_120012_' . Str::random(5));
+    File::ensureDirectoryExists($csvDirectory, 0750, true);
     $csvPath = $csvDirectory . DIRECTORY_SEPARATOR . 'sv-merchant-display-map.csv';
 
     $rows = [
@@ -233,6 +242,10 @@ it('maps sv merchant preview display filters to the correct source columns', fun
         $session = app('session.store');
         $session->start();
         $session->put('active_id_report', 100);
+        $session->put('import_files', [[
+            'name' => basename($csvPath),
+            'path' => $csvPath,
+        ]]);
 
         $request = Request::create('/import/preview/filter-options', 'GET', [
             'file_path' => $csvPath,
@@ -257,6 +270,6 @@ it('maps sv merchant preview display filters to the correct source columns', fun
         expect($payload['status'] ?? null)->toBe('success');
         expect($payload['values'] ?? null)->toBe(['UNIT MADIUN A', 'UNIT MADIUN B']);
     } finally {
-        File::delete($csvPath);
+        File::deleteDirectory($csvDirectory);
     }
 });

@@ -283,6 +283,10 @@ class ImportProgressServiceTest extends TestCase
             ->once()
             ->with('import_job_terminate:88')
             ->andReturnTrue();
+        Cache::shouldReceive('forget')
+            ->once()
+            ->with('sidebar:active-import-jobs:v1')
+            ->andReturnTrue();
 
         $importJobsTable = Mockery::mock();
         $importJobsTable->shouldReceive('where')
@@ -429,8 +433,10 @@ class ImportProgressServiceTest extends TestCase
 
     public function test_get_status_payload_recovers_completed_direct_load_audit(): void
     {
-        if (!Schema::hasTable('import_jobs')) {
-            Schema::create('import_jobs', function ($table): void {
+        Schema::dropIfExists('import_jobs');
+        Schema::dropIfExists('jobs');
+
+        Schema::create('import_jobs', function ($table): void {
                 $table->id();
                 $table->unsignedInteger('id_report')->nullable();
                 $table->string('file_name')->nullable();
@@ -443,11 +449,9 @@ class ImportProgressServiceTest extends TestCase
                 $table->json('job_context')->nullable();
                 $table->string('job_fingerprint')->nullable();
                 $table->timestamps();
-            });
-        }
+        });
 
-        if (!Schema::hasTable('jobs')) {
-            Schema::create('jobs', function ($table): void {
+        Schema::create('jobs', function ($table): void {
                 $table->id();
                 $table->string('queue')->nullable();
                 $table->longText('payload');
@@ -455,8 +459,7 @@ class ImportProgressServiceTest extends TestCase
                 $table->unsignedInteger('reserved_at')->nullable();
                 $table->unsignedInteger('available_at');
                 $table->unsignedInteger('created_at');
-            });
-        }
+        });
 
         DB::table('import_jobs')->insert([
             'id' => 43,

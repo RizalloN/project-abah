@@ -17,7 +17,7 @@ class SchedulerCentralizationTest extends TestCase
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('network:update-duckdns'"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('network:public-health --fix'"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('reports:ensure-fresh-snapshots'"));
-        $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('reports:snapshot:drain-dirty --max-runtime=55'"));
+        $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('reports:snapshot:drain-dirty --max-runtime=5'"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('reports:dashboard-harian-sync-missing'"));
     }
 
@@ -26,7 +26,7 @@ class SchedulerCentralizationTest extends TestCase
         $consoleRoutes = file_get_contents(base_path('routes/console.php'));
 
         $this->assertMatchesRegularExpression(
-            "/Schedule::command\\('reports:snapshot:drain-dirty --max-runtime=55'\\)\\s*->everyMinute\\(\\)\\s*->withoutOverlapping\\(2\\)\\s*->runInBackground\\(\\);/s",
+            "/Schedule::command\\('reports:snapshot:drain-dirty --max-runtime=5'\\)\\s*->everyMinute\\(\\)\\s*->withoutOverlapping\\(2\\)\\s*->runInBackground\\(\\);/s",
             $consoleRoutes
         );
         $this->assertMatchesRegularExpression(

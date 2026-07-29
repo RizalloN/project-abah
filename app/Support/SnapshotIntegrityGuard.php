@@ -10,7 +10,7 @@ use Throwable;
 class SnapshotIntegrityGuard
 {
     /**
-     * @var array<string, array{period:string, identity?:array<int, string>, optional_identity?:array<int, string>, max_rows_per_period?:int|null}>
+     * @var array<string, array{period:string, identity?:array<int, string>, optional_identity?:array<int, string>, database_unique?:bool, max_rows_per_period?:int|null}>
      */
     private const SNAPSHOTS = [
         'dashboard_harian_snapshots' => [
@@ -19,11 +19,13 @@ class SnapshotIntegrityGuard
         ],
         'dashboard_pinjaman_snapshots' => [
             'period' => 'periode',
-            'identity' => ['account_number', 'segmen_dashboard', 'produk_dashboard', 'cabang1', 'unit1'],
+            'identity' => ['uniqueid_dps'],
+            'database_unique' => true,
         ],
         'dashboard_pinjaman_chart_periodik_snapshots' => [
             'period' => 'periode',
-            'identity' => ['source_uniqueid_namareport', 'account_number'],
+            'identity' => ['uniqueid_dpcs'],
+            'database_unique' => true,
         ],
         'dashboard_simpanan_snapshots' => [
             'period' => 'snapshot_period',
@@ -166,7 +168,9 @@ class SnapshotIntegrityGuard
 
         try {
             $rowCount = (int) DB::table($snapshotTable)->where($periodColumn, $period)->count();
-            $duplicateGroups = $this->duplicateGroups($snapshotTable, $periodColumn, $identityColumns, $period);
+            $duplicateGroups = ($definition['database_unique'] ?? false)
+                ? []
+                : $this->duplicateGroups($snapshotTable, $periodColumn, $identityColumns, $period);
             $duplicateGroupCount = count($duplicateGroups);
             $maxRows = $definition['max_rows_per_period'] ?? null;
             $tooManyRows = is_int($maxRows) && $rowCount > $maxRows;
@@ -240,7 +244,7 @@ class SnapshotIntegrityGuard
     }
 
     /**
-     * @return array<string, array{period:string, identity?:array<int, string>, optional_identity?:array<int, string>, max_rows_per_period?:int|null}>|array{period:string, identity?:array<int, string>, optional_identity?:array<int, string>, max_rows_per_period?:int|null}|null
+     * @return array<string, array{period:string, identity?:array<int, string>, optional_identity?:array<int, string>, database_unique?:bool, max_rows_per_period?:int|null}>|array{period:string, identity?:array<int, string>, optional_identity?:array<int, string>, database_unique?:bool, max_rows_per_period?:int|null}|null
      */
     public function definition(?string $snapshotTable = null): ?array
     {

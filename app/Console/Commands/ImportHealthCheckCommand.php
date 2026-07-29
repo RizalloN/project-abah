@@ -3,30 +3,49 @@
 namespace App\Console\Commands;
 
 use App\Services\Import\ImportProgressService;
+use App\Support\SnapshotDirtyPeriodService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class ImportHealthCheckCommand extends Command
 {
-    protected $signature = 'import:health-check {--fix : Auto-terminate stuck jobs} {--hours=2 : Hours threshold for stuck detection}';
+    protected $signature = 'import:health-check
+        {--fix : Repair stale metadata and auto-terminate stuck jobs}
+        {--retry-dead-letters : Requeue unresolved snapshot dirty-period dead letters}
+        {--hours=2 : Hours threshold for stuck detection}';
 
-    protected $description = 'Health check for stuck/stale import jobs and snapshot deferral queue blockage';
+    protected $description = 'Health check for stuck imports, snapshot queues, dead letters, and slow queries';
 
-    public function handle(ImportProgressService $progressService): int
+    public function handle(ImportProgressService $progressService, SnapshotDirtyPeriodService $dirtyPeriods): int
     {
         try {
             $hoursThreshold = max(1, (int) $this->option('hours'));
             $shouldFix = (bool) $this->option('fix');
+            $shouldRetryDeadLetters = (bool) $this->option('retry-dead-letters');
 
             $this->info('Running import health check...');
             $this->reconcileProcessingJobs($progressService);
 
+            $deadLetterRecovery = ($shouldFix || $shouldRetryDeadLetters)
+                ? $dirtyPeriods->recoverFailed(25, $shouldRetryDeadLetters)
+                : ['pruned' => 0, 'retried' => 0, 'unresolved' => 0];
+
             $stuckJobs = $this->findStuckImportJobs($hoursThreshold);
             $deferredSnapshots = $this->countDeferredSnapshots();
+            $failedSnapshotPeriods = $this->countFailedSnapshotDirtyPeriods();
 
-            $this->displayStatus($stuckJobs, $deferredSnapshots, $hoursThreshold);
+            $this->displayStatus($stuckJobs, $deferredSnapshots, $failedSnapshotPeriods, $hoursThreshold);
+
+            if ($deadLetterRecovery['pruned'] > 0 || $deadLetterRecovery['retried'] > 0) {
+                $this->line(sprintf(
+                    'Snapshot dead-letter recovery: %d stale marker(s) pruned, %d unresolved item(s) requeued.',
+                    $deadLetterRecovery['pruned'],
+                    $deadLetterRecovery['retried']
+                ));
+            }
 
             if ($shouldFix && !empty($stuckJobs)) {
                 $this->fixStuckJobs($stuckJobs);
@@ -35,7 +54,10 @@ class ImportHealthCheckCommand extends Command
             $this->info('Checking for slow database queries...');
             $killedQueries = $this->killSlowQueries($shouldFix);
             if (!empty($killedQueries)) {
-                $this->line("<fg=yellow>⚠ Auto-terminated " . count($killedQueries) . " stuck database query/queries.</>");
+                $message = $shouldFix
+                    ? 'Auto-terminated '.count($killedQueries).' stuck database query/queries.'
+                    : 'Detected '.count($killedQueries).' long-running database query/queries; rerun with --fix to terminate them.';
+                $this->line("<fg=yellow>WARNING: {$message}</>");
             } else {
                 $this->line('<fg=green>✓ No stuck database queries detected.</>');
             }
@@ -87,7 +109,7 @@ class ImportHealthCheckCommand extends Command
         try {
             return DB::table('jobs')
                 ->where('queue', 'snapshots-parallel')
-                ->where('reserved_at', null)
+                ->whereNull('reserved_at')
                 ->where('payload', 'like', '%ExecuteBatchedSnapshotJob%')
                 ->count();
         } catch (\Throwable) {
@@ -95,7 +117,20 @@ class ImportHealthCheckCommand extends Command
         }
     }
 
-    private function displayStatus(array $stuckJobs, int $deferredCount, int $threshold): void
+    private function countFailedSnapshotDirtyPeriods(): int
+    {
+        try {
+            if (! Schema::hasTable('failed_snapshot_dirty_periods')) {
+                return 0;
+            }
+
+            return (int) DB::table('failed_snapshot_dirty_periods')->count();
+        } catch (\Throwable) {
+            return 0;
+        }
+    }
+
+    private function displayStatus(array $stuckJobs, int $deferredCount, int $failedSnapshotPeriods, int $threshold): void
     {
         $this->line("\n<fg=cyan>=== IMPORT HEALTH STATUS ===</>");
 
@@ -125,6 +160,12 @@ class ImportHealthCheckCommand extends Command
             $this->line('<fg=green>✓ No deferred snapshot jobs pending.</>');
         } else {
             $this->line("<fg=yellow>⚠ {$deferredCount} snapshot rebuild job(s) waiting in queue (deferred)</>");
+        }
+
+        if ($failedSnapshotPeriods === 0) {
+            $this->line('<fg=green>✓ No snapshot dirty-period dead letters.</>');
+        } else {
+            $this->line("<fg=yellow>WARNING: {$failedSnapshotPeriods} snapshot dirty-period item(s) require review in failed_snapshot_dirty_periods.</>");
         }
 
         if (!empty($stuckJobs) && $deferredCount > 0) {
@@ -172,12 +213,18 @@ class ImportHealthCheckCommand extends Command
             $processes = DB::select("SHOW FULL PROCESSLIST");
             foreach ($processes as $p) {
                 $queryInfo = strtolower((string) ($p->Info ?? ''));
-                // Target queries running longer than 60 seconds in Query/Execute state
-                // (excluding administrative tasks like ALTER or CREATE INDEX)
+                $queryState = strtolower((string) ($p->State ?? ''));
+                $runningSeconds = (int) ($p->Time ?? 0);
+                $lockWaitThreshold = max(60, (int) config('import.health.lock_wait_kill_seconds', 300));
+                $genericThreshold = max($lockWaitThreshold, (int) config('import.health.generic_query_kill_seconds', 3600));
+                $isLockWait = str_contains($queryState, 'lock') || str_contains($queryState, 'waiting');
+                $isPastSafeThreshold = ($isLockWait && $runningSeconds > $lockWaitThreshold)
+                    || $runningSeconds > $genericThreshold;
+
                 if (
                     isset($p->Id, $p->Time, $p->Command, $p->Info) &&
                     in_array($p->Command, ['Query', 'Execute'], true) &&
-                    $p->Time > 60 &&
+                    $isPastSafeThreshold &&
                     !$this->shouldIgnoreSlowQuery($queryInfo)
                 ) {
                     if ($shouldFix) {
@@ -214,6 +261,12 @@ class ImportHealthCheckCommand extends Command
         }
 
         if (str_contains($queryInfo, 'load data')) {
+            return true;
+        }
+
+        if (str_contains($queryInfo, '_snapshots')
+            || str_contains($queryInfo, 'snapshot_dirty_periods')
+            || str_contains($queryInfo, 'snapshot_source_signatures')) {
             return true;
         }
 

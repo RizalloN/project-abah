@@ -645,7 +645,7 @@ class ManagedReportBackupRecoveryService
     private function managedBackupAllowedRoots(): array
     {
         $roots = [storage_path('app/' . self::BACKUP_DIRECTORY)];
-        $configured = trim((string) env('MANAGED_REPORT_RECOVERY_ALLOWED_BACKUP_DIRS', ''));
+        $configured = trim((string) config('services.managed_report_recovery.allowed_backup_dirs', ''));
 
         if ($configured !== '') {
             foreach (preg_split('/[;,]+/', $configured) ?: [] as $entry) {
@@ -730,7 +730,7 @@ class ManagedReportBackupRecoveryService
 
     private function resolveAwkBinaryPath(): string
     {
-        $configured = trim((string) env('AWK_BINARY', ''));
+        $configured = trim((string) config('services.system_binaries.awk', ''));
         $candidates = array_values(array_filter([
             $configured !== '' ? $configured : null,
             'C:\\Program Files\\Git\\usr\\bin\\awk.exe',
@@ -751,7 +751,7 @@ class ManagedReportBackupRecoveryService
 
     private function resolveGzipBinaryPath(): string
     {
-        $configured = trim((string) env('GZIP_BINARY', ''));
+        $configured = trim((string) config('services.system_binaries.gzip', ''));
         $candidates = array_values(array_filter([
             $configured !== '' ? $configured : null,
             'C:\\xampp\\php\\gzip.exe',
@@ -974,7 +974,7 @@ AWK;
 
     private function resolveMysqlBinaryPath(): string
     {
-        $configured = trim((string) env('MYSQL_BINARY', ''));
+        $configured = trim((string) config('services.system_binaries.mysql', ''));
         $candidates = array_values(array_filter([
             $configured !== '' ? $configured : null,
             'C:\\xampp\\mysql\\bin\\mysql.exe',

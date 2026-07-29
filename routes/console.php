@@ -282,6 +282,10 @@ Artisan::command('queue:health-sweep', function () {
     );
 })->purpose('Bersihkan state queue stale dan terminasi job pending yang tidak lagi sehat');
 
+Schedule::command('scheduler:heartbeat')
+    ->everyMinute()
+    ->withoutOverlapping(2);
+
 Schedule::command('queue:health-sweep')
     ->everyMinute()
     ->withoutOverlapping(2)
@@ -307,6 +311,16 @@ Schedule::command('logs:maintenance')
 Schedule::command('cache:maintenance')
     ->hourly()
     ->withoutOverlapping(120)
+    ->runInBackground();
+
+Schedule::command('dashboard-sources:refresh --queue --only-stale')
+    ->everyFiveMinutes()
+    ->withoutOverlapping(10)
+    ->runInBackground();
+
+Schedule::command('database:performance-tune')
+    ->hourly()
+    ->withoutOverlapping(5)
     ->runInBackground();
 
 Schedule::command('optimize')
@@ -411,7 +425,7 @@ Schedule::command('reports:ensure-fresh-snapshots')
     ->withoutOverlapping(10)
     ->runInBackground();
 
-Schedule::command('reports:snapshot:drain-dirty --max-runtime=55')
+Schedule::command('reports:snapshot:drain-dirty --max-runtime=5')
     ->everyMinute()
     ->withoutOverlapping(2)
     ->runInBackground();
@@ -436,7 +450,7 @@ Artisan::command('shadow:auto-backfill-scheduler', function () {
     $exitCode = \Illuminate\Support\Facades\Artisan::call('shadow:backfill', [
         '--queue' => true,
         '--skip-snapshot' => true,
-        '--chunk-size' => 50000,
+        '--chunk-size' => 10000,
         '--retry-count' => 3,
     ]);
 

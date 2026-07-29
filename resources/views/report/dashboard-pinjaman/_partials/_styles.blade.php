@@ -231,18 +231,23 @@
     }
 
     .loan-matrix thead tr:nth-child(2) th {
-        top: 38px;
+        top: var(--abah-table-head-top, 0px);
         height: 34px;
     }
 
 
-    .loan-matrix .matrix-before { 
-        background: var(--loan-blue-deep) !important; 
+    .loan-matrix thead th.matrix-before {
+        background: var(--loan-blue-deep) !important;
         color: #ffffff !important;
-        position: sticky; 
-        left: 0; 
-        z-index: 20; 
-        text-align: left; 
+        position: sticky !important;
+        top: var(--abah-table-head-top, 0px) !important;
+        left: 0 !important;
+        z-index: 50 !important;
+        text-align: left;
+    }
+
+    .loan-matrix thead tr:first-child th.matrix-before {
+        top: 0 !important;
     }
 
     .loan-matrix tbody th { 

@@ -17,7 +17,7 @@ while ($true) {
     $startedAt = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     Write-Host "[$startedAt] Starting scheduler..."
 
-    & php artisan schedule:work
+    & php artisan schedule:work --quiet --no-interaction
 
     $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int] $LASTEXITCODE }
     $endedAt = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'

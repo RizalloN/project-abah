@@ -8,8 +8,8 @@ use Throwable;
 
 class LogMaintenanceService
 {
-    private const DEFAULT_MAX_BYTES = 134217728; // 128 MB
-    private const DEFAULT_KEEP_ARCHIVES = 10;
+    private const DEFAULT_MAX_BYTES = 33554432; // 32 MB
+    private const DEFAULT_KEEP_ARCHIVES = 7;
 
     /**
      * @return array<string, mixed>
@@ -18,8 +18,8 @@ class LogMaintenanceService
     {
         $logDir = storage_path('logs');
         $archiveDir = $logDir . DIRECTORY_SEPARATOR . 'archive';
-        $maxBytes = max(10485760, (int) env('LOG_MAINTENANCE_MAX_BYTES', self::DEFAULT_MAX_BYTES));
-        $keepArchives = max(1, (int) env('LOG_MAINTENANCE_KEEP_ARCHIVES', self::DEFAULT_KEEP_ARCHIVES));
+        $maxBytes = max(10485760, (int) config('performance.log_maintenance.max_bytes', self::DEFAULT_MAX_BYTES));
+        $keepArchives = max(1, (int) config('performance.log_maintenance.keep_archives', self::DEFAULT_KEEP_ARCHIVES));
 
         $summary = [
             'dry_run' => $dryRun,

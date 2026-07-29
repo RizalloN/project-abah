@@ -1,9 +1,18 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
-    # Biarkan file yang memang ada di root project.
-    RewriteCond %{REQUEST_FILENAME} -f
-    RewriteRule ^ - [L]
+    # Jangan pernah sajikan source, secret, log, atau entrypoint PHP tambahan.
+    RewriteRule ^(?:\.git|\.agents|\.codex)(?:/|$) - [R=404,L,NC]
+    RewriteRule ^(?:\.env(?:\..*)?|composer\.(?:json|lock)|package(?:-lock)?\.json|phpunit\.xml|artisan|AGENTS\.md)$ - [R=404,L,NC]
+    RewriteCond %{REQUEST_URI} !/(?:public/)?index\.php$
+    RewriteRule \.php$ - [R=404,L,NC]
+
+    # Pertahankan asset public storage, lalu blok storage internal aplikasi.
+    RewriteCond %{DOCUMENT_ROOT}/project-ABAH/public/storage/$1 -f
+    RewriteRule ^storage/(.*)$ public/storage/$1 [L]
+    RewriteRule ^storage(?:/|$) - [R=404,L,NC]
+
+    RewriteRule ^(?:app|bootstrap|config|database|resources|routes|tests|vendor|node_modules|scripts)(?:/|$) - [R=404,L,NC]
 
     # Biarkan direct access ke folder public bila memang dipanggil eksplisit.
     RewriteRule ^public/ - [L]
@@ -19,6 +28,14 @@
 </IfModule>
 
 Options -Indexes
+
+<IfModule mod_php.c>
+    php_flag expose_php Off
+    php_flag display_errors Off
+    php_flag log_errors On
+    php_flag session.use_strict_mode On
+    php_flag session.cookie_httponly On
+</IfModule>
 
 <IfModule mod_expires.c>
     ExpiresActive On
@@ -36,6 +53,8 @@ Options -Indexes
 </IfModule>
 
 <IfModule mod_headers.c>
+    Header always unset X-Powered-By
+
     <FilesMatch "\.(css|js|png|jpe?g|gif|svg|webp|ico|woff2?)$">
         Header set Cache-Control "public, max-age=2592000"
     </FilesMatch>

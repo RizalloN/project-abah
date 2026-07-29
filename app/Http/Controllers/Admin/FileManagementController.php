@@ -16,6 +16,9 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use App\Services\Import\ImportProgressService;
 use App\Support\DatabaseBackupStatusStore;
+use App\Support\LatestSnapshotRecoveryService;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class FileManagementController extends Controller
@@ -174,6 +177,72 @@ class FileManagementController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function checkLatestSnapshots(LatestSnapshotRecoveryService $snapshotRecovery): JsonResponse
+    {
+        try {
+            $result = $snapshotRecovery->queueLatestChecks(static::class);
+
+            if ($result['duplicate_request']) {
+                return response()->json([
+                    'status' => 'running',
+                    'message' => 'Pengecekan snapshot terbaru sedang dijadwalkan oleh permintaan lain.',
+                    'queued_sources' => [],
+                    'skipped_sources' => [],
+                ], 202);
+            }
+
+            $workerCheckFailed = false;
+            try {
+                Artisan::call('queue:ensure-running', [
+                    '--once' => true,
+                    '--queues' => 'snapshots-priority',
+                    '--workers' => 1,
+                    '--timeout' => (int) config('queue.worker_timeout', 0),
+                    '--memory' => (int) config('queue.worker_memory', 512),
+                    '--max-jobs' => (int) config('queue.worker_max_jobs', 25),
+                    '--max-time' => (int) config('queue.worker_max_time', 3600),
+                ]);
+            } catch (\Throwable $workerException) {
+                $workerCheckFailed = true;
+                Log::warning('Manual latest snapshot check was queued but worker verification failed.', [
+                    'exception_class' => $workerException::class,
+                    'message' => $workerException->getMessage(),
+                ]);
+            }
+
+            $queued = $result['queued'];
+            $status = $queued === [] ? 'completed' : 'queued';
+            $message = $queued === []
+                ? 'Tidak ada sumber snapshot dengan periode valid untuk diperiksa.'
+                : sprintf(
+                    'Pengecekan snapshot untuk %d sumber periode terbaru telah dijadwalkan pada worker snapshot prioritas.',
+                    count($queued)
+                );
+
+            if ($workerCheckFailed) {
+                $message .= ' Job tetap masuk antrean, tetapi pemeriksaan worker otomatis gagal dijalankan. Scheduler akan mencoba lagi.';
+            }
+
+            return response()->json([
+                'status' => $status,
+                'message' => $message,
+                'queued_sources' => $queued,
+                'skipped_sources' => $result['skipped'],
+                'worker_check_failed' => $workerCheckFailed,
+            ], $queued === [] ? 200 : 202);
+        } catch (\Throwable $e) {
+            Log::error('Failed to queue manual latest snapshot freshness checks.', [
+                'exception_class' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal menjalankan pengecekan snapshot: ' . $e->getMessage(),
             ], 500);
         }
     }

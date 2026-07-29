@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Input;
 
 use App\Http\Controllers\Controller;
 use App\Models\BodBoc;
+use App\Support\SargableDateFilter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -199,8 +200,7 @@ class BodBocController extends Controller
                 ]);
         }
 
-        $hasSamePeriode = DB::table('bod_boc')
-            ->whereDate('periode', $periode)
+        $hasSamePeriode = SargableDateFilter::apply(DB::table('bod_boc'), 'periode', '=', $periode)
             ->exists();
 
         $existingCif = DB::table('bod_boc')

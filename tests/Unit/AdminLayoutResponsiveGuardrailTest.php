@@ -16,7 +16,14 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
         $this->assertStringContainsString('position: sticky;', $layout);
         $this->assertStringContainsString('ensureWrapper', $layout);
         $this->assertStringContainsString('syncReadableCellTitles', $layout);
-        $this->assertStringContainsString("root.querySelectorAll('table').forEach(enhanceTable)", $layout);
+        $this->assertStringContainsString('syncStickyHeaderSurfaces', $layout);
+        $this->assertStringContainsString("target.closest('table')", $layout);
+        $this->assertStringContainsString('--abah-table-header-height', $layout);
+        $this->assertStringContainsString('.abah-sticky-surface', $layout);
+        $this->assertStringContainsString('tbody td:first-child:not(.sticky-col):not([colspan])', $layout);
+        $this->assertStringContainsString("target.querySelectorAll('table').forEach(function (table)", $layout);
+        $this->assertStringContainsString('tables.forEach(enhanceTable)', $layout);
+        $this->assertStringContainsString('scheduleEnhance(node)', $layout);
         $this->assertStringNotContainsString('.content-wrapper .card { position: sticky;', $layout);
         $this->assertStringNotContainsString('.content-wrapper form { position: sticky;', $layout);
     }
@@ -75,6 +82,12 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
         $this->assertStringContainsString('position: relative;', $style);
         $this->assertStringContainsString('{{ $wrapperSelector }} {{ $tableSelector }} thead th', $style);
         $this->assertStringContainsString('position: sticky;', $style);
+        $this->assertStringContainsString('max-height: min(68dvh, 680px) !important;', $style);
+        $this->assertStringContainsString('overflow-y: auto;', $style);
+        $this->assertStringContainsString('scrollbar-gutter: stable;', $style);
+        $this->assertStringNotContainsString('scrollbar-gutter: stable both-edges;', $style);
+        $this->assertStringNotContainsString('max-height: none !important;', $style);
+        $this->assertStringNotContainsString('overflow-y: visible;', $style);
         $this->assertStringNotContainsString('top: var(--table-sticky-top);', $style);
     }
 }

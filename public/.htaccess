@@ -1,4 +1,9 @@
 <IfModule mod_php.c>
+    php_flag expose_php Off
+    php_flag display_errors Off
+    php_flag log_errors On
+    php_flag session.use_strict_mode On
+    php_flag session.cookie_httponly On
     php_value upload_max_filesize 1024M
     php_value post_max_size 1024M
     php_value memory_limit 2048M
@@ -26,6 +31,8 @@
 </IfModule>
 
 <IfModule mod_headers.c>
+    Header always unset X-Powered-By
+
     <FilesMatch "\.(css|js|png|jpe?g|gif|svg|webp|ico|woff2?)$">
         Header set Cache-Control "public, max-age=2592000"
     </FilesMatch>
@@ -37,6 +44,9 @@
     </IfModule>
 
     RewriteEngine On
+
+    # Front controller adalah satu-satunya file PHP yang boleh diakses publik.
+    RewriteRule ^(?!index\.php$).*\.php$ - [R=404,L,NC]
 
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
@@ -55,4 +65,10 @@
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
+</IfModule>
+
+<IfModule mod_authz_core.c>
+    <FilesMatch "^(?!index\.php$).*\.php$">
+        Require all denied
+    </FilesMatch>
 </IfModule>

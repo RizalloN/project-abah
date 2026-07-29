@@ -334,6 +334,16 @@
                 .toLowerCase();
         }
 
+        function plainImportMessage(message) {
+            const withoutTags = String(message || '')
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<[^>]*>/g, ' ');
+            const decoder = document.createElement('textarea');
+            decoder.innerHTML = withoutTags;
+
+            return decoder.value.replace(/[ \t]+/g, ' ').trim();
+        }
+
         function isDuplicateImportMessage(message) {
             const text = normalizeDuplicateMessage(message);
             return text.includes('duplikat')
@@ -350,8 +360,8 @@
         async function showDuplicateImportModal(title, message, redirectTarget = redirectToSelectFile) {
             await themedSwal({
                 icon: 'warning',
-                title: title || 'Data Ditolak (Duplikat)!',
-                html: message || 'Data duplikat terdeteksi.',
+                title: plainImportMessage(title || 'Data Ditolak (Duplikat)!'),
+                text: plainImportMessage(message || 'Data duplikat terdeteksi.'),
                 confirmButtonText: 'Tutup',
                 allowOutsideClick: false,
                 allowEscapeKey: false,
@@ -1806,8 +1816,8 @@
 
                     themedSwal({
                         icon: result.status || (response.ok ? 'success' : 'error'),
-                        title: result.title || 'Selesai',
-                        html: result.text || result.message || '',
+                        title: plainImportMessage(result.title || 'Selesai'),
+                        text: plainImportMessage(result.text || result.message || ''),
                         confirmButtonText: 'Tutup'
                     }).then(() => {
                         redirectToImportIndex();
@@ -1913,8 +1923,8 @@
                 if (!initResponse.ok || initResult.status !== 'success') {
                         themedSwal({
                             icon: initResult.status || 'error',
-                            title: initResult.title || 'Import Dibatalkan',
-                            html: initResult.text || initResult.message || 'Persiapan fase Polars gagal.',
+                            title: plainImportMessage(initResult.title || 'Import Dibatalkan'),
+                            text: plainImportMessage(initResult.text || initResult.message || 'Persiapan fase Polars gagal.'),
                             confirmButtonText: 'Tutup'
                         });
                     resetImportButton();
@@ -1962,7 +1972,7 @@
                     themedSwal({
                         icon: 'error',
                         title: 'Proses Terhenti',
-                        html: errorMessage,
+                        text: plainImportMessage(errorMessage),
                         confirmButtonText: 'Tutup'
                     });
                     resetImportButton();
@@ -1999,7 +2009,7 @@
                     const skippedRows = Array.isArray(data.skipped_rows) ? data.skipped_rows : [];
                     const skippedHtml = skippedCount > 0
                         ? '<br><small class="text-warning">Baris di-skip: <b>' + skippedCount.toLocaleString('id-ID') + '</b>' +
-                          (skippedRows.length ? '<br>Contoh baris: ' + skippedRows.join(', ') : '') +
+                          (skippedRows.length ? '<br>Contoh baris: ' + skippedRows.map(escapeHtml).join(', ') : '') +
                           '</small>'
                         : '';
 
@@ -2013,7 +2023,7 @@
                                 title: 'Import Selesai',
                                 html: '<p>Berhasil: <b>' + Number(data.total_success || 0).toLocaleString('id-ID') + ' baris</b></p>' +
                                       '<p>Gagal: <b>' + Number(data.total_failed || 0).toLocaleString('id-ID') + ' baris</b></p>' +
-                                      (data.error_message ? '<small class="text-danger">' + data.error_message + '</small>' : '') +
+                                      (data.error_message ? '<small class="text-danger">' + escapeHtml(data.error_message) + '</small>' : '') +
                                       skippedHtml,
                                 confirmButtonText: 'Tutup'
                             }).then(() => {

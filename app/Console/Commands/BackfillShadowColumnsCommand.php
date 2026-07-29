@@ -8,12 +8,13 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 use Carbon\Carbon;
+use Generator;
 
 class BackfillShadowColumnsCommand extends Command
 {
     protected $signature = 'shadow:backfill
         {--periods= : Comma-separated periods (e.g., 2026-04-25,2026-04-26)}
-        {--chunk-size=50000 : Rows per update chunk}
+        {--chunk-size=10000 : Rows per update chunk}
         {--delay=0 : Delay in milliseconds between chunks (helps with lock contention)}
         {--retry-count=3 : Max retry attempts per chunk}
         {--dry-run : Preview changes without executing}
@@ -204,9 +205,9 @@ class BackfillShadowColumnsCommand extends Command
 
         $retryPass = 0;
         $previouslyFailed = [];
-        $initialNullRows = 0;
         $lastProcessedId = null;
         $chunksCompleted = 0;
+        $periodProcessed = 0;
 
         do {
             $retryPass++;
@@ -215,9 +216,7 @@ class BackfillShadowColumnsCommand extends Command
             $failed = 0;
 
             if ($retryPass === 1) {
-                $nullRows = $this->countNullShadowColumns($period);
-                $initialNullRows = $nullRows;
-                if ($nullRows === 0) {
+                if (! $this->hasPendingShadowRows($period)) {
                     $this->line("   ✓ All shadow columns already filled");
                     $this->chunkStats[$period] = ['total' => 0, 'processed' => 0, 'failed' => 0, 'completion_percentage' => 100.0];
                     if (!$dryRun) {
@@ -225,30 +224,30 @@ class BackfillShadowColumnsCommand extends Command
                     }
                     return;
                 }
-                $this->line("   Processing <fg=yellow>{$nullRows}</> rows (retry pass {$retryPass})");
+                $nullRows = null;
+                $this->line("   Processing rows in streaming chunks (retry pass {$retryPass})");
             } else {
                 $nullRows = count($previouslyFailed);
                 $this->line("   Retry pass {$retryPass}: Processing <fg=yellow>{$nullRows}</> failed chunks...");
             }
 
             $progressBar = null;
-            if (!$live) {
+            if (!$live && $nullRows !== null) {
                 $progressBar = $this->output->createProgressBar($nullRows);
                 $progressBar->setFormat('   [%bar%] %percent%% | %current%/%max% | %elapsed% / %estimated%');
             }
 
             if ($retryPass === 1) {
-                $rowIds = $this->snapshotRowIds($period, $chunkSize);
+                $chunks = $this->pendingRowIdChunks($period, $chunkSize);
             } else {
-                $rowIds = $previouslyFailed;
                 $chunkSize = max(1000, (int) ($chunkSize / 2));
+                $chunks = array_chunk($previouslyFailed, $chunkSize);
             }
 
             $failedThisPass = [];
 
-            foreach (array_chunk($rowIds, $chunkSize) as $chunk) {
+            foreach ($chunks as $chunk) {
                 $chunkNumber++;
-                $idList = implode("','", $chunk);
                 $chunkStart = microtime(true);
                 $chunkCount = count($chunk);
                 $lastProcessedId = (string) end($chunk);
@@ -263,10 +262,10 @@ class BackfillShadowColumnsCommand extends Command
                     ));
                 }
 
-                $chunkProcessed = $this->processChunk($period, $idList, $retryCount, $dryRun);
+                $chunkProcessed = $this->processChunk($period, $chunk, $retryCount, $dryRun);
 
                 $chunkTime = microtime(true) - $chunkStart;
-                $this->recordPerformanceMetric($chunkSize, $chunkTime);
+                $this->recordPerformanceMetric($chunkCount, $chunkTime);
                 $chunksCompleted++;
 
                 if ($chunkProcessed === $chunkCount) {
@@ -281,7 +280,9 @@ class BackfillShadowColumnsCommand extends Command
                 }
 
                 $rowsHandled = $processed + $failed;
-                $completionPct = $initialNullRows > 0 ? round(min(100, 100 * ($rowsHandled / $initialNullRows)), 2) : 100.0;
+                $completionPct = $nullRows !== null && $nullRows > 0
+                    ? round(min(100, 100 * ($rowsHandled / $nullRows)), 2)
+                    : 0.0;
                 if (!$dryRun) {
                     $this->persistBackfillCheckpoint($period, $lastProcessedId, $rowsHandled, $chunksCompleted, $completionPct);
                     $this->persistBackfillMetric($period, $chunkNumber, $chunkCount, $chunkTime, $chunkProcessed === $chunkCount);
@@ -313,16 +314,28 @@ class BackfillShadowColumnsCommand extends Command
 
             $this->totalProcessed += $processed;
             $this->totalFailed += $failed;
+            $periodProcessed += $processed;
 
-            $completionPct = $nullRows > 0 ? round(100 * ($processed / $nullRows), 2) : 100;
-            $this->line("   Pass {$retryPass} completed: {$processed}/{$nullRows} rows ({$completionPct}%)");
+            $this->line("   Pass {$retryPass} completed: {$processed} rows processed, {$failed} failed");
 
             $previouslyFailed = $failedThisPass;
 
         } while (!empty($previouslyFailed) && $retryPass < self::MAX_RETRY_PASSES);
 
-        $finalStats = $this->validateCompletion($period);
+        $finalStats = $dryRun
+            ? ['total' => $periodProcessed, 'processed' => $periodProcessed, 'failed' => 0, 'completion_percentage' => 100.0]
+            : $this->validateCompletion($period, $periodProcessed);
         $this->chunkStats[$period] = $finalStats;
+
+        if (!$dryRun) {
+            $this->persistBackfillCheckpoint(
+                $period,
+                $lastProcessedId,
+                $periodProcessed,
+                $chunksCompleted,
+                $finalStats['completion_percentage']
+            );
+        }
 
         if ($finalStats['completion_percentage'] >= 95.0) {
             $this->line("   <fg=green>✓ Period {$period}: {$finalStats['completion_percentage']}% complete</>");
@@ -397,26 +410,50 @@ class BackfillShadowColumnsCommand extends Command
         }
     }
 
-    private function snapshotRowIds(string $period, int $chunkSize): array
+    /**
+     * Stream only one page of primary keys at a time. Updated rows disappear
+     * from the predicate, while the cursor prevents rescanning earlier keys.
+     *
+     * @return Generator<int, array<int, string>>
+     */
+    private function pendingRowIdChunks(string $period, int $chunkSize): Generator
     {
         $requiredColumns = $this->requiredDailyLoanShadowColumns();
+        $lastId = null;
 
-        return DB::table('daily_loan_dinamis')
-            ->where('periode', $period)
-            ->where(fn ($q) => $this->applyShadowBackfillPredicate($q, $requiredColumns))
-            ->orderBy('uniqueid_namareport')
-            ->pluck('uniqueid_namareport')
-            ->toArray();
+        while (true) {
+            $query = DB::table('daily_loan_dinamis')
+                ->where('periode', $period)
+                ->where(fn ($q) => $this->applyShadowBackfillPredicate($q, $requiredColumns));
+
+            if ($lastId !== null) {
+                $query->where('uniqueid_namareport', '>', $lastId);
+            }
+
+            $rowIds = $query
+                ->orderBy('uniqueid_namareport')
+                ->limit(max(1, $chunkSize))
+                ->pluck('uniqueid_namareport')
+                ->map(static fn ($value): string => (string) $value)
+                ->all();
+
+            if ($rowIds === []) {
+                return;
+            }
+
+            $lastId = (string) end($rowIds);
+            yield $rowIds;
+        }
     }
 
-    private function countNullShadowColumns(string $period): int
+    private function hasPendingShadowRows(string $period): bool
     {
         $requiredColumns = $this->requiredDailyLoanShadowColumns();
 
         return DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->where(fn ($q) => $this->applyShadowBackfillPredicate($q, $requiredColumns))
-            ->count();
+            ->exists();
     }
 
     /**
@@ -441,6 +478,14 @@ class BackfillShadowColumnsCommand extends Command
      */
     private function applyShadowBackfillPredicate($query, array $requiredColumns): void
     {
+        if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at') && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
+            $query
+                ->whereNull('shadow_built_at')
+                ->orWhereColumn('shadow_built_at', '<', 'updated_at');
+
+            return;
+        }
+
         foreach ($requiredColumns as $column) {
             $query->orWhereNull($column);
         }
@@ -453,25 +498,17 @@ class BackfillShadowColumnsCommand extends Command
             });
         }
 
-        if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at') && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
-            $query
-                ->orWhereNull('shadow_built_at')
-                ->orWhereColumn('shadow_built_at', '<', 'updated_at');
-        }
     }
 
-    private function validateCompletion(string $period): array
+    private function validateCompletion(string $period, int $processedRows = 0): array
     {
-        $totalRows = DB::table('daily_loan_dinamis')->where('periode', $period)->count();
-        $nullRows = $this->countNullShadowColumns($period);
-        $filledRows = $totalRows - $nullRows;
-        $completion = $totalRows > 0 ? ((100.0 * $filledRows) / $totalRows) : 100.0;
+        $hasPendingRows = $this->hasPendingShadowRows($period);
 
         return [
-            'total' => $totalRows,
-            'processed' => $filledRows,
-            'failed' => $nullRows,
-            'completion_percentage' => round($completion, 2),
+            'total' => $processedRows + ($hasPendingRows ? 1 : 0),
+            'processed' => $processedRows,
+            'failed' => $hasPendingRows ? 1 : 0,
+            'completion_percentage' => $hasPendingRows ? 0.0 : 100.0,
         ];
     }
 
@@ -494,37 +531,54 @@ class BackfillShadowColumnsCommand extends Command
         }
     }
 
-    private function processChunk(string $period, string $idList, int $retryCount, bool $dryRun): int
+    /**
+     * @param array<int, string> $rowIds
+     */
+    private function processChunk(string $period, array $rowIds, int $retryCount, bool $dryRun): int
     {
-        $shadowBuiltAssignment = Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')
-            ? ",\n                shadow_built_at = NOW(6)"
-            : '';
+        if ($rowIds === []) {
+            return 0;
+        }
 
-        $sql = <<<SQL
-            UPDATE daily_loan_dinamis
-            SET
-                segmen_kinerja = UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(segmen_dashboard, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', '')),
-                produk_kinerja = UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(produk_dashboard, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', '')),
-                cabang_normalized = UPPER(TRIM(COALESCE(cabang1, ''))),
-                unit_normalized = UPPER(TRIM(COALESCE(unit1, ''))),
-                branch_normalized = UPPER(TRIM(COALESCE(branch1, ''))),
-                rm_normalized = UPPER(TRIM(COALESCE(pn_pengelola1, ''))),
-                pn_pemutus_normalized = NULLIF(TRIM(LEADING '0' FROM TRIM(SUBSTRING_INDEX(COALESCE(pn_pemutus1, ''), '-', 1))), ''),
-                cifno_clean = UPPER(TRIM(COALESCE(cifno, ''))){$shadowBuiltAssignment}
-            WHERE uniqueid_namareport IN ('{$idList}')
-        SQL;
+        $firstId = (string) reset($rowIds);
+        $lastId = (string) end($rowIds);
+        $updates = [
+            'segmen_kinerja' => DB::raw("UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(segmen_dashboard, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))"),
+            'produk_kinerja' => DB::raw("UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(produk_dashboard, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))"),
+            'cabang_normalized' => DB::raw("UPPER(TRIM(COALESCE(cabang1, '')))"),
+            'unit_normalized' => DB::raw("UPPER(TRIM(COALESCE(unit1, '')))"),
+            'branch_normalized' => DB::raw("UPPER(TRIM(COALESCE(branch1, '')))"),
+            'rm_normalized' => DB::raw("UPPER(TRIM(COALESCE(pn_pengelola1, '')))"),
+            'cifno_clean' => DB::raw("UPPER(TRIM(COALESCE(cifno, '')))"),
+        ];
+
+        if (Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')
+            && Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus1')) {
+            $updates['pn_pemutus_normalized'] = DB::raw("NULLIF(TRIM(LEADING '0' FROM TRIM(SUBSTRING_INDEX(COALESCE(pn_pemutus1, ''), '-', 1))), '')");
+        }
+
+        if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')) {
+            $updates['shadow_built_at'] = now();
+        }
 
         if ($dryRun) {
-            $this->comment("   [DRY RUN] Would execute: " . substr($sql, 0, 80) . "...");
-            return count(explode("','", $idList));
+            $this->comment("   [DRY RUN] Would update keys {$firstId} through {$lastId}.");
+
+            return count($rowIds);
         }
 
         $attempt = 0;
         while ($attempt < $retryCount) {
             $attempt++;
             try {
-                DB::statement($sql);
-                return count(explode("','", $idList));
+                $requiredColumns = $this->requiredDailyLoanShadowColumns();
+                DB::table('daily_loan_dinamis')
+                    ->where('periode', $period)
+                    ->whereBetween('uniqueid_namareport', [$firstId, $lastId])
+                    ->where(fn ($query) => $this->applyShadowBackfillPredicate($query, $requiredColumns))
+                    ->update($updates);
+
+                return count($rowIds);
             } catch (Throwable $e) {
                 if ($attempt >= $retryCount) {
                     Log::error('Chunk update failed after retries', [

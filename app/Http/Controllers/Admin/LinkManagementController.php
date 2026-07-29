@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Rules\TrustedSpreadsheetUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -53,14 +54,14 @@ class LinkManagementController extends Controller
         'mantri' => [
             'label' => 'KPI Mantri',
             'sheet_name' => 'KPI',
-            'spreadsheet_id' => '1h7XMo46a10a3gC1f_CPtsBUT2V1PcxAE',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/1h7XMo46a10a3gC1f_CPtsBUT2V1PcxAE/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'spreadsheet_id' => '160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
         'consumer' => [
             'label' => 'KPI Konsumer',
             'sheet_name' => 'KPI',
-            'spreadsheet_id' => '1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'spreadsheet_id' => '14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
     ];
     private const MARKET_SHARE_DEFAULTS = [
@@ -71,7 +72,6 @@ class LinkManagementController extends Controller
             'link_url' => 'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/edit?usp=sharing',
         ],
     ];
-
     public function index(): View
     {
         $this->ensureKpiDefaults();
@@ -91,15 +91,15 @@ class LinkManagementController extends Controller
     {
         $validated = $request->validate([
             'kpi' => ['array'],
-            'kpi.*.link_url' => ['required', 'url', 'max:2048'],
+            'kpi.*.link_url' => ['required', 'url', 'max:2048', new TrustedSpreadsheetUrl],
             'kpi.*.sheet_name' => ['required', 'string', 'max:160'],
-            'sppg.link_url' => ['nullable', 'url', 'max:2048'],
+            'sppg.link_url' => ['nullable', 'url', 'max:2048', new TrustedSpreadsheetUrl],
             'sppg.sheet_name' => ['nullable', 'string', 'max:160'],
             'market_share' => ['array'],
-            'market_share.*.link_url' => ['required', 'url', 'max:2048'],
+            'market_share.*.link_url' => ['required', 'url', 'max:2048', new TrustedSpreadsheetUrl],
             'market_share.*.sheet_name' => ['required', 'string', 'max:160'],
             'business_cluster' => ['array'],
-            'business_cluster.*.link_url' => ['nullable', 'url', 'max:2048'],
+            'business_cluster.*.link_url' => ['nullable', 'url', 'max:2048', new TrustedSpreadsheetUrl],
         ], [
             'kpi.*.link_url.required' => 'Link KPI wajib diisi.',
             'kpi.*.link_url.url' => 'Link KPI harus berupa URL valid.',

@@ -218,6 +218,8 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringContainsString('kinerja-rm-scope-badge is-kcp', $html);
         $this->assertStringContainsString('OS Pinjaman', $html);
         $this->assertStringContainsString('Series LAR', $html);
+        $this->assertStringContainsString('--kinerja-branch-column-width: 112px;', $html);
+        $this->assertStringContainsString('left: var(--kinerja-branch-column-width);', $html);
         $this->assertStringContainsString('20 Jun 25', $html);
         $this->assertStringContainsString('31 Des 25', $html);
         $this->assertStringContainsString('30 Apr 26', $html);
@@ -412,6 +414,10 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringContainsString('Kinerja-RM-Ritel', $view);
         $this->assertStringContainsString('.rm-ritel-page .kinerja-table-container::-webkit-scrollbar-thumb', $view);
         $this->assertStringContainsString('scrollbar-color: #cbd5e1 #ffffff', $view);
+        $this->assertStringContainsString('--kinerja-branch-column-width: 94px;', $view);
+        $this->assertStringContainsString('left: var(--kinerja-branch-column-width) !important;', $view);
+        $this->assertStringContainsString('scrollbar-gutter: stable;', $view);
+        $this->assertStringNotContainsString('scrollbar-gutter: stable both-edges;', $view);
         $this->assertStringNotContainsString('scrollbar-color: #1d4ed8 #dbeafe', $view);
         $this->assertStringContainsString('OS & Kualitas', $table);
         $this->assertStringContainsString('Navigasi Kinerja RM Ritel', $table);

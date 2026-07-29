@@ -674,8 +674,8 @@
                     </ul>
                 </li>
 
-                <li class="nav-item sidebar-dashboard-simpanan {{ request()->routeIs('dashboard', 'report.dashboard-dana', 'report.dashboard-dana.hourly-dpk') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('dashboard', 'report.dashboard-dana', 'report.dashboard-dana.hourly-dpk') ? 'active' : '' }}">
+                <li class="nav-item sidebar-dashboard-simpanan {{ request()->routeIs('report.dashboard-dana', 'report.dashboard-dana.hourly-dpk') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-dana', 'report.dashboard-dana.hourly-dpk') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-university"></i>
                         <p>
                             Dashboard Simpanan
@@ -683,12 +683,6 @@
                         </p>
                     </a>
                     <ul class="nav nav-treeview">
-                        <li class="nav-item">
-                            <a href="{{ route('dashboard') }}" class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}">
-                                <i class="far fa-circle nav-icon"></i>
-                                <p>Landing Page</p>
-                            </a>
-                        </li>
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-dana') }}" class="nav-link {{ request()->routeIs('report.dashboard-dana') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
@@ -704,8 +698,8 @@
                     </ul>
                 </li>
 
-                <li class="nav-item sidebar-dashboard-pinjaman {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'active' : '' }}">
+                <li class="nav-item sidebar-dashboard-pinjaman {{ request()->routeIs('dashboard', 'report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('dashboard', 'report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-line"></i>
                         <p>
                             Dashboard Pinjaman
@@ -713,6 +707,12 @@
                         </p>
                     </a>
                     <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('dashboard') }}" class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Landing Page</p>
+                            </a>
+                        </li>
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.kredit') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kredit') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
@@ -759,6 +759,12 @@
                             <a href="{{ route('report.dashboard-pinjaman.data-ph') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.data-ph') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Data PH</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.run-off') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.run-off') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Run OFF</p>
                             </a>
                         </li>
 
@@ -861,6 +867,24 @@
                     </ul>
                 </li>
 
+                <li class="nav-item {{ request()->routeIs('prognosa.weekly') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('prognosa.weekly') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-chart-area"></i>
+                        <p>
+                            Prognosa
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
+                    </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('prognosa.weekly') }}" class="nav-link {{ request()->routeIs('prognosa.weekly') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Weekly Prognosa</p>
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+
                 <li class="nav-item sidebar-dashboard-marketshare {{ request()->routeIs('report.dashboard-dana.market-share', 'report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.mapping-cras', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.instansi') ? 'menu-open' : '' }}">
                     <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share', 'report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.mapping-cras', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.instansi') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-pie"></i>
@@ -924,7 +948,7 @@
                                     <span
                                         id="sidebar-job-badge"
                                         class="sidebar-job-badge {{ ($activeImportJobCount ?? 0) > 0 ? '' : 'd-none' }}"
-                                        data-fetch-url="{{ route('job-management.data') }}"
+                                        data-fetch-url="{{ route('job-management.badge') }}"
                                     >{{ ($activeImportJobCount ?? 0) > 99 ? '99+' : ($activeImportJobCount ?? 0) }}</span>
                                 </p>
                             </a>
@@ -1139,18 +1163,37 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     let sidebarJobBadgeTimer = null;
+    let sidebarJobBadgeRequest = null;
+
+    function scheduleSidebarJobBadgeRefresh(delay) {
+        if (sidebarJobBadgeTimer) {
+            window.clearTimeout(sidebarJobBadgeTimer);
+        }
+
+        if (!document.hidden) {
+            sidebarJobBadgeTimer = window.setTimeout(refreshSidebarJobBadge, delay);
+        }
+    }
 
     async function refreshSidebarJobBadge() {
+        if (document.hidden || sidebarJobBadgeRequest) {
+            return;
+        }
+
+        sidebarJobBadgeRequest = new AbortController();
+
         try {
-            const response = await fetch(`${badge.dataset.fetchUrl}?status=all&page=1&per_page=1`, {
+            const response = await fetch(badge.dataset.fetchUrl, {
                 headers: {
                     'Accept': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
                 },
+                signal: sidebarJobBadgeRequest.signal,
             });
 
             const payload = await response.json().catch(() => ({}));
             if (!response.ok || payload.status === 'error') {
+                scheduleSidebarJobBadgeRefresh(45000);
                 return;
             }
 
@@ -1163,15 +1206,35 @@ document.addEventListener('DOMContentLoaded', function () {
                 badge.classList.add('d-none');
             }
         } catch (_) {
+        } finally {
+            sidebarJobBadgeRequest = null;
+            const hasActiveJobs = !badge.classList.contains('d-none');
+            scheduleSidebarJobBadgeRefresh(hasActiveJobs ? 15000 : 45000);
         }
     }
 
     refreshSidebarJobBadge();
-    sidebarJobBadgeTimer = window.setInterval(refreshSidebarJobBadge, 8000);
+
+    document.addEventListener('visibilitychange', function () {
+        if (document.hidden) {
+            if (sidebarJobBadgeTimer) {
+                window.clearTimeout(sidebarJobBadgeTimer);
+            }
+            if (sidebarJobBadgeRequest) {
+                sidebarJobBadgeRequest.abort();
+            }
+            return;
+        }
+
+        refreshSidebarJobBadge();
+    });
 
     window.addEventListener('beforeunload', function () {
         if (sidebarJobBadgeTimer) {
-            window.clearInterval(sidebarJobBadgeTimer);
+            window.clearTimeout(sidebarJobBadgeTimer);
+        }
+        if (sidebarJobBadgeRequest) {
+            sidebarJobBadgeRequest.abort();
         }
     });
 });

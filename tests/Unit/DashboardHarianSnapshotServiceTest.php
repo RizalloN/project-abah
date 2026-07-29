@@ -235,6 +235,10 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             'UNIT Sudirman Madiun',
             $reflection->invoke($service, 'UNIT SUDIRMAN MADIUN', 'KC Madiun')
         );
+        $this->assertSame(
+            'UNIT Kota III',
+            $reflection->invoke($service, 'UNIT KOTA III', 'KC Madiun')
+        );
     }
 
     public function test_slug_filter_conditions_match_all_scope_parts(): void

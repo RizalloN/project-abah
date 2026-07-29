@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Input;
 
 use App\Http\Controllers\Controller;
 use App\Models\InputRekanan;
+use App\Support\SargableDateFilter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -201,8 +202,7 @@ class InputRekananController extends Controller
                 ]);
         }
 
-        $hasSamePeriode = DB::table('input_rekanan')
-            ->whereDate('periode', $periode)
+        $hasSamePeriode = SargableDateFilter::apply(DB::table('input_rekanan'), 'periode', '=', $periode)
             ->exists();
 
         $existingCif = DB::table('input_rekanan')

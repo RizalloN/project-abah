@@ -133,7 +133,7 @@ class SnapshotQueuePauseService
         ), static fn (string $value): bool => $value !== ''));
 
         if ($configured === []) {
-            $configured = ['snapshots-parallel', 'shadow-backfill'];
+            $configured = ['snapshots-priority', 'snapshots-parallel', 'shadow-backfill'];
         }
 
         $excluded = (array) config('import.snapshot.pause_excluded_queues', ['imports-high']);

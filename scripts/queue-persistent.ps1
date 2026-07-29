@@ -52,7 +52,9 @@ while ($true) {
         "--tries=$Tries",
         "--timeout=$Timeout",
         "--sleep=$Sleep",
-        "--memory=$Memory"
+        "--memory=$Memory",
+        '--quiet',
+        '--no-interaction'
     )
 
     if ($MaxJobs -gt 0) {

@@ -1,0 +1,7213 @@
+.pres-structured-shell {
+    justify-content: stretch;
+    padding: 18px 20px;
+    overflow: hidden;
+    border: 1px solid rgba(8, 87, 195, 0.12);
+    border-radius: 8px;
+    background:
+        linear-gradient(rgba(8, 87, 195, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(8, 87, 195, 0.035) 1px, transparent 1px),
+        #f8fbff;
+    background-size: 72px 72px;
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+}
+
+.pres-structured-shell,
+.pres-structured-shell * {
+    box-sizing: border-box;
+    letter-spacing: 0;
+}
+
+.pres-structured-shell button,
+.pres-structured-shell canvas {
+    user-select: none;
+}
+
+.pres-structured-shell .psd-slide {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 12px;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+}
+
+.psd-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1.12fr) minmax(430px, 0.88fr);
+    align-items: start;
+    gap: 22px;
+    min-height: 88px;
+}
+
+.psd-heading {
+    min-width: 0;
+}
+
+.psd-kicker {
+    display: block;
+    margin-bottom: 3px;
+    color: #0857c3;
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1.15;
+    text-transform: uppercase;
+}
+
+.psd-kicker.is-light {
+    color: #8dd8ff;
+}
+
+.psd-heading h1 {
+    margin: 0;
+    color: #0f172a;
+    font-size: 30px;
+    font-weight: 900;
+    line-height: 1.08;
+}
+
+.psd-heading p {
+    max-width: 760px;
+    margin: 7px 0 0;
+    color: #526177;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+.psd-header-side {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    min-width: 0;
+}
+
+.psd-reading {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    align-items: stretch;
+    width: 100%;
+    min-height: 76px;
+    overflow: hidden;
+    border: 1px solid #cfe0f5;
+    border-left: 5px solid #0857c3;
+    border-radius: 6px;
+    background: #f2f7fd;
+}
+
+.psd-reading > span {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    align-self: stretch;
+    padding: 10px 11px;
+    color: #0857c3;
+    border-right: 1px solid #d8e6f7;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1.25;
+    text-transform: uppercase;
+}
+
+.psd-reading > span i {
+    font-size: 15px;
+}
+
+.psd-reading p {
+    display: block;
+    overflow: visible;
+    margin: 0;
+    padding: 11px 14px;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.psd-reading.is-green {
+    border-left-color: #009b77;
+}
+
+.psd-reading.is-green > span {
+    color: #007d62;
+}
+
+.psd-reading.is-amber {
+    border-left-color: #f59e0b;
+}
+
+.psd-reading.is-amber > span {
+    color: #a16207;
+}
+
+.psd-reading.is-red {
+    border-left-color: #e62b34;
+}
+
+.psd-reading.is-red > span {
+    color: #c01f28;
+}
+
+.psd-period {
+    position: absolute;
+    top: -16px;
+    right: 0;
+    padding: 3px 10px;
+    color: #526177;
+    border: 1px solid #d5e0ed;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    font-size: 9.5px;
+    font-weight: 800;
+}
+
+.psd-panel,
+.psd-total-summary,
+.psd-segment-summary,
+.psd-productivity-summary,
+.psd-kts-summary,
+.psd-action-board,
+.psd-strategy-board {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid #d6e2f0;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.94);
+}
+
+.psd-panel-title {
+    display: flex;
+    flex: 0 0 38px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+    height: 38px;
+    padding: 0 13px;
+    color: #ffffff;
+    background: #0857c3;
+    font-size: 10.5px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.psd-panel-title span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-panel-title i {
+    width: 16px;
+    margin-right: 4px;
+    text-align: center;
+}
+
+.psd-panel-title small {
+    flex: 0 0 auto;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 8.5px;
+    font-weight: 800;
+}
+
+.psd-stat {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    justify-content: center;
+    padding: 9px 11px;
+    border: 1px solid #dce6f1;
+    border-top: 3px solid #0857c3;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.psd-stat > span {
+    overflow: hidden;
+    color: #64748b;
+    font-size: 8px;
+    font-weight: 900;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.psd-stat > strong {
+    overflow: hidden;
+    margin-top: 3px;
+    color: #0f172a;
+    font-size: 17px;
+    font-weight: 900;
+    line-height: 1.05;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-stat > small {
+    display: block;
+    overflow: hidden;
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-stat.is-cyan {
+    border-top-color: #00aeef;
+}
+
+.psd-stat.is-green {
+    border-top-color: #009b77;
+}
+
+.psd-stat.is-amber {
+    border-top-color: #f59e0b;
+}
+
+.psd-stat.is-red {
+    border-top-color: #e62b34;
+}
+
+.psd-insight-strip {
+    display: grid;
+    grid-template-columns: repeat(var(--psd-insights, 3), minmax(0, 1fr));
+    gap: 8px;
+    min-height: 58px;
+}
+
+.psd-insight {
+    display: grid;
+    grid-template-rows: auto auto auto;
+    align-content: center;
+    min-width: 0;
+    padding: 8px 11px;
+    border: 1px solid #d9e4f1;
+    border-left: 4px solid #0857c3;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.94);
+}
+
+.psd-insight > span {
+    color: #64748b;
+    font-size: 8px;
+    font-weight: 900;
+    line-height: 1.15;
+    text-transform: uppercase;
+}
+
+.psd-insight > strong {
+    overflow: hidden;
+    margin-top: 2px;
+    color: #172033;
+    font-size: 12px;
+    font-weight: 900;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-insight > small {
+    overflow: hidden;
+    margin-top: 2px;
+    color: #64748b;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-insight.is-green {
+    border-left-color: #009b77;
+}
+
+.psd-insight.is-amber {
+    border-left-color: #f59e0b;
+}
+
+.psd-insight.is-red {
+    border-left-color: #e62b34;
+}
+
+.psd-table-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.psd-analysis-column {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) minmax(150px, 0.42fr);
+    gap: 10px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.psd-analysis-column > .psd-table-panel,
+.psd-analysis-column > .psd-mini-trend {
+    min-width: 0;
+    min-height: 0;
+}
+
+.psd-mini-trend {
+    display: grid;
+    grid-template-rows: 38px minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid #d6e2f0;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.96);
+}
+
+.psd-mini-trend .psd-panel-title {
+    background: linear-gradient(90deg, #0857c3, #00a6d6);
+}
+
+.psd-mini-trend-body {
+    display: grid;
+    grid-template-rows: repeat(var(--psd-mini-series, 1), minmax(0, 1fr));
+    min-height: 0;
+    padding: 4px 11px 6px;
+}
+
+.psd-mini-trend-lane {
+    display: grid;
+    grid-template-columns: minmax(105px, 0.72fr) minmax(170px, 1.65fr) minmax(112px, 0.78fr);
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    min-height: 0;
+    border-bottom: 1px solid #e5ebf3;
+}
+
+.psd-mini-trend-lane:last-child {
+    border-bottom: 0;
+}
+
+.psd-mini-trend-lane > span,
+.psd-mini-trend-lane > em {
+    display: block;
+    min-width: 0;
+}
+
+.psd-mini-trend-lane > span strong,
+.psd-mini-trend-lane > span small,
+.psd-mini-trend-lane > em small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-mini-trend-lane > span strong {
+    color: #172033;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.psd-mini-trend-lane > span small {
+    margin-top: 2px;
+    color: #526177;
+    font-size: 10px;
+    font-weight: 850;
+}
+
+.psd-mini-trend-lane svg {
+    display: block;
+    width: 100%;
+    height: 38px;
+    overflow: visible;
+}
+
+.psd-mini-trend-lane polyline {
+    fill: none;
+    stroke-width: 3.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.psd-mini-trend-lane circle {
+    stroke: #ffffff;
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+
+.psd-mini-grid {
+    stroke: #dfe7f1;
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+
+.psd-mini-trend-lane > em {
+    color: #526177;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 900;
+    text-align: right;
+}
+
+.psd-mini-trend-lane > em.is-positive {
+    color: #078a68;
+}
+
+.psd-mini-trend-lane > em.is-negative {
+    color: #c62828;
+}
+
+.psd-mini-trend-lane > em.is-neutral {
+    color: #9a6a00;
+}
+
+.psd-mini-trend-lane > em small {
+    margin-top: 2px;
+    color: #64748b;
+    font-size: 9.5px;
+    font-weight: 750;
+}
+
+.psd-mini-trend-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px;
+    color: #526177;
+    font-size: 11px;
+    font-weight: 750;
+    text-align: center;
+}
+
+.psd-mini-trend-fallback i {
+    color: #0857c3;
+    font-size: 18px;
+}
+
+.psd-matrix {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-rows: 34px minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+    padding: 10px 12px 12px;
+}
+
+.psd-matrix-head,
+.psd-matrix-row {
+    display: grid;
+    grid-template-columns: var(--psd-columns);
+    min-width: 0;
+}
+
+.psd-matrix-head {
+    align-items: center;
+    padding: 0 10px;
+    color: #526177;
+    border-bottom: 1px solid #bfcde0;
+    border-radius: 4px 4px 0 0;
+    background: #edf3f9;
+}
+
+.psd-matrix-head span {
+    min-width: 0;
+    overflow: hidden;
+    padding-right: 8px;
+    font-size: 8px;
+    font-weight: 900;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.psd-matrix-head .is-right,
+.psd-matrix-row .is-right {
+    padding-right: 0;
+    padding-left: 8px;
+    text-align: right;
+}
+
+.psd-matrix-body {
+    display: grid;
+    grid-template-rows: repeat(var(--psd-row-count, 1), minmax(0, 1fr));
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.psd-matrix-row {
+    align-items: center;
+    min-height: 0;
+    padding: 0 10px;
+    border-bottom: 1px solid #e1e8f1;
+}
+
+.psd-matrix-row:nth-child(even) {
+    background: #f7f9fc;
+}
+
+.psd-matrix-row:last-child {
+    border-bottom: 0;
+}
+
+.psd-matrix-row > div {
+    min-width: 0;
+    overflow: hidden;
+    padding-right: 8px;
+    color: #334155;
+    font-size: 9px;
+    font-style: normal;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+}
+
+.psd-matrix-row strong {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    color: #172033;
+    font-size: 9px;
+    font-weight: 850;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-matrix-row small {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    margin-top: 2px;
+    color: #64748b;
+    font-size: 7px;
+    font-weight: 700;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-progress-cell {
+    display: grid;
+    gap: 4px;
+}
+
+.psd-progress-cell > span {
+    display: block;
+    width: 100%;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #dbe4ef;
+}
+
+.psd-progress-cell > span i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #0857c3;
+}
+
+.psd-progress-cell > span i.is-cyan {
+    background: #00a6d6;
+}
+
+.psd-progress-cell > span i.is-green {
+    background: #009b77;
+}
+
+.psd-progress-cell > span i.is-amber {
+    background: #f59e0b;
+}
+
+.psd-progress-cell > span i.is-red {
+    background: #e62b34;
+}
+
+.psd-empty,
+.psd-loading-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    height: 100%;
+    min-height: 90px;
+    padding: 18px;
+    color: #64748b;
+    border: 1px dashed #bdcde0;
+    border-radius: 6px;
+    background: #f7f9fc;
+    font-size: 10px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.psd-empty.is-large {
+    min-height: 180px;
+}
+
+.psd-loading-state {
+    flex-direction: column;
+}
+
+.psd-loading-state i {
+    color: #0857c3;
+    font-size: 22px;
+}
+
+.psd-loading-state strong {
+    color: #0f172a;
+    font-size: 12px;
+}
+
+.psd-loading-state span {
+    font-size: 9px;
+}
+
+.psd-total-layout,
+.psd-loan-total-layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 0.73fr) minmax(0, 1.27fr);
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.psd-total-summary {
+    display: grid;
+    grid-template-rows: 38px minmax(100px, 0.8fr) minmax(0, 1.2fr);
+}
+
+.psd-hero-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    min-width: 0;
+    padding: 10px;
+    text-align: center;
+}
+
+.psd-hero-number > span {
+    color: #64748b;
+    font-size: 9px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.psd-hero-number > strong {
+    margin-top: 5px;
+    color: #0857c3;
+    font-size: 28px;
+    font-weight: 950;
+    line-height: 1;
+}
+
+.psd-hero-number > small {
+    margin-top: 6px;
+    color: #526177;
+    font-size: 9px;
+    font-weight: 750;
+}
+
+.psd-delta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0 10px 10px;
+}
+
+.psd-delta-grid .psd-stat > strong {
+    font-size: 13px;
+}
+
+.psd-breakdown-layout {
+    display: grid;
+    grid-template-rows: minmax(150px, 0.72fr) minmax(0, 1.28fr);
+    gap: 12px;
+    min-height: 0;
+}
+
+.psd-component-board {
+    display: grid;
+    grid-template-columns: repeat(var(--psd-components, 3), minmax(0, 1fr));
+    gap: 10px;
+    min-height: 0;
+}
+
+.psd-component-card {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    grid-template-rows: auto auto 5px auto;
+    column-gap: 10px;
+    align-content: center;
+    min-width: 0;
+    min-height: 0;
+    padding: 14px;
+    border: 1px solid #d7e3f0;
+    border-top: 4px solid #0857c3;
+    border-radius: 7px;
+    background: #ffffff;
+}
+
+.psd-component-card .psd-component-icon {
+    display: flex;
+    grid-row: 1 / 5;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    color: #0857c3;
+    border-radius: 7px;
+    background: #e9f2ff;
+    font-size: 18px;
+}
+
+.psd-component-card > span {
+    color: #526177;
+    font-size: 9px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.psd-component-card > strong {
+    margin-top: 3px;
+    color: #0f172a;
+    font-size: 20px;
+    font-weight: 900;
+    line-height: 1.1;
+}
+
+.psd-component-card > small {
+    margin-top: 6px;
+    color: #64748b;
+    font-size: 8px;
+    font-weight: 750;
+}
+
+.psd-component-card.is-wholesale,
+.psd-component-card.is-deposito {
+    border-top-color: #b89b84;
+}
+
+.psd-component-card.is-micro,
+.psd-component-card.is-tabungan {
+    border-top-color: #00a6d6;
+}
+
+.psd-component-card.is-retail,
+.psd-component-card.is-giro {
+    border-top-color: #0857c3;
+}
+
+.psd-share-bar {
+    display: block;
+    width: 100%;
+    height: 5px;
+    overflow: hidden;
+    margin-top: 7px;
+    border-radius: 999px;
+    background: #dce5f0;
+}
+
+.psd-share-bar i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #1682e8;
+}
+
+.psd-loan-total-layout .psd-total-summary {
+    grid-template-rows: 38px minmax(86px, 0.7fr) auto auto minmax(0, 1fr);
+}
+
+.psd-quality-bar {
+    display: flex;
+    height: 20px;
+    overflow: hidden;
+    margin: 0 12px;
+    border-radius: 5px;
+    background: #e5eaf1;
+}
+
+.psd-quality-bar i {
+    display: block;
+    height: 100%;
+}
+
+.psd-quality-bar .is-healthy,
+.psd-quality-legend i.is-healthy {
+    background: #10b981;
+}
+
+.psd-quality-bar .is-sml,
+.psd-quality-legend i.is-sml {
+    background: #f59e0b;
+}
+
+.psd-quality-bar .is-npl,
+.psd-quality-legend i.is-npl {
+    background: #ef4444;
+}
+
+.psd-quality-legend {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 8px 12px;
+}
+
+.psd-quality-legend span {
+    min-width: 0;
+    color: #526177;
+    font-size: 7px;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.psd-quality-legend span i {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 4px;
+    border-radius: 2px;
+}
+
+.psd-quality-legend strong {
+    color: #172033;
+}
+
+.psd-segment-layout {
+    display: grid;
+    grid-template-columns: minmax(340px, 0.82fr) minmax(0, 1.18fr);
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.psd-segment-summary {
+    display: grid;
+    grid-template-rows: 38px 92px minmax(0, 1fr);
+}
+
+.psd-segment-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    align-content: center;
+    gap: 3px 12px;
+    padding: 10px 13px;
+    border-bottom: 1px solid #e1e8f1;
+}
+
+.psd-segment-hero > span {
+    color: #64748b;
+    font-size: 8px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.psd-segment-hero > strong {
+    grid-row: 2;
+    color: #0857c3;
+    font-size: 23px;
+    font-weight: 950;
+}
+
+.psd-segment-hero > div {
+    display: grid;
+    grid-row: 1 / 3;
+    grid-column: 2;
+    align-content: center;
+    gap: 6px;
+    text-align: right;
+}
+
+.psd-segment-hero small {
+    color: #526177;
+    font-size: 8px;
+    font-weight: 750;
+}
+
+.psd-segment-hero small b {
+    color: #172033;
+}
+
+.psd-product-stack {
+    display: grid;
+    grid-template-rows: repeat(var(--psd-product-count, 1), minmax(0, 1fr));
+    min-height: 0;
+    padding: 7px 10px 10px;
+}
+
+.psd-product-stack article {
+    display: grid;
+    grid-template-columns: 27px minmax(0, 1fr) minmax(150px, 0.85fr);
+    align-items: center;
+    gap: 8px;
+    min-height: 0;
+    padding: 5px 7px;
+    border-bottom: 1px solid #e1e8f1;
+}
+
+.psd-product-stack article:last-child {
+    border-bottom: 0;
+}
+
+.psd-product-stack article > i {
+    color: #0857c3;
+    font-size: 13px;
+    text-align: center;
+}
+
+.psd-product-main {
+    min-width: 0;
+}
+
+.psd-product-main > span,
+.psd-product-main > strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-product-main > span {
+    color: #526177;
+    font-size: 8px;
+    font-weight: 850;
+}
+
+.psd-product-main > strong {
+    margin-top: 2px;
+    color: #172033;
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.psd-product-main > small {
+    display: block;
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 7px;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.psd-product-share {
+    height: 4px;
+    overflow: hidden;
+    margin-top: 5px;
+    border-radius: 999px;
+    background: #dfe7f1;
+}
+
+.psd-product-share i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #00a6d6;
+}
+
+.psd-product-quality {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+    min-width: 0;
+}
+
+.psd-product-quality > span {
+    display: grid;
+    min-width: 0;
+    padding: 5px 6px;
+    border-left: 3px solid #f59e0b;
+    background: #f8fafc;
+}
+
+.psd-product-quality > span:last-child {
+    border-left-color: #e62b34;
+}
+
+.psd-product-quality small,
+.psd-product-quality b,
+.psd-product-quality em {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-product-quality small {
+    color: #64748b;
+    font-size: 6px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.psd-product-quality b {
+    margin-top: 2px;
+    color: #172033;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.psd-product-quality em {
+    margin-top: 1px;
+    color: #64748b;
+    font-size: 6px;
+    font-style: normal;
+    font-weight: 750;
+}
+
+.psd-product-stack.is-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
+    gap: 8px;
+}
+
+.psd-product-stack.is-card-grid article {
+    grid-template-columns: 30px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, auto);
+    align-content: center;
+    padding: 12px;
+    border: 1px solid #dce6f1;
+    border-top: 3px solid #00a6d6;
+    border-radius: 6px;
+}
+
+.psd-product-stack.is-card-grid article > i {
+    align-self: start;
+    padding-top: 2px;
+}
+
+.psd-product-stack.is-card-grid .psd-product-quality {
+    grid-column: 1 / -1;
+    margin-top: 11px;
+}
+
+.psd-product-branches {
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 5px;
+    min-width: 0;
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid #dce6f1;
+}
+
+.psd-product-branches > strong {
+    color: #526177;
+    font-size: 7px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.psd-product-branches > span {
+    display: grid;
+    grid-template-columns: minmax(72px, 0.9fr) minmax(50px, 1fr) auto;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+.psd-product-branches b,
+.psd-product-branches small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-product-branches b {
+    color: #334155;
+    font-size: 6px;
+    font-weight: 800;
+}
+
+.psd-product-branches small {
+    color: #172033;
+    font-size: 6px;
+    font-weight: 850;
+}
+
+.psd-product-branches > span > i {
+    display: block;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #dfe7f1;
+}
+
+.psd-product-branches > span > i em {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #00a6d6;
+}
+
+.psd-product-stack.is-card-grid .psd-product-main > strong {
+    font-size: 15px;
+}
+
+.psd-product-stack.is-card-grid .psd-product-quality b {
+    font-size: 9px;
+}
+
+.psd-quality-layout {
+    display: grid;
+    grid-template-columns: minmax(255px, 0.7fr) minmax(340px, 1fr) minmax(285px, 0.78fr);
+    gap: 10px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.psd-quality-overview {
+    display: grid;
+    grid-template-rows: 38px 98px minmax(0, 1fr) 46px;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid #d6e2f0;
+    border-radius: 7px;
+    background: #ffffff;
+}
+
+.psd-quality-hero {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    padding: 9px;
+    background: #fffaf0;
+}
+
+.psd-quality-hero.is-npl {
+    background: #fff5f5;
+}
+
+.psd-quality-hero > span {
+    color: #64748b;
+    font-size: 8px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.psd-quality-hero > strong {
+    margin-top: 4px;
+    color: #d97706;
+    font-size: 23px;
+    font-weight: 950;
+}
+
+.psd-quality-hero.is-npl > strong {
+    color: #dc2626;
+}
+
+.psd-quality-hero > b {
+    margin-top: 3px;
+    color: #526177;
+    font-size: 9px;
+    font-weight: 850;
+}
+
+.psd-segment-risk-grid {
+    display: grid;
+    grid-template-rows: repeat(var(--psd-risk-count, 3), minmax(0, 1fr));
+    min-height: 0;
+    padding: 7px 10px;
+}
+
+.psd-segment-risk-grid article {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-content: center;
+    gap: 2px 8px;
+    min-height: 0;
+    border-bottom: 1px solid #e1e8f1;
+}
+
+.psd-segment-risk-grid article:last-child {
+    border-bottom: 0;
+}
+
+.psd-segment-risk-grid span {
+    color: #526177;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.psd-segment-risk-grid strong {
+    color: #172033;
+    font-size: 10px;
+    font-weight: 900;
+    text-align: right;
+}
+
+.psd-segment-risk-grid small {
+    grid-column: 1 / 3;
+    color: #64748b;
+    font-size: 7px;
+    font-weight: 700;
+}
+
+.psd-quality-deltas {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px;
+    padding: 7px 9px;
+    border-top: 1px solid #e1e8f1;
+    background: #f7f9fc;
+}
+
+.psd-quality-deltas span {
+    color: #64748b;
+    font-size: 7px;
+    font-weight: 800;
+    text-align: center;
+}
+
+.psd-quality-deltas strong {
+    display: block;
+    margin-top: 2px;
+    color: #172033;
+    font-size: 8px;
+}
+
+.is-positive {
+    color: #008766 !important;
+}
+
+.is-negative,
+.psd-risk-text {
+    color: #d9202a !important;
+}
+
+.is-neutral {
+    color: #9a6700 !important;
+}
+
+.psd-product-risk {
+    display: flex;
+    flex-direction: column;
+}
+
+.psd-risk-list {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-rows: repeat(var(--psd-risk-rows, 1), minmax(0, 1fr));
+    min-height: 0;
+    padding: 7px 10px 10px;
+}
+
+.psd-risk-list > div:not(.psd-empty) {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    min-height: 0;
+    border-bottom: 1px solid #e1e8f1;
+}
+
+.psd-risk-list > div:last-child {
+    border-bottom: 0;
+}
+
+.psd-risk-list > div > b {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    color: #ffffff;
+    border-radius: 4px;
+    background: #e62b34;
+    font-size: 8px;
+}
+
+.psd-risk-list span,
+.psd-risk-list em {
+    min-width: 0;
+}
+
+.psd-risk-list span strong,
+.psd-risk-list span small,
+.psd-risk-list em,
+.psd-risk-list em small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-risk-list span strong {
+    color: #172033;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.psd-risk-list span small {
+    margin-top: 2px;
+    color: #64748b;
+    font-size: 7px;
+    font-weight: 700;
+}
+
+.psd-risk-list em {
+    color: #172033;
+    font-size: 8px;
+    font-style: normal;
+    font-weight: 900;
+    text-align: right;
+}
+
+.psd-risk-list em small {
+    margin-top: 2px;
+    color: #d9202a;
+    font-size: 7px;
+}
+
+.psd-productivity-layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 0.75fr) minmax(0, 1.25fr);
+    gap: 10px;
+    min-height: 0;
+}
+
+.psd-productivity-summary {
+    display: grid;
+    grid-template-rows: 38px minmax(0, 1fr) 76px;
+}
+
+.psd-productivity-kpis {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    min-height: 0;
+    padding: 10px;
+}
+
+.psd-productivity-kpis .psd-stat:last-child {
+    grid-column: 1 / 3;
+}
+
+.psd-productivity-kpis.is-two-column {
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.psd-productivity-kpis.is-two-column .psd-stat:last-child {
+    grid-column: auto;
+}
+
+.psd-productivity-readout {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    margin: 0 10px 10px;
+    padding: 9px 10px;
+    color: #174b3e;
+    border-left: 4px solid #009b77;
+    background: #eefaf6;
+}
+
+.psd-productivity-readout i {
+    color: #009b77;
+    font-size: 17px;
+    text-align: center;
+}
+
+.psd-productivity-readout p {
+    margin: 0;
+    font-size: 8px;
+    font-weight: 750;
+    line-height: 1.35;
+}
+
+.psd-mantri-layout {
+    display: grid;
+    grid-template-columns: minmax(300px, 0.72fr) minmax(0, 1.28fr);
+    gap: 10px;
+    min-height: 0;
+}
+
+.psd-pdwk-panel {
+    display: grid;
+    grid-template-rows: 38px 88px minmax(0, 1fr);
+}
+
+.psd-pdwk-total {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    border-bottom: 1px solid #e1e8f1;
+}
+
+.psd-pdwk-total span {
+    color: #64748b;
+    font-size: 8px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.psd-pdwk-total strong {
+    margin-top: 4px;
+    color: #0857c3;
+    font-size: 21px;
+    font-weight: 950;
+}
+
+.psd-pdwk-total small {
+    margin-top: 3px;
+    color: #526177;
+    font-size: 8px;
+    font-weight: 750;
+}
+
+.psd-role-grid {
+    display: grid;
+    grid-template-rows: repeat(var(--psd-role-count, 1), minmax(0, 1fr));
+    min-height: 0;
+    padding: 7px 10px 10px;
+}
+
+.psd-role-grid article {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto 5px;
+    align-content: center;
+    gap: 3px 8px;
+    padding: 5px 7px;
+    border-bottom: 1px solid #e1e8f1;
+}
+
+.psd-role-grid article:last-child {
+    border-bottom: 0;
+}
+
+.psd-role-grid article span {
+    color: #526177;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.psd-role-grid article strong {
+    color: #172033;
+    font-size: 10px;
+    font-weight: 900;
+    text-align: right;
+}
+
+.psd-role-grid article small {
+    color: #64748b;
+    font-size: 7px;
+    font-weight: 700;
+}
+
+.psd-role-grid .psd-share-bar {
+    grid-column: 1 / 3;
+    margin-top: 2px;
+}
+
+.psd-segmented {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid #d6e1ee;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.psd-segmented button {
+    min-height: 25px;
+    padding: 0 10px;
+    color: #526177;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    font-size: 8px;
+    font-weight: 850;
+    cursor: pointer;
+}
+
+.psd-segmented button.is-active {
+    color: #ffffff;
+    background: #0857c3;
+}
+
+.psd-segmented.is-wide {
+    flex-wrap: nowrap;
+    max-width: 100%;
+}
+
+.psd-segmented.is-wide button {
+    padding: 0 7px;
+}
+
+.psd-kts-layout {
+    display: grid;
+    grid-template-columns: minmax(240px, 0.55fr) minmax(0, 1.45fr);
+    gap: 10px;
+    min-height: 0;
+}
+
+.psd-kts-summary {
+    display: grid;
+    grid-template-rows: repeat(3, minmax(0, 1fr)) minmax(105px, 1.1fr);
+    gap: 7px;
+    padding: 9px;
+}
+
+.psd-kts-definition {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    padding: 12px;
+    border: 1px solid #d8e4f1;
+    border-left: 4px solid #0857c3;
+    border-radius: 5px;
+    background: #f3f7fc;
+}
+
+.psd-kts-definition strong {
+    color: #0857c3;
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.psd-kts-definition p {
+    margin: 7px 0 0;
+    color: #526177;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.psd-timeseries-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.34fr) minmax(320px, 0.66fr);
+    gap: 10px;
+    min-height: 0;
+}
+
+.psd-chart-panel {
+    display: grid;
+    grid-template-rows: 38px minmax(0, 1fr) 28px;
+}
+
+.psd-chart-wrap {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    padding: 8px 12px 0;
+}
+
+.psd-chart-wrap canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.psd-series-legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 0 10px;
+    border-top: 1px solid #e1e8f1;
+}
+
+.psd-series-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: #526177;
+    font-size: 8px;
+    font-weight: 800;
+}
+
+.psd-series-legend i {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+}
+
+.psd-timeseries-side {
+    display: grid;
+    grid-template-rows: 104px minmax(0, 1fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.psd-business-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    min-height: 0;
+}
+
+.psd-business-kpis .psd-stat {
+    padding: 10px 11px;
+}
+
+.psd-business-kpis .psd-stat > strong {
+    font-size: 17px;
+}
+
+.psd-business-kpis .psd-stat > small {
+    margin-top: 3px;
+}
+
+.psd-quadrant-panel {
+    display: grid;
+    grid-template-rows: 38px minmax(0, 1fr);
+}
+
+.psd-quadrant-body {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    min-height: 0;
+    padding: 6px 8px 8px;
+}
+
+.psd-quadrant-body svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
+.psd-quadrant-zone {
+    fill: rgba(8, 87, 195, 0.035);
+}
+
+.psd-quadrant-zone.is-high-high {
+    fill: rgba(0, 155, 119, 0.06);
+}
+
+.psd-quadrant-grid {
+    stroke: #e0e8f2;
+    stroke-width: 1;
+}
+
+.psd-quadrant-average {
+    stroke: #9aa9bc;
+    stroke-width: 1.2;
+    stroke-dasharray: 6 5;
+}
+
+.psd-quadrant-balance {
+    stroke: #f59e0b;
+    stroke-width: 2;
+    stroke-dasharray: 7 5;
+}
+
+.psd-quadrant-axis {
+    stroke: #64748b;
+    stroke-width: 1.6;
+}
+
+.psd-quadrant-tick {
+    fill: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.psd-quadrant-axis-label,
+.psd-quadrant-balance-label {
+    fill: #334155;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.psd-quadrant-balance-label {
+    fill: #a16207;
+}
+
+.psd-quadrant-point circle {
+    fill: #a8bed9;
+    stroke: #ffffff;
+    stroke-width: 3;
+}
+
+.psd-quadrant-point.is-active circle {
+    fill: #0857c3;
+}
+
+.psd-quadrant-point text {
+    fill: #475569;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.psd-quadrant-point text tspan:last-child {
+    fill: #64748b;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.psd-quadrant-point.is-active text {
+    fill: #0f172a;
+}
+
+.psd-quadrant-note {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    padding: 7px 9px;
+    color: #526177;
+    border-left: 4px solid #f59e0b;
+    background: #fff9eb;
+}
+
+.psd-quadrant-note strong {
+    color: #92400e;
+    font-size: 9px;
+    font-weight: 900;
+}
+
+.psd-quadrant-note span {
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.psd-closing-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.28fr) minmax(320px, 0.72fr);
+    gap: 10px;
+    min-height: 0;
+}
+
+.psd-strategy-board,
+.psd-action-board {
+    display: grid;
+    grid-template-rows: 38px minmax(0, 1fr);
+}
+
+.psd-strategy-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    gap: 7px;
+    min-height: 0;
+    padding: 10px;
+}
+
+.psd-strategy-grid article {
+    display: grid;
+    grid-template-columns: 27px minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    align-content: stretch;
+    gap: 2px 8px;
+    min-width: 0;
+    min-height: 0;
+    padding: 7px 9px;
+    border: 1px solid #dce5f0;
+    border-radius: 5px;
+    background: #f8fafc;
+}
+
+.psd-strategy-grid article > b {
+    display: flex;
+    grid-row: 1 / 3;
+    align-items: center;
+    justify-content: center;
+    width: 25px;
+    height: 25px;
+    color: #ffffff;
+    border-radius: 4px;
+    background: #0857c3;
+    font-size: 8px;
+}
+
+.psd-strategy-grid article div {
+    min-width: 0;
+}
+
+.psd-strategy-value span,
+.psd-strategy-value strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-strategy-value span {
+    color: #526177;
+    font-size: 8px;
+    font-weight: 850;
+}
+
+.psd-strategy-value strong {
+    margin-top: 2px;
+    color: #172033;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.psd-strategy-grid article em {
+    align-self: center;
+    font-size: 9px;
+    font-style: normal;
+    font-weight: 900;
+}
+
+.psd-strategy-detail {
+    display: grid;
+    grid-column: 2 / 4;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(0, 1fr);
+    align-items: stretch;
+    min-width: 0;
+    min-height: 0;
+    margin-top: 4px;
+    border-top: 1px solid #e4eaf2;
+}
+
+.psd-strategy-detail > span {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    padding: 4px 7px;
+    border-right: 1px solid #e4eaf2;
+    border-bottom: 1px solid #e4eaf2;
+}
+
+.psd-strategy-detail > span:nth-child(2n) {
+    border-right: 0;
+}
+
+.psd-strategy-detail > span:nth-last-child(-n + 2) {
+    border-bottom: 0;
+}
+
+.psd-strategy-detail i,
+.psd-strategy-detail strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-strategy-detail i {
+    color: #64748b;
+    font-size: 7px;
+    font-style: normal;
+    font-weight: 750;
+}
+
+.psd-strategy-detail strong {
+    margin-top: 2px;
+    color: #334155;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.psd-action-board {
+    grid-template-rows: 38px 142px minmax(0, 1fr) 66px;
+}
+
+.psd-closing-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px 10px 5px;
+}
+
+.psd-closing-kpis article {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid #dce5f0;
+    border-top: 3px solid #0857c3;
+    border-radius: 4px;
+    background: #f8fafc;
+}
+
+.psd-closing-kpis article.is-green {
+    border-top-color: #009b77;
+}
+
+.psd-closing-kpis article.is-amber {
+    border-top-color: #f59e0b;
+}
+
+.psd-closing-kpis article.is-red {
+    border-top-color: #e62b34;
+}
+
+.psd-closing-kpis article.is-cyan {
+    border-top-color: #00aeef;
+}
+
+.psd-closing-kpis span,
+.psd-closing-kpis small {
+    overflow: hidden;
+    color: #64748b;
+    font-size: 7px;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-closing-kpis strong {
+    overflow: hidden;
+    margin: 2px 0;
+    color: #172033;
+    font-size: 11px;
+    font-weight: 900;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-action-board ol {
+    display: grid;
+    grid-template-rows: repeat(5, minmax(0, 1fr));
+    min-height: 0;
+    margin: 0;
+    padding: 4px 12px 3px 34px;
+}
+
+.psd-action-board li {
+    min-height: 0;
+    padding: 5px 3px;
+    color: #0857c3;
+    border-bottom: 1px solid #e1e8f1;
+    font-size: 9px;
+    font-weight: 900;
+}
+
+.psd-action-board li:last-child {
+    border-bottom: 0;
+}
+
+.psd-action-board li b,
+.psd-action-board li span {
+    display: block;
+}
+
+.psd-action-board li > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.psd-action-board li em {
+    color: #0f172a;
+    font-size: 8px;
+    font-style: normal;
+    font-weight: 900;
+}
+
+.psd-action-board li span {
+    margin-top: 2px;
+    color: #526177;
+    font-size: 7px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.psd-closing-message {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    margin: 0 10px 8px;
+    padding: 8px 11px;
+    color: #ffffff;
+    border-radius: 5px;
+    background: #032b58;
+}
+
+.psd-closing-message strong {
+    font-size: 9px;
+    font-weight: 900;
+}
+
+.psd-closing-message span {
+    margin-top: 4px;
+    color: #8dd8ff;
+    font-size: 8px;
+    font-weight: 750;
+}
+
+.psd-roadmap-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+    gap: 12px;
+    min-height: 0;
+}
+
+.psd-roadmap-flow {
+    display: grid;
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    min-height: 0;
+}
+
+.psd-roadmap-step {
+    position: relative;
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 13px;
+    min-height: 0;
+    padding: 9px 18px 9px 10px;
+    border: 1px solid #d7e3f0;
+    border-left: 5px solid #0857c3;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.psd-roadmap-step.is-cyan {
+    border-left-color: #00aeef;
+}
+
+.psd-roadmap-step.is-amber {
+    border-left-color: #f59e0b;
+}
+
+.psd-roadmap-step.is-green {
+    border-left-color: #009b77;
+}
+
+.psd-roadmap-number {
+    color: #0857c3;
+    font-size: 24px;
+    font-weight: 950;
+    line-height: 1;
+    text-align: center;
+}
+
+.psd-roadmap-step h3 {
+    margin: 0;
+    color: #172033;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.psd-roadmap-step p {
+    margin: 3px 0 0;
+    color: #526177;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.psd-roadmap-step small {
+    color: #64748b;
+    font-size: 8px;
+    font-weight: 850;
+}
+
+.psd-roadmap-step > i {
+    position: absolute;
+    right: -12px;
+    bottom: -13px;
+    z-index: 2;
+    color: #9ab4d2;
+    font-size: 14px;
+    transform: rotate(90deg);
+}
+
+.psd-pulse {
+    display: grid;
+    grid-template-rows: 38px minmax(0, 1fr) 88px;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid #d6e2f0;
+    border-radius: 7px;
+    background: #ffffff;
+}
+
+.psd-pulse-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    min-height: 0;
+    padding: 10px;
+}
+
+.psd-decision-note {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    margin: 0 10px 10px;
+    padding: 10px;
+    border-left: 4px solid #009b77;
+    background: #eefaf6;
+}
+
+.psd-decision-note i {
+    color: #009b77;
+    font-size: 18px;
+    text-align: center;
+}
+
+.psd-decision-note strong {
+    color: #174b3e;
+    font-size: 9px;
+    font-weight: 900;
+}
+
+.psd-decision-note p {
+    margin: 3px 0 0;
+    color: #3c665b;
+    font-size: 7px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.pres-structured-shell#pres-slide-0 {
+    padding: 0;
+    border: 0;
+    background: #032b58;
+}
+
+.psd-cover {
+    position: relative;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    padding: 25px 30px 22px;
+    color: #ffffff;
+    background-color: #032b58;
+    background-image:
+        linear-gradient(90deg, rgba(2, 27, 58, 0.98) 0%, rgba(2, 43, 82, 0.88) 47%, rgba(2, 43, 82, 0.2) 75%, rgba(2, 43, 82, 0.1) 100%),
+        var(--psd-cover-image);
+    background-position: center, center;
+    background-size: cover, cover;
+}
+
+.psd-cover::after {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 58%;
+    height: 5px;
+    content: '';
+    background: linear-gradient(90deg, #00aeef, #f59e0b, #e62b34);
+}
+
+.psd-cover-brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: max-content;
+    padding: 7px 12px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.94);
+}
+
+.psd-cover-brand img {
+    display: block;
+    width: auto;
+    max-width: 140px;
+    height: 24px;
+    object-fit: contain;
+}
+
+.psd-cover-brand span {
+    width: 1px;
+    height: 19px;
+    background: #c8d3df;
+}
+
+.psd-cover-copy {
+    display: flex;
+    align-self: center;
+    justify-content: center;
+    flex-direction: column;
+    max-width: 730px;
+    min-height: 0;
+}
+
+.psd-cover-copy h1 {
+    margin: 5px 0 0;
+    color: #ffffff !important;
+    font-size: 54px;
+    font-weight: 950;
+    line-height: 0.98;
+}
+
+.psd-cover-copy h2 {
+    max-width: 680px;
+    margin: 11px 0 0;
+    color: #8dd8ff !important;
+    font-size: 24px;
+    font-weight: 850;
+    line-height: 1.15;
+}
+
+.psd-cover-copy p {
+    max-width: 680px;
+    margin: 16px 0 0;
+    color: rgba(255, 255, 255, 0.82) !important;
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 1.5;
+}
+
+.psd-cover-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    max-width: 900px;
+}
+
+.psd-cover-metrics .psd-stat {
+    border-color: rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.94);
+}
+
+.psd-cover-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 900px;
+    margin-top: 11px;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 9px;
+    font-weight: 750;
+}
+
+.pres-structured-loading {
+    display: grid;
+    grid-template-rows: 12px 34px minmax(0, 1fr);
+    gap: 10px;
+    width: 100%;
+    height: 100%;
+}
+
+#apple-presentation-mode .dashboard-loading-overlay:not(.active) {
+    display: none !important;
+    transition: none !important;
+}
+
+.pres-structured-loading-kicker,
+.pres-structured-loading-title,
+.pres-structured-loading-grid span {
+    border-radius: 4px;
+    background: linear-gradient(90deg, #e6edf5, #f6f9fc, #e6edf5);
+    background-size: 200% 100%;
+    animation: psd-loading 1.4s linear infinite;
+}
+
+.pres-structured-loading-kicker {
+    width: 140px;
+}
+
+.pres-structured-loading-title {
+    width: 48%;
+}
+
+.pres-structured-loading-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+@keyframes psd-loading {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+}
+
+@media (max-width: 900px) {
+    .pres-structured-shell {
+        padding: 14px;
+    }
+
+    .psd-header {
+        grid-template-columns: minmax(0, 1fr) minmax(360px, 0.85fr);
+        gap: 14px;
+    }
+
+    .psd-heading h1 {
+        font-size: 27px;
+    }
+
+    .psd-cover {
+        padding: 22px;
+    }
+
+    .psd-cover-copy h1 {
+        font-size: 48px;
+    }
+}
+
+/*
+ * The presentation canvas is scaled to fit the viewport. Keep the smallest
+ * business text comfortably readable from a shared screen before that scale
+ * is applied, rather than compensating only with browser zoom.
+ */
+.pres-structured-shell .psd-kicker {
+    font-size: 15px;
+}
+
+.pres-structured-shell .psd-heading h1 {
+    font-size: 40px;
+}
+
+.pres-structured-shell .psd-heading p {
+    font-size: 15px;
+}
+
+.pres-structured-shell .psd-reading > span,
+.pres-structured-shell .psd-period,
+.pres-structured-shell .psd-panel-title,
+.pres-structured-shell .psd-panel-title small {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-reading p {
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.pres-structured-shell .psd-stat > span,
+.pres-structured-shell .psd-stat > small,
+.pres-structured-shell .psd-insight > span,
+.pres-structured-shell .psd-matrix-head span {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-stat > strong {
+    font-size: 22px;
+}
+
+.pres-structured-shell .psd-insight > strong {
+    font-size: 15px;
+}
+
+.pres-structured-shell .psd-insight > small,
+.pres-structured-shell .psd-matrix-row small {
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-matrix-row > div,
+.pres-structured-shell .psd-matrix-row strong {
+    font-size: 12px;
+    line-height: 1.25;
+}
+
+.pres-structured-shell .psd-hero-number > span,
+.pres-structured-shell .psd-hero-number > small,
+.pres-structured-shell .psd-segment-hero > span,
+.pres-structured-shell .psd-segment-hero small,
+.pres-structured-shell .psd-quality-hero > span,
+.pres-structured-shell .psd-quality-hero > b {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-hero-number > strong {
+    font-size: 34px;
+}
+
+.pres-structured-shell .psd-segment-hero > strong,
+.pres-structured-shell .psd-quality-hero > strong {
+    font-size: 30px;
+}
+
+.pres-structured-shell .psd-quality-legend span,
+.pres-structured-shell .psd-product-quality small,
+.pres-structured-shell .psd-product-quality em,
+.pres-structured-shell .psd-product-branches > strong,
+.pres-structured-shell .psd-role-grid article small,
+.pres-structured-shell .psd-risk-list span small,
+.pres-structured-shell .psd-risk-list em small {
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-product-quality b,
+.pres-structured-shell .psd-product-stack.is-card-grid .psd-product-quality b,
+.pres-structured-shell .psd-risk-list span strong,
+.pres-structured-shell .psd-risk-list em {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-product-stack.is-card-grid .psd-product-main > strong,
+.pres-structured-shell .psd-productivity-readout i,
+.pres-structured-shell .psd-decision-note i {
+    font-size: 18px;
+}
+
+.pres-structured-shell .psd-productivity-readout p,
+.pres-structured-shell .psd-kts-definition p,
+.pres-structured-shell .psd-decision-note p,
+.pres-structured-shell .psd-action-board li span {
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.pres-structured-shell .psd-pdwk-total span,
+.pres-structured-shell .psd-pdwk-total small,
+.pres-structured-shell .psd-role-grid article span,
+.pres-structured-shell .psd-strategy-value span,
+.pres-structured-shell .psd-closing-message span {
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-pdwk-total strong,
+.pres-structured-shell .psd-role-grid article strong,
+.pres-structured-shell .psd-strategy-value strong,
+.pres-structured-shell .psd-action-board li,
+.pres-structured-shell .psd-decision-note strong {
+    font-size: 13px;
+}
+
+.pres-structured-shell .psd-segmented button {
+    min-height: 32px;
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-kts-definition strong,
+.pres-structured-shell .psd-series-legend span,
+.pres-structured-shell .psd-closing-message strong {
+    font-size: 13px;
+}
+
+/*
+ * Readability pass for projected and tablet presentation use. The deck is a
+ * fixed 16:9 canvas, so local 6-11px labels become difficult to read after the
+ * canvas is scaled. Keep dense components legible without changing data flow.
+ */
+.pres-structured-shell .psd-kicker {
+    font-size: 16px;
+}
+
+.pres-structured-shell .psd-heading h1 {
+    font-size: 42px;
+}
+
+.pres-structured-shell .psd-heading p {
+    font-size: 16px;
+    line-height: 1.35;
+}
+
+.pres-structured-shell .psd-reading > span,
+.pres-structured-shell .psd-period {
+    font-size: 13px;
+}
+
+.pres-structured-shell .psd-reading p {
+    font-size: 15px;
+    line-height: 1.32;
+}
+
+.pres-structured-shell .psd-panel-title {
+    font-size: 14px;
+}
+
+.pres-structured-shell .psd-panel-title small {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-stat > span,
+.pres-structured-shell .psd-stat > small,
+.pres-structured-shell .psd-insight > span {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-stat > strong {
+    font-size: 24px;
+}
+
+.pres-structured-shell .psd-insight > strong {
+    font-size: 17px;
+}
+
+.pres-structured-shell .psd-insight > small {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-matrix-head span {
+    font-size: 13px;
+}
+
+.pres-structured-shell .psd-matrix-row > div,
+.pres-structured-shell .psd-matrix-row strong {
+    font-size: 14px;
+    line-height: 1.15;
+}
+
+.pres-structured-shell .psd-matrix-row small {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-mini-trend-lane > span strong,
+.pres-structured-shell .psd-mini-trend-lane > em {
+    font-size: 14px;
+}
+
+.pres-structured-shell .psd-mini-trend-lane > span small {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-mini-trend-lane > em small {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-mini-trend-fallback,
+.pres-structured-shell .psd-empty {
+    font-size: 13px;
+}
+
+.pres-structured-shell .psd-hero-number > span,
+.pres-structured-shell .psd-hero-number > small,
+.pres-structured-shell .psd-segment-hero > span,
+.pres-structured-shell .psd-segment-hero small,
+.pres-structured-shell .psd-quality-hero > span,
+.pres-structured-shell .psd-quality-hero > b {
+    font-size: 13px;
+}
+
+.pres-structured-shell .psd-hero-number > strong {
+    font-size: 38px;
+}
+
+.pres-structured-shell .psd-segment-hero > strong,
+.pres-structured-shell .psd-quality-hero > strong {
+    font-size: 34px;
+}
+
+.pres-structured-shell .psd-component-card > span {
+    font-size: 13px;
+}
+
+.pres-structured-shell .psd-component-card > strong {
+    font-size: 25px;
+}
+
+.pres-structured-shell .psd-component-card > small,
+.pres-structured-shell .psd-quality-legend span {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-product-main > span {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-product-main > strong {
+    font-size: 15px;
+}
+
+.pres-structured-shell .psd-product-main > small,
+.pres-structured-shell .psd-product-quality small,
+.pres-structured-shell .psd-product-quality em,
+.pres-structured-shell .psd-product-branches > strong {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-product-quality b {
+    font-size: 14px;
+}
+
+.pres-structured-shell .psd-product-branches b,
+.pres-structured-shell .psd-product-branches small {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-product-stack.is-card-grid .psd-product-main > strong {
+    font-size: 19px;
+}
+
+.pres-structured-shell .psd-product-stack.is-card-grid .psd-product-quality b {
+    font-size: 14px;
+}
+
+.pres-structured-shell .psd-segment-risk-grid span,
+.pres-structured-shell .psd-quality-deltas span {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-segment-risk-grid strong,
+.pres-structured-shell .psd-quality-deltas strong {
+    font-size: 14px;
+}
+
+.pres-structured-shell .psd-segment-risk-grid small {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-risk-list > div > b {
+    width: 26px;
+    height: 26px;
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-risk-list span strong,
+.pres-structured-shell .psd-risk-list em {
+    font-size: 13px;
+}
+
+.pres-structured-shell .psd-risk-list span small,
+.pres-structured-shell .psd-risk-list em small {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-productivity-readout p,
+.pres-structured-shell .psd-kts-definition p,
+.pres-structured-shell .psd-decision-note p,
+.pres-structured-shell .psd-action-board li span {
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+.pres-structured-shell .psd-pdwk-total span,
+.pres-structured-shell .psd-pdwk-total small,
+.pres-structured-shell .psd-role-grid article span,
+.pres-structured-shell .psd-role-grid article small,
+.pres-structured-shell .psd-strategy-value span,
+.pres-structured-shell .psd-closing-message span {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-pdwk-total strong {
+    font-size: 27px;
+}
+
+.pres-structured-shell .psd-role-grid article strong,
+.pres-structured-shell .psd-strategy-value strong,
+.pres-structured-shell .psd-action-board li,
+.pres-structured-shell .psd-decision-note strong {
+    font-size: 15px;
+}
+
+.pres-structured-shell .psd-kts-definition strong,
+.pres-structured-shell .psd-series-legend span,
+.pres-structured-shell .psd-closing-message strong {
+    font-size: 14px;
+}
+
+.pres-structured-shell .psd-strategy-grid article > b,
+.pres-structured-shell .psd-strategy-grid article em {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-strategy-detail i,
+.pres-structured-shell .psd-quadrant-note span,
+.pres-structured-shell .psd-closing-kpis span,
+.pres-structured-shell .psd-closing-kpis small {
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-strategy-detail strong,
+.pres-structured-shell .psd-quadrant-note strong,
+.pres-structured-shell .psd-action-board li em {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-closing-kpis strong {
+    font-size: 15px;
+}
+
+.pres-structured-shell .psd-quadrant-tick,
+.pres-structured-shell .psd-quadrant-point text {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-quadrant-point text tspan:last-child {
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-quadrant-axis-label,
+.pres-structured-shell .psd-quadrant-balance-label {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-roadmap-number {
+    font-size: 29px;
+}
+
+.pres-structured-shell .psd-roadmap-step h3 {
+    font-size: 19px;
+}
+
+.pres-structured-shell .psd-roadmap-step p {
+    font-size: 13px;
+    line-height: 1.3;
+}
+
+.pres-structured-shell .psd-roadmap-step small {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-cover-copy p {
+    font-size: 15px;
+}
+
+.pres-structured-shell .psd-cover-footer {
+    font-size: 12px;
+}
+
+@media (orientation: portrait) and (max-width: 900px) {
+    .pres-structured-shell .psd-kicker {
+        font-size: 18px;
+    }
+
+    .pres-structured-shell .psd-heading h1 {
+        font-size: 46px;
+    }
+
+    .pres-structured-shell .psd-heading p,
+    .pres-structured-shell .psd-reading p {
+        font-size: 18px;
+    }
+
+    .pres-structured-shell .psd-reading > span,
+    .pres-structured-shell .psd-period,
+    .pres-structured-shell .psd-panel-title {
+        font-size: 16px;
+    }
+
+    .pres-structured-shell .psd-panel-title small,
+    .pres-structured-shell .psd-stat > span,
+    .pres-structured-shell .psd-stat > small,
+    .pres-structured-shell .psd-insight > span,
+    .pres-structured-shell .psd-insight > small {
+        font-size: 13px;
+    }
+
+    .pres-structured-shell .psd-stat > strong {
+        font-size: 28px;
+    }
+
+    .pres-structured-shell .psd-insight > strong {
+        font-size: 19px;
+    }
+
+    .pres-structured-shell .psd-matrix-head span,
+    .pres-structured-shell .psd-matrix-row small,
+    .pres-structured-shell .psd-mini-trend-lane > span small,
+    .pres-structured-shell .psd-mini-trend-lane > em small {
+        font-size: 13px;
+    }
+
+    .pres-structured-shell .psd-matrix-row > div,
+    .pres-structured-shell .psd-matrix-row strong,
+    .pres-structured-shell .psd-mini-trend-lane > span strong,
+    .pres-structured-shell .psd-mini-trend-lane > em {
+        font-size: 16px;
+    }
+
+    .pres-structured-shell .psd-product-main > span,
+    .pres-structured-shell .psd-product-main > small,
+    .pres-structured-shell .psd-product-quality small,
+    .pres-structured-shell .psd-product-quality em,
+    .pres-structured-shell .psd-product-branches > strong,
+    .pres-structured-shell .psd-product-branches b,
+    .pres-structured-shell .psd-product-branches small,
+    .pres-structured-shell .psd-segment-risk-grid span,
+    .pres-structured-shell .psd-segment-risk-grid small,
+    .pres-structured-shell .psd-quality-deltas span,
+    .pres-structured-shell .psd-risk-list span small,
+    .pres-structured-shell .psd-risk-list em small,
+    .pres-structured-shell .psd-role-grid article span,
+    .pres-structured-shell .psd-role-grid article small {
+        font-size: 13px;
+    }
+
+    .pres-structured-shell .psd-product-main > strong,
+    .pres-structured-shell .psd-product-quality b,
+    .pres-structured-shell .psd-segment-risk-grid strong,
+    .pres-structured-shell .psd-quality-deltas strong,
+    .pres-structured-shell .psd-risk-list span strong,
+    .pres-structured-shell .psd-risk-list em,
+    .pres-structured-shell .psd-role-grid article strong {
+        font-size: 16px;
+    }
+}
+
+/*
+ * Business story v2.
+ * The thirteen-slide deck keeps one fixed 16:9 canvas while allocating every
+ * content band explicitly. This prevents sparse panels and keeps the dense
+ * comparison matrices readable after the canvas is scaled.
+ */
+.pres-structured-shell .psd-v2-data-slide,
+.pres-structured-shell .psd-v2-agenda-slide,
+.pres-structured-shell .psd-v2-strategy-slide,
+.pres-structured-shell .psd-v2-priority-slide {
+    grid-template-rows: 106px minmax(0, 1fr) 62px;
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-v2-data-slide > .psd-header,
+.pres-structured-shell .psd-v2-agenda-slide > .psd-header,
+.pres-structured-shell .psd-v2-strategy-slide > .psd-header,
+.pres-structured-shell .psd-v2-priority-slide > .psd-header {
+    height: 106px;
+    min-height: 106px;
+}
+
+.pres-structured-shell .psd-v2-data-slide .psd-heading h1,
+.pres-structured-shell .psd-v2-agenda-slide .psd-heading h1,
+.pres-structured-shell .psd-v2-strategy-slide .psd-heading h1,
+.pres-structured-shell .psd-v2-priority-slide .psd-heading h1 {
+    font-size: 36px;
+}
+
+.pres-structured-shell .psd-v2-data-slide .psd-heading p,
+.pres-structured-shell .psd-v2-agenda-slide .psd-heading p,
+.pres-structured-shell .psd-v2-strategy-slide .psd-heading p,
+.pres-structured-shell .psd-v2-priority-slide .psd-heading p {
+    font-size: 14px;
+}
+
+.pres-structured-shell .psd-v2-data-slide .psd-reading,
+.pres-structured-shell .psd-v2-agenda-slide .psd-reading,
+.pres-structured-shell .psd-v2-strategy-slide .psd-reading,
+.pres-structured-shell .psd-v2-priority-slide .psd-reading {
+    grid-template-columns: 134px minmax(0, 1fr);
+    min-height: 62px;
+}
+
+.pres-structured-shell .psd-v2-data-slide .psd-reading > span,
+.pres-structured-shell .psd-v2-agenda-slide .psd-reading > span,
+.pres-structured-shell .psd-v2-strategy-slide .psd-reading > span,
+.pres-structured-shell .psd-v2-priority-slide .psd-reading > span {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-v2-data-slide .psd-reading p,
+.pres-structured-shell .psd-v2-agenda-slide .psd-reading p,
+.pres-structured-shell .psd-v2-strategy-slide .psd-reading p,
+.pres-structured-shell .psd-v2-priority-slide .psd-reading p {
+    font-size: 14px;
+    line-height: 1.28;
+}
+
+.pres-structured-shell .psd-v2-data-main {
+    display: grid;
+    grid-template-rows: minmax(270px, 0.94fr) minmax(0, 1.06fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table {
+    grid-template-rows: minmax(388px, 1.42fr) minmax(150px, 0.58fr);
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-table-panel > .psd-panel-title {
+    flex-basis: 32px;
+    height: 32px;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-comparison-table th,
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-comparison-table td {
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-comparison-table .psd-v2-group-head th {
+    height: 22px;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-comparison-table .psd-v2-date-head th {
+    height: 32px;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-comparison-table tbody tr {
+    height: 21px;
+}
+
+.pres-structured-shell .psd-v2-table-panel,
+.pres-structured-shell .psd-v2-trend-panel,
+.pres-structured-shell .psd-v2-distribution-panel,
+.pres-structured-shell .psd-v2-quadrant-panel,
+.pres-structured-shell .psd-v2-action-board,
+.pres-structured-shell .psd-v2-priority-signals {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    flex-direction: column;
+    border: 1px solid #cbd9e9;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-v2-table-panel > .psd-panel-title,
+.pres-structured-shell .psd-v2-trend-panel > .psd-panel-title,
+.pres-structured-shell .psd-v2-distribution-panel > .psd-panel-title,
+.pres-structured-shell .psd-v2-quadrant-panel > .psd-panel-title,
+.pres-structured-shell .psd-v2-action-board > .psd-panel-title,
+.pres-structured-shell .psd-v2-priority-signals > .psd-panel-title {
+    flex: 0 0 36px;
+    height: 36px;
+    font-size: 13px;
+}
+
+.pres-structured-shell .psd-v2-support-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.26fr) minmax(390px, 0.74fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-v2-support-split.is-equal {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pres-structured-shell .psd-v2-comparison-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.pres-structured-shell .psd-v2-comparison-table {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.pres-structured-shell .psd-v2-comparison-table col.is-scope {
+    width: 8.5%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table col.is-dimension {
+    width: 10%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table col.is-value {
+    width: 5.2%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table col.is-delta {
+    width: 5.3%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table col.is-rka {
+    width: 6%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table col.is-achievement {
+    width: 6.6%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table th,
+.pres-structured-shell .psd-v2-comparison-table td {
+    min-width: 0;
+    padding: 4px 3px;
+    overflow: hidden;
+    border-right: 1px solid #d7e1ed;
+    border-bottom: 1px solid #d7e1ed;
+    color: #263449;
+    font-size: 10.5px;
+    font-weight: 750;
+    line-height: 1.12;
+    text-align: right;
+    vertical-align: middle;
+}
+
+.pres-structured-shell .psd-v2-comparison-table th:first-child,
+.pres-structured-shell .psd-v2-comparison-table th:nth-child(2),
+.pres-structured-shell .psd-v2-comparison-table td:first-child,
+.pres-structured-shell .psd-v2-comparison-table td:nth-child(2) {
+    padding-left: 7px;
+    text-align: left;
+}
+
+.pres-structured-shell .psd-v2-comparison-table th:last-child,
+.pres-structured-shell .psd-v2-comparison-table td:last-child {
+    border-right: 0;
+}
+
+.pres-structured-shell .psd-v2-comparison-table thead th {
+    color: #ffffff;
+    background: #0a448f;
+    font-weight: 900;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-v2-comparison-table .psd-v2-group-head th {
+    height: 24px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    border-right-color: rgba(255, 255, 255, 0.26);
+    border-bottom-color: rgba(255, 255, 255, 0.35);
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-v2-comparison-table .psd-v2-date-head th {
+    height: 35px;
+    background: #0d5ab5;
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-v2-comparison-table .psd-v2-date-head th > span,
+.pres-structured-shell .psd-v2-comparison-table .psd-v2-date-head th > small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-v2-comparison-table .psd-v2-date-head th > small {
+    margin-top: 2px;
+    color: #cbe5ff;
+    font-size: 9px;
+    font-weight: 750;
+}
+
+.pres-structured-shell .psd-v2-comparison-table tbody tr {
+    height: 24px;
+}
+
+.pres-structured-shell .psd-v2-comparison-table tbody tr:nth-child(even) td {
+    background: #f4f7fb;
+}
+
+.pres-structured-shell .psd-v2-comparison-table tbody tr.is-total td {
+    color: #073b7a;
+    background: #dcecff;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-comparison-table tbody tr.is-selected td {
+    background: #e8f6ff;
+    box-shadow: inset 0 2px 0 #00a6d6, inset 0 -2px 0 #00a6d6;
+}
+
+.pres-structured-shell .psd-v2-comparison-table td.is-current {
+    color: #063d83;
+    background: #edf6ff;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-comparison-table td > strong,
+.pres-structured-shell .psd-v2-comparison-table td > span,
+.pres-structured-shell .psd-v2-comparison-table td > small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pres-structured-shell .psd-v2-comparison-table td > small {
+    margin-top: 2px;
+    color: #607087;
+    font-size: 8px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-v2-comparison-table .is-positive {
+    color: #008766;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-comparison-table .is-negative {
+    color: #d9202a;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-comparison-table .is-neutral {
+    color: #b27600;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-empty-cell {
+    height: 100%;
+    color: #64748b !important;
+    background: #f7f9fc !important;
+    font-size: 13px !important;
+    text-align: center !important;
+}
+
+.pres-structured-shell .psd-v2-trend-chart {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-rows: minmax(0, 1fr) auto;
+    min-width: 0;
+    min-height: 0;
+    padding: 5px 9px 7px;
+}
+
+.pres-structured-shell .psd-v2-trend-chart svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: visible;
+}
+
+.pres-structured-shell .psd-v2-trend-chart p {
+    margin: 1px 4px 0;
+    color: #5c6b80;
+    font-size: 10px;
+    font-weight: 750;
+    line-height: 1.2;
+}
+
+.pres-structured-shell .psd-v2-chart-grid,
+.pres-structured-shell .psd-v2-chart-axis {
+    stroke: #d7e0eb;
+    stroke-width: 1;
+}
+
+.pres-structured-shell .psd-v2-chart-area {
+    fill: rgba(8, 87, 195, 0.1);
+}
+
+.pres-structured-shell .psd-v2-chart-line {
+    fill: none;
+    stroke: #0857c3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 3;
+}
+
+.pres-structured-shell .psd-v2-chart-point {
+    fill: #ffffff;
+    stroke: #0857c3;
+    stroke-width: 3;
+}
+
+.pres-structured-shell .psd-v2-chart-value {
+    fill: #172033;
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-v2-chart-label {
+    fill: #5b6980;
+    font-size: 9px;
+    font-weight: 800;
+}
+
+.pres-structured-shell .psd-v2-trend-panel.is-green .psd-v2-chart-line,
+.pres-structured-shell .psd-v2-trend-panel.is-green .psd-v2-chart-point {
+    stroke: #009b77;
+}
+
+.pres-structured-shell .psd-v2-trend-panel.is-green .psd-v2-chart-area {
+    fill: rgba(0, 155, 119, 0.1);
+}
+
+.pres-structured-shell .psd-v2-trend-panel.is-amber .psd-v2-chart-line,
+.pres-structured-shell .psd-v2-trend-panel.is-amber .psd-v2-chart-point {
+    stroke: #ee9b00;
+}
+
+.pres-structured-shell .psd-v2-trend-panel.is-amber .psd-v2-chart-area {
+    fill: rgba(238, 155, 0, 0.11);
+}
+
+.pres-structured-shell .psd-v2-trend-panel.is-red .psd-v2-chart-line,
+.pres-structured-shell .psd-v2-trend-panel.is-red .psd-v2-chart-point {
+    stroke: #e62b34;
+}
+
+.pres-structured-shell .psd-v2-trend-panel.is-red .psd-v2-chart-area {
+    fill: rgba(230, 43, 52, 0.1);
+}
+
+.pres-structured-shell .psd-v2-trend-panel.is-cyan .psd-v2-chart-line,
+.pres-structured-shell .psd-v2-trend-panel.is-cyan .psd-v2-chart-point {
+    stroke: #00a6d6;
+}
+
+.pres-structured-shell .psd-v2-trend-panel.is-cyan .psd-v2-chart-area {
+    fill: rgba(0, 166, 214, 0.1);
+}
+
+.pres-structured-shell .psd-v2-distribution-list {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-rows: repeat(var(--psd-v2-items, 5), minmax(0, 1fr));
+    min-width: 0;
+    min-height: 0;
+    padding: 5px 7px 7px;
+}
+
+.pres-structured-shell .psd-v2-distribution-list article {
+    display: grid;
+    grid-template-columns: 25px minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) 5px;
+    align-items: center;
+    gap: 2px 7px;
+    min-width: 0;
+    min-height: 0;
+    padding: 4px 7px;
+    border-bottom: 1px solid #e0e7f0;
+}
+
+.pres-structured-shell .psd-v2-distribution-list article:last-child {
+    border-bottom: 0;
+}
+
+.pres-structured-shell .psd-v2-rank {
+    display: flex;
+    grid-row: 1 / 3;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    color: #ffffff;
+    border-radius: 3px;
+    background: #0857c3;
+    font-size: 10px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-distribution-list article > div {
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-v2-distribution-list strong,
+.pres-structured-shell .psd-v2-distribution-list small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-v2-distribution-list strong {
+    color: #172033;
+    font-size: 11px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-distribution-list small {
+    margin-top: 1px;
+    color: #607087;
+    font-size: 9px;
+    font-weight: 750;
+}
+
+.pres-structured-shell .psd-v2-distribution-list b {
+    color: #172033;
+    font-size: 11px;
+    font-weight: 950;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-v2-distribution-list em {
+    display: block;
+    grid-column: 2 / 4;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: #dce5ef;
+}
+
+.pres-structured-shell .psd-v2-distribution-list em i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #0857c3;
+}
+
+.pres-structured-shell .psd-v2-distribution-list em i.is-green {
+    background: #009b77;
+}
+
+.pres-structured-shell .psd-v2-distribution-list em i.is-amber {
+    background: #ee9b00;
+}
+
+.pres-structured-shell .psd-v2-distribution-list em i.is-red {
+    background: #e62b34;
+}
+
+.pres-structured-shell .psd-v2-quadrant-table {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-rows: 28px repeat(7, minmax(0, 1fr));
+    min-width: 0;
+    min-height: 0;
+    padding: 5px 7px 7px;
+}
+
+.pres-structured-shell .psd-v2-quadrant-head,
+.pres-structured-shell .psd-v2-quadrant-row {
+    display: grid;
+    grid-template-columns: minmax(82px, 1.15fr) repeat(4, minmax(38px, 0.55fr)) minmax(60px, 0.72fr);
+    align-items: center;
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-v2-quadrant-head {
+    color: #ffffff;
+    border-radius: 3px 3px 0 0;
+    background: #0a448f;
+}
+
+.pres-structured-shell .psd-v2-quadrant-head span {
+    font-size: 9px;
+    font-weight: 900;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row {
+    position: relative;
+    min-height: 0;
+    padding: 3px 4px 7px;
+    border-bottom: 1px solid #e0e7f0;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row:nth-child(odd) {
+    background: #f5f8fc;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row strong,
+.pres-structured-shell .psd-v2-quadrant-row span,
+.pres-structured-shell .psd-v2-quadrant-row b {
+    color: #27364b;
+    font-size: 10px;
+    font-weight: 900;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row strong {
+    text-align: left;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row .is-q4 {
+    color: #d9202a;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row .is-q3 {
+    color: #d97706;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row .is-q2 {
+    color: #0879bd;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row .is-q1 {
+    color: #008766;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row em {
+    position: absolute;
+    right: 4px;
+    bottom: 2px;
+    left: 4px;
+    display: flex;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: #dce5ef;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row em i {
+    display: block;
+    height: 100%;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row em .is-q4 {
+    background: #e62b34;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row em .is-q3 {
+    background: #ee9b00;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row em .is-q2 {
+    background: #00a6d6;
+}
+
+.pres-structured-shell .psd-v2-quadrant-row em .is-q1 {
+    background: #009b77;
+}
+
+.pres-structured-shell .psd-v2-empty-chart {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    color: #64748b;
+    background: #f7f9fc;
+    font-size: 13px;
+    font-weight: 800;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-v2-agenda-main {
+    display: grid;
+    grid-template-columns: minmax(0, 0.92fr) minmax(470px, 1.08fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-v2-agenda-list {
+    display: grid;
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    gap: 7px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-v2-agenda-list article {
+    display: grid;
+    grid-template-columns: 46px 42px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    min-height: 0;
+    padding: 9px 13px;
+    border: 1px solid #cedbea;
+    border-left: 5px solid #0857c3;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-v2-agenda-list article.is-cyan {
+    border-left-color: #00a6d6;
+}
+
+.pres-structured-shell .psd-v2-agenda-list article.is-amber {
+    border-left-color: #ee9b00;
+}
+
+.pres-structured-shell .psd-v2-agenda-list article.is-green {
+    border-left-color: #009b77;
+}
+
+.pres-structured-shell .psd-v2-agenda-number {
+    color: #0857c3;
+    font-size: 24px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-agenda-list article > i {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    color: #ffffff;
+    border-radius: 4px;
+    background: #0857c3;
+    font-size: 18px;
+}
+
+.pres-structured-shell .psd-v2-agenda-list article > div {
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-v2-agenda-list header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-v2-agenda-list strong {
+    color: #142033;
+    font-size: 18px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-agenda-list small {
+    color: #0857c3;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-v2-agenda-list p {
+    margin: 4px 0 0;
+    color: #53627a;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.28;
+}
+
+.pres-structured-shell .psd-v2-agenda-visual {
+    position: relative;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) 136px;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid #bdd0e7;
+    border-radius: 4px;
+    background:
+        linear-gradient(90deg, rgba(4, 40, 91, 0.92), rgba(4, 40, 91, 0.28)),
+        var(--psd-agenda-image) center / cover no-repeat;
+}
+
+.pres-structured-shell .psd-v2-agenda-visual-copy {
+    display: flex;
+    justify-content: flex-end;
+    flex-direction: column;
+    padding: 24px;
+    color: #ffffff;
+}
+
+.pres-structured-shell .psd-v2-agenda-visual-copy > span {
+    font-size: 13px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-v2-agenda-visual-copy > strong {
+    max-width: 520px;
+    margin-top: 5px;
+    font-size: 27px;
+    font-weight: 950;
+    line-height: 1.08;
+}
+
+.pres-structured-shell .psd-v2-agenda-visual-copy > p {
+    max-width: 520px;
+    margin: 8px 0 0;
+    color: #dcecff;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.pres-structured-shell .psd-v2-agenda-pulse {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    padding: 1px;
+    background: rgba(255, 255, 255, 0.32);
+}
+
+.pres-structured-shell .psd-v2-agenda-pulse > span {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    min-width: 0;
+    padding: 10px 14px;
+    background: rgba(248, 251, 255, 0.96);
+}
+
+.pres-structured-shell .psd-v2-agenda-pulse small {
+    color: #607087;
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-v2-agenda-pulse b {
+    margin-top: 3px;
+    overflow: hidden;
+    color: #122039;
+    font-size: 18px;
+    font-weight: 950;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-segmented button.active {
+    color: #ffffff;
+    background: #0857c3;
+}
+
+.pres-structured-shell .psd-v2-strategy-main {
+    display: grid;
+    grid-template-columns: minmax(0, 0.92fr) minmax(340px, 0.72fr) minmax(0, 0.92fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-v2-strategy-column {
+    display: grid;
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    gap: 7px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-v2-strategy-node {
+    display: grid;
+    grid-template-columns: 30px 38px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+    padding: 7px 10px;
+    border: 1px solid #ccd9e9;
+    border-left: 4px solid #0857c3;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-v2-strategy-node > span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    color: #ffffff;
+    border-radius: 50%;
+    background: #0857c3;
+    font-size: 11px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-strategy-node > i {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    color: #0857c3;
+    border: 2px solid #8fc8ff;
+    border-radius: 50%;
+    background: #e8f4ff;
+    font-size: 15px;
+}
+
+.pres-structured-shell .psd-v2-strategy-node > div {
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-v2-strategy-node strong,
+.pres-structured-shell .psd-v2-strategy-node p,
+.pres-structured-shell .psd-v2-strategy-node em {
+    display: block;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-v2-strategy-node strong {
+    color: #172033;
+    font-size: 12px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-strategy-node p {
+    margin-top: 2px;
+    color: #263449;
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-v2-strategy-node p small,
+.pres-structured-shell .psd-v2-strategy-node em {
+    color: #617087;
+    font-size: 9px;
+    font-style: normal;
+    font-weight: 750;
+}
+
+.pres-structured-shell .psd-v2-strategy-node > b {
+    font-size: 11px;
+    font-weight: 950;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-v2-strategy-core {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 24px 18px;
+    color: #ffffff;
+    border-radius: 4px;
+    background:
+        linear-gradient(rgba(3, 41, 92, 0.2), rgba(3, 41, 92, 0.95)),
+        var(--psd-strategy-image) center / cover no-repeat;
+}
+
+.pres-structured-shell .psd-v2-strategy-ring {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 146px;
+    height: 146px;
+    flex-direction: column;
+    border: 8px solid rgba(113, 197, 232, 0.9);
+    border-radius: 50%;
+    background: rgba(5, 65, 145, 0.86);
+    box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.16);
+}
+
+.pres-structured-shell .psd-v2-strategy-ring span {
+    font-size: 44px;
+    font-weight: 950;
+    line-height: 0.9;
+}
+
+.pres-structured-shell .psd-v2-strategy-ring strong {
+    font-size: 20px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-strategy-ring small {
+    margin-top: 3px;
+    color: #bcecff;
+    font-size: 10px;
+    font-weight: 850;
+}
+
+.pres-structured-shell .psd-v2-strategy-core > p {
+    margin: 18px 0 0;
+    font-size: 12px;
+    font-weight: 750;
+    line-height: 1.35;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-v2-strategy-main {
+    grid-template-columns: minmax(0, 1.56fr) minmax(430px, 0.94fr);
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-v2-strategy-left,
+.pres-structured-shell .psd-v2-strategy-right {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-v2-strategy-left {
+    grid-template-rows: 232px 118px minmax(0, 1fr);
+    gap: 6px;
+}
+
+.pres-structured-shell .psd-v2-strategy-right {
+    grid-template-rows: 205px 126px minmax(0, 1fr);
+}
+
+.pres-structured-shell .psd-v2-strategy-panel {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    flex-direction: column;
+    border: 1px solid #c7d7ea;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-v2-strategy-panel > .psd-panel-title {
+    height: 30px;
+    min-height: 30px;
+    flex: 0 0 30px;
+    padding: 0 9px;
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-v2-strategy-panel > .psd-panel-title small {
+    font-size: 9px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.pres-structured-shell .psd-v2-strategy-table {
+    width: 100%;
+    height: 100%;
+    border-spacing: 0;
+    border-collapse: collapse;
+    table-layout: fixed;
+    color: #26354a;
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table th,
+.pres-structured-shell .psd-v2-strategy-table td {
+    min-width: 0;
+    overflow: hidden;
+    padding: 3px 6px;
+    border-right: 1px solid #dce5f0;
+    border-bottom: 1px solid #dce5f0;
+    line-height: 1.08;
+    text-align: right;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+
+.pres-structured-shell .psd-v2-strategy-table th {
+    color: #34455d;
+    background: #eaf0f7;
+    font-size: 9.5px;
+    font-weight: 950;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-v2-strategy-table th:first-child,
+.pres-structured-shell .psd-v2-strategy-table td:first-child,
+.pres-structured-shell .psd-v2-strategy-table th:nth-child(2),
+.pres-structured-shell .psd-v2-strategy-table td:nth-child(2) {
+    text-align: left;
+}
+
+.pres-structured-shell .psd-v2-strategy-table tbody tr:nth-child(even) {
+    background: #f7f9fc;
+}
+
+.pres-structured-shell .psd-v2-strategy-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.pres-structured-shell .psd-v2-strategy-table th:last-child,
+.pres-structured-shell .psd-v2-strategy-table td:last-child {
+    border-right: 0;
+}
+
+.pres-structured-shell .psd-v2-strategy-table td > strong,
+.pres-structured-shell .psd-v2-strategy-table td > small {
+    display: block;
+}
+
+.pres-structured-shell .psd-v2-strategy-table td > strong {
+    color: #17243a;
+    font-size: 10.5px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-strategy-table td > small {
+    margin-top: 2px;
+    color: #63748a;
+    font-size: 8.5px;
+    font-weight: 750;
+}
+
+.pres-structured-shell .psd-v2-strategy-table td.is-empty {
+    color: #63748a;
+    font-size: 10px;
+    font-weight: 800;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-v2-strategy-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 19px;
+    height: 19px;
+    color: #ffffff;
+    border-radius: 3px;
+    background: #0857c3;
+    font-size: 9px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-digital thead tr:first-child {
+    height: 17px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-digital thead tr:last-child {
+    height: 16px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-digital tbody tr {
+    height: 25px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-digital th:first-child {
+    width: 32px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-digital th:nth-child(2) {
+    width: 112px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-digital th:last-child {
+    width: 92px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-digital .is-group-head th:not(:first-child, :nth-child(2)) {
+    text-align: center;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-digital .is-date-head th {
+    text-align: right;
+}
+
+.pres-structured-shell .psd-v2-strategy-value {
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-v2-strategy-value strong,
+.pres-structured-shell .psd-v2-strategy-value small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-v2-strategy-value strong {
+    color: #26354a;
+    font-size: 9.5px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-strategy-value small {
+    margin-top: 2px;
+    color: #6a7b90;
+    font-size: 8px;
+    font-weight: 750;
+}
+
+.pres-structured-shell .psd-v2-strategy-value.is-current strong {
+    color: #075ecb;
+}
+
+.pres-structured-shell .psd-v2-strategy-value.is-positive strong {
+    color: #078a68;
+}
+
+.pres-structured-shell .psd-v2-strategy-value.is-negative strong {
+    color: #c62828;
+}
+
+.pres-structured-shell .psd-v2-strategy-value.is-neutral strong {
+    color: #916600;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-casa thead tr {
+    height: 20px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-casa tbody tr {
+    height: 17px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-casa th:first-child {
+    width: 32%;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-casa td,
+.pres-structured-shell .psd-v2-strategy-table.is-casa td > strong {
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-payroll thead tr {
+    height: 22px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-payroll tbody tr {
+    height: 38px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-payroll th:first-child {
+    width: 16%;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-payroll th:last-child {
+    width: 11%;
+}
+
+.pres-structured-shell .psd-v2-payroll-metric strong,
+.pres-structured-shell .psd-v2-payroll-metric small,
+.pres-structured-shell .psd-v2-payroll-metric em {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-v2-payroll-metric strong {
+    color: #17243a;
+    font-size: 9.5px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-payroll-metric small {
+    margin-top: 2px;
+    color: #6b7a8f;
+    font-size: 8px;
+    font-weight: 750;
+}
+
+.pres-structured-shell .psd-v2-payroll-metric em {
+    margin-top: 2px;
+    font-size: 8px;
+    font-style: normal;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-v2-payroll-metric em span + span {
+    margin-left: 4px;
+}
+
+.pres-structured-shell .psd-v2-payroll-metric .is-positive {
+    color: #078a68;
+}
+
+.pres-structured-shell .psd-v2-payroll-metric .is-negative {
+    color: #c62828;
+}
+
+.pres-structured-shell .psd-v2-payroll-metric .is-neutral {
+    color: #916600;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-cluster thead tr {
+    height: 25px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-cluster tbody tr {
+    height: 29px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-cluster th:first-child {
+    width: 38%;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-cluster td,
+.pres-structured-shell .psd-v2-strategy-table.is-cluster td > strong {
+    font-size: 9.5px;
+}
+
+.pres-structured-shell .psd-v2-dormant-grid {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-v2-dormant-grid > div {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    min-width: 0;
+    padding: 4px 5px;
+    border-right: 1px solid #dce5f0;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-v2-dormant-grid > div:last-child {
+    border-right: 0;
+}
+
+.pres-structured-shell .psd-v2-dormant-grid strong {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-v2-dormant-grid small {
+    font-size: 8px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-supporting thead tr {
+    height: 26px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-supporting tbody tr {
+    height: 57px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-supporting th:first-child {
+    width: 34px;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-supporting th:nth-child(2) {
+    width: 42%;
+}
+
+.pres-structured-shell .psd-v2-strategy-table.is-supporting td,
+.pres-structured-shell .psd-v2-strategy-table.is-supporting td > strong {
+    font-size: 9.5px;
+}
+
+.pres-structured-shell .psd-v2-priority-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(450px, 0.92fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-v2-action-list {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-rows: repeat(5, minmax(0, 1fr));
+    min-width: 0;
+    min-height: 0;
+    padding: 5px 8px 8px;
+}
+
+.pres-structured-shell .psd-v2-action-list article {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    min-height: 0;
+    padding: 6px 9px;
+    border-bottom: 1px solid #dfe7f0;
+}
+
+.pres-structured-shell .psd-v2-action-list article:last-child {
+    border-bottom: 0;
+}
+
+.pres-structured-shell .psd-v2-action-list article > span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    color: #ffffff;
+    border-radius: 3px;
+    background: #0857c3;
+    font-size: 12px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-action-list article.is-green > span {
+    background: #009b77;
+}
+
+.pres-structured-shell .psd-v2-action-list article.is-amber > span {
+    background: #ee9b00;
+}
+
+.pres-structured-shell .psd-v2-action-list article.is-red > span {
+    background: #e62b34;
+}
+
+.pres-structured-shell .psd-v2-action-list article > div {
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-v2-action-list header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-v2-action-list strong {
+    color: #0857c3;
+    font-size: 15px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-action-list small {
+    color: #53627a;
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-v2-action-list p {
+    margin: 3px 0 0;
+    color: #34445c;
+    font-size: 11px;
+    font-weight: 750;
+    line-height: 1.25;
+}
+
+.pres-structured-shell .psd-v2-signal-grid {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    gap: 1px;
+    min-width: 0;
+    min-height: 0;
+    padding: 6px;
+    background: #dbe4ef;
+}
+
+.pres-structured-shell .psd-v2-signal-grid article {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 0;
+    padding: 6px 8px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-v2-signal-grid article > span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    color: #ffffff;
+    border-radius: 3px;
+    background: #0857c3;
+    font-size: 10px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-signal-grid article > div {
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-v2-signal-grid small,
+.pres-structured-shell .psd-v2-signal-grid strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-v2-signal-grid small {
+    color: #607087;
+    font-size: 9px;
+    font-weight: 850;
+}
+
+.pres-structured-shell .psd-v2-signal-grid strong {
+    margin-top: 2px;
+    color: #172033;
+    font-size: 12px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-signal-grid b {
+    font-size: 10px;
+    font-weight: 950;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-v2-closing-statement {
+    flex: 0 0 58px;
+    padding: 9px 12px;
+    color: #ffffff;
+    background: #063b82;
+}
+
+.pres-structured-shell .psd-v2-closing-statement strong,
+.pres-structured-shell .psd-v2-closing-statement span {
+    display: block;
+}
+
+.pres-structured-shell .psd-v2-closing-statement strong {
+    font-size: 13px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-v2-closing-statement span {
+    margin-top: 3px;
+    color: #8dd8ff;
+    font-size: 11px;
+    font-weight: 850;
+}
+
+@media print {
+    .pres-structured-shell {
+        border: 0;
+        box-shadow: none;
+    }
+}
+
+/*
+ * Screen geometry guard.
+ * The stage keeps a stable 810px logical height while pres-engine.js expands
+ * its logical width to the available viewport ratio. Locking slide width to
+ * the shared variable prevents intrinsic tables from collapsing the canvas.
+ */
+@media screen {
+    #apple-presentation-mode .pres-slides-container {
+        width: var(--pres-slide-width, 1440px) !important;
+        min-width: var(--pres-slide-width, 1440px) !important;
+        max-width: var(--pres-slide-width, 1440px) !important;
+        height: 810px !important;
+        min-height: 810px !important;
+        max-height: 810px !important;
+        flex: 0 0 var(--pres-slide-width, 1440px) !important;
+    }
+
+    #apple-presentation-mode .apple-slide {
+        position: absolute !important;
+        inset: auto !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: auto !important;
+        bottom: auto !important;
+        width: var(--pres-slide-width, 1440px) !important;
+        min-width: var(--pres-slide-width, 1440px) !important;
+        max-width: var(--pres-slide-width, 1440px) !important;
+        height: 810px !important;
+        min-height: 810px !important;
+        max-height: 810px !important;
+        flex: 0 0 var(--pres-slide-width, 1440px) !important;
+    }
+}
+
+/*
+ * Compact executive-sheet system.
+ * The presentation canvas uses a minimum 1440x810 logical size and can widen
+ * on landscape screens. These rules keep every slide information-dense while
+ * preserving legibility after the canvas is scaled on tablet and mobile.
+ */
+.pres-structured-shell {
+    position: relative;
+    isolation: isolate;
+    padding: 12px 14px;
+    overflow: hidden;
+    border: 1px solid #c9d8ea;
+    border-radius: 5px;
+    background:
+        linear-gradient(rgba(8, 87, 195, 0.028) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(8, 87, 195, 0.028) 1px, transparent 1px),
+        #f8fbff;
+    background-size: 64px 64px;
+    box-shadow: none;
+}
+
+.pres-structured-shell:not(#pres-slide-0)::before,
+.pres-structured-shell:not(#pres-slide-0)::after {
+    position: absolute;
+    z-index: 0;
+    pointer-events: none;
+    content: "";
+}
+
+.pres-structured-shell:not(#pres-slide-0)::before {
+    top: 0;
+    right: 0;
+    width: 230px;
+    height: 9px;
+    background: #0857c3;
+    clip-path: polygon(14% 0, 100% 0, 100% 100%, 0 100%);
+}
+
+.pres-structured-shell:not(#pres-slide-0)::after {
+    right: 0;
+    bottom: 0;
+    width: 170px;
+    height: 7px;
+    background: #00aeef;
+    clip-path: polygon(24% 0, 100% 0, 100% 100%, 0 100%);
+}
+
+.pres-structured-shell > * {
+    position: relative;
+    z-index: 1;
+}
+
+.pres-structured-shell .psd-slide {
+    grid-template-rows: 106px minmax(0, 1fr) 62px;
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-header {
+    grid-template-columns: minmax(0, 0.95fr) minmax(520px, 1.05fr);
+    align-items: stretch;
+    gap: 14px;
+    min-height: 0;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #b8cce4;
+}
+
+.pres-structured-shell .psd-heading {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+}
+
+.pres-structured-shell .psd-heading-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    margin-bottom: 3px;
+}
+
+.pres-structured-shell .psd-kicker {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: #0857c3;
+    font-size: 13px;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-period {
+    position: static;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    color: #ffffff;
+    border: 0;
+    border-radius: 3px;
+    background: #123b88;
+    font-size: 11px;
+    font-weight: 850;
+    line-height: 1.15;
+}
+
+.pres-structured-shell .psd-heading h1 {
+    overflow: visible;
+    padding-bottom: 2px;
+    font-size: 34px;
+    line-height: 1.15;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-heading p {
+    max-width: none;
+    margin-top: 3px;
+    overflow: visible;
+    color: #4e5f76;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-overflow: clip;
+    white-space: normal;
+}
+
+.pres-structured-shell .psd-header-side {
+    display: flex;
+    align-items: stretch;
+    justify-content: flex-start;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 4px;
+    height: 100%;
+}
+
+.pres-structured-shell .psd-header-controls {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-header-controls .psd-segmented {
+    flex: 0 0 auto;
+}
+
+.pres-structured-shell .psd-reading {
+    flex: 1 1 auto;
+    grid-template-columns: 132px minmax(0, 1fr);
+    min-height: 60px;
+    height: auto;
+    border-radius: 3px;
+    background: #eef4fb;
+}
+
+.pres-structured-shell .psd-reading > span {
+    justify-content: center;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.15;
+}
+
+.pres-structured-shell .psd-reading p {
+    display: flex;
+    align-items: center;
+    padding: 8px 11px;
+    overflow: visible;
+    color: #34445c;
+    font-size: 13px;
+    line-height: 1.3;
+}
+
+.pres-structured-shell .psd-panel,
+.pres-structured-shell .psd-total-summary,
+.pres-structured-shell .psd-segment-summary,
+.pres-structured-shell .psd-productivity-summary,
+.pres-structured-shell .psd-kts-summary,
+.pres-structured-shell .psd-action-board,
+.pres-structured-shell .psd-strategy-board,
+.pres-structured-shell .psd-quality-overview,
+.pres-structured-shell .psd-pulse,
+.pres-structured-shell .psd-mini-trend {
+    border-color: #cbd9e9;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-panel-title {
+    flex-basis: 34px;
+    height: 34px;
+    padding: 0 11px;
+    border-bottom: 1px solid #0a459f;
+    background: #0857c3;
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-panel-title small {
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-stat {
+    justify-content: center;
+    padding: 7px 9px;
+    border-radius: 3px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-stat > span,
+.pres-structured-shell .psd-stat > small {
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-stat > strong {
+    margin-top: 2px;
+    font-size: 19px;
+}
+
+.pres-structured-shell .psd-insight-strip {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: 0;
+    min-height: 62px;
+    overflow: hidden;
+    color: #ffffff;
+    border: 1px solid #06499f;
+    border-radius: 4px;
+    background: #0857c3;
+}
+
+.pres-structured-shell .psd-insight-label {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: center;
+    column-gap: 8px;
+    min-width: 0;
+    padding: 7px 11px;
+    border-right: 1px solid rgba(255, 255, 255, 0.25);
+    background: #063b82;
+}
+
+.pres-structured-shell .psd-insight-label i {
+    display: flex;
+    grid-row: 1 / 3;
+    align-items: center;
+    justify-content: center;
+    width: 29px;
+    height: 29px;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.38);
+    border-radius: 3px;
+    font-size: 15px;
+}
+
+.pres-structured-shell .psd-insight-label span {
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1.1;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-insight-label small {
+    margin-top: 3px;
+    color: #a9d8ff;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.15;
+}
+
+.pres-structured-shell .psd-insight-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--psd-insights, 3), minmax(0, 1fr));
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-insight {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    min-width: 0;
+    padding: 6px 12px;
+    border: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 0;
+    background: transparent;
+}
+
+.pres-structured-shell .psd-insight:first-child {
+    border-left: 0;
+}
+
+.pres-structured-shell .psd-insight > span {
+    color: #b8ddff;
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-insight > strong {
+    margin-top: 2px;
+    color: #ffffff;
+    font-size: 15px;
+}
+
+.pres-structured-shell .psd-insight > small {
+    margin-top: 2px;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 9px;
+}
+
+.pres-structured-shell .psd-insight.is-green {
+    box-shadow: inset 0 4px 0 #1fbc91;
+}
+
+.pres-structured-shell .psd-insight.is-amber {
+    box-shadow: inset 0 4px 0 #f8b42f;
+}
+
+.pres-structured-shell .psd-insight.is-red {
+    box-shadow: inset 0 4px 0 #ff626a;
+}
+
+.pres-structured-shell .psd-total-layout,
+.pres-structured-shell .psd-loan-total-layout,
+.pres-structured-shell .psd-segment-layout,
+.pres-structured-shell .psd-quality-layout,
+.pres-structured-shell .psd-productivity-layout,
+.pres-structured-shell .psd-mantri-layout,
+.pres-structured-shell .psd-kts-layout,
+.pres-structured-shell .psd-timeseries-layout,
+.pres-structured-shell .psd-closing-layout,
+.pres-structured-shell .psd-roadmap-main {
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-total-layout,
+.pres-structured-shell .psd-loan-total-layout {
+    grid-template-columns: minmax(315px, 0.68fr) minmax(0, 1.32fr);
+}
+
+.pres-structured-shell .psd-analysis-column {
+    grid-template-rows: minmax(0, 1fr) 154px;
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-breakdown-layout {
+    grid-template-rows: 170px minmax(0, 1fr);
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-segment-layout {
+    grid-template-columns: minmax(390px, 0.9fr) minmax(0, 1.1fr);
+}
+
+.pres-structured-shell .psd-quality-layout {
+    grid-template-columns: minmax(250px, 0.64fr) minmax(400px, 1.06fr) minmax(320px, 0.8fr);
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-productivity-layout {
+    grid-template-columns: minmax(330px, 0.7fr) minmax(0, 1.3fr);
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-mantri-layout {
+    grid-template-columns: minmax(320px, 0.68fr) minmax(0, 1.32fr);
+}
+
+.pres-structured-shell .psd-kts-layout {
+    grid-template-columns: minmax(250px, 0.52fr) minmax(0, 1.48fr);
+}
+
+.pres-structured-shell .psd-timeseries-layout {
+    grid-template-columns: minmax(0, 1.28fr) minmax(350px, 0.72fr);
+}
+
+.pres-structured-shell .psd-closing-layout {
+    grid-template-columns: minmax(0, 1.22fr) minmax(380px, 0.78fr);
+}
+
+.pres-structured-shell .psd-total-summary {
+    grid-template-rows: 34px 114px minmax(0, 1fr);
+}
+
+.pres-structured-shell .psd-total-summary .psd-delta-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+    padding: 0 8px 8px;
+}
+
+.pres-structured-shell .psd-total-summary .psd-delta-grid .psd-stat {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr) minmax(112px, auto);
+    grid-template-rows: auto;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 9px;
+}
+
+.pres-structured-shell .psd-total-summary .psd-delta-grid .psd-stat > span,
+.pres-structured-shell .psd-total-summary .psd-delta-grid .psd-stat > strong,
+.pres-structured-shell .psd-total-summary .psd-delta-grid .psd-stat > small {
+    margin: 0;
+}
+
+.pres-structured-shell .psd-total-summary .psd-delta-grid .psd-stat > strong {
+    font-size: 17px;
+}
+
+.pres-structured-shell .psd-total-summary .psd-delta-grid .psd-stat > small {
+    text-align: right;
+}
+
+.pres-structured-shell .psd-loan-total-layout .psd-total-summary {
+    grid-template-rows: 34px 90px 18px 42px minmax(0, 1fr);
+}
+
+.pres-structured-shell .psd-segment-summary {
+    grid-template-rows: 34px 78px minmax(0, 1fr);
+}
+
+.pres-structured-shell .psd-quality-overview {
+    grid-template-rows: 34px 86px minmax(0, 1fr) 48px;
+}
+
+.pres-structured-shell .psd-productivity-summary {
+    grid-template-rows: 34px minmax(0, 1fr) 68px;
+}
+
+.pres-structured-shell .psd-pdwk-panel {
+    grid-template-rows: 34px 76px minmax(0, 1fr);
+}
+
+.pres-structured-shell .psd-chart-panel,
+.pres-structured-shell .psd-quadrant-panel,
+.pres-structured-shell .psd-strategy-board {
+    grid-template-rows: 34px minmax(0, 1fr);
+}
+
+.pres-structured-shell .psd-action-board {
+    grid-template-rows: 34px 136px minmax(0, 1fr) 58px;
+}
+
+.pres-structured-shell .psd-pulse {
+    grid-template-rows: 34px minmax(0, 1fr) 76px;
+}
+
+.pres-structured-shell .psd-mini-trend {
+    grid-template-rows: 34px minmax(0, 1fr);
+}
+
+.pres-structured-shell .psd-matrix-head {
+    min-height: 34px;
+    padding: 0 10px;
+    background: #eaf0f7;
+}
+
+.pres-structured-shell .psd-matrix-head span {
+    color: #3d4d63;
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-matrix-body {
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-matrix-row {
+    min-height: 38px;
+    padding: 0 10px;
+}
+
+.pres-structured-shell .psd-matrix-row > div,
+.pres-structured-shell .psd-matrix-row strong {
+    font-size: 12px;
+    line-height: 1.15;
+}
+
+.pres-structured-shell .psd-matrix-row small {
+    margin-top: 2px;
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-hero-number > strong {
+    font-size: 32px;
+}
+
+.pres-structured-shell .psd-segment-hero > strong,
+.pres-structured-shell .psd-quality-hero > strong {
+    font-size: 28px;
+}
+
+.pres-structured-shell .psd-component-board {
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-component-card {
+    grid-template-columns: 34px minmax(0, 1fr);
+    column-gap: 8px;
+    padding: 10px 12px;
+    border-radius: 4px;
+}
+
+.pres-structured-shell .psd-component-card .psd-component-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    font-size: 15px;
+}
+
+.pres-structured-shell .psd-component-card > span {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-component-card > strong {
+    font-size: 21px;
+}
+
+.pres-structured-shell .psd-component-card > small {
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-product-stack,
+.pres-structured-shell .psd-risk-list,
+.pres-structured-shell .psd-role-grid {
+    padding: 5px 8px 7px;
+}
+
+.pres-structured-shell .psd-product-stack article {
+    padding: 4px 6px;
+}
+
+.pres-structured-shell .psd-product-main > span,
+.pres-structured-shell .psd-product-main > small,
+.pres-structured-shell .psd-product-quality small,
+.pres-structured-shell .psd-product-quality em,
+.pres-structured-shell .psd-product-branches > strong,
+.pres-structured-shell .psd-product-branches b,
+.pres-structured-shell .psd-product-branches small {
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-product-main > strong,
+.pres-structured-shell .psd-product-quality b {
+    font-size: 13px;
+}
+
+.pres-structured-shell .psd-product-stack.is-card-grid .psd-product-main > strong {
+    font-size: 17px;
+}
+
+.pres-structured-shell .psd-productivity-kpis {
+    gap: 5px;
+    padding: 7px;
+}
+
+.pres-structured-shell .psd-productivity-readout {
+    margin: 0 7px 7px;
+    padding: 7px 8px;
+}
+
+.pres-structured-shell .psd-productivity-readout p,
+.pres-structured-shell .psd-kts-definition p,
+.pres-structured-shell .psd-decision-note p,
+.pres-structured-shell .psd-action-board li span {
+    font-size: 10px;
+    line-height: 1.25;
+}
+
+.pres-structured-shell .psd-risk-list span strong,
+.pres-structured-shell .psd-risk-list em,
+.pres-structured-shell .psd-role-grid article strong {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-risk-list span small,
+.pres-structured-shell .psd-risk-list em small,
+.pres-structured-shell .psd-role-grid article span,
+.pres-structured-shell .psd-role-grid article small {
+    font-size: 9px;
+}
+
+.pres-structured-shell .psd-mini-trend-body {
+    padding: 3px 9px 5px;
+}
+
+.pres-structured-shell .psd-mini-trend-lane {
+    grid-template-columns: minmax(115px, 0.72fr) minmax(180px, 1.65fr) minmax(110px, 0.78fr);
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-mini-trend-lane > span strong,
+.pres-structured-shell .psd-mini-trend-lane > em {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-mini-trend-lane > span small,
+.pres-structured-shell .psd-mini-trend-lane > em small {
+    font-size: 9px;
+}
+
+.pres-structured-shell .psd-roadmap-main {
+    grid-template-columns: minmax(0, 1.28fr) minmax(340px, 0.72fr);
+}
+
+.pres-structured-shell .psd-roadmap-flow {
+    gap: 6px;
+}
+
+.pres-structured-shell .psd-roadmap-step {
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 7px 15px 7px 8px;
+    border-radius: 4px;
+}
+
+.pres-structured-shell .psd-roadmap-number {
+    font-size: 25px;
+}
+
+.pres-structured-shell .psd-roadmap-step h3 {
+    font-size: 17px;
+}
+
+.pres-structured-shell .psd-roadmap-step p,
+.pres-structured-shell .psd-roadmap-step small {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-strategy-grid {
+    gap: 5px;
+    padding: 7px;
+}
+
+.pres-structured-shell .psd-strategy-grid article {
+    gap: 2px 6px;
+    padding: 5px 7px;
+    border-radius: 3px;
+}
+
+.pres-structured-shell .psd-strategy-value span,
+.pres-structured-shell .psd-strategy-detail i,
+.pres-structured-shell .psd-closing-kpis span,
+.pres-structured-shell .psd-closing-kpis small {
+    font-size: 9px;
+}
+
+.pres-structured-shell .psd-strategy-value strong,
+.pres-structured-shell .psd-strategy-detail strong,
+.pres-structured-shell .psd-action-board li em {
+    font-size: 11px;
+}
+
+.pres-structured-shell .psd-closing-kpis strong {
+    font-size: 14px;
+}
+
+.pres-structured-shell .psd-action-board li {
+    padding: 4px 2px;
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-closing-message {
+    margin: 0 8px 7px;
+    padding: 7px 9px;
+}
+
+.pres-structured-shell .psd-closing-message strong {
+    font-size: 12px;
+}
+
+.pres-structured-shell .psd-closing-message span {
+    font-size: 10px;
+}
+
+.pres-structured-shell#pres-slide-0 {
+    padding: 0;
+    border: 0;
+    background: #032b58;
+}
+
+.pres-structured-shell .psd-cover {
+    grid-template-rows: 46px minmax(0, 1fr) 94px 30px;
+    padding: 20px 24px 17px;
+    background-image:
+        linear-gradient(90deg, rgba(2, 27, 58, 0.99) 0%, rgba(2, 43, 82, 0.93) 50%, rgba(2, 43, 82, 0.28) 76%, rgba(2, 43, 82, 0.1) 100%),
+        var(--psd-cover-image);
+}
+
+.pres-structured-shell .psd-cover-copy {
+    align-self: center;
+    max-width: 820px;
+}
+
+.pres-structured-shell .psd-cover-copy h1 {
+    font-size: 52px;
+}
+
+.pres-structured-shell .psd-cover-copy h2 {
+    margin-top: 8px;
+    font-size: 24px;
+}
+
+.pres-structured-shell .psd-cover-copy p {
+    max-width: 760px;
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.pres-structured-shell .psd-cover-agenda {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    max-width: 810px;
+    margin-top: 14px;
+}
+
+.pres-structured-shell .psd-cover-agenda > span {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    min-width: 0;
+    padding: 7px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 3px;
+    background: rgba(3, 43, 88, 0.8);
+}
+
+.pres-structured-shell .psd-cover-agenda b {
+    display: flex;
+    grid-row: 1 / 3;
+    align-items: center;
+    justify-content: center;
+    width: 23px;
+    height: 23px;
+    color: #052d5f;
+    border-radius: 3px;
+    background: #8dd8ff;
+    font-size: 10px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-cover-agenda strong {
+    overflow: hidden;
+    color: #ffffff;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-cover-agenda small {
+    margin-top: 2px;
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 8px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-cover-metrics {
+    gap: 6px;
+    max-width: 900px;
+}
+
+.pres-structured-shell .psd-cover-metrics .psd-stat {
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-cover-footer {
+    max-width: 900px;
+    margin-top: 7px;
+    font-size: 10px;
+}
+
+.pres-structured-shell .psd-micro-highlight-layout {
+    display: grid;
+    grid-template-rows: minmax(0, 1.03fr) minmax(0, 0.97fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-micro-highlight-slide .psd-heading h1 {
+    padding-bottom: 2px;
+    line-height: 1.06;
+}
+
+.pres-structured-shell .psd-micro-highlight-top {
+    display: grid;
+    grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.04fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-micro-kpi-panel,
+.pres-structured-shell .psd-micro-product-panel,
+.pres-structured-shell .psd-micro-list-panel {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    flex-direction: column;
+    border: 1px solid #cbd9e9;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-micro-kpi-grid {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    min-width: 0;
+    min-height: 0;
+    padding: 7px;
+}
+
+.pres-structured-shell .psd-micro-kpi {
+    display: grid;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid #d8e3ef;
+    border-top: 4px solid #0857c3;
+    border-radius: 3px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-micro-kpi.is-sml {
+    border-top-color: #f2a000;
+}
+
+.pres-structured-shell .psd-micro-kpi.is-npl {
+    border-top-color: #e73543;
+}
+
+.pres-structured-shell .psd-micro-kpi > header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 7px 8px 3px;
+    color: #526177;
+    font-size: 10px;
+    font-weight: 950;
+    line-height: 1.15;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-micro-kpi > header i {
+    flex: 0 0 auto;
+    color: #0857c3;
+    font-size: 13px;
+}
+
+.pres-structured-shell .psd-micro-kpi.is-sml > header i {
+    color: #d68900;
+}
+
+.pres-structured-shell .psd-micro-kpi.is-npl > header i {
+    color: #d9202a;
+}
+
+.pres-structured-shell .psd-micro-kpi > strong {
+    display: block;
+    min-width: 0;
+    padding: 2px 8px 5px;
+    overflow: hidden;
+    color: #0f172a;
+    font-size: 24px;
+    font-weight: 950;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-micro-kpi-target {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-height: 39px;
+    border-top: 1px solid #e2eaf3;
+    border-bottom: 1px solid #e2eaf3;
+    background: #f5f8fc;
+}
+
+.pres-structured-shell .psd-micro-kpi.is-sml .psd-micro-kpi-target,
+.pres-structured-shell .psd-micro-kpi.is-npl .psd-micro-kpi-target {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.pres-structured-shell .psd-micro-kpi-target > span {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    min-width: 0;
+    padding: 5px 7px;
+    color: #69778c;
+    border-left: 1px solid #e2eaf3;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1.15;
+}
+
+.pres-structured-shell .psd-micro-kpi-target > span:first-child {
+    border-left: 0;
+}
+
+.pres-structured-shell .psd-micro-kpi-target b {
+    margin-top: 2px;
+    overflow: hidden;
+    color: #172033;
+    font-size: 12px;
+    font-weight: 950;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-micro-kpi-lines {
+    display: grid;
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+    min-width: 0;
+    min-height: 0;
+    padding: 3px 8px 5px;
+}
+
+.pres-structured-shell .psd-micro-kpi-lines > span {
+    display: grid;
+    grid-template-columns: minmax(48px, 0.72fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    padding: 3px 0;
+    border-top: 1px solid #edf2f7;
+}
+
+.pres-structured-shell .psd-micro-kpi-lines > span:first-child {
+    border-top: 0;
+}
+
+.pres-structured-shell .psd-micro-kpi-lines small,
+.pres-structured-shell .psd-micro-kpi-lines em {
+    min-width: 0;
+    overflow: hidden;
+    color: #69778c;
+    font-size: 9px;
+    font-style: normal;
+    font-weight: 800;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-micro-kpi-lines strong {
+    min-width: 0;
+    overflow: hidden;
+    color: #172033;
+    font-size: 11px;
+    font-weight: 950;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-micro-kpi-lines em {
+    display: none;
+}
+
+.pres-structured-shell .psd-micro-product-table {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-rows: 31px repeat(5, minmax(0, 1fr));
+    min-width: 0;
+    min-height: 0;
+    padding: 6px 7px 7px;
+}
+
+.pres-structured-shell .psd-micro-product-head,
+.pres-structured-shell .psd-micro-product-row {
+    display: grid;
+    grid-template-columns:
+        minmax(112px, 1.45fr)
+        minmax(76px, 0.9fr)
+        minmax(47px, 0.58fr)
+        minmax(74px, 0.9fr)
+        minmax(47px, 0.58fr)
+        minmax(74px, 0.9fr)
+        minmax(47px, 0.58fr);
+    align-items: center;
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-micro-product-head {
+    color: #ffffff;
+    border-radius: 3px 3px 0 0;
+    background: #0b3f85;
+}
+
+.pres-structured-shell .psd-micro-product-head span {
+    padding: 0 5px;
+    overflow: hidden;
+    font-size: 9px;
+    font-weight: 900;
+    text-align: right;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-micro-product-head span:first-child {
+    text-align: left;
+}
+
+.pres-structured-shell .psd-micro-product-row {
+    border: 1px solid #e2eaf3;
+    border-top: 0;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-micro-product-row:nth-child(odd) {
+    background: #f5f8fc;
+}
+
+.pres-structured-shell .psd-micro-product-row > * {
+    min-width: 0;
+    padding: 0 5px;
+    overflow: hidden;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 800;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-micro-product-row > strong {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #172033;
+    font-size: 11px;
+    font-weight: 950;
+    text-align: left;
+}
+
+.pres-structured-shell .psd-micro-product-row > strong i {
+    flex: 0 0 auto;
+    width: 14px;
+    color: #0857c3;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-micro-product-row > b {
+    color: #172033;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-micro-product-row .is-risk {
+    color: #d9202a;
+}
+
+.pres-structured-shell .psd-micro-support-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-micro-table-panel {
+    container-type: inline-size;
+}
+
+.pres-structured-shell .psd-micro-branch-table {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-rows: 31px repeat(var(--psd-micro-row-count, 4), minmax(0, 1fr));
+    min-width: 0;
+    min-height: 0;
+    padding: 6px 7px 7px;
+}
+
+.pres-structured-shell .psd-micro-branch-head,
+.pres-structured-shell .psd-micro-branch-row {
+    display: grid;
+    grid-template-columns: minmax(104px, 1.18fr) repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-micro-branch-table.is-pdwk .psd-micro-branch-head,
+.pres-structured-shell .psd-micro-branch-table.is-pdwk .psd-micro-branch-row {
+    grid-template-columns: minmax(88px, 1.04fr) repeat(4, minmax(0, 1fr));
+}
+
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-branch-head,
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-branch-row {
+    grid-template-columns: minmax(82px, 1.02fr) repeat(5, minmax(0, 1fr));
+}
+
+.pres-structured-shell .psd-micro-branch-head {
+    overflow: hidden;
+    color: #ffffff;
+    border-radius: 3px 3px 0 0;
+    background: #0b3f85;
+}
+
+.pres-structured-shell .psd-micro-branch-head > span {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 0;
+    padding: 5px 9px;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+    font-size: 9px;
+    font-weight: 900;
+    line-height: 1.08;
+    text-align: right;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+}
+
+.pres-structured-shell .psd-micro-branch-head > span:first-child {
+    justify-content: flex-start;
+    border-left: 0;
+    text-align: left;
+}
+
+.pres-structured-shell .psd-micro-branch-row {
+    border: 1px solid #e2eaf3;
+    border-top: 0;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-micro-branch-row:nth-child(odd) {
+    background: #f5f8fc;
+}
+
+.pres-structured-shell .psd-micro-branch-row > strong,
+.pres-structured-shell .psd-micro-branch-row > .psd-micro-value-pair {
+    min-width: 0;
+    min-height: 0;
+    padding: 6px 9px;
+    border-left: 1px solid #e2eaf3;
+}
+
+.pres-structured-shell .psd-micro-branch-row > strong {
+    display: flex;
+    align-items: center;
+    border-left: 0;
+    color: #172033;
+    font-size: 10px;
+    font-weight: 950;
+    line-height: 1.12;
+    overflow-wrap: anywhere;
+}
+
+.pres-structured-shell .psd-micro-value-pair {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    flex-direction: column;
+    gap: 3px;
+    overflow: hidden;
+    text-align: right;
+}
+
+.pres-structured-shell .psd-micro-value-pair > strong,
+.pres-structured-shell .psd-micro-value-pair > small {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    line-height: 1.08;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-micro-value-pair > strong {
+    color: #172033;
+    font-size: 10px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-micro-value-pair > small {
+    color: #607087;
+    font-size: 8px;
+    font-weight: 800;
+}
+
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-value-pair:nth-child(2) > strong {
+    color: #dc2626;
+}
+
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-value-pair:nth-child(3) > strong,
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-value-pair:nth-child(4) > strong {
+    color: #d97706;
+}
+
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-value-pair:nth-child(5) > strong {
+    color: #0857c3;
+}
+
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-value-pair:nth-child(6) > strong {
+    color: #008766;
+}
+
+.pres-structured-shell .psd-micro-branch-table.is-tiering .psd-micro-value-pair:nth-child(4) > strong {
+    color: #008766;
+}
+
+.pres-structured-shell .psd-micro-branch-table.is-pdwk .psd-micro-branch-head > span,
+.pres-structured-shell .psd-micro-branch-table.is-pdwk .psd-micro-branch-row > strong,
+.pres-structured-shell .psd-micro-branch-table.is-pdwk .psd-micro-branch-row > .psd-micro-value-pair,
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-branch-head > span,
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-branch-row > strong,
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-branch-row > .psd-micro-value-pair {
+    padding-right: 5px;
+    padding-left: 5px;
+}
+
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-branch-head > span {
+    font-size: 8px;
+}
+
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-value-pair > strong {
+    font-size: 9px;
+}
+
+.pres-structured-shell .psd-micro-branch-table.is-extreme-low .psd-micro-value-pair > small {
+    font-size: 7.5px;
+}
+
+@container (max-width: 640px) {
+    .pres-structured-shell .psd-micro-branch-head > span,
+    .pres-structured-shell .psd-micro-branch-row > strong,
+    .pres-structured-shell .psd-micro-branch-row > .psd-micro-value-pair {
+        padding-right: 6px;
+        padding-left: 6px;
+    }
+
+    .pres-structured-shell .psd-micro-value-pair > strong {
+        font-size: 9px;
+    }
+}
+
+.pres-structured-shell .psd-micro-role-list,
+.pres-structured-shell .psd-micro-ranking-list {
+    display: grid;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding: 6px 7px 7px;
+}
+
+.pres-structured-shell .psd-micro-role-list {
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+}
+
+.pres-structured-shell .psd-micro-ranking-list {
+    grid-template-rows: repeat(5, minmax(0, 1fr));
+}
+
+.pres-structured-shell .psd-micro-ranking-list.is-extreme-low {
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+}
+
+.pres-structured-shell .psd-micro-role-list article,
+.pres-structured-shell .psd-micro-ranking-list article {
+    display: grid;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 0;
+    padding: 4px 7px;
+    border: 1px solid #e2eaf3;
+    border-top: 0;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-micro-role-list article:first-child,
+.pres-structured-shell .psd-micro-ranking-list article:first-child {
+    border-top: 1px solid #e2eaf3;
+    border-radius: 3px 3px 0 0;
+}
+
+.pres-structured-shell .psd-micro-role-list article:nth-child(even),
+.pres-structured-shell .psd-micro-ranking-list article:nth-child(even) {
+    background: #f5f8fc;
+}
+
+.pres-structured-shell .psd-micro-role-list article {
+    grid-template-columns: 25px minmax(0, 1fr) auto auto auto;
+}
+
+.pres-structured-shell .psd-micro-ranking-list article {
+    grid-template-columns: 25px minmax(0, 1fr) auto auto;
+}
+
+.pres-structured-shell .psd-micro-role-list article > i,
+.pres-structured-shell .psd-micro-ranking-list article > i {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    color: #ffffff;
+    border-radius: 3px;
+    background: #0857c3;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-micro-role-list strong,
+.pres-structured-shell .psd-micro-ranking-list strong {
+    min-width: 0;
+    overflow: hidden;
+    color: #172033;
+    font-size: 11px;
+    font-weight: 950;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-micro-ranking-list article > div {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-micro-ranking-list small {
+    margin-top: 2px;
+    overflow: hidden;
+    color: #748297;
+    font-size: 8px;
+    font-weight: 750;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-micro-role-list span,
+.pres-structured-shell .psd-micro-ranking-list article > span {
+    color: #172033;
+    font-size: 11px;
+    font-weight: 950;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-micro-role-list small,
+.pres-structured-shell .psd-micro-role-list b,
+.pres-structured-shell .psd-micro-ranking-list article > b {
+    color: #607087;
+    font-size: 9px;
+    font-weight: 850;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-micro-role-list b {
+    color: #008766;
+    font-size: 11px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-micro-list-panel .psd-empty {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 800;
+    text-align: center;
+}
+
+/*
+ * Funding strategy orbit.
+ * The visual hierarchy follows the eight-point strategy map used in executive
+ * reviews, while each module keeps the live dashboard values readable.
+ */
+.pres-structured-shell .psd-v2-strategy-orbit {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 270px minmax(0, 1fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-v2-strategy-rail {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-v2-strategy-rail.is-left {
+    grid-template-rows: minmax(226px, 2.45fr) repeat(3, minmax(78px, 0.86fr));
+}
+
+.pres-structured-shell .psd-v2-strategy-rail.is-right {
+    grid-template-rows:
+        minmax(116px, 1.04fr)
+        minmax(126px, 1.12fr)
+        minmax(174px, 1.58fr)
+        minmax(78px, 0.76fr);
+}
+
+.pres-structured-shell .psd-strategy-orbit-node {
+    position: relative;
+    display: grid;
+    align-items: stretch;
+    gap: 6px;
+    min-width: 0;
+    min-height: 0;
+    overflow: visible;
+    padding: 5px;
+    border: 1px solid #c8d9ed;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow: 0 4px 12px rgba(30, 64, 109, 0.06);
+}
+
+.pres-structured-shell .psd-strategy-orbit-node.is-left {
+    grid-template-columns: 29px minmax(0, 1fr) 44px;
+    grid-template-areas: "number body icon";
+    border-right: 3px solid #73c8ed;
+}
+
+.pres-structured-shell .psd-strategy-orbit-node.is-right {
+    grid-template-columns: 44px minmax(0, 1fr) 29px;
+    grid-template-areas: "icon body number";
+    border-left: 3px solid #73c8ed;
+}
+
+.pres-structured-shell .psd-strategy-orbit-node::after {
+    position: absolute;
+    z-index: -1;
+    top: 50%;
+    width: 16px;
+    height: 2px;
+    background: #8acbea;
+    content: "";
+}
+
+.pres-structured-shell .psd-strategy-orbit-node.is-left::after {
+    right: -16px;
+}
+
+.pres-structured-shell .psd-strategy-orbit-node.is-right::after {
+    left: -16px;
+}
+
+.pres-structured-shell .psd-strategy-node-number {
+    grid-area: number;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    width: 28px;
+    height: 28px;
+    color: #ffffff;
+    border-radius: 50%;
+    background: #075dc8;
+    font-size: 13px;
+    font-weight: 950;
+    line-height: 1;
+    box-shadow: 0 0 0 3px #ddecfb;
+}
+
+.pres-structured-shell .psd-strategy-node-icon {
+    grid-area: icon;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    width: 42px;
+    height: 42px;
+    color: #053f8d;
+    border: 4px solid #66c9ef;
+    border-radius: 50%;
+    background: #e7f6fd;
+    font-size: 17px;
+    box-shadow:
+        0 0 0 3px #d5e6f7,
+        inset 0 0 0 2px #ffffff;
+}
+
+.pres-structured-shell .psd-strategy-node-body {
+    grid-area: body;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    flex-direction: column;
+}
+
+.pres-structured-shell .psd-strategy-node-body > header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 6px;
+    min-width: 0;
+    padding: 1px 2px 4px;
+}
+
+.pres-structured-shell .psd-strategy-node-body > header > div {
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-strategy-node-body > header strong,
+.pres-structured-shell .psd-strategy-node-body > header p,
+.pres-structured-shell .psd-strategy-node-body > header small {
+    display: block;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.pres-structured-shell .psd-strategy-node-body > header strong {
+    color: #102440;
+    font-size: 12.5px;
+    font-weight: 950;
+    line-height: 1.08;
+}
+
+.pres-structured-shell .psd-strategy-node-body > header p {
+    margin-top: 2px;
+    color: #5b6c83;
+    font-size: 9px;
+    font-weight: 720;
+    line-height: 1.16;
+}
+
+.pres-structured-shell .psd-strategy-node-body > header small {
+    max-width: 88px;
+    padding: 2px 5px;
+    color: #075dc8;
+    border: 1px solid #c8def4;
+    border-radius: 3px;
+    background: #eef6ff;
+    font-size: 8.5px;
+    font-weight: 900;
+    line-height: 1.1;
+    text-align: right;
+}
+
+.pres-structured-shell .psd-strategy-orbit-node.is-supporting .psd-strategy-node-body > header {
+    padding-bottom: 3px;
+}
+
+.pres-structured-shell .psd-strategy-orbit-node.is-supporting .psd-strategy-node-body > header strong {
+    font-size: 11.5px;
+}
+
+.pres-structured-shell .psd-strategy-orbit-node.is-supporting .psd-strategy-node-body > header p {
+    font-size: 8.5px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid #d8e3ef;
+    border-radius: 3px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table {
+    width: 100%;
+    height: 100%;
+    border-spacing: 0;
+    border-collapse: collapse;
+    table-layout: fixed;
+    color: #26374e;
+    font-size: 9.5px;
+    font-variant-numeric: tabular-nums;
+}
+
+.pres-structured-shell .psd-strategy-mini-table th,
+.pres-structured-shell .psd-strategy-mini-table td {
+    min-width: 0;
+    overflow: hidden;
+    padding: 2px 4px;
+    border-right: 1px solid #dce6f1;
+    border-bottom: 1px solid #dce6f1;
+    line-height: 1.08;
+    text-align: right;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-strategy-mini-table th {
+    color: #36506f;
+    background: #eaf1f8;
+    font-size: 8.5px;
+    font-weight: 950;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-strategy-mini-table th small {
+    display: block;
+    margin-top: 1px;
+    color: #6e7f94;
+    font-size: 6.8px;
+    font-weight: 800;
+    line-height: 1;
+    text-transform: none;
+}
+
+.pres-structured-shell .psd-strategy-mini-table th:first-child,
+.pres-structured-shell .psd-strategy-mini-table td:first-child,
+.pres-structured-shell .psd-strategy-mini-table.is-casa th:first-child,
+.pres-structured-shell .psd-strategy-mini-table.is-casa td:first-child,
+.pres-structured-shell .psd-strategy-mini-table.is-payroll th:first-child,
+.pres-structured-shell .psd-strategy-mini-table.is-payroll td:first-child,
+.pres-structured-shell .psd-strategy-mini-table.is-cluster th:first-child,
+.pres-structured-shell .psd-strategy-mini-table.is-cluster td:first-child {
+    text-align: left;
+}
+
+.pres-structured-shell .psd-strategy-mini-table tbody tr:nth-child(even) {
+    background: #f6f9fc;
+}
+
+.pres-structured-shell .psd-strategy-mini-table tr:last-child td {
+    border-bottom: 0;
+}
+
+.pres-structured-shell .psd-strategy-mini-table th:last-child,
+.pres-structured-shell .psd-strategy-mini-table td:last-child {
+    border-right: 0;
+}
+
+.pres-structured-shell .psd-strategy-mini-table td > strong,
+.pres-structured-shell .psd-strategy-mini-table td > small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pres-structured-shell .psd-strategy-mini-table td > strong {
+    color: #152640;
+    font-size: 9.5px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-strategy-mini-table td > small {
+    margin-top: 1px;
+    color: #728095;
+    font-size: 7.5px;
+    font-weight: 750;
+}
+
+.pres-structured-shell .psd-strategy-mini-table td.is-empty {
+    color: #64748b;
+    font-size: 9.5px;
+    font-weight: 800;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-digital col.is-number {
+    width: 24px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-digital col.is-label {
+    width: 82px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-digital col.is-rka {
+    width: 67px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-digital thead tr:first-child {
+    height: 18px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-digital thead tr:last-child {
+    height: 23px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-digital tbody tr {
+    height: 23px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-digital th:first-child,
+.pres-structured-shell .psd-strategy-mini-table.is-digital td:first-child {
+    padding-right: 1px;
+    padding-left: 1px;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-digital td:first-child b {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    color: #ffffff;
+    border-radius: 3px;
+    background: #075dc8;
+    font-size: 8px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-digital td:nth-child(2) strong {
+    font-size: 9.2px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-digital td:nth-child(2) small {
+    font-size: 6.8px;
+}
+
+.pres-structured-shell .psd-strategy-cell {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pres-structured-shell .psd-strategy-cell strong {
+    color: #2b3c53;
+    font-size: 8.7px;
+    font-weight: 930;
+}
+
+.pres-structured-shell .psd-strategy-cell.is-current strong {
+    color: #075dc8;
+}
+
+.pres-structured-shell .psd-strategy-cell.is-positive strong,
+.pres-structured-shell .psd-strategy-payroll-metric .is-positive,
+.pres-structured-shell .psd-strategy-dormant-grid .is-positive strong {
+    color: #008766;
+}
+
+.pres-structured-shell .psd-strategy-cell.is-negative strong,
+.pres-structured-shell .psd-strategy-payroll-metric .is-negative,
+.pres-structured-shell .psd-strategy-dormant-grid .is-negative strong {
+    color: #c62828;
+}
+
+.pres-structured-shell .psd-strategy-cell.is-neutral strong,
+.pres-structured-shell .psd-strategy-payroll-metric .is-neutral,
+.pres-structured-shell .psd-strategy-dormant-grid .is-neutral strong {
+    color: #9a6800;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-casa thead tr,
+.pres-structured-shell .psd-strategy-mini-table.is-cluster thead tr {
+    height: 20px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-casa tbody tr {
+    height: 17px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-casa th:first-child {
+    width: 30%;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-cluster tbody tr {
+    height: 15px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-cluster thead tr {
+    height: 18px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-cluster th:first-child {
+    width: 35%;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-payroll thead tr {
+    height: 21px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-payroll tbody tr {
+    height: 29px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-payroll th:first-child {
+    width: 15%;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-payroll th:last-child {
+    width: 14%;
+}
+
+.pres-structured-shell .psd-strategy-payroll-metric strong,
+.pres-structured-shell .psd-strategy-payroll-metric small {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-strategy-payroll-metric strong {
+    color: #16283f;
+    font-size: 8.8px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-strategy-payroll-metric small {
+    margin-top: 1px;
+    color: #6b7b90;
+    font-size: 6.6px;
+    font-weight: 800;
+}
+
+.pres-structured-shell .psd-strategy-support-values,
+.pres-structured-shell .psd-strategy-dormant-grid {
+    display: grid;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid #d8e3ef;
+    border-radius: 3px;
+    background: #f7fafe;
+}
+
+.pres-structured-shell .psd-strategy-support-values {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.pres-structured-shell .psd-strategy-dormant-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.pres-structured-shell .psd-strategy-support-values > span,
+.pres-structured-shell .psd-strategy-dormant-grid > span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    padding: 2px 3px;
+    border-right: 1px solid #dce6f1;
+    flex-direction: column;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-strategy-support-values > span:last-child,
+.pres-structured-shell .psd-strategy-dormant-grid > span:last-child {
+    border-right: 0;
+}
+
+.pres-structured-shell .psd-strategy-support-values small,
+.pres-structured-shell .psd-strategy-dormant-grid small {
+    display: block;
+    overflow: hidden;
+    width: 100%;
+    color: #6a7a8e;
+    font-size: 7px;
+    font-weight: 850;
+    line-height: 1.05;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-strategy-support-values strong,
+.pres-structured-shell .psd-strategy-dormant-grid strong {
+    display: block;
+    overflow: hidden;
+    width: 100%;
+    margin-top: 2px;
+    color: #14253d;
+    font-size: 9.5px;
+    font-weight: 950;
+    line-height: 1.05;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-strategy-dormant-grid .is-current {
+    background: #eaf4ff;
+}
+
+.pres-structured-shell .psd-v2-strategy-core {
+    position: relative;
+    z-index: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 18px 13px;
+    color: #ffffff;
+    border: 1px solid #0857c3;
+    border-radius: 6px;
+    background: #064589;
+    box-shadow: inset 0 0 0 5px rgba(95, 193, 236, 0.14);
+    flex-direction: column;
+}
+
+.pres-structured-shell .psd-v2-strategy-core::before,
+.pres-structured-shell .psd-v2-strategy-core::after {
+    position: absolute;
+    z-index: -1;
+    width: 238px;
+    height: 238px;
+    border: 1px solid rgba(115, 207, 246, 0.24);
+    border-radius: 50%;
+    content: "";
+}
+
+.pres-structured-shell .psd-v2-strategy-core::before {
+    top: 48px;
+}
+
+.pres-structured-shell .psd-v2-strategy-core::after {
+    top: 84px;
+    width: 166px;
+    height: 166px;
+}
+
+.pres-structured-shell .psd-strategy-core-ring {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 132px;
+    height: 132px;
+    flex: 0 0 132px;
+    color: #ffffff;
+    border: 7px solid #63cef4;
+    border-radius: 50%;
+    background: #0b59b4;
+    box-shadow:
+        0 0 0 7px rgba(255, 255, 255, 0.16),
+        0 10px 24px rgba(0, 22, 58, 0.28);
+    flex-direction: column;
+}
+
+.pres-structured-shell .psd-strategy-core-ring span {
+    font-size: 40px;
+    font-weight: 950;
+    line-height: 0.86;
+}
+
+.pres-structured-shell .psd-strategy-core-ring strong {
+    margin-top: 4px;
+    font-size: 18px;
+    font-weight: 950;
+    line-height: 1;
+}
+
+.pres-structured-shell .psd-strategy-core-ring small {
+    margin-top: 4px;
+    color: #c6efff;
+    font-size: 9px;
+    font-weight: 850;
+}
+
+.pres-structured-shell .psd-strategy-skyline {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 6px;
+    width: 198px;
+    height: 126px;
+    margin-top: 13px;
+    padding: 0 9px 8px;
+    border-bottom: 5px solid #4dc6f0;
+}
+
+.pres-structured-shell .psd-strategy-skyline i {
+    display: block;
+    width: 24px;
+    height: var(--h);
+    min-height: 28px;
+    border: 2px solid rgba(255, 255, 255, 0.38);
+    border-bottom: 0;
+    background: #13b7d6;
+    box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.08);
+}
+
+.pres-structured-shell .psd-strategy-skyline i:nth-child(2),
+.pres-structured-shell .psd-strategy-skyline i:nth-child(5) {
+    background: #0bb994;
+}
+
+.pres-structured-shell .psd-strategy-skyline i:nth-child(3),
+.pres-structured-shell .psd-strategy-skyline i:nth-child(6) {
+    background: #f4a11a;
+}
+
+.pres-structured-shell .psd-strategy-skyline i:nth-child(4) {
+    background: #ef6848;
+}
+
+.pres-structured-shell .psd-strategy-core-copy {
+    width: 100%;
+    min-width: 0;
+    margin-top: 14px;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-strategy-core-copy > strong,
+.pres-structured-shell .psd-strategy-core-copy > span {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.pres-structured-shell .psd-strategy-core-copy > strong {
+    font-size: 17px;
+    font-weight: 950;
+    line-height: 1.08;
+}
+
+.pres-structured-shell .psd-strategy-core-copy > span {
+    margin-top: 3px;
+    color: #bfeaff;
+    font-size: 9px;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-strategy-core-copy > div {
+    display: grid;
+    gap: 4px;
+    width: 100%;
+    margin-top: 12px;
+}
+
+.pres-structured-shell .psd-strategy-core-copy small {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 5px;
+    min-width: 0;
+    padding: 5px 7px;
+    color: #d9f3ff;
+    border: 1px solid rgba(160, 220, 247, 0.28);
+    border-radius: 3px;
+    background: rgba(2, 42, 91, 0.54);
+    font-size: 8.5px;
+    font-weight: 800;
+    line-height: 1.08;
+    text-align: left;
+}
+
+.pres-structured-shell .psd-strategy-core-copy small b {
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 950;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-strategy-actionbar {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 11px;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 7px 12px;
+    color: #ffffff;
+    border: 1px solid #0754ad;
+    border-radius: 5px;
+    background: #063d7c;
+}
+
+.pres-structured-shell .psd-strategy-actionbar > span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    color: #053f8d;
+    border-radius: 50%;
+    background: #81d7f6;
+    font-size: 17px;
+}
+
+.pres-structured-shell .psd-strategy-actionbar > div {
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-strategy-actionbar > div strong {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 950;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-strategy-actionbar > div p {
+    margin: 2px 0 0;
+    color: #d6edff;
+    font-size: 9.5px;
+    font-weight: 760;
+    line-height: 1.15;
+}
+
+.pres-structured-shell .psd-strategy-actionbar dl {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(88px, 1fr));
+    gap: 1px;
+    min-width: 330px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid rgba(159, 211, 246, 0.28);
+    border-radius: 3px;
+    background: rgba(159, 211, 246, 0.28);
+}
+
+.pres-structured-shell .psd-strategy-actionbar dl > div {
+    min-width: 0;
+    padding: 4px 7px;
+    background: #0a4a91;
+}
+
+.pres-structured-shell .psd-strategy-actionbar dt,
+.pres-structured-shell .psd-strategy-actionbar dd {
+    overflow: hidden;
+    margin: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-strategy-actionbar dt {
+    color: #9edcf7;
+    font-size: 7px;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-strategy-actionbar dd {
+    margin-top: 2px;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-strategy-actionbar dd.is-positive {
+    color: #83efcf;
+}
+
+.pres-structured-shell .psd-strategy-actionbar dd.is-negative {
+    color: #ffaaa8;
+}
+
+.pres-structured-shell .psd-strategy-actionbar dd.is-neutral {
+    color: #ffd481;
+}
+
+/*
+ * Full-width presentation content and table readability guard.
+ * Keep label columns flexible, numeric columns on one line, and leave enough
+ * inset around every value so text never sits on top of a cell or chart line.
+ */
+@media screen {
+    #apple-presentation-mode .apple-slide.pres-structured-shell {
+        padding: 5px 3px !important;
+    }
+}
+
+.pres-structured-shell .psd-slide,
+.pres-structured-shell .psd-v2-data-main,
+.pres-structured-shell .psd-v2-support-split,
+.pres-structured-shell .psd-v2-table-panel,
+.pres-structured-shell .psd-v2-comparison-wrap,
+.pres-structured-shell .psd-v2-trend-panel,
+.pres-structured-shell .psd-v2-distribution-panel,
+.pres-structured-shell .psd-v2-quadrant-panel {
+    width: 100%;
+    max-width: none;
+    margin-right: 0;
+    margin-left: 0;
+}
+
+.pres-structured-shell .psd-v2-comparison-table {
+    border-spacing: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.pres-structured-shell .psd-v2-comparison-table.has-prognosa col.is-scope {
+    width: 7%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table.has-prognosa col.is-dimension {
+    width: 7.5%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table.has-prognosa col.is-value {
+    width: 4.25%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table.has-prognosa col.is-delta {
+    width: 5.2%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table col.is-prognosa {
+    width: 5.8%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table col.is-prognosa-delta {
+    width: 6.2%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table.has-prognosa col.is-rka {
+    width: 5.4%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table.has-prognosa col.is-achievement {
+    width: 6.8%;
+}
+
+.pres-structured-shell .psd-v2-comparison-table th.is-prognosa {
+    color: #ffffff;
+    background: #087f68;
+}
+
+.pres-structured-shell .psd-v2-comparison-table td.is-prognosa {
+    background: #eefbf7;
+    box-shadow: inset 1px 0 0 rgba(13, 159, 119, 0.18);
+}
+
+.pres-structured-shell .psd-v2-comparison-table tbody tr:nth-child(even) td.is-prognosa {
+    background: #e5f7f1;
+}
+
+.pres-structured-shell .psd-v2-comparison-table tbody tr.is-total td.is-prognosa {
+    color: #075f51;
+    background: #d2f1e7;
+}
+
+.pres-structured-shell .psd-v2-comparison-table.has-prognosa th,
+.pres-structured-shell .psd-v2-comparison-table.has-prognosa td {
+    padding-right: 3px;
+    padding-left: 3px;
+}
+
+.pres-structured-shell .psd-v2-comparison-table th,
+.pres-structured-shell .psd-v2-comparison-table td {
+    padding: 3px 4px;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 1.16;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-v2-comparison-table th:first-child,
+.pres-structured-shell .psd-v2-comparison-table th:nth-child(2),
+.pres-structured-shell .psd-v2-comparison-table td:first-child,
+.pres-structured-shell .psd-v2-comparison-table td:nth-child(2) {
+    padding-right: 6px;
+    padding-left: 8px;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.pres-structured-shell .psd-v2-comparison-table td > strong,
+.pres-structured-shell .psd-v2-comparison-table td > span,
+.pres-structured-shell .psd-v2-comparison-table td > small {
+    width: 100%;
+    overflow: visible;
+    line-height: inherit;
+    text-overflow: clip;
+    white-space: inherit;
+}
+
+.pres-structured-shell .psd-v2-comparison-table .psd-v2-group-head th {
+    padding: 4px 5px;
+    line-height: 1.08;
+    white-space: normal;
+}
+
+.pres-structured-shell .psd-v2-comparison-table .psd-v2-date-head th {
+    padding: 4px 3px;
+    line-height: 1.08;
+}
+
+.pres-structured-shell .psd-v2-comparison-table .psd-v2-date-head th > span,
+.pres-structured-shell .psd-v2-comparison-table .psd-v2-date-head th > small {
+    overflow: visible;
+    text-overflow: clip;
+}
+
+.pres-structured-shell .psd-v2-comparison-table tbody tr {
+    height: 26px;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table {
+    grid-template-rows: minmax(404px, 1.5fr) minmax(136px, 0.5fr);
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-comparison-table th,
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-comparison-table td {
+    padding-top: 3px;
+    padding-bottom: 3px;
+    font-size: 9.8px;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-comparison-table tbody tr {
+    height: 24px;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-distribution-list {
+    padding: 3px 6px 5px;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-distribution-list article {
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    grid-template-rows: minmax(12px, 1fr) 4px;
+    gap: 1px 5px;
+    padding: 1px 5px;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-rank {
+    width: 18px;
+    height: 18px;
+    font-size: 8px;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-distribution-list article > div {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    overflow: visible;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-distribution-list strong,
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-distribution-list small,
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-distribution-list b {
+    overflow: visible;
+    line-height: 1;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-distribution-list strong,
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-distribution-list b {
+    font-size: 9.4px;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-distribution-list small {
+    margin-top: 0;
+    color: #65758b;
+    font-size: 7.4px;
+}
+
+.pres-structured-shell .psd-v2-data-main.is-dense-table .psd-v2-distribution-list em {
+    height: 3px;
+}
+
+.pres-structured-shell .psd-strategy-mini-table {
+    font-variant-numeric: tabular-nums;
+}
+
+.pres-structured-shell .psd-strategy-mini-table th,
+.pres-structured-shell .psd-strategy-mini-table td {
+    padding: 3px 4px;
+    line-height: 1.12;
+    text-overflow: clip;
+}
+
+.pres-structured-shell .psd-strategy-mini-table th {
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.pres-structured-shell .psd-strategy-mini-table td {
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-strategy-mini-table td > strong,
+.pres-structured-shell .psd-strategy-mini-table td > small,
+.pres-structured-shell .psd-strategy-payroll-metric strong,
+.pres-structured-shell .psd-strategy-payroll-metric small,
+.pres-structured-shell .psd-strategy-cell {
+    overflow: visible;
+    line-height: 1.08;
+    text-overflow: clip;
+}
+
+.pres-structured-shell .psd-strategy-mini-table.is-digital td:nth-child(2),
+.pres-structured-shell .psd-strategy-mini-table.is-casa td:first-child,
+.pres-structured-shell .psd-strategy-mini-table.is-cluster td:first-child,
+.pres-structured-shell .psd-strategy-mini-table.is-payroll td:first-child {
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.pres-structured-shell .psd-matrix {
+    width: 100%;
+    max-width: none;
+    padding-right: 8px;
+    padding-left: 8px;
+}
+
+.pres-structured-shell .psd-matrix-head,
+.pres-structured-shell .psd-matrix-row {
+    padding-right: 8px;
+    padding-left: 8px;
+}
+
+.pres-structured-shell .psd-matrix-head span {
+    padding-right: 6px;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+}
+
+.pres-structured-shell .psd-matrix-row > div:first-child strong,
+.pres-structured-shell .psd-matrix-row > div:first-child small {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+}
+
+.pres-structured-shell .psd-v2-trend-chart {
+    padding: 8px 12px 9px;
+}
+
+.pres-structured-shell .psd-v2-chart-value,
+.pres-structured-shell .psd-v2-chart-label {
+    paint-order: stroke fill;
+    stroke: #ffffff;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+
+.pres-structured-shell .psd-v2-chart-value {
+    stroke-width: 4px;
+}
+
+.pres-structured-shell .psd-v2-chart-label {
+    stroke-width: 3px;
+}
+
+.pres-structured-shell .psd-chart-wrap.is-expandable,
+.pres-structured-shell .psd-v2-trend-chart.is-expandable,
+.pres-structured-shell .psd-mini-trend.is-expandable {
+    cursor: zoom-in;
+    outline: 0;
+}
+
+.pres-structured-shell .psd-chart-wrap.is-expandable:focus-visible,
+.pres-structured-shell .psd-v2-trend-chart.is-expandable:focus-visible,
+.pres-structured-shell .psd-mini-trend.is-expandable:focus-visible {
+    border-radius: 6px;
+    box-shadow: inset 0 0 0 3px rgba(8, 87, 195, 0.42);
+}
+
+.pres-structured-shell .psd-v2-trend-chart.is-expandable:hover,
+.pres-structured-shell .psd-mini-trend.is-expandable:hover {
+    background-color: rgba(8, 87, 195, 0.025);
+}
+
+.psd-timeseries-modal-open {
+    overflow: hidden !important;
+}
+
+.psd-timeseries-modal {
+    position: fixed;
+    z-index: 30050;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: clamp(12px, 2.4vw, 34px);
+    overflow: hidden;
+    background: rgba(3, 16, 36, 0.78);
+    backdrop-filter: blur(8px);
+    overscroll-behavior: contain;
+    animation: psd-timeseries-modal-in 160ms ease-out;
+}
+
+.psd-timeseries-dialog {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    width: min(1560px, 100%);
+    height: min(900px, calc(100dvh - clamp(24px, 4.8vw, 68px)));
+    min-height: 420px;
+    overflow: hidden;
+    border: 1px solid rgba(167, 203, 236, 0.72);
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 30px 90px rgba(3, 16, 36, 0.42);
+}
+
+.psd-timeseries-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    min-width: 0;
+    padding: 18px 22px 16px;
+    border-bottom: 1px solid #dce7f2;
+    background: linear-gradient(115deg, #f7fbff, #edf5fc);
+}
+
+.psd-timeseries-dialog-header > div {
+    min-width: 0;
+}
+
+.psd-timeseries-dialog-heading {
+    flex: 1 1 380px;
+}
+
+.psd-timeseries-metric-selector {
+    display: grid;
+    flex: 0 1 560px;
+    gap: 5px;
+    min-width: 0;
+}
+
+.psd-timeseries-metric-selector > div {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    min-width: 0;
+}
+
+.psd-timeseries-metric-selector > span {
+    text-align: right;
+}
+
+.psd-timeseries-metric-selector > strong {
+    justify-self: end;
+    max-width: 100%;
+    overflow: hidden;
+    color: #18324f;
+    font-size: 13px;
+    font-weight: 850;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.psd-timeseries-dialog-header .psd-timeseries-metric-selector button {
+    min-width: 0;
+    min-height: 31px;
+    padding: 5px 10px;
+    border-color: #c7d7e9;
+    border-radius: 999px;
+    box-shadow: none;
+    color: #48617d;
+    background: rgba(255, 255, 255, 0.82);
+    font-size: 11px;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+.psd-timeseries-dialog-header .psd-timeseries-metric-selector button.is-active {
+    border-color: #0857c3;
+    color: #ffffff;
+    background: #0857c3;
+}
+
+.psd-timeseries-dialog-header span {
+    display: block;
+    color: #0857c3;
+    font-size: 12px;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.psd-timeseries-dialog-header h2 {
+    margin: 3px 0 0;
+    color: #10223d;
+    font-size: clamp(22px, 2vw, 32px);
+    font-weight: 900;
+    line-height: 1.1;
+    overflow-wrap: anywhere;
+}
+
+.psd-timeseries-dialog-header p {
+    margin: 5px 0 0;
+    color: #60738b;
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 1.3;
+}
+
+.psd-timeseries-dialog-header button {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 102px;
+    min-height: 42px;
+    padding: 9px 14px;
+    border: 1px solid #cbd9e8;
+    border-radius: 10px;
+    color: #18324f;
+    background: #ffffff;
+    box-shadow: 0 5px 15px rgba(33, 66, 104, 0.08);
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.psd-timeseries-dialog-header button:hover {
+    border-color: #92b9e4;
+    color: #0857c3;
+    background: #f7fbff;
+}
+
+.psd-timeseries-dialog-header button:focus-visible {
+    outline: 3px solid rgba(8, 87, 195, 0.3);
+    outline-offset: 2px;
+}
+
+.psd-timeseries-dialog-chart {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    padding: 20px 24px 12px;
+}
+
+.psd-timeseries-dialog-chart canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.psd-timeseries-dialog-footer {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+    align-items: center;
+    gap: 18px;
+    min-width: 0;
+    padding: 12px 22px 14px;
+    border-top: 1px solid #dce7f2;
+    background: #f8fbfe;
+}
+
+.psd-timeseries-dialog-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: #52677f;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.psd-timeseries-dialog-status i {
+    flex: 0 0 auto;
+    color: #d97706;
+}
+
+.psd-timeseries-dialog-status.is-daily i {
+    color: #087f68;
+}
+
+.psd-timeseries-dialog-legend {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px 16px;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.psd-timeseries-dialog-legend span {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    color: #3f536b;
+    font-size: 12px;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.psd-timeseries-dialog-legend i {
+    display: inline-block;
+    width: 18px;
+    height: 4px;
+    border-radius: 999px;
+}
+
+.psd-timeseries-dialog-legend small {
+    color: #7a8ca2;
+    font-size: 10px;
+    font-weight: 650;
+}
+
+@keyframes psd-timeseries-modal-in {
+    from {
+        opacity: 0;
+        transform: scale(0.985);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@media (max-width: 900px) {
+    .psd-timeseries-modal {
+        padding: 12px;
+    }
+
+    .psd-timeseries-dialog {
+        height: calc(100dvh - 24px);
+        min-height: 0;
+        border-radius: 13px;
+    }
+
+    .psd-timeseries-dialog-header {
+        flex-wrap: wrap;
+        padding: 14px 16px 12px;
+    }
+
+    .psd-timeseries-dialog-heading {
+        flex: 1 1 calc(100% - 70px);
+        order: 1;
+    }
+
+    .psd-timeseries-metric-selector {
+        flex: 1 1 100%;
+        order: 3;
+    }
+
+    .psd-timeseries-metric-selector > div {
+        justify-content: flex-start;
+        overflow-x: auto;
+        scrollbar-width: thin;
+    }
+
+    .psd-timeseries-metric-selector > span {
+        text-align: left;
+    }
+
+    .psd-timeseries-metric-selector > strong {
+        justify-self: start;
+    }
+
+    .psd-timeseries-dialog-header [data-psd-timeseries-close] {
+        order: 2;
+    }
+
+    .psd-timeseries-dialog-header button {
+        min-width: 44px;
+        padding: 9px 12px;
+    }
+
+    .psd-timeseries-dialog-header .psd-timeseries-metric-selector button {
+        min-width: 0;
+        min-height: 29px;
+        padding: 5px 9px;
+    }
+
+    .psd-timeseries-dialog-header [data-psd-timeseries-close] span {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .psd-timeseries-dialog-chart {
+        padding: 14px 12px 8px;
+    }
+
+    .psd-timeseries-dialog-footer {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 9px;
+        padding: 10px 14px 12px;
+    }
+
+    .psd-timeseries-dialog-legend {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 560px), (max-height: 560px) {
+    .psd-timeseries-dialog-header h2 {
+        font-size: 19px;
+        white-space: normal;
+    }
+
+    .psd-timeseries-dialog-header p,
+    .psd-timeseries-dialog-status,
+    .psd-timeseries-dialog-legend span {
+        font-size: 11px;
+    }
+
+    .psd-timeseries-dialog-header {
+        gap: 10px;
+        padding: 10px 12px;
+    }
+
+    .psd-timeseries-metric-selector {
+        gap: 3px;
+    }
+
+    .psd-timeseries-dialog-header .psd-timeseries-metric-selector button {
+        min-height: 25px;
+        padding: 4px 7px;
+        font-size: 9px;
+    }
+
+    .psd-timeseries-dialog-chart {
+        padding: 8px 8px 4px;
+    }
+
+    .psd-timeseries-dialog-footer {
+        gap: 6px;
+        padding: 7px 10px 9px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .psd-timeseries-modal {
+        animation: none;
+    }
+}
+
+@media print {
+    .psd-timeseries-modal {
+        display: none !important;
+    }
+
+    .pres-structured-shell {
+        border: 0;
+        box-shadow: none;
+    }
+}

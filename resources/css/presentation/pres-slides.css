@@ -1,0 +1,4180 @@
+    /* 18-page BRI executive deck system */
+    .bri-deck-title-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .bri-deck-kicker {
+      color: #0857c3;
+      font-size: 0.78rem;
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .bri-deck-title {
+      margin: 0.2rem 0 0;
+      color: #0f172a;
+      font-size: clamp(1.7rem, 2.45vw, 2.65rem);
+      font-weight: 900;
+      line-height: 1.05;
+    }
+
+    .bri-deck-subtitle {
+      margin: 0.5rem 0 0;
+      color: #475569;
+      font-size: 0.88rem;
+      font-weight: 600;
+      line-height: 1.45;
+      max-width: 760px;
+    }
+
+    .bri-cover-hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(360px, 0.82fr) minmax(560px, 1.18fr);
+      gap: 1.35rem;
+      height: 100%;
+      align-items: stretch;
+    }
+
+    .bri-cover-copy {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 2.2rem;
+      border-radius: 20px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(239,246,255,0.92));
+      border: 1px solid rgba(255, 255, 255, 0.55);
+      box-shadow: 0 24px 58px rgba(0, 0, 0, 0.18);
+    }
+
+    .bri-cover-photo {
+      position: relative;
+      overflow: hidden;
+      border-radius: 22px;
+      border: 8px solid #ffffff;
+      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.26);
+      background: #0857c3;
+    }
+
+    .bri-cover-photo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transform: scale(1.01);
+    }
+
+    .bri-cover-photo::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(8, 87, 195, 0.14), transparent 38%, rgba(230, 28, 36, 0.08));
+      pointer-events: none;
+    }
+
+    .bri-cover-title {
+      margin: 0.45rem 0 0;
+      color: #0857c3;
+      font-size: clamp(2.6rem, 4.7vw, 5.4rem);
+      font-weight: 950;
+      line-height: 0.94;
+    }
+
+    .bri-cover-meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.65rem;
+      margin-top: 1.2rem;
+    }
+
+    .bri-cover-meta .pres-cover-stat {
+      min-height: 72px;
+    }
+
+    .bri-highlight-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.85rem;
+    }
+
+    .bri-dashboard-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: 12px;
+      border: 1px solid rgba(8, 87, 195, 0.14);
+      background: #ffffff;
+      box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
+    }
+
+    .bri-dashboard-card .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 0.55rem 0.85rem;
+      color: #ffffff;
+      background: linear-gradient(90deg, #0857c3, #307fe2);
+      font-size: 0.76rem;
+      font-weight: 900;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .bri-dashboard-card .card-head.cyan {
+      background: linear-gradient(90deg, #307fe2, #00aeef);
+    }
+
+    .bri-dashboard-card .card-head.red {
+      background: linear-gradient(90deg, #0857c3, #ef4444);
+    }
+
+    .bri-dashboard-card .metric-main {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.4rem;
+      padding: 0.9rem 1rem 0.65rem;
+      text-align: center;
+    }
+
+    .bri-dashboard-card .metric-main span,
+    .bri-dashboard-card .metric-deltas span {
+      display: block;
+      color: #475569;
+      font-size: 0.67rem;
+      font-weight: 800;
+    }
+
+    .bri-dashboard-card .metric-main strong {
+      display: block;
+      margin-top: 0.18rem;
+      color: #0f172a;
+      font-size: 1.23rem;
+      font-weight: 950;
+      line-height: 1;
+    }
+
+    .bri-dashboard-card .achievement {
+      padding: 0.35rem 1rem 0.75rem;
+      text-align: center;
+      border-top: 1px solid rgba(15, 23, 42, 0.07);
+    }
+
+    .bri-dashboard-card .achievement strong {
+      display: block;
+      color: #f59e0b;
+      font-size: 1.55rem;
+      font-weight: 950;
+      line-height: 1;
+    }
+
+    .bri-dashboard-card .metric-deltas {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0;
+      padding: 0.65rem 0.85rem 0.85rem;
+      border-top: 1px solid rgba(15, 23, 42, 0.07);
+      text-align: center;
+    }
+
+    .bri-dashboard-card .metric-deltas strong {
+      color: #059669;
+      font-size: 0.76rem;
+      font-weight: 900;
+    }
+
+    .bri-dashboard-card .metric-deltas strong.neg {
+      color: #dc2626;
+    }
+
+    .bri-panel-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 0.9rem;
+      margin-top: 0.9rem;
+      min-height: 0;
+    }
+
+    .bri-blue-panel-title {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      min-height: 34px;
+      padding: 0.48rem 0.8rem;
+      color: #ffffff;
+      background: linear-gradient(90deg, #0857c3, #307fe2);
+      border-radius: 10px 10px 0 0;
+      font-size: 0.76rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .bri-inner-panel {
+      overflow: hidden;
+      border: 1px solid rgba(8, 87, 195, 0.14);
+      border-radius: 11px;
+      background: #ffffff;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+    }
+
+    .bri-panel-body {
+      padding: 0.8rem;
+    }
+
+    .bri-product-row,
+    .bri-branch-card,
+    .bri-finance-card {
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      border-radius: 10px;
+      background: #ffffff;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+    }
+
+    .bri-product-row {
+      display: grid;
+      grid-template-columns: 140px repeat(3, minmax(0, 1fr));
+      gap: 0.75rem;
+      align-items: center;
+      padding: 0.55rem 0.7rem;
+      margin-bottom: 0.42rem;
+    }
+
+    .bri-raised-bars {
+      display: flex;
+      align-items: end;
+      gap: 1rem;
+      height: 310px;
+      padding: 1.2rem 1.4rem 0.75rem;
+      perspective: 900px;
+    }
+
+    .bri-raised-bar {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      height: 100%;
+    }
+
+    .bri-raised-bar .bar {
+      width: 76%;
+      min-height: 18px;
+      border-radius: 10px 10px 4px 4px;
+      background: linear-gradient(180deg, var(--bar-color), #073b8e);
+      box-shadow: inset -10px 0 18px rgba(255,255,255,0.16), 10px 12px 20px rgba(8,87,195,0.18);
+      transform: rotateX(7deg) rotateY(-8deg);
+      transform-origin: bottom center;
+    }
+
+    .bri-raised-bar strong {
+      color: #0f172a;
+      font-size: 0.78rem;
+      font-weight: 900;
+      text-align: center;
+    }
+
+    .bri-raised-bar span {
+      color: #64748b;
+      font-size: 0.68rem;
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .bri-saving-highlight-slide {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      gap: 0.72rem;
+    }
+
+    .bri-saving-highlight-slide .bri-deck-title-row {
+      flex: 0 0 auto;
+    }
+
+    .bri-saving-highlight-slide .bri-highlight-grid {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.58rem;
+      flex: 0 0 auto;
+    }
+
+    .bri-saving-highlight-slide .bri-dashboard-card .card-head {
+      min-height: 32px;
+      padding: 0.42rem 0.55rem;
+      font-size: 0.66rem;
+    }
+
+    .bri-saving-highlight-slide .bri-dashboard-card .metric-main {
+      padding: 0.58rem 0.62rem 0.42rem;
+    }
+
+    .bri-saving-highlight-slide .bri-dashboard-card .metric-main strong {
+      font-size: 1rem;
+      line-height: 1.12;
+    }
+
+    .bri-saving-highlight-slide .bri-dashboard-card .achievement {
+      padding: 0.36rem 0.58rem 0.54rem;
+    }
+
+    .bri-saving-highlight-slide .bri-dashboard-card .achievement strong {
+      font-size: 1.2rem;
+      line-height: 1.05;
+    }
+
+    .bri-saving-highlight-slide .bri-panel-grid {
+      flex: 1 1 auto;
+      min-height: 0;
+      margin-top: 0;
+    }
+
+    .bri-saving-highlight-slide .bri-inner-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .bri-saving-highlight-slide .bri-panel-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .bri-saving-highlight-slide #pres-saving-summary-table {
+      overflow: auto;
+    }
+
+    .bri-raised-bars {
+      display: grid;
+      grid-template-columns: 1fr;
+      align-content: center;
+      gap: 0.72rem;
+      height: 100%;
+      min-height: 0;
+      padding: 0.9rem 0.95rem;
+      perspective: none;
+    }
+
+    .bri-raised-bar {
+      display: grid;
+      grid-template-columns: minmax(115px, 0.72fr) minmax(170px, 1.25fr) minmax(52px, auto);
+      align-items: center;
+      gap: 0.8rem;
+      min-height: 58px;
+      height: auto;
+      padding: 0.78rem 0.88rem;
+      border: 1px solid rgba(8, 87, 195, 0.12);
+      border-radius: 14px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96)),
+        radial-gradient(circle at 10% 0%, rgba(8, 87, 195, 0.12), transparent 34%);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+    }
+
+    .bri-raised-bar .bar-meta {
+      display: grid;
+      gap: 0.18rem;
+      min-width: 0;
+    }
+
+    .bri-raised-bar strong {
+      color: #0f172a;
+      font-size: 0.82rem;
+      font-weight: 950;
+      line-height: 1.12;
+      text-align: left;
+      white-space: normal;
+    }
+
+    .bri-raised-bar span {
+      color: #64748b;
+      font-size: 0.68rem;
+      font-weight: 850;
+      line-height: 1.2;
+      text-align: left;
+      white-space: normal;
+    }
+
+    .bri-raised-bar .bar-track {
+      height: 18px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e5edf7;
+      box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.09);
+    }
+
+    .bri-raised-bar .bar {
+      width: var(--bar-width, 0%);
+      height: 100% !important;
+      min-height: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--bar-color), #307fe2);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 8px 16px rgba(8, 87, 195, 0.16);
+      transform: none;
+    }
+
+    .bri-raised-bar em {
+      justify-self: end;
+      color: var(--bar-color, #0857c3);
+      font-size: 0.9rem;
+      font-style: normal;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    .bri-donut-lite {
+      --p1: 70%;
+      --p2: 15%;
+      --p3: 15%;
+      width: 205px;
+      height: 205px;
+      border-radius: 50%;
+      background: conic-gradient(#0857c3 0 var(--p1), #71c5e8 var(--p1) calc(var(--p1) + var(--p2)), #ef4444 calc(var(--p1) + var(--p2)) 100%);
+      box-shadow: 0 18px 36px rgba(8,87,195,0.18);
+      position: relative;
+      margin: 0 auto;
+    }
+
+    .bri-donut-lite::after {
+      content: '';
+      position: absolute;
+      inset: 48px;
+      border-radius: inherit;
+      background: #ffffff;
+      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+    }
+
+    .bri-mini-stat-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.65rem;
+    }
+
+    .bri-branch-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    .bri-branch-card {
+      padding: 0.9rem;
+    }
+
+    .bri-branch-card h3,
+    .bri-finance-card h3 {
+      margin: 0;
+      color: #0f172a;
+      font-size: 0.95rem;
+      font-weight: 900;
+    }
+
+    .bri-branch-card .metric-line,
+    .bri-finance-card .metric-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.65rem;
+      margin-top: 0.55rem;
+      color: #475569;
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    .bri-finance-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.72rem;
+    }
+
+    .bri-finance-card {
+      padding: 0.9rem;
+      border-top: 4px solid var(--tone, #0857c3);
+    }
+
+    .bri-finance-card strong {
+      display: block;
+      margin-top: 0.55rem;
+      color: var(--tone, #0857c3);
+      font-size: 1.25rem;
+      font-weight: 950;
+    }
+
+    .bri-deep-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.9rem;
+      min-height: 0;
+    }
+
+    @media (max-width: 1100px) {
+      .bri-cover-hero,
+      .bri-panel-grid,
+      .bri-deep-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .bri-highlight-grid,
+      .bri-branch-grid,
+      .bri-finance-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    /* Presentation QC fit layer: keep every slide inside the framed viewport. */
+    #apple-presentation-mode {
+      --pres-stage-x: clamp(1.15rem, 2.15vw, 2.65rem);
+      --pres-stage-top: clamp(4.35rem, 7.2vh, 5.05rem);
+      --pres-stage-bottom: clamp(4.65rem, 7.8vh, 5.2rem);
+      padding: var(--pres-stage-top) var(--pres-stage-x) var(--pres-stage-bottom) !important;
+    }
+
+    .pres-slides-container {
+      width: 100% !important;
+      height: calc(100vh - var(--pres-stage-top) - var(--pres-stage-bottom)) !important;
+      max-width: min(100%, 1840px) !important;
+      margin: 0 auto !important;
+      overflow: visible !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+    .pres-slides-container::before {
+      top: 50% !important;
+      left: 50% !important;
+      width: calc(100% - 0.35rem) !important;
+      height: calc(100% - 0.35rem) !important;
+      max-width: none !important;
+      max-height: none !important;
+      transform: translate(-50%, -50%) !important;
+      border-width: 6px !important;
+      border-radius: 24px !important;
+    }
+
+    .apple-presentation-mode::after {
+      left: var(--pres-stage-x) !important;
+      right: var(--pres-stage-x) !important;
+      top: calc(var(--pres-stage-top) - 0.72rem) !important;
+    }
+
+    .pres-executive-grid {
+      inset: var(--pres-stage-top) var(--pres-stage-x) var(--pres-stage-bottom) !important;
+    }
+
+    .pres-executive-scan {
+      left: var(--pres-stage-x) !important;
+      right: var(--pres-stage-x) !important;
+      top: calc(var(--pres-stage-top) - 0.72rem) !important;
+    }
+
+    .pres-executive-edge {
+      top: calc(var(--pres-stage-top) - 0.72rem) !important;
+      bottom: calc(var(--pres-stage-bottom) - 0.72rem) !important;
+    }
+
+    .pres-executive-edge.left {
+      left: var(--pres-stage-x) !important;
+    }
+
+    .pres-executive-edge.right {
+      right: var(--pres-stage-x) !important;
+    }
+
+    .pres-top-bar,
+    .pres-bottom-bar {
+      left: var(--pres-stage-x) !important;
+      right: var(--pres-stage-x) !important;
+    }
+
+    .apple-slide {
+      width: calc(100% - 4.35rem) !important;
+      height: calc(100% - 1.15rem) !important;
+      max-width: none !important;
+      max-height: none !important;
+      padding: 0.72rem 0.92rem !important;
+      justify-content: flex-start !important;
+      overflow: hidden !important;
+      gap: 0.62rem;
+    }
+
+    .apple-slide.active {
+      transform: translateX(0) scale(1) !important;
+    }
+
+    .apple-slide.prev {
+      transform: translateX(-42px) scale(0.985) !important;
+    }
+
+    .bri-cover-hero {
+      height: 100% !important;
+      min-height: 0 !important;
+      gap: 1rem !important;
+    }
+
+    .bri-cover-copy {
+      min-height: 0 !important;
+      overflow: hidden !important;
+      padding: clamp(1.25rem, 2.25vh, 1.8rem) !important;
+    }
+
+    .bri-cover-title {
+      font-size: clamp(2.15rem, 4.25vw, 4.55rem) !important;
+      line-height: 0.96 !important;
+    }
+
+    .bri-cover-meta {
+      gap: 0.52rem !important;
+      margin-top: 0.86rem !important;
+    }
+
+    .bri-cover-meta .pres-cover-stat {
+      min-height: 60px !important;
+    }
+
+    #pres-slide-0 .bri-cover-copy > div:last-child,
+    #pres-slide-8 .bri-cover-copy > div:last-child {
+      margin-top: 0.75rem !important;
+      align-items: center !important;
+    }
+
+    #pres-slide-0 .pres-splash-accent-btn,
+    #pres-slide-8 .pres-splash-accent-btn {
+      min-height: 38px !important;
+      padding: 0.62rem 1.22rem !important;
+      font-size: 0.88rem !important;
+      line-height: 1.08 !important;
+    }
+
+    .bri-deck-title-row {
+      flex: 0 0 auto;
+      margin-bottom: 0.52rem !important;
+    }
+
+    .bri-deck-title {
+      font-size: clamp(1.55rem, 2.12vw, 2.32rem) !important;
+      line-height: 1.02 !important;
+    }
+
+    .bri-deck-subtitle {
+      margin-top: 0.35rem !important;
+      font-size: 0.8rem !important;
+      line-height: 1.35 !important;
+    }
+
+    .bri-highlight-grid {
+      gap: 0.62rem !important;
+      flex: 0 0 auto;
+    }
+
+    .bri-dashboard-card .card-head {
+      min-height: 30px !important;
+      padding: 0.38rem 0.65rem !important;
+      font-size: 0.66rem !important;
+    }
+
+    .bri-dashboard-card .metric-main {
+      padding: 0.58rem 0.82rem 0.42rem !important;
+      gap: 0.3rem !important;
+    }
+
+    .bri-dashboard-card .metric-main span,
+    .bri-dashboard-card .metric-deltas span {
+      font-size: 0.6rem !important;
+    }
+
+    .bri-dashboard-card .metric-main strong {
+      font-size: clamp(0.96rem, 1.18vw, 1.18rem) !important;
+    }
+
+    .bri-dashboard-card .achievement {
+      padding: 0.28rem 0.78rem 0.48rem !important;
+    }
+
+    .bri-dashboard-card .achievement strong {
+      font-size: clamp(1.08rem, 1.65vw, 1.4rem) !important;
+    }
+
+    .bri-dashboard-card .metric-deltas {
+      padding: 0.48rem 0.72rem 0.58rem !important;
+    }
+
+    .bri-dashboard-card .metric-deltas strong {
+      font-size: 0.66rem !important;
+      overflow-wrap: anywhere;
+    }
+
+    .bri-panel-grid,
+    .bri-deep-grid,
+    .pres-grid-2col,
+    .pres-kts-grid,
+    .pres-digital-layout {
+      flex: 1 1 auto;
+      min-height: 0 !important;
+      margin-top: 0.48rem !important;
+    }
+
+    .bri-inner-panel,
+    .pres-glass-card,
+    .pres-panel-card,
+    .pres-timeseries-card {
+      min-height: 0;
+    }
+
+    .bri-inner-panel {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .bri-panel-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: hidden;
+      padding: 0.62rem !important;
+    }
+
+    .bri-product-row {
+      grid-template-columns: minmax(120px, 0.58fr) repeat(3, minmax(0, 1fr)) !important;
+      gap: 0.55rem !important;
+      padding: 0.42rem 0.55rem !important;
+      margin-bottom: 0.32rem !important;
+    }
+
+    .bri-donut-lite {
+      width: clamp(150px, 12vw, 190px) !important;
+      height: clamp(150px, 12vw, 190px) !important;
+    }
+
+    .bri-donut-lite::after {
+      inset: clamp(36px, 3vw, 46px) !important;
+    }
+
+    #pres-slide-1 .bri-highlight-grid {
+      max-height: 232px;
+    }
+
+    #pres-slide-1 .bri-panel-grid {
+      flex: 1 1 0;
+    }
+
+    #pres-slide-1 .pres-table-scroll {
+      max-height: min(136px, 18vh) !important;
+      overflow: auto !important;
+    }
+
+    #pres-slide-1 #pres-loan-composition-summary {
+      margin-top: 0.48rem !important;
+      font-size: 0.78rem;
+      line-height: 1.16;
+    }
+
+    #pres-slide-3 .bri-inner-panel,
+    #pres-slide-4 .bri-panel-grid,
+    #pres-slide-6 .bri-panel-grid,
+    #pres-slide-10 .pres-segment-panel,
+    #pres-slide-12 .pres-digital-layout {
+      height: auto !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+    }
+
+    #pres-slide-3 .bri-panel-body {
+      height: auto !important;
+    }
+
+    #pres-slide-5 .pres-timeseries-grid,
+    #pres-slide-9 .pres-explorer-grid,
+    #pres-slide-12 .bri-deep-grid,
+    #pres-slide-13 .pres-kts-grid,
+    #pres-slide-14 .pres-digital-layout,
+    #pres-slide-12 .pres-digital-layout {
+      height: auto !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+    }
+
+    #pres-slide-5 .pres-timeseries-chart-box,
+    #pres-slide-9 .pres-chart-wrap,
+    #pres-slide-12 .pres-chart-wrap {
+      height: auto !important;
+      min-height: 0 !important;
+    }
+
+    .pres-table-scroll {
+      min-height: 0 !important;
+      overflow: auto !important;
+      scrollbar-width: thin;
+    }
+
+    .pres-table-dense th,
+    .pres-table-dense td {
+      padding: 0.42rem 0.52rem !important;
+      font-size: 0.68rem !important;
+      line-height: 1.18 !important;
+    }
+
+    .bri-branch-grid,
+    .bri-finance-grid {
+      flex: 1 1 auto;
+      min-height: 0;
+      align-content: start;
+      gap: 0.56rem !important;
+      overflow: hidden;
+    }
+
+    .bri-branch-card,
+    .bri-finance-card {
+      padding: 0.68rem !important;
+      min-width: 0;
+    }
+
+    .bri-branch-card h3,
+    .bri-finance-card h3 {
+      font-size: 0.82rem !important;
+      line-height: 1.15 !important;
+    }
+
+    .bri-branch-card .metric-line,
+    .bri-finance-card .metric-line {
+      margin-top: 0.36rem !important;
+      font-size: 0.64rem !important;
+      line-height: 1.18 !important;
+    }
+
+    .bri-finance-card strong {
+      margin-top: 0.35rem !important;
+      font-size: 1rem !important;
+    }
+
+    .pres-top-bar {
+      top: 0.7rem !important;
+    }
+
+    .pres-bottom-bar {
+      bottom: 0.65rem !important;
+      padding-top: 0.46rem !important;
+    }
+
+    @media (min-width: 1600px) {
+      #apple-presentation-mode {
+        --pres-stage-top: 4.65rem;
+        --pres-stage-bottom: 4.95rem;
+        --pres-stage-x: 2.2rem;
+      }
+    }
+
+    .pres-ppt-export-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      min-height: 38px;
+      padding: 0.55rem 0.8rem;
+      border: 1px solid rgba(8, 87, 195, 0.24);
+      border-radius: 7px;
+      background: #0857c3;
+      color: #fff;
+      font: inherit;
+      font-size: 0.76rem;
+      font-weight: 850;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .pres-ppt-export-btn:hover { background: #06479f; }
+
+    .pres-export-dialog {
+      width: min(920px, calc(100vw - 2rem));
+      max-height: calc(100dvh - 2rem);
+      padding: 0;
+      border: 1px solid #d7e2ef;
+      border-radius: 8px;
+      color: #132238;
+      box-shadow: 0 24px 70px rgba(15, 35, 60, 0.24);
+    }
+
+    .pres-export-dialog::backdrop { background: rgba(15, 35, 60, 0.58); }
+    .pres-export-form { display: flex; flex-direction: column; max-height: calc(100dvh - 2rem); }
+    .pres-export-head { padding: 1.25rem 1.4rem; background: #0857c3; color: #fff; }
+    .pres-export-head h2 { margin: 0; font-size: 1.35rem; letter-spacing: 0; }
+    .pres-export-head p { margin: 0.35rem 0 0; color: rgba(255,255,255,.82); font-size: .82rem; }
+    .pres-export-body { padding: 1.25rem 1.4rem; overflow: auto; background: #fff; }
+    .pres-export-field { display: grid; gap: .4rem; }
+    .pres-export-field > span { color: #344054; font-size: .72rem; font-weight: 850; text-transform: uppercase; }
+    .pres-export-field input,
+    .pres-export-field select {
+      width: 100%;
+      min-height: 42px;
+      padding: .55rem .7rem;
+      border: 1px solid #cbd7e5;
+      border-radius: 6px;
+      background: #fff;
+      color: #132238;
+      font: inherit;
+      font-size: .86rem;
+    }
+    .pres-export-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-top: 1rem; }
+    .pres-export-group { padding: 1rem; border: 1px solid #dce5ef; border-radius: 7px; background: #f6f8fb; }
+    .pres-export-group h3 { margin: 0 0 .8rem; color: #0857c3; font-size: .92rem; }
+    .pres-export-group .pres-export-field + .pres-export-field { margin-top: .75rem; }
+    .pres-export-actions { display: flex; justify-content: flex-end; gap: .65rem; padding: 1rem 1.4rem; border-top: 1px solid #dce5ef; background: #f6f8fb; }
+    .pres-export-cancel { min-height: 40px; padding: .55rem .85rem; border: 1px solid #cbd7e5; border-radius: 6px; background: #fff; color: #344054; font: inherit; font-weight: 800; cursor: pointer; }
+
+    @media (max-width: 900px) {
+      .pres-export-grid { grid-template-columns: 1fr; }
+      .pres-ppt-export-btn span { display: none; }
+      .pres-ppt-export-btn { width: 38px; padding: 0; }
+    }
+
+    /* Final PPT viewport contract: one 16:9 canvas, fitted as a whole on every device. */
+    #apple-presentation-mode {
+      --pres-slide-width: 1440px;
+      --pres-slide-height: 810px;
+      --pres-stage-scale: 1;
+      padding: 0 !important;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden !important;
+    }
+
+    #apple-presentation-mode .pres-slides-container {
+      position: absolute !important;
+      left: 50% !important;
+      top: var(--pres-stage-center-y, 50%) !important;
+      width: var(--pres-slide-width) !important;
+      height: var(--pres-slide-height) !important;
+      max-width: none !important;
+      margin: 0 !important;
+      overflow: visible !important;
+      transform: translate(-50%, -50%) scale(var(--pres-stage-scale)) !important;
+      transform-origin: 50% 50% !important;
+      contain: layout style;
+    }
+
+    #apple-presentation-mode .pres-slides-container::before {
+      width: calc(100% - 0.35rem) !important;
+      height: calc(100% - 0.35rem) !important;
+      pointer-events: none;
+    }
+
+    #apple-presentation-mode .apple-slide {
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      max-width: none !important;
+      max-height: none !important;
+      padding: 1.15rem 1.35rem !important;
+      overflow: hidden !important;
+      overscroll-behavior: none;
+      opacity: 0 !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+      transform: none !important;
+      transition: opacity 0.18s ease !important;
+    }
+
+    #apple-presentation-mode .apple-slide.active {
+      opacity: 1 !important;
+      visibility: visible !important;
+      pointer-events: auto !important;
+      transform: none !important;
+    }
+
+    #apple-presentation-mode .apple-slide.prev {
+      opacity: 0 !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+      transform: none !important;
+    }
+
+    /* Breakpoints must not reflow the logical PPT canvas. */
+    #apple-presentation-mode .bri-cover-hero {
+      grid-template-columns: minmax(0, 1.12fr) minmax(360px, 0.88fr) !important;
+    }
+
+    #apple-presentation-mode .bri-panel-grid {
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr) !important;
+    }
+
+    #apple-presentation-mode .bri-deep-grid,
+    #apple-presentation-mode .pres-grid-2col {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    #apple-presentation-mode .pres-explorer-grid {
+      grid-template-columns: minmax(360px, 0.78fr) minmax(700px, 1.32fr) !important;
+    }
+
+    #apple-presentation-mode .pres-kts-grid {
+      grid-template-columns: minmax(260px, 0.42fr) minmax(0, 1.58fr) !important;
+    }
+
+    #apple-presentation-mode .pres-digital-layout {
+      grid-template-columns: minmax(290px, 0.52fr) minmax(0, 1.48fr) !important;
+    }
+
+    #apple-presentation-mode .pres-risk-composition-layout {
+      grid-template-columns: 220px minmax(0, 1fr) !important;
+    }
+
+    #apple-presentation-mode .pres-risk-metric-grid {
+      grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    }
+
+    #apple-presentation-mode .bri-highlight-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+
+    #apple-presentation-mode .bri-branch-grid,
+    #apple-presentation-mode .bri-finance-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    }
+
+    #apple-presentation-mode .pres-cover-board,
+    #apple-presentation-mode .pres-mini-stat-grid,
+    #apple-presentation-mode .pres-segment-summary-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    }
+
+    #apple-presentation-mode .pres-digital-list {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    #apple-presentation-mode .pres-control-bar {
+      flex-direction: row !important;
+      align-items: center !important;
+      gap: 0.55rem !important;
+    }
+
+    #apple-presentation-mode .pres-control-group,
+    #apple-presentation-mode .pres-compact-select {
+      width: auto !important;
+      min-width: 0;
+    }
+
+    #apple-presentation-mode .pres-table-scroll {
+      overflow-x: hidden !important;
+      overflow-y: auto !important;
+      padding-right: 0 !important;
+    }
+
+    #apple-presentation-mode .pres-table-scroll table {
+      width: 100% !important;
+      min-width: 0 !important;
+      table-layout: fixed !important;
+    }
+
+    #apple-presentation-mode .pres-table-dense th,
+    #apple-presentation-mode .pres-table-dense td {
+      overflow-wrap: anywhere;
+      word-break: normal;
+      white-space: normal !important;
+    }
+
+    #apple-presentation-mode .pres-delta {
+      white-space: normal;
+    }
+
+    /* Business-analysis slides: dense, selector-led, and explicit about each axis. */
+    #apple-presentation-mode .pres-analysis-selector {
+      display: grid;
+      gap: 0.3rem;
+      min-width: 210px;
+      color: #64748b;
+      font-size: 0.62rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-analysis-selector .pres-compact-select {
+      min-width: 210px !important;
+      height: 38px;
+      border-color: #b9cce4;
+      background: #ffffff;
+      color: #0f172a;
+      font-weight: 850;
+      text-transform: none;
+    }
+
+    #apple-presentation-mode .pres-branch-analytics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.8rem;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode .pres-analysis-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid #cfdded;
+      border-radius: 7px;
+      background: #ffffff;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07);
+    }
+
+    #apple-presentation-mode .pres-analysis-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+      min-height: 62px;
+      padding: 0.7rem 0.85rem;
+      border-bottom: 1px solid #dce6f1;
+      background: #f7faff;
+    }
+
+    #apple-presentation-mode .pres-analysis-panel-head h3 {
+      margin: 0.18rem 0 0;
+      color: #0f172a;
+      font-size: 1.02rem;
+      line-height: 1.15;
+      font-weight: 900;
+    }
+
+    #apple-presentation-mode .pres-analysis-chip {
+      flex: 0 0 auto;
+      max-width: 190px;
+      padding: 0.35rem 0.5rem;
+      border: 1px solid #b9d6fb;
+      border-radius: 6px;
+      background: #eaf3ff;
+      color: #0857c3;
+      font-size: 0.64rem;
+      font-weight: 900;
+      text-align: center;
+    }
+
+    #apple-presentation-mode .pres-analysis-chip.risk {
+      border-color: #f3d19a;
+      background: #fff7e8;
+      color: #9a5b00;
+    }
+
+    #apple-presentation-mode .pres-analysis-chart {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 0;
+      padding: 0.65rem 0.72rem 0.4rem;
+    }
+
+    #apple-presentation-mode .pres-analysis-chart canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    #apple-presentation-mode .pres-axis-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.42rem;
+      min-height: 34px;
+      padding: 0.42rem 0.65rem;
+      border-top: 1px solid #e2e8f0;
+      color: #64748b;
+      background: #fbfdff;
+      font-size: 0.62rem;
+      font-weight: 750;
+    }
+
+    #apple-presentation-mode .pres-axis-note strong { color: #0f172a; font-weight: 950; }
+    #apple-presentation-mode .pres-axis-note span { width: 1px; height: 12px; background: #cbd5e1; }
+    #apple-presentation-mode .pres-axis-note em { margin-left: auto; font-style: normal; color: #0857c3; }
+
+    #apple-presentation-mode .pres-analysis-insight-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.65rem;
+      flex: 0 0 86px;
+      margin-top: 0.7rem;
+    }
+
+    #apple-presentation-mode .pres-analysis-insight {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      align-items: center;
+      gap: 0.55rem;
+      min-width: 0;
+      padding: 0.65rem 0.72rem;
+      border: 1px solid #d7e2ee;
+      border-radius: 7px;
+      background: #ffffff;
+    }
+
+    #apple-presentation-mode .pres-analysis-insight i {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 6px;
+      color: #ffffff;
+      background: #0857c3;
+      font-size: 0.85rem;
+    }
+
+    #apple-presentation-mode .pres-analysis-insight span,
+    #apple-presentation-mode .pres-branch-action-item span {
+      display: block;
+      color: #64748b;
+      font-size: 0.58rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-analysis-insight strong,
+    #apple-presentation-mode .pres-branch-action-item strong {
+      display: block;
+      margin-top: 0.16rem;
+      color: #0f172a;
+      font-size: 0.86rem;
+      line-height: 1.1;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-analysis-insight small,
+    #apple-presentation-mode .pres-branch-action-item small {
+      display: block;
+      margin-top: 0.14rem;
+      color: #64748b;
+      font-size: 0.58rem;
+      font-weight: 750;
+    }
+
+    #apple-presentation-mode .pres-branch-focus-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.12fr) minmax(390px, 0.88fr);
+      gap: 0.8rem;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode .pres-branch-focus-panel,
+    #apple-presentation-mode .pres-branch-quality-panel {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid #cfdded;
+      border-radius: 7px;
+      background: #ffffff;
+    }
+
+    #apple-presentation-mode .pres-branch-focus-panel {
+      display: flex;
+      flex-direction: column;
+    }
+
+    #apple-presentation-mode .pres-branch-focus-head,
+    #apple-presentation-mode .pres-branch-quality-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      min-height: 58px;
+      padding: 0.7rem 0.85rem;
+      border-bottom: 1px solid #dce6f1;
+      background: #f7faff;
+    }
+
+    #apple-presentation-mode .pres-branch-focus-head h3 {
+      margin: 0.16rem 0 0;
+      color: #0f172a;
+      font-size: 1.2rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-branch-status {
+      padding: 0.4rem 0.58rem;
+      border: 1px solid #f1d196;
+      border-radius: 6px;
+      background: #fff7e8;
+      color: #935c05;
+      font-size: 0.68rem;
+      font-weight: 900;
+    }
+
+    #apple-presentation-mode .pres-branch-status.achieved {
+      border-color: #9edbc8;
+      background: #eaf8f2;
+      color: #047857;
+    }
+
+    #apple-presentation-mode .pres-branch-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      border-bottom: 1px solid #dce6f1;
+    }
+
+    #apple-presentation-mode .pres-branch-kpi-grid > div {
+      min-width: 0;
+      min-height: 105px;
+      padding: 0.78rem 0.85rem;
+      border-right: 1px solid #e2e8f0;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    #apple-presentation-mode .pres-branch-kpi-grid > div:nth-child(2n) { border-right: 0; }
+    #apple-presentation-mode .pres-branch-kpi-grid > div:nth-child(n+3) { border-bottom: 0; }
+    #apple-presentation-mode .pres-branch-kpi-grid span { display:block; color:#64748b; font-size:0.62rem; font-weight:900; text-transform:uppercase; }
+    #apple-presentation-mode .pres-branch-kpi-grid strong { display:block; margin-top:0.35rem; color:#0f172a; font-size:1.35rem; font-weight:950; }
+    #apple-presentation-mode .pres-branch-kpi-grid em { display:block; margin-top:0.22rem; color:#0857c3; font-size:0.68rem; font-style:normal; font-weight:850; }
+
+    #apple-presentation-mode .pres-branch-target-list {
+      display: grid;
+      gap: 0.8rem;
+      padding: 0.85rem;
+    }
+
+    #apple-presentation-mode .pres-branch-target-list > div {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.35rem 0.75rem;
+      align-items: center;
+    }
+
+    #apple-presentation-mode .pres-branch-target-list span { color:#475569; font-size:0.68rem; font-weight:850; }
+    #apple-presentation-mode .pres-branch-target-list strong { color:#0f172a; font-size:0.7rem; font-weight:950; }
+    #apple-presentation-mode .pres-branch-target-list i { grid-column:1 / -1; height:8px; overflow:hidden; border-radius:4px; background:#e2e8f0; }
+    #apple-presentation-mode .pres-branch-target-list b { display:block; width:0; height:100%; border-radius:inherit; background:#0857c3; transition:width .25s ease; }
+
+    #apple-presentation-mode .pres-branch-balance-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.65rem;
+      margin: 0 auto 0.85rem;
+      width: calc(100% - 1.7rem);
+    }
+
+    #apple-presentation-mode .pres-branch-balance-grid > div {
+      min-width: 0;
+      padding: 0.72rem 0.8rem;
+      border: 1px solid #d6e2ef;
+      border-left: 4px solid #0857c3;
+      border-radius: 6px;
+      background: #f7faff;
+    }
+
+    #apple-presentation-mode .pres-branch-balance-grid span { display:block; color:#64748b; font-size:0.58rem; font-weight:900; text-transform:uppercase; }
+    #apple-presentation-mode .pres-branch-balance-grid strong { display:block; margin-top:0.22rem; color:#0f172a; font-size:1.05rem; font-weight:950; }
+    #apple-presentation-mode .pres-branch-balance-grid small { display:block; margin-top:0.14rem; color:#64748b; font-size:0.58rem; font-weight:750; }
+
+    #apple-presentation-mode .pres-branch-quality-panel {
+      display: flex;
+      flex-direction: column;
+    }
+
+    #apple-presentation-mode .pres-branch-quality-head strong { color:#475569; font-size:0.68rem; font-weight:850; }
+
+    #apple-presentation-mode .pres-quality-ladder {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.6rem;
+      padding: 0.85rem;
+    }
+
+    #apple-presentation-mode .pres-quality-ladder > div {
+      min-width: 0;
+      min-height: 160px;
+      padding: 0.75rem;
+      border: 1px solid #d7e2ee;
+      border-top: 5px solid #10b981;
+      border-radius: 6px;
+      background: #fbfefd;
+    }
+
+    #apple-presentation-mode .pres-quality-ladder .kol-2 { border-top-color:#f59e0b; background:#fffcf5; }
+    #apple-presentation-mode .pres-quality-ladder .kol-npl { border-top-color:#ef4444; background:#fffafa; }
+    #apple-presentation-mode .pres-quality-ladder span { display:block; color:#64748b; font-size:0.6rem; font-weight:900; text-transform:uppercase; }
+    #apple-presentation-mode .pres-quality-ladder b { display:block; margin-top:0.22rem; color:#0f172a; font-size:0.72rem; }
+    #apple-presentation-mode .pres-quality-ladder strong { display:block; margin-top:1.05rem; color:#0f172a; font-size:1.35rem; font-weight:950; }
+    #apple-presentation-mode .pres-quality-ladder em { display:block; margin-top:0.25rem; color:#64748b; font-size:0.66rem; font-style:normal; font-weight:800; }
+
+    #apple-presentation-mode .pres-branch-reading {
+      flex: 1 1 auto;
+      margin: 0 0.85rem 0.85rem;
+      padding: 0.8rem 0.85rem;
+      border-left: 4px solid #0857c3;
+      background: #f5f9ff;
+    }
+
+    #apple-presentation-mode .pres-branch-reading span { color:#0857c3; font-size:0.6rem; font-weight:950; text-transform:uppercase; }
+    #apple-presentation-mode .pres-branch-reading p { margin:0.35rem 0 0; color:#334155; font-size:0.7rem; line-height:1.42; font-weight:700; }
+    #apple-presentation-mode .pres-branch-reading ul { display:grid; gap:0.38rem; margin:0.62rem 0 0; padding:0; list-style:none; }
+    #apple-presentation-mode .pres-branch-reading li { position:relative; padding-left:1rem; color:#334155; font-size:0.64rem; line-height:1.35; font-weight:750; }
+    #apple-presentation-mode .pres-branch-reading li::before { content:''; position:absolute; left:0; top:0.36rem; width:6px; height:6px; border-radius:2px; background:#0857c3; }
+
+    #apple-presentation-mode .pres-branch-action-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.65rem;
+      flex: 0 0 82px;
+      margin-top: 0.7rem;
+    }
+
+    #apple-presentation-mode .pres-branch-action-item {
+      min-width: 0;
+      padding: 0.62rem 0.72rem;
+      border: 1px solid #d7e2ee;
+      border-left: 5px solid var(--tone, #0857c3);
+      border-radius: 6px;
+      background: #ffffff;
+    }
+
+    #apple-presentation-mode .bri-cover-title {
+      font-size: 4rem !important;
+      line-height: 0.98 !important;
+    }
+
+    #apple-presentation-mode .bri-deck-title {
+      font-size: 2rem !important;
+      line-height: 1.04 !important;
+    }
+
+    #apple-presentation-mode .pres-top-bar,
+    #apple-presentation-mode .pres-bottom-bar {
+      left: clamp(0.55rem, 2vw, 2rem) !important;
+      right: clamp(0.55rem, 2vw, 2rem) !important;
+      min-width: 0;
+    }
+
+    #apple-presentation-mode .pres-title-brand,
+    #apple-presentation-mode .pres-controls-right,
+    #apple-presentation-mode .pres-nav-buttons-container {
+      min-width: 0;
+    }
+
+    @media (max-width: 900px) {
+      #apple-presentation-mode .pres-title-lbl span,
+      #apple-presentation-mode .pres-live-chip span:last-child,
+      #apple-presentation-mode .bri-130-badge {
+        display: none !important;
+      }
+
+      #apple-presentation-mode .pres-controls-right,
+      #apple-presentation-mode .pres-title-brand {
+        gap: 0.4rem !important;
+      }
+
+      #apple-presentation-mode .pres-logos-wrapper {
+        gap: 0.35rem !important;
+        margin-right: 0 !important;
+        padding: 0.3rem 0.45rem !important;
+      }
+
+      #apple-presentation-mode .pres-logo-brand.logo-danantara { height: 18px !important; }
+      #apple-presentation-mode .pres-logo-brand.logo-bri { height: 13px !important; }
+      #apple-presentation-mode .pres-autoplay-panel { padding: 0.28rem !important; }
+      #apple-presentation-mode .pres-auto-meta { display: none !important; }
+    }
+
+    @media (max-width: 560px) {
+      #apple-presentation-mode .pres-title-lbl,
+      #apple-presentation-mode .pres-title-brand > .pres-logo-divider,
+      #apple-presentation-mode .pres-live-chip,
+      #apple-presentation-mode .pres-logos-wrapper,
+      #apple-presentation-mode .pres-paginator {
+        display: none !important;
+      }
+
+      #apple-presentation-mode .pres-top-bar { top: 0.45rem !important; }
+      #apple-presentation-mode .pres-bottom-bar { bottom: 0.4rem !important; }
+      #apple-presentation-mode .pres-nav-btn-back,
+      #apple-presentation-mode .pres-nav-btn,
+      #apple-presentation-mode .pres-ppt-export-btn,
+      #apple-presentation-mode .pres-autoplay-btn {
+        width: 34px !important;
+        min-width: 34px !important;
+        height: 34px !important;
+        min-height: 34px !important;
+        padding: 0 !important;
+        justify-content: center !important;
+      }
+
+      #apple-presentation-mode .pres-slide-counter-badge {
+        margin: 0 !important;
+        font-size: 0.62rem !important;
+      }
+    }
+
+    @media (max-height: 500px) and (orientation: landscape) {
+      #apple-presentation-mode .pres-title-lbl,
+      #apple-presentation-mode .pres-live-chip,
+      #apple-presentation-mode .pres-logos-wrapper,
+      #apple-presentation-mode .pres-auto-meta,
+      #apple-presentation-mode .pres-paginator {
+        display: none !important;
+      }
+
+      #apple-presentation-mode .pres-top-bar {
+        top: 0.25rem !important;
+      }
+
+      #apple-presentation-mode .pres-bottom-bar {
+        bottom: 0.2rem !important;
+        padding-top: 0.2rem !important;
+      }
+
+      #apple-presentation-mode .pres-nav-btn-back,
+      #apple-presentation-mode .pres-ppt-export-btn,
+      #apple-presentation-mode .pres-autoplay-btn,
+      #apple-presentation-mode .pres-nav-btn {
+        width: 32px !important;
+        min-width: 32px !important;
+        height: 32px !important;
+        min-height: 32px !important;
+        padding: 0 !important;
+        justify-content: center !important;
+      }
+
+      #apple-presentation-mode .pres-back-text,
+      #apple-presentation-mode .pres-ppt-export-btn span {
+        display: none !important;
+      }
+
+      #apple-presentation-mode .pres-slide-counter-badge {
+        margin: 0 !important;
+        padding: 0.16rem 0.45rem !important;
+        font-size: 0.58rem !important;
+      }
+    }
+
+    /* Executive deck v3: dense decision-oriented layouts on the fixed canvas. */
+    #apple-presentation-mode #pres-slide-1 .bri-dashboard-card {
+      display: flex;
+      flex-direction: column;
+      min-height: 218px;
+    }
+
+    #apple-presentation-mode #pres-slide-1 .metric-deltas {
+      margin-top: auto;
+    }
+
+    #apple-presentation-mode #pres-slide-1 .pres-os-achievement {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(120px, 0.72fr);
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    #apple-presentation-mode #pres-slide-1 .pres-os-achievement .pres-kpi-sub-trend {
+      justify-self: center;
+      margin: 0;
+    }
+
+    #apple-presentation-mode #pres-slide-1 .pres-table-scroll {
+      max-height: 156px !important;
+    }
+
+    #apple-presentation-mode #pres-saving-cards {
+      grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    }
+
+    #apple-presentation-mode .pres-product-performance-layout,
+    #apple-presentation-mode .pres-portfolio-health-layout,
+    #apple-presentation-mode .pres-financial-analysis-grid {
+      display: grid;
+      flex: 1 1 auto;
+      min-height: 0;
+      gap: 0.75rem;
+    }
+
+    #apple-presentation-mode .pres-product-performance-layout {
+      grid-template-columns: minmax(0, 1.06fr) minmax(520px, 0.94fr);
+    }
+
+    #apple-presentation-mode .pres-product-side-stack {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) 164px;
+      gap: 0.75rem;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode .pres-product-board-panel .bri-blue-panel-title span {
+      margin-left: auto;
+      padding: 0.22rem 0.45rem;
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 5px;
+      background: rgba(255,255,255,0.12);
+      font-size: 0.62rem;
+    }
+
+    #apple-presentation-mode #pres-loan-product-bars {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-content: stretch;
+      gap: 0.62rem;
+      overflow: hidden;
+    }
+
+    #apple-presentation-mode .pres-product-scorecard {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      min-width: 0;
+      min-height: 0;
+      padding: 0.72rem;
+      border: 1px solid #d6e2ef;
+      border-top: 4px solid var(--product-tone, #0857c3);
+      border-radius: 7px;
+      background: #fff;
+    }
+
+    #apple-presentation-mode .pres-product-scorecard:first-child {
+      grid-column: 1 / -1;
+    }
+
+    #apple-presentation-mode .pres-product-scorecard-head,
+    #apple-presentation-mode .pres-profit-row-head,
+    #apple-presentation-mode .pres-risk-stack-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+    }
+
+    #apple-presentation-mode .pres-product-scorecard-head strong {
+      color: #0f172a;
+      font-size: 0.8rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-product-share {
+      padding: 0.22rem 0.38rem;
+      border-radius: 4px;
+      background: #eaf3ff;
+      color: #0857c3;
+      font-size: 0.61rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-product-os {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.6rem;
+      margin-top: 0.48rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    #apple-presentation-mode .pres-product-os span,
+    #apple-presentation-mode .pres-product-risk span,
+    #apple-presentation-mode .pres-readout-item span,
+    #apple-presentation-mode .pres-portfolio-metric span,
+    #apple-presentation-mode .pres-segment-insight span,
+    #apple-presentation-mode .pres-digital-priority span {
+      color: #64748b;
+      font-size: 0.57rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-product-os strong {
+      color: #0f172a;
+      font-size: 1rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-product-risk-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.5rem;
+      margin-top: 0.55rem;
+    }
+
+    #apple-presentation-mode .pres-product-risk {
+      min-width: 0;
+      padding: 0.48rem;
+      border-left: 3px solid var(--risk-tone, #f59e0b);
+      background: #f8fafc;
+    }
+
+    #apple-presentation-mode .pres-product-risk strong {
+      display: block;
+      margin-top: 0.16rem;
+      color: #0f172a;
+      font-size: 0.74rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-executive-readout {
+      min-height: 0;
+      padding: 0.78rem;
+      border: 1px solid #cbdced;
+      border-left: 5px solid #0857c3;
+      border-radius: 7px;
+      background: #f7faff;
+      overflow: hidden;
+    }
+
+    #apple-presentation-mode .pres-product-insight-grid,
+    #apple-presentation-mode .pres-segment-insight-grid,
+    #apple-presentation-mode .pres-digital-priority-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.55rem;
+    }
+
+    #apple-presentation-mode .pres-product-insight-grid {
+      margin-top: 0.52rem;
+    }
+
+    #apple-presentation-mode .pres-readout-item,
+    #apple-presentation-mode .pres-segment-insight,
+    #apple-presentation-mode .pres-digital-priority {
+      min-width: 0;
+      padding: 0.56rem 0.62rem;
+      border: 1px solid #d8e3ef;
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    #apple-presentation-mode .pres-readout-item strong,
+    #apple-presentation-mode .pres-segment-insight strong,
+    #apple-presentation-mode .pres-digital-priority strong {
+      display: block;
+      margin-top: 0.2rem;
+      color: #0f172a;
+      font-size: 0.76rem;
+      line-height: 1.18;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-readout-item small,
+    #apple-presentation-mode .pres-segment-insight small,
+    #apple-presentation-mode .pres-digital-priority small {
+      display: block;
+      margin-top: 0.16rem;
+      color: #64748b;
+      font-size: 0.56rem;
+      line-height: 1.22;
+      font-weight: 750;
+    }
+
+    #apple-presentation-mode .pres-portfolio-health-layout {
+      grid-template-columns: minmax(430px, 0.78fr) minmax(0, 1.22fr);
+    }
+
+    #apple-presentation-mode .pres-portfolio-donut-body {
+      display: grid;
+      place-items: center;
+      align-content: center;
+      gap: 1rem;
+    }
+
+    #apple-presentation-mode .pres-portfolio-donut-shell {
+      position: relative;
+      display: grid;
+      place-items: center;
+      width: 360px;
+      height: 360px;
+    }
+
+    #apple-presentation-mode #pres-loan-composition-donut {
+      width: 340px !important;
+      height: 340px !important;
+    }
+
+    #apple-presentation-mode #pres-loan-composition-donut::after {
+      inset: 76px !important;
+    }
+
+    #apple-presentation-mode .pres-portfolio-donut-center {
+      position: absolute;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      width: 165px;
+      text-align: center;
+    }
+
+    #apple-presentation-mode .pres-portfolio-donut-center span {
+      color: #64748b;
+      font-size: 0.63rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-portfolio-donut-center strong {
+      margin-top: 0.28rem;
+      color: #0f172a;
+      font-size: 1.4rem;
+      line-height: 1.24;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-portfolio-donut-body p {
+      max-width: 390px;
+      margin: 0;
+      color: #64748b;
+      font-size: 0.68rem;
+      line-height: 1.45;
+      font-weight: 750;
+      text-align: center;
+    }
+
+    #apple-presentation-mode .pres-portfolio-donut-legend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.42rem 0.72rem;
+      color: #475569;
+      font-size: 0.6rem;
+      font-weight: 850;
+    }
+
+    #apple-presentation-mode .pres-portfolio-donut-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-portfolio-donut-legend i {
+      width: 9px;
+      height: 9px;
+      border-radius: 2px;
+      background: #10b981;
+    }
+
+    #apple-presentation-mode .pres-portfolio-donut-legend .is-sml i {
+      background: #f59e0b;
+    }
+
+    #apple-presentation-mode .pres-portfolio-donut-legend .is-npl i {
+      background: #ef4444;
+    }
+
+    #apple-presentation-mode .pres-portfolio-status-panel .bri-panel-body {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 0.75rem;
+    }
+
+    #apple-presentation-mode .pres-portfolio-health-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.58rem;
+    }
+
+    #apple-presentation-mode .pres-portfolio-metric {
+      min-width: 0;
+      padding: 0.7rem;
+      border: 1px solid #d6e2ef;
+      border-top: 4px solid var(--metric-tone, #0857c3);
+      border-radius: 7px;
+      background: #fff;
+    }
+
+    #apple-presentation-mode .pres-portfolio-metric strong {
+      display: block;
+      margin-top: 0.26rem;
+      color: #0f172a;
+      font-size: 1rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-portfolio-metric small {
+      display: block;
+      margin-top: 0.15rem;
+      color: #64748b;
+      font-size: 0.56rem;
+      font-weight: 800;
+    }
+
+    #apple-presentation-mode .pres-risk-stack {
+      padding: 0.78rem;
+      border: 1px solid #d6e2ef;
+      border-radius: 7px;
+      background: #fff;
+    }
+
+    #apple-presentation-mode .pres-risk-stack-head {
+      color: #475569;
+      font-size: 0.63rem;
+      font-weight: 900;
+    }
+
+    #apple-presentation-mode .pres-risk-stack-track {
+      display: flex;
+      height: 42px;
+      margin-top: 0.62rem;
+      overflow: hidden;
+      border-radius: 5px;
+      background: #e2e8f0;
+    }
+
+    #apple-presentation-mode .pres-risk-stack-track span {
+      display: grid;
+      place-items: center;
+      min-width: 2px;
+      color: #fff;
+      font-size: 0.58rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-portfolio-reading {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr);
+      grid-template-rows: auto 1fr;
+      align-items: start;
+      align-content: start;
+      gap: 0.7rem;
+      min-height: 0;
+      padding: 0.85rem;
+      border-left: 5px solid #0857c3;
+      background: #f5f9ff;
+    }
+
+    #apple-presentation-mode .pres-portfolio-reading i {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 6px;
+      color: #fff;
+      background: #0857c3;
+    }
+
+    #apple-presentation-mode .pres-portfolio-reading strong {
+      display: block;
+      color: #0f172a;
+      font-size: 0.78rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-portfolio-reading p {
+      margin: 0.28rem 0 0;
+      color: #475569;
+      font-size: 0.67rem;
+      line-height: 1.45;
+      font-weight: 750;
+    }
+
+    #apple-presentation-mode .pres-portfolio-action-grid {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-self: end;
+      gap: 0.55rem;
+      width: 100%;
+      margin-top: 0.78rem;
+    }
+
+    #apple-presentation-mode .pres-portfolio-action-grid > div {
+      min-width: 0;
+      padding: 0.65rem;
+      border: 1px solid #cfdeed;
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    #apple-presentation-mode .pres-portfolio-action-grid span,
+    #apple-presentation-mode .pres-portfolio-action-grid small {
+      display: block;
+      color: #64748b;
+      font-size: 0.56rem;
+      font-weight: 850;
+    }
+
+    #apple-presentation-mode .pres-portfolio-action-grid strong {
+      display: block;
+      margin: 0.22rem 0;
+      color: #0f172a;
+      font-size: 0.9rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-portfolio-action-grid ul {
+      display: grid;
+      gap: 0.32rem;
+      margin: 0.62rem 0 0;
+      padding: 0.55rem 0 0;
+      border-top: 1px solid #e2e8f0;
+      list-style: none;
+    }
+
+    #apple-presentation-mode .pres-portfolio-action-grid li {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.45rem;
+      min-width: 0;
+      color: #64748b;
+      font-size: 0.58rem;
+      font-weight: 760;
+    }
+
+    #apple-presentation-mode .pres-portfolio-action-grid li span {
+      min-width: 0;
+      text-transform: none;
+    }
+
+    #apple-presentation-mode .pres-portfolio-action-grid li b {
+      flex: 0 0 auto;
+      color: #0f172a;
+      font-size: 0.61rem;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-financial-analysis-grid {
+      grid-template-columns: minmax(0, 1.25fr) minmax(350px, 0.75fr);
+      margin-top: 0.72rem;
+    }
+
+    #apple-presentation-mode .pres-financial-brief {
+      display: grid;
+      align-content: start;
+      gap: 0.55rem;
+    }
+
+    #apple-presentation-mode .pres-profit-row {
+      margin-bottom: 0.58rem;
+    }
+
+    #apple-presentation-mode .pres-profit-row-head {
+      color: #334155;
+      font-size: 0.68rem;
+      font-weight: 850;
+    }
+
+    #apple-presentation-mode .pres-profit-row-head strong {
+      color: #0f172a;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-profit-bar-track {
+      display: block;
+      height: 9px;
+      margin-top: 0.3rem;
+      overflow: hidden;
+      border-radius: 4px;
+      background: #e2e8f0;
+    }
+
+    #apple-presentation-mode .pres-profit-bar-fill {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: #0857c3;
+    }
+
+    #apple-presentation-mode .pres-explorer-grid {
+      grid-template-columns: minmax(360px, 0.72fr) minmax(700px, 1.28fr) !important;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-side {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      width: 100%;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-mini-stat-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-side > .pres-glass-card,
+    #apple-presentation-mode #pres-slide-9 .pres-chart-wrap {
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      overflow: hidden;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-mini-stat-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-side > .pres-glass-card {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-chart-wrap {
+      flex: 1 1 auto;
+      height: auto !important;
+      min-height: 0 !important;
+    }
+
+    #apple-presentation-mode #pres-explorer-chart {
+      display: block;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: 100% !important;
+      max-height: 100% !important;
+    }
+
+    #apple-presentation-mode .pres-explorer-readout {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.5rem;
+      margin-top: auto;
+      padding-top: 0.62rem;
+      border-top: 1px solid #dce6f1;
+    }
+
+    #apple-presentation-mode .pres-segment-insight-grid {
+      flex: 0 0 82px;
+      margin-top: 0.6rem;
+    }
+
+    #apple-presentation-mode .bri-deep-grid {
+      flex: 1 1 auto;
+      align-items: stretch;
+    }
+
+    #apple-presentation-mode .bri-deep-grid.pres-deep-grid--1 {
+      grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    #apple-presentation-mode .bri-deep-grid.pres-deep-grid--2,
+    #apple-presentation-mode .bri-deep-grid.pres-deep-grid--3 {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    #apple-presentation-mode .bri-deep-grid.pres-deep-grid--3 .bri-inner-panel:first-child {
+      grid-column: 1 / -1;
+    }
+
+    #apple-presentation-mode .bri-deep-grid .bri-inner-panel {
+      min-height: 0;
+    }
+
+    #apple-presentation-mode .pres-ranking-list {
+      display: grid;
+      grid-auto-rows: minmax(76px, 1fr);
+      align-content: stretch;
+      gap: 0.55rem;
+    }
+
+    #apple-presentation-mode .pres-ranking-item {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr) minmax(90px, auto);
+      align-items: center;
+      gap: 0.72rem;
+      min-width: 0;
+      padding: 0.62rem 0.7rem;
+      border: 1px solid #d7e2ee;
+      border-left: 5px solid var(--rank-tone, #f59e0b);
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    #apple-presentation-mode .pres-ranking-number {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 5px;
+      color: #fff;
+      background: var(--rank-tone, #f59e0b);
+      font-size: 0.74rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-ranking-copy {
+      min-width: 0;
+    }
+
+    #apple-presentation-mode .pres-ranking-copy strong {
+      display: block;
+      overflow: hidden;
+      color: #0f172a;
+      font-size: 0.72rem;
+      font-weight: 900;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-ranking-track {
+      display: block;
+      height: 7px;
+      margin-top: 0.38rem;
+      overflow: hidden;
+      border-radius: 3px;
+      background: #e2e8f0;
+    }
+
+    #apple-presentation-mode .pres-ranking-track i {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--rank-tone, #f59e0b);
+    }
+
+    #apple-presentation-mode .pres-ranking-item > b {
+      color: #0f172a;
+      font-size: 0.76rem;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode #pres-slide-10 .pres-table-dense tbody tr {
+      height: 76px;
+    }
+
+    #apple-presentation-mode .pres-empty-state {
+      display: grid;
+      place-items: center;
+      align-content: center;
+      min-height: 220px;
+      padding: 1.2rem;
+      color: #64748b;
+      text-align: center;
+    }
+
+    #apple-presentation-mode .pres-empty-state i {
+      margin-bottom: 0.65rem;
+      color: #9db9d8;
+      font-size: 2rem;
+    }
+
+    #apple-presentation-mode .pres-empty-state strong {
+      color: #334155;
+      font-size: 0.85rem;
+    }
+
+    #apple-presentation-mode .pres-empty-state p {
+      max-width: 460px;
+      margin: 0.35rem 0 0;
+      font-size: 0.68rem;
+      line-height: 1.45;
+    }
+
+    #apple-presentation-mode .pres-kts-detail-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+      padding: 1rem;
+    }
+
+    #apple-presentation-mode .pres-kts-detail-panel.is-empty .pres-table-scroll {
+      display: grid;
+      flex: 1 1 auto;
+      max-height: none !important;
+    }
+
+    #apple-presentation-mode .pres-kts-detail-panel.is-empty table {
+      height: 100%;
+    }
+
+    #apple-presentation-mode .pres-kts-empty-cell {
+      height: 460px;
+      padding: 0 !important;
+    }
+
+    #apple-presentation-mode #pres-slide-12 .bri-deck-title,
+    #apple-presentation-mode #pres-slide-12 .bri-deck-subtitle {
+      color: #fff !important;
+    }
+
+    #apple-presentation-mode #pres-slide-12 .bri-deck-kicker {
+      color: #7dd3fc !important;
+    }
+
+    #apple-presentation-mode .pres-digital-priority-grid {
+      margin-top: 0.72rem;
+    }
+
+    #apple-presentation-mode .pres-digital-priority {
+      border-color: rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.9);
+    }
+
+    #apple-presentation-mode .pres-digital-closing-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-top: 0.7rem;
+      color: #475569;
+      font-size: 0.72rem;
+      font-weight: 850;
+    }
+
+    #apple-presentation-mode .pres-digital-scope-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0.3rem 0.62rem;
+      border: 1px solid rgba(113, 197, 232, 0.48);
+      border-radius: 6px;
+      background: rgba(0, 82, 156, 0.42);
+      color: #ffffff;
+      font-size: 0.66rem;
+      font-weight: 850;
+      line-height: 1;
+    }
+
+    #apple-presentation-mode .pres-digital-title-tools {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.45rem;
+      width: 100%;
+    }
+
+    #apple-presentation-mode .pres-digital-title-tools .pres-control-group {
+      margin: 0;
+    }
+
+    /* Slide narratives use the unused title-side area without growing the canvas. */
+    #apple-presentation-mode .bri-deck-title-row > div:first-child {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    #apple-presentation-mode .pres-title-side {
+      display: grid;
+      flex: 0 1 500px;
+      align-content: start;
+      justify-items: end;
+      gap: 0.42rem;
+      width: min(500px, 42%);
+      min-width: 390px;
+    }
+
+    #apple-presentation-mode .pres-title-side-wide {
+      flex-basis: 620px;
+      width: min(620px, 48%);
+    }
+
+    #apple-presentation-mode .pres-title-side > .pres-analysis-selector,
+    #apple-presentation-mode .pres-title-side > .pres-control-bar,
+    #apple-presentation-mode .pres-title-side > .pres-control-group {
+      margin: 0;
+    }
+
+    #apple-presentation-mode .pres-slide-narrative {
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr);
+      align-items: center;
+      gap: 0.58rem;
+      width: 100%;
+      min-height: 54px;
+      padding: 0.5rem 0.62rem;
+      border: 1px solid #cadbeb;
+      border-left: 4px solid #0857c3;
+      border-radius: 7px;
+      background: #f7faff;
+      box-sizing: border-box;
+    }
+
+    #apple-presentation-mode .pres-slide-narrative > i {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      color: #ffffff;
+      background: #0857c3;
+      font-size: 0.76rem;
+    }
+
+    #apple-presentation-mode .pres-slide-narrative span {
+      display: block;
+      color: #0857c3;
+      font-size: 0.55rem;
+      font-weight: 950;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-slide-narrative p {
+      margin: 0.12rem 0 0;
+      color: #334155;
+      font-size: 0.63rem;
+      line-height: 1.32;
+      font-weight: 750;
+      overflow-wrap: anywhere;
+    }
+
+    #apple-presentation-mode .pres-chart-explanation {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      align-items: center;
+      gap: 0.52rem;
+      flex: 0 0 52px;
+      min-height: 52px;
+      padding: 0.44rem 0.62rem;
+      border-top: 1px solid #dbe6f1;
+      border-left: 4px solid #0857c3;
+      background: #f5f9ff;
+      box-sizing: border-box;
+    }
+
+    #apple-presentation-mode .pres-chart-explanation.risk {
+      border-left-color: #d97706;
+      background: #fffbf2;
+    }
+
+    #apple-presentation-mode .pres-chart-explanation i {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 5px;
+      color: #ffffff;
+      background: #0857c3;
+      font-size: 0.7rem;
+    }
+
+    #apple-presentation-mode .pres-chart-explanation.risk i {
+      background: #d97706;
+    }
+
+    #apple-presentation-mode .pres-chart-explanation p {
+      margin: 0;
+      color: #334155;
+      font-size: 0.61rem;
+      line-height: 1.32;
+      font-weight: 760;
+    }
+
+    #apple-presentation-mode #pres-slide-5 .pres-analysis-panel-head {
+      min-height: 56px;
+      padding-top: 0.56rem;
+      padding-bottom: 0.56rem;
+    }
+
+    #apple-presentation-mode #pres-slide-5 .pres-analysis-insight-grid {
+      flex-basis: 78px;
+      margin-top: 0.52rem;
+    }
+
+    #apple-presentation-mode #pres-slide-5 .pres-analysis-insight {
+      padding: 0.5rem 0.58rem;
+    }
+
+    #apple-presentation-mode #pres-slide-11 .pres-panel-card:last-of-type {
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode #pres-slide-11 .pres-panel-card:last-of-type .pres-panel-body,
+    #apple-presentation-mode #pres-slide-11 .pres-panel-card:last-of-type .pres-table-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none !important;
+    }
+
+    #apple-presentation-mode .pres-deep-ranking-panel .pres-ranking-list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-auto-rows: minmax(54px, 1fr);
+      gap: 0.42rem;
+    }
+
+    #apple-presentation-mode .pres-deep-ranking-panel .pres-ranking-item {
+      grid-template-columns: 34px minmax(0, 1fr) minmax(72px, auto);
+      gap: 0.5rem;
+      padding: 0.46rem 0.54rem;
+    }
+
+    #apple-presentation-mode .pres-deep-ranking-panel .pres-ranking-number {
+      width: 30px;
+      height: 30px;
+    }
+
+    #apple-presentation-mode #pres-slide-12 .pres-slide-narrative {
+      border-color: rgba(255, 255, 255, 0.22);
+      border-left-color: #7dd3fc;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    #apple-presentation-mode #pres-slide-12 .pres-slide-narrative > i {
+      color: #06469c;
+      background: #7dd3fc;
+    }
+
+    #apple-presentation-mode #pres-slide-12 .pres-slide-narrative span {
+      color: #7dd3fc;
+    }
+
+    #apple-presentation-mode #pres-slide-12 .pres-slide-narrative p {
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    /* Executive density pass: use the full canvas without inflating typography. */
+    #apple-presentation-mode .bri-deck-kicker,
+    #apple-presentation-mode .bri-blue-panel-title,
+    #apple-presentation-mode .bri-dashboard-card .card-head,
+    #apple-presentation-mode .pres-table-dense thead th {
+      letter-spacing: 0 !important;
+    }
+
+    #apple-presentation-mode .bri-blue-panel-title {
+      min-height: 38px;
+      padding: 0.5rem 0.78rem;
+      font-size: 0.72rem;
+    }
+
+    #apple-presentation-mode .bri-deck-title {
+      line-height: 1.2 !important;
+    }
+
+    #apple-presentation-mode .bri-dashboard-card .metric-main strong,
+    #apple-presentation-mode .bri-dashboard-card .achievement strong {
+      line-height: 1.2 !important;
+    }
+
+    #apple-presentation-mode .pres-table-dense thead th {
+      font-size: 0.62rem !important;
+      line-height: 1.15 !important;
+    }
+
+    #apple-presentation-mode .pres-table-dense tbody td {
+      font-size: 0.67rem !important;
+    }
+
+    /* Slide 1: horizontal OS/SML/NPL summary and a fully occupied detail band. */
+    #apple-presentation-mode #pres-slide-1 .bri-highlight-grid {
+      flex: 0 0 205px;
+      max-height: none;
+    }
+
+    #apple-presentation-mode #pres-slide-1 .bri-dashboard-card {
+      min-height: 0;
+    }
+
+    #apple-presentation-mode #pres-slide-1 .bri-dashboard-card .achievement strong {
+      line-height: 1.2 !important;
+      overflow: visible;
+    }
+
+    #apple-presentation-mode #pres-slide-1 .bri-panel-grid {
+      grid-template-columns: minmax(0, 1.52fr) minmax(380px, 0.68fr) !important;
+      flex: 1 1 auto;
+      margin-top: 0 !important;
+    }
+
+    #apple-presentation-mode #pres-slide-1 .pres-loan-products-body {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 0.4rem;
+    }
+
+    #apple-presentation-mode .pres-loan-product-columns,
+    #apple-presentation-mode #pres-loan-product-rows .bri-product-row {
+      grid-template-columns: minmax(140px, 0.68fr) repeat(3, minmax(0, 1fr)) !important;
+    }
+
+    #apple-presentation-mode .pres-loan-product-columns {
+      display: grid;
+      gap: 0.55rem;
+      padding: 0.12rem 0.58rem 0.34rem;
+      border-bottom: 1px solid #dbe5ef;
+      color: #64748b;
+      font-size: 0.59rem;
+      font-weight: 950;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-loan-product-columns span:not(:first-child) {
+      text-align: right;
+    }
+
+    #apple-presentation-mode #pres-loan-product-rows {
+      display: grid;
+      grid-auto-rows: minmax(0, 1fr);
+      gap: 0.34rem;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode #pres-loan-product-rows .bri-product-row {
+      min-height: 0;
+      margin: 0 !important;
+      padding: 0.38rem 0.58rem !important;
+    }
+
+    #apple-presentation-mode #pres-loan-product-rows .bri-product-row > div:not(:first-child) {
+      text-align: right;
+    }
+
+    #apple-presentation-mode #pres-loan-product-rows .bri-product-row strong {
+      font-size: 0.72rem;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode #pres-slide-1 .pres-loan-summary-body {
+      display: grid;
+      grid-template-rows: 126px auto minmax(0, 1fr);
+      gap: 0.45rem;
+      align-items: stretch;
+    }
+
+    #apple-presentation-mode #pres-slide-1 #pres-loan-mini-donut {
+      width: 122px !important;
+      height: 122px !important;
+    }
+
+    #apple-presentation-mode #pres-slide-1 #pres-loan-mini-donut::after {
+      inset: 29px !important;
+    }
+
+    #apple-presentation-mode #pres-loan-composition-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.35rem;
+      margin: 0 !important;
+    }
+
+    #apple-presentation-mode #pres-loan-composition-summary .metric-line {
+      display: grid;
+      justify-items: center;
+      align-content: center;
+      gap: 0.12rem;
+      min-width: 0;
+      margin: 0;
+      padding: 0.42rem 0.3rem;
+      border: 1px solid #d8e3ef;
+      border-top: 3px solid #0857c3;
+      border-radius: 6px;
+      background: #f8fbff;
+      text-align: center;
+    }
+
+    #apple-presentation-mode #pres-loan-composition-summary .metric-line.is-sml {
+      border-top-color: #f59e0b;
+    }
+
+    #apple-presentation-mode #pres-loan-composition-summary .metric-line.is-npl {
+      border-top-color: #ef4444;
+    }
+
+    #apple-presentation-mode #pres-loan-composition-summary .metric-line span {
+      color: #64748b;
+      font-size: 0.55rem;
+      font-weight: 950;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode #pres-loan-composition-summary .metric-line strong {
+      color: #0f172a;
+      font-size: 0.67rem;
+      line-height: 1.15;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode #pres-loan-composition-summary .metric-line small {
+      display: block;
+      margin-top: 0.08rem;
+      color: #64748b;
+      font-size: 0.52rem;
+    }
+
+    #apple-presentation-mode #pres-slide-1 .pres-loan-branch-table {
+      display: flex;
+      min-height: 0;
+      max-height: none !important;
+      margin: 0 !important;
+    }
+
+    #apple-presentation-mode #pres-slide-1 .pres-loan-branch-table table {
+      height: 100%;
+    }
+
+    #apple-presentation-mode #pres-slide-1 .pres-loan-branch-table th,
+    #apple-presentation-mode #pres-slide-1 .pres-loan-branch-table td {
+      padding: 0.3rem 0.38rem !important;
+      font-size: 0.61rem !important;
+    }
+
+    /* Slides 2 and 6: funding rows and analytical lens share the available height. */
+    #apple-presentation-mode #pres-slide-2 #pres-saving-cards {
+      flex: 0 0 142px;
+    }
+
+    #apple-presentation-mode .pres-saving-mix-panel .bri-panel-body,
+    #apple-presentation-mode .pres-saving-lens-panel .bri-panel-body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    #apple-presentation-mode #pres-saving-bar-stage {
+      grid-auto-rows: minmax(0, 1fr);
+      align-content: stretch;
+      gap: 0.48rem;
+      padding: 0.55rem;
+    }
+
+    #apple-presentation-mode #pres-saving-bar-stage .bri-raised-bar {
+      height: 100%;
+      min-height: 0;
+      padding: 0.52rem 0.68rem;
+      border-radius: 7px;
+      box-sizing: border-box;
+    }
+
+    #apple-presentation-mode #pres-saving-composition-bars {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+      align-content: stretch;
+      gap: 0.62rem;
+      padding: 0.65rem;
+    }
+
+    #apple-presentation-mode #pres-saving-composition-bars .bri-raised-bar {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto 20px auto auto;
+      align-content: center;
+      gap: 0.65rem;
+      height: 100%;
+      min-height: 0;
+      padding: 0.9rem;
+      border-radius: 8px;
+      box-sizing: border-box;
+    }
+
+    #apple-presentation-mode #pres-saving-composition-bars .bri-raised-bar strong {
+      font-size: 0.92rem;
+    }
+
+    #apple-presentation-mode #pres-saving-composition-bars .bri-raised-bar span {
+      font-size: 0.72rem;
+    }
+
+    #apple-presentation-mode #pres-saving-composition-bars .bri-raised-bar em {
+      justify-self: start;
+      font-size: 1.05rem;
+    }
+
+    #apple-presentation-mode #pres-saving-composition-bars .pres-bar-reading {
+      max-width: 330px;
+      color: #475569;
+      font-size: 0.64rem;
+      line-height: 1.4;
+      font-weight: 760;
+    }
+
+    #apple-presentation-mode #pres-saving-bar-stage .pres-bar-reading {
+      display: none;
+    }
+
+    #apple-presentation-mode #pres-saving-summary-table,
+    #apple-presentation-mode #pres-saving-composition-table {
+      display: grid;
+      grid-template-rows: auto 10px minmax(0, 1fr) auto;
+      gap: 0.42rem;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    #apple-presentation-mode #pres-saving-summary-table table,
+    #apple-presentation-mode #pres-saving-composition-table table {
+      align-self: start;
+    }
+
+    #apple-presentation-mode #pres-saving-summary-table th,
+    #apple-presentation-mode #pres-saving-summary-table td,
+    #apple-presentation-mode #pres-saving-composition-table th,
+    #apple-presentation-mode #pres-saving-composition-table td {
+      padding: 0.34rem 0.42rem !important;
+    }
+
+    #apple-presentation-mode .pres-funding-mix-strip {
+      display: flex;
+      width: 100%;
+      height: 10px;
+      overflow: hidden;
+      border-radius: 4px;
+      background: #e2e8f0;
+    }
+
+    #apple-presentation-mode .pres-funding-mix-strip span {
+      display: block;
+      min-width: 2px;
+      height: 100%;
+    }
+
+    #apple-presentation-mode .pres-funding-lens-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+      gap: 0.42rem;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode .pres-funding-lens {
+      display: grid;
+      align-content: center;
+      min-width: 0;
+      padding: 0.48rem 0.55rem;
+      border: 1px solid #d7e3ef;
+      border-left: 4px solid #0857c3;
+      border-radius: 6px;
+      background: #f8fbff;
+    }
+
+    #apple-presentation-mode .pres-funding-lens span {
+      color: #64748b;
+      font-size: 0.55rem;
+      font-weight: 950;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-funding-lens strong {
+      margin-top: 0.15rem;
+      color: #0f172a;
+      font-size: 0.76rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-funding-lens small {
+      margin-top: 0.12rem;
+      color: #64748b;
+      font-size: 0.55rem;
+      line-height: 1.22;
+      font-weight: 750;
+    }
+
+    #apple-presentation-mode .pres-funding-reading {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      align-items: center;
+      gap: 0.48rem;
+      padding: 0.48rem 0.55rem;
+      border-left: 4px solid #10b981;
+      background: #f2fbf7;
+    }
+
+    #apple-presentation-mode .pres-funding-reading i {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 5px;
+      color: #fff;
+      background: #059669;
+      font-size: 0.68rem;
+    }
+
+    #apple-presentation-mode .pres-funding-reading p {
+      margin: 0;
+      color: #334155;
+      font-size: 0.58rem;
+      line-height: 1.28;
+      font-weight: 760;
+    }
+
+    /* Product and risk panels: distribute rows instead of leaving a blank lower half. */
+    #apple-presentation-mode .pres-product-side-stack {
+      grid-template-rows: minmax(0, 1fr) 178px;
+    }
+
+    #apple-presentation-mode .pres-product-side-stack > .bri-inner-panel .pres-table-scroll {
+      display: flex;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode .pres-product-side-stack table {
+      height: 100%;
+    }
+
+    #apple-presentation-mode .pres-product-side-stack tbody tr {
+      height: 20%;
+    }
+
+    #apple-presentation-mode #pres-slide-3 .pres-product-insight-grid {
+      height: calc(100% - 1.15rem);
+    }
+
+    #apple-presentation-mode #pres-slide-3 .pres-readout-item {
+      display: grid;
+      align-content: center;
+    }
+
+    #apple-presentation-mode .pres-portfolio-reading {
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    #apple-presentation-mode .pres-portfolio-action-grid {
+      align-self: stretch;
+      margin-top: 0.55rem;
+    }
+
+    #apple-presentation-mode .pres-portfolio-action-grid > div {
+      display: grid;
+      grid-template-rows: auto auto auto minmax(0, 1fr);
+      align-content: stretch;
+    }
+
+    /* Financial slide: cards are a header band; analysis owns the remaining canvas. */
+    #apple-presentation-mode #pres-slide-8 .bri-finance-grid {
+      flex: 0 0 174px;
+      grid-auto-rows: minmax(0, 1fr);
+      align-content: stretch;
+    }
+
+    #apple-presentation-mode #pres-slide-8 .bri-finance-card {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      align-content: stretch;
+      padding: 0.66rem !important;
+    }
+
+    #apple-presentation-mode #pres-slide-8 .bri-finance-card strong {
+      align-self: center;
+      margin-top: 0.28rem;
+      font-size: 1.08rem;
+    }
+
+    #apple-presentation-mode #pres-slide-8 .bri-finance-card .metric-line {
+      margin-top: 0.28rem;
+      font-size: 0.62rem;
+    }
+
+    #apple-presentation-mode #pres-slide-8 .pres-financial-analysis-grid {
+      flex: 1 1 auto;
+      margin-top: 0 !important;
+    }
+
+    #apple-presentation-mode #pres-slide-8 .pres-financial-analysis-grid .bri-panel-body {
+      display: grid;
+      grid-template-rows: repeat(4, minmax(0, 1fr));
+      gap: 0.42rem;
+    }
+
+    #apple-presentation-mode #pres-slide-8 .pres-profit-row {
+      display: grid;
+      align-content: center;
+      margin: 0;
+      padding: 0.35rem 0.42rem;
+      border: 1px solid #e0e8f1;
+      border-radius: 6px;
+      background: #fbfdff;
+    }
+
+    #apple-presentation-mode #pres-slide-8 .pres-financial-brief {
+      grid-template-rows: auto repeat(4, minmax(0, 1fr));
+      align-content: stretch;
+    }
+
+    #apple-presentation-mode #pres-slide-8 .pres-financial-brief .pres-readout-item {
+      display: grid;
+      align-content: center;
+    }
+
+    /* Explorer tables: stable numeric columns and vertically balanced rows. */
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-grid,
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-main-panel {
+      min-height: 0;
+    }
+
+    #apple-presentation-mode #pres-slide-9 #pres-explorer-table-wrap:not(.hidden),
+    #apple-presentation-mode #pres-slide-9 #pres-explorer-bar-wrap:not(.hidden) {
+      display: flex;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode #pres-slide-9 #pres-explorer-table-wrap table {
+      height: 100%;
+    }
+
+    #apple-presentation-mode #pres-slide-9 #pres-explorer-table-wrap th:first-child {
+      width: 17%;
+    }
+
+    #apple-presentation-mode #pres-slide-9 #pres-explorer-table-wrap th:nth-child(2) {
+      width: 15%;
+    }
+
+    #apple-presentation-mode #pres-slide-9 #pres-explorer-table-wrap th,
+    #apple-presentation-mode #pres-slide-9 #pres-explorer-table-wrap td {
+      padding: 0.36rem 0.42rem !important;
+      overflow-wrap: normal;
+    }
+
+    #apple-presentation-mode #pres-slide-9 #pres-explorer-table-wrap .pres-delta,
+    #apple-presentation-mode #pres-slide-9 #pres-explorer-table-wrap .pres-value-bar strong {
+      font-size: 0.62rem;
+      white-space: nowrap !important;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-readout {
+      flex: 0 0 86px;
+      margin-top: 0.55rem;
+    }
+
+    #apple-presentation-mode #pres-slide-10 .pres-segment-table-wrap {
+      display: flex;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode #pres-slide-10 .pres-segment-table-wrap table {
+      height: 100%;
+    }
+
+    #apple-presentation-mode #pres-slide-10 .pres-segment-table-wrap tbody tr {
+      height: auto;
+    }
+
+    #apple-presentation-mode #pres-slide-10 .pres-segment-table-wrap th:first-child {
+      width: 17%;
+    }
+
+    #apple-presentation-mode #pres-slide-10 .pres-segment-table-wrap th:nth-child(2) {
+      width: 14%;
+    }
+
+    #apple-presentation-mode #pres-slide-10 .pres-segment-table-wrap th,
+    #apple-presentation-mode #pres-slide-10 .pres-segment-table-wrap td {
+      padding: 0.36rem 0.42rem !important;
+      overflow-wrap: normal;
+    }
+
+    #apple-presentation-mode #pres-slide-10 .pres-segment-table-wrap .pres-delta,
+    #apple-presentation-mode #pres-slide-10 .pres-segment-table-wrap .pres-value-bar strong {
+      font-size: 0.62rem;
+      white-space: nowrap !important;
+    }
+
+    /* KTS and closing slides reserve a meaningful footer instead of blank panel space. */
+    #apple-presentation-mode #pres-slide-14 .pres-kts-detail-panel {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) 88px;
+      gap: 0.55rem;
+    }
+
+    #apple-presentation-mode #pres-slide-14 .pres-kts-detail-panel > .pres-table-scroll {
+      display: flex;
+      min-height: 0;
+      max-height: none !important;
+    }
+
+    #apple-presentation-mode #pres-slide-14 .pres-kts-detail-panel table {
+      min-height: 100%;
+    }
+
+    #apple-presentation-mode .pres-kts-insight-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.5rem;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode .pres-kts-insight {
+      display: grid;
+      align-content: center;
+      min-width: 0;
+      padding: 0.5rem 0.58rem;
+      border: 1px solid #d7e3ef;
+      border-left: 4px solid #0857c3;
+      border-radius: 6px;
+      background: #f8fbff;
+    }
+
+    #apple-presentation-mode .pres-kts-insight.is-wide {
+      grid-column: 1 / -1;
+    }
+
+    #apple-presentation-mode .pres-kts-insight span {
+      color: #64748b;
+      font-size: 0.55rem;
+      font-weight: 950;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-kts-insight strong {
+      margin-top: 0.16rem;
+      color: #0f172a;
+      font-size: 0.72rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-kts-insight small {
+      margin-top: 0.12rem;
+      color: #64748b;
+      font-size: 0.54rem;
+      line-height: 1.2;
+      font-weight: 750;
+    }
+
+    #apple-presentation-mode #pres-slide-14 .pres-kts-summary {
+      grid-template-rows: repeat(3, auto) auto minmax(0, 1fr);
+      align-content: stretch;
+    }
+
+    #apple-presentation-mode #pres-slide-14 #pres-micro-productivity-grid {
+      display: grid;
+      grid-template-rows: repeat(3, minmax(0, 1fr));
+      gap: 0.5rem;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode #pres-slide-14 #pres-micro-productivity-grid .pres-mini-stat {
+      display: grid;
+      align-content: center;
+      margin-top: 0 !important;
+    }
+
+    #apple-presentation-mode #pres-slide-12 .pres-digital-main-panel {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto auto;
+      gap: 0.58rem;
+      overflow: hidden;
+    }
+
+    #apple-presentation-mode #pres-slide-12 #pres-digital-table-wrap:not(.hidden),
+    #apple-presentation-mode #pres-slide-12 #pres-digital-chart-wrap:not(.hidden) {
+      display: flex;
+      min-height: 0;
+      max-height: none !important;
+      height: auto !important;
+    }
+
+    #apple-presentation-mode #pres-slide-12 #pres-digital-table-wrap table {
+      height: 100%;
+    }
+
+    #apple-presentation-mode #pres-slide-12 .pres-digital-priority-grid,
+    #apple-presentation-mode #pres-slide-12 .pres-digital-closing-row {
+      margin-top: 0;
+    }
+
+    #apple-presentation-mode #pres-slide-12 .pres-digital-closing-row {
+      min-height: 50px;
+      padding-top: 0.45rem;
+      border-top: 1px solid #dce6f1;
+    }
+
+    /* One scope control drives the complete deck and stays compact on narrow viewports. */
+    #apple-presentation-mode .pres-global-scope-control {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.48rem;
+      min-width: 176px;
+      height: 38px;
+      padding: 0.28rem 0.58rem;
+      border: 1px solid #cbd9e8;
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.94);
+      color: #0857c3;
+      box-shadow: 0 3px 12px rgba(8, 87, 195, 0.08);
+      box-sizing: border-box;
+    }
+
+    #apple-presentation-mode .pres-global-scope-control > i {
+      flex: 0 0 auto;
+      font-size: 0.76rem;
+    }
+
+    #apple-presentation-mode .pres-global-scope-control > span {
+      display: grid;
+      flex: 1 1 auto;
+      min-width: 0;
+      gap: 0;
+    }
+
+    #apple-presentation-mode .pres-global-scope-control small {
+      color: #64748b;
+      font-size: 0.48rem;
+      line-height: 1;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-global-scope-control select {
+      width: 100%;
+      min-width: 0;
+      padding: 0;
+      border: 0;
+      outline: 0;
+      color: #0f172a;
+      background: transparent;
+      font: inherit;
+      font-size: 0.66rem;
+      line-height: 1.25;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-global-scope-control {
+      border-color: rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.12);
+      color: #7dd3fc;
+      box-shadow: none;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-global-scope-control small,
+    #apple-presentation-mode.theme-dark .pres-global-scope-control select {
+      color: #ffffff;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-global-scope-control option {
+      color: #0f172a;
+      background: #ffffff;
+    }
+
+    #apple-presentation-mode .pres-prognosa-control {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-width: 132px;
+      height: 38px;
+      padding: 0.28rem 0.55rem;
+      border: 1px solid #cbd9e8;
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.94);
+      color: #0f172a;
+      box-shadow: 0 3px 12px rgba(8, 87, 195, 0.08);
+      cursor: pointer;
+      box-sizing: border-box;
+    }
+
+    #apple-presentation-mode .pres-prognosa-control > input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #apple-presentation-mode .pres-prognosa-switch {
+      position: relative;
+      flex: 0 0 31px;
+      width: 31px;
+      height: 18px;
+      border-radius: 9px;
+      background: #b8c5d4;
+      transition: background 0.16s ease;
+    }
+
+    #apple-presentation-mode .pres-prognosa-switch i {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.3);
+      transition: transform 0.16s ease;
+    }
+
+    #apple-presentation-mode .pres-prognosa-control > input:checked + .pres-prognosa-switch {
+      background: #0d9f77;
+    }
+
+    #apple-presentation-mode .pres-prognosa-control > input:checked + .pres-prognosa-switch i {
+      transform: translateX(13px);
+    }
+
+    #apple-presentation-mode .pres-prognosa-copy {
+      display: grid;
+      min-width: 0;
+      line-height: 1;
+    }
+
+    #apple-presentation-mode .pres-prognosa-copy small {
+      color: #64748b;
+      font-size: 0.48rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-prognosa-copy strong {
+      margin-top: 0.14rem;
+      overflow: hidden;
+      color: #0f172a;
+      font-size: 0.61rem;
+      font-weight: 900;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-prognosa-control.is-active {
+      border-color: rgba(13, 159, 119, 0.42);
+      background: #effbf7;
+    }
+
+    #apple-presentation-mode .pres-prognosa-control.is-disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-prognosa-control {
+      border-color: rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    #apple-presentation-mode.theme-dark .pres-prognosa-copy small,
+    #apple-presentation-mode.theme-dark .pres-prognosa-copy strong {
+      color: #ffffff;
+    }
+
+    .pres-export-prognosa {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.7rem 0.8rem;
+      border: 1px solid #d6e2ef;
+      border-radius: 7px;
+      background: #f4f9ff;
+      cursor: pointer;
+    }
+
+    .pres-export-prognosa > input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #0d9f77;
+    }
+
+    .pres-export-prognosa > span {
+      display: grid;
+      gap: 0.2rem;
+    }
+
+    .pres-export-prognosa strong {
+      color: #14233a;
+      font-size: 0.75rem;
+    }
+
+    .pres-export-prognosa small {
+      color: #64748b;
+      font-size: 0.62rem;
+      line-height: 1.35;
+    }
+
+    /* Slide 15: RM productivity uses a fixed analytical column and a ranking column. */
+    #apple-presentation-mode .pres-productivity-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 0.84fr) minmax(0, 1.16fr);
+      flex: 1 1 auto;
+      gap: 0.72rem;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode .pres-productivity-summary-panel,
+    #apple-presentation-mode .pres-productivity-table-panel,
+    #apple-presentation-mode .pres-trend-chart-panel,
+    #apple-presentation-mode .pres-trend-side-panel {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid #cadbeb;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+    }
+
+    #apple-presentation-mode .pres-productivity-summary-panel {
+      display: grid;
+      grid-template-rows: 42px 84px minmax(0, 1fr) 62px;
+      gap: 0.52rem;
+      padding: 0.72rem;
+    }
+
+    #apple-presentation-mode .pres-productivity-summary-panel.has-pdwk {
+      grid-template-rows: 42px 78px 116px minmax(0, 1fr) 58px;
+    }
+
+    #apple-presentation-mode .pres-productivity-scope-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      padding: 0.4rem 0.55rem;
+      border-left: 4px solid #0857c3;
+      background: #f3f8fe;
+    }
+
+    #apple-presentation-mode .pres-productivity-scope-line div {
+      display: grid;
+      min-width: 0;
+    }
+
+    #apple-presentation-mode .pres-productivity-scope-line span,
+    #apple-presentation-mode .pres-productivity-kpi-grid span,
+    #apple-presentation-mode .pres-productivity-insights span,
+    #apple-presentation-mode .pres-trend-kpi-grid span,
+    #apple-presentation-mode .pres-trend-reading span {
+      color: #64748b;
+      font-size: 0.52rem;
+      font-weight: 950;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-productivity-scope-line strong {
+      margin-top: 0.08rem;
+      color: #0f172a;
+      font-size: 0.78rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-productivity-scope-line em {
+      flex: 0 0 auto;
+      color: #475569;
+      font-size: 0.59rem;
+      font-style: normal;
+      font-weight: 850;
+    }
+
+    #apple-presentation-mode .pres-productivity-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.42rem;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode .pres-productivity-kpi-grid article,
+    #apple-presentation-mode .pres-trend-kpi-grid article {
+      display: grid;
+      align-content: center;
+      min-width: 0;
+      padding: 0.46rem 0.5rem;
+      border: 1px solid #d9e4ef;
+      border-top: 3px solid #0857c3;
+      border-radius: 6px;
+      background: #fbfdff;
+    }
+
+    #apple-presentation-mode .pres-productivity-kpi-grid article.is-risk {
+      border-top-color: #dc2626;
+    }
+
+    #apple-presentation-mode .pres-productivity-kpi-grid strong,
+    #apple-presentation-mode .pres-trend-kpi-grid strong {
+      margin-top: 0.15rem;
+      color: #0f172a;
+      font-size: 0.78rem;
+      line-height: 1.1;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-productivity-kpi-grid small,
+    #apple-presentation-mode .pres-trend-kpi-grid small,
+    #apple-presentation-mode .pres-productivity-insights small,
+    #apple-presentation-mode .pres-trend-reading small {
+      margin-top: 0.12rem;
+      color: #64748b;
+      font-size: 0.5rem;
+      line-height: 1.2;
+      font-weight: 740;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-panel {
+      display: grid;
+      grid-template-rows: 28px minmax(0, 1fr);
+      gap: 0.32rem;
+      min-height: 0;
+      padding: 0.38rem 0.42rem 0.42rem;
+      border: 1px solid #bfd8f1;
+      border-left: 4px solid #0857c3;
+      border-radius: 7px;
+      background: #f4f9ff;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-panel[hidden] {
+      display: none;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      min-width: 0;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-head > div {
+      display: flex;
+      align-items: baseline;
+      gap: 0.42rem;
+      min-width: 0;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-head span,
+    #apple-presentation-mode .pres-micro-pdwk-role span {
+      color: #64748b;
+      font-size: 0.48rem;
+      font-weight: 950;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-head strong {
+      color: #0857c3;
+      font-size: 0.68rem;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-head small {
+      max-width: 46%;
+      overflow: hidden;
+      color: #475569;
+      font-size: 0.48rem;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.34rem;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-role {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-rows: auto 1fr;
+      gap: 0.14rem 0.32rem;
+      min-width: 0;
+      padding: 0.34rem 0.38rem;
+      border: 1px solid #d3e2f1;
+      border-top: 3px solid var(--pdwk-tone, #0857c3);
+      border-radius: 5px;
+      background: #ffffff;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-role > strong {
+      color: #0f172a;
+      font-size: 0.62rem;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-role > em {
+      color: var(--pdwk-tone, #0857c3);
+      font-size: 0.5rem;
+      font-style: normal;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-breakdown {
+      display: grid;
+      grid-column: 1 / -1;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.2rem;
+      align-self: end;
+      min-width: 0;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-breakdown small {
+      min-width: 0;
+      color: #64748b;
+      font-size: 0.43rem;
+      line-height: 1.16;
+      font-weight: 760;
+      overflow-wrap: anywhere;
+    }
+
+    #apple-presentation-mode .pres-micro-pdwk-breakdown b {
+      display: block;
+      margin-top: 0.05rem;
+      color: #334155;
+      font-size: 0.46rem;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-productivity-chart-shell {
+      position: relative;
+      min-height: 0;
+      padding: 0.45rem 0.55rem 0.25rem;
+      border: 1px solid #e0e8f1;
+      border-radius: 7px;
+      background: #fbfdff;
+    }
+
+    #apple-presentation-mode .pres-productivity-chart-shell canvas,
+    #apple-presentation-mode .pres-trend-chart-wrap canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    #apple-presentation-mode .pres-productivity-reading {
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr);
+      align-items: center;
+      gap: 0.5rem;
+      min-height: 0;
+      padding: 0.48rem 0.56rem;
+      border-left: 4px solid #10b981;
+      background: #f1fbf7;
+    }
+
+    #apple-presentation-mode .pres-productivity-reading i {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 5px;
+      color: #ffffff;
+      background: #059669;
+      font-size: 0.7rem;
+    }
+
+    #apple-presentation-mode .pres-productivity-reading p {
+      margin: 0;
+      color: #334155;
+      font-size: 0.59rem;
+      line-height: 1.3;
+      font-weight: 760;
+    }
+
+    #apple-presentation-mode .pres-productivity-table-panel {
+      display: grid;
+      grid-template-rows: 38px minmax(0, 1fr) 86px;
+    }
+
+    #apple-presentation-mode .pres-productivity-table-panel .bri-blue-panel-title > span {
+      margin-left: auto;
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 0.58rem;
+    }
+
+    #apple-presentation-mode .pres-productivity-table-panel .pres-table-scroll {
+      display: flex;
+      min-height: 0;
+      padding: 0.45rem;
+    }
+
+    #apple-presentation-mode .pres-productivity-table-panel table {
+      height: 100%;
+    }
+
+    #apple-presentation-mode .pres-productivity-table-panel th,
+    #apple-presentation-mode .pres-productivity-table-panel td {
+      padding: 0.3rem 0.36rem !important;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-productivity-table-panel td:nth-child(2) {
+      white-space: normal;
+    }
+
+    #apple-presentation-mode .pres-productivity-table-panel td small {
+      display: block;
+      margin-top: 0.08rem;
+      color: #64748b;
+      font-size: 0.5rem;
+      line-height: 1.15;
+    }
+
+    #apple-presentation-mode .pres-risk-value {
+      color: #b91c1c;
+      font-weight: 900;
+    }
+
+    #apple-presentation-mode .pres-productivity-insights {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.42rem;
+      min-height: 0;
+      padding: 0.45rem;
+      border-top: 1px solid #dce6f1;
+      background: #f8fbff;
+    }
+
+    #apple-presentation-mode .pres-productivity-insights > div,
+    #apple-presentation-mode .pres-trend-reading > div {
+      display: grid;
+      align-content: center;
+      min-width: 0;
+      padding: 0.4rem 0.46rem;
+      border-left: 3px solid #0857c3;
+      background: #ffffff;
+    }
+
+    #apple-presentation-mode .pres-productivity-insights > div.is-risk {
+      border-left-color: #dc2626;
+    }
+
+    #apple-presentation-mode .pres-productivity-insights strong,
+    #apple-presentation-mode .pres-trend-reading strong {
+      margin-top: 0.12rem;
+      color: #0f172a;
+      font-size: 0.67rem;
+      font-weight: 950;
+      overflow-wrap: anywhere;
+    }
+
+    /* Slide 16: one detailed chart, compact KPI strip, exact first/last comparison. */
+    #apple-presentation-mode .pres-trend-group-toggle {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      max-width: 100%;
+    }
+
+    #apple-presentation-mode .pres-trend-group-toggle .pres-toggle-btn {
+      padding: 0.34rem 0.5rem;
+      font-size: 0.58rem;
+    }
+
+    #apple-presentation-mode .pres-trend-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.52fr) minmax(380px, 0.78fr);
+      flex: 1 1 auto;
+      gap: 0.72rem;
+      min-height: 0;
+    }
+
+    #apple-presentation-mode .pres-trend-chart-panel {
+      display: grid;
+      grid-template-rows: 54px minmax(0, 1fr) 30px;
+      gap: 0.48rem;
+      padding: 0.72rem;
+    }
+
+    #apple-presentation-mode .pres-trend-chart-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0 0.2rem 0.45rem;
+      border-bottom: 1px solid #e0e8f1;
+    }
+
+    #apple-presentation-mode .pres-trend-chart-head h3 {
+      margin: 0.12rem 0 0;
+      color: #0f172a;
+      font-size: 1rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-trend-chart-head p {
+      max-width: 300px;
+      margin: 0;
+      color: #64748b;
+      font-size: 0.62rem;
+      line-height: 1.3;
+      font-weight: 740;
+      text-align: right;
+    }
+
+    #apple-presentation-mode .pres-trend-chart-wrap {
+      position: relative;
+      min-height: 0;
+      padding: 0.25rem;
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip {
+      position: absolute;
+      z-index: 8;
+      width: 242px;
+      max-width: calc(100% - 1rem);
+      padding: 0.58rem;
+      border: 1px solid #b8d3ed;
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.98);
+      box-shadow: 0 14px 32px rgba(15, 46, 82, 0.2);
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, calc(-100% - 12px));
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip.is-visible {
+      opacity: 1;
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip.is-below {
+      transform: translate(-50%, 12px);
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin: -0.58rem -0.58rem 0.42rem;
+      padding: 0.45rem 0.58rem;
+      border-radius: 6px 6px 0 0;
+      color: #ffffff;
+      background: #0757bd;
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip-head span {
+      font-size: 0.48rem;
+      font-weight: 850;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip-head strong {
+      font-size: 0.62rem;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip-row {
+      display: grid;
+      grid-template-columns: 9px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 0.34rem;
+      padding: 0.25rem 0;
+      border-bottom: 1px solid #e6edf5;
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip-row:last-child {
+      border-bottom: 0;
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--tooltip-tone, #0857c3);
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip-row div {
+      display: grid;
+      min-width: 0;
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip-row span {
+      overflow: hidden;
+      color: #334155;
+      font-size: 0.52rem;
+      font-weight: 850;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip-row small {
+      color: #64748b;
+      font-size: 0.45rem;
+      font-weight: 760;
+    }
+
+    #apple-presentation-mode .pres-trend-tooltip-row strong {
+      color: #0f172a;
+      font-size: 0.58rem;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-trend-period-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.35rem 0.5rem;
+      border-top: 1px solid #e0e8f1;
+      color: #64748b;
+      font-size: 0.58rem;
+      font-weight: 800;
+    }
+
+    #apple-presentation-mode .pres-trend-period-line strong {
+      color: #0857c3;
+    }
+
+    #apple-presentation-mode .pres-trend-side-panel {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) 94px;
+      gap: 0.55rem;
+      padding: 0.72rem;
+    }
+
+    #apple-presentation-mode .pres-trend-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.42rem;
+    }
+
+    #apple-presentation-mode .pres-trend-kpi-grid article {
+      min-height: 70px;
+      border-top-color: var(--series-tone, #0857c3);
+    }
+
+    #apple-presentation-mode .pres-trend-table-wrap {
+      min-height: 0;
+      overflow: auto;
+      border: 1px solid #dce6f1;
+      border-radius: 6px;
+    }
+
+    #apple-presentation-mode .pres-trend-table-wrap table {
+      height: 100%;
+    }
+
+    #apple-presentation-mode .pres-trend-table-wrap th,
+    #apple-presentation-mode .pres-trend-table-wrap td {
+      padding: 0.42rem 0.46rem !important;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode .pres-trend-table-wrap th {
+      white-space: normal;
+      vertical-align: bottom;
+    }
+
+    #apple-presentation-mode .pres-trend-table-wrap .is-latest {
+      color: #0857c3;
+      background: #eef6ff;
+      font-weight: 950;
+    }
+
+    #apple-presentation-mode .pres-trend-table-wrap .pos {
+      color: #047857;
+      font-weight: 900;
+    }
+
+    #apple-presentation-mode .pres-trend-table-wrap .neg {
+      color: #dc2626;
+      font-weight: 900;
+    }
+
+    #apple-presentation-mode .pres-series-key {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      margin-right: 0.35rem;
+      border-radius: 2px;
+      background: var(--series-tone, #0857c3);
+    }
+
+    #apple-presentation-mode .pres-trend-reading {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-rows: minmax(0, 1fr);
+      gap: 0.42rem;
+      min-height: 0;
+      padding: 0.45rem;
+      border-left: 4px solid #0857c3;
+      background: #f4f8fd;
+    }
+
+    /* Slide 9: compact annotated trend with a data-led reading beneath it. */
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-grid {
+      grid-template-columns: minmax(330px, 0.64fr) minmax(760px, 1.36fr) !important;
+      gap: 0.68rem;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-side {
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 0.58rem;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-mini-stat-grid {
+      gap: 0.42rem;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-mini-stat {
+      min-height: 52px;
+      padding: 0.48rem 0.58rem;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-side > .pres-glass-card.pres-explorer-trend-card {
+      display: grid !important;
+      grid-template-rows: 40px 224px minmax(0, 1fr);
+      gap: 0.46rem;
+      min-height: 0;
+      padding: 0.62rem;
+      overflow: hidden;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.7rem;
+      min-width: 0;
+      padding: 0 0.16rem 0.42rem;
+      border-bottom: 1px solid #dce6f1;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-head > div {
+      display: grid;
+      min-width: 0;
+      gap: 0.08rem;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-head span,
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-copy > span,
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-fact span {
+      color: #64748b;
+      font-size: 0.48rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-head strong {
+      overflow: hidden;
+      color: #0f172a;
+      font-size: 0.68rem;
+      font-weight: 950;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-head small {
+      flex: 0 0 auto;
+      padding: 0.24rem 0.38rem;
+      border: 1px solid #cbdced;
+      border-radius: 5px;
+      color: #0857c3;
+      background: #f4f8fd;
+      font-size: 0.48rem;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-plot {
+      position: relative;
+      flex: 0 0 224px !important;
+      height: 224px !important;
+      min-height: 224px !important;
+      padding: 0.08rem 0.12rem 0;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-analysis {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 0.38rem;
+      min-height: 0;
+      padding: 0.48rem 0.52rem;
+      border-left: 4px solid var(--trend-tone, #0857c3);
+      background: #f4f8fd;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-copy {
+      display: grid;
+      gap: 0.1rem;
+      min-width: 0;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-copy p {
+      display: -webkit-box;
+      margin: 0;
+      overflow: hidden;
+      color: #334155;
+      font-size: 0.56rem;
+      font-weight: 740;
+      line-height: 1.34;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-facts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      min-height: 0;
+      border-top: 1px solid #dce6f1;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-fact {
+      display: grid;
+      align-content: center;
+      min-width: 0;
+      padding: 0.34rem 0.42rem 0.12rem;
+      border-right: 1px solid #dce6f1;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-fact:last-child {
+      border-right: 0;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-fact strong {
+      overflow: hidden;
+      margin-top: 0.1rem;
+      color: #0f172a;
+      font-size: 0.62rem;
+      font-weight: 950;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-fact small {
+      overflow: hidden;
+      margin-top: 0.04rem;
+      color: #64748b;
+      font-size: 0.44rem;
+      font-weight: 760;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-fact.is-good strong {
+      color: #047857;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-fact.is-risk strong {
+      color: #c62828;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-action {
+      display: grid;
+      align-content: center;
+      min-height: 0;
+      padding: 0.36rem 0.42rem 0;
+      border-top: 1px solid #dce6f1;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-action span {
+      color: #0857c3;
+      font-size: 0.46rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    #apple-presentation-mode #pres-slide-9 .pres-explorer-trend-action p {
+      display: -webkit-box;
+      margin: 0.08rem 0 0;
+      overflow: hidden;
+      color: #334155;
+      font-size: 0.5rem;
+      font-weight: 760;
+      line-height: 1.3;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    @media (max-width: 900px) {
+      #apple-presentation-mode .pres-global-scope-control {
+        min-width: 148px;
+      }
+
+      #apple-presentation-mode .pres-global-scope-control small,
+      #apple-presentation-mode .pres-prognosa-copy small {
+        display: none;
+      }
+
+      #apple-presentation-mode .pres-prognosa-control {
+        min-width: 106px;
+      }
+    }
+
+    @media (max-width: 560px) {
+      #apple-presentation-mode .pres-global-scope-control {
+        min-width: 138px;
+        height: 34px;
+        padding: 0.22rem 0.4rem;
+      }
+
+      #apple-presentation-mode .pres-global-scope-control select {
+        font-size: 0.61rem;
+      }
+
+      #apple-presentation-mode .pres-prognosa-control {
+        min-width: 48px;
+        width: 48px;
+        height: 34px;
+        padding: 0.25rem 0.48rem;
+      }
+
+      #apple-presentation-mode .pres-prognosa-copy {
+        display: none;
+      }
+    }

@@ -2,12 +2,76 @@
 
 namespace Tests\Unit;
 
+use App\Services\Import\ExcelStagingService;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
 
 class SimpananMultiPnExcelProcessorScriptTest extends TestCase
 {
+    public function test_excel_staging_service_monitors_the_python_process_without_blocking(): void
+    {
+        $python = $this->resolvePythonBinary();
+        if ($python === null) {
+            $this->markTestSkipped('Python tidak tersedia untuk menjalankan prosesor Simpanan MultiPN.');
+        }
+
+        $dir = storage_path('framework/testing/simpanan_excel_monitor_' . uniqid());
+        mkdir($dir, 0777, true);
+        $xlsxPath = $dir . DIRECTORY_SEPARATOR . 'source.xlsx';
+        $csvPath = $dir . DIRECTORY_SEPARATOR . 'stage.csv';
+        $headers = ['COL_0', 'Posisi', 'COL_2', 'Regional Office', 'Kantor Cabang', 'COL_5', 'Unit Kerja', 'CIFNO', 'No Rekening', 'Status', 'Jenis Simpanan', 'Saldo IDR'];
+
+        try {
+            $spreadsheet = new Spreadsheet();
+            $spreadsheet->getActiveSheet()->fromArray([
+                ['Kelolaan Rekening Simpanan Multi PN'],
+                [],
+                [],
+                ['Kriteria Report', null, ': Rekening Aktif'],
+                ['Date Printed', null, ': 21-07-2026 10:00:00 AM'],
+                ['No', 'Posisi', '', 'Regional Office', 'Kantor Cabang', '', 'Unit Kerja', 'CIFNO', 'No Rekening', 'Status', 'Jenis Simpanan', 'Saldo IDR'],
+                [1, '19-07-2026', '', 'R -- KANWIL MALANG', '00045 -- KC Madiun', '', '03886 -- UNIT MEJAYAN MADIUN', 'CIF001', '000123', '01', 'TABUNGAN', '100.00'],
+            ]);
+            (new Xlsx($spreadsheet))->save($xlsxPath);
+
+            $nativePreview = app(ExcelStagingService::class)->extractPreviewViaNativeXlsx($xlsxPath, 10);
+            $this->assertIsArray($nativePreview);
+            $this->assertCount(12, $nativePreview['headers']);
+            $this->assertSame('', $nativePreview['headers'][2]);
+            $this->assertSame('', $nativePreview['headers'][5]);
+            $this->assertSame('Jenis Simpanan', $nativePreview['headers'][10]);
+            $this->assertSame('Saldo IDR', $nativePreview['headers'][11]);
+
+            $events = [];
+            $result = app(ExcelStagingService::class)->stageExcelToCsv(
+                static function (string $event, array $payload) use (&$events): void {
+                    $events[] = [$event, $payload];
+                },
+                $xlsxPath,
+                5,
+                $headers,
+                $csvPath,
+                base_path('scripts/simpanan_multipn_polars_processor.py'),
+                'test_excel_stage_monitor_',
+                0,
+                ['table_name' => 'simpanan_multipn']
+            );
+
+            $this->assertIsArray($result);
+            $this->assertSame(1, $result['total_rows']);
+            $this->assertFileExists($csvPath);
+            $this->assertNotEmpty($events);
+            $this->assertSame([], glob(storage_path('app/test_excel_stage_monitor_*.stdout.log')) ?: []);
+            $this->assertSame([], glob(storage_path('app/test_excel_stage_monitor_*.stderr.log')) ?: []);
+        } finally {
+            if (isset($spreadsheet)) {
+                $spreadsheet->disconnectWorksheets();
+            }
+            \Illuminate\Support\Facades\File::deleteDirectory($dir);
+        }
+    }
+
     public function test_stage_streams_excel_without_changing_source_text_or_column_positions(): void
     {
         $python = $this->resolvePythonBinary();
@@ -40,6 +104,7 @@ class SimpananMultiPnExcelProcessorScriptTest extends TestCase
         ]);
         (new Xlsx($spreadsheet))->save($xlsxPath);
         $spreadsheet->disconnectWorksheets();
+        $this->removeWorksheetDimensionMetadata($xlsxPath);
 
         $headers = ['COL_0', 'Posisi', 'COL_2', 'Regional Office', 'Kantor Cabang', 'COL_5', 'Unit Kerja', 'CIFNO', 'No Rekening', 'Status', 'Jenis Simpanan', 'Saldo IDR'];
         file_put_contents($configPath, json_encode([
@@ -76,6 +141,7 @@ class SimpananMultiPnExcelProcessorScriptTest extends TestCase
         $this->assertSame('0004901009801538', $row[8]);
         $this->assertSame('01', $row[9]);
         $this->assertSame('1.234,50', $row[11]);
+        $this->assertStringContainsString('"backend": "xlsx-xml-stream"', implode("\n", $output));
         $this->assertStringContainsString('"full_vectorization": false', implode("\n", $output));
     }
 
@@ -166,5 +232,18 @@ class SimpananMultiPnExcelProcessorScriptTest extends TestCase
         if ($exitCode !== 0) {
             $this->markTestSkipped("Python module {$module} tidak tersedia.");
         }
+    }
+
+    private function removeWorksheetDimensionMetadata(string $xlsxPath): void
+    {
+        $archive = new \ZipArchive();
+        $this->assertTrue($archive->open($xlsxPath) === true);
+
+        $worksheet = $archive->getFromName('xl/worksheets/sheet1.xml');
+        $this->assertIsString($worksheet);
+        $worksheetWithoutDimension = preg_replace('/<dimension\b[^>]*\/>/', '', $worksheet, 1);
+        $this->assertIsString($worksheetWithoutDimension);
+        $this->assertTrue($archive->addFromString('xl/worksheets/sheet1.xml', $worksheetWithoutDimension));
+        $archive->close();
     }
 }

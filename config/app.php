@@ -105,6 +105,11 @@ return [
         ),
     ],
 
+    'security_rate_limits' => [
+        'admin_sensitive_per_minute' => (int) env('SECURITY_ADMIN_SENSITIVE_LIMIT_PER_MINUTE', 30),
+        'auth_sensitive_per_minute' => (int) env('SECURITY_AUTH_SENSITIVE_LIMIT_PER_MINUTE', 12),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Maintenance Mode Driver

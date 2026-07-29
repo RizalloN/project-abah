@@ -8,14 +8,26 @@
 @php
     $selectedBranchValue = $selectedBranches[0] ?? 'AREA_6_ALL';
     $selectedUnitValue = $selectedUnits[0] ?? 'ALL_UKER';
+    $selectedSegmentValue = $selectedSegments[0] ?? 'ALL_SEGMEN';
 @endphp
 
 <style>
+    .ug-npl-page,
+    .ug-npl-page * {
+        box-sizing: border-box;
+    }
+
     .ug-npl-page {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: clip;
         color: #0f172a;
     }
 
     .ug-npl-panel {
+        min-width: 0;
+        max-width: 100%;
         border: 1px solid #cbd5e1;
         border-top: 3px solid var(--loan-blue);
         background: #ffffff;
@@ -24,14 +36,19 @@
     }
 
     .ug-npl-panel-body {
+        min-width: 0;
         padding: 1rem;
     }
 
     .ug-npl-filter-grid {
         display: grid;
-        grid-template-columns: repeat(5, minmax(150px, 1fr)) auto;
+        grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
         gap: 0.75rem;
         align-items: end;
+    }
+
+    .ug-npl-field {
+        min-width: 0;
     }
 
     .ug-npl-field label {
@@ -46,6 +63,7 @@
 
     .ug-npl-control {
         width: 100%;
+        min-width: 0;
         height: 40px;
         border: 1px solid #cbd5e1;
         border-radius: 0;
@@ -54,11 +72,15 @@
         font-size: 0.82rem;
         font-weight: 700;
         padding: 0.35rem 0.65rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .ug-npl-actions {
         display: flex;
+        min-width: 0;
         gap: 0.5rem;
+        flex-wrap: wrap;
         justify-content: flex-end;
     }
 
@@ -94,6 +116,8 @@
 
     .ug-npl-hero {
         display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
         justify-content: space-between;
         gap: 1rem;
         padding: 1.1rem 1.25rem;
@@ -103,12 +127,18 @@
         background: #ffffff;
     }
 
+    .ug-npl-hero-copy {
+        min-width: 0;
+        flex: 1 1 420px;
+    }
+
     .ug-npl-title {
         margin: 0;
         color: var(--loan-blue-ink);
         font-size: 1.35rem;
         font-weight: 900;
         text-transform: uppercase;
+        overflow-wrap: anywhere;
     }
 
     .ug-npl-meta {
@@ -116,27 +146,31 @@
         color: #64748b;
         font-size: 0.82rem;
         font-weight: 700;
+        overflow-wrap: anywhere;
     }
 
     .ug-npl-status {
-        align-self: center;
+        align-self: flex-start;
+        max-width: min(100%, 430px);
         border: 1px solid #cbd5e1;
         background: #f8fafc;
         color: #475569;
         padding: 0.45rem 0.75rem;
         font-size: 0.78rem;
         font-weight: 800;
-        white-space: nowrap;
+        text-align: right;
+        overflow-wrap: anywhere;
     }
 
     .ug-npl-metrics {
         display: grid;
-        grid-template-columns: repeat(4, minmax(160px, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 0.75rem;
         margin-bottom: 1rem;
     }
 
     .ug-npl-metric {
+        min-width: 0;
         border: 1px solid #cbd5e1;
         background: #ffffff;
         padding: 0.9rem 1rem;
@@ -160,17 +194,29 @@
         font-weight: 900;
         line-height: 1.2;
         font-variant-numeric: tabular-nums;
+        overflow-wrap: anywhere;
     }
 
     .ug-npl-table-wrap {
+        position: relative;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
         overflow: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-gutter: stable;
         border: 1px solid #cbd5e1;
         background: #ffffff;
-        max-height: 64vh;
+        max-height: var(--ug-npl-table-max-height, 64dvh);
+    }
+
+    .ug-npl-action-table-wrap {
+        --ug-npl-table-max-height: 280px;
     }
 
     .ug-npl-table {
-        width: 100%;
+        width: max-content;
         min-width: 1320px;
         border-collapse: separate;
         border-spacing: 0;
@@ -196,9 +242,31 @@
         text-align: center;
         font-weight: 850;
         text-transform: uppercase;
+        white-space: normal;
+        line-height: 1.2;
+    }
+
+    .ug-npl-table th:first-child,
+    .ug-npl-table td:first-child:not([colspan]) {
+        position: sticky;
+        left: 0;
+    }
+
+    .ug-npl-table th:first-child {
+        z-index: 3;
+    }
+
+    .ug-npl-table td:first-child:not([colspan]) {
+        z-index: 1;
+        background: #ffffff;
+        box-shadow: 2px 0 0 #e2e8f0;
     }
 
     .ug-npl-table tbody tr:nth-child(even) td {
+        background: #f8fafc;
+    }
+
+    .ug-npl-table tbody tr:nth-child(even) td:first-child:not([colspan]) {
         background: #f8fafc;
     }
 
@@ -208,6 +276,7 @@
     }
 
     .ug-npl-chip {
+        max-width: 100%;
         display: inline-flex;
         align-items: center;
         min-height: 24px;
@@ -217,12 +286,58 @@
         color: #334155;
         font-size: 0.72rem;
         font-weight: 800;
+        overflow-wrap: anywhere;
+    }
+
+    .ug-npl-cell-wrap {
+        min-width: 180px;
+        max-width: 280px;
+        white-space: normal !important;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+    }
+
+    .ug-npl-section-head {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .ug-npl-section-head h5 {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 1399.98px) {
+        .ug-npl-filter-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .ug-npl-actions {
+            grid-column: span 3;
+        }
     }
 
     @media (max-width: 991.98px) {
-        .ug-npl-filter-grid,
         .ug-npl-metrics {
             grid-template-columns: 1fr 1fr;
+        }
+
+        .ug-npl-table-wrap {
+            scrollbar-gutter: auto;
+        }
+    }
+
+    @media (max-width: 767.98px) {
+        .ug-npl-filter-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .ug-npl-actions {
+            grid-column: span 2;
         }
     }
 
@@ -232,19 +347,51 @@
             grid-template-columns: 1fr;
         }
 
+        .ug-npl-actions {
+            grid-column: auto;
+            justify-content: stretch;
+        }
+
+        .ug-npl-btn {
+            flex: 1 1 0;
+            justify-content: center;
+            padding: 0 0.65rem;
+        }
+
         .ug-npl-hero {
             flex-direction: column;
+        }
+
+        .ug-npl-status {
+            max-width: 100%;
+            text-align: left;
+        }
+
+        .ug-npl-panel-body {
+            padding: 0.8rem;
+        }
+
+        .ug-npl-table th,
+        .ug-npl-table td {
+            padding: 0.45rem 0.55rem;
+            font-size: 0.74rem;
+        }
+    }
+
+    @media (max-height: 700px) and (min-width: 768px) {
+        .ug-npl-table-wrap {
+            max-height: min(var(--ug-npl-table-max-height, 64dvh), 52dvh);
         }
     }
 </style>
 
 <div class="loan-dashboard ug-npl-page">
     <div class="ug-npl-hero">
-        <div>
+        <div class="ug-npl-hero-copy">
             <h1 class="ug-npl-title">Analisa UG NPL</h1>
             <p class="ug-npl-meta">Estimasi siklus bayar anuitas berdasarkan umur tunggakan dan NPB LA.</p>
         </div>
-        <div class="ug-npl-status" id="ugNplStatus">Menyiapkan data</div>
+        <div class="ug-npl-status" id="ugNplStatus" aria-live="polite">Menyiapkan data</div>
     </div>
 
     <div class="ug-npl-panel">
@@ -283,6 +430,16 @@
                                     </option>
                                 @endforeach
                             @endif
+                        </select>
+                    </div>
+                    <div class="ug-npl-field">
+                        <label for="ugNplSegment">Segmen</label>
+                        <select id="ugNplSegment" name="segmen_dashboard" class="ug-npl-control">
+                            @foreach($segmentOptions as $segment)
+                                <option value="{{ $segment }}" {{ $segment === $selectedSegmentValue ? 'selected' : '' }}>
+                                    {{ $segment === 'ALL_SEGMEN' ? 'Semua Segmen' : $segment }}
+                                </option>
+                            @endforeach
                         </select>
                     </div>
                     <div class="ug-npl-field">
@@ -338,7 +495,7 @@
     <div class="ug-npl-panel">
         <div class="ug-npl-panel-body">
             <h5 class="mb-3 font-weight-bold text-uppercase">Ringkasan Action</h5>
-            <div class="ug-npl-table-wrap" style="max-height: 280px;">
+            <div class="ug-npl-table-wrap ug-npl-action-table-wrap" tabindex="0" aria-label="Tabel ringkasan action UG NPL">
                 <table class="ug-npl-table" style="min-width: 980px;">
                     <thead>
                         <tr>
@@ -363,17 +520,18 @@
 
     <div class="ug-npl-panel">
         <div class="ug-npl-panel-body">
-            <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="ug-npl-section-head mb-3">
                 <h5 class="mb-0 font-weight-bold text-uppercase">Nominatif Prioritas</h5>
                 <span class="ug-npl-chip" id="ugNplRowInfo">0 row</span>
             </div>
-            <div class="ug-npl-table-wrap">
+            <div class="ug-npl-table-wrap ug-npl-detail-table-wrap" tabindex="0" aria-label="Tabel nominatif prioritas UG NPL">
                 <table class="ug-npl-table">
                     <thead>
                         <tr>
                             <th>Action</th>
                             <th>Cabang</th>
                             <th>Unit</th>
+                            <th>Segmen</th>
                             <th>No Rekening</th>
                             <th>Nama Debitur</th>
                             <th>Kolek</th>
@@ -392,7 +550,7 @@
                         </tr>
                     </thead>
                     <tbody id="ugNplRowsBody">
-                        <tr><td colspan="18" class="text-center text-muted">Memuat data...</td></tr>
+                        <tr><td colspan="19" class="text-center text-muted">Memuat data...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -412,21 +570,60 @@
         const rowsBody = document.getElementById('ugNplRowsBody');
         const rowInfo = document.getElementById('ugNplRowInfo');
         const dataUrl = @json(route('report.dashboard-pinjaman.analisa-ug-npl.data'));
+        const tableWraps = Array.from(document.querySelectorAll('.ug-npl-table-wrap'));
+        let activeRequest = null;
+        let requestSequence = 0;
+        let viewportFrame = 0;
 
         function currency(value) {
             return `Rp ${formatNumber(Math.round(Number(value || 0)))}`;
         }
 
-        function setLoading(isLoading, message) {
-            statusEl.textContent = message;
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>'"]/g, (character) => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                "'": '&#039;',
+                '"': '&quot;',
+            }[character]));
+        }
+
+        function displayText(value, fallback = '-') {
+            const text = String(value ?? '').trim();
+            return escapeHtml(text || fallback);
+        }
+
+        function setLoading(isLoading, message = null) {
+            if (message !== null) statusEl.textContent = message;
             refreshButton.disabled = isLoading;
             refreshIcon.className = isLoading ? 'fas fa-spinner fa-spin' : 'fas fa-sync-alt';
+            form.setAttribute('aria-busy', isLoading ? 'true' : 'false');
         }
 
         function paramsFromForm(forceRefresh = false) {
             const params = new URLSearchParams(new FormData(form));
+            const unitControl = document.getElementById('ugNplUnit');
+            if (unitControl && unitControl.disabled) params.set('unit1', 'ALL_UKER');
             if (forceRefresh) params.set('refresh', '1');
             return params;
+        }
+
+        function scheduleViewportSync() {
+            if (viewportFrame) cancelAnimationFrame(viewportFrame);
+            viewportFrame = requestAnimationFrame(() => {
+                viewportFrame = 0;
+                const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || 0);
+                tableWraps.forEach((wrap) => {
+                    const rect = wrap.getBoundingClientRect();
+                    const isSummary = wrap.classList.contains('ug-npl-action-table-wrap');
+                    const minimum = isSummary ? 180 : 260;
+                    const maximum = isSummary ? 300 : 680;
+                    const available = Math.floor(viewportHeight - Math.max(0, rect.top) - 20);
+                    const height = Math.max(minimum, Math.min(maximum, available || minimum));
+                    wrap.style.setProperty('--ug-npl-table-max-height', `${height}px`);
+                });
+            });
         }
 
         function renderSummary(summary) {
@@ -444,7 +641,7 @@
 
             actionBody.innerHTML = actions.map((item) => `
                 <tr>
-                    <td><span class="ug-npl-chip">${item.label}</span></td>
+                    <td><span class="ug-npl-chip">${displayText(item.label)}</span></td>
                     <td class="text-right">${formatNumber(item.accounts || 0)}</td>
                     <td class="text-right">${currency(item.outstanding)}</td>
                     <td class="text-right">${currency(item.current_arrears)}</td>
@@ -460,21 +657,22 @@
         function renderRows(rows, payload) {
             rowInfo.textContent = `${formatNumber(payload.row_count || 0)} row ditampilkan`;
             if (!rows || rows.length === 0) {
-                rowsBody.innerHTML = '<tr><td colspan="18" class="text-center text-muted">Tidak ada nominatif.</td></tr>';
+                rowsBody.innerHTML = '<tr><td colspan="19" class="text-center text-muted">Tidak ada nominatif.</td></tr>';
                 return;
             }
 
             rowsBody.innerHTML = rows.map((row) => `
                 <tr>
-                    <td><span class="ug-npl-chip">${row.action_label}</span></td>
-                    <td>${row.cabang1 || '-'}</td>
-                    <td>${row.unit1 || '-'}</td>
-                    <td>${row.nomor_rekening1 || '-'}</td>
-                    <td>${row.nama_debitur1 || '-'}</td>
-                    <td class="text-center">${row.current_bucket || '-'}</td>
-                    <td class="text-center">${row.target_bucket || '-'}</td>
-                    <td class="text-center">${row.loan_type || '-'}</td>
-                    <td>${row.payment_rule || '-'}</td>
+                    <td><span class="ug-npl-chip">${displayText(row.action_label)}</span></td>
+                    <td>${displayText(row.cabang1)}</td>
+                    <td>${displayText(row.unit1)}</td>
+                    <td><span class="ug-npl-chip">${displayText(row.segmen_dashboard)}</span></td>
+                    <td>${displayText(row.nomor_rekening1)}</td>
+                    <td class="ug-npl-cell-wrap">${displayText(row.nama_debitur1)}</td>
+                    <td class="text-center">${displayText(row.current_bucket)}</td>
+                    <td class="text-center">${displayText(row.target_bucket)}</td>
+                    <td class="text-center">${displayText(row.loan_type)}</td>
+                    <td class="ug-npl-cell-wrap">${displayText(row.payment_rule)}</td>
                     <td class="text-right">${formatNumber(row.umur_tunggakan || 0)}</td>
                     <td class="text-right">${formatNumber(row.effective_months || 0)}</td>
                     <td class="text-right">${formatNumber(row.cycles || 0)}</td>
@@ -489,27 +687,46 @@
         }
 
         async function loadData(forceRefresh = false) {
+            const sequence = ++requestSequence;
+            if (activeRequest) activeRequest.abort();
+            activeRequest = new AbortController();
             setLoading(true, 'Memuat data');
             try {
                 const response = await fetch(`${dataUrl}?${paramsFromForm(forceRefresh).toString()}`, {
                     headers: { 'Accept': 'application/json' },
+                    signal: activeRequest.signal,
                 });
                 if (!response.ok) throw new Error('Gagal memuat data');
                 const payload = await response.json();
+                if (sequence !== requestSequence) return;
                 renderSummary(payload.summary || {});
                 renderActions(payload.actions || []);
                 renderRows(payload.rows || [], payload);
-                statusEl.textContent = `Periode ${formatDate(payload.selected_period)} - horizon ${payload.horizon_days} hari`;
+                statusEl.textContent = `Periode ${formatDate(payload.selected_period)} - ${payload.segment_label || 'Semua Segmen'} - horizon ${payload.horizon_days} hari`;
+                scheduleViewportSync();
             } catch (error) {
+                if (error.name === 'AbortError' || sequence !== requestSequence) return;
                 statusEl.textContent = 'Gagal memuat data';
                 actionBody.innerHTML = '<tr><td colspan="9" class="text-center text-danger">Gagal memuat data.</td></tr>';
-                rowsBody.innerHTML = '<tr><td colspan="18" class="text-center text-danger">Gagal memuat data.</td></tr>';
+                rowsBody.innerHTML = '<tr><td colspan="19" class="text-center text-danger">Gagal memuat data.</td></tr>';
             } finally {
-                setLoading(false, statusEl.textContent);
+                if (sequence === requestSequence) {
+                    activeRequest = null;
+                    setLoading(false);
+                    scheduleViewportSync();
+                }
             }
         }
 
         refreshButton.addEventListener('click', () => loadData(true));
+        window.addEventListener('resize', scheduleViewportSync, { passive: true });
+        window.addEventListener('orientationchange', scheduleViewportSync, { passive: true });
+        window.visualViewport?.addEventListener('resize', scheduleViewportSync, { passive: true });
+        if ('ResizeObserver' in window) {
+            const observer = new ResizeObserver(scheduleViewportSync);
+            observer.observe(document.querySelector('.ug-npl-page'));
+        }
+        scheduleViewportSync();
         loadData(false);
     });
 </script>

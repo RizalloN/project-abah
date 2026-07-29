@@ -60,6 +60,9 @@ function Invoke-ProcessWithTimeout {
             -PassThru `
             -RedirectStandardOutput $stdoutPath `
             -RedirectStandardError $stderrPath
+        # PowerShell 5 can lose ExitCode after a fast process exits unless its
+        # native handle is materialized while the process is still alive.
+        $null = $process.Handle
 
         $timedOut = $false
         if ($TimeoutSeconds -gt 0) {
@@ -77,7 +80,11 @@ function Invoke-ProcessWithTimeout {
             Wait-Process -Id $process.Id
         }
 
+        if (-not $timedOut) {
+            $process.WaitForExit()
+        }
         $process.Refresh()
+        $resolvedExitCode = if ($timedOut) { $null } elseif ($null -eq $process.ExitCode) { 1 } else { [int]$process.ExitCode }
         $output = @()
         if (Test-Path $stdoutPath) {
             $output += Get-Content -Path $stdoutPath -ErrorAction SilentlyContinue
@@ -88,7 +95,7 @@ function Invoke-ProcessWithTimeout {
 
         return @{
             TimedOut = $timedOut
-            ExitCode = if ($timedOut) { $null } else { $process.ExitCode }
+            ExitCode = $resolvedExitCode
             Output = $output
         }
     } finally {
@@ -98,7 +105,7 @@ function Invoke-ProcessWithTimeout {
 
 $importWorkerCount = Get-IntSetting -Value $ImportWorkers -EnvName 'ABAH_IMPORT_WORKERS' -Default 3
 $reportWorkerCount = Get-IntSetting -Value $ReportWorkers -EnvName 'ABAH_REPORT_WORKERS' -Default 3
-$snapshotWorkerCount = Get-IntSetting -Value $SnapshotWorkers -EnvName 'ABAH_SNAPSHOT_WORKERS' -Default 2
+$snapshotWorkerCount = Get-IntSetting -Value $SnapshotWorkers -EnvName 'ABAH_SNAPSHOT_WORKERS' -Default 3
 $shadowWorkerCount = Get-IntSetting -Value $ShadowWorkers -EnvName 'ABAH_SHADOW_WORKERS' -Default 2
 $queueWorkerMemory = Get-IntSetting -Value $WorkerMemory -EnvName 'ABAH_WORKER_MEMORY' -Default 512
 $queueWorkerMaxJobs = Get-IntSetting -Value $WorkerMaxJobs -EnvName 'ABAH_WORKER_MAX_JOBS' -Default 25
@@ -107,6 +114,16 @@ $startupMigrateTimeout = Get-IntSetting -Value $null -EnvName 'ABAH_START_MIGRAT
 $startupQueueRestartTimeout = Get-IntSetting -Value $null -EnvName 'ABAH_START_QUEUE_RESTART_TIMEOUT' -Default 60
 
 Write-Host ("Worker policy: memory {0}MB, max-jobs {1}, max-time {2}s." -f $queueWorkerMemory, $queueWorkerMaxJobs, $queueWorkerMaxTime)
+
+Write-Host 'Menerapkan runtime tuning database...'
+try {
+    & php artisan database:performance-tune --no-interaction
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Database tuning selesai dengan exit code $LASTEXITCODE."
+    }
+} catch {
+    Write-Warning ("Database runtime tuning gagal: {0}" -f $_.Exception.Message)
+}
 
 # Ensure schema is current before spawning workers. Critical for snapshot dirty-period
 # triggers (migration 2026_05_12_000002_create_dirty_marker_triggers.php) which let
@@ -130,6 +147,16 @@ try {
     }
 } catch {
     Write-Warning ("Tidak dapat menjalankan php artisan migrate: {0}" -f $_.Exception.Message)
+}
+
+Write-Host 'Menjalankan maintenance log sebelum worker dimulai...'
+try {
+    & php artisan logs:maintenance --no-interaction | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Log maintenance selesai dengan exit code $LASTEXITCODE."
+    }
+} catch {
+    Write-Warning ("Log maintenance startup gagal: {0}" -f $_.Exception.Message)
 }
 
 if (-not $SkipQueueRestart) {
@@ -183,7 +210,8 @@ function Start-PersistentQueuePool {
         [string]$Queues,
         [string]$LogPath,
         [string]$WorkerKey,
-        [int]$DesiredCount = 1
+        [int]$DesiredCount = 1,
+        [int]$Tries = 1
     )
 
     if ($DesiredCount -le 0) {
@@ -218,7 +246,7 @@ function Start-PersistentQueuePool {
 
         $slotWorkerName = "$WorkerKey-$slot"
         $scriptPath = Join-Path $projectRoot 'scripts\queue-persistent.ps1'
-        $command = "cd /d `"$projectRoot`" && powershell -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Queues `"$Queues`" -Tries 1 -Timeout 0 -Sleep 1 -Memory $queueWorkerMemory -MaxJobs $queueWorkerMaxJobs -MaxTimeSeconds $queueWorkerMaxTime -RestartDelaySeconds 3 -WorkerName `"$slotWorkerName`" >> `"$slotLogPath`" 2>&1"
+        $command = "cd /d `"$projectRoot`" && powershell -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Queues `"$Queues`" -Tries $Tries -Timeout 0 -Sleep 1 -Memory $queueWorkerMemory -MaxJobs $queueWorkerMaxJobs -MaxTimeSeconds $queueWorkerMaxTime -RestartDelaySeconds 3 -WorkerName `"$slotWorkerName`" >> `"$slotLogPath`" 2>&1"
         Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $command -WindowStyle Hidden | Out-Null
         Write-Host "$Name persistent worker $slot/$DesiredCount dijalankan. Log: $slotLogPath"
     }
@@ -245,15 +273,22 @@ function Start-PersistentScheduler {
 # --- Queue routing rationale ---
 # imports-daily-loan is handled exclusively by import workers to prevent 12-worker
 # competition for a single-worker job. Report workers focus on their own queues.
-# Snapshot and shadow workers drain reports-low when idle, making use of spare
-# capacity instead of leaving those pools completely idle between builds.
+# Every high-cost workload has an explicit pool so one backlog cannot starve
+# imports, remote refreshes, or priority snapshots.
 
 Start-PersistentQueuePool `
     -Name 'Import queue worker' `
-    -Queues 'imports-high,imports-daily-loan' `
+    -Queues 'imports-high' `
     -LogPath (Join-Path $projectRoot 'storage\logs\persistent-import-queue-worker.log') `
     -WorkerKey 'abah-import-worker' `
     -DesiredCount $importWorkerCount
+
+Start-PersistentQueuePool `
+    -Name 'Daily Loan import worker' `
+    -Queues 'imports-daily-loan' `
+    -LogPath (Join-Path $projectRoot 'storage\logs\persistent-daily-loan-worker.log') `
+    -WorkerKey 'abah-daily-loan-worker' `
+    -DesiredCount 1
 
 Start-PersistentQueuePool `
     -Name 'Report queue worker' `
@@ -263,15 +298,30 @@ Start-PersistentQueuePool `
     -DesiredCount $reportWorkerCount
 
 Start-PersistentQueuePool `
+    -Name 'Remote source worker' `
+    -Queues 'remote-sources' `
+    -LogPath (Join-Path $projectRoot 'storage\logs\persistent-remote-source-worker.log') `
+    -WorkerKey 'abah-remote-source-worker' `
+    -DesiredCount 2 `
+    -Tries 3
+
+Start-PersistentQueuePool `
+    -Name 'Priority snapshot worker' `
+    -Queues 'snapshots-priority' `
+    -LogPath (Join-Path $projectRoot 'storage\logs\persistent-priority-snapshot-worker.log') `
+    -WorkerKey 'abah-priority-snapshot-worker' `
+    -DesiredCount 1
+
+Start-PersistentQueuePool `
     -Name 'Snapshot queue worker' `
-    -Queues 'snapshots-parallel,reports-low' `
+    -Queues 'snapshots-parallel' `
     -LogPath (Join-Path $projectRoot 'storage\logs\persistent-snapshot-queue-worker.log') `
     -WorkerKey 'abah-snapshot-worker' `
     -DesiredCount $snapshotWorkerCount
 
 Start-PersistentQueuePool `
     -Name 'Shadow backfill queue worker' `
-    -Queues 'shadow-backfill,reports-low' `
+    -Queues 'shadow-backfill' `
     -LogPath (Join-Path $projectRoot 'storage\logs\persistent-shadow-backfill-worker.log') `
     -WorkerKey 'abah-shadow-worker' `
     -DesiredCount $shadowWorkerCount

@@ -124,7 +124,7 @@ test('users can not authenticate with invalid password', function () {
     expect(Auth::check())->toBeFalse();
 });
 
-test('valid credentials can recover from a stale login lock', function () {
+test('valid credentials remain blocked while the login limiter is active', function () {
     $user = User::factory()->create([
         'pn' => '90179583',
         'role' => 'admin',
@@ -144,11 +144,11 @@ test('valid credentials can recover from a stale login lock', function () {
     RateLimiter::hit($request->throttleKey(), 900);
     RateLimiter::hit($request->throttleKey(), 900);
 
-    $response = app(AuthenticatedSessionController::class)->store($request);
+    expect(fn () => app(AuthenticatedSessionController::class)->store($request))
+        ->toThrow(\Illuminate\Validation\ValidationException::class);
 
-    expect(Auth::check())->toBeTrue();
-    expect($response->getStatusCode())->toBeIn([302, 303]);
-    expect(RateLimiter::tooManyAttempts($request->throttleKey(), 5))->toBeFalse();
+    expect(Auth::check())->toBeFalse();
+    expect(RateLimiter::tooManyAttempts($request->throttleKey(), 5))->toBeTrue();
 });
 
 test('users can logout', function () {

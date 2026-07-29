@@ -153,7 +153,7 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         ));
     }
 
-    public function test_daily_loan_freshness_rebuilds_fresh_snapshot_when_duplicate_identity_exists(): void
+    public function test_daily_loan_freshness_accepts_distinct_source_rows_with_same_business_identity(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             'periode' => '2026-05-06',
@@ -164,6 +164,7 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
 
         DB::table('dashboard_pinjaman_snapshots')->insert([
             $this->snapshotRow('periode', '2026-05-06', '2026-05-08 11:00:00') + [
+                'uniqueid_dps' => 'snapshot-row-1',
                 'account_number' => 'LOAN-1',
                 'segmen_dashboard' => 'SMALL',
                 'produk_dashboard' => 'KUPEDES',
@@ -171,6 +172,7 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
                 'unit1' => 'UNIT 1',
             ],
             $this->snapshotRow('periode', '2026-05-06', '2026-05-08 11:00:00') + [
+                'uniqueid_dps' => 'snapshot-row-2',
                 'account_number' => 'LOAN-1',
                 'segmen_dashboard' => 'SMALL',
                 'produk_dashboard' => 'KUPEDES',
@@ -189,10 +191,7 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         $this->markFresh('daily_loan_dinamis', 'rasio_casa_debitur_snapshots', '2026-05-06', $metadata);
 
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
-        $builder->shouldReceive('rebuildDashboard')
-            ->once()
-            ->with('2026-05-06', false)
-            ->andReturn(['2026-05-06' => 2]);
+        $builder->shouldNotReceive('rebuildDashboard');
         $builder->shouldNotReceive('rebuildChartPeriodik');
         $builder->shouldNotReceive('rebuildPerformanceRm');
         $builder->shouldNotReceive('rebuildRasioCasa');
@@ -805,6 +804,7 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         }
 
         Schema::table('dashboard_pinjaman_snapshots', function (Blueprint $table) {
+            $table->string('uniqueid_dps')->nullable();
             $table->string('account_number')->nullable();
             $table->string('segmen_dashboard')->nullable();
             $table->string('produk_dashboard')->nullable();

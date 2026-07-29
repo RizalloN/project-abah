@@ -19,7 +19,7 @@
     z-index: 1;
     scrollbar-width: thin;
     scrollbar-color: #cbd5e1 transparent;
-    scrollbar-gutter: stable both-edges;
+    scrollbar-gutter: stable;
     box-sizing: border-box;
     padding-bottom: var(--table-scrollbar-space);
 }
@@ -71,9 +71,10 @@
         position: relative;
         top: auto;
         height: auto !important;
-        max-height: none !important;
+        max-height: min(68vh, 680px) !important;
+        max-height: min(68dvh, 680px) !important;
         overflow-x: auto;
-        overflow-y: visible;
-        overscroll-behavior: auto;
+        overflow-y: auto;
+        overscroll-behavior: contain;
     }
 }

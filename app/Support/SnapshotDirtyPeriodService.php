@@ -187,6 +187,12 @@ class SnapshotDirtyPeriodService
 
         $cleared = $deleted > 0;
         if ($cleared) {
+            $this->forgetFailedMarker([
+                'source_table' => (string) ($claim['source_table'] ?? ''),
+                'period_key' => (string) ($claim['period_key'] ?? ''),
+                'shard_type' => (string) ($claim['shard_type'] ?? self::DEFAULT_SHARD_TYPE),
+                'shard_key' => (string) ($claim['shard_key'] ?? self::DEFAULT_SHARD_KEY),
+            ]);
             $this->writeAudit($claim, 'snapshot_dirty_clear', 'success');
         }
 
@@ -273,6 +279,64 @@ class SnapshotDirtyPeriodService
         return (int) $query->count();
     }
 
+    /**
+     * @return array{pruned:int,retried:int,unresolved:int}
+     */
+    public function recoverFailed(int $limit = 25, bool $retryUnresolved = false): array
+    {
+        $result = ['pruned' => 0, 'retried' => 0, 'unresolved' => 0];
+        if (! Schema::hasTable(self::FAILED_TABLE)) {
+            return $result;
+        }
+
+        $rows = DB::table(self::FAILED_TABLE)
+            ->orderBy('failed_at')
+            ->limit(max(1, min(100, $limit)))
+            ->get();
+
+        foreach ($rows as $row) {
+            $key = [
+                'source_table' => (string) $row->source_table,
+                'period_key' => (string) $row->period_key,
+                'shard_type' => (string) $row->shard_type,
+                'shard_key' => (string) $row->shard_key,
+            ];
+
+            $superseded = Schema::hasTable(self::AUDIT_TABLE)
+                && DB::table(self::AUDIT_TABLE)
+                    ->where('table_name', $key['source_table'])
+                    ->where('period_hint', $key['period_key'])
+                    ->where('action', 'snapshot_dirty_clear')
+                    ->where('status', 'success')
+                    ->where('created_at', '>', $row->failed_at)
+                    ->exists();
+
+            if ($superseded) {
+                DB::table(self::FAILED_TABLE)->where($key)->delete();
+                $result['pruned']++;
+
+                continue;
+            }
+
+            if ($retryUnresolved) {
+                $this->mark(
+                    $key['source_table'],
+                    $key['period_key'],
+                    $key['shard_type'],
+                    $key['shard_key'],
+                    max(1, (int) ($row->dirty_row_count ?? 1))
+                );
+                $result['retried']++;
+
+                continue;
+            }
+
+            $result['unresolved']++;
+        }
+
+        return $result;
+    }
+
     private function releaseStaleClaims(?string $sourceTable = null, ?string $period = null): void
     {
         $cutoff = now()->subSeconds(self::CLAIM_STALE_AFTER_SECONDS);
@@ -308,7 +372,17 @@ class SnapshotDirtyPeriodService
             return;
         }
 
-        DB::table(self::FAILED_TABLE)->where($key)->delete();
+        $query = DB::table(self::FAILED_TABLE)
+            ->where('source_table', $key['source_table'])
+            ->where('period_key', $key['period_key']);
+
+        if ($key['shard_type'] !== self::DEFAULT_SHARD_TYPE || $key['shard_key'] !== self::DEFAULT_SHARD_KEY) {
+            $query
+                ->where('shard_type', $key['shard_type'])
+                ->where('shard_key', $key['shard_key']);
+        }
+
+        $query->delete();
     }
 
     private function moveToFailed(object $row, string $message): void

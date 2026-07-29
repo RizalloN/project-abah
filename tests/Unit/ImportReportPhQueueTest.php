@@ -27,7 +27,7 @@ class ImportReportPhQueueTest extends TestCase
 
     protected function tearDown(): void
     {
-        Storage::disk('local')->delete('testing/report_ph_queue.csv');
+        Storage::disk('local')->delete('report_ph_imports/report_ph_queue.csv');
         Mockery::close();
 
         parent::tearDown();
@@ -46,7 +46,7 @@ class ImportReportPhQueueTest extends TestCase
             'active' => 1,
         ]);
 
-        $relativePath = 'testing/report_ph_queue.csv';
+        $relativePath = 'report_ph_imports/report_ph_queue.csv';
         Storage::disk('local')->put($relativePath, implode("\n", [
             'Textbox3,PERIODE,ACCTNO,KANWIL,KANCA,UNIT,NAMA_DEBITUR,CIF1,FKSEGMEN,SEGMEN_DASHBOARD,DESCRIPTION,PRODUK_DASHBOARD,TGL_PH,TGL_REALISASI,CURTYP,POKOK,BUNGA',
             '1,4/4/2026 12:00:00 AM,814601007586100,KANWIL MALANG,KC Ponorogo,UNIT PASAR CONDONG PONOROGO,SUMIHAR PANJAITAN,SIWZ507,11100,Micro,Kupedes,Kupedes,16/10/2025,11/09/2024,IDR,"219,000.00","1,267,362.25"',

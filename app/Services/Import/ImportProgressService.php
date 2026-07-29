@@ -57,6 +57,10 @@ class ImportProgressService
         if ($attributes !== []) {
             $attributes['updated_at'] = now();
             DB::table('import_jobs')->where('id', $jobId)->update($attributes);
+
+            if (array_key_exists('status', $attributes)) {
+                app(ActiveImportJobCounter::class)->forget();
+            }
         }
 
         if ($progressPayload !== null) {
@@ -84,6 +88,7 @@ class ImportProgressService
 
         try {
             DB::table('import_jobs')->insert($attributes);
+            app(ActiveImportJobCounter::class)->forget();
 
             return $nextId;
         } catch (QueryException $e) {
@@ -616,6 +621,21 @@ class ImportProgressService
             $attributes['status'] = $status;
             if ($this->isTerminalStatus($status)) {
                 $attributes['job_fingerprint'] = null;
+            }
+        }
+
+        if ($progressPayload !== null) {
+            $progressPayload['total_success'] = $success;
+            $progressPayload['total_failed'] = $failed;
+
+            if ($totalRows !== null) {
+                $progressPayload['total_rows'] = $totalRows;
+                $progressPayload['processed_rows'] = min($totalRows, $success + $failed);
+            }
+
+            if ($status !== null) {
+                // Keep a stale processing heartbeat from restoring a terminal job.
+                $progressPayload['status'] = $status;
             }
         }
 

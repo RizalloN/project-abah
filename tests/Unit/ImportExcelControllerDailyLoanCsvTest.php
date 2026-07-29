@@ -198,7 +198,46 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         $this->assertSame(0, $result['skipped_count']);
         $this->assertNotEmpty($result['headers'] ?? []);
         $this->assertArrayHasKey('period_hints', $result);
-        $this->assertIsArray($result['period_hints']);
+        $this->assertSame(['2026-04-04'], $result['period_hints']);
+    }
+
+    public function test_direct_load_plan_rejects_prepared_source_without_period_hints(): void
+    {
+        $csvPath = storage_path('framework/testing/daily_loan_missing_period_hints.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, "PERIODE,NOMOR_REKENING1,BAKI_DEBET1\n2026-04-04,123,1000\n");
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Periode Daily Loan tidak terdeteksi');
+
+        try {
+            $this->invokeMethod('buildDirectDailyLoanCsvLoadPlan', [
+                $csvPath,
+                ['PERIODE', 'NOMOR_REKENING1', 'BAKI_DEBET1'],
+                [
+                    'prepared_source' => [
+                        'path' => $csvPath,
+                        'headers' => ['PERIODE', 'NOMOR_REKENING1', 'BAKI_DEBET1'],
+                        'period_hints' => [],
+                    ],
+                    'delimiter' => ',',
+                ],
+            ]);
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
+    public function test_polars_processor_returns_period_hints_to_php(): void
+    {
+        $source = file_get_contents(base_path('scripts/daily_loan_polars_processor.py'));
+
+        $this->assertIsString($source);
+        $this->assertStringContainsString('period_hints = sorted(', $source);
+        $this->assertStringContainsString('"dates": period_hints', $source);
     }
 
     public function test_prepare_daily_loan_direct_load_source_rewrites_business_headers_to_canonical_headers(): void

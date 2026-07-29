@@ -678,6 +678,23 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
                 'freq_payment' => 3,
                 'freq_int_payment' => 1,
             ],
+            [
+                'periode' => '2026-06-28',
+                'nomor_rekening1' => 'DL-SML1-01',
+                'nama_debitur1' => 'Debitur DL SML 1',
+                'ln_type' => 'DL',
+                'tgl_jatuh_tempo' => '2026-06-27',
+                'kolek' => '2',
+                'flag_restruk' => null,
+                'umur_tunggakan' => 20,
+                'plafon' => 100000000,
+                'baki_debet1' => 55000000,
+                'tunggakan_pokok' => 3000000,
+                'tunggakan_bunga' => 500000,
+                'tunggakan_penalti' => 100000,
+                'freq_payment' => 1,
+                'freq_int_payment' => 1,
+            ],
         ]);
 
         $controller = new DashboardPinjamanReportController();
@@ -709,6 +726,57 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
         $this->assertSame(7, $rows['DL-01']['cycles']);
         $this->assertSame(0.0, $rows['DL-01']['estimated_principal']);
         $this->assertEqualsWithDelta(20555555.56, $rows['DL-01']['estimated_payment'], 0.01);
+
+        $this->assertSame('SML 1', $rows['DL-SML1-01']['current_bucket']);
+        $this->assertSame('Lancar', $rows['DL-SML1-01']['target_bucket']);
+        $this->assertTrue($rows['DL-SML1-01']['is_past_due']);
+        $this->assertSame(0.0, $rows['DL-SML1-01']['estimated_principal']);
+        $this->assertSame(600000.0, $rows['DL-SML1-01']['estimated_payment']);
+        $this->assertSame('DL SML 1 -> Lancar: bunga + penalti (pokok 0)', $rows['DL-SML1-01']['payment_rule']);
+    }
+
+    public function test_ug_npl_rows_can_be_filtered_by_segment(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            [
+                'periode' => '2026-06-28',
+                'nomor_rekening1' => 'UG-MICRO-01',
+                'segmen_dashboard' => 'MICRO',
+                'kolek' => '2',
+                'umur_tunggakan' => 20,
+                'tunggakan_bunga' => 500000,
+                'cabang1' => 'KC Madiun',
+                'unit1' => 'Unit A',
+            ],
+            [
+                'periode' => '2026-06-28',
+                'nomor_rekening1' => 'UG-SMALL-01',
+                'segmen_dashboard' => 'SMALL',
+                'kolek' => '2',
+                'umur_tunggakan' => 20,
+                'tunggakan_bunga' => 750000,
+                'cabang1' => 'KC Madiun',
+                'unit1' => 'Unit B',
+            ],
+        ]);
+
+        $controller = new DashboardPinjamanReportController();
+        $fetchMethod = new ReflectionMethod(DashboardPinjamanReportController::class, 'fetchUgNplRows');
+        $fetchMethod->setAccessible(true);
+        $rows = collect(iterator_to_array($fetchMethod->invoke(
+            $controller,
+            '2026-06-28',
+            ['KC Madiun'],
+            [],
+            ['MICRO']
+        )));
+
+        $this->assertSame(['UG-MICRO-01'], $rows->pluck('nomor_rekening1')->all());
+        $this->assertSame(['MICRO'], $rows->pluck('segmen_dashboard')->all());
+
+        $view = file_get_contents(resource_path('views/report/dashboard-pinjaman/analisa-ug-npl.blade.php'));
+        $this->assertStringContainsString('name="segmen_dashboard"', $view);
+        $this->assertStringContainsString('row.segmen_dashboard', $view);
     }
 
     private function invokeShouldUseLw325RecoveryMetrics(string $period): bool

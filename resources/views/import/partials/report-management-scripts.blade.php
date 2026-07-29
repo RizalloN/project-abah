@@ -423,11 +423,11 @@
             if (!managementNotice) return;
             if (!message) {
                 managementNotice.className = 'report-management-notice d-none';
-                managementNotice.innerHTML = '';
+                managementNotice.textContent = '';
                 return;
             }
             managementNotice.className = 'report-management-notice report-management-notice--' + type;
-            managementNotice.innerHTML = message;
+            managementNotice.textContent = message;
         }
 
         function updateSummary(rows, meta = {}) {

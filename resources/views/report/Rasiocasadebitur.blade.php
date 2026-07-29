@@ -1182,6 +1182,15 @@ document.addEventListener('DOMContentLoaded', function () {
         return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(parseFloat(num));
     }
 
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
     function formatPct(num) {
         if (num === null || num === undefined || isNaN(parseFloat(num))) return '-';
         return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parseFloat(num)) + '%';
@@ -1243,7 +1252,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function setOverlay(title, copy, visible = true) {
         overlayTitle.textContent = title;
-        overlayCopy.innerHTML = copy;
+        overlayCopy.textContent = copy;
         overlay.classList.toggle('is-hidden', !visible);
     }
 
@@ -1253,7 +1262,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td colspan="31" class="text-center">
                     <div class="py-4">
                         <i class="fas fa-inbox fa-2x text-muted mb-3 d-block opacity-50"></i>
-                        ${message}
+                        ${escapeHtml(message)}
                     </div>
                 </td>
             </tr>`;
@@ -1272,7 +1281,7 @@ document.addEventListener('DOMContentLoaded', function () {
         
         dataList.forEach(function(row) {
             const tr = document.createElement('tr');
-            const branchCell = `<td class="sticky-col text-left font-weight-bold">${row.branch || '-'}</td>`;
+            const branchCell = `<td class="sticky-col text-left font-weight-bold">${escapeHtml(row.branch || '-')}</td>`;
             
             if (isDual && segmentKey2) {
                 tr.innerHTML = branchCell + createDataCells(row[segmentKey]) + createDataCells(row[segmentKey2], true);
@@ -1382,7 +1391,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 filterPosisi.value = currentDate;
             }
 
-            filterMetaPeriod.innerHTML = `<i class="fas fa-clock text-primary mr-1"></i> <strong>Posisi:</strong> ${labels.curr || '-'} | <strong>YTD:</strong> ${labels.ytd || '-'} | <strong>M-2:</strong> ${labels.m2 || '-'} | <strong>Bulan lalu:</strong> ${labels.prev || '-'}`;
+            filterMetaPeriod.innerHTML = `<i class="fas fa-clock text-primary mr-1"></i> <strong>Posisi:</strong> ${escapeHtml(labels.curr || '-')} | <strong>YTD:</strong> ${escapeHtml(labels.ytd || '-')} | <strong>M-2:</strong> ${escapeHtml(labels.m2 || '-')} | <strong>Bulan lalu:</strong> ${escapeHtml(labels.prev || '-')}`;
 
             if (!hasAnyData) {
                 const emptyMessage = res.message || `Tidak ada data untuk tanggal ${currentDate}. Coba pilih tanggal lain.`;
@@ -1393,7 +1402,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             renderRows(dataList, totalData, res.ritel_data, res.ritel_total, res.micro_data, res.micro_total, res.is_branch_filtered);
-            summaryBadge.innerHTML = `<i class="fas fa-check-circle text-success mr-1"></i> ${dataList.length} ${summaryLabel} | ${labels.curr || currentDate}`;
+            summaryBadge.innerHTML = `<i class="fas fa-check-circle text-success mr-1"></i> ${dataList.length} ${escapeHtml(summaryLabel)} | ${escapeHtml(labels.curr || currentDate)}`;
             setOverlay('Data Siap Ditampilkan', 'Data siap ditampilkan.', false);
         } catch (xhr) {
             if (xhr && xhr.statusText === 'abort') {
@@ -1465,8 +1474,9 @@ document.addEventListener('DOMContentLoaded', function () {
     let activeRequestPerUker = null;
 
     function renderPerUkerMessage(message) {
-        const singleHtml = `<tr class="loading-row"><td colspan="16" class="text-center">${message}</td></tr>`;
-        const dualHtml = `<tr class="loading-row"><td colspan="31" class="text-center">${message}</td></tr>`;
+        const safeMessage = escapeHtml(message);
+        const singleHtml = `<tr class="loading-row"><td colspan="16" class="text-center">${safeMessage}</td></tr>`;
+        const dualHtml = `<tr class="loading-row"><td colspan="31" class="text-center">${safeMessage}</td></tr>`;
 
         $('#tbody-per-uker-total').html(singleHtml);
         $('#tbody-per-uker-briguna-kpr').html(dualHtml);
@@ -1552,7 +1562,7 @@ document.addEventListener('DOMContentLoaded', function () {
             renderSingleTableBody('tbody-per-uker-total', dataList, totalData, 'total');
             renderSingleTableBody('tbody-per-uker-briguna-kpr', dataList, totalData, 'briguna', true, 'kpr');
             renderSingleTableBody('tbody-per-uker-mikro-smc', dataList, totalData, 'mikro', true, 'smc');
-            summaryBadgePerUker.innerHTML = `<i class="fas fa-check-circle text-success mr-1"></i> ${dataList.length} unit kerja | ${selectedCabang} | ${labels.curr || effectiveDates.curr || '-'}`;
+            summaryBadgePerUker.innerHTML = `<i class="fas fa-check-circle text-success mr-1"></i> ${dataList.length} unit kerja | ${escapeHtml(selectedCabang)} | ${escapeHtml(labels.curr || effectiveDates.curr || '-')}`;
         } catch (xhr) {
             if (xhr && xhr.statusText === 'abort') {
                 return;
@@ -1683,7 +1693,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 
                 dataList.forEach(function(row) {
                     const tr = document.createElement('tr');
-                    const branchCell = `<td class="sticky-col text-left font-weight-bold">${row.branch || '-'}</td>`;
+                    const branchCell = `<td class="sticky-col text-left font-weight-bold">${escapeHtml(row.branch || '-')}</td>`;
                     tr.innerHTML = branchCell + createDataCells(row.total);
                     fragment.appendChild(tr);
                 });

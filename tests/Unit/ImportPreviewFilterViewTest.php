@@ -84,6 +84,10 @@ class ImportPreviewFilterViewTest extends TestCase
         $this->assertStringContainsString('uploadRequest.status === 0 && !nativeUploadFallbackStarted', $source);
         $this->assertStringContainsString("updateProgressSurface(3, 'Mencoba jalur upload standar...'", $source);
         $this->assertStringContainsString('HTMLFormElement.prototype.submit.call(formImport);', $source);
+        $this->assertStringContainsString('const stagedUploadFiles = new WeakMap();', $source);
+        $this->assertStringContainsString('async function stageUploadFile(input)', $source);
+        $this->assertStringContainsString('const bytes = await file.arrayBuffer();', $source);
+        $this->assertStringContainsString("formData.set('file', stagedUploadFile, stagedUploadFile.name);", $source);
         $this->assertStringNotContainsString('shouldWarnOnly', $source);
         $this->assertStringNotContainsString('Koneksi upload terputus sebelum file selesai dikirim.', $source);
     }

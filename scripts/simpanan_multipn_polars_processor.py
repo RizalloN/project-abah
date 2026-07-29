@@ -20,11 +20,14 @@ import io
 import json
 import math
 import os
+import posixpath
 import re
 import sys
 import tempfile
 import time
 import threading
+import zipfile
+from xml.etree import ElementTree
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timedelta
 from datetime import date
@@ -1003,9 +1006,108 @@ def write_with_polars(df, path: str, delimiter: str) -> None:
     raise RuntimeError(f"Gagal menulis CSV hasil Polars: {last_error}")
 
 
+def _xlsx_local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _xlsx_first_worksheet_path(archive: zipfile.ZipFile) -> str:
+    workbook_path = "xl/workbook.xml"
+    relationships_path = "xl/_rels/workbook.xml.rels"
+
+    if workbook_path in archive.namelist() and relationships_path in archive.namelist():
+        workbook = ElementTree.fromstring(archive.read(workbook_path))
+        first_sheet = next((node for node in workbook.iter() if _xlsx_local_name(node.tag) == "sheet"), None)
+        relationship_id = None
+        if first_sheet is not None:
+            relationship_id = next(
+                (value for key, value in first_sheet.attrib.items() if _xlsx_local_name(key) == "id"),
+                None,
+            )
+
+        if relationship_id:
+            relationships = ElementTree.fromstring(archive.read(relationships_path))
+            for relationship in relationships:
+                if relationship.attrib.get("Id") != relationship_id:
+                    continue
+
+                target = str(relationship.attrib.get("Target") or "").replace("\\", "/")
+                if target:
+                    if target.startswith("/"):
+                        return target.lstrip("/")
+                    return posixpath.normpath(posixpath.join("xl", target))
+
+    worksheet_paths = sorted(
+        name
+        for name in archive.namelist()
+        if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")
+    )
+    if not worksheet_paths:
+        raise RuntimeError("Worksheet XLSX Simpanan MultiPN tidak ditemukan.")
+
+    return worksheet_paths[0]
+
+
+def _xlsx_shared_strings(archive: zipfile.ZipFile) -> list[str]:
+    path = "xl/sharedStrings.xml"
+    if path not in archive.namelist():
+        return []
+
+    values: list[str] = []
+    with archive.open(path) as shared_handle:
+        for _, element in ElementTree.iterparse(shared_handle, events=("end",)):
+            if _xlsx_local_name(element.tag) != "si":
+                continue
+
+            values.append(
+                "".join(
+                    child.text or ""
+                    for child in element.iter()
+                    if _xlsx_local_name(child.tag) == "t"
+                )
+            )
+            element.clear()
+
+    return values
+
+
+def _xlsx_column_index(reference: str, fallback: int) -> int:
+    match = re.match(r"^([A-Za-z]+)", reference or "")
+    if not match:
+        return fallback
+
+    index = 0
+    for character in match.group(1).upper():
+        index = (index * 26) + (ord(character) - 64)
+    return max(0, index - 1)
+
+
+def _xlsx_cell_text(cell: ElementTree.Element, shared_strings: list[str]) -> str:
+    cell_type = str(cell.attrib.get("t") or "")
+    if cell_type == "inlineStr":
+        return "".join(
+            child.text or ""
+            for child in cell.iter()
+            if _xlsx_local_name(child.tag) == "t"
+        )
+
+    raw_value = next(
+        (child.text or "" for child in cell if _xlsx_local_name(child.tag) == "v"),
+        "",
+    )
+    if cell_type == "s" and raw_value != "":
+        try:
+            return shared_strings[int(raw_value)]
+        except (ValueError, IndexError):
+            return raw_value
+
+    if cell_type == "b":
+        return "1" if raw_value == "1" else "0"
+
+    return raw_value
+
+
 def stage_excel_source(config: dict) -> None:
-    """Stream XLSX rows to a position-safe CSV without mutating source text."""
-    from openpyxl import load_workbook
+    """Stream worksheet XML directly so large XLSX files never inflate in memory."""
 
     source_path = str(config["file_path"])
     output_csv_path = str(config["output_csv_path"])
@@ -1023,64 +1125,88 @@ def stage_excel_source(config: dict) -> None:
         raise RuntimeError("Header Simpanan MultiPN tidak tersedia untuk staging Excel.")
 
     os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
-    workbook = None
     rows_done = 0
     started_at = time.perf_counter()
 
     try:
-        send_progress(5, "Membuka Excel Simpanan MultiPN dalam mode streaming...", 0, 0, 0, "baris/detik", "xlsx_stream")
-        workbook = load_workbook(source_path, read_only=True, data_only=True)
-        worksheet = workbook.active
-        total_rows = int(worksheet.max_row or 0)
-        total_data_rows = max(0, total_rows - (header_index + 1))
+        send_progress(5, "Membuka struktur XLSX Simpanan MultiPN...", 0, 0, 0, "baris/detik", "xlsx_xml_stream")
+        with zipfile.ZipFile(source_path) as archive:
+            worksheet_path = _xlsx_first_worksheet_path(archive)
+            shared_strings = _xlsx_shared_strings(archive)
 
-        with open(output_csv_path, "w", encoding="utf-8", newline="") as output_handle:
-            writer = csv.writer(
-                output_handle,
-                delimiter=",",
-                quotechar='"',
-                quoting=csv.QUOTE_MINIMAL,
-                lineterminator="\n",
-                doublequote=True,
-            )
-            writer.writerow(headers)
+            with archive.open(worksheet_path) as worksheet_handle, open(
+                output_csv_path,
+                "w",
+                encoding="utf-8",
+                newline="",
+            ) as output_handle:
+                writer = csv.writer(
+                    output_handle,
+                    delimiter=",",
+                    quotechar='"',
+                    quoting=csv.QUOTE_MINIMAL,
+                    lineterminator="\n",
+                    doublequote=True,
+                )
+                writer.writerow(headers)
+                output_handle.flush()
+                send_progress(7, "Struktur XLSX siap. Mengalirkan baris data...", 0, 0, 0, "baris/detik", "xlsx_xml_stream")
 
-            for excel_row, row in enumerate(worksheet.iter_rows(values_only=True), start=1):
-                if excel_row <= header_index + 1:
-                    continue
+                parsed_row = 0
+                last_progress_at = started_at
+                for _, row_element in ElementTree.iterparse(worksheet_handle, events=("end",)):
+                    if _xlsx_local_name(row_element.tag) != "row":
+                        continue
 
-                values = [
-                    excel_cell_to_source_text(row[index] if index < len(row) else None)
-                    for index in range(len(headers))
-                ]
-                if not any(value != "" for value in values):
-                    continue
+                    parsed_row += 1
+                    try:
+                        excel_row_number = int(row_element.attrib.get("r") or parsed_row)
+                    except (TypeError, ValueError):
+                        excel_row_number = parsed_row
+                    if excel_row_number <= header_index + 1:
+                        row_element.clear()
+                        continue
 
-                writer.writerow(values)
-                rows_done += 1
+                    values = [""] * len(headers)
+                    fallback_index = 0
+                    for cell in row_element:
+                        if _xlsx_local_name(cell.tag) != "c":
+                            continue
 
-                if rows_done % 5000 == 0:
-                    elapsed = max(time.perf_counter() - started_at, 0.001)
-                    speed = int(rows_done / elapsed)
-                    percent = (
-                        min(95, 8 + int((rows_done / max(total_data_rows, 1)) * 87))
-                        if total_data_rows > 0
-                        else min(90, 8 + int(elapsed / 3))
-                    )
-                    send_progress(
-                        percent,
-                        f"Mengonversi Excel tanpa mengubah nilai sumber... ({speed:,} baris/detik)",
-                        rows_done,
-                        total_data_rows,
-                        speed,
-                        "baris/detik",
-                        "xlsx_stream",
-                    )
+                        column_index = _xlsx_column_index(str(cell.attrib.get("r") or ""), fallback_index)
+                        fallback_index = column_index + 1
+                        if column_index >= len(values):
+                            continue
+                        values[column_index] = _xlsx_cell_text(cell, shared_strings)
 
-                    job_id = int(config.get("job_id") or 0)
-                    db_config = config.get("db_config") or {}
-                    if job_id and db_config and check_termination(job_id, db_config):
-                        raise RuntimeError("Proses import dihentikan oleh pengguna.")
+                    row_element.clear()
+                    if not any(value != "" for value in values):
+                        continue
+
+                    writer.writerow(values)
+                    rows_done += 1
+
+                    now = time.perf_counter()
+                    if rows_done % 5000 == 0 or (now - last_progress_at) >= 5:
+                        output_handle.flush()
+                        last_progress_at = now
+                        elapsed = max(now - started_at, 0.001)
+                        speed = int(rows_done / elapsed)
+                        percent = min(90, 8 + (rows_done // 100000) * 4)
+                        send_progress(
+                            percent,
+                            f"Mengonversi XLSX secara streaming... ({speed:,} baris/detik)",
+                            rows_done,
+                            0,
+                            speed,
+                            "baris/detik",
+                            "xlsx_xml_stream",
+                        )
+
+                        job_id = int(config.get("job_id") or 0)
+                        db_config = config.get("db_config") or {}
+                        if job_id and db_config and check_termination(job_id, db_config):
+                            raise RuntimeError("Proses import dihentikan oleh pengguna.")
 
         elapsed = max(time.perf_counter() - started_at, 0.001)
         speed = int(rows_done / elapsed)
@@ -1091,7 +1217,7 @@ def stage_excel_source(config: dict) -> None:
                 "total_rows": rows_done,
                 "written_rows": rows_done,
                 "headers": headers,
-                "backend": "openpyxl-stream",
+                "backend": "xlsx-xml-stream",
                 "full_vectorization": False,
                 "speed": speed,
             },
@@ -1104,8 +1230,6 @@ def stage_excel_source(config: dict) -> None:
             pass
         raise
     finally:
-        if workbook is not None:
-            workbook.close()
         DBConnectionPool.get_instance().close()
 
 

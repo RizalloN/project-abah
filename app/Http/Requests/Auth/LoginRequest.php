@@ -47,14 +47,13 @@ class LoginRequest extends FormRequest
      */
     public function authenticate(): User
     {
-        $isRateLimited = $this->isRateLimited();
+        if ($this->isRateLimited()) {
+            $this->throwRateLimitedValidationException();
+        }
+
         $user = $this->validUserForCredentials();
 
         if ($user === null) {
-            if ($isRateLimited) {
-                $this->throwRateLimitedValidationException();
-            }
-
             $this->hitRateLimiters();
 
             throw ValidationException::withMessages([
@@ -74,11 +73,7 @@ class LoginRequest extends FormRequest
      */
     public function ensureIsNotRateLimited(): void
     {
-        if (!$this->isRateLimited()) {
-            return;
-        }
-
-        if ($this->validUserForCredentials() === null) {
+        if ($this->isRateLimited()) {
             $this->throwRateLimitedValidationException();
         }
     }
@@ -89,9 +84,6 @@ class LoginRequest extends FormRequest
             || RateLimiter::tooManyAttempts($this->ipThrottleKey(), self::MAX_ATTEMPTS_PER_IP);
     }
 
-    /**
-     * Let the real account owner recover from a stale throttle lock.
-     */
     private function validUserForCredentials(): ?User
     {
         $user = User::query()->where('pn', $this->normalizedPn())->first();

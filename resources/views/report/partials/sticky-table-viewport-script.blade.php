@@ -13,6 +13,13 @@ document.addEventListener('DOMContentLoaded', function () {
     const stickyTrim = {{ (int) $stickyTrim }};
     const mainHeader = document.querySelector('.main-header');
     let syncFrame = null;
+    const wrapperObservers = new Map();
+    const observerOptions = {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style', 'hidden'],
+    };
 
     const shouldUseCompactViewport = function () {
         return window.matchMedia('(max-width: 1180px), (max-height: 760px)').matches;
@@ -115,8 +122,8 @@ document.addEventListener('DOMContentLoaded', function () {
         wrapper.style.setProperty('--table-scrollbar-space', scrollbarReserve + 'px');
 
         if (shouldUseCompactViewport()) {
-            wrapper.style.height = 'auto';
-            wrapper.style.maxHeight = 'none';
+            wrapper.style.removeProperty('height');
+            wrapper.style.removeProperty('max-height');
             return;
         }
 
@@ -137,9 +144,40 @@ document.addEventListener('DOMContentLoaded', function () {
         wrapper.style.maxHeight = desiredHeight + 'px';
     };
 
+    const observeWrapper = function (wrapper) {
+        let observer = wrapperObservers.get(wrapper);
+
+        if (!observer) {
+            observer = new MutationObserver(scheduleViewportSync);
+            wrapperObservers.set(wrapper, observer);
+        }
+
+        observer.observe(wrapper, observerOptions);
+    };
+
     const syncAllViewports = function () {
         syncFrame = null;
-        getManagedWrappers().forEach(syncWrapperViewport);
+        const wrappers = getManagedWrappers();
+
+        /*
+         * Mutating wrapper/header inline styles while their observers are active
+         * would schedule this same sync again indefinitely. Disconnect every
+         * managed observer for the short synchronous measurement/write cycle;
+         * external row/class/visibility mutations remain observed afterwards.
+         */
+        wrappers.forEach(function (wrapper) {
+            const observer = wrapperObservers.get(wrapper);
+
+            if (observer) {
+                observer.disconnect();
+            }
+        });
+
+        try {
+            wrappers.forEach(syncWrapperViewport);
+        } finally {
+            wrappers.forEach(observeWrapper);
+        }
     };
 
     const scheduleViewportSync = function () {
@@ -150,15 +188,7 @@ document.addEventListener('DOMContentLoaded', function () {
         syncFrame = window.requestAnimationFrame(syncAllViewports);
     };
 
-    getManagedWrappers().forEach(function (wrapper) {
-        const observer = new MutationObserver(scheduleViewportSync);
-        observer.observe(wrapper, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class', 'style', 'hidden'],
-        });
-    });
+    getManagedWrappers().forEach(observeWrapper);
 
     window.addEventListener('resize', scheduleViewportSync);
     window.addEventListener('load', scheduleViewportSync);

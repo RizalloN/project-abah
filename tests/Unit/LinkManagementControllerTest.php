@@ -54,7 +54,8 @@ class LinkManagementControllerTest extends TestCase
         );
         $this->assertSame('KPI Konsumer', $links['consumer']['label']);
         $this->assertSame('KPI', $links['consumer']['sheet_name']);
-        $this->assertSame('1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM', $links['consumer']['spreadsheet_id']);
+        $this->assertSame('14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J', $links['consumer']['spreadsheet_id']);
+        $this->assertSame('160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7', $links['mantri']['spreadsheet_id']);
         $this->assertSame('KPI RM Mikro', $links['rm-mikro']['sheet_name']);
         $this->assertSame('11dzu4edTyp9UFBicNDughtJ43bzvZguh', $links['rm-mikro']['spreadsheet_id']);
         $this->assertSame(

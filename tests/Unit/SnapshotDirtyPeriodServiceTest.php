@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Support\SnapshotDirtyPeriodService;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -186,6 +187,85 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
         $this->assertDatabaseMissing('failed_snapshot_dirty_periods', [
             'source_table' => 'ssa_pinjaman',
             'period_key' => '2026-05-13',
+        ]);
+    }
+
+    public function test_period_mark_clears_failed_branch_shards_for_the_same_period(): void
+    {
+        DB::table('failed_snapshot_dirty_periods')->insert([
+            'source_table' => 'simpanan_multipn',
+            'period_key' => '2026-05-16',
+            'shard_type' => 'branch',
+            'shard_key' => '00045 -- MADIUN',
+            'dirty_since' => now(),
+            'dirty_row_count' => 1,
+            'attempts' => SnapshotDirtyPeriodService::MAX_ATTEMPTS,
+            'last_error' => 'deadlock',
+            'failed_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        (new SnapshotDirtyPeriodService)->mark('simpanan_multipn', '2026-05-16');
+
+        $this->assertDatabaseMissing('failed_snapshot_dirty_periods', [
+            'source_table' => 'simpanan_multipn',
+            'period_key' => '2026-05-16',
+        ]);
+    }
+
+    public function test_failed_recovery_prunes_superseded_markers_and_only_retries_when_requested(): void
+    {
+        $failedAt = now()->subDay();
+        foreach ([
+            ['daily_loan_dinamis', '2025-09-30', 'period', '*'],
+            ['simpanan_multipn', '2026-05-16', 'branch', '00045 -- MADIUN'],
+        ] as [$table, $period, $shardType, $shardKey]) {
+            DB::table('failed_snapshot_dirty_periods')->insert([
+                'source_table' => $table,
+                'period_key' => $period,
+                'shard_type' => $shardType,
+                'shard_key' => $shardKey,
+                'dirty_since' => $failedAt,
+                'dirty_row_count' => 1,
+                'attempts' => SnapshotDirtyPeriodService::MAX_ATTEMPTS,
+                'last_error' => 'historical failure',
+                'failed_at' => $failedAt,
+                'created_at' => $failedAt,
+                'updated_at' => $failedAt,
+            ]);
+        }
+
+        DB::table('report_sync_audits')->insert([
+            'table_name' => 'daily_loan_dinamis',
+            'period_hint' => '2025-09-30',
+            'action' => 'snapshot_dirty_clear',
+            'status' => 'success',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new SnapshotDirtyPeriodService;
+        $pruned = $service->recoverFailed();
+
+        $this->assertSame(['pruned' => 1, 'retried' => 0, 'unresolved' => 1], $pruned);
+        $this->assertDatabaseHas('failed_snapshot_dirty_periods', [
+            'source_table' => 'simpanan_multipn',
+            'period_key' => '2026-05-16',
+        ]);
+
+        $retried = $service->recoverFailed(retryUnresolved: true);
+
+        $this->assertSame(['pruned' => 0, 'retried' => 1, 'unresolved' => 0], $retried);
+        $this->assertDatabaseMissing('failed_snapshot_dirty_periods', [
+            'source_table' => 'simpanan_multipn',
+            'period_key' => '2026-05-16',
+        ]);
+        $this->assertDatabaseHas('snapshot_dirty_periods', [
+            'source_table' => 'simpanan_multipn',
+            'period_key' => '2026-05-16',
+            'shard_type' => 'branch',
+            'shard_key' => '00045 -- MADIUN',
         ]);
     }
 }

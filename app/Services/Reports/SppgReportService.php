@@ -2,7 +2,10 @@
 
 namespace App\Services\Reports;
 
+use App\Jobs\RefreshRemoteDashboardSourcesJob;
+use App\Rules\TrustedSpreadsheetUrl;
 use App\Support\UserBranchScope;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -28,7 +31,7 @@ class SppgReportService
             return $this->emptyReport(collect(['Link spreadsheet SPPG belum diisi di Link Management.']), $link);
         }
 
-        return $this->readSpreadsheet($link);
+        return $this->scopeReport($this->readSpreadsheet($link));
     }
 
     private function linkConfig(): array
@@ -76,31 +79,81 @@ class SppgReportService
 
     private function readSpreadsheet(array $link): array
     {
-        $cacheKey = 'report:sppg:v1:' . UserBranchScope::cacheKey() . ':'
+        $cacheKey = 'report:sppg:v2:'
             . md5(($link['link_url'] ?? '') . '|' . ($link['sheet_name'] ?? self::DEFAULT_SHEET_NAME));
-
-        return Cache::remember($cacheKey, now()->addMinute(), function () use ($link): array {
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
             try {
-                $csvUrl = $this->toCsvUrl((string) $link['link_url'], (string) ($link['sheet_name'] ?: self::DEFAULT_SHEET_NAME));
-                $response = Http::timeout(20)
-                    ->retry(1, 500)
-                    ->accept('text/csv')
-                    ->get($csvUrl);
-
-                if (!$response->successful()) {
-                    return $this->emptyReport(collect(['Spreadsheet SPPG tidak bisa diakses. Pastikan link sudah shareable untuk aplikasi.']), $link);
+                $fetchedAt = isset($cached['lastFetchedAt']) ? Carbon::parse($cached['lastFetchedAt']) : null;
+                if ($fetchedAt === null || $fetchedAt->lt(now()->subMinutes(10))) {
+                    $this->queueSourceRefresh();
                 }
-
-                $body = $response->body();
-                if (str_contains(Str::lower(substr($body, 0, 500)), '<html')) {
-                    return $this->emptyReport(collect(['Respon spreadsheet SPPG bukan CSV. Pastikan link Google Sheets sudah public/shareable atau gunakan link dengan gid sheet Area 6.']), $link);
-                }
-
-                return $this->rowsFromCsv($body, $link);
-            } catch (\Throwable $exception) {
-                return $this->emptyReport(collect(['Gagal membaca spreadsheet SPPG (' . $exception->getMessage() . ').']), $link);
+            } catch (\Throwable) {
+                $this->queueSourceRefresh();
             }
-        });
+
+            return $cached;
+        }
+
+        $this->queueSourceRefresh();
+
+        return $this->emptyReport(collect(['Data SPPG sedang disinkronkan di background.']), $link);
+    }
+
+    public function refreshSourceCache(): array
+    {
+        $link = $this->linkConfig();
+        if (trim((string) ($link['link_url'] ?? '')) === '') {
+            return ['success' => false, 'error' => 'Link spreadsheet SPPG belum tersedia.'];
+        }
+
+        $payload = $this->fetchSpreadsheet($link);
+        $success = $payload['errors']->isEmpty();
+        if ($success) {
+            $cacheKey = 'report:sppg:v2:'
+                . md5(($link['link_url'] ?? '') . '|' . ($link['sheet_name'] ?? self::DEFAULT_SHEET_NAME));
+            Cache::forever($cacheKey, $payload);
+        }
+
+        Cache::forget('dashboard_sources:refresh:sppg:pending');
+
+        return [
+            'success' => $success,
+            'row_count' => (int) ($payload['totalRows'] ?? 0),
+            'errors' => $payload['errors']->all(),
+        ];
+    }
+
+    private function queueSourceRefresh(): void
+    {
+        $key = 'dashboard_sources:refresh:sppg:pending';
+        if (Cache::add($key, now()->toIso8601String(), now()->addMinutes(10))) {
+            RefreshRemoteDashboardSourcesJob::dispatch(['sppg']);
+        }
+    }
+
+    private function fetchSpreadsheet(array $link): array
+    {
+        try {
+            $csvUrl = $this->toCsvUrl((string) $link['link_url'], (string) ($link['sheet_name'] ?: self::DEFAULT_SHEET_NAME));
+            $response = Http::timeout(20)
+                ->retry(1, 500)
+                ->accept('text/csv')
+                ->get($csvUrl);
+
+            if (!$response->successful()) {
+                return $this->emptyReport(collect(['Spreadsheet SPPG tidak bisa diakses. Pastikan link sudah shareable untuk aplikasi.']), $link);
+            }
+
+            $body = $response->body();
+            if (str_contains(Str::lower(substr($body, 0, 500)), '<html')) {
+                return $this->emptyReport(collect(['Respon spreadsheet SPPG bukan CSV. Pastikan link Google Sheets sudah public/shareable atau gunakan link dengan gid sheet Area 6.']), $link);
+            }
+
+            return $this->rowsFromCsv($body, $link);
+        } catch (\Throwable $exception) {
+            return $this->emptyReport(collect(['Gagal membaca spreadsheet SPPG (' . $exception->getMessage() . ').']), $link);
+        }
     }
 
     private function rowsFromCsv(string $csv, array $link): array
@@ -137,19 +190,7 @@ class SppgReportService
             ]);
         }
 
-        $rows = $rows
-            ->when(UserBranchScope::current() !== null, function ($items) {
-                $scope = UserBranchScope::current();
-                $branch = strtoupper((string) $scope['label']);
-                $plainBranch = strtoupper((string) $scope['plain_label']);
-
-                return $items->filter(function (array $row) use ($branch, $plainBranch): bool {
-                    $value = strtoupper((string) ($row['branch_office'] ?? ''));
-
-                    return str_contains($value, $branch) || str_contains($value, $plainBranch);
-                });
-            })
-            ->sortBy([
+        $rows = $rows->sortBy([
                 fn ($row) => Str::lower($row['branch_office'] ?? ''),
                 fn ($row) => Str::lower($row['nama_yayasan'] ?? ''),
             ])
@@ -163,6 +204,28 @@ class SppgReportService
             'branchOptions' => $rows->pluck('branch_office')->filter()->unique()->sort()->values(),
             'lastFetchedAt' => now(),
         ];
+    }
+
+    private function scopeReport(array $report): array
+    {
+        $scope = UserBranchScope::current();
+        if ($scope === null) {
+            return $report;
+        }
+
+        $branch = strtoupper((string) $scope['label']);
+        $plainBranch = strtoupper((string) $scope['plain_label']);
+        $rows = collect($report['rows'] ?? [])->filter(function (array $row) use ($branch, $plainBranch): bool {
+            $value = strtoupper((string) ($row['branch_office'] ?? ''));
+
+            return str_contains($value, $branch) || str_contains($value, $plainBranch);
+        })->values();
+
+        $report['rows'] = $rows;
+        $report['totalRows'] = $rows->count();
+        $report['branchOptions'] = $rows->pluck('branch_office')->filter()->unique()->sort()->values();
+
+        return $report;
     }
 
     private function parseCsv(string $csv): array
@@ -229,8 +292,12 @@ class SppgReportService
 
     private function toCsvUrl(string $linkUrl, string $sheetName): string
     {
+        if (!TrustedSpreadsheetUrl::isTrusted($linkUrl)) {
+            throw new \RuntimeException('Sumber spreadsheet tidak diizinkan.');
+        }
+
         if (!preg_match('~docs\.google\.com/spreadsheets/d/([^/]+)~', $linkUrl, $matches)) {
-            return $linkUrl;
+            throw new \RuntimeException('ID Google Sheets tidak ditemukan.');
         }
 
         $spreadsheetId = $matches[1];

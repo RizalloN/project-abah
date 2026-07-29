@@ -810,17 +810,29 @@ document.addEventListener('DOMContentLoaded', function () {
         branchOptions.forEach((item, index) => {
             const value = String(item.value ?? item);
             const label = String(item.label ?? item);
-            const checked = selectedBranches.includes(value) ? 'checked' : '';
 
             const labelEl = document.createElement('label');
             labelEl.className = 'dropdown-item';
-            labelEl.setAttribute('for', `dormant_branch_${index}`);
-            labelEl.innerHTML = `
-                <div class="form-check">
-                    <input class="form-check-input dormant-branch-checkbox" type="checkbox" value="${value}" id="dormant_branch_${index}" ${checked}>
-                    <span class="form-check-label">${label}</span>
-                </div>
-            `;
+            const inputId = `dormant_branch_${index}`;
+            labelEl.htmlFor = inputId;
+
+            const formCheck = document.createElement('div');
+            formCheck.className = 'form-check';
+
+            const input = document.createElement('input');
+            input.className = 'form-check-input dormant-branch-checkbox';
+            input.type = 'checkbox';
+            input.value = value;
+            input.id = inputId;
+            input.checked = selectedBranches.includes(value);
+
+            const labelText = document.createElement('span');
+            labelText.className = 'form-check-label';
+            labelText.textContent = label;
+
+            formCheck.appendChild(input);
+            formCheck.appendChild(labelText);
+            labelEl.appendChild(formCheck);
             fragment.appendChild(labelEl);
         });
         branchMenu.innerHTML = '';
@@ -864,17 +876,29 @@ document.addEventListener('DOMContentLoaded', function () {
         unitOptions.forEach((item, index) => {
             const value = String(item.value ?? item);
             const label = String(item.label ?? item);
-            const checked = selectedUnits.includes(value) ? 'checked' : '';
 
             const labelEl = document.createElement('label');
             labelEl.className = 'dropdown-item';
-            labelEl.setAttribute('for', `dormant_unit_${index}`);
-            labelEl.innerHTML = `
-                <div class="form-check">
-                    <input class="form-check-input dormant-unit-checkbox" type="checkbox" value="${value}" id="dormant_unit_${index}" ${checked}>
-                    <span class="form-check-label">${label}</span>
-                </div>
-            `;
+            const inputId = `dormant_unit_${index}`;
+            labelEl.htmlFor = inputId;
+
+            const formCheck = document.createElement('div');
+            formCheck.className = 'form-check';
+
+            const input = document.createElement('input');
+            input.className = 'form-check-input dormant-unit-checkbox';
+            input.type = 'checkbox';
+            input.value = value;
+            input.id = inputId;
+            input.checked = selectedUnits.includes(value);
+
+            const labelText = document.createElement('span');
+            labelText.className = 'form-check-label';
+            labelText.textContent = label;
+
+            formCheck.appendChild(input);
+            formCheck.appendChild(labelText);
+            labelEl.appendChild(formCheck);
             fragment.appendChild(labelEl);
         });
         unitMenu.innerHTML = '';

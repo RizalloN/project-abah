@@ -2,6 +2,8 @@
 
 namespace App\Services\Reports;
 
+use App\Support\SargableDateFilter;
+
 use App\Support\UserBranchScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -112,7 +114,7 @@ class QlolaReportService
             ->selectRaw('COALESCE(SUM(COALESCE(nominal, 0)), 0) as nominal_transaksi')
             ->whereIn(DB::raw($corpBranchExpression), $branches)
             ->when(!empty($selectedUkers), fn ($query) => $query->whereIn(DB::raw($this->normalizeSqlExpression('uker')), $selectedUkers))
-            ->when($corpPeriod, fn ($query) => $query->whereDate('periode', $corpPeriod))
+            ->when($corpPeriod, fn ($query) => SargableDateFilter::apply($query, 'periode', '=', $corpPeriod))
             ->whereNotNull($isBranchFiltered ? 'uker' : 'cabang')
             ->groupBy(DB::raw($corpGroupExpression))
             ->get()
@@ -123,7 +125,7 @@ class QlolaReportService
             ->selectRaw('COUNT(*) as jumlah_user_aktif')
             ->whereIn(DB::raw($usakBranchExpression), $branches)
             ->when(!empty($selectedUkers), fn ($query) => $query->whereIn(DB::raw($this->normalizeSqlExpression('uker')), $selectedUkers))
-            ->when($usakPeriod, fn ($query) => $query->whereDate('periode', $usakPeriod))
+            ->when($usakPeriod, fn ($query) => SargableDateFilter::apply($query, 'periode', '=', $usakPeriod))
             ->whereIn(DB::raw('UPPER(TRIM(deskripsi))'), ['ACTIVE', 'ACTIVATED'])
             ->whereNotNull($isBranchFiltered ? 'uker' : 'kanca')
             ->groupBy(DB::raw($usakGroupExpression))

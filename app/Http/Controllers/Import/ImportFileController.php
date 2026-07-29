@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Http\Controllers\Import\Concerns\AuthorizesImportSourceFiles;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Jobs\PrepareCsvStagingJob;
 use App\Services\Import\ImportProgressService;
@@ -11,6 +12,7 @@ use App\Services\Import\ImportDuplicateGuardService;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Support\ReportDataSyncService;
+use App\Support\SargableDateFilter;
 use App\Support\StrictDateParser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -27,6 +29,7 @@ use Symfony\Component\Process\Process;
 class ImportFileController extends Controller
 {
     use AllocatesGapIds;
+    use AuthorizesImportSourceFiles;
     use SmartCsvImportSupport;
 
     private ?array $dailyLoanColumnsCache = null;
@@ -881,11 +884,7 @@ class ImportFileController extends Controller
 
     private function cleanupImportDirectory(string $filePath): void
     {
-        $importDir = dirname(dirname($filePath));
-
-        if (strpos($importDir, 'imports') !== false && File::exists($importDir)) {
-            File::deleteDirectory($importDir);
-        }
+        $this->cleanupAuthorizedImportDirectory($filePath);
     }
 
     private function resolveImportBatchSize(string $tableName): int
@@ -2903,7 +2902,10 @@ class ImportFileController extends Controller
             return back()->with('error', $message);
         }
 
-        $request->validate(['id_report' => 'required', 'file' => 'required|file|mimes:rar,csv,txt']);
+        $request->validate([
+            'id_report' => ['required'],
+            'file' => ['required', 'file', 'mimes:rar,csv,txt', 'max:' . $this->configuredImportUploadMaxKilobytes()],
+        ]);
         $requestedReport = DB::table('nama_report')
             ->where('id_report', (int) $request->input('id_report'))
             ->first();
@@ -2941,33 +2943,28 @@ class ImportFileController extends Controller
             return back()->with('error', $message);
         }
 
-        $folderName = 'import_' . date('Ymd_His') . '_' . Str::random(5);
-        $storagePath = storage_path('app/imports/' . $folderName);
-        if (!file_exists($storagePath)) { mkdir($storagePath, 0777, true); }
         $file = $request->file('file');
-        $fileName = $file->getClientOriginalName();
-        $file->move($storagePath, $fileName);
-        $fullPath = $storagePath . '/' . $fileName;
+        $storagePath = $this->createSecureImportDirectory();
+        $storedUpload = $this->storeImportUpload($file, $storagePath);
+        $fileName = $storedUpload['name'];
+        $fullPath = $storedUpload['path'];
         $files = [];
-        $extension = strtolower($file->getClientOriginalExtension());
+        $extension = $storedUpload['extension'];
 
         if ($extension === 'rar') {
-            $extractPath = $storagePath . '/extracted';
-            if (!file_exists($extractPath)) { mkdir($extractPath, 0777, true); }
-            $command = '"C:\Program Files\7-Zip\7z.exe" x "' . $fullPath . '" -o"' . $extractPath . '" -y';
-            $output = [];
-            $exitCode = 0;
-            exec($command, $output, $exitCode);
-
-            $rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($extractPath));
-            foreach ($rii as $fileItem) {
-                if ($fileItem->isDir()) continue;
-                $files[] = ['name' => $fileItem->getFilename(), 'path' => $fileItem->getPathname()];
-            }
-
-            if ($exitCode !== 0 || empty($files)) {
+            try {
+                $files = $this->extractImportArchive($fullPath, $storagePath);
+            } catch (\Throwable $e) {
                 $this->cleanupImportDirectory($fullPath);
-                return back()->with('error', 'Gagal mengekstrak file RAR atau arsip tidak berisi file yang bisa diproses.');
+
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $e->getMessage(),
+                    ], 422);
+                }
+
+                return back()->with('error', $e->getMessage());
             }
         } else {
             $files[] = ['name' => $fileName, 'path' => $fullPath];
@@ -3011,7 +3008,7 @@ class ImportFileController extends Controller
         $this->applySafeRuntimeLimits();
 
         $request->validate(['file_path' => 'required|string', 'delimiter' => 'nullable|string']);
-        $filePath = $request->input('file_path');
+        $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
         $currentDelimiter = $request->input('delimiter', 'auto');
         if (!file_exists($filePath)) { return back()->with('error', 'File tidak ditemukan di server.'); }
         $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
@@ -3369,7 +3366,7 @@ class ImportFileController extends Controller
             'preview_state_key' => 'nullable|string',
         ]);
 
-        $filePath = (string) $request->input('file_path');
+        $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
         $currentDelimiter = (string) $request->input('delimiter', 'auto');
         $previewStateKey = trim((string) $request->input('preview_state_key', ''));
         $filterableColumnIndices = json_decode((string) $request->input('filterable_column_indices_json', ''), true);
@@ -3431,7 +3428,7 @@ class ImportFileController extends Controller
             'active_filters_json' => 'nullable|string',
         ]);
 
-        $filePath = (string) $request->input('file_path');
+        $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
         $currentDelimiter = (string) $request->input('delimiter', 'auto');
         $columnIndex = (int) $request->input('column_index');
         $previewStateKey = trim((string) $request->input('preview_state_key', ''));
@@ -3732,7 +3729,7 @@ class ImportFileController extends Controller
             'column_name' => 'nullable|string',
         ]);
 
-        $filePath = (string) $request->input('file_path');
+        $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
         $currentDelimiter = (string) $request->input('delimiter', 'auto');
         $columnIndex = (int) $request->input('column_index');
         $columnName = (string) $request->input('column_name', '');
@@ -3886,7 +3883,7 @@ class ImportFileController extends Controller
             'limit' => 'nullable|integer|min:1|max:200',
         ]);
 
-        $filePath = (string) $request->input('file_path');
+        $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
         $currentDelimiter = (string) $request->input('delimiter', 'auto');
         $limit = (int) $request->input('limit', 100);
         $previewStateKey = trim((string) $request->input('preview_state_key', ''));
@@ -4608,7 +4605,7 @@ class ImportFileController extends Controller
             'delimiter' => 'required|string',
         ]);
 
-        $filePath = $request->input('file_path');
+        $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json'), true) ?: [];
         $displayToSourceMap = session('import_display_to_source_map', []);
@@ -4706,14 +4703,14 @@ class ImportFileController extends Controller
                 $duplicateText = 'Semua kombinasi <b>PERIODE + MERCHANT_CODE + OUTLET_CODE</b> pada file ini sudah ada di tabel <b class="text-uppercase">' . $tableName . '</b>.<br><br>Sistem membatalkan proses untuk mencegah data dobel.';
             }
         } elseif ($this->isIbbizImportTable($tableName) && $manualImportPeriode !== null) {
-            $isDuplicate = DB::table($tableName)->whereDate('periode', $manualImportPeriode)->exists();
+            $isDuplicate = SargableDateFilter::apply(DB::table($tableName), 'periode', '=', $manualImportPeriode)->exists();
             if ($isDuplicate) {
                 $duplicateText = 'Data IB Biz untuk periode <b>' . e($manualImportPeriode) . '</b> sudah ada di tabel <b class="text-uppercase">' . e($tableName) . '</b>.<br><br>Sistem membatalkan proses ini.';
             }
         } elseif ($meta['sample_posisi']) {
             // BUG-03: Guard against tables that don't have a POSISI column
             $isDuplicate = $this->cachedSchemaHasColumn($tableName, 'POSISI')
-                && DB::table($tableName)->whereDate('POSISI', $meta['sample_posisi'])->exists();
+                && SargableDateFilter::apply(DB::table($tableName), 'POSISI', '=', $meta['sample_posisi'])->exists();
             if ($isDuplicate) {
                 $duplicateText = "Data untuk tanggal POSISI <b>{$meta['sample_posisi']}</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>{$tableName}</b>.<br><br>Sistem membatalkan proses ini.";
             }
@@ -5338,7 +5335,7 @@ class ImportFileController extends Controller
             'delimiter' => 'required|string'
         ]);
 
-        $filePath = $request->input('file_path');
+        $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json'), true) ?: [];
         $displayToSourceMap = session('import_display_to_source_map', []);
@@ -5673,12 +5670,12 @@ class ImportFileController extends Controller
                 $duplicateText = "Semua kombinasi <b>PERIODE + MERCHANT_CODE + OUTLET_CODE</b> pada file ini sudah ada di tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
             }
         } elseif ($this->isIbbizImportTable($tableName) && $manualImportPeriode !== null) {
-            $isDuplicate = DB::table($tableName)->whereDate('periode', $manualImportPeriode)->exists();
+            $isDuplicate = SargableDateFilter::apply(DB::table($tableName), 'periode', '=', $manualImportPeriode)->exists();
             if ($isDuplicate) {
                 $duplicateText = "Data IB Biz untuk periode <b>{$manualImportPeriode}</b> sudah pernah diunggah ke tabel <b class='text-uppercase'>{$tableName}</b>.<br><br>Sistem membatalkan proses ini.";
             }
         } elseif ($samplePosisi) {
-            $isDuplicate = DB::table($tableName)->whereDate('POSISI', $samplePosisi)->exists();
+            $isDuplicate = SargableDateFilter::apply(DB::table($tableName), 'POSISI', '=', $samplePosisi)->exists();
             if ($isDuplicate) {
                 $duplicateText = "Data untuk tanggal POSISI <b>$samplePosisi</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
             }

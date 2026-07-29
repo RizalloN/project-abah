@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Import;
 use App\Http\Controllers\Controller;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
+use App\Services\Import\ActiveImportJobCounter;
 use App\Support\ManagedReportSnapshotRebuildCoordinator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -25,26 +26,23 @@ class ImportJobManagementController extends Controller
         return view('import.job-management');
     }
 
-    public function data(
-        Request $request,
-        ImportProgressService $progressService,
-        ?ImportExecutionService $executionService = null
-    )
+    public function badge(ActiveImportJobCounter $counter)
+    {
+        return response()->json([
+            'status' => 'success',
+            'summary' => [
+                'active_jobs' => $counter->count(),
+            ],
+        ])->header('Cache-Control', 'private, max-age=15');
+    }
+
+    public function data(Request $request, ImportProgressService $progressService)
     {
         if (!Schema::hasTable('import_jobs')) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Tabel `import_jobs` belum tersedia.',
             ], 500);
-        }
-
-        try {
-            ($executionService ?? app(ImportExecutionService::class))
-                ->recoverOrphanedZeroProgressJobs();
-        } catch (\Throwable $e) {
-            Log::warning('Job Management gagal menjalankan recovery import orphan.', [
-                'message' => $e->getMessage(),
-            ]);
         }
 
         $validated = $request->validate([
@@ -477,7 +475,12 @@ class ImportJobManagementController extends Controller
         }
 
         try {
-            $jobObject = @unserialize($serializedCommand);
+            $jobObject = @unserialize($serializedCommand, [
+                'allowed_classes' => [
+                    \App\Jobs\RunImportJob::class,
+                    \App\Jobs\RunManagedReportSnapshotRebuildJob::class,
+                ],
+            ]);
         } catch (\Throwable) {
             $jobObject = false;
         }
@@ -840,9 +843,14 @@ class ImportJobManagementController extends Controller
             })
             ->values();
 
-        $snapshotQueueHealth = $this->snapshotRebuildCoordinator->purgeStaleReservedQueueRows();
-        $purgedReservedSnapshotJobs = (int) ($snapshotQueueHealth['purged_reserved_snapshot_jobs'] ?? 0);
-        $staleReservedSnapshotJobs = (int) ($snapshotQueueHealth['stale_reserved_snapshot_jobs'] ?? 0);
+        // Monitoring requests must remain read-only. Recovery and cleanup are owned
+        // by the scheduled queue:health-sweep command.
+        $purgedReservedSnapshotJobs = 0;
+        $staleReservedSnapshotJobs = $reservedJobs
+            ->filter(fn ($job): bool => str_contains((string) ($job->payload ?? ''), $snapshotRebuildBasename))
+            ->filter(fn ($job): bool => is_numeric($job->reserved_at)
+                && max(0, now()->timestamp - (int) $job->reserved_at) >= 600)
+            ->count();
 
         $jobs = DB::table('jobs')
             ->whereNull('reserved_at')
@@ -1034,7 +1042,7 @@ class ImportJobManagementController extends Controller
     {
         $configuredWorkerQueues = explode(
             ',',
-            (string) config('queue.worker_queues', 'imports-high,snapshots-parallel,default,reports-low,shadow-backfill,imports-daily-loan')
+            (string) config('queue.worker_queues', 'imports-high,snapshots-priority,snapshots-parallel,remote-sources,default,reports-low,shadow-backfill,imports-daily-loan')
         );
 
         return array_values(array_unique(array_filter(array_map(
@@ -1047,7 +1055,9 @@ class ImportJobManagementController extends Controller
                 'reports-low',
                 'imports-high',
                 'imports-daily-loan',
+                'snapshots-priority',
                 'snapshots-parallel',
+                'remote-sources',
                 'shadow-backfill',
             ])
         ), static fn (string $queue): bool => $queue !== '')));

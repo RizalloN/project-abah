@@ -29,6 +29,7 @@ class ExcelImportJobService
 
     public function putPreviewState(string $key, array $payload): void
     {
+        $payload['_owner_id'] = auth()->id();
         Cache::put($this->previewStateKey($key), $payload, now()->addMinutes(30));
     }
 
@@ -39,8 +40,18 @@ class ExcelImportJobService
         }
 
         $cached = Cache::get($this->previewStateKey($key));
+        if (!is_array($cached)) {
+            return [];
+        }
 
-        return is_array($cached) ? $cached : [];
+        if (auth()->check()) {
+            $ownerId = $cached['_owner_id'] ?? null;
+            if ($ownerId === null || (string) $ownerId !== (string) auth()->id()) {
+                return [];
+            }
+        }
+
+        return $cached;
     }
 
     public function putImportJobState(int $jobId, array $payload): void

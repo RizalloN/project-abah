@@ -292,6 +292,10 @@ class ExcelQueuedImportService
                                 ),
                             ];
                         } catch (\Throwable $e) {
+                            if (strtolower(trim($tableName)) === 'daily_loan_dinamis') {
+                                throw $e;
+                            }
+
                             Log::warning('Fast-path direct CSV unavailable, fallback ke mode lama: ' . $e->getMessage(), [
                                 'job_id' => $jobId,
                                 'table_name' => $tableName,

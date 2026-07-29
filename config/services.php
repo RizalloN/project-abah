@@ -62,7 +62,7 @@ return [
         'cache_path' => env('MARKET_SHARE_MAPPING_CACHE_PATH', 'app/cache/market-share-mapping.xlsx'),
         'fallback_cache_path' => env('MARKET_SHARE_MAPPING_FALLBACK_CACHE_PATH', 'app/public_workbooks/market-share-mapping.xlsx'),
         'cache_minutes' => env('MARKET_SHARE_MAPPING_CACHE_MINUTES', 15),
-        'timeout_seconds' => env('MARKET_SHARE_MAPPING_TIMEOUT_SECONDS', 30),
+        'timeout_seconds' => env('MARKET_SHARE_MAPPING_TIMEOUT_SECONDS', 120),
         'workbook_url' => env(
             'MARKET_SHARE_MAPPING_WORKBOOK_URL',
             env(
@@ -70,6 +70,17 @@ return [
                 'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/edit?usp=sharing'
             )
         ),
+    ],
+
+    'system_binaries' => [
+        'mysql' => env('MYSQL_BINARY'),
+        'mysqldump' => env('MYSQLDUMP_BINARY'),
+        'gzip' => env('GZIP_BINARY'),
+        'awk' => env('AWK_BINARY'),
+    ],
+
+    'managed_report_recovery' => [
+        'allowed_backup_dirs' => env('MANAGED_REPORT_RECOVERY_ALLOWED_BACKUP_DIRS', ''),
     ],
 
 ];

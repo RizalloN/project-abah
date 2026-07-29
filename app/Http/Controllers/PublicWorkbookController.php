@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\RefreshRemoteDashboardSourcesJob;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -50,24 +52,22 @@ class PublicWorkbookController extends Controller
         $cacheMinutes = (int) config("services.{$configKey}.cache_minutes", 15);
 
         if ($cacheMinutes <= 0 || !$this->isCacheFresh($path, $cacheMinutes)) {
-            try {
-                $this->refreshWorkbook($path, $configKey, $label);
-            } catch (Throwable $exception) {
-                Log::warning($label . ' workbook refresh failed.', [
-                    'message' => $exception->getMessage(),
-                ]);
+            $source = $configKey === 'market_share_mapping' ? 'market-share-mapping' : 'market-share';
+            $pendingKey = 'dashboard_sources:refresh:' . $source . ':pending';
+            if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
+                RefreshRemoteDashboardSourcesJob::dispatch([$source]);
+            }
 
-                if (!$this->isUsableWorkbook($path)) {
-                    $sourceUrl = (string) config("services.{$configKey}.source_url", '');
-                    if ($sourceUrl !== '') {
-                        return redirect()->away($sourceUrl);
-                    }
-                    $fallbackUrl = (string) config("services.{$configKey}.workbook_url", '');
-                    if ($fallbackUrl !== '') {
-                        return redirect()->away($fallbackUrl);
-                    }
-                    abort(502, 'Workbook ' . $label . ' belum bisa diambil.');
+            if (!$this->isUsableWorkbook($path)) {
+                $sourceUrl = (string) config("services.{$configKey}.source_url", '');
+                if ($sourceUrl !== '') {
+                    return redirect()->away($sourceUrl);
                 }
+                $fallbackUrl = (string) config("services.{$configKey}.workbook_url", '');
+                if ($fallbackUrl !== '') {
+                    return redirect()->away($fallbackUrl);
+                }
+                abort(502, 'Workbook ' . $label . ' belum tersedia pada cache lokal.');
             }
         }
 
@@ -124,7 +124,25 @@ class PublicWorkbookController extends Controller
         );
 
         File::ensureDirectoryExists(dirname($path));
-        File::put($path, $body);
+        File::replace($path, $body);
+    }
+
+    public function refreshMarketShareSource(): array
+    {
+        $cachePath = trim((string) config('services.market_share.cache_path', 'app/public_workbooks/market-share.xlsx'), '/\\');
+        $path = storage_path($cachePath);
+
+        try {
+            $this->refreshWorkbook($path, 'market_share', 'Market Share');
+
+            return ['success' => true, 'path' => $path, 'updated_at' => now()->toDateTimeString()];
+        } catch (Throwable $exception) {
+            Log::warning('Market Share workbook background refresh failed.', ['message' => $exception->getMessage()]);
+
+            return ['success' => false, 'error' => $exception->getMessage()];
+        } finally {
+            Cache::forget('dashboard_sources:refresh:market-share:pending');
+        }
     }
 
     private function isUsableWorkbook(string $path): bool

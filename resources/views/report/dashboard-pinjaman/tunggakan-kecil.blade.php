@@ -952,7 +952,7 @@
                 <tr>
                     <td colspan="8" class="loan-small-empty">
                         <strong>Data tidak ditemukan</strong>
-                        ${message}
+                        ${escapeHtml(message)}
                     </td>
                 </tr>
             `;
@@ -995,7 +995,7 @@
 
             body.innerHTML = rows.map(row => `
                 <tr>
-                    <th class="text-start-important">${row.label}</th>
+                    <th class="text-start-important">${escapeHtml(row.label)}</th>
                     <td class="position-start position-count">${formatCount(row.ytd)}</td>
                     <td class="position-end position-rp">${formatCurrency(row.ytd_tunggakan)}</td>
                     <td class="position-start position-count">${formatCount(row.mtd)}</td>
@@ -1003,7 +1003,7 @@
                     <td class="position-start position-count">${formatCount(row.current)}</td>
                     <td class="position-end position-rp">${formatCurrency(row.current_tunggakan ?? row.total_tunggakan)}</td>
                     <td>
-                        <a class="btn-export-excel" href="${buildExportUrl(payload, row)}">
+                        <a class="btn-export-excel" href="${escapeHtml(buildExportUrl(payload, row))}">
                             <i class="fas fa-file-excel mr-1"></i>Export
                         </a>
                     </td>

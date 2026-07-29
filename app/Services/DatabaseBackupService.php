@@ -504,11 +504,8 @@ class DatabaseBackupService
         fclose($handle);
 
         if (str_starts_with($prefix, "\xEF\xBB\xBF")) {
-            $remaining = file_get_contents($outputPath);
-            if ($remaining !== false) {
-                file_put_contents($outputPath, substr($remaining, 3), LOCK_EX);
-                $prefix = substr($prefix, 3);
-            }
+            $this->stripUtf8BomInPlace($outputPath);
+            $prefix = substr($prefix, 3);
         }
 
         $trimmedPrefix = ltrim($prefix);
@@ -524,9 +521,60 @@ class DatabaseBackupService
         }
     }
 
+    private function stripUtf8BomInPlace(string $path): void
+    {
+        $handle = @fopen($path, 'r+b');
+        if ($handle === false) {
+            throw new RuntimeException('Backup tidak dapat dibuka untuk membersihkan UTF-8 BOM.');
+        }
+
+        $readOffset = 3;
+        $writeOffset = 0;
+
+        try {
+            while (true) {
+                if (fseek($handle, $readOffset) !== 0) {
+                    throw new RuntimeException('Gagal membaca backup setelah UTF-8 BOM.');
+                }
+
+                $chunk = fread($handle, 1048576);
+                if ($chunk === false) {
+                    throw new RuntimeException('Gagal membaca backup saat membersihkan UTF-8 BOM.');
+                }
+                if ($chunk === '') {
+                    break;
+                }
+
+                if (fseek($handle, $writeOffset) !== 0) {
+                    throw new RuntimeException('Gagal menulis ulang backup tanpa UTF-8 BOM.');
+                }
+
+                $written = 0;
+                $chunkLength = strlen($chunk);
+                while ($written < $chunkLength) {
+                    $result = fwrite($handle, substr($chunk, $written));
+                    if ($result === false || $result === 0) {
+                        throw new RuntimeException('Gagal menulis ulang backup tanpa UTF-8 BOM.');
+                    }
+                    $written += $result;
+                }
+
+                $readOffset += $chunkLength;
+                $writeOffset += $chunkLength;
+            }
+
+            if (! ftruncate($handle, $writeOffset)) {
+                throw new RuntimeException('Gagal memangkas UTF-8 BOM pada backup.');
+            }
+            fflush($handle);
+        } finally {
+            fclose($handle);
+        }
+    }
+
     private function resolveDumpBinaryPath(): string
     {
-        $configured = trim((string) env('MYSQLDUMP_BINARY', ''));
+        $configured = trim((string) config('services.system_binaries.mysqldump', ''));
         $candidates = array_values(array_filter([
             $configured !== '' ? $configured : null,
             'C:\\xampp\\mysql\\bin\\mysqldump.exe',

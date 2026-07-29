@@ -18,9 +18,9 @@ use Illuminate\Support\Facades\Log;
 
 class RebuildSnapshotSimpleBatch implements ShouldQueue
 {
-    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels, SnapshotJobRetryWindow;
 
-    public $tries = 2;
+    public $tries = 40;
     public $timeout = 1200; // 20 minutes
     public $backoff = [60, 300]; // Retry after 1 min, then 5 min
 

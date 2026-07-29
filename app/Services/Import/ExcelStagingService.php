@@ -79,7 +79,7 @@ class ExcelStagingService
     public function findPython(): ?string
     {
         $candidates = array_values(array_filter(array_unique([
-            env('IMPORT_PYTHON_BIN'),
+            config('import.python_binary'),
             'python',
             'python3',
             'py',
@@ -109,7 +109,7 @@ class ExcelStagingService
         $scriptPath ??= base_path('scripts/excel_gpu_processor.py');
 
         if (!$pythonExe || !file_exists($scriptPath)) {
-            return $this->detectExcelHeaderViaNativeXlsx($path);
+            return $this->detectExcelHeaderFallback($path);
         }
 
         $configFile = storage_path('app/' . $configPrefix . uniqid() . '.json');
@@ -130,7 +130,7 @@ class ExcelStagingService
         if (!is_resource($process)) {
             @unlink($configFile);
 
-            return $this->detectExcelHeaderViaNativeXlsx($path);
+            return $this->detectExcelHeaderFallback($path);
         }
 
         fclose($pipes[0]);
@@ -167,7 +167,7 @@ class ExcelStagingService
                     $this->terminateProcess($process, $pipes);
                     @unlink($configFile);
 
-                    return $this->detectExcelHeaderViaNativeXlsx($path);
+                    return $this->detectExcelHeaderFallback($path);
                 }
 
                 usleep(50000);
@@ -181,12 +181,12 @@ class ExcelStagingService
         }
 
         if (!$output) {
-            return $this->detectExcelHeaderViaNativeXlsx($path);
+            return $this->detectExcelHeaderFallback($path);
         }
 
         $result = json_decode(trim($output), true);
         if (!$result || ($result['status'] ?? '') !== 'ok') {
-            return $this->detectExcelHeaderViaNativeXlsx($path);
+            return $this->detectExcelHeaderFallback($path);
         }
 
         return [
@@ -220,7 +220,7 @@ class ExcelStagingService
         $scriptPath ??= base_path('scripts/excel_gpu_processor.py');
 
         if (!$pythonExe || !file_exists($scriptPath)) {
-            return $this->stageExcelToCsvViaNativeXlsx(
+            return $this->stageExcelToCsvFallback(
                 $send,
                 $sourcePath,
                 $headerIndex,
@@ -251,31 +251,89 @@ class ExcelStagingService
             . ' --config ' . escapeshellarg($configFile)
             . ' --mode stage';
 
-        $descriptors = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
+        $pollProcessFiles = strncasecmp(PHP_OS, 'WIN', 3) === 0;
+        $stdoutPath = $pollProcessFiles ? $configFile . '.stdout.log' : null;
+        $stderrPath = $pollProcessFiles ? $configFile . '.stderr.log' : null;
+        $descriptors = $pollProcessFiles
+            ? [
+                0 => ['pipe', 'r'],
+                1 => ['file', $stdoutPath, 'ab'],
+                2 => ['file', $stderrPath, 'ab'],
+            ]
+            : [
+                0 => ['pipe', 'r'],
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ];
 
         $process = proc_open($cmd, $descriptors, $pipes);
         if (!is_resource($process)) {
             @unlink($configFile);
             @unlink($stagedCsvPath);
+            if ($stdoutPath !== null) {
+                @unlink($stdoutPath);
+            }
+            if ($stderrPath !== null) {
+                @unlink($stderrPath);
+            }
             return null;
         }
 
         fclose($pipes[0]);
-        stream_set_blocking($pipes[1], false);
-        stream_set_blocking($pipes[2], false);
+        if (!$pollProcessFiles) {
+            stream_set_blocking($pipes[1], false);
+            stream_set_blocking($pipes[2], false);
+        }
 
         $buffer = '';
         $donePayload = null;
         $pythonError = null;
         $stderrBuffer = '';
         $lastOutputAt = microtime(true);
+        $lastHeartbeatAt = $lastOutputAt;
+        $stdoutOffset = 0;
+        $stderrOffset = 0;
+        $heartbeatProgress = [
+            'percent' => 5,
+            'rows_done' => 0,
+            'total' => 0,
+            'speed' => 0,
+        ];
         $idleTimeoutSeconds = max(60, (int) config('import.excel_stage_idle_timeout_seconds', 300));
 
-        $processLine = static function (string $line) use ($send, &$donePayload, &$pythonError): void {
+        $readProcessOutput = static function (?string $path, int &$offset): string {
+            if ($path === null || !is_file($path)) {
+                return '';
+            }
+
+            clearstatcache(true, $path);
+            $size = @filesize($path);
+            if (!is_int($size) || $size <= $offset) {
+                return '';
+            }
+
+            $handle = @fopen($path, 'rb');
+            if ($handle === false) {
+                return '';
+            }
+
+            try {
+                if ($offset > 0) {
+                    fseek($handle, $offset);
+                }
+                $chunk = fread($handle, min(65536, $size - $offset));
+                if ($chunk === false || $chunk === '') {
+                    return '';
+                }
+                $offset += strlen($chunk);
+
+                return $chunk;
+            } finally {
+                fclose($handle);
+            }
+        };
+
+        $processLine = static function (string $line) use ($send, &$donePayload, &$pythonError, &$heartbeatProgress): void {
             $line = trim($line);
             if ($line === '') {
                 return;
@@ -290,6 +348,11 @@ class ExcelStagingService
             unset($data['type']);
 
             if ($type === 'progress') {
+                foreach (array_keys($heartbeatProgress) as $key) {
+                    if (array_key_exists($key, $data)) {
+                        $heartbeatProgress[$key] = $data[$key];
+                    }
+                }
                 $send('progress', $data);
                 return;
             }
@@ -314,11 +377,20 @@ class ExcelStagingService
                 if ($this->checkJobTerminationExternally($jobId)) {
                     $this->terminateProcess($process, $pipes);
                     @unlink($configFile);
+                    @unlink($stagedCsvPath);
+                    if ($stdoutPath !== null) {
+                        @unlink($stdoutPath);
+                    }
+                    if ($stderrPath !== null) {
+                        @unlink($stderrPath);
+                    }
                     throw new \RuntimeException('Import dihentikan oleh pengguna.');
                 }
             }
 
-            $chunk = fread($pipes[1], 65536);
+            $chunk = $pollProcessFiles
+                ? $readProcessOutput($stdoutPath, $stdoutOffset)
+                : fread($pipes[1], 65536);
             if ($chunk !== false && $chunk !== '') {
                 $lastOutputAt = microtime(true);
                 $buffer .= $chunk;
@@ -329,7 +401,9 @@ class ExcelStagingService
                 }
             }
 
-            $errorChunk = fread($pipes[2], 65536);
+            $errorChunk = $pollProcessFiles
+                ? $readProcessOutput($stderrPath, $stderrOffset)
+                : fread($pipes[2], 65536);
             if ($errorChunk !== false && $errorChunk !== '') {
                 $lastOutputAt = microtime(true);
                 $stderrBuffer .= $errorChunk;
@@ -342,7 +416,13 @@ class ExcelStagingService
                 $this->terminateProcess($process, $pipes);
                 @unlink($configFile);
                 @unlink($stagedCsvPath);
-                return $this->stageExcelToCsvViaNativeXlsx(
+                if ($stdoutPath !== null) {
+                    @unlink($stdoutPath);
+                }
+                if ($stderrPath !== null) {
+                    @unlink($stderrPath);
+                }
+                return $this->stageExcelToCsvFallback(
                     $send,
                     $sourcePath,
                     $headerIndex,
@@ -355,10 +435,19 @@ class ExcelStagingService
                 break;
             }
 
+            if ((microtime(true) - $lastOutputAt) >= 5.0 && (microtime(true) - $lastHeartbeatAt) >= 5.0) {
+                $lastHeartbeatAt = microtime(true);
+                $send('progress', array_merge($heartbeatProgress, [
+                    'message' => 'Worker sedang membaca struktur XLSX besar...',
+                ]));
+            }
+
             usleep(50000);
         }
 
-        $remaining = stream_get_contents($pipes[1]);
+        $remaining = $pollProcessFiles
+            ? $readProcessOutput($stdoutPath, $stdoutOffset)
+            : stream_get_contents($pipes[1]);
         if ($remaining) {
             $buffer .= $remaining;
             foreach (explode("\n", $buffer) as $line) {
@@ -366,7 +455,9 @@ class ExcelStagingService
             }
         }
 
-        $remainingError = stream_get_contents($pipes[2]);
+        $remainingError = $pollProcessFiles
+            ? $readProcessOutput($stderrPath, $stderrOffset)
+            : stream_get_contents($pipes[2]);
         if ($remainingError !== false && $remainingError !== '') {
             $stderrBuffer .= $remainingError;
             if (strlen($stderrBuffer) > 8192) {
@@ -374,10 +465,18 @@ class ExcelStagingService
             }
         }
 
-        fclose($pipes[1]);
-        fclose($pipes[2]);
+        if (!$pollProcessFiles) {
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+        }
         proc_close($process);
         @unlink($configFile);
+        if ($stdoutPath !== null) {
+            @unlink($stdoutPath);
+        }
+        if ($stderrPath !== null) {
+            @unlink($stderrPath);
+        }
 
         if ($pythonError !== null || !$donePayload || !file_exists($stagedCsvPath)) {
             if ($pythonError === null && trim($stderrBuffer) !== '') {
@@ -385,7 +484,7 @@ class ExcelStagingService
             }
 
             @unlink($stagedCsvPath);
-            return $this->stageExcelToCsvViaNativeXlsx(
+            return $this->stageExcelToCsvFallback(
                 $send,
                 $sourcePath,
                 $headerIndex,
@@ -587,11 +686,170 @@ class ExcelStagingService
         }
     }
 
+    private function stageExcelToCsvFallback(
+        callable $send,
+        string $sourcePath,
+        int $headerIndex,
+        array $normalizedHeaders,
+        string $stagedCsvPath
+    ): ?array {
+        return $this->stageExcelToCsvViaNativeXlsx(
+            $send,
+            $sourcePath,
+            $headerIndex,
+            $normalizedHeaders,
+            $stagedCsvPath
+        ) ?? $this->stageExcelToCsvViaPhpSpreadsheet(
+            $send,
+            $sourcePath,
+            $headerIndex,
+            $normalizedHeaders,
+            $stagedCsvPath
+        );
+    }
+
+    private function stageExcelToCsvViaPhpSpreadsheet(
+        callable $send,
+        string $sourcePath,
+        int $headerIndex,
+        array $normalizedHeaders,
+        string $stagedCsvPath
+    ): ?array {
+        $outputHandle = @fopen($stagedCsvPath, 'wb');
+        if ($outputHandle === false) {
+            return null;
+        }
+
+        try {
+            $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($sourcePath);
+            $reader->setReadDataOnly(true);
+            $spreadsheet = $reader->load($sourcePath);
+            $sheet = $spreadsheet->getActiveSheet();
+            $lastColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(max(1, count($normalizedHeaders)));
+            $writtenRows = 0;
+            $processedRows = 0;
+            $lastProgressAt = 0;
+
+            fputcsv($outputHandle, array_values($normalizedHeaders));
+            foreach ($sheet->getRowIterator($headerIndex + 2) as $row) {
+                $rowNumber = $row->getRowIndex();
+                $rowValues = $sheet->rangeToArray(
+                    'A' . $rowNumber . ':' . $lastColumn . $rowNumber,
+                    null,
+                    true,
+                    true,
+                    false
+                )[0] ?? [];
+                $rowValues = array_slice(array_pad((array) $rowValues, count($normalizedHeaders), null), 0, count($normalizedHeaders));
+
+                if (!collect($rowValues)->contains(static fn ($value): bool => $value !== null && trim((string) $value) !== '')) {
+                    continue;
+                }
+
+                foreach ($rowValues as $index => $value) {
+                    $rowValues[$index] = $this->normalizeDecimalValueForStaging($value);
+                }
+
+                fputcsv($outputHandle, $rowValues);
+                $writtenRows++;
+                $processedRows++;
+
+                if (($processedRows - $lastProgressAt) >= 1000) {
+                    $lastProgressAt = $processedRows;
+                    $send('progress', [
+                        'percent' => 8,
+                        'message' => 'Menyiapkan CSV staging dari XLS... (' . number_format($processedRows, 0, ',', '.') . ' baris)',
+                        'rows_done' => $processedRows,
+                        'total' => 0,
+                        'speed' => 0,
+                    ]);
+                }
+            }
+
+            $spreadsheet->disconnectWorksheets();
+
+            return [
+                'staged_csv_path' => $stagedCsvPath,
+                'total_rows' => $writtenRows,
+                'header_index' => 0,
+                'headers' => array_values($normalizedHeaders),
+            ];
+        } catch (\Throwable) {
+            @unlink($stagedCsvPath);
+            return null;
+        } finally {
+            fclose($outputHandle);
+        }
+    }
+
     private function supportsNativeXlsxStreaming(string $path): bool
     {
         return strtolower(pathinfo($path, PATHINFO_EXTENSION)) === 'xlsx'
             && class_exists(\ZipArchive::class)
             && class_exists(\XMLReader::class);
+    }
+
+    private function detectExcelHeaderFallback(string $path): ?array
+    {
+        return $this->detectExcelHeaderViaNativeXlsx($path)
+            ?? $this->detectExcelHeaderViaPhpSpreadsheet($path);
+    }
+
+    private function detectExcelHeaderViaPhpSpreadsheet(string $path): ?array
+    {
+        try {
+            $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($path);
+            $reader->setReadDataOnly(true);
+            $reader->setReadFilter(new class implements \PhpOffice\PhpSpreadsheet\Reader\IReadFilter {
+                public function readCell(string $columnAddress, int $row, string $worksheetName = ''): bool
+                {
+                    return $row <= 50;
+                }
+            });
+            $worksheetInfo = $reader->listWorksheetInfo($path);
+            $spreadsheet = $reader->load($path);
+
+            try {
+                $rows = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
+                $bestHeaderRowIndex = null;
+                $bestHeaderValues = [];
+                $bestFilledCells = -1;
+
+                foreach (array_slice($rows, 0, 50) as $rowIndex => $row) {
+                    $filledCells = 0;
+                    $lastFilledIndex = -1;
+                    foreach ((array) $row as $columnIndex => $value) {
+                        if ($value !== null && trim((string) $value) !== '') {
+                            $filledCells++;
+                            $lastFilledIndex = (int) $columnIndex;
+                        }
+                    }
+
+                    if ($filledCells > $bestFilledCells) {
+                        $bestFilledCells = $filledCells;
+                        $bestHeaderRowIndex = $rowIndex;
+                        $bestHeaderValues = array_values(array_map(
+                            static fn ($value): string => $value === null ? '' : trim((string) $value),
+                            array_slice((array) $row, 0, max(1, $lastFilledIndex + 1))
+                        ));
+                    }
+                }
+
+                if ($bestHeaderRowIndex === null || $bestHeaderValues === []) {
+                    return null;
+                }
+
+                return [
+                    'header_index' => $bestHeaderRowIndex,
+                    'total_rows' => (int) ($worksheetInfo[0]['totalRows'] ?? count($rows)),
+                    'header_values' => $bestHeaderValues,
+                ];
+            } finally {
+                $spreadsheet->disconnectWorksheets();
+            }
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function detectExcelHeaderViaNativeXlsx(string $path): ?array
@@ -636,9 +894,11 @@ class ExcelStagingService
 
                 $rowValues = $this->extractWorksheetRowValues($reader, $sharedStrings, 256);
                 $filledCells = 0;
-                foreach ($rowValues as $value) {
+                $lastFilledIndex = -1;
+                foreach ($rowValues as $index => $value) {
                     if ($value !== null && trim((string) $value) !== '') {
                         $filledCells++;
+                        $lastFilledIndex = (int) $index;
                     }
                 }
 
@@ -647,7 +907,7 @@ class ExcelStagingService
                     $bestHeaderRowIndex = $rowNumber - 1;
                     $bestHeaderValues = array_values(array_map(
                         static fn ($value) => $value === null ? '' : trim((string) $value),
-                        array_slice($rowValues, 0, max(1, $filledCells))
+                        array_slice($rowValues, 0, max(1, $lastFilledIndex + 1))
                     ));
                 }
             }

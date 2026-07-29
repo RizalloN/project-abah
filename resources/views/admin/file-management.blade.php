@@ -40,6 +40,7 @@
          data-backup-url="{{ route('file-management.database-backup') }}"
          data-delete-url="{{ route('file-management.destroy') }}"
          data-cleanup-url="{{ route('import.cleanup-artifacts') }}"
+         data-snapshot-check-url="{{ route('file-management.snapshots.latest-check') }}"
          data-current-scope="import_artifacts">
 
         <!-- Toolbar & Stats -->
@@ -91,6 +92,7 @@
                         </div>
 
                         <button type="button" id="btn-file-management-cleanup" class="btn btn-sm btn-outline-primary fm-action-btn" data-scope-action="import_artifacts"><i class="fas fa-broom mr-1"></i> Cleanup Excel</button>
+                        <button type="button" id="btn-file-management-snapshot-check" class="btn btn-sm btn-outline-secondary fm-action-btn fm-snapshot-action-btn"><i class="fas fa-sync-alt mr-1"></i> Cek Snapshot Terbaru</button>
                         <button type="button" id="btn-file-management-backup" class="btn btn-sm btn-success fm-action-btn d-none" data-scope-action="database_backups"><i class="fas fa-database mr-1"></i> Backup DB</button>
                     </div>
                 </div>
@@ -229,12 +231,14 @@
         const deleteUrl = card?.getAttribute('data-delete-url') || '';
         const backupUrl = card?.getAttribute('data-backup-url') || '';
         const cleanupUrl = card?.getAttribute('data-cleanup-url') || '';
+        const snapshotCheckUrl = card?.getAttribute('data-snapshot-check-url') || '';
         const searchInput = document.getElementById('file-management-search');
         const selectAll = document.getElementById('file-management-select-all');
         const tableBody = document.getElementById('file-management-table-body');
         const btnDeleteSelected = document.getElementById('btn-file-management-delete-selected');
         const btnBackup = document.getElementById('btn-file-management-backup');
         const btnCleanup = document.getElementById('btn-file-management-cleanup');
+        const btnSnapshotCheck = document.getElementById('btn-file-management-snapshot-check');
         const hoursInput = document.getElementById('file-management-hours');
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
         const scopeButtons = Array.from(document.querySelectorAll('[data-file-scope]'));
@@ -589,6 +593,37 @@
             window.location.reload();
         });
 
+        btnSnapshotCheck?.addEventListener('click', async function () {
+            if (!snapshotCheckUrl) return;
+
+            const originalHtml = btnSnapshotCheck.innerHTML;
+            btnSnapshotCheck.disabled = true;
+            btnSnapshotCheck.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Memeriksa...';
+
+            try {
+                const payload = await postJson(snapshotCheckUrl, {});
+                const sources = Array.isArray(payload.queued_sources) ? payload.queued_sources : [];
+                const sourceList = sources.length
+                    ? `<ul class="text-left mb-0 mt-2 small">${sources.map((item) => `<li><b>${escapeHtml(item.table)}</b>: ${escapeHtml(item.period)}</li>`).join('')}</ul>`
+                    : '';
+
+                await themedSwal({
+                    icon: payload.status === 'completed' ? 'info' : 'success',
+                    title: payload.status === 'completed' ? 'Snapshot Tidak Perlu Dijadwalkan' : 'Pengecekan Snapshot Dijadwalkan',
+                    html: `<div>${escapeHtml(payload.message || 'Pengecekan snapshot telah diproses.')}</div>${sourceList}`,
+                });
+            } catch (error) {
+                await themedSwal({
+                    icon: 'error',
+                    title: 'Pengecekan Snapshot Gagal',
+                    text: error.message || 'Tidak dapat menjadwalkan pengecekan snapshot.',
+                });
+            } finally {
+                btnSnapshotCheck.disabled = false;
+                btnSnapshotCheck.innerHTML = originalHtml;
+            }
+        });
+
         btnBackup?.addEventListener('click', async function () {
             const confirm = await themedSwal({
                 icon: 'question',
@@ -823,6 +858,20 @@
         border-radius: 8px !important;
         min-height: 32px;
         font-weight: 800;
+    }
+
+    .fm-snapshot-action-btn {
+        color: #334155;
+        border-color: #cbd5e1;
+        background: #ffffff;
+    }
+
+    .fm-snapshot-action-btn:hover,
+    .fm-snapshot-action-btn:focus {
+        color: #0f4c81;
+        border-color: #93c5fd;
+        background: #eff6ff;
+        box-shadow: none;
     }
 
     .fm-safety-note {

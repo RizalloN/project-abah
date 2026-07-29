@@ -56,11 +56,11 @@
     </div>
 
     <div class="kinerja-table-container">
-        <table class="kinerja-konsumer-table kinerja-konsumer-table--compact kinerja-quality-series-table">
+        <table class="kinerja-konsumer-table kinerja-konsumer-table--compact kinerja-quality-series-table" style="--kinerja-branch-column-width: 112px;">
             <thead>
                 <tr>
-                    <th rowspan="2" class="sticky-col" style="width: 112px; left: 0;">Cabang</th>
-                    <th rowspan="2" class="sticky-col" style="width: 190px; left: 112px;">Nama RM</th>
+                    <th rowspan="2" class="sticky-col" style="width: var(--kinerja-branch-column-width); left: 0;">Cabang</th>
+                    <th rowspan="2" class="sticky-col" style="width: 190px; left: var(--kinerja-branch-column-width);">Nama RM</th>
                     <th rowspan="2" style="width: 108px;">Produk</th>
                     @if($showLoanReference)
                         <th rowspan="2" class="sub-head" style="width: 92px;">OS Pinjaman<br>{{ $selectedHeaderLabel }}</th>
@@ -88,7 +88,7 @@
                 @forelse($rows as $branch)
                     <tr class="loan-branch-subtotal">
                         <td rowspan="{{ $branch['branch_rowspan'] }}" class="merged-branch-cell sticky-col" style="left: 0;">{{ $branch['cabang'] }}</td>
-                        <td colspan="2" class="text-center-important sticky-col" style="left: 112px; z-index: 20; border-right: 1px solid #cbd5e1;">
+                        <td colspan="2" class="text-center-important sticky-col" style="left: var(--kinerja-branch-column-width); z-index: 20; border-right: 1px solid #cbd5e1;">
                             TOTAL {{ $branch['cabang'] }}
                         </td>
                         @if($showLoanReference)
@@ -114,7 +114,7 @@
                         @foreach($rmData['items'] as $item)
                             <tr>
                                 @if($firstRmRow)
-                                    <td rowspan="{{ $rmData['rm_rowspan'] }}" class="merged-rm-cell sticky-col" style="left: 112px;">
+                                    <td rowspan="{{ $rmData['rm_rowspan'] }}" class="merged-rm-cell sticky-col" style="left: var(--kinerja-branch-column-width);">
                                         <div class="d-flex align-items-start flex-column">
                                             <span>{{ $rmName }}</span>
                                             @if($rmCategory !== null)

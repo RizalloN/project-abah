@@ -38,4 +38,28 @@ class DashboardHarianResponsiveViewTest extends TestCase
         $this->assertStringContainsString('window.addEventListener(\'orientationchange\', handleResponsiveViewportChange);', $source);
         $this->assertStringContainsString('window.visualViewport.addEventListener(\'resize\', handleResponsiveViewportChange);', $source);
     }
+
+    public function test_daily_table_uses_bounded_scroll_and_runtime_three_row_header_offsets(): void
+    {
+        $source = file_get_contents(resource_path('views/report/dashboard-harian.blade.php'));
+
+        $this->assertMatchesRegularExpression(
+            '/@media \(max-width: 991\.98px\), \(max-height: 760px\).*?\.daily-table-wrap\s*\{[^}]*max-height:\s*max\(240px,\s*min\(68dvh,\s*640px\)\)\s*!important;[^}]*overflow:\s*auto\s*!important;/s',
+            $source
+        );
+        $this->assertMatchesRegularExpression(
+            '/@media \(orientation: landscape\) and \(max-height: 640px\).*?\.daily-table-wrap\s*\{[^}]*max-height:\s*max\(220px,\s*min\(60dvh,\s*520px\)\)\s*!important;[^}]*overflow:\s*auto\s*!important;/s',
+            $source
+        );
+        $this->assertStringContainsString('--daily-header-column-top: var(--daily-header-group-height);', $source);
+        $this->assertStringContainsString('--daily-header-rka-top: calc(var(--daily-header-group-height) + var(--daily-header-column-height));', $source);
+        $this->assertStringContainsString('const syncStickyHeaderOffsets = function ()', $source);
+        $this->assertStringContainsString("tableWrap.style.setProperty('--daily-header-column-top', groupHeight + 'px');", $source);
+        $this->assertStringContainsString("tableWrap.style.setProperty('--daily-header-rka-top', (groupHeight + columnHeight) + 'px');", $source);
+        $this->assertStringContainsString('const stickyHeaderResizeObserver = new ResizeObserver(scheduleTableViewportSync);', $source);
+        $this->assertStringContainsString('document.fonts.ready.then(scheduleTableViewportSync);', $source);
+        $this->assertStringContainsString('class="sticky-label group-label" rowspan="3"', $source);
+        $this->assertStringContainsString('top: var(--daily-header-column-top);', $source);
+        $this->assertStringContainsString('top: var(--daily-header-rka-top);', $source);
+    }
 }

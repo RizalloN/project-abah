@@ -3,6 +3,7 @@
 use App\Http\Controllers\DashboardPinjamanReportController;
 use App\Http\Controllers\DashboardHarianController;
 use App\Http\Controllers\DashboardSimpananController;
+use App\Http\Controllers\PrognosaWeeklyController;
 use App\Http\Controllers\Report\AlmafactsDashboardController;
 use App\Http\Controllers\Report\DigitalPerformanceController;
 use App\Http\Controllers\Report\DataPhReportController;
@@ -11,6 +12,7 @@ use App\Http\Controllers\Report\KinerjaRmMikroReportController;
 use App\Http\Controllers\Report\KinerjaNonPtpReportController;
 use App\Http\Controllers\Report\KolaborasiReportController;
 use App\Http\Controllers\Report\NewPayrollReportController;
+use App\Http\Controllers\Report\RunOffReportController;
 use App\Http\Controllers\Import\ImportCasaBrilinkController;
 use App\Http\Controllers\Import\ImportCognosPhController;
 use App\Http\Controllers\Import\ImportCognosRecoveryController;
@@ -48,14 +50,16 @@ Route::get('/', function () {
     return app(AuthenticatedSessionController::class)->create();
 })->name('home');
 
-Route::get('/workbooks/market-share.xlsx', [PublicWorkbookController::class, 'marketShare'])
-    ->name('public-workbooks.market-share');
-Route::get('/workbooks/market-share/{token}/market-share.xlsx', [PublicWorkbookController::class, 'marketShare'])
-    ->name('public-workbooks.market-share.token');
-Route::get('/workbooks/market-share-mapping.xlsx', [PublicWorkbookController::class, 'marketShareMapping'])
-    ->name('public-workbooks.market-share-mapping');
-Route::get('/workbooks/market-share-mapping/{token}/market-share-mapping.xlsx', [PublicWorkbookController::class, 'marketShareMapping'])
-    ->name('public-workbooks.market-share-mapping.token');
+Route::middleware('throttle:60,1')->group(function (): void {
+    Route::get('/workbooks/market-share.xlsx', [PublicWorkbookController::class, 'marketShare'])
+        ->name('public-workbooks.market-share');
+    Route::get('/workbooks/market-share/{token}/market-share.xlsx', [PublicWorkbookController::class, 'marketShare'])
+        ->name('public-workbooks.market-share.token');
+    Route::get('/workbooks/market-share-mapping.xlsx', [PublicWorkbookController::class, 'marketShareMapping'])
+        ->name('public-workbooks.market-share-mapping');
+    Route::get('/workbooks/market-share-mapping/{token}/market-share-mapping.xlsx', [PublicWorkbookController::class, 'marketShareMapping'])
+        ->name('public-workbooks.market-share-mapping.token');
+});
 
 Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttle:240,1'])->group(function () {
     Route::get('/dashboard-harian', [DashboardHarianController::class, 'index'])
@@ -72,15 +76,31 @@ Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttl
         ->name('dashboard.harian.data');
     Route::get('/dashboard-harian/export', [DashboardHarianController::class, 'exportExcel'])
         ->name('dashboard.harian.export');
-
+    Route::get('/prognosa/weekly/{sheet?}', [PrognosaWeeklyController::class, 'index'])
+        ->name('prognosa.weekly');
     Route::get('/dashboard', [DashboardSimpananController::class, 'index'])
         ->name('dashboard');
     Route::get('/dashboard/presentation-data', [DashboardSimpananController::class, 'presentationData'])
         ->name('dashboard.presentation-data');
+    Route::get('/dashboard/presentation-data/summary', [DashboardSimpananController::class, 'presentationSummaryData'])
+        ->name('dashboard.presentation-data.summary');
+    Route::get('/dashboard/presentation-data/detail/{section}', [DashboardSimpananController::class, 'presentationDetailData'])
+        ->whereIn('section', ['performance', 'micro', 'productivity', 'timeseries', 'digital', 'all'])
+        ->name('dashboard.presentation-data.detail');
     Route::get('/dashboard/presentation-kts-data', [DashboardSimpananController::class, 'presentationKtsData'])
         ->name('dashboard.presentation-kts-data');
     Route::get('/dashboard/presentation', [DashboardSimpananController::class, 'presentation'])
         ->name('dashboard.presentation');
+    Route::post('/dashboard/presentation/export-pptx', [DashboardSimpananController::class, 'exportPowerPoint'])
+        ->name('dashboard.presentation.export-pptx');
+    Route::post('/dashboard/presentation/export-pptx/start', [DashboardSimpananController::class, 'startPowerPointExport'])
+        ->name('dashboard.presentation.export-pptx.start');
+    Route::get('/dashboard/presentation/export-pptx/{token}/status', [DashboardSimpananController::class, 'powerPointExportStatus'])
+        ->whereUuid('token')
+        ->name('dashboard.presentation.export-pptx.status');
+    Route::get('/dashboard/presentation/export-pptx/{token}/download', [DashboardSimpananController::class, 'downloadPowerPointExport'])
+        ->whereUuid('token')
+        ->name('dashboard.presentation.export-pptx.download');
     Route::get('/dashboard/area6-data', [DashboardSimpananController::class, 'area6Data'])
         ->name('dashboard.area6-data');
 
@@ -141,6 +161,8 @@ Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttl
         ->name('report.dashboard-pinjaman.data-ph');
     Route::get('/report/dashboard-pinjaman/data-ph/nominatif', [DataPhReportController::class, 'nominatif'])
         ->name('report.dashboard-pinjaman.data-ph.nominatif');
+    Route::get('/report/dashboard-pinjaman/run-off', [RunOffReportController::class, 'index'])
+        ->name('report.dashboard-pinjaman.run-off');
     Route::get('/report/dashboard-pinjaman/kinerjarm', [KinerjaRmReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerjarm');
     Route::get('/report/dashboard-pinjaman/kinerjarm/history', [KinerjaRmReportController::class, 'historyDetails'])
@@ -215,6 +237,7 @@ Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.l
     Route::get('/import', [ImportIndexController::class, 'index'])->name('import.index');
     Route::get('/report-management', [ImportIndexController::class, 'reportManagement'])->name('report-management.index');
     Route::get('/job-management', [ImportJobManagementController::class, 'index'])->name('job-management.index');
+    Route::get('/job-management/badge', [ImportJobManagementController::class, 'badge'])->name('job-management.badge');
     Route::get('/job-management/data', [ImportJobManagementController::class, 'data'])->name('job-management.data');
     Route::post('/job-management/clear', [ImportJobManagementController::class, 'clear'])->middleware('throttle:admin-sensitive')->name('job-management.clear');
     Route::post('/job-management/bulk-delete', [ImportJobManagementController::class, 'bulkDestroy'])->middleware('throttle:admin-sensitive')->name('job-management.bulk-destroy');
@@ -226,6 +249,7 @@ Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.l
     Route::post('/job-management/queue-job/{queueJobId}/force-run', [ImportJobManagementController::class, 'forceRunQueueJob'])->middleware('throttle:admin-sensitive')->name('job-management.queue.force-run');
     Route::post('/job-management/queue-job/purge', [ImportJobManagementController::class, 'purgeQueueJobs'])->middleware('throttle:admin-sensitive')->name('job-management.queue.purge');
     Route::get('/file-management', [FileManagementController::class, 'index'])->name('file-management.index');
+    Route::post('/file-management/snapshots/latest-check', [FileManagementController::class, 'checkLatestSnapshots'])->middleware('throttle:admin-sensitive')->name('file-management.snapshots.latest-check');
     Route::post('/file-management/database-backup', [FileManagementController::class, 'backupDatabase'])->middleware('throttle:admin-sensitive')->name('file-management.database-backup');
     Route::get('/file-management/database-backup/{backupId}/status', [FileManagementController::class, 'getBackupStatus'])->name('file-management.database-backup.status');
     Route::get('/file-management/download', FileManagementDownloadController::class)->name('file-management.download');

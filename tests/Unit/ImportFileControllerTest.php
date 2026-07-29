@@ -615,13 +615,20 @@ class ImportFileControllerTest extends TestCase
             'table_name' => $tableName,
         ]);
 
-        $csvPath = storage_path('framework/testing/' . $tableName . '_preview.csv');
+        $importDirectory = storage_path('app/imports/import_20260724_120000_' . \Illuminate\Support\Str::random(5));
+        $csvPath = $importDirectory . DIRECTORY_SEPARATOR . $tableName . '_preview.csv';
         if (!is_dir(dirname($csvPath))) {
-            @mkdir(dirname($csvPath), 0777, true);
+            @mkdir(dirname($csvPath), 0750, true);
         }
 
         file_put_contents($csvPath, $headerLine . "\n" . $dataLine . "\n");
-        session(['active_id_report' => 91]);
+        session([
+            'active_id_report' => 91,
+            'import_files' => [[
+                'name' => basename($csvPath),
+                'path' => $csvPath,
+            ]],
+        ]);
 
         try {
             return (new ImportFileController())->preview(\Illuminate\Http\Request::create('/import/preview/direct', 'GET', [
@@ -630,7 +637,8 @@ class ImportFileControllerTest extends TestCase
                 'periode' => '2026-06-30',
             ]));
         } finally {
-            @unlink($csvPath);
+            \Illuminate\Support\Facades\File::deleteDirectory($importDirectory);
+            session()->forget(['import_files', 'final_import_path']);
         }
     }
 

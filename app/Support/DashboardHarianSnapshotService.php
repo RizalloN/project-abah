@@ -847,7 +847,9 @@ class DashboardHarianSnapshotService
                 'deltas' => collect($deltaKeys)
                     ->map(fn (string $key): array => [
                         'key' => $key,
+                        'period' => $periods[$key] ?? null,
                         'label' => $this->keragaanPositionLabel($key, $periods[$key] ?? null),
+                        'delta_label' => $this->keragaanDeltaLabel($key),
                     ])
                     ->all(),
             ],
@@ -1090,11 +1092,13 @@ class DashboardHarianSnapshotService
     {
         $cleanCode = trim((string) $code);
         if (preg_match('/^\d+$/', $cleanCode) === 1) {
-            return str_pad($cleanCode, 5, '0', STR_PAD_LEFT);
+            $unpadded = ltrim($cleanCode, '0');
+            return str_pad($unpadded === '' ? '0' : $unpadded, 4, '0', STR_PAD_LEFT);
         }
 
         if (preg_match('/^\s*(\d{4,5})\b/', (string) $rawUnit, $matches) === 1) {
-            return str_pad($matches[1], 5, '0', STR_PAD_LEFT);
+            $unpadded = ltrim($matches[1], '0');
+            return str_pad($unpadded === '' ? '0' : $unpadded, 4, '0', STR_PAD_LEFT);
         }
 
         return $cleanCode;
@@ -1106,11 +1110,19 @@ class DashboardHarianSnapshotService
             return '-';
         }
 
-        $date = Carbon::parse($period);
+        return Carbon::parse($period)->translatedFormat('d M y');
+    }
 
-        return in_array($key, ['yoy', 'ytd'], true)
-            ? $date->translatedFormat('M y')
-            : $date->translatedFormat('d M y');
+    private function keragaanDeltaLabel(string $key): string
+    {
+        return match (strtolower($key)) {
+            'yoy' => 'YoY',
+            'ytd' => 'YtD',
+            'mtm' => 'MtM',
+            'mtd' => 'MtD',
+            'h1'  => 'DtD',
+            default => strtoupper($key),
+        };
     }
 
     private function keragaanDeltaTone(float $delta, bool $lowerBetter): string
@@ -1249,7 +1261,7 @@ class DashboardHarianSnapshotService
                 $unitQuery = DB::table(self::SNAPSHOT_TABLE)
                     ->where('snapshot_period', $effectivePeriod)
                     ->selectRaw("unit_label as label, unit_key as value, kanca_label as kanca_value")
-                    ->whereColumn('unit_key', '<>', 'kanca_key'); // Exclude summary rows, not KC/KCP detail labels
+                    ->whereColumn('unit_key', '<>', 'kanca_key');
 
                 if ($normalizedKanca !== []) {
                     $unitQuery->whereIn('kanca_label', $normalizedKanca);
@@ -1283,7 +1295,9 @@ class DashboardHarianSnapshotService
                 ->values();
         }
 
-        $isArea6Scope = $this->isArea6KancaSelection($normalizedKanca, $kancas);
+        $allKancaValues = $kancas->map(fn ($row) => (string) data_get($row, 'value'))->filter()->values()->all();
+        $isArea6Scope = $normalizedKanca === []
+            || ($allKancaValues !== [] && count($normalizedKanca) === count($allKancaValues) && !array_diff($allKancaValues, $normalizedKanca));
 
         $scopedUnits = $units
             ->filter(function ($row) use ($normalizedKanca, $isArea6Scope) {
@@ -1298,13 +1312,6 @@ class DashboardHarianSnapshotService
                 return in_array((string) data_get($row, 'kanca_value'), $normalizedKanca, true);
             })
             ->values();
-
-        if (
-            $normalizedUnit !== []
-            && !$scopedUnits->contains(fn ($row) => in_array((string) data_get($row, 'value'), $normalizedUnit, true))
-        ) {
-            $normalizedUnit = [];
-        }
 
         return [
             'kanca' => array_values(array_merge([['value' => 'all', 'label' => self::AREA_6_LABEL]], $kancas->map(fn ($row) => (array) $row)->all())),
@@ -1330,22 +1337,25 @@ class DashboardHarianSnapshotService
                     'unit_label' => self::ALL_UNIT_LABEL,
                     'row_count' => 0,
                     'current_total_simpanan' => 0,
-                    'current_total_os_non_commercial' => 0,
-                    'current_casa_pct' => 0,
+                    'current_total_os' => 0,
                 ],
             ];
         }
 
-        // Pre-warm existence cache with a single DISTINCT query so the upcoming
-        // resolveComparisonPeriods() calls (9 periods) each hit the in-memory map
-        // instead of issuing one COUNT/EXISTS round-trip per period.
-        $this->prewarmSnapshotExistenceCache();
-
         $comparisonPeriods = $this->resolveComparisonPeriods($selectedPeriod, $rkaPeriod, $mtmPeriod);
-        $periodKeys = array_values(array_unique(array_filter(array_values($comparisonPeriods))));
-        $metricsByPeriod = $this->loadMetricsForPeriods($periodKeys, $kancaKey, $unitKey);
+        $neededPeriods = array_values(array_unique(array_filter([
+            $selectedPeriod,
+            $comparisonPeriods['yoy'],
+            $comparisonPeriods['ytd'],
+            $comparisonPeriods['m2'],
+            $comparisonPeriods['mtm'],
+            $comparisonPeriods['mtd'],
+            $comparisonPeriods['h1'],
+        ])));
 
-        $currentMetrics = $metricsByPeriod[$comparisonPeriods['current']] ?? $this->finalizeMetrics($this->emptyMetrics());
+        $metricsByPeriod = $this->loadMetricsForPeriods($neededPeriods, $kancaKey, $unitKey);
+
+        $currentMetrics = $metricsByPeriod[$selectedPeriod] ?? $this->finalizeMetrics($this->emptyMetrics());
         $yoyMetrics = $comparisonPeriods['yoy'] ? ($metricsByPeriod[$comparisonPeriods['yoy']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $ytdMetrics = $comparisonPeriods['ytd'] ? ($metricsByPeriod[$comparisonPeriods['ytd']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $m2Metrics = $comparisonPeriods['m2'] ? ($metricsByPeriod[$comparisonPeriods['m2']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
@@ -1425,8 +1435,7 @@ class DashboardHarianSnapshotService
                 'unit_label' => $this->displayFilterLabel($unitKey, self::ALL_UNIT_LABEL, $selectedPeriod, 'unit_kerja', $kancaKey, $unitKey),
                 'row_count' => count($rows),
                 'current_total_simpanan' => (float) ($currentMetrics['total_simpanan'] ?? 0),
-                'current_total_os_non_commercial' => (float) ($currentMetrics['total_os_non_commercial'] ?? 0),
-                'current_casa_pct' => (float) ($currentMetrics['casa_pct'] ?? 0),
+                'current_total_os' => (float) ($currentMetrics['total_os'] ?? 0),
             ],
         ];
     }
@@ -3522,10 +3531,10 @@ class DashboardHarianSnapshotService
         if (str_contains($upper, 'UNIT ')) {
             $suffix = trim(substr($clean, stripos($upper, 'UNIT ') + 5));
 
-            return 'UNIT ' . Str::title(Str::lower($suffix));
+            return 'UNIT ' . $this->formatUnitDisplayLabel($suffix);
         }
 
-        return Str::title(Str::lower($clean));
+        return $this->formatUnitDisplayLabel($clean);
     }
 
     private function normalizeOfficeUnitLabel(string $value): string
@@ -3536,14 +3545,25 @@ class DashboardHarianSnapshotService
         }
 
         if (preg_match('/\bKCP\b\s*(.+)$/i', $clean, $matches) === 1) {
-            return 'KCP ' . Str::title(Str::lower(trim($matches[1])));
+            return 'KCP ' . $this->formatUnitDisplayLabel(trim($matches[1]));
         }
 
         if (preg_match('/\bKC\b\s*(.+)$/i', $clean, $matches) === 1) {
-            return 'KC ' . Str::title(Str::lower(trim($matches[1])));
+            return 'KC ' . $this->formatUnitDisplayLabel(trim($matches[1]));
         }
 
-        return Str::title(Str::lower($clean));
+        return $this->formatUnitDisplayLabel($clean);
+    }
+
+    private function formatUnitDisplayLabel(string $value): string
+    {
+        $title = Str::title(Str::lower(trim($value)));
+
+        return preg_replace_callback(
+            '/\b(?:i|ii|iii|iv|v|vi|vii|viii|ix|x)\b/i',
+            static fn (array $matches): string => strtoupper($matches[0]),
+            $title
+        ) ?? $title;
     }
 
     private function cleanBranchValue(string $value): string

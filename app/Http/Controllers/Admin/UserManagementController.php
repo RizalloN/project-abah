@@ -8,10 +8,14 @@ use App\Support\UserBranchScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 
 class UserManagementController extends Controller
@@ -99,7 +103,7 @@ class UserManagementController extends Controller
         // ── Rate-limit: max MAX_CREATES_PER_HOUR pembuatan user baru per admin per jam ──
         $currentAdmin = Auth::user();
         $hourAgo = now()->subHour();
-        $recentCount = \Illuminate\Support\Facades\DB::table('user_audit_log')
+        $recentCount = DB::table('user_audit_log')
             ->where('actor_id', $currentAdmin->getKey())
             ->where('action', 'create')
             ->where('created_at', '>=', $hourAgo)
@@ -117,13 +121,13 @@ class UserManagementController extends Controller
             'pn'       => ['required', 'string', 'regex:' . self::PN_REGEX, 'unique:users,pn'],
             'role'     => ['required', Rule::in(['admin', 'user'])],
             'branch_scope' => ['required', Rule::in(array_keys(UserBranchScope::options()))],
-            'password' => ['required', 'string', 'min:8'],
+            'password' => ['required', 'string', $this->securePasswordRule()],
         ], [
             'name.regex'     => 'Nama hanya boleh mengandung huruf dan spasi (tanpa gelar asing atau karakter khusus).',
             'pn.regex'       => 'PN harus berupa 4–10 digit angka (contoh: 90179583).',
             'branch_scope.required' => 'Wilayah binaan wajib dipilih.',
             'branch_scope.in' => 'Wilayah binaan yang dipilih tidak valid.',
-            'password.min'   => 'Password minimal 8 karakter.',
+            'password.min'   => 'Password minimal 12 karakter.',
         ])->validateWithBag('createUser');
 
         // ── Cek pola nama Faker/gelar asing ──
@@ -159,13 +163,13 @@ class UserManagementController extends Controller
             'pn'       => ['required', 'string', 'regex:' . self::PN_REGEX, Rule::unique('users', 'pn')->ignore($user->getKey())],
             'role'     => ['required', Rule::in(['admin', 'user'])],
             'branch_scope' => ['required', Rule::in(array_keys(UserBranchScope::options()))],
-            'password' => ['nullable', 'string', 'min:8'],
+            'password' => ['nullable', 'string', $this->securePasswordRule()],
         ], [
             'name.regex'   => 'Nama hanya boleh mengandung huruf dan spasi (tanpa gelar asing atau karakter khusus).',
             'pn.regex'     => 'PN harus berupa 4–10 digit angka (contoh: 90179583).',
             'branch_scope.required' => 'Wilayah binaan wajib dipilih.',
             'branch_scope.in' => 'Wilayah binaan yang dipilih tidak valid.',
-            'password.min' => 'Password minimal 8 karakter.',
+            'password.min' => 'Password minimal 12 karakter.',
         ]);
 
         if ($validator->fails()) {
@@ -198,17 +202,32 @@ class UserManagementController extends Controller
         }
 
         $oldRole = $user->role;
+        $oldPn = $user->pn;
         $oldBranchScope = $user->branch_scope ?: UserBranchScope::AREA_SCOPE;
         $user->name = trim($data['name']);
         $user->pn   = trim($data['pn']);
         $user->role = $data['role'];
         $user->branch_scope = $data['branch_scope'];
 
-        if (!empty($data['password'])) {
+        $passwordChanged = !empty($data['password']);
+        $securityContextChanged = $passwordChanged
+            || $oldRole !== $data['role']
+            || $oldBranchScope !== $data['branch_scope']
+            || $oldPn !== trim($data['pn']);
+
+        if ($passwordChanged) {
             $user->password = Hash::make($data['password']);
         }
 
+        if ($securityContextChanged) {
+            $user->setRememberToken(Str::random(60));
+        }
+
         $user->save();
+
+        if ($securityContextChanged) {
+            $this->revokePersistedSessions((int) $user->getKey());
+        }
 
         // ── Audit log ──
         $this->writeAuditLog('update', $user, $currentUser, [
@@ -216,8 +235,17 @@ class UserManagementController extends Controller
             'new_role' => $data['role'],
             'old_branch_scope' => $oldBranchScope,
             'new_branch_scope' => $data['branch_scope'],
-            'password_changed' => !empty($data['password']),
+            'password_changed' => $passwordChanged,
+            'sessions_revoked' => $securityContextChanged,
         ]);
+
+        if ($securityContextChanged && $currentUser && (int) $currentUser->getKey() === (int) $user->getKey()) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()->route('login')->with('status', 'Perubahan keamanan tersimpan. Silakan login kembali.');
+        }
 
         return back()->with('success', 'Data user berhasil diperbarui.');
     }
@@ -234,6 +262,7 @@ class UserManagementController extends Controller
         // Simpan info untuk log sebelum delete
         $deletedInfo = ['id' => $user->getKey(), 'name' => $user->name, 'pn' => $user->pn];
 
+        $this->revokePersistedSessions((int) $user->getKey());
         $user->delete();
 
         // ── Audit log ──
@@ -275,5 +304,30 @@ class UserManagementController extends Controller
         } catch (\Throwable) {
             // Tabel mungkin belum ada — log ke file sudah cukup sebagai fallback
         }
+    }
+
+    private function securePasswordRule(): Password
+    {
+        return Password::min(12)
+            ->letters()
+            ->mixedCase()
+            ->numbers();
+    }
+
+    private function revokePersistedSessions(int $userId): void
+    {
+        if ($userId <= 0 || config('session.driver') !== 'database') {
+            return;
+        }
+
+        $table = (string) config('session.table', 'sessions');
+        $connection = (string) (config('session.connection') ?: config('database.default'));
+        $schema = Schema::connection($connection);
+
+        if ($table === '' || !$schema->hasTable($table) || !$schema->hasColumn($table, 'user_id')) {
+            return;
+        }
+
+        DB::connection($connection)->table($table)->where('user_id', $userId)->delete();
     }
 }

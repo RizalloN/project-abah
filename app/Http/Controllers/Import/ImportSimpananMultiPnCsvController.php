@@ -43,6 +43,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             'file' => [
                 'required',
                 'file',
+                'max:' . $this->simpananUploadMaxKilobytes(),
                 function (string $attribute, $file, \Closure $fail) {
                     $originalExtension = $file ? strtolower((string) $file->getClientOriginalExtension()) : '';
                     $detectedMimeType = $file ? strtolower((string) ($file->getMimeType() ?: $file->getClientMimeType())) : '';
@@ -106,9 +107,9 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
     public function initChunkUpload(Request $request)
     {
         $request->validate([
-            'original_name' => 'required|string',
-            'total_size' => 'required|integer|min:1',
-            'total_chunks' => 'required|integer|min:1',
+            'original_name' => 'required|string|max:255',
+            'total_size' => 'required|integer|min:1|max:' . $this->simpananUploadMaxBytes(),
+            'total_chunks' => 'required|integer|min:1|max:' . $this->simpananUploadMaxChunks(),
         ]);
 
         $originalName = trim((string) $request->input('original_name'));
@@ -132,13 +133,21 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
         $uploadId = 'simpanan_' . Str::uuid()->toString();
         $directory = $this->ensureSimpananChunkUploadDirectory($uploadId);
-        file_put_contents($directory . DIRECTORY_SEPARATOR . 'meta.json', json_encode([
+        $written = file_put_contents($directory . DIRECTORY_SEPARATOR . 'meta.json', json_encode([
             'original_name' => $originalName,
             'total_size' => $totalSize,
             'total_chunks' => $totalChunks,
             'created_at' => now()->toIso8601String(),
             'user_id' => auth()->id(),
-        ], JSON_PRETTY_PRINT));
+        ], JSON_PRETTY_PRINT), LOCK_EX);
+        if ($written === false) {
+            $this->cleanupSimpananChunkUploadDirectory($directory);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Metadata upload Simpanan Multi PN gagal dibuat.',
+            ], 500);
+        }
 
         return response()->json([
             'status' => 'success',
@@ -151,8 +160,8 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $request->validate([
             'upload_id' => ['required', 'string', 'regex:/^simpanan_[0-9a-f-]{36}$/'],
             'chunk_index' => 'required|integer|min:0',
-            'total_chunks' => 'required|integer|min:1',
-            'file' => 'required|file',
+            'total_chunks' => 'required|integer|min:1|max:' . $this->simpananUploadMaxChunks(),
+            'file' => 'required|file|max:' . (int) (self::CHUNK_SIZE_BYTES / 1024),
         ]);
 
         $uploadId = trim((string) $request->input('upload_id'));
@@ -176,7 +185,12 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         }
 
         $chunkFile = $request->file('file');
-        if (!$chunkFile || !$chunkFile->isValid() || (int) $chunkFile->getSize() > self::CHUNK_SIZE_BYTES) {
+        if (
+            !$chunkFile
+            || !$chunkFile->isValid()
+            || (int) $chunkFile->getSize() < 1
+            || (int) $chunkFile->getSize() > self::CHUNK_SIZE_BYTES
+        ) {
             return response()->json(['status' => 'error', 'message' => 'Potongan file upload tidak valid.'], 422);
         }
 
@@ -197,8 +211,8 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
     {
         $request->validate([
             'upload_id' => ['required', 'string', 'regex:/^simpanan_[0-9a-f-]{36}$/'],
-            'total_chunks' => 'required|integer|min:1',
-            'original_name' => 'required|string',
+            'total_chunks' => 'required|integer|min:1|max:' . $this->simpananUploadMaxChunks(),
+            'original_name' => 'required|string|max:255',
         ]);
 
         $uploadId = trim((string) $request->input('upload_id'));
@@ -326,6 +340,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     'displayFilterMap' => $payload['displayFilterMap'],
                     'headerIndex' => $payload['header_index'] ?? 0,
                     'normalizedHeaders' => $payload['normalized_headers'] ?? [],
+                    'sourceHeaders' => $payload['sourceHeaders'] ?? ($payload['normalized_headers'] ?? []),
                     'path' => urldecode($sessionPath),
                     'stagedCsvPath' => $path,
                     'delimiter' => $payload['delimiter'] ?? ';',
@@ -384,6 +399,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 'displayFilterMap' => $built['displayFilterMap'],
                 'headerIndex' => $built['header_index'] ?? 0,
                 'normalizedHeaders' => $built['normalized_headers'] ?? [],
+                'sourceHeaders' => $built['sourceHeaders'] ?? ($built['normalized_headers'] ?? []),
                 'path' => $relativePath,
                 'stagedCsvPath' => $absolutePath,
                 'delimiter' => $built['delimiter'] ?? ';',
@@ -393,6 +409,12 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             $cacheKey = 'excel_preview_' . md5($relativePath . '|simpanan_csv_direct|' . microtime(true));
             Cache::put($cacheKey, $payload, now()->addMinutes(10));
         }
+
+        $payload = $this->sanitizeSimpananMultiPnPreviewPayload(
+            $payload,
+            (array) ($payload['sourceHeaders'] ?? ($payload['normalizedHeaders'] ?? [])),
+            'simpanan_multipn'
+        );
 
         $previewMeta = [
             'path' => $payload['path'] ?? null,
@@ -523,7 +545,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
         $fileSize = @filesize($csvPath);
         $fileMtime = @filemtime($csvPath);
-        $cacheKey = 'simpanan_multipn_preview:v2:' . md5($csvPath . '|' . $fileSize . '|' . $fileMtime);
+        $cacheKey = 'simpanan_multipn_preview:v3:' . md5($csvPath . '|' . $fileSize . '|' . $fileMtime);
         $cached = Cache::get($cacheKey);
         if (is_array($cached) && !empty($cached['headers'])) {
             return $cached;
@@ -610,19 +632,13 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 $formattedUniqueValues[$index] = $keys;
             }
 
-            $filteredPreview = $this->stripIgnoredPreviewColumns(
+            $orderedPreview = $this->preparePreviewDisplayPayload(
                 $headers,
-                $cleanPreview,
                 $formattedUniqueValues,
+                $cleanPreview,
                 'simpanan_multipn'
             );
-
-            $orderedPreview = $this->orderPreviewColumns(
-                $filteredPreview['headers'],
-                $filteredPreview['formatted_unique_values'],
-                $filteredPreview['rows'],
-                'simpanan_multipn'
-            );
+            $sourceHeaders = $orderedPreview['source_headers'];
 
             $estimatedRows = $this->estimateCsvPhysicalDataRows($csvPath);
             Log::info('Simpanan MultiPN CSV preview prepared with bounded sampling.', [
@@ -640,7 +656,8 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 'displayFilterMap' => $orderedPreview['display_filter_map'],
                 'header_index' => 0,
                 'header_row' => 1,
-                'normalized_headers' => $filteredPreview['headers'],
+                'normalized_headers' => $sourceHeaders,
+                'sourceHeaders' => $sourceHeaders,
                 'rows_scanned' => min($rowsProcessedForUniques, $sampledRows),
                 'total_sample_rows' => $estimatedRows > 0 ? $estimatedRows : $sampledRows,
                 'total_rows' => $estimatedRows > 0 ? $estimatedRows : null,
@@ -2911,10 +2928,25 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         return storage_path(self::CHUNK_UPLOAD_TEMP_DIR . DIRECTORY_SEPARATOR . $uploadId);
     }
 
+    private function simpananUploadMaxBytes(): int
+    {
+        return max(1, (int) config('import.security.upload_max_bytes', 4 * 1024 * 1024 * 1024));
+    }
+
+    private function simpananUploadMaxKilobytes(): int
+    {
+        return max(1, (int) floor($this->simpananUploadMaxBytes() / 1024));
+    }
+
+    private function simpananUploadMaxChunks(): int
+    {
+        return max(1, (int) ceil($this->simpananUploadMaxBytes() / self::CHUNK_SIZE_BYTES));
+    }
+
     private function ensureSimpananChunkUploadDirectory(string $uploadId): string
     {
         $directory = $this->simpananChunkUploadDirectory($uploadId);
-        if (!is_dir($directory) && !@mkdir($directory, 0777, true) && !is_dir($directory)) {
+        if (!is_dir($directory) && !@mkdir($directory, 0750, true) && !is_dir($directory)) {
             throw new \RuntimeException('Gagal menyiapkan folder upload bertahap Simpanan Multi PN.');
         }
 
@@ -2935,7 +2967,8 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
     private function ownsSimpananChunkUpload(array $meta): bool
     {
         $ownerId = $meta['user_id'] ?? null;
-        return $ownerId === null || (string) $ownerId === (string) auth()->id();
+
+        return $ownerId !== null && (string) $ownerId === (string) auth()->id();
     }
 
     private function cleanupSimpananChunkUploadDirectory(string $directory): void

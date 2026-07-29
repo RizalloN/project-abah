@@ -1,0 +1,1556 @@
+    /* Dashboard executive redesign: blue, dense, and presentation-ready. */
+    body,
+    html {
+      background:
+        linear-gradient(90deg, rgba(15, 23, 42, 0.025) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.02) 1px, transparent 1px),
+        #eef6ff !important;
+      background-size: 38px 38px, 38px 38px, auto !important;
+      color: var(--pres-ink) !important;
+    }
+
+    .apple-presentation-mode {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(239, 247, 255, 0.96) 54%, rgba(226, 239, 252, 0.98) 100%) !important;
+      padding: 5.2rem 2.35rem 4.7rem !important;
+    }
+
+    .apple-presentation-mode::before,
+    .apple-presentation-mode::after {
+      display: none !important;
+    }
+
+    .pres-slides-container {
+      isolation: isolate;
+    }
+
+    .apple-slide {
+      max-width: 1760px !important;
+      max-height: 840px !important;
+      padding: 0.15rem !important;
+    }
+
+    .apple-slide h1,
+    .apple-slide h2,
+    .apple-slide h3 {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+      letter-spacing: 0 !important;
+      color: var(--pres-ink) !important;
+    }
+
+    .apple-slide h2 {
+      font-size: clamp(1.8rem, 2.35vw, 2.55rem) !important;
+      line-height: 1.06 !important;
+      margin-bottom: 1rem !important;
+    }
+
+    .pres-top-bar,
+    .pres-bottom-bar {
+      left: 2rem !important;
+      right: 2rem !important;
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(216, 224, 234, 0.94) !important;
+      box-shadow: 0 10px 30px rgba(17, 24, 39, 0.06);
+    }
+
+    .pres-top-bar {
+      top: 0.85rem !important;
+      padding: 0.62rem 0.75rem !important;
+      border-left: 4px solid var(--pres-academic) !important;
+      border-radius: 8px !important;
+    }
+
+    .pres-bottom-bar {
+      bottom: 0.82rem !important;
+      padding: 0.52rem 0.68rem !important;
+      border-radius: 8px !important;
+    }
+
+    .pres-logos-wrapper,
+    .pres-cover-logos {
+      background: #ffffff !important;
+      border: 1px solid var(--pres-line) !important;
+      border-radius: 8px !important;
+      box-shadow: none !important;
+    }
+
+    .pres-title-lbl {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 1.02rem !important;
+      letter-spacing: 0 !important;
+      color: var(--pres-ink) !important;
+    }
+
+    .pres-title-lbl span {
+      color: var(--pres-academic) !important;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 800 !important;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .pres-meta-chip,
+    .pres-nav-btn-back,
+    .pres-nav-btn,
+    .pres-control-group,
+    .pres-compact-select {
+      border-radius: 8px !important;
+      border-color: var(--pres-line) !important;
+      background: #ffffff !important;
+      box-shadow: 0 6px 18px rgba(17, 24, 39, 0.05) !important;
+      color: var(--pres-ink) !important;
+    }
+
+    .pres-nav-btn:hover,
+    .pres-nav-btn-back:hover {
+      border-color: rgba(17, 85, 200, 0.36) !important;
+      color: var(--pres-academic) !important;
+      transform: translateY(-1px) !important;
+    }
+
+    .pres-date-picker-select {
+      color: var(--pres-ink) !important;
+      font-weight: 800 !important;
+    }
+
+    .pres-section-eyebrow,
+    .pres-cover-eyebrow,
+    .apple-slide [style*="#0071e3"],
+    .apple-slide [style*="color:#0071e3"],
+    .apple-slide [style*="color: #0071e3"] {
+      color: var(--pres-academic) !important;
+    }
+
+    .pres-section-eyebrow,
+    .pres-cover-eyebrow {
+      letter-spacing: 0.12em !important;
+      font-size: 0.68rem !important;
+      position: relative;
+      padding-left: 0.95rem;
+    }
+
+    .pres-section-eyebrow::before,
+    .pres-cover-eyebrow::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 50%;
+      width: 0.55rem;
+      height: 2px;
+      background: var(--pres-gold);
+      transform: translateY(-50%);
+    }
+
+    .pres-text-gradient-silver,
+    .pres-text-gradient-blue {
+      background: none !important;
+      -webkit-background-clip: initial !important;
+      -webkit-text-fill-color: currentColor !important;
+      color: var(--pres-ink) !important;
+    }
+
+    .pres-glass-card {
+      background: var(--pres-paper) !important;
+      border: 1px solid var(--pres-line) !important;
+      border-radius: 8px !important;
+      box-shadow: var(--pres-shadow-soft) !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+
+    .pres-glass-card:hover {
+      transform: none !important;
+      border-color: rgba(17, 85, 200, 0.26) !important;
+      box-shadow: var(--pres-shadow) !important;
+    }
+
+    .pres-cover-layout {
+      grid-template-columns: minmax(320px, 0.82fr) minmax(620px, 1.38fr) !important;
+      gap: 1rem !important;
+    }
+
+    .pres-cover-lead {
+      padding: 1.35rem 1.45rem !important;
+      border-top: 5px solid var(--pres-academic) !important;
+      background:
+        linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+    }
+
+    .pres-cover-title {
+      font-size: clamp(2.15rem, 3vw, 3.35rem) !important;
+      line-height: 1.02 !important;
+      white-space: normal !important;
+      color: var(--pres-ink) !important;
+    }
+
+    .pres-cover-subtitle {
+      color: var(--pres-ink-soft) !important;
+      font-size: 0.92rem !important;
+      line-height: 1.58 !important;
+    }
+
+    .pres-cover-board {
+      grid-template-columns: repeat(6, 1fr) !important;
+      gap: 0.62rem !important;
+    }
+
+    .pres-cover-card {
+      padding: 0.78rem 0.82rem !important;
+      min-height: 142px !important;
+      border-top: 3px solid rgba(17, 85, 200, 0.86) !important;
+    }
+
+    .pres-cover-card .label,
+    .pres-cover-stat span,
+    .pres-mini-stat span,
+    .pres-segment-summary-item span {
+      color: var(--pres-muted) !important;
+      letter-spacing: 0.07em !important;
+    }
+
+    .pres-cover-card .value,
+    .pres-cover-stat strong,
+    .pres-mini-stat strong,
+    .pres-segment-summary-item strong {
+      color: var(--pres-ink) !important;
+      font-variant-numeric: tabular-nums !important;
+    }
+
+    .pres-cover-card .value {
+      font-size: clamp(1rem, 1.18vw, 1.32rem) !important;
+    }
+
+    .pres-cover-stat,
+    .pres-mini-stat,
+    .pres-rka-strip > div,
+    .pres-segment-summary-item {
+      background: linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%) !important;
+      border-color: var(--pres-line) !important;
+      border-radius: 8px !important;
+    }
+
+    .pres-splash-accent-btn {
+      background: var(--pres-academic) !important;
+      border: 1px solid var(--pres-academic-dark) !important;
+      border-radius: 8px !important;
+      box-shadow: 0 14px 30px rgba(17, 85, 200, 0.22) !important;
+      letter-spacing: 0.02em !important;
+    }
+
+    .pres-splash-accent-btn:hover {
+      background: var(--pres-academic-dark) !important;
+      transform: translateY(-1px) !important;
+    }
+
+    .pres-toggle-btn {
+      border-radius: 6px !important;
+      color: var(--pres-ink-soft) !important;
+      font-weight: 850 !important;
+    }
+
+    .pres-toggle-btn.active {
+      background: var(--pres-academic) !important;
+      color: #ffffff !important;
+      box-shadow: 0 8px 18px rgba(17, 85, 200, 0.18) !important;
+    }
+
+    .pres-explorer-grid {
+      grid-template-columns: minmax(360px, 0.78fr) minmax(700px, 1.32fr) !important;
+      gap: 0.9rem !important;
+      height: calc(100% - 5.4rem) !important;
+    }
+
+    .pres-grid-2col {
+      gap: 1rem !important;
+    }
+
+    .pres-table-scroll {
+      border: 1px solid rgba(216, 224, 234, 0.78);
+      border-radius: 8px;
+      background: #ffffff;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(17, 85, 200, 0.35) transparent;
+    }
+
+    .pres-table-scroll::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+
+    .pres-table-scroll::-webkit-scrollbar-thumb {
+      background: rgba(17, 85, 200, 0.35);
+      border-radius: 8px;
+    }
+
+    .pres-table-dense {
+      border-collapse: separate !important;
+      border-spacing: 0 !important;
+      width: 100%;
+      font-size: 0.78rem !important;
+    }
+
+    .pres-table-dense thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #eef3f8 !important;
+      color: var(--pres-ink-soft) !important;
+      border-bottom: 1px solid var(--pres-line) !important;
+      padding: 0.55rem 0.65rem !important;
+      text-transform: uppercase;
+      letter-spacing: 0.055em !important;
+      font-size: 0.63rem !important;
+    }
+
+    .pres-table-dense tbody td {
+      padding: 0.54rem 0.65rem !important;
+      border-bottom: 1px solid rgba(216, 224, 234, 0.68) !important;
+      color: var(--pres-ink) !important;
+      line-height: 1.18 !important;
+      font-variant-numeric: tabular-nums !important;
+    }
+
+    .pres-table-dense tbody tr:nth-child(even) td {
+      background: rgba(248, 250, 252, 0.74);
+    }
+
+    .pres-table-dense tbody tr:hover td {
+      background: rgba(17, 85, 200, 0.045);
+    }
+
+    .pres-delta.pos {
+      color: var(--pres-accent) !important;
+    }
+
+    .pres-delta.neg {
+      color: #b91c1c !important;
+    }
+
+    .pres-kpi-huge-number {
+      color: var(--pres-academic) !important;
+      font-size: clamp(2.65rem, 5vw, 4.55rem) !important;
+      line-height: 1 !important;
+      font-variant-numeric: tabular-nums !important;
+    }
+
+    .pres-chart-wrap,
+    .pres-timeseries-chart-box {
+      background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.55), rgba(255, 255, 255, 0.96));
+      border: 1px solid rgba(216, 224, 234, 0.72);
+      border-radius: 8px;
+      padding: 0.35rem;
+      box-sizing: border-box;
+    }
+
+    .pres-timeseries-grid {
+      height: calc(100% - 5rem) !important;
+      max-height: 595px !important;
+      gap: 0.9rem !important;
+    }
+
+    .pres-timeseries-card {
+      padding: 1rem 1rem 0.9rem !important;
+    }
+
+    .pres-timeseries-card-header h3 {
+      font-size: clamp(1.05rem, 1.28vw, 1.32rem) !important;
+    }
+
+    .pres-spectrum-bar {
+      border-radius: 5px !important;
+      border: 1px solid rgba(216, 224, 234, 0.86);
+      overflow: hidden;
+    }
+
+    .pres-kts-grid,
+    .pres-digital-layout {
+      gap: 0.9rem !important;
+    }
+
+    .pres-digital-list {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 0.58rem !important;
+    }
+
+    .pres-digital-list .pres-glass-card {
+      border-left: 4px solid var(--pres-academic) !important;
+    }
+
+    .pres-digital-value {
+      color: var(--pres-ink) !important;
+    }
+
+    .pres-paginator {
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(216, 224, 234, 0.9);
+      border-radius: 999px;
+      padding: 0.22rem 0.38rem;
+    }
+
+    .pres-dot {
+      background: #cbd5e1 !important;
+      border-radius: 999px !important;
+    }
+
+    .pres-dot.active {
+      background: var(--pres-academic) !important;
+      width: 1.65rem !important;
+      box-shadow: 0 4px 12px rgba(17, 85, 200, 0.28);
+    }
+
+    .pres-slide-counter-badge {
+      color: var(--pres-muted) !important;
+      background: #ffffff !important;
+      border: 1px solid var(--pres-line) !important;
+      border-radius: 8px !important;
+    }
+
+    .dashboard-loading-overlay {
+      background: rgba(238, 246, 255, 0.92) !important;
+    }
+
+    .loading-ring {
+      border-top-color: var(--pres-academic) !important;
+    }
+
+    .loading-ring-inner {
+      border-bottom-color: var(--pres-gold) !important;
+    }
+
+    #loading-progress-bar {
+      background: linear-gradient(90deg, var(--pres-academic), var(--pres-gold)) !important;
+    }
+
+    #loading-progress-percent {
+      color: var(--pres-academic) !important;
+    }
+
+    .pres-panel-card {
+      overflow: hidden !important;
+      padding: 0 !important;
+    }
+
+    .pres-panel-header {
+      min-height: 3rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.85rem;
+      padding: 0.72rem 1rem;
+      background: linear-gradient(90deg, var(--pres-academic-dark), var(--pres-academic));
+      color: #ffffff;
+      font-weight: 900;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+    }
+
+    .pres-panel-header.pres-panel-header-cyan {
+      background: linear-gradient(90deg, #1496c8, var(--pres-cyan));
+    }
+
+    .pres-panel-header.pres-panel-header-orange {
+      background: linear-gradient(90deg, #f97316, var(--pres-gold));
+    }
+
+    .pres-panel-header span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      min-width: 0;
+    }
+
+    .pres-panel-icon {
+      width: 1.75rem;
+      height: 1.75rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.18);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+      flex: 0 0 auto;
+    }
+
+    .pres-panel-subtitle {
+      color: rgba(255, 255, 255, 0.86);
+      font-size: 0.66rem;
+      font-weight: 850;
+      text-align: right;
+      text-transform: none;
+      letter-spacing: 0.01em;
+    }
+
+    .pres-panel-body {
+      padding: 1rem;
+      min-height: 0;
+    }
+
+    .pres-value-bar {
+      min-width: 7.5rem;
+      display: grid;
+      gap: 0.28rem;
+      justify-items: end;
+    }
+
+    .pres-value-bar strong {
+      font-size: 0.78rem;
+      line-height: 1;
+      font-weight: 900;
+      color: inherit;
+      white-space: nowrap;
+    }
+
+    .pres-value-bar-track {
+      width: min(8.5rem, 100%);
+      height: 0.28rem;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e2e8f0;
+    }
+
+    .pres-value-bar-fill {
+      display: block;
+      height: 100%;
+      min-width: 0.18rem;
+      border-radius: inherit;
+    }
+
+    .pres-risk-composition-layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    .pres-donut-shell {
+      min-height: 210px;
+      display: grid;
+      place-items: center;
+      position: relative;
+      border-radius: 8px;
+      background: linear-gradient(180deg, #f8fbff, #ffffff);
+      border: 1px solid rgba(207, 224, 244, 0.9);
+    }
+
+    .pres-donut-canvas-wrapper {
+      position: relative;
+      width: 190px;
+      height: 190px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .pres-donut-canvas-wrapper canvas {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100%;
+    }
+
+    .pres-donut-center {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+      text-align: center;
+    }
+
+    .pres-donut-center strong {
+      display: block;
+      color: var(--pres-ink);
+      font-size: 1.35rem;
+      font-weight: 950;
+      line-height: 1;
+    }
+
+    .pres-donut-center span {
+      display: block;
+      margin-top: 0.28rem;
+      color: var(--pres-muted);
+      font-size: 0.62rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .pres-risk-metric-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.65rem;
+    }
+
+    .pres-risk-metric {
+      min-height: 4.25rem;
+      padding: 0.72rem;
+      border-radius: 8px;
+      background: #ffffff;
+      border: 1px solid rgba(207, 224, 244, 0.9);
+    }
+
+    .pres-risk-metric span {
+      display: block;
+      color: var(--pres-muted);
+      font-size: 0.62rem;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .pres-risk-metric strong {
+      display: block;
+      margin-top: 0.32rem;
+      font-size: 1.02rem;
+      font-weight: 950;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .pres-timeseries-card {
+      overflow: hidden !important;
+      padding: 0 !important;
+    }
+
+    .pres-timeseries-card-header {
+      min-height: 3.35rem;
+      padding: 0.78rem 1rem;
+      background: linear-gradient(90deg, var(--pres-academic-dark), var(--pres-academic));
+      color: #ffffff;
+    }
+
+    .pres-timeseries-card:nth-child(2) .pres-timeseries-card-header {
+      background: linear-gradient(90deg, #1496c8, var(--pres-cyan));
+    }
+
+    .pres-timeseries-card-header span,
+    .pres-timeseries-card-header h3,
+    .pres-timeseries-card-header strong,
+    .pres-timeseries-card-header div {
+      color: #ffffff !important;
+    }
+
+    .pres-timeseries-card .pres-timeseries-chart-box {
+      margin: 1rem;
+      height: calc(100% - 5.4rem);
+      min-height: 260px;
+    }
+
+    .pres-explorer-side .pres-mini-stat,
+    .pres-segment-summary-item {
+      border-top: 3px solid var(--pres-academic) !important;
+    }
+
+    .pres-explorer-side .pres-mini-stat:nth-child(2),
+    .pres-segment-summary-item:nth-child(2) {
+      border-top-color: var(--pres-cyan) !important;
+    }
+
+    .pres-explorer-side .pres-mini-stat:nth-child(3),
+    .pres-segment-summary-item:nth-child(3) {
+      border-top-color: var(--pres-gold) !important;
+    }
+
+    .pres-explorer-side .pres-mini-stat:nth-child(4),
+    .pres-segment-summary-item:nth-child(4) {
+      border-top-color: var(--pres-accent) !important;
+    }
+
+    @media (min-width: 1600px) {
+      .apple-slide {
+        max-width: 1760px !important;
+        max-height: 860px !important;
+      }
+
+      .pres-cover-card {
+        min-height: 160px !important;
+      }
+    }
+
+    @media (max-width: 1024px) {
+      .pres-top-bar,
+      .pres-bottom-bar {
+        left: 0.85rem !important;
+        right: 0.85rem !important;
+      }
+
+      .pres-cover-layout,
+      .pres-explorer-grid {
+        grid-template-columns: 1fr !important;
+      }
+
+      .pres-risk-composition-layout,
+      .pres-risk-metric-grid {
+        grid-template-columns: 1fr !important;
+      }
+
+      .pres-cover-board {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .pres-cover-board,
+      .pres-digital-list {
+        grid-template-columns: 1fr !important;
+      }
+
+      .pres-title-lbl {
+        font-size: 0.9rem !important;
+      }
+    }
+
+    /* BRI corporate template skin */
+    :root {
+      --pres-ink: #0b1116;
+      --pres-ink-soft: #2f3a44;
+      --pres-muted: #5f6f7c;
+      --pres-paper: #ffffff;
+      --pres-page: #ffffff;
+      --pres-line: #d7e5f6;
+      --pres-academic: #0857c3;
+      --pres-academic-dark: #06469c;
+      --pres-accent: #008f7a;
+      --pres-blue: #307fe2;
+      --pres-cyan: #71c5e8;
+      --pres-gold: #ccad95;
+      --pres-danger: #ef4444;
+      --pres-shadow: 0 10px 26px rgba(8, 87, 195, 0.10);
+      --pres-shadow-soft: 0 6px 16px rgba(8, 87, 195, 0.07);
+    }
+
+    body,
+    html {
+      background: #ffffff !important;
+      color: var(--pres-ink) !important;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+    }
+
+    .apple-presentation-mode {
+      background:
+        linear-gradient(90deg, rgba(8, 87, 195, 0.035) 0 1px, transparent 1px 100%),
+        linear-gradient(180deg, #ffffff 0%, #ffffff 72%, #f3f8ff 100%) !important;
+      background-size: 100% 100%, auto !important;
+      padding: 5.15rem 3.15rem 4.55rem !important;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+    }
+
+    .pres-slides-container::before {
+      display: block !important;
+      content: '' !important;
+      position: absolute !important;
+      top: 50% !important;
+      left: 50% !important;
+      width: calc(100% + 1.2rem) !important;
+      height: calc(100% + 1.1rem) !important;
+      max-width: min(1810px, calc(100vw - 1rem)) !important;
+      max-height: min(875px, calc(100vh - 3.5rem)) !important;
+      transform: translate(-50%, -50%) !important;
+      border: 7px solid rgba(8, 87, 195, 0.12) !important;
+      border-radius: 28px !important;
+      filter: none !important;
+      opacity: 1 !important;
+      background: transparent !important;
+      pointer-events: none !important;
+      z-index: 1 !important;
+      animation: none !important;
+      box-sizing: border-box !important;
+    }
+
+    @keyframes float-horizontal-box {
+      0% {
+        transform: translate(-51.2%, -50%) scale(0.996);
+      }
+      50% {
+        transform: translate(-48.8%, -50%) scale(1.004) rotate(0.04deg);
+      }
+      100% {
+        transform: translate(-51.2%, -50%) scale(0.996);
+      }
+    }
+
+    .apple-presentation-mode::after {
+      display: block !important;
+      content: '' !important;
+      position: absolute !important;
+      left: 3.15rem !important;
+      right: 3.15rem !important;
+      top: 4.35rem !important;
+      height: 1px !important;
+      background: var(--pres-academic) !important;
+      border-radius: 0 !important;
+      filter: none !important;
+      opacity: 0.75 !important;
+      pointer-events: none !important;
+      z-index: 1 !important;
+    }
+
+    .apple-slide h1,
+    .apple-slide h2,
+    .apple-slide h3,
+    .pres-title-lbl,
+    .pres-meta-chip,
+    .pres-nav-btn-back,
+    .pres-table-dense,
+    .pres-compact-select,
+    .pres-toggle-btn {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+    }
+
+    .pres-top-bar,
+    .pres-bottom-bar {
+      background: transparent !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      left: 3.15rem !important;
+      right: 3.15rem !important;
+    }
+
+    .pres-top-bar {
+      top: 0.92rem !important;
+      padding: 0 !important;
+    }
+
+    .pres-bottom-bar {
+      bottom: 0.82rem !important;
+      padding-top: 0.7rem !important;
+      border-top: 1px solid rgba(8, 87, 195, 0.22) !important;
+    }
+
+    .pres-logos-wrapper,
+    .pres-cover-logos {
+      display: inline-flex !important;
+      align-items: center !important;
+      background: rgba(255, 255, 255, 0.92) !important;
+      border: 1px solid rgba(8, 87, 195, 0.18) !important;
+      border-radius: 12px !important;
+      padding: 0.4rem 0.8rem !important;
+      gap: 0.5rem !important;
+      box-shadow: 0 6px 16px rgba(8, 87, 195, 0.04) !important;
+    }
+
+    .pres-logo-divider,
+    .pres-cover-logo-divider {
+      display: inline-block !important;
+      width: 1.5px !important;
+      height: 18px !important;
+      background: rgba(8, 87, 195, 0.22) !important;
+      margin: 0 0.4rem !important;
+      align-self: center;
+    }
+
+    .pres-logo-brand.logo-danantara,
+    .pres-cover-logos .logo-danantara {
+      height: 28px !important;
+    }
+
+    .pres-logo-brand.logo-bri,
+    .pres-cover-logos .logo-bri {
+      height: 24px !important;
+      width: auto !important;
+    }
+
+    .pres-title-lbl {
+      color: var(--pres-academic) !important;
+      font-size: 1rem !important;
+      font-weight: 900 !important;
+    }
+
+    .pres-title-lbl span {
+      color: #4b5563 !important;
+      font-size: 0.88rem !important;
+      font-weight: 500 !important;
+      text-transform: none !important;
+      letter-spacing: 0 !important;
+    }
+
+    .pres-meta-chip,
+    .pres-nav-btn-back,
+    .pres-nav-btn,
+    .pres-control-group,
+    .pres-compact-select,
+    .pres-slide-counter-badge {
+      border: 1px solid rgba(8, 87, 195, 0.22) !important;
+      border-radius: 10px !important;
+      background: #ffffff !important;
+      box-shadow: 0 4px 12px rgba(8, 87, 195, 0.03) !important;
+    }
+
+    .pres-cover-layout {
+      grid-template-columns: minmax(330px, 0.86fr) minmax(610px, 1.34fr) !important;
+      align-items: stretch !important;
+      gap: 1.35rem !important;
+    }
+
+    .pres-cover-lead.pres-glass-card {
+      background: transparent !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      padding: 0 1.25rem 0 0 !important;
+    }
+
+    .pres-cover-title {
+      color: var(--pres-academic) !important;
+      font-size: clamp(2.35rem, 3.45vw, 4rem) !important;
+      line-height: 1.03 !important;
+      font-weight: 900 !important;
+      padding-bottom: 0.62rem !important;
+      border-bottom: 2px solid rgba(8, 87, 195, 0.72) !important;
+    }
+
+    .pres-cover-eyebrow,
+    .pres-section-eyebrow {
+      color: var(--pres-academic) !important;
+      font-size: 0.78rem !important;
+      letter-spacing: 0.08em !important;
+      font-weight: 800 !important;
+      padding-left: 0 !important;
+    }
+
+    .pres-cover-eyebrow::before,
+    .pres-section-eyebrow::before {
+      display: none !important;
+    }
+
+    .pres-cover-subtitle {
+      color: #374151 !important;
+      font-size: 1rem !important;
+      line-height: 1.5 !important;
+    }
+
+    .pres-cover-strip {
+      gap: 0.65rem !important;
+    }
+
+    .pres-cover-stat,
+    .pres-mini-stat,
+    .pres-segment-summary-item,
+    .pres-rka-strip > div {
+      border: 1px solid rgba(8, 87, 195, 0.18) !important;
+      border-radius: 12px !important;
+      background: #ffffff !important;
+      box-shadow: 0 4px 12px rgba(8, 87, 195, 0.02) !important;
+    }
+
+    .pres-glass-card {
+      border: 1.5px solid rgba(8, 87, 195, 0.18) !important;
+      border-radius: 18px !important;
+      background: #ffffff !important;
+      box-shadow: 0 12px 30px rgba(8, 87, 195, 0.05) !important;
+    }
+
+    .pres-cover-card {
+      border-top: 4px solid var(--pres-academic) !important;
+    }
+
+    .pres-panel-header,
+    .pres-timeseries-card-header {
+      background: var(--pres-academic) !important;
+      border-top-left-radius: 17px !important;
+      border-top-right-radius: 17px !important;
+      border-bottom-left-radius: 0 !important;
+      border-bottom-right-radius: 0 !important;
+    }
+
+    .pres-panel-header.pres-panel-header-cyan,
+    .pres-timeseries-card:nth-child(2) .pres-timeseries-card-header {
+      background: var(--pres-blue) !important;
+      border-top-left-radius: 17px !important;
+      border-top-right-radius: 17px !important;
+      border-bottom-left-radius: 0 !important;
+      border-bottom-right-radius: 0 !important;
+    }
+
+    .pres-panel-header.pres-panel-header-orange {
+      background: var(--pres-gold) !important;
+      color: var(--pres-ink) !important;
+      border-top-left-radius: 17px !important;
+      border-top-right-radius: 17px !important;
+      border-bottom-left-radius: 0 !important;
+      border-bottom-right-radius: 0 !important;
+    }
+
+    .pres-table-dense thead th {
+      background: var(--pres-academic) !important;
+      color: #ffffff !important;
+      border-bottom-color: var(--pres-academic) !important;
+    }
+
+    .pres-table-dense tbody tr:nth-child(even) td {
+      background: #f3f8ff !important;
+    }
+
+    .pres-kpi-huge-number,
+    .pres-text-gradient-blue {
+      color: var(--pres-academic) !important;
+    }
+
+    .pres-splash-accent-btn,
+    .pres-toggle-btn.active,
+    .pres-dot.active {
+      background: var(--pres-academic) !important;
+      border-color: var(--pres-academic) !important;
+    }
+
+    .pres-executive-grid,
+    .pres-executive-scan,
+    .pres-executive-edge {
+      position: absolute;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .pres-executive-grid {
+      inset: 5.25rem 3.15rem 4.35rem 3.15rem;
+      background-image:
+        linear-gradient(rgba(8, 87, 195, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(8, 87, 195, 0.06) 1px, transparent 1px);
+      background-size: 64px 64px;
+      mask-image: linear-gradient(90deg, transparent 0%, #000 16%, #000 84%, transparent 100%);
+      opacity: 0.46;
+      animation: pres-grid-drift 34s linear infinite;
+    }
+
+    .pres-executive-scan {
+      left: 3.15rem;
+      right: 3.15rem;
+      top: 4.35rem;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, rgba(0, 174, 239, 0.9), rgba(247, 159, 31, 0.75), transparent);
+      box-shadow: 0 0 22px rgba(0, 174, 239, 0.32);
+      transform-origin: left center;
+      animation: pres-scan-run 7.5s ease-in-out infinite;
+    }
+
+    .pres-executive-edge {
+      top: 4.35rem;
+      bottom: 4.35rem;
+      width: 3px;
+      background: linear-gradient(180deg, rgba(8, 87, 195, 0), rgba(8, 87, 195, 0.72), rgba(247, 159, 31, 0.65), rgba(8, 87, 195, 0));
+      opacity: 0.7;
+    }
+
+    .pres-executive-edge.left {
+      left: 3.15rem;
+    }
+
+    .pres-executive-edge.right {
+      right: 3.15rem;
+    }
+
+    .pres-command-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-height: 34px;
+      padding: 0.38rem 0.72rem;
+      border: 1px solid rgba(8, 87, 195, 0.22);
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(243,248,255,0.96));
+      color: #0857c3;
+      font-size: 0.72rem;
+      font-weight: 850;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      box-shadow: 0 8px 18px rgba(8, 87, 195, 0.05);
+    }
+
+    .pres-command-chip i {
+      color: #f59e0b;
+      font-size: 0.72rem;
+    }
+
+    .pres-live-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.48rem;
+      min-height: 34px;
+      padding: 0.36rem 0.72rem;
+      border: 1px solid rgba(5, 150, 105, 0.22);
+      border-radius: 10px;
+      background: #ffffff;
+      color: #047857;
+      font-size: 0.72rem;
+      font-weight: 850;
+      box-shadow: 0 4px 12px rgba(5, 150, 105, 0.04);
+    }
+
+    .pres-live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #10b981;
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45);
+      animation: pres-live-pulse 1.7s ease-out infinite;
+    }
+
+    .pres-autoplay-panel {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      min-width: 210px;
+    }
+
+    .pres-autoplay-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      border: 1px solid rgba(8, 87, 195, 0.22);
+      border-radius: 10px;
+      background: #ffffff;
+      color: #0857c3;
+      box-shadow: 0 4px 12px rgba(8, 87, 195, 0.03);
+      transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease;
+    }
+
+    .pres-autoplay-btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .pres-autoplay-btn.is-running {
+      background: var(--pres-academic);
+      color: #ffffff;
+    }
+
+    .pres-auto-meta {
+      display: grid;
+      gap: 0.28rem;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pres-auto-label {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.8rem;
+      color: #64748b;
+      font-size: 0.66rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .pres-auto-progress {
+      height: 5px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(8, 87, 195, 0.12);
+    }
+
+    .pres-auto-progress-fill {
+      display: block;
+      height: 100%;
+      width: 0%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #0857c3, #00aeef, #f59e0b);
+    }
+
+    .pres-auto-progress-fill.is-running {
+      animation: pres-autoplay-fill var(--pres-autoplay-duration, 9000ms) linear forwards;
+    }
+
+    .pres-cover-command-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .pres-cover-lead::after {
+      content: '';
+      display: block;
+      width: min(420px, 100%);
+      height: 4px;
+      margin-top: 1rem;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #0857c3, #00aeef, #f59e0b);
+      transform-origin: left center;
+      animation: pres-accent-breathe 4.8s ease-in-out infinite;
+    }
+
+    .apple-slide.active .pres-glass-card,
+    .apple-slide.active .pres-cover-card,
+    .apple-slide.active .pres-panel {
+      animation: pres-panel-rise 0.86s cubic-bezier(.19, 1, .22, 1) both;
+    }
+
+    @keyframes pres-grid-drift {
+      0% { background-position: 0 0; }
+      100% { background-position: 128px 64px; }
+    }
+
+    @keyframes pres-scan-run {
+      0%, 100% { transform: scaleX(0.04); opacity: 0.18; }
+      42% { transform: scaleX(1); opacity: 0.8; }
+      58% { transform: scaleX(1); opacity: 0.56; }
+    }
+
+    @keyframes pres-live-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.42); }
+      100% { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
+    }
+
+    @keyframes pres-autoplay-fill {
+      from { width: 0%; }
+      to { width: 100%; }
+    }
+
+    @keyframes pres-accent-breathe {
+      0%, 100% { transform: scaleX(0.72); opacity: 0.62; }
+      50% { transform: scaleX(1); opacity: 1; }
+    }
+
+    @keyframes pres-panel-rise {
+      from { opacity: 0; transform: translateY(16px) scale(0.992); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @media (max-width: 1024px) {
+      .apple-presentation-mode {
+        padding-left: 1.15rem !important;
+        padding-right: 1.15rem !important;
+      }
+
+      .apple-presentation-mode::after {
+        left: 1.15rem !important;
+        right: 1.15rem !important;
+      }
+
+      .pres-top-bar,
+      .pres-bottom-bar {
+        left: 1.15rem !important;
+        right: 1.15rem !important;
+      }
+
+      .pres-executive-grid,
+      .pres-executive-scan {
+        left: 1.15rem !important;
+        right: 1.15rem !important;
+      }
+
+      .pres-executive-edge {
+        display: none;
+      }
+
+      .pres-live-chip,
+      .pres-command-chip {
+        display: none;
+      }
+
+      .pres-autoplay-panel {
+        min-width: 150px;
+      }
+    }
+
+    /* ==========================================================================
+       PPT MODE MASSIVE REDESIGN OVERRIDES (EXECUTIVE BANKING MASTERPIECE)
+       ========================================================================= */
+
+    /* 1. Dotted Grid Background Pattern & Pulse Animations */
+    #apple-presentation-mode {
+      background:
+        radial-gradient(rgba(8, 87, 195, 0.08) 1.2px, transparent 1.2px),
+        linear-gradient(180deg, #ffffff 0%, #f7f9fc 50%, #e8eff7 100%) !important;
+      background-size: 24px 24px, auto !important;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.8s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+
+    /* 2. Theme Dark Overrides for Opening (Cover) & Closing Slides */
+    #apple-presentation-mode.theme-dark {
+      background:
+        radial-gradient(rgba(255, 255, 255, 0.04) 1.2px, transparent 1.2px),
+        linear-gradient(135deg, #0A2540 0%, #001020 100%) !important;
+      background-size: 24px 24px, auto !important;
+      color: #ffffff !important;
+    }
+
+    #apple-presentation-mode.theme-dark::before {
+      content: '';
+      position: absolute;
+      width: 800px;
+      height: 800px;
+      background: radial-gradient(circle, rgba(8, 87, 195, 0.18) 0%, transparent 70%);
+      top: -200px;
+      left: -200px;
+      z-index: 1;
+      pointer-events: none;
+      display: block !important;
+      animation: ambient-pulse-1 20s infinite alternate ease-in-out;
+    }
+
+    #apple-presentation-mode.theme-dark::after {
+      content: '';
+      position: absolute;
+      width: 900px;
+      height: 900px;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 70%);
+      bottom: -300px;
+      right: -300px;
+      z-index: 1;
+      pointer-events: none;
+      display: block !important;
+      animation: ambient-pulse-2 25s infinite alternate ease-in-out;
+    }
+
+    /* Adjustments for top & bottom bars in dark theme */
+    #apple-presentation-mode.theme-dark .pres-top-bar,
+    #apple-presentation-mode.theme-dark .pres-bottom-bar {
+      background: rgba(10, 37, 64, 0.82) !important;
+      border-color: rgba(255, 255, 255, 0.12) !important;
+      color: #ffffff !important;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45) !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-title-lbl,
+    #apple-presentation-mode.theme-dark .pres-meta-chip,
+    #apple-presentation-mode.theme-dark .pres-nav-btn-back,
+    #apple-presentation-mode.theme-dark .pres-nav-btn,
+    #apple-presentation-mode.theme-dark .pres-paginator,
+    #apple-presentation-mode.theme-dark .pres-slide-counter-badge,
+    #apple-presentation-mode.theme-dark .pres-autoplay-panel {
+      color: #ffffff !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+      border-color: rgba(255, 255, 255, 0.14) !important;
+      box-shadow: none !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-title-lbl span {
+      color: #3b82f6 !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-logo-divider {
+      background: rgba(255, 255, 255, 0.25) !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-logos-wrapper {
+      background: #ffffff !important;
+      border-color: rgba(255, 255, 255, 0.85) !important;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-logos-wrapper .pres-logo-divider {
+      background: rgba(8, 87, 195, 0.2) !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-dot {
+      background: rgba(255, 255, 255, 0.3) !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-dot.active {
+      background: #0071e3 !important;
+      box-shadow: 0 0 12px rgba(0, 113, 227, 0.6);
+    }
+
+    #apple-presentation-mode.theme-dark .pres-autoplay-btn {
+      color: #ffffff !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-nav-btn-back:hover,
+    #apple-presentation-mode.theme-dark .pres-nav-btn:hover {
+      background: rgba(255, 255, 255, 0.16) !important;
+      border-color: rgba(255, 255, 255, 0.3) !important;
+      color: #3b82f6 !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-auto-label span {
+      color: rgba(255, 255, 255, 0.6) !important;
+    }
+    #apple-presentation-mode.theme-dark #pres-auto-state {
+      color: #ffffff !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-auto-progress {
+      background: rgba(255, 255, 255, 0.15) !important;
+    }
+
+    /* 3. Framed Image Styling */
+    .pres-cover-image-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      width: 100%;
+      min-height: 0;
+      padding: 0.5rem;
+    }
+
+    .pres-cover-image-frame {
+      width: 100%;
+      height: 100%;
+      max-height: 480px;
+      object-fit: cover;
+      border-radius: 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+      transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    #pres-slide-0 .pres-cover-image-frame {
+      border: 8px solid #0857c3;
+      box-shadow: 0 20px 40px rgba(8, 87, 195, 0.25);
+    }
+
+    #pres-slide-8 .pres-cover-image-frame {
+      border: 8px solid #ffffff;
+      box-shadow: 0 20px 40px rgba(255, 255, 255, 0.15);
+    }
+
+    .pres-cover-image-frame:hover {
+      transform: translateY(-8px) scale(1.025);
+    }
+
+    #pres-slide-0 .pres-cover-image-frame:hover {
+      box-shadow: 0 30px 60px rgba(8, 87, 195, 0.45);
+    }
+
+    #pres-slide-8 .pres-cover-image-frame:hover {
+      box-shadow: 0 30px 60px rgba(255, 255, 255, 0.3);
+    }
+
+    /* 4. Timeline Progress Bar (Self-Moving Autoplay) */
+    .pres-auto-progress {
+      position: relative;
+      height: 4px;
+      background: rgba(0, 0, 0, 0.08);
+      border-radius: 2px;
+      overflow: hidden;
+      width: 60px;
+    }
+
+    .pres-auto-progress-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 0%;
+      background: #0071e3;
+      border-radius: 2px;
+      transition: none;
+    }
+
+    .pres-auto-progress-fill.is-running {
+      width: 100%;
+      transition: width var(--pres-autoplay-duration) linear !important;
+    }
+
+    #apple-presentation-mode.theme-dark .pres-auto-progress-fill {
+      background: #3b82f6 !important;
+    }
+
+    /* 5. Custom 130 Tahun BRI Badge styles */
+    .bri-130-badge {
+      transition: transform 0.3s ease;
+    }
+    .bri-130-badge:hover {
+      transform: scale(1.06);
+    }
+    #apple-presentation-mode.theme-dark .bri-130-badge text {
+      fill: #0857c3 !important;
+    }
+    #apple-presentation-mode.theme-dark .bri-130-badge text:last-of-type {
+      fill: #e61c24 !important;
+    }
+    #apple-presentation-mode.theme-dark .bri-130-badge path[stroke="#0857c3"] {
+      stroke: #0857c3 !important;
+    }
+
+    /* 6. Tableau Table Style Polishing */
+    .pres-table-dense {
+      background: #ffffff;
+    }
+
+    .pres-table-dense thead th {
+      background: #f1f5f9 !important;
+      border-bottom: 2px solid #cbd5e1 !important;
+      font-weight: 800 !important;
+      color: #334155 !important;
+      font-size: 0.68rem !important;
+      padding: 0.65rem 0.8rem !important;
+      text-transform: uppercase;
+      letter-spacing: 0.04em !important;
+    }
+
+    .pres-table-dense tbody td {
+      border-bottom: 1px solid #e2e8f0 !important;
+      padding: 0.6rem 0.8rem !important;
+      color: #1e293b !important;
+      font-weight: 500;
+    }
+
+    .pres-table-dense tbody tr:nth-child(even) td {
+      background: #f8fafc !important;
+    }
+
+    .pres-table-dense tbody tr:hover td {
+      background: rgba(8, 87, 195, 0.06) !important;
+    }
+
+    /* Double underline for total rows */
+    .pres-table-dense tbody tr[style*="background"] td,
+    .pres-table-dense tbody tr.pres-kts-branch-header td {
+      border-bottom: 3px double #0857c3 !important;
+      font-weight: 800 !important;
+    }
+
+    /* 7. Strategic Priorities Slide Cards */
+    .pres-priority-card {
+      background: #ffffff;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      border-radius: 16px;
+      padding: 1.8rem;
+      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.03);
+      display: flex;
+      gap: 1.5rem;
+      align-items: flex-start;
+      transition: all 0.3s ease;
+    }
+
+    .pres-priority-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 16px 35px rgba(8, 87, 195, 0.08);
+      border-color: rgba(8, 87, 195, 0.25);
+    }
+
+    .pres-priority-icon-wrapper {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.35rem;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .pres-priority-icon-wrapper.casa {
+      background: rgba(8, 87, 195, 0.1);
+      color: #0857c3;
+      border: 1px solid rgba(8, 87, 195, 0.2);
+    }
+
+    .pres-priority-icon-wrapper.quality {
+      background: rgba(16, 185, 129, 0.1);
+      color: #047857;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .pres-priority-icon-wrapper.prod {
+      background: rgba(245, 158, 11, 0.1);
+      color: #b45309;
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+
+    /* 8. Slide transition speed improvement */
+    .apple-slide {
+      transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.5s !important;
+    }

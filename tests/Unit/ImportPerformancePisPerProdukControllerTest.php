@@ -389,7 +389,10 @@ class ImportPerformancePisPerProdukControllerTest extends TestCase
         ]);
 
         file_put_contents($csvPath, implode("\n", $rows) . "\n");
-        session(['performance_pis_periode' => '2026-03-31']);
+        session([
+            'performance_pis_file' => $relativePath,
+            'performance_pis_periode' => '2026-03-31',
+        ]);
 
         try {
             $request = Request::create('/import/performance-pis/preview/filter-options', 'GET', [
@@ -406,6 +409,7 @@ class ImportPerformancePisPerProdukControllerTest extends TestCase
             $this->assertContains('KC Jember', $payload['values'] ?? []);
         } finally {
             @unlink($csvPath);
+            session()->forget(['performance_pis_file', 'performance_pis_periode']);
         }
     }
 
@@ -437,7 +441,10 @@ class ImportPerformancePisPerProdukControllerTest extends TestCase
         ]);
 
         file_put_contents($csvPath, implode("\n", $rows) . "\n");
-        session(['performance_pis_periode' => '2026-03-31']);
+        session([
+            'performance_pis_file' => $relativePath,
+            'performance_pis_periode' => '2026-03-31',
+        ]);
 
         try {
             $request = Request::create('/import/performance-pis/preview/filtered-rows', 'GET', [
@@ -457,6 +464,7 @@ class ImportPerformancePisPerProdukControllerTest extends TestCase
             $this->assertSame('PT SAMPLE JEMBER', $payload['rows'][0][array_search('nama_perusahaan', $headers, true)] ?? null);
         } finally {
             @unlink($csvPath);
+            session()->forget(['performance_pis_file', 'performance_pis_periode']);
         }
     }
 

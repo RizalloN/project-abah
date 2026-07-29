@@ -51,3 +51,9 @@ Selalu jawab dengan:
 - Jangan menyentuh logic lain hanya karena terlihat bisa diperbaiki.
 - Jangan mengubah dependency, config, migration, atau struktur folder tanpa instruksi eksplisit.
 - Jangan membuat perubahan spekulatif.
+
+# Rules for Gemini 3.6
+- Selalu lakukan analisis kode multi-file sebelum menjawab.
+- Jangan gunakan tebakan, jalankan `code_execution` jika ragu.
+- Tulis output dalam bahasa Indonesia yang teknis dan padat
+

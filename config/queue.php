@@ -21,7 +21,7 @@ return [
 
     'worker_queues' => env(
         'QUEUE_WORKER_QUEUES',
-        'imports-high,imports-daily-loan,snapshots-parallel,default,reports-low,shadow-backfill'
+        'imports-high,imports-daily-loan,snapshots-priority,snapshots-parallel,remote-sources,default,reports-low,shadow-backfill'
     ),
 
     // Keep latency-sensitive imports isolated from long snapshot/report jobs.
@@ -29,19 +29,31 @@ return [
     'worker_pools' => [
         'imports-high' => [
             'queues' => 'imports-high',
-            'workers' => (int) env('QUEUE_IMPORT_WORKERS', 2),
+            'workers' => (int) env('QUEUE_IMPORT_WORKERS', env('ABAH_IMPORT_WORKERS', 3)),
         ],
         'imports-daily-loan' => [
             'queues' => 'imports-daily-loan',
             'workers' => (int) env('QUEUE_DAILY_LOAN_WORKERS', 1),
         ],
+        'snapshots-priority' => [
+            'queues' => 'snapshots-priority',
+            'workers' => (int) env('QUEUE_SNAPSHOT_PRIORITY_WORKERS', 1),
+        ],
         'snapshots' => [
             'queues' => 'snapshots-parallel',
-            'workers' => (int) env('QUEUE_SNAPSHOT_WORKERS', 3),
+            'workers' => (int) env('QUEUE_SNAPSHOT_WORKERS', env('ABAH_SNAPSHOT_WORKERS', 3)),
+        ],
+        'remote-sources' => [
+            'queues' => 'remote-sources',
+            'workers' => (int) env('QUEUE_REMOTE_SOURCE_WORKERS', 2),
         ],
         'background' => [
-            'queues' => 'default,reports-low,shadow-backfill',
-            'workers' => (int) env('QUEUE_BACKGROUND_WORKERS', 1),
+            'queues' => 'default,reports-low',
+            'workers' => (int) env('QUEUE_BACKGROUND_WORKERS', env('ABAH_REPORT_WORKERS', 3)),
+        ],
+        'shadow-backfill' => [
+            'queues' => 'shadow-backfill',
+            'workers' => (int) env('QUEUE_SHADOW_WORKERS', env('ABAH_SHADOW_WORKERS', 2)),
         ],
     ],
 
@@ -103,6 +115,15 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => 'snapshots-parallel',
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 7200),
+            'after_commit' => false,
+        ],
+
+        'snapshots-priority' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => 'snapshots-priority',
             'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 7200),
             'after_commit' => false,
         ],

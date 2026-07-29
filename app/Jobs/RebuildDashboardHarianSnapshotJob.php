@@ -25,9 +25,9 @@ use Illuminate\Support\Facades\Log;
  */
 class RebuildDashboardHarianSnapshotJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, SnapshotJobRetryWindow;
 
-    public $tries = 2;
+    public $tries = 40;
     public $timeout = 0;
     
     private array $periods;

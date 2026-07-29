@@ -6,6 +6,7 @@ use App\Http\Controllers\Import\ImportExcelController;
 use App\Services\Import\ExcelImportJobService;
 use App\Services\Import\ExcelQueuedImportService;
 use App\Services\Import\ImportExecutionService;
+use App\Services\Import\ImportPipelineService;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Services\Import\MySqlBulkLoadService;
@@ -102,6 +103,71 @@ class ImportExcelQueuedFallbackTest extends TestCase
         $this->assertSame(1, $result['total_success']);
         $this->assertSame(0, $result['total_failed']);
         $this->assertSame(1, $result['total_rows']);
+    }
+
+    public function test_daily_loan_direct_exception_does_not_start_staged_fallback(): void
+    {
+        $relativePath = 'testing/queued_fallback_daily_loan.csv';
+        Storage::disk('local')->put($relativePath, "PERIODE,NOMOR_REKENING1,BAKI_DEBET1\n2026-04-04,123,1000\n");
+
+        $service = new ExcelQueuedImportService();
+        $stagedFallbackCalled = false;
+        $failedMessage = '';
+
+        $result = $service->execute([
+            'job_id' => 78,
+            'params' => [
+                'job_id' => 78,
+                'file_path' => $relativePath,
+                'table_name' => 'daily_loan_dinamis',
+                'header_index' => 0,
+                'active_filters' => [],
+                'total_rows' => 2,
+                'delimiter' => ',',
+            ],
+            'headers' => ['PERIODE', 'NOMOR_REKENING1', 'BAKI_DEBET1'],
+        ], [
+            'resolve_import_strategy' => fn (string $tableName) => new class {
+                public function importMode(array $context = []): string
+                {
+                    return 'bulk_csv_direct';
+                }
+            },
+            'mark_failed' => function (
+                int $jobId,
+                string $message,
+                int $success = 0,
+                int $failed = 0
+            ) use (&$failedMessage): void {
+                $failedMessage = $message;
+            },
+            'find_job' => fn (int $jobId) => (object) [
+                'status' => 'processing',
+                'total_success' => 0,
+                'total_failed' => 0,
+                'total_files' => 1,
+            ],
+            'update_job' => fn (int $jobId, array $attributes, ?array $progressPayload = null) => null,
+            'assert_transactional_table' => fn (string $tableName, string $context) => null,
+            'assert_duplicate_guard' => fn (string $tableName) => null,
+            'is_csv_file' => fn (string $path) => true,
+            'detect_csv_delimiter' => fn (string $path) => ',',
+            'count_csv_data_rows' => fn (string $path, ?string $tableName = null) => 1,
+            'resolve_csv_data_row_estimate' => fn (?int $totalRows, int $headerIndex) => 1,
+            'run_csv_pipeline' => fn (array $payload) => app(ImportPipelineService::class)->runCsvPipeline($payload),
+            'process_daily_loan_direct_csv_stream' => function (): bool {
+                throw new \RuntimeException('Direct load berhenti setelah commit.');
+            },
+            'process_staged_csv_stream' => function () use (&$stagedFallbackCalled): bool {
+                $stagedFallbackCalled = true;
+
+                return true;
+            },
+        ]);
+
+        $this->assertFalse($stagedFallbackCalled);
+        $this->assertSame('failed', $result['status']);
+        $this->assertStringContainsString('Direct load berhenti setelah commit.', $failedMessage);
     }
 
     public function test_daily_loan_strategy_always_forces_direct_mode_even_if_filters_present(): void

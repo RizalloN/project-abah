@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\Schema;
 
 class EnsureImportedSnapshotsFreshJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, SnapshotJobRetryWindow;
 
     public $tries = 35;
     public $timeout = 2400;
@@ -111,6 +111,14 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             'l1133' => $this->ensureFallbackLoanSnapshots($dashboardHarian, 'l1133'),
             default => null,
         };
+
+        if ($table === 'daily_loan_dinamis'
+            && $periodScope !== ''
+            && config('queue.default') !== 'sync') {
+            WarmDashboardSimpananCacheJob::dispatch('micro-readiness', [
+                'period' => $periodScope,
+            ]);
+        }
     }
 
     private function handleDeletedSourcePeriod(
@@ -359,16 +367,9 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             return;
         }
 
-        $totalRows = (int) DB::table('daily_loan_dinamis')
-            ->where('periode', $period)
-            ->count();
-        $completion = $totalRows > 0 ? round((100 * ($totalRows - $missingAfter)) / $totalRows, 2) : 100.0;
-
         throw new \RuntimeException(sprintf(
-            'Shadow column Daily Loan periode %s belum siap untuk snapshot Kinerja RM format baru (%.2f%% lengkap, sisa %s row).',
-            $period,
-            $completion,
-            number_format($missingAfter)
+            'Shadow column Daily Loan periode %s belum siap untuk snapshot Kinerja RM format baru.',
+            $period
         ));
     }
 
@@ -394,9 +395,17 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             }
         }
 
-        return (int) DB::table('daily_loan_dinamis')
+        return DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->where(function ($query) use ($requiredColumns): void {
+                if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')
+                    && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
+                    $query->whereNull('shadow_built_at')
+                        ->orWhereColumn('shadow_built_at', '<', 'updated_at');
+
+                    return;
+                }
+
                 foreach ($requiredColumns as $column) {
                     $query->orWhereNull($column);
                 }
@@ -409,13 +418,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
                     });
                 }
 
-                if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')
-                    && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
-                    $query->orWhereNull('shadow_built_at')
-                        ->orWhereColumn('shadow_built_at', '<', 'updated_at');
-                }
             })
-            ->count();
+            ->exists() ? 1 : 0;
     }
 
     private function ensureSimpananSnapshots(

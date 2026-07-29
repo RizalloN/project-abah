@@ -385,12 +385,15 @@
 
     .market-native-shell {
         display: grid;
+        min-width: 0;
         gap: 1rem;
     }
 
     .market-native-switch {
         display: inline-flex;
         align-items: center;
+        max-width: 100%;
+        min-width: 0;
         width: fit-content;
         gap: 0.35rem;
         padding: 0.35rem;
@@ -639,11 +642,14 @@
 
     .market-mapping-workspace {
         display: grid;
+        min-width: 0;
         gap: 1rem;
     }
 
     .market-mapping-mode {
         display: none;
+        min-width: 0;
+        max-width: 100%;
     }
 
     .market-mapping-mode.active {
@@ -1614,6 +1620,22 @@
         .market-instansi-table-shell {
             height: max(620px, calc(100svh - 210px));
             min-height: 620px;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .market-native-switch {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            width: 100%;
+            border-radius: 14px;
+        }
+
+        .market-native-switch-button {
+            width: 100%;
+            min-width: 0;
+            border-radius: 10px;
+            white-space: normal;
         }
     }
 </style>

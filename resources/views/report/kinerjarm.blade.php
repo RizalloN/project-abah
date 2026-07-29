@@ -555,6 +555,7 @@
 
     /* Consolidated Excel-style Table */
     .kinerja-konsumer-table {
+        --kinerja-branch-column-width: 94px;
         width: 100%;
         min-width: 1750px !important;
         border-collapse: separate !important;
@@ -606,6 +607,12 @@
         border-right: 1px solid #1e293b !important;
     }
 
+    .kinerja-konsumer-table thead tr:first-child > th.sticky-col:first-child {
+        width: var(--kinerja-branch-column-width) !important;
+        min-width: var(--kinerja-branch-column-width);
+        max-width: var(--kinerja-branch-column-width);
+    }
+
     .kinerja-konsumer-table td.sticky-col {
         position: sticky;
         left: 0;
@@ -650,6 +657,9 @@
     }
 
     .kinerja-konsumer-table td.merged-branch-cell {
+        width: var(--kinerja-branch-column-width);
+        min-width: var(--kinerja-branch-column-width);
+        max-width: var(--kinerja-branch-column-width);
         border-left: 1px solid #e2e8f0 !important;
         color: #0f2f66 !important;
         font-weight: 600 !important;
@@ -674,7 +684,7 @@
         font-weight: 600 !important;
         padding: 5px 8px !important;
         position: sticky !important;
-        left: 94px !important; /* Realigned for removed No column */
+        left: var(--kinerja-branch-column-width) !important;
         z-index: 20;
         border-right: 1px solid #e2e8f0 !important;
         box-shadow: none !important;
@@ -1381,7 +1391,7 @@
     .rm-ritel-page .kinerja-table-container {
         scrollbar-width: auto;
         scrollbar-color: #cbd5e1 #ffffff;
-        scrollbar-gutter: stable both-edges;
+        scrollbar-gutter: stable;
     }
 
     .rm-ritel-page .kinerja-table-container::-webkit-scrollbar {
@@ -1781,12 +1791,13 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const modal = new bootstrap.Modal(document.getElementById('rmDetailModal'));
         const content = $('#rmDetailModalContent');
+        const safeRm = $('<div>').text(rm || '').html();
         
         content.html(`
             <div class="modal-body text-center py-5">
                 <div class="premium-loader my-4">
                     <div class="premium-loader-spinner"></div>
-                    <div class="premium-loader-text">Mengambil data rincian RM: ${rm}...</div>
+                    <div class="premium-loader-text">Mengambil data rincian RM: ${safeRm}...</div>
                 </div>
             </div>
         `);

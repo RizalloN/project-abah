@@ -17,9 +17,9 @@ use Illuminate\Support\Facades\Log;
 
 class RebuildRasioPeriodJob implements ShouldQueue
 {
-    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels, SnapshotJobRetryWindow;
 
-    public $tries = 2;
+    public $tries = 40;
     public $timeout = 900; // 15 minutes (more time for CASA ratio computation)
     public $backoff = [60, 300];
 
@@ -48,8 +48,8 @@ class RebuildRasioPeriodJob implements ShouldQueue
         try {
             $this->updateProgress("Membangun Rasio CASA untuk periode {$this->period}...");
 
-            $result = $builder->buildRasioPeriodSnapshot($this->period, $this->force);
-            $resultUker = $builder->buildRasioUkerPeriodSnapshot($this->period, $this->force);
+            $result = (int) ($builder->rebuildRasioCasa($this->period, $this->force)[$this->period] ?? 0);
+            $resultUker = 0;
 
             ReportDataSyncService::analyzeTable('rasio_casa_debitur_snapshots');
             ReportDataSyncService::analyzeTable('rasio_casa_debitur_uker_snapshots');

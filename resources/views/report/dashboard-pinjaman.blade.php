@@ -2458,13 +2458,15 @@
             return Number.isNaN(n) ? '0' : _mismatchIntlFmt.format(n);
         }
 
-        function resetMismatchState(message = 'Pilih periode dan cabang lalu klik <strong>Proses</strong>.') {
-            // Build state row safely to avoid XSS (B7)
+        function resetMismatchState(message = 'Pilih periode dan cabang lalu klik Proses.') {
             const tr = document.createElement('tr');
             const td = document.createElement('td');
+            const title = document.createElement('strong');
             td.colSpan = 4;
             td.className = 'loan-empty-state';
-            td.innerHTML = '<strong>Audit belum dijalankan</strong> ' + message;
+            title.textContent = 'Audit belum dijalankan';
+            td.appendChild(title);
+            td.appendChild(document.createTextNode(' ' + String(message || '')));
             tr.appendChild(td);
             mismatchBody.innerHTML = '';
             mismatchBody.appendChild(tr);

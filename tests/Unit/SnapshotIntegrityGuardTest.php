@@ -63,6 +63,45 @@ class SnapshotIntegrityGuardTest extends TestCase
         $this->assertSame(2, $result['row_count']);
     }
 
+    public function test_distinct_daily_loan_source_rows_may_share_the_same_business_identity(): void
+    {
+        Schema::create('dashboard_pinjaman_snapshots', function (Blueprint $table): void {
+            $table->string('uniqueid_dps')->primary();
+            $table->date('periode');
+            $table->string('account_number');
+            $table->string('segmen_dashboard');
+            $table->string('produk_dashboard');
+            $table->string('cabang1');
+            $table->string('unit1');
+        });
+
+        DB::table('dashboard_pinjaman_snapshots')->insert([
+            [
+                'uniqueid_dps' => 'source-row-1',
+                'periode' => '2026-07-10',
+                'account_number' => 'LOAN-1',
+                'segmen_dashboard' => 'MICRO',
+                'produk_dashboard' => 'KUR-KECIL',
+                'cabang1' => 'KC MADIUN',
+                'unit1' => 'UNIT 1',
+            ],
+            [
+                'uniqueid_dps' => 'source-row-2',
+                'periode' => '2026-07-10',
+                'account_number' => 'LOAN-1',
+                'segmen_dashboard' => 'MICRO',
+                'produk_dashboard' => 'KUR-KECIL',
+                'cabang1' => 'KC MADIUN',
+                'unit1' => 'UNIT 1',
+            ],
+        ]);
+
+        $result = app(SnapshotIntegrityGuard::class)->inspectPeriod('dashboard_pinjaman_snapshots', '2026-07-10');
+
+        $this->assertSame('ok', $result['status']);
+        $this->assertSame(0, $result['duplicate_group_count']);
+    }
+
     public function test_table_with_missing_identity_column_is_skipped_safely(): void
     {
         Schema::create('dashboard_harian_snapshots', function (Blueprint $table) {

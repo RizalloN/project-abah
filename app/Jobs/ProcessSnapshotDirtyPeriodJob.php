@@ -14,10 +14,11 @@ use Illuminate\Support\Facades\Log;
 
 class ProcessSnapshotDirtyPeriodJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, SnapshotJobRetryWindow;
 
-    public $tries = 1;
+    public $tries = 40;
     public $timeout = 3600;
+    public $backoff = [60, 300];
 
     /**
      * @param array<string, mixed> $claim

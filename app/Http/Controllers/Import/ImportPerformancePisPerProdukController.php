@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Http\Controllers\Import\Concerns\AuthorizesSessionImportStorageFiles;
 use App\Services\Import\ExcelStagingService;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ReportDataSyncService;
+use App\Support\SargableDateFilter;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -20,7 +22,7 @@ use ZipArchive;
 
 class ImportPerformancePisPerProdukController extends Controller
 {
-    use AllocatesGapIds;
+    use AllocatesGapIds, AuthorizesSessionImportStorageFiles;
 
     private const TABLE_NAME = 'performance_pis_per_produk';
     private const UNIQUE_SUFFIX = '_PISPP';
@@ -143,21 +145,18 @@ class ImportPerformancePisPerProdukController extends Controller
 
     private function resolvePreviewWorkingContext(string $filePath): array
     {
-        $relativePath = urldecode(trim($filePath));
-        $absolutePath = file_exists($relativePath) ? $relativePath : Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
-            throw new \RuntimeException('File Performance PIS tidak ditemukan.');
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            $filePath,
+            'performance_pis_file',
+            ['performance_pis_imports'],
+            ['xlsx', 'csv', 'txt']
+        );
 
         $manualPosisi = session('performance_pis_periode');
-        if (!file_exists($relativePath)) {
-            $this->ensurePerformancePisPreviewStage($relativePath, $absolutePath, $manualPosisi);
-        }
+        $this->ensurePerformancePisPreviewStage($relativePath, $absolutePath, $manualPosisi);
 
-        $stageState = !file_exists($relativePath) ? $this->getStagedExcelState($relativePath) : [];
-        $workingPath = !file_exists($relativePath)
-            ? $this->resolveWorkingImportPath($relativePath)
-            : $absolutePath;
+        $stageState = $this->getStagedExcelState($relativePath);
+        $workingPath = $this->resolveWorkingImportPath($relativePath);
         $context = $this->buildImportContext($workingPath, $manualPosisi, $stageState);
 
         return [$workingPath, $context];
@@ -261,7 +260,7 @@ class ImportPerformancePisPerProdukController extends Controller
     {
         $request->validate([
             'id_report' => 'required',
-            'file' => 'required|file|mimes:xlsx,csv,txt',
+            'file' => 'required|file|mimes:xlsx,csv,txt|max:' . $this->configuredSessionImportUploadMaxKilobytes(),
             'periode' => 'required|date_format:Y-m-d',
         ]);
 
@@ -391,17 +390,19 @@ class ImportPerformancePisPerProdukController extends Controller
         ini_set('memory_limit', '1024M');
         set_time_limit(0);
 
-        $relativePath = session('performance_pis_file', $request->input('file_path'));
+        $relativePath = (string) session('performance_pis_file', $request->input('file_path'));
         $periodeInput = $request->input('periode', session('performance_pis_periode'));
 
         if (!$relativePath) {
             return redirect()->route('import.index')->with('error', 'File import tidak ditemukan. Silakan upload ulang.');
         }
 
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
-            return redirect()->route('import.index')->with('error', 'File Excel tidak ditemukan di server.');
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            $relativePath,
+            'performance_pis_file',
+            ['performance_pis_imports'],
+            ['xlsx', 'csv', 'txt']
+        );
 
         if (!$periodeInput) {
             return redirect()->route('import.index')->with('error', 'Periode Performance PIS tidak ditemukan. Silakan upload ulang.');
@@ -604,15 +605,12 @@ class ImportPerformancePisPerProdukController extends Controller
             'periode' => 'required|date_format:Y-m-d',
         ]);
 
-        $relativePath = $request->input('file_path');
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
-            return response()->json([
-                'status' => 'error',
-                'title' => 'Gagal!',
-                'text' => 'File Excel tidak ditemukan di server.',
-            ], 422);
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            (string) $request->input('file_path'),
+            'performance_pis_file',
+            ['performance_pis_imports'],
+            ['xlsx', 'csv', 'txt']
+        );
 
         try {
             $this->bulkLoadService()->assertTransactionalTable(self::TABLE_NAME, 'import Performance PIS');
@@ -639,7 +637,7 @@ class ImportPerformancePisPerProdukController extends Controller
             ], 422);
         }
 
-        if (!empty($context['posisi']) && DB::table(self::TABLE_NAME)->whereDate('posisi', $context['posisi'])->exists()) {
+        if (!empty($context['posisi']) && SargableDateFilter::apply(DB::table(self::TABLE_NAME), 'posisi', '=', $context['posisi'])->exists()) {
             $this->cleanupUploadedFile($relativePath);
 
             return response()->json([
@@ -747,15 +745,12 @@ class ImportPerformancePisPerProdukController extends Controller
             'periode' => 'required|date_format:Y-m-d',
         ]);
 
-        $relativePath = $request->input('file_path');
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
-            return response()->json([
-                'status' => 'error',
-                'title' => 'Gagal!',
-                'text' => 'File Excel tidak ditemukan di server.',
-            ], 422);
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            (string) $request->input('file_path'),
+            'performance_pis_file',
+            ['performance_pis_imports'],
+            ['xlsx', 'csv', 'txt']
+        );
 
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
@@ -789,7 +784,7 @@ class ImportPerformancePisPerProdukController extends Controller
             ], 422);
         }
 
-        if (DB::table(self::TABLE_NAME)->whereDate('posisi', $context['posisi'])->exists()) {
+        if (SargableDateFilter::apply(DB::table(self::TABLE_NAME), 'posisi', '=', $context['posisi'])->exists()) {
             $this->cleanupUploadedFile($relativePath);
 
             return response()->json([

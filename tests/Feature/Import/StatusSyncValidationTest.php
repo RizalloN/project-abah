@@ -294,6 +294,33 @@ class StatusSyncValidationTest extends TestCase
         Bus::assertDispatched(\App\Jobs\RunImportJob::class, fn ($job): bool => $job->jobId === $jobId);
     }
 
+    public function test_daily_loan_never_uses_inline_fallback_while_queue_worker_is_running(): void
+    {
+        $jobId = 10;
+        $this->createTestJob($jobId, 'processing', [
+            'total_files' => 320524,
+            'file_name' => 'daily-loan.csv',
+            'folder_path' => 'imports',
+            'id_report' => 8,
+            'job_context' => json_encode([
+                'table_name' => 'daily_loan_dinamis',
+                'state' => [
+                    'params' => [
+                        'job_id' => $jobId,
+                        'table_name' => 'daily_loan_dinamis',
+                        'disable_inline_fallback' => false,
+                    ],
+                    'headers' => ['PERIODE'],
+                ],
+            ]),
+        ]);
+
+        $method = new \ReflectionMethod(ImportExecutionService::class, 'inlineFallbackDisabledForJob');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($this->executionService, $jobId));
+    }
+
     /**
      * Helper: Create test job
      */

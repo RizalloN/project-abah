@@ -2,6 +2,8 @@
 
 namespace App\Services\Reports;
 
+use App\Support\SargableDateFilter;
+
 use App\Support\RkaLookupService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -102,8 +104,8 @@ class BrilinkReportService
 
         // CASA period resolution
         $selectedCasaDate   = $current->copy()->endOfMonth();
-        $latestCasaWeb      = DB::table('casa_brilink_web')->whereDate('periode', '<=', $selectedCasaDate->toDateString())->max('periode');
-        $latestCasaEdc      = DB::table('casa_brilink_edc')->whereDate('periode', '<=', $selectedCasaDate->toDateString())->max('periode');
+        $latestCasaWeb      = SargableDateFilter::apply(DB::table('casa_brilink_web'), 'periode', '<=', $selectedCasaDate->toDateString())->max('periode');
+        $latestCasaEdc      = SargableDateFilter::apply(DB::table('casa_brilink_edc'), 'periode', '<=', $selectedCasaDate->toDateString())->max('periode');
         $latestCasaCandidates = array_filter([$latestCasaWeb, $latestCasaEdc]);
         $effectiveCasaDate  = !empty($latestCasaCandidates) ? Carbon::parse(max($latestCasaCandidates)) : $selectedCasaDate->copy();
         $casaPrevDate       = $effectiveCasaDate->copy()->subMonthNoOverflow()->endOfMonth();
@@ -114,19 +116,17 @@ class BrilinkReportService
         $branchLookupKeys = array_values(array_unique(array_merge(...array_values($branchAliasMap))));
 
         $fetchCasaByPeriod = function (Carbon $period) use ($branchLookupKeys, $branchAliasMap, $isBranchFiltered, $selectedUkers, $casaDisplayColumn) {
-            $webRows = DB::table('casa_brilink_web')
+            $webRows = SargableDateFilter::apply(DB::table('casa_brilink_web'), 'periode', '=', $period->toDateString())
                 ->selectRaw("UPPER(TRIM($casaDisplayColumn)) as branch")
                 ->selectRaw('SUM(COALESCE(jml_nominal_casa, 0)) as total_nominal')
-                ->whereDate('periode', $period->toDateString())
                 ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchLookupKeys)
                 ->when($isBranchFiltered && !empty($selectedUkers), fn ($q) => $q->whereIn(DB::raw("UPPER(TRIM($casaDisplayColumn))"), $selectedUkers))
                 ->groupBy(DB::raw("UPPER(TRIM($casaDisplayColumn))"))
                 ->get();
 
-            $edcRows = DB::table('casa_brilink_edc')
+            $edcRows = SargableDateFilter::apply(DB::table('casa_brilink_edc'), 'periode', '=', $period->toDateString())
                 ->selectRaw("UPPER(TRIM($casaDisplayColumn)) as branch")
                 ->selectRaw('SUM(COALESCE(jml_nominal_casa, 0)) as total_nominal')
-                ->whereDate('periode', $period->toDateString())
                 ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchLookupKeys)
                 ->when($isBranchFiltered && !empty($selectedUkers), fn ($q) => $q->whereIn(DB::raw("UPPER(TRIM($casaDisplayColumn))"), $selectedUkers))
                 ->groupBy(DB::raw("UPPER(TRIM($casaDisplayColumn))"))

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Import\Concerns\AuthorizesSessionImportStorageFiles;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Http\Controllers\Import\Concerns\GeneratesFileIdentifiers;
@@ -14,6 +15,7 @@ use App\Services\Import\ImportNotificationSyncService;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ReportDataSyncService;
 use App\Support\ImportPreviewErrorHandler;
+use App\Support\SargableDateFilter;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -26,6 +28,8 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ImportReportPhController extends Controller
 {
+    use AuthorizesSessionImportStorageFiles;
+
     use AllocatesGapIds;
     use SmartCsvImportSupport;
     use GeneratesFileIdentifiers;
@@ -127,7 +131,7 @@ class ImportReportPhController extends Controller
     {
         $request->validate([
             'id_report' => 'required',
-            'file' => 'required|file|mimes:csv,txt,xlsx,xls',
+            'file' => 'required|file|mimes:csv,txt,xlsx,xls|max:' . $this->configuredSessionImportUploadMaxKilobytes(),
         ]);
 
         $path = $request->file('file')->store('report_ph_imports');
@@ -1114,15 +1118,17 @@ class ImportReportPhController extends Controller
         ini_set('memory_limit', '512M');
         set_time_limit(0);
 
-        $relativePath = session('report_ph_file', $request->input('file_path'));
+        $relativePath = (string) session('report_ph_file', $request->input('file_path'));
         if (!$relativePath) {
             return redirect()->route('import.index')->with('error', 'File import ' . self::REPORT_LABEL . ' tidak ditemukan. Silakan upload ulang.');
         }
 
-        $absolutePath = $this->resolveAbsoluteImportPath($relativePath);
-        if ($absolutePath === null || !file_exists($absolutePath)) {
-            return redirect()->route('import.index')->with('error', 'File CSV ' . self::REPORT_LABEL . ' tidak ditemukan di server.');
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            $relativePath,
+            'report_ph_file',
+            ['report_ph_imports'],
+            ['csv', 'txt', 'xlsx', 'xls']
+        );
 
         $previewStateKey = trim((string) $request->input('preview_state_key', ''));
         $previewState = $previewStateKey !== ''
@@ -1272,15 +1278,12 @@ class ImportReportPhController extends Controller
             'delimiter' => 'required|string',
         ]);
 
-        $relativePath = $request->input('file_path');
-        $absolutePath = $this->resolveAbsoluteImportPath($relativePath);
-        if ($absolutePath === null || !file_exists($absolutePath)) {
-            return response()->json([
-                'status' => 'error',
-                'title' => 'Gagal!',
-                'text' => 'File CSV ' . self::REPORT_LABEL . ' tidak ditemukan di server.',
-            ], 422);
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            (string) $request->input('file_path'),
+            'report_ph_file',
+            ['report_ph_imports'],
+            ['csv', 'txt', 'xlsx', 'xls']
+        );
 
         $workingPath = $this->resolveWorkingImportPath($relativePath);
         if (!file_exists($workingPath)) {
@@ -1374,7 +1377,7 @@ class ImportReportPhController extends Controller
             ], 422);
         }
 
-        if (DB::table(self::TABLE_NAME)->whereDate('periode', $periode)->exists()) {
+        if (SargableDateFilter::apply(DB::table(self::TABLE_NAME), 'periode', '=', $periode)->exists()) {
             $this->cleanupUploadedFile($relativePath);
 
             return response()->json([
@@ -1479,15 +1482,12 @@ class ImportReportPhController extends Controller
             'delimiter' => 'required|string',
         ]);
 
-        $relativePath = $request->input('file_path');
-        $absolutePath = $this->resolveAbsoluteImportPath($relativePath);
-        if ($absolutePath === null || !file_exists($absolutePath)) {
-            return response()->json([
-                'status' => 'error',
-                'title' => 'Gagal!',
-                'text' => 'File CSV ' . self::REPORT_LABEL . ' tidak ditemukan di server.',
-            ], 422);
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            (string) $request->input('file_path'),
+            'report_ph_file',
+            ['report_ph_imports'],
+            ['csv', 'txt', 'xlsx', 'xls']
+        );
 
         $workingPath = $this->resolveWorkingImportPath($relativePath);
         if (!file_exists($workingPath)) {
@@ -1529,7 +1529,7 @@ class ImportReportPhController extends Controller
             ], 422);
         }
 
-        if (DB::table(self::TABLE_NAME)->whereDate('periode', $context['periode'])->exists()) {
+        if (SargableDateFilter::apply(DB::table(self::TABLE_NAME), 'periode', '=', $context['periode'])->exists()) {
             $this->cleanupUploadedFile($relativePath);
 
             return response()->json([
@@ -3106,8 +3106,7 @@ class ImportReportPhController extends Controller
             throw new \RuntimeException('Periode validasi import LW325 - PH tidak valid.');
         }
 
-        $actualRows = (int) DB::table(self::TABLE_NAME)
-            ->whereDate('periode', $periode)
+        $actualRows = (int) SargableDateFilter::apply(DB::table(self::TABLE_NAME), 'periode', '=', $periode)
             ->count();
 
         $zeroPeriodRows = (int) DB::table(self::TABLE_NAME)
@@ -3118,8 +3117,7 @@ class ImportReportPhController extends Controller
             ->count();
 
         $expectedPrefix = $periode . '_';
-        $malformedRows = (int) DB::table(self::TABLE_NAME)
-            ->whereDate('periode', $periode)
+        $malformedRows = (int) SargableDateFilter::apply(DB::table(self::TABLE_NAME), 'periode', '=', $periode)
             ->where(function ($query) use ($expectedPrefix): void {
                 $query->whereNull('uniqueid_namareport')
                     ->orWhere('uniqueid_namareport', '')

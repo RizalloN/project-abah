@@ -6,6 +6,7 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobQueued;
+use Illuminate\Queue\Events\Looping;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\View;
+use Illuminate\Validation\Rules\Password;
+use App\Services\Import\ActiveImportJobCounter;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -41,8 +44,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Password::defaults(static fn (): Password => Password::min(12)
+            ->letters()
+            ->mixedCase()
+            ->numbers());
+
         $this->registerSecurityRateLimiters();
         $this->registerQueueWorkerAutoEnsure();
+        $this->registerQueueWorkerHeartbeats();
 
         // Record user logins to login_histories table
         Event::listen(\Illuminate\Auth\Events\Login::class, function (\Illuminate\Auth\Events\Login $event): void {
@@ -84,14 +93,8 @@ class AppServiceProvider extends ServiceProvider
         }
 
         View::composer('layouts.sidebar', function ($view): void {
-            $activeImportJobCount = 0;
-
             try {
-                if (Schema::hasTable('import_jobs')) {
-                    $activeImportJobCount = (int) DB::table('import_jobs')
-                        ->whereIn('status', ['queued', 'processing'])
-                        ->count();
-                }
+                $activeImportJobCount = app(ActiveImportJobCounter::class)->count();
             } catch (\Throwable) {
                 $activeImportJobCount = 0;
             }
@@ -103,12 +106,12 @@ class AppServiceProvider extends ServiceProvider
     private function registerSecurityRateLimiters(): void
     {
         RateLimiter::for('admin-sensitive', function (Request $request): Limit {
-            return Limit::perMinute((int) env('SECURITY_ADMIN_SENSITIVE_LIMIT_PER_MINUTE', 30))
+            return Limit::perMinute((int) config('app.security_rate_limits.admin_sensitive_per_minute', 30))
                 ->by($this->securityRateLimitKey($request));
         });
 
         RateLimiter::for('auth-sensitive', function (Request $request): Limit {
-            return Limit::perMinute((int) env('SECURITY_AUTH_SENSITIVE_LIMIT_PER_MINUTE', 12))
+            return Limit::perMinute((int) config('app.security_rate_limits.auth_sensitive_per_minute', 12))
                 ->by($this->securityRateLimitKey($request));
         });
     }
@@ -155,16 +158,69 @@ class AppServiceProvider extends ServiceProvider
         });
     }
 
+    private function registerQueueWorkerHeartbeats(): void
+    {
+        if (app()->runningUnitTests()) {
+            return;
+        }
+
+        Event::listen(Looping::class, function (Looping $event): void {
+            if ((string) $event->connectionName !== 'database') {
+                return;
+            }
+
+            $workerPool = $this->queueWorkerPoolFor((string) $event->queue);
+            if ($workerPool === null) {
+                return;
+            }
+
+            static $lastHeartbeatAt = [];
+
+            $now = time();
+            $processKey = $workerPool['name'] . ':' . getmypid();
+            if (($lastHeartbeatAt[$processKey] ?? 0) >= ($now - 5)) {
+                return;
+            }
+            $lastHeartbeatAt[$processKey] = $now;
+
+            $key = 'queue:worker-pool:heartbeats:' . sha1($workerPool['name']);
+            $lock = Cache::lock($key . ':lock', 3);
+            if (!$lock->get()) {
+                return;
+            }
+
+            try {
+                $heartbeats = Cache::get($key, []);
+                $heartbeats = is_array($heartbeats) ? $heartbeats : [];
+                $heartbeats = array_filter(
+                    $heartbeats,
+                    static fn ($timestamp): bool => is_numeric($timestamp) && ($now - (int) $timestamp) <= 30
+                );
+                $heartbeats[(string) getmypid()] = $now;
+
+                Cache::put($key, $heartbeats, now()->addMinutes(2));
+
+                $pidKey = 'queue:worker-pool:pids:' . sha1($workerPool['name']);
+                $pids = Cache::get($pidKey, []);
+                $pids = is_array($pids) ? $pids : [];
+                $pids[(string) getmypid()] = $now;
+                Cache::put($pidKey, $pids, now()->addHours(8));
+            } finally {
+                $lock->release();
+            }
+        });
+    }
+
     /** @return array{name: string, queues: string, workers: int}|null */
     private function queueWorkerPoolFor(string $queue): ?array
     {
-        foreach ((array) config('queue.worker_pools', []) as $poolName => $pool) {
-            $queues = array_values(array_filter(array_map(
-                static fn (string $name): string => trim($name),
-                explode(',', (string) ($pool['queues'] ?? ''))
-            )));
+        $requestedQueues = $this->normalizeQueueNames($queue);
 
-            if (in_array($queue, $queues, true)) {
+        foreach ((array) config('queue.worker_pools', []) as $poolName => $pool) {
+            $queues = $this->normalizeQueueNames((string) ($pool['queues'] ?? ''));
+
+            if ($requestedQueues === $queues
+                || (count($requestedQueues) === 1 && in_array($requestedQueues[0], $queues, true))) {
                 return [
                     'name' => (string) $poolName,
                     'queues' => implode(',', $queues),
@@ -174,6 +230,18 @@ class AppServiceProvider extends ServiceProvider
         }
 
         return null;
+    }
+
+    /** @return array<int, string> */
+    private function normalizeQueueNames(string $queues): array
+    {
+        $names = array_values(array_unique(array_filter(array_map(
+            static fn (string $name): string => trim($name),
+            explode(',', $queues)
+        ))));
+        sort($names);
+
+        return $names;
     }
 
     private function registerCustomQueueExtensions(): void

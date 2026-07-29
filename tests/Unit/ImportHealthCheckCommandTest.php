@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Console\Commands\ImportHealthCheckCommand;
 use App\Services\Import\ImportProgressService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\TestCase;
 
@@ -24,9 +25,11 @@ class ImportHealthCheckCommandTest extends TestCase
 
         $loadData = "LOAD DATA LOCAL INFILE 'D:/tmp/ponorogo.txt' INTO TABLE `simpanan_multipn`";
         $deleteScope = "DELETE FROM `simpanan_multipn` WHERE `posisi` IN ('2026-06-05')";
+        $snapshotBuild = 'INSERT INTO performance_rm_snapshots SELECT * FROM daily_loan_dinamis';
 
         $this->assertTrue($method->invoke($command, strtolower($loadData)));
         $this->assertTrue($method->invoke($command, strtolower($deleteScope)));
+        $this->assertTrue($method->invoke($command, strtolower($snapshotBuild)));
         $this->assertFalse($method->invoke($command, 'select sleep(90)'));
     }
 
@@ -48,5 +51,19 @@ class ImportHealthCheckCommandTest extends TestCase
         $method->invoke($command, $progressService);
 
         $this->addToAssertionCount(1);
+    }
+
+    public function test_health_check_counts_snapshot_dead_letters(): void
+    {
+        Schema::shouldReceive('hasTable')->once()->with('failed_snapshot_dirty_periods')->andReturnTrue();
+
+        $query = Mockery::mock();
+        $query->shouldReceive('count')->once()->andReturn(5);
+        DB::shouldReceive('table')->once()->with('failed_snapshot_dirty_periods')->andReturn($query);
+
+        $command = new ImportHealthCheckCommand();
+        $method = new \ReflectionMethod($command, 'countFailedSnapshotDirtyPeriods');
+
+        $this->assertSame(5, $method->invoke($command));
     }
 }

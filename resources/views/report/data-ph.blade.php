@@ -131,7 +131,7 @@
     /* ── Compact Flat Selectors ── */
     .loan-filter-modern {
         display: grid;
-        grid-template-columns: repeat(3, 1fr) auto;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(140px, auto);
         gap: 0.75rem;
         background: #ffffff;
         padding: 1rem;
@@ -151,6 +151,7 @@
 
     .loan-filter-item {
         display: flex;
+        min-width: 0;
         flex-direction: column;
         gap: 0.4rem;
         position: relative;
@@ -173,6 +174,7 @@
     .loan-dropdown {
         position: relative;
         width: 100%;
+        min-width: 0;
     }
 
     .loan-dropdown-icon {
@@ -189,6 +191,7 @@
 
     .loan-dropdown-toggle {
         width: 100%;
+        min-width: 0;
         height: 40px;
         background: #ffffff;
         border: 1px solid var(--border-color);
@@ -221,6 +224,7 @@
         left: 0;
         width: 100%;
         min-width: 260px;
+        max-width: min(360px, calc(100vw - 24px));
         background: #ffffff;
         border: 1px solid var(--border-color);
         border-radius: 0px !important;
@@ -298,6 +302,41 @@
         gap: 0.5rem;
         transition: all 0.2s ease;
         box-shadow: none !important;
+    }
+
+    @media (max-width: 991.98px) {
+        .loan-filter-modern {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .loan-filter-modern > div,
+        .btn-loan-modern-submit {
+            min-width: 0;
+        }
+    }
+
+    @media (max-width: 767.98px) {
+        .filter-section.p-4 {
+            padding: 0.75rem !important;
+        }
+
+        .loan-filter-modern {
+            grid-template-columns: minmax(0, 1fr);
+            gap: 0.75rem;
+            padding: 0.75rem;
+        }
+
+        .loan-dropdown-menu {
+            width: 100%;
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .loan-dropdown-text,
+        .loan-dropdown-option span {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
     }
 
     .btn-loan-modern-submit:hover {
@@ -584,13 +623,14 @@
 
     .kejar-laba-table-shell {
         height: auto !important;
-        max-height: none !important;
-        overflow-x: auto !important;
-        overflow-y: visible !important;
-        overscroll-behavior: auto !important;
+        max-height: min(72vh, 760px) !important;
+        max-height: min(72dvh, 760px) !important;
+        overflow: auto !important;
+        overscroll-behavior: contain !important;
     }
 
     .kejar-laba-table {
+        --ph-index-column-width: 64px;
         width: 100%;
         border-collapse: separate !important;
         border-spacing: 0 !important;
@@ -671,6 +711,17 @@
         position: sticky;
         left: 0;
         box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .kejar-laba-table .ph-sticky-index {
+        left: 0 !important;
+        width: var(--ph-index-column-width);
+        min-width: var(--ph-index-column-width);
+        max-width: var(--ph-index-column-width);
+    }
+
+    .kejar-laba-table .ph-sticky-scope {
+        left: var(--ph-index-column-width) !important;
     }
 
     /* Thicker border separating frozen pane */
@@ -1013,7 +1064,8 @@
                                 const opt = document.createElement('div');
                                 opt.className = `loan-dropdown-option ${unit.value === unitInput.value ? 'is-active' : ''}`;
                                 opt.dataset.value = unit.value;
-                                opt.innerHTML = `<div class="loan-dropdown-check"><i class="fas fa-check"></i></div><span>${unit.label}</span>`;
+                                opt.innerHTML = '<div class="loan-dropdown-check"><i class="fas fa-check"></i></div><span></span>';
+                                opt.querySelector('span').textContent = unit.label;
                                 opt.addEventListener('click', (e) => {
                                     e.stopPropagation();
                                     unitInput.value = unit.value;
@@ -1064,8 +1116,8 @@
             <table class="kejar-laba-table" data-abah-no-table-guard="1">
                 <thead>
                     <tr>
-                        <th rowspan="2" class="sticky-col" style="z-index: 50 !important;">No</th>
-                        <th rowspan="2" class="sticky-col" style="left: 64px; z-index: 50 !important;">{{ $isArea6AllSelected ? 'Kantor Cabang' : 'Unit Kerja' }}</th>
+                        <th rowspan="2" class="sticky-col ph-sticky-index" style="z-index: 50 !important;">No</th>
+                        <th rowspan="2" class="sticky-col ph-sticky-scope" style="z-index: 50 !important;">{{ $isArea6AllSelected ? 'Kantor Cabang' : 'Unit Kerja' }}</th>
                         <th rowspan="2" style="z-index: 30 !important;">Segmen</th>
                         <th rowspan="2" class="text-center">SISA PH<br>{{ strtoupper($selectedPeriodLabel) }}</th>
                         <th colspan="4" class="text-center">POSISI RECOVERY</th>
@@ -1092,10 +1144,10 @@
                         @endphp
                         {{-- MICRO --}}
                         <tr class="ph-nominatif-trigger" data-ph-nominatif-row data-period="{{ $selectedPeriod }}" data-segment="micro" data-segment-label="MICRO" data-kanca="{{ $row['kanca'] ?? '' }}" data-unit="{{ $phUnitFilter }}" data-scope-label="{{ $phScopeLabel }}" style="background-color: {{ $blockBg }};">
-                            <td rowspan="5" class="text-center sticky-col font-weight-bold" style="background-color: {{ $blockBg }} !important; z-index: 20;">
+                            <td rowspan="5" class="text-center sticky-col ph-sticky-index font-weight-bold" style="background-color: {{ $blockBg }} !important; z-index: 20;">
                                 {{ $row['no'] }}
                             </td>
-                            <td rowspan="5" class="sticky-col font-weight-bold" style="left: 64px; background-color: {{ $blockBg }} !important; color: var(--primary-blue-dark); z-index: 20;">
+                            <td rowspan="5" class="sticky-col ph-sticky-scope font-weight-bold" style="background-color: {{ $blockBg }} !important; color: var(--primary-blue-dark); z-index: 20;">
                                 {{ $isArea6AllSelected ? $row['kanca'] : $row['unit'] }}
                             </td>
                             <td class="font-weight-bold text-uppercase" style="background-color: {{ $blockBg }}; color: #475569;">
@@ -1410,10 +1462,10 @@
 
                             <tr class="{{ $isGrandTotalRow ? 'total-row' : '' }}" style="background-color: {{ $grandBg }}; font-weight: {{ $isGrandTotalRow ? '800' : '700' }};">
                                 @if($grandIndex === 0)
-                                    <td rowspan="{{ count($phSegmentRows) }}" class="text-center sticky-col font-weight-bold" style="background-color: {{ $grandStickyBg }} !important; color: {{ $grandTextColor }}; z-index: 20;">
+                                    <td rowspan="{{ count($phSegmentRows) }}" class="text-center sticky-col ph-sticky-index font-weight-bold" style="background-color: {{ $grandStickyBg }} !important; color: {{ $grandTextColor }}; z-index: 20;">
                                         GT
                                     </td>
-                                    <td rowspan="{{ count($phSegmentRows) }}" class="sticky-col font-weight-bold text-uppercase" style="left: 64px; background-color: {{ $grandStickyBg }} !important; color: {{ $grandTextColor }}; z-index: 20;">
+                                    <td rowspan="{{ count($phSegmentRows) }}" class="sticky-col ph-sticky-scope font-weight-bold text-uppercase" style="background-color: {{ $grandStickyBg }} !important; color: {{ $grandTextColor }}; z-index: 20;">
                                         {{ $isArea6AllSelected ? 'Grand Total Area 6' : 'Grand Total Tampilan' }}
                                     </td>
                                 @endif
@@ -1607,5 +1659,9 @@
         });
     });
 </script>
+@include('report.partials.sticky-table-viewport-script', [
+    'wrapperSelector' => '.kejar-laba-table-shell',
+    'tableSelector' => '.kejar-laba-table',
+])
 @endsection
 

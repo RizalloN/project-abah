@@ -44,6 +44,15 @@ beforeEach(function (): void {
         $table->text('extra')->nullable();
         $table->timestamp('created_at')->nullable();
     });
+
+    Schema::create('sessions', function (Blueprint $table): void {
+        $table->string('id')->primary();
+        $table->foreignId('user_id')->nullable()->index();
+        $table->string('ip_address', 45)->nullable();
+        $table->text('user_agent')->nullable();
+        $table->longText('payload');
+        $table->integer('last_activity')->index();
+    });
 });
 
 afterEach(function (): void {
@@ -86,7 +95,7 @@ it('allows an admin to create a user for one assigned branch', function (): void
         'pn' => '90002001',
         'role' => 'user',
         'branch_scope' => 'magetan',
-        'password' => 'password123',
+        'password' => 'Password1234',
     ]);
 
     $response->assertRedirect()->assertSessionHas('success');
@@ -94,6 +103,25 @@ it('allows an admin to create a user for one assigned branch', function (): void
     $createdUser = User::where('pn', '90002001')->firstOrFail();
     expect($createdUser->branch_scope)->toBe('magetan')
         ->and(UserBranchScope::forUser($createdUser)['key'])->toBe('magetan');
+});
+
+it('requires a strong password for admin-created accounts', function (): void {
+    $admin = User::factory()->create([
+        'name' => 'Admin Area',
+        'pn' => '90001005',
+        'role' => 'admin',
+        'branch_scope' => UserBranchScope::AREA_SCOPE,
+    ]);
+
+    $this->actingAs($admin)->post(route('user-management.store'), [
+        'name' => 'User Lemah',
+        'pn' => '90002005',
+        'role' => 'user',
+        'branch_scope' => 'madiun',
+        'password' => 'password123',
+    ])->assertSessionHasErrors('password', null, 'createUser');
+
+    $this->assertDatabaseMissing('users', ['pn' => '90002005']);
 });
 
 it('allows an admin to change a user between branch and area access', function (): void {
@@ -125,6 +153,45 @@ it('allows an admin to change a user between branch and area access', function (
         ->and(UserBranchScope::forUser($managedUser))->toBeNull();
 });
 
+it('revokes persisted sessions and remember tokens when access scope changes', function (): void {
+    Config::set('session.driver', 'database');
+    Config::set('session.table', 'sessions');
+    Config::set('session.connection', 'sqlite');
+
+    $admin = User::factory()->create([
+        'name' => 'Admin Area',
+        'pn' => '90001006',
+        'role' => 'admin',
+        'branch_scope' => UserBranchScope::AREA_SCOPE,
+    ]);
+    $managedUser = User::factory()->create([
+        'name' => 'User Cabang',
+        'pn' => '90002006',
+        'role' => 'user',
+        'branch_scope' => 'madiun',
+        'remember_token' => 'fixed-remember-token',
+    ]);
+
+    DB::table('sessions')->insert([
+        'id' => 'managed-user-session',
+        'user_id' => $managedUser->getKey(),
+        'payload' => 'payload',
+        'last_activity' => now()->timestamp,
+    ]);
+
+    $this->actingAs($admin)->put(route('user-management.update', $managedUser), [
+        'name' => $managedUser->name,
+        'pn' => $managedUser->pn,
+        'role' => $managedUser->role,
+        'branch_scope' => 'ngawi',
+        'password' => '',
+    ])->assertRedirect();
+
+    $managedUser->refresh();
+    expect($managedUser->remember_token)->not->toBe('fixed-remember-token');
+    $this->assertDatabaseMissing('sessions', ['id' => 'managed-user-session']);
+});
+
 it('rejects unsupported branch assignments', function (): void {
     $admin = User::factory()->create([
         'name' => 'Admin Area',
@@ -138,7 +205,7 @@ it('rejects unsupported branch assignments', function (): void {
         'pn' => '90002003',
         'role' => 'user',
         'branch_scope' => 'surabaya',
-        'password' => 'password123',
+        'password' => 'Password1234',
     ]);
 
     $response->assertSessionHasErrors('branch_scope', null, 'createUser');
@@ -163,7 +230,7 @@ it('keeps user scope management inaccessible to non admin roles', function (): v
             'pn' => '90002004',
             'role' => 'user',
             'branch_scope' => 'madiun',
-            'password' => 'password123',
+            'password' => 'Password1234',
         ])
         ->assertForbidden();
 

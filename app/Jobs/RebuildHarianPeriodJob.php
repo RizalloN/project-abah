@@ -17,9 +17,9 @@ use Illuminate\Support\Facades\Log;
 
 class RebuildHarianPeriodJob implements ShouldQueue
 {
-    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels, SnapshotJobRetryWindow;
 
-    public $tries = 2;
+    public $tries = 40;
     public $timeout = 600; // 10 minutes per period
     public $backoff = [60, 300];
 

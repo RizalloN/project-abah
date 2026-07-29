@@ -17,9 +17,9 @@ use Illuminate\Support\Facades\Log;
 
 class RebuildDormantPeriodJob implements ShouldQueue
 {
-    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels, SnapshotJobRetryWindow;
 
-    public $tries = 2;
+    public $tries = 40;
     public $timeout = 600;
     public $backoff = [60, 300];
 
@@ -48,7 +48,7 @@ class RebuildDormantPeriodJob implements ShouldQueue
         try {
             $this->updateProgress("Membangun Rekening Dormant untuk periode {$this->period}...");
 
-            $result = $builder->buildDormantPeriodSnapshot($this->period, $this->force);
+            $result = (int) ($builder->rebuildRekeningDormant($this->period, $this->force)[$this->period] ?? 0);
 
             ReportDataSyncService::analyzeTable('rekening_dormant_snapshots');
 

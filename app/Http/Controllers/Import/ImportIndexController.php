@@ -492,7 +492,7 @@ class ImportIndexController extends Controller
             Artisan::queue('snapshot:force-sync', [
                 '--period' => $period,
                 '--sync-id' => $syncId,
-            ])->onQueue('imports-high');
+            ])->onQueue('snapshots-priority');
 
             Log::info('Force sync snapshots queued', [
                 'sync_id' => $syncId,
@@ -3294,7 +3294,7 @@ class ImportIndexController extends Controller
     private function managedDatabaseBackupDirectories(): array
     {
         $directories = [storage_path('app/private/database_backups')];
-        $configured = trim((string) env('MANAGED_REPORT_RECOVERY_ALLOWED_BACKUP_DIRS', ''));
+        $configured = trim((string) config('services.managed_report_recovery.allowed_backup_dirs', ''));
 
         if ($configured !== '') {
             foreach (preg_split('/[;,]+/', $configured) ?: [] as $entry) {

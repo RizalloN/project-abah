@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Import\Concerns\AuthorizesSessionImportStorageFiles;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Services\Import\ImportCleanupService;
 use App\Services\Import\MySqlBulkLoadService;
+use App\Support\SargableDateFilter;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -16,6 +18,8 @@ use Illuminate\Support\Str;
 
 class ImportCognosPhController extends Controller
 {
+    use AuthorizesSessionImportStorageFiles;
+
     use SmartCsvImportSupport;
 
     private const TABLE_NAME = 'cognos_ph';
@@ -96,7 +100,7 @@ class ImportCognosPhController extends Controller
     {
         $request->validate([
             'id_report' => 'required',
-            'file' => 'required|file|mimes:csv,txt,xlsx,xls',
+            'file' => 'required|file|mimes:csv,txt,xlsx,xls|max:' . $this->configuredSessionImportUploadMaxKilobytes(),
         ]);
 
         $path = $request->file('file')->store('cognos_ph_imports');
@@ -206,15 +210,17 @@ class ImportCognosPhController extends Controller
         ini_set('memory_limit', '512M');
         set_time_limit(0);
 
-        $relativePath = session('cognos_ph_file', $request->input('file_path'));
+        $relativePath = (string) session('cognos_ph_file', $request->input('file_path'));
         if (!$relativePath) {
             return redirect()->route('import.index')->with('error', 'File import ' . self::REPORT_LABEL . ' tidak ditemukan. Silakan upload ulang.');
         }
 
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
-            return redirect()->route('import.index')->with('error', 'File ' . self::REPORT_LABEL . ' tidak ditemukan di server.');
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            $relativePath,
+            'cognos_ph_file',
+            ['cognos_ph_imports'],
+            ['csv', 'txt', 'xlsx', 'xls']
+        );
 
         $workingPath = $this->resolveWorkingImportPath($relativePath);
         if (!file_exists($workingPath)) {
@@ -286,15 +292,12 @@ class ImportCognosPhController extends Controller
             'delimiter' => 'required|string',
         ]);
 
-        $relativePath = $request->input('file_path');
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
-            return response()->json([
-                'status' => 'error',
-                'title' => 'Gagal!',
-                'text' => 'File ' . self::REPORT_LABEL . ' tidak ditemukan di server.',
-            ], 422);
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            (string) $request->input('file_path'),
+            'cognos_ph_file',
+            ['cognos_ph_imports'],
+            ['csv', 'txt', 'xlsx', 'xls']
+        );
 
         try {
             $this->bulkLoadService()->assertTransactionalTable(self::TABLE_NAME, 'import ' . self::REPORT_LABEL);
@@ -353,7 +356,7 @@ class ImportCognosPhController extends Controller
             ], 422);
         }
 
-        if (DB::table(self::TABLE_NAME)->whereDate('periode', $context['periode'])->exists()) {
+        if (SargableDateFilter::apply(DB::table(self::TABLE_NAME), 'periode', '=', $context['periode'])->exists()) {
             $this->cleanupUploadedFile($relativePath);
 
             return response()->json([
@@ -458,7 +461,7 @@ class ImportCognosPhController extends Controller
                 $workingPath = $this->resolveWorkingImportPath($relativePath);
                 $context = $this->buildCsvContext($workingPath);
 
-                if (!empty($context['periode']) && DB::table(self::TABLE_NAME)->whereDate('periode', $context['periode'])->exists()) {
+                if (!empty($context['periode']) && SargableDateFilter::apply(DB::table(self::TABLE_NAME), 'periode', '=', $context['periode'])->exists()) {
                     $this->cleanupUploadedFile($relativePath);
                     $send('error', ['message' => 'Data untuk periode ' . $context['periode'] . ' sudah ada di tabel ' . self::TABLE_NAME . '.']);
                     return;
@@ -600,15 +603,12 @@ class ImportCognosPhController extends Controller
             'delimiter' => 'required|string',
         ]);
 
-        $relativePath = $request->input('file_path');
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
-            return response()->json([
-                'status' => 'error',
-                'title' => 'Gagal!',
-                'text' => 'File ' . self::REPORT_LABEL . ' tidak ditemukan di server.',
-            ], 422);
-        }
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            (string) $request->input('file_path'),
+            'cognos_ph_file',
+            ['cognos_ph_imports'],
+            ['csv', 'txt', 'xlsx', 'xls']
+        );
 
         try {
             $this->bulkLoadService()->assertTransactionalTable(self::TABLE_NAME, 'import ' . self::REPORT_LABEL);
@@ -634,7 +634,7 @@ class ImportCognosPhController extends Controller
             ], 422);
         }
 
-        if (!empty($context['periode']) && DB::table(self::TABLE_NAME)->whereDate('periode', $context['periode'])->exists()) {
+        if (!empty($context['periode']) && SargableDateFilter::apply(DB::table(self::TABLE_NAME), 'periode', '=', $context['periode'])->exists()) {
             $this->cleanupUploadedFile($relativePath);
 
             return response()->json([

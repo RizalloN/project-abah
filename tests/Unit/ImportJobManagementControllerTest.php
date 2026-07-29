@@ -194,7 +194,7 @@ class ImportJobManagementControllerTest extends TestCase
         $this->assertSame('success', $payload['status']);
     }
 
-    public function test_queue_health_purges_stale_reserved_snapshot_jobs_without_active_state(): void
+    public function test_queue_health_reports_stale_reserved_snapshot_without_mutating_queue(): void
     {
         $rebuildId = '123e4567-e89b-12d3-a456-426614174000';
 
@@ -220,9 +220,9 @@ class ImportJobManagementControllerTest extends TestCase
         $health = $method->invoke($controller);
 
         $this->assertSame('ok', $health['status']);
-        $this->assertSame(1, $health['purged_reserved_snapshot_jobs']);
-        $this->assertSame(0, $health['stale_reserved_snapshot_jobs']);
-        $this->assertSame(0, DB::table('jobs')->count());
+        $this->assertSame(0, $health['purged_reserved_snapshot_jobs']);
+        $this->assertSame(1, $health['stale_reserved_snapshot_jobs']);
+        $this->assertSame(1, DB::table('jobs')->count());
     }
 
     public function test_force_start_snapshot_recovers_from_queue_row_when_cache_state_missing(): void

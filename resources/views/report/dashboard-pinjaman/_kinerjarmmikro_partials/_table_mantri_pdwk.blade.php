@@ -11,24 +11,23 @@
 @endphp
 
 <div class="rm-mikro-table-wrap table-container">
-    <table class="rm-mikro-table" style="min-width: 2600px;">
+    <table class="rm-mikro-table" style="min-width: 2400px;">
         <thead>
             <tr>
                 <th rowspan="3">No</th><th rowspan="3">BC</th><th rowspan="3">Nama Uker</th><th rowspan="3">Cabang</th><th rowspan="3">MBM</th>
                 <th colspan="4" class="group-head">KAUNIT s.d {{ $selectedPeriodShortLabel }}</th>
                 <th colspan="6" class="group-head">MBM</th>
                 <th colspan="6" class="group-head">PINCA</th>
-                <th colspan="2" class="group-head">RMBH Override</th>
-                <th colspan="2" class="group-head">Total Realisasi</th>
+                <th colspan="2" rowspan="2" class="group-head">RMBH Override</th>
+                <th colspan="2" rowspan="2" class="group-head">Total Realisasi</th>
             </tr>
             <tr>
                 <th colspan="2">Sesuai PDWK</th><th colspan="2">Override</th>
                 <th colspan="2">Sesuai PDWK</th><th colspan="2">Override</th><th colspan="2">Total</th>
                 <th colspan="2">Sesuai PDWK</th><th colspan="2">Override</th><th colspan="2">Total</th>
-                <th>Deb</th><th>Rp.Juta</th><th>Deb</th><th>Rp.Juta</th>
             </tr>
             <tr>
-                @for ($i = 0; $i < 12; $i++)
+                @for ($i = 0; $i < 10; $i++)
                     <th>Deb</th><th>Rp.Juta</th>
                 @endfor
             </tr>
@@ -48,7 +47,7 @@
                     @endforeach
                 </tr>
             @empty
-                <tr><td colspan="29" class="rm-mikro-empty">Data tidak ditemukan.</td></tr>
+                <tr><td colspan="25" class="rm-mikro-empty">Data tidak ditemukan.</td></tr>
             @endforelse
         </tbody>
     </table>

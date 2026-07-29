@@ -161,7 +161,32 @@ class ImportDailyLoanBackendController extends Controller
             return null;
         }
 
-        return $resolved;
+        $configuredRoots = (array) config('import.security.backend_source_roots', []);
+        if ($configuredRoots === []) {
+            $configuredRoots = [storage_path('app/backend-imports')];
+        }
+
+        foreach ($configuredRoots as $configuredRoot) {
+            $root = realpath(trim((string) $configuredRoot));
+            if ($root !== false && $this->pathIsInsideRoot($resolved, $root)) {
+                return $resolved;
+            }
+        }
+
+        return null;
+    }
+
+    private function pathIsInsideRoot(string $path, string $root): bool
+    {
+        $normalizedPath = str_replace('\\', '/', rtrim($path, '\\/'));
+        $normalizedRoot = str_replace('\\', '/', rtrim($root, '\\/'));
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $normalizedPath = strtolower($normalizedPath);
+            $normalizedRoot = strtolower($normalizedRoot);
+        }
+
+        return str_starts_with($normalizedPath, $normalizedRoot . '/');
     }
 
     private function normalizeRequestedPeriod(?string $value): ?string

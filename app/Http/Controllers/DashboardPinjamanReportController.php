@@ -46,6 +46,7 @@ class DashboardPinjamanReportController extends Controller
     private const SMALL_ARREARS_AREA_ALL = 'AREA_6_ALL';
     private const SMALL_ARREARS_AREA_BRANCHES = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
     private const SMALL_ARREARS_ALL_UKER = 'ALL_UKER';
+    private const UG_NPL_ALL_SEGMENTS = 'ALL_SEGMEN';
     private const KOLEK_MISMATCH_AREA_ALL = 'AREA_6_ALL';
 
     private const BEFORE_ROWS = ['New Account', 'L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M'];
@@ -399,6 +400,11 @@ class DashboardPinjamanReportController extends Controller
         $unitOptions = $branchSelection['is_area_all']
             ? collect()
             : collect([self::SMALL_ARREARS_ALL_UKER])->merge($this->fetchSmallArrearsDistinctValues('unit1', $selectedPeriod, $branchSelection['effective_branches']))->values();
+        $segmentSelection = $this->resolveUgNplSegmentSelection($request->input('segmen_dashboard'));
+        $segmentOptions = collect([self::UG_NPL_ALL_SEGMENTS])
+            ->merge($this->fetchSmallArrearsDistinctValues('segmen_dashboard', $selectedPeriod, $branchSelection['effective_branches']))
+            ->unique()
+            ->values();
 
         return view('report.dashboard-pinjaman.analisa-ug-npl', [
             'availablePeriods' => $availablePeriods,
@@ -409,6 +415,8 @@ class DashboardPinjamanReportController extends Controller
             'selectedUnits' => $unitSelection['selected_values'],
             'branchOptions' => $this->smallArrearsBranchOptions(),
             'unitOptions' => $unitOptions,
+            'selectedSegments' => $segmentSelection['selected_values'],
+            'segmentOptions' => $segmentOptions,
             'selectedAction' => $this->resolveUgNplAction($request->input('action')),
             'selectedHorizonDays' => $this->resolveUgNplHorizonDays($request->input('horizon_days')),
             'actionOptions' => $this->ugNplActionOptions(),
@@ -426,19 +434,21 @@ class DashboardPinjamanReportController extends Controller
         $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
         $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
         $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
+        $segmentSelection = $this->resolveUgNplSegmentSelection($request->input('segmen_dashboard'));
         $selectedAction = $this->resolveUgNplAction($request->input('action'));
         $horizonDays = $this->resolveUgNplHorizonDays($request->input('horizon_days'));
         $forceRefresh = $request->boolean('refresh');
 
         if (!$selectedPeriod) {
-            return response()->json($this->emptyUgNplPayload(null, $selectedAction, $horizonDays));
+            return response()->json($this->emptyUgNplPayload(null, $selectedAction, $horizonDays, $segmentSelection['effective_segments']));
         }
 
-        $cacheKey = 'dashboard_pinjaman_ug_npl:v3-ug-npl-pl-arrears:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_ug_npl:v4-dl-sml1-segment:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'cabang1' => $branchSelection['selected_values'],
             'unit1' => $unitSelection['selected_values'],
+            'segmen_dashboard' => $segmentSelection['selected_values'],
             'action' => $selectedAction,
             'horizon_days' => $horizonDays,
         ]));
@@ -452,10 +462,11 @@ class DashboardPinjamanReportController extends Controller
                 $unitSelection['effective_units'],
                 $branchSelection['is_area_all'],
                 $selectedAction,
-                $horizonDays
+                $horizonDays,
+                $segmentSelection['effective_segments']
             ),
             $forceRefresh,
-            fn () => $this->emptyUgNplPayload($selectedPeriod, $selectedAction, $horizonDays)
+            fn () => $this->emptyUgNplPayload($selectedPeriod, $selectedAction, $horizonDays, $segmentSelection['effective_segments'])
         );
 
         return response()->json($payload);
@@ -2680,7 +2691,7 @@ class DashboardPinjamanReportController extends Controller
                 ->distinct()
                 ->orderBy($column);
 
-            if ($column === 'unit1' && $selectedBranches !== []) {
+            if (in_array($column, ['unit1', 'segmen_dashboard'], true) && $selectedBranches !== []) {
                 $query->whereIn('cabang1', $selectedBranches);
             }
 
@@ -3792,12 +3803,30 @@ class DashboardPinjamanReportController extends Controller
         return array_key_exists($days, $this->ugNplHorizonOptions()) ? $days : 30;
     }
 
-    private function emptyUgNplPayload(?string $selectedPeriod, string $selectedAction, int $horizonDays): array
+    private function resolveUgNplSegmentSelection($value): array
+    {
+        $normalized = $this->normalizeFilterValues($value);
+
+        if ($normalized === [] || in_array(self::UG_NPL_ALL_SEGMENTS, $normalized, true)) {
+            return [
+                'selected_values' => [self::UG_NPL_ALL_SEGMENTS],
+                'effective_segments' => [],
+            ];
+        }
+
+        return [
+            'selected_values' => [$normalized[0]],
+            'effective_segments' => [$normalized[0]],
+        ];
+    }
+
+    private function emptyUgNplPayload(?string $selectedPeriod, string $selectedAction, int $horizonDays, array $selectedSegments = []): array
     {
         return [
             'selected_period' => $selectedPeriod,
             'selected_action' => $selectedAction,
             'horizon_days' => $horizonDays,
+            'segment_label' => $selectedSegments === [] ? 'Semua Segmen' : implode(', ', $selectedSegments),
             'summary' => $this->emptyUgNplSummary(),
             'actions' => $this->emptyUgNplActionSummaries(),
             'rows' => [],
@@ -3842,14 +3871,15 @@ class DashboardPinjamanReportController extends Controller
         array $selectedUnits,
         bool $isAreaAll,
         string $selectedAction,
-        int $horizonDays
+        int $horizonDays,
+        array $selectedSegments = []
     ): array {
         $summary = $this->emptyUgNplSummary();
         $actions = $this->emptyUgNplActionSummaries();
         $rows = [];
         $rowLimit = 250;
 
-        foreach ($this->fetchUgNplRows($selectedPeriod, $selectedBranches, $selectedUnits) as $row) {
+        foreach ($this->fetchUgNplRows($selectedPeriod, $selectedBranches, $selectedUnits, $selectedSegments) as $row) {
             $analysis = $this->mapUgNplRow($row, $horizonDays);
             if ($analysis === null) {
                 continue;
@@ -3874,6 +3904,7 @@ class DashboardPinjamanReportController extends Controller
             'horizon_days' => $horizonDays,
             'scope_label' => $isAreaAll ? 'Area 6 - All' : implode(', ', $selectedBranches),
             'unit_label' => $selectedUnits === [] ? 'ALL UKER' : implode(', ', $selectedUnits),
+            'segment_label' => $selectedSegments === [] ? 'Semua Segmen' : implode(', ', $selectedSegments),
             'summary' => $summary,
             'actions' => array_values($actions),
             'rows' => $rows,
@@ -3882,9 +3913,12 @@ class DashboardPinjamanReportController extends Controller
         ];
     }
 
-    private function fetchUgNplRows(string $selectedPeriod, array $selectedBranches, array $selectedUnits): \Generator
+    private function fetchUgNplRows(string $selectedPeriod, array $selectedBranches, array $selectedUnits, array $selectedSegments = []): \Generator
     {
-        $query = DB::table(DB::raw($this->qualifyIndexedSource('daily_loan_dinamis', 'd', [self::LOAN_REKENING_INDEX])))
+        $preferredIndexes = $selectedSegments === []
+            ? [self::LOAN_REKENING_INDEX]
+            : [self::LOAN_FILTER_INDEX, self::LOAN_REKENING_INDEX];
+        $query = DB::table(DB::raw($this->qualifyIndexedSource('daily_loan_dinamis', 'd', $preferredIndexes)))
             ->where('d.periode', $selectedPeriod)
             ->whereNotNull('d.nomor_rekening1')
             ->where('d.nomor_rekening1', '<>', '')
@@ -3892,12 +3926,14 @@ class DashboardPinjamanReportController extends Controller
             ->whereRaw('(COALESCE(d.tunggakan_pokok, 0) + COALESCE(d.tunggakan_bunga, 0) + COALESCE(d.tunggakan_penalti, 0)) > 0')
             ->when($selectedBranches !== [], fn (Builder $query) => $query->whereIn('d.cabang1', $selectedBranches))
             ->when($selectedUnits !== [], fn (Builder $query) => $query->whereIn('d.unit1', $selectedUnits))
+            ->when($selectedSegments !== [], fn (Builder $query) => $query->whereIn('d.segmen_dashboard', $selectedSegments))
             ->select([
                 'd.periode',
                 'd.cabang1',
                 'd.unit1',
                 'd.nomor_rekening1',
                 'd.nama_debitur1',
+                'd.segmen_dashboard',
                 'd.ln_type',
                 'd.kolek',
                 'd.flag_restruk',
@@ -3985,8 +4021,12 @@ class DashboardPinjamanReportController extends Controller
             $paymentRule = 'Umum SML: pokok + bunga + penalti';
         }
 
-        if ($isDlLoan && !$isPastDue) {
+        $isDlSml1ToLancar = $isDlLoan && $bucket === 'SML 1' && $targetBucket === 'Lancar';
+        if (($isDlLoan && !$isPastDue) || $isDlSml1ToLancar) {
             $estimatedPrincipal = 0.0;
+        }
+        if ($isDlSml1ToLancar) {
+            $paymentRule = 'DL SML 1 -> Lancar: bunga + penalti (pokok 0)';
         }
 
         $installment = $cycles > 0
@@ -4007,6 +4047,7 @@ class DashboardPinjamanReportController extends Controller
             'unit1' => (string) ($row->unit1 ?? ''),
             'nomor_rekening1' => (string) ($row->nomor_rekening1 ?? ''),
             'nama_debitur1' => (string) ($row->nama_debitur1 ?? ''),
+            'segmen_dashboard' => (string) ($row->segmen_dashboard ?? ''),
             'current_bucket' => $bucket,
             'kolek' => (string) ($row->kolek ?? ''),
             'loan_type' => $loanType,

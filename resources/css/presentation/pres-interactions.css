@@ -1,0 +1,641 @@
+@layer presentation.tokens {
+  :root {
+    --pres-tool-surface: #ffffff;
+    --pres-tool-muted: #64748b;
+    --pres-tool-border: #cbdced;
+    --pres-tool-accent: #0857c3;
+    --pres-tool-risk: #c62828;
+    --pres-tool-positive: #047857;
+  }
+}
+
+#apple-presentation-mode .apple-slide {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+#apple-presentation-mode .pres-table-scroll table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+#apple-presentation-mode .apple-slide[data-progressive-section].is-section-loading::before {
+  content: "";
+  position: absolute;
+  z-index: 48;
+  inset: 116px 28px 30px;
+  border: 1px solid #cfe0f2;
+  border-radius: 8px;
+  background:
+    linear-gradient(100deg, transparent 24%, rgba(255, 255, 255, 0.82) 38%, transparent 52%) 0 0 / 220% 100%,
+    repeating-linear-gradient(
+      180deg,
+      #edf4fb 0,
+      #edf4fb 54px,
+      #f8fbfe 54px,
+      #f8fbfe 70px
+    );
+  animation: pres-section-shimmer 1.4s linear infinite;
+  pointer-events: none;
+}
+
+#apple-presentation-mode .apple-slide[data-progressive-section].is-section-loading::after {
+  content: "Menyiapkan analisis slide...";
+  position: absolute;
+  z-index: 49;
+  top: 50%;
+  left: 50%;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid #c6d9ee;
+  border-radius: 6px;
+  color: #24415f;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 26px rgba(15, 56, 96, 0.12);
+  font-size: 0.78rem;
+  font-weight: 800;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+@keyframes pres-section-shimmer {
+  to {
+    background-position: -220% 0, 0 0;
+  }
+}
+
+.pres-quick-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  padding: 0.2rem;
+  border: 1px solid #dce6f1;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.pres-quick-tools button,
+.pres-tool-dialog-head button {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  color: #475569;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pres-quick-tools button:hover,
+.pres-quick-tools button:focus-visible,
+.pres-quick-tools button.active,
+.pres-tool-dialog-head button:hover,
+.pres-tool-dialog-head button:focus-visible {
+  color: #ffffff;
+  background: #0857c3;
+  outline: none;
+}
+
+.pres-quick-tools button.has-note::after {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border: 1px solid #ffffff;
+  border-radius: 50%;
+  background: #f59e0b;
+  content: "";
+  transform: translate(9px, -9px);
+}
+
+.pres-tool-dialog {
+  width: min(980px, calc(100vw - 2rem));
+  max-height: min(760px, calc(100dvh - 2rem));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #b8cee6;
+  border-radius: 8px;
+  color: #0f172a;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+}
+
+.pres-tool-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(3px);
+}
+
+.pres-tool-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  color: #ffffff;
+  background: #0857c3;
+}
+
+.pres-tool-dialog-head > div {
+  display: grid;
+  gap: 0.08rem;
+}
+
+.pres-tool-dialog-head span {
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.pres-tool-dialog-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.pres-tool-dialog-head button {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.pres-tool-dialog-controls,
+.pres-note-actions {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.pres-tool-dialog-controls label,
+.pres-note-field {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 0.3rem;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.pres-tool-dialog-controls select,
+.pres-note-field textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  color: #0f172a;
+  background: #ffffff;
+  font: inherit;
+}
+
+.pres-tool-dialog-controls select {
+  min-height: 38px;
+  padding: 0.45rem 0.6rem;
+}
+
+.pres-tool-dialog-controls button,
+.pres-note-actions button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid #0857c3;
+  border-radius: 5px;
+  color: #ffffff;
+  background: #0857c3;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.pres-compare-content,
+.pres-drilldown-content {
+  max-height: calc(100dvh - 190px);
+  padding: 1rem;
+  overflow: auto;
+}
+
+.pres-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.pres-compare-period-panel {
+  min-width: 0;
+  border: 1px solid #dce6f1;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.pres-compare-period-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  color: #0f172a;
+  background: #edf4fb;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.pres-compare-metrics {
+  display: grid;
+}
+
+.pres-compare-metric {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) auto;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.pres-compare-metric span {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.pres-compare-metric strong {
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-align: right;
+}
+
+.pres-compare-delta {
+  grid-column: 1 / -1;
+  justify-self: end;
+  color: #047857;
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.pres-compare-delta.negative {
+  color: #c62828;
+}
+
+.pres-drilldown-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.pres-drilldown-summary > div {
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid #dce6f1;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.pres-drilldown-summary span,
+.pres-drilldown-reading span {
+  display: block;
+  color: #64748b;
+  font-size: 0.66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.pres-drilldown-summary strong {
+  display: block;
+  margin-top: 0.22rem;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.pres-drilldown-reading {
+  margin-top: 0.8rem;
+  padding: 0.8rem;
+  border-left: 4px solid #0857c3;
+  background: #edf4fb;
+}
+
+.pres-drilldown-reading p {
+  margin: 0.3rem 0 0;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+[data-pres-drilldown] {
+  cursor: pointer;
+}
+
+[data-pres-drilldown]:hover {
+  outline: 2px solid rgba(8, 87, 195, 0.3);
+  outline-offset: -2px;
+}
+
+.pres-note-field {
+  padding: 1rem;
+}
+
+.pres-note-field textarea {
+  min-height: 190px;
+  resize: vertical;
+  padding: 0.7rem;
+  line-height: 1.5;
+}
+
+.pres-note-actions {
+  justify-content: flex-end;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 0;
+}
+
+#pres-note-clear {
+  border-color: #cbd5e1;
+  color: #475569;
+  background: #ffffff;
+}
+
+.pres-toast {
+  position: fixed;
+  z-index: 10020;
+  right: 1rem;
+  bottom: 1rem;
+  max-width: min(360px, calc(100vw - 2rem));
+  padding: 0.7rem 0.85rem;
+  border-radius: 6px;
+  color: #ffffff;
+  background: #0f172a;
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.24);
+  font-size: 0.76rem;
+  font-weight: 800;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.pres-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#apple-presentation-mode.is-offline-data .pres-live-dot {
+  background: #f59e0b;
+}
+
+#apple-presentation-mode.is-offline-data #pres-live-status::after {
+  content: " (offline)";
+}
+
+#apple-presentation-mode.is-stale-data .pres-live-dot {
+  background: #f59e0b;
+}
+
+#apple-presentation-mode.is-stale-data #pres-live-status::after {
+  content: " (memperbarui)";
+}
+
+#apple-presentation-mode [data-slide-narrative][data-severity="risk"] {
+  border-left-color: #c62828;
+}
+
+#apple-presentation-mode [data-slide-narrative][data-severity="watch"] {
+  border-left-color: #f59e0b;
+}
+
+#apple-presentation-mode [data-slide-narrative][data-severity="positive"] {
+  border-left-color: #047857;
+}
+
+#apple-presentation-mode.manual-dark {
+  background: #071827;
+}
+
+#apple-presentation-mode.manual-dark .pres-top-bar,
+#apple-presentation-mode.manual-dark .pres-bottom-bar {
+  border-color: #27435d;
+  color: #e2e8f0;
+  background: #0b2236;
+}
+
+#apple-presentation-mode.manual-dark .apple-slide {
+  background-color: #0d1f30;
+}
+
+.pres-export-progress {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #cfe0f5;
+  border-radius: 6px;
+  background: #f3f8ff;
+}
+
+.pres-export-progress[hidden] {
+  display: none;
+}
+
+.pres-export-progress-head {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.pres-export-progress-head > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 6px;
+  color: #ffffff;
+  background: #0866d4;
+}
+
+.pres-export-progress-head div {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.pres-export-progress-head strong {
+  color: #10233b;
+  font-size: 0.83rem;
+}
+
+.pres-export-progress-head small {
+  overflow-wrap: anywhere;
+  color: #61738a;
+  font-size: 0.73rem;
+}
+
+.pres-export-progress-head b {
+  color: #0866d4;
+  font-size: 0.78rem;
+}
+
+.pres-export-progress-track {
+  display: block;
+  height: 6px;
+  margin-top: 0.72rem;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #dce8f6;
+}
+
+.pres-export-progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #0866d4;
+  transition: width 0.25s ease;
+}
+
+.pres-export-progress.is-completed {
+  border-color: #b7e4d5;
+  background: #edf9f5;
+}
+
+.pres-export-progress.is-completed .pres-export-progress-head > span,
+.pres-export-progress.is-completed .pres-export-progress-track span {
+  background: #078a68;
+}
+
+.pres-export-progress.is-completed .pres-export-progress-head b {
+  color: #078a68;
+}
+
+.pres-export-progress.is-failed {
+  border-color: #f4c3c3;
+  background: #fff3f3;
+}
+
+.pres-export-progress.is-failed .pres-export-progress-head > span,
+.pres-export-progress.is-failed .pres-export-progress-track span {
+  background: #c62828;
+}
+
+.pres-export-progress.is-failed .pres-export-progress-head b {
+  color: #c62828;
+}
+
+#pres-export-submit[disabled] {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+@media (max-width: 1450px) {
+  #apple-presentation-mode .pres-title-lbl span,
+  #apple-presentation-mode .pres-live-chip {
+    display: none !important;
+  }
+
+  #apple-presentation-mode .pres-controls-right {
+    gap: 0.42rem !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  #apple-presentation-mode .pres-nav-btn-back {
+    display: inline-grid !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    padding: 0 !important;
+    place-items: center;
+  }
+
+  #apple-presentation-mode .pres-back-text,
+  #apple-presentation-mode .pres-title-brand > .pres-logo-divider {
+    display: none !important;
+  }
+
+  #apple-presentation-mode .pres-controls-right {
+    gap: 0.28rem !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .pres-quick-tools {
+    gap: 0.12rem;
+  }
+
+  .pres-quick-tools button {
+    width: 28px;
+    height: 28px;
+  }
+
+  .pres-compare-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .pres-quick-tools button:nth-child(2),
+  .pres-quick-tools button:nth-child(4),
+  .pres-live-chip {
+    display: none;
+  }
+
+  .pres-tool-dialog {
+    width: calc(100vw - 0.75rem);
+    max-height: calc(100dvh - 0.75rem);
+  }
+
+  .pres-drilldown-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  @page {
+    size: 13.333in 7.5in;
+    margin: 0;
+  }
+
+  body {
+    overflow: visible;
+    background: #ffffff;
+  }
+
+  #apple-presentation-mode {
+    width: auto;
+    height: auto;
+    overflow: visible;
+    background: #ffffff;
+  }
+
+  #apple-presentation-mode .pres-top-bar,
+  #apple-presentation-mode .pres-bottom-bar,
+  #apple-presentation-mode .pres-executive-grid,
+  #apple-presentation-mode .pres-executive-scan,
+  #apple-presentation-mode .pres-executive-edge,
+  .dashboard-loading-overlay,
+  .pres-tool-dialog,
+  .pres-toast {
+    display: none;
+  }
+
+  #apple-presentation-mode .pres-slides-container {
+    position: static;
+    width: auto;
+    height: auto;
+    transform: none;
+  }
+
+  #apple-presentation-mode .apple-slide {
+    position: relative;
+    display: block;
+    width: 13.333in;
+    height: 7.5in;
+    min-height: 7.5in;
+    overflow: hidden;
+    break-after: page;
+    page-break-after: always;
+    opacity: 1;
+    transform: none;
+  }
+}

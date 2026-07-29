@@ -76,4 +76,95 @@ class SimpananMultiPnSourcePreservationTest extends TestCase
         $this->assertSame('0004901009801538', $mapped['no_rekening']);
         $this->assertSame('01', $mapped['status']);
     }
+
+    public function test_mapped_bulk_csv_is_not_reparsed_as_a_source_csv(): void
+    {
+        $source = file_get_contents(base_path('app/Http/Controllers/Import/ImportExcelController.php'));
+
+        $this->assertStringContainsString(
+            'Mapping Simpanan MultiPN siap. Melanjutkan langsung ke MySQL...',
+            $source
+        );
+        $this->assertStringNotContainsString(
+            'prepareSimpananMultiPnDirectLoadSource($outputCsvPath',
+            $source
+        );
+        $this->assertStringNotContainsString('$writeBuffer[] = $outputRow;', $source);
+    }
+
+    public function test_preview_hides_internal_simpanan_placeholder_columns_without_shifting_source_indexes(): void
+    {
+        $controller = new class extends ImportExcelController
+        {
+            public function exposeStripPreviewColumns(array $headers, array $rows, array $uniqueValues): array
+            {
+                return $this->stripIgnoredPreviewColumns($headers, $rows, $uniqueValues, 'simpanan_multipn');
+            }
+
+            public function exposeRemapPreviewFilters(array $displayFilterMap, array $sourceIndexes): array
+            {
+                return $this->remapPreviewDisplayFilterMap($displayFilterMap, $sourceIndexes);
+            }
+
+            public function exposePreparePreviewDisplayPayload(array $headers, array $uniqueValues, array $rows): array
+            {
+                return $this->preparePreviewDisplayPayload($headers, $uniqueValues, $rows, 'simpanan_multipn');
+            }
+
+            public function exposeSanitizeCachedPreview(array $payload): array
+            {
+                return $this->sanitizeSimpananMultiPnPreviewPayload($payload, null, 'simpanan_multipn');
+            }
+        };
+
+        $headers = ['No', 'Posisi', 'COL_2', 'Kantor Cabang', 'COL_4', 'CIFNO'];
+        $rows = [[
+            'No' => '1',
+            'Posisi' => '19-07-2026',
+            'COL_2' => null,
+            'Kantor Cabang' => '00045 -- KC Madiun',
+            'COL_4' => null,
+            'CIFNO' => '00CIF001',
+        ]];
+        $uniqueValues = [
+            0 => ['1'],
+            1 => ['19-07-2026'],
+            2 => ['(Blank)'],
+            3 => ['00045 -- KC Madiun'],
+            4 => ['(Blank)'],
+            5 => ['00CIF001'],
+        ];
+
+        $filtered = $controller->exposeStripPreviewColumns($headers, $rows, $uniqueValues);
+
+        $this->assertSame(['Posisi', 'Kantor Cabang', 'CIFNO'], $filtered['headers']);
+        $this->assertSame([1, 3, 5], $filtered['source_indexes']);
+        $this->assertSame([
+            'Posisi' => '19-07-2026',
+            'Kantor Cabang' => '00045 -- KC Madiun',
+            'CIFNO' => '00CIF001',
+        ], $filtered['rows'][0]);
+        $this->assertSame([0 => 1, 1 => 3, 2 => 5], $controller->exposeRemapPreviewFilters([0 => 0, 1 => 1, 2 => 2], $filtered['source_indexes']));
+
+        $displayPayload = $controller->exposePreparePreviewDisplayPayload($headers, $uniqueValues, $rows);
+        $this->assertSame(['Posisi', 'Kantor Cabang', 'CIFNO'], $displayPayload['headers']);
+        $this->assertSame($headers, $displayPayload['source_headers']);
+        $this->assertSame([0 => 1, 1 => 3, 2 => 5], $displayPayload['display_filter_map']);
+
+        $cachedPayload = $controller->exposeSanitizeCachedPreview([
+            'headers' => $headers,
+            'preview' => $rows,
+            'formattedUniqueValues' => $uniqueValues,
+            'sourceHeaders' => $headers,
+            'displayFilterMap' => array_combine(array_keys($headers), array_keys($headers)),
+        ]);
+        $this->assertSame(['Posisi', 'Kantor Cabang', 'CIFNO'], $cachedPayload['headers']);
+        $this->assertSame([0 => 1, 1 => 3, 2 => 5], $cachedPayload['displayFilterMap']);
+        $this->assertSame($headers, $cachedPayload['sourceHeaders']);
+
+        $uniqueValues[2] = ['Ada nilai'];
+        $withData = $controller->exposeStripPreviewColumns($headers, $rows, $uniqueValues);
+        $this->assertNotContains('COL_2', $withData['headers']);
+        $this->assertSame($headers, $displayPayload['source_headers']);
+    }
 }

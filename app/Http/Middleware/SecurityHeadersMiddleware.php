@@ -22,6 +22,11 @@ class SecurityHeadersMiddleware
 
     private function withSecurityHeaders(Response $response, Request $request): Response
     {
+        $response->headers->remove('X-Powered-By');
+        if (function_exists('header_remove') && !headers_sent()) {
+            header_remove('X-Powered-By');
+        }
+
         if (!$this->isPublicWorkbookRequest($request)) {
             $response->headers->set('X-Frame-Options', 'DENY');
         }
@@ -45,7 +50,7 @@ class SecurityHeadersMiddleware
             $response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
         }
 
-        if (auth()->check()) {
+        if (auth()->check() || $this->isAuthenticationRequest($request)) {
             $response->headers->set('Cache-Control', 'no-store, private, max-age=0');
             $response->headers->set('Pragma', 'no-cache');
             $response->headers->set('Expires', '0');
@@ -60,6 +65,15 @@ class SecurityHeadersMiddleware
             || $request->is('workbooks/market-share/*')
             || $request->is('workbooks/market-share-mapping.xlsx')
             || $request->is('workbooks/market-share-mapping/*');
+    }
+
+    private function isAuthenticationRequest(Request $request): bool
+    {
+        return $request->is('login')
+            || $request->is('forgot-password')
+            || $request->is('reset-password')
+            || $request->is('reset-password/*')
+            || $request->is('confirm-password');
     }
 
     private function contentSecurityPolicy(Request $request): string
@@ -77,7 +91,7 @@ class SecurityHeadersMiddleware
             "img-src 'self' data: blob:",
             "font-src 'self' https://fonts.gstatic.com data:",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+            "script-src 'self' 'unsafe-inline'",
             "connect-src 'self'",
         ];
 

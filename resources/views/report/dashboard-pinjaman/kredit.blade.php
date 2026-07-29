@@ -409,23 +409,32 @@
 
     /* Crisp Grid Container & Excel Tables */
     .loan-summary-table-wrap {
+        --loan-sticky-cabang-width: 150px;
+        --loan-sticky-kategori-width: 190px;
+        --loan-sticky-kategori-left: 150px;
+        --loan-sticky-total-width: 340px;
         border: 1px solid #94a3b8 !important;
         margin-bottom: 2rem !important;
         background-color: #ffffff !important;
-        overflow-x: auto !important;
-        overflow-y: visible !important;
+        overflow: auto !important;
+        max-height: min(72vh, 720px) !important;
+        position: relative !important;
+        isolation: isolate !important;
+        overscroll-behavior-x: contain;
     }
 
     .loan-summary-table {
-        border-collapse: collapse !important;
+        border-collapse: separate !important;
+        border-spacing: 0 !important;
         border: 1px solid #94a3b8 !important;
         width: max-content !important;
         min-width: 1680px !important;
-        table-layout: auto !important;
+        table-layout: fixed !important;
     }
 
     /* Excel Corporate Header Styling */
     .loan-summary-table thead th {
+        position: sticky !important;
         background-color: #475569 !important; /* Premium corporate slate gray */
         color: #ffffff !important;
         font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif !important;
@@ -434,27 +443,44 @@
         text-transform: uppercase !important;
         letter-spacing: 0.05em !important;
         padding: 8px 10px !important;
-        border: 1px solid #334155 !important;
+        border-right: 1px solid #334155 !important;
+        border-bottom: 1px solid #334155 !important;
         text-align: center !important;
         vertical-align: middle !important;
         line-height: 1.2 !important;
         white-space: normal !important;
         min-width: 92px;
+        box-sizing: border-box !important;
+    }
+
+    /* Header Row 1 Vertical Sticky */
+    .loan-summary-table thead tr:first-child > th {
+        top: 0 !important;
+        z-index: 30 !important;
+    }
+
+    /* Header Row 2 Vertical Sticky */
+    .loan-summary-table thead tr:nth-child(2) > th {
+        top: var(--loan-summary-header-row-height, 34px) !important;
+        z-index: 20 !important;
     }
 
     .loan-summary-table thead th.sub-head {
         background-color: #334155 !important; /* Deep corporate dark slate */
-        border: 1px solid #1e293b !important;
+        border-right: 1px solid #1e293b !important;
+        border-bottom: 1px solid #1e293b !important;
     }
 
     .loan-summary-table thead th.accent-head {
         background-color: #1e293b !important; /* Accent dark slate for delta metrics */
-        border: 1px solid #0f172a !important;
+        border-right: 1px solid #0f172a !important;
+        border-bottom: 1px solid #0f172a !important;
     }
 
     /* Grid Cells with Excel Grid Lines */
     .loan-summary-table td {
-        border: 1px solid #cbd5e1 !important; /* Muted crisp excel inner gridlines */
+        border-right: 1px solid #cbd5e1 !important; /* Muted crisp excel inner gridlines */
+        border-bottom: 1px solid #cbd5e1 !important;
         padding: 6px 12px !important; /* Perfect accounting cell padding */
         font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif !important;
         font-size: 0.82rem !important;
@@ -466,6 +492,7 @@
         line-height: 1.22 !important;
         white-space: nowrap !important;
         min-width: 92px;
+        box-sizing: border-box !important;
     }
 
     /* Text & Label Alignments */
@@ -474,7 +501,7 @@
         text-align: left !important;
         font-weight: 600 !important;
         color: #334155 !important;
-        min-width: 150px;
+        min-width: 160px;
         max-width: 280px;
         white-space: normal !important;
         overflow-wrap: anywhere;
@@ -650,29 +677,90 @@
         text-transform: uppercase !important;
     }
 
-    /* Sticky / Frozen Column for Kantor Cabang */
-    .loan-summary-table thead th.sticky-cabang-header {
-        position: sticky !important;
-        left: 0 !important;
-        z-index: 20 !important;
-        background-color: #475569 !important;
-        border-right: 2px solid #1e293b !important;
-    }
-
+    /* Sticky / Frozen Column 1 for Kantor Cabang / Uker */
+    .loan-summary-table thead th.sticky-cabang-header,
     .loan-summary-table td.sticky-cabang-cell {
         position: sticky !important;
         left: 0 !important;
-        z-index: 10 !important;
-        background-color: #ffffff !important;
-        border-right: 2px solid #94a3b8 !important;
+        width: var(--loan-sticky-cabang-width) !important;
+        min-width: var(--loan-sticky-cabang-width) !important;
+        max-width: var(--loan-sticky-cabang-width) !important;
+        box-sizing: border-box !important;
+        background-clip: padding-box !important;
     }
 
-    .loan-summary-table tr.loan-branch-subtotal td.sticky-cabang-cell {
+    .loan-summary-table thead th.sticky-cabang-header {
+        top: 0 !important;
+        z-index: 60 !important;
+        background-color: #475569 !important;
+        border-right: 1px solid #334155 !important;
+        border-bottom: 2px solid #1e293b !important;
+        box-shadow: 2px 0 5px rgba(15, 23, 42, 0.12) !important;
+    }
+
+    .loan-summary-table td.sticky-cabang-cell {
+        z-index: 15 !important;
+        background-color: #ffffff !important;
+        border-right: 1px solid #cbd5e1 !important;
+        box-shadow: 2px 0 5px rgba(15, 23, 42, 0.06) !important;
+    }
+
+    /* Consolidation Table Single Column Override (Width 250px) */
+    .loan-summary-table thead th.sticky-consolidation-header,
+    .loan-summary-table td.sticky-consolidation-cell {
+        width: 250px !important;
+        min-width: 250px !important;
+        max-width: 250px !important;
+        border-right: 2px solid #94a3b8 !important;
+        box-shadow: 4px 0 8px -2px rgba(15, 23, 42, 0.15) !important;
+    }
+
+    /* Sticky / Frozen Column 2 for Kategori */
+    .loan-summary-table thead th.sticky-kategori-header,
+    .loan-summary-table td.sticky-kategori-cell {
+        position: sticky !important;
+        left: var(--loan-sticky-kategori-left) !important;
+        width: var(--loan-sticky-kategori-width) !important;
+        min-width: var(--loan-sticky-kategori-width) !important;
+        max-width: var(--loan-sticky-kategori-width) !important;
+        box-sizing: border-box !important;
+        white-space: nowrap !important;
+        background-clip: padding-box !important;
+    }
+
+    .loan-summary-table thead th.sticky-kategori-header {
+        top: 0 !important;
+        z-index: 61 !important;
+        background-color: #475569 !important;
+        border-right: 2px solid #1e293b !important;
+        border-bottom: 2px solid #1e293b !important;
+        box-shadow: 4px 0 8px -2px rgba(15, 23, 42, 0.18) !important;
+    }
+
+    .loan-summary-table td.sticky-kategori-cell {
+        z-index: 16 !important;
+        background-color: #ffffff !important;
+        border-right: 2px solid #94a3b8 !important;
+        box-shadow: 4px 0 8px -2px rgba(15, 23, 42, 0.08) !important;
+    }
+
+    .loan-summary-table tr.loan-branch-subtotal td.sticky-cabang-cell,
+    .loan-summary-table tr.loan-branch-subtotal td.sticky-kategori-cell {
         background-color: #e2e8f0 !important;
     }
 
-    .loan-summary-table tbody tr.loan-grand-total td.sticky-cabang-cell {
+    .loan-summary-table tbody tr.loan-grand-total td.sticky-cabang-cell,
+    .loan-summary-table tbody tr.loan-grand-total td.sticky-kategori-cell {
         background-color: #cbd5e1 !important;
+    }
+
+    .loan-summary-table tbody tr.loan-grand-total td.sticky-cabang-cell[colspan="2"] {
+        left: 0 !important;
+        width: var(--loan-sticky-total-width) !important;
+        min-width: var(--loan-sticky-total-width) !important;
+        max-width: var(--loan-sticky-total-width) !important;
+        border-right: 2px solid #94a3b8 !important;
+        box-shadow: 4px 0 8px -2px rgba(15, 23, 42, 0.18) !important;
     }
 
     @media (max-width: 991.98px), (max-height: 760px) {
@@ -1715,7 +1803,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const labelStyle = isBold ? 'font-weight: 800; color: #0857c3;' : (isSubRow ? 'font-weight: 600; padding-left: 2rem; font-style: italic; color: #64748b; font-size: 0.75rem;' : 'font-weight: 600;');
             const rowStyle = isBold ? 'background: rgba(8, 87, 195, 0.03);' : '';
             return `<tr style="${rowStyle}">
-                <td class="text-start-important" style="${labelStyle}">${label}</td>
+                <td class="text-start-important sticky-cabang-cell sticky-consolidation-cell" style="${labelStyle}">${escapeHtml(label)}</td>
                 <td>${formatCurrency(d.ytd)}</td>
                 <td>${formatCurrency(d.m2)}</td>
                 <td>${formatCurrency(d.mtm)}</td>
@@ -1739,26 +1827,26 @@ document.addEventListener('DOMContentLoaded', function () {
         let html = `<table class="loan-summary-table">
             <thead>
                 <tr>
-                    <th rowspan="2" style="width: 250px;">URAIAN KONSOLIDASI AREA 6</th>
+                    <th rowspan="2" class="sticky-cabang-header sticky-consolidation-header" style="width: 250px;">URAIAN KONSOLIDASI AREA 6</th>
                     <th colspan="5" class="sub-head">PERIODE</th>
                     <th colspan="3" class="accent-head">DELTA (Δ) PERIODE</th>
                     <th colspan="2" class="sub-head">RKAP</th>
                     <th colspan="4" class="accent-head">PENCAPAIAN RKA</th>
                 </tr>
                 <tr>
-                    <th class="sub-head" style="width: 85px;">${dates.ytd}<br><small>(YtD)</small></th>
-                    <th class="sub-head" style="width: 85px;">${dates.m2}<br><small>(M-2)</small></th>
-                    <th class="sub-head" style="width: 85px;">${dates.mtm}<br><small>MoM</small></th>
-                    <th class="sub-head" style="width: 85px;">${dates.mtd}<br><small>MTD</small></th>
-                    <th class="sub-head" style="background: #004280; width: 90px;">${dates.selected}<br><small>(HARI INI)</small></th>
+                    <th class="sub-head" style="width: 85px;">${escapeHtml(dates.ytd)}<br><small>(YtD)</small></th>
+                    <th class="sub-head" style="width: 85px;">${escapeHtml(dates.m2)}<br><small>(M-2)</small></th>
+                    <th class="sub-head" style="width: 85px;">${escapeHtml(dates.mtm)}<br><small>MoM</small></th>
+                    <th class="sub-head" style="width: 85px;">${escapeHtml(dates.mtd)}<br><small>MTD</small></th>
+                    <th class="sub-head" style="background: #004280; width: 90px;">${escapeHtml(dates.selected)}<br><small>(HARI INI)</small></th>
                     <th class="accent-head" style="width: 80px;">YtD</th>
                     <th class="accent-head" style="width: 80px;">MoM</th>
                     <th class="accent-head" style="width: 80px;">MtD</th>
-                    <th class="sub-head" style="width: 85px;">${rkaCurrentLabel}</th>
-                    <th class="sub-head" style="width: 85px;">${rkaM1Label}</th>
-                    <th class="accent-head" style="width: 90px;">${rkaCurrentLabel} Δ</th>
+                    <th class="sub-head" style="width: 85px;">${escapeHtml(rkaCurrentLabel)}</th>
+                    <th class="sub-head" style="width: 85px;">${escapeHtml(rkaM1Label)}</th>
+                    <th class="accent-head" style="width: 90px;">${escapeHtml(rkaCurrentLabel)} Δ</th>
                     <th class="accent-head" style="width: 70px;">%</th>
-                    <th class="accent-head" style="width: 90px;">${rkaM1Label} Δ</th>
+                    <th class="accent-head" style="width: 90px;">${escapeHtml(rkaM1Label)} Δ</th>
                     <th class="accent-head" style="width: 70px;">%</th>
                 </tr>
             </thead>
@@ -1795,6 +1883,15 @@ document.addEventListener('DOMContentLoaded', function () {
         return '<div class="loan-table-container">' + html + '</div>';
     }
 
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
     function buildTable(data, headerDates, typeLabel, segmentName, rkaLabels) {
         if (!data || data.length === 0 || (data.length === 1 && data[0].is_total && data[0].selected == 0)) {
             return '<div class="text-center py-5 text-muted">Tidak ada data untuk filter ini.</div>';
@@ -1817,27 +1914,27 @@ document.addEventListener('DOMContentLoaded', function () {
         let html = `<table class="loan-summary-table">
             <thead>
                 <tr>
-                    <th rowspan="2" class="sticky-cabang-header" style="width: 140px;">${scopeHeaderLabel}</th>
-                    <th rowspan="2" style="width: 150px;">KATEGORI ${segmentName}</th>
-                    <th colspan="5" class="sub-head">${typePrefix} PERIODE</th>
+                    <th rowspan="2" class="sticky-cabang-header" style="width: 160px;">${escapeHtml(scopeHeaderLabel)}</th>
+                    <th rowspan="2" class="sticky-kategori-header" style="width: 150px;">KATEGORI ${escapeHtml(segmentName)}</th>
+                    <th colspan="5" class="sub-head">${escapeHtml(typePrefix)} PERIODE</th>
                     <th colspan="3" class="accent-head">DELTA (Δ) PERIODE</th>
                     <th colspan="2" class="sub-head">RKAP</th>
                     <th colspan="4" class="accent-head">PENCAPAIAN RKA</th>
                 </tr>
                 <tr>
-                    <th class="sub-head" style="width: 85px;">${dates.ytd}<br><small>(YtD)</small></th>
-                    <th class="sub-head" style="width: 85px;">${dates.m2}<br><small>(M-2)</small></th>
-                    <th class="sub-head" style="width: 85px;">${dates.mtm}<br><small>MoM</small></th>
-                    <th class="sub-head" style="width: 85px;">${dates.mtd}<br><small>MTD</small></th>
-                    <th class="sub-head" style="background: #004280; width: 90px;">${dates.selected}<br><small>(HARI INI)</small></th>
+                    <th class="sub-head" style="width: 85px;">${escapeHtml(dates.ytd)}<br><small>(YtD)</small></th>
+                    <th class="sub-head" style="width: 85px;">${escapeHtml(dates.m2)}<br><small>(M-2)</small></th>
+                    <th class="sub-head" style="width: 85px;">${escapeHtml(dates.mtm)}<br><small>MoM</small></th>
+                    <th class="sub-head" style="width: 85px;">${escapeHtml(dates.mtd)}<br><small>MTD</small></th>
+                    <th class="sub-head" style="background: #004280; width: 90px;">${escapeHtml(dates.selected)}<br><small>(HARI INI)</small></th>
                     <th class="accent-head" style="width: 80px;">YtD</th>
                     <th class="accent-head" style="width: 80px;">MoM</th>
                     <th class="accent-head" style="width: 80px;">MtD</th>
-                    <th class="sub-head" style="width: 85px;">${rkaCurrentLabel}</th>
-                    <th class="sub-head" style="width: 85px;">${rkaM1Label}</th>
-                    <th class="accent-head" style="width: 90px;">${rkaCurrentLabel} Δ</th>
+                    <th class="sub-head" style="width: 85px;">${escapeHtml(rkaCurrentLabel)}</th>
+                    <th class="sub-head" style="width: 85px;">${escapeHtml(rkaM1Label)}</th>
+                    <th class="accent-head" style="width: 90px;">${escapeHtml(rkaCurrentLabel)} Δ</th>
                     <th class="accent-head" style="width: 70px;">%</th>
-                    <th class="accent-head" style="width: 90px;">${rkaM1Label} Δ</th>
+                    <th class="accent-head" style="width: 90px;">${escapeHtml(rkaM1Label)} Δ</th>
                     <th class="accent-head" style="width: 70px;">%</th>
                 </tr>
             </thead>
@@ -1891,8 +1988,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (showBranchSubtotal) {
                 html += `<tr class="loan-branch-subtotal">
-                    <td rowspan="${groupRows.length + 1}" class="text-center-v text-start-important merged-branch-cell sticky-cabang-cell" style="border-bottom: 2px solid #cbd5e1;">${branchName}</td>
-                    <td class="text-center-v text-center-important" style="font-size: 0.68rem; letter-spacing: 0.05em; background: rgba(255,255,255,0.05); font-weight: 900; border-right: 1px solid rgba(255,255,255,0.1);">TOTAL ${shortBranchName.toUpperCase()}</td>
+                    <td rowspan="${groupRows.length + 1}" class="text-center-v text-start-important merged-branch-cell sticky-cabang-cell" style="border-bottom: 2px solid #cbd5e1;">${escapeHtml(branchName)}</td>
+                    <td class="text-center-v text-center-important sticky-kategori-cell" style="font-size: 0.68rem; letter-spacing: 0.05em; background: rgba(255,255,255,0.05); font-weight: 900; border-right: 1px solid rgba(255,255,255,0.1);">TOTAL ${escapeHtml(shortBranchName.toUpperCase())}</td>
                     <td>${formatCurrency(subtotal.ytd)}</td>
                     <td>${formatCurrency(subtotal.m2)}</td>
                     <td>${formatCurrency(subtotal.mtm)}</td>
@@ -1922,12 +2019,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     ? 'font-size: 0.82rem; font-weight: 900; letter-spacing: 0.04em; color: #003d7c; background: #dbeafe;'
                     : 'font-size: 0.75rem;';
                 const branchCell = !showBranchSubtotal && index === 0
-                    ? `<td rowspan="${groupRows.length}" class="text-center-v text-start-important merged-branch-cell sticky-cabang-cell" style="border-bottom: 2px solid #cbd5e1;">${branchName}</td>`
+                    ? `<td rowspan="${groupRows.length}" class="text-center-v text-start-important merged-branch-cell sticky-cabang-cell" style="border-bottom: 2px solid #cbd5e1;">${escapeHtml(branchName)}</td>`
                     : '';
 
                 html += `<tr>
                     ${branchCell}
-                    <td class="${categoryCellClass}" style="${categoryCellStyle}">${categoryLabel}</td>
+                    <td class="${categoryCellClass} sticky-kategori-cell" style="${categoryCellStyle}">${escapeHtml(categoryLabel)}</td>
                     <td>${formatCurrency(row.ytd)}</td>
                     <td>${formatCurrency(row.m2)}</td>
                     <td>${formatCurrency(row.mtm)}</td>
@@ -1970,7 +2067,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function showSpinners(kategori) {
-        const stub = (label) => `<div class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary mb-3" role="status"><span class="sr-only">Loading...</span></div><p><strong>Memproses data ${label}</strong></p><p style="font-size: 0.85rem;">Untuk Segmen ${kategori}...</p></div>`;
+        const stub = (label) => `<div class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary mb-3" role="status"><span class="sr-only">Loading...</span></div><p><strong>Memproses data ${escapeHtml(label)}</strong></p><p style="font-size: 0.85rem;">Untuk Segmen ${escapeHtml(kategori)}...</p></div>`;
         osTableContainer.innerHTML = stub('Outstanding');
         consolidationSection.classList.add('d-none');
         consolidationTableContainer.innerHTML = '';
@@ -1979,7 +2076,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function showErrorMessage(message) {
-        const errorHtml = `<div class="alert alert-danger alert-dismissible fade show" role="alert"><strong>Gagal memuat data</strong><br>${message}<button type="button" class="close" data-dismiss="alert" aria-label="Tutup"><span aria-hidden="true">&times;</span></button></div>`;
+        const errorHtml = `<div class="alert alert-danger alert-dismissible fade show" role="alert"><strong>Gagal memuat data</strong><br>${escapeHtml(message)}<button type="button" class="close" data-dismiss="alert" aria-label="Tutup"><span aria-hidden="true">&times;</span></button></div>`;
         osTableContainer.innerHTML = errorHtml; 
         smlTableContainer.innerHTML = errorHtml; 
         nplTableContainer.innerHTML = errorHtml;
@@ -2027,19 +2124,73 @@ document.addEventListener('DOMContentLoaded', function () {
                 smlTableContainer.innerHTML = buildTable(data.sml, data.header_dates, 'SML', kategori, data.rka_labels);
                 document.getElementById('nplTitle').innerText = `C. NON-PERFORMING LOAN (NPL) - ${kategori}`;
                 nplTableContainer.innerHTML = buildTable(data.npl, data.header_dates, 'NPL', kategori, data.rka_labels);
+                syncSummaryTableHeaders();
+                scheduleSummaryTableSync();
             })
             .catch(error => {
                 if (timeoutId) clearTimeout(timeoutId);
                 console.error('Error:', error);
                 let errorMsg = 'Periksa koneksi atau snapshot data.';
                 if (error.name === 'AbortError') errorMsg = 'Permintaan timeout. Coba lagi.';
-                else if (error.message.includes('HTTP')) errorMsg = error.message;
                 showErrorMessage(errorMsg);
             })
             .finally(() => {
                 btnLoadData.disabled = false;
             });
     }
+
+    function syncSummaryTableHeaders() {
+        document.querySelectorAll('.loan-summary-table-wrap').forEach(wrap => {
+            const table = wrap.querySelector('.loan-summary-table');
+            const row1Cell = table?.querySelector('thead tr:first-child th:not([rowspan])');
+            if (row1Cell) {
+                const h = row1Cell.offsetHeight;
+                if (h > 0) wrap.style.setProperty('--loan-summary-header-row-height', h + 'px');
+            }
+
+            const cabangHeader = table?.querySelector('thead th.sticky-cabang-header');
+            const kategoriHeader = table?.querySelector('thead th.sticky-kategori-header');
+            if (!cabangHeader || !kategoriHeader) return;
+
+            // The second frozen column must use the rendered width of the first one.
+            // This prevents overlap when labels, zoom, or device width change the table layout.
+            const cabangWidth = Math.ceil(cabangHeader.getBoundingClientRect().width);
+            const kategoriWidth = Math.ceil(kategoriHeader.getBoundingClientRect().width);
+
+            if (cabangWidth > 0) {
+                table.style.setProperty('--loan-sticky-cabang-width', `${cabangWidth}px`);
+            }
+
+            if (kategoriWidth > 0) {
+                table.style.setProperty('--loan-sticky-kategori-width', `${kategoriWidth}px`);
+            }
+
+            const wrapLeft = wrap.getBoundingClientRect().left;
+            const renderedCabang = cabangHeader.getBoundingClientRect();
+            const renderedKategori = kategoriHeader.getBoundingClientRect();
+            const kategoriLeft = renderedCabang.right - wrapLeft;
+            const frozenTotalWidth = renderedKategori.right - wrapLeft;
+
+            if (kategoriLeft > 0) {
+                table.style.setProperty('--loan-sticky-kategori-left', `${kategoriLeft}px`);
+            }
+
+            if (frozenTotalWidth > 0) {
+                table.style.setProperty('--loan-sticky-total-width', `${frozenTotalWidth}px`);
+            }
+        });
+    }
+
+    let summaryTableSyncFrame = null;
+    function scheduleSummaryTableSync() {
+        if (summaryTableSyncFrame) cancelAnimationFrame(summaryTableSyncFrame);
+        summaryTableSyncFrame = requestAnimationFrame(() => {
+            summaryTableSyncFrame = null;
+            syncSummaryTableHeaders();
+        });
+    }
+    window.addEventListener('resize', scheduleSummaryTableSync);
+    window.addEventListener('orientationchange', scheduleSummaryTableSync);
 
     btnLoadData.addEventListener('click', loadDashboardData);
     

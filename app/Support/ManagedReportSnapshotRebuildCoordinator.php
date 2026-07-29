@@ -699,7 +699,7 @@ class ManagedReportSnapshotRebuildCoordinator
                 ->where('key', 'like', '%' . ManagedReportSnapshotRebuildStore::stateKey('') . '%')
                 ->pluck('value')
                 ->map(function ($value): ?array {
-                    $decoded = @unserialize((string) $value);
+                    $decoded = @unserialize((string) $value, ['allowed_classes' => false]);
 
                     return is_array($decoded) ? ManagedReportSnapshotRebuildStore::normalizeState($decoded, false) : null;
                 })

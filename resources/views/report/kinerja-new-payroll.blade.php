@@ -416,7 +416,7 @@
                                     <th rowspan="2" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 210px;">BRANCH OFFICE</th>
                                     <th colspan="5" class="bg-header-main">New Rekening Payroll</th>
                                     <th colspan="5" class="bg-header-main" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">Saldo New Payroll</th>
-                                    <th colspan="3" class="bg-header-main" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">Kualitas New Payroll</th>
+                                    <th colspan="3" class="bg-header-main" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">Payroll Berkualitas</th>
                                 </tr>
                                 <tr class="bg-header-sub">
                                     <th class="lbl-curr">-</th>
@@ -424,7 +424,7 @@
                                     <th>YoY</th>
                                     <th class="lbl-rka rka-col">RKA</th>
                                     <th class="rka-col">Penc (%)</th>
-                                    <th class="lbl-curr" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">-</th>
+                                    <th style="border-left: 2px solid rgba(255,255,255,0.4) !important;">Debitur &ge; Rp5 Juta</th>
                                     <th>%YoY</th>
                                     <th>YoY</th>
                                     <th class="lbl-rka rka-col">RKA</th>

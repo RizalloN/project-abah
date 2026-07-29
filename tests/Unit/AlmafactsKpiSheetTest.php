@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class AlmafactsKpiSheetTest extends TestCase
@@ -18,6 +19,7 @@ class AlmafactsKpiSheetTest extends TestCase
 
         Config::set('cache.default', 'array');
         Cache::flush();
+        Queue::fake();
     }
 
     public function test_kpi_page_defaults_to_mbm_sheet_and_uses_requested_order(): void
@@ -26,7 +28,7 @@ class AlmafactsKpiSheetTest extends TestCase
             'docs.google.com/*' => Http::response("\"KEY PERFORMING INDICATOR\",\"MBM\",\"SCORE\",\"\",\"\"\n\"MADIUN\",\"NUR\",\"98%\",\"\",\"\"", 200),
         ]);
 
-        $view = (new AlmafactsDashboardController())->kpi(Request::create('/report/dashboard-almafacts/kpi', 'GET'));
+        $view = $this->kpiView('mbm');
         $data = $view->getData();
 
         $this->assertSame('mbm', $data['selectedSheetKey']);
@@ -51,7 +53,7 @@ class AlmafactsKpiSheetTest extends TestCase
             ),
         ]);
 
-        $view = (new AlmafactsDashboardController())->kpi(Request::create('/report/dashboard-almafacts/kpi/ka-unit', 'GET'), 'ka-unit');
+        $view = $this->kpiView('ka-unit');
         $data = $view->getData();
 
         $this->assertSame('ka-unit', $data['selectedSheetKey']);
@@ -75,7 +77,7 @@ class AlmafactsKpiSheetTest extends TestCase
             'docs.google.com/*' => Http::response("\"KEY PERFORMING INDICATOR\",\"MBM\",\"SCORE\",\"\",\"\"\n\"MADIUN\",\"NUR\",\"98%\",\"\",\"\"", 200),
         ]);
 
-        $view = (new AlmafactsDashboardController())->kpi(Request::create('/report/dashboard-almafacts/kpi/mbm', 'GET'), 'mbm');
+        $view = $this->kpiView('mbm');
         $data = $view->getData();
 
         $this->assertSame('mbm', $data['selectedSheetKey']);
@@ -98,7 +100,7 @@ class AlmafactsKpiSheetTest extends TestCase
             ),
         ]);
 
-        $view = (new AlmafactsDashboardController())->kpi(Request::create('/report/dashboard-almafacts/kpi/rm-mikro', 'GET'), 'rm-mikro');
+        $view = $this->kpiView('rm-mikro');
         $data = $view->getData();
 
         $this->assertSame('rm-mikro', $data['selectedSheetKey']);
@@ -135,7 +137,7 @@ class AlmafactsKpiSheetTest extends TestCase
             ),
         ]);
 
-        $view = (new AlmafactsDashboardController())->kpi(Request::create('/report/dashboard-almafacts/kpi/rm-sme', 'GET'), 'rm-sme');
+        $view = $this->kpiView('rm-sme');
         $data = $view->getData();
 
         $this->assertSame('rm-sme', $data['selectedSheetKey']);
@@ -162,12 +164,12 @@ class AlmafactsKpiSheetTest extends TestCase
             ),
         ]);
 
-        $view = (new AlmafactsDashboardController())->kpi(Request::create('/report/dashboard-almafacts/kpi/mantri', 'GET'), 'mantri');
+        $view = $this->kpiView('mantri');
         $data = $view->getData();
 
         $this->assertSame('mantri', $data['selectedSheetKey']);
         $this->assertSame('KPI', $data['selectedSheet']['sheet']);
-        $this->assertSame('1h7XMo46a10a3gC1f_CPtsBUT2V1PcxAE', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame('KPI', $data['summary']['sheet_name']);
         $this->assertSame(
             ['Key', 'BO', 'MBM', 'Uker', 'Type BRI', 'BC', 'Nama Mantri', 'Status', 'JG', 'Lama Di UKER 2026', 'Pencapaian', 'Score'],
@@ -183,6 +185,8 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertContains('Rank Cabang', array_column($data['headerGroups'], 'label'));
         $this->assertSame('Nur Elfiana', $data['rows'][0][2]);
         $this->assertSame(1, $data['summary']['row_count']);
+        $this->assertTrue($data['kpiBranchFilter']['enabled']);
+        $this->assertSame(['all', 'MADIUN'], array_column($data['kpiBranchFilter']['options'], 'value'));
     }
 
     public function test_kpi_consumer_splits_briguna_and_kpr_rows_and_skips_blank_rows(): void
@@ -197,13 +201,13 @@ class AlmafactsKpiSheetTest extends TestCase
             ),
         ]);
 
-        $view = (new AlmafactsDashboardController())->kpi(Request::create('/report/dashboard-almafacts/kpi/consumer', 'GET'), 'consumer');
+        $view = $this->kpiView('consumer');
         $data = $view->getData();
 
         $this->assertSame('consumer', $data['selectedSheetKey']);
         $this->assertSame('KPI Konsumer', $data['selectedSheet']['label']);
         $this->assertSame('KPI', $data['selectedSheet']['sheet']);
-        $this->assertSame('1SL6lL9evwbJWzrXi7JDHbD5xVHcw1AEM', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame(2, $data['summary']['row_count']);
         $this->assertSame(['briguna', 'kpr'], array_column($data['tableSections'], 'key'));
         $this->assertSame('KPI Briguna', $data['tableSections'][0]['title']);
@@ -224,6 +228,59 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertStringContainsString('KPI KPR', $html);
     }
 
+    public function test_kpi_branch_filter_limits_consumer_rows_to_the_selected_branch(): void
+    {
+        Http::fake([
+            'docs.google.com/*' => Http::response(
+                "\"NO\",\"KANCA\",\"BC\",\"UKER\",\"SEGMEN\",\"SCORE\"\n"
+                . "\"1\",\"KC Madiun\",\"45\",\"KC Madiun\",\"BRIGUNA\",\"95.50\"\n"
+                . "\"2\",\"KC Ngawi\",\"57\",\"KC Ngawi\",\"KPR\",\"88.25\"",
+                200
+            ),
+        ]);
+
+        $controller = new AlmafactsDashboardController();
+        $controller->refreshKpiSourceCaches(['consumer']);
+        $view = $controller->kpi(
+            Request::create('/report/dashboard-almafacts/kpi/consumer', 'GET', ['cabang' => 'KC Ngawi']),
+            'consumer'
+        );
+        $data = $view->getData();
+
+        $this->assertTrue($data['kpiBranchFilter']['enabled']);
+        $this->assertFalse($data['kpiBranchFilter']['locked']);
+        $this->assertSame('KC Ngawi', $data['kpiBranchFilter']['selected']);
+        $this->assertSame(1, $data['summary']['row_count']);
+        $this->assertCount(0, $data['tableSections'][0]['rows']);
+        $this->assertCount(1, $data['tableSections'][1]['rows']);
+    }
+
+    public function test_kpi_branch_filter_is_locked_to_the_authenticated_user_branch(): void
+    {
+        Http::fake([
+            'docs.google.com/*' => Http::response(
+                "\"NO\",\"KANCA\",\"BC\",\"UKER\",\"SEGMEN\",\"SCORE\"\n"
+                . "\"1\",\"KC Madiun\",\"45\",\"KC Madiun\",\"BRIGUNA\",\"95.50\"\n"
+                . "\"2\",\"KC Ngawi\",\"57\",\"KC Ngawi\",\"KPR\",\"88.25\"",
+                200
+            ),
+        ]);
+        $this->actingAs(new User(['pn' => 'test-kpi-scope', 'branch_scope' => 'madiun']));
+
+        $controller = new AlmafactsDashboardController();
+        $controller->refreshKpiSourceCaches(['consumer']);
+        $view = $controller->kpi(
+            Request::create('/report/dashboard-almafacts/kpi/consumer', 'GET', ['cabang' => 'KC Ngawi']),
+            'consumer'
+        );
+        $data = $view->getData();
+
+        $this->assertTrue($data['kpiBranchFilter']['locked']);
+        $this->assertSame('KC Madiun', $data['kpiBranchFilter']['selected']);
+        $this->assertSame(['KC Madiun'], array_column($data['kpiBranchFilter']['options'], 'value'));
+        $this->assertSame(1, $data['summary']['row_count']);
+    }
+
     public function test_kpi_page_reads_two_row_header_with_pencp_and_nilai_as_sortable_columns(): void
     {
         Http::fake([
@@ -235,7 +292,7 @@ class AlmafactsKpiSheetTest extends TestCase
             ),
         ]);
 
-        $view = (new AlmafactsDashboardController())->kpi(Request::create('/report/dashboard-almafacts/kpi/rm-mikro', 'GET'), 'rm-mikro');
+        $view = $this->kpiView('rm-mikro');
         $data = $view->getData();
 
         $this->assertSame(['BO', 'Nama', 'Pencapaian', 'Score', 'Rank'], $data['header']);
@@ -256,5 +313,49 @@ class AlmafactsKpiSheetTest extends TestCase
         $rendered = $view->render();
         $this->assertStringContainsString('data-sort-column="2"', $rendered);
         $this->assertStringContainsString("header.addEventListener('click'", $rendered);
+    }
+
+    public function test_kpi_page_reads_warmed_cache_without_remote_http_call(): void
+    {
+        Http::fake([
+            'docs.google.com/*' => Http::response("\"KEY PERFORMING INDICATOR\",\"MBM\",\"SCORE\"\n\"MADIUN\",\"NUR\",\"98%\"", 200),
+        ]);
+
+        $controller = new AlmafactsDashboardController();
+        $controller->refreshKpiSourceCaches(['mbm']);
+        Http::preventStrayRequests();
+
+        $view = $controller->kpi(Request::create('/report/dashboard-almafacts/kpi/mbm', 'GET'), 'mbm');
+
+        $this->assertSame(['BO', 'MBM', 'Score'], $view->getData()['header']);
+        Http::assertSentCount(1);
+    }
+
+    public function test_kpi_sticky_header_and_columns_use_runtime_geometry_on_every_viewport(): void
+    {
+        $source = file_get_contents(resource_path('views/report/almafacts/kpi.blade.php'));
+
+        $this->assertIsString($source);
+        $this->assertStringContainsString('top: var(--kpi-sticky-header-row-height);', $source);
+        $this->assertStringContainsString('left: var(--kpi-sticky-first-column-width) !important;', $source);
+        $this->assertStringContainsString('Math.ceil(firstRow.getBoundingClientRect().height)', $source);
+        $this->assertStringContainsString("table.style.setProperty('--kpi-sticky-header-row-height'", $source);
+        $this->assertStringContainsString("table.style.setProperty('--kpi-sticky-first-column-width'", $source);
+        $this->assertStringContainsString("table.querySelector('tbody tr .kpi-sticky-col-0')", $source);
+        $this->assertStringContainsString("window.addEventListener('orientationchange', adjustStickyHeaders)", $source);
+        $this->assertStringContainsString('new ResizeObserver(adjustStickyHeaders)', $source);
+        $this->assertStringNotContainsString('if (window.innerWidth < 768)', $source);
+        $this->assertStringNotContainsString('top: 28px; /* Height of row 1 th fallback */', $source);
+    }
+
+    private function kpiView(string $sheet): \Illuminate\View\View
+    {
+        $controller = new AlmafactsDashboardController();
+        $controller->refreshKpiSourceCaches([$sheet]);
+
+        return $controller->kpi(
+            Request::create('/report/dashboard-almafacts/kpi/' . $sheet, 'GET'),
+            $sheet
+        );
     }
 }

@@ -918,13 +918,14 @@ document.addEventListener('DOMContentLoaded', function () {
                     $('.lbl-casa-prev').text(res.labels?.casa_prev || 'Prev');
                     $('.lbl-casa-end').text(res.labels?.casa_end || 'Curr End');
                 } else if(res.status === 'error') {
-                    $('#tbody-brilink').html(`<tr><td colspan="27" class="text-center text-danger py-5"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>${res.msg}</td></tr>`);
-                    $('#tbody-agen-user').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
-                    $('#tbody-juragan').html(`<tr><td colspan="13" class="text-center text-danger py-5">${res.msg}</td></tr>`);
-                    $('#tbody-bep-detail').html(`<tr><td colspan="13" class="text-center text-danger py-5">${res.msg}</td></tr>`);
-                    $('#tbody-transaksi').html(`<tr><td colspan="6" class="text-center text-danger py-5">${res.msg}</td></tr>`);
-                    $('#tbody-active-user').html(`<tr><td colspan="5" class="text-center text-danger py-5">${res.msg}</td></tr>`);
-                    $('#tbody-casa').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
+                    const safeMessage = $('<div>').text(res.msg || 'Gagal memuat data.').html();
+                    $('#tbody-brilink').html(`<tr><td colspan="27" class="text-center text-danger py-5"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>${safeMessage}</td></tr>`);
+                    $('#tbody-agen-user').html(`<tr><td colspan="11" class="text-center text-danger py-5">${safeMessage}</td></tr>`);
+                    $('#tbody-juragan').html(`<tr><td colspan="13" class="text-center text-danger py-5">${safeMessage}</td></tr>`);
+                    $('#tbody-bep-detail').html(`<tr><td colspan="13" class="text-center text-danger py-5">${safeMessage}</td></tr>`);
+                    $('#tbody-transaksi').html(`<tr><td colspan="6" class="text-center text-danger py-5">${safeMessage}</td></tr>`);
+                    $('#tbody-active-user').html(`<tr><td colspan="5" class="text-center text-danger py-5">${safeMessage}</td></tr>`);
+                    $('#tbody-casa').html(`<tr><td colspan="11" class="text-center text-danger py-5">${safeMessage}</td></tr>`);
                 }
             },
             error: function(err) {

@@ -23,7 +23,7 @@ class CrasMappingService
 
     private const METRICS = [
         'plafond' => ['label' => 'Plafon', 'format' => 'currency'],
-        'baki_debet' => ['label' => 'Baki Debet', 'format' => 'currency'],
+        'baki_debet' => ['label' => 'OS / Baki Debet', 'format' => 'currency'],
         'jumlah_debitur' => ['label' => 'Debitur', 'format' => 'count'],
         'jumlah_rekening' => ['label' => 'Rekening', 'format' => 'count'],
         'biaya_ckpn' => ['label' => 'Biaya CKPN', 'format' => 'currency'],
@@ -36,15 +36,35 @@ class CrasMappingService
         'tunggakan_pokok' => ['label' => 'Tunggakan Pokok', 'format' => 'currency'],
     ];
 
+    private const DERIVED_METRICS = [
+        'npl_os' => ['label' => 'NPL', 'format' => 'currency'],
+        'sml_os' => ['label' => 'SML', 'format' => 'currency'],
+        'npl_debitur' => ['label' => 'Debitur NPL', 'format' => 'count'],
+        'sml_debitur' => ['label' => 'Debitur SML', 'format' => 'count'],
+        'npl_ratio' => ['label' => 'Rasio NPL', 'format' => 'percent'],
+        'sml_ratio' => ['label' => 'Rasio SML', 'format' => 'percent'],
+    ];
+
     private const HEATMAP_METRICS = [
         'baki_debet',
+        'npl_os',
+        'sml_os',
+        'npl_ratio',
+        'sml_ratio',
         'plafond',
         'jumlah_debitur',
+        'npl_debitur',
+        'sml_debitur',
+        'jumlah_rekening',
+        'biaya_ckpn',
         'ckpn_mo',
         'realisasi_ph',
         'recovery_total',
         'saldo_ph',
         'total_tunggakan',
+        'tunggakan_bunga',
+        'tunggakan_kecil',
+        'tunggakan_pokok',
     ];
 
     public function payload(array $input = []): array
@@ -60,7 +80,7 @@ class CrasMappingService
 
         $period = $this->resolvePeriod((string) ($input['periode'] ?? ''), $periodOptions);
         $selected = $this->selectedFilters($input, $period);
-        $cacheKey = 'cras_mapping:v3:'.md5(json_encode($selected));
+        $cacheKey = 'cras_mapping:v4:'.md5(json_encode($selected));
 
         $computed = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($selected): array {
             $units = $this->aggregateUnits($selected);
@@ -99,10 +119,7 @@ class CrasMappingService
                 'selected' => in_array((string) ($input['metric'] ?? ''), self::HEATMAP_METRICS, true)
                     ? (string) $input['metric']
                     : 'baki_debet',
-                'options' => array_values(array_filter(
-                    $this->metricDefinitions(),
-                    fn (array $metric): bool => in_array($metric['key'], self::HEATMAP_METRICS, true)
-                )),
+                'options' => $this->heatmapMetricDefinitions(),
             ],
             'units' => $computed['units'],
             'metrics' => $computed['metrics'],
@@ -168,6 +185,11 @@ class CrasMappingService
             $selected[$key] = $this->normalizeOption((string) ($input[$key] ?? 'all'));
         }
 
+        $userScope = UserBranchScope::current();
+        if ($userScope !== null) {
+            $selected['wilayah'] = $userScope['key'];
+        }
+
         $branches = array_keys((array) config('marketshare-geography.branches', []));
         if ($selected['wilayah'] !== 'all' && ! in_array($selected['wilayah'], $branches, true)) {
             $selected['wilayah'] = 'all';
@@ -185,15 +207,23 @@ class CrasMappingService
 
     private function filterOptions(array $selected, array $periodOptions): array
     {
-        $baseKey = md5(json_encode([$selected['periode'], $selected['wilayah'], $selected['sektor']]));
+        $baseKey = md5(json_encode($selected));
 
-        return Cache::remember('cras_mapping:filters:v2:'.$baseKey, now()->addMinutes(10), function () use ($selected, $periodOptions): array {
+        return Cache::remember('cras_mapping:filters:v4:'.$baseKey, now()->addMinutes(10), function () use ($selected, $periodOptions): array {
             $branchOptions = [['value' => 'all', 'label' => 'Seluruh Area 6']];
-            foreach ((array) config('marketshare-geography.branches', []) as $key => $definition) {
-                $branchOptions[] = [
-                    'value' => (string) $key,
-                    'label' => (string) ($definition['label'] ?? ucfirst((string) $key)),
-                ];
+            $userScope = UserBranchScope::current();
+            if ($userScope !== null) {
+                $branchOptions = [[
+                    'value' => $userScope['key'],
+                    'label' => $userScope['label'],
+                ]];
+            } else {
+                foreach ((array) config('marketshare-geography.branches', []) as $key => $definition) {
+                    $branchOptions[] = [
+                        'value' => (string) $key,
+                        'label' => (string) ($definition['label'] ?? ucfirst((string) $key)),
+                    ];
+                }
             }
 
             $options = [
@@ -204,8 +234,10 @@ class CrasMappingService
             foreach (self::FILTER_COLUMNS as $key => $column) {
                 $query = DB::table(self::TABLE)->where('cras_periode', $selected['periode']);
                 $this->applyRegionFilter($query, $selected['wilayah']);
-                if ($key === 'sub_sektor' && $selected['sektor'] !== 'all') {
-                    $query->where('sektor_ekonomi', $selected['sektor']);
+                foreach (self::FILTER_COLUMNS as $otherKey => $otherColumn) {
+                    if ($otherKey !== $key && ($selected[$otherKey] ?? 'all') !== 'all') {
+                        $query->where($otherColumn, $selected[$otherKey]);
+                    }
                 }
 
                 $values = $query
@@ -220,6 +252,10 @@ class CrasMappingService
                     ->unique()
                     ->values()
                     ->all();
+                $selectedValue = (string) ($selected[$key] ?? 'all');
+                if ($selectedValue !== 'all' && ! in_array($selectedValue, $values, true)) {
+                    array_unshift($values, $selectedValue);
+                }
 
                 $options[$key] = array_merge(
                     [['value' => 'all', 'label' => 'Semua']],
@@ -253,10 +289,15 @@ class CrasMappingService
             foreach (array_keys(self::METRICS) as $metric) {
                 $metrics[$metric] = round((float) ($row[$metric] ?? 0), 2);
             }
+            foreach (['npl_os', 'sml_os', 'npl_debitur', 'sml_debitur'] as $metric) {
+                $metrics[$metric] = round((float) ($row[$metric] ?? 0), 2);
+            }
             $metrics['total_tunggakan'] = round(
                 $metrics['tunggakan_bunga'] + $metrics['tunggakan_kecil'] + $metrics['tunggakan_pokok'],
                 2
             );
+            $metrics['npl_ratio'] = $this->percentage($metrics['npl_os'], $metrics['baki_debet']);
+            $metrics['sml_ratio'] = $this->percentage($metrics['sml_os'], $metrics['baki_debet']);
 
             $units[] = [
                 'code' => $code,
@@ -288,6 +329,13 @@ class CrasMappingService
         foreach (array_keys(self::METRICS) as $metric) {
             $selects[] = 'SUM('.$this->mysqlNumericExpression($metric).") AS `{$metric}`";
         }
+        $qualityExpression = 'UPPER(TRIM(`kualitas`))';
+        $nplCondition = $this->mysqlNplCondition($qualityExpression);
+        $smlCondition = $this->mysqlSmlCondition($qualityExpression);
+        $selects[] = 'SUM(CASE WHEN '.$nplCondition.' THEN '.$this->mysqlNumericExpression('baki_debet').' ELSE 0 END) AS `npl_os`';
+        $selects[] = 'SUM(CASE WHEN '.$smlCondition.' THEN '.$this->mysqlNumericExpression('baki_debet').' ELSE 0 END) AS `sml_os`';
+        $selects[] = 'SUM(CASE WHEN '.$nplCondition.' THEN '.$this->mysqlNumericExpression('jumlah_debitur').' ELSE 0 END) AS `npl_debitur`';
+        $selects[] = 'SUM(CASE WHEN '.$smlCondition.' THEN '.$this->mysqlNumericExpression('jumlah_debitur').' ELSE 0 END) AS `sml_debitur`';
 
         return $query
             ->selectRaw(implode(', ', $selects))
@@ -298,7 +346,7 @@ class CrasMappingService
 
     private function aggregateUnitsInPhp(Builder $query): array
     {
-        $columns = array_merge(['br_number', 'ket_unit_kerja', 'ket_kanca'], array_keys(self::METRICS));
+        $columns = array_merge(['br_number', 'ket_unit_kerja', 'ket_kanca', 'kualitas'], array_keys(self::METRICS));
         $groups = [];
 
         foreach ($query->select($columns)->cursor() as $row) {
@@ -310,12 +358,23 @@ class CrasMappingService
                     'ket_unit_kerja' => $row->ket_unit_kerja,
                     'ket_kanca' => $row->ket_kanca,
                     'source_rows' => 0,
-                ] + array_fill_keys(array_keys(self::METRICS), 0.0);
+                ] + array_fill_keys(
+                    array_merge(array_keys(self::METRICS), ['npl_os', 'sml_os', 'npl_debitur', 'sml_debitur']),
+                    0.0
+                );
             }
 
             $groups[$key]['source_rows']++;
             foreach (array_keys(self::METRICS) as $metric) {
                 $groups[$key][$metric] += $this->parseNumber($row->{$metric} ?? 0);
+            }
+            $qualityBucket = $this->qualityBucket((string) ($row->kualitas ?? ''));
+            if ($qualityBucket === 'npl') {
+                $groups[$key]['npl_os'] += $this->parseNumber($row->baki_debet ?? 0);
+                $groups[$key]['npl_debitur'] += $this->parseNumber($row->jumlah_debitur ?? 0);
+            } elseif ($qualityBucket === 'sml') {
+                $groups[$key]['sml_os'] += $this->parseNumber($row->baki_debet ?? 0);
+                $groups[$key]['sml_debitur'] += $this->parseNumber($row->jumlah_debitur ?? 0);
             }
         }
 
@@ -341,6 +400,29 @@ class CrasMappingService
         $number = is_numeric($value) ? (float) $value : 0.0;
 
         return $negative ? -abs($number) : $number;
+    }
+
+    private function mysqlNplCondition(string $qualityExpression): string
+    {
+        return "({$qualityExpression} = 'NPL' OR {$qualityExpression} IN ('3', '4', '5', 'KL', 'D', 'M', 'KURANG LANCAR', 'DIRAGUKAN', 'MACET'))";
+    }
+
+    private function mysqlSmlCondition(string $qualityExpression): string
+    {
+        return "({$qualityExpression} LIKE 'SML%' OR {$qualityExpression} IN ('2', 'DPK', 'DALAM PERHATIAN KHUSUS'))";
+    }
+
+    private function qualityBucket(string $quality): ?string
+    {
+        $normalized = strtoupper(trim((string) preg_replace('/\s+/', ' ', $quality)));
+        if ($normalized === 'NPL' || in_array($normalized, ['3', '4', '5', 'KL', 'D', 'M', 'KURANG LANCAR', 'DIRAGUKAN', 'MACET'], true)) {
+            return 'npl';
+        }
+        if (str_starts_with($normalized, 'SML') || in_array($normalized, ['2', 'DPK', 'DALAM PERHATIAN KHUSUS'], true)) {
+            return 'sml';
+        }
+
+        return null;
     }
 
     private function applyFilters(Builder $query, array $selected): void
@@ -394,16 +476,30 @@ class CrasMappingService
         $totals = $this->emptyMetrics();
         foreach ($units as $unit) {
             foreach (array_keys($totals) as $metric) {
+                if (in_array($metric, ['npl_ratio', 'sml_ratio'], true)) {
+                    continue;
+                }
                 $totals[$metric] += (float) ($unit['values'][$metric] ?? 0);
             }
         }
+
+        $totals['npl_ratio'] = $this->percentage($totals['npl_os'], $totals['baki_debet']);
+        $totals['sml_ratio'] = $this->percentage($totals['sml_os'], $totals['baki_debet']);
 
         return array_map(fn (float $value): float => round($value, 2), $totals);
     }
 
     private function emptyMetrics(): array
     {
-        return array_fill_keys(array_merge(array_keys(self::METRICS), ['total_tunggakan']), 0.0);
+        return array_fill_keys(
+            array_merge(array_keys(self::METRICS), array_keys(self::DERIVED_METRICS), ['total_tunggakan']),
+            0.0
+        );
+    }
+
+    private function percentage(float $numerator, float $denominator): float
+    {
+        return $denominator > 0 ? round(($numerator / $denominator) * 100, 4) : 0.0;
     }
 
     private function metricDefinitions(): array
@@ -412,8 +508,21 @@ class CrasMappingService
         foreach (self::METRICS as $key => $metric) {
             $definitions[] = ['key' => $key] + $metric;
         }
+        foreach (self::DERIVED_METRICS as $key => $metric) {
+            $definitions[] = ['key' => $key] + $metric;
+        }
         $definitions[] = ['key' => 'total_tunggakan', 'label' => 'Total Tunggakan', 'format' => 'currency'];
 
         return $definitions;
+    }
+
+    private function heatmapMetricDefinitions(): array
+    {
+        $definitions = collect($this->metricDefinitions())->keyBy('key');
+
+        return array_values(array_filter(array_map(
+            fn (string $key): ?array => $definitions->get($key),
+            self::HEATMAP_METRICS
+        )));
     }
 }

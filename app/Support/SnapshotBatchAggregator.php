@@ -21,12 +21,14 @@ class SnapshotBatchAggregator
 
     public function registerSyncRequest(string $tableName, ?string $periodHint = null, ?int $jobId = null, ?string $source = null, ?string $rebuildId = null): array
     {
+        $normalizedTable = strtolower(trim($tableName));
+        $this->persistSyncRequest($normalizedTable, $periodHint);
+
         // Check if batching is globally disabled
         if (!SnapshotBatchConfig::ENABLED) {
             return ['batched' => false, 'reason' => 'batching_disabled'];
         }
 
-        $normalizedTable = strtolower(trim($tableName));
         if ($normalizedTable === '') {
             return ['batched' => false, 'reason' => 'empty_table_name'];
         }
@@ -110,6 +112,24 @@ class SnapshotBatchAggregator
             ]);
 
             return ['batched' => false, 'reason' => 'lock_failed', 'error' => $e->getMessage()];
+        }
+    }
+
+    private function persistSyncRequest(string $tableName, ?string $periodHint): void
+    {
+        $period = trim((string) $periodHint);
+        if ($tableName === '' || $period === '') {
+            return;
+        }
+
+        try {
+            app(SnapshotDirtyPeriodService::class)->mark($tableName, $period);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to persist snapshot sync request.', [
+                'table_name' => $tableName,
+                'period_hint' => $period,
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 

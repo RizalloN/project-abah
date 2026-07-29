@@ -41,7 +41,7 @@ afterEach(function () {
     Cache::flush();
     Schema::dropIfExists('import_jobs');
 
-    $directory = storage_path('framework/testing/import-backend-daily-loan');
+    $directory = storage_path('app/backend-imports/testing-daily-loan');
     if (is_dir($directory)) {
         File::deleteDirectory($directory);
     }
@@ -49,7 +49,7 @@ afterEach(function () {
 
 function createDailyLoanBackendCsv(string $fileName, string $period = '19-04-2026'): string
 {
-    $directory = storage_path('framework/testing/import-backend-daily-loan');
+    $directory = storage_path('app/backend-imports/testing-daily-loan');
     File::ensureDirectoryExists($directory);
 
     $path = $directory . DIRECTORY_SEPARATOR . $fileName;
@@ -67,7 +67,7 @@ function createDailyLoanBackendCsv(string $fileName, string $period = '19-04-202
 
 function createDailyLoanBackendBusinessHeaderCsv(string $fileName, string $period = '31/03/2025'): string
 {
-    $directory = storage_path('framework/testing/import-backend-daily-loan');
+    $directory = storage_path('app/backend-imports/testing-daily-loan');
     File::ensureDirectoryExists($directory);
 
     $path = $directory . DIRECTORY_SEPARATOR . $fileName;
@@ -79,6 +79,26 @@ function createDailyLoanBackendBusinessHeaderCsv(string $fileName, string $perio
 
     return $path;
 }
+
+it('rejects backend source files outside configured import roots', function () {
+    $outsidePath = storage_path('framework/testing/backend-source-outside.csv');
+    File::ensureDirectoryExists(dirname($outsidePath));
+    File::put($outsidePath, "PERIODE,KODE_KANWIL1,CIFNO,NOMOR_REKENING1,BAKI_DEBET1\n");
+
+    try {
+        $request = Request::create('/import/backend/daily-loan/local-file', 'POST', [
+            'source_path' => $outsidePath,
+            'mode' => 'queue',
+        ]);
+
+        $response = app(ImportDailyLoanBackendController::class)->importLocalCsv($request);
+
+        expect($response->getStatusCode())->toBe(422);
+        expect($response->getData(true)['message'] ?? '')->toContain('tidak ditemukan');
+    } finally {
+        File::delete($outsidePath);
+    }
+});
 
 it('queues backend daily loan import from a local csv file', function () {
     $csvPath = createDailyLoanBackendCsv('backend-daily-loan.csv');

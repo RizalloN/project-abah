@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Support\SargableDateFilter;
+
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -1276,13 +1278,11 @@ class ReportSnapshotBuilder
         $yoyStart = $yoyDate->copy()->startOfYear()->toDateString();
         $yoyEnd = $yoyDate->copy()->endOfMonth()->toDateString();
 
-        $prevSnapshot = DB::table('performance_pis_per_produk')
-            ->whereDate('posisi', '<=', $prevEnd)
+        $prevSnapshot = SargableDateFilter::apply(DB::table('performance_pis_per_produk'), 'posisi', '<=', $prevEnd)
             ->whereIn(DB::raw('UPPER(TRIM(kanca))'), self::NEW_PAYROLL_BRANCHES)
             ->max('posisi') ?? $snapshotPosisi;
 
-        $yoySnapshot = DB::table('performance_pis_per_produk')
-            ->whereDate('posisi', '<=', $yoyEnd)
+        $yoySnapshot = SargableDateFilter::apply(DB::table('performance_pis_per_produk'), 'posisi', '<=', $yoyEnd)
             ->whereIn(DB::raw('UPPER(TRIM(kanca))'), self::NEW_PAYROLL_BRANCHES)
             ->max('posisi') ?? $snapshotPosisi;
 

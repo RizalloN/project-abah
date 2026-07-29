@@ -4,20 +4,22 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Http\Controllers\Import\Concerns\AuthorizesImportSourceFiles;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ReportDataSyncService;
+use App\Support\SargableDateFilter;
 use App\Support\StrictDateParser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon; 
 
 class ImportFileBrimoController extends Controller
 {
     use AllocatesGapIds;
+    use AuthorizesImportSourceFiles;
     use SmartCsvImportSupport;
 
     private const BULK_LOAD_TEMP_DIR = 'app/import_bulk';
@@ -267,30 +269,46 @@ class ImportFileBrimoController extends Controller
 
     public function upload(Request $request)
     {
-        $request->validate(['id_report' => 'required', 'file' => 'required|file|mimes:rar']);
-        $folderName = 'import_' . date('Ymd_His') . '_' . Str::random(5);
-        $storagePath = storage_path('app/imports/' . $folderName);
-        if (!file_exists($storagePath)) { mkdir($storagePath, 0777, true); }
+        $request->validate([
+            'id_report' => ['required'],
+            'file' => ['required', 'file', 'mimes:rar', 'max:' . $this->configuredImportUploadMaxKilobytes()],
+        ]);
+
         $file = $request->file('file');
-        $fileName = $file->getClientOriginalName();
-        $file->move($storagePath, $fileName);
-        $fullPath = $storagePath . '/' . $fileName;
-        $extractPath = $storagePath . '/extracted';
-        if (!file_exists($extractPath)) { mkdir($extractPath, 0777, true); }
-        $command = '"C:\Program Files\7-Zip\7z.exe" x "' . $fullPath . '" -o"' . $extractPath . '" -y';
-        exec($command);
-        $files = [];
-        $rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($extractPath));
-        foreach ($rii as $fileItem) {
-            if ($fileItem->isDir()) continue;
-            $files[] = ['name' => $fileItem->getFilename(), 'path' => $fileItem->getPathname()];
+        $storagePath = $this->createSecureImportDirectory();
+        $storedUpload = $this->storeImportUpload($file, $storagePath);
+        $fullPath = $storedUpload['path'];
+
+        try {
+            $files = $this->extractImportArchive($fullPath, $storagePath);
+        } catch (\Throwable $e) {
+            $this->cleanupAuthorizedImportDirectory($fullPath);
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+
+            return back()->with('error', $e->getMessage());
         }
+
         session([
             'import_files'      => $files,
             'active_id_report'  => $request->input('id_report'),
             'import_type'       => 'brimo',
         ]);
-        return redirect()->route('import.select');
+
+        $selectUrl = route('import.select');
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'success',
+                'redirect' => $selectUrl,
+            ]);
+        }
+
+        return redirect()->to($selectUrl);
     }
 
     public function preview(Request $request)
@@ -300,7 +318,7 @@ class ImportFileBrimoController extends Controller
         ini_set('max_execution_time', 0); 
 
         $request->validate(['file_path' => 'required|string', 'delimiter' => 'nullable|string']);
-        $filePath = $request->input('file_path');
+        $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
         $currentDelimiter = $request->input('delimiter', 'auto');
         if (!file_exists($filePath)) { return back()->with('error', 'File tidak ditemukan di server.'); }
         $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
@@ -426,7 +444,7 @@ class ImportFileBrimoController extends Controller
             'delimiter' => 'required|string'
         ]);
 
-        $filePath = $request->input('file_path');
+        $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
         $selectedColumns = $request->input('selected_columns');
         $activeFilters = json_decode($request->input('active_filters_json'), true) ?: [];
         $currentDelimiter = $request->input('delimiter', 'auto');
@@ -620,7 +638,7 @@ class ImportFileBrimoController extends Controller
 
         if (in_array($tableName, ['user_brimo_rpt_v2', 'user_brimo_fin'])) {
             if ($samplePosisi) {
-                $isDuplicate = DB::table($tableName)->whereDate('posisi', $samplePosisi)->exists();
+                $isDuplicate = SargableDateFilter::apply(DB::table($tableName), 'posisi', '=', $samplePosisi)->exists();
                 if ($isDuplicate) {
                     $duplicateText = "Data untuk tanggal POSISI <b>$samplePosisi</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
                 }
@@ -637,7 +655,7 @@ class ImportFileBrimoController extends Controller
                     $duplicateText = "Data untuk PERIODE <b>$samplePeriode</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
                 }
             } elseif ($samplePosisi) {
-                $isDuplicate = DB::table($tableName)->whereDate('posisi', $samplePosisi)->exists();
+                $isDuplicate = SargableDateFilter::apply(DB::table($tableName), 'posisi', '=', $samplePosisi)->exists();
                 if ($isDuplicate) {
                     $duplicateText = "Data untuk tanggal POSISI <b>$samplePosisi</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
                 }
@@ -645,10 +663,7 @@ class ImportFileBrimoController extends Controller
         }
 
         if ($isDuplicate) {
-            $importDir = dirname(dirname($filePath));
-            if (strpos($importDir, 'imports') !== false && File::exists($importDir)) {
-                File::deleteDirectory($importDir);
-            }
+            $this->cleanupAuthorizedImportDirectory($filePath);
             
             $response = [
                 'status' => 'warning',
@@ -763,10 +778,7 @@ class ImportFileBrimoController extends Controller
             }
         }
 
-        $importDir = dirname(dirname($filePath));
-        if (strpos($importDir, 'imports') !== false && File::exists($importDir)) {
-            File::deleteDirectory($importDir);
-        }
+        $this->cleanupAuthorizedImportDirectory($filePath);
 
         if ($totalFailed > 0) {
             $response = [

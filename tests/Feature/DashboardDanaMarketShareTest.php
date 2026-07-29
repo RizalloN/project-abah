@@ -1,12 +1,15 @@
 <?php
 
 use App\Models\User;
+use App\Http\Controllers\DashboardSimpananController;
+use App\Http\Controllers\PublicWorkbookController;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Queue;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
@@ -787,6 +790,7 @@ it('refreshes the mapping geography workbook from the configured Google Sheet ex
 });
 
 it('uses the local mapping workbook fallback when the Google Sheet cannot be reached', function (): void {
+    Queue::fake();
     $fallbackPath = storage_path('app/testing-market-share-mapping-fallback.xlsx');
     createMarketShareMappingWorkbookFixture($fallbackPath);
 
@@ -809,9 +813,7 @@ it('uses the local mapping workbook fallback when the Google Sheet cannot be rea
         ->assertSee('03212 - DOLOPO');
 
     expect(File::exists(storage_path('app/testing-market-share-mapping.xlsx')))->toBeFalse();
-    Http::assertSent(function ($request): bool {
-        return $request->url() === 'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/export?format=xlsx';
-    });
+    Http::assertNothingSent();
 });
 
 it('uses the geography workspace by default while retaining the configured google sheet', function (): void {
@@ -842,6 +844,7 @@ it('uses the geography workspace by default while retaining the configured googl
 
 
 it('serves market share workbook through a protected public token endpoint', function (): void {
+    Queue::fake();
     $sourceUrl = 'https://example.com/market-share.xlsx';
     $token = 'market-token-test';
     $path = storage_path('app/testing-market-share.xlsx');
@@ -860,6 +863,8 @@ it('serves market share workbook through a protected public token endpoint', fun
             ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
         ),
     ]);
+
+    (new PublicWorkbookController())->refreshMarketShareSource();
 
     $this->get('/workbooks/market-share.xlsx?token=wrong')
         ->assertNotFound();
@@ -964,6 +969,8 @@ it('normalizes pasted office iframe sources before fetching mapping workbook', f
             ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
         );
     });
+
+    (new DashboardSimpananController())->refreshMarketShareMappingSource();
 
     $this->get('/workbooks/market-share-mapping.xlsx?token=' . $token)
         ->assertOk();

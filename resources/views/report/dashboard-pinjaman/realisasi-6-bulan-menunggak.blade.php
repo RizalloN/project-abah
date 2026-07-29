@@ -381,13 +381,13 @@
         background: #10b981;
     }
 
-    @media (max-width: 991.98px) {
+    @media (max-width: 1199.98px) {
         .six-arrears-filter-grid {
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
         .six-arrears-summary {
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
         .six-arrears-actions {
@@ -649,7 +649,7 @@
             if (!rows.length) {
                 bodyEl.innerHTML = `<tr><td colspan="12" class="six-arrears-empty">
                     <i class="fas fa-info-circle"></i>
-                    Tidak ada debitur yang memenuhi filter realisasi M-${rangeVal} s/d periode terpilih, kolek minimal 2, dan total tunggakan > 0.
+                    Tidak ada debitur yang memenuhi filter realisasi M-${escapeHtml(rangeVal)} s/d periode terpilih, kolek minimal 2, dan total tunggakan > 0.
                 </td></tr>`;
                 return;
             }
@@ -823,4 +823,3 @@
     });
 </script>
 @endpush
-

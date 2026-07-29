@@ -137,6 +137,31 @@ beforeEach(function (): void {
             'tunggakan_kecil' => '500',
             'tunggakan_pokok' => '6,000',
         ],
+        [
+            'cras_uuid' => 'ngawi-npl',
+            'cras_periode' => '2026-06-30',
+            'ket_kanca' => 'KC Ngawi',
+            'br_number' => '06429',
+            'ket_unit_kerja' => 'UNIT NGAWI',
+            'sektor_ekonomi' => 'PERDAGANGAN',
+            'sub_sektor_ekonomi' => 'GROSIR',
+            'loan_type' => 'KUPEDES',
+            'segmen' => 'MIKRO',
+            'ket_produk_tiering' => 'TIER 2',
+            'kualitas' => 'NPL',
+            'plafond' => '2,700,000',
+            'baki_debet' => '2,400,000',
+            'jumlah_debitur' => '3',
+            'jumlah_rekening' => '3',
+            'biaya_ckpn' => '90,000',
+            'ckpn_mo' => '85,000',
+            'realisasi_ph' => '40,000',
+            'recovery_total' => '18,000',
+            'saldo_ph' => '15,000',
+            'tunggakan_bunga' => '12,000',
+            'tunggakan_kecil' => '3,000',
+            'tunggakan_pokok' => '35,000',
+        ],
     ]);
 });
 
@@ -160,6 +185,11 @@ it('renders the CRAS mapping workspace and navigation entry', function (): void 
         ->assertSee('Loan Type')
         ->assertSee('Produk Tiering')
         ->assertSee('Tunggakan Pokok')
+        ->assertSee('Fokus Peta dan Peringkat')
+        ->assertSee('Filter Portofolio Lanjutan')
+        ->assertSee('Wilayah yang Perlu Dilihat')
+        ->assertSee('NPL Terbesar')
+        ->assertSee('SML Terbesar')
         ->assertSee('id="crasPortfolioMap"', false)
         ->assertSee('Mapping CRAS');
 });
@@ -183,6 +213,9 @@ it('aggregates text metrics and applies all CRAS portfolio filters', function ()
         ->assertJsonPath('ready', true)
         ->assertJsonPath('filters.selected.wilayah', 'madiun')
         ->assertJsonPath('filters.selected.sektor', 'PERTANIAN')
+        ->assertJsonPath('filters.options.sub_sektor.1.value', 'PADI')
+        ->assertJsonPath('filters.options.loan_type.1.value', 'KUPEDES')
+        ->assertJsonPath('filters.options.kualitas.1.value', '1')
         ->assertJsonPath('heatmap.selected', 'total_tunggakan')
         ->assertJsonPath('coverage.source_row_count', 1)
         ->assertJsonPath('coverage.total_unit_count', 1)
@@ -202,6 +235,37 @@ it('aggregates text metrics and applies all CRAS portfolio filters', function ()
         ->assertJsonPath('metrics.total_tunggakan', 21000);
 });
 
+it('calculates NPL and SML exposure for regional mapping and ranking', function (): void {
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', [
+        'wilayah' => 'all',
+        'metric' => 'npl_os',
+    ]));
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('ready', true)
+        ->assertJsonPath('heatmap.selected', 'npl_os')
+        ->assertJsonPath('heatmap.options.0.key', 'baki_debet')
+        ->assertJsonPath('heatmap.options.1.key', 'npl_os')
+        ->assertJsonPath('heatmap.options.2.key', 'sml_os')
+        ->assertJsonPath('coverage.source_row_count', 4)
+        ->assertJsonPath('metrics.baki_debet', 6200000)
+        ->assertJsonPath('metrics.npl_os', 2400000)
+        ->assertJsonPath('metrics.sml_os', 1800000)
+        ->assertJsonPath('metrics.npl_debitur', 3)
+        ->assertJsonPath('metrics.sml_debitur', 1)
+        ->assertJsonPath('metrics.npl_ratio', 38.71)
+        ->assertJsonPath('metrics.sml_ratio', 29.03)
+        ->assertJsonPath('units.2.branch', 'KC Ngawi')
+        ->assertJsonPath('units.2.values.npl_os', 2400000)
+        ->assertJsonPath('units.2.values.npl_ratio', 100)
+        ->assertJsonPath('units.3.branch', 'KC Ponorogo')
+        ->assertJsonPath('units.3.values.sml_os', 1800000)
+        ->assertJsonPath('units.3.values.sml_ratio', 100);
+});
+
 it('forces a restricted user to their own CRAS branch', function (): void {
     $user = User::factory()->create(['pn' => '0049']);
 
@@ -213,6 +277,8 @@ it('forces a restricted user to their own CRAS branch', function (): void {
         ->assertOk()
         ->assertJsonPath('ready', true)
         ->assertJsonPath('filters.selected.wilayah', 'magetan')
+        ->assertJsonCount(1, 'filters.options.wilayah')
+        ->assertJsonPath('filters.options.wilayah.0.value', 'magetan')
         ->assertJsonPath('coverage.source_row_count', 1)
         ->assertJsonPath('metrics.plafond', 900000)
         ->assertJsonPath('metrics.baki_debet', 750000)
@@ -228,5 +294,10 @@ it('keeps responsive map and table guardrails in the CRAS view', function (): vo
         ->toContain('@media (max-width: 340px)')
         ->toContain('overflow: auto')
         ->toContain('map.invalidateSize')
-        ->toContain('window.L.map');
+        ->toContain('window.L.map')
+        ->toContain('data-cras-ranking-mode="district"')
+        ->toContain('function sortedDistricts')
+        ->toContain('function renderInsights')
+        ->toContain("npl: ['#fff1f3'")
+        ->toContain("sml: ['#fff8e8'");
 });

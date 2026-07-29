@@ -25,6 +25,8 @@
         --daily-header-group-height: 30px;
         --daily-header-column-height: 48px;
         --daily-header-rka-height: 28px;
+        --daily-header-column-top: var(--daily-header-group-height);
+        --daily-header-rka-top: calc(var(--daily-header-group-height) + var(--daily-header-column-height));
         --daily-table-blue: #0070c0;
         --daily-table-blue-dark: #003b70;
         --daily-table-blue-mid: #005b9f;
@@ -1019,7 +1021,7 @@
         z-index: 140;
     }
     .daily-table thead tr.column-row th {
-        top: var(--daily-header-group-height);
+        top: var(--daily-header-column-top);
         height: var(--daily-header-column-height);
         z-index: 130;
         background: var(--daily-table-blue-mid);
@@ -1031,7 +1033,7 @@
         background: var(--daily-table-cyan);
     }
     .daily-table thead tr.rka-sub-row th {
-        top: calc(var(--daily-header-group-height) + var(--daily-header-column-height));
+        top: var(--daily-header-rka-top);
         height: var(--daily-header-rka-height);
         z-index: 125;
     }
@@ -1040,7 +1042,7 @@
         z-index: 150 !important;
     }
     .daily-table thead th[rowspan="2"] {
-        top: var(--daily-header-group-height);
+        top: var(--daily-header-column-top);
         z-index: 135;
     }
     .daily-table thead th.rka-period-cell {
@@ -1745,8 +1747,9 @@
         .daily-table-wrap {
             position: relative !important;
             top: auto !important;
-            max-height: none !important;
-            min-height: min(320px, 54vh);
+            max-height: max(240px, min(68dvh, 640px)) !important;
+            min-height: min(320px, 54dvh);
+            overflow: auto !important;
         }
     }
 
@@ -1784,8 +1787,9 @@
         }
 
         .daily-table-wrap {
-            max-height: none !important;
-            min-height: min(280px, 58vh);
+            max-height: max(220px, min(60dvh, 520px)) !important;
+            min-height: min(220px, 48dvh);
+            overflow: auto !important;
         }
 
         .daily-table-panel {
@@ -2862,6 +2866,28 @@
             return Math.max(0, headerHeight - TABLE_STICKY_TOP_TRIM);
         };
 
+        const syncStickyHeaderOffsets = function () {
+            if (!tableWrap) {
+                return [];
+            }
+
+            const headerRows = Array.from(tableWrap.querySelectorAll('.daily-table thead tr'));
+            const groupRow = headerRows.find(function (row) { return row.classList.contains('group-row'); });
+            const columnRow = headerRows.find(function (row) { return row.classList.contains('column-row'); });
+            const groupHeight = groupRow ? Math.ceil(groupRow.getBoundingClientRect().height || 0) : 0;
+            const columnHeight = columnRow ? Math.ceil(columnRow.getBoundingClientRect().height || 0) : 0;
+
+            if (groupHeight > 0) {
+                tableWrap.style.setProperty('--daily-header-column-top', groupHeight + 'px');
+            }
+
+            if (groupHeight > 0 && columnHeight > 0) {
+                tableWrap.style.setProperty('--daily-header-rka-top', (groupHeight + columnHeight) + 'px');
+            }
+
+            return headerRows;
+        };
+
         const syncTableViewport = function () {
             if (!tableWrap || !tableRegion || !body) {
                 return;
@@ -2870,7 +2896,7 @@
             const stickyTop = getStickyTopOffset();
             tableRegion.style.setProperty('--daily-table-sticky-top', stickyTop + 'px');
 
-            const headerRows = Array.from(tableWrap.querySelectorAll('.daily-table thead tr'));
+            const headerRows = syncStickyHeaderOffsets();
             const visibleRows = Array.from(body.querySelectorAll('tr')).filter(function (row) {
                 return !row.classList.contains('row-hidden-by-scope') && window.getComputedStyle(row).display !== 'none';
             });
@@ -2910,6 +2936,17 @@
         const scheduleTableViewportSync = function () {
             requestAnimationFrame(syncTableViewport);
         };
+
+        if (window.ResizeObserver && tableWrap) {
+            const stickyHeaderResizeObserver = new ResizeObserver(scheduleTableViewportSync);
+            tableWrap.querySelectorAll('.daily-table thead tr').forEach(function (row) {
+                stickyHeaderResizeObserver.observe(row);
+            });
+        }
+
+        if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(scheduleTableViewportSync);
+        }
 
         const populateSelect = function (select, options, selectedValue) {
             if (!select) {

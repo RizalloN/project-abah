@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Http\Controllers\Import\ImportExcelController;
 use App\Http\Controllers\Import\ImportIndexController;
+use App\Models\User;
 use App\Services\Import\ImportCleanupService;
 use App\Services\Import\ImportDuplicateGuardService;
 use App\Services\Import\ImportExecutionService;
@@ -709,6 +710,10 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
 
     public function test_simpanan_chunk_upload_reassembles_large_csv_and_opens_preview_stream(): void
     {
+        $user = new User();
+        $user->forceFill(['id' => 991, 'pn' => 'security-chunk-owner', 'role' => 'admin']);
+        $this->actingAs($user);
+
         $controller = app(ImportSimpananMultiPnCsvController::class);
         $testingDirectory = storage_path('framework/testing');
         if (!is_dir($testingDirectory)) {

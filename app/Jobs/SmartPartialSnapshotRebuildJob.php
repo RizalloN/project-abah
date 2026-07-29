@@ -23,8 +23,11 @@ class SmartPartialSnapshotRebuildJob implements ShouldQueue
     use InteractsWithQueue;
     use Queueable;
     use SerializesModels;
+    use SnapshotJobRetryWindow;
 
     public int $timeout = 0;
+    public int $tries = 40;
+    public array $backoff = [60, 300];
 
     public function __construct(
         public string $tableName,
@@ -200,4 +203,3 @@ class SmartPartialSnapshotRebuildJob implements ShouldQueue
     }
 
 }
-

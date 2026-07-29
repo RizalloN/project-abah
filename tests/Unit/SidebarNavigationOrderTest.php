@@ -24,4 +24,13 @@ class SidebarNavigationOrderTest extends TestCase
             $this->assertStringContainsString('nav-item ' . $class, $source);
         }
     }
+
+    public function test_dashboard_pinjaman_exposes_internal_run_off_report(): void
+    {
+        $source = file_get_contents(resource_path('views/layouts/sidebar.blade.php'));
+
+        $this->assertStringContainsString("route('report.dashboard-pinjaman.run-off')", $source);
+        $this->assertStringContainsString('<p>Run OFF</p>', $source);
+        $this->assertStringNotContainsString('1sFCcyfUadZq5ZVUrFtLeCDhpz_r_B8aj', $source);
+    }
 }

@@ -598,6 +598,15 @@
         const areaBranches = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
         const initialSelectedBranch = @json(($mismatchSelectedBranches ?? ['AREA_6_ALL'])[0] ?? 'AREA_6_ALL');
 
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
         initMultiSelect(branchSelect, 'Pilih Kantor Cabang');
 
         function getSelectedBranch() {
@@ -723,7 +732,7 @@
             body.innerHTML = tableRows.map((row, i) => `
                 <tr>
                     <td>${i+1}</td>
-                    <td>${row.label || row.unit}</td>
+                    <td>${escapeHtml(row.label || row.unit)}</td>
                     <td>${formatNumber(row.memburuk_count)}</td>
                     <td class="text-right">${formatCurrency(row.memburuk_os)}</td>
                     <td>${formatNumber(row.kolek_membaik_count)}</td>
@@ -777,7 +786,8 @@
                 options.forEach(opt => {
                     const item = document.createElement('div');
                     item.className = `loan-dropdown-option ${opt.selected ? 'is-active' : ''}`;
-                    item.innerHTML = `<div class="loan-dropdown-check"><i class="fas fa-check"></i></div><span>${opt.text}</span>`;
+                    item.innerHTML = '<div class="loan-dropdown-check"><i class="fas fa-check"></i></div><span></span>';
+                    item.querySelector('span').textContent = opt.text;
                     item.addEventListener('click', (e) => {
                         e.stopPropagation();
                         if (opt.value === areaAllValue) {

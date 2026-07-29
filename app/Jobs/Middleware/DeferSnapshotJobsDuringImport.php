@@ -42,19 +42,7 @@ class DeferSnapshotJobsDuringImport
                 return $next($job);
             }
 
-            $maxDeferAttempts = max(1, (int) config('import.snapshot.max_defer_attempts', 30));
             $attempts = method_exists($job, 'attempts') ? (int) $job->attempts() : 0;
-            if ($attempts >= $maxDeferAttempts) {
-                Log::warning('Snapshot job forced after reaching max import deferrals.', [
-                    'job' => method_exists($job, 'resolveName') ? (string) $job->resolveName() : $job::class,
-                    'source_table' => $this->sourceTable,
-                    'attempts' => $attempts,
-                    'max_defer_attempts' => $maxDeferAttempts,
-                ]);
-
-                return $next($job);
-            }
-
             $delay = max(1, (int) config('import.snapshot.defer_seconds', 60));
             $jobName = method_exists($job, 'resolveName')
                 ? (string) $job->resolveName()
@@ -65,7 +53,6 @@ class DeferSnapshotJobsDuringImport
                 'source_table' => $this->sourceTable,
                 'delay_seconds' => $delay,
                 'attempts' => $attempts,
-                'max_defer_attempts' => $maxDeferAttempts,
             ]);
 
             if (method_exists($job, 'release')) {

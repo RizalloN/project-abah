@@ -2,12 +2,15 @@
 
 namespace Tests\Unit;
 
+use App\Http\Controllers\DashboardSimpananController;
 use App\Http\Controllers\Report\KinerjaRmMikroReportController;
+use App\Jobs\SyncImportedReportJob;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
 use Tests\TestCase;
@@ -156,6 +159,70 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
 
         $this->assertSame(['2026-05-17', '2026-04-30'], $periods->all());
         $this->assertSame('2026-05-17', $this->invokePrivateMethod($controller, 'resolveSelectedPeriod', $periods, '2026-05-15'));
+    }
+
+    public function test_embedded_payload_serves_last_ready_period_while_latest_daily_loan_is_synced(): void
+    {
+        Queue::fake();
+
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-07-24',
+            'segmen_kinerja' => null,
+            'produk_kinerja' => null,
+            'description' => 'Kupedes',
+            'branch1' => '001',
+            'unit1' => 'UNIT BARU',
+            'cabang1' => 'KC MADIUN',
+            'pn_pengelola1' => '0009 - Mantri Belum Normal',
+            'nomor_rekening1' => 'LATEST-UNREADY',
+            'plafon' => 200000000,
+            'baki_debet1' => 180000000,
+            'kol_adk1' => 1,
+            'kolek' => 1,
+            'tgl_realisasi' => '2026-07-24',
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-07-23',
+            'produk_kinerja' => 'KUPEDES',
+            'description' => 'Kupedes',
+            'pn_pemutus_normalized' => '123',
+            'nomor_rekening1' => 'READY-MANTRI',
+            'tgl_realisasi' => '2026-07-23',
+        ]);
+        DB::table('brihc')->insert([
+            'pn' => '123',
+            'jabatan' => 'KAUNIT',
+        ]);
+        DB::table('performance_rm_snapshots')->insert([
+            'periode' => '2026-07-23',
+            'cabang' => 'KC MADIUN',
+            'unit' => 'UNIT TEST',
+            'branch_code' => '001',
+            'rm' => '0001 - RM READY',
+            'segmen' => 'MICRO',
+            'produk' => 'KUR-MIKRO',
+            'lancar_deb' => 1,
+            'lancar_os' => 90000000,
+            'total_deb' => 1,
+            'loan_os' => 90000000,
+            'realisasi_deb' => 1,
+            'realisasi_os' => 100000000,
+        ]);
+
+        $controller = new KinerjaRmMikroReportController();
+        $decision = $controller->buildEmbeddedPayload('unit_pemutus', '2026-07-24', true);
+        $rmKur = $controller->buildEmbeddedPayload('per_rm', '2026-07-24', false);
+
+        $this->assertSame('2026-07-24', $decision['meta']['requested_period']);
+        $this->assertSame('2026-07-23', $decision['meta']['data_period']);
+        $this->assertTrue($decision['meta']['refresh_pending']);
+        $this->assertNotEmpty($decision['rows']);
+        $this->assertSame('2026-07-23', $rmKur['meta']['data_period']);
+        $this->assertSame('RM READY', $rmKur['rows'][0]['nama']);
+        Queue::assertPushedOn('snapshots-priority', SyncImportedReportJob::class, function (SyncImportedReportJob $job): bool {
+            return $job->tableName === 'daily_loan_dinamis'
+                && $job->periodHint === '2026-07-24';
+        });
     }
 
     public function test_rm_mikro_kur_payload_uses_kur_ritel_2015_and_excludes_kur_mikro_baru_when_snapshot_is_missing(): void
@@ -455,6 +522,70 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertStringNotContainsString("row.addEventListener('click'", $view);
     }
 
+    public function test_presentation_mantri_categories_are_aggregated_per_branch(): void
+    {
+        Queue::fake();
+
+        $fixtures = [
+            ['pn' => '0101', 'name' => 'Extreme', 'amount' => 100000000],
+            ['pn' => '0102', 'name' => 'Low', 'amount' => 500000000],
+            ['pn' => '0103', 'name' => 'Mid', 'amount' => 900000000],
+            ['pn' => '0104', 'name' => 'High', 'amount' => 1300000000],
+        ];
+
+        foreach ($fixtures as $index => $fixture) {
+            $this->insertBrihcPemasar([
+                'uniqueid_namareport' => 'PRESENTATION-CATEGORY-' . $fixture['pn'],
+                'completename' => 'Mantri ' . $fixture['name'],
+                'pn_mantri' => '6494 | ' . $fixture['pn'] . ' - Mantri ' . $fixture['name'],
+            ]);
+            $this->insertDailyLoan([
+                'periode' => '2026-05-31',
+                'tgl_realisasi' => '2026-05-15',
+                'pn_pengelola1' => $fixture['pn'] . ' - Mantri ' . $fixture['name'],
+                'rm_normalized' => $fixture['pn'] . ' - MANTRI ' . strtoupper($fixture['name']),
+                'nomor_rekening1' => 'CATEGORY-' . ($index + 1),
+                'plafon' => $fixture['amount'],
+            ]);
+        }
+
+        $payload = $this->invokePrivateMethod(
+            new DashboardSimpananController(),
+            'buildPresentationExtremeLowMantri',
+            '2026-05-31'
+        );
+        $madiun = collect($payload['rows'])->firstWhere('branch_office', 'KC MADIUN');
+        $emptyBranch = collect($payload['rows'])
+            ->first(fn (array $row): bool => (int) ($row['total_mantri'] ?? 0) === 0);
+
+        $this->assertTrue($payload['available']);
+        $this->assertCount(4, $payload['rows']);
+        $this->assertNotNull($madiun);
+        $this->assertSame(4, $madiun['total_mantri']);
+        $this->assertSame(1, $madiun['extreme_low']['deb']);
+        $this->assertSame(1, $madiun['low']['deb']);
+        $this->assertSame(2, $madiun['under_800']['deb']);
+        $this->assertSame(1, $madiun['mid']['deb']);
+        $this->assertSame(1, $madiun['high']['deb']);
+        $this->assertSame(
+            $madiun['total_mantri'],
+            $madiun['extreme_low']['deb']
+                + $madiun['low']['deb']
+                + $madiun['mid']['deb']
+                + $madiun['high']['deb']
+        );
+        $this->assertSame(
+            $madiun['under_800']['deb'],
+            $madiun['extreme_low']['deb'] + $madiun['low']['deb']
+        );
+        $this->assertEqualsWithDelta(25.0, $madiun['extreme_low']['pct'], 0.0001);
+        $this->assertEqualsWithDelta(50.0, $madiun['under_800']['pct'], 0.0001);
+        $this->assertNotNull($emptyBranch);
+        $this->assertSame(0, $emptyBranch['low']['deb']);
+        $this->assertSame(0, $emptyBranch['mid']['deb']);
+        $this->assertSame(0, $emptyBranch['high']['deb']);
+    }
+
     public function test_rm_mikro_kur_payload_hides_rm_with_zero_monthly_realisasi(): void
     {
         DB::table('performance_rm_snapshots')->insert([
@@ -608,6 +739,109 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertStringContainsString('rm-mikro-sortable', $blade);
         $this->assertStringContainsString('sortTableByColumn', $blade);
         $this->assertStringContainsString('aria-sort', $blade);
+    }
+
+    public function test_presentation_micro_period_falls_back_until_latest_shadow_columns_are_ready(): void
+    {
+        $this->insertDailyLoan([
+            'periode' => '2026-07-23',
+            'segmen_kinerja' => 'MICRO',
+            'produk_kinerja' => 'KUPEDES',
+            'rm_normalized' => '0001 - MANTRI SIAP',
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-07-24',
+            'segmen_kinerja' => null,
+            'produk_kinerja' => null,
+            'rm_normalized' => null,
+        ]);
+
+        $controller = new DashboardSimpananController();
+
+        $this->assertSame(
+            '2026-07-23',
+            $this->invokePrivateMethod($controller, 'resolvePresentationMicroPeriod', '2026-07-24')
+        );
+
+        DB::table('daily_loan_dinamis')
+            ->where('periode', '2026-07-24')
+            ->update([
+                'segmen_kinerja' => 'MICRO',
+                'produk_kinerja' => 'KUPEDES',
+                'rm_normalized' => '0002 - MANTRI TERBARU',
+            ]);
+        Cache::flush();
+
+        $this->assertSame(
+            '2026-07-24',
+            $this->invokePrivateMethod($controller, 'resolvePresentationMicroPeriod', '2026-07-24')
+        );
+    }
+
+    public function test_presentation_rm_kur_tiering_is_recapped_per_branch(): void
+    {
+        Queue::fake();
+
+        DB::table('performance_rm_snapshots')->insert([
+            [
+                'periode' => '2026-07-24',
+                'cabang' => 'KC MADIUN',
+                'unit' => 'UNIT A',
+                'branch_code' => '001',
+                'rm' => '0001 - RM SATU',
+                'segmen' => 'MICRO',
+                'produk' => 'KUR-MIKRO',
+                'lt_250_realisasi_deb' => 2,
+                'lt_250_realisasi_os' => 200000000,
+                'gt_250_realisasi_deb' => 1,
+                'gt_250_realisasi_os' => 300000000,
+            ],
+            [
+                'periode' => '2026-07-24',
+                'cabang' => 'KC MADIUN',
+                'unit' => 'UNIT B',
+                'branch_code' => '002',
+                'rm' => '0002 - RM DUA',
+                'segmen' => 'MICRO',
+                'produk' => 'KUR-MIKRO',
+                'lt_250_realisasi_deb' => 3,
+                'lt_250_realisasi_os' => 400000000,
+                'gt_250_realisasi_deb' => 2,
+                'gt_250_realisasi_os' => 600000000,
+            ],
+            [
+                'periode' => '2026-07-24',
+                'cabang' => 'KC NGAWI',
+                'unit' => 'UNIT C',
+                'branch_code' => '003',
+                'rm' => '0003 - RM TIGA',
+                'segmen' => 'MICRO',
+                'produk' => 'KUR-MIKRO',
+                'lt_250_realisasi_deb' => 4,
+                'lt_250_realisasi_os' => 500000000,
+                'gt_250_realisasi_deb' => 1,
+                'gt_250_realisasi_os' => 350000000,
+            ],
+        ]);
+
+        $payload = $this->invokePrivateMethod(
+            new DashboardSimpananController(),
+            'buildPresentationRmKurTiering',
+            '2026-07-24'
+        );
+
+        $this->assertTrue($payload['available']);
+        $this->assertSame('2026-07-24', $payload['data_period']);
+        $this->assertCount(4, $payload['rows']);
+        $this->assertSame('KC MADIUN', $payload['rows'][0]['cabang']);
+        $this->assertSame(5, $payload['rows'][0]['lt_250']['deb']);
+        $this->assertSame(600000000.0, $payload['rows'][0]['lt_250']['os']);
+        $this->assertSame(3, $payload['rows'][0]['gt_250']['deb']);
+        $this->assertSame(900000000.0, $payload['rows'][0]['gt_250']['os']);
+        $this->assertSame(0, $payload['rows'][1]['total']['deb']);
+        $this->assertSame('KC NGAWI', $payload['rows'][2]['cabang']);
+        $this->assertSame(13, $payload['total']['total']['deb']);
+        $this->assertSame(2350000000.0, $payload['total']['total']['os']);
     }
 
     private function insertDailyLoan(array $overrides): void

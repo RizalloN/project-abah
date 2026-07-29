@@ -288,7 +288,7 @@ class DashboardHarianController extends Controller
     private function keragaanUkerPayload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit, string $dataType): array
     {
         $cacheKey = 'dashboard_harian:keragaan_uker:' . md5(json_encode([
-            'schema' => 'v2-gi405-direct-cache-version',
+            'schema' => 'v3-uker-label-and-table-scroll-fix',
             'version' => $this->reportCacheVersion(),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,

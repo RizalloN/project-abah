@@ -24,40 +24,22 @@ class DrainSnapshotDirtyPeriodsCommand extends Command
 
     public function handle(SnapshotDirtyPeriodService $dirtyPeriods): int
     {
-        $startedAt = microtime(true);
-        $maxRuntime = max(1, min(55, (int) $this->option('max-runtime')));
         $limit = max(1, (int) $this->option('limit'));
         $maxDispatch = max(1, (int) $this->option('max-rebuild-concurrency'));
         $queueThreshold = max(0, (int) $this->option('queue-threshold'));
         $sourceTable = trim((string) $this->option('source-table')) ?: null;
         $period = trim((string) $this->option('period')) ?: null;
 
-        $passes = 0;
+        $passes = 1;
         $dispatched = 0;
 
-        do {
-            $passes++;
-
-            if ($this->snapshotQueueIsBackpressured($queueThreshold)) {
-                $this->audit('snapshot_dirty_drain', 'skipped', [
-                    'message' => 'snapshots-parallel queue above threshold',
-                    'context' => ['queue_threshold' => $queueThreshold],
-                ]);
-                usleep(500_000);
-
-                continue;
-            }
-
+        if ($this->snapshotQueueIsBackpressured($queueThreshold)) {
+            $this->audit('snapshot_dirty_drain', 'skipped', [
+                'message' => 'snapshots-parallel queue above threshold',
+                'context' => ['queue_threshold' => $queueThreshold],
+            ]);
+        } else {
             $claims = $dirtyPeriods->claimDue(min($limit, $maxDispatch), $sourceTable, $period);
-            if ($claims === []) {
-                if ($dirtyPeriods->claimableCount($sourceTable, $period) === 0) {
-                    break;
-                }
-
-                usleep(500_000);
-
-                continue;
-            }
 
             foreach ($claims as $claim) {
                 ProcessSnapshotDirtyPeriodJob::dispatch($claim)->onQueue('snapshots-parallel');
@@ -73,7 +55,7 @@ class DrainSnapshotDirtyPeriodsCommand extends Command
                     ],
                 ]);
             }
-        } while ((microtime(true) - $startedAt) < $maxRuntime);
+        }
 
         $this->line(json_encode([
             'passes' => $passes,

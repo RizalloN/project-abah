@@ -22,7 +22,7 @@ class ProcessShadowBackfillJob implements ShouldQueue
 
     public function __construct(
         public array $periods,
-        public int $chunkSize = 50000,
+        public int $chunkSize = 10000,
         public int $sleepDelay = 0,
         public int $retryCount = 3,
         ?string $queueName = null,
@@ -75,8 +75,7 @@ class ProcessShadowBackfillJob implements ShouldQueue
             ]);
 
             if ($this->attempts() >= 5) {
-                $this->failed(new \Exception("Backfill command failed after 5 attempts"));
-                return;
+                throw new \RuntimeException('Backfill command failed after 5 attempts.');
             }
 
             $this->release(delay: $this->getBackoffDelay());
@@ -88,8 +87,7 @@ class ProcessShadowBackfillJob implements ShouldQueue
             ]);
 
             if ($this->attempts() >= 5) {
-                $this->failed($e);
-                return;
+                throw $e;
             }
 
             $this->release(delay: $this->getBackoffDelay());
@@ -121,13 +119,17 @@ class ProcessShadowBackfillJob implements ShouldQueue
         $completedOverall = 0;
 
         foreach ($this->periods as $period) {
-            $total = DB::table('daily_loan_dinamis')
-                ->where('periode', $period)
-                ->count();
-
-            $null = DB::table('daily_loan_dinamis')
+            $hasPendingRows = DB::table('daily_loan_dinamis')
                 ->where('periode', $period)
                 ->where(function ($q) {
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')
+                        && \Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
+                        $q->whereNull('shadow_built_at')
+                            ->orWhereColumn('shadow_built_at', '<', 'updated_at');
+
+                        return;
+                    }
+
                     $q->whereNull('segmen_kinerja')
                         ->orWhereNull('produk_kinerja')
                         ->orWhereNull('cabang_normalized')
@@ -144,16 +146,12 @@ class ProcessShadowBackfillJob implements ShouldQueue
                         });
                     }
 
-                    if (\Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')
-                        && \Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
-                        $q->orWhereNull('shadow_built_at')
-                            ->orWhereColumn('shadow_built_at', '<', 'updated_at');
-                    }
                 })
-                ->count();
+                ->exists();
 
-            $completed = $total - $null;
-            $pct = $total > 0 ? (100.0 * $completed / $total) : 100.0;
+            $total = 1;
+            $completed = $hasPendingRows ? 0 : 1;
+            $pct = $hasPendingRows ? 0.0 : 100.0;
 
             $stats[$period] = [
                 'total' => $total,

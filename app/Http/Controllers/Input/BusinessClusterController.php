@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Input;
 
 use App\Http\Controllers\Controller;
+use App\Rules\TrustedSpreadsheetUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -29,7 +30,7 @@ class BusinessClusterController extends Controller
 
         $validated = $request->validate([
             'nama_kanca' => ['required', 'string', Rule::in(self::KANCA_OPTIONS)],
-            'link_url' => ['required', 'url', 'max:2048'],
+            'link_url' => ['required', 'url', 'max:2048', new TrustedSpreadsheetUrl],
         ], [
             'nama_kanca.required' => 'Nama kanca wajib dipilih.',
             'nama_kanca.in' => 'Nama kanca tidak valid.',
@@ -39,15 +40,6 @@ class BusinessClusterController extends Controller
         ]);
 
         $linkUrl = trim((string) $validated['link_url']);
-        if (!Str::startsWith($linkUrl, ['http://', 'https://'])) {
-            return back()
-                ->withInput()
-                ->with('sweet_warning', [
-                    'title' => 'Link Tidak Valid',
-                    'text' => 'Link spreadsheet harus diawali http:// atau https://.',
-                ]);
-        }
-
         if (!Schema::hasTable(self::TABLE)) {
             return redirect()
                 ->route('import.index')
