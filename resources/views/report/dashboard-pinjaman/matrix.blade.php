@@ -142,7 +142,8 @@
         top: calc(100% + 8px);
         left: 0;
         width: 100%;
-        min-width: 320px;
+        min-width: min(320px, calc(100vw - 2rem));
+        max-width: calc(100vw - 2rem);
         background: rgba(255, 255, 255, 0.98);
         backdrop-filter: blur(25px);
         border: 1px solid rgba(226, 232, 240, 0.9);
@@ -393,6 +394,29 @@
         border-radius: 8px;
     }
 
+    .loan-table-heading > .d-flex {
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+    }
+
+    .loan-table-heading h5 {
+        min-width: 0;
+        flex: 1 1 340px;
+        overflow-wrap: anywhere;
+    }
+
+    .loan-table-heading .text-right {
+        display: flex;
+        flex: 0 1 auto;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.35rem;
+    }
+
+    .loan-table-heading .text-right .badge {
+        margin: 0 !important;
+    }
+
     @media (max-width: 1399.98px) {
         .loan-filter-shell .loan-filter-modern {
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -421,13 +445,28 @@
         .loan-filter-shell .loan-filter-modern {
             grid-template-columns: minmax(0, 1fr);
         }
+
+        .loan-dropdown-menu {
+            right: auto !important;
+            left: 0 !important;
+            width: min(100%, calc(100vw - 2rem));
+        }
+
+        .loan-table-heading h5,
+        .loan-table-heading .text-right {
+            flex-basis: 100%;
+        }
+
+        .loan-table-heading .text-right {
+            justify-content: flex-start;
+        }
     }
 </style>
 
 <div class="loan-dashboard pt-4 px-3">
     <div class="loan-recovery-header">
         <h1>Report Recovery</h1>
-        <p>Matrix kolektibilitas dengan recovery LW325 untuk turunan pokok/lunas dan PH dari Daily Loan Dinamis.</p>
+        <p>Matrix pergeseran kolektibilitas berbasis Daily Loan dan nominatif PH periode berjalan.</p>
     </div>
 
     <div id="loanMatrixPanel">
@@ -440,7 +479,7 @@
                             <span class="loan-filter-summary-copy">
                                 Posisi <strong id="loanActivePeriodMeta">{{ $formatMatrixPeriod($selectedPeriod) }}</strong>
                                 <span class="loan-filter-summary-separator">|</span>
-                                Delta <strong id="loanComparisonPeriodMeta">{{ $formatMatrixPeriod($comparisonPeriod) }}</strong>
+                                Pembanding <strong id="loanComparisonPeriodMeta">{{ $formatMatrixPeriod($comparisonPeriod) }}</strong>
                                 <span class="loan-filter-summary-separator">|</span>
                                 <span id="loanFilterSelectionSummary">Semua portofolio</span>
                             </span>
@@ -549,9 +588,10 @@
             <div class="card-body p-4">
                 <div class="loan-table-heading mb-4">
                     <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0 font-weight-bold text-dark"><i class="fas fa-th-large mr-2 text-muted"></i> Data Matriks Pergeseran <span id="loanMatrixPeriodBadge" class="text-primary ml-1" style="font-size: 0.9rem;">Posisi {{ $formatMatrixPeriod($selectedPeriod) }} | Delta MTD {{ $formatMatrixPeriod($comparisonPeriod) }}</span></h5>
+                        <h5 class="mb-0 font-weight-bold text-dark"><i class="fas fa-th-large mr-2 text-muted"></i> Data Matriks Pergeseran <span id="loanMatrixPeriodBadge" class="text-primary ml-1" style="font-size: 0.9rem;">Posisi {{ $formatMatrixPeriod($selectedPeriod) }} | Pembanding {{ $formatMatrixPeriod($comparisonPeriod) }}</span></h5>
                         <div class="text-right">
-                             <span class="badge badge-light border text-muted px-2 py-1" style="font-size: 0.7rem;">UNIT: IDR JUTA</span>
+                             <span id="loanReconciliationBadge" class="badge badge-light border text-muted px-2 py-1 mr-1" style="font-size: 0.7rem;">BELUM DIHITUNG</span>
+                             <span class="badge badge-light border text-muted px-2 py-1" style="font-size: 0.7rem;">UNIT: RUPIAH</span>
                         </div>
                     </div>
                 </div>
@@ -576,9 +616,9 @@
                         <table class="loan-matrix">
                             <thead>
                                 <tr>
-                                    <th class="matrix-before">Kualitas Delta MTD<br><span id="loanComparisonHeadLabel">{{ $formatMatrixPeriod($comparisonPeriod) }}</span></th>
+                                    <th class="matrix-before">Kualitas Posisi Awal<br><span id="loanComparisonHeadLabel">{{ $formatMatrixPeriod($comparisonPeriod) }}</span></th>
                                     <th colspan="{{ count($matrixColumns) }}" class="matrix-after-group">Kualitas Posisi <span id="loanCurrentHeadLabel">{{ $formatMatrixPeriod($selectedPeriod) }}</span></th>
-                                    <th rowspan="2" class="matrix-total-head">Delta MTD<br><span id="loanTotalValueHeader">per Baris</span></th>
+                                    <th rowspan="2" class="matrix-total-head">Total Posisi<br><span id="loanTotalValueHeader">Berjalan</span></th>
                                     <th colspan="4" class="matrix-subhead">Data Output (IDR)</th>
                                 </tr>
                                 <tr>
@@ -676,6 +716,7 @@
         const chip = document.getElementById('loanLoadingChip');
         const submitButton = document.getElementById('loanSubmitButton');
         const periodBadge = document.getElementById('loanMatrixPeriodBadge');
+        const reconciliationBadge = document.getElementById('loanReconciliationBadge');
         const activePeriodMeta = document.getElementById('loanActivePeriodMeta');
         const comparisonPeriodMeta = document.getElementById('loanComparisonPeriodMeta');
         const currentHeadLabel = document.getElementById('loanCurrentHeadLabel');
@@ -715,6 +756,7 @@
         let activeDrillAfterBucket = null;
         let activeDrillNextOffset = null;
         let activeDrillRenderedCount = 0;
+        let activeMatrixParams = null;
         let rowClickTimer = null;
         let isNavigatingAway = false;
         let filterReloadTimer = null;
@@ -749,7 +791,24 @@
         }
 
         function renderPositionDeltaLabel(selectedPeriod, comparisonPeriod) {
-            return `Posisi ${formatMatrixPeriodDate(selectedPeriod)} | Delta MTD ${formatMatrixPeriodDate(comparisonPeriod)}`;
+            return `Posisi ${formatMatrixPeriodDate(selectedPeriod)} | Pembanding ${formatMatrixPeriodDate(comparisonPeriod)}`;
+        }
+
+        function renderMatrixContextLabel(payload) {
+            const positionLabel = renderPositionDeltaLabel(payload?.selected_period, payload?.comparison_period);
+            if (!payload?.ph_period) return positionLabel;
+
+            const fallbackLabel = payload.ph_period_relation === 'fallback' ? ' (terakhir tersedia)' : '';
+            return `${positionLabel} | PH ${formatMatrixPeriodDate(payload.ph_period)}${fallbackLabel}`;
+        }
+
+        function syncMatrixContext(payload) {
+            if (!payload) return;
+            periodBadge.textContent = renderMatrixContextLabel(payload);
+            activePeriodMeta.textContent = formatMatrixPeriodDate(payload.selected_period);
+            comparisonPeriodMeta.textContent = formatMatrixPeriodDate(payload.comparison_period);
+            if (currentHeadLabel) currentHeadLabel.textContent = formatMatrixPeriodDate(payload.selected_period);
+            if (comparisonHeadLabel) comparisonHeadLabel.textContent = formatMatrixPeriodDate(payload.comparison_period);
         }
 
         function setFilterPanelOpen(open) {
@@ -792,6 +851,22 @@
             window.clearTimeout(snapshotWarmTimer);
         }
 
+        function markMatrixDirty() {
+            if (isRefreshingFilters) return;
+            if (activeController) activeController.abort();
+            if (activeDrillController) activeDrillController.abort();
+            window.clearTimeout(snapshotWarmTimer);
+            activeMatrixRequestId += 1;
+            activeDrillRequestId += 1;
+            activeMatrixParams = null;
+            activeDrillBucket = null;
+            activeDrillAfterBucket = null;
+            renderMatrixState('Filter berubah', 'Klik Terapkan untuk memuat Matrix sesuai pilihan terbaru.');
+            renderReconciliation(null);
+            periodBadge.textContent = 'Perubahan filter belum diterapkan';
+            releaseLoadingUi();
+        }
+
         function releaseLoadingUi() {
             overlay.classList.add('is-hidden');
             chip.classList.add('d-none');
@@ -832,7 +907,8 @@
         }
 
         function buildDrillParams(beforeBucket, afterBucket, offset = 0) {
-            const params = new URLSearchParams(new FormData(form));
+            if (!activeMatrixParams) return null;
+            const params = new URLSearchParams(activeMatrixParams.toString());
             params.set('before_bucket', beforeBucket);
             if (afterBucket) params.set('after_bucket', afterBucket);
             params.set('offset', offset);
@@ -891,7 +967,7 @@
         }
 
         async function openDrilldown(beforeBucket, afterBucket, offset = 0, append = false) {
-            if (!beforeBucket || !afterBucket) return;
+            if (!beforeBucket || !afterBucket || !activeMatrixParams) return;
             if (activeDrillController) activeDrillController.abort();
             activeDrillController = new AbortController();
             const requestId = ++activeDrillRequestId;
@@ -916,6 +992,7 @@
 
             drillLoadMoreButton.disabled = true;
             const params = buildDrillParams(beforeBucket, afterBucket, offset);
+            if (!params) return;
 
             try {
                 const response = await fetch(`${detailUrl}?${params.toString()}`, { signal: activeDrillController.signal });
@@ -946,7 +1023,7 @@
 
             drillMeta.innerHTML = `
                 <span>Posisi: ${escapeHtml(formatMatrixPeriodDate(payload.selected_period))}</span>
-                <span>Delta MTD: ${escapeHtml(formatMatrixPeriodDate(payload.comparison_period))}</span>
+                <span>Pembanding: ${escapeHtml(formatMatrixPeriodDate(payload.comparison_period))}</span>
                 <span>Dari: ${escapeHtml(displayBucketLabel(payload.before_bucket))}</span>
                 <span>Ke: ${escapeHtml(displayBucketLabel(payload.after_bucket))}</span>
                 <span>Ditampilkan: ${formatNumber(activeDrillRenderedCount + rows.length)}</span>
@@ -1012,8 +1089,9 @@
         }
 
         function exportDrilldown(beforeBucket, afterBucket) {
-            if (!beforeBucket) return;
+            if (!beforeBucket || !activeMatrixParams) return;
             const params = buildDrillParams(beforeBucket, afterBucket, 0);
+            if (!params) return;
             params.delete('offset');
             params.delete('limit');
             window.location.href = `${exportUrl}?${params.toString()}`;
@@ -1089,11 +1167,6 @@
         }
 
         function applyFilterOptions(payload) {
-            activePeriodMeta.textContent = formatMatrixPeriodDate(payload.selected_period);
-            comparisonPeriodMeta.textContent = formatMatrixPeriodDate(payload.comparison_period);
-            if (currentHeadLabel) currentHeadLabel.textContent = formatMatrixPeriodDate(payload.selected_period);
-            if (comparisonHeadLabel) comparisonHeadLabel.textContent = formatMatrixPeriodDate(payload.comparison_period);
-
             isRefreshingFilters = true;
             setSelectOptions(segmenSelect, payload.segments || [], 'Semua Segmen');
             setSelectOptions(produkSelect, payload.products || [], 'Semua Produk');
@@ -1133,12 +1206,59 @@
             $select.val(selected).trigger('change');
         }
 
-        async function loadMatrix(pushHistory = false, isSnapshotRetry = false) {
+        function renderMatrixState(title, message, canRetry = false) {
+            const retry = canRetry
+                ? '<button type="button" class="btn btn-sm btn-outline-primary mt-3" data-matrix-retry><i class="fas fa-redo mr-2"></i>Coba Lagi</button>'
+                : '';
+            body.innerHTML = `
+                <tr>
+                    <td colspan="${qualityColumns.length + outputColumns.length + 2}" class="loan-empty-state">
+                        <div class="py-4">
+                            <strong class="d-block mb-1">${escapeHtml(title)}</strong>
+                            <p class="mb-0 text-muted">${escapeHtml(message || '')}</p>
+                            ${retry}
+                        </div>
+                    </td>
+                </tr>
+            `;
+            foot.innerHTML = '';
+        }
+
+        function renderReconciliation(reconciliation) {
+            if (!reconciliationBadge) return;
+            reconciliationBadge.classList.remove('badge-light', 'badge-success', 'badge-danger', 'text-muted');
+
+            if (reconciliation?.status === 'balanced') {
+                reconciliationBadge.classList.add('badge-success');
+                reconciliationBadge.textContent = 'REKONSILIASI SESUAI';
+            } else if (reconciliation?.status === 'mismatch') {
+                reconciliationBadge.classList.add('badge-danger');
+                reconciliationBadge.textContent = 'SELISIH REKONSILIASI';
+            } else if (reconciliation?.status === 'error') {
+                reconciliationBadge.classList.add('badge-danger');
+                reconciliationBadge.textContent = 'DATA GAGAL DIMUAT';
+            } else {
+                reconciliationBadge.classList.add('badge-light', 'text-muted');
+                reconciliationBadge.textContent = 'BELUM DIHITUNG';
+            }
+
+            reconciliationBadge.title = reconciliation
+                ? `Selisih: ${formatNumber(reconciliation.difference)} | Rekening berjalan: ${formatNumber(reconciliation.matrix_accounts)}`
+                : '';
+        }
+
+        async function loadMatrix(pushHistory = false, isSnapshotRetry = false, forceRefresh = false) {
             if (activeController) activeController.abort();
             activeController = new AbortController();
             const requestId = ++activeMatrixRequestId;
             const params = new URLSearchParams(new FormData(form));
-            params.set('_ts', Date.now());
+            const requestParams = new URLSearchParams(params.toString());
+            requestParams.set('_ts', Date.now());
+            if (forceRefresh) requestParams.set('refresh', '1');
+
+            if (pushHistory) {
+                window.history.pushState({}, '', `?${params.toString()}`);
+            }
 
             if (!isSnapshotRetry) {
                 window.clearTimeout(snapshotWarmTimer);
@@ -1146,42 +1266,56 @@
                 startLoadingProgress();
             }
             try {
-                const response = await fetch(`${dataUrl}?${params.toString()}`, { signal: activeController.signal });
+                const response = await fetch(`${dataUrl}?${requestParams.toString()}`, { signal: activeController.signal });
                 const payload = await response.json();
                 if (requestId !== activeMatrixRequestId) return;
+                syncMatrixContext(payload);
 
-                if (payload.status === 'warming') {
+                if (payload.status === 'warming' || payload.status === 'computing') {
                     snapshotWarmAttempts += 1;
-                    const periodLabel = (payload.warming_periods || [])
-                        .map(formatMatrixPeriodDate)
-                        .join(', ');
+                    const periodLabel = [
+                        formatMatrixPeriodDate(payload.comparison_period),
+                        formatMatrixPeriodDate(payload.selected_period),
+                    ].filter(value => value !== '-').join(' vs ');
 
-                    if (snapshotWarmAttempts >= 24) {
-                        body.innerHTML = `<tr><td colspan="${qualityColumns.length + outputColumns.length + 2}" class="text-center text-muted py-4">Snapshot periode ${escapeHtml(periodLabel)} masih diproses. Silakan muat ulang beberapa saat lagi.</td></tr>`;
+                    if (snapshotWarmAttempts >= 40) {
+                        renderMatrixState('Perhitungan belum selesai', `Data ${periodLabel} masih dihitung.`, true);
                         releaseLoadingUi();
                         return;
                     }
 
-                    updateLoadingProgress(28, 'Menyiapkan Snapshot', `Menyiapkan data ${periodLabel}. Memuat ulang otomatis...`);
+                    updateLoadingProgress(45, 'Menghitung Matrix', `Merekonsiliasi data ${periodLabel}. Memuat ulang otomatis...`);
                     snapshotWarmTimer = window.setTimeout(() => {
                         if (requestId === activeMatrixRequestId) loadMatrix(false, true);
-                    }, Number(payload.retry_after_ms) || 5000);
+                    }, Number(payload.retry_after_ms) || 3000);
                     return;
                 }
 
-                renderRows(payload.matrix_rows);
+                if (!response.ok || payload.status === 'error') {
+                    throw new Error(payload.message || `HTTP ${response.status}`);
+                }
+                if (payload.status === 'empty') {
+                    activeMatrixParams = null;
+                    renderMatrixState('Data pembanding belum tersedia', payload.message || 'Pilih periode lain.');
+                    renderReconciliation(null);
+                    releaseLoadingUi();
+                    return;
+                }
+
+                renderRows(payload.matrix_rows || []);
                 renderFoot(payload.grand_totals, payload.grand_total_value);
-                periodBadge.textContent = renderPositionDeltaLabel(payload.selected_period, payload.comparison_period);
-                activePeriodMeta.textContent = formatMatrixPeriodDate(payload.selected_period);
-                comparisonPeriodMeta.textContent = formatMatrixPeriodDate(payload.comparison_period);
-                if (currentHeadLabel) currentHeadLabel.textContent = formatMatrixPeriodDate(payload.selected_period);
-                if (comparisonHeadLabel) comparisonHeadLabel.textContent = formatMatrixPeriodDate(payload.comparison_period);
-                
-                if (pushHistory) window.history.replaceState({}, '', `?${params.toString()}`);
+                renderReconciliation(payload.reconciliation);
+                activeMatrixParams = new URLSearchParams(params.toString());
                 updateLoadingProgress(100, 'Selesai', 'Data dimuat.');
                 setTimeout(releaseLoadingUi, 300);
             } catch (e) {
-                if (e.name !== 'AbortError') releaseLoadingUi();
+                if (e.name !== 'AbortError') {
+                    activeMatrixParams = null;
+                    renderMatrixState('Data gagal dimuat', e.message || 'Terjadi kesalahan saat menghitung matrix.', true);
+                    renderReconciliation({ status: 'error', difference: null, matrix_accounts: null });
+                    releaseLoadingUi();
+                    console.error('Matrix load error:', e);
+                }
             }
         }
 
@@ -1194,8 +1328,9 @@
                 const val = row.values[idx];
                 const afterBucket = qualityColumns[idx];
                 const cls = isNewAccount ? 'matrix-new-account' : (rowRank === idx ? 'matrix-stagnant' : (rowRank > idx ? 'matrix-up' : 'matrix-down'));
-                const cellClass = val ? `${cls} loan-drill-cell` : 'matrix-empty';
-                const cellAttrs = val ? ` data-before-bucket="${escapeHtml(row.label)}" data-after-bucket="${escapeHtml(afterBucket)}"` : '';
+                const hasValue = val !== null && val !== undefined && Number(val) !== 0;
+                const cellClass = hasValue ? `${cls} loan-drill-cell` : 'matrix-empty';
+                const cellAttrs = hasValue ? ` data-before-bucket="${escapeHtml(row.label)}" data-after-bucket="${escapeHtml(afterBucket)}"` : '';
                 html += `<td class="${cellClass}"${cellAttrs}>${formatNumber(val)}</td>`;
             }
             
@@ -1211,6 +1346,11 @@
         }
 
         function renderRows(rows) {
+            if (!Array.isArray(rows) || rows.length === 0) {
+                renderMatrixState('Tidak ada data', 'Tidak ditemukan rekening untuk kombinasi filter ini.');
+                return;
+            }
+
             const chunkSize = Math.max(12, Math.ceil(rows.length / 8));
             
             if (rows.length <= 15) {
@@ -1272,16 +1412,23 @@
             loadMatrix(true);
         });
         periodInput.addEventListener('change', () => {
+            markMatrixDirty();
             updateFilterSummary();
             loadFilterOptions();
         });
         periodInput.addEventListener('input', () => {
+            markMatrixDirty();
             window.clearTimeout(filterReloadTimer);
             filterReloadTimer = window.setTimeout(() => {
                 if (periodInput.value) {
                     loadFilterOptions();
                 }
             }, 300);
+        });
+        body.addEventListener('click', event => {
+            if (event.target.closest('[data-matrix-retry]')) {
+                loadMatrix(false, false, true);
+            }
         });
         body.addEventListener('dblclick', event => {
             const cell = event.target.closest('td.loan-drill-cell');
@@ -1303,6 +1450,7 @@
             initMultiSelect(element, placeholder);
             window.jQuery(element).on('change', () => {
                 syncSelectedDataset(element);
+                if (!isRefreshingFilters) markMatrixDirty();
                 if (!isRefreshingFilters && (element === segmenSelect || element === cabangSelect)) {
                     scheduleFilterOptionsReload();
                 }
@@ -1423,7 +1571,11 @@
         updateFilterSummary();
         setFilterPanelOpen(false);
 
-        if (periodInput.value) loadFilterOptions();
+        const initialFilterLoad = periodInput.value ? loadFilterOptions() : Promise.resolve();
+        if (new URLSearchParams(window.location.search).has('periode')) {
+            initialFilterLoad.then(() => loadMatrix(false));
+        }
+        window.addEventListener('popstate', () => window.location.reload());
     });
 </script>
 @endpush

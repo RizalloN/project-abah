@@ -1,45 +1,50 @@
 <?php
 
-use App\Http\Controllers\DashboardPinjamanReportController;
+use App\Http\Controllers\Admin\FileManagementController;
+use App\Http\Controllers\Admin\FileManagementDownloadController;
+use App\Http\Controllers\Admin\LinkManagementController;
+use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\DashboardHarianController;
+use App\Http\Controllers\DashboardPinjamanReportController;
 use App\Http\Controllers\DashboardSimpananController;
-use App\Http\Controllers\PrognosaWeeklyController;
-use App\Http\Controllers\Report\AlmafactsDashboardController;
-use App\Http\Controllers\Report\DigitalPerformanceController;
-use App\Http\Controllers\Report\DataPhReportController;
-use App\Http\Controllers\Report\KinerjaRmReportController;
-use App\Http\Controllers\Report\KinerjaRmMikroReportController;
-use App\Http\Controllers\Report\KinerjaNonPtpReportController;
-use App\Http\Controllers\Report\KolaborasiReportController;
-use App\Http\Controllers\Report\NewPayrollReportController;
-use App\Http\Controllers\Report\RunOffReportController;
+use App\Http\Controllers\DriveAsixController;
+use App\Http\Controllers\DriveAsixOfficeController;
+use App\Http\Controllers\Import\Gi405RecDhImportExcelController;
 use App\Http\Controllers\Import\ImportCasaBrilinkController;
+use App\Http\Controllers\Import\ImportCleanupController;
 use App\Http\Controllers\Import\ImportCognosPhController;
 use App\Http\Controllers\Import\ImportCognosRecoveryController;
-use App\Http\Controllers\Import\ImportCleanupController;
 use App\Http\Controllers\Import\ImportCrasController;
 use App\Http\Controllers\Import\ImportDailyLoanBackendController;
+use App\Http\Controllers\Import\ImportExcelController;
 use App\Http\Controllers\Import\ImportFileBrimoController;
 use App\Http\Controllers\Import\ImportFileController;
-use App\Http\Controllers\Import\Gi405RecDhImportExcelController;
 use App\Http\Controllers\Import\ImportIndexController;
-use App\Http\Controllers\Import\ImportJobStatusController;
 use App\Http\Controllers\Import\ImportJobManagementController;
+use App\Http\Controllers\Import\ImportJobStatusController;
 use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
 use App\Http\Controllers\Import\ImportReportPhController;
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Http\Controllers\Import\SnapshotAuditController;
-use App\Http\Controllers\Input\BusinessClusterController;
 use App\Http\Controllers\Input\BodBocController;
+use App\Http\Controllers\Input\BusinessClusterController;
 use App\Http\Controllers\Input\InputRekananController;
-use App\Http\Controllers\Auth\AuthenticatedSessionController;
-use App\Http\Controllers\Admin\FileManagementDownloadController;
-use App\Http\Controllers\Admin\FileManagementController;
-use App\Http\Controllers\Admin\LinkManagementController;
-use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\PerformanceBrimoController;
+use App\Http\Controllers\PrognosaWeeklyController;
 use App\Http\Controllers\PublicWorkbookController;
 use App\Http\Controllers\RasioCasaDebiturController;
 use App\Http\Controllers\RekeningDormantController;
+use App\Http\Controllers\Report\AlmafactsDashboardController;
+use App\Http\Controllers\Report\DataPhReportController;
+use App\Http\Controllers\Report\DigitalPerformanceController;
+use App\Http\Controllers\Report\KinerjaNonPtpReportController;
+use App\Http\Controllers\Report\KinerjaRmMikroReportController;
+use App\Http\Controllers\Report\KinerjaRmReportController;
+use App\Http\Controllers\Report\KolaborasiReportController;
+use App\Http\Controllers\Report\NewPayrollReportController;
+use App\Http\Controllers\Report\RunOffReportController;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -59,6 +64,17 @@ Route::middleware('throttle:60,1')->group(function (): void {
         ->name('public-workbooks.market-share-mapping');
     Route::get('/workbooks/market-share-mapping/{token}/market-share-mapping.xlsx', [PublicWorkbookController::class, 'marketShareMapping'])
         ->name('public-workbooks.market-share-mapping.token');
+
+});
+
+Route::middleware('throttle:240,1')->group(function (): void {
+    Route::get('/drive/office/files/{file}/{documentKey}/source', [DriveAsixOfficeController::class, 'source'])
+        ->where('documentKey', '[A-Za-z0-9._=-]{1,128}')
+        ->name('drive.office.source');
+    Route::post('/drive/office/files/{file}/{documentKey}/callback', [DriveAsixOfficeController::class, 'callback'])
+        ->where('documentKey', '[A-Za-z0-9._=-]{1,128}')
+        ->withoutMiddleware(ValidateCsrfToken::class)
+        ->name('drive.office.callback');
 });
 
 Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttle:240,1'])->group(function () {
@@ -78,6 +94,37 @@ Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttl
         ->name('dashboard.harian.export');
     Route::get('/prognosa/weekly/{sheet?}', [PrognosaWeeklyController::class, 'index'])
         ->name('prognosa.weekly');
+
+    // ── DriveASIX ──
+    Route::prefix('drive')->name('drive.')->group(function () {
+        Route::post('/upload', [DriveAsixController::class, 'upload'])->name('upload');
+
+        // Folder operations
+        Route::post('/folders', [DriveAsixController::class, 'storeFolder'])->name('folder.store');
+        Route::patch('/folders/{folder}/rename', [DriveAsixController::class, 'renameFolder'])->name('folder.rename');
+        Route::patch('/folders/{folder}/move', [DriveAsixController::class, 'moveFolder'])->name('folder.move');
+        Route::delete('/folders/{folder}', [DriveAsixController::class, 'deleteFolder'])->name('folder.delete');
+
+        // File operations
+        Route::patch('/files/{file}/rename', [DriveAsixController::class, 'renameFile'])->name('file.rename');
+        Route::patch('/files/{file}/move', [DriveAsixController::class, 'moveFile'])->name('file.move');
+        Route::patch('/files/{file}/copy', [DriveAsixController::class, 'copyFile'])->name('file.copy');
+        Route::delete('/files/{file}', [DriveAsixController::class, 'deleteFile'])->name('file.delete');
+        Route::get('/files/{file}/office-editor', [DriveAsixOfficeController::class, 'editor'])->name('file.office-editor');
+        Route::get('/files/{file}/editor', [DriveAsixController::class, 'editor'])->name('file.editor');
+        Route::get('/files/{file}/workbook', [DriveAsixController::class, 'workbook'])->name('file.workbook');
+        Route::patch('/files/{file}/workbook', [DriveAsixController::class, 'saveWorkbook'])->name('file.workbook.save');
+        Route::get('/files/{file}/document-preview', [DriveAsixController::class, 'documentPreview'])->name('file.document-preview');
+        Route::get('/files/{file}/preview', [DriveAsixController::class, 'preview'])->name('file.preview');
+        Route::get('/files/{file}/download', [DriveAsixController::class, 'download'])->name('file.download');
+
+        // Trash
+        Route::patch('/trash/files/{id}/restore', [DriveAsixController::class, 'restoreFile'])->name('file.restore');
+        Route::delete('/trash/files/{id}/purge', [DriveAsixController::class, 'purgeFile'])->name('file.purge');
+        Route::delete('/trash/purge-all', [DriveAsixController::class, 'purgeAllFiles'])->name('file.purge-all');
+
+        Route::get('/{folderId?}', [DriveAsixController::class, 'index'])->name('index');
+    });
     Route::get('/dashboard', [DashboardSimpananController::class, 'index'])
         ->name('dashboard');
     Route::get('/dashboard/presentation-data', [DashboardSimpananController::class, 'presentationData'])
@@ -190,8 +237,8 @@ Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttl
     Route::post('/report/data/qris/ukers', [DigitalPerformanceController::class, 'fetchQrisUkers'])->name('report.qris.ukers');
 
     // BRIMO — menggunakan PerformanceBrimoController yang sudah di-fix N+1-nya
-    Route::get('/report/optimalisasi-digital/brimo', [App\Http\Controllers\PerformanceBrimoController::class, 'index'])->name('report.brimo');
-    Route::post('/report/data/brimo', [App\Http\Controllers\PerformanceBrimoController::class, 'fetchData'])->name('report.data.brimo');
+    Route::get('/report/optimalisasi-digital/brimo', [PerformanceBrimoController::class, 'index'])->name('report.brimo');
+    Route::post('/report/data/brimo', [PerformanceBrimoController::class, 'fetchData'])->name('report.data.brimo');
 
     // Kolaborasi Perusahaan Anak — dihandle oleh KolaborasiReportController
     Route::get('/report/kolaborasi-perusahaan-anak/program-referral-partner-perusahaan-anak', [KolaborasiReportController::class, 'programReferralPartnerPerusahaanAnak'])->name('report.kolaborasi.referral');
@@ -294,6 +341,7 @@ Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.l
 
     Route::get('/import/select', function () {
         $files = session('import_files', []);
+
         return view('import.select-file', compact('files'));
     })->name('import.select');
 
@@ -351,9 +399,9 @@ Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.l
     Route::get('/import/cognos-ph/stream', [ImportCognosPhController::class, 'processImportStream'])->name('import.cognos-ph.stream');
     Route::post('/import/cognos-ph/process', [ImportCognosPhController::class, 'processImport'])->name('import.cognos-ph.process');
 
-    Route::post('/import-excel/init', [App\Http\Controllers\Import\ImportExcelController::class, 'initExcelImport'])->name('import.excel.init');
-    Route::get('/import-excel/stream', [App\Http\Controllers\Import\ImportExcelController::class, 'processExcelStream'])->name('import.excel.stream');
-    Route::post('/import-excel/chunk', [App\Http\Controllers\Import\ImportExcelController::class, 'processExcelChunk'])->name('import.excel.chunk');
+    Route::post('/import-excel/init', [ImportExcelController::class, 'initExcelImport'])->name('import.excel.init');
+    Route::get('/import-excel/stream', [ImportExcelController::class, 'processExcelStream'])->name('import.excel.stream');
+    Route::post('/import-excel/chunk', [ImportExcelController::class, 'processExcelChunk'])->name('import.excel.chunk');
 
     Route::post('/import/init', [ImportFileController::class, 'initImport'])->name('import.init');
     Route::get('/import/stream', [ImportFileController::class, 'processImportStream'])->name('import.stream');
@@ -366,9 +414,9 @@ Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.l
     Route::post('/import/brimo/process', [ImportFileBrimoController::class, 'processImport'])->name('import.brimo.process');
 
     Route::prefix('import-excel')->group(function () {
-        Route::post('/upload', [App\Http\Controllers\Import\ImportExcelController::class, 'uploadExcel'])->name('import.excel.upload');
-        Route::get('/preview', [App\Http\Controllers\Import\ImportExcelController::class, 'previewExcel'])->name('import.excel.preview');
-        Route::get('/prepare-preview', [App\Http\Controllers\Import\ImportExcelController::class, 'preparePreviewStream'])->name('import.excel.prepare-preview');
+        Route::post('/upload', [ImportExcelController::class, 'uploadExcel'])->name('import.excel.upload');
+        Route::get('/preview', [ImportExcelController::class, 'previewExcel'])->name('import.excel.preview');
+        Route::get('/prepare-preview', [ImportExcelController::class, 'preparePreviewStream'])->name('import.excel.prepare-preview');
     });
 
     Route::prefix('import-excel/gi405-rec-dh')->group(function () {
@@ -381,24 +429,24 @@ Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.l
     });
 
     Route::prefix('import-excel/daily-loan-dinamis')->group(function () {
-        Route::post('/upload', [App\Http\Controllers\Import\ImportExcelController::class, 'uploadDailyLoanExcel'])->name('import.dailyloan.upload');
-        Route::post('/upload-chunk/init', [App\Http\Controllers\Import\ImportExcelController::class, 'initDailyLoanChunkUpload'])->name('import.dailyloan.upload-chunk.init');
-        Route::post('/upload-chunk', [App\Http\Controllers\Import\ImportExcelController::class, 'uploadDailyLoanChunk'])->name('import.dailyloan.upload-chunk');
-        Route::post('/upload-chunk/finalize', [App\Http\Controllers\Import\ImportExcelController::class, 'finalizeDailyLoanChunkUpload'])->name('import.dailyloan.upload-chunk.finalize');
-        Route::get('/preview', [App\Http\Controllers\Import\ImportExcelController::class, 'previewDailyLoanExcel'])->name('import.dailyloan.preview');
-        Route::get('/prepare-preview', [App\Http\Controllers\Import\ImportExcelController::class, 'prepareDailyLoanPreview'])->name('import.dailyloan.prepare-preview');
-        Route::post('/init', [App\Http\Controllers\Import\ImportExcelController::class, 'initDailyLoanImport'])->name('import.dailyloan.init');
-        Route::get('/stream', [App\Http\Controllers\Import\ImportExcelController::class, 'streamDailyLoanImport'])->name('import.dailyloan.stream');
-        Route::post('/chunk', [App\Http\Controllers\Import\ImportExcelController::class, 'chunkDailyLoanImport'])->name('import.dailyloan.chunk');
+        Route::post('/upload', [ImportExcelController::class, 'uploadDailyLoanExcel'])->name('import.dailyloan.upload');
+        Route::post('/upload-chunk/init', [ImportExcelController::class, 'initDailyLoanChunkUpload'])->name('import.dailyloan.upload-chunk.init');
+        Route::post('/upload-chunk', [ImportExcelController::class, 'uploadDailyLoanChunk'])->name('import.dailyloan.upload-chunk');
+        Route::post('/upload-chunk/finalize', [ImportExcelController::class, 'finalizeDailyLoanChunkUpload'])->name('import.dailyloan.upload-chunk.finalize');
+        Route::get('/preview', [ImportExcelController::class, 'previewDailyLoanExcel'])->name('import.dailyloan.preview');
+        Route::get('/prepare-preview', [ImportExcelController::class, 'prepareDailyLoanPreview'])->name('import.dailyloan.prepare-preview');
+        Route::post('/init', [ImportExcelController::class, 'initDailyLoanImport'])->name('import.dailyloan.init');
+        Route::get('/stream', [ImportExcelController::class, 'streamDailyLoanImport'])->name('import.dailyloan.stream');
+        Route::post('/chunk', [ImportExcelController::class, 'chunkDailyLoanImport'])->name('import.dailyloan.chunk');
     });
 
     Route::prefix('import-excel/simpanan-multipn')->group(function () {
-        Route::post('/upload', [App\Http\Controllers\Import\ImportExcelController::class, 'uploadSimpananMultiPnExcel'])->name('import.simpanan.upload');
-        Route::get('/preview', [App\Http\Controllers\Import\ImportExcelController::class, 'previewSimpananMultiPnExcel'])->name('import.simpanan.preview');
-        Route::get('/prepare-preview', [App\Http\Controllers\Import\ImportExcelController::class, 'prepareSimpananMultiPnPreview'])->name('import.simpanan.prepare-preview');
-        Route::post('/init', [App\Http\Controllers\Import\ImportExcelController::class, 'initSimpananMultiPnImport'])->name('import.simpanan.init');
-        Route::get('/stream', [App\Http\Controllers\Import\ImportExcelController::class, 'streamSimpananMultiPnImport'])->name('import.simpanan.stream');
-        Route::post('/chunk', [App\Http\Controllers\Import\ImportExcelController::class, 'chunkSimpananMultiPnImport'])->name('import.simpanan.chunk');
+        Route::post('/upload', [ImportExcelController::class, 'uploadSimpananMultiPnExcel'])->name('import.simpanan.upload');
+        Route::get('/preview', [ImportExcelController::class, 'previewSimpananMultiPnExcel'])->name('import.simpanan.preview');
+        Route::get('/prepare-preview', [ImportExcelController::class, 'prepareSimpananMultiPnPreview'])->name('import.simpanan.prepare-preview');
+        Route::post('/init', [ImportExcelController::class, 'initSimpananMultiPnImport'])->name('import.simpanan.init');
+        Route::get('/stream', [ImportExcelController::class, 'streamSimpananMultiPnImport'])->name('import.simpanan.stream');
+        Route::post('/chunk', [ImportExcelController::class, 'chunkSimpananMultiPnImport'])->name('import.simpanan.chunk');
     });
 
     Route::prefix('import-csv/simpanan-multipn')->group(function () {

@@ -41,6 +41,17 @@ class ResponsiveOperationalViewsTest extends TestCase
         $this->assertStringContainsString('text-overflow: ellipsis;', $source);
     }
 
+    public function test_timeseries_chart_connects_observed_points_and_keeps_sparse_months_visible(): void
+    {
+        $source = file_get_contents(resource_path('views/report/dashboard-harian-timeseries.blade.php'));
+
+        $this->assertStringContainsString('const observedPointCount = Array.isArray(d.data)', $source);
+        $this->assertStringContainsString('const showSparsePoint = observedPointCount <= 1;', $source);
+        $this->assertStringContainsString('pointRadius: showSparsePoint ? 3 : (isLatest ? 2.25 : 0)', $source);
+        $this->assertStringContainsString('spanGaps: true,', $source);
+        $this->assertStringContainsString('without manufacturing values for missing dates.', $source);
+    }
+
     public function test_market_share_header_stacks_actions_on_narrow_screens(): void
     {
         $source = file_get_contents(resource_path('views/report/dashboard-dana-market-share.blade.php'));

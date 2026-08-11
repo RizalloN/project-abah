@@ -1,0 +1,35 @@
+services:
+  documentserver:
+    image: ${ONLYOFFICE_IMAGE:?Set ONLYOFFICE_IMAGE to a reviewed, pinned ONLYOFFICE Document Server tag or digest}
+    container_name: asix-onlyoffice-documentserver
+    restart: unless-stopped
+    shm_size: 2gb
+    ports:
+      - "127.0.0.1:${ONLYOFFICE_BIND_PORT:-8080}:80"
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:?Set a strong ONLYOFFICE_JWT_SECRET}
+      JWT_HEADER: ${ONLYOFFICE_JWT_HEADER:-AuthorizationJwt}
+      ALLOW_PRIVATE_IP_ADDRESS: "false"
+      ALLOW_META_IP_ADDRESS: "false"
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_logs:/var/log/onlyoffice
+      - onlyoffice_lib:/var/lib/onlyoffice
+      - onlyoffice_postgresql:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1/healthcheck >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+volumes:
+  onlyoffice_data:
+  onlyoffice_logs:
+  onlyoffice_lib:
+  onlyoffice_postgresql:

@@ -257,6 +257,20 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         );
     }
 
+    public function test_keragaan_uker_unit_filter_accepts_punctuation_in_source_unit_name(): void
+    {
+        $service = new DashboardHarianSnapshotService();
+        $reflection = new \ReflectionMethod($service, 'buildKeragaanUkerUnitFilterCondition');
+        $reflection->setAccessible(true);
+
+        $condition = $reflection->invoke($service, 'ss.nama_uker', 'unit-a-yani-magetan');
+
+        $this->assertStringContainsString("UPPER(ss.nama_uker) LIKE '%UNIT%'", $condition);
+        $this->assertStringContainsString("UPPER(ss.nama_uker) LIKE '%A%'", $condition);
+        $this->assertStringContainsString("UPPER(ss.nama_uker) LIKE '%YANI%'", $condition);
+        $this->assertStringContainsString("UPPER(ss.nama_uker) LIKE '%MAGETAN%'", $condition);
+    }
+
     public function test_filter_options_treat_all_kancas_as_area6_and_hide_units_until_scoped(): void
     {
         $this->createSourceMetadataTables();
@@ -302,6 +316,45 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame([['value' => 'all', 'label' => 'Semua Unit Kerja']], $area6Filters['unit_kerja']);
         $this->assertContains('unit-a', array_column($madiunFilters['unit_kerja'], 'value'));
         $this->assertNotContains('kc-ngawi', array_column($madiunFilters['unit_kerja'], 'value'));
+    }
+
+    public function test_fetch_periods_keeps_available_source_dates_when_historical_snapshots_are_incomplete(): void
+    {
+        $this->createSourceMetadataTables();
+
+        foreach (['2026-05-01', '2026-05-02'] as $period) {
+            DB::table('ssa_pinjaman')->insert([
+                'month_day_year_of_periode' => $period,
+                'nama_cabang' => 'KC Madiun',
+                'nama_uker' => '00045 -- KC Madiun',
+                'baki_debet' => 1_000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('ssa_simpanan')->insert([
+                'Month_Day_Year_of_Posisi' => $period,
+                'nama_cabang' => 'KC Madiun',
+                'nama_uker' => '00045 -- KC Madiun',
+                'saldo' => 500,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        DB::table('dashboard_harian_snapshots')->insert([
+            'uniqueid_dhs' => 'madiun-summary-2026-05-02',
+            'snapshot_period' => '2026-05-02',
+            'kanca_key' => 'kc-madiun',
+            'kanca_label' => 'KC Madiun',
+            'unit_key' => 'kc-madiun',
+            'unit_label' => 'KC Madiun',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $periods = (new DashboardHarianSnapshotService())->fetchPeriods()->all();
+
+        $this->assertSame(['2026-05-02', '2026-05-01'], $periods);
     }
 
     public function test_timeseries_sml_uses_percentage_metric_without_currency_scaling(): void

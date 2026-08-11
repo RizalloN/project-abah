@@ -23,11 +23,11 @@ class SecurityHeadersMiddleware
     private function withSecurityHeaders(Response $response, Request $request): Response
     {
         $response->headers->remove('X-Powered-By');
-        if (function_exists('header_remove') && !headers_sent()) {
+        if (function_exists('header_remove') && ! headers_sent()) {
             header_remove('X-Powered-By');
         }
 
-        if (!$this->isPublicWorkbookRequest($request)) {
+        if (! $this->isPublicWorkbookRequest($request)) {
             $response->headers->set('X-Frame-Options', 'DENY');
         }
         $response->headers->set('X-Content-Type-Options', 'nosniff');
@@ -40,6 +40,7 @@ class SecurityHeadersMiddleware
         $response->headers->set(
             'Cross-Origin-Resource-Policy',
             $this->isPublicWorkbookRequest($request)
+                || $this->isOnlyOfficeSourceRequest($request)
                 ? 'cross-origin'
                 : 'same-origin'
         );
@@ -82,6 +83,20 @@ class SecurityHeadersMiddleware
             return "default-src 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.microsoft.com";
         }
 
+        $onlyOfficeOrigin = $this->onlyOfficeEditorOrigin($request);
+        $scriptSources = "'self' 'unsafe-inline'";
+        $connectSources = "'self'";
+
+        if ($onlyOfficeOrigin !== null) {
+            $scriptSources .= ' '.$onlyOfficeOrigin;
+            $connectSources .= ' '.$onlyOfficeOrigin;
+
+            $websocketOrigin = $this->websocketOrigin($onlyOfficeOrigin);
+            if ($websocketOrigin !== null) {
+                $connectSources .= ' '.$websocketOrigin;
+            }
+        }
+
         $directives = [
             "default-src 'self'",
             "base-uri 'self'",
@@ -91,9 +106,15 @@ class SecurityHeadersMiddleware
             "img-src 'self' data: blob:",
             "font-src 'self' https://fonts.gstatic.com data:",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-            "script-src 'self' 'unsafe-inline'",
-            "connect-src 'self'",
+            "script-src {$scriptSources}",
+            "connect-src {$connectSources}",
         ];
+
+        if ($onlyOfficeOrigin !== null) {
+            $frameSources = "'self' {$onlyOfficeOrigin}";
+            $directives[] = "frame-src {$frameSources}";
+            $directives[] = "child-src {$frameSources}";
+        }
 
         $workbookUrl = $this->workbookUrlForRequest($request);
         if ($workbookUrl !== null) {
@@ -107,6 +128,36 @@ class SecurityHeadersMiddleware
         }
 
         return implode('; ', $directives);
+    }
+
+    private function isOnlyOfficeSourceRequest(Request $request): bool
+    {
+        return $request->is('drive/office/files/*/*/source');
+    }
+
+    private function onlyOfficeEditorOrigin(Request $request): ?string
+    {
+        if (! $request->is('drive/files/*/office-editor')
+            || ! (bool) config('services.onlyoffice.enabled', false)) {
+            return null;
+        }
+
+        return $this->originFromUrl((string) config('services.onlyoffice.public_url', ''));
+    }
+
+    private function websocketOrigin(string $origin): ?string
+    {
+        $scheme = parse_url($origin, PHP_URL_SCHEME);
+        $host = parse_url($origin, PHP_URL_HOST);
+        $port = parse_url($origin, PHP_URL_PORT);
+
+        if (! in_array($scheme, ['http', 'https'], true) || ! is_string($host) || $host === '') {
+            return null;
+        }
+
+        return ($scheme === 'https' ? 'wss://' : 'ws://')
+            .$host
+            .(is_int($port) ? ':'.$port : '');
     }
 
     private function workbookUrlForRequest(Request $request): ?string
@@ -149,11 +200,12 @@ class SecurityHeadersMiddleware
     {
         $scheme = parse_url($url, PHP_URL_SCHEME);
         $host = parse_url($url, PHP_URL_HOST);
+        $port = parse_url($url, PHP_URL_PORT);
 
-        if (!in_array($scheme, ['http', 'https'], true) || !is_string($host) || $host === '') {
+        if (! in_array($scheme, ['http', 'https'], true) || ! is_string($host) || $host === '') {
             return null;
         }
 
-        return $scheme . '://' . $host;
+        return $scheme.'://'.$host.(is_int($port) ? ':'.$port : '');
     }
 }

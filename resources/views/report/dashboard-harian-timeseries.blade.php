@@ -1888,21 +1888,28 @@
                         labels: Array.from({length: 31}, (_, i) => i + 1),
                         datasets: datasets.map((d, i) => {
                             const isLatest = i === datasets.length - 1;
+                            const observedPointCount = Array.isArray(d.data)
+                                ? d.data.filter(value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))).length
+                                : 0;
+                            const showSparsePoint = observedPointCount <= 1;
+
                             return {
                                 label: d.label,
                                 data: d.data,
                                 borderColor: monthColors[i % monthColors.length].border,
                                 backgroundColor: monthColors[i % monthColors.length].bg,
                                 borderWidth: isLatest ? 2.25 : 1.35,
-                                pointRadius: isLatest ? 2.25 : 0,
+                                pointRadius: showSparsePoint ? 3 : (isLatest ? 2.25 : 0),
                                 pointHoverRadius: isLatest ? 5 : 3,
-                                pointBorderWidth: isLatest ? 1.5 : 0,
+                                pointBorderWidth: (isLatest || showSparsePoint) ? 1.5 : 0,
                                 pointBackgroundColor: '#ffffff',
                                 pointBorderColor: monthColors[i % monthColors.length].border,
                                 tension: 0.32,
                                 fill: isLatest,
                                 clip: false,
-                                spanGaps: false,
+                                // Snapshot periods are not always imported every calendar day.
+                                // Connect observed points visually without manufacturing values for missing dates.
+                                spanGaps: true,
                                 borderDash: isLatest ? [] : [4, 4],
                                 borderCapStyle: 'round',
                                 borderJoinStyle: 'round'

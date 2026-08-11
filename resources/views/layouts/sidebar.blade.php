@@ -885,6 +885,13 @@
                     </ul>
                 </li>
 
+                <li class="nav-item">
+                    <a href="{{ route('drive.index') }}" class="nav-link {{ request()->routeIs('drive.*') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-hdd"></i>
+                        <p>DriveASIX</p>
+                    </a>
+                </li>
+
                 <li class="nav-item sidebar-dashboard-marketshare {{ request()->routeIs('report.dashboard-dana.market-share', 'report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.mapping-cras', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.instansi') ? 'menu-open' : '' }}">
                     <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share', 'report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.mapping-cras', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.instansi') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-pie"></i>

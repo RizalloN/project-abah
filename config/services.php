@@ -39,6 +39,29 @@ return [
         'enabled' => env('PUBLIC_ACCESS_HEALTH_ENABLED', false),
     ],
 
+    'onlyoffice' => [
+        'enabled' => (bool) env('ONLYOFFICE_ENABLED', false),
+        'public_url' => rtrim((string) env('ONLYOFFICE_PUBLIC_URL', ''), '/'),
+        'internal_url' => rtrim((string) env(
+            'ONLYOFFICE_INTERNAL_URL',
+            env('ONLYOFFICE_PUBLIC_URL', '')
+        ), '/'),
+        'app_url' => rtrim((string) env('ONLYOFFICE_APP_URL', env('APP_URL', '')), '/'),
+        'jwt_secret' => (string) env('ONLYOFFICE_JWT_SECRET', ''),
+        'jwt_header' => (string) env('ONLYOFFICE_JWT_HEADER', 'AuthorizationJwt'),
+        'allowed_download_origins' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('ONLYOFFICE_ALLOWED_DOWNLOAD_ORIGINS', ''))
+        ))),
+        'access_ttl_minutes' => max(5, (int) env('ONLYOFFICE_ACCESS_TTL_MINUTES', 1440)),
+        'timeout_seconds' => max(5, (int) env('ONLYOFFICE_TIMEOUT_SECONDS', 120)),
+        'max_download_bytes' => max(
+            1_048_576,
+            (int) env('ONLYOFFICE_MAX_DOWNLOAD_BYTES', 52_428_800)
+        ),
+        'verify_tls' => (bool) env('ONLYOFFICE_VERIFY_TLS', true),
+    ],
+
     'market_share' => [
         'title' => env('MARKET_SHARE_WORKBOOK_TITLE', 'Market Share Office 365'),
         'source_url' => env('MARKET_SHARE_SOURCE_URL'),

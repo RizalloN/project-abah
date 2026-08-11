@@ -73,6 +73,62 @@ it('enforces HTTPS transport and isolates workbook framing policy', function () 
         ->toContain('frame-ancestors https://*.officeapps.live.com');
 });
 
+it('scopes onlyoffice framing and cross origin file access to drive editor routes', function () {
+    $middleware = new SecurityHeadersMiddleware;
+    $originalConfig = config('services.onlyoffice');
+
+    try {
+        config([
+            'services.onlyoffice.enabled' => true,
+            'services.onlyoffice.public_url' => 'https://office.asixdashboard.online:8443/editor/path',
+        ]);
+
+        $editorRequest = Request::create(
+            'https://asixdashboard.online/drive/files/15/office-editor',
+            'GET'
+        );
+        $editorResponse = $middleware->handle($editorRequest, fn () => response('editor'));
+        $editorCsp = (string) $editorResponse->headers->get('Content-Security-Policy');
+
+        expect($editorCsp)
+            ->toContain("script-src 'self' 'unsafe-inline' https://office.asixdashboard.online:8443")
+            ->toContain("frame-src 'self' https://office.asixdashboard.online:8443")
+            ->toContain("child-src 'self' https://office.asixdashboard.online:8443")
+            ->toContain(
+                "connect-src 'self' https://office.asixdashboard.online:8443 wss://office.asixdashboard.online:8443"
+            );
+
+        $ordinaryResponse = $middleware->handle(
+            Request::create('https://asixdashboard.online/dashboard', 'GET'),
+            fn () => response('dashboard')
+        );
+        expect($ordinaryResponse->headers->get('Content-Security-Policy'))
+            ->not->toContain('office.asixdashboard.online');
+
+        $sourceResponse = $middleware->handle(
+            Request::create(
+                'https://asixdashboard.online/drive/office/files/15/document-key/source',
+                'GET'
+            ),
+            fn () => response('source')
+        );
+        expect($sourceResponse->headers->get('Cross-Origin-Resource-Policy'))
+            ->toBe('cross-origin');
+
+        $callbackResponse = $middleware->handle(
+            Request::create(
+                'https://asixdashboard.online/drive/office/files/15/document-key/callback',
+                'POST'
+            ),
+            fn () => response('callback')
+        );
+        expect($callbackResponse->headers->get('Cross-Origin-Resource-Policy'))
+            ->toBe('same-origin');
+    } finally {
+        config(['services.onlyoffice' => $originalConfig]);
+    }
+});
+
 it('rate limits sensitive admin control actions without throttling the import page', function () {
     $importPageRoute = Route::getRoutes()->getByName('import.index');
     $deleteRoute = Route::getRoutes()->getByName('import.report-management.delete');
@@ -87,7 +143,7 @@ it('renders the secured import page with sanitized flash notices', function () {
     $createdUsersTable = false;
     $createdReportsTable = false;
 
-    if (!Schema::hasTable('users')) {
+    if (! Schema::hasTable('users')) {
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
             $table->string('name');
@@ -101,7 +157,7 @@ it('renders the secured import page with sanitized flash notices', function () {
         $createdUsersTable = true;
     }
 
-    if (!Schema::hasTable('nama_report')) {
+    if (! Schema::hasTable('nama_report')) {
         Schema::create('nama_report', function (Blueprint $table): void {
             $table->id('id_report');
             $table->string('nama_report');
@@ -115,7 +171,7 @@ it('renders the secured import page with sanitized flash notices', function () {
     }
 
     $admin = User::factory()->create([
-        'pn' => 'import-render-' . Str::random(6),
+        'pn' => 'import-render-'.Str::random(6),
         'role' => 'admin',
         'branch_scope' => null,
     ]);
@@ -218,7 +274,8 @@ it('accepts only trusted Google Sheets HTTPS sources', function () {
 });
 
 it('authorizes preview files by import root and active upload session', function () {
-    $guard = new class {
+    $guard = new class
+    {
         use AuthorizesImportSourceFiles;
 
         public function authorize(string $path): string
@@ -232,30 +289,30 @@ it('authorizes preview files by import root and active upload session', function
         }
     };
 
-    $folderA = storage_path('app/imports/import_20260724_120000_' . Str::random(5));
-    $folderB = storage_path('app/imports/import_20260724_120001_' . Str::random(5));
-    $outside = storage_path('framework/testing/security-outside-' . Str::random(8) . '.csv');
+    $folderA = storage_path('app/imports/import_20260724_120000_'.Str::random(5));
+    $folderB = storage_path('app/imports/import_20260724_120001_'.Str::random(5));
+    $outside = storage_path('framework/testing/security-outside-'.Str::random(8).'.csv');
 
     File::ensureDirectoryExists($folderA, 0750, true);
     File::ensureDirectoryExists($folderB, 0750, true);
     File::ensureDirectoryExists(dirname($outside), 0750, true);
-    File::put($folderA . '/source.csv', "A,B\n1,2\n");
-    File::put($folderB . '/source.csv', "A,B\n3,4\n");
+    File::put($folderA.'/source.csv', "A,B\n1,2\n");
+    File::put($folderB.'/source.csv', "A,B\n3,4\n");
     File::put($outside, "A,B\n5,6\n");
 
     try {
         session(['import_files' => [[
             'name' => 'source.csv',
-            'path' => $folderA . '/source.csv',
+            'path' => $folderA.'/source.csv',
         ]]]);
 
-        expect($guard->authorize($folderA . '/source.csv'))->toBe(realpath($folderA . '/source.csv'));
-        expect(fn () => $guard->authorize($folderB . '/source.csv'))
+        expect($guard->authorize($folderA.'/source.csv'))->toBe(realpath($folderA.'/source.csv'));
+        expect(fn () => $guard->authorize($folderB.'/source.csv'))
             ->toThrow(ValidationException::class);
         expect(fn () => $guard->authorize($outside))
             ->toThrow(ValidationException::class);
 
-        $guard->cleanup($folderA . '/source.csv');
+        $guard->cleanup($folderA.'/source.csv');
 
         expect(File::isDirectory($folderA))->toBeFalse();
         expect(File::isDirectory($folderB))->toBeTrue();
@@ -270,11 +327,12 @@ it('authorizes preview files by import root and active upload session', function
 
 it('preflights expanded archive size before extracting import files', function () {
     $sevenZip = 'C:\\Program Files\\7-Zip\\7z.exe';
-    if (!is_file($sevenZip) || !class_exists(ZipArchive::class)) {
+    if (! is_file($sevenZip) || ! class_exists(ZipArchive::class)) {
         $this->markTestSkipped('7-Zip atau ZipArchive tidak tersedia pada environment test.');
     }
 
-    $guard = new class {
+    $guard = new class
+    {
         use AuthorizesImportSourceFiles;
 
         public function extract(string $archivePath, string $directory): array
@@ -283,11 +341,11 @@ it('preflights expanded archive size before extracting import files', function (
         }
     };
 
-    $directory = storage_path('framework/testing/security-archive-' . Str::random(8));
-    $archivePath = $directory . '.zip';
+    $directory = storage_path('framework/testing/security-archive-'.Str::random(8));
+    $archivePath = $directory.'.zip';
     File::ensureDirectoryExists(dirname($archivePath), 0750, true);
 
-    $archive = new ZipArchive();
+    $archive = new ZipArchive;
     expect($archive->open($archivePath, ZipArchive::CREATE | ZipArchive::OVERWRITE))->toBeTrue();
     $archive->addFromString('source.csv', str_repeat('A', 128));
     $archive->close();
@@ -300,7 +358,7 @@ it('preflights expanded archive size before extracting import files', function (
     try {
         expect(fn () => $guard->extract($archivePath, $directory))
             ->toThrow(RuntimeException::class, 'Isi arsip melebihi batas keamanan import.');
-        expect(is_file($directory . '/extracted/source.csv'))->toBeFalse();
+        expect(is_file($directory.'/extracted/source.csv'))->toBeFalse();
     } finally {
         File::deleteDirectory($directory);
         File::delete($archivePath);
@@ -308,7 +366,8 @@ it('preflights expanded archive size before extracting import files', function (
 });
 
 it('accepts RAR metadata with empty link fields while retaining real link detection', function () {
-    $guard = new class {
+    $guard = new class
+    {
         use AuthorizesImportSourceFiles;
 
         public function isLink(array $properties): bool
@@ -331,7 +390,8 @@ it('accepts RAR metadata with empty link fields while retaining real link detect
 });
 
 it('binds specialized importer paths to the current upload session', function () {
-    $guard = new class {
+    $guard = new class
+    {
         use AuthorizesSessionImportStorageFiles;
 
         public function authorize(string $path): array
@@ -346,10 +406,10 @@ it('binds specialized importer paths to the current upload session', function ()
     };
 
     $directory = storage_path('app/private/performance_pis_imports');
-    $ownedRelativePath = 'performance_pis_imports/security-owned-' . Str::random(8) . '.csv';
-    $foreignRelativePath = 'performance_pis_imports/security-foreign-' . Str::random(8) . '.csv';
-    $ownedPath = storage_path('app/private/' . $ownedRelativePath);
-    $foreignPath = storage_path('app/private/' . $foreignRelativePath);
+    $ownedRelativePath = 'performance_pis_imports/security-owned-'.Str::random(8).'.csv';
+    $foreignRelativePath = 'performance_pis_imports/security-foreign-'.Str::random(8).'.csv';
+    $ownedPath = storage_path('app/private/'.$ownedRelativePath);
+    $foreignPath = storage_path('app/private/'.$foreignRelativePath);
 
     File::ensureDirectoryExists($directory, 0750, true);
     File::put($ownedPath, "A,B\n1,2\n");
@@ -376,13 +436,13 @@ it('binds specialized importer paths to the current upload session', function ()
 it('binds cached Excel preview state to the user who created it', function () {
     $owner = User::factory()->make([
         'id' => 91001,
-        'pn' => 'preview-owner-' . Str::random(6),
+        'pn' => 'preview-owner-'.Str::random(6),
     ]);
     $otherUser = User::factory()->make([
         'id' => 91002,
-        'pn' => 'preview-other-' . Str::random(6),
+        'pn' => 'preview-other-'.Str::random(6),
     ]);
-    $previewKey = 'security-preview-' . Str::uuid();
+    $previewKey = 'security-preview-'.Str::uuid();
     $service = app(ExcelImportJobService::class);
 
     Auth::setUser($owner);
@@ -398,16 +458,16 @@ it('binds cached Excel preview state to the user who created it', function () {
 it('rejects Excel chunk parameters that do not match the active upload job', function () {
     $owner = User::factory()->make([
         'id' => 92001,
-        'pn' => 'excel-chunk-owner-' . Str::random(6),
+        'pn' => 'excel-chunk-owner-'.Str::random(6),
         'role' => 'admin',
     ]);
-    $relativePath = 'excel_imports/security-chunk-' . Str::random(8) . '.csv';
+    $relativePath = 'excel_imports/security-chunk-'.Str::random(8).'.csv';
     Storage::put($relativePath, "HEADER\nVALUE\n");
 
     $createdReportTable = false;
     $createdJobTable = false;
 
-    if (!Schema::hasTable('nama_report')) {
+    if (! Schema::hasTable('nama_report')) {
         Schema::create('nama_report', function (Blueprint $table): void {
             $table->id('id_report');
             $table->string('nama_report');
@@ -420,7 +480,7 @@ it('rejects Excel chunk parameters that do not match the active upload job', fun
         $createdReportTable = true;
     }
 
-    if (!Schema::hasTable('import_jobs')) {
+    if (! Schema::hasTable('import_jobs')) {
         Schema::create('import_jobs', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('id_report');
@@ -439,7 +499,7 @@ it('rejects Excel chunk parameters that do not match the active upload job', fun
     }
 
     $reportId = DB::table('nama_report')->insertGetId([
-        'nama_report' => 'Security Chunk Report ' . Str::random(6),
+        'nama_report' => 'Security Chunk Report '.Str::random(6),
         'table_name' => 'security_chunk_target',
         'active' => true,
         'import_controller' => ImportExcelController::class,
@@ -529,7 +589,7 @@ it('rejects chunk sessions whose declared size exceeds the configured upload cap
 });
 
 it('binds Daily Loan chunks to their initiating user and rejects traversal IDs', function () {
-    if (!Schema::hasTable('users')) {
+    if (! Schema::hasTable('users')) {
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
             $table->string('name');
@@ -543,8 +603,8 @@ it('binds Daily Loan chunks to their initiating user and rejects traversal IDs',
         });
     }
 
-    $owner = User::factory()->create(['pn' => 'chunk-owner-' . Str::random(6)]);
-    $otherUser = User::factory()->create(['pn' => 'chunk-other-' . Str::random(6)]);
+    $owner = User::factory()->create(['pn' => 'chunk-owner-'.Str::random(6)]);
+    $otherUser = User::factory()->create(['pn' => 'chunk-other-'.Str::random(6)]);
     $controller = app(ImportExcelController::class);
 
     Auth::login($owner);
@@ -555,7 +615,7 @@ it('binds Daily Loan chunks to their initiating user and rejects traversal IDs',
     ], [], [], ['HTTP_ACCEPT' => 'application/json']);
     $initResponse = $controller->initDailyLoanChunkUpload($initRequest);
     $uploadId = (string) $initResponse->getData(true)['upload_id'];
-    $chunkDirectory = storage_path('app/chunk_uploads/' . $uploadId);
+    $chunkDirectory = storage_path('app/chunk_uploads/'.$uploadId);
 
     try {
         Auth::login($otherUser);

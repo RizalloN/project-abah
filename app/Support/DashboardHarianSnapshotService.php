@@ -271,18 +271,49 @@ class DashboardHarianSnapshotService
                 return ['built' => 0, 'failed' => 0, 'missing' => [], 'stale' => [], 'checked' => 0];
             }
 
+            $built = 0;
+            $failed = 0;
+
             $missingPeriods = [];
+            $existingPeriodsToValidate = [];
             $stalePeriods = [];
 
             foreach ($periodsToCheck as $period) {
                 if (($existingSnapshots[$period] ?? 0) <= 0) {
                     $missingPeriods[] = $period;
+
                     continue;
                 }
 
+                $existingPeriodsToValidate[] = $period;
+            }
+
+            $buildDuePeriods = function (array $periods) use (&$built, &$failed): void {
+                foreach (array_values(array_unique($periods)) as $period) {
+                    try {
+                        $count = $this->buildPeriodSnapshot($period, false);
+                        if ($count > 0) {
+                            $built++;
+                        }
+                    } catch (Throwable $e) {
+                        $failed++;
+                        Log::warning('Failed to sync due Dashboard Harian snapshot.', [
+                            'period' => $period,
+                            'exception' => $e::class,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            };
+
+            // A missing snapshot makes valid SSA dates disappear from read paths. Restore
+            // those exact-source periods before running the more expensive stale checks.
+            $buildDuePeriods($missingPeriods);
+
+            foreach ($existingPeriodsToValidate as $period) {
                 $sourceMetadata = $this->buildSourceMetadata($period);
                 $hasDuplicateKeys = $this->snapshotPeriodHasDuplicateKeys($period);
-                if ($hasDuplicateKeys || !$this->snapshotSourceIsFresh($period, $sourceMetadata)) {
+                if ($hasDuplicateKeys || ! $this->snapshotSourceIsFresh($period, $sourceMetadata)) {
                     $stalePeriods[] = $period;
 
                     if ($hasDuplicateKeys) {
@@ -293,35 +324,7 @@ class DashboardHarianSnapshotService
                 }
             }
 
-            $duePeriods = array_values(array_unique(array_merge($missingPeriods, $stalePeriods)));
-            if ($duePeriods === []) {
-                return [
-                    'built' => 0,
-                    'failed' => 0,
-                    'missing' => [],
-                    'stale' => [],
-                    'checked' => count($periodsToCheck),
-                ];
-            }
-
-            $built = 0;
-            $failed = 0;
-
-            foreach ($duePeriods as $period) {
-                try {
-                    $count = $this->buildPeriodSnapshot($period, false);
-                    if ($count > 0) {
-                        $built++;
-                    }
-                } catch (Throwable $e) {
-                    $failed++;
-                    Log::warning('Failed to sync due Dashboard Harian snapshot.', [
-                        'period' => $period,
-                        'exception' => $e::class,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            }
+            $buildDuePeriods($stalePeriods);
 
             return [
                 'built' => $built,
@@ -332,6 +335,7 @@ class DashboardHarianSnapshotService
             ];
         } catch (Throwable $e) {
             Log::error('Failed to sync due Dashboard Harian snapshots', ['error' => $e->getMessage()]);
+
             return ['built' => 0, 'failed' => 0, 'missing' => [], 'stale' => [], 'checked' => 0];
         }
     }
@@ -523,16 +527,23 @@ class DashboardHarianSnapshotService
                         $exists = DB::table(self::SNAPSHOT_TABLE)
                             ->where('snapshot_period', $latestShared)
                             ->exists();
-                        if (!$exists) {
+                        if (! $exists) {
                             $this->buildPeriodSnapshot($latestShared, false);
                         }
                     }
                 } catch (Throwable $e) {
                     Log::warning('Auto-building latest shared period snapshot failed in fetchPeriods.', [
                         'period' => $latestShared,
-                        'error' => $e->getMessage()
+                        'error' => $e->getMessage(),
                     ]);
                 }
+            }
+
+            // The source intersection is the authoritative period calendar. Returning only
+            // materialized snapshot periods hides valid daily SSA data whenever a background
+            // rebuild is delayed, which makes Timeseries look randomly discontinuous.
+            if ($shared !== []) {
+                return collect($shared);
             }
 
             try {
@@ -1043,10 +1054,20 @@ class DashboardHarianSnapshotService
             return $this->buildFilterCondition($column, $filterValue);
         }
 
-        $label = strtoupper($type . ' ' . implode(' ', $parts));
+        $label = strtoupper($type.' '.implode(' ', $parts));
         $upperColumn = "UPPER({$column})";
+        $tokenConditions = collect(array_merge([$type], $parts))
+            ->map(fn (string $part): string => preg_replace('/[^a-z0-9]+/i', '', $part) ?? '')
+            ->filter()
+            ->map(fn (string $part): string => "{$upperColumn} LIKE '%".strtoupper($part)."%'")
+            ->implode(' AND ');
 
-        return "({$upperColumn} = '{$label}' OR {$upperColumn} LIKE '%-- {$label}%' OR {$upperColumn} LIKE '% {$label}%')";
+        // Source reports occasionally format a unit name with punctuation, for example
+        // "UNIT A. YANI MAGETAN", while the snapshot key is "unit-a-yani-magetan".
+        // Keep every unit token in the predicate so the selected branch/unit scope stays exact.
+        $flexibleCondition = $tokenConditions !== '' ? " OR ({$tokenConditions})" : '';
+
+        return "({$upperColumn} = '{$label}' OR {$upperColumn} LIKE '%-- {$label}%' OR {$upperColumn} LIKE '% {$label}%'{$flexibleCondition})";
     }
 
     private function mapKeragaanUkerRawRow($row, string $type): ?array
@@ -2963,7 +2984,7 @@ class DashboardHarianSnapshotService
 
     private function fetchPhAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
     {
-        if (!Schema::hasTable('lw325_ph')) {
+        if (! Schema::hasTable('lw325_ph')) {
             return collect();
         }
 
@@ -2982,7 +3003,7 @@ class DashboardHarianSnapshotService
 
         $previousPhPeriod = $this->resolvePreviousMonthPhPeriod($currentPhPeriod);
 
-        if (!$this->isPreviousMonthEndPhPeriod($currentPhPeriod, $previousPhPeriod)) {
+        if (! $this->isPreviousMonthEndPhPeriod($currentPhPeriod, $previousPhPeriod)) {
             Log::warning('Skipping LW325 PH recovery because the comparison period is not the previous month-end.', [
                 'current_period' => $currentPhPeriod,
                 'comparison_period' => $previousPhPeriod,
@@ -2993,76 +3014,83 @@ class DashboardHarianSnapshotService
 
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
-        $currentAccountKeySql = $this->phAccountKeySql('n');
-        $previousAccountKeySql = $this->phAccountKeySql('o');
+        $lookupSources = $this->preparePhLookupSources($currentPhPeriod, $previousPhPeriod);
+        $currentSource = $lookupSources['current_source'] ?? 'lw325_ph as n';
+        $previousSource = $lookupSources['previous_source'] ?? 'lw325_ph as o';
+        $currentAccountKeySql = $lookupSources !== null ? 'n.account_key' : $this->phAccountKeySql('n');
+        $previousAccountKeySql = $lookupSources !== null ? 'o.account_key' : $this->phAccountKeySql('o');
 
-        // OPTIMIZATION: Single combined query for TUPOK + LUNAS
-        // Instead of 2 separate queries with UNION ALL, we create a single subquery
-        // that identifies both types, then aggregate once. This reduces:
-        // - Query execution from 3 (tupok + lunas + final aggregation) to 1
-        // - Result set processing overhead
-        // - Database buffer pool pressure
-        // Expected performance gain: 10-15%
+        try {
+            // TUPOK and LUNAS are evaluated from the same two PH positions so the
+            // result remains identical while the final aggregation needs one pass.
 
-        $tupokQuery = DB::table('lw325_ph as n')
-            ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $currentPhPeriod, $currentAccountKeySql, $previousAccountKeySql) {
-                $join->whereRaw("{$currentAccountKeySql} = {$previousAccountKeySql}")
-                    ->on('n.kanca', '=', 'o.kanca')
-                    ->on('n.unit', '=', 'o.unit')
-                    ->whereRaw('n.periode = ?', [$currentPhPeriod])
-                    ->whereRaw('o.periode = ?', [$previousPhPeriod]);
-            })
-            ->selectRaw("o.kanca as n_kanca")
-            ->selectRaw("o.unit as n_unit")
-            ->selectRaw("o.segmen_dashboard as n_segment")
-            ->selectRaw("(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) as amount")
-            ->selectRaw("'tupok' as recovery_type")
-            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
-            ->whereNotNull('n.acctno')
-            ->where('n.acctno', '<>', '');
+            $tupokQuery = DB::table($currentSource)
+                ->join($previousSource, function ($join) use ($previousPhPeriod, $currentPhPeriod, $currentAccountKeySql, $previousAccountKeySql, $lookupSources) {
+                    $join->whereRaw("{$currentAccountKeySql} = {$previousAccountKeySql}")
+                        ->on('n.kanca', '=', 'o.kanca')
+                        ->on('n.unit', '=', 'o.unit');
 
-        // Apply index-friendly filters directly on source columns (not on TRIM/COALESCE results)
-        if ($normalizedKanca !== []) {
-            $tupokQuery->whereIn('n.kanca', $normalizedKanca);
-        }
-        if ($normalizedUnit !== []) {
-            $tupokQuery->whereIn('n.unit', $normalizedUnit);
-        }
+                    if ($lookupSources === null) {
+                        $join
+                            ->whereRaw('n.periode = ?', [$currentPhPeriod])
+                            ->whereRaw('o.periode = ?', [$previousPhPeriod]);
+                    }
+                })
+                ->selectRaw('o.kanca as n_kanca')
+                ->selectRaw('o.unit as n_unit')
+                ->selectRaw('o.segmen_dashboard as n_segment')
+                ->selectRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) as amount')
+                ->selectRaw("'tupok' as recovery_type")
+                ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
+                ->whereNotNull('n.acctno')
+                ->where('n.acctno', '<>', '');
+            if ($normalizedKanca !== []) {
+                $tupokQuery->whereIn('n.kanca', $normalizedKanca);
+            }
+            if ($normalizedUnit !== []) {
+                $tupokQuery->whereIn('n.unit', $normalizedUnit);
+            }
 
-        $lumasQuery = DB::table('lw325_ph as o')
-            ->leftJoin('lw325_ph as n', function ($join) use ($currentPhPeriod, $currentAccountKeySql, $previousAccountKeySql) {
-                $join->whereRaw("{$previousAccountKeySql} = {$currentAccountKeySql}")
-                    ->on('o.kanca', '=', 'n.kanca')
-                    ->on('o.unit', '=', 'n.unit')
-                    ->whereRaw('n.periode = ?', [$currentPhPeriod]);
-            })
-            ->where('o.periode', $previousPhPeriod)
-            ->whereNull('n.acctno')
-            ->whereNotNull('o.acctno')
-            ->where('o.acctno', '<>', '')
-            ->selectRaw("o.kanca as n_kanca")
-            ->selectRaw("o.unit as n_unit")
-            ->selectRaw("o.segmen_dashboard as n_segment")
-            ->selectRaw("COALESCE(o.pokok, 0) as amount")
-            ->selectRaw("'lunas' as recovery_type");
+            $lumasQuery = DB::table($previousSource)
+                ->leftJoin($currentSource, function ($join) use ($currentPhPeriod, $currentAccountKeySql, $previousAccountKeySql, $lookupSources) {
+                    $join->whereRaw("{$previousAccountKeySql} = {$currentAccountKeySql}")
+                        ->on('o.kanca', '=', 'n.kanca')
+                        ->on('o.unit', '=', 'n.unit');
 
-        // Apply index-friendly filters directly on source columns
-        if ($normalizedKanca !== []) {
-            $lumasQuery->whereIn('o.kanca', $normalizedKanca);
-        }
-        if ($normalizedUnit !== []) {
-            $lumasQuery->whereIn('o.unit', $normalizedUnit);
-        }
+                    if ($lookupSources === null) {
+                        $join
+                            ->whereRaw('n.periode = ?', [$currentPhPeriod]);
+                    }
+                });
 
-        $combinedSubquery = $tupokQuery->unionAll($lumasQuery);
+            if ($lookupSources === null) {
+                $lumasQuery
+                    ->where('o.periode', $previousPhPeriod);
+            }
 
-        // Final aggregation: single pass over combined recovery data
-        // TRIM/COALESCE now applied only to SELECT for output formatting, not for filtering
-        return DB::query()
-            ->fromSub($combinedSubquery, 'ph_summary')
-            ->selectRaw("TRIM(COALESCE(n_kanca, '')) as raw_kanca")
-            ->selectRaw("TRIM(COALESCE(n_unit, '')) as raw_unit")
-            ->selectRaw("
+            $lumasQuery
+                ->whereNull('n.acctno')
+                ->whereNotNull('o.acctno')
+                ->where('o.acctno', '<>', '')
+                ->selectRaw('o.kanca as n_kanca')
+                ->selectRaw('o.unit as n_unit')
+                ->selectRaw('o.segmen_dashboard as n_segment')
+                ->selectRaw('COALESCE(o.pokok, 0) as amount')
+                ->selectRaw("'lunas' as recovery_type");
+            if ($normalizedKanca !== []) {
+                $lumasQuery->whereIn('o.kanca', $normalizedKanca);
+            }
+            if ($normalizedUnit !== []) {
+                $lumasQuery->whereIn('o.unit', $normalizedUnit);
+            }
+
+            $combinedSubquery = $tupokQuery->unionAll($lumasQuery);
+
+            return DB::query()
+                ->fromSub($combinedSubquery, 'ph_summary')
+                ->selectRaw("TRIM(COALESCE(n_kanca, '')) as raw_kanca")
+                ->selectRaw("TRIM(COALESCE(n_unit, '')) as raw_unit")
+                ->selectRaw("
                 SUM(
                     CASE
                         WHEN recovery_type = 'tupok'
@@ -3071,7 +3099,7 @@ class DashboardHarianSnapshotService
                     END
                 ) as ph_tupok
             ")
-            ->selectRaw("
+                ->selectRaw("
                 SUM(
                     CASE
                         WHEN recovery_type = 'lunas'
@@ -3080,7 +3108,7 @@ class DashboardHarianSnapshotService
                     END
                 ) as ph_lunas
             ")
-            ->selectRaw("
+                ->selectRaw("
                 SUM(
                     CASE
                         WHEN UPPER(TRIM(COALESCE(n_segment, ''))) = 'SMALL'
@@ -3089,7 +3117,7 @@ class DashboardHarianSnapshotService
                     END
                 ) as rec_dh_small
             ")
-            ->selectRaw("
+                ->selectRaw("
                 SUM(
                     CASE
                         WHEN UPPER(TRIM(COALESCE(n_segment, ''))) = 'CONSUMER'
@@ -3098,7 +3126,7 @@ class DashboardHarianSnapshotService
                     END
                 ) as rec_dh_consumer
             ")
-            ->selectRaw("
+                ->selectRaw("
                 SUM(
                     CASE
                         WHEN UPPER(TRIM(COALESCE(n_segment, ''))) IN ('MICRO', 'MIKRO')
@@ -3107,9 +3135,86 @@ class DashboardHarianSnapshotService
                     END
                 ) as rec_dh_micro
             ")
-            ->selectRaw('SUM(amount) as rec_dh_total')
-            ->groupBy('n_kanca', 'n_unit')
-            ->get();
+                ->selectRaw('SUM(amount) as rec_dh_total')
+                ->groupBy('n_kanca', 'n_unit')
+                ->get();
+        } finally {
+            $this->dropPhLookupSources($lookupSources);
+        }
+    }
+
+    /**
+     * @return array{current_source: string, previous_source: string, tables: array<int, string>}|null
+     */
+    private function preparePhLookupSources(string $currentPeriod, string $previousPeriod): ?array
+    {
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return null;
+        }
+
+        $connection = DB::connection();
+        $currentTable = 'tmp_dashboard_harian_ph_current';
+        $previousTable = 'tmp_dashboard_harian_ph_previous';
+        $currentIdentifier = $connection->getQueryGrammar()->wrapTable($currentTable);
+        $previousIdentifier = $connection->getQueryGrammar()->wrapTable($previousTable);
+        $accountKeySql = $this->phAccountKeySql('src');
+
+        try {
+            $connection->statement("DROP TEMPORARY TABLE IF EXISTS {$currentIdentifier}");
+            $connection->statement("DROP TEMPORARY TABLE IF EXISTS {$previousIdentifier}");
+
+            foreach ([
+                [$currentIdentifier, $currentPeriod],
+                [$previousIdentifier, $previousPeriod],
+            ] as [$table, $period]) {
+                $connection->statement(
+                    "CREATE TEMPORARY TABLE {$table} ENGINE=InnoDB AS
+                    SELECT src.kanca, src.unit, src.segmen_dashboard, src.acctno, src.pokok,
+                        {$accountKeySql} AS account_key
+                    FROM lw325_ph AS src
+                    WHERE src.periode = ?",
+                    [$period]
+                );
+                $connection->statement("CREATE INDEX idx_dh_ph_lookup ON {$table} (kanca, unit, account_key)");
+            }
+
+            return [
+                'current_source' => "{$currentTable} as n",
+                'previous_source' => "{$previousTable} as o",
+                'tables' => [$currentIdentifier, $previousIdentifier],
+            ];
+        } catch (Throwable $e) {
+            $this->dropPhLookupSources([
+                'tables' => [$currentIdentifier, $previousIdentifier],
+            ]);
+            Log::warning('Dashboard Harian PH lookup table preparation failed; using indexed source fallback.', [
+                'current_period' => $currentPeriod,
+                'previous_period' => $previousPeriod,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * @param  array{tables: array<int, string>}|null  $lookupSources
+     */
+    private function dropPhLookupSources(?array $lookupSources): void
+    {
+        if ($lookupSources === null) {
+            return;
+        }
+
+        try {
+            foreach ($lookupSources['tables'] ?? [] as $table) {
+                DB::statement("DROP TEMPORARY TABLE IF EXISTS {$table}");
+            }
+        } catch (Throwable $e) {
+            Log::warning('Dashboard Harian PH lookup table cleanup failed.', [
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function finalizeMetrics(array $metrics): array
@@ -4649,7 +4754,7 @@ class DashboardHarianSnapshotService
             'medium' => [
                 "{$segment} = 'MEDIUM' AND {$productDashboard} = 'MEDIUM'",
                 "{$segment} = 'SMALL' AND {$segmen_2025} = 'MEDIUM'",
-                "{$segment} = 'MEDIUM' AND {$segmen_2025} = 'COMMERCIAL'"
+                "{$segment} = 'MEDIUM' AND {$segmen_2025} = 'COMMERCIAL'",
             ],
             // NOTE: 'consumer' is computed in finalizeMetrics from subsegments, not queried
             'briguna_konsumer' => "{$segment} = 'CONSUMER' AND {$productDashboard} IN ('BRIGUNA-KONSUMER', 'BRIGUNA-MIKRO')",
@@ -4659,10 +4764,13 @@ class DashboardHarianSnapshotService
             'briguna_mikro' => "{$microSegment} AND {$productDashboard} = 'BRIGUNA-MIKRO'",
             'kupedes' => [
                 "{$microSegment} AND {$product} = 'KUPEDES'",
-                "{$microSegment} AND {$productDashboard} = 'CASH COLLATERAL'"
+                "{$microSegment} AND {$productDashboard} = 'CASH COLLATERAL'",
             ],
             'kur_mikro' => "{$microSegment} AND {$productDashboard} = 'KUR-MIKRO' AND {$product} = 'KUR MIKRO'",
-            'kur_kecil' => "{$microSegment} AND {$productDashboard} IN ('KUR-MIKRO', 'KUR-KECIL') AND {$product} IN ('KUR KECIL', 'KREDIT MIKRO - KUR RITEL 2015')",
+            'kur_kecil' => [
+                "{$microSegment} AND {$productDashboard} IN ('KUR-MIKRO', 'KUR-KECIL') AND {$product} IN ('KUR KECIL', 'KREDIT MIKRO - KUR RITEL 2015')",
+                "{$segment} = 'SMALL' AND {$productDashboard} = 'KUR-SMALL' AND {$product} = 'KUR KECIL'",
+            ],
             'kur_kpp' => "{$microSegment} AND {$productDashboard} = 'KPR'",
         ];
     }
@@ -4821,8 +4929,7 @@ class DashboardHarianSnapshotService
         string $segment = 'total',
         ?string $recoverySegment = null,
         ?string $recoveryProduct = null
-    ): array
-    {
+    ): array {
         if ($months === []) {
             return [
                 'series' => [],
@@ -4841,7 +4948,7 @@ class DashboardHarianSnapshotService
             );
         }
 
-        if (!$this->canUseSnapshotMetrics()) {
+        if (! $this->canUseSnapshotMetrics()) {
             return [
                 'series' => [],
                 'area_total' => [],
@@ -4949,7 +5056,7 @@ class DashboardHarianSnapshotService
         } elseif ($normalizedKanca !== []) {
             // Filter by kanca, but only take the kanca-level summary row (kanca_key == unit_key)
             $query->whereIn('kanca_key', array_map([$this, 'slugKey'], $normalizedKanca))
-                  ->whereRaw('kanca_key = unit_key');
+                ->whereRaw('kanca_key = unit_key');
         } else {
             // Total Area (All Kanca) - Only take summary rows to avoid double counting
             $query->whereRaw('kanca_key = unit_key');
@@ -4969,12 +5076,14 @@ class DashboardHarianSnapshotService
             $day = (int) substr($row->snapshot_period, 8, 2);
             $kanca = $row->kanca_label;
 
-            if ($day < 1 || $day > 31) continue;
+            if ($day < 1 || $day > 31) {
+                continue;
+            }
 
-            if (!isset($series[$kanca])) {
+            if (! isset($series[$kanca])) {
                 $series[$kanca] = [];
             }
-            if (!isset($series[$kanca][$month])) {
+            if (! isset($series[$kanca][$month])) {
                 $series[$kanca][$month] = array_fill(1, 31, null);
             }
             $scaledValue = $valueType === 'percent'
@@ -4982,11 +5091,11 @@ class DashboardHarianSnapshotService
                 : (float) $row->value / 1000000000;
             $series[$kanca][$month][$day] = $scaledValue;
 
-            if (!isset($areaTotal[$month])) {
+            if (! isset($areaTotal[$month])) {
                 $areaTotal[$month] = array_fill(1, 31, null);
             }
             if ($valueType === 'percent') {
-                if (!isset($areaNumerator[$month])) {
+                if (! isset($areaNumerator[$month])) {
                     $areaNumerator[$month] = array_fill(1, 31, 0.0);
                     $areaDenominator[$month] = array_fill(1, 31, 0.0);
                 }

@@ -318,6 +318,12 @@ Schedule::command('dashboard-sources:refresh --queue --only-stale')
     ->withoutOverlapping(10)
     ->runInBackground();
 
+Schedule::command('database:backup-daily')
+    ->dailyAt('00:00')
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping(1440)
+    ->runInBackground();
+
 Schedule::command('database:performance-tune')
     ->hourly()
     ->withoutOverlapping(5)

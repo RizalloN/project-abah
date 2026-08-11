@@ -21,23 +21,41 @@ class DashboardPinjamanMatrixViewTest extends TestCase
         $this->assertSame(1, substr_count($view, 'id="loanComparisonPeriodMeta"'));
     }
 
-    public function test_matrix_retries_while_a_missing_snapshot_is_prepared(): void
+    public function test_matrix_retries_while_another_request_is_computing(): void
     {
         $view = file_get_contents(resource_path('views/report/dashboard-pinjaman/matrix.blade.php'));
 
         $this->assertIsString($view);
-        $this->assertStringContainsString("payload.status === 'warming'", $view);
-        $this->assertStringContainsString('snapshotWarmAttempts >= 24', $view);
+        $this->assertStringContainsString("payload.status === 'warming' || payload.status === 'computing'", $view);
+        $this->assertStringContainsString('snapshotWarmAttempts >= 40', $view);
         $this->assertStringContainsString('loadMatrix(false, true)', $view);
+        $this->assertStringContainsString('REKONSILIASI SESUAI', $view);
+        $this->assertStringContainsString('UNIT: RUPIAH', $view);
     }
 
-    public function test_matrix_endpoint_does_not_rebuild_snapshots_inside_a_browser_request(): void
+    public function test_matrix_endpoint_uses_daily_loan_without_snapshot_warming(): void
     {
         $controller = file_get_contents(app_path('Http/Controllers/DashboardPinjamanReportController.php'));
 
         $this->assertIsString($controller);
-        $this->assertStringContainsString('queueMissingMatrixSnapshots', $controller);
-        $this->assertStringContainsString("'status' => 'warming'", $controller);
+        $this->assertStringContainsString("'status' => 'computing'", $controller);
+        $this->assertStringContainsString('buildMovementMatrixAndSuplesiAggregateQuery', $controller);
+        $this->assertStringContainsString("'uses_snapshot' => false", $controller);
         $this->assertStringNotContainsString('rebuildDashboard($period, false)', $controller);
+    }
+
+    public function test_matrix_period_changes_invalidate_old_rows_and_keep_drilldown_on_applied_params(): void
+    {
+        $view = file_get_contents(resource_path('views/report/dashboard-pinjaman/matrix.blade.php'));
+
+        $this->assertIsString($view);
+        $this->assertStringContainsString('function markMatrixDirty()', $view);
+        $this->assertStringContainsString('activeMatrixParams = null', $view);
+        $this->assertStringContainsString('new URLSearchParams(activeMatrixParams.toString())', $view);
+        $this->assertStringContainsString("window.history.pushState({}, '', `?\${params.toString()}`)", $view);
+        $this->assertStringContainsString("window.addEventListener('popstate', () => window.location.reload())", $view);
+        $this->assertStringContainsString("payload.ph_period_relation === 'fallback'", $view);
+        $this->assertStringContainsString('max-width: calc(100vw - 2rem)', $view);
+        $this->assertStringNotContainsString("window.history.replaceState({}, '', `?\${params.toString()}`)", $view);
     }
 }

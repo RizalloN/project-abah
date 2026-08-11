@@ -19,6 +19,7 @@ class SchedulerCentralizationTest extends TestCase
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('reports:ensure-fresh-snapshots'"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('reports:snapshot:drain-dirty --max-runtime=5'"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('reports:dashboard-harian-sync-missing'"));
+        $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('database:backup-daily'"));
     }
 
     public function test_frequent_snapshot_commands_use_bounded_mutexes_and_background_execution(): void
@@ -63,5 +64,17 @@ class SchedulerCentralizationTest extends TestCase
         );
         $this->assertStringNotContainsString("'--once' => true", $consoleRoutes);
         $this->assertStringNotContainsString("'--fix' => true", $consoleRoutes);
+    }
+
+    public function test_daily_database_backup_runs_at_midnight_with_a_full_day_mutex(): void
+    {
+        $consoleRoutes = file_get_contents(base_path('routes/console.php'));
+
+        $this->assertMatchesRegularExpression(
+            <<<'REGEX'
+/Schedule::command\('database:backup-daily'\)\s*->dailyAt\('00:00'\)\s*->timezone\((?:'Asia\/Jakarta'|config\('database_backup\.timezone'[^)]*\))\)\s*->withoutOverlapping\(1440\)\s*->runInBackground\(\);/s
+REGEX,
+            $consoleRoutes
+        );
     }
 }
