@@ -127,6 +127,44 @@ function driveAsixWorkbookBinary(string $format = 'xlsx'): string
     }
 }
 
+function driveAsixPipelineWorkbookBinary(): string
+{
+    $spreadsheet = new Spreadsheet;
+    $spreadsheet->getActiveSheet()->setTitle('Pipeline')->fromArray([
+        ['Nama Debitur', 'Kanca', 'TL Kunjungan'],
+        ['Debitur A', 'KC Madiun', 'Sudah kunjungan'],
+        ['Debitur B', '45', 'Not Done'],
+        ['Debitur C', 'KC Magetan', '31 Jul 2026'],
+        ['Debitur Luar Area', 'KC Surabaya', 'Sudah'],
+    ]);
+    $spreadsheet->createSheet()->setTitle('Tanpa Status')->fromArray([
+        ['Nama Debitur', 'Kanca', 'STATUS_AVAILABLE'],
+        ['Debitur D', 'KC Ngawi', 'Available'],
+    ]);
+    $spreadsheet->createSheet()->setTitle('Pipeline Small')->fromArray([
+        ['KODE UKER', 'KANCA', 'SUPLIER/BUYER(', 'Progress TL'],
+        ['45', 'KANCA MADIUN', 'Supplier Area 6', 'Kunjungan Ulang'],
+    ]);
+
+    $temporaryPath = tempnam(sys_get_temp_dir(), 'pipeline-summary-test-');
+    if ($temporaryPath === false) {
+        throw new RuntimeException('Tidak dapat membuat workbook pipeline sementara.');
+    }
+
+    try {
+        (new Xlsx($spreadsheet))->save($temporaryPath);
+        $binary = file_get_contents($temporaryPath);
+        if ($binary === false) {
+            throw new RuntimeException('Tidak dapat membaca workbook pipeline sementara.');
+        }
+
+        return $binary;
+    } finally {
+        $spreadsheet->disconnectWorksheets();
+        @unlink($temporaryPath);
+    }
+}
+
 /**
  * @param  array<string, string>  $entries
  */
@@ -224,6 +262,88 @@ it('mengizinkan user biasa membuka editor dan membaca workbook multi-sheet', fun
         ->assertJsonPath('workbook.sheets.1.title', 'Detail');
 });
 
+it('meringkas persentase TL hanya dari pipeline empat cabang Area 6', function (): void {
+    $user = driveAsixTestUser();
+    $binary = driveAsixPipelineWorkbookBinary();
+    $pipelineFolder = DriveAsixFolder::query()->create([
+        'name' => 'Pipeline',
+        'parent_id' => null,
+        'created_by' => $user->getKey(),
+    ]);
+    $madiunFolder = DriveAsixFolder::query()->create([
+        'name' => 'MADIUN',
+        'parent_id' => $pipelineFolder->getKey(),
+        'created_by' => $user->getKey(),
+    ]);
+    $storedName = 'pipeline-'.bin2hex(random_bytes(4)).'.xlsx';
+    Storage::disk('local')->put('drive_asix/'.$storedName, $binary);
+    DriveAsixFile::query()->create([
+        'folder_id' => null,
+        'original_name' => 'PIPELINE_MADIUN_FOLLOW_UP_AREA_6.xlsx',
+        'stored_name' => $storedName,
+        'mime_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'size_bytes' => strlen($binary),
+        'uploaded_by' => $user->getKey(),
+    ]);
+    $referenceStoredName = 'reference-'.bin2hex(random_bytes(4)).'.xlsx';
+    Storage::disk('local')->put('drive_asix/'.$referenceStoredName, $binary);
+    DriveAsixFile::query()->create([
+        'folder_id' => $madiunFolder->getKey(),
+        'original_name' => 'GAPOKTAN.xlsx',
+        'stored_name' => $referenceStoredName,
+        'mime_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'size_bytes' => strlen($binary),
+        'uploaded_by' => $user->getKey(),
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('drive.pipeline-summary'))
+        ->assertOk()
+        ->assertJsonPath('totals.total', 5)
+        ->assertJsonPath('totals.followed_up', 3)
+        ->assertJsonPath('totals.pending', 1)
+        ->assertJsonPath('totals.unclassified', 1)
+        ->assertJsonPath('totals.classified', 4)
+        ->assertJsonPath('totals.follow_up_percentage', 60)
+        ->assertJsonPath('totals.progress', 60)
+        ->assertJsonPath('totals.outside_scope', 1)
+        ->assertJsonPath('totals.scanned_files', 1)
+        ->assertJsonPath('totals.active_files', 1)
+        ->assertJsonPath('files.0.status_fields.0', 'TL Kunjungan')
+        ->assertJsonPath('branches.0.name', 'KC Madiun')
+        ->assertJsonPath('branches.0.total', 3)
+        ->assertJsonPath('branches.0.followed_up', 2)
+        ->assertJsonPath('branches.0.follow_up_percentage', 66.7)
+        ->assertJsonPath('branches.1.name', 'KC Magetan')
+        ->assertJsonPath('branches.1.total', 1)
+        ->assertJsonPath('branches.1.followed_up', 1)
+        ->assertJsonPath('branches.1.follow_up_percentage', 100)
+        ->assertJsonPath('branches.2.name', 'KC Ngawi')
+        ->assertJsonPath('branches.2.unclassified', 1)
+        ->assertJsonPath('branches.2.follow_up_percentage', 0)
+        ->assertJsonCount(4, 'branches');
+});
+
+it('membuka editor dengan autosave dan kembali ke folder asal file', function (): void {
+    $user = driveAsixTestUser();
+    $folder = DriveAsixFolder::query()->create([
+        'name' => 'Pipeline Madiun',
+        'parent_id' => null,
+        'created_by' => $user->getKey(),
+    ]);
+    $file = driveAsixStoredWorkbook($user);
+    $file->update(['folder_id' => $folder->getKey()]);
+
+    $this->actingAs($user)
+        ->get(route('drive.file.editor', $file))
+        ->assertOk()
+        ->assertSee(route('drive.index', ['folderId' => $folder->getKey()]), false)
+        ->assertSee('id="sheetExitModal"', false)
+        ->assertSee('const AUTOSAVE_DELAY_MS = 1400;', false)
+        ->assertSee('scheduleAutosave()', false)
+        ->assertSee('Simpan & keluar', false);
+});
+
 it('menyimpan nilai formula format dan merge ke file workbook lokal', function (): void {
     $user = driveAsixTestUser();
     $file = driveAsixStoredWorkbook($user);
@@ -300,6 +420,91 @@ it('menyimpan nilai formula format dan merge ke file workbook lokal', function (
         ->and($sheet->getMergeCells())->toHaveKey('D4:E4');
 
     $savedWorkbook->disconnectWorksheets();
+});
+
+it('mempertahankan isi seluruh sel saat merge lalu unmerge', function (): void {
+    $user = driveAsixTestUser();
+    $file = driveAsixStoredWorkbook($user);
+
+    $revision = $this->actingAs($user)
+        ->getJson(route('drive.file.workbook', $file))
+        ->assertOk()
+        ->json('file.revision');
+
+    $mergeResponse = $this->actingAs($user)
+        ->patchJson(route('drive.file.workbook.save', $file), [
+            'base_revision' => $revision,
+            'operations' => [
+                ['type' => 'set_cell', 'sheet' => 0, 'address' => 'D4', 'value' => 'Nilai utama'],
+                ['type' => 'set_cell', 'sheet' => 0, 'address' => 'E4', 'value' => 'Nilai tersembunyi'],
+                ['type' => 'merge', 'sheet' => 0, 'range' => 'D4:E4'],
+            ],
+        ])
+        ->assertOk();
+
+    $savedPath = Storage::disk('local')->path('drive_asix/'.$file->stored_name);
+    $mergedWorkbook = IOFactory::load($savedPath);
+    expect($mergedWorkbook->getSheet(0)->getMergeCells())->toHaveKey('D4:E4')
+        ->and($mergedWorkbook->getSheet(0)->getCell('D4')->getValue())->toBe('Nilai utama')
+        ->and($mergedWorkbook->getSheet(0)->getCell('E4')->getValue())->toBe('Nilai tersembunyi');
+    $mergedWorkbook->disconnectWorksheets();
+
+    $this->actingAs($user)
+        ->patchJson(route('drive.file.workbook.save', $file), [
+            'base_revision' => $mergeResponse->json('file.revision'),
+            'operations' => [[
+                'type' => 'unmerge',
+                'sheet' => 0,
+                'range' => 'D4:E4',
+            ]],
+        ])
+        ->assertOk();
+
+    $unmergedWorkbook = IOFactory::load($savedPath);
+    expect($unmergedWorkbook->getSheet(0)->getMergeCells())->not->toHaveKey('D4:E4')
+        ->and($unmergedWorkbook->getSheet(0)->getCell('D4')->getValue())->toBe('Nilai utama')
+        ->and($unmergedWorkbook->getSheet(0)->getCell('E4')->getValue())->toBe('Nilai tersembunyi');
+    $unmergedWorkbook->disconnectWorksheets();
+});
+
+it('menolak merge satu sel dan merge yang bertumpuk tanpa mengubah workbook', function (): void {
+    $user = driveAsixTestUser();
+    $file = driveAsixStoredWorkbook($user);
+    $path = Storage::disk('local')->path('drive_asix/'.$file->stored_name);
+    $revision = $this->actingAs($user)
+        ->getJson(route('drive.file.workbook', $file))
+        ->assertOk()
+        ->json('file.revision');
+    $originalHash = hash_file('sha256', $path);
+
+    $this->actingAs($user)
+        ->patchJson(route('drive.file.workbook.save', $file), [
+            'base_revision' => $revision,
+            'operations' => [[
+                'type' => 'merge',
+                'sheet' => 0,
+                'range' => 'A4:A4',
+            ]],
+        ])
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'Pilih sedikitnya dua sel untuk digabungkan.');
+
+    $this->actingAs($user)
+        ->patchJson(route('drive.file.workbook.save', $file), [
+            'base_revision' => $revision,
+            'operations' => [[
+                'type' => 'merge',
+                'sheet' => 0,
+                'range' => 'C1:D1',
+            ]],
+        ])
+        ->assertStatus(422)
+        ->assertJsonPath(
+            'message',
+            'Rentang merge bersinggungan dengan merged cell lain. Pisahkan sel tersebut terlebih dahulu.'
+        );
+
+    expect(hash_file('sha256', $path))->toBe($originalHash);
 });
 
 it('menolak simpan dari revisi lama tanpa menimpa perubahan terbaru', function (): void {
@@ -642,6 +847,39 @@ it('membatasi upload dan delete untuk admin tanpa membatasi akses edit user', fu
     expect(DriveAsixFile::withTrashed()->find($file->getKey())?->trashed())->toBeTrue();
 });
 
+it('mengembalikan respons json untuk antrean hapus file dan folder admin', function (): void {
+    $admin = driveAsixTestUser('admin');
+    $folder = DriveAsixFolder::query()->create([
+        'name' => 'Folder Sementara',
+        'parent_id' => null,
+        'created_by' => $admin->getKey(),
+    ]);
+    $file = driveAsixStoredWorkbook($admin);
+    $file->update(['folder_id' => $folder->getKey()]);
+
+    $this->actingAs($admin)
+        ->deleteJson(route('drive.file.delete', $file))
+        ->assertOk()
+        ->assertJsonPath('status', 'success')
+        ->assertJsonPath('deleted.type', 'file')
+        ->assertJsonPath('deleted.id', $file->getKey())
+        ->assertJsonPath('redirect_url', route('drive.index', ['folderId' => $folder->getKey()]));
+
+    expect(DriveAsixFile::withTrashed()->find($file->getKey())?->trashed())->toBeTrue();
+
+    $this->actingAs($admin)
+        ->deleteJson(route('drive.folder.delete', $folder))
+        ->assertOk()
+        ->assertJsonPath('status', 'success')
+        ->assertJsonPath('deleted.type', 'folder')
+        ->assertJsonPath('deleted.id', $folder->getKey())
+        ->assertJsonPath('redirect_url', route('drive.index'));
+
+    $this->assertDatabaseMissing('drive_asix_folders', [
+        'id' => $folder->getKey(),
+    ]);
+});
+
 it('menjaga nama file aman dan mempertahankan ekstensi saat rename', function (): void {
     $admin = driveAsixTestUser('admin');
     $file = driveAsixStoredWorkbook($admin);
@@ -978,6 +1216,64 @@ it('membagi payload berdasarkan sel terisi dan tetap memuat dimensi struktural',
     }
 });
 
+it('memuat seluruh baris workbook besar secara virtual tanpa batas dua ribu baris', function (): void {
+    $user = driveAsixTestUser();
+    $spreadsheet = new Spreadsheet;
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setTitle('Data Besar');
+    $sheet->setCellValue('A1', 'Header');
+    $sheet->setCellValue('A2505', 'Baris terakhir');
+    $sheet->setCellValue('B2505', 2505);
+
+    $temporaryPath = tempnam(sys_get_temp_dir(), 'drive-asix-virtual-');
+    expect($temporaryPath)->not->toBeFalse();
+
+    try {
+        (new Xlsx($spreadsheet))->save($temporaryPath);
+        $binary = file_get_contents($temporaryPath);
+        expect($binary)->toBeString();
+
+        $storedName = 'virtual-'.bin2hex(random_bytes(5)).'.xlsx';
+        Storage::disk('local')->put('drive_asix/'.$storedName, $binary);
+        $file = DriveAsixFile::query()->create([
+            'folder_id' => null,
+            'original_name' => 'Data Besar.xlsx',
+            'stored_name' => $storedName,
+            'mime_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'size_bytes' => strlen($binary),
+            'uploaded_by' => $user->getKey(),
+        ]);
+
+        $payload = $this->actingAs($user)
+            ->getJson(route('drive.file.workbook', $file))
+            ->assertOk()
+            ->assertJsonPath('workbook.sheets.0.max_row', 2505)
+            ->assertJsonMissingPath('workbook.sheets.0.cells.A2505')
+            ->json();
+
+        expect($payload['file']['warnings'])
+            ->not->toContain('Sheet "Data Besar" terlalu besar; editor menampilkan sampai 2000 baris dan 100 kolom. Data dan format di luar area itu tetap dipertahankan.');
+
+        $this->actingAs($user)
+            ->getJson(route('drive.file.workbook.cells', $file).'?'.http_build_query([
+                'revision' => $payload['file']['revision'],
+                'sheet' => '0',
+                'start_row' => 2401,
+                'end_row' => 2505,
+                'start_col' => 1,
+                'end_col' => 2,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('range.start_row', 2401)
+            ->assertJsonPath('range.end_row', 2505)
+            ->assertJsonPath('cells.A2505.value', 'Baris terakhir')
+            ->assertJsonPath('cells.B2505.value', 2505);
+    } finally {
+        $spreadsheet->disconnectWorksheets();
+        @unlink($temporaryPath);
+    }
+});
+
 it('memblokir pembuatan sheet ke-256 untuk semua format workbook', function (): void {
     $spreadsheet = new Spreadsheet;
     for ($index = 1; $index < 255; $index++) {
@@ -1154,9 +1450,13 @@ it('mengembalikan file dan versi bila penghapusan metadata permanen gagal', func
 it('memuat guard UI untuk drive kosong, save race, range, dan clipboard terstruktur', function (): void {
     $indexSource = file_get_contents(resource_path('views/drive/index.blade.php'));
     $editorSource = file_get_contents(resource_path('views/drive/spreadsheet-editor.blade.php'));
+    $sidebarSource = file_get_contents(resource_path('views/layouts/sidebar.blade.php'));
 
     expect($indexSource)->toBeString()
         ->and($editorSource)->toBeString()
+        ->and($sidebarSource)->toBeString()
+        ->and($sidebarSource)->toContain('<p>Bank Pipeline</p>')
+        ->and($sidebarSource)->not->toContain('<p>DriveASIX</p>')
         ->and($indexSource)->toContain('if (!grid || !list) return;')
         ->and(substr_count(
             $indexSource,
@@ -1168,7 +1468,19 @@ it('memuat guard UI untuk drive kosong, save race, range, dan clipboard terstruk
         ->and($editorSource)->toContain('Tutup, tetap terkunci')
         ->and($editorSource)->toContain('activateActionSheet(action)')
         ->and($editorSource)->toContain('MAX_INTERACTIVE_RANGE_CELLS')
+        ->and($editorSource)->toContain("'cellsUrl' => route('drive.file.workbook.cells'")
+        ->and($editorSource)->toContain('const ROW_VIEWPORT_CHUNK_SIZE = 160;')
+        ->and($editorSource)->toContain('requestVisibleRows(rows);')
+        ->and($editorSource)->toContain('new Float64Array(rows + 1)')
+        ->and($editorSource)->not->toContain('const MAX_RENDER_ROWS = 2000;')
         ->and($editorSource)->toContain('cells: cellRows')
+        ->and($editorSource)->toContain('window.Swal.fire({')
+        ->and($editorSource)->not->toContain('window.confirm(')
+        ->and($editorSource)->not->toContain('background-color: var(--asix-sheet-selected) !important;')
+        ->and($editorSource)->toContain('outline: 1px solid rgba(24, 167, 200, .62);')
+        ->and($editorSource)->toContain("elements.mergeButton.setAttribute('aria-pressed'")
+        ->and($editorSource)->toContain('Pilih sedikitnya dua sel untuk digabungkan.')
+        ->and($editorSource)->toContain('mergedRanges.find(merged => rangesEqual(merged.range, range))')
         ->and($editorSource)->not->toContain('if (cut) clearRange(range);');
 });
 

@@ -27,13 +27,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 
-REQUIRED_HEADERS = {
+SSA_SIMPANAN_COLUMNS = [
     "month_day_year_of_posisi",
     "nama_cabang",
     "nama_uker",
     "produk",
+    "segmentasi",
+    "segmen_kategorisasi_bisnis",
     "saldo",
-}
+]
+
+REQUIRED_HEADERS = set(SSA_SIMPANAN_COLUMNS)
 
 INDONESIAN_MONTHS = {
     "januari": "january",
@@ -290,7 +294,16 @@ def is_valid_ssa_row_values(values_by_header: dict[str, object]) -> bool:
     nama_cabang = normalize_cell(values_by_header.get("nama_cabang"))
     nama_uker = normalize_cell(values_by_header.get("nama_uker"))
     produk = normalize_cell(values_by_header.get("produk"))
-    if posisi == "" or nama_cabang == "" or nama_uker == "" or produk == "":
+    segmentasi = normalize_cell(values_by_header.get("segmentasi"))
+    kategori_bisnis = normalize_cell(values_by_header.get("segmen_kategorisasi_bisnis"))
+    if (
+        posisi == ""
+        or nama_cabang == ""
+        or nama_uker == ""
+        or produk == ""
+        or segmentasi == ""
+        or kategori_bisnis == ""
+    ):
         return False
 
     return True
@@ -591,6 +604,10 @@ def stage_ssa_simpanan(config: dict) -> None:
 
         if df.height == 0:
             raise RuntimeError("Polars tidak menemukan baris data SSA Simpanan yang valid.")
+
+        # LOAD DATA relies on positional columns. Keep the target order stable
+        # even when a source workbook reorders its columns or adds metadata.
+        df = df.select(SSA_SIMPANAN_COLUMNS)
 
         df = df.with_columns([
             pl.col(column).cast(pl.Utf8).str.strip_chars().alias(column)

@@ -93,6 +93,7 @@ class DailyDatabaseBackupService
                     );
                 }
 
+                $this->verifyExistingManagedBackup($existing);
                 [$deletedBackups, $warnings] = $this->pruneRetainedBackups($baseDirectory);
 
                 return $this->result(
@@ -683,7 +684,7 @@ class DailyDatabaseBackupService
             return strcmp($right['backup_date'], $left['backup_date']);
         });
 
-        $retentionCount = max(1, (int) config('database_backup.retention_count', 2));
+        $retentionCount = max(1, (int) config('database_backup.retention_count', 1));
         $expired = array_slice($managed, $retentionCount);
         $deleted = [];
 
@@ -698,6 +699,37 @@ class DailyDatabaseBackupService
         }
 
         return [$deleted, $warnings];
+    }
+
+    /**
+     * Re-read the published backup before treating it as today's usable copy.
+     * Retention is only allowed to run after both compressed and SQL-stream
+     * checksums still match the verified manifest.
+     *
+     * @param  array{
+     *     backup_path: string,
+     *     manifest: array<string, mixed>
+     * }  $backup
+     */
+    private function verifyExistingManagedBackup(array $backup): void
+    {
+        $manifest = $backup['manifest'];
+        $backupPath = $backup['backup_path'];
+        $expectedCompressedHash = (string) ($manifest['sha256_compressed'] ?? '');
+        $compressedHash = hash_file('sha256', $backupPath);
+
+        if (! is_string($compressedHash)
+            || $compressedHash === ''
+            || ! hash_equals($expectedCompressedHash, $compressedHash)) {
+            throw new RuntimeException('Checksum file backup terkompresi tidak cocok dengan manifest.');
+        }
+
+        $this->verifyCompressedDump(
+            $backupPath,
+            (int) ($manifest['uncompressed_bytes'] ?? 0),
+            (string) ($manifest['sha256_uncompressed'] ?? ''),
+            ''
+        );
     }
 
     /**

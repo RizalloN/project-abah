@@ -1028,7 +1028,10 @@ class ImportProgressService
         $totalRows = max(0, (int) ($job->total_files ?? 0));
         $resolvedTerminalStatus = $this->resolveTerminalStatusFromTotals($success, $failed, $totalRows);
 
-        if ($status === 'processing' && $resolvedTerminalStatus !== null) {
+        // A worker can finish writing every row just before its final status update.
+        // Reconcile from persisted totals for both queued and processing states so a
+        // completed import is never later mislabeled as a stale queued job.
+        if ($resolvedTerminalStatus !== null) {
             $this->finalizeProcessingJobFromTotals($jobId, $resolvedTerminalStatus, $success, $failed, $totalRows);
 
             return $this->findJob($jobId);

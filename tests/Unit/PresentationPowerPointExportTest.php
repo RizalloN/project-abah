@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\Presentation\PresentationDeckDataService;
+use App\Services\Presentation\NativeOpenXmlPowerPointRenderer;
 use App\Services\Presentation\PresentationScopeDataService;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
@@ -85,6 +86,198 @@ class PresentationPowerPointExportTest extends TestCase
         $this->assertStringContainsString('id="pres-export-progress"', $source);
         $this->assertStringContainsString('config.exportStartUrl', $source);
         $this->assertStringContainsString('const pollExport = async', $source);
+    }
+
+    public function test_powerpoint_deck_places_marketshare_slides_immediately_after_agenda(): void
+    {
+        $renderer = new NativeOpenXmlPowerPointRenderer();
+        $method = new \ReflectionMethod($renderer, 'buildSlides');
+        $slides = $method->invoke($renderer, [
+            'meta' => [
+                'title' => 'Performance Review',
+                'scope_label' => 'Area 6 Konsolidasi',
+                'period_label' => '31 Juli 2026',
+                'source_note' => 'Sumber pengujian',
+            ],
+            'agenda' => ['Market Share Area 6', 'Mapping Potensi dan Penetrasi'],
+            'marketshare' => [
+                'area6' => [
+                    'available' => true,
+                    'scope_label' => 'Area 6 Konsolidasi',
+                    'period' => 'Mei 2026',
+                    'unit' => 'Rp dalam Miliar',
+                    'source' => 'Workbook Market Share Area 6',
+                    'segment_key' => 'dpk',
+                    'segment_label' => 'Total DPK',
+                    'rows' => [
+                        [
+                            'label' => 'KC Madiun',
+                            'branch' => 'KC Madiun',
+                            'total' => false,
+                            'bri_current' => 100,
+                            'industry_current' => 400,
+                            'outside_current' => 300,
+                            'market_share_current' => 25,
+                            'market_share_previous' => 24,
+                            'bri_ytd' => 5,
+                        ],
+                        [
+                            'label' => 'AREA 6',
+                            'branch' => 'AREA 6',
+                            'total' => true,
+                            'bri_current' => 100,
+                            'industry_current' => 400,
+                            'outside_current' => 300,
+                            'market_share_current' => 25,
+                            'market_share_previous' => 24,
+                            'bri_ytd' => 5,
+                        ],
+                    ],
+                    'total' => [
+                        'bri_current' => 100,
+                        'industry_current' => 400,
+                        'outside_current' => 300,
+                        'market_share_current' => 25,
+                        'market_share_previous' => 24,
+                        'bri_ytd' => 5,
+                    ],
+                ],
+                'sektoral' => [
+                    'scope_label' => 'Area 6 (Semua Cabang)',
+                    'period' => 'Maret 2026',
+                    'total' => [
+                        'bri_os' => 100,
+                        'industry_os' => 400,
+                        'potential_os' => 300,
+                        'market_share_os' => 0.25,
+                    ],
+                    'top_sectors' => [[
+                        'sector' => 'Perdagangan',
+                        'bri_os' => 100,
+                        'industry_os' => 400,
+                        'market_share_os' => 0.25,
+                    ]],
+                ],
+                'mapping' => [
+                    'scope_label' => 'Area 6 Konsolidasi',
+                    'updated_at' => '06 Agu 2026 20:44',
+                    'totals' => ['potential' => 1000, 'existing' => 250, 'penetration' => 25],
+                    'dashboard' => [
+                        'ready' => true,
+                        'highlights' => ['Penetrasi total Area 6 mencapai 25%.'],
+                    ],
+                    'coverage' => ['unit_count' => 1, 'mapped_unit_count' => 1],
+                    'map_points' => [['label' => '03212 - Dolopo', 'x' => 0.5, 'y' => 0.5, 'potential' => 1000, 'penetration' => 25]],
+                    'ranking' => [[
+                        'label' => '03212 - Dolopo',
+                        'values' => ['total' => ['existing' => 250, 'penetration' => 25]],
+                    ]],
+                ],
+            ],
+            'funding' => ['title' => 'Performance Funding', 'overview_rows' => [], 'product_rows' => []],
+            'sme' => ['title' => 'Performance SME', 'overview_rows' => [], 'product_rows' => []],
+            'consumer' => ['title' => 'Performance Konsumer', 'overview_rows' => [], 'product_rows' => []],
+            'structured' => ['funding' => [], 'credit' => []],
+            'strategies' => [],
+            'funding_strategies' => [],
+            'trend_groups' => [],
+        ]);
+
+        $this->assertCount(15, $slides);
+        $this->assertStringContainsString('Market Share Total DPK - Area 6 Konsolidasi', $slides[2]);
+        $this->assertStringNotContainsString('Market Share Sektoral', $slides[2]);
+        $this->assertStringContainsString('Mapping Market Share', $slides[3]);
+        $this->assertStringContainsString('Update 06 Agu 2026 20:44', $slides[3]);
+        $this->assertStringContainsString('Performance Funding', $slides[4]);
+        $this->assertStringContainsString('15', $slides[14]);
+    }
+
+    public function test_powerpoint_marketshare_payload_respects_selected_branch_scope(): void
+    {
+        $service = new PresentationDeckDataService();
+        $method = new \ReflectionMethod($service, 'buildMarketShare');
+        $payload = [
+            'area6' => [
+                'title' => 'Marketshare - Area 6',
+                'period' => 'Mei 2026',
+                'unit' => 'Rp dalam Miliar',
+                'source' => 'Workbook Market Share Area 6',
+                'default_segment' => 'dpk',
+                'segments' => [
+                    'dpk' => [
+                        'key' => 'dpk',
+                        'label' => 'Total DPK',
+                        'kind' => 'deposit',
+                        'headers' => ['Cabang'],
+                        'insights' => ['Market share Area 6 menguat.'],
+                        'rows' => [
+                            ['branch' => 'Madiun', 'total' => false, 'values' => [null, null, 100, 5, null, null, 400, null, null, null, 300, null, null, 20, 25]],
+                            ['branch' => 'Ngawi', 'total' => false, 'values' => [null, null, 200, 4, null, null, 500, null, null, null, 300, null, null, 35, 40]],
+                            ['branch' => 'AREA 6', 'total' => true, 'values' => [null, null, 300, 4.5, null, null, 900, null, null, null, 600, null, null, 30, 33.33]],
+                        ],
+                    ],
+                ],
+            ],
+            'sektoral' => [
+                'period' => 'Maret 2026',
+                'scopes' => [
+                    'area6' => ['label' => 'Area 6', 'rows' => [['sector' => 'Area', 'bri_os' => 999]], 'total' => []],
+                    'madiun' => ['label' => 'KC Madiun', 'rows' => [['sector' => 'Madiun', 'bri_os' => 100]], 'total' => ['bri_os' => 100]],
+                ],
+            ],
+            'mapping' => [
+                'ready' => true,
+                'updated_at' => '06 Agu 2026 20:44',
+                'area_totals' => ['potential' => 300, 'existing' => 45, 'penetration' => 15],
+                'branches' => [
+                    ['key' => 'madiun', 'totals' => ['potential' => 100, 'existing' => 25, 'penetration' => 25]],
+                    ['key' => 'ngawi', 'totals' => ['potential' => 200, 'existing' => 20, 'penetration' => 10]],
+                ],
+                'units' => [
+                    ['label' => 'Madiun Unit', 'branch' => 'madiun', 'district_codes' => ['3519010'], 'values' => ['total' => ['potential' => 100, 'existing' => 25, 'penetration' => 25]]],
+                    ['label' => 'Ngawi Unit', 'branch' => 'ngawi', 'district_codes' => ['3521010'], 'values' => ['total' => ['potential' => 200, 'existing' => 20, 'penetration' => 10]]],
+                ],
+                'geojson' => ['features' => [
+                    ['properties' => ['KDCPUM' => '3519010'], 'geometry' => ['coordinates' => [[[111.1, -7.6], [111.2, -7.5], [111.1, -7.6]]]]],
+                    ['properties' => ['KDCPUM' => '3521010'], 'geometry' => ['coordinates' => [[[111.3, -7.4], [111.4, -7.3], [111.3, -7.4]]]]],
+                ]],
+                'dashboard' => [
+                    'ready' => true,
+                    'title' => 'Market Share Mapping Area 6',
+                    'subtitle' => 'Dashboard potensi wilayah',
+                    'selectedSector' => 'TOTAL',
+                    'totalMetrics' => [
+                        ['label' => 'Total Potensi', 'raw' => 607212, 'value' => '607.212'],
+                        ['label' => 'Total Debitur', 'raw' => 346571, 'value' => '346.571'],
+                        ['label' => 'Penetrasi', 'raw' => 57.1, 'value' => '57,1%'],
+                    ],
+                    'headlineMetrics' => [
+                        ['label' => 'Orang', 'raw' => 1971514, 'value' => '1.971.514'],
+                    ],
+                    'highlights' => [
+                        ['label' => 'Sinyal', 'value' => 'Penetrasi Area 6 kuat'],
+                    ],
+                ],
+            ],
+        ];
+
+        $result = $method->invoke($service, $payload, 'KC Madiun', 'KC Madiun');
+        $areaResult = $method->invoke($service, $payload, 'area6', 'Area 6 Konsolidasi');
+
+        $this->assertSame('madiun', $result['scope_key']);
+        $this->assertSame('Madiun', data_get($result, 'area6.rows.0.branch'));
+        $this->assertSame(100.0, data_get($result, 'area6.total.bri_current'));
+        $this->assertSame(25.0, data_get($result, 'area6.total.market_share_current'));
+        $this->assertSame('Madiun', data_get($result, 'sektoral.rows.0.sector'));
+        $this->assertSame(25, data_get($result, 'mapping.totals.penetration'));
+        $this->assertFalse(data_get($result, 'mapping.dashboard.ready'));
+        $this->assertSame('Madiun Unit', data_get($result, 'mapping.ranking.0.label'));
+        $this->assertCount(1, data_get($result, 'mapping.map_points'));
+        $this->assertSame(607212.0, data_get($areaResult, 'mapping.totals.potential'));
+        $this->assertSame(346571.0, data_get($areaResult, 'mapping.totals.existing'));
+        $this->assertSame(57.1, data_get($areaResult, 'mapping.totals.penetration'));
+        $this->assertTrue(data_get($areaResult, 'mapping.dashboard.ready'));
+        $this->assertSame('Sinyal: Penetrasi Area 6 kuat', data_get($areaResult, 'mapping.dashboard.highlights.0'));
     }
 
     public function test_deck_builder_contains_all_required_comparison_points_and_products(): void
@@ -238,7 +431,8 @@ class PresentationPowerPointExportTest extends TestCase
 
         foreach ([
             'psd-heading-meta',
-            'Posisi data:',
+            "periodLabel = 'Posisi data'",
+            '${escapeHtml(periodLabel)}:',
             'psd-header-controls',
             'psd-insight-label',
             'Fokus pembahasan',
@@ -339,10 +533,11 @@ class PresentationPowerPointExportTest extends TestCase
         $structured = file_get_contents(resource_path('js/presentation/pres-structured-deck.js'));
 
         preg_match_all("/\\['key' => '([^']+)'/", $slides, $matches);
-        $this->assertCount(13, $matches[1] ?? []);
+        $this->assertCount(15, $matches[1] ?? []);
 
-        $this->assertStringContainsString('for (let index = 0; index < 13; index += 1)', $structured);
-        $this->assertStringContainsString('const storyHeader = ({ kicker, title, subtitle, narrative, period', $structured);
+        $this->assertStringContainsString('for (let index = 0; index < 15; index += 1)', $structured);
+        $this->assertStringContainsString('const storyHeader = ({', $structured);
+        $this->assertStringContainsString("periodLabel = 'Posisi data'", $structured);
         $this->assertStringContainsString('class="psd-reading', $structured);
         $this->assertStringContainsString('Pembacaan data', $structured);
         $this->assertStringContainsString('comparisonTable({', $structured);
@@ -361,11 +556,11 @@ class PresentationPowerPointExportTest extends TestCase
         $this->assertStringContainsString('window.cancelAnimationFrame(activeFrame)', $view);
         $this->assertStringContainsString('chart.render()', $view);
         $this->assertStringContainsString('animation: false', $view);
-        $this->assertStringContainsString("e.target.closest('input, select, textarea, button, [contenteditable=\"true\"], [data-psd-timeseries-expand]')", $view);
+        $this->assertStringContainsString("e.target.closest('input, select, textarea, button, [contenteditable=\"true\"], [data-psd-timeseries-expand], [data-psd-marketshare-interactive]')", $view);
         $this->assertStringContainsString("e.key === 'Home'", $view);
         $this->assertStringContainsString("e.key === 'End'", $view);
         $this->assertStringContainsString("e.key.toLowerCase() === 'f'", $view);
-        $this->assertStringContainsString("#pres-slide-12 .bri-deck-title", $view);
+        $this->assertStringContainsString('index === 0 || index === 14', $view);
         $this->assertStringContainsString('color: #fff !important', $view);
     }
 
@@ -456,7 +651,7 @@ class PresentationPowerPointExportTest extends TestCase
         $this->assertStringContainsString('4 garis bulanan', $structured);
         $this->assertStringContainsString('spanGaps: false', $structured);
         $this->assertStringContainsString('timeseriesMonthLegend(metric, modalData)', $structured);
-        $this->assertStringContainsString('timeseries: [2, 3, 5, 6, 7, 9, 10, 11]', $structured);
+        $this->assertStringContainsString('timeseries: [4, 5, 7, 8, 9, 11, 12, 13]', $structured);
         $this->assertStringContainsString("this.root.addEventListener('dblclick'", $structured);
         $this->assertStringContainsString('openTimeseriesModal(trigger', $structured);
         $this->assertStringContainsString('scope?.daily', $structured);
@@ -473,9 +668,9 @@ class PresentationPowerPointExportTest extends TestCase
         $this->assertStringContainsString('Pergerakan indikator utama dengan angka posisi pada setiap periode.', $renderer);
         $this->assertStringContainsString('$this->trendNarrative(', $renderer);
         $this->assertStringContainsString('private function lineChart', $renderer);
-        $this->assertStringContainsString("2: ['timeseries']", $loader);
-        $this->assertStringContainsString("6: ['productivity', 'timeseries']", $loader);
-        $this->assertStringContainsString("10: ['timeseries']", $loader);
+        $this->assertStringContainsString("4: ['timeseries']", $loader);
+        $this->assertStringContainsString("8: ['productivity', 'timeseries']", $loader);
+        $this->assertStringContainsString("12: ['timeseries']", $loader);
         $this->assertStringContainsString('[data-psd-timeseries-expand]', $engine);
     }
 
@@ -561,7 +756,7 @@ class PresentationPowerPointExportTest extends TestCase
         $this->assertStringContainsString("'rm_kur_tiering' => \$this->buildPresentationRmKurTiering(\$requestedPeriod)", $controller);
         $this->assertStringContainsString('->buildEmbeddedPayload($category, $period, $mantri, $extremeLowView)', $controller);
         $this->assertStringContainsString("'per_cabang'", $controller);
-        $this->assertStringContainsString(':ppt_deck_v17_monthly_overlay_timeseries', $controller);
+        $this->assertStringContainsString(':ppt_deck_v20_marketshare_area6', $controller);
         $this->assertStringContainsString("\$lockSeconds = \$type === 'presentation-payload' ? 300", $controller);
         $this->assertStringContainsString('buildPresentationSummaryPayload', $controller);
         $this->assertStringContainsString("'summary-only'", $controller);
@@ -581,18 +776,21 @@ class PresentationPowerPointExportTest extends TestCase
         $this->assertStringContainsString("section === 'micro' ? this.summaryRefreshTimeout : this.timeout", $loader);
         $this->assertStringContainsString("onStatus('cache-warming')", $loader);
         $this->assertStringContainsString('sectionNamesForSlide(index)', $loader);
-        $this->assertStringContainsString("2: ['timeseries']", $loader);
-        $this->assertStringContainsString("3: ['timeseries']", $loader);
-        $this->assertStringContainsString("4: ['digital']", $loader);
+        $this->assertStringContainsString("2: ['marketshare']", $loader);
+        $this->assertStringContainsString("3: ['marketshare']", $loader);
+        $this->assertStringContainsString("4: ['timeseries']", $loader);
         $this->assertStringContainsString("5: ['timeseries']", $loader);
-        $this->assertStringContainsString("6: ['productivity', 'timeseries']", $loader);
-        $this->assertStringContainsString("7: ['productivity', 'timeseries']", $loader);
-        $this->assertStringContainsString("8: ['micro']", $loader);
-        $this->assertStringContainsString("9: ['timeseries']", $loader);
-        $this->assertStringContainsString("10: ['timeseries']", $loader);
+        $this->assertStringContainsString("6: ['digital']", $loader);
+        $this->assertStringContainsString("7: ['timeseries']", $loader);
+        $this->assertStringContainsString("8: ['productivity', 'timeseries']", $loader);
+        $this->assertStringContainsString("9: ['productivity', 'timeseries']", $loader);
+        $this->assertStringContainsString("10: ['micro']", $loader);
         $this->assertStringContainsString("11: ['timeseries']", $loader);
-        $this->assertStringContainsString("12: ['digital']", $loader);
+        $this->assertStringContainsString("12: ['timeseries']", $loader);
+        $this->assertStringContainsString("13: ['timeseries']", $loader);
+        $this->assertStringContainsString("14: ['digital']", $loader);
         $this->assertStringContainsString('this.requestedSlideIndex = Number(index) || 0', $loader);
+        $this->assertStringContainsString("['micro', 'marketshare']", $loader);
         $this->assertStringContainsString("this.loadSection('micro')", $loader);
         $this->assertStringContainsString('Promise.allSettled', $loader);
         $this->assertStringContainsString("payload?.meta?.cache_state === 'stale-refreshing'", $loader);
@@ -606,6 +804,7 @@ class PresentationPowerPointExportTest extends TestCase
         $this->assertStringContainsString("'progressive' => 'digital'", $slides);
         $this->assertStringContainsString("'progressive' => 'micro'", $slides);
         $this->assertStringContainsString("'progressive' => 'timeseries'", $slides);
+        $this->assertStringContainsString("'progressive' => 'marketshare'", $slides);
         $this->assertStringContainsString('data-progressive-section="{{ $story[\'progressive\'] }}"', $slides);
         $this->assertStringContainsString('is-section-loading', $slides);
         $this->assertStringContainsString('@keyframes pres-section-shimmer', $styles);
@@ -613,6 +812,54 @@ class PresentationPowerPointExportTest extends TestCase
         $this->assertStringContainsString("const VERSION = 'presentation-v2'", $serviceWorker);
         $this->assertStringContainsString('refreshCachedPresentationData', $serviceWorker);
         $this->assertStringContainsString('.slice(0, MAX_DATA_PERIODS)', $serviceWorker);
+    }
+
+    public function test_browser_presentation_places_area6_and_mapping_slides_after_agenda(): void
+    {
+        $slides = file_get_contents(resource_path('views/presentation/_executive-slides.blade.php'));
+        $structured = file_get_contents(resource_path('js/presentation/pres-structured-deck.js'));
+        $styles = file_get_contents(resource_path('css/presentation/pres-structured.css'));
+        $view = file_get_contents(resource_path('views/presentation.blade.php'));
+
+        $agendaPosition = strpos($slides, "['key' => 'agenda'");
+        $area6Position = strpos($slides, "['key' => 'market-share-area6'");
+        $mappingPosition = strpos($slides, "['key' => 'market-share-mapping'");
+        $fundingPosition = strpos($slides, "['key' => 'funding-summary'");
+
+        $this->assertIsInt($agendaPosition);
+        $this->assertIsInt($area6Position);
+        $this->assertIsInt($mappingPosition);
+        $this->assertIsInt($fundingPosition);
+        $this->assertTrue($agendaPosition < $area6Position);
+        $this->assertTrue($area6Position < $mappingPosition);
+        $this->assertTrue($mappingPosition < $fundingPosition);
+        $this->assertStringContainsString("['key' => 'market-share-area6'", $slides);
+        $this->assertStringContainsString("['key' => 'market-share-mapping'", $slides);
+        $this->assertStringContainsString('renderMarketShareArea6()', $structured);
+        $this->assertStringContainsString('renderMarketShareMapping()', $structured);
+        $this->assertStringContainsString("'Market Share Area 6'", file_get_contents(resource_path('js/presentation/pres-engine.js')));
+        $this->assertStringContainsString('return scopedUnits;', $structured);
+        $this->assertStringContainsString('psd-marketshare-area-bars', $structured);
+        $this->assertStringContainsString('psd-marketshare-area-table', $structured);
+        $this->assertStringContainsString('psd-marketshare-executive-card', $structured);
+        $this->assertStringContainsString('data-psd-marketshare-segment', $structured);
+        $this->assertStringContainsString("const sector = { key: 'total', label: 'Total seluruh sektor' };", $structured);
+        $this->assertStringContainsString("const metric = { key: 'penetration', label: 'Penetrasi' };", $structured);
+        $this->assertStringContainsString('const effectivePotential = dashboardPotential', $structured);
+        $this->assertStringContainsString('const marketGap = Math.max(0, effectivePotential - effectiveExisting);', $structured);
+        $this->assertStringContainsString("mapping?.updated_at ? 'Diperbarui' : 'Posisi data'", $structured);
+        $this->assertStringNotContainsString('data-psd-marketshare-sector', $structured);
+        $this->assertStringNotContainsString('data-psd-marketshare-metric', $structured);
+        $this->assertStringContainsString('<thead>', $structured);
+        $this->assertStringContainsString('drawMarketShareMap()', $structured);
+        $this->assertStringContainsString('destroyMarketShareMap()', $structured);
+        $this->assertStringContainsString('this.marketShareMap.invalidateSize', $structured);
+        $this->assertStringContainsString('.psd-marketshare-map-main', $styles);
+        $this->assertStringContainsString('.psd-marketshare-area-main', $styles);
+        $this->assertStringContainsString('.psd-marketshare-area-table', $styles);
+        $this->assertStringContainsString('.psd-marketshare-executive-card', $styles);
+        $this->assertStringContainsString("asset('vendor/leaflet-1.9.4/leaflet.js')", $view);
+        $this->assertStringContainsString('Slide 1 dari 15', $view);
     }
 
     public function test_comparison_scope_propagates_rka_to_totals_segments_and_products(): void

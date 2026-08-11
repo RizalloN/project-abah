@@ -85,26 +85,31 @@ class NativeOpenXmlPowerPointRenderer
         $consumer = (array) data_get($deck, 'consumer', []);
         $structuredFunding = (array) data_get($deck, 'structured.funding', []);
         $structuredCredit = (array) data_get($deck, 'structured.credit', []);
+        $marketShare = (array) data_get($deck, 'marketshare', []);
         $trendGroups = array_values((array) data_get($deck, 'trend_groups', []));
 
         return [
             $this->coverSlide($deck, 1),
             $this->agendaSlide($deck, 2),
+            !empty(data_get($marketShare, 'area6.available'))
+                ? $this->marketShareAreaSlide($deck, (array) ($marketShare['area6'] ?? []), 3)
+                : $this->marketShareSectorSlide($deck, (array) ($marketShare['sektoral'] ?? []), 3),
+            $this->marketShareMappingSlide($deck, (array) ($marketShare['mapping'] ?? []), 4),
             $structuredFunding !== []
-                ? $this->structuredFundingOverviewSlide($deck, $structuredFunding, 3)
-                : $this->sectionOverviewSlide($deck, $funding, 3),
+                ? $this->structuredFundingOverviewSlide($deck, $structuredFunding, 5)
+                : $this->sectionOverviewSlide($deck, $funding, 5),
             $structuredFunding !== []
-                ? $this->structuredFundingBreakdownSlide($deck, $structuredFunding, 'products', 4)
-                : $this->sectionProductSlide($deck, $funding, 4),
-            $this->strategySlide($deck, 5),
-            $this->structuredCreditOverviewSlide($deck, $structuredCredit, 6),
-            $this->structuredCreditSegmentSlide($deck, $structuredCredit, 'sme', 7),
-            $this->structuredCreditSegmentSlide($deck, $structuredCredit, 'consumer', 8),
-            $this->structuredCreditSegmentSlide($deck, $structuredCredit, 'micro', 9),
-            $this->structuredQualitySlide($deck, $structuredCredit, 'sml', 10),
-            $this->structuredQualitySlide($deck, $structuredCredit, 'npl', 11),
-            $this->trendLabSlide($deck, array_slice($trendGroups, 0, 2), 12, 'Timeseries Kinerja Terintegrasi'),
-            $this->closingSlide($deck, 13),
+                ? $this->structuredFundingBreakdownSlide($deck, $structuredFunding, 'products', 6)
+                : $this->sectionProductSlide($deck, $funding, 6),
+            $this->strategySlide($deck, 7),
+            $this->structuredCreditOverviewSlide($deck, $structuredCredit, 8),
+            $this->structuredCreditSegmentSlide($deck, $structuredCredit, 'sme', 9),
+            $this->structuredCreditSegmentSlide($deck, $structuredCredit, 'consumer', 10),
+            $this->structuredCreditSegmentSlide($deck, $structuredCredit, 'micro', 11),
+            $this->structuredQualitySlide($deck, $structuredCredit, 'sml', 12),
+            $this->structuredQualitySlide($deck, $structuredCredit, 'npl', 13),
+            $this->trendLabSlide($deck, array_slice($trendGroups, 0, 2), 14, 'Timeseries Kinerja Terintegrasi'),
+            $this->closingSlide($deck, 15),
         ];
     }
 
@@ -165,27 +170,396 @@ class NativeOpenXmlPowerPointRenderer
             $agenda = array_values((array) data_get($deck, 'agenda', []));
             $xml = $this->header($deck, 'EXECUTIVE STORYLINE', 'Ikhtisar dan Alur Pembahasan', 'Dari posisi bisnis menuju prioritas tindakan.');
 
-            foreach (array_slice($agenda, 0, 11) as $index => $item) {
+            foreach (array_slice($agenda, 0, 13) as $index => $item) {
                 $column = $index % 3;
                 $row = intdiv($index, 3);
                 $x = 0.72 + ($column * 6.28);
-                $y = 2.0 + ($row * 1.38);
-                $xml .= $this->shape($x, $y, 5.96, 1.12, $row % 2 === 0 ? 'F6F9FD' : 'FFFFFF', 'D9E4F1', 0.04, 800);
-                $xml .= $this->shape($x + 0.18, $y + 0.2, 0.7, 0.7, '0866D4', '0866D4', 0.02, 0, 'ellipse');
-                $xml .= $this->text((string) ($index + 1), $x + 0.18, $y + 0.2, 0.7, 0.7, 14, 'FFFFFF', true, 'ctr', 'mid');
-                $xml .= $this->text((string) $item, $x + 1.02, $y + 0.18, 4.66, 0.76, 12.5, '12233B', true, 'l', 'mid');
+                $y = 1.92 + ($row * 1.08);
+                $xml .= $this->shape($x, $y, 5.96, 0.88, $row % 2 === 0 ? 'F6F9FD' : 'FFFFFF', 'D9E4F1', 0.04, 800);
+                $xml .= $this->shape($x + 0.16, $y + 0.15, 0.58, 0.58, '0866D4', '0866D4', 0.02, 0, 'ellipse');
+                $xml .= $this->text((string) ($index + 1), $x + 0.16, $y + 0.15, 0.58, 0.58, 12.5, 'FFFFFF', true, 'ctr', 'mid');
+                $xml .= $this->text((string) $item, $x + 0.88, $y + 0.13, 4.82, 0.62, 11.2, '12233B', true, 'l', 'mid');
             }
 
             $xml .= $this->callout(
                 'PRINSIP PEMBACAAN',
                 'Posisi historis, delta, RKA, distribusi, dan timeseries dibaca berurutan. Hijau menunjukkan momentum positif; untuk SML/NPL, penurunan adalah perbaikan kualitas.',
                 0.72,
-                7.78,
+                7.48,
                 18.8,
                 1.22,
                 'EAF4FF',
                 '0866D4'
             );
+            $xml .= $this->footer($deck, $slideNumber);
+
+            return $xml;
+        });
+    }
+
+    /** @param array<string, mixed> $deck @param array<string, mixed> $area */
+    private function marketShareAreaSlide(array $deck, array $area, int $slideNumber): string
+    {
+        return $this->slide(function () use ($deck, $area, $slideNumber): string {
+            $scope = (string) ($area['scope_label'] ?? data_get($deck, 'meta.scope_label', 'Area 6'));
+            $period = (string) ($area['period'] ?? '-');
+            $unit = (string) ($area['unit'] ?? 'Rp dalam Miliar');
+            $source = (string) ($area['source'] ?? '-');
+            $segment = (string) ($area['segment_label'] ?? 'Total DPK');
+            $kind = strtolower((string) ($area['kind'] ?? 'deposit'));
+            $columns = array_values((array) data_get($area, 'headers.columns', []));
+            $comparisonColumn = $kind === 'loan' ? 15 : 13;
+            $comparisonLabel = trim((string) ($columns[$comparisonColumn] ?? '')) ?: 'Desember 2025';
+            $rows = array_values((array) ($area['rows'] ?? []));
+            $total = (array) ($area['total'] ?? []);
+            $branchRows = array_values(array_filter($rows, fn (array $row): bool => empty($row['total'])));
+            $currentShare = $total['market_share_current'] ?? null;
+            $previousShare = $total['market_share_previous'] ?? null;
+            $briYtd = $total['bri_ytd'] ?? null;
+            $sourceLabel = mb_strimwidth($source, 0, 76, '...');
+            $xml = $this->header(
+                $deck,
+                'MARKET INTELLIGENCE | AREA 6',
+                "Market Share {$segment} - {$scope}",
+                "Posisi {$period} | {$unit} | {$sourceLabel}"
+            );
+
+            $cards = [
+                ['OS BRI', $this->formatBillions($total['bri_current'] ?? null), 'Posisi terbaru', '0866D4'],
+                ['TOTAL INDUSTRI', $this->formatBillions($total['industry_current'] ?? null), 'Basis pasar', '16A3C7'],
+                ['MARKET SHARE', $this->formatPercent($currentShare), 'BRI terhadap industri', $this->marketShareTone((float) ($currentShare ?? 0))],
+                ['PERTUMBUHAN YTD', $this->formatSignedPercent($briYtd), 'Pertumbuhan OS BRI', is_numeric($briYtd) && (float) $briYtd < 0 ? 'C62828' : '0D9F77'],
+            ];
+            foreach ($cards as $index => $card) {
+                $xml .= $this->metricCard((string) $card[0], (string) $card[1], (string) $card[2], 0.72 + ($index * 4.64), 1.82, 4.36, 1.22, (string) $card[3]);
+            }
+
+            $xml .= $this->shape(0.72, 3.32, 7.7, 6.06, 'FFFFFF', 'D4E2F2', 0.04, 800);
+            $xml .= $this->text('MARKET SHARE PER CABANG', 1.02, 3.58, 4.4, 0.28, 12, '0866D4', true);
+            $xml .= $this->text("Posisi terbaru dibanding {$comparisonLabel}", 4.62, 3.58, 3.42, 0.24, 9.3, '64758C', false, 'r');
+            $maxShare = 50.0;
+            foreach ($rows as $row) {
+                foreach (['market_share_current', 'market_share_previous'] as $key) {
+                    if (is_numeric($row[$key] ?? null)) {
+                        $maxShare = max($maxShare, (float) $row[$key]);
+                    }
+                }
+            }
+            $maxShare = max(10.0, ceil($maxShare / 10) * 10);
+            foreach (array_slice($rows, 0, 5) as $index => $row) {
+                $y = 4.08 + ($index * 0.84);
+                $isTotal = !empty($row['total']);
+                if ($isTotal) {
+                    $xml .= $this->shape(0.92, $y - 0.08, 7.3, 0.7, 'EFF6FF', 'D7E6F7', 0.03, 450);
+                }
+                $label = preg_replace('/^KC\s+/i', '', (string) ($row['label'] ?? '-')) ?: '-';
+                $current = is_numeric($row['market_share_current'] ?? null) ? (float) $row['market_share_current'] : 0.0;
+                $previous = is_numeric($row['market_share_previous'] ?? null) ? (float) $row['market_share_previous'] : 0.0;
+                $trackX = 2.75;
+                $trackWidth = 4.18;
+                $xml .= $this->text($label, 1.02, $y + 0.03, 1.55, 0.3, 10, $isTotal ? '0866D4' : '263C57', true, 'l', 'mid');
+                $xml .= $this->shape($trackX, $y + 0.02, $trackWidth, 0.18, 'E7EEF7', 'E7EEF7', 0.02);
+                $xml .= $this->shape($trackX, $y + 0.29, $trackWidth, 0.12, 'EEF2F7', 'EEF2F7', 0.02);
+                if ($current > 0) {
+                    $xml .= $this->shape($trackX, $y + 0.02, $trackWidth * min(1, $current / $maxShare), 0.18, '0866D4', '0866D4', 0.02);
+                }
+                if ($previous > 0) {
+                    $xml .= $this->shape($trackX, $y + 0.29, $trackWidth * min(1, $previous / $maxShare), 0.12, '69C4DF', '69C4DF', 0.02);
+                }
+                $xml .= $this->text($this->formatPercent($current), 7.02, $y + 0.03, 0.94, 0.28, 9.6, $this->marketShareTone($current), true, 'r', 'mid');
+            }
+            if ($rows === []) {
+                $xml .= $this->text('Data Market Share Area 6 belum tersedia.', 1.1, 5.55, 6.9, 0.5, 14, '718198', true, 'ctr');
+            }
+            $xml .= $this->shape(1.02, 8.5, 0.12, 0.12, '0866D4', '0866D4', 0, 0, 'ellipse');
+            $xml .= $this->text($period, 1.22, 8.44, 1.35, 0.2, 8.7, '52647B', true);
+            $xml .= $this->shape(2.7, 8.5, 0.12, 0.12, '69C4DF', '69C4DF', 0, 0, 'ellipse');
+            $xml .= $this->text($comparisonLabel, 2.9, 8.44, 1.7, 0.2, 8.7, '52647B', true);
+            $xml .= $this->text('Sumber: ' . $sourceLabel, 1.02, 8.91, 6.95, 0.22, 8.4, '718198');
+
+            $tableRows = [];
+            foreach (array_slice($rows, 0, 5) as $row) {
+                $isTotal = !empty($row['total']);
+                $tableRows[] = [
+                    $this->cell((string) ($row['label'] ?? '-'), $isTotal ? '0866D4' : '12233B', true),
+                    $this->cell($this->formatBillions($row['bri_current'] ?? null), '0866D4', true, null, 'r'),
+                    $this->cell($this->formatBillions($row['industry_current'] ?? null), '52647B', false, null, 'r'),
+                    $this->cell($this->formatBillions($row['outside_current'] ?? null), '52647B', false, null, 'r'),
+                    $this->cell($this->formatPercent($row['market_share_current'] ?? null), $this->marketShareTone((float) ($row['market_share_current'] ?? 0)), true, null, 'r'),
+                    $this->cell($this->formatSignedPercent($row['bri_ytd'] ?? null), is_numeric($row['bri_ytd'] ?? null) && (float) $row['bri_ytd'] < 0 ? 'C62828' : '078A68', true, null, 'r'),
+                ];
+            }
+            $xml .= $this->table(
+                ['CABANG', 'OS BRI', 'INDUSTRI', 'LUAR BRI', 'MS', 'YTD'],
+                $tableRows,
+                8.7,
+                3.32,
+                10.58,
+                4.18,
+                [1.85, 1.32, 1.42, 1.42, 0.9, 0.88],
+                9.2,
+                9.2
+            );
+
+            $leader = $branchRows !== []
+                ? collect($branchRows)->sortByDesc(fn (array $row): float => (float) ($row['market_share_current'] ?? 0))->first()
+                : null;
+            $trend = is_numeric($briYtd) && (float) $briYtd >= 0 ? 'bertumbuh' : 'terkontraksi';
+            $narrative = sprintf(
+                '%s menguasai %s pasar %s dengan OS BRI %s dan tren YTD %s (%s). %s mencatat penetrasi tertinggi; fokus berikutnya adalah memperkecil pasar di luar BRI sebesar %s.',
+                $scope,
+                $this->formatPercent($currentShare),
+                $segment,
+                $this->formatBillions($total['bri_current'] ?? null),
+                $trend,
+                $this->formatSignedPercent($briYtd),
+                (string) ($leader['label'] ?? $scope),
+                $this->formatBillions($total['outside_current'] ?? null)
+            );
+            $xml .= $this->callout('RINGKASAN EKSEKUTIF', $narrative, 8.7, 7.75, 10.58, 1.63, 'F1F7FD', $this->marketShareTone((float) ($currentShare ?? 0)));
+            $xml .= $this->footer($deck, $slideNumber);
+
+            return $xml;
+        });
+    }
+
+    /** @param array<string, mixed> $deck @param array<string, mixed> $sektoral */
+    private function marketShareSectorSlide(array $deck, array $sektoral, int $slideNumber): string
+    {
+        return $this->slide(function () use ($deck, $sektoral, $slideNumber): string {
+            $scope = (string) ($sektoral['scope_label'] ?? data_get($deck, 'meta.scope_label', 'Area 6'));
+            $period = (string) ($sektoral['period'] ?? '-');
+            $total = (array) ($sektoral['total'] ?? []);
+            $rows = array_values((array) ($sektoral['top_sectors'] ?? []));
+            $xml = $this->header(
+                $deck,
+                'MARKET INTELLIGENCE',
+                "Market Share Sektoral {$scope}",
+                "Posisi {$period} | Perbandingan portofolio BRI terhadap industri per sektor."
+            );
+
+            $cards = [
+                ['OS BRI', $this->formatBillions($total['bri_os'] ?? null), 'Portofolio terkelola', '0866D4'],
+                ['TOTAL INDUSTRI', $this->formatBillions($total['industry_os'] ?? null), 'Basis pasar sektoral', '16A3C7'],
+                ['MARKET SHARE', $this->formatRatioPercent($total['market_share_os'] ?? null), 'Penetrasi OS BRI', $this->marketShareTone((float) ($total['market_share_os'] ?? 0) * 100)],
+                ['RUANG PASAR', $this->formatBillions($total['potential_os'] ?? null), 'Industri di luar BRI', 'E59200'],
+            ];
+            foreach ($cards as $index => $card) {
+                $xml .= $this->metricCard((string) $card[0], (string) $card[1], (string) $card[2], 0.72 + ($index * 4.64), 1.82, 4.36, 1.22, (string) $card[3]);
+            }
+
+            $xml .= $this->shape(0.72, 3.32, 10.18, 5.96, 'FFFFFF', 'D4E2F2', 0.04, 800);
+            $xml .= $this->text('KONTRIBUSI SEKTOR UTAMA', 1.02, 3.58, 5.5, 0.28, 12, '0866D4', true);
+            $maximum = max(1.0, ...array_map(fn (array $row): float => (float) ($row['industry_os'] ?? 0), $rows));
+            foreach (array_slice($rows, 0, 6) as $index => $row) {
+                $y = 4.08 + ($index * 0.79);
+                $industry = max(0.0, (float) ($row['industry_os'] ?? 0));
+                $bri = max(0.0, (float) ($row['bri_os'] ?? 0));
+                $outside = max(0.0, $industry - $bri);
+                $availableWidth = 5.5;
+                $briWidth = $availableWidth * ($bri / $maximum);
+                $outsideWidth = $availableWidth * ($outside / $maximum);
+                $xml .= $this->text((string) ($row['sector'] ?? '-'), 1.02, $y, 3.18, 0.34, 10.2, '263C57', true, 'l', 'mid');
+                $xml .= $this->shape(4.35, $y + 0.04, $availableWidth, 0.24, 'E8EEF6', 'E8EEF6', 0.02);
+                if ($briWidth > 0) {
+                    $xml .= $this->shape(4.35, $y + 0.04, $briWidth, 0.24, '0866D4', '0866D4', 0.02);
+                }
+                if ($outsideWidth > 0) {
+                    $xml .= $this->shape(4.35 + $briWidth, $y + 0.04, $outsideWidth, 0.24, 'A8DDF1', 'A8DDF1', 0.02);
+                }
+                $xml .= $this->text($this->formatRatioPercent($row['market_share_os'] ?? null), 9.93, $y - 0.01, 0.68, 0.32, 9.7, '0866D4', true, 'r', 'mid');
+            }
+            $xml .= $this->shape(1.02, 8.92, 0.12, 0.12, '0866D4', '0866D4', 0, 0, 'ellipse');
+            $xml .= $this->text('OS BRI', 1.22, 8.86, 0.9, 0.2, 9, '52647B', true);
+            $xml .= $this->shape(2.2, 8.92, 0.12, 0.12, 'A8DDF1', 'A8DDF1', 0, 0, 'ellipse');
+            $xml .= $this->text('Pasar di luar BRI', 2.4, 8.86, 1.9, 0.2, 9, '52647B', true);
+
+            $tableRows = [];
+            foreach (array_slice($rows, 0, 6) as $index => $row) {
+                $tableRows[] = [
+                    $this->cell((string) ($index + 1), '52647B', true, null, 'ctr'),
+                    $this->cell((string) ($row['sector'] ?? '-'), '12233B', true),
+                    $this->cell($this->formatBillions($row['bri_os'] ?? null), '0866D4', true, null, 'r'),
+                    $this->cell($this->formatBillions($row['industry_os'] ?? null), '52647B', false, null, 'r'),
+                    $this->cell($this->formatRatioPercent($row['market_share_os'] ?? null), $this->marketShareTone((float) ($row['market_share_os'] ?? 0) * 100), true, null, 'r'),
+                ];
+            }
+            $xml .= $this->table(
+                ['#', 'SEKTOR', 'BRI', 'INDUSTRI', 'MS'],
+                $tableRows,
+                11.18,
+                3.32,
+                8.1,
+                4.2,
+                [0.42, 2.55, 1.15, 1.15, 0.78],
+                9.3,
+                9.3
+            );
+
+            $leader = (array) ($rows[0] ?? []);
+            $marketShare = (float) ($total['market_share_os'] ?? 0) * 100;
+            $status = $marketShare >= 35 ? 'kuat' : ($marketShare >= 20 ? 'menengah' : 'rendah');
+            $narrative = sprintf(
+                'Penetrasi %s berada pada level %s. %s menjadi kontributor OS terbesar (%s); ruang pasar %s perlu diarahkan ke sektor dengan basis industri besar dan penetrasi yang masih rendah.',
+                $this->formatPercent($marketShare),
+                $status,
+                (string) ($leader['sector'] ?? 'Sektor utama'),
+                $this->formatBillions($leader['bri_os'] ?? null),
+                $this->formatBillions($total['potential_os'] ?? null)
+            );
+            $xml .= $this->callout('RINGKASAN EKSEKUTIF', $narrative, 11.18, 7.72, 8.1, 1.56, 'F1F7FD', '0866D4');
+            $xml .= $this->footer($deck, $slideNumber);
+
+            return $xml;
+        });
+    }
+
+    /** @param array<string, mixed> $deck @param array<string, mixed> $mapping */
+    private function marketShareMappingSlide(array $deck, array $mapping, int $slideNumber): string
+    {
+        return $this->slide(function () use ($deck, $mapping, $slideNumber): string {
+            $scope = (string) ($mapping['scope_label'] ?? data_get($deck, 'meta.scope_label', 'Area 6'));
+            $totals = (array) ($mapping['totals'] ?? []);
+            $coverage = (array) ($mapping['coverage'] ?? []);
+            $points = array_values((array) ($mapping['map_points'] ?? []));
+            $ranking = array_values((array) ($mapping['ranking'] ?? []));
+            $dashboard = (array) ($mapping['dashboard'] ?? []);
+            $dashboardHighlights = array_values((array) ($dashboard['highlights'] ?? []));
+            $updatedAt = (string) ($mapping['updated_at'] ?? '-');
+            $penetration = (float) ($totals['penetration'] ?? 0);
+            $gap = max(0.0, (float) ($totals['potential'] ?? 0) - (float) ($totals['existing'] ?? 0));
+            $xml = $this->header(
+                $deck,
+                'MARKET GEOGRAPHY',
+                "Mapping Market Share {$scope}",
+                "Sheet REKAP | Update {$updatedAt} | Potensi, existing, dan penetrasi unit kerja."
+            );
+
+            $xml .= $this->shape(0.72, 1.86, 11.6, 7.76, 'F2F7FC', 'D4E2F2', 0.04, 800);
+            $xml .= $this->text('PETA PENETRASI UNIT KERJA', 1.0, 2.12, 5.2, 0.3, 12, '0866D4', true);
+            $xml .= $this->text('Warna titik menunjukkan tingkat penetrasi; ukuran menunjukkan potensi.', 6.52, 2.12, 5.42, 0.25, 9.5, '64758C', false, 'r');
+            $mapX = 1.1;
+            $mapY = 2.7;
+            $mapWidth = 10.8;
+            $mapHeight = 6.25;
+            for ($grid = 1; $grid < 5; $grid++) {
+                $xml .= $this->shape($mapX + (($mapWidth / 5) * $grid), $mapY, 0.01, $mapHeight, 'DDE8F3', 'DDE8F3');
+                $xml .= $this->shape($mapX, $mapY + (($mapHeight / 5) * $grid), $mapWidth, 0.01, 'DDE8F3', 'DDE8F3');
+            }
+
+            if ($points === []) {
+                $xml .= $this->text('Koordinat mapping belum tersedia untuk scope ini.', $mapX + 1.0, $mapY + 2.55, $mapWidth - 2.0, 0.5, 15, '718198', true, 'ctr');
+            } else {
+                usort($points, fn (array $left, array $right): int =>
+                    (float) ($right['potential'] ?? 0) <=> (float) ($left['potential'] ?? 0)
+                );
+                $maxPotential = max(1.0, ...array_map(fn (array $point): float => (float) ($point['potential'] ?? 0), $points));
+                $mapLabels = [];
+                foreach (array_slice($points, 0, 45) as $index => $point) {
+                    $size = 0.14 + (0.24 * sqrt(max(0.0, (float) ($point['potential'] ?? 0)) / $maxPotential));
+                    $x = $mapX + (max(0.04, min(0.96, (float) ($point['x'] ?? 0.5))) * ($mapWidth - 0.6));
+                    $y = $mapY + (max(0.04, min(0.96, (float) ($point['y'] ?? 0.5))) * ($mapHeight - 0.6));
+                    $tone = $this->marketShareTone((float) ($point['penetration'] ?? 0));
+                    $xml .= $this->shape($x, $y, $size, $size, $tone, 'FFFFFF', 0, 650, 'ellipse');
+                    if ($index < 6) {
+                        $mapLabels[] = ['point' => $point, 'x' => $x + ($size / 2), 'y' => $y + ($size / 2), 'tone' => $tone];
+                    }
+                }
+                $sideCounts = ['left' => 0, 'right' => 0];
+                foreach ($mapLabels as $mapLabel) {
+                    $side = (float) data_get($mapLabel, 'point.x', 0.5) < 0.5 ? 'left' : 'right';
+                    if ($sideCounts[$side] >= 4) {
+                        $side = $side === 'left' ? 'right' : 'left';
+                    }
+                    if ($sideCounts[$side] >= 4) {
+                        continue;
+                    }
+                    $slot = $sideCounts[$side]++;
+                    $labelX = $side === 'left' ? $mapX + 0.12 : $mapX + $mapWidth - 1.95;
+                    $labelY = $mapY + 0.42 + ($slot * 0.67);
+                    $label = preg_replace('/^\d+\s*-\s*/', '', (string) data_get($mapLabel, 'point.label', '-')) ?: '-';
+                    $lineEndX = $side === 'left' ? $labelX + 1.72 : $labelX;
+                    $xml .= $this->line((float) $mapLabel['x'], (float) $mapLabel['y'], $lineEndX, $labelY + 0.16, 'A9BED5', 0.8);
+                    $xml .= $this->shape($labelX, $labelY, 1.72, 0.34, 'FFFFFF', 'D7E3F0', 0.02, 350);
+                    $xml .= $this->text($label, $labelX + 0.08, $labelY + 0.04, 1.56, 0.23, 7.6, '344A65', true, $side === 'left' ? 'l' : 'r', 'mid');
+                }
+            }
+            $legend = [['C62828', '< 15%'], ['E59200', '15-30%'], ['0D9F77', '30-50%'], ['0866D4', '> 50%']];
+            foreach ($legend as $index => $item) {
+                $x = 1.1 + ($index * 1.55);
+                $xml .= $this->shape($x, 9.18, 0.12, 0.12, (string) $item[0], (string) $item[0], 0, 0, 'ellipse');
+                $xml .= $this->text((string) $item[1], $x + 0.18, 9.12, 1.1, 0.2, 8.8, '52647B', true);
+            }
+            $xml .= $this->text(
+                min(45, count($points)) . ' dari ' . count($points) . ' titik prioritas | ' . $this->integer($coverage['district_count'] ?? 0) . ' kecamatan',
+                6.05,
+                9.1,
+                5.7,
+                0.22,
+                8.6,
+                '52647B',
+                true,
+                'r'
+            );
+
+            $cards = array_values((array) ($mapping['cards'] ?? []));
+            if ($cards === []) {
+                $cards = [
+                    ['label' => 'POTENSI', 'value' => $totals['potential'] ?? null, 'kind' => 'integer', 'meta' => 'Basis nasabah pasar'],
+                    ['label' => 'EXISTING', 'value' => $totals['existing'] ?? null, 'kind' => 'integer', 'meta' => 'Nasabah BRI'],
+                    ['label' => 'PENETRASI', 'value' => $penetration, 'kind' => 'percent', 'meta' => 'Existing / potensi'],
+                    ['label' => 'GAP PASAR', 'value' => $gap, 'kind' => 'integer', 'meta' => 'Potensi belum tergarap'],
+                ];
+            }
+            foreach (array_slice($cards, 0, 4) as $index => $card) {
+                $column = $index % 2;
+                $row = intdiv($index, 2);
+                $label = (string) ($card['label'] ?? '-');
+                $value = ($card['kind'] ?? 'integer') === 'percent'
+                    ? $this->formatPercent($card['value'] ?? null)
+                    : $this->integer($card['value'] ?? null);
+                $tone = str_contains($label, 'PENETRASI')
+                    ? $this->marketShareTone((float) ($card['value'] ?? 0))
+                    : (str_contains($label, 'GAP') ? 'E59200' : ($index === 1 ? '0866D4' : '16A3C7'));
+                $xml .= $this->metricCard(
+                    $label,
+                    $value,
+                    (string) ($card['meta'] ?? ''),
+                    12.58 + ($column * 3.3),
+                    1.86 + ($row * 1.36),
+                    $column === 0 ? 3.08 : 3.4,
+                    1.16,
+                    $tone
+                );
+            }
+
+            $tableRows = [];
+            foreach (array_slice($ranking, 0, 5) as $index => $unit) {
+                $tableRows[] = [
+                    $this->cell((string) ($index + 1), '52647B', true, null, 'ctr'),
+                    $this->cell((string) ($unit['label'] ?? $unit['name'] ?? '-'), '12233B', true),
+                    $this->cell($this->integer(data_get($unit, 'values.total.existing')), '52647B', false, null, 'r'),
+                    $this->cell($this->formatPercent(data_get($unit, 'values.total.penetration')), $this->marketShareTone((float) data_get($unit, 'values.total.penetration', 0)), true, null, 'r'),
+                ];
+            }
+            $xml .= $this->table(['#', 'UNIT', 'EXISTING', 'PEN.'], $tableRows, 12.58, 4.62, 6.7, 3.18, [0.42, 2.5, 1.12, 0.9], 9.1, 9.1);
+
+            $mappedUnits = (int) ($coverage['mapped_unit_count'] ?? 0);
+            $unitCount = (int) ($coverage['unit_count'] ?? 0);
+            $status = $penetration >= 30 ? 'kuat' : ($penetration >= 15 ? 'bertumbuh' : 'perlu akselerasi');
+            $dashboardSignal = $dashboardHighlights !== []
+                ? ' ' . mb_strimwidth((string) $dashboardHighlights[0], 0, 135, '...')
+                : '';
+            $narrative = sprintf(
+                'Penetrasi %s berstatus %s dengan gap %s nasabah. Cakupan mapping %s dari %s unit; prioritaskan unit berpotensi besar yang belum menembus 30%%.%s',
+                $this->formatPercent($penetration),
+                $status,
+                $this->integer($gap),
+                $this->integer($mappedUnits),
+                $this->integer($unitCount),
+                $dashboardSignal
+            );
+            $xml .= $this->callout('PENETRASI TERHADAP PASAR', $narrative, 12.58, 8.02, 6.7, 1.6, 'F1F7FD', $this->marketShareTone($penetration));
             $xml .= $this->footer($deck, $slideNumber);
 
             return $xml;
@@ -2714,6 +3088,26 @@ class NativeOpenXmlPowerPointRenderer
     private function formatPercent(mixed $value): string
     {
         return is_numeric($value) ? $this->number((float) $value, 2) . '%' : '-';
+    }
+
+    private function formatRatioPercent(mixed $value): string
+    {
+        return is_numeric($value) ? $this->formatPercent((float) $value * 100) : '-';
+    }
+
+    private function formatBillions(mixed $value): string
+    {
+        return is_numeric($value) ? 'Rp' . $this->number((float) $value, 1) . ' M' : '-';
+    }
+
+    private function marketShareTone(float $penetration): string
+    {
+        return match (true) {
+            $penetration >= 50 => '0866D4',
+            $penetration >= 30 => '0D9F77',
+            $penetration >= 15 => 'E59200',
+            default => 'C62828',
+        };
     }
 
     private function formatSignedPercent(mixed $value): string

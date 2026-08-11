@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Editor Spreadsheet - DriveASIX')
+@section('title', 'Editor Spreadsheet - Bank Pipeline')
 
 @section('styles')
 <style>
@@ -17,6 +17,39 @@
         --asix-sheet-selected: rgba(24, 167, 200, .13);
         --asix-sheet-row-head: 52px;
         --asix-sheet-col-head: 30px;
+    }
+
+    .asix-sheet-swal {
+        width: min(430px, calc(100vw - 24px)) !important;
+        border: 1px solid var(--asix-sheet-line);
+        border-radius: 10px !important;
+        box-shadow: 0 22px 55px -28px rgba(15, 23, 42, .46) !important;
+    }
+
+    .asix-sheet-swal-title {
+        color: var(--asix-sheet-ink) !important;
+        font-size: 1.18rem !important;
+        letter-spacing: 0 !important;
+    }
+
+    .asix-sheet-swal-confirm,
+    .asix-sheet-swal-cancel {
+        min-height: 38px;
+        border: 0;
+        border-radius: 6px;
+        padding: .55rem .95rem;
+        font-size: .82rem;
+        font-weight: 700;
+    }
+
+    .asix-sheet-swal-confirm {
+        color: #fff;
+        background: #b91c1c;
+    }
+
+    .asix-sheet-swal-cancel {
+        color: #334155;
+        background: #e2e8f0;
     }
 
     body.drive-spreadsheet-active {
@@ -693,13 +726,15 @@
     }
 
     .asix-sheet-cell.is-selected {
-        background-color: var(--asix-sheet-selected) !important;
+        outline: 1px solid rgba(24, 167, 200, .62);
+        outline-offset: -1px;
     }
 
     .asix-sheet-cell.is-active {
         z-index: 7 !important;
         overflow: visible;
-        box-shadow: inset 0 0 0 2px var(--asix-sheet-cyan);
+        outline: 2px solid var(--asix-sheet-cyan);
+        outline-offset: -2px;
     }
 
     .asix-sheet-cell.is-active::after {
@@ -1052,6 +1087,12 @@
         border-color: var(--asix-sheet-amber);
     }
 
+    .asix-sheet-dialog-button.is-danger {
+        color: #fff;
+        background: #be123c;
+        border-color: #be123c;
+    }
+
     .asix-sheet-toast-stack {
         position: fixed;
         right: max(1rem, env(safe-area-inset-right));
@@ -1181,10 +1222,11 @@
 @section('content')
 @php
     $driveFileName = $file->original_name ?? $file->name ?? 'Spreadsheet';
+    $resolvedBackUrl = $backUrl ?? route('drive.index');
 @endphp
 <div class="asix-sheet-app" id="asixSheetApp" data-abah-no-table-guard="1">
     <header class="asix-sheet-topbar">
-        <a class="asix-sheet-back" href="{{ route('drive.index') }}" aria-label="Kembali ke DriveASIX" title="Kembali ke DriveASIX">
+        <a class="asix-sheet-back" href="{{ $resolvedBackUrl }}" data-sheet-exit aria-label="Kembali ke Bank Pipeline" title="Kembali ke Bank Pipeline">
             <i class="fas fa-arrow-left"></i>
         </a>
         <span class="asix-sheet-file-mark" aria-hidden="true"><i class="fas fa-border-all"></i></span>
@@ -1213,7 +1255,7 @@
                 <button type="button" class="asix-sheet-menu-item" data-command="save"><i class="fas fa-save"></i>Simpan <span class="shortcut">Ctrl+S</span></button>
                 <a class="asix-sheet-menu-item" href="{{ route('drive.file.download', ['file' => $file]) }}"><i class="fas fa-download"></i>Unduh file asli</a>
                 <div class="asix-sheet-menu-separator"></div>
-                <a class="asix-sheet-menu-item" href="{{ route('drive.index') }}"><i class="fas fa-arrow-left"></i>Kembali ke DriveASIX</a>
+                <a class="asix-sheet-menu-item" href="{{ $resolvedBackUrl }}" data-sheet-exit><i class="fas fa-arrow-left"></i>Kembali ke Bank Pipeline</a>
             </div>
         </details>
         <details class="asix-sheet-menu">
@@ -1329,7 +1371,7 @@
             <option value="Rp #,##0">Rupiah</option>
         </select>
         <button type="button" class="asix-sheet-tool" data-command="wrap" id="sheetWrapButton" title="Bungkus teks"><i class="fas fa-text-width"></i></button>
-        <button type="button" class="asix-sheet-tool" data-command="merge" id="sheetMergeButton" title="Gabung / pisah sel"><i class="fas fa-object-group"></i></button>
+        <button type="button" class="asix-sheet-tool" data-command="merge" id="sheetMergeButton" title="Gabungkan sel" aria-label="Gabungkan sel" aria-pressed="false"><i class="fas fa-object-group"></i></button>
         <span class="asix-sheet-toolbar-divider"></span>
         <button type="button" class="asix-sheet-tool" data-command="toggle-filter" title="Filter"><i class="fas fa-filter"></i></button>
         <button type="button" class="asix-sheet-tool" data-command="sort-asc" title="Urut naik"><i class="fas fa-sort-amount-down-alt"></i></button>
@@ -1360,7 +1402,7 @@
             <div class="asix-sheet-state-card">
                 <span class="asix-sheet-state-icon"><span class="asix-sheet-spinner"></span></span>
                 <h2>Menyiapkan spreadsheet</h2>
-                <p>DriveASIX sedang membaca workbook dari penyimpanan lokal.</p>
+                <p>Bank Pipeline sedang membaca workbook dari penyimpanan lokal.</p>
             </div>
         </div>
 
@@ -1436,6 +1478,23 @@
     </div>
 </div>
 
+<div class="asix-sheet-modal" id="sheetExitModal" role="dialog" aria-modal="true" aria-labelledby="sheetExitTitle">
+    <div class="asix-sheet-dialog">
+        <div class="asix-sheet-dialog-head">
+            <h2 id="sheetExitTitle">Simpan sebelum keluar?</h2>
+            <button type="button" class="asix-sheet-dialog-close" data-close-modal="sheetExitModal" aria-label="Batal keluar"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="asix-sheet-dialog-body">
+            <p class="asix-sheet-dialog-note">Masih ada perubahan lokal yang belum tersimpan. Simpan terlebih dahulu agar pembaruan pipeline tidak hilang.</p>
+        </div>
+        <div class="asix-sheet-dialog-actions">
+            <button type="button" class="asix-sheet-dialog-button" data-close-modal="sheetExitModal">Tetap mengedit</button>
+            <button type="button" class="asix-sheet-dialog-button is-danger" id="sheetExitDiscardButton">Keluar tanpa menyimpan</button>
+            <button type="button" class="asix-sheet-dialog-button is-primary" id="sheetExitSaveButton"><i class="fas fa-save"></i> Simpan & keluar</button>
+        </div>
+    </div>
+</div>
+
 <div class="asix-sheet-toast-stack" id="sheetToastStack" aria-live="polite"></div>
 @endsection
 
@@ -1446,8 +1505,10 @@
 
     const CONFIG = {{ Illuminate\Support\Js::from([
         'workbookUrl' => route('drive.file.workbook', ['file' => $file]),
+        'cellsUrl' => route('drive.file.workbook.cells', ['file' => $file]),
         'saveUrl' => route('drive.file.workbook.save', ['file' => $file]),
         'downloadUrl' => route('drive.file.download', ['file' => $file]),
+        'backUrl' => $resolvedBackUrl,
         'csrfToken' => csrf_token(),
         'fallbackName' => $driveFileName,
     ]) }};
@@ -1501,6 +1562,9 @@
         findCase: $('#sheetFindCase'),
         findResult: $('#sheetFindResult'),
         conflictModal: $('#sheetConflictModal'),
+        exitModal: $('#sheetExitModal'),
+        exitSaveButton: $('#sheetExitSaveButton'),
+        exitDiscardButton: $('#sheetExitDiscardButton'),
         toastStack: $('#sheetToastStack'),
     };
 
@@ -1526,16 +1590,25 @@
         findMatches: [],
         findIndex: -1,
         conflictingOperations: null,
+        pendingRowLoads: new Map(),
+        failedRowLoads: new Map(),
+        rowLoadGeneration: 0,
+        autosaveTimer: null,
+        savePromise: null,
+        pendingExitUrl: null,
+        allowUnload: false,
     };
 
     const DEFAULT_COLUMN_WIDTH = 104;
     const DEFAULT_ROW_HEIGHT = 28;
-    const MAX_RENDER_ROWS = 2000;
+    const MAX_WORKSHEET_ROWS = 1048576;
     const MAX_RENDER_COLUMNS = 100;
+    const ROW_VIEWPORT_CHUNK_SIZE = 160;
     const MAX_INTERACTIVE_RANGE_CELLS = 20000;
     const MAX_CLIPBOARD_CELLS = 2400;
     const MAX_FROZEN_ROWS = 100;
     const MAX_FROZEN_COLUMNS = 20;
+    const AUTOSAVE_DELAY_MS = 1400;
 
     function deepClone(value) {
         if (typeof structuredClone === 'function') {
@@ -1662,6 +1735,14 @@
             column_widths: { ...(sheet?.column_widths || {}) },
             row_heights: { ...(sheet?.row_heights || {}) },
             cells,
+            loaded_row_ranges: Array.isArray(sheet?.loaded_row_ranges)
+                ? sheet.loaded_row_ranges
+                    .map(range => ({
+                        start: Math.max(1, Number(range?.start) || 1),
+                        end: Math.max(1, Number(range?.end) || 1),
+                    }))
+                    .filter(range => range.end >= range.start)
+                : [],
         };
     }
 
@@ -1817,8 +1898,120 @@
         return response.json();
     }
 
+    function rowRangeLoaded(sheet, startRow, endRow) {
+        return (sheet?.loaded_row_ranges || []).some(range => (
+            range.start <= startRow && range.end >= endRow
+        ));
+    }
+
+    function markRowRangeLoaded(sheet, startRow, endRow) {
+        const ranges = [...(sheet.loaded_row_ranges || []), { start: startRow, end: endRow }]
+            .sort((left, right) => left.start - right.start);
+        const merged = [];
+        ranges.forEach(range => {
+            const previous = merged[merged.length - 1];
+            if (previous && range.start <= previous.end + 1) {
+                previous.end = Math.max(previous.end, range.end);
+            } else {
+                merged.push({ ...range });
+            }
+        });
+        sheet.loaded_row_ranges = merged;
+    }
+
+    function updateFooterStatus() {
+        const sheet = activeSheet();
+        if (!sheet) return;
+        const loadingCopy = state.pendingRowLoads.size
+            ? ` \u00b7 memuat ${state.pendingRowLoads.size} blok data...`
+            : '';
+        elements.footerStatus.textContent = `${sheet.max_row || 1} baris \u00b7 ${sheet.max_col || 1} kolom${loadingCopy}`;
+    }
+
+    async function loadRowChunk(sheet, startRow) {
+        if (!sheet || state.loading || state.saving || state.conflictLocked) return;
+        if (pendingOperations().length) return;
+
+        const endRow = Math.min(sheet.max_row, startRow + ROW_VIEWPORT_CHUNK_SIZE - 1);
+        if (endRow < startRow || rowRangeLoaded(sheet, startRow, endRow)) return;
+
+        const endColumn = Math.max(1, Math.min(MAX_RENDER_COLUMNS, sheet.max_col || 1));
+        const key = `${sheet.index}:${startRow}:${endRow}:${endColumn}`;
+        if (state.pendingRowLoads.has(key)) return state.pendingRowLoads.get(key);
+        const lastFailure = state.failedRowLoads.get(key) || 0;
+        if (Date.now() - lastFailure < 5000) return;
+
+        const generation = state.rowLoadGeneration;
+        const revision = state.revision;
+        const request = (async () => {
+            const url = new URL(CONFIG.cellsUrl, window.location.origin);
+            url.searchParams.set('revision', revision || '');
+            url.searchParams.set('sheet', String(sheet.index));
+            url.searchParams.set('start_row', String(startRow));
+            url.searchParams.set('end_row', String(endRow));
+            url.searchParams.set('start_col', '1');
+            url.searchParams.set('end_col', String(endColumn));
+
+            const response = await fetch(url.toString(), {
+                method: 'GET',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const payload = await readJsonResponse(response);
+            if (response.status === 409 || response.status === 412) {
+                if (!pendingOperations().length) await loadWorkbook();
+                return;
+            }
+            if (!response.ok) {
+                throw new Error(payload.message || 'Baris workbook gagal dimuat.');
+            }
+            if (generation !== state.rowLoadGeneration || revision !== state.revision) return;
+            if (pendingOperations().length) return;
+
+            const target = state.workbook?.sheets?.find(candidate => (
+                String(candidate.index) === String(sheet.index)
+            ));
+            if (!target) return;
+
+            Object.entries(payload.cells || {}).forEach(([address, cell]) => {
+                target.cells[String(address).toUpperCase()] = normalizeCell(cell);
+            });
+            target.row_heights = { ...target.row_heights, ...(payload.row_heights || {}) };
+            markRowRangeLoaded(target, startRow, endRow);
+            state.failedRowLoads.delete(key);
+            if (target === activeSheet()) scheduleRender();
+        })().catch(error => {
+            console.error(error);
+            state.failedRowLoads.set(key, Date.now());
+            showToast(error.message || 'Baris workbook gagal dimuat.', 'error', 4200);
+        }).finally(() => {
+            if (state.pendingRowLoads.get(key) === request) {
+                state.pendingRowLoads.delete(key);
+            }
+            updateFooterStatus();
+        });
+
+        state.pendingRowLoads.set(key, request);
+        updateFooterStatus();
+
+        return request;
+    }
+
+    function requestVisibleRows(rows) {
+        const sheet = activeSheet();
+        if (!sheet || !Array.isArray(rows) || !rows.length) return;
+        const chunks = new Set(rows.map(row => (
+            Math.floor((Math.max(1, row) - 1) / ROW_VIEWPORT_CHUNK_SIZE) * ROW_VIEWPORT_CHUNK_SIZE + 1
+        )));
+        chunks.forEach(startRow => void loadRowChunk(sheet, startRow));
+    }
+
     async function loadWorkbook(options = {}) {
         const operationsToReapply = options.reapplyOperations || null;
+        state.rowLoadGeneration++;
+        state.pendingRowLoads.clear();
+        state.failedRowLoads.clear();
         setLoading(true);
         setEmpty(null);
         setBanner(elements.errorBanner, [], 'error');
@@ -1887,66 +2080,85 @@
         }
     }
 
-    async function saveWorkbook() {
-        if (!state.canEdit || state.saving || state.conflictLocked) return;
-        commitCellEditor();
+    async function saveWorkbook(options = {}) {
+        const settings = options instanceof Event ? {} : options;
+        if (!state.canEdit || state.conflictLocked) return false;
+        if (state.saving) return state.savePromise || false;
+        if (state.editing) commitCellEditor();
         const operations = pendingOperations();
-        if (!operations.length) return;
+        if (!operations.length) return true;
 
-        state.saving = true;
-        updateDirtyState();
-        setBanner(elements.errorBanner, [], 'error');
-        try {
-            const response = await fetch(CONFIG.saveUrl, {
-                method: 'PATCH',
-                credentials: 'same-origin',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': CONFIG.csrfToken,
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                body: JSON.stringify({
-                    base_revision: state.revision,
-                    operations,
-                    active_sheet: activeSheet()?.title ?? null,
-                }),
-            });
-            const payload = await readJsonResponse(response);
-            if (response.status === 409 || response.status === 412) {
-                state.conflictingOperations = operations;
-                state.conflictLocked = true;
-                showModal(elements.conflictModal);
-                throw new Error(payload.message || 'File telah berubah di server.');
-            }
-            if (!response.ok) {
-                const validationMessage = payload.errors
-                    ? Object.values(payload.errors).flat().join(' ')
-                    : null;
-                throw new Error(validationMessage || payload.message || 'Perubahan gagal disimpan.');
-            }
-
-            state.revision = payload.revision ?? payload.file?.revision ?? state.revision;
-            if (payload.file) state.file = { ...state.file, ...payload.file };
-            if (payload.workbook) {
-                state.workbook = normalizeWorkbook(payload.workbook);
-                state.activeSheetPosition = resolveActivePosition(state.workbook);
-            }
-            state.undoStack = [];
-            state.redoStack = [];
-            rebuildMetrics();
-            renderTabs();
-            syncSelectionUi();
-            scheduleRender();
-            showToast('Perubahan spreadsheet berhasil disimpan.', 'success');
-        } catch (error) {
-            console.error(error);
-            setBanner(elements.errorBanner, error.message, 'error');
-            showToast(error.message, 'error', 5000);
-        } finally {
-            state.saving = false;
-            updateDirtyState();
+        if (state.autosaveTimer) {
+            window.clearTimeout(state.autosaveTimer);
+            state.autosaveTimer = null;
         }
+
+        const request = (async () => {
+            state.saving = true;
+            updateDirtyState();
+            setBanner(elements.errorBanner, [], 'error');
+            try {
+                const response = await fetch(CONFIG.saveUrl, {
+                    method: 'PATCH',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': CONFIG.csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify({
+                        base_revision: state.revision,
+                        operations,
+                        active_sheet: activeSheet()?.title ?? null,
+                    }),
+                });
+                const payload = await readJsonResponse(response);
+                if (response.status === 409 || response.status === 412) {
+                    state.conflictingOperations = operations;
+                    state.conflictLocked = true;
+                    showModal(elements.conflictModal);
+                    throw new Error(payload.message || 'File telah berubah di server.');
+                }
+                if (!response.ok) {
+                    const validationMessage = payload.errors
+                        ? Object.values(payload.errors).flat().join(' ')
+                        : null;
+                    throw new Error(validationMessage || payload.message || 'Perubahan gagal disimpan.');
+                }
+
+                state.revision = payload.revision ?? payload.file?.revision ?? state.revision;
+                if (payload.file) state.file = { ...state.file, ...payload.file };
+                if (payload.workbook) {
+                    state.rowLoadGeneration++;
+                    state.pendingRowLoads.clear();
+                    state.failedRowLoads.clear();
+                    state.workbook = normalizeWorkbook(payload.workbook);
+                    state.activeSheetPosition = resolveActivePosition(state.workbook);
+                }
+                state.undoStack = [];
+                state.redoStack = [];
+                rebuildMetrics();
+                renderTabs();
+                syncSelectionUi();
+                scheduleRender();
+                if (!settings.quiet) showToast('Perubahan spreadsheet berhasil disimpan.', 'success');
+                return true;
+            } catch (error) {
+                console.error(error);
+                setBanner(elements.errorBanner, error.message, 'error');
+                showToast(error.message, 'error', 5000);
+                return false;
+            } finally {
+                state.saving = false;
+                updateDirtyState();
+            }
+        })();
+
+        state.savePromise = request;
+        const saved = await request;
+        if (state.savePromise === request) state.savePromise = null;
+        return saved;
     }
 
     function actionSheetPosition(action) {
@@ -2018,12 +2230,39 @@
         showToast(`Diulangi: ${action.label}`, 'info', 1800);
     }
 
+    function scheduleAutosave() {
+        if (!state.canEdit || state.conflictLocked || !pendingOperations().length) return;
+        if (state.autosaveTimer) window.clearTimeout(state.autosaveTimer);
+        state.autosaveTimer = window.setTimeout(() => {
+            state.autosaveTimer = null;
+            if (!state.editing && !state.saving && pendingOperations().length) {
+                void saveWorkbook({quiet: true, source: 'autosave'});
+            }
+        }, AUTOSAVE_DELAY_MS);
+    }
+
+    function leaveEditor(url) {
+        state.allowUnload = true;
+        window.location.assign(url || CONFIG.backUrl);
+    }
+
+    async function requestEditorExit(url) {
+        state.pendingExitUrl = url || CONFIG.backUrl;
+        if (state.saving && state.savePromise) await state.savePromise;
+        if (!pendingOperations().length) {
+            leaveEditor(state.pendingExitUrl);
+            return;
+        }
+        showModal(elements.exitModal);
+    }
+
     function afterLocalMutation() {
         rebuildMetrics();
         renderTabs();
         syncSelectionUi();
         scheduleRender();
         updateDirtyState();
+        scheduleAutosave();
     }
 
     function cellChangeOperations(changes, sheetReference) {
@@ -2386,24 +2625,43 @@
         const range = selectedRange();
         if (!sheet || !allowInteractiveRange(range)) return;
         const address = rangeAddress(range);
-        const existing = (sheet.merged_cells || []).find(merged => {
-            const parsed = parseRange(merged);
-            return parsed && rangesIntersect(parsed, range);
-        });
+        const mergedRanges = mergedRangeEntries(sheet);
+        const existing = mergedRanges.find(merged => rangesEqual(merged.range, range));
+
+        if (!existing && rangeCellCount(range) < 2) {
+            showToast('Pilih sedikitnya dua sel untuk digabungkan.', 'info');
+            return;
+        }
+
+        const overlapping = !existing
+            ? mergedRanges.find(merged => rangesIntersect(merged.range, range))
+            : null;
+        if (overlapping) {
+            showToast(
+                `Rentang ${address} bersinggungan dengan ${overlapping.address}. Pisahkan sel tersebut terlebih dahulu.`,
+                'error',
+                4800
+            );
+            return;
+        }
+
         const before = [...sheet.merged_cells];
         const after = existing
-            ? before.filter(merged => merged !== existing)
+            ? before.filter(merged => merged !== existing.address)
             : [...before, address];
-        performAction({
+        const applied = performAction({
             label: existing ? 'Pisahkan sel' : 'Gabungkan sel',
             operations: [{
                 type: existing ? 'unmerge' : 'merge',
                 sheet: sheetOperationReference(sheet),
-                range: existing || address,
+                range: existing?.address || address,
             }],
             apply: () => activeSheet().merged_cells = [...after],
             revert: () => activeSheet().merged_cells = [...before],
         });
+        if (applied) {
+            showToast(existing ? 'Sel berhasil dipisahkan.' : 'Sel berhasil digabungkan.', 'success', 1800);
+        }
     }
 
     function freezePane(unfreeze = false) {
@@ -2586,13 +2844,42 @@
         }, 'Duplikat sheet', insertAt);
     }
 
-    function deleteSheet() {
+    async function deleteSheet() {
         if (state.workbook.sheets.length <= 1) {
             showToast('Workbook harus memiliki sedikitnya satu sheet.', 'error');
             return;
         }
         const sheet = activeSheet();
-        if (!window.confirm(`Hapus sheet "${sheet.title}"?`)) return;
+        if (!window.Swal) {
+            showToast('Komponen konfirmasi belum siap. Muat ulang halaman lalu coba kembali.', 'error');
+            return;
+        }
+
+        let confirmation;
+        try {
+            confirmation = await window.Swal.fire({
+                icon: 'warning',
+                title: 'Hapus sheet?',
+                text: `"${sheet.title}" akan dihapus dari workbook.`,
+                showCancelButton: true,
+                confirmButtonText: 'Hapus sheet',
+                cancelButtonText: 'Batal',
+                reverseButtons: true,
+                focusCancel: true,
+                buttonsStyling: false,
+                customClass: {
+                    popup: 'asix-sheet-swal',
+                    title: 'asix-sheet-swal-title',
+                    confirmButton: 'asix-sheet-swal-confirm',
+                    cancelButton: 'asix-sheet-swal-cancel',
+                },
+            });
+        } catch (_) {
+            showToast('Konfirmasi tidak dapat ditampilkan.', 'error');
+            return;
+        }
+
+        if (!confirmation.isConfirmed) return;
         const deletingPosition = state.activeSheetPosition;
         sheetCollectionAction({
             type: 'delete_sheet',
@@ -2605,6 +2892,22 @@
     function rangesIntersect(a, b) {
         return a.startRow <= b.endRow && a.endRow >= b.startRow
             && a.startCol <= b.endCol && a.endCol >= b.startCol;
+    }
+
+    function rangesEqual(a, b) {
+        return a.startRow === b.startRow && a.endRow === b.endRow
+            && a.startCol === b.startCol && a.endCol === b.endCol;
+    }
+
+    function mergedRangeEntries(sheet = activeSheet()) {
+        return (sheet?.merged_cells || []).map(address => ({
+            address,
+            range: parseRange(address),
+        })).filter(entry => entry.range);
+    }
+
+    function exactMergedRange(sheet, range) {
+        return mergedRangeEntries(sheet).find(merged => rangesEqual(merged.range, range)) || null;
     }
 
     function rangeCellCount(range) {
@@ -2853,14 +3156,24 @@
 
     function selectCell(row, col, extend = false) {
         let point = {
-            row: Math.max(1, Math.min(MAX_RENDER_ROWS, Number(row) || 1)),
+            row: Math.max(1, Math.min(MAX_WORKSHEET_ROWS, Number(row) || 1)),
             col: Math.max(1, Math.min(MAX_RENDER_COLUMNS, Number(col) || 1)),
         };
         const merged = state.mergedMap.get(cellAddress(point.row, point.col));
-        if (merged && !merged.master) {
+        if (merged && extend) {
+            const anchor = state.selection.anchor;
+            point = {
+                row: anchor.row <= merged.range.startRow ? merged.range.endRow : merged.range.startRow,
+                col: anchor.col <= merged.range.startCol ? merged.range.endCol : merged.range.startCol,
+            };
+            state.selection.focus = point;
+        } else if (merged) {
             point = { row: merged.range.startRow, col: merged.range.startCol };
-        }
-        if (extend) {
+            state.selection = {
+                anchor: { row: merged.range.endRow, col: merged.range.endCol },
+                focus: point,
+            };
+        } else if (extend) {
             state.selection.focus = point;
         } else {
             state.selection = { anchor: point, focus: point };
@@ -2874,8 +3187,8 @@
 
     function selectRange(range) {
         const normalized = {
-            startRow: Math.max(1, Math.min(MAX_RENDER_ROWS, Number(range.startRow) || 1)),
-            endRow: Math.max(1, Math.min(MAX_RENDER_ROWS, Number(range.endRow) || 1)),
+            startRow: Math.max(1, Math.min(MAX_WORKSHEET_ROWS, Number(range.startRow) || 1)),
+            endRow: Math.max(1, Math.min(MAX_WORKSHEET_ROWS, Number(range.endRow) || 1)),
             startCol: Math.max(1, Math.min(MAX_RENDER_COLUMNS, Number(range.startCol) || 1)),
             endCol: Math.max(1, Math.min(MAX_RENDER_COLUMNS, Number(range.endCol) || 1)),
         };
@@ -2912,6 +3225,17 @@
         elements.vertical.value = style.vertical || '';
         elements.borderStyle.value = style.border_style || '';
         elements.numberFormat.value = style.number_format || 'General';
+
+        const mergedRange = exactMergedRange(sheet, range);
+        const mergeLabel = mergedRange ? 'Pisahkan sel' : 'Gabungkan sel';
+        elements.mergeButton.classList.toggle('is-active', Boolean(mergedRange));
+        elements.mergeButton.title = mergeLabel;
+        elements.mergeButton.setAttribute('aria-label', mergeLabel);
+        elements.mergeButton.setAttribute('aria-pressed', mergedRange ? 'true' : 'false');
+        const mergeIcon = elements.mergeButton.querySelector('i');
+        if (mergeIcon) {
+            mergeIcon.className = mergedRange ? 'fas fa-object-ungroup' : 'fas fa-object-group';
+        }
     }
 
     function beginCellEdit(initialValue = null) {
@@ -2988,10 +3312,10 @@
         const selected = selectedRange();
         const requestedRows = Math.max(200, (sheet.max_row || 1) + 30, selected.endRow + 10);
         const requestedColumns = Math.max(26, (sheet.max_col || 1) + 5, selected.endCol + 5);
-        const rows = Math.min(MAX_RENDER_ROWS, requestedRows);
+        const rows = Math.min(MAX_WORKSHEET_ROWS, requestedRows);
         const columns = Math.min(MAX_RENDER_COLUMNS, requestedColumns);
-        const rowOffsets = new Array(rows + 1).fill(0);
-        const columnOffsets = new Array(columns + 1).fill(0);
+        const rowOffsets = new Float64Array(rows + 1);
+        const columnOffsets = new Float64Array(columns + 1);
         for (let row = 1; row <= rows; row++) {
             rowOffsets[row] = rowOffsets[row - 1] + rowHeight(sheet, row);
         }
@@ -3010,14 +3334,14 @@
         elements.canvas.style.height = `${state.metrics.totalHeight}px`;
         elements.columnTrack.style.width = `${state.metrics.totalWidth}px`;
         elements.rowTrack.style.height = `${state.metrics.totalHeight}px`;
-        elements.footerStatus.textContent = `${sheet.max_row || 1} baris · ${sheet.max_col || 1} kolom`;
+        updateFooterStatus();
         rebuildMergedMap();
-        if (requestedRows > MAX_RENDER_ROWS || requestedColumns > MAX_RENDER_COLUMNS) {
-            setBanner(elements.warningBanner, [
-                ...(state.file?.warnings || []),
-                `Pratinjau editor dibatasi sampai ${MAX_RENDER_ROWS.toLocaleString('id-ID')} baris dan ${MAX_RENDER_COLUMNS.toLocaleString('id-ID')} kolom.`,
-            ], 'warning');
-        }
+        setBanner(elements.warningBanner, [
+            ...(state.file?.warnings || []),
+            ...(requestedColumns > MAX_RENDER_COLUMNS
+                ? [`Editor kompatibel menampilkan sampai ${MAX_RENDER_COLUMNS.toLocaleString('id-ID')} kolom.`]
+                : []),
+        ], 'warning');
     }
 
     function rebuildMergedMap() {
@@ -3121,6 +3445,8 @@
             metrics.columns
         );
         const selection = selectedRange();
+
+        requestVisibleRows(rows);
 
         elements.canvas.replaceChildren();
         elements.columnTrack.replaceChildren();
@@ -3630,7 +3956,26 @@
             });
         });
 
-        elements.saveButton.addEventListener('click', saveWorkbook);
+        elements.saveButton.addEventListener('click', () => void saveWorkbook());
+        $$('[data-sheet-exit]').forEach(link => {
+            link.addEventListener('click', event => {
+                event.preventDefault();
+                void requestEditorExit(link.href || CONFIG.backUrl);
+            });
+        });
+        elements.exitDiscardButton.addEventListener('click', () => {
+            hideModal(elements.exitModal);
+            leaveEditor(state.pendingExitUrl || CONFIG.backUrl);
+        });
+        elements.exitSaveButton.addEventListener('click', async () => {
+            elements.exitSaveButton.disabled = true;
+            const saved = await saveWorkbook({quiet: true, source: 'exit'});
+            elements.exitSaveButton.disabled = false;
+            if (saved && !pendingOperations().length) {
+                hideModal(elements.exitModal);
+                leaveEditor(state.pendingExitUrl || CONFIG.backUrl);
+            }
+        });
         elements.reload.addEventListener('click', () => {
             const operations = state.conflictLocked
                 ? (state.conflictingOperations || pendingOperations())
@@ -3739,8 +4084,13 @@
         if (typeof ResizeObserver !== 'undefined') {
             new ResizeObserver(() => scheduleRender()).observe(elements.viewport);
         }
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden' && pendingOperations().length && !state.conflictLocked) {
+                void saveWorkbook({quiet: true, source: 'visibility'});
+            }
+        });
         window.addEventListener('beforeunload', event => {
-            if (!pendingOperations().length) return;
+            if (state.allowUnload || !pendingOperations().length) return;
             event.preventDefault();
             event.returnValue = '';
         });

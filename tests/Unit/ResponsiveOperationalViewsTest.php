@@ -17,6 +17,40 @@ class ResponsiveOperationalViewsTest extends TestCase
         $this->assertStringContainsString('min-width: 0;', $source);
     }
 
+    public function test_hourly_dpk_uses_page_scroll_and_exposes_every_product_table(): void
+    {
+        $source = file_get_contents(resource_path('views/report/dashboard-dana-hourly-dpk.blade.php'));
+        $pdf = file_get_contents(resource_path('views/report/dashboard-dana-hourly-dpk-pdf.blade.php'));
+
+        $this->assertStringContainsString('<h1>Hourly DPK</h1>', $source);
+        $this->assertStringNotContainsString('<p>Monitoring posisi simpanan', $source);
+        $this->assertStringContainsString('class="hourly-product-nav"', $source);
+        $this->assertStringContainsString("'hourly-product-'", $source);
+        $this->assertStringContainsString("\$hourlyReport['summaryTotal']", $source);
+        $this->assertStringContainsString("\$export['summaryTotal']", $pdf);
+        $this->assertMatchesRegularExpression(
+            '/\.hourly-table-shell\s*\{[^}]*height:\s*auto;[^}]*max-height:\s*none;[^}]*overflow-x:\s*auto;[^}]*overflow-y:\s*visible;/s',
+            $source
+        );
+    }
+
+    public function test_shared_table_guards_do_not_create_nested_vertical_scrolling(): void
+    {
+        $layout = file_get_contents(resource_path('views/layouts/admin.blade.php'));
+        $style = file_get_contents(resource_path('views/report/partials/sticky-table-viewport-style.blade.php'));
+        $script = file_get_contents(resource_path('views/report/partials/sticky-table-viewport-script.blade.php'));
+
+        $this->assertMatchesRegularExpression(
+            '/\.content-wrapper \.abah-table-scroll,.*?height:\s*auto\s*!important;.*?max-height:\s*none\s*!important;.*?overflow-x:\s*auto;.*?overflow-y:\s*visible;/s',
+            $layout
+        );
+        $this->assertStringContainsString('max-height: none !important;', $style);
+        $this->assertStringContainsString('overflow-y: visible;', $style);
+        $this->assertStringNotContainsString('bindWrapperInteractions', $script);
+        $this->assertStringNotContainsString('desiredHeight', $script);
+        $this->assertStringNotContainsString("event.preventDefault()", $script);
+    }
+
     public function test_job_management_reflows_summary_and_controls_on_touch_widths(): void
     {
         $source = file_get_contents(resource_path('views/import/job-management.blade.php'));

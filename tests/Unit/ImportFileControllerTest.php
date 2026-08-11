@@ -77,6 +77,125 @@ class ImportFileControllerTest extends TestCase
         }
     }
 
+    public function test_brilink_summary_vendor_csv_uses_the_preview_filter_selection(): void
+    {
+        $controller = new ImportFileController();
+        $csvPath = storage_path('framework/testing/brilink_summary_area6.csv');
+
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        $rows = [
+            ['textbox26', 'textbox1', 'textbox7', 'textbox4', 'textbox16', 'textbox12', 'textbox19', 'textbox13', 'brilink_web_name', 'BRILINK_WEB_CODE', 'outlet_name', 'OUTLET_CODE', 'Total_transaksi', 'textbox18', 'textbox20', 'textbox32'],
+            ['Periode : July 2026', '1', 'R', 'KANWIL MALANG', '0070', 'KC Ponorogo', '6495', 'UNIT SAMPLE', 'Agen Ponorogo', '10004594', 'Outlet Ponorogo', '10004651', '1', '100.00', '2.00', '5.00'],
+            ['Periode : July 2026', '2', 'R', 'KANWIL MALANG', '0045', 'KC Madiun', '6496', 'UNIT SAMPLE', 'Agen Madiun', '10004595', 'Outlet Madiun', '10004652', '2', '200.00', '4.00', '10.00'],
+            ['Periode : July 2026', '3', 'R', 'KANWIL MALANG', '0049', 'KC Magetan', '6497', 'UNIT SAMPLE', 'Agen Magetan', '10004596', 'Outlet Magetan', '10004653', '3', '300.00', '6.00', '15.00'],
+            ['Periode : July 2026', '4', 'R', 'KANWIL MALANG', '0057', 'KC Ngawi', '6498', 'UNIT SAMPLE', 'Agen Ngawi', '10004597', 'Outlet Ngawi', '10004654', '4', '400.00', '8.00', '20.00'],
+            ['Periode : July 2026', '5', 'R', 'KANWIL MALANG', '0001', 'KC Blitar', '6499', 'UNIT SAMPLE', 'Agen Blitar', '10004598', 'Outlet Blitar', '10004655', '5', '500.00', '10.00', '25.00'],
+        ];
+
+        $handle = fopen($csvPath, 'w');
+        foreach ($rows as $row) {
+            fputcsv($handle, $row);
+        }
+        fclose($handle);
+
+        try {
+            $allRowsMeta = $this->invokeMethod($controller, 'collectImportMeta', [
+                $csvPath,
+                [],
+                [],
+                ',',
+                true,
+                false,
+            ]);
+
+            $ponorogo = $this->invokeMethod($controller, 'transformBrilinkSummaryRow', [$rows[1]]);
+            $outsideArea6 = $this->invokeMethod($controller, 'transformBrilinkSummaryRow', [$rows[5]]);
+            $headers = $this->invokeMethod($controller, 'formatCsvHeaders', [$rows[0], true]);
+            $branchValues = array_map(function (array $row) use ($controller): string {
+                return $this->invokeMethod($controller, 'transformBrilinkSummaryRow', [$row])[4];
+            }, array_slice($rows, 1));
+            $initialSelections = $this->invokeMethod($controller, 'buildInitialArea6Selections', [
+                $headers,
+                [4 => $branchValues],
+                ['CABANG'],
+            ]);
+            $area6Filters = [4 => array_fill_keys($initialSelections[4], true)];
+            $filteredMeta = $this->invokeMethod($controller, 'collectImportMeta', [
+                $csvPath,
+                [],
+                $area6Filters,
+                ',',
+                true,
+                false,
+            ]);
+            $blitarMeta = $this->invokeMethod($controller, 'collectImportMeta', [
+                $csvPath,
+                [],
+                [4 => ['KC Blitar' => true]],
+                ',',
+                true,
+                false,
+            ]);
+            $mappedPonorogo = $this->invokeMethod($controller, 'mapRowForInsert', [
+                $ponorogo,
+                range(0, 14),
+                [],
+                true,
+                '_BST',
+            ]);
+
+            $this->assertSame(5, $allRowsMeta['total_rows']);
+            $this->assertSame(4, $filteredMeta['total_rows']);
+            $this->assertSame(1, $blitarMeta['total_rows']);
+            $this->assertSame([
+                'KC Ponorogo',
+                'KC Madiun',
+                'KC Magetan',
+                'KC Ngawi',
+            ], $initialSelections[4]);
+            $this->assertStringStartsWith('2026-07-', $filteredMeta['sample_periode']);
+            $this->assertSame([
+                'July 2026',
+                'R',
+                'KANWIL MALANG',
+                '0070',
+                'KC Ponorogo',
+                '6495',
+                'UNIT SAMPLE',
+                'Agen Ponorogo',
+                '10004594',
+                'Outlet Ponorogo',
+                '10004651',
+                '1',
+                '100.00',
+                '2.00',
+                '5.00',
+            ], $ponorogo);
+            $this->assertSame('KC Ponorogo', $mappedPonorogo['cabang']);
+            $this->assertSame('UNIT SAMPLE', $mappedPonorogo['uker']);
+            $this->assertSame('10004594', $mappedPonorogo['merchant_code']);
+            $this->assertSame(1, $mappedPonorogo['total_transaksi']);
+            $this->assertSame(100.0, $mappedPonorogo['total_nominal']);
+            $this->assertSame('KC Blitar', $outsideArea6[4]);
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
+    public function test_brilink_summary_always_uses_parsed_staging_path(): void
+    {
+        $skip = $this->invokeMethod(new ImportFileController(), 'shouldSkipRawLoadDataFastPath', [
+            'brilink_web_laporan_summary_transaksi_brilink_web',
+            storage_path('framework/testing/file-that-does-not-need-to-exist.csv'),
+            ',',
+        ]);
+
+        $this->assertTrue($skip);
+    }
+
     public function test_merchant_import_does_not_fallback_when_configured_table_is_missing(): void
     {
         $controller = new ImportFileController();

@@ -49,7 +49,7 @@ class DailyDatabaseBackupServiceTest extends TestCase
         Config::set('database_backup', [
             'enabled' => true,
             'directory' => $this->backupRoot,
-            'retention_count' => 2,
+            'retention_count' => 1,
             'compression_level' => 4,
             'min_free_space_bytes' => 0,
             'mysqldump_binary' => $this->dumpBinary,
@@ -124,7 +124,7 @@ class DailyDatabaseBackupServiceTest extends TestCase
         $this->assertNoTemporaryArtifactsRemain();
     }
 
-    public function test_retention_keeps_only_two_newest_valid_backups_and_preserves_unrelated_content(): void
+    public function test_retention_keeps_only_latest_valid_backup_and_preserves_unrelated_content(): void
     {
         $oldest = $this->createManagedBackup('2026-07-28');
         $old = $this->createManagedBackup('2026-07-29');
@@ -153,7 +153,7 @@ class DailyDatabaseBackupServiceTest extends TestCase
         $this->assertDirectoryDoesNotExist($oldest);
         $this->assertDirectoryDoesNotExist($old);
         $this->assertDirectoryDoesNotExist($legacy);
-        $this->assertDirectoryExists($newestExisting);
+        $this->assertDirectoryDoesNotExist($newestExisting);
         $this->assertDirectoryExists($today);
         $this->assertDirectoryExists($unrelatedFolder);
         $this->assertDirectoryExists($invalidManagedFolder);
@@ -161,6 +161,7 @@ class DailyDatabaseBackupServiceTest extends TestCase
         $this->assertFileExists($unrelatedFile);
         $this->assertSame(
             [
+                'backup project-abah 30072026',
                 'backup project-abah 29072026',
                 'backup project-abah 28072026',
                 '28042026',
@@ -168,6 +169,33 @@ class DailyDatabaseBackupServiceTest extends TestCase
             array_values($result['deleted_backups'])
         );
         $this->assertNoTemporaryArtifactsRemain();
+    }
+
+    public function test_existing_backup_is_fully_reverified_before_previous_backup_is_pruned(): void
+    {
+        $previous = $this->createManagedBackup('2026-07-30');
+        $today = $this->createManagedBackup('2026-07-31');
+        $todayBackup = $today.DIRECTORY_SEPARATOR.'project_abah_31072026.sql.gz';
+        $contents = (string) File::get($todayBackup);
+        $contents[10] = chr(ord($contents[10]) ^ 1);
+        File::put($todayBackup, $contents);
+
+        $runner = Mockery::mock(CompressedDatabaseDumpRunner::class);
+
+        try {
+            (new DailyDatabaseBackupService($runner))->backup(
+                $this->date('2026-07-31 09:00:00')
+            );
+            $this->fail('Corrupted existing backup must fail full verification.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString(
+                'Checksum file backup terkompresi tidak cocok',
+                $exception->getMessage()
+            );
+        }
+
+        $this->assertDirectoryExists($previous);
+        $this->assertDirectoryExists($today);
     }
 
     public function test_runner_failure_does_not_prune_existing_backups_and_removes_temporary_artifacts(): void

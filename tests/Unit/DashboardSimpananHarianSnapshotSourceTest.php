@@ -176,6 +176,25 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $this->assertSame(['Ritel', 'Mikro', 'Wholesale'], $service->fetchCategories());
     }
 
+    public function test_dashboard_dana_month_end_uses_previous_month_end_as_mtd_reference(): void
+    {
+        DB::table('dashboard_harian_snapshots')->insert([
+            $this->summaryRow('2025-12-31', 'KC Madiun', 900_000_000, 0, 9, 0),
+            $this->summaryRow('2026-06-30', 'KC Madiun', 1_000_000_000, 0, 10, 0),
+            $this->summaryRow('2026-07-31', 'KC Madiun', 1_100_000_000, 0, 11, 0),
+        ]);
+
+        $periods = $this->invokePrivate(
+            app(DashboardDanaService::class),
+            'calculatePeriodReferences',
+            ['2026-07-31']
+        );
+
+        $this->assertSame('2026-07-31', $periods['selected']);
+        $this->assertSame('2026-06-30', $periods['mtd']);
+        $this->assertNotSame($periods['selected'], $periods['mtd']);
+    }
+
     public function test_dashboard_dana_branch_scope_groups_rows_by_segment(): void
     {
         DB::table('dashboard_harian_snapshots')->insert([
@@ -634,19 +653,25 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
 
         $this->assertSame([
             'meta',
+            'scope',
             'assets',
             'summary',
             'performance_overview',
-            'timeseries',
-            'cover_card_timeseries',
             'savings_breakdown',
+            'funding_structure',
+            'credit_structure',
+            'comparison',
             'loan_products',
             'financial_highlights',
             'executive_summary',
-            'micro',
             'quality',
             'kts',
+            'timeseries',
+            'cover_card_timeseries',
+            'micro',
+            'productivity',
             'digital_strategy',
+            'narrative',
         ], array_keys($payload));
         $this->assertSame('Area 6 - Region Malang', $payload['meta']['title']);
         $this->assertSame('2026-05-19', $payload['meta']['period']);
@@ -656,8 +681,8 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $this->assertEqualsWithDelta(150_000_000, $cards->get('sml')['value_raw'], 0.01);
         $this->assertEqualsWithDelta(70_000_000, $cards->get('npl')['value_raw'], 0.01);
         $this->assertTrue($payload['timeseries']['available']);
-        $this->assertTrue($series->has('sml_nominal'));
-        $this->assertContains(150, array_map('intval', $series->get('sml_nominal')['values']));
+        $this->assertTrue($series->has('sml'));
+        $this->assertContains(150, array_map('intval', $series->get('sml')['values']));
         $this->assertCount(8, $payload['digital_strategy']['cards']);
         $this->assertSame([], $payload['kts']['ritel']);
         $this->assertSame([], $payload['kts']['micro']);
@@ -781,6 +806,7 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
             $table->string('uniqueid_rcds')->primary();
             $table->date('loan_period')->nullable();
             $table->date('casa_period')->nullable();
+            $table->string('branch_key')->nullable();
             $table->string('branch_label')->nullable();
             $table->decimal('os_amount', 20, 2)->default(0);
             $table->decimal('casa_amount', 20, 2)->default(0);
@@ -814,6 +840,9 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
             $table->date('periode')->nullable();
             $table->string('cabang1')->nullable();
             $table->string('unit1')->nullable();
+            $table->decimal('baki_debet1', 20, 2)->default(0);
+            $table->unsignedTinyInteger('kolek')->nullable();
+            $table->string('flag_restruk')->nullable();
         });
     }
 

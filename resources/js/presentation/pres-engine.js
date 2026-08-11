@@ -431,6 +431,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const slideStoryLabels = [
         'Cover',
         'Daftar isi',
+        'Market Share Area 6',
+        'Mapping Market Share',
         'Summary funding',
         'Funding per produk',
         '8 strategi funding',
@@ -568,7 +570,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Toggle dark theme for cover and closing slides.
         if (presMode) {
           const manualDark = presMode.classList.contains('manual-dark');
-          presMode.classList.toggle('theme-dark', manualDark || index === 0 || index === 12);
+          presMode.classList.toggle('theme-dark', manualDark || index === 0 || index === 14);
         }
 
         // Run count-up animations on active slide elements
@@ -3868,7 +3870,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const progressBar = document.getElementById('loading-progress-bar');
         const progressPercent = document.getElementById('loading-progress-percent');
         const progressStatus = document.getElementById('dashboard-loading-status');
-        const deferredSectionKeys = ['micro', 'productivity', 'timeseries', 'digital'];
+        const deferredSectionKeys = ['micro', 'productivity', 'timeseries', 'digital', 'marketshare'];
         let currentProgress = 0;
         let firstPayloadRendered = false;
         let lastRenderedPayload = null;
@@ -3939,6 +3941,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 'detail:productivity': [68, 'Memuat produktivitas RM...'],
                 'detail:timeseries': [78, 'Memuat timeseries dan tren...'],
                 'detail:digital': [88, 'Memuat strategi digital...'],
+                'detail:marketshare': [92, 'Memuat tabel dan peta market share...'],
                 'offline-fallback': [96, 'Jaringan tidak tersedia. Menggunakan cache offline...'],
               };
               const [value, message] = statusMap[status] || [currentProgress, null];
@@ -4237,7 +4240,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         const isInteractiveTarget = e.target instanceof Element
-          && Boolean(e.target.closest('input, select, textarea, button, [contenteditable="true"], [data-psd-timeseries-expand]'));
+          && Boolean(e.target.closest('input, select, textarea, button, [contenteditable="true"], [data-psd-timeseries-expand], [data-psd-marketshare-interactive]'));
 
         if (isInteractiveTarget && e.key !== 'Escape') return;
 

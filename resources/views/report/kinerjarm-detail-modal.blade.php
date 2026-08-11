@@ -1,6 +1,8 @@
 @php
-    $formatAmount = $formatAmount ?? fn ($value, int $decimals = 1) => number_format(((float) $value) / 1000000, $decimals, ',', '.');
-    $formatPercent = $formatPercent ?? fn ($value, int $decimals = 2) => number_format((float) $value, $decimals, ',', '.');
+    $formatAmountFormatter = $formatAmount ?? fn ($value, int $decimals = 0) => number_format(((float) $value) / 1000000, 0, ',', '.');
+    $formatPercentFormatter = $formatPercent ?? fn ($value, int $decimals = 2) => number_format((float) $value, 2, ',', '.');
+    $formatAmount = fn ($value, int $decimals = 0) => $formatAmountFormatter($value, 0);
+    $formatPercent = fn ($value, int $decimals = 2) => $formatPercentFormatter($value, 2);
     $detailMode = $detailMode ?? 'default';
     $historyRangeLabel = $historyRangeLabel ?? null;
     $smallSummariesByYear = $smallSummariesByYear ?? [];
@@ -303,7 +305,7 @@
                         </div>
                         <div>
                             <span>% LAR {{ $larPeriodLabel }}</span>
-                            <strong>{{ $formatPercent($totalPctLar, 2) }}%</strong>
+                            <strong>{{ $formatPercent($totalPctLar) }}%</strong>
                         </div>
                         <div>
                             <span>Penc. LAR {{ $year }}</span>
@@ -338,7 +340,7 @@
                                                 {{ $detail['penc_realisasi'] }}
                                             </span>
                                         </td>
-                                        <td class="text-end">{{ $formatPercent($detail['pct_lar'], 2) }}%</td>
+                                        <td class="text-end">{{ $formatPercent($detail['pct_lar']) }}%</td>
                                         <td class="text-center">
                                             <span class="kinerja-rm-modal__grade {{ $detail['penc_lar'] === 'A' ? 'is-good' : 'is-bad' }}">
                                                 {{ $detail['penc_lar'] }}
@@ -354,7 +356,7 @@
                                     <td class="text-center">
                                         <span class="kinerja-rm-modal__grade {{ $totalPencRealisasi === 'A' ? 'is-good' : 'is-bad' }}">{{ $totalPencRealisasi }}</span>
                                     </td>
-                                    <td class="text-end">{{ $formatPercent($totalPctLar, 2) }}%</td>
+                                    <td class="text-end">{{ $formatPercent($totalPctLar) }}%</td>
                                     <td class="text-center">
                                         <span class="kinerja-rm-modal__grade {{ $totalPencLar === 'A' ? 'is-good' : 'is-bad' }}">{{ $totalPencLar }}</span>
                                     </td>

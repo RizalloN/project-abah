@@ -784,9 +784,23 @@ class ExcelStagingService
 
     private function supportsNativeXlsxStreaming(string $path): bool
     {
-        return strtolower(pathinfo($path, PATHINFO_EXTENSION)) === 'xlsx'
-            && class_exists(\ZipArchive::class)
-            && class_exists(\XMLReader::class);
+        if (!is_file($path) || !class_exists(\ZipArchive::class) || !class_exists(\XMLReader::class)) {
+            return false;
+        }
+
+        // Some source systems append `.xls` to a valid XLSX package. Trust the
+        // workbook container, not its filename, so the streaming reader remains usable.
+        $zip = new \ZipArchive();
+        if ($zip->open($path) !== true) {
+            return false;
+        }
+
+        try {
+            return $zip->locateName('[Content_Types].xml') !== false
+                && $zip->locateName('xl/workbook.xml') !== false;
+        } finally {
+            $zip->close();
+        }
     }
 
     private function detectExcelHeaderFallback(string $path): ?array

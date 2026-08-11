@@ -690,6 +690,61 @@
         box-shadow: none !important;
     }
 
+    .kinerja-quality-series-table thead tr:first-child > th.quality-sticky-no {
+        width: var(--kinerja-no-column-width) !important;
+        min-width: var(--kinerja-no-column-width);
+        max-width: var(--kinerja-no-column-width);
+    }
+
+    .kinerja-quality-series-table .quality-sticky-no {
+        width: var(--kinerja-no-column-width);
+        min-width: var(--kinerja-no-column-width);
+        max-width: var(--kinerja-no-column-width);
+        text-align: center !important;
+    }
+
+    .kinerja-quality-series-table td.quality-sticky-branch {
+        width: var(--kinerja-branch-column-width);
+        min-width: var(--kinerja-branch-column-width);
+        max-width: var(--kinerja-branch-column-width);
+        left: var(--kinerja-no-column-width) !important;
+    }
+
+    .kinerja-quality-series-table .quality-sticky-unit-code {
+        width: var(--kinerja-unit-code-width);
+        min-width: var(--kinerja-unit-code-width);
+        max-width: var(--kinerja-unit-code-width);
+        left: calc(var(--kinerja-no-column-width) + var(--kinerja-branch-column-width)) !important;
+    }
+
+    .kinerja-quality-series-table .quality-sticky-rm,
+    .kinerja-quality-series-table td.merged-rm-cell.quality-sticky-rm {
+        width: var(--kinerja-rm-column-width);
+        min-width: var(--kinerja-rm-column-width);
+        max-width: var(--kinerja-rm-column-width);
+        left: calc(var(--kinerja-no-column-width) + var(--kinerja-branch-column-width) + var(--kinerja-unit-code-width)) !important;
+        box-shadow: 5px 0 8px -7px rgba(15, 23, 42, 0.55) !important;
+    }
+
+    .kinerja-quality-series-table .quality-row-number,
+    .kinerja-quality-series-table .quality-unit-code {
+        color: #334155 !important;
+        font-size: 0.68rem !important;
+        font-weight: 700 !important;
+        text-align: center !important;
+    }
+
+    .kinerja-quality-series-table .quality-subtotal-no,
+    .kinerja-quality-series-table .quality-subtotal-label,
+    .kinerja-quality-series-table .quality-grand-total-label {
+        position: sticky !important;
+        background: inherit !important;
+    }
+
+    .kinerja-quality-series-table .quality-subtotal-label {
+        min-width: calc(var(--kinerja-unit-code-width) + var(--kinerja-rm-column-width) + 108px);
+    }
+
     .kinerja-konsumer-table tr:not(.loan-branch-subtotal):not(.row-grand-total) td.merged-rm-cell {
         background: #ffffff !important;
     }
@@ -1509,6 +1564,370 @@
         gap: 0.55rem;
     }
 
+    .kinerja-performance-table-container {
+        max-height: 72vh;
+        isolation: isolate;
+    }
+
+    .kinerja-rm-performance-table {
+        --performance-no-width: 48px;
+        --performance-unit-width: 150px;
+        --performance-rm-width: 220px;
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        background: #ffffff;
+        color: #1e293b;
+        font-size: 0.7rem;
+    }
+
+    .kinerja-rm-performance-table th,
+    .kinerja-rm-performance-table td {
+        height: 42px;
+        padding: 0.38rem 0.5rem;
+        border-right: 1px solid #e2e8f0;
+        border-bottom: 1px solid #e2e8f0;
+        text-align: right;
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+
+    .kinerja-rm-performance-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        height: 38px;
+        padding: 0.35rem 0.45rem;
+        background: #102f5f;
+        color: #ffffff;
+        font-size: 0.64rem;
+        font-weight: 800;
+        letter-spacing: 0.025em;
+        line-height: 1.15;
+        text-align: center;
+        text-transform: uppercase;
+        border-color: #2b4b75;
+    }
+
+    .kinerja-rm-performance-table thead tr:nth-child(2) th {
+        top: 38px;
+        background: #1d436f;
+    }
+
+    .kinerja-rm-performance-table thead th small {
+        display: block;
+        margin-top: 0.15rem;
+        color: #c9dcf5;
+        font-size: 0.54rem;
+        font-weight: 650;
+        letter-spacing: 0;
+        text-transform: none;
+    }
+
+    .kinerja-rm-performance-table .performance-group-head--delta,
+    .kinerja-rm-performance-table .performance-delta-head {
+        background: #173a64;
+    }
+
+    .kinerja-rm-performance-table .performance-sticky {
+        position: sticky;
+        z-index: 20;
+        background: #ffffff;
+    }
+
+    .kinerja-rm-performance-table thead .performance-sticky {
+        z-index: 70;
+        background: #102f5f;
+    }
+
+    .kinerja-rm-performance-table .performance-sticky-no {
+        left: 0;
+        width: var(--performance-no-width);
+        min-width: var(--performance-no-width);
+        max-width: var(--performance-no-width);
+    }
+
+    .kinerja-rm-performance-table .performance-sticky-unit {
+        left: var(--performance-no-width);
+        width: var(--performance-unit-width);
+        min-width: var(--performance-unit-width);
+        max-width: var(--performance-unit-width);
+    }
+
+    .kinerja-rm-performance-table .performance-sticky-rm {
+        left: calc(var(--performance-no-width) + var(--performance-unit-width));
+        width: var(--performance-rm-width);
+        min-width: var(--performance-rm-width);
+        max-width: var(--performance-rm-width);
+        box-shadow: 5px 0 8px -7px rgba(15, 23, 42, 0.55);
+    }
+
+    .kinerja-rm-performance-table tbody tr:nth-child(even):not(.performance-total-row) td {
+        background: #f8fafc;
+    }
+
+    .kinerja-rm-performance-table tbody tr:hover td {
+        background: #eef5ff;
+    }
+
+    .kinerja-rm-performance-table .performance-unit-cell,
+    .kinerja-rm-performance-table .performance-rm-cell {
+        overflow: hidden;
+        text-align: left;
+        text-overflow: ellipsis;
+    }
+
+    .kinerja-rm-performance-table .performance-unit-cell strong,
+    .kinerja-rm-performance-table .performance-unit-cell span {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .kinerja-rm-performance-table .performance-unit-cell strong {
+        color: #0f2f66;
+        font-size: 0.7rem;
+    }
+
+    .kinerja-rm-performance-table .performance-unit-cell span {
+        margin-top: 0.1rem;
+        color: #64748b;
+        font-size: 0.59rem;
+    }
+
+    .kinerja-rm-performance-table .performance-rm-cell {
+        color: #172554;
+        font-weight: 750;
+        cursor: pointer;
+    }
+
+    .kinerja-rm-performance-table .performance-cell-center {
+        text-align: center;
+    }
+
+    .kinerja-rm-performance-table .performance-month-head.is-current {
+        background: #a36305;
+        color: #ffffff;
+    }
+
+    .kinerja-rm-performance-table .performance-month-cell {
+        min-width: 104px;
+        text-align: right;
+    }
+
+    .kinerja-rm-performance-table .performance-month-cell span {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.35rem;
+        line-height: 1.35;
+    }
+
+    .kinerja-rm-performance-table .performance-month-cell b {
+        color: #64748b;
+        font-size: 0.56rem;
+        font-weight: 750;
+    }
+
+    .kinerja-rm-performance-table tbody .performance-month-cell.is-current {
+        background: #fff7d6;
+        color: #713f12;
+        font-weight: 800;
+    }
+
+    .kinerja-rm-performance-table .performance-empty-value {
+        display: block;
+        color: #94a3b8;
+        text-align: center;
+    }
+
+    .kinerja-rm-performance-table .performance-delta-cell {
+        min-width: 82px;
+        font-weight: 750;
+    }
+
+    .kinerja-rm-performance-table .performance-delta-cell.is-positive {
+        color: #087443;
+        background: #effcf5;
+    }
+
+    .kinerja-rm-performance-table .performance-delta-cell.is-negative {
+        color: #b42318;
+        background: #fff4f2;
+    }
+
+    .kinerja-rm-performance-table .performance-total-row td {
+        position: sticky;
+        bottom: 0;
+        z-index: 25;
+        background: #dfeafb;
+        color: #102f5f;
+        font-weight: 850;
+        border-top: 1px solid #a9bfdb;
+    }
+
+    .kinerja-rm-performance-table .performance-total-row .performance-sticky {
+        z-index: 35;
+        background: #dfeafb;
+    }
+
+    .kinerja-rm-performance-table .performance-empty-row {
+        height: 150px;
+        color: #64748b;
+        font-weight: 700;
+        text-align: center;
+    }
+
+    .kinerja-quality-series-card .kinerja-report-card__header {
+        min-height: 54px;
+        padding: 0.7rem 0.85rem;
+        background: #ffffff;
+        border-bottom: 1px solid #dbe4f0;
+    }
+
+    .kinerja-quality-series-card .kinerja-report-card__title {
+        color: #172554;
+        font-size: 0.92rem;
+    }
+
+    .kinerja-quality-series-card .kinerja-report-card__title i {
+        color: #0b5cab;
+        font-size: 0.76rem;
+    }
+
+    .kinerja-quality-table-container {
+        max-height: 72vh;
+        isolation: isolate;
+    }
+
+    .kinerja-quality-series-table {
+        min-width: 1600px !important;
+        color: #1e293b;
+        font-size: 0.7rem;
+    }
+
+    .kinerja-quality-series-table th,
+    .kinerja-quality-series-table td {
+        height: 42px;
+        padding: 0.38rem 0.5rem !important;
+        border-color: #e2e8f0 !important;
+    }
+
+    .kinerja-quality-series-table thead th,
+    .kinerja-quality-series-table thead th.sticky-col {
+        height: 38px !important;
+        padding: 0.35rem 0.45rem !important;
+        background: #102f5f !important;
+        border-color: #2b4b75 !important;
+        color: #ffffff !important;
+        font-size: 0.64rem !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.025em !important;
+        line-height: 1.15;
+    }
+
+    .kinerja-quality-series-table thead tr:nth-child(2) th {
+        top: 38px;
+        background: #1d436f !important;
+    }
+
+    .kinerja-quality-series-table thead th.quality-series-head {
+        background: #102f5f !important;
+    }
+
+    .kinerja-quality-series-table thead th.quality-delta-head,
+    .kinerja-quality-series-table thead tr:nth-child(2) th.accent-head {
+        background: #173a64 !important;
+    }
+
+    .kinerja-quality-series-table thead th.quality-current-head {
+        background: #a36305 !important;
+        border-color: #a36305 !important;
+    }
+
+    .kinerja-quality-series-table thead .sticky-col {
+        z-index: 70;
+    }
+
+    .kinerja-quality-series-table tbody tr:nth-child(even):not(.loan-branch-subtotal):not(.row-grand-total) td,
+    .kinerja-quality-series-table tbody tr:nth-child(even):not(.loan-branch-subtotal):not(.row-grand-total) td.sticky-col {
+        background: #f8fafc !important;
+    }
+
+    .kinerja-quality-series-table tbody tr:hover td,
+    .kinerja-quality-series-table tbody tr:hover td.sticky-col {
+        background: #eef5ff !important;
+    }
+
+    .kinerja-quality-series-table .quality-sticky-branch {
+        color: #334155 !important;
+        font-size: 0.66rem !important;
+        font-weight: 700 !important;
+        text-align: left !important;
+    }
+
+    .kinerja-quality-series-table td.merged-rm-cell.quality-sticky-rm {
+        color: #172554 !important;
+        font-weight: 750 !important;
+    }
+
+    .kinerja-quality-series-table .quality-current-cell {
+        background: #fff7d6 !important;
+        color: #713f12 !important;
+        font-weight: 800 !important;
+    }
+
+    .kinerja-quality-series-table .quality-delta-cell {
+        min-width: 82px;
+        font-weight: 750 !important;
+    }
+
+    .kinerja-quality-series-table .quality-delta-cell.cell-pos {
+        background: #effcf5 !important;
+        color: #087443 !important;
+    }
+
+    .kinerja-quality-series-table .quality-delta-cell.cell-neg {
+        background: #fff4f2 !important;
+        color: #b42318 !important;
+    }
+
+    .kinerja-quality-series-table .loan-branch-subtotal td,
+    .kinerja-quality-series-table .loan-branch-subtotal td.sticky-col {
+        background: #dbe8f7 !important;
+        color: #0b315f !important;
+        font-weight: 800 !important;
+        border-top: 2px solid #4f76a7 !important;
+        border-bottom-color: #9fb8d5 !important;
+    }
+
+    .kinerja-quality-series-table .loan-branch-subtotal td:first-child {
+        box-shadow: inset 4px 0 0 #0b5cab !important;
+    }
+
+    .kinerja-quality-series-table .loan-branch-subtotal .quality-current-cell {
+        background: #fff0bd !important;
+    }
+
+    .kinerja-quality-series-table .row-grand-total td,
+    .kinerja-quality-series-table .row-grand-total td.sticky-col {
+        background: #dfeafb !important;
+        color: #102f5f !important;
+        font-weight: 850 !important;
+        border-top-color: #a9bfdb !important;
+    }
+
+    .kinerja-quality-series-table .row-grand-total .quality-current-cell {
+        background: #f5e8bb !important;
+    }
+
+    .kinerja-quality-series-table .quality-empty-row {
+        height: 150px !important;
+        color: #64748b !important;
+        font-weight: 700 !important;
+        text-align: center !important;
+    }
+
     .rm-ritel-page .premium-loader-text {
         font-size: 0.78rem;
         letter-spacing: 0;
@@ -1532,6 +1951,11 @@
 
         .rm-ritel-page .lux-btn {
             flex: 1;
+        }
+
+        .kinerja-rm-performance-table {
+            --performance-unit-width: 132px;
+            --performance-rm-width: 180px;
         }
     }
 </style>

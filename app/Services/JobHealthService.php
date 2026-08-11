@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Jobs\EnsureDashboardSimpananSnapshotJob;
 use App\Jobs\EnsureDashboardSnapshotJob;
+use App\Jobs\EnsureImportedSnapshotsFreshJob;
 use App\Jobs\EnsureRasioCasaSnapshotJob;
 use App\Jobs\EnsureRekeningDormantSnapshotJob;
 use App\Jobs\RunManagedReportDeleteJob;
@@ -19,6 +20,7 @@ use App\Support\ManagedReportSnapshotRebuildCoordinator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class JobHealthService
 {
@@ -27,6 +29,7 @@ class JobHealthService
     private const SWEEP_INTERVAL_SECONDS = 60;
     private const MANAGED_QUEUE_STALE_SECONDS = 15 * 60;
     private const REPORT_QUEUE_STALE_SECONDS = 20 * 60;
+    private const SNAPSHOT_BATCH_STALE_SECONDS = 2 * 60 * 60;
 
     public function __construct(
         private readonly ImportProgressService $importProgressService,
@@ -73,6 +76,7 @@ class JobHealthService
             $managedLoads = $this->managedReportLoadCoordinator->sweepStaleStates();
             $managedRebuilds = $this->managedReportSnapshotRebuildCoordinator->sweepStaleStates();
             $managedDeletes = $this->importIndexController->sweepManagedReportDeleteStates();
+            $recoveredSnapshotBatchIds = $this->recoverOrphanedSnapshotBatches();
             $purgedQueueRows = $this->purgeStaleQueueRows();
 
             Cache::put(self::SWEEP_LAST_RUN_KEY, now()->toIso8601String(), now()->addMinutes(10));
@@ -85,12 +89,14 @@ class JobHealthService
                 'managed_loads_reconciled' => $managedLoads,
                 'managed_rebuilds_reconciled' => $managedRebuilds,
                 'managed_deletes_reconciled' => $managedDeletes,
+                'orphaned_snapshot_batches_recovered' => count($recoveredSnapshotBatchIds),
+                'orphaned_snapshot_batch_ids' => $recoveredSnapshotBatchIds,
                 'purged_queue_rows' => $purgedQueueRows,
             ];
 
             $purgedQueueRowCount = array_sum($purgedQueueRows);
 
-            if ((count($recoveredImportIds) + $queuedImports + $processingImports + $managedLoads + $managedRebuilds + $managedDeletes + $purgedQueueRowCount) > 0) {
+            if ((count($recoveredImportIds) + $queuedImports + $processingImports + $managedLoads + $managedRebuilds + $managedDeletes + count($recoveredSnapshotBatchIds) + $purgedQueueRowCount) > 0) {
                 Log::info('Job health sweep dijalankan.', $summary);
             }
 
@@ -98,6 +104,108 @@ class JobHealthService
         } finally {
             optional($lock)->release();
         }
+    }
+
+    /**
+     * Laravel batches can remain pending after every queue row has been consumed
+     * or moved to failed_jobs. Close only those old, source-scoped batches and
+     * enqueue the normal freshness guard so data is rebuilt when needed.
+     *
+     * @return array<int, string>
+     */
+    private function recoverOrphanedSnapshotBatches(): array
+    {
+        if (!Schema::hasTable('job_batches') || !Schema::hasTable('jobs')) {
+            return [];
+        }
+
+        $cutoff = now()->subSeconds(self::SNAPSHOT_BATCH_STALE_SECONDS)->timestamp;
+        $batches = DB::table('job_batches')
+            ->where('pending_jobs', '>', 0)
+            ->whereNull('finished_at')
+            ->whereNull('cancelled_at')
+            ->where('created_at', '<=', $cutoff)
+            ->orderBy('created_at')
+            ->get(['id', 'name', 'pending_jobs', 'created_at']);
+
+        $recovered = [];
+
+        foreach ($batches as $batch) {
+            $definition = $this->snapshotBatchDefinition((string) ($batch->name ?? ''));
+            if ($definition === null || $this->hasLiveSnapshotBatchQueueJob((string) $batch->id)) {
+                continue;
+            }
+
+            $updated = DB::table('job_batches')
+                ->where('id', $batch->id)
+                ->where('pending_jobs', '>', 0)
+                ->whereNull('finished_at')
+                ->update([
+                    'pending_jobs' => 0,
+                    'finished_at' => now()->timestamp,
+                ]);
+
+            if ($updated !== 1) {
+                continue;
+            }
+
+            try {
+                EnsureImportedSnapshotsFreshJob::dispatch(
+                    $definition['source_table'],
+                    $definition['period'],
+                    'job-health:orphaned-snapshot-batch'
+                )->onQueue('snapshots-parallel');
+            } catch (\Throwable $e) {
+                DB::table('job_batches')
+                    ->where('id', $batch->id)
+                    ->update([
+                        'pending_jobs' => (int) $batch->pending_jobs,
+                        'finished_at' => null,
+                    ]);
+
+                Log::warning('Failed to queue snapshot freshness recovery for orphaned batch.', [
+                    'batch_id' => (string) $batch->id,
+                    'batch_name' => (string) $batch->name,
+                    'message' => $e->getMessage(),
+                ]);
+
+                continue;
+            }
+
+            $recovered[] = (string) $batch->id;
+            Log::warning('Recovered orphaned snapshot batch and queued freshness verification.', [
+                'batch_id' => (string) $batch->id,
+                'batch_name' => (string) $batch->name,
+                'source_table' => $definition['source_table'],
+                'period' => $definition['period'],
+            ]);
+        }
+
+        return $recovered;
+    }
+
+    /** @return array{source_table: string, period: string}|null */
+    private function snapshotBatchDefinition(string $batchName): ?array
+    {
+        if (!preg_match('/^(daily_loan|simpanan):(\\d{4}-\\d{2}-\\d{2})$/', trim($batchName), $matches)) {
+            return null;
+        }
+
+        return [
+            'source_table' => $matches[1] === 'daily_loan' ? 'daily_loan_dinamis' : 'simpanan_multipn',
+            'period' => $matches[2],
+        ];
+    }
+
+    private function hasLiveSnapshotBatchQueueJob(string $batchId): bool
+    {
+        if ($batchId === '') {
+            return false;
+        }
+
+        return DB::table('jobs')
+            ->where('payload', 'like', '%"batchId":"' . addcslashes($batchId, '%_\\') . '"%')
+            ->exists();
     }
 
     private function purgeStaleQueueRows(): array

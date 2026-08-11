@@ -30,6 +30,8 @@ class ResponsiveUiAuditScriptTest extends TestCase
         $this->assertStringContainsString('noOverlap', $script);
         $this->assertStringContainsString('horizontalColumns', $script);
         $this->assertStringContainsString('transparentStickyCells', $script);
+        $this->assertStringContainsString('nestedVerticalTableScrolls', $script);
+        $this->assertStringContainsString('host.scrollHeight > host.clientHeight + 1', $script);
         $this->assertStringContainsString('visibleRectWithinAncestors', $script);
         $this->assertStringContainsString("current.getAttribute('aria-hidden') === 'true'", $script);
         $this->assertStringContainsString('headingText:', $script);

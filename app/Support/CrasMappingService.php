@@ -104,11 +104,13 @@ class CrasMappingService
             ];
         });
 
+        $lpg = app(CrasLpgPortfolioService::class)->payload($input, $period, $selected['wilayah']);
+
         return [
             'ready' => true,
             'message' => '',
-            'title' => 'Mapping Portofolio SSA CRAS',
-            'subtitle' => 'Sebaran portofolio kredit per wilayah layanan berdasarkan data SSA CRAS.',
+            'title' => 'Marketshare CRAS LPG',
+            'subtitle' => 'Pemetaan sektor ekonomi ke sektor industri dan kategori Sector Acceptance Criteria untuk Micro dan Small.',
             'updated_at' => Carbon::parse($period)->translatedFormat('d F Y'),
             'filters' => [
                 'selected' => $selected,
@@ -124,6 +126,7 @@ class CrasMappingService
             'units' => $computed['units'],
             'metrics' => $computed['metrics'],
             'coverage' => $computed['coverage'],
+            'lpg' => $lpg,
             'source' => [
                 'label' => 'SSA CRAS',
                 'geojson_label' => (string) config('marketshare-geography.source.label', 'Batas Administrasi Kecamatan'),

@@ -28,6 +28,9 @@ class ImportProgressTerminalStateTest extends TestCase
 
         Schema::create('import_jobs', function (Blueprint $table): void {
             $table->id();
+            $table->unsignedBigInteger('id_report')->default(0);
+            $table->string('file_name')->nullable();
+            $table->string('folder_path')->nullable();
             $table->string('status')->nullable();
             $table->unsignedBigInteger('total_files')->default(0);
             $table->unsignedBigInteger('total_success')->default(0);
@@ -85,5 +88,30 @@ class ImportProgressTerminalStateTest extends TestCase
         $this->assertSame('completed', $progress['status']);
         $this->assertSame(320512, $progress['processed_rows']);
         $this->assertSame(320512, $progress['total_success']);
+    }
+
+    public function test_finished_queued_job_is_reconciled_before_stale_queue_timeout(): void
+    {
+        DB::table('import_jobs')->insert([
+            'id' => 82,
+            'id_report' => 35,
+            'file_name' => 'finished.csv',
+            'folder_path' => storage_path('app/testing'),
+            'status' => 'queued',
+            'total_files' => 2481,
+            'total_success' => 2481,
+            'total_failed' => 0,
+            'job_fingerprint' => 'finished-queued-import',
+            'created_at' => now()->subMinutes(20),
+            'updated_at' => now()->subMinutes(20),
+        ]);
+
+        $payload = app(ImportProgressService::class)->getStatusPayload(82);
+        $job = DB::table('import_jobs')->where('id', 82)->first();
+
+        $this->assertSame('completed', $payload['status']);
+        $this->assertSame(100, $payload['percent']);
+        $this->assertSame('completed', $job->status);
+        $this->assertNull($job->job_fingerprint);
     }
 }

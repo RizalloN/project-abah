@@ -97,6 +97,7 @@ Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttl
 
     // ── DriveASIX ──
     Route::prefix('drive')->name('drive.')->group(function () {
+        Route::get('/pipeline-summary', [DriveAsixController::class, 'pipelineSummary'])->name('pipeline-summary');
         Route::post('/upload', [DriveAsixController::class, 'upload'])->name('upload');
 
         // Folder operations
@@ -112,6 +113,7 @@ Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttl
         Route::delete('/files/{file}', [DriveAsixController::class, 'deleteFile'])->name('file.delete');
         Route::get('/files/{file}/office-editor', [DriveAsixOfficeController::class, 'editor'])->name('file.office-editor');
         Route::get('/files/{file}/editor', [DriveAsixController::class, 'editor'])->name('file.editor');
+        Route::get('/files/{file}/workbook/cells', [DriveAsixController::class, 'workbookCells'])->name('file.workbook.cells');
         Route::get('/files/{file}/workbook', [DriveAsixController::class, 'workbook'])->name('file.workbook');
         Route::patch('/files/{file}/workbook', [DriveAsixController::class, 'saveWorkbook'])->name('file.workbook.save');
         Route::get('/files/{file}/document-preview', [DriveAsixController::class, 'documentPreview'])->name('file.document-preview');
@@ -132,7 +134,7 @@ Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttl
     Route::get('/dashboard/presentation-data/summary', [DashboardSimpananController::class, 'presentationSummaryData'])
         ->name('dashboard.presentation-data.summary');
     Route::get('/dashboard/presentation-data/detail/{section}', [DashboardSimpananController::class, 'presentationDetailData'])
-        ->whereIn('section', ['performance', 'micro', 'productivity', 'timeseries', 'digital', 'all'])
+        ->whereIn('section', ['performance', 'micro', 'productivity', 'timeseries', 'digital', 'marketshare', 'all'])
         ->name('dashboard.presentation-data.detail');
     Route::get('/dashboard/presentation-kts-data', [DashboardSimpananController::class, 'presentationKtsData'])
         ->name('dashboard.presentation-kts-data');
@@ -268,6 +270,7 @@ Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttl
     Route::get('/report/dashboard-dana/market-share/mapping-cras', [DashboardSimpananController::class, 'marketShareCrasMappingIndex'])->name('report.dashboard-dana.market-share.mapping-cras');
     Route::get('/report/dashboard-dana/market-share/mapping-cras/data', [DashboardSimpananController::class, 'marketShareCrasMappingData'])->name('report.dashboard-dana.market-share.mapping-cras.data');
     Route::get('/report/dashboard-dana/market-share/area-6', [DashboardSimpananController::class, 'marketShareArea6Index'])->name('report.dashboard-dana.market-share.area6');
+    Route::get('/report/dashboard-dana/market-share/sektoral', [DashboardSimpananController::class, 'marketShareSektoralIndex'])->name('report.dashboard-dana.market-share.sektoral');
     Route::get('/report/dashboard-dana/market-share/instansi', [DashboardSimpananController::class, 'marketShareInstansiIndex'])->name('report.dashboard-dana.market-share.instansi');
     Route::get('/report/dashboard-dana/market-share/instansi/data', [DashboardSimpananController::class, 'marketShareInstansiData'])->name('report.dashboard-dana.market-share.instansi.data');
 });

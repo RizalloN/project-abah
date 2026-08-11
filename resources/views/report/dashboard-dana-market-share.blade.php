@@ -1745,6 +1745,8 @@
             $mappingSectors = $mappingSummary['sectors'] ?? [];
             $mappingSectorDetails = $mappingSummary['sectorDetails'] ?? [];
             $mappingSelectedSector = (string) ($mappingSummary['selectedSector'] ?? ($mappingSectors[0]['label'] ?? '-'));
+            $mappingSectorMetricLabel = (string) ($mappingSummary['sectorMetricLabel']
+                ?? (($mappingSummary['layout_version'] ?? '') === 'dashboard-v2' ? 'Penetrasi' : 'Konversi'));
             $chartPalette = ['#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47', '#264478', '#9E480E', '#636363'];
             $chartValueLabel = function (float|int|null $value, string $title = ''): string {
                 $value = (float) ($value ?? 0);
@@ -2153,7 +2155,7 @@
                             <div class="market-mapping-summary-panel">
                                 <div class="market-mapping-summary-panel-header">
                                     <h3 class="market-mapping-summary-panel-title">Kartu Per Sektor Ekonomi</h3>
-                                    <span>Konversi</span>
+                                    <span>{{ $mappingSectorMetricLabel }}</span>
                                 </div>
                                 <div class="market-mapping-sector-grid">
                                     @foreach($mappingSummary['sectors'] as $sector)
@@ -2172,7 +2174,7 @@
                                             </div>
                                             <div>
                                                 <div class="market-mapping-sector-label">{{ $sectorLabel }}</div>
-                                                <div class="market-mapping-sector-meta">Konversi</div>
+                                                <div class="market-mapping-sector-meta">{{ $mappingSectorMetricLabel }}</div>
                                                 <div class="market-mapping-sector-value">{{ $sector['conversion'] ?? '-' }}</div>
                                             </div>
                                         </button>

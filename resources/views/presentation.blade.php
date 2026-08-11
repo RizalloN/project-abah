@@ -11,6 +11,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <!-- Chart.js local asset for reliable offline/local loading -->
   <script src="{{ asset('vendor/chartjs/chart.min.js') }}"></script>
+  <!-- Leaflet local assets keep the market-share map available without a CDN. -->
+  <link rel="stylesheet" href="{{ asset('vendor/leaflet-1.9.4/leaflet.css') }}">
+  <script src="{{ asset('vendor/leaflet-1.9.4/leaflet.js') }}"></script>
   <link rel="manifest" href="{{ asset('manifest-presentation.webmanifest') }}">
   <meta name="theme-color" content="#0857c3">
 
@@ -818,11 +821,11 @@
       <!-- Page dots indicator -->
       <div style="display: flex; flex-direction: column; align-items: center; gap: 0.35rem;">
         <div class="pres-paginator" id="pres-paginator-dots">
-          @for ($i = 0; $i < 13; $i++)
+          @for ($i = 0; $i < 15; $i++)
             <div class="pres-dot {{ $i === 0 ? 'active' : '' }}" data-index="{{ $i }}"></div>
           @endfor
         </div>
-        <div class="pres-slide-counter-badge" id="pres-slide-counter-badge">Slide 1 dari 13</div>
+        <div class="pres-slide-counter-badge" id="pres-slide-counter-badge">Slide 1 dari 15</div>
       </div>
 
       <div class="pres-nav-buttons-container">

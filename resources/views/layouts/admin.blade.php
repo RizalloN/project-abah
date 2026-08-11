@@ -934,17 +934,30 @@
             width: 100%;
             max-width: 100%;
             min-width: 0;
-            max-height: min(72vh, 820px);
-            max-height: min(72dvh, 820px);
+            height: auto !important;
+            max-height: none !important;
             overflow-x: auto;
-            overflow-y: auto;
-            overscroll-behavior: contain;
-            overflow-anchor: none;
+            overflow-y: visible;
+            overscroll-behavior-x: contain;
+            overscroll-behavior-y: auto;
+            overflow-anchor: auto;
             scroll-padding-top: var(--abah-table-header-height, 0px);
             touch-action: pan-x pan-y;
             scrollbar-gutter: auto;
             scrollbar-width: thin;
             scrollbar-color: #cbd5e1 #ffffff;
+        }
+
+        .content-wrapper .kinerja-table-container,
+        .content-wrapper [class*="table-container"],
+        .content-wrapper [class*="table-shell"] {
+            height: auto !important;
+            max-height: none !important;
+            overflow-x: auto !important;
+            overflow-y: visible !important;
+            overscroll-behavior-x: contain;
+            overscroll-behavior-y: auto;
+            scrollbar-gutter: auto;
         }
 
         @media (pointer: fine) {
@@ -953,7 +966,7 @@
             .content-wrapper .table-container,
             .content-wrapper [class*="table-wrap"],
             .content-wrapper [class*="table-scroll"] {
-                scrollbar-gutter: stable;
+                scrollbar-gutter: auto;
             }
         }
 
@@ -1280,7 +1293,8 @@
             .content-wrapper .table-container,
             .content-wrapper [class*="table-wrap"],
             .content-wrapper [class*="table-scroll"] {
-                max-height: min(76vh, 760px);
+                height: auto !important;
+                max-height: none !important;
             }
         }
 
@@ -1343,7 +1357,8 @@
             .content-wrapper .table-container,
             .content-wrapper [class*="table-wrap"],
             .content-wrapper [class*="table-scroll"] {
-                max-height: calc(100vh - 118px);
+                height: auto !important;
+                max-height: none !important;
             }
         }
 
@@ -1430,7 +1445,8 @@
             .content-wrapper .table-container,
             .content-wrapper [class*="table-wrap"],
             .content-wrapper [class*="table-scroll"] {
-                max-height: max(420px, calc(100dvh - 150px));
+                height: auto !important;
+                max-height: none !important;
             }
 
             .modern-navbar .menu-toggle,
@@ -1497,7 +1513,8 @@
             .content-wrapper .table-container,
             .content-wrapper [class*="table-wrap"],
             .content-wrapper [class*="table-scroll"] {
-                max-height: max(180px, calc(100dvh - 118px));
+                height: auto !important;
+                max-height: none !important;
             }
         }
 

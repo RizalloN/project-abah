@@ -25,6 +25,7 @@ use App\Support\DashboardDanaService;
 use App\Support\CrasMappingService;
 use App\Support\HourlyDpkDashboardService;
 use App\Support\MarketShareArea6Report;
+use App\Support\MarketShareSektoralReport;
 use App\Support\ReportCacheVersion;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\UserBranchScope;
@@ -160,7 +161,15 @@ class DashboardSimpananController extends Controller
         $selectedBranch = (string) $request->query('cabang', 'all');
         $selectedProduct = (string) $request->query('jenis', 'all');
         $selectedSegment = (string) $request->query('segmen', 'all');
+        if (strtolower(trim($selectedBranch)) !== 'all' && trim($selectedBranch) !== '') {
+            $selectedProduct = 'all';
+            $selectedSegment = 'all';
+        }
         $payload = $service->payload($selectedBranch, $selectedProduct, $selectedSegment);
+        $hourlyReport = $service->exportPayload(
+            $payload['selectedBranch'] ?? $selectedBranch,
+            $payload['selectedSegment'] ?? $selectedSegment
+        );
 
         return view('report.dashboard-dana-hourly-dpk', [
             'filters' => $filters,
@@ -168,6 +177,7 @@ class DashboardSimpananController extends Controller
             'selectedBranch' => $payload['selectedBranch'] ?? $selectedBranch,
             'selectedProduct' => $payload['selectedProduct'] ?? $selectedProduct,
             'selectedSegment' => $payload['selectedSegment'] ?? $selectedSegment,
+            'hourlyReport' => $hourlyReport,
             'dateFormatter' => fn (?string $date): string => $service->formatDateLabel($date),
         ]);
     }
@@ -178,6 +188,9 @@ class DashboardSimpananController extends Controller
         $filters = $service->filters();
         $selectedBranch = (string) $request->query('cabang', 'all');
         $selectedSegment = (string) $request->query('segmen', 'all');
+        if (strtolower(trim($selectedBranch)) !== 'all' && trim($selectedBranch) !== '') {
+            $selectedSegment = 'all';
+        }
         $export = $service->exportPayload($selectedBranch, $selectedSegment);
 
         return view('report.dashboard-dana-hourly-dpk-pdf', [
@@ -375,7 +388,7 @@ class DashboardSimpananController extends Controller
         $payload = app(CrasMappingService::class)->payload($request->query());
 
         return view('report.dashboard-dana-cras-mapping', [
-            'pageTitle' => 'Mapping CRAS',
+            'pageTitle' => 'Marketshare CRAS LPG',
             'crasMapping' => $payload,
             'crasMappingDataUrl' => route('report.dashboard-dana.market-share.mapping-cras.data'),
         ]);
@@ -440,11 +453,34 @@ class DashboardSimpananController extends Controller
                 $payload['rows'] ?? [],
                 fn (array $row): bool => $this->normalizeToken((string) ($row['branch'] ?? '')) === $this->normalizeToken($userBranchScope['label'])
             ));
+            $payload['insights'] = MarketShareArea6Report::insights(
+                (string) ($payload['selected']['kind'] ?? 'deposit'),
+                $payload['rows']
+            );
         }
 
         return view('report.dashboard-dana-market-share-area6', [
             'pageTitle' => $payload['title'],
             'marketShareArea6' => $payload,
+        ]);
+    }
+
+    public function marketShareSektoralIndex(Request $request): View
+    {
+        $userBranchScope = UserBranchScope::current();
+        $selectedScope = $userBranchScope['key'] ?? (string) $request->query('cabang', UserBranchScope::AREA_SCOPE);
+        $payload = MarketShareSektoralReport::payload($selectedScope);
+
+        if ($userBranchScope !== null) {
+            $payload['scopes'] = [$userBranchScope['key'] => $userBranchScope['label']];
+            $payload['scope_locked'] = true;
+        } else {
+            $payload['scope_locked'] = false;
+        }
+
+        return view('report.dashboard-dana-market-share-sektoral', [
+            'pageTitle' => $payload['title'],
+            'marketShareSektoral' => $payload,
         ]);
     }
 
@@ -1179,17 +1215,19 @@ class DashboardSimpananController extends Controller
         $useFallback = $cachePath === 'app/cache/market-share-mapping.xlsx'
             || $fallbackCachePath !== 'app/public_workbooks/market-share-mapping.xlsx';
         $availableWorkbookPath = function () use ($path, $fallbackPath, $useFallback): ?string {
-            if ($this->isUsableMarketShareMappingWorkbook($path)) {
+            if ($this->isCompatibleMarketShareMappingWorkbook($path)) {
                 return $path;
             }
 
-            return $useFallback && $this->isUsableMarketShareMappingWorkbook($fallbackPath) ? $fallbackPath : null;
+            return $useFallback && $this->isCompatibleMarketShareMappingWorkbook($fallbackPath) ? $fallbackPath : null;
         };
 
         $availablePath = $availableWorkbookPath();
+        $sourceChangedAt = (int) Cache::get('dashboard_sources:market-share-mapping:source-changed-at', 0);
         $isFresh = $availablePath !== null
             && $cacheMinutes > 0
-            && filemtime($availablePath) >= now()->subMinutes($cacheMinutes)->getTimestamp();
+            && filemtime($availablePath) >= now()->subMinutes($cacheMinutes)->getTimestamp()
+            && ($sourceChangedAt <= 0 || filemtime($availablePath) >= $sourceChangedAt);
 
         if (!$isFresh) {
             $this->deferMarketShareMappingWorkbookRefresh($path);
@@ -1257,13 +1295,14 @@ class DashboardSimpananController extends Controller
             $temporaryPath = $path . '.refresh-' . bin2hex(random_bytes(6));
             File::put($temporaryPath, $body);
 
-            if (!$this->isUsableMarketShareMappingWorkbook($temporaryPath)) {
+            if (!$this->isCompatibleMarketShareMappingWorkbook($temporaryPath)) {
                 File::delete($temporaryPath);
-                throw new \RuntimeException('Workbook Google Sheets hasil unduh tidak valid.');
+                throw new \RuntimeException('Workbook Google Sheets tidak memiliki struktur sheet REKAP yang kompatibel.');
             }
 
             File::replace($path, $body);
             File::delete($temporaryPath);
+            Cache::forget('dashboard_sources:market-share-mapping:source-changed-at');
 
             return true;
         } catch (Throwable $exception) {
@@ -1348,6 +1387,82 @@ class DashboardSimpananController extends Controller
         fclose($handle);
 
         return $this->looksLikeXlsxWorkbook((string) $header, false);
+    }
+
+    private function isCompatibleMarketShareMappingWorkbook(string $path): bool
+    {
+        if (!$this->isUsableMarketShareMappingWorkbook($path)) {
+            return false;
+        }
+
+        $cacheKey = 'market_share_mapping_schema:v1:' . md5(implode('|', [
+            $path,
+            (string) filemtime($path),
+            (string) filesize($path),
+        ]));
+
+        return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($path): bool {
+            try {
+                $preview = $this->readMarketShareMappingWorkbookPreview($path, 'REKAP');
+                if (strtoupper(trim((string) ($preview['selectedSheet'] ?? ''))) !== 'REKAP'
+                    || (int) ($preview['rowCount'] ?? 0) < 3
+                    || (int) ($preview['columnCount'] ?? 0) < 39
+                ) {
+                    return false;
+                }
+
+                $headerRow = collect($preview['rows'] ?? [])->firstWhere('number', 2);
+                if (!is_array($headerRow)) {
+                    return false;
+                }
+
+                $headers = $this->marketShareGeographyRowValues($headerRow);
+                $normalizedHeader = static function (mixed $value): string {
+                    $value = strtoupper(trim((string) $value));
+
+                    return trim(preg_replace('/[^A-Z0-9]+/', ' ', $value) ?? '');
+                };
+                $requiredHeaders = [
+                    0 => ['NAMA', 'KANCA'],
+                    1 => ['NAMA', 'UKER', 'WILAYAH'],
+                    6 => ['SEKTOR', 'PERTANIAN'],
+                    16 => ['TOTAL', 'POTENSI'],
+                    17 => ['SEKTOR', 'PERTANIAN'],
+                    27 => ['TOTAL', 'DEB'],
+                    28 => ['SEKTOR', 'PERTANIAN'],
+                    38 => ['SHARE', 'TOTAL'],
+                ];
+
+                foreach ($requiredHeaders as $index => $tokens) {
+                    $header = $normalizedHeader($headers[$index] ?? '');
+                    foreach ($tokens as $token) {
+                        if (!str_contains($header, $token)) {
+                            return false;
+                        }
+                    }
+                }
+
+                foreach ($preview['rows'] ?? [] as $row) {
+                    if ((int) ($row['number'] ?? 0) <= 2) {
+                        continue;
+                    }
+
+                    $values = $this->marketShareGeographyRowValues((array) $row);
+                    if (trim((string) ($values[0] ?? '')) !== '' && trim((string) ($values[1] ?? '')) !== '') {
+                        return true;
+                    }
+                }
+
+                return false;
+            } catch (Throwable $exception) {
+                Log::warning('Validasi struktur workbook Mapping Market Share gagal.', [
+                    'path' => $path,
+                    'message' => $exception->getMessage(),
+                ]);
+
+                return false;
+            }
+        });
     }
 
     private function looksLikeXlsxWorkbook(string $content, bool $checkSize = true): bool
@@ -1500,6 +1615,268 @@ class DashboardSimpananController extends Controller
 
             return '';
         };
+
+        $normalized = static fn (mixed $value): string => (string) preg_replace(
+            '/[^A-Z0-9]+/',
+            '',
+            strtoupper(trim((string) $value))
+        );
+        $rowsByNumber = [];
+        foreach ($rows as $row) {
+            $rowNumber = (int) ($row['number'] ?? 0);
+            if ($rowNumber <= 0) {
+                continue;
+            }
+
+            $rowsByNumber[$rowNumber] = array_map(
+                static fn (array $cell): string => !empty($cell['skip'])
+                    ? ''
+                    : trim((string) ($cell['value'] ?? '')),
+                (array) ($row['cells'] ?? [])
+            );
+        }
+
+        // Layout DASHBOARD terbaru tidak lagi memakai koordinat KPI lama. Deteksi
+        // tabel sektor dari label agar penambahan kolom/baris dekoratif tidak
+        // menggeser kontrak data. Jalur lama di bawah tetap dipertahankan.
+        $latestSectorHeader = null;
+        foreach ($rowsByNumber as $rowNumber => $values) {
+            $keys = array_map($normalized, $values);
+            $sectorIndex = array_search('SEKTOR', $keys, true);
+            $potentialIndex = array_search('POTENSI', $keys, true);
+            $debtorIndex = array_search('DEBITUR', $keys, true);
+            $penetrationIndex = array_search('PENETRASI', $keys, true);
+
+            if ($sectorIndex === false || $potentialIndex === false || $debtorIndex === false || $penetrationIndex === false) {
+                continue;
+            }
+
+            $latestSectorHeader = [
+                'row' => $rowNumber,
+                'sector' => $sectorIndex,
+                'potential' => $potentialIndex,
+                'debtor' => $debtorIndex,
+                'penetration' => $penetrationIndex,
+            ];
+            break;
+        }
+
+        if ($latestSectorHeader !== null) {
+            $sectors = [];
+            $sectorDetails = [];
+            $sectorTotal = [];
+            $headerRowNumber = (int) $latestSectorHeader['row'];
+            $maximumRow = $rowsByNumber === [] ? $headerRowNumber : max(array_keys($rowsByNumber));
+
+            for ($rowNumber = $headerRowNumber + 1; $rowNumber <= $maximumRow; $rowNumber++) {
+                $values = $rowsByNumber[$rowNumber] ?? [];
+                $label = trim((string) ($values[$latestSectorHeader['sector']] ?? ''));
+                $sectorKey = $normalized($label);
+                if ($sectorKey === '') {
+                    if ($sectors !== []) {
+                        break;
+                    }
+                    continue;
+                }
+
+                $potential = trim((string) ($values[$latestSectorHeader['potential']] ?? ''));
+                $debtors = trim((string) ($values[$latestSectorHeader['debtor']] ?? ''));
+                $penetration = trim((string) ($values[$latestSectorHeader['penetration']] ?? ''));
+                if (str_contains($sectorKey, 'TOTAL')) {
+                    $sectorTotal = [
+                        'potential' => $potential,
+                        'debtors' => $debtors,
+                        'penetration' => $penetration,
+                    ];
+                    break;
+                }
+
+                if ($potential === '' && $debtors === '' && $penetration === '') {
+                    continue;
+                }
+
+                $sectors[] = [
+                    'label' => $label,
+                    'potential' => $potential,
+                    'debtors' => $debtors,
+                    'penetration' => $penetration,
+                    'conversion' => $penetration,
+                    'icon' => $this->mappingSummarySectorIcon($label),
+                    'tone' => $this->mappingSummarySectorTone($label),
+                ];
+                $sectorDetails[$sectorKey] = [
+                    'label' => $label,
+                    'conversion' => $penetration,
+                    'metrics' => [
+                        'POTENSI' => $potential,
+                        'DEBITUR' => $debtors,
+                        'PENETRASI' => $penetration,
+                    ],
+                ];
+            }
+
+            $findMetricRow = static function (array $requiredKeys) use ($rowsByNumber, $normalized): ?array {
+                foreach ($rowsByNumber as $rowNumber => $values) {
+                    $keys = array_map($normalized, $values);
+                    $indexes = [];
+                    foreach ($requiredKeys as $requiredKey => $matcher) {
+                        $index = null;
+                        foreach ($keys as $candidateIndex => $candidateKey) {
+                            if ($matcher($candidateKey)) {
+                                $index = $candidateIndex;
+                                break;
+                            }
+                        }
+                        if ($index === null) {
+                            continue 2;
+                        }
+                        $indexes[$requiredKey] = $index;
+                    }
+
+                    return ['row' => $rowNumber, 'indexes' => $indexes, 'values' => $values];
+                }
+
+                return null;
+            };
+
+            $demographicRow = $findMetricRow([
+                'people' => static fn (string $key): bool => $key === 'JUMLAHORANG',
+                'households' => static fn (string $key): bool => $key === 'JUMLAHKK',
+                'productive' => static fn (string $key): bool => $key === 'USIAPRODUKTIF',
+                'non_productive' => static fn (string $key): bool => $key === 'USIATIDAKPRODUKTIF',
+            ]);
+            $demographics = [];
+            if ($demographicRow !== null) {
+                $valueRow = $rowsByNumber[((int) $demographicRow['row']) + 1] ?? [];
+                foreach ((array) $demographicRow['indexes'] as $key => $index) {
+                    $label = trim((string) ($demographicRow['values'][$index] ?? $key));
+                    $demographics[] = [
+                        'key' => $key,
+                        'label' => $label,
+                        'value' => trim((string) ($valueRow[$index] ?? '')) ?: '-',
+                        'icon' => $this->mappingSummaryMetricIcon($label),
+                    ];
+                }
+            }
+
+            $totalRow = $findMetricRow([
+                'potential' => static fn (string $key): bool => $key === 'TOTALPOTENSI',
+                'debtors' => static fn (string $key): bool => str_contains($key, 'DEBITUR'),
+                'penetration' => static fn (string $key): bool => str_contains($key, 'PENETRASI'),
+            ]);
+            $totalMetrics = [];
+            if ($totalRow !== null) {
+                $valueRow = $rowsByNumber[((int) $totalRow['row']) + 1] ?? [];
+                foreach ((array) $totalRow['indexes'] as $key => $index) {
+                    $label = trim((string) ($totalRow['values'][$index] ?? $key));
+                    $totalMetrics[] = [
+                        'key' => $key,
+                        'label' => $label,
+                        'value' => trim((string) ($valueRow[$index] ?? '')) ?: '-',
+                        'icon' => $this->mappingSummaryMetricIcon($label),
+                    ];
+                }
+            } elseif ($sectorTotal !== []) {
+                foreach ([
+                    'potential' => 'Total Potensi',
+                    'debtors' => 'Sudah Menjadi Debitur',
+                    'penetration' => 'Penetrasi',
+                ] as $key => $label) {
+                    $totalMetrics[] = [
+                        'key' => $key,
+                        'label' => $label,
+                        'value' => (string) ($sectorTotal[$key] ?? '-'),
+                        'icon' => $this->mappingSummaryMetricIcon($label),
+                    ];
+                }
+            }
+
+            $selectors = [];
+            foreach ($rowsByNumber as $values) {
+                $keys = array_map($normalized, $values);
+                foreach (['branch' => 'NAMAKANCA', 'unit' => 'NAMAUKER'] as $key => $labelKey) {
+                    $index = array_search($labelKey, $keys, true);
+                    if ($index === false || isset($selectors[$key])) {
+                        continue;
+                    }
+                    $selectedValue = '';
+                    for ($candidate = $index + 1, $count = count($values); $candidate < $count; $candidate++) {
+                        if (trim((string) ($values[$candidate] ?? '')) !== '') {
+                            $selectedValue = trim((string) $values[$candidate]);
+                            break;
+                        }
+                    }
+                    $selectors[$key] = [
+                        'label' => trim((string) ($values[$index] ?? $labelKey)),
+                        'value' => $selectedValue !== '' ? $selectedValue : '-',
+                    ];
+                }
+            }
+
+            $highlights = [];
+            foreach ($rowsByNumber as $rowNumber => $values) {
+                $keys = array_map($normalized, $values);
+                $highlightIndex = array_search('HIGHLIGHTDINAMIS', $keys, true);
+                if ($highlightIndex === false) {
+                    continue;
+                }
+                for ($candidateRow = $rowNumber + 1; $candidateRow <= min($rowNumber + 8, $maximumRow); $candidateRow++) {
+                    $candidateValues = $rowsByNumber[$candidateRow] ?? [];
+                    $label = trim((string) ($candidateValues[$highlightIndex] ?? ''));
+                    if ($label === '') {
+                        if ($highlights !== []) {
+                            break;
+                        }
+                        continue;
+                    }
+                    $value = '';
+                    for ($candidate = $highlightIndex + 1, $count = count($candidateValues); $candidate < $count; $candidate++) {
+                        if (trim((string) ($candidateValues[$candidate] ?? '')) !== '') {
+                            $value = trim((string) $candidateValues[$candidate]);
+                            break;
+                        }
+                    }
+                    if ($value !== '') {
+                        $highlights[] = [
+                            'label' => $label,
+                            'value' => $value,
+                            'icon' => $this->mappingSummaryMetricIcon($label),
+                        ];
+                    }
+                }
+                break;
+            }
+
+            $selectedSector = (string) ($sectors[0]['label'] ?? '-');
+            $selectedDetail = $sectorDetails[$normalized($selectedSector)] ?? [];
+            $headlineMetrics = [];
+            foreach ([
+                'POTENSI' => 'Potensi',
+                'DEBITUR' => 'Debitur',
+                'PENETRASI' => 'Penetrasi',
+            ] as $key => $label) {
+                $headlineMetrics[] = [
+                    'label' => $label,
+                    'value' => (string) data_get($selectedDetail, "metrics.{$key}", '-'),
+                    'icon' => $this->mappingSummaryMetricIcon($label),
+                ];
+            }
+
+            return [
+                'ready' => $sectors !== [] || $totalMetrics !== [] || $demographics !== [],
+                'layout_version' => 'dashboard-v2',
+                'title' => $cellValue(1, 1) ?: 'Dashboard Potensi & Penetrasi Debitur',
+                'subtitle' => $cellValue(2, 1) ?: 'Analisis dinamis per sektor berdasarkan Nama Kanca dan Nama Uker.',
+                'selectedSector' => $selectedSector,
+                'selectors' => $selectors,
+                'demographics' => $demographics,
+                'headlineMetrics' => $headlineMetrics,
+                'totalMetrics' => $totalMetrics,
+                'sectors' => $sectors,
+                'sectorDetails' => $sectorDetails,
+                'highlights' => $highlights,
+            ];
+        }
 
         $headlineMetrics = [];
         foreach ([2, 4, 6, 8, 10, 12] as $columnNumber) {
@@ -2744,7 +3121,7 @@ class DashboardSimpananController extends Controller
 
     private function defaultMarketShareMappingSheet(array $sheetNames): string
     {
-        $preferredNames = ['DASHBOARD', 'MAPING', 'MAPPING'];
+        $preferredNames = ['REKAP', 'DASHBOARD', 'MAPING', 'MAPPING'];
         foreach ($preferredNames as $preferredName) {
             foreach ($sheetNames as $sheetName) {
                 if (strtoupper(trim((string) $sheetName)) === $preferredName) {
@@ -3011,10 +3388,7 @@ class DashboardSimpananController extends Controller
 
         $linkUrl = trim((string) $row->link_url);
         $sheetName = trim((string) ($row->sheet_name ?? ''));
-        if (str_contains($linkUrl, '1Wlf7Wv5SR8DhtDlRgYwzhAHDSdwIsooa')
-            || str_contains($linkUrl, '18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY')
-            || $this->googleSpreadsheetPreviewUrl($linkUrl, $sheetName) === ''
-        ) {
+        if ($this->googleSpreadsheetPreviewUrl($linkUrl, $sheetName) === '') {
             return null;
         }
 
@@ -3317,7 +3691,7 @@ class DashboardSimpananController extends Controller
             return response()->noContent();
         }
 
-        return response()->json($payload);
+        return response()->json($this->scopePresentationMarketShareInPayload($payload));
     }
 
     public function presentationSummaryData(Request $request)
@@ -3343,17 +3717,38 @@ class DashboardSimpananController extends Controller
 
     public function presentationDetailData(Request $request, string $section)
     {
-        $period = $this->resolvePresentationPeriod($request->query('periode'));
         $sectionKeys = [
             'performance' => ['performance_overview', 'quality'],
             'micro' => ['micro', 'kts'],
             'productivity' => ['productivity'],
             'timeseries' => ['timeseries', 'cover_card_timeseries'],
             'digital' => ['digital_strategy'],
+            'marketshare' => ['marketshare'],
             'all' => [],
         ];
 
         abort_unless(array_key_exists($section, $sectionKeys), 404);
+
+        if ($section === 'marketshare') {
+            return response()
+                ->json([
+                    'section' => $section,
+                    'payload' => [
+                        'marketshare' => $this->scopePresentationMarketSharePayload(
+                            $this->buildPresentationMarketShare()
+                        ),
+                        'loading' => [
+                            'progressive' => true,
+                            'complete' => false,
+                            'section' => $section,
+                        ],
+                    ],
+                ])
+                ->setPrivate()
+                ->setMaxAge(30);
+        }
+
+        $period = $this->resolvePresentationPeriod($request->query('periode'));
 
         if ($section === 'micro') {
             return response()
@@ -3385,7 +3780,9 @@ class DashboardSimpananController extends Controller
         }
 
         $detailKeys = $section === 'all' ? array_keys($payload) : $sectionKeys[$section];
-        $detail = collect($payload)->only($detailKeys)->all();
+        $detail = $this->scopePresentationMarketShareInPayload(
+            collect($payload)->only($detailKeys)->all()
+        );
         $detail['loading'] = [
             'progressive' => true,
             'complete' => $section === 'all',
@@ -3489,7 +3886,9 @@ class DashboardSimpananController extends Controller
         return view('presentation', [
             'selectedPeriod' => $period,
             'periods' => $periods,
-            'presentationPayload' => $payload,
+            'presentationPayload' => is_array($payload)
+                ? $this->scopePresentationMarketShareInPayload($payload)
+                : null,
         ]);
     }
 
@@ -3499,6 +3898,9 @@ class DashboardSimpananController extends Controller
 
         $period = $this->resolvePresentationPeriod($validated['periode'] ?? null);
         $payload = $this->cachedPresentationPayload($period);
+        $payload['marketshare'] = $this->scopePresentationMarketSharePayload(
+            $this->buildPresentationMarketShare()
+        );
         $validated['title'] = trim((string) ($validated['title'] ?? '')) ?: 'Performance Review - Area 6 Region 13';
 
         set_time_limit(300);
@@ -3517,6 +3919,9 @@ class DashboardSimpananController extends Controller
         $validated = $this->validatedPresentationExport($request);
         $period = $this->resolvePresentationPeriod($validated['periode'] ?? null);
         $payload = $this->cachedPresentationPayload($period);
+        $payload['marketshare'] = $this->scopePresentationMarketSharePayload(
+            $this->buildPresentationMarketShare()
+        );
         $validated['title'] = trim((string) ($validated['title'] ?? '')) ?: 'Performance Review - Area 6 Region 13';
         $validated['periode'] = $period;
 
@@ -3676,7 +4081,7 @@ class DashboardSimpananController extends Controller
         return 'dashboard_simpanan:presentation_payload:'
             . ($period ?? 'null') . ':'
             . self::LANDING_SOURCE_CACHE_VERSION . ':v'
-            . $this->reportCacheVersion() . ':ppt_deck_v17_monthly_overlay_timeseries';
+            . $this->reportCacheVersion() . ':ppt_deck_v20_marketshare_area6';
     }
 
     private function presentationStablePayloadCacheKey(?string $period): string
@@ -3684,7 +4089,7 @@ class DashboardSimpananController extends Controller
         return 'dashboard_simpanan:presentation_payload:stable:'
             . ($period ?? 'null') . ':'
             . self::LANDING_SOURCE_CACHE_VERSION . ':v'
-            . $this->reportCacheVersion() . ':ppt_deck_v17_monthly_overlay_timeseries';
+            . $this->reportCacheVersion() . ':ppt_deck_v20_marketshare_area6';
     }
 
     private function presentationSummaryPayloadCacheKey(?string $period): string
@@ -3692,7 +4097,7 @@ class DashboardSimpananController extends Controller
         return 'dashboard_simpanan:presentation_summary_payload:'
             . ($period ?? 'null') . ':'
             . self::LANDING_SOURCE_CACHE_VERSION . ':v'
-            . $this->reportCacheVersion() . ':ppt_deck_v17_monthly_overlay_timeseries';
+            . $this->reportCacheVersion() . ':ppt_deck_v20_marketshare_area6';
     }
 
     private function deferPresentationPayloadRefresh(?string $period): void
@@ -3876,11 +4281,18 @@ class DashboardSimpananController extends Controller
                 'cards' => [],
                 'scopes' => [],
             ],
+            'marketshare' => [
+                'available' => false,
+                'loading' => true,
+                'area6' => ['available' => false, 'segments' => []],
+                'sektoral' => ['available' => false, 'scopes' => []],
+                'mapping' => ['ready' => false],
+            ],
         ];
         $summary['loading'] = [
             'progressive' => true,
             'complete' => false,
-            'deferred_sections' => ['micro', 'productivity', 'timeseries', 'digital'],
+            'deferred_sections' => ['micro', 'productivity', 'timeseries', 'digital', 'marketshare'],
         ];
 
         return $summary;
@@ -3917,10 +4329,181 @@ class DashboardSimpananController extends Controller
                     $context['presentationPeriod'] ?: null,
                     $this->dashboardBranchDisplayNames()
                 ),
+                'marketshare' => $this->buildPresentationMarketShare(),
             ]
         );
 
         $payload['narrative'] = app(PresentationNarrativeService::class)->build($payload);
+
+        return $payload;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildPresentationMarketShare(): array
+    {
+        $index = MarketShareArea6Report::payload();
+        $segments = [];
+        $sektoralIndex = MarketShareSektoralReport::payload();
+        $sektoralScopes = [];
+
+        foreach (array_keys((array) ($index['segments'] ?? [])) as $segmentKey) {
+            $segment = MarketShareArea6Report::payload((string) $segmentKey);
+            $segments[$segmentKey] = array_merge(
+                (array) ($segment['selected'] ?? []),
+                [
+                    'headers' => (array) ($segment['headers'] ?? []),
+                    'rows' => array_values((array) ($segment['rows'] ?? [])),
+                    'insights' => (array) ($segment['insights'] ?? []),
+                ]
+            );
+        }
+
+        foreach (array_keys((array) ($sektoralIndex['scopes'] ?? [])) as $scopeKey) {
+            $scopePayload = MarketShareSektoralReport::payload((string) $scopeKey);
+            $sektoralScopes[$scopeKey] = [
+                'key' => (string) $scopeKey,
+                'label' => (string) ($scopePayload['selected_scope_label'] ?? $scopeKey),
+                'rows' => array_values((array) ($scopePayload['rows'] ?? [])),
+                'total' => (array) ($scopePayload['total'] ?? []),
+                'top_sectors' => array_values((array) data_get($scopePayload, 'charts.top_sectors', [])),
+            ];
+        }
+
+        $workbookPath = $this->freshMarketShareMappingWorkbookPath();
+        $mapping = $this->marketShareMappingGeographyPayload($workbookPath);
+        $updatedAt = (string) ($mapping['updated_at'] ?? '');
+        $dataVersion = 'mapping-unavailable';
+        if ($workbookPath !== null && is_file($workbookPath)) {
+            $dataVersion = hash('sha256', implode('|', [
+                (string) filemtime($workbookPath),
+                (string) filesize($workbookPath),
+            ]));
+            $updatedAt = $updatedAt !== ''
+                ? $updatedAt
+                : date('d M Y H:i', filemtime($workbookPath));
+        }
+
+        $dashboardSummary = ['ready' => false];
+        if ($workbookPath !== null && is_file($workbookPath)) {
+            try {
+                $dashboardPreview = $this->readMarketShareMappingWorkbookPreview($workbookPath, 'DASHBOARD');
+                $dashboardSummary = array_intersect_key(
+                    (array) ($dashboardPreview['summary'] ?? []),
+                    array_flip([
+                        'ready',
+                        'layout_version',
+                        'title',
+                        'subtitle',
+                        'selectedSector',
+                        'selectors',
+                        'demographics',
+                        'headlineMetrics',
+                        'totalMetrics',
+                        'sectors',
+                        'sectorDetails',
+                        'highlights',
+                        'charts',
+                    ])
+                );
+            } catch (Throwable $exception) {
+                Log::warning('Dashboard summary Mapping Market Share gagal dibaca untuk presentasi.', [
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+        $dashboardSummary['data_version'] = $dataVersion;
+        $dashboardSummary['updated_at'] = $updatedAt;
+        $mapping['dashboard'] = $dashboardSummary;
+        $mapping['data_version'] = $dataVersion;
+        $mapping['updated_at'] = $updatedAt;
+
+        return [
+            'available' => $sektoralScopes !== [] || !empty($mapping['ready']),
+            'loading' => false,
+            'data_version' => $dataVersion,
+            'updated_at' => $updatedAt,
+            'area6' => [
+                'available' => $segments !== [],
+                'title' => (string) ($index['title'] ?? 'Marketshare - Area 6'),
+                'subtitle' => (string) ($index['subtitle'] ?? ''),
+                'period' => (string) ($index['period'] ?? ''),
+                'unit' => (string) ($index['unit'] ?? ''),
+                'source' => (string) ($index['source'] ?? ''),
+                'default_segment' => (string) data_get($index, 'selected.key', 'dpk'),
+                'segments' => $segments,
+            ],
+            'sektoral' => [
+                'available' => $sektoralScopes !== [],
+                'title' => (string) ($sektoralIndex['title'] ?? 'Marketshare Sektoral'),
+                'subtitle' => (string) ($sektoralIndex['subtitle'] ?? ''),
+                'period' => (string) ($sektoralIndex['period'] ?? ''),
+                'unit' => (string) ($sektoralIndex['unit'] ?? ''),
+                'source' => (string) ($sektoralIndex['source'] ?? ''),
+                'scopes' => $sektoralScopes,
+            ],
+            'mapping' => $mapping,
+        ];
+    }
+
+    /**
+     * Batasi payload Marketshare saat dikirim ke browser. Cache presentasi tetap
+     * menyimpan payload Area 6 agar tidak tercampur antar-user.
+     *
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function scopePresentationMarketShareInPayload(array $payload): array
+    {
+        if (!isset($payload['marketshare']) || !is_array($payload['marketshare'])) {
+            return $payload;
+        }
+
+        $payload['marketshare'] = $this->scopePresentationMarketSharePayload(
+            $payload['marketshare']
+        );
+
+        return $payload;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function scopePresentationMarketSharePayload(array $payload): array
+    {
+        $scope = UserBranchScope::current();
+        if ($scope === null) {
+            return $payload;
+        }
+
+        foreach ((array) data_get($payload, 'area6.segments', []) as $key => $segment) {
+            $rows = array_values(array_filter(
+                (array) ($segment['rows'] ?? []),
+                fn (array $row): bool => $this->normalizeToken((string) ($row['branch'] ?? ''))
+                    === $this->normalizeToken($scope['label'])
+            ));
+            $payload['area6']['segments'][$key]['rows'] = $rows;
+            $payload['area6']['segments'][$key]['insights'] = MarketShareArea6Report::insights(
+                (string) ($segment['kind'] ?? 'deposit'),
+                $rows
+            );
+        }
+
+        $payload['area6']['title'] = 'Marketshare - ' . $scope['label'];
+        $payload['area6']['subtitle'] = 'Cuplikan market share untuk ' . $scope['label'] . '.';
+        $payload['sektoral']['scopes'] = array_intersect_key(
+            (array) data_get($payload, 'sektoral.scopes', []),
+            [$scope['key'] => true]
+        );
+        $payload['mapping'] = $this->scopeMarketShareGeographyPayload(
+            (array) ($payload['mapping'] ?? [])
+        );
+        // Summary DASHBOARD memuat agregat seluruh Area 6 dan daftar selector
+        // workbook. Untuk user cabang, hanya payload geography yang sudah
+        // dihitung ulang sesuai unit wilayahnya yang boleh dikirim.
+        $payload['mapping']['dashboard'] = ['ready' => false];
 
         return $payload;
     }

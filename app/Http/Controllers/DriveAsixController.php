@@ -8,6 +8,7 @@ use App\Models\DriveAsixFile;
 use App\Models\DriveAsixFolder;
 use App\Services\DriveAsix\OfficeDocumentPreviewService;
 use App\Services\DriveAsix\OnlyOfficeEditorService;
+use App\Services\DriveAsix\PipelineWorkbookSummaryService;
 use App\Services\DriveAsix\SpreadsheetWorkbookService;
 use App\Support\SpreadsheetFileFormatDetector;
 use Illuminate\Contracts\Cache\LockTimeoutException;
@@ -33,6 +34,8 @@ class DriveAsixController extends Controller
     private const OFFICE_SESSION_PATH = 'drive_asix_office_sessions';
 
     private const QUARANTINE_PATH = 'drive_asix_quarantine';
+
+    private const PIPELINE_SUMMARY_CACHE_VERSION = 'v3-area6-pipeline-identities';
 
     private const MAX_ZIP_ENTRIES = 4_096;
 
@@ -78,6 +81,53 @@ class DriveAsixController extends Controller
             'currentFolder', 'breadcrumbs', 'folders', 'files',
             'folderId', 'allFolders', 'trashedFiles', 'trashedCount'
         ));
+    }
+
+    public function pipelineSummary(PipelineWorkbookSummaryService $summaries)
+    {
+        $pipelineRootIds = DriveAsixFolder::query()
+            ->whereNull('parent_id')
+            ->get(['id', 'parent_id', 'name'])
+            ->filter(fn (DriveAsixFolder $folder): bool => $folder->parent_id === null
+                && Str::lower(trim($folder->name)) === 'pipeline')
+            ->pluck('id');
+
+        $files = DriveAsixFile::query()
+            ->whereNull('deleted_at')
+            ->with('folder')
+            ->get()
+            ->filter(function (DriveAsixFile $file) use ($pipelineRootIds): bool {
+                if (! $file->isSpreadsheet()) {
+                    return false;
+                }
+
+                $directlyInPipelineRoot = $file->folder_id !== null
+                    && $pipelineRootIds->contains($file->folder_id);
+                $namedAsPipeline = preg_match(
+                    '/(?:^|[^a-z0-9])(pipeline|prospek|leads?)(?:[^a-z0-9]|$)/i',
+                    $file->original_name
+                ) === 1;
+                $isPipelineSource = $directlyInPipelineRoot || $namedAsPipeline;
+                $file->setAttribute('pipeline_context', $isPipelineSource);
+
+                return $isPipelineSource;
+            })
+            ->values();
+
+        $revisionKey = hash('sha256', $files
+            ->map(fn (DriveAsixFile $file): string => implode(':', [
+                $file->getKey(),
+                $file->updated_at?->format('U.u') ?? '',
+                $file->size_bytes,
+            ]))
+            ->implode('|'));
+        $summary = Cache::remember(
+            'bank-pipeline:summary:aggregate:'.self::PIPELINE_SUMMARY_CACHE_VERSION.':'.$revisionKey,
+            now()->addMinutes(15),
+            fn (): array => $summaries->summarize($files)
+        );
+
+        return response()->json($summary);
     }
 
     // -------------- FOLDER ACTIONS --------------
@@ -127,15 +177,34 @@ class DriveAsixController extends Controller
     }
 
     public function deleteFolder(
+        Request $request,
         DriveAsixFolder $folder,
         OnlyOfficeEditorService $office
     ) {
         $this->requireAdmin();
+        $folderId = $folder->getKey();
+        $folderName = $folder->name;
+        $parentId = $folder->parent_id;
         $this->assertFolderHasNoActiveOfficeSession($folder, $office);
         $this->deletePhysicalFiles($folder, $office);
         $folder->delete();
 
-        return back()->with('success', 'Folder berhasil dihapus.');
+        $message = '"'.$folderName.'" berhasil dihapus.';
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => $message,
+                'deleted' => [
+                    'type' => 'folder',
+                    'id' => $folderId,
+                ],
+                'redirect_url' => $parentId === null
+                    ? route('drive.index')
+                    : route('drive.index', ['folderId' => $parentId]),
+            ]);
+        }
+
+        return back()->with('success', $message);
     }
 
     // -------------- FILE ACTIONS --------------
@@ -312,10 +381,14 @@ class DriveAsixController extends Controller
     }
 
     public function deleteFile(
+        Request $request,
         DriveAsixFile $file,
         OnlyOfficeEditorService $office
     ) {
         $this->requireAdmin();
+        $fileId = $file->getKey();
+        $fileName = $file->original_name;
+        $folderId = $file->folder_id;
         $sessionLock = Cache::lock(
             'drive-asix:office-session:'.$file->getKey(),
             60
@@ -331,7 +404,22 @@ class DriveAsixController extends Controller
             abort(423, 'Sesi editor Office sedang berubah. Coba hapus kembali beberapa detik lagi.');
         }
 
-        return back()->with('success', '"'.$file->original_name.'" dipindahkan ke Sampah.');
+        $message = '"'.$fileName.'" dipindahkan ke Sampah.';
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => $message,
+                'deleted' => [
+                    'type' => 'file',
+                    'id' => $fileId,
+                ],
+                'redirect_url' => $folderId === null
+                    ? route('drive.index')
+                    : route('drive.index', ['folderId' => $folderId]),
+            ]);
+        }
+
+        return back()->with('success', $message);
     }
 
     public function restoreFile(int $id)
@@ -419,7 +507,9 @@ class DriveAsixController extends Controller
         abort_unless($file->isSpreadsheet(), 415, 'File ini bukan spreadsheet.');
         abort_unless($workbooks->detectFormat($file) !== null, 415, 'Isi workbook tidak valid.');
 
-        return view('drive.spreadsheet-editor', compact('file'));
+        $backUrl = route('drive.index', ['folderId' => $file->folder_id]);
+
+        return view('drive.spreadsheet-editor', compact('file', 'backUrl'));
     }
 
     public function workbook(
@@ -428,6 +518,40 @@ class DriveAsixController extends Controller
     ) {
         try {
             return response()->json($workbooks->read($file));
+        } catch (DriveAsixWorkbookException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+    }
+
+    public function workbookCells(
+        Request $request,
+        DriveAsixFile $file,
+        SpreadsheetWorkbookService $workbooks
+    ) {
+        $validated = $request->validate([
+            'revision' => 'required|string|max:100',
+            'sheet' => 'required|string|max:31',
+            'start_row' => 'required|integer|min:1|max:1048576',
+            'end_row' => 'required|integer|gte:start_row|max:1048576',
+            'start_col' => 'required|integer|min:1|max:100',
+            'end_col' => 'required|integer|gte:start_col|max:100',
+        ]);
+
+        try {
+            return response()->json($workbooks->readCells(
+                $file,
+                $validated['revision'],
+                $validated['sheet'],
+                (int) $validated['start_row'],
+                (int) $validated['end_row'],
+                (int) $validated['start_col'],
+                (int) $validated['end_col']
+            ));
+        } catch (DriveAsixVersionConflictException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'current_revision' => $exception->currentRevision,
+            ], 409);
         } catch (DriveAsixWorkbookException $exception) {
             return response()->json(['message' => $exception->getMessage()], 422);
         }

@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Services\Import\ExcelStagingService;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xls;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
 
 class ExcelStagingServiceLegacyXlsTest extends TestCase
@@ -39,6 +40,43 @@ class ExcelStagingServiceLegacyXlsTest extends TestCase
             $this->assertStringContainsString('MADIUN', (string) file_get_contents($stagedPath));
             $this->assertStringContainsString('1000.00', (string) file_get_contents($stagedPath));
         } finally {
+            @unlink($sourcePath);
+            @unlink($stagedPath);
+        }
+    }
+
+    public function test_xlsx_package_with_xls_suffix_uses_native_xlsx_reader(): void
+    {
+        $basePath = $this->temporaryPath('.xlsx');
+        $sourcePath = $basePath . '.xls';
+        $stagedPath = $this->temporaryPath('.csv');
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getActiveSheet()->fromArray([
+            ['POSISI', 'SALDO'],
+            ['10 Agustus 2026', '1000'],
+        ]);
+        (new Xlsx($spreadsheet))->save($basePath);
+        $spreadsheet->disconnectWorksheets();
+        rename($basePath, $sourcePath);
+
+        try {
+            $service = new ExcelStagingService();
+            $preview = $service->extractPreviewViaNativeXlsx($sourcePath, 10);
+            $result = $service->stageExcelToCsv(
+                static function (): void {
+                },
+                $sourcePath,
+                0,
+                ['posisi', 'saldo'],
+                $stagedPath,
+                __DIR__ . '/missing-reader.py'
+            );
+
+            $this->assertSame(['POSISI', 'SALDO'], $preview['headers']);
+            $this->assertSame(1, $result['total_rows']);
+            $this->assertStringContainsString('10 Agustus 2026', (string) file_get_contents($stagedPath));
+        } finally {
+            @unlink($basePath);
             @unlink($sourcePath);
             @unlink($stagedPath);
         }

@@ -61,6 +61,10 @@ class DashboardPinjamanKreditService
             'sml' => $this->formatSegmentType($periods, $scopes, $categories, $segment, 'sml', $rkaData),
             'npl' => $this->formatSegmentType($periods, $scopes, $categories, $segment, 'npl', $rkaData),
             'header_dates' => $periods,
+            'display_options' => [
+                // At month-end, MoM and MTD share the same prior month-end baseline.
+                'show_mom' => !$this->isMonthEnd($selectedPeriod),
+            ],
             'rka_labels' => $this->calculateRkaLabels($selectedPeriod),
         ];
 
@@ -591,16 +595,28 @@ class DashboardPinjamanKreditService
 
         try {
             $selected = Carbon::parse($selectedPeriod);
+            $previousMonthComparable = $selected->copy()->subMonthNoOverflow();
+            $isMonthEnd = $this->isMonthEnd($selectedPeriod);
+
             return [
                 'selected' => $selected->format('Y-m-d'),
                 'ytd' => $selected->copy()->subYear()->endOfYear()->format('Y-m-d'),
                 'm2' => $selected->copy()->subMonths(2)->endOfMonth()->format('Y-m-d'),
-                'mtm' => $selected->copy()->subMonth()->format('Y-m-d'),
+                'mtm' => $isMonthEnd
+                    ? $previousMonthComparable->copy()->endOfMonth()->format('Y-m-d')
+                    : $previousMonthComparable->format('Y-m-d'),
                 'mtd' => $selected->copy()->subMonthNoOverflow()->endOfMonth()->format('Y-m-d'),
             ];
         } catch (Throwable) {
             return ['selected' => $selectedPeriod, 'ytd' => null, 'm2' => null, 'mtm' => null, 'mtd' => null];
         }
+    }
+
+    private function isMonthEnd(string $period): bool
+    {
+        $date = Carbon::parse($period);
+
+        return $date->isSameDay($date->copy()->endOfMonth());
     }
 
     /**

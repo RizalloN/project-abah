@@ -205,6 +205,7 @@ class KinerjaRmFormattingTest extends TestCase
                         'rm' => 'RM TEST',
                         'rm_category' => 'KCP',
                         'rm_unit' => 'KCP CARUBAN',
+                        'rm_unit_code' => '552',
                         'rm_rowspan' => 1,
                         'items' => [$item],
                     ],
@@ -213,13 +214,27 @@ class KinerjaRmFormattingTest extends TestCase
             'total' => $subtotal,
         ])->render();
 
+        $this->assertStringContainsString('>No<', $html);
+        $this->assertStringContainsString('Kode Uker', $html);
         $this->assertStringContainsString('Nama RM', $html);
-        $this->assertStringContainsString('KCP CARUBAN', $html);
-        $this->assertStringContainsString('kinerja-rm-scope-badge is-kcp', $html);
+        $this->assertStringContainsString('>552<', $html);
+        $this->assertStringContainsString('quality-row-number', $html);
         $this->assertStringContainsString('OS Pinjaman', $html);
         $this->assertStringContainsString('Series LAR', $html);
+        $this->assertStringContainsString('quality-series-head', $html);
+        $this->assertStringContainsString('quality-delta-head', $html);
+        $this->assertStringContainsString('quality-current-head', $html);
+        $this->assertStringContainsString('quality-current-cell', $html);
+        $this->assertStringContainsString('quality-delta-cell', $html);
+        $this->assertStringContainsString('--kinerja-no-column-width: 48px;', $html);
         $this->assertStringContainsString('--kinerja-branch-column-width: 112px;', $html);
-        $this->assertStringContainsString('left: var(--kinerja-branch-column-width);', $html);
+        $this->assertStringContainsString('quality-sticky-rm', $html);
+        $this->assertStringContainsString('KC TEST</td>', $html);
+        $this->assertStringNotContainsString('rowspan="2" class="merged-branch-cell', $html);
+        $this->assertMatchesRegularExpression(
+            '/quality-row-number[^>]*>1<\/td>\s*<td[^>]*quality-sticky-branch[^>]*>KC TEST<\/td>/s',
+            $html
+        );
         $this->assertStringContainsString('20 Jun 25', $html);
         $this->assertStringContainsString('31 Des 25', $html);
         $this->assertStringContainsString('30 Apr 26', $html);
@@ -230,6 +245,32 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringNotContainsString('>M-1<', $html);
         $this->assertStringContainsString('cell-pos', $html);
         $this->assertStringContainsString('cell-neg', $html);
+    }
+
+    public function test_quality_series_rows_sort_by_unit_code_when_requested(): void
+    {
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $branches = [
+            'KC B' => [
+                'cabang' => 'KC B',
+                'rms' => [
+                    'RM 552' => ['rm' => 'RM 552', 'rm_unit_code' => '552', 'items' => [['product' => 'LAR']]],
+                    'RM 45' => ['rm' => 'RM 45', 'rm_unit_code' => '45', 'items' => [['product' => 'LAR']]],
+                ],
+            ],
+            'KC A' => [
+                'cabang' => 'KC A',
+                'rms' => [
+                    'RM 7' => ['rm' => 'RM 7', 'rm_unit_code' => '7', 'items' => [['product' => 'LAR']]],
+                ],
+            ],
+        ];
+
+        $sorted = $this->invokePrivateMethod($controller, 'sortKinerjaRmBranches', [$branches, 'CONSUMER', true]);
+
+        $this->assertSame(['KC A', 'KC B'], array_keys($sorted));
+        $this->assertSame(['RM 45', 'RM 552'], array_keys($sorted['KC B']['rms']));
+        $this->assertSame(3, $sorted['KC B']['branch_rowspan']);
     }
 
     public function test_kinerjarm_history_modal_renders_million_format_for_realisasi_os(): void
@@ -251,7 +292,7 @@ class KinerjaRmFormattingTest extends TestCase
         ])->render();
 
         $this->assertStringContainsString('Realisasi OS (Rp Juta)', $html);
-        $this->assertStringContainsString('1.600,0', $html);
+        $this->assertStringContainsString('1.600', $html);
         $this->assertStringContainsString('12,35%', $html);
     }
 
@@ -419,12 +460,65 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringContainsString('scrollbar-gutter: stable;', $view);
         $this->assertStringNotContainsString('scrollbar-gutter: stable both-edges;', $view);
         $this->assertStringNotContainsString('scrollbar-color: #1d4ed8 #dbeafe', $view);
-        $this->assertStringContainsString('OS & Kualitas', $table);
+        $this->assertStringContainsString('Performance & Kualitas', $table);
+        $this->assertStringContainsString("@include('report.kinerjarm-performance-table-section')", $table);
         $this->assertStringContainsString('Navigasi Kinerja RM Ritel', $table);
         $this->assertStringContainsString('<p>Kinerja RM Ritel</p>', $sidebar);
         $this->assertStringNotContainsString('Dashboard RM Ritel', $view);
         $this->assertStringNotContainsString('Kinerja RM Performance Report', $view);
         $this->assertStringNotContainsString('Report RM Performance', $view);
+    }
+
+    public function test_small_performance_table_uses_monthly_rp_lar_and_closed_month_accumulation(): void
+    {
+        $months = collect([
+            ['key' => '2026-07', 'short_label' => 'Jul 26', 'period' => '2026-07-31', 'period_label' => '31 Jul 2026', 'is_closed' => true],
+            ['key' => '2026-08', 'short_label' => 'Agu 26', 'period' => '2026-08-09', 'period_label' => '09 Agu 2026', 'is_closed' => false],
+        ]);
+        $row = [
+            'unit_code' => '45',
+            'unit' => 'KC MADIUN',
+            'cabang' => 'KC MADIUN',
+            'rm' => '0001 - RM SMALL',
+            'rm_display' => 'RM SMALL',
+            'months' => [
+                '2026-07' => ['rp' => 3000000000, 'lar_pct' => 15.0, 'has_data' => true],
+                '2026-08' => ['rp' => 10000000000, 'lar_pct' => 50.0, 'has_data' => true],
+            ],
+            'accumulated' => ['ratas_rp' => 3000000000, 'lar_pct' => 15.0],
+            'quadrant' => 1,
+        ];
+        $total = [
+            'months' => $row['months'],
+            'accumulated' => $row['accumulated'],
+        ];
+
+        $html = view('report.kinerjarm-performance-table-section', [
+            'selectedSegmen' => 'SMALL',
+            'selectedPeriod' => '2026-08-09',
+            'performanceMonths' => $months,
+            'performanceRows' => [$row],
+            'performanceTotal' => $total,
+            'performanceMeta' => [
+                'latest_period_label' => '09 Agu 2026',
+                'closed_range_label' => 'Jan 26 - Jul 26',
+                'closed_through_period_label' => '31 Jul 2026',
+                'hidden_inactive_count' => 17,
+            ],
+        ])->render();
+
+        $this->assertStringContainsString('Realisasi &amp; LAR per RM', $html);
+        $this->assertStringContainsString('Rp / % LAR', $html);
+        $this->assertStringContainsString('15,00%', $html);
+        $this->assertStringContainsString('Kuadran 1', $html);
+        $this->assertStringContainsString('- berjalan', $html);
+        $this->assertStringNotContainsString('Target JG / Bulan', $html);
+        $this->assertStringNotContainsString('performance-group-head--delta', $html);
+        $this->assertStringNotContainsString('Jml Deb', $html);
+        $this->assertStringNotContainsString('Terakhir 09 Agu 2026', $html);
+        $this->assertStringNotContainsString('Ratas Jan 26 - Jul 26', $html);
+        $this->assertStringNotContainsString('LAR bulan tutup 31 Jul 2026', $html);
+        $this->assertStringNotContainsString('17 RM tanpa realisasi 2 bulan disaring', $html);
     }
 
     private function invokePrivateMethod(object $object, string $method, array $arguments = []): mixed

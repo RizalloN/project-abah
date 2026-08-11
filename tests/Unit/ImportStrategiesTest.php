@@ -123,6 +123,63 @@ class ImportStrategiesTest extends TestCase
         $this->assertSame('bulk_csv_staging', $ssaPinjaman->importMode());
     }
 
+    public function test_ssa_strategies_normalize_and_validate_current_source_workbook_columns(): void
+    {
+        $ssaSimpanan = new SsaSimpananImportStrategy();
+        $ssaPinjaman = new SsaPinjamanImportStrategy();
+
+        $this->assertSame([
+            'month_day_year_of_posisi',
+            'nama_cabang',
+            'nama_uker',
+            'produk',
+            'segmentasi',
+            'segmen_kategorisasi_bisnis',
+            'saldo',
+        ], $ssaSimpanan->transformHeaders([
+            'Month, Day, Year of Posisi',
+            'Nama Cabang',
+            'Nama Uker',
+            'Produk',
+            'Segmentasi',
+            'Segmen Kategorisasi Bisnis',
+            'Saldo',
+        ]));
+        $this->assertTrue($ssaSimpanan->validateSchema([
+            'month_day_year_of_posisi', 'nama_cabang', 'nama_uker', 'produk',
+            'segmentasi', 'segmen_kategorisasi_bisnis', 'saldo',
+        ])['ok']);
+
+        $this->assertSame([
+            'month_day_year_of_periode',
+            'nama_cabang',
+            'nama_uker',
+            'produk',
+            'produk_dashboard',
+            'segmen',
+            'segmen_lama',
+            'segmen_2025',
+            'segmen_dashboard',
+            'kolektabilitas_one_obligor',
+            'flag_restruk',
+            'baki_debet',
+            'jumlah_debitur_aktif',
+            'jumlah_rekening_aktif',
+        ], $ssaPinjaman->transformHeaders([
+            'Month, Day, Year of Periode',
+            'Nama Cabang', 'Nama Uker', 'Produk', 'Produk_Dashboard', 'Segmen',
+            'Segmen Lama', 'SEGMEN_2025', 'Segmen_Dashboard',
+            'Kolektabilitas One Obligor', 'Flag Restruk', 'Baki Debet',
+            'Jumlah Debitur Aktif', 'Jumlah Rekening Aktif',
+        ]));
+        $this->assertTrue($ssaPinjaman->validateSchema([
+            'month_day_year_of_periode', 'nama_cabang', 'nama_uker', 'produk',
+            'produk_dashboard', 'segmen', 'segmen_lama', 'segmen_2025',
+            'segmen_dashboard', 'kolektabilitas_one_obligor', 'flag_restruk',
+            'baki_debet', 'jumlah_debitur_aktif', 'jumlah_rekening_aktif',
+        ])['ok']);
+    }
+
     public function test_gi405_strategy_uses_bulk_csv_fast_path_for_imports(): void
     {
         $strategy = new Gi405RecDhImportStrategy();

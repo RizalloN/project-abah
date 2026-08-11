@@ -106,4 +106,14 @@ class ImportPreviewFilterViewTest extends TestCase
         $this->assertStringContainsString("inputCsv.setAttribute('accept', '.csv,.txt,.xlsx');", $index);
         $this->assertStringContainsString('CSV/TXT UTF-16LE dan XLSX diproses tanpa membulatkan', $index);
     }
+
+    public function test_brilink_summary_report_uses_csv_upload_with_area_6_notice(): void
+    {
+        $source = file_get_contents(resource_path('views/import/index.blade.php'));
+
+        $this->assertStringContainsString("tableName === 'brilink_web_laporan_summary_transaksi_brilink_web'", $source);
+        $this->assertStringContainsString('Upload BRILINK Web Summary (.csv, .txt)', $source);
+        $this->assertStringContainsString('Data otomatis dibatasi ke KC Madiun, KC Magetan, KC Ngawi, dan KC Ponorogo.', $source);
+        $this->assertStringContainsString("inputCsv.setAttribute('accept', '.csv,.txt');", $source);
+    }
 }

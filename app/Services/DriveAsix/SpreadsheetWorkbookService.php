@@ -12,9 +12,11 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\Cell\AdvancedValueBinder;
+use PhpOffice\PhpSpreadsheet\Cell\Cell;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
@@ -37,9 +39,13 @@ class SpreadsheetWorkbookService
 
     private const MAX_SHEETS_PER_WORKBOOK = 255;
 
-    private const MAX_ROWS_IN_PAYLOAD = 2_000;
+    private const INITIAL_ROWS_IN_PAYLOAD = 160;
 
     private const MAX_COLUMNS_IN_PAYLOAD = 100;
+
+    private const MAX_ROWS_PER_VIEWPORT_REQUEST = 250;
+
+    private const MAX_CELLS_PER_VIEWPORT_REQUEST = 20_000;
 
     private const MAX_TOTAL_CELLS_IN_PAYLOAD = 50_000;
 
@@ -71,12 +77,107 @@ class SpreadsheetWorkbookService
     public function read(DriveAsixFile $file): array
     {
         [$path, $format] = $this->resolveWorkbook($file);
-        $spreadsheet = $this->load($path, $format);
+        $revision = $this->revision($path);
+        $cacheKey = 'drive-asix:workbook-payload:'.hash('sha256', implode('|', [
+            $file->getKey(),
+            $revision,
+            $file->original_name,
+            $file->updated_at?->format('U.u') ?? '',
+        ]));
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use (
+            $file,
+            $path,
+            $format
+        ): array {
+            $spreadsheet = $this->load($path, $format);
+
+            try {
+                return $this->serializeWorkbook($file, $spreadsheet, $path, $format);
+            } finally {
+                $spreadsheet->disconnectWorksheets();
+            }
+        });
+    }
+
+    /**
+     * Load one virtualized row window without imposing a limit on the rows
+     * available to the editor. The small request window keeps memory and JSON
+     * payloads stable even when the worksheet contains hundreds of thousands
+     * of rows.
+     *
+     * @return array<string, mixed>
+     */
+    public function readCells(
+        DriveAsixFile $file,
+        string $expectedRevision,
+        string $sheetReference,
+        int $startRow,
+        int $endRow,
+        int $startColumn = 1,
+        int $endColumn = self::MAX_COLUMNS_IN_PAYLOAD
+    ): array {
+        $rowCount = $endRow - $startRow + 1;
+        $columnCount = $endColumn - $startColumn + 1;
+        if ($startRow < 1
+            || $endRow < $startRow
+            || $startColumn < 1
+            || $endColumn < $startColumn
+            || $endColumn > self::MAX_COLUMNS_IN_PAYLOAD
+            || $rowCount > self::MAX_ROWS_PER_VIEWPORT_REQUEST
+            || ($rowCount * $columnCount) > self::MAX_CELLS_PER_VIEWPORT_REQUEST) {
+            throw new DriveAsixWorkbookException('Rentang viewport workbook tidak valid.');
+        }
+
+        $lock = Cache::lock('drive-asix:workbook:'.$file->getKey(), 600);
 
         try {
-            return $this->serializeWorkbook($file, $spreadsheet, $path, $format);
-        } finally {
-            $spreadsheet->disconnectWorksheets();
+            return $lock->block(8, function () use (
+                $file,
+                $expectedRevision,
+                $sheetReference,
+                $startRow,
+                $endRow,
+                $startColumn,
+                $endColumn
+            ): array {
+                [$path, $format] = $this->resolveWorkbook($file);
+                $currentRevision = $this->revision($path);
+                if (! hash_equals($currentRevision, $expectedRevision)) {
+                    throw new DriveAsixVersionConflictException($currentRevision);
+                }
+
+                $cacheKey = 'drive-asix:viewport:'.hash('sha256', implode('|', [
+                    $file->getKey(),
+                    $currentRevision,
+                    $sheetReference,
+                    $startRow,
+                    $endRow,
+                    $startColumn,
+                    $endColumn,
+                ]));
+
+                return Cache::remember(
+                    $cacheKey,
+                    now()->addMinutes(10),
+                    fn (): array => $this->readCellWindow(
+                        $path,
+                        $format,
+                        $currentRevision,
+                        $sheetReference,
+                        $startRow,
+                        $endRow,
+                        $startColumn,
+                        $endColumn
+                    )
+                );
+            });
+        } catch (DriveAsixVersionConflictException|DriveAsixWorkbookException $exception) {
+            throw $exception;
+        } catch (LockTimeoutException) {
+            throw new DriveAsixWorkbookException(
+                'File sedang disimpan. Tunggu beberapa detik lalu muat baris kembali.'
+            );
         }
     }
 
@@ -541,6 +642,121 @@ class SpreadsheetWorkbookService
         }
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function readCellWindow(
+        string $path,
+        string $format,
+        string $revision,
+        string $sheetReference,
+        int $startRow,
+        int $endRow,
+        int $startColumn,
+        int $endColumn
+    ): array {
+        try {
+            $reader = IOFactory::createReader($format === 'xlsx' ? 'Xlsx' : 'Xls');
+            $reader->setReadDataOnly(false);
+            $sheetNames = $reader->listWorksheetNames($path);
+            $sheetName = ctype_digit($sheetReference)
+                ? ($sheetNames[(int) $sheetReference] ?? null)
+                : collect($sheetNames)->first(
+                    static fn (string $name): bool => $name === $sheetReference
+                );
+
+            if (! is_string($sheetName) || $sheetName === '') {
+                throw new DriveAsixWorkbookException('Sheet workbook tidak ditemukan.');
+            }
+
+            $reader->setLoadSheetsOnly([$sheetName]);
+            $reader->setReadFilter(new class($sheetName, $startRow, $endRow, $startColumn, $endColumn) implements IReadFilter
+            {
+                public function __construct(
+                    private readonly string $sheetName,
+                    private readonly int $startRow,
+                    private readonly int $endRow,
+                    private readonly int $startColumn,
+                    private readonly int $endColumn
+                ) {}
+
+                public function readCell(
+                    string $columnAddress,
+                    int $row,
+                    string $worksheetName = ''
+                ): bool {
+                    if ($worksheetName !== '' && $worksheetName !== $this->sheetName) {
+                        return false;
+                    }
+                    if ($row < $this->startRow || $row > $this->endRow) {
+                        return false;
+                    }
+
+                    $column = Coordinate::columnIndexFromString($columnAddress);
+
+                    return $column >= $this->startColumn && $column <= $this->endColumn;
+                }
+            });
+
+            if (method_exists($reader, 'setIncludeCharts')) {
+                $reader->setIncludeCharts(false);
+            }
+
+            $spreadsheet = $reader->load($path);
+            try {
+                $worksheet = $spreadsheet->getSheetByName($sheetName);
+                if (! $worksheet instanceof Worksheet) {
+                    throw new DriveAsixWorkbookException('Sheet workbook tidak dapat dibaca.');
+                }
+
+                $cells = [];
+                foreach ($worksheet->getCoordinates(false) as $coordinate) {
+                    [$column, $row] = Coordinate::coordinateFromString($coordinate);
+                    $columnIndex = Coordinate::columnIndexFromString($column);
+                    if ($row < $startRow
+                        || $row > $endRow
+                        || $columnIndex < $startColumn
+                        || $columnIndex > $endColumn) {
+                        continue;
+                    }
+                    $cells[$coordinate] = $this->serializeCell($worksheet->getCell($coordinate));
+                }
+
+                $rowHeights = [];
+                foreach ($worksheet->getRowDimensions() as $row => $dimension) {
+                    if ($row >= $startRow && $row <= $endRow && $dimension->getRowHeight() > 0) {
+                        $rowHeights[(string) $row] = $dimension->getRowHeight();
+                    }
+                }
+
+                $latestRevision = $this->revision($path);
+                if (! hash_equals($revision, $latestRevision)) {
+                    throw new DriveAsixVersionConflictException($latestRevision);
+                }
+
+                return [
+                    'revision' => $revision,
+                    'sheet' => $sheetReference,
+                    'range' => [
+                        'start_row' => $startRow,
+                        'end_row' => $endRow,
+                        'start_col' => $startColumn,
+                        'end_col' => $endColumn,
+                    ],
+                    'cells' => $cells,
+                    'row_heights' => $rowHeights,
+                ];
+            } finally {
+                $spreadsheet->disconnectWorksheets();
+            }
+        } catch (DriveAsixVersionConflictException|DriveAsixWorkbookException $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            report($exception);
+            throw new DriveAsixWorkbookException('Baris workbook tidak dapat dimuat.');
+        }
+    }
+
     private function write(Spreadsheet $spreadsheet, string $path, string $format): void
     {
         $writer = IOFactory::createWriter($spreadsheet, $format === 'xlsx' ? 'Xlsx' : 'Xls');
@@ -686,58 +902,30 @@ class SpreadsheetWorkbookService
             $highestColumnIndex,
             $warnings
         );
-        $maxRow = min(self::MAX_ROWS_IN_PAYLOAD, max(40, $structuralHighestRow));
+        $maxRow = max(40, $structuralHighestRow);
+        $payloadMaxRow = min(self::INITIAL_ROWS_IN_PAYLOAD, $maxRow);
         $maxColumn = min(self::MAX_COLUMNS_IN_PAYLOAD, max(12, $structuralHighestColumn));
 
-        if ($structuralHighestRow > self::MAX_ROWS_IN_PAYLOAD
-            || $structuralHighestColumn > self::MAX_COLUMNS_IN_PAYLOAD) {
-            $warnings[] = 'Sheet "'.$worksheet->getTitle().'" terlalu besar; editor menampilkan sampai '
-                .self::MAX_ROWS_IN_PAYLOAD.' baris dan '.self::MAX_COLUMNS_IN_PAYLOAD
-                .' kolom. Data dan format di luar area itu tetap dipertahankan.';
+        if ($structuralHighestColumn > self::MAX_COLUMNS_IN_PAYLOAD) {
+            $warnings[] = 'Sheet "'.$worksheet->getTitle().'" memiliki lebih dari '
+                .self::MAX_COLUMNS_IN_PAYLOAD
+                .' kolom. Kolom di luar area editor tetap dipertahankan.';
         }
 
         $cells = [];
         $serializedCellCount = 0;
-        $cellPayloadTruncated = false;
+        $loadedThroughRow = 0;
         $lastColumn = Coordinate::stringFromColumnIndex($maxColumn);
-        foreach ($worksheet->getRowIterator(1, $maxRow) as $rowIterator) {
+        foreach ($worksheet->getRowIterator(1, $payloadMaxRow) as $rowIterator) {
             foreach ($rowIterator->getCellIterator('A', $lastColumn, true) as $cell) {
                 if ($serializedCellCount >= $cellBudget) {
-                    $cellPayloadTruncated = true;
-
                     break 2;
                 }
 
-                $coordinate = $cell->getCoordinate();
-                $value = $cell->getValue();
-                $formula = $cell->getDataType() === DataType::TYPE_FORMULA
-                    ? (string) $value
-                    : null;
-                if ($formula !== null) {
-                    $calculated = $cell->getOldCalculatedValue();
-                    $display = $calculated === null
-                        ? $formula
-                        : NumberFormat::toFormattedString(
-                            $calculated,
-                            $cell->getStyle()->getNumberFormat()->getFormatCode()
-                        );
-                } else {
-                    $display = $cell->getFormattedValue();
-                }
-
-                $cells[$coordinate] = [
-                    'value' => $formula === null ? $value : null,
-                    'formula' => $formula,
-                    'display' => $display,
-                    'data_type' => $cell->getDataType(),
-                    'style' => $this->serializeStyle($cell->getStyle()),
-                ];
+                $cells[$cell->getCoordinate()] = $this->serializeCell($cell);
                 $serializedCellCount++;
             }
-        }
-        if ($cellPayloadTruncated) {
-            $warnings[] = 'Sebagian sel pada sheet "'.$worksheet->getTitle()
-                .'" tidak dimuat ke editor karena batas payload workbook. Data asli tetap dipertahankan.';
+            $loadedThroughRow = $rowIterator->getRowIndex();
         }
 
         $columnWidths = [];
@@ -799,6 +987,9 @@ class SpreadsheetWorkbookService
             'column_widths' => $columnWidths,
             'row_heights' => $rowHeights,
             'cells' => $cells,
+            'loaded_row_ranges' => $loadedThroughRow > 0
+                ? [['start' => 1, 'end' => $loadedThroughRow]]
+                : [],
         ];
     }
 
@@ -816,7 +1007,7 @@ class SpreadsheetWorkbookService
             $highestDataColumn,
             $ignoredWarnings
         );
-        $maxRow = min(self::MAX_ROWS_IN_PAYLOAD, max(40, $highestRow));
+        $maxRow = min(self::INITIAL_ROWS_IN_PAYLOAD, max(40, $highestRow));
         $maxColumn = min(self::MAX_COLUMNS_IN_PAYLOAD, max(12, $highestColumn));
         $lastColumn = Coordinate::stringFromColumnIndex($maxColumn);
         $demand = 0;
@@ -944,6 +1135,36 @@ class SpreadsheetWorkbookService
         }
 
         return [$highestRow, $highestColumn];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeCell(Cell $cell): array
+    {
+        $value = $cell->getValue();
+        $formula = $cell->getDataType() === DataType::TYPE_FORMULA
+            ? (string) $value
+            : null;
+        if ($formula !== null) {
+            $calculated = $cell->getOldCalculatedValue();
+            $display = $calculated === null
+                ? $formula
+                : NumberFormat::toFormattedString(
+                    $calculated,
+                    $cell->getStyle()->getNumberFormat()->getFormatCode()
+                );
+        } else {
+            $display = $cell->getFormattedValue();
+        }
+
+        return [
+            'value' => $formula === null ? $value : null,
+            'formula' => $formula,
+            'display' => $display,
+            'data_type' => $cell->getDataType(),
+            'style' => $this->serializeStyle($cell->getStyle()),
+        ];
     }
 
     /**
@@ -1099,11 +1320,45 @@ class SpreadsheetWorkbookService
     ): void {
         $range = $this->range($operation['range'] ?? null, $format);
         $this->assertRangeSize($range);
+        [$start, $end] = Coordinate::rangeBoundaries($range);
+
+        if ($merge && $start === $end) {
+            throw new DriveAsixWorkbookException(
+                'Pilih sedikitnya dua sel untuk digabungkan.'
+            );
+        }
+
+        $exactMergedRange = null;
+        foreach ($worksheet->getMergeCells() as $mergedRange) {
+            [$mergedStart, $mergedEnd] = Coordinate::rangeBoundaries($mergedRange);
+            $isExact = $start === $mergedStart && $end === $mergedEnd;
+
+            if ($isExact) {
+                $exactMergedRange = $mergedRange;
+                break;
+            }
+
+            $intersects = $start[0] <= $mergedEnd[0]
+                && $end[0] >= $mergedStart[0]
+                && $start[1] <= $mergedEnd[1]
+                && $end[1] >= $mergedStart[1];
+            if ($merge && $intersects) {
+                throw new DriveAsixWorkbookException(
+                    'Rentang merge bersinggungan dengan merged cell lain. Pisahkan sel tersebut terlebih dahulu.'
+                );
+            }
+        }
 
         if ($merge) {
-            $worksheet->mergeCells($range);
-        } else {
-            $worksheet->unmergeCells($range);
+            if ($exactMergedRange === null) {
+                $worksheet->mergeCells($range, Worksheet::MERGE_CELL_CONTENT_HIDE);
+            }
+
+            return;
+        }
+
+        if ($exactMergedRange !== null) {
+            $worksheet->unmergeCells($exactMergedRange);
         }
     }
 

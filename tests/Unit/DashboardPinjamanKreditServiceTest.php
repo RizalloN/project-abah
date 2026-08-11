@@ -383,6 +383,17 @@ class DashboardPinjamanKreditServiceTest extends TestCase
         $this->assertSame('2026-05-18', $periods['selected']);
     }
 
+    public function test_month_end_hides_mom_and_uses_previous_month_end_as_its_baseline(): void
+    {
+        $service = app(DashboardPinjamanKreditService::class);
+        $periods = $service->calculatePeriodReferences('2026-07-31');
+        $payload = $service->getUnifiedSegmentData('2026-07-31', 'SME');
+
+        $this->assertSame('2026-06-30', $periods['mtm']);
+        $this->assertSame($periods['mtd'], $periods['mtm']);
+        $this->assertFalse($payload['display_options']['show_mom']);
+    }
+
     public function test_kredit_payload_uses_mtd_for_previous_month_end_delta(): void
     {
         DB::table('dashboard_harian_snapshots')->insert([

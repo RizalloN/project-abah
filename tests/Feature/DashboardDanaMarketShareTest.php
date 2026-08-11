@@ -16,6 +16,11 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 beforeEach(function (): void {
     useMarketShareWorkbookSqliteConnection();
     Cache::flush();
+    $controllerReflection = new ReflectionClass(DashboardSimpananController::class);
+    foreach (['hasTableMemo', 'hasColumnMemo'] as $propertyName) {
+        $property = $controllerReflection->getProperty($propertyName);
+        $property->setValue(null, []);
+    }
 
     config()->set('services.market_share.source_url', 'https://example.com/market-share-source.xlsx');
     config()->set('services.market_share_mapping.source_url', 'https://example.com/market-share-mapping-source.xlsx');
@@ -40,7 +45,9 @@ afterEach(function (): void {
     Schema::dropIfExists('external_report_links');
     File::delete(storage_path('app/testing-market-share.xlsx'));
     File::delete(storage_path('app/testing-market-share-mapping.xlsx'));
+    File::delete(storage_path('app/testing-market-share-mapping-latest.xlsx'));
     File::delete(storage_path('app/testing-market-share-mapping-fallback.xlsx'));
+    File::delete(storage_path('app/testing-market-share-mapping-invalid.xlsx'));
 });
 
 function useMarketShareWorkbookSqliteConnection(): void
@@ -245,6 +252,49 @@ function createMarketShareMappingWorkbookFixture(string $path): void
     $spreadsheet->disconnectWorksheets();
 }
 
+function createLatestMarketShareMappingDashboardFixture(string $path): void
+{
+    File::ensureDirectoryExists(dirname($path));
+
+    $spreadsheet = new Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setTitle('DASHBOARD');
+    $sheet->setCellValue('A1', 'DASHBOARD POTENSI & PENETRASI DEBITUR');
+    $sheet->setCellValue('A2', 'Analisis dinamis per sektor berdasarkan Nama Kanca dan Nama Uker');
+    $sheet->setCellValue('A4', 'NAMA KANCA');
+    $sheet->setCellValue('C4', 'Semua Kanca');
+    $sheet->setCellValue('H4', 'NAMA UKER');
+    $sheet->setCellValue('J4', 'Semua Uker');
+    $sheet->setCellValue('A6', 'JUMLAH ORANG');
+    $sheet->setCellValue('D6', 'JUMLAH KK');
+    $sheet->setCellValue('H6', 'USIA PRODUKTIF');
+    $sheet->setCellValue('K6', 'USIA TIDAK PRODUKTIF');
+    $sheet->setCellValue('A7', 3394772);
+    $sheet->setCellValue('D7', 1230624);
+    $sheet->setCellValue('H7', 1578436);
+    $sheet->setCellValue('K7', 1785945);
+    $sheet->setCellValue('A9', 'TOTAL POTENSI');
+    $sheet->setCellValue('E9', 'SUDAH MENJADI DEBITUR');
+    $sheet->setCellValue('I9', '% PENETRASI');
+    $sheet->setCellValue('A10', 607212);
+    $sheet->setCellValue('E10', 346571);
+    $sheet->setCellValue('I10', '57.1%');
+    $sheet->setCellValue('A13', 'SEKTOR');
+    $sheet->setCellValue('B13', 'POTENSI');
+    $sheet->setCellValue('C13', 'DEBITUR');
+    $sheet->setCellValue('D13', 'PENETRASI');
+    $sheet->setCellValue('F13', 'HIGHLIGHT DINAMIS');
+    $sheet->fromArray([
+        ['PERTANIAN', 214319, 126335, '58.9%', null, 'Potensi terbesar', 'PERTANIAN (214,319)'],
+        ['PERDAGANGAN', 169928, 127421, '75.0%', null, 'Debitur terbesar', 'PERDAGANGAN (127,421)'],
+        ['INDUSTRI', 25365, 23584, '93.0%', null, 'Penetrasi tertinggi', 'INDUSTRI (93.0%)'],
+        ['TOTAL', 607212, 346571, '57.1%'],
+    ], null, 'A14');
+
+    (new Xlsx($spreadsheet))->save($path);
+    $spreadsheet->disconnectWorksheets();
+}
+
 it('renders market share as an office 365 workbook view', function (): void {
     config()->set('services.market_share.title', 'Market Share Test');
     config()->set('services.market_share.public_token', '');
@@ -310,6 +360,53 @@ it('limits the static area market share rows to the signed in branch', function 
         ->assertDontSee('KC Ngawi')
         ->assertDontSee('KC Ponorogo')
         ->assertDontSee('>Area 6<', false);
+});
+
+it('renders the redesigned area 6 marketshare workspace without the legacy submenu', function (): void {
+    $user = User::factory()->create(['pn' => '90170001']);
+
+    $this->actingAs($user)
+        ->get(route('report.dashboard-dana.market-share.area6'))
+        ->assertOk()
+        ->assertSee('Perbandingan cabang')
+        ->assertSee('marketShareAreaChart', false)
+        ->assertSee('Geser tabel untuk melihat seluruh kolom')
+        ->assertDontSee('<p>Market Share</p>', false);
+});
+
+it('renders marketshare sektoral from the march area 6 workbook snapshot', function (): void {
+    $user = User::factory()->create(['pn' => '90170001']);
+
+    $this->actingAs($user)
+        ->get(route('report.dashboard-dana.market-share.sektoral'))
+        ->assertOk()
+        ->assertSee('Marketshare Sektoral')
+        ->assertSee('Area 6 (Semua Cabang)')
+        ->assertSee('13.367,4')
+        ->assertSee('30,45%')
+        ->assertSee('Perdagangan Besar Dan Eceran, Reparasi Mobil Dan Motor')
+        ->assertSee('mssSectorBar', false)
+        ->assertSee('Potensi Belum BRI')
+        ->assertSee('Penetrasi BRI terhadap industri per sektor')
+        ->assertSee('marketShareLabelsPlugin', false)
+        ->assertSee('value="market_share_os"', false)
+        ->assertSee("renderBar(sortSelect ? sortSelect.value : 'market_share_os')", false)
+        ->assertDontSee('mssCompositionChart', false)
+        ->assertDontSee("type: 'doughnut'", false)
+        ->assertSee('Sektoral per segmen Area 6 Maret.xlsx');
+});
+
+it('locks marketshare sektoral to the signed in branch', function (): void {
+    $user = User::factory()->create(['pn' => '0049']);
+
+    $this->actingAs($user)
+        ->get(route('report.dashboard-dana.market-share.sektoral', ['cabang' => 'madiun']))
+        ->assertOk()
+        ->assertSee('KC Magetan')
+        ->assertSee('Pilihan dikunci sesuai otorisasi akun.')
+        ->assertSee('2.716,8')
+        ->assertDontSee('Area 6 (Semua Cabang)')
+        ->assertDontSee('KC Madiun');
 });
 
 it('renders market share mapping as a separate office 365 workbook view', function (): void {
@@ -384,7 +481,7 @@ it('keeps the geography workspace available alongside the configured google shee
     $user = User::factory()->create();
 
     $this->actingAs($user)
-        ->get('/report/dashboard-dana/market-share/mapping')
+        ->get('/report/dashboard-dana/market-share/mapping?sheet=DASHBOARD')
         ->assertOk()
         ->assertSee('Mapping Google Direct Test')
         ->assertSee('Peta Wilayah')
@@ -449,6 +546,49 @@ it('ignores legacy managed sharepoint mapping links and uses the configured goog
         ->assertDontSee('Workbook Mapping Market Share Office 365')
         ->assertDontSee('lin20912662-my.sharepoint.com', false)
         ->assertDontSee('https://view.officeapps.live.com/op/embed.aspx?src=', false);
+});
+
+it('uses a compatible mapping workbook configured from link management', function (): void {
+    Schema::create('external_report_links', function (Blueprint $table): void {
+        $table->string('uniqueid_link', 120)->primary();
+        $table->string('group_key', 80);
+        $table->string('link_key', 100);
+        $table->string('label', 160);
+        $table->string('sheet_name', 160)->nullable();
+        $table->string('spreadsheet_id', 160)->nullable();
+        $table->text('link_url');
+        $table->boolean('is_active')->default(true);
+        $table->timestamps();
+        $table->unique(['group_key', 'link_key'], 'uq_external_report_links_scope');
+    });
+
+    DB::table('external_report_links')->insert([
+        'uniqueid_link' => 'market_share_mapping',
+        'group_key' => 'market_share',
+        'link_key' => 'mapping',
+        'label' => 'Mapping Market Share',
+        'sheet_name' => 'REKAP',
+        'spreadsheet_id' => 'custom-compatible-mapping',
+        'link_url' => 'https://docs.google.com/spreadsheets/d/custom-compatible-mapping/edit?usp=sharing',
+        'is_active' => true,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $configuredUrl = 'https://docs.google.com/spreadsheets/d/1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    $managedPreviewUrl = 'https://docs.google.com/spreadsheets/d/custom-compatible-mapping/edit?usp=sharing';
+    config()->set('services.market_share_mapping.title', 'Mapping Latest Test');
+    config()->set('services.market_share_mapping.workbook_url', $configuredUrl);
+    config()->set('services.market_share_mapping.cache_path', 'app/testing-non-existent-market-share-mapping.xlsx');
+
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get('/report/dashboard-dana/market-share/mapping')
+        ->assertOk()
+        ->assertSee('Mapping Latest Test')
+        ->assertSee($managedPreviewUrl, false)
+        ->assertDontSee('1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt', false);
 });
 
 it('prioritizes the public mapping workbook endpoint over a configured sharepoint embed link', function (): void {
@@ -581,7 +721,7 @@ it('uses the direct sharepoint embed for oversized mapping workbooks when a gues
         ->assertSee('wdAllowInteractivity=True', false)
         ->assertSee('wdAllowTyping=True', false)
         ->assertSee('wdHideSheetTabs=False', false)
-        ->assertSee('ActiveCell=%27DASHBOARD%27%21A1', false)
+        ->assertSee('ActiveCell=%27REKAP%27%21A1', false)
         ->assertSee('market-office-sheet-tabs', false)
         ->assertSee('data-market-office-sheet-url', false)
         ->assertSee('DASHBOARD')
@@ -706,7 +846,7 @@ it('renders valid cached market share mapping workbook as a summary with excel m
     $user = User::factory()->create();
 
     $this->actingAs($user)
-        ->get('/report/dashboard-dana/market-share/mapping')
+        ->get('/report/dashboard-dana/market-share/mapping?sheet=DASHBOARD')
         ->assertOk()
         ->assertSee('Mapping')
         ->assertSee('Mapping Native Test')
@@ -742,13 +882,113 @@ it('renders the local geography workspace without requiring a public workbook to
     $user = User::factory()->create();
 
     $this->actingAs($user)
-        ->get('/report/dashboard-dana/market-share/mapping')
+        ->get('/report/dashboard-dana/market-share/mapping?sheet=DASHBOARD')
         ->assertOk()
         ->assertSee('Mapping Local Geography Test')
         ->assertSee('Peta Wilayah')
         ->assertSee('marketShareGeographyMap', false)
         ->assertSee('03212 - DOLOPO')
         ->assertSee('Summary');
+});
+
+it('uses REKAP as the default native mapping sheet', function (): void {
+    $filePath = storage_path('app/testing-market-share-mapping.xlsx');
+    createMarketShareMappingWorkbookFixture($filePath);
+
+    $controller = app(DashboardSimpananController::class);
+    $reader = new ReflectionMethod($controller, 'readMarketShareMappingWorkbookPreview');
+    $reader->setAccessible(true);
+
+    $defaultPayload = $reader->invoke($controller, $filePath, '');
+    $dashboardPayload = $reader->invoke($controller, $filePath, 'DASHBOARD');
+
+    expect($defaultPayload['selectedSheet'])->toBe('REKAP')
+        ->and($defaultPayload['summary']['ready'] ?? false)->toBeFalse()
+        ->and($dashboardPayload['selectedSheet'])->toBe('DASHBOARD')
+        ->and($dashboardPayload['summary']['ready'] ?? false)->toBeTrue();
+});
+
+it('reads the latest mapping dashboard layout by labels instead of fixed coordinates', function (): void {
+    $filePath = storage_path('app/testing-market-share-mapping-latest.xlsx');
+    createLatestMarketShareMappingDashboardFixture($filePath);
+
+    $controller = app(DashboardSimpananController::class);
+    $reader = new ReflectionMethod($controller, 'readMarketShareMappingWorkbookPreview');
+    $reader->setAccessible(true);
+
+    $payload = $reader->invoke($controller, $filePath, 'DASHBOARD');
+    $summary = $payload['summary'];
+    $headline = collect($summary['headlineMetrics'] ?? [])->keyBy('label');
+    $totals = collect($summary['totalMetrics'] ?? [])->keyBy('key');
+    $demographics = collect($summary['demographics'] ?? [])->keyBy('key');
+
+    expect($summary['ready'] ?? false)->toBeTrue()
+        ->and($summary['layout_version'] ?? null)->toBe('dashboard-v2')
+        ->and(str_replace(',', '', (string) data_get($totals, 'potential.value')))->toBe('607212')
+        ->and(str_replace(',', '', (string) data_get($totals, 'debtors.value')))->toBe('346571')
+        ->and((string) data_get($totals, 'penetration.value'))->toBe('57.1%')
+        ->and(str_replace(',', '', (string) data_get($demographics, 'people.value')))->toBe('3394772')
+        ->and(data_get($summary, 'selectors.branch.value'))->toBe('Semua Kanca')
+        ->and(data_get($summary, 'selectors.unit.value'))->toBe('Semua Uker')
+        ->and($summary['sectors'][0]['label'] ?? null)->toBe('PERTANIAN')
+        ->and($summary['sectors'][0]['conversion'] ?? null)->toBe('58.9%')
+        ->and(str_replace(',', '', (string) data_get($headline, 'Potensi.value')))->toBe('214319')
+        ->and(str_replace(',', '', (string) data_get($summary, 'sectorDetails.PERTANIAN.metrics.POTENSI')))->toBe('214319')
+        ->and(data_get($summary, 'highlights.0.label'))->toBe('Potensi terbesar')
+        ->and(data_get($summary, 'highlights.0.value'))->toBe('PERTANIAN (214,319)');
+});
+
+it('serves area 6 and rekap mapping data for the two marketshare presentation slides', function (): void {
+    config()->set('services.market_share_mapping.cache_path', 'app/testing-market-share-mapping.xlsx');
+    config()->set('services.market_share_mapping.cache_minutes', 15);
+    createMarketShareMappingWorkbookFixture(storage_path('app/testing-market-share-mapping.xlsx'));
+
+    $user = User::factory()->create(['pn' => '90170001']);
+
+    $response = $this->actingAs($user)
+        ->getJson(route('dashboard.presentation-data.detail', ['section' => 'marketshare']))
+        ->assertOk()
+        ->assertJsonPath('section', 'marketshare')
+        ->assertJsonPath('payload.marketshare.area6.period', 'Mei 2026')
+        ->assertJsonPath('payload.marketshare.area6.default_segment', 'dpk')
+        ->assertJsonPath('payload.marketshare.area6.segments.dpk.insights.cards.2.value', '38.8%')
+        ->assertJsonPath('payload.marketshare.sektoral.period', 'Maret 2026')
+        ->assertJsonPath('payload.marketshare.sektoral.scopes.area6.label', 'Area 6 (Semua Cabang)')
+        ->assertJsonPath('payload.marketshare.mapping.ready', true)
+        ->assertJsonPath('payload.marketshare.mapping.sheet', 'REKAP')
+        ->assertJsonPath('payload.marketshare.mapping.dashboard.ready', true);
+
+    expect(data_get($response->json(), 'payload.marketshare.area6.segments'))->toHaveCount(13);
+    expect(data_get($response->json(), 'payload.marketshare.area6.segments.dpk.rows'))->toHaveCount(5);
+    expect(data_get($response->json(), 'payload.marketshare.sektoral.scopes'))->toHaveCount(5);
+    expect(data_get($response->json(), 'payload.marketshare.sektoral.scopes.area6.rows'))->toHaveCount(19);
+    expect((float) data_get($response->json(), 'payload.marketshare.sektoral.scopes.area6.total.market_share_os'))
+        ->toBeGreaterThan(0.30);
+    expect(data_get($response->json(), 'payload.marketshare.mapping.units.0.label'))->toBe('03212 - DOLOPO');
+});
+
+it('limits presentation marketshare rows and polygons to the signed in branch', function (): void {
+    config()->set('services.market_share_mapping.cache_path', 'app/testing-market-share-mapping.xlsx');
+    config()->set('services.market_share_mapping.cache_minutes', 15);
+    createMarketShareMappingWorkbookFixture(storage_path('app/testing-market-share-mapping.xlsx'));
+
+    $user = User::factory()->create(['pn' => '0045']);
+
+    $response = $this->actingAs($user)
+        ->getJson(route('dashboard.presentation-data.detail', ['section' => 'marketshare']))
+        ->assertOk()
+        ->assertJsonPath('payload.marketshare.area6.title', 'Marketshare - KC Madiun')
+        ->assertJsonPath('payload.marketshare.area6.segments.dpk.rows.0.branch', 'KC Madiun')
+        ->assertJsonPath('payload.marketshare.sektoral.scopes.madiun.label', 'KC Madiun')
+        ->assertJsonPath('payload.marketshare.mapping.branches.0.key', 'madiun')
+        ->assertJsonPath('payload.marketshare.mapping.dashboard.ready', false);
+
+    expect(data_get($response->json(), 'payload.marketshare.area6.segments.dpk.rows'))->toHaveCount(1);
+    expect(data_get($response->json(), 'payload.marketshare.area6.segments.dpk.insights.chart.rows'))->toHaveCount(1);
+    expect(data_get($response->json(), 'payload.marketshare.sektoral.scopes'))->toHaveCount(1);
+    expect(data_get($response->json(), 'payload.marketshare.sektoral.scopes.madiun.rows'))->toHaveCount(19);
+    expect(data_get($response->json(), 'payload.marketshare.mapping.branches'))->toHaveCount(1);
+    expect(data_get($response->json(), 'payload.marketshare.mapping.units'))->toHaveCount(1);
 });
 
 it('refreshes the mapping geography workbook from the configured Google Sheet export', function (): void {
@@ -787,6 +1027,89 @@ it('refreshes the mapping geography workbook from the configured Google Sheet ex
     Http::assertSent(function ($request): bool {
         return $request->url() === 'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/export?format=xlsx';
     });
+});
+
+it('refreshes mapping data from the google workbook saved in link management', function (): void {
+    Schema::create('external_report_links', function (Blueprint $table): void {
+        $table->string('uniqueid_link', 120)->primary();
+        $table->string('group_key', 80);
+        $table->string('link_key', 100);
+        $table->string('label', 160);
+        $table->string('sheet_name', 160)->nullable();
+        $table->string('spreadsheet_id', 160)->nullable();
+        $table->text('link_url');
+        $table->boolean('is_active')->default(true);
+        $table->timestamps();
+        $table->unique(['group_key', 'link_key'], 'uq_external_report_links_scope');
+    });
+
+    DB::table('external_report_links')->insert([
+        'uniqueid_link' => 'market_share_mapping',
+        'group_key' => 'market_share',
+        'link_key' => 'mapping',
+        'label' => 'Mapping Market Share',
+        'sheet_name' => 'REKAP',
+        'spreadsheet_id' => 'managed-compatible-workbook',
+        'link_url' => 'https://docs.google.com/spreadsheets/d/managed-compatible-workbook/edit?usp=sharing',
+        'is_active' => true,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $filePath = storage_path('app/testing-market-share-mapping.xlsx');
+    createMarketShareMappingWorkbookFixture($filePath);
+    $workbookBody = File::get($filePath);
+    File::delete($filePath);
+
+    config()->set('services.market_share_mapping.cache_path', 'app/testing-market-share-mapping.xlsx');
+    Http::fake([
+        'https://docs.google.com/spreadsheets/d/managed-compatible-workbook/export?format=xlsx' => Http::response(
+            $workbookBody,
+            200,
+            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+        ),
+    ]);
+
+    $result = (new DashboardSimpananController())->refreshMarketShareMappingSource();
+
+    expect($result['success'])->toBeTrue()
+        ->and(File::exists($filePath))->toBeTrue();
+    Http::assertSent(fn ($request): bool => $request->url()
+        === 'https://docs.google.com/spreadsheets/d/managed-compatible-workbook/export?format=xlsx');
+});
+
+it('keeps the last good mapping workbook when the replacement format is incompatible', function (): void {
+    $filePath = storage_path('app/testing-market-share-mapping.xlsx');
+    $invalidPath = storage_path('app/testing-market-share-mapping-invalid.xlsx');
+    createMarketShareMappingWorkbookFixture($filePath);
+    $lastGoodHash = hash_file('sha256', $filePath);
+
+    $invalidWorkbook = new Spreadsheet();
+    $invalidWorkbook->getActiveSheet()->setTitle('BUKAN REKAP');
+    $invalidWorkbook->getActiveSheet()->fromArray([
+        ['Kolom A', 'Kolom B'],
+        ['data', 100],
+    ]);
+    (new Xlsx($invalidWorkbook))->save($invalidPath);
+    $invalidWorkbook->disconnectWorksheets();
+
+    config()->set('services.market_share_mapping.cache_path', 'app/testing-market-share-mapping.xlsx');
+    config()->set(
+        'services.market_share_mapping.source_url',
+        'https://docs.google.com/spreadsheets/d/incompatible-mapping-workbook/edit?usp=sharing'
+    );
+    Http::fake([
+        'https://docs.google.com/spreadsheets/d/incompatible-mapping-workbook/export?format=xlsx' => Http::response(
+            File::get($invalidPath),
+            200,
+            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+        ),
+    ]);
+
+    $result = (new DashboardSimpananController())->refreshMarketShareMappingSource();
+
+    expect($result['success'])->toBeFalse()
+        ->and(hash_file('sha256', $filePath))->toBe($lastGoodHash);
 });
 
 it('uses the local mapping workbook fallback when the Google Sheet cannot be reached', function (): void {
@@ -828,7 +1151,7 @@ it('uses the geography workspace by default while retaining the configured googl
     $user = User::factory()->create();
 
     $this->actingAs($user)
-        ->get('/report/dashboard-dana/market-share/mapping')
+        ->get('/report/dashboard-dana/market-share/mapping?sheet=DASHBOARD')
         ->assertOk()
         ->assertSee('Mapping Google Default Test')
         ->assertSee('Peta Wilayah')
@@ -885,6 +1208,9 @@ it('serves market share mapping workbook through a protected public token endpoi
     $path = storage_path('app/testing-market-share-mapping.xlsx');
 
     File::delete($path);
+    createMarketShareMappingWorkbookFixture($path);
+    $workbookBody = File::get($path);
+    File::delete($path);
 
     config()->set('services.market_share_mapping.source_url', $sourceUrl);
     config()->set('services.market_share_mapping.public_token', $token);
@@ -893,7 +1219,7 @@ it('serves market share mapping workbook through a protected public token endpoi
 
     Http::fake([
         $sourceUrl => Http::response(
-            "PK\x03\x04" . str_repeat('0', 2048),
+            $workbookBody,
             200,
             ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
         ),
@@ -918,6 +1244,9 @@ it('serves market share mapping workbook through a path token endpoint for offic
     $path = storage_path('app/testing-market-share-mapping.xlsx');
 
     File::delete($path);
+    createMarketShareMappingWorkbookFixture($path);
+    $workbookBody = File::get($path);
+    File::delete($path);
 
     config()->set('services.market_share_mapping.source_url', $sourceUrl);
     config()->set('services.market_share_mapping.public_token', $token);
@@ -926,7 +1255,7 @@ it('serves market share mapping workbook through a path token endpoint for offic
 
     Http::fake([
         $sourceUrl => Http::response(
-            "PK\x03\x04" . str_repeat('0', 2048),
+            $workbookBody,
             200,
             ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
         ),
@@ -951,6 +1280,9 @@ it('normalizes pasted office iframe sources before fetching mapping workbook', f
     $requestedUrl = null;
 
     File::delete($path);
+    createMarketShareMappingWorkbookFixture($path);
+    $workbookBody = File::get($path);
+    File::delete($path);
 
     config()->set(
         'services.market_share_mapping.source_url',
@@ -960,11 +1292,11 @@ it('normalizes pasted office iframe sources before fetching mapping workbook', f
     config()->set('services.market_share_mapping.cache_path', 'app/testing-market-share-mapping.xlsx');
     config()->set('services.market_share_mapping.cache_minutes', 0);
 
-    Http::fake(function ($request) use (&$requestedUrl) {
+    Http::fake(function ($request) use (&$requestedUrl, $workbookBody) {
         $requestedUrl = $request->url();
 
         return Http::response(
-            "PK\x03\x04" . str_repeat('0', 2048),
+            $workbookBody,
             200,
             ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
         );

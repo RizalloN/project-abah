@@ -110,12 +110,12 @@
             <div class="kinerja-tabs-header">
                 <div class="kinerja-tabs-heading">
                     <p class="kinerja-tabs-kicker">{{ $segmentLabel }}</p>
-                    <h2 class="kinerja-tabs-title">OS & Kualitas</h2>
+                    <h2 class="kinerja-tabs-title">Performance & Kualitas</h2>
                 </div>
 
                 <div class="kinerja-tabs-nav" role="tablist" aria-label="Navigasi Kinerja RM Ritel">
                     <button type="button" id="kinerja-tab-os" class="kinerja-tab-btn active" data-kinerja-tab="os" role="tab" aria-controls="kinerja-panel-os" aria-selected="true">
-                        <span class="kinerja-tab-btn__label">OS</span>
+                        <span class="kinerja-tab-btn__label">Performance</span>
                     </button>
                     <button type="button" id="kinerja-tab-kualitas" class="kinerja-tab-btn" data-kinerja-tab="kualitas" role="tab" aria-controls="kinerja-panel-kualitas" aria-selected="false">
                         <span class="kinerja-tab-btn__label">Kualitas</span>
@@ -125,21 +125,7 @@
 
             <div class="kinerja-tabs-body">
                 <section id="kinerja-panel-os" class="kinerja-tab-panel is-active" data-kinerja-panel="os" role="tabpanel" aria-labelledby="kinerja-tab-os">
-                    @include('report.kinerjarm-table-section', [
-                        'sectionTitle' => 'OS per RM',
-                        'sectionSubtitle' => null,
-                        'sectionMeta' => 'Rp Juta',
-                        'comparisonColumns' => $comparisonColumns,
-                        'rows' => $rows,
-                        'total' => $total,
-                        'showTargets' => true,
-                        'showTargetColumns' => $selectedSegmen !== 'SMALL',
-                        'showAchievementColumns' => true,
-                        'showLarColumn' => $selectedSegmen !== 'CONSUMER',
-                        'compact' => false,
-                        'grandTotalLabel' => 'GRAND TOTAL ' . ($selectedProductLabel === 'Semua Produk' ? 'RM' : strtoupper($selectedProductLabel)),
-                        'emptyMessage' => 'Silakan pilih parameter filter yang berbeda.',
-                    ])
+                    @include('report.kinerjarm-performance-table-section')
                 </section>
 
                 <section id="kinerja-panel-kualitas" class="kinerja-tab-panel" data-kinerja-panel="kualitas" role="tabpanel" aria-labelledby="kinerja-tab-kualitas">

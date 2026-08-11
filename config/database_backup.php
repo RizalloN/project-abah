@@ -18,7 +18,7 @@ return [
         'D:\\BACKUP PROJECT ABAH'
     ),
 
-    'retention_count' => max(1, (int) env('DATABASE_DAILY_BACKUP_RETENTION_COUNT', 2)),
+    'retention_count' => max(1, (int) env('DATABASE_DAILY_BACKUP_RETENTION_COUNT', 1)),
 
     'compression_level' => min(
         9,

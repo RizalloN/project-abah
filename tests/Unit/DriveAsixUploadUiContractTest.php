@@ -17,9 +17,14 @@ class DriveAsixUploadUiContractTest extends TestCase
         $this->source = $source;
     }
 
-    public function test_upload_uses_sequential_batches_and_locks_repeated_interaction(): void
+    public function test_upload_uses_a_sequential_single_file_queue_and_locks_repeated_interaction(): void
     {
-        $this->assertStringContainsString('const UPLOAD_BATCH_SIZE = 10;', $this->source);
+        $this->assertStringContainsString('const UPLOAD_BATCH_SIZE = 1;', $this->source);
+        $this->assertStringContainsString(
+            'const MAX_CONSECUTIVE_UPLOAD_FAILURES = 3;',
+            $this->source
+        );
+        $this->assertStringContainsString('xhr.timeout = UPLOAD_TIMEOUT_MS;', $this->source);
         $this->assertStringContainsString('let uploadInFlight = false;', $this->source);
         $this->assertStringContainsString(
             'offset += UPLOAD_BATCH_SIZE',
@@ -30,7 +35,7 @@ class DriveAsixUploadUiContractTest extends TestCase
             $this->source
         );
         $this->assertStringContainsString(
-            'for (activeBatch = 0; activeBatch < batches.length; activeBatch++)',
+            'for (let activeBatch = 0; activeBatch < batches.length; activeBatch++)',
             $this->source
         );
         $this->assertStringContainsString(
@@ -59,11 +64,11 @@ class DriveAsixUploadUiContractTest extends TestCase
             $this->source
         );
         $this->assertStringContainsString(
-            'Mengunggah batch ${batchIndex + 1}/${batchCount}... ${aggregatePercent}%',
+            'Mengunggah file ${batchIndex + 1}/${batchCount}... ${aggregatePercent}%',
             $this->source
         );
         $this->assertStringContainsString(
-            'Memvalidasi dan menyimpan... (batch ${batchIndex + 1}/${batchCount})',
+            'Memvalidasi dan menyimpan file ${batchIndex + 1}/${batchCount}...',
             $this->source
         );
         $this->assertStringContainsString(
@@ -94,7 +99,7 @@ class DriveAsixUploadUiContractTest extends TestCase
             $this->source
         );
         $this->assertStringContainsString(
-            'uploadedTotal !== selectedFiles.length',
+            'uploadedTotal === selectedFiles.length',
             $this->source
         );
         $this->assertStringContainsString(
@@ -108,7 +113,7 @@ class DriveAsixUploadUiContractTest extends TestCase
         $this->assertStringNotContainsString('location.reload()', $this->source);
     }
 
-    public function test_validation_error_maps_files_index_to_name_and_reports_failed_batch(): void
+    public function test_validation_error_maps_the_file_name_and_queue_continues_safely(): void
     {
         $this->assertStringContainsString(
             'key.match(/^files\.(\d+)(?:\.|$)/)',
@@ -119,16 +124,64 @@ class DriveAsixUploadUiContractTest extends TestCase
             $this->source
         );
         $this->assertStringContainsString(
-            '`Batch ${batchNumber}/${batches.length} gagal.',
+            'failedUploads.push({',
             $this->source
         );
         $this->assertStringContainsString(
-            '${uploadedTotal} file dari batch sebelumnya sudah tersimpan.',
+            'consecutiveTransportFailures >= MAX_CONSECUTIVE_UPLOAD_FAILURES',
+            $this->source
+        );
+        $this->assertStringContainsString(
+            "queueStopReason = 'karena koneksi tidak stabil';",
+            $this->source
+        );
+        $this->assertStringContainsString(
+            "queueStopReason = 'karena sesi atau izin akses perlu diperbarui';",
             $this->source
         );
         $this->assertStringContainsString(
             "setUploadProgress(\n    Number.isFinite(currentWidth) ? Math.min(currentWidth, 96) : 0,",
             $this->source
         );
+    }
+
+    public function test_multi_selection_and_all_delete_confirmations_use_sweetalert(): void
+    {
+        $this->assertStringContainsString('data-select-key="folder:', $this->source);
+        $this->assertStringContainsString('data-select-key="file:', $this->source);
+        $this->assertStringContainsString('class="dv-select-checkbox"', $this->source);
+        $this->assertStringContainsString('id="btnSelectAll"', $this->source);
+        $this->assertStringContainsString('id="btnDeleteSelected"', $this->source);
+        $this->assertStringContainsString('const selectedDriveItems = new Map();', $this->source);
+        $this->assertStringContainsString('async function deleteSelectedDriveItems()', $this->source);
+        $this->assertStringContainsString(
+            'for (const [index, item] of selectedItems.entries())',
+            $this->source
+        );
+        $this->assertStringContainsString("method: 'DELETE'", $this->source);
+        $this->assertStringContainsString('function driveSwal(options)', $this->source);
+        $this->assertStringContainsString("document.querySelectorAll('.js-drive-confirm')", $this->source);
+        $this->assertStringNotContainsString('confirm(', $this->source);
+        $this->assertStringNotContainsString('onsubmit="return confirm', $this->source);
+    }
+
+    public function test_bank_pipeline_exposes_executive_summary_and_drag_drop_contract(): void
+    {
+        $this->assertStringContainsString("@section('title', 'Bank Pipeline')", $this->source);
+        $this->assertStringContainsString('id="bankPipelineSummary"', $this->source);
+        $this->assertStringContainsString("route('drive.pipeline-summary')", $this->source);
+        $this->assertStringContainsString('id="pipelineTotal"', $this->source);
+        $this->assertStringContainsString('id="pipelineFollowed"', $this->source);
+        $this->assertStringContainsString('id="pipelineFollowUpPercentage"', $this->source);
+        $this->assertStringContainsString('id="pipelineBranchRows"', $this->source);
+        $this->assertStringContainsString('totals.follow_up_percentage ?? totals.progress', $this->source);
+        $this->assertStringContainsString('Persentase TL = pipeline sudah TL / jumlah pipeline.', $this->source);
+        $this->assertStringNotContainsString('id="pipelinePending"', $this->source);
+        $this->assertStringNotContainsString('id="pipelineUnclassified"', $this->source);
+        $this->assertStringNotContainsString('id="pipelineSourceList"', $this->source);
+        $this->assertStringContainsString('draggable="true"', $this->source);
+        $this->assertStringContainsString('async function moveDraggedDriveItem(destinationId)', $this->source);
+        $this->assertStringContainsString("method: 'PATCH'", $this->source);
+        $this->assertStringContainsString('data-drop-folder-id=', $this->source);
     }
 }

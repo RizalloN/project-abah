@@ -1,6 +1,7 @@
 @php
     $periodKeys = ['yoy', 'ytd', 'mtm', 'mtd', 'h2', 'h1'];
-    $deltaLabels = ['ytd' => 'YTD', 'yoy' => 'YoY', 'mtm' => 'MtM', 'mtd' => 'MtD', 'dtd' => 'DtD'];
+    $deltaLabels = ['dtd' => 'Hari Lalu', 'mtd' => 'Bulan Lalu', 'ytd' => 'Tahun Lalu'];
+    $isAreaScope = ($export['selectedBranch'] ?? 'all') === 'all';
     $formatJuta = static function ($value): string {
         $number = (float) $value / 1000000;
 
@@ -238,6 +239,18 @@
             width: 72px;
         }
 
+        .code {
+            width: 52px;
+        }
+
+        .branch-code {
+            width: 58px;
+        }
+
+        .branch-name {
+            width: 110px;
+        }
+
         .unit {
             width: 156px;
             white-space: normal;
@@ -268,6 +281,30 @@
             font-weight: 900;
         }
 
+        .subtotal-retail td {
+            background: #dbeafe !important;
+            color: #052f63;
+            border-top: 2px solid #2563eb;
+            border-bottom: 2px solid #2563eb;
+            font-weight: 900;
+        }
+
+        .subtotal-micro td {
+            background: #d1fae5 !important;
+            color: #065f46;
+            border-top: 2px solid #059669;
+            border-bottom: 2px solid #059669;
+            font-weight: 900;
+        }
+
+        .summary-ritel td {
+            background: #eff6ff !important;
+        }
+
+        .summary-mikro td {
+            background: #ecfdf5 !important;
+        }
+
         .empty {
             padding: 14px;
             color: #64748b;
@@ -283,6 +320,10 @@
         }
 
         @media print {
+            .summary-section {
+                page-break-after: avoid;
+            }
+
             html,
             body {
                 width: 287mm;
@@ -417,6 +458,18 @@
                 width: 18mm;
             }
 
+            .code {
+                width: 14mm;
+            }
+
+            .branch-code {
+                width: 15mm;
+            }
+
+            .branch-name {
+                width: 28mm;
+            }
+
             .unit {
                 width: 38mm;
                 white-space: normal;
@@ -472,6 +525,106 @@
             </div>
         </header>
 
+        <section class="section summary-section">
+            <div class="section-title">
+                <h2>Summary</h2>
+                <p class="section-note">{{ $isAreaScope ? 'Ringkasan posisi per produk Area 6.' : 'Ringkasan posisi segmen Ritel dan Mikro pada cabang terpilih.' }}</p>
+            </div>
+            @if ($isAreaScope)
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="no">No</th>
+                            <th class="left">Segmen</th>
+                            <th class="left">Produk</th>
+                            <th>Posisi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse (($export['summary'] ?? []) as $summary)
+                            <tr>
+                                <td class="no">{{ $summary['no'] ?? '' }}</td>
+                                <td class="left">{{ $summary['segment'] ?? '' }}</td>
+                                <td class="left">{{ $summary['produk'] ?? '' }}</td>
+                                <td>{{ $formatJuta($summary['posisi'] ?? 0) }}</td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="4" class="empty">Summary belum tersedia.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            @else
+                @php
+                    $summaryPayload = (array) (($export['tables'][0]['payload'] ?? []));
+                    $summaryPeriods = (array) ($summaryPayload['periods'] ?? []);
+                    $summaryHours = (array) ($summaryPayload['hours'] ?? []);
+                    $summaryTotal = (array) ($export['summaryTotal'] ?? []);
+                @endphp
+                <table>
+                    <thead>
+                        <tr>
+                            <th rowspan="2" class="no">No</th>
+                            <th rowspan="2" class="left">Segmen</th>
+                            <th colspan="6">Posisi Historis SSA Simpanan</th>
+                            <th colspan="{{ max(1, count($summaryHours)) }}">Posisi Hari Ini {{ $summaryPayload['selectedDateLabel'] ?? '' }}</th>
+                            <th colspan="{{ count($deltaLabels) }}">Delta thd Jam Terakhir</th>
+                        </tr>
+                        <tr>
+                            @foreach ($periodKeys as $key)
+                                <th>{{ $dateFormatter($summaryPeriods[$key] ?? null) }}</th>
+                            @endforeach
+                            @forelse ($summaryHours as $hour)
+                                <th>{{ $hour['label'] ?? '' }}</th>
+                            @empty
+                                <th></th>
+                            @endforelse
+                            @foreach ($deltaLabels as $label)
+                                <th>{{ $label }}</th>
+                            @endforeach
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (($export['summary'] ?? []) as $summary)
+                            <tr class="summary-{{ strtolower($summary['segment'] ?? '') }}">
+                                <td class="no">{{ $summary['no'] ?? '' }}</td>
+                                <td class="left">{{ $summary['segment'] ?? '' }}</td>
+                                @foreach ($periodKeys as $key)
+                                    <td>{{ $formatJuta($summary['period_values'][$key] ?? 0) }}</td>
+                                @endforeach
+                                @forelse ($summaryHours as $hour)
+                                    <td>{{ $formatJuta($summary['hour_values'][$hour['key']] ?? 0) }}</td>
+                                @empty
+                                    <td>0,0</td>
+                                @endforelse
+                                @foreach ($deltaLabels as $key => $label)
+                                    @php $summaryDelta = $summary['delta_values'][$key] ?? 0; @endphp
+                                    <td class="{{ $deltaClass($summaryDelta) }}">{{ $formatDeltaJuta($summaryDelta) }}</td>
+                                @endforeach
+                            </tr>
+                        @endforeach
+                        @if ($summaryTotal !== [])
+                            <tr class="total">
+                                <td class="no">&Sigma;</td>
+                                <td class="left">GRAND TOTAL</td>
+                                @foreach ($periodKeys as $key)
+                                    <td>{{ $formatJuta($summaryTotal['period_values'][$key] ?? 0) }}</td>
+                                @endforeach
+                                @forelse ($summaryHours as $hour)
+                                    <td>{{ $formatJuta($summaryTotal['hour_values'][$hour['key']] ?? 0) }}</td>
+                                @empty
+                                    <td>0,0</td>
+                                @endforelse
+                                @foreach ($deltaLabels as $key => $label)
+                                    @php $summaryDelta = $summaryTotal['delta_values'][$key] ?? 0; @endphp
+                                    <td class="{{ $deltaClass($summaryDelta) }}">{{ $formatDeltaJuta($summaryDelta) }}</td>
+                                @endforeach
+                            </tr>
+                        @endif
+                    </tbody>
+                </table>
+            @endif
+        </section>
+
         @foreach (($export['tables'] ?? []) as $index => $table)
             @php
                 $payload = (array) ($table['payload'] ?? []);
@@ -479,6 +632,7 @@
                 $periods = (array) ($payload['periods'] ?? []);
                 $rows = (array) ($payload['rows'] ?? []);
                 $total = (array) ($payload['total'] ?? []);
+                $fixedColumnCount = $isAreaScope ? 3 : 4;
             @endphp
             <section class="section">
                 <div class="section-title">
@@ -493,8 +647,14 @@
                         <thead>
                             <tr>
                                 <th rowspan="2" class="no">No</th>
-                                <th rowspan="2" class="left branch">Cabang</th>
-                                <th rowspan="2" class="left unit">Unit Kerja</th>
+                                @if ($isAreaScope)
+                                    <th rowspan="2" class="left branch-code">Kode Cabang</th>
+                                    <th rowspan="2" class="left branch-name">Nama Cabang</th>
+                                @else
+                                    <th rowspan="2" class="left branch">Nama Cabang</th>
+                                    <th rowspan="2" class="left code">BC</th>
+                                    <th rowspan="2" class="left unit">Nama Uker</th>
+                                @endif
                                 <th colspan="6">Posisi Historis SSA Simpanan</th>
                                 <th colspan="{{ max(1, count($hours)) }}">Posisi Hari Ini {{ $payload['selectedDateLabel'] ?? '-' }}</th>
                                 <th colspan="{{ count($deltaLabels) }}">Delta thd Jam Terakhir</th>
@@ -515,10 +675,16 @@
                         </thead>
                         <tbody>
                             @forelse ($rows as $row)
-                                <tr>
-                                    <td class="no">{{ $row['no'] ?? '-' }}</td>
-                                    <td class="left branch">{{ $row['branch'] ?? '-' }}</td>
-                                    <td class="left unit">{{ $row['unit'] ?? '-' }}</td>
+                                <tr class="{{ str_replace('_', '-', $row['row_type'] ?? 'detail') }}">
+                                    <td class="no">{{ ($row['no'] ?? '') !== '' ? $row['no'] : 'Σ' }}</td>
+                                    @if ($isAreaScope)
+                                        <td class="left branch-code">{{ $row['branch_code'] ?? '' }}</td>
+                                        <td class="left branch-name">{{ $row['branch'] ?? '' }}</td>
+                                    @else
+                                        <td class="left branch">{{ $row['branch'] ?? '' }}</td>
+                                        <td class="left code">{{ $row['unit_code'] ?? '' }}</td>
+                                        <td class="left unit">{{ $row['unit'] ?? '' }}</td>
+                                    @endif
                                     @foreach ($periodKeys as $key)
                                         <td>{{ $formatJuta($row['period_values'][$key] ?? 0) }}</td>
                                     @endforeach
@@ -534,15 +700,21 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="{{ 9 + max(1, count($hours)) + count($deltaLabels) }}" class="empty">Data tidak ditemukan untuk filter ini.</td>
+                                    <td colspan="{{ $fixedColumnCount + 6 + max(1, count($hours)) + count($deltaLabels) }}" class="empty">Data tidak ditemukan untuk filter ini.</td>
                                 </tr>
                             @endforelse
 
                             @if ($rows !== [])
                                 <tr class="total">
-                                    <td class="no">#</td>
-                                    <td class="left branch">{{ $payload['scopeLabel'] ?? '-' }}</td>
-                                    <td class="left unit">GRAND TOTAL</td>
+                                    <td class="no">Σ</td>
+                                    @if ($isAreaScope)
+                                        <td class="left branch-code"></td>
+                                        <td class="left branch-name">GRAND TOTAL AREA 6</td>
+                                    @else
+                                        <td class="left branch">{{ $payload['scopeLabel'] ?? '' }}</td>
+                                        <td class="left code">{{ $payload['branchCode'] ?? '' }}</td>
+                                        <td class="left unit">GRAND TOTAL</td>
+                                    @endif
                                     @foreach ($periodKeys as $key)
                                         <td>{{ $formatJuta($total['period_values'][$key] ?? 0) }}</td>
                                     @endforeach

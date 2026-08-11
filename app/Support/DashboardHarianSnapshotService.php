@@ -3420,10 +3420,21 @@ class DashboardHarianSnapshotService
             'kur_mikro_npl' => ['mata_anggaran' => ['NPL Rp KUR Mikro']],
             'kur_kecil_npl' => ['mata_anggaran' => ['NPL Rp KUR Kecil']],
             'kur_kpp_npl' => ['mata_anggaran' => ['NPL Rp KPP']],
+            // The latest breakdown workbook provides Recovery DH as one total per
+            // Uker. Split that same source by the office ownership shown on screen:
+            // KC/KCP belongs to Ritel and UNIT belongs to Mikro. Using the older
+            // C.1/C.2/C.3/C.5 sub-ledgers here mixes scopes and overstates both rows.
             'rec_dh_total' => ['mata_anggaran' => ['C. RECOVERY EKSTRAKOMTABEL']],
-            'rec_dh_small' => ['mata_anggaran' => ['C. 2. Recovery Ekstrakomtabel Small']],
-            'rec_dh_consumer' => ['mata_anggaran' => ['C. 4. Recovery Ekstrakomtabel Konsumer']],
-            'rec_dh_micro' => ['mata_anggaran' => ['C. 1. a. Recovery Ekstrakomtabel Mikro', 'C. 1. b. Recovery Ekstrakomtabel Kece']],
+            'rec_dh_small' => [
+                'mata_anggaran' => ['C. RECOVERY EKSTRAKOMTABEL'],
+                'uker_contains_any' => ['KC', 'KCP'],
+                'include_kanca_summary' => true,
+            ],
+            'rec_dh_consumer' => ['mata_anggaran' => []],
+            'rec_dh_micro' => [
+                'mata_anggaran' => ['C. RECOVERY EKSTRAKOMTABEL'],
+                'uker_contains_any' => ['UNIT'],
+            ],
         ];
     }
 

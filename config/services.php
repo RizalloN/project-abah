@@ -79,7 +79,7 @@ return [
         'title' => env('MARKET_SHARE_MAPPING_TITLE', 'Mapping Market Share Google Sheets'),
         'source_url' => env(
             'MARKET_SHARE_MAPPING_SOURCE_URL',
-            'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/export?format=xlsx'
+            'https://docs.google.com/spreadsheets/d/1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt/export?format=xlsx'
         ),
         'public_token' => env('MARKET_SHARE_MAPPING_PUBLIC_TOKEN'),
         'cache_path' => env('MARKET_SHARE_MAPPING_CACHE_PATH', 'app/cache/market-share-mapping.xlsx'),
@@ -90,7 +90,7 @@ return [
             'MARKET_SHARE_MAPPING_WORKBOOK_URL',
             env(
                 'MARKET_SHARE_MAPPING_URL',
-                'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/edit?usp=sharing'
+                'https://docs.google.com/spreadsheets/d/1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true'
             )
         ),
     ],

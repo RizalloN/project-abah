@@ -445,15 +445,119 @@ function Add-AgendaSlide() {
     $slide = New-ContentSlide 'Ikhtisar' 'Ikhtisar Pembahasan' 'Alur analisis disusun dari funding, kredit, kualitas, hingga strategi eksekusi.'
     $items = @($script:data.agenda)
     for ($i = 0; $i -lt $items.Count; $i++) {
+        $column = $i % 3
+        $row = [Math]::Floor($i / 3)
+        $left = 55 + ($column * 450)
+        $top = 205 + ($row * 96)
+        Add-Rect $slide $left $top 425 76 $colors.Soft $colors.Line 5 | Out-Null
+        Add-Rect $slide ($left + 14) ($top + 13) 50 50 $colors.Blue $colors.Blue 5 | Out-Null
+        Add-Text $slide ([string]($i + 1).ToString('00')) ($left + 15) ($top + 25) 48 22 13 $colors.White $true 2 | Out-Null
+        Add-Text $slide ([string]$items[$i]) ($left + 78) ($top + 18) 325 38 13 $colors.Ink $true | Out-Null
+    }
+}
+
+function Add-MarketShareSlides() {
+    $marketShare = $script:data.marketshare
+    $area = $marketShare.area6
+    $areaSlide = New-ContentSlide 'Market Intelligence | Area 6' ('Market Share ' + [string]$area.segment_label + ' - ' + [string]$area.scope_label) ('Posisi ' + [string]$area.period + ' | ' + [string]$area.unit + ' | ' + [string]$area.source)
+    $total = $area.total
+    $areaKpis = @(
+        @('OS BRI', ('Rp' + ([double]$total.bri_current).ToString('N1', $culture) + ' M'), $colors.Blue),
+        @('TOTAL INDUSTRI', ('Rp' + ([double]$total.industry_current).ToString('N1', $culture) + ' M'), $colors.Cakrawala),
+        @('MARKET SHARE', (([double]$total.market_share_current).ToString('N2', $culture) + '%'), $colors.Green),
+        @('PERTUMBUHAN YTD', (([double]$total.bri_ytd).ToString('+0.00;-0.00;0.00', $culture) + '%'), $(if ([double]$total.bri_ytd -lt 0) { $colors.Red } else { $colors.Green }))
+    )
+    for ($i = 0; $i -lt $areaKpis.Count; $i++) {
+        $left = 55 + ($i * 332)
+        Add-Rect $areaSlide $left 190 305 86 $colors.Soft $colors.Line 5 | Out-Null
+        Add-Rect $areaSlide $left 190 7 86 $areaKpis[$i][2] $areaKpis[$i][2] 0 | Out-Null
+        Add-Text $areaSlide ([string]$areaKpis[$i][0]) ($left + 18) 205 270 18 10 $colors.Muted $true | Out-Null
+        Add-Text $areaSlide ([string]$areaKpis[$i][1]) ($left + 18) 229 270 28 17 $colors.Ink $true | Out-Null
+    }
+    $areaRows = @($area.rows | Select-Object -First 5)
+    Add-Rect $areaSlide 55 305 440 315 $colors.Soft $colors.Line 5 | Out-Null
+    Add-Text $areaSlide 'MARKET SHARE PER CABANG' 75 325 350 20 11 $colors.Blue $true | Out-Null
+    for ($r = 0; $r -lt $areaRows.Count; $r++) {
+        $row = $areaRows[$r]
+        $top = 365 + ($r * 47)
+        $label = ([string]$row.label) -replace '^KC\s+', ''
+        $share = [Math]::Max(0, [double]$row.market_share_current)
+        Add-Text $areaSlide $label 75 $top 120 20 9.5 $colors.Ink $true | Out-Null
+        Add-Rect $areaSlide 195 ($top + 2) 220 15 (Get-Rgb '#DFE8F4') (Get-Rgb '#DFE8F4') 3 | Out-Null
+        Add-Rect $areaSlide 195 ($top + 2) ([Math]::Max(2, 220 * [Math]::Min(1, $share / 60))) 15 $colors.Blue $colors.Blue 3 | Out-Null
+        Add-Text $areaSlide ($share.ToString('N2', $culture) + '%') 420 $top 55 20 9 $colors.Blue $true 3 | Out-Null
+    }
+    $tableShape = $areaSlide.Shapes.AddTable($areaRows.Count + 1, 5, 520, 305, 865, 315)
+    $table = $tableShape.Table
+    $headers = @('CABANG', 'OS BRI', 'INDUSTRI', 'MARKET SHARE', 'YTD BRI')
+    $widths = @(230, 165, 175, 155, 140)
+    for ($c = 1; $c -le 5; $c++) {
+        $table.Columns.Item($c).Width = $widths[$c - 1]
+        Set-TableCell $table 1 $c $headers[$c - 1] $colors.Blue $colors.White $true 2 10
+    }
+    for ($r = 0; $r -lt $areaRows.Count; $r++) {
+        $row = $areaRows[$r]
+        $fill = if ($r % 2 -eq 0) { $colors.Soft } else { $colors.White }
+        Set-TableCell $table ($r + 2) 1 ([string]$row.label) $fill $colors.Ink $true 1 9.5
+        Set-TableCell $table ($r + 2) 2 ('Rp' + ([double]$row.bri_current).ToString('N1', $culture) + ' M') $fill $colors.Blue $true 3 9.5
+        Set-TableCell $table ($r + 2) 3 ('Rp' + ([double]$row.industry_current).ToString('N1', $culture) + ' M') $fill $colors.Ink $false 3 9.5
+        Set-TableCell $table ($r + 2) 4 (([double]$row.market_share_current).ToString('N2', $culture) + '%') $fill $colors.Green $true 3 9.5
+        Set-TableCell $table ($r + 2) 5 (([double]$row.bri_ytd).ToString('+0.00;-0.00;0.00', $culture) + '%') $fill $(if ([double]$row.bri_ytd -lt 0) { $colors.Red } else { $colors.Green }) $true 3 9.5
+    }
+    Add-Rect $areaSlide 55 645 1330 75 (Get-Rgb '#F1F7FD') $colors.Line 5 | Out-Null
+    Add-Text $areaSlide 'RINGKASAN EKSEKUTIF' 75 657 260 18 10 $colors.Blue $true | Out-Null
+    Add-Text $areaSlide (([string]$area.scope_label) + ' mencatat market share ' + ([double]$total.market_share_current).ToString('N2', $culture) + '% dengan pertumbuhan YTD ' + ([double]$total.bri_ytd).ToString('+0.00;-0.00;0.00', $culture) + '%. Fokuskan akuisisi pada cabang dengan ruang pasar terbesar.') 75 680 1260 26 12 $colors.Ink $true | Out-Null
+
+    $mapping = $marketShare.mapping
+    $mapSlide = New-ContentSlide 'Market Geography' ('Mapping Market Share ' + [string]$mapping.scope_label) ('Sheet REKAP | Update ' + [string]$mapping.updated_at + ' | Sebaran potensi, existing, dan penetrasi unit kerja.')
+    Add-Rect $mapSlide 55 190 805 500 (Get-Rgb '#F2F7FC') $colors.Line 5 | Out-Null
+    Add-Text $mapSlide 'PETA PENETRASI UNIT KERJA' 78 210 360 22 11 $colors.Blue $true | Out-Null
+    $mapPoints = @($mapping.map_points | Sort-Object { [double]$_.potential } -Descending | Select-Object -First 45)
+    foreach ($point in $mapPoints) {
+        $left = 95 + ([double]$point.x * 690)
+        $top = 260 + ([double]$point.y * 350)
+        $penetration = [double]$point.penetration
+        $tone = if ($penetration -ge 50) { $colors.Blue } elseif ($penetration -ge 30) { $colors.Green } elseif ($penetration -ge 15) { $colors.Mentari } else { $colors.Red }
+        Add-Rect $mapSlide $left $top 16 16 $tone $colors.White 8 | Out-Null
+    }
+    $totals = $mapping.totals
+    $mapKpis = @($mapping.cards | Select-Object -First 4)
+    if ($mapKpis.Count -eq 0) {
+        $mapKpis = @(
+            [pscustomobject]@{ label = 'POTENSI'; value = [double]$totals.potential; kind = 'integer' },
+            [pscustomobject]@{ label = 'EXISTING'; value = [double]$totals.existing; kind = 'integer' },
+            [pscustomobject]@{ label = 'PENETRASI'; value = [double]$totals.penetration; kind = 'percent' },
+            [pscustomobject]@{ label = 'GAP PASAR'; value = [Math]::Max(0, [double]$totals.potential - [double]$totals.existing); kind = 'integer' }
+        )
+    }
+    for ($i = 0; $i -lt $mapKpis.Count; $i++) {
         $column = $i % 2
         $row = [Math]::Floor($i / 2)
-        $left = 75 + ($column * 650)
-        $top = 260 + ($row * 125)
-        Add-Rect $slide $left $top 600 92 $colors.Soft $colors.Line 5 | Out-Null
-        Add-Rect $slide ($left + 18) ($top + 17) 58 58 $colors.Blue $colors.Blue 5 | Out-Null
-        Add-Text $slide ([string]($i + 1).ToString('00')) ($left + 20) ($top + 30) 54 24 15 $colors.White $true 2 | Out-Null
-        Add-Text $slide ([string]$items[$i]) ($left + 94) ($top + 28) 475 40 17 $colors.Ink $true | Out-Null
+        $left = 900 + ($column * 225)
+        $top = 190 + ($row * 100)
+        Add-Rect $mapSlide $left $top 205 82 $colors.Soft $colors.Line 5 | Out-Null
+        $card = $mapKpis[$i]
+        $cardValue = if ([string]$card.kind -eq 'percent') { ([double]$card.value).ToString('N2', $culture) + '%' } else { ([double]$card.value).ToString('N0', $culture) }
+        Add-Text $mapSlide ([string]$card.label) ($left + 14) ($top + 13) 175 16 9.5 $colors.Muted $true | Out-Null
+        Add-Text $mapSlide $cardValue ($left + 14) ($top + 36) 175 26 16 $colors.Ink $true | Out-Null
     }
+    $ranking = @($mapping.ranking | Select-Object -First 5)
+    $rankShape = $mapSlide.Shapes.AddTable($ranking.Count + 1, 3, 900, 405, 430, 205)
+    $rankTable = $rankShape.Table
+    $rankHeaders = @('UNIT', 'EXISTING', 'PEN.')
+    for ($c = 1; $c -le 3; $c++) { Set-TableCell $rankTable 1 $c $rankHeaders[$c - 1] $colors.Blue $colors.White $true 2 9 }
+    for ($r = 0; $r -lt $ranking.Count; $r++) {
+        $unit = $ranking[$r]
+        $fill = if ($r % 2 -eq 0) { $colors.Soft } else { $colors.White }
+        Set-TableCell $rankTable ($r + 2) 1 ([string]$unit.label) $fill $colors.Ink $true 1 8.5
+        Set-TableCell $rankTable ($r + 2) 2 ([double]$unit.values.total.existing).ToString('N0', $culture) $fill $colors.Ink $false 3 8.5
+        Set-TableCell $rankTable ($r + 2) 3 (([double]$unit.values.total.penetration).ToString('N2', $culture) + '%') $fill $colors.Blue $true 3 8.5
+    }
+    Add-Rect $mapSlide 900 630 430 75 (Get-Rgb '#F1F7FD') $colors.Line 5 | Out-Null
+    Add-Text $mapSlide 'PENETRASI TERHADAP PASAR' 918 642 390 16 9.5 $colors.Blue $true | Out-Null
+    $dashboardHighlights = @($mapping.dashboard.highlights)
+    $highlightText = if ($dashboardHighlights.Count -gt 0) { ' ' + [string]$dashboardHighlights[0] } else { '' }
+    Add-Text $mapSlide ('Gap pasar ' + ([Math]::Max(0, [double]$totals.potential - [double]$totals.existing)).ToString('N0', $culture) + ' nasabah; prioritaskan unit berpotensi besar dengan penetrasi di bawah 30%.' + $highlightText) 918 663 390 30 10.5 $colors.Ink $true | Out-Null
 }
 
 function Add-SectionSlides($Section, [bool]$Funding = $false) {
@@ -645,6 +749,7 @@ try {
     }
     Update-Cover $presentation.Slides.Item(1)
     Add-AgendaSlide
+    Add-MarketShareSlides
     Add-SectionSlides $data.funding $true
     Add-SectionSlides $data.sme $false
     Add-SectionSlides $data.consumer $false

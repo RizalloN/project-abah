@@ -1,5 +1,5 @@
 @extends('layouts.admin')
-@section('title', 'DriveASIX')
+@section('title', 'Bank Pipeline')
 @section('content')
 <style>
 :root{
@@ -70,6 +70,9 @@
   border-bottom:1px solid var(--d-border);flex-wrap:wrap;
 }
 .dv-toolbar-div{width:1px;height:20px;background:var(--d-border);flex-shrink:0;}
+.dv-toolbar-summary{display:flex;align-items:center;gap:.45rem;min-width:0;color:var(--d-muted);font-size:.75rem;font-weight:600;}
+.dv-selection-actions{display:flex;align-items:center;gap:.4rem;margin-left:auto;}
+.dv-selection-status{font-size:.75rem;font-weight:700;color:var(--d-blue);white-space:nowrap;}
 
 /* ── DROP ZONE ── */
 .dv-dropzone{
@@ -101,6 +104,35 @@
 .dv-flash.ok{background:#f0fdf4;border:1px solid #86efac;color:#166534;}
 .dv-flash.err{background:#fff1f2;border:1px solid #fca5a5;color:#991b1b;}
 
+/* Executive pipeline summary */
+.dv-summary{margin:.85rem 1.25rem 0;padding:1rem;background:#fff;border:1px solid var(--d-border);border-left:4px solid #0f5eb8;border-radius:8px;box-shadow:var(--d-shadow);}
+.dv-summary-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:.8rem;}
+.dv-summary-title{margin:0;color:#0b2d52;font-size:1rem;font-weight:800;}
+.dv-summary-copy{margin:.18rem 0 0;color:var(--d-muted);font-size:.75rem;line-height:1.45;}
+.dv-summary-updated{display:flex;align-items:center;gap:.45rem;color:var(--d-muted);font-size:.7rem;font-weight:700;white-space:nowrap;}
+.dv-summary-refresh{width:32px;height:32px;border:1px solid #cbd8e6;background:#fff;color:#0f5eb8;border-radius:6px;cursor:pointer;}
+.dv-summary-refresh:disabled{opacity:.55;cursor:wait;}
+.dv-summary-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;margin-bottom:.8rem;}
+.dv-summary-metric{min-width:0;padding:.7rem .8rem;border:1px solid #dce5ee;border-top:3px solid #0f5eb8;background:#f8fbff;border-radius:6px;}
+.dv-summary-metric.is-good{border-top-color:#0f9f75;}.dv-summary-metric.is-progress{border-top-color:#16a0bd;}
+.dv-summary-metric span{display:block;color:#64748b;font-size:.66rem;font-weight:800;text-transform:uppercase;}
+.dv-summary-metric strong{display:block;margin-top:.22rem;color:#10233d;font-size:1.25rem;line-height:1;font-weight:850;font-variant-numeric:tabular-nums;}
+.dv-summary-panel{min-width:0;border:1px solid #dce5ee;border-radius:6px;overflow:hidden;background:#fff;}
+.dv-summary-panel-title{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin:0;padding:.58rem .72rem;background:#edf4fb;color:#163a61;font-size:.72rem;font-weight:800;}
+.dv-summary-table-wrap{width:100%;overflow-x:auto;}
+.dv-summary-table{width:100%;min-width:460px;border-collapse:collapse;font-size:.73rem;}
+.dv-summary-table th,.dv-summary-table td{padding:.52rem .65rem;border-bottom:1px solid #e5ebf2;text-align:right;white-space:nowrap;}
+.dv-summary-table th{background:#f8fafc;color:#5b6d82;font-size:.65rem;text-transform:uppercase;}
+.dv-summary-table th:first-child,.dv-summary-table td:first-child{text-align:left;font-weight:750;color:#18334f;}
+.dv-summary-table tr:last-child td{border-bottom:0;}
+.dv-progress-cell{display:flex;align-items:center;justify-content:flex-end;gap:.45rem;}
+.dv-progress-track{width:70px;height:6px;background:#dfe8f1;border-radius:99px;overflow:hidden;}
+.dv-progress-track i{display:block;height:100%;background:#0f9f75;border-radius:inherit;}
+.dv-summary-note{margin:.7rem 0 0;color:#64748b;font-size:.67rem;line-height:1.45;}
+.dv-summary-error{padding:1rem;color:#9f1239;background:#fff1f2;font-size:.75rem;font-weight:700;}
+.dv-card.is-dragging,.dv-list-row.is-dragging{opacity:.4;}
+.dv-card.is-drop-target,.dv-list-row.is-drop-target,.dv-breadcrumb.is-drop-target{outline:3px solid rgba(15,94,184,.28);outline-offset:-3px;background:#eaf4ff;}
+
 /* ── CONTENT ── */
 .dv-content{padding:1rem 1.25rem 2rem;flex:1;}
 .dv-sec-lbl{font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--d-muted);margin:.1rem 0 .55rem .1rem;}
@@ -116,6 +148,9 @@
 }
 .dv-card:hover{box-shadow:var(--d-shadow-md);border-color:#c5cde4;}
 .dv-card.selected{border-color:var(--d-blue);background:var(--d-blue-lt);box-shadow:0 0 0 3px rgba(26,115,232,.12);}
+.dv-item-check{display:inline-flex;align-items:center;justify-content:center;margin:0;cursor:pointer;}
+.dv-item-check input{width:17px;height:17px;margin:0;accent-color:var(--d-blue);cursor:pointer;}
+.dv-card-check{position:absolute;top:.62rem;left:.62rem;z-index:2;}
 .dv-card-icon{font-size:2.5rem;line-height:1;}
 .dv-card-name{font-size:.76rem;font-weight:700;color:var(--d-text);word-break:break-word;line-height:1.3;max-width:100%;}
 .dv-card-meta{font-size:.67rem;color:var(--d-muted);}
@@ -133,6 +168,7 @@
 .dv-list-row:last-child{border-bottom:none;}
 .dv-list-row:hover{background:var(--d-hover);}
 .dv-list-row.selected{background:var(--d-blue-lt);}
+.dv-list-leading{display:flex;align-items:center;justify-content:center;min-width:0;}
 .dv-list-name{font-size:.8rem;font-weight:600;color:var(--d-text);display:flex;align-items:center;gap:.45rem;overflow:hidden;}
 .dv-list-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .dv-list-cell{font-size:.75rem;color:var(--d-muted);}
@@ -195,10 +231,24 @@
 
 .dv-trash-badge{display:inline-flex;align-items:center;justify-content:center;background:#dc2626;color:#fff;border-radius:99px;font-size:.65rem;font-weight:800;min-width:18px;height:18px;padding:0 5px;margin-left:.2rem;}
 
+.drive-swal-popup{border:1px solid var(--d-border);border-radius:10px!important;box-shadow:var(--d-shadow-lg)!important;padding:1.1rem!important;}
+.drive-swal-title{color:var(--d-text)!important;font-size:1.2rem!important;font-weight:800!important;letter-spacing:0!important;}
+.drive-swal-html{color:var(--d-muted)!important;font-size:.88rem!important;line-height:1.55!important;}
+.drive-swal-confirm,.drive-swal-cancel{min-height:38px;border:0;border-radius:6px;padding:.55rem .95rem;font-size:.82rem;font-weight:700;}
+.drive-swal-confirm{background:var(--d-blue);color:#fff;}
+.drive-swal-confirm-danger{background:#b91c1c;color:#fff;}
+.drive-swal-cancel{background:#e2e8f0;color:#334155;}
+
 @media(max-width:640px){
+  .dv-summary{margin:.7rem .7rem 0;padding:.75rem;}
+  .dv-summary-head{align-items:center;}
+  .dv-summary-updated span{display:none;}
+  .dv-summary-metrics{grid-template-columns:1fr;}
   .dv-grid{grid-template-columns:repeat(auto-fill,minmax(128px,1fr));}
   .dv-list-head,.dv-list-row{grid-template-columns:2rem 1fr 5rem;}
   .dv-list-head>:nth-child(n+4),.dv-list-row>:nth-child(n+4){display:none;}
+  .dv-selection-actions{width:100%;margin-left:0;}
+  .dv-selection-actions .btn-dv{flex:1;justify-content:center;}
 }
 </style>
 
@@ -209,8 +259,8 @@
   <div class="dv-brand">
     <div class="dv-brand-logo"><i class="fas fa-hdd"></i></div>
     <div>
-      <p class="dv-brand-name">DriveASIX</p>
-      <p class="dv-brand-sub">Penyimpanan file internal Area 6</p>
+      <p class="dv-brand-name">Bank Pipeline</p>
+      <p class="dv-brand-sub">Workspace tindak lanjut pipeline Area 6</p>
     </div>
   </div>
   <div class="dv-topbar-right">
@@ -228,8 +278,8 @@
 </div>
 
 {{-- ══ BREADCRUMB ══ --}}
-<div class="dv-breadcrumb">
-  <a href="{{ route('drive.index') }}"><i class="fas fa-hdd" style="margin-right:.3rem;font-size:.8rem;"></i>DriveASIX</a>
+<div class="dv-breadcrumb" data-drop-folder-id="{{ $folderId ?? '' }}">
+  <a href="{{ route('drive.index') }}"><i class="fas fa-stream" style="margin-right:.3rem;font-size:.8rem;"></i>Bank Pipeline</a>
   @foreach($breadcrumbs as $crumb)
     <span class="sep"><i class="fas fa-chevron-right" style="font-size:.6rem;color:#cbd5e1;margin:0 .15rem;"></i></span>
     @if(!$loop->last)
@@ -242,9 +292,23 @@
 
 {{-- ══ TOOLBAR ══ --}}
 <div class="dv-toolbar">
-  <span style="font-size:.76rem;color:var(--d-muted);"><i class="fas fa-mouse-pointer" style="margin-right:.3rem;"></i>Klik kanan atau klik <i class="fas fa-ellipsis-v"></i> pada item untuk opsi</span>
-  <div class="dv-toolbar-div"></div>
-  <span style="font-size:.74rem;color:var(--d-muted);">{{ $folders->count() }} folder &middot; {{ $files->count() }} file</span>
+  <div class="dv-toolbar-summary">
+    <i class="fas fa-folder-open" aria-hidden="true"></i>
+    <span>{{ $folders->count() }} folder &middot; {{ $files->count() }} file</span>
+  </div>
+  @if(auth()->user()->isAdmin() && ($folders->isNotEmpty() || $files->isNotEmpty()))
+    <div class="dv-selection-actions">
+      <span class="dv-selection-status" id="dvSelectionStatus" aria-live="polite">0 dipilih</span>
+      <button type="button" class="btn-dv btn-dv-secondary" id="btnSelectAll">
+        <i class="fas fa-check-double" aria-hidden="true"></i>
+        <span id="dvSelectAllLabel">Pilih semua</span>
+      </button>
+      <button type="button" class="btn-dv btn-dv-danger" id="btnDeleteSelected" disabled>
+        <i class="fas fa-trash-alt" aria-hidden="true"></i>
+        <span>Hapus</span>
+      </button>
+    </div>
+  @endif
 </div>
 
 {{-- ══ FLASH ══ --}}
@@ -262,6 +326,42 @@
 @endif
 
 {{-- ══ UPLOAD ZONE ══ --}}
+<section class="dv-summary" id="bankPipelineSummary"
+  data-summary-url="{{ route('drive.pipeline-summary') }}" aria-labelledby="bankPipelineSummaryTitle">
+  <div class="dv-summary-head">
+    <div>
+      <h2 class="dv-summary-title" id="bankPipelineSummaryTitle">Summary Pipeline Area 6</h2>
+      <p class="dv-summary-copy">KC Madiun, KC Magetan, KC Ngawi, dan KC Ponorogo.</p>
+    </div>
+    <div class="dv-summary-updated">
+      <span id="pipelineSummaryUpdated">Memuat data...</span>
+      <button type="button" class="dv-summary-refresh" id="pipelineSummaryRefresh"
+        title="Muat ulang ringkasan" aria-label="Muat ulang ringkasan">
+        <i class="fas fa-sync-alt" aria-hidden="true"></i>
+      </button>
+    </div>
+  </div>
+  <div class="dv-summary-metrics" aria-live="polite">
+    <div class="dv-summary-metric"><span>Jumlah pipeline</span><strong id="pipelineTotal">--</strong></div>
+    <div class="dv-summary-metric is-good"><span>Pipeline sudah TL</span><strong id="pipelineFollowed">--</strong></div>
+    <div class="dv-summary-metric is-progress"><span>Persentase TL</span><strong id="pipelineFollowUpPercentage">--</strong></div>
+  </div>
+  <div class="dv-summary-panel">
+    <h3 class="dv-summary-panel-title"><span>Rekap per kantor cabang</span><span id="pipelineBranchCoverage">4 cabang</span></h3>
+    <div class="dv-summary-table-wrap">
+      <table class="dv-summary-table">
+        <thead><tr><th>Cabang</th><th>Jumlah pipeline</th><th>Sudah TL</th><th>Persentase TL</th></tr></thead>
+        <tbody id="pipelineBranchRows">
+          <tr><td colspan="4">Membaca workbook pipeline...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <p class="dv-summary-note" id="pipelineSummaryNote">
+    Persentase TL dihitung dari pipeline sudah TL dibagi seluruh jumlah pipeline Area 6.
+  </p>
+</section>
+
 @if(auth()->user()->isAdmin())
   <div class="dv-dropzone" id="dvDropzone">
     <div class="dv-dz-icon"><i class="fas fa-upload"></i></div>
@@ -299,6 +399,8 @@
         <div class="dv-grid" id="gridFolders">
           @foreach($folders as $folder)
           <div class="dv-card" data-type="folder" data-id="{{ $folder->id }}" data-name="{{ $folder->name }}"
+            @if(auth()->user()->isAdmin()) draggable="true" data-drop-folder-id="{{ $folder->id }}" @endif
+            data-select-key="folder:{{ $folder->id }}"
             data-open-url="{{ route('drive.index', $folder->id) }}"
             data-rename-url="{{ route('drive.folder.rename', $folder) }}"
             data-move-url="{{ route('drive.folder.move', $folder) }}"
@@ -308,6 +410,11 @@
             onclick="selectCard(this,event)"
             @if(auth()->user()->isAdmin()) oncontextmenu="openCtx(event,this)" @endif>
             @if(auth()->user()->isAdmin())
+            <label class="dv-item-check dv-card-check" onclick="event.stopPropagation()">
+              <input type="checkbox" class="dv-select-checkbox"
+                aria-label="Pilih folder {{ $folder->name }}"
+                onchange="toggleSelectionFromCheckbox(this)">
+            </label>
             <button class="btn-dv btn-dv-ghost btn-dv-icon dv-card-more"
               onclick="event.stopPropagation();openCtx(event,this.closest('.dv-card'))"
               title="Opsi lainnya"><i class="fas fa-ellipsis-v"></i></button>
@@ -325,6 +432,8 @@
           @foreach($files as $file)
           @php $ic = $file->iconInfo(); @endphp
           <div class="dv-card" data-type="file" data-id="{{ $file->id }}" data-name="{{ $file->original_name }}"
+            @if(auth()->user()->isAdmin()) draggable="true" @endif
+            data-select-key="file:{{ $file->id }}"
             data-mode="{{ $file->openMode() }}"
             data-office-url="{{ route('drive.file.office-editor', $file) }}"
             data-editor-url="{{ route('drive.file.editor', $file) }}"
@@ -340,6 +449,11 @@
             onclick="selectCard(this,event)"
             @if(auth()->user()->isAdmin()) oncontextmenu="openCtx(event,this)" @endif>
             @if(auth()->user()->isAdmin())
+            <label class="dv-item-check dv-card-check" onclick="event.stopPropagation()">
+              <input type="checkbox" class="dv-select-checkbox"
+                aria-label="Pilih file {{ $file->original_name }}"
+                onchange="toggleSelectionFromCheckbox(this)">
+            </label>
             <button class="btn-dv btn-dv-ghost btn-dv-icon dv-card-more"
               onclick="event.stopPropagation();openCtx(event,this.closest('.dv-card'))"
               title="Opsi lainnya"><i class="fas fa-ellipsis-v"></i></button>
@@ -361,6 +475,8 @@
         </div>
         @foreach($folders as $folder)
         <div class="dv-list-row" data-type="folder" data-id="{{ $folder->id }}" data-name="{{ $folder->name }}"
+          @if(auth()->user()->isAdmin()) draggable="true" data-drop-folder-id="{{ $folder->id }}" @endif
+          data-select-key="folder:{{ $folder->id }}"
           data-open-url="{{ route('drive.index', $folder->id) }}"
           data-rename-url="{{ route('drive.folder.rename', $folder) }}"
           data-move-url="{{ route('drive.folder.move', $folder) }}"
@@ -369,8 +485,21 @@
           ondblclick="openItem(this)"
           onclick="selectRow(this,event)"
           @if(auth()->user()->isAdmin()) oncontextmenu="openCtx(event,this)" @endif>
-          <div style="color:#f6c341;text-align:center;"><i class="fas fa-folder"></i></div>
-          <div class="dv-list-name"><span>{{ $folder->name }}</span></div>
+          <div class="dv-list-leading">
+            @if(auth()->user()->isAdmin())
+              <label class="dv-item-check" onclick="event.stopPropagation()">
+                <input type="checkbox" class="dv-select-checkbox"
+                  aria-label="Pilih folder {{ $folder->name }}"
+                  onchange="toggleSelectionFromCheckbox(this)">
+              </label>
+            @else
+              <i class="fas fa-folder" style="color:#f6c341;" aria-hidden="true"></i>
+            @endif
+          </div>
+          <div class="dv-list-name">
+            @if(auth()->user()->isAdmin())<i class="fas fa-folder" style="color:#f6c341;" aria-hidden="true"></i>@endif
+            <span>{{ $folder->name }}</span>
+          </div>
           <div class="dv-list-cell">—</div>
           <div class="dv-list-cell">{{ optional($folder->creator)->name ?? '—' }}</div>
           <div class="dv-list-acts" onclick="event.stopPropagation()">
@@ -383,6 +512,8 @@
         @foreach($files as $file)
         @php $ic = $file->iconInfo(); @endphp
         <div class="dv-list-row" data-type="file" data-id="{{ $file->id }}" data-name="{{ $file->original_name }}"
+          @if(auth()->user()->isAdmin()) draggable="true" @endif
+          data-select-key="file:{{ $file->id }}"
           data-mode="{{ $file->openMode() }}"
           data-office-url="{{ route('drive.file.office-editor', $file) }}"
           data-editor-url="{{ route('drive.file.editor', $file) }}"
@@ -397,8 +528,21 @@
           ondblclick="openItem(this)"
           onclick="selectRow(this,event)"
           @if(auth()->user()->isAdmin()) oncontextmenu="openCtx(event,this)" @endif>
-          <div style="color:{{ $ic['color'] }};text-align:center;"><i class="{{ $ic['icon'] }}"></i></div>
-          <div class="dv-list-name"><span>{{ $file->original_name }}</span></div>
+          <div class="dv-list-leading">
+            @if(auth()->user()->isAdmin())
+              <label class="dv-item-check" onclick="event.stopPropagation()">
+                <input type="checkbox" class="dv-select-checkbox"
+                  aria-label="Pilih file {{ $file->original_name }}"
+                  onchange="toggleSelectionFromCheckbox(this)">
+              </label>
+            @else
+              <i class="{{ $ic['icon'] }}" style="color:{{ $ic['color'] }};" aria-hidden="true"></i>
+            @endif
+          </div>
+          <div class="dv-list-name">
+            @if(auth()->user()->isAdmin())<i class="{{ $ic['icon'] }}" style="color:{{ $ic['color'] }};" aria-hidden="true"></i>@endif
+            <span>{{ $file->original_name }}</span>
+          </div>
           <div class="dv-list-cell">{{ $file->humanSize() }}</div>
           <div class="dv-list-cell">{{ optional($file->uploader)->name ?? '—' }}</div>
           <div class="dv-list-acts" onclick="event.stopPropagation()">
@@ -483,10 +627,10 @@
       <input type="hidden" name="action" id="mcAction" value="move">
       <input type="hidden" name="destination_folder_id" id="mcDestId" value="">
       <div class="dv-modal-body">
-        <p style="font-size:.8rem;color:var(--d-muted);margin:0 0 .75rem;">Pilih folder tujuan. Klik <strong>Root DriveASIX</strong> untuk memindahkan ke halaman utama.</p>
+        <p style="font-size:.8rem;color:var(--d-muted);margin:0 0 .75rem;">Pilih folder tujuan. Klik <strong>Root Bank Pipeline</strong> untuk memindahkan ke halaman utama.</p>
         <div class="dv-tree" id="folderTree">
           <div class="dv-tree-item sel" data-id="" onclick="selectTree(this,'')">
-            <i class="fas fa-hdd" style="color:var(--d-blue);font-size:.9rem;"></i> Root DriveASIX
+            <i class="fas fa-hdd" style="color:var(--d-blue);font-size:.9rem;"></i> Root Bank Pipeline
           </div>
           @foreach($allFolders as $f)
           <div class="dv-tree-item" data-id="{{ $f->id }}" onclick="selectTree(this,{{ $f->id }})">
@@ -545,7 +689,11 @@
                 @csrf @method('PATCH')
                 <button type="submit" class="btn-dv btn-dv-secondary" style="font-size:.72rem;padding:.3rem .6rem;" title="Pulihkan"><i class="fas fa-undo"></i> Pulihkan</button>
               </form>
-              <form method="POST" action="{{ route('drive.file.purge', $tf->id) }}" onsubmit="return confirm('Hapus permanen?')">
+              <form method="POST" action="{{ route('drive.file.purge', $tf->id) }}"
+                class="js-drive-confirm"
+                data-confirm-title="Hapus permanen?"
+                data-confirm-text="File {{ $tf->original_name }} akan dihapus permanen dan tidak dapat dipulihkan."
+                data-confirm-button="Hapus permanen">
                 @csrf @method('DELETE')
                 <button type="submit" class="btn-dv btn-dv-danger" style="font-size:.72rem;padding:.3rem .6rem;" title="Hapus permanen"><i class="fas fa-times"></i></button>
               </form>
@@ -553,7 +701,11 @@
           </div>
         @endforeach
         <div style="padding:.85rem 1.25rem;display:flex;justify-content:flex-end;border-top:1px solid var(--d-border);">
-          <form method="POST" action="{{ route('drive.file.purge-all') }}" onsubmit="return confirm('Hapus semua file di sampah secara permanen? Aksi ini tidak dapat dibatalkan.')">
+          <form method="POST" action="{{ route('drive.file.purge-all') }}"
+            class="js-drive-confirm"
+            data-confirm-title="Kosongkan Sampah?"
+            data-confirm-text="Semua file di Sampah akan dihapus permanen dan tidak dapat dipulihkan."
+            data-confirm-button="Kosongkan Sampah">
             @csrf @method('DELETE')
             <button type="submit" class="btn-dv btn-dv-danger"><i class="fas fa-fire-alt"></i> Kosongkan Sampah</button>
           </form>
@@ -567,6 +719,95 @@
 <script>
 const IS_ADMIN = {{ auth()->user()->isAdmin() ? 'true' : 'false' }};
 const CSRF = document.querySelector('meta[name=csrf-token]')?.content ?? '';
+
+const pipelineNumber = new Intl.NumberFormat('id-ID');
+
+function pipelineCell(row, value) {
+  const cell = document.createElement('td');
+  cell.textContent = value;
+  row.appendChild(cell);
+  return cell;
+}
+
+function renderPipelineSummary(payload) {
+  const totals = payload?.totals || {};
+  const followUpPercentage = totals.follow_up_percentage ?? totals.progress ?? 0;
+  document.getElementById('pipelineTotal').textContent = pipelineNumber.format(totals.total || 0);
+  document.getElementById('pipelineFollowed').textContent = pipelineNumber.format(totals.followed_up || 0);
+  document.getElementById('pipelineFollowUpPercentage').textContent = `${Number(followUpPercentage).toFixed(1).replace('.', ',')}%`;
+  document.getElementById('pipelineBranchCoverage').textContent = `${(payload.branches || []).length} cabang`;
+
+  const generatedAt = payload?.generated_at ? new Date(payload.generated_at) : null;
+  document.getElementById('pipelineSummaryUpdated').textContent = generatedAt && !Number.isNaN(generatedAt.getTime())
+    ? `Diperbarui ${generatedAt.toLocaleString('id-ID', {dateStyle:'medium', timeStyle:'short'})}`
+    : 'Ringkasan terbaru';
+
+  const branchRows = document.getElementById('pipelineBranchRows');
+  branchRows.replaceChildren();
+  (payload.branches || []).forEach(branch => {
+    const row = document.createElement('tr');
+    pipelineCell(row, branch.name || branch.key || '-');
+    pipelineCell(row, pipelineNumber.format(branch.total || 0));
+    pipelineCell(row, pipelineNumber.format(branch.followed_up || 0));
+    const branchFollowUpPercentage = branch.follow_up_percentage ?? branch.progress ?? 0;
+    const progressCell = pipelineCell(row, '');
+    progressCell.className = 'dv-progress-cell';
+    const track = document.createElement('span');
+    track.className = 'dv-progress-track';
+    const fill = document.createElement('i');
+    fill.style.width = `${Math.max(0, Math.min(100, Number(branchFollowUpPercentage)))}%`;
+    track.appendChild(fill);
+    const label = document.createElement('strong');
+    label.textContent = `${Number(branchFollowUpPercentage).toFixed(1).replace('.', ',')}%`;
+    progressCell.append(track, label);
+    branchRows.appendChild(row);
+  });
+  if (!branchRows.children.length) {
+    const row = document.createElement('tr');
+    const cell = pipelineCell(row, 'Belum ada entri pipeline Area 6 yang dapat dipetakan.');
+    cell.colSpan = 4;
+    branchRows.appendChild(row);
+  }
+
+  const notes = [
+    'Jumlah pipeline menghitung seluruh entri valid di empat KC Area 6; angka bukan nominal rupiah.',
+    'Persentase TL = pipeline sudah TL / jumlah pipeline. Entri tanpa isi TL tetap masuk sebagai pipeline, tetapi tidak dihitung sudah TL.',
+    totals.outside_scope ? `${pipelineNumber.format(totals.outside_scope)} entri cabang di luar Area 6 diabaikan.` : '',
+    totals.unmapped ? `${pipelineNumber.format(totals.unmapped)} entri tanpa identitas cabang tidak dimasukkan.` : '',
+    payload.warnings?.length ? `${payload.warnings.length} file perlu pemeriksaan struktur.` : ''
+  ].filter(Boolean);
+  document.getElementById('pipelineSummaryNote').textContent = notes.join(' ');
+}
+
+async function loadPipelineSummary() {
+  const section = document.getElementById('bankPipelineSummary');
+  const refresh = document.getElementById('pipelineSummaryRefresh');
+  if (!section?.dataset.summaryUrl || refresh?.disabled) return;
+  if (refresh) refresh.disabled = true;
+  try {
+    const response = await fetch(section.dataset.summaryUrl, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: {'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.message || 'Ringkasan pipeline gagal dimuat.');
+    renderPipelineSummary(payload);
+  } catch (error) {
+    console.error(error);
+    document.getElementById('pipelineSummaryUpdated').textContent = 'Gagal diperbarui';
+    const rows = document.getElementById('pipelineBranchRows');
+    const row = document.createElement('tr');
+    const cell = pipelineCell(row, error.message || 'Ringkasan pipeline gagal dimuat.');
+    cell.colSpan = 4;
+    rows.replaceChildren(row);
+  } finally {
+    if (refresh) refresh.disabled = false;
+  }
+}
+
+document.getElementById('pipelineSummaryRefresh')?.addEventListener('click', loadPipelineSummary);
+loadPipelineSummary();
 
 /* ── View Toggle ── */
 function setView(v) {
@@ -584,27 +825,413 @@ document.getElementById('btnGrid')?.addEventListener('click', () => setView('gri
 document.getElementById('btnList')?.addEventListener('click', () => setView('list'));
 
 /* ── Selection ── */
-function isCoarsePointer() { return window.matchMedia?.('(hover: none), (pointer: coarse)').matches ?? false; }
-function selectCard(el, event) {
-  document.querySelectorAll('.dv-card.selected').forEach(c => c.classList.remove('selected'));
-  el.classList.add('selected');
-  if (isCoarsePointer() && !event?.target?.closest('button')) openItem(el);
+const driveSwalTheme = {
+  customClass: {
+    popup: 'drive-swal-popup',
+    title: 'drive-swal-title',
+    htmlContainer: 'drive-swal-html',
+    confirmButton: 'drive-swal-confirm',
+    cancelButton: 'drive-swal-cancel'
+  },
+  buttonsStyling: false
+};
+
+function driveSwal(options) {
+  if (!window.Swal) {
+    return Promise.reject(new Error('Komponen konfirmasi belum siap. Muat ulang halaman lalu coba kembali.'));
+  }
+
+  const configuredOptions = Object.assign({}, driveSwalTheme, options);
+  configuredOptions.customClass = Object.assign(
+    {},
+    driveSwalTheme.customClass,
+    options?.customClass || {}
+  );
+
+  return window.Swal.fire(configuredOptions);
 }
-function selectRow(el, event) {
-  document.querySelectorAll('.dv-list-row.selected').forEach(r => r.classList.remove('selected'));
-  el.classList.add('selected');
-  if (isCoarsePointer() && !event?.target?.closest('button')) openItem(el);
+
+const selectedDriveItems = new Map();
+let driveClickSuppressedUntil = 0;
+
+function isCoarsePointer() {
+  return window.matchMedia?.('(hover: none), (pointer: coarse)').matches ?? false;
 }
+
+function driveItemFromElement(element) {
+  const key = element?.dataset?.selectKey;
+  if (!key) return null;
+
+  return {
+    key,
+    type: element.dataset.type || '',
+    id: element.dataset.id || '',
+    name: element.dataset.name || '',
+    deleteUrl: element.dataset.deleteUrl || ''
+  };
+}
+
+function selectableDriveItems() {
+  const items = new Map();
+  document.querySelectorAll('[data-select-key]').forEach(element => {
+    const item = driveItemFromElement(element);
+    if (item && !items.has(item.key)) items.set(item.key, item);
+  });
+  return Array.from(items.values());
+}
+
+function elementsForSelectionKey(key) {
+  return Array.from(document.querySelectorAll('[data-select-key]'))
+    .filter(element => element.dataset.selectKey === key);
+}
+
+function syncSelectionKey(key) {
+  const selected = selectedDriveItems.has(key);
+  elementsForSelectionKey(key).forEach(element => {
+    element.classList.toggle('selected', selected);
+    element.querySelectorAll('.dv-select-checkbox').forEach(checkbox => {
+      checkbox.checked = selected;
+    });
+  });
+}
+
+function updateSelectionToolbar() {
+  const count = selectedDriveItems.size;
+  const availableCount = selectableDriveItems().length;
+  const allSelected = availableCount > 0 && count === availableCount;
+  const status = document.getElementById('dvSelectionStatus');
+  const deleteButton = document.getElementById('btnDeleteSelected');
+  const selectAllButton = document.getElementById('btnSelectAll');
+  const selectAllLabel = document.getElementById('dvSelectAllLabel');
+
+  if (status) status.textContent = `${count} dipilih`;
+  if (deleteButton) deleteButton.disabled = count === 0;
+  if (selectAllButton) selectAllButton.setAttribute('aria-pressed', allSelected ? 'true' : 'false');
+  if (selectAllLabel) selectAllLabel.textContent = allSelected ? 'Batalkan semua' : 'Pilih semua';
+}
+
+function setDriveItemSelected(element, selected) {
+  const item = driveItemFromElement(element);
+  if (!item || !IS_ADMIN) return;
+
+  if (selected) selectedDriveItems.set(item.key, item);
+  else selectedDriveItems.delete(item.key);
+
+  syncSelectionKey(item.key);
+  updateSelectionToolbar();
+}
+
+function clearDriveSelection() {
+  const keys = Array.from(selectedDriveItems.keys());
+  selectedDriveItems.clear();
+  keys.forEach(syncSelectionKey);
+  updateSelectionToolbar();
+}
+
+function toggleSelectionFromCheckbox(checkbox) {
+  const element = checkbox.closest('[data-select-key]');
+  setDriveItemSelected(element, checkbox.checked);
+}
+
+function selectDriveItem(element, event) {
+  if (Date.now() < driveClickSuppressedUntil) return;
+  if (event?.target?.closest('button,a,input,label')) return;
+
+  if (!IS_ADMIN) {
+    if (isCoarsePointer()) openItem(element);
+    return;
+  }
+
+  const item = driveItemFromElement(element);
+  if (!item) return;
+
+  if (isCoarsePointer() && selectedDriveItems.size === 1 && selectedDriveItems.has(item.key)) {
+    openItem(element);
+    return;
+  }
+
+  if (event?.ctrlKey || event?.metaKey || event?.shiftKey) {
+    setDriveItemSelected(element, !selectedDriveItems.has(item.key));
+    return;
+  }
+
+  if (selectedDriveItems.size !== 1 || !selectedDriveItems.has(item.key)) {
+    clearDriveSelection();
+    setDriveItemSelected(element, true);
+  }
+}
+
+function selectCard(element, event) {
+  selectDriveItem(element, event);
+}
+
+function selectRow(element, event) {
+  selectDriveItem(element, event);
+}
+
 document.querySelectorAll('.dv-card[role="button"],.dv-list-row[role="button"]').forEach(item => {
   item.addEventListener('keydown', event => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
+
+    if (IS_ADMIN && event.key === ' ') {
+      const driveItem = driveItemFromElement(item);
+      setDriveItemSelected(item, !selectedDriveItems.has(driveItem?.key));
+      return;
+    }
+
     openItem(item);
   });
 });
-document.addEventListener('click', e => { if (!e.target.closest('.dv-card,.dv-list-row')) { document.querySelectorAll('.dv-card.selected,.dv-list-row.selected').forEach(el => el.classList.remove('selected')); } });
+
+document.getElementById('btnSelectAll')?.addEventListener('click', () => {
+  const availableItems = selectableDriveItems();
+  if (availableItems.length > 0 && selectedDriveItems.size === availableItems.length) {
+    clearDriveSelection();
+    return;
+  }
+
+  availableItems.forEach(item => {
+    selectedDriveItems.set(item.key, item);
+    syncSelectionKey(item.key);
+  });
+  updateSelectionToolbar();
+});
+
+updateSelectionToolbar();
+
+/* Drag-and-drop item movement */
+let draggedDriveItem = null;
+
+function clearDriveDropTargets() {
+  document.querySelectorAll('.is-drop-target').forEach(element => element.classList.remove('is-drop-target'));
+}
+
+async function moveDraggedDriveItem(destinationId) {
+  if (!draggedDriveItem?.moveUrl) return;
+  const response = await fetch(draggedDriveItem.moveUrl, {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'X-CSRF-TOKEN': CSRF,
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    body: JSON.stringify({destination_folder_id: destinationId || null})
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const validationMessage = payload.errors ? Object.values(payload.errors).flat().join(' ') : '';
+    throw new Error(validationMessage || payload.message || 'Item gagal dipindahkan.');
+  }
+}
+
+if (IS_ADMIN) {
+  document.querySelectorAll('[data-select-key][draggable="true"]').forEach(element => {
+    element.addEventListener('dragstart', event => {
+      if (event.target.closest('button,input,label,a')) {
+        event.preventDefault();
+        return;
+      }
+      draggedDriveItem = {
+        type: element.dataset.type,
+        id: element.dataset.id,
+        name: element.dataset.name,
+        moveUrl: element.dataset.moveUrl
+      };
+      driveClickSuppressedUntil = Date.now() + 700;
+      element.classList.add('is-dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', draggedDriveItem.name || 'Bank Pipeline');
+    });
+    element.addEventListener('dragend', () => {
+      element.classList.remove('is-dragging');
+      clearDriveDropTargets();
+      window.setTimeout(() => draggedDriveItem = null, 0);
+    });
+  });
+
+  document.querySelectorAll('[data-drop-folder-id]').forEach(target => {
+    target.addEventListener('dragover', event => {
+      if (!draggedDriveItem || Array.from(event.dataTransfer.types || []).includes('Files')) return;
+      const destinationId = target.dataset.dropFolderId || '';
+      if (draggedDriveItem.type === 'folder' && String(draggedDriveItem.id) === String(destinationId)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      clearDriveDropTargets();
+      target.classList.add('is-drop-target');
+    });
+    target.addEventListener('dragleave', event => {
+      if (!target.contains(event.relatedTarget)) target.classList.remove('is-drop-target');
+    });
+    target.addEventListener('drop', async event => {
+      if (!draggedDriveItem || Array.from(event.dataTransfer.types || []).includes('Files')) return;
+      event.preventDefault();
+      const destinationId = target.dataset.dropFolderId || null;
+      clearDriveDropTargets();
+      try {
+        await moveDraggedDriveItem(destinationId);
+        window.location.assign(window.location.href);
+      } catch (error) {
+        await driveSwal({icon:'error', title:'Gagal memindahkan item', text:error.message, confirmButtonText:'Tutup'}).catch(() => {});
+      }
+    });
+  });
+}
 
 /* ── Modals ── */
+async function deleteDriveItem(item) {
+  if (!item?.deleteUrl) throw new Error('Alamat penghapusan item tidak tersedia.');
+
+  const response = await fetch(item.deleteUrl, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+    headers: {
+      'X-CSRF-TOKEN': CSRF,
+      'Accept': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
+    }
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok || payload?.status !== 'success') {
+    throw new Error(payload?.message || `Server menolak penghapusan "${item.name}".`);
+  }
+
+  return payload;
+}
+
+async function deleteSelectedDriveItems() {
+  const selectedItems = Array.from(selectedDriveItems.values())
+    .sort((left, right) => Number(left.type === 'folder') - Number(right.type === 'folder'));
+  if (!selectedItems.length) return;
+
+  const folderCount = selectedItems.filter(item => item.type === 'folder').length;
+  const fileCount = selectedItems.length - folderCount;
+  const details = [
+    fileCount > 0 ? `${fileCount} file akan dipindahkan ke Sampah.` : '',
+    folderCount > 0 ? `${folderCount} folder beserta isinya akan dihapus permanen.` : ''
+  ].filter(Boolean).join(' ');
+
+  let confirmation;
+  try {
+    confirmation = await driveSwal({
+      icon: 'warning',
+      title: `Hapus ${selectedItems.length} item?`,
+      text: details,
+      showCancelButton: true,
+      confirmButtonText: 'Hapus item',
+      cancelButtonText: 'Batal',
+      reverseButtons: true,
+      focusCancel: true,
+      customClass: {
+        confirmButton: 'drive-swal-confirm drive-swal-confirm-danger'
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    return;
+  }
+  if (!confirmation.isConfirmed) return;
+
+  const deleteButton = document.getElementById('btnDeleteSelected');
+  if (deleteButton) deleteButton.disabled = true;
+
+  driveSwal({
+    title: 'Menghapus item',
+    text: `Memproses 0 dari ${selectedItems.length} item...`,
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+    didOpen: () => window.Swal.showLoading()
+  }).catch(() => {});
+
+  const failures = [];
+  let deletedCount = 0;
+
+  for (const [index, item] of selectedItems.entries()) {
+    window.Swal?.update({
+      text: `Memproses ${index + 1} dari ${selectedItems.length}: ${item.name}`
+    });
+
+    try {
+      await deleteDriveItem(item);
+      deletedCount++;
+      selectedDriveItems.delete(item.key);
+    } catch (error) {
+      failures.push({
+        name: item.name,
+        message: error?.message || 'Penghapusan gagal.'
+      });
+    }
+  }
+
+  window.Swal?.close();
+  updateSelectionToolbar();
+
+  if (failures.length === 0) {
+    await driveSwal({
+      icon: 'success',
+      title: 'Penghapusan selesai',
+      text: `${deletedCount} item berhasil diproses.`,
+      showConfirmButton: false,
+      timer: 1100,
+      timerProgressBar: true
+    }).catch(() => {});
+    window.location.assign(window.location.href);
+    return;
+  }
+
+  const firstFailure = failures[0];
+  await driveSwal({
+    icon: deletedCount > 0 ? 'warning' : 'error',
+    title: deletedCount > 0 ? 'Sebagian item gagal dihapus' : 'Item gagal dihapus',
+    text: `${deletedCount} berhasil, ${failures.length} gagal. ${firstFailure.name}: ${firstFailure.message}`,
+    confirmButtonText: 'Tutup'
+  }).catch(() => {});
+
+  if (deletedCount > 0) {
+    window.location.assign(window.location.href);
+  } else if (deleteButton) {
+    deleteButton.disabled = false;
+  }
+}
+
+document.getElementById('btnDeleteSelected')?.addEventListener('click', deleteSelectedDriveItems);
+
+document.querySelectorAll('.js-drive-confirm').forEach(form => {
+  form.addEventListener('submit', async event => {
+    if (form.dataset.driveConfirmed === 'true') return;
+    event.preventDefault();
+
+    let confirmation;
+    try {
+      confirmation = await driveSwal({
+        icon: 'warning',
+        title: form.dataset.confirmTitle || 'Konfirmasi tindakan',
+        text: form.dataset.confirmText || 'Tindakan ini tidak dapat dibatalkan.',
+        showCancelButton: true,
+        confirmButtonText: form.dataset.confirmButton || 'Lanjutkan',
+        cancelButtonText: 'Batal',
+        reverseButtons: true,
+        focusCancel: true,
+        customClass: {
+          confirmButton: 'drive-swal-confirm drive-swal-confirm-danger'
+        }
+      });
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+
+    if (confirmation.isConfirmed) {
+      form.dataset.driveConfirmed = 'true';
+      form.requestSubmit();
+    }
+  });
+});
+
 function openModal(id) { document.getElementById(id).classList.add('is-open'); document.body.style.overflow = 'hidden'; }
 function closeModal(id) { document.getElementById(id).classList.remove('is-open'); if (!document.querySelector('.dv-overlay.is-open')) document.body.style.overflow = ''; }
 document.querySelectorAll('.dv-overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) closeModal(o.id); }));
@@ -620,7 +1247,9 @@ const $pp = document.getElementById('dvProgress');
 const $pf = document.getElementById('dvProgressFill');
 const $pl = document.getElementById('dvProgressLbl');
 const $uploadButton = document.getElementById('btnUpload');
-const UPLOAD_BATCH_SIZE = 10;
+const UPLOAD_BATCH_SIZE = 1;
+const UPLOAD_TIMEOUT_MS = 15 * 60 * 1000;
+const MAX_CONSECUTIVE_UPLOAD_FAILURES = 3;
 let uploadInFlight = false;
 
 function setUploadBusy(busy) {
@@ -673,6 +1302,12 @@ function uploadErrorMessage(payload, batchFiles, fallback) {
   }
   return payload?.message || fallback;
 }
+function createUploadError(message, transportFailure = false, fatalQueue = false) {
+  const error = new Error(message);
+  error.transportFailure = transportFailure;
+  error.fatalQueue = fatalQueue;
+  return error;
+}
 function sameOriginUploadRedirect(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
   try {
@@ -691,6 +1326,7 @@ function sendUploadBatch(batchFiles, batchIndex, batchCount) {
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', $uf.action);
+    xhr.timeout = UPLOAD_TIMEOUT_MS;
     xhr.setRequestHeader('X-CSRF-TOKEN', CSRF);
     xhr.setRequestHeader('Accept', 'application/json');
     xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
@@ -703,7 +1339,7 @@ function sendUploadBatch(batchFiles, batchIndex, batchCount) {
       );
       setUploadProgress(
         Math.min(aggregatePercent, 96),
-        `Mengunggah batch ${batchIndex + 1}/${batchCount}... ${aggregatePercent}%`
+        `Mengunggah file ${batchIndex + 1}/${batchCount}... ${aggregatePercent}%`
       );
     });
     xhr.upload.addEventListener('load', () => {
@@ -713,7 +1349,7 @@ function sendUploadBatch(batchFiles, batchIndex, batchCount) {
       );
       setUploadProgress(
         validationWidth,
-        `Memvalidasi dan menyimpan... (batch ${batchIndex + 1}/${batchCount})`,
+        `Memvalidasi dan menyimpan file ${batchIndex + 1}/${batchCount}...`,
         'validating'
       );
     });
@@ -734,22 +1370,31 @@ function sendUploadBatch(batchFiles, batchIndex, batchCount) {
         return;
       }
 
-      reject(new Error(uploadErrorMessage(
-        payload,
-        batchFiles,
-        xhr.status === 201
-          ? 'Respons sukses server tidak lengkap atau tidak konsisten.'
-          : 'Upload gagal. Periksa format dan ukuran file.'
-      )));
+      const transportFailure = xhr.status === 408
+        || xhr.status === 425
+        || xhr.status === 429
+        || xhr.status >= 500;
+      const fatalQueue = [401, 403, 419].includes(xhr.status);
+      reject(createUploadError(
+        uploadErrorMessage(
+          payload,
+          batchFiles,
+          xhr.status === 201
+            ? 'Respons sukses server tidak lengkap atau tidak konsisten.'
+            : 'Upload gagal. Periksa format dan ukuran file.'
+        ),
+        transportFailure,
+        fatalQueue
+      ));
     });
-    xhr.addEventListener('error', () => reject(new Error('Koneksi ke server terputus.')));
-    xhr.addEventListener('abort', () => reject(new Error('Upload dibatalkan.')));
-    xhr.addEventListener('timeout', () => reject(new Error('Upload melewati batas waktu.')));
+    xhr.addEventListener('error', () => reject(createUploadError('Koneksi ke server terputus.', true)));
+    xhr.addEventListener('abort', () => reject(createUploadError('Upload dibatalkan.')));
+    xhr.addEventListener('timeout', () => reject(createUploadError('Upload melewati batas waktu.', true)));
 
     try {
       xhr.send(fd);
     } catch (_) {
-      reject(new Error('Upload tidak dapat dimulai.'));
+      reject(createUploadError('Upload tidak dapat dimulai.', true));
     }
   });
 }
@@ -770,6 +1415,17 @@ $dz?.addEventListener('drop', e => {
   $dz.classList.remove('drag-over');
   if (!uploadInFlight) doUpload(e.dataTransfer.files);
 });
+document.addEventListener('dragover', event => {
+  if (!IS_ADMIN || uploadInFlight || !Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+  event.preventDefault();
+  $dz?.classList.add('is-open', 'drag-over');
+});
+document.addEventListener('drop', event => {
+  if (!IS_ADMIN || uploadInFlight || !Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+  event.preventDefault();
+  $dz?.classList.remove('drag-over');
+  if (!event.target.closest('#dvDropzone')) doUpload(event.dataTransfer.files);
+});
 $fi?.addEventListener('change', () => doUpload($fi.files));
 async function doUpload(files) {
   if (uploadInFlight || !files?.length || !$uf) return;
@@ -786,10 +1442,13 @@ async function doUpload(files) {
 
   let uploadedTotal = 0;
   let finalRedirect = null;
-  let activeBatch = 0;
+  let consecutiveTransportFailures = 0;
+  let skippedCount = 0;
+  let queueStopReason = '';
+  const failedUploads = [];
 
-  try {
-    for (activeBatch = 0; activeBatch < batches.length; activeBatch++) {
+  for (let activeBatch = 0; activeBatch < batches.length; activeBatch++) {
+    try {
       const result = await sendUploadBatch(
         batches[activeBatch],
         activeBatch,
@@ -797,12 +1456,32 @@ async function doUpload(files) {
       );
       uploadedTotal += result.uploadedCount;
       finalRedirect = result.redirect;
-    }
+      consecutiveTransportFailures = 0;
+    } catch (error) {
+      const fileName = batches[activeBatch][0]?.name || `File ${activeBatch + 1}`;
+      failedUploads.push({
+        name: fileName,
+        message: error?.message || 'Upload gagal.'
+      });
+      consecutiveTransportFailures = error?.transportFailure
+        ? consecutiveTransportFailures + 1
+        : 0;
 
-    if (uploadedTotal !== selectedFiles.length || !finalRedirect) {
-      throw new Error('Jumlah file tersimpan tidak sesuai dengan file yang dipilih.');
-    }
+      if (error?.fatalQueue) {
+        skippedCount = batches.length - activeBatch - 1;
+        queueStopReason = 'karena sesi atau izin akses perlu diperbarui';
+        break;
+      }
 
+      if (consecutiveTransportFailures >= MAX_CONSECUTIVE_UPLOAD_FAILURES) {
+        skippedCount = batches.length - activeBatch - 1;
+        queueStopReason = 'karena koneksi tidak stabil';
+        break;
+      }
+    }
+  }
+
+  if (uploadedTotal === selectedFiles.length && finalRedirect && failedUploads.length === 0) {
     setUploadProgress(
       100,
       `${uploadedTotal} file berhasil disimpan. Membuka folder...`
@@ -810,14 +1489,26 @@ async function doUpload(files) {
     if ($fi) $fi.value = '';
     setUploadBusy(false);
     window.location.assign(finalRedirect.href);
-  } catch (error) {
-    const batchNumber = Math.min(activeBatch + 1, batches.length);
-    const savedNote = uploadedTotal > 0
-      ? ` ${uploadedTotal} file dari batch sebelumnya sudah tersimpan.`
-      : '';
-    setUploadError(
-      `Batch ${batchNumber}/${batches.length} gagal. ${error?.message || 'Upload gagal.'}${savedNote}`
-    );
+    return;
+  }
+
+  const firstFailure = failedUploads[0];
+  const progressMessage = [
+    `${uploadedTotal} berhasil`,
+    `${failedUploads.length} gagal`,
+    skippedCount > 0 ? `${skippedCount} belum diproses ${queueStopReason}` : ''
+  ].filter(Boolean).join(' · ');
+  setUploadError(progressMessage);
+
+  await driveSwal({
+    icon: uploadedTotal > 0 ? 'warning' : 'error',
+    title: uploadedTotal > 0 ? 'Upload selesai dengan kendala' : 'Upload belum berhasil',
+    text: `${progressMessage}.${firstFailure ? ` ${firstFailure.name}: ${firstFailure.message}` : ''}`,
+    confirmButtonText: 'Tutup'
+  }).catch(() => {});
+
+  if (uploadedTotal > 0 && finalRedirect) {
+    window.location.assign(finalRedirect.href);
   }
 }
 
@@ -883,11 +1574,32 @@ document.getElementById('ctxCopy').addEventListener('click', () => {
   openModal('modalMoveCopy');
 });
 
-document.getElementById('ctxDelete').addEventListener('click', () => {
+document.getElementById('ctxDelete').addEventListener('click', async () => {
   const consequence = ctxType === 'folder'
     ? 'Folder beserta seluruh isinya akan dihapus permanen.'
     : 'File akan masuk ke Sampah dan masih dapat dipulihkan.';
-  if (!confirm(`Hapus ${ctxType==='folder'?'folder':'file'} "${ctxName}"?\n${consequence}`)) return;
+
+  let confirmation;
+  try {
+    confirmation = await driveSwal({
+      icon: 'warning',
+      title: `Hapus ${ctxType === 'folder' ? 'folder' : 'file'}?`,
+      text: `"${ctxName}". ${consequence}`,
+      showCancelButton: true,
+      confirmButtonText: 'Hapus',
+      cancelButtonText: 'Batal',
+      reverseButtons: true,
+      focusCancel: true,
+      customClass: {
+        confirmButton: 'drive-swal-confirm drive-swal-confirm-danger'
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    return;
+  }
+
+  if (!confirmation.isConfirmed) return;
   if (ctxElement?.dataset.deleteUrl) postForm(ctxElement.dataset.deleteUrl, 'DELETE');
 });
 

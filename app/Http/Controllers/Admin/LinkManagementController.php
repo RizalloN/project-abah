@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\RefreshRemoteDashboardSourcesJob;
 use App\Rules\TrustedSpreadsheetUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -67,9 +69,9 @@ class LinkManagementController extends Controller
     private const MARKET_SHARE_DEFAULTS = [
         'mapping' => [
             'label' => 'Mapping Market Share',
-            'sheet_name' => 'DASHBOARD',
-            'spreadsheet_id' => '1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/edit?usp=sharing',
+            'sheet_name' => 'REKAP',
+            'spreadsheet_id' => '1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
     ];
     public function index(): View
@@ -118,7 +120,9 @@ class LinkManagementController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($validated): void {
+        $marketShareMappingChanged = false;
+
+        DB::transaction(function () use ($validated, &$marketShareMappingChanged): void {
             foreach (($validated['kpi'] ?? []) as $key => $payload) {
                 if (!array_key_exists($key, self::KPI_DEFAULTS)) {
                     continue;
@@ -186,6 +190,14 @@ class LinkManagementController extends Controller
                 $linkUrl = trim((string) $payload['link_url']);
                 $sheetName = trim((string) $payload['sheet_name']);
                 $spreadsheetId = $this->extractSpreadsheetId($linkUrl) ?: self::MARKET_SHARE_DEFAULTS[$key]['spreadsheet_id'];
+                $previous = DB::table(self::LINK_TABLE)
+                    ->where('group_key', self::MARKET_SHARE_GROUP)
+                    ->where('link_key', $key)
+                    ->first();
+                $marketShareMappingChanged = $marketShareMappingChanged
+                    || ! $previous
+                    || trim((string) ($previous->link_url ?? '')) !== $linkUrl
+                    || trim((string) ($previous->sheet_name ?? '')) !== $sheetName;
 
                 DB::table(self::LINK_TABLE)->updateOrInsert(
                     ['group_key' => self::MARKET_SHARE_GROUP, 'link_key' => $key],
@@ -232,6 +244,10 @@ class LinkManagementController extends Controller
                 }
             }
         });
+
+        if ($marketShareMappingChanged) {
+            $this->scheduleMarketShareMappingRefresh();
+        }
 
         return redirect()
             ->route('link-management.index')
@@ -294,6 +310,7 @@ class LinkManagementController extends Controller
                         'link_url' => $payload['link_url'],
                         'updated_at' => now(),
                     ]);
+                $this->markMarketShareMappingSourceChanged();
                 continue;
             }
 
@@ -411,7 +428,28 @@ class LinkManagementController extends Controller
 
         return str_contains($url, '1Wlf7Wv5SR8DhtDlRgYwzhAHDSdwIsooa')
             || str_contains($url, '18RTg3ajn4Lpa2MkXtg8uuiRE7HsmEWbS3EdqO5xrcbY')
+            || str_contains($url, '1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE')
+            || str_contains($url, '1au_fie_dm1BwvxpAtN_1EEFdAOvUuYM0')
             || str_contains($lowerUrl, 'sharepoint.com')
             || !str_contains($lowerUrl, 'docs.google.com/spreadsheets/d/');
+    }
+
+    private function scheduleMarketShareMappingRefresh(): void
+    {
+        $this->markMarketShareMappingSourceChanged();
+
+        try {
+            RefreshRemoteDashboardSourcesJob::dispatch(['market-share-mapping']);
+        } catch (\Throwable $exception) {
+            Log::warning('Refresh Mapping Market Share gagal dijadwalkan setelah perubahan Link Management.', [
+                'message' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    private function markMarketShareMappingSourceChanged(): void
+    {
+        Cache::put('dashboard_sources:market-share-mapping:source-changed-at', now()->getTimestamp(), now()->addDays(7));
+        Cache::forget('dashboard_sources:refresh:market-share-mapping:pending');
     }
 }

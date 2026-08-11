@@ -137,7 +137,7 @@ class PowerPointExportService
                 ? (int) preg_match_all('#<p:sldId\b#', $presentationXml)
                 : 0;
 
-            if ($count < 12) {
+            if ($count < 15) {
                 throw new RuntimeException("Deck hanya berisi {$count} slide; ekspor dianggap tidak lengkap.");
             }
 

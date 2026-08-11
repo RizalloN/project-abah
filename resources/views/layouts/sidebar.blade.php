@@ -888,12 +888,12 @@
                 <li class="nav-item">
                     <a href="{{ route('drive.index') }}" class="nav-link {{ request()->routeIs('drive.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-hdd"></i>
-                        <p>DriveASIX</p>
+                        <p>Bank Pipeline</p>
                     </a>
                 </li>
 
-                <li class="nav-item sidebar-dashboard-marketshare {{ request()->routeIs('report.dashboard-dana.market-share', 'report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.mapping-cras', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.instansi') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share', 'report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.mapping-cras', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.instansi') ? 'active' : '' }}">
+                <li class="nav-item sidebar-dashboard-marketshare {{ request()->routeIs('report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.mapping-cras', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.sektoral', 'report.dashboard-dana.market-share.instansi') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share.mapping', 'report.dashboard-dana.market-share.mapping-cras', 'report.dashboard-dana.market-share.area6', 'report.dashboard-dana.market-share.sektoral', 'report.dashboard-dana.market-share.instansi') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-pie"></i>
                         <p>
                             Marketshare
@@ -901,12 +901,6 @@
                         </p>
                     </a>
                     <ul class="nav nav-treeview">
-                        <li class="nav-item">
-                            <a href="{{ route('report.dashboard-dana.market-share') }}" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share') ? 'active' : '' }}">
-                                <i class="far fa-circle nav-icon"></i>
-                                <p>Market Share</p>
-                            </a>
-                        </li>
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-dana.market-share.mapping') }}" class="nav-link {{ request()->routeIs('report.dashboard-dana.market-share.mapping') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
@@ -916,13 +910,19 @@
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-dana.market-share.mapping-cras') }}" class="nav-link sidebar-nav-compact {{ request()->routeIs('report.dashboard-dana.market-share.mapping-cras') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
-                                <p>Mapping CRAS</p>
+                                <p>Marketshare CRAS LPG</p>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-dana.market-share.area6') }}" class="nav-link sidebar-nav-compact {{ request()->routeIs('report.dashboard-dana.market-share.area6') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Marketshare Area 6</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-dana.market-share.sektoral') }}" class="nav-link sidebar-nav-compact {{ request()->routeIs('report.dashboard-dana.market-share.sektoral') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Marketshare Sektoral</p>
                             </a>
                         </li>
                         <li class="nav-item">

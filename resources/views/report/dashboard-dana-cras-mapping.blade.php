@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', $pageTitle ?? 'Mapping CRAS')
+@section('title', $pageTitle ?? 'Marketshare CRAS LPG')
 
 @section('styles')
 <link rel="stylesheet" href="{{ asset('vendor/leaflet-1.9.4/leaflet.css') }}">
@@ -9,6 +9,9 @@
 @section('content')
 @php
     $payload = $crasMapping ?? ['ready' => false];
+    $lpgPayload = data_get($payload, 'lpg', []);
+    $lpgFilterOptions = data_get($lpgPayload, 'filters.options', []);
+    $lpgSelectedFilters = data_get($lpgPayload, 'filters.selected', []);
     $filterOptions = data_get($payload, 'filters.options', []);
     $selectedFilters = data_get($payload, 'filters.selected', []);
     $primaryFilterLabels = [
@@ -88,6 +91,88 @@
 
     .cras-map-period i { color: var(--cras-blue); }
 
+    .cras-context-bar {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.7rem;
+        padding: 0.72rem 0.85rem;
+        border: 1px solid var(--cras-border);
+        border-radius: 6px;
+        background: var(--cras-white);
+    }
+
+    .cras-context-fields {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(220px, 320px));
+        gap: 0.65rem;
+        min-width: 0;
+    }
+
+    .cras-view-switch {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.55rem;
+        margin-bottom: 0.8rem;
+        padding: 0.3rem;
+        border: 1px solid var(--cras-border);
+        border-radius: 6px;
+        background: #eaf0f6;
+    }
+
+    .cras-view-trigger {
+        display: grid;
+        grid-template-columns: 36px minmax(0, 1fr);
+        align-items: center;
+        gap: 0.65rem;
+        min-width: 0;
+        min-height: 54px;
+        padding: 0.52rem 0.7rem;
+        border: 1px solid transparent;
+        border-radius: 5px;
+        background: transparent;
+        color: #526174;
+        text-align: left;
+    }
+
+    .cras-view-trigger > i {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 5px;
+        background: #d8e4ef;
+        color: #46627d;
+    }
+
+    .cras-view-trigger strong,
+    .cras-view-trigger small { display: block; }
+    .cras-view-trigger strong { font-size: 0.8rem; }
+    .cras-view-trigger small { margin-top: 0.08rem; color: #718096; font-size: 0.65rem; }
+
+    .cras-view-trigger:hover,
+    .cras-view-trigger:focus {
+        background: #f8fafc;
+        color: var(--cras-ink);
+        outline: 0;
+    }
+
+    .cras-view-trigger.is-active {
+        border-color: #b8d1e8;
+        background: #ffffff;
+        color: var(--cras-blue);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+    }
+
+    .cras-view-trigger.is-active > i {
+        background: var(--cras-blue);
+        color: #ffffff;
+    }
+
+    .cras-view-panel[hidden] { display: none !important; }
+
     .cras-filter-panel,
     .cras-kpi-strip,
     .cras-workspace,
@@ -138,6 +223,10 @@
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 0.65rem;
         padding: 0.8rem 0.85rem;
+    }
+
+    .cras-filter-primary--map {
+        grid-template-columns: minmax(240px, 360px);
     }
 
     .cras-filter-field {
@@ -877,8 +966,10 @@
     .cras-unit-section { overflow: hidden; }
 
     .cras-table-wrap {
-        max-height: 430px;
-        overflow: auto;
+        max-height: none;
+        overflow-x: auto;
+        overflow-y: visible;
+        scrollbar-gutter: stable;
     }
 
     .cras-unit-table {
@@ -913,6 +1004,304 @@
     .cras-unit-table tbody tr:hover td { background: #f8fafc; }
     .cras-unit-table .text-right { text-align: right; }
 
+    .cras-map-sac-strip {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.8rem;
+        padding: 0.58rem 0.72rem;
+        border: 1px solid var(--cras-border);
+        border-radius: 6px;
+        background: #ffffff;
+    }
+
+    .cras-map-sac-title {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        flex: 0 0 auto;
+    }
+
+    .cras-map-sac-title > i {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 5px;
+        background: #eaf3fb;
+        color: var(--cras-blue);
+    }
+
+    .cras-map-sac-title strong,
+    .cras-map-sac-title small { display: block; }
+    .cras-map-sac-title strong { color: #243247; font-size: 0.72rem; }
+    .cras-map-sac-title small { margin-top: 0.05rem; color: #718096; font-size: 0.6rem; }
+
+    .cras-map-sac-items {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 0.38rem;
+    }
+
+    .cras-map-sac-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        min-height: 28px;
+        padding: 0.25rem 0.42rem;
+        border: 1px solid var(--sac-color);
+        border-radius: 4px;
+        background: var(--sac-soft);
+        color: #334155;
+        font-size: 0.64rem;
+        font-weight: 750;
+        white-space: nowrap;
+    }
+
+    .cras-lpg-panel {
+        margin-bottom: 0.8rem;
+        overflow: hidden;
+        border: 1px solid var(--cras-border);
+        border-radius: 6px;
+        background: #ffffff;
+    }
+
+    .cras-lpg-head,
+    .cras-lpg-table-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.8rem 0.9rem;
+        border-bottom: 1px solid var(--cras-border);
+        background: #f8fafc;
+    }
+
+    .cras-lpg-head h2,
+    .cras-lpg-table-head h3 {
+        margin: 0;
+        color: var(--cras-ink);
+        font-size: 0.9rem;
+        font-weight: 800;
+    }
+
+    .cras-lpg-head p,
+    .cras-lpg-table-head p {
+        max-width: 900px;
+        margin: 0.2rem 0 0;
+        color: var(--cras-muted);
+        font-size: 0.7rem;
+        line-height: 1.5;
+    }
+
+    .cras-lpg-reference {
+        flex: 0 0 auto;
+        color: #526174;
+        font-size: 0.64rem;
+        font-weight: 700;
+        text-align: right;
+    }
+
+    .cras-sac-legend {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        padding: 0.55rem 0.85rem;
+        border-bottom: 1px solid var(--cras-border);
+    }
+
+    .cras-sac-legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        min-height: 28px;
+        padding: 0.25rem 0.42rem;
+        border: 1px solid var(--sac-color);
+        border-radius: 4px;
+        background: var(--sac-soft);
+    }
+
+    .cras-sac-legend-item strong { color: #25364a; font-size: 0.65rem; }
+    .cras-sac-legend-item small { color: #64748b; font-size: 0.61rem; }
+
+    [data-sac-color="hijau"] { --sac-color: #209653; --sac-soft: #effaf3; }
+    [data-sac-color="hijau_muda"] { --sac-color: #69c991; --sac-soft: #f1fbf5; }
+    [data-sac-color="kuning"] { --sac-color: #e8b425; --sac-soft: #fff9e8; }
+    [data-sac-color="merah"] { --sac-color: #ed4d52; --sac-soft: #fff2f2; }
+    [data-sac-color="unmapped"] { --sac-color: #94a3b8; --sac-soft: #f8fafc; }
+
+    .cras-lpg-controls {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+        align-items: end;
+        gap: 0.6rem;
+        padding: 0.75rem 0.85rem;
+        border-bottom: 1px solid var(--cras-border);
+    }
+
+    .cras-lpg-controls .cras-filter-button { min-width: 108px; }
+
+    .cras-lpg-kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        border-bottom: 1px solid var(--cras-border);
+    }
+
+    .cras-lpg-kpi {
+        min-width: 0;
+        padding: 0.72rem 0.85rem;
+        border-right: 1px solid var(--cras-border);
+    }
+
+    .cras-lpg-kpi:last-child { border-right: 0; }
+    .cras-lpg-kpi span { display: block; color: #64748b; font-size: 0.62rem; font-weight: 800; text-transform: uppercase; }
+    .cras-lpg-kpi strong { display: block; margin-top: 0.2rem; color: #172033; font-size: 0.92rem; line-height: 1.25; overflow-wrap: anywhere; }
+    .cras-lpg-kpi[data-tone="sml"] strong { color: var(--cras-sml); }
+    .cras-lpg-kpi[data-tone="npl"] strong { color: var(--cras-npl); }
+
+    .cras-lpg-summary {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        border-bottom: 1px solid var(--cras-border);
+    }
+
+    .cras-lpg-summary-item {
+        min-width: 0;
+        padding: 0.68rem 0.75rem;
+        border-right: 1px solid var(--cras-border);
+        border-top: 3px solid var(--sac-color);
+        background: var(--sac-soft);
+    }
+
+    .cras-lpg-summary-item:last-child { border-right: 0; }
+    .cras-lpg-summary-item span,
+    .cras-lpg-summary-item small { display: block; color: #64748b; font-size: 0.62rem; }
+    .cras-lpg-summary-item strong { display: block; margin: 0.15rem 0; color: #172033; font-size: 0.82rem; }
+
+    .cras-lpg-table-wrap {
+        width: 100%;
+        overflow-x: auto;
+        overflow-y: visible;
+        scrollbar-gutter: stable;
+    }
+
+    .cras-lpg-table {
+        width: 100%;
+        min-width: 900px;
+        table-layout: fixed;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 0.7rem;
+    }
+
+    .content-wrapper .cras-lpg-table.abah-table-managed {
+        width: 100%;
+        min-width: 900px;
+        table-layout: fixed;
+    }
+
+    .cras-lpg-table th {
+        padding: 0.58rem 0.62rem;
+        border-right: 1px solid #d8e2ec;
+        border-bottom: 1px solid #cbd5e1;
+        background: #eaf1f8;
+        color: #334155;
+        font-size: 0.63rem;
+        font-weight: 800;
+        line-height: 1.3;
+        text-transform: uppercase;
+        white-space: normal;
+        vertical-align: middle;
+    }
+
+    .cras-lpg-table td {
+        padding: 0.56rem 0.62rem;
+        border-right: 1px solid #edf1f5;
+        border-bottom: 1px solid #e5eaf0;
+        color: #334155;
+        line-height: 1.4;
+        vertical-align: top;
+    }
+
+    .cras-lpg-table tbody tr td:first-child { border-left: 4px solid var(--sac-color); }
+    .cras-lpg-table tbody tr:hover td { background: #f8fbfd; }
+    .cras-lpg-table .text-right { text-align: right; white-space: nowrap; }
+    .cras-lpg-table th:nth-child(1) { width: 18%; }
+    .cras-lpg-table th:nth-child(2) { width: 25%; }
+    .cras-lpg-table th:nth-child(3),
+    .cras-lpg-table th:nth-child(4),
+    .cras-lpg-table th:nth-child(5) { width: 10%; }
+    .cras-lpg-table th:nth-child(6) { width: 11%; }
+    .cras-lpg-table th:nth-child(7) { width: 16%; }
+    .cras-lpg-target { min-width: 0; max-width: none; overflow-wrap: anywhere; }
+    .cras-lpg-risk { color: #b4232d; font-weight: 800; }
+
+    .cras-sac-sort {
+        display: inline-flex;
+        flex: 0 0 auto;
+        padding: 2px;
+        border: 1px solid #cbd5e1;
+        border-radius: 5px;
+        background: #eef3f8;
+    }
+
+    .cras-sac-sort-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.3rem;
+        min-height: 34px;
+        padding: 0.35rem 0.58rem;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: #526174;
+        font-size: 0.66rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .cras-sac-sort-button.is-active {
+        background: #ffffff;
+        color: var(--cras-blue);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.13);
+    }
+
+    .cras-lpg-category-list {
+        display: flex;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 0.28rem;
+        min-width: 0;
+    }
+
+    .cras-lpg-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.32rem;
+        padding: 0.22rem 0.38rem;
+        border: 1px solid var(--sac-color);
+        border-radius: 4px;
+        background: var(--sac-soft);
+        color: #25364a;
+        font-size: 0.64rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .cras-lpg-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sac-color); }
+
+    .cras-lpg-empty {
+        padding: 2.5rem 1rem;
+        color: #64748b;
+        text-align: center;
+    }
+
     .cras-empty {
         padding: 4rem 1rem;
         text-align: center;
@@ -942,6 +1331,8 @@
     .cras-tooltip small { color: #64748b; }
 
     @media (max-width: 1199.98px) {
+        .cras-lpg-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .cras-lpg-controls .cras-filter-button { width: 100%; }
         .cras-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .cras-kpi-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
         .cras-kpi-item:nth-child(3) { border-right: 0; }
@@ -965,6 +1356,18 @@
     }
 
     @media (max-width: 767.98px) {
+        .cras-context-bar { align-items: stretch; flex-direction: column; }
+        .cras-context-fields { grid-template-columns: minmax(0, 1fr); }
+        .cras-context-bar > .cras-filter-button { width: 100%; }
+        .cras-lpg-head, .cras-lpg-table-head { flex-direction: column; }
+        .cras-lpg-reference { text-align: left; }
+        .cras-sac-sort { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+        .cras-lpg-controls { grid-template-columns: minmax(0, 1fr); }
+        .cras-lpg-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .cras-lpg-kpi:nth-child(2n) { border-right: 0; }
+        .cras-lpg-kpi:nth-child(-n + 2) { border-bottom: 1px solid var(--cras-border); }
+        .cras-map-sac-strip { align-items: flex-start; flex-direction: column; }
+        .cras-map-sac-items { justify-content: flex-start; }
         .cras-map-page { padding: 0.65rem; }
         .cras-map-header { align-items: flex-start; flex-direction: column; }
         .cras-filter-head { align-items: flex-start; flex-direction: column; gap: 0.28rem; }
@@ -992,6 +1395,10 @@
     }
 
     @media (max-width: 340px) {
+        .cras-view-switch { grid-template-columns: minmax(0, 1fr); }
+        .cras-lpg-kpis { grid-template-columns: minmax(0, 1fr); }
+        .cras-lpg-kpi, .cras-lpg-kpi:nth-child(2n) { border-right: 0; border-bottom: 1px solid var(--cras-border); }
+        .cras-lpg-kpi:last-child { border-bottom: 0; }
         .cras-filter-grid { grid-template-columns: minmax(0, 1fr); }
         .cras-focus-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .cras-kpi-strip { grid-template-columns: minmax(0, 1fr); }
@@ -1005,7 +1412,7 @@
 <main class="cras-map-page" data-cras-map-app data-data-url="{{ $crasMappingDataUrl }}">
     <header class="cras-map-header">
         <div>
-            <h1><i class="fas fa-map-marked-alt text-primary mr-2"></i>{{ $payload['title'] ?? 'Mapping Portofolio SSA CRAS' }}</h1>
+            <h1><i class="fas fa-industry text-primary mr-2"></i>{{ $payload['title'] ?? 'Marketshare CRAS LPG' }}</h1>
             <p>{{ $payload['subtitle'] ?? 'Sebaran portofolio kredit per wilayah layanan.' }}</p>
         </div>
         <div class="cras-map-period">
@@ -1015,16 +1422,8 @@
     </header>
 
     @if(!empty($payload['ready']))
-        <section class="cras-filter-panel" aria-label="Filter Mapping CRAS">
-            <div class="cras-filter-head">
-                <div>
-                    <h2><i class="fas fa-sliders-h mr-1 text-primary" aria-hidden="true"></i> Kendali Pemetaan</h2>
-                    <p>Tentukan cakupan data, lalu pilih fokus analisis yang ingin dibandingkan.</p>
-                </div>
-                <span class="cras-filter-status" data-cras-filter-status>{{ $activePortfolioFilterCount }} filter portofolio aktif</span>
-            </div>
-
-            <div class="cras-filter-primary">
+        <section class="cras-context-bar" aria-label="Konteks data CRAS">
+            <div class="cras-context-fields">
                 @foreach($primaryFilterLabels as $key => $label)
                     <label class="cras-filter-field" for="crasFilter{{ Illuminate\Support\Str::studly($key) }}">
                         <span>{{ $label }}</span>
@@ -1039,7 +1438,34 @@
                         </select>
                     </label>
                 @endforeach
+            </div>
+            <button type="button" class="cras-filter-button" data-cras-context-apply>
+                <i class="fas fa-sync-alt" aria-hidden="true"></i><span>Perbarui Cakupan</span>
+            </button>
+        </section>
 
+        <nav class="cras-view-switch" aria-label="Mode Marketshare CRAS LPG">
+            <button type="button" class="cras-view-trigger is-active" data-cras-view-trigger="mapping" aria-pressed="true">
+                <i class="fas fa-map-marked-alt" aria-hidden="true"></i>
+                <span><strong>Mapping Polygon</strong><small>Peta wilayah dan portofolio unit</small></span>
+            </button>
+            <button type="button" class="cras-view-trigger" data-cras-view-trigger="sac" aria-pressed="false">
+                <i class="fas fa-industry" aria-hidden="true"></i>
+                <span><strong>Kategori SAC</strong><small>Prioritas sektor dan kualitas kredit</small></span>
+            </button>
+        </nav>
+
+        <div class="cras-view-panel" data-cras-view-panel="mapping">
+        <section class="cras-filter-panel" aria-label="Filter Marketshare CRAS LPG">
+            <div class="cras-filter-head">
+                <div>
+                    <h2><i class="fas fa-sliders-h mr-1 text-primary" aria-hidden="true"></i> Kendali Pemetaan</h2>
+                    <p>Tentukan cakupan data, lalu pilih fokus analisis yang ingin dibandingkan.</p>
+                </div>
+                <span class="cras-filter-status" data-cras-filter-status>{{ $activePortfolioFilterCount }} filter portofolio aktif</span>
+            </div>
+
+            <div class="cras-filter-primary cras-filter-primary--map">
                 <label class="cras-filter-field" for="crasHeatMetric">
                     <span>Fokus Peta dan Peringkat</span>
                     <select id="crasHeatMetric" data-cras-heat-metric>
@@ -1132,6 +1558,14 @@
                 <span class="cras-kpi-label"><i class="fas fa-coins"></i> Total Tunggakan</span>
                 <strong class="cras-kpi-value" data-cras-kpi="total_tunggakan">-</strong>
             </div>
+        </section>
+
+        <section class="cras-map-sac-strip" aria-label="Ringkasan warna kategori SAC">
+            <div class="cras-map-sac-title">
+                <i class="fas fa-palette" aria-hidden="true"></i>
+                <span><strong>Komposisi SAC</strong><small>Sentuhan kategori industri pada cakupan mapping aktif</small></span>
+            </div>
+            <div class="cras-map-sac-items" data-cras-map-sac-summary></div>
         </section>
 
         <section class="cras-insight-strip" aria-labelledby="crasInsightTitle">
@@ -1246,6 +1680,99 @@
                 </table>
             </div>
         </section>
+        </div>
+
+        <div class="cras-view-panel" data-cras-view-panel="sac" hidden>
+            <section class="cras-lpg-panel" aria-labelledby="crasLpgTitle">
+                <div class="cras-lpg-head">
+                    <div>
+                        <h2 id="crasLpgTitle"><i class="fas fa-industry mr-1 text-primary" aria-hidden="true"></i> Sector Acceptance Criteria LPG</h2>
+                        <p data-cras-lpg-scope>{{ data_get($lpgPayload, 'scope_note', 'Pemetaan sektor ekonomi ke sektor industri untuk Micro dan Small.') }}</p>
+                    </div>
+                    <div class="cras-lpg-reference">
+                        <span>Referensi: {{ data_get($lpgPayload, 'reference.file', 'SSA CRAS OLAH LPG') }}</span><br>
+                        <span data-cras-lpg-row-count>{{ count(data_get($lpgPayload, 'industry_rows', [])) }} subsektor industri</span>
+                    </div>
+                </div>
+
+                @if(!empty($lpgPayload['ready']))
+                    <div class="cras-sac-legend" aria-label="Arti kategori warna SAC">
+                        @foreach(['hijau', 'hijau_muda', 'kuning', 'merah'] as $colorKey)
+                            @php($definition = data_get($lpgPayload, 'color_definitions.'.$colorKey, []))
+                            <div class="cras-sac-legend-item" data-sac-color="{{ $colorKey }}">
+                                <span class="cras-lpg-dot" aria-hidden="true"></span>
+                                <strong>{{ data_get($definition, 'label', Illuminate\Support\Str::headline($colorKey)) }}</strong>
+                                <small>{{ data_get($definition, 'meaning', '-') }}</small>
+                            </div>
+                        @endforeach
+                    </div>
+
+                    <div class="cras-lpg-controls">
+                        @foreach([
+                            'segment' => 'Segmen LPG',
+                            'color' => 'Kategori SAC',
+                            'industry_sector' => 'Sektor Industri',
+                            'industry_sub_sector' => 'Subsektor Industri',
+                        ] as $key => $label)
+                            <label class="cras-filter-field" for="crasLpgFilter{{ Illuminate\Support\Str::studly($key) }}">
+                                <span>{{ $label }}</span>
+                                <select id="crasLpgFilter{{ Illuminate\Support\Str::studly($key) }}" data-cras-lpg-filter="{{ $key }}">
+                                    @foreach(($lpgFilterOptions[$key] ?? []) as $option)
+                                        <option value="{{ $option['value'] ?? '' }}" @selected(($lpgSelectedFilters[$key] ?? 'all') === ($option['value'] ?? ''))>
+                                            {{ $option['label'] ?? '-' }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </label>
+                        @endforeach
+                        <button type="button" class="cras-filter-button" data-cras-lpg-apply>
+                            <i class="fas fa-filter" aria-hidden="true"></i><span>Terapkan</span>
+                        </button>
+                    </div>
+
+                    <div class="cras-lpg-kpis" aria-live="polite">
+                        <div class="cras-lpg-kpi"><span>Total OS</span><strong data-cras-lpg-kpi="eligible_os">-</strong></div>
+                        <div class="cras-lpg-kpi" data-tone="sml"><span>SML</span><strong data-cras-lpg-kpi="sml">-</strong></div>
+                        <div class="cras-lpg-kpi" data-tone="npl"><span>NPL</span><strong data-cras-lpg-kpi="npl">-</strong></div>
+                        <div class="cras-lpg-kpi" data-tone="npl"><span>NPL terhadap OS</span><strong data-cras-lpg-kpi="npl_ratio">-</strong></div>
+                    </div>
+
+                    <div class="cras-lpg-table-head">
+                        <div>
+                            <h3 data-cras-sac-table-title>Prioritas Subsektor Industri berdasarkan OS Terbesar</h3>
+                            <p data-cras-sac-table-description>Nominal SML dan NPL dihitung terhadap OS pada subsektor industri yang sama.</p>
+                        </div>
+                        <div class="cras-sac-sort" role="group" aria-label="Urutan prioritas SAC">
+                            <button type="button" class="cras-sac-sort-button @if(($lpgSelectedFilters['sort'] ?? 'os_desc') === 'os_desc') is-active @endif" data-cras-lpg-sort="os_desc">
+                                <i class="fas fa-sort-amount-down" aria-hidden="true"></i> OS Terbesar
+                            </button>
+                            <button type="button" class="cras-sac-sort-button @if(($lpgSelectedFilters['sort'] ?? 'os_desc') === 'npl_ratio_desc') is-active @endif" data-cras-lpg-sort="npl_ratio_desc">
+                                <i class="fas fa-exclamation-triangle" aria-hidden="true"></i> NPL &gt; 5%
+                            </button>
+                        </div>
+                    </div>
+                    <div class="cras-lpg-table-wrap">
+                        <table class="cras-lpg-table">
+                            <thead>
+                                <tr>
+                                    <th>Sektor Industri</th>
+                                    <th>Subsektor Industri</th>
+                                    <th class="text-right">OS</th>
+                                    <th class="text-right">SML</th>
+                                    <th class="text-right">NPL</th>
+                                    <th class="text-right">NPL terhadap OS</th>
+                                    <th>Kategori SAC</th>
+                                </tr>
+                            </thead>
+                            <tbody data-cras-lpg-table></tbody>
+                        </table>
+                        <div class="cras-lpg-empty" data-cras-lpg-empty hidden>Tidak ada subsektor industri yang sesuai dengan filter SAC.</div>
+                    </div>
+                @else
+                    <div class="cras-lpg-empty">{{ data_get($lpgPayload, 'message', 'Referensi LPG belum tersedia.') }}</div>
+                @endif
+            </section>
+        </div>
     @else
         <section class="cras-filter-panel cras-empty">
             <i class="fas fa-map"></i>
@@ -1282,6 +1809,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const filterElements = Array.from(app.querySelectorAll('[data-cras-filter]'));
     const heatMetric = app.querySelector('[data-cras-heat-metric]');
     const applyButton = app.querySelector('[data-cras-apply]');
+    const contextApplyButton = app.querySelector('[data-cras-context-apply]');
     const resetButton = app.querySelector('[data-cras-reset]');
     const mapResetButton = app.querySelector('[data-cras-map-reset]');
     const loading = app.querySelector('[data-cras-loading]');
@@ -1293,6 +1821,16 @@ document.addEventListener('DOMContentLoaded', function () {
     const rankingCount = app.querySelector('[data-cras-ranking-count]');
     const tableBody = app.querySelector('[data-cras-unit-table]');
     const tableMetricHead = app.querySelector('[data-cras-table-metric-head]');
+    const lpgFilterElements = Array.from(app.querySelectorAll('[data-cras-lpg-filter]'));
+    const lpgApplyButton = app.querySelector('[data-cras-lpg-apply]');
+    const lpgTableBody = app.querySelector('[data-cras-lpg-table]');
+    const lpgEmpty = app.querySelector('[data-cras-lpg-empty]');
+    const lpgMapSummary = app.querySelector('[data-cras-map-sac-summary]');
+    const lpgSortButtons = Array.from(app.querySelectorAll('[data-cras-lpg-sort]'));
+    const lpgTableTitle = app.querySelector('[data-cras-sac-table-title]');
+    const lpgTableDescription = app.querySelector('[data-cras-sac-table-description]');
+    const viewTriggers = Array.from(app.querySelectorAll('[data-cras-view-trigger]'));
+    const viewPanels = Array.from(app.querySelectorAll('[data-cras-view-panel]'));
     const activeFilters = app.querySelector('[data-cras-active-filters]');
     const filterCount = app.querySelector('[data-cras-filter-count]');
     const filterStatus = app.querySelector('[data-cras-filter-status]');
@@ -1316,6 +1854,8 @@ document.addEventListener('DOMContentLoaded', function () {
     let geoLayer = null;
     let fullBounds = null;
     let rankingMode = 'district';
+    let activeView = new URLSearchParams(window.location.search).get('view') === 'sac' ? 'sac' : 'mapping';
+    let lpgSort = String(payload.lpg?.filters?.selected?.sort || 'os_desc');
     let districtMetricCache = new Map();
 
     const map = window.L.map(mapElement, {
@@ -1329,6 +1869,24 @@ document.addEventListener('DOMContentLoaded', function () {
     const renderer = window.L.svg({ padding: 0.5 });
     map.attributionControl.setPrefix(false);
     map.attributionControl.addAttribution('Polygon: Badan Informasi Geospasial');
+
+    function setActiveView(view, updateUrl) {
+        activeView = view === 'sac' ? 'sac' : 'mapping';
+        viewTriggers.forEach(function (button) {
+            const selected = button.dataset.crasViewTrigger === activeView;
+            button.classList.toggle('is-active', selected);
+            button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        });
+        viewPanels.forEach(function (panel) {
+            panel.hidden = panel.dataset.crasViewPanel !== activeView;
+        });
+        if (activeView === 'mapping') {
+            window.requestAnimationFrame(function () { map.invalidateSize(false); });
+        }
+        if (updateUrl) {
+            window.history.replaceState({}, '', window.location.pathname + '?' + requestParams().toString());
+        }
+    }
 
     function currentMetric() {
         return String(heatMetric?.value || payload.heatmap?.selected || 'baki_debet');
@@ -1356,6 +1914,117 @@ document.addEventListener('DOMContentLoaded', function () {
         if (absolute >= 1e9) return 'Rp ' + compactFormat.format(numeric / 1e9) + ' M';
         if (absolute >= 1e6) return 'Rp ' + compactFormat.format(numeric / 1e6) + ' Jt';
         return 'Rp ' + numberFormat.format(Math.round(numeric));
+    }
+
+    function renderLpg() {
+        const lpg = payload.lpg || {};
+        if (!lpg.ready) return;
+        const coverage = lpg.coverage || {};
+        const metrics = lpg.metrics || {};
+        const kpiValues = {
+            eligible_os: formatMetric(coverage.eligible_os, 'baki_debet', true),
+            sml: formatMetric(metrics.sml, 'sml_os', true),
+            npl: formatMetric(metrics.npl, 'npl_os', true),
+            npl_ratio: compactFormat.format(Number(metrics.npl_ratio || 0)) + '%',
+        };
+        Object.keys(kpiValues).forEach(function (key) {
+            const node = app.querySelector('[data-cras-lpg-kpi="' + key + '"]');
+            if (node) node.textContent = kpiValues[key];
+        });
+        const rowCount = app.querySelector('[data-cras-lpg-row-count]');
+        if (rowCount) {
+            rowCount.textContent = numberFormat.format((lpg.industry_rows || []).length) + ' subsektor industri | coverage '
+                + compactFormat.format(Number(coverage.mapping_ratio || 0)) + '%';
+        }
+
+        if (lpgMapSummary) {
+            lpgMapSummary.innerHTML = '';
+            (lpg.summary || []).filter(function (item) {
+                return ['hijau', 'hijau_muda', 'kuning', 'merah'].includes(String(item.key || ''));
+            }).forEach(function (item) {
+                const badge = document.createElement('span');
+                const dot = document.createElement('span');
+                badge.className = 'cras-map-sac-item';
+                badge.dataset.sacColor = String(item.key || 'unmapped');
+                dot.className = 'cras-lpg-dot';
+                badge.append(dot, document.createTextNode(String(item.label || '-') + ' ' + formatMetric(item.baki_debet, 'baki_debet', true)));
+                lpgMapSummary.appendChild(badge);
+            });
+        }
+
+        if (!lpgTableBody) return;
+        lpgSort = String(lpg.filters?.selected?.sort || lpgSort || 'os_desc');
+        lpgSortButtons.forEach(function (button) {
+            button.classList.toggle('is-active', button.dataset.crasLpgSort === lpgSort);
+        });
+        const riskMode = lpgSort === 'npl_ratio_desc';
+        if (lpgTableTitle) {
+            lpgTableTitle.textContent = riskMode
+                ? 'Prioritas Subsektor dengan Rasio NPL di atas 5%'
+                : 'Prioritas Subsektor Industri berdasarkan OS Terbesar';
+        }
+        if (lpgTableDescription) {
+            lpgTableDescription.textContent = riskMode
+                ? 'Hanya subsektor dengan NPL terhadap OS lebih dari 5%, diurutkan dari rasio tertinggi.'
+                : 'Seluruh subsektor diurutkan dari OS terbesar; SML dan NPL dihitung pada OS subsektor yang sama.';
+        }
+
+        lpgTableBody.innerHTML = '';
+        (lpg.industry_rows || []).forEach(function (item) {
+            const row = document.createElement('tr');
+            const categories = Array.isArray(item.sac_categories) ? item.sac_categories : [];
+            row.dataset.sacColor = String(categories[0]?.color || 'unmapped');
+
+            const industrySector = document.createElement('td');
+            industrySector.className = 'cras-lpg-target';
+            industrySector.textContent = String(item.industry_sector || '-');
+
+            const industrySubSector = document.createElement('td');
+            industrySubSector.className = 'cras-lpg-target';
+            industrySubSector.textContent = String(item.industry_sub_sector || '-');
+
+            const os = document.createElement('td');
+            os.className = 'text-right';
+            os.textContent = formatMetric(item.baki_debet, 'baki_debet', true);
+            os.title = formatMetric(item.baki_debet, 'baki_debet', false);
+
+            const sml = document.createElement('td');
+            sml.className = 'text-right';
+            sml.textContent = formatMetric(item.sml, 'sml_os', true);
+            sml.title = formatMetric(item.sml, 'sml_os', false) + ' (' + compactFormat.format(Number(item.sml_ratio || 0)) + '% dari OS)';
+
+            const npl = document.createElement('td');
+            npl.className = 'text-right';
+            npl.textContent = formatMetric(item.npl, 'npl_os', true);
+            npl.title = formatMetric(item.npl, 'npl_os', false);
+
+            const nplRatio = document.createElement('td');
+            nplRatio.className = 'text-right' + (Number(item.npl_ratio || 0) > 5 ? ' cras-lpg-risk' : '');
+            nplRatio.textContent = compactFormat.format(Number(item.npl_ratio || 0)) + '%';
+
+            const colorCell = document.createElement('td');
+            const categoryList = document.createElement('div');
+            categoryList.className = 'cras-lpg-category-list';
+            categories.forEach(function (category) {
+                const badge = document.createElement('span');
+                const dot = document.createElement('span');
+                badge.className = 'cras-lpg-badge';
+                badge.dataset.sacColor = String(category.color || 'unmapped');
+                dot.className = 'cras-lpg-dot';
+                const prefix = categories.length > 1 ? String(category.segment_label || '-') + ': ' : '';
+                badge.append(dot, document.createTextNode(prefix + String(category.color_label || '-')));
+                badge.title = String(category.meaning || '-');
+                categoryList.appendChild(badge);
+            });
+            if (!categories.length) {
+                categoryList.textContent = '-';
+            }
+            colorCell.appendChild(categoryList);
+
+            row.append(industrySector, industrySubSector, os, sml, npl, nplRatio, colorCell);
+            lpgTableBody.appendChild(row);
+        });
+        if (lpgEmpty) lpgEmpty.hidden = (lpg.industry_rows || []).length > 0;
     }
 
     function metricPalette(key) {
@@ -1795,6 +2464,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function renderAll(fit) {
         districtMetricCache = new Map();
+        renderLpg();
         renderKpis();
         renderSecondaryMetrics();
         renderOverview();
@@ -1823,6 +2493,28 @@ document.addEventListener('DOMContentLoaded', function () {
         const options = payload.filters?.options || {};
         const selected = payload.filters?.selected || {};
         Object.keys(options).forEach(function (key) { setSelectOptions(key, options[key], selected[key]); });
+        syncLpgFilters();
+    }
+
+    function syncLpgFilters() {
+        const lpg = payload.lpg || {};
+        const options = lpg.filters?.options || {};
+        const selected = lpg.filters?.selected || {};
+        lpgFilterElements.forEach(function (select) {
+            const key = String(select.dataset.crasLpgFilter || '');
+            select.innerHTML = '';
+            (options[key] || []).forEach(function (option) {
+                const node = document.createElement('option');
+                node.value = String(option.value ?? '');
+                node.textContent = String(option.label ?? '-');
+                node.selected = node.value === String(selected[key] ?? 'all');
+                select.appendChild(node);
+            });
+        });
+        lpgSort = String(selected.sort || 'os_desc');
+        lpgSortButtons.forEach(function (button) {
+            button.classList.toggle('is-active', button.dataset.crasLpgSort === lpgSort);
+        });
     }
 
     function requestParams() {
@@ -1830,7 +2522,12 @@ document.addEventListener('DOMContentLoaded', function () {
         filterElements.forEach(function (select) {
             params.set(select.dataset.crasFilter, select.value);
         });
+        lpgFilterElements.forEach(function (select) {
+            params.set('lpg_' + select.dataset.crasLpgFilter, select.value);
+        });
+        params.set('lpg_sort', lpgSort);
         params.set('metric', currentMetric());
+        params.set('view', activeView);
         return params;
     }
 
@@ -1839,6 +2536,8 @@ document.addEventListener('DOMContentLoaded', function () {
         loading.textContent = 'Mengagregasi portofolio CRAS...';
         loading.classList.remove('is-hidden');
         applyButton.disabled = true;
+        if (contextApplyButton) contextApplyButton.disabled = true;
+        if (lpgApplyButton) lpgApplyButton.disabled = true;
         const originalButtonHtml = applyButton.innerHTML;
         applyButton.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Memuat</span>';
         const params = requestParams();
@@ -1849,22 +2548,26 @@ document.addEventListener('DOMContentLoaded', function () {
                 cache: 'no-store',
             });
             const result = await response.json().catch(function () { return {}; });
-            if (!response.ok || !result.ready) throw new Error(result.message || 'Data Mapping CRAS gagal dimuat.');
+            if (!response.ok || !result.ready) throw new Error(result.message || 'Data Marketshare CRAS LPG gagal dimuat.');
             payload = result;
             syncFilters();
             if (heatMetric) heatMetric.value = result.heatmap?.selected || currentMetric();
             window.history.replaceState({}, '', window.location.pathname + '?' + requestParams().toString());
             renderAll(true);
         } catch (error) {
-            loading.textContent = error.message || 'Data Mapping CRAS gagal dimuat.';
+            loading.textContent = error.message || 'Data Marketshare CRAS LPG gagal dimuat.';
             loading.classList.remove('is-hidden');
         } finally {
             applyButton.disabled = false;
+            if (contextApplyButton) contextApplyButton.disabled = false;
+            if (lpgApplyButton) lpgApplyButton.disabled = false;
             applyButton.innerHTML = originalButtonHtml;
         }
     }
 
     applyButton?.addEventListener('click', loadData);
+    contextApplyButton?.addEventListener('click', loadData);
+    lpgApplyButton?.addEventListener('click', loadData);
     resetButton?.addEventListener('click', function () {
         filterElements.forEach(function (select) {
             select.value = select.dataset.crasFilter === 'periode'
@@ -1872,6 +2575,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 : String(payload.filters?.options?.[select.dataset.crasFilter]?.[0]?.value || 'all');
         });
         if (heatMetric) heatMetric.value = 'baki_debet';
+        lpgFilterElements.forEach(function (select) {
+            select.value = String(payload.lpg?.filters?.options?.[select.dataset.crasLpgFilter]?.[0]?.value || 'all');
+        });
+        lpgSort = 'os_desc';
         loadData();
     });
     heatMetric?.addEventListener('change', function () {
@@ -1905,6 +2612,22 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
+    lpgSortButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            lpgSort = String(button.dataset.crasLpgSort || 'os_desc');
+            lpgSortButtons.forEach(function (item) {
+                item.classList.toggle('is-active', item === button);
+            });
+            loadData();
+        });
+    });
+
+    viewTriggers.forEach(function (button) {
+        button.addEventListener('click', function () {
+            setActiveView(String(button.dataset.crasViewTrigger || 'mapping'), true);
+        });
+    });
+
     insightButtons.forEach(function (button) {
         button.addEventListener('click', function () {
             const key = String(button.dataset.crasInsight || 'baki_debet');
@@ -1923,6 +2646,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (bounds.isValid()) map.fitBounds(bounds, { padding: [18, 18], maxZoom: 10.5 });
         renderOverview();
     });
+
+    setActiveView(activeView, false);
 
     fetch(payload.source?.geojson_url || '')
         .then(function (response) {

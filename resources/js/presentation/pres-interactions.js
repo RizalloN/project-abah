@@ -358,7 +358,7 @@ export const setupPresentationInteractions = ({
                 exportInProgress = false;
                 if (exportSubmit) exportSubmit.disabled = false;
                 triggerExportDownload(payload);
-                notify(`${payload.slide_count || 13} slide PowerPoint selesai dibuat.`);
+                notify(`${payload.slide_count || 15} slide PowerPoint selesai dibuat.`);
                 return;
             }
             if (payload.status === 'failed') {

@@ -515,6 +515,10 @@ class ImportExcelController extends Controller
 
     private function detectHeaderIndex(array $rows, ?string $tableName = null): ?int
     {
+        if (strtolower(trim((string) $tableName)) === 'rka') {
+            return $this->detectRkaHeaderIndex($rows);
+        }
+
         $bestIndex = null;
         $bestScore = 0;
         $dbColumnsLookup = [];
@@ -558,6 +562,34 @@ class ImportExcelController extends Controller
         }
 
         return $bestScore >= 2 ? $bestIndex : null;
+    }
+
+    private function detectRkaHeaderIndex(array $rows): ?int
+    {
+        $requiredColumns = ['desc_uker', 'mata_anggaran'];
+        $monthColumns = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+        foreach ($rows as $index => $row) {
+            $normalizedHeaders = array_values(array_unique(array_filter(array_map(
+                fn ($value): string => $this->normalizeImportColumnName((string) $value),
+                (array) $row
+            ))));
+
+            if (array_diff($requiredColumns, $normalizedHeaders) !== []) {
+                continue;
+            }
+
+            if (count(array_intersect($monthColumns, $normalizedHeaders)) === count($monthColumns)) {
+                return (int) $index;
+            }
+        }
+
+        return null;
+    }
+
+    private function isDetectedHeaderValidForTable(array $headerValues, string $tableName): bool
+    {
+        return $this->detectHeaderIndex([$headerValues], $tableName) === 0;
     }
 
     private function headerNotFoundMessage(?string $tableName = null): string
@@ -3282,6 +3314,12 @@ class ImportExcelController extends Controller
 
         if ($this->isSsaAlmafactsTable($tableName)) {
             $normalizedHeaders = $this->forceSsaAlmafactsPositionHeadersByIndex($normalizedHeaders);
+        }
+
+        if ($this->isSsaSimpananTable($tableName) || $this->isSsaPinjamanTable($tableName)) {
+            $normalizedHeaders = array_values(
+                $this->resolveImportStrategy($tableName)->transformHeaders($normalizedHeaders)
+            );
         }
 
         if ($this->isDlyKapResegmentasiTable($tableName)) {
@@ -10470,16 +10508,26 @@ class ImportExcelController extends Controller
             ? mb_strtolower($selectedKanca, 'UTF-8')
             : strtolower($selectedKanca);
 
-        $alreadyExists = DB::table('rka')
-            ->whereRaw('LOWER(TRIM(`kanca`)) = ?', [$normalizedKanca])
-            ->exists();
+        $query = DB::table('rka')
+            ->whereRaw('LOWER(TRIM(`kanca`)) = ?', [$normalizedKanca]);
+
+        $selectedYear = $this->extractRkaYearValue(
+            session('excel_manual_periode', session('excel_derived_tahun'))
+        );
+        if ($selectedYear !== null && $this->cachedSchemaHasColumn('rka', 'tahun')) {
+            $query->where('tahun', $selectedYear);
+        }
+
+        $alreadyExists = $query->exists();
 
         if (!$alreadyExists) {
             return;
         }
 
         throw new \RuntimeException(
-            "Data RKA untuk kanca <b>{$selectedKanca}</b> sudah ada di database.<br><br>"
+            "Data RKA untuk kanca <b>{$selectedKanca}</b>"
+            . ($selectedYear !== null ? " tahun <b>{$selectedYear}</b>" : '')
+            . " sudah ada di database.<br><br>"
             . 'Import dibatalkan agar data duplikat tidak masuk ke tabel <b class="text-uppercase">rka</b>.'
         );
     }
@@ -12145,6 +12193,52 @@ class ImportExcelController extends Controller
         ], 422);
     }
 
+    private function assertSsaSourceHeaderContract(string $tableName, array $headers): void
+    {
+        if (!$this->isSsaSimpananTable($tableName) && !$this->isSsaPinjamanTable($tableName)) {
+            return;
+        }
+
+        $headers = $this->resolveImportStrategy($tableName)->transformHeaders($headers);
+        $available = array_fill_keys(array_map('strtolower', $headers), true);
+        $required = $this->isSsaSimpananTable($tableName)
+            ? [
+                'month_day_year_of_posisi',
+                'nama_cabang',
+                'nama_uker',
+                'produk',
+                'segmentasi',
+                'segmen_kategorisasi_bisnis',
+                'saldo',
+            ]
+            : [
+                'month_day_year_of_periode',
+                'nama_cabang',
+                'nama_uker',
+                'produk',
+                'produk_dashboard',
+                'segmen',
+                'segmen_lama',
+                'segmen_2025',
+                'segmen_dashboard',
+                'kolektabilitas_one_obligor',
+                'flag_restruk',
+                'baki_debet',
+                'jumlah_debitur_aktif',
+                'jumlah_rekening_aktif',
+            ];
+
+        $missing = array_values(array_filter($required, static fn (string $column): bool => !isset($available[$column])));
+        if ($missing === []) {
+            return;
+        }
+
+        $label = $this->isSsaSimpananTable($tableName) ? 'SSA Simpanan' : 'SSA Pinjaman';
+        throw new \RuntimeException(
+            "Import {$label} dibatalkan: kolom sumber wajib tidak ditemukan: " . implode(', ', $missing) . '.'
+        );
+    }
+
     /**
      * Initialize queued import job dengan deteksi header, estimasi baris, dan staging CSV.
      * Method ini dipanggil DARI DALAM job execution (async) supaya tidak blocking response ke user.
@@ -12295,6 +12389,17 @@ class ImportExcelController extends Controller
                     } else {
                         $pythonResult = $this->detectHeaderViaPython($path);
 
+                        if ($pythonResult !== null
+                            && !$this->isDetectedHeaderValidForTable((array) ($pythonResult['header_values'] ?? []), $tableName)) {
+                            Log::warning('Header Excel hasil deteksi Python ditolak karena tidak cocok dengan schema report.', [
+                                'job_id' => $jobId,
+                                'table_name' => $tableName,
+                                'detected_header_index' => $pythonResult['header_index'] ?? null,
+                                'detected_headers' => $pythonResult['header_values'] ?? [],
+                            ]);
+                            $pythonResult = null;
+                        }
+
                         if ($pythonResult !== null) {
                             $headerIndex = $pythonResult['header_index'];
                             $totalRows = $pythonResult['total_rows'];
@@ -12393,6 +12498,8 @@ class ImportExcelController extends Controller
             if ($this->isSsaAlmafactsTable($tableName)) {
                 $normalizedHeadersForSession = $this->forceSsaAlmafactsPositionHeadersByIndex($normalizedHeadersForSession);
             }
+
+            $this->assertSsaSourceHeaderContract($tableName, $normalizedHeadersForSession);
 
             // ── Staging Excel to CSV (jika perlu) ───────────────────────
             $stagedCsvPath = $lw321PnStagedCsvPath;

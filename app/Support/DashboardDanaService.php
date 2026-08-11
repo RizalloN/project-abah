@@ -808,7 +808,7 @@ class DashboardDanaService
             
             // Target dates
             $ytdTarget = $selectedDate->copy()->subYear()->endOfYear()->format('Y-m-d');
-            $mtdTarget = $selectedDate->copy()->subMonth()->endOfMonth()->format('Y-m-d');
+            $mtdTarget = $selectedDate->copy()->subMonthNoOverflow()->endOfMonth()->format('Y-m-d');
             
             $ytdSimpanan = $this->resolveHarianSnapshotPeriodOnOrBefore($ytdTarget)
                 ?? DB::table('ssa_simpanan')->where('Month_Day_Year_of_Posisi', '<=', $ytdTarget)->max('Month_Day_Year_of_Posisi');

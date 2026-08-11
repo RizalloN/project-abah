@@ -13,7 +13,10 @@
     };
 
     $periodKeys = ['yoy', 'ytd', 'mtm', 'mtd', 'h2', 'h1'];
-    $deltaLabels = ['ytd' => 'YTD', 'yoy' => 'YoY', 'mtm' => 'MtM', 'mtd' => 'MtD', 'dtd' => 'DtD'];
+    $deltaLabels = ['dtd' => 'Hari Lalu', 'mtd' => 'Bulan Lalu', 'ytd' => 'Tahun Lalu'];
+    $isAreaScope = ($selectedBranch ?? 'all') === 'all';
+    $isBranchDetail = !$isAreaScope;
+    $displayTables = (array) ($hourlyReport['tables'] ?? []);
     $deltaClass = static function ($value): string {
         $number = (float) $value;
 
@@ -59,28 +62,23 @@
     .hourly-dpk-hero {
         background: linear-gradient(135deg, var(--hourly-blue-deep), #086ed1);
         color: #fff;
-        padding: 1.35rem 1.75rem;
-        border-radius: 0 0 22px 22px;
-        box-shadow: 0 16px 30px -24px rgba(0, 58, 117, 0.4);
+        padding: 0.62rem 1.45rem;
+        border-radius: 0 0 10px 10px;
+        box-shadow: 0 10px 22px -20px rgba(0, 58, 117, 0.42);
     }
 
     .hourly-dpk-hero h1 {
         margin: 0;
-        font-size: 1.9rem;
+        font-size: 1.25rem;
+        line-height: 1.2;
         font-weight: 900;
         letter-spacing: 0;
-    }
-
-    .hourly-dpk-hero p {
-        margin: 0.35rem 0 0;
-        color: rgba(255, 255, 255, 0.82);
-        font-weight: 650;
     }
 
     .hourly-dpk-container {
         max-width: 1660px;
         margin: 0 auto;
-        padding: 1.35rem 1.45rem 0;
+        padding: 0.9rem 1.45rem 0;
     }
 
     .hourly-filter-card,
@@ -266,6 +264,93 @@
         position: relative;
         z-index: 1;
         overflow: hidden;
+        scroll-margin-top: 0.75rem;
+    }
+
+    .hourly-summary-card {
+        margin-bottom: 1.15rem;
+        overflow: hidden;
+    }
+
+    .hourly-summary-shell {
+        overflow-x: auto;
+        scrollbar-width: thin;
+        scrollbar-color: #9fb2ca #edf4fb;
+    }
+
+    .hourly-summary-card table {
+        width: max-content;
+        min-width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .hourly-summary-card th,
+    .hourly-summary-card td {
+        padding: 0.72rem 0.85rem;
+        min-width: 112px;
+        white-space: nowrap;
+        border-right: 1px solid #dce7f3;
+        border-bottom: 1px solid #dce7f3;
+        text-align: right;
+    }
+
+    .hourly-summary-card th {
+        color: #fff;
+        background: #0b519d;
+        font-size: 0.72rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        text-align: center;
+    }
+
+    .hourly-summary-card .hourly-summary-label {
+        min-width: 150px;
+        text-align: left;
+        font-weight: 950;
+    }
+
+    .hourly-summary-retail td {
+        background: #eff6ff;
+    }
+
+    .hourly-summary-micro td {
+        background: #ecfdf5;
+    }
+
+    .hourly-summary-total td {
+        background: #ffeb3b !important;
+        color: #10213a !important;
+        font-weight: 950 !important;
+    }
+
+    .hourly-product-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin: 0 0 0.85rem;
+    }
+
+    .hourly-product-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 38px;
+        padding: 0.48rem 0.8rem;
+        border: 1px solid #bfd5ee;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #164f8d;
+        font-size: 0.78rem;
+        font-weight: 900;
+        text-decoration: none !important;
+    }
+
+    .hourly-product-link:hover,
+    .hourly-product-link:focus-visible {
+        border-color: #0b67be;
+        background: #eaf4ff;
+        color: #073b78;
     }
 
     .hourly-table-title {
@@ -287,9 +372,11 @@
     .hourly-table-shell {
         position: relative;
         z-index: 1;
-        max-height: calc(100vh - 295px);
-        min-height: 430px;
-        overflow: auto;
+        height: auto;
+        max-height: none;
+        min-height: 0;
+        overflow-x: auto;
+        overflow-y: visible;
         scrollbar-width: thin;
         scrollbar-color: #9fb2ca #edf4fb;
     }
@@ -372,11 +459,37 @@
         text-align: left !important;
     }
 
-    .hourly-sticky-unit {
+    .hourly-sticky-code {
         left: 218px;
+        min-width: 110px;
+        width: 110px;
+        max-width: 110px;
+        text-align: center !important;
+    }
+
+    .hourly-sticky-unit {
+        left: 328px;
         min-width: 300px;
         width: 300px;
         max-width: 300px;
+        text-align: left !important;
+        border-right: 2px solid #b8cce4 !important;
+        box-shadow: 12px 0 18px -18px rgba(15, 23, 42, 0.75);
+    }
+
+    .hourly-sticky-area-code {
+        left: 58px;
+        min-width: 112px;
+        width: 112px;
+        max-width: 112px;
+        text-align: center !important;
+    }
+
+    .hourly-sticky-area-branch {
+        left: 170px;
+        min-width: 210px;
+        width: 210px;
+        max-width: 210px;
         text-align: left !important;
         border-right: 2px solid #b8cce4 !important;
         box-shadow: 12px 0 18px -18px rgba(15, 23, 42, 0.75);
@@ -398,6 +511,22 @@
     .hourly-total td {
         background: #ffeb3b !important;
         color: #10213a !important;
+        font-weight: 950 !important;
+    }
+
+    .hourly-subtotal-retail td {
+        background: #dbeafe !important;
+        color: #052f63 !important;
+        border-top: 2px solid #2563eb !important;
+        border-bottom: 2px solid #2563eb !important;
+        font-weight: 950 !important;
+    }
+
+    .hourly-subtotal-micro td {
+        background: #d1fae5 !important;
+        color: #065f46 !important;
+        border-top: 2px solid #059669 !important;
+        border-bottom: 2px solid #059669 !important;
         font-weight: 950 !important;
     }
 
@@ -443,9 +572,6 @@
             justify-content: center;
         }
 
-        .hourly-table-shell {
-            max-height: calc(100vh - 360px);
-        }
     }
 
     @media (max-width: 575.98px) {
@@ -480,7 +606,6 @@
 <div class="hourly-dpk-page">
     <div class="hourly-dpk-hero">
         <h1>Hourly DPK</h1>
-        <p>Monitoring posisi simpanan harian berbasis Hourly DPK dan pembanding historis SSA Simpanan.</p>
     </div>
 
     <div class="hourly-dpk-container">
@@ -497,25 +622,17 @@
                     <div class="hourly-select" data-hourly-select="cabang"></div>
                 </div>
 
-                <div class="hourly-filter-field">
-                    <label class="hourly-filter-label" for="jenis">Jenis Simpanan</label>
-                    <select id="jenis" name="jenis" class="hourly-native-select" data-hourly-native-select>
-                        @foreach (($filters['products'] ?? []) as $value => $label)
-                            <option value="{{ $value }}" {{ ($selectedProduct ?? 'all') === $value ? 'selected' : '' }}>{{ $label }}</option>
-                        @endforeach
-                    </select>
-                    <div class="hourly-select" data-hourly-select="jenis"></div>
-                </div>
-
-                <div class="hourly-filter-field">
-                    <label class="hourly-filter-label" for="segmen">Segmen</label>
-                    <select id="segmen" name="segmen" class="hourly-native-select" data-hourly-native-select>
-                        @foreach (($filters['segments'] ?? ['all' => 'Semua Segmen']) as $value => $label)
-                            <option value="{{ $value }}" {{ ($selectedSegment ?? 'all') === $value ? 'selected' : '' }}>{{ $label }}</option>
-                        @endforeach
-                    </select>
-                    <div class="hourly-select" data-hourly-select="segmen"></div>
-                </div>
+                @if ($isAreaScope)
+                    <div class="hourly-filter-field">
+                        <label class="hourly-filter-label" for="segmen">Segmen</label>
+                        <select id="segmen" name="segmen" class="hourly-native-select" data-hourly-native-select>
+                            @foreach (($filters['segments'] ?? ['all' => 'Semua Segmen']) as $value => $label)
+                                <option value="{{ $value }}" {{ ($selectedSegment ?? 'all') === $value ? 'selected' : '' }}>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                        <div class="hourly-select" data-hourly-select="segmen"></div>
+                    </div>
+                @endif
 
                 <div class="hourly-filter-actions">
                     <button type="submit" class="hourly-submit">
@@ -542,31 +659,137 @@
             </div>
         </form>
 
-        <div class="hourly-table-card">
-            <div class="hourly-table-title">
-                <h2>Hourly DPK</h2>
-                <span class="hourly-pill"><i class="fas fa-table"></i>{{ number_format(count($payload['rows'] ?? []), 0, ',', '.') }} baris</span>
-            </div>
-
-            @if (!($payload['ready'] ?? false))
-                <div class="hourly-empty">{{ $payload['message'] ?? 'Data belum tersedia.' }}</div>
-            @else
-                <div class="hourly-table-shell">
-                    <table class="hourly-table">
+        @if ($isBranchDetail)
+            @php
+                $summaryPayload = (array) (($hourlyReport['tables'][0]['payload'] ?? []));
+                $summaryPeriods = (array) ($summaryPayload['periods'] ?? []);
+                $summaryHours = (array) ($summaryPayload['hours'] ?? []);
+                $summaryTotal = (array) ($hourlyReport['summaryTotal'] ?? []);
+            @endphp
+            <div class="hourly-table-card hourly-summary-card">
+                <div class="hourly-table-title">
+                    <h2>Summary Segmen {{ $hourlyReport['scopeLabel'] ?? ($payload['scopeLabel'] ?? '') }}</h2>
+                    <span class="hourly-pill"><i class="fas fa-calendar-day"></i>Posisi {{ $hourlyReport['selectedDateLabel'] ?? '-' }}</span>
+                </div>
+                <div class="hourly-summary-shell">
+                    <table>
                         <thead>
                             <tr>
-                                <th rowspan="2" class="hourly-sticky hourly-sticky-no">No</th>
-                                <th rowspan="2" class="hourly-sticky hourly-sticky-branch">Cabang</th>
-                                <th rowspan="2" class="hourly-sticky hourly-sticky-unit">Unit Kerja</th>
+                                <th rowspan="2">No</th>
+                                <th rowspan="2">Segmen</th>
                                 <th colspan="6">Posisi Historis SSA Simpanan</th>
-                                <th colspan="{{ max(1, count($payload['hours'] ?? [])) }}">Posisi Hari Ini {{ $payload['selectedDateLabel'] ?? '-' }}</th>
-                                <th colspan="{{ count($deltaLabels) }}">Delta thd {{ $payload['hours'] ? (($payload['hours'][count($payload['hours']) - 1]['label'] ?? 'Jam Terbaru')) : 'Jam Terbaru' }}</th>
+                                <th colspan="{{ max(1, count($summaryHours)) }}">Posisi Hari Ini {{ $summaryPayload['selectedDateLabel'] ?? '-' }}</th>
+                                <th colspan="{{ count($deltaLabels) }}">Delta thd Jam Terakhir</th>
                             </tr>
                             <tr>
                                 @foreach ($periodKeys as $key)
-                                    <th>{{ $dateFormatter(($payload['periods'][$key] ?? null)) }}</th>
+                                    <th>{{ $dateFormatter($summaryPeriods[$key] ?? null) }}</th>
                                 @endforeach
-                                @forelse (($payload['hours'] ?? []) as $hour)
+                                @forelse ($summaryHours as $hour)
+                                    <th>{{ $hour['label'] ?? '' }}</th>
+                                @empty
+                                    <th></th>
+                                @endforelse
+                                @foreach ($deltaLabels as $label)
+                                    <th>{{ $label }}</th>
+                                @endforeach
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (($hourlyReport['summary'] ?? []) as $summary)
+                                <tr class="hourly-summary-{{ strtolower($summary['segment'] ?? '') }}">
+                                    <td class="text-center">{{ $summary['no'] ?? '' }}</td>
+                                    <td class="hourly-summary-label">{{ $summary['segment'] ?? '' }}</td>
+                                    @foreach ($periodKeys as $key)
+                                        <td>{{ $formatJuta($summary['period_values'][$key] ?? 0) }}</td>
+                                    @endforeach
+                                    @forelse ($summaryHours as $hour)
+                                        <td>{{ $formatJuta($summary['hour_values'][$hour['key']] ?? 0) }}</td>
+                                    @empty
+                                        <td>0,0</td>
+                                    @endforelse
+                                    @foreach ($deltaLabels as $key => $label)
+                                        @php $summaryDelta = $summary['delta_values'][$key] ?? 0; @endphp
+                                        <td class="{{ $deltaClass($summaryDelta) }}">{{ $formatDeltaJuta($summaryDelta) }}</td>
+                                    @endforeach
+                                </tr>
+                            @endforeach
+                            @if ($summaryTotal !== [])
+                                <tr class="hourly-summary-total">
+                                    <td class="text-center">&Sigma;</td>
+                                    <td class="hourly-summary-label">GRAND TOTAL</td>
+                                    @foreach ($periodKeys as $key)
+                                        <td>{{ $formatJuta($summaryTotal['period_values'][$key] ?? 0) }}</td>
+                                    @endforeach
+                                    @forelse ($summaryHours as $hour)
+                                        <td>{{ $formatJuta($summaryTotal['hour_values'][$hour['key']] ?? 0) }}</td>
+                                    @empty
+                                        <td>0,0</td>
+                                    @endforelse
+                                    @foreach ($deltaLabels as $key => $label)
+                                        @php $summaryDelta = $summaryTotal['delta_values'][$key] ?? 0; @endphp
+                                        <td class="{{ $deltaClass($summaryDelta) }}">{{ $formatDeltaJuta($summaryDelta) }}</td>
+                                    @endforeach
+                                </tr>
+                            @endif
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        @endif
+
+        @if (count($displayTables) > 1)
+            <nav class="hourly-product-nav" aria-label="Navigasi jenis simpanan">
+                @foreach ($displayTables as $table)
+                    @php
+                        $productAnchor = 'hourly-product-' . strtolower((string) ($table['key'] ?? 'all'));
+                    @endphp
+                    <a class="hourly-product-link" href="#{{ $productAnchor }}">{{ $table['label'] ?? 'Simpanan' }}</a>
+                @endforeach
+            </nav>
+        @endif
+
+        @foreach ($displayTables as $table)
+            @php
+                $tablePayload = (array) ($table['payload'] ?? []);
+                $tableRows = (array) ($tablePayload['rows'] ?? []);
+                $tableHours = (array) ($tablePayload['hours'] ?? []);
+                $tablePeriods = (array) ($tablePayload['periods'] ?? []);
+                $tableTotal = (array) ($tablePayload['total'] ?? []);
+                $fixedColumnCount = $isAreaScope ? 3 : 4;
+                $productAnchor = 'hourly-product-' . strtolower((string) ($table['key'] ?? 'all'));
+            @endphp
+            <div id="{{ $productAnchor }}" class="hourly-table-card {{ $loop->first ? '' : 'mt-3' }}">
+                <div class="hourly-table-title">
+                    <h2>{{ $table['label'] ?? 'Hourly DPK' }}</h2>
+                    <span class="hourly-pill"><i class="fas fa-table"></i>{{ number_format($tablePayload['dataRowCount'] ?? count($tableRows), 0, ',', '.') }} baris data</span>
+                </div>
+
+                @if (!($tablePayload['ready'] ?? false))
+                    <div class="hourly-empty">{{ $tablePayload['message'] ?? 'Data belum tersedia.' }}</div>
+                @else
+                    <div class="hourly-table-shell">
+                        <table class="hourly-table">
+                        <thead>
+                            <tr>
+                                <th rowspan="2" class="hourly-sticky hourly-sticky-no">No</th>
+                                @if ($isAreaScope)
+                                    <th rowspan="2" class="hourly-sticky hourly-sticky-area-code">Kode Cabang</th>
+                                    <th rowspan="2" class="hourly-sticky hourly-sticky-area-branch">Nama Cabang</th>
+                                @else
+                                    <th rowspan="2" class="hourly-sticky hourly-sticky-branch">Nama Cabang</th>
+                                    <th rowspan="2" class="hourly-sticky hourly-sticky-code">BC</th>
+                                    <th rowspan="2" class="hourly-sticky hourly-sticky-unit">Nama Uker</th>
+                                @endif
+                                <th colspan="6">Posisi Historis SSA Simpanan</th>
+                                <th colspan="{{ max(1, count($tableHours)) }}">Posisi Hari Ini {{ $tablePayload['selectedDateLabel'] ?? '-' }}</th>
+                                <th colspan="{{ count($deltaLabels) }}">Delta thd {{ $tableHours ? (($tableHours[count($tableHours) - 1]['label'] ?? 'Jam Terbaru')) : 'Jam Terbaru' }}</th>
+                            </tr>
+                            <tr>
+                                @foreach ($periodKeys as $key)
+                                    <th>{{ $dateFormatter(($tablePeriods[$key] ?? null)) }}</th>
+                                @endforeach
+                                @forelse ($tableHours as $hour)
                                     <th>{{ $hour['label'] }}</th>
                                 @empty
                                     <th>-</th>
@@ -577,15 +800,21 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @forelse (($payload['rows'] ?? []) as $row)
-                                <tr>
-                                    <td class="hourly-sticky hourly-sticky-no text-center">{{ $row['no'] }}</td>
-                                    <td class="hourly-sticky hourly-sticky-branch">{{ $row['branch'] }}</td>
-                                    <td class="hourly-sticky hourly-sticky-unit">{{ $row['unit'] }}</td>
+                            @forelse ($tableRows as $row)
+                                <tr class="hourly-{{ str_replace('_', '-', $row['row_type'] ?? 'detail') }}">
+                                    <td class="hourly-sticky hourly-sticky-no text-center">{{ $row['no'] !== '' ? $row['no'] : 'Σ' }}</td>
+                                    @if ($isAreaScope)
+                                        <td class="hourly-sticky hourly-sticky-area-code">{{ $row['branch_code'] ?? '' }}</td>
+                                        <td class="hourly-sticky hourly-sticky-area-branch">{{ $row['branch'] ?? '' }}</td>
+                                    @else
+                                        <td class="hourly-sticky hourly-sticky-branch">{{ $row['branch'] ?? '' }}</td>
+                                        <td class="hourly-sticky hourly-sticky-code">{{ $row['unit_code'] ?? '' }}</td>
+                                        <td class="hourly-sticky hourly-sticky-unit">{{ $row['unit'] ?? '' }}</td>
+                                    @endif
                                     @foreach ($periodKeys as $key)
                                         <td>{{ $formatJuta($row['period_values'][$key] ?? 0) }}</td>
                                     @endforeach
-                                    @forelse (($payload['hours'] ?? []) as $hour)
+                                    @forelse ($tableHours as $hour)
                                         <td>{{ $formatJuta($row['hour_values'][$hour['key']] ?? 0) }}</td>
                                     @empty
                                         <td>0,0</td>
@@ -597,25 +826,31 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="{{ 9 + max(1, count($payload['hours'] ?? [])) + count($deltaLabels) }}" class="hourly-empty">Data tidak ditemukan untuk filter ini.</td>
+                                    <td colspan="{{ $fixedColumnCount + 6 + max(1, count($tableHours)) + count($deltaLabels) }}" class="hourly-empty">Data tidak ditemukan untuk filter ini.</td>
                                 </tr>
                             @endforelse
 
-                            @if (!empty($payload['rows']))
+                            @if ($tableRows !== [])
                                 <tr class="hourly-total">
-                                    <td class="hourly-sticky hourly-sticky-no text-center">#</td>
-                                    <td class="hourly-sticky hourly-sticky-branch">{{ $payload['scopeLabel'] ?? 'AREA 6' }}</td>
-                                    <td class="hourly-sticky hourly-sticky-unit">GRAND TOTAL</td>
+                                    <td class="hourly-sticky hourly-sticky-no text-center">Σ</td>
+                                    @if ($isAreaScope)
+                                        <td class="hourly-sticky hourly-sticky-area-code"></td>
+                                        <td class="hourly-sticky hourly-sticky-area-branch">GRAND TOTAL AREA 6</td>
+                                    @else
+                                        <td class="hourly-sticky hourly-sticky-branch">{{ $tablePayload['scopeLabel'] ?? '' }}</td>
+                                        <td class="hourly-sticky hourly-sticky-code">{{ $tablePayload['branchCode'] ?? '' }}</td>
+                                        <td class="hourly-sticky hourly-sticky-unit">GRAND TOTAL</td>
+                                    @endif
                                     @foreach ($periodKeys as $key)
-                                        <td>{{ $formatJuta($payload['total']['period_values'][$key] ?? 0) }}</td>
+                                        <td>{{ $formatJuta($tableTotal['period_values'][$key] ?? 0) }}</td>
                                     @endforeach
-                                    @forelse (($payload['hours'] ?? []) as $hour)
-                                        <td>{{ $formatJuta($payload['total']['hour_values'][$hour['key']] ?? 0) }}</td>
+                                    @forelse ($tableHours as $hour)
+                                        <td>{{ $formatJuta($tableTotal['hour_values'][$hour['key']] ?? 0) }}</td>
                                     @empty
                                         <td>0,0</td>
                                     @endforelse
                                     @foreach ($deltaLabels as $key => $label)
-                                        @php $deltaValue = $payload['total']['delta_values'][$key] ?? 0; @endphp
+                                        @php $deltaValue = $tableTotal['delta_values'][$key] ?? 0; @endphp
                                         <td class="{{ $deltaClass($deltaValue) }}">{{ $formatDeltaJuta($deltaValue) }}</td>
                                     @endforeach
                                 </tr>
@@ -623,8 +858,9 @@
                         </tbody>
                     </table>
                 </div>
-            @endif
-        </div>
+                @endif
+            </div>
+        @endforeach
     </div>
 </div>
 @endsection

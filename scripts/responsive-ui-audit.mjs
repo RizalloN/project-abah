@@ -169,7 +169,8 @@ const auditExpression = `(async () => {
     const viewportHeight = window.innerHeight;
     const ignoredOverflowHosts = [
         '.abah-table-scroll', '.table-responsive', '.table-container',
-        '[class*="table-wrap"]', '[class*="table-scroll"]',
+        '.kinerja-table-container', '[class*="table-wrap"]', '[class*="table-scroll"]',
+        '[class*="table-container"]', '[class*="table-shell"]',
         '.nav-tabs', '.dropdown-menu', '.select2-dropdown', '.leaflet-container',
         '.main-sidebar', '.control-sidebar', '.route-loading-overlay'
     ].join(',');
@@ -518,6 +519,37 @@ const auditExpression = `(async () => {
         }
     }
 
+    const nestedVerticalTableScrolls = [];
+    const inspectedVerticalHosts = new Set();
+    Array.from(document.querySelectorAll('table')).forEach((table) => {
+        const tableRect = table.getBoundingClientRect();
+        const tableStyle = getComputedStyle(table);
+        if (!isVisible(table, tableStyle, tableRect)) {
+            return;
+        }
+
+        let host = table.parentElement;
+        while (host && host !== document.body && host !== document.documentElement && !host.classList.contains('content-wrapper')) {
+            if (!inspectedVerticalHosts.has(host)) {
+                const style = getComputedStyle(host);
+                const overflowY = style.overflowY;
+                const hasNestedScroll = ['auto', 'scroll'].includes(overflowY)
+                    && host.scrollHeight > host.clientHeight + 1;
+
+                if (hasNestedScroll) {
+                    inspectedVerticalHosts.add(host);
+                    nestedVerticalTableScrolls.push({
+                        selector: selectorFor(host),
+                        overflowY,
+                        clientHeight: Math.round(host.clientHeight),
+                        scrollHeight: Math.round(host.scrollHeight),
+                    });
+                }
+            }
+            host = host.parentElement;
+        }
+    });
+
     const controls = Array.from(document.querySelectorAll('button, .btn, input:not([type="hidden"]), select, textarea'))
         .filter((element) => !element.classList.contains('select2-hidden-accessible') && element.getAttribute('aria-hidden') !== 'true')
         .map((element) => {
@@ -598,6 +630,7 @@ const auditExpression = `(async () => {
         undersizedControls,
         interactiveOverlaps: interactiveOverlaps.slice(0, 12),
         tableMetrics,
+        nestedVerticalTableScrolls,
         stickyAudits,
         // Alias dipertahankan agar pemroses report versi lama tidak langsung rusak.
         stickyFrozenColumns: stickyAudits,
@@ -708,6 +741,7 @@ try {
             result.document.horizontalOverflow
             || result.horizontalOffenders.length > 0
             || result.interactiveOverlaps.length > 0
+            || result.nestedVerticalTableScrolls.length > 0
             || result.runtimeErrors.length > 0
             || result.stickyAudits.some(stickyAuditFailed)
         )),
@@ -724,6 +758,7 @@ try {
         overlaps: result.interactiveOverlaps.length,
         smallControls: result.undersizedControls.length,
         tables: result.tableMetrics.length,
+        nestedTableScrolls: result.nestedVerticalTableScrolls.length,
         stickyFailures: result.stickyAudits.filter(stickyAuditFailed).length,
         jsErrors: result.runtimeErrors.length,
         applicationError: result.applicationError,

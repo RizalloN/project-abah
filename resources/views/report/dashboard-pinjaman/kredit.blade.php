@@ -1892,10 +1892,12 @@ document.addEventListener('DOMContentLoaded', function () {
             .replace(/'/g, '&#039;');
     }
 
-    function buildTable(data, headerDates, typeLabel, segmentName, rkaLabels) {
+    function buildTable(data, headerDates, typeLabel, segmentName, rkaLabels, displayOptions = {}) {
         if (!data || data.length === 0 || (data.length === 1 && data[0].is_total && data[0].selected == 0)) {
             return '<div class="text-center py-5 text-muted">Tidak ada data untuk filter ini.</div>';
         }
+
+        const showMom = displayOptions.show_mom !== false;
 
         const dates = {
             ytd: formatDate(headerDates.ytd),
@@ -1916,19 +1918,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 <tr>
                     <th rowspan="2" class="sticky-cabang-header" style="width: 160px;">${escapeHtml(scopeHeaderLabel)}</th>
                     <th rowspan="2" class="sticky-kategori-header" style="width: 150px;">KATEGORI ${escapeHtml(segmentName)}</th>
-                    <th colspan="5" class="sub-head">${escapeHtml(typePrefix)} PERIODE</th>
-                    <th colspan="3" class="accent-head">DELTA (Δ) PERIODE</th>
+                    <th colspan="${showMom ? 5 : 4}" class="sub-head">${escapeHtml(typePrefix)} PERIODE</th>
+                    <th colspan="${showMom ? 3 : 2}" class="accent-head">DELTA (Δ) PERIODE</th>
                     <th colspan="2" class="sub-head">RKAP</th>
                     <th colspan="4" class="accent-head">PENCAPAIAN RKA</th>
                 </tr>
                 <tr>
                     <th class="sub-head" style="width: 85px;">${escapeHtml(dates.ytd)}<br><small>(YtD)</small></th>
                     <th class="sub-head" style="width: 85px;">${escapeHtml(dates.m2)}<br><small>(M-2)</small></th>
-                    <th class="sub-head" style="width: 85px;">${escapeHtml(dates.mtm)}<br><small>MoM</small></th>
+                    ${showMom ? `<th class="sub-head" style="width: 85px;">${escapeHtml(dates.mtm)}<br><small>MoM</small></th>` : ''}
                     <th class="sub-head" style="width: 85px;">${escapeHtml(dates.mtd)}<br><small>MTD</small></th>
                     <th class="sub-head" style="background: #004280; width: 90px;">${escapeHtml(dates.selected)}<br><small>(HARI INI)</small></th>
                     <th class="accent-head" style="width: 80px;">YtD</th>
-                    <th class="accent-head" style="width: 80px;">MoM</th>
+                    ${showMom ? '<th class="accent-head" style="width: 80px;">MoM</th>' : ''}
                     <th class="accent-head" style="width: 80px;">MtD</th>
                     <th class="sub-head" style="width: 85px;">${escapeHtml(rkaCurrentLabel)}</th>
                     <th class="sub-head" style="width: 85px;">${escapeHtml(rkaM1Label)}</th>
@@ -1992,11 +1994,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     <td class="text-center-v text-center-important sticky-kategori-cell" style="font-size: 0.68rem; letter-spacing: 0.05em; background: rgba(255,255,255,0.05); font-weight: 900; border-right: 1px solid rgba(255,255,255,0.1);">TOTAL ${escapeHtml(shortBranchName.toUpperCase())}</td>
                     <td>${formatCurrency(subtotal.ytd)}</td>
                     <td>${formatCurrency(subtotal.m2)}</td>
-                    <td>${formatCurrency(subtotal.mtm)}</td>
+                    ${showMom ? `<td>${formatCurrency(subtotal.mtm)}</td>` : ''}
                     <td>${formatCurrency(subtotal.mtd)}</td>
                     <td style="background: rgba(224, 242, 254, 0.15); color: #7dd3fc;">${formatCurrency(subtotal.selected)}</td>
                     <td class="${getPositionDeltaClass(subtotal.d_ytd, typeLabel)}">${formatCurrency(subtotal.d_ytd)}</td>
-                    <td class="${getPositionDeltaClass(subtotal.d_mom, typeLabel)}">${formatCurrency(subtotal.d_mom)}</td>
+                    ${showMom ? `<td class="${getPositionDeltaClass(subtotal.d_mom, typeLabel)}">${formatCurrency(subtotal.d_mom)}</td>` : ''}
                     <td class="${getPositionDeltaClass(subtotal.d_mtd, typeLabel)}">${formatCurrency(subtotal.d_mtd)}</td>
                     <td>${formatCurrency(subtotal.rka_current)}</td>
                     <td>${formatCurrency(subtotal.rka_m1)}</td>
@@ -2027,11 +2029,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     <td class="${categoryCellClass} sticky-kategori-cell" style="${categoryCellStyle}">${escapeHtml(categoryLabel)}</td>
                     <td>${formatCurrency(row.ytd)}</td>
                     <td>${formatCurrency(row.m2)}</td>
-                    <td>${formatCurrency(row.mtm)}</td>
+                    ${showMom ? `<td>${formatCurrency(row.mtm)}</td>` : ''}
                     <td>${formatCurrency(row.mtd)}</td>
                     <td style="background: #f0f7ff; color: #003d7c; font-weight: 800;">${formatCurrency(row.selected)}</td>
                     <td class="${getPositionDeltaClass(row.delta_ytd, typeLabel)}">${formatCurrency(row.delta_ytd)}</td>
-                    <td class="${getPositionDeltaClass(row.delta_mom, typeLabel)}">${formatCurrency(row.delta_mom)}</td>
+                    ${showMom ? `<td class="${getPositionDeltaClass(row.delta_mom, typeLabel)}">${formatCurrency(row.delta_mom)}</td>` : ''}
                     <td class="${getPositionDeltaClass(row.delta_mtd, typeLabel)}">${formatCurrency(row.delta_mtd)}</td>
                     <td>${formatCurrency(row.rka_current)}</td>
                     <td>${formatCurrency(row.rka_m1)}</td>
@@ -2048,11 +2050,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td colspan="2" class="text-center-important sticky-cabang-cell" style="letter-spacing: 0.1em; color: #ffffff; border-right: 1px solid rgba(255,255,255,0.2); font-weight: 800;">GRAND TOTAL</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.ytd)}</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.m2)}</td>
-                <td style="color: #ffffff;">${formatCurrency(totalRow.mtm)}</td>
+                ${showMom ? `<td style="color: #ffffff;">${formatCurrency(totalRow.mtm)}</td>` : ''}
                 <td style="color: #ffffff;">${formatCurrency(totalRow.mtd)}</td>
                 <td style="background: #0f172a; color: #ffffff;">${formatCurrency(totalRow.selected)}</td>
                 <td class="${getPositionDeltaClass(totalRow.delta_ytd, typeLabel)}">${formatCurrency(totalRow.delta_ytd)}</td>
-                <td class="${getPositionDeltaClass(totalRow.delta_mom, typeLabel)}">${formatCurrency(totalRow.delta_mom)}</td>
+                ${showMom ? `<td class="${getPositionDeltaClass(totalRow.delta_mom, typeLabel)}">${formatCurrency(totalRow.delta_mom)}</td>` : ''}
                 <td class="${getPositionDeltaClass(totalRow.delta_mtd, typeLabel)}">${formatCurrency(totalRow.delta_mtd)}</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.rka_current)}</td>
                 <td style="color: #ffffff;">${formatCurrency(totalRow.rka_m1)}</td>
@@ -2119,11 +2121,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 consolidationTableContainer.innerHTML = '';
 
                 document.getElementById('osTitle').innerText = `A. OUTSTANDING (OS) - ${kategori}`;
-                osTableContainer.innerHTML = buildTable(data.os, data.header_dates, 'Outstanding', kategori, data.rka_labels);
+                osTableContainer.innerHTML = buildTable(data.os, data.header_dates, 'Outstanding', kategori, data.rka_labels, data.display_options);
                 document.getElementById('smlTitle').innerText = `B. SPECIAL MENTION LOAN (SML) - ${kategori}`;
-                smlTableContainer.innerHTML = buildTable(data.sml, data.header_dates, 'SML', kategori, data.rka_labels);
+                smlTableContainer.innerHTML = buildTable(data.sml, data.header_dates, 'SML', kategori, data.rka_labels, data.display_options);
                 document.getElementById('nplTitle').innerText = `C. NON-PERFORMING LOAN (NPL) - ${kategori}`;
-                nplTableContainer.innerHTML = buildTable(data.npl, data.header_dates, 'NPL', kategori, data.rka_labels);
+                nplTableContainer.innerHTML = buildTable(data.npl, data.header_dates, 'NPL', kategori, data.rka_labels, data.display_options);
                 syncSummaryTableHeaders();
                 scheduleSummaryTableSync();
             })

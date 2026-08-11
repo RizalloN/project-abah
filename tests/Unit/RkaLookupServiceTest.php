@@ -38,6 +38,13 @@ class RkaLookupServiceTest extends TestCase
             $table->decimal('mar', 20, 2)->nullable();
             $table->decimal('apr', 20, 2)->nullable();
             $table->decimal('may', 20, 2)->nullable();
+            $table->decimal('jun', 20, 2)->nullable();
+            $table->decimal('jul', 20, 2)->nullable();
+            $table->decimal('aug', 20, 2)->nullable();
+            $table->decimal('sep', 20, 2)->nullable();
+            $table->decimal('oct', 20, 2)->nullable();
+            $table->decimal('nov', 20, 2)->nullable();
+            $table->decimal('dec', 20, 2)->nullable();
             $table->timestamp('created_at')->nullable();
             $table->timestamp('updated_at')->nullable();
         });
@@ -454,5 +461,92 @@ class RkaLookupServiceTest extends TestCase
         );
 
         $this->assertSame(['UNIT PERINTIS KEMERDEKAAN MADI' => 750.0], $result['total_simpanan']);
+    }
+
+    public function test_similar_unit_names_do_not_cross_count_rka_targets(): void
+    {
+        DB::table('rka')->insert([
+            ['uniqueid_namareport' => 'rka-kota-i', 'kanca' => 'KC Ponorogo', 'desc_uker' => '6502-UNIT KOTA I PONOROGO', 'mata_anggaran' => 'B. KREDIT TOTAL', 'may' => 100, 'created_at' => '2026-05-01 00:00:00'],
+            ['uniqueid_namareport' => 'rka-kota-ii', 'kanca' => 'KC Ponorogo', 'desc_uker' => '3844-UNIT KOTA II PONOROGO', 'mata_anggaran' => 'B. KREDIT TOTAL', 'may' => 200, 'created_at' => '2026-05-01 00:00:00'],
+            ['uniqueid_namareport' => 'rka-kota-iii', 'kanca' => 'KC Ponorogo', 'desc_uker' => '6492-UNIT KOTA III PONOROGO', 'mata_anggaran' => 'B. KREDIT TOTAL', 'may' => 300, 'created_at' => '2026-05-01 00:00:00'],
+            ['uniqueid_namareport' => 'rka-pasar-pon', 'kanca' => 'KC Ponorogo', 'desc_uker' => '6503-UNIT PASAR PON PONOROGO', 'mata_anggaran' => 'B. KREDIT TOTAL', 'may' => 400, 'created_at' => '2026-05-01 00:00:00'],
+            ['uniqueid_namareport' => 'rka-pasar-bajang', 'kanca' => 'KC Ponorogo', 'desc_uker' => '8113-UNIT PASAR BAJANG PONOROGO', 'mata_anggaran' => 'B. KREDIT TOTAL', 'may' => 500, 'created_at' => '2026-05-01 00:00:00'],
+        ]);
+
+        $definitions = ['total_os' => ['mata_anggaran' => ['B. KREDIT TOTAL']]];
+        $service = new RkaLookupService();
+
+        $kotaI = $service->aggregateForScope($definitions, 'may', 'KC Ponorogo', 'UNIT Kota I Ponorogo', 2026);
+        $kotaII = $service->aggregateForScope($definitions, 'may', 'KC Ponorogo', 'UNIT Kota II Ponorogo', 2026);
+        $kotaIII = $service->aggregateForScope($definitions, 'may', 'KC Ponorogo', 'UNIT Kota III Ponorogo', 2026);
+        $pasarPon = $service->aggregateForScope($definitions, 'may', 'KC Ponorogo', 'UNIT Pasar Pon Ponorogo', 2026);
+        $groupedKotaI = $service->aggregateByGroup(
+            $definitions,
+            'may',
+            ['kc-ponorogo'],
+            ['unit-kota-i-ponorogo'],
+            'uker',
+            2026
+        );
+
+        $this->assertSame(100.0, $kotaI['total_os']);
+        $this->assertSame(200.0, $kotaII['total_os']);
+        $this->assertSame(300.0, $kotaIII['total_os']);
+        $this->assertSame(400.0, $pasarPon['total_os']);
+        $this->assertSame(['UNIT KOTA I PONOROGO' => 100.0], $groupedKotaI['total_os']);
+    }
+
+    public function test_rka_year_filter_uses_business_year_instead_of_upload_timestamp(): void
+    {
+        Schema::table('rka', function (Blueprint $table): void {
+            $table->unsignedInteger('tahun')->nullable();
+        });
+
+        DB::table('rka')->insert([
+            'uniqueid_namareport' => 'rka-business-year-2025',
+            'tahun' => 2025,
+            'kanca' => 'KC Madiun',
+            'desc_uker' => '45-KC Madiun',
+            'mata_anggaran' => 'A.1. DPK Retail Funding Total',
+            'dec' => 2025,
+            'created_at' => '2026-07-31 10:00:00',
+            'updated_at' => '2026-07-31 10:00:00',
+        ]);
+
+        $service = new RkaLookupService();
+        $result = $service->aggregateForScope(
+            ['total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total']]],
+            'dec',
+            'KC Madiun',
+            'KC Madiun',
+            2025
+        );
+
+        $this->assertSame(2025.0, $result['total_simpanan']);
+        $this->assertSame([2025], $service->availableYears());
+    }
+
+    public function test_latest_breakdown_budget_label_matches_legacy_dashboard_definition(): void
+    {
+        DB::table('rka')->insert([
+            'uniqueid_namareport' => 'rka-latest-funding-label',
+            'kanca' => 'KC Madiun',
+            'desc_uker' => '45-KC Madiun',
+            'mata_anggaran' => 'A. DPK Retail Funding Total',
+            'jul' => 987654,
+            'created_at' => '2026-07-31 10:00:00',
+            'updated_at' => '2026-07-31 10:00:00',
+        ]);
+
+        $service = new RkaLookupService();
+        $result = $service->aggregateForScope(
+            ['total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total']]],
+            'jul',
+            'KC Madiun',
+            'KC Madiun',
+            2026
+        );
+
+        $this->assertSame(987654.0, $result['total_simpanan']);
     }
 }

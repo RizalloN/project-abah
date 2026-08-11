@@ -37,6 +37,8 @@ beforeEach(function (): void {
         $table->string('ket_kanca');
         $table->string('br_number');
         $table->string('ket_unit_kerja');
+        $table->string('status_rekening')->nullable();
+        $table->string('produk')->nullable();
         $table->string('sektor_ekonomi')->nullable();
         $table->string('sub_sektor_ekonomi')->nullable();
         $table->string('loan_type')->nullable();
@@ -68,6 +70,8 @@ beforeEach(function (): void {
             'ket_kanca' => 'KC Madiun',
             'br_number' => '03883',
             'ket_unit_kerja' => 'UNIT CARUBAN',
+            'status_rekening' => 'AKTIF',
+            'produk' => 'KUPEDES',
             'sektor_ekonomi' => 'PERTANIAN',
             'sub_sektor_ekonomi' => 'PADI',
             'loan_type' => 'KUPEDES',
@@ -93,6 +97,8 @@ beforeEach(function (): void {
             'ket_kanca' => 'KC Ponorogo',
             'br_number' => '02204',
             'ket_unit_kerja' => 'KCP SUDIRMAN PONOROGO',
+            'status_rekening' => 'AKTIF',
+            'produk' => 'KUR MIKRO',
             'sektor_ekonomi' => 'PERDAGANGAN',
             'sub_sektor_ekonomi' => 'ECERAN',
             'loan_type' => 'KUR',
@@ -118,6 +124,8 @@ beforeEach(function (): void {
             'ket_kanca' => 'KC Magetan',
             'br_number' => '03410',
             'ket_unit_kerja' => 'UNIT MAGETAN',
+            'status_rekening' => 'AKTIF',
+            'produk' => 'KUPEDES',
             'sektor_ekonomi' => 'INDUSTRI',
             'sub_sektor_ekonomi' => 'PENGOLAHAN',
             'loan_type' => 'KUPEDES',
@@ -143,6 +151,8 @@ beforeEach(function (): void {
             'ket_kanca' => 'KC Ngawi',
             'br_number' => '06429',
             'ket_unit_kerja' => 'UNIT NGAWI',
+            'status_rekening' => 'AKTIF',
+            'produk' => 'KUPEDES',
             'sektor_ekonomi' => 'PERDAGANGAN',
             'sub_sektor_ekonomi' => 'GROSIR',
             'loan_type' => 'KUPEDES',
@@ -179,7 +189,7 @@ it('renders the CRAS mapping workspace and navigation entry', function (): void 
     $this->actingAs($user)
         ->get(route('report.dashboard-dana.market-share.mapping-cras'))
         ->assertOk()
-        ->assertSee('Mapping Portofolio SSA CRAS')
+        ->assertSee('Marketshare CRAS LPG')
         ->assertSee('Sektor Ekonomi')
         ->assertSee('Sub Sektor Ekonomi')
         ->assertSee('Loan Type')
@@ -191,7 +201,117 @@ it('renders the CRAS mapping workspace and navigation entry', function (): void 
         ->assertSee('NPL Terbesar')
         ->assertSee('SML Terbesar')
         ->assertSee('id="crasPortfolioMap"', false)
-        ->assertSee('Mapping CRAS');
+        ->assertSee('Sector Acceptance Criteria LPG')
+        ->assertSee('Marketshare CRAS LPG');
+});
+
+it('maps Micro and Small with segment-specific SAC colors and excludes Briguna Mikro', function (): void {
+    DB::table('cras')->insert([
+        [
+            'cras_uuid' => 'lpg-micro-transport',
+            'cras_periode' => '2026-05-31',
+            'ket_kanca' => 'KC Madiun',
+            'br_number' => '03883',
+            'ket_unit_kerja' => 'UNIT CARUBAN',
+            'status_rekening' => 'AKTIF',
+            'produk' => 'KUPEDES',
+            'sektor_ekonomi' => 'TRANSPORTASI',
+            'sub_sektor_ekonomi' => 'Angkutan Jalan Raya',
+            'loan_type' => 'KUPEDES',
+            'segmen' => 'Micro',
+            'ket_produk_tiering' => 'TIER 1',
+            'kualitas' => '3',
+            'plafond' => '1,500,000,000',
+            'baki_debet' => '1,200,000,000',
+            'jumlah_debitur' => '2',
+            'jumlah_rekening' => '2',
+        ],
+        [
+            'cras_uuid' => 'lpg-small-transport',
+            'cras_periode' => '2026-05-31',
+            'ket_kanca' => 'KC Madiun',
+            'br_number' => '00045',
+            'ket_unit_kerja' => 'KC MADIUN',
+            'status_rekening' => 'AKTIF',
+            'produk' => 'SMALL',
+            'sektor_ekonomi' => 'TRANSPORTASI',
+            'sub_sektor_ekonomi' => 'Angkutan Jalan Raya',
+            'loan_type' => 'KMK',
+            'segmen' => 'Small',
+            'ket_produk_tiering' => 'KECIL',
+            'kualitas' => '2',
+            'plafond' => '4,500,000,000',
+            'baki_debet' => '4,000,000,000',
+            'jumlah_debitur' => '1',
+            'jumlah_rekening' => '1',
+        ],
+        [
+            'cras_uuid' => 'lpg-briguna-excluded',
+            'cras_periode' => '2026-05-31',
+            'ket_kanca' => 'KC Madiun',
+            'br_number' => '03883',
+            'ket_unit_kerja' => 'UNIT CARUBAN',
+            'status_rekening' => 'AKTIF',
+            'produk' => 'BRIGUNA MIKRO',
+            'sektor_ekonomi' => 'TRANSPORTASI',
+            'sub_sektor_ekonomi' => 'Angkutan Jalan Raya',
+            'loan_type' => 'BRIGUNA',
+            'segmen' => 'Micro',
+            'ket_produk_tiering' => 'BRIGUNA MIKRO',
+            'kualitas' => '1',
+            'plafond' => '500,000,000',
+            'baki_debet' => '450,000,000',
+            'jumlah_debitur' => '1',
+            'jumlah_rekening' => '1',
+        ],
+    ]);
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', [
+        'periode' => '2026-05-31',
+    ]));
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('lpg.ready', true)
+        ->assertJsonCount(2, 'lpg.rows')
+        ->assertJsonPath('lpg.rows.0.segment', 'micro')
+        ->assertJsonPath('lpg.rows.0.industry_sector', 'Transportasi')
+        ->assertJsonPath('lpg.rows.0.industry_sub_sector', 'Angkutan darat')
+        ->assertJsonPath('lpg.rows.0.color', 'kuning')
+        ->assertJsonPath('lpg.rows.1.segment', 'small')
+        ->assertJsonPath('lpg.rows.1.color', 'hijau_muda')
+        ->assertJsonPath('lpg.coverage.eligible_rows', 2)
+        ->assertJsonPath('lpg.coverage.mapped_rows', 2)
+        ->assertJsonPath('lpg.coverage.mapping_ratio', 100)
+        ->assertJsonPath('lpg.metrics.baki_debet', 5200000000)
+        ->assertJsonPath('lpg.metrics.sml', 4000000000)
+        ->assertJsonPath('lpg.metrics.npl', 1200000000)
+        ->assertJsonCount(1, 'lpg.industry_rows')
+        ->assertJsonPath('lpg.industry_rows.0.baki_debet', 5200000000)
+        ->assertJsonPath('lpg.industry_rows.0.sml', 4000000000)
+        ->assertJsonPath('lpg.industry_rows.0.npl', 1200000000)
+        ->assertJsonPath('lpg.industry_rows.0.npl_ratio', 23.08)
+        ->assertJsonCount(2, 'lpg.industry_rows.0.sac_categories');
+
+    $this->actingAs($user)->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', [
+        'periode' => '2026-05-31',
+        'lpg_color' => 'kuning',
+    ]))
+        ->assertOk()
+        ->assertJsonPath('lpg.filters.selected.color', 'kuning')
+        ->assertJsonCount(1, 'lpg.rows')
+        ->assertJsonPath('lpg.rows.0.segment', 'micro')
+        ->assertJsonPath('lpg.rows.0.color', 'kuning');
+
+    $this->actingAs($user)->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', [
+        'periode' => '2026-05-31',
+        'lpg_sort' => 'npl_ratio_desc',
+    ]))
+        ->assertOk()
+        ->assertJsonPath('lpg.filters.selected.sort', 'npl_ratio_desc')
+        ->assertJsonCount(1, 'lpg.industry_rows')
+        ->assertJsonPath('lpg.industry_rows.0.npl_ratio', 23.08);
 });
 
 it('aggregates text metrics and applies all CRAS portfolio filters', function (): void {
@@ -292,11 +412,19 @@ it('keeps responsive map and table guardrails in the CRAS view', function (): vo
         ->toContain('@media (max-width: 1199.98px)')
         ->toContain('@media (max-width: 767.98px)')
         ->toContain('@media (max-width: 340px)')
-        ->toContain('overflow: auto')
+        ->toContain('overflow-x: auto')
+        ->toContain('overflow-y: visible')
         ->toContain('map.invalidateSize')
         ->toContain('window.L.map')
         ->toContain('data-cras-ranking-mode="district"')
+        ->toContain('data-cras-view-trigger="mapping"')
+        ->toContain('data-cras-view-trigger="sac"')
+        ->toContain('data-cras-view-panel="mapping"')
+        ->toContain('data-cras-view-panel="sac"')
+        ->toContain('data-cras-lpg-sort="npl_ratio_desc"')
+        ->toContain('data-cras-lpg-table')
         ->toContain('function sortedDistricts')
+        ->toContain('function renderLpg')
         ->toContain('function renderInsights')
         ->toContain("npl: ['#fff1f3'")
         ->toContain("sml: ['#fff8e8'");

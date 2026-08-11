@@ -44,7 +44,7 @@ if (-not $isAdministrator) {
     $scheduleFolder = $scheduleService.GetFolder('\')
     $scheduledTask = $scheduleFolder.GetTask($taskName)
     $definition = $scheduledTask.Definition
-    $definition.RegistrationInfo.Description = 'Backup database Project ABAH pukul 00:00; simpan dua hari terbaru.'
+    $definition.RegistrationInfo.Description = 'Backup database Project ABAH setiap hari pukul 00:00; simpan satu backup terbaru yang terverifikasi.'
     $definition.Settings.StartWhenAvailable = $true
     $definition.Settings.DisallowStartIfOnBatteries = $false
     $definition.Settings.StopIfGoingOnBatteries = $false
@@ -91,7 +91,7 @@ $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
 
 Register-ScheduledTask `
     -TaskName $taskName `
-    -Description 'Backup database Project ABAH pukul 00:00; simpan dua hari terbaru.' `
+    -Description 'Backup database Project ABAH setiap hari pukul 00:00; simpan satu backup terbaru yang terverifikasi.' `
     -Trigger $trigger `
     -Action $action `
     -Settings $settings `

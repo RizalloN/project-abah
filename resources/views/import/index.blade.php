@@ -1664,6 +1664,8 @@
             const isSimpanan = reportName.includes('simpanan multipn');
             const isPerformancePis = reportName.includes('performance pis per produk');
             const isCasaBrilink = reportName.includes('casa brilink');
+            const isBrilinkSummary = tableName === 'brilink_web_laporan_summary_transaksi_brilink_web'
+                || reportName.includes('brilink web - laporan summary transaksi');
             const isReportPh = reportName.includes('report nominatif rekening pinjaman ph');
             const isCognosPh = reportName.includes('cognos ph');
             const isCognosRecovery = reportName.includes('cognos recovery');
@@ -1869,6 +1871,23 @@
                     label: 'Periode Bulan',
                     help: 'Wajib isi periode manual dalam format bulan (YYYY-MM) untuk CASA BRILINK WEB/EDC.',
                 }));
+                configureKancaInput({ visible: false });
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (isBrilinkSummary) {
+                formCsv.style.display = 'block';
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.csv,.txt');
+                formImport.action = "{{ route('import.upload') }}";
+                formImport.dataset.preparePreviewUrl = '';
+                csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload BRILINK Web Summary (.csv, .txt)';
+                csvHelp.textContent = 'Data otomatis dibatasi ke KC Madiun, KC Magetan, KC Ngawi, dan KC Ponorogo.';
+                applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
+                configurePeriodeInput({ visible: false });
                 configureKancaInput({ visible: false });
                 updateReportSummary();
                 updateFileSelectionUI();

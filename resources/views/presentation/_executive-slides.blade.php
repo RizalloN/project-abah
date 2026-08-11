@@ -2,6 +2,8 @@
   $presentationStory = [
     ['key' => 'cover', 'label' => 'Cover'],
     ['key' => 'agenda', 'label' => 'Daftar Isi'],
+    ['key' => 'market-share-area6', 'label' => 'Market Share Area 6', 'progressive' => 'marketshare'],
+    ['key' => 'market-share-mapping', 'label' => 'Mapping Market Share', 'progressive' => 'marketshare'],
     ['key' => 'funding-summary', 'label' => 'Summary Funding'],
     ['key' => 'funding-product', 'label' => 'Funding per Produk'],
     ['key' => 'strategies', 'label' => '8 Strategi', 'progressive' => 'digital'],

@@ -3465,7 +3465,7 @@
 
 .pres-structured-shell .psd-v2-agenda-list {
     display: grid;
-    grid-template-rows: repeat(4, minmax(0, 1fr));
+    grid-template-rows: repeat(5, minmax(0, 1fr));
     gap: 7px;
     min-width: 0;
     min-height: 0;
@@ -7193,6 +7193,1274 @@
         gap: 6px;
         padding: 7px 10px 9px;
     }
+}
+
+/* Market-share presentation slides: sector intelligence and self-hosted vector map. */
+.pres-structured-shell .psd-marketshare-sector-slide .psd-heading,
+.pres-structured-shell .psd-marketshare-area-slide .psd-heading,
+.pres-structured-shell .psd-marketshare-map-slide .psd-heading {
+    align-items: flex-start;
+    overflow: hidden;
+}
+
+.pres-structured-shell .psd-marketshare-sector-slide .psd-heading h1,
+.pres-structured-shell .psd-marketshare-area-slide .psd-heading h1,
+.pres-structured-shell .psd-marketshare-map-slide .psd-heading h1 {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 30px;
+    text-align: left;
+}
+
+.pres-structured-shell .psd-marketshare-sector-main {
+    display: grid;
+    grid-template-rows: 82px minmax(0, 1fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-marketshare-sector-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-marketshare-sector-kpis .psd-stat {
+    padding: 7px 11px;
+}
+
+.pres-structured-shell .psd-marketshare-sector-kpis .psd-stat > strong {
+    font-size: 18px;
+}
+
+.pres-structured-shell .psd-marketshare-sector-body {
+    display: grid;
+    grid-template-columns: minmax(410px, 0.86fr) minmax(0, 1.34fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-marketshare-sector-chart-panel {
+    display: grid;
+    grid-template-rows: 38px minmax(0, 1fr) 92px;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.pres-structured-shell .psd-marketshare-sector-bars {
+    display: grid;
+    grid-template-rows: 26px repeat(7, minmax(0, 1fr));
+    min-width: 0;
+    min-height: 0;
+    padding: 5px 10px 4px;
+    overflow: hidden;
+}
+
+.pres-structured-shell .psd-marketshare-sector-legend {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    color: #607087;
+    font-size: 7.5px;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-marketshare-sector-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.pres-structured-shell .psd-marketshare-sector-legend i {
+    width: 16px;
+    height: 6px;
+    border-radius: 1px;
+    background: #0b67b5;
+}
+
+.pres-structured-shell .psd-marketshare-sector-legend i.is-market {
+    background: #cbd5e1;
+}
+
+.pres-structured-shell .psd-marketshare-sector-bars article {
+    display: grid;
+    grid-template-columns: 24px minmax(130px, 0.8fr) minmax(145px, 1fr);
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 0;
+    border-top: 1px solid #e3ebf4;
+}
+
+.pres-structured-shell .psd-marketshare-sector-rank {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 21px;
+    height: 21px;
+    color: #0857c3;
+    border-radius: 3px;
+    background: #e9f2fd;
+    font-size: 7.5px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-marketshare-sector-bar-copy {
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-marketshare-sector-bar-copy strong,
+.pres-structured-shell .psd-marketshare-sector-bar-copy small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-sector-bar-copy strong {
+    color: #193a60;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-marketshare-sector-bar-copy small {
+    margin-top: 2px;
+    color: #718198;
+    font-size: 6.8px;
+    font-weight: 750;
+}
+
+.pres-structured-shell .psd-marketshare-sector-bar-track {
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+    height: 11px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: #edf1f6;
+}
+
+.pres-structured-shell .psd-marketshare-sector-bar-track i {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #0758a8, #1684d2);
+}
+
+.pres-structured-shell .psd-marketshare-sector-bar-track i.is-market {
+    background: #cbd5e1;
+}
+
+.pres-structured-shell .psd-marketshare-executive-callout {
+    display: grid;
+    grid-template-columns: 116px minmax(0, 1fr);
+    align-items: stretch;
+    min-width: 0;
+    margin: 0 9px 9px;
+    overflow: hidden;
+    border: 1px solid #cbdcf0;
+    border-left: 5px solid #0857c3;
+    border-radius: 5px;
+    background: #f1f7fd;
+}
+
+.pres-structured-shell .psd-marketshare-executive-callout > span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px;
+    color: #0857c3;
+    border-right: 1px solid #d7e4f2;
+    font-size: 8px;
+    font-weight: 950;
+    line-height: 1.25;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-marketshare-executive-callout > p {
+    align-self: center;
+    margin: 0;
+    padding: 8px 10px;
+    color: #304b69;
+    font-size: 8px;
+    font-weight: 750;
+    line-height: 1.35;
+}
+
+.pres-structured-shell .psd-marketshare-executive-callout.is-green {
+    border-left-color: #078773;
+    background: #f0faf7;
+}
+
+.pres-structured-shell .psd-marketshare-executive-callout.is-green > span {
+    color: #087560;
+}
+
+.pres-structured-shell .psd-marketshare-executive-callout.is-amber {
+    border-left-color: #e69b13;
+    background: #fff8e9;
+}
+
+.pres-structured-shell .psd-marketshare-executive-callout.is-amber > span {
+    color: #9a6600;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table-panel {
+    display: grid;
+    grid-template-rows: 38px minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table-wrap {
+    min-width: 0;
+    min-height: 0;
+    padding: 8px;
+    overflow: hidden;
+    background: #f7fafe;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table {
+    width: 100%;
+    height: 100%;
+    table-layout: fixed;
+    border: 1px solid #c8d6e5;
+    border-radius: 4px;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    color: #19324f;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table th,
+.pres-structured-shell .psd-marketshare-sector-table td {
+    min-width: 0;
+    padding: 3px 5px;
+    overflow: hidden;
+    border-right: 1px solid #d9e3ee;
+    border-bottom: 1px solid #d9e3ee;
+    font-size: 8px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.18;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table tr > :last-child {
+    border-right: 0;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table tbody tr:last-child > * {
+    border-bottom: 0;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table thead th {
+    height: 32px;
+    color: #ffffff;
+    background: #174d82;
+    font-size: 7.5px;
+    font-weight: 950;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table thead th:first-child {
+    width: 29%;
+    background: #083a70;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table tbody th {
+    width: 29%;
+    color: #183e67;
+    background: #f0f5fa;
+    font-weight: 900;
+    text-align: left;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table tbody td strong {
+    color: #075da8;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table tbody .is-positive {
+    color: #08785f;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table tbody .is-negative {
+    color: #bd2938;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table tbody tr.is-total > * {
+    color: #ffffff;
+    background: #0b4e91;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-marketshare-sector-table tbody tr.is-total td strong {
+    color: #ffffff;
+}
+
+.pres-structured-shell .psd-marketshare-sector-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    grid-row: 2 / -1;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.pres-structured-shell .psd-marketshare-field {
+    display: grid;
+    grid-template-columns: auto minmax(150px, 1fr);
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    min-height: 30px;
+    padding: 2px 3px 2px 8px;
+    border: 1px solid #cbd9e9;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-marketshare-field.is-compact {
+    grid-template-columns: auto minmax(118px, 1fr);
+}
+
+.pres-structured-shell .psd-marketshare-field > span {
+    color: #526177;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-field select {
+    min-width: 0;
+    height: 26px;
+    padding: 0 24px 0 7px;
+    color: #16304f;
+    border: 0;
+    outline: 0;
+    background: #eef4fb;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 850;
+    cursor: pointer;
+}
+
+.pres-structured-shell .psd-marketshare-area-main,
+.pres-structured-shell .psd-marketshare-map-main {
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-marketshare-area-main {
+    display: grid;
+    grid-template-rows: 82px minmax(0, 1fr);
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-marketshare-area-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-marketshare-area-kpis .psd-stat {
+    padding: 7px 11px;
+}
+
+.pres-structured-shell .psd-marketshare-area-kpis .psd-stat > strong {
+    font-size: 18px;
+}
+
+.pres-structured-shell .psd-marketshare-area-body {
+    display: grid;
+    grid-template-columns: minmax(360px, 0.82fr) minmax(0, 1.28fr);
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-marketshare-area-chart-panel,
+.pres-structured-shell .psd-marketshare-area-table-panel {
+    display: grid;
+    grid-template-rows: 34px minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.pres-structured-shell .psd-marketshare-area-bars {
+    display: grid;
+    grid-template-rows: 28px repeat(var(--psd-marketshare-area-rows, 4), minmax(0, 1fr));
+    min-width: 0;
+    min-height: 0;
+    padding: 7px 11px 9px;
+    overflow: hidden;
+}
+
+.pres-structured-shell .psd-marketshare-area-legend {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    color: #607087;
+    font-size: 8px;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-marketshare-area-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.pres-structured-shell .psd-marketshare-area-legend i {
+    width: 16px;
+    height: 6px;
+    border-radius: 2px;
+    background: #087ca7;
+}
+
+.pres-structured-shell .psd-marketshare-area-legend i.is-secondary {
+    background: #b8c7da;
+}
+
+.pres-structured-shell .psd-marketshare-area-bars article {
+    display: grid;
+    grid-template-columns: minmax(125px, 0.72fr) minmax(155px, 1fr);
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    min-height: 0;
+    border-top: 1px solid #e1e9f2;
+}
+
+.pres-structured-shell .psd-marketshare-area-bar-copy,
+.pres-structured-shell .psd-marketshare-area-bar-copy strong,
+.pres-structured-shell .psd-marketshare-area-bar-copy small {
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-marketshare-area-bar-copy strong,
+.pres-structured-shell .psd-marketshare-area-bar-copy small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-area-bar-copy strong {
+    color: #173b63;
+    font-size: 10px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-marketshare-area-bar-copy small {
+    margin-top: 3px;
+    color: #667990;
+    font-size: 7.5px;
+    font-weight: 750;
+}
+
+.pres-structured-shell .psd-marketshare-area-bar-pair {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-marketshare-area-bar-pair > span {
+    display: block;
+    height: 8px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: #edf2f7;
+}
+
+.pres-structured-shell .psd-marketshare-area-bar-pair i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #0758a8, #00a6d6);
+}
+
+.pres-structured-shell .psd-marketshare-area-bar-pair i.is-secondary {
+    background: #b8c7da;
+}
+
+.pres-structured-shell .psd-marketshare-area-table-wrap {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 8px;
+    background: #f7fafe;
+}
+
+.pres-structured-shell .psd-marketshare-area-table {
+    width: 100%;
+    height: 100%;
+    table-layout: fixed;
+    overflow: hidden;
+    color: #19324f;
+    border: 1px solid #c8d6e5;
+    border-radius: 4px;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-marketshare-area-table th,
+.pres-structured-shell .psd-marketshare-area-table td {
+    min-width: 0;
+    padding: 4px 6px;
+    overflow: hidden;
+    border-right: 1px solid #d9e3ee;
+    border-bottom: 1px solid #d9e3ee;
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-area-table tr > :last-child {
+    border-right: 0;
+}
+
+.pres-structured-shell .psd-marketshare-area-table tbody tr:last-child > * {
+    border-bottom: 0;
+}
+
+.pres-structured-shell .psd-marketshare-area-table thead th {
+    height: 38px;
+    padding: 4px;
+    color: #ffffff;
+    background: #174d82;
+    font-size: 8px;
+    font-weight: 950;
+    line-height: 1.15;
+    text-align: center;
+    text-transform: uppercase;
+    white-space: normal;
+}
+
+.pres-structured-shell .psd-marketshare-area-table tr > :first-child {
+    width: 23%;
+    text-align: left;
+}
+
+.pres-structured-shell .psd-marketshare-area-table thead tr > :first-child {
+    text-align: center;
+    background: #083a70;
+}
+
+.pres-structured-shell .psd-marketshare-area-table tbody th {
+    color: #183e67;
+    background: #f0f5fa;
+    font-size: 9.5px;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-marketshare-area-table tbody tr:nth-child(even):not(.is-total) td {
+    background: #f8fbff;
+}
+
+.pres-structured-shell .psd-marketshare-area-table tbody tr.is-total > * {
+    color: #ffffff;
+    background: #0b4e91;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-marketshare-area-table .is-positive {
+    color: #08785f;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-marketshare-area-table .is-negative {
+    color: #bd2938;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-marketshare-area-table tr.is-total .is-positive,
+.pres-structured-shell .psd-marketshare-area-table tr.is-total .is-negative {
+    color: #ffffff;
+}
+
+.pres-structured-shell .psd-marketshare-table-panel,
+.pres-structured-shell .psd-marketshare-map-panel {
+    display: grid;
+    grid-template-rows: 34px minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.pres-structured-shell .psd-marketshare-table-wrap {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 10px;
+    background:
+        linear-gradient(180deg, rgba(238, 244, 251, 0.72), rgba(255, 255, 255, 0.95) 36%),
+        #ffffff;
+}
+
+.pres-structured-shell .psd-marketshare-table {
+    width: 100%;
+    table-layout: fixed;
+    overflow: hidden;
+    border-collapse: separate;
+    border-spacing: 0;
+    color: #152238;
+    border: 1px solid #bfcfe1;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-marketshare-table th,
+.pres-structured-shell .psd-marketshare-table td {
+    min-width: 0;
+    padding: 0 3px;
+    overflow: hidden;
+    border-right: 1px solid #d2dfed;
+    border-bottom: 1px solid #d2dfed;
+    font-size: 9.5px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-table tr > :last-child {
+    border-right: 0;
+}
+
+.pres-structured-shell .psd-marketshare-table tbody tr:last-child > * {
+    border-bottom: 0;
+}
+
+.pres-structured-shell .psd-marketshare-table thead tr:first-child th {
+    height: 38px;
+    color: #ffffff;
+    background: #123b88;
+    font-size: 10px;
+    font-weight: 950;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-marketshare-table thead tr:first-child th.is-share-group {
+    background: #087ca7;
+}
+
+.pres-structured-shell .psd-marketshare-table thead tr:nth-child(2) th {
+    height: 50px;
+    padding: 4px 2px;
+    color: #24415f;
+    background: #eaf1f9;
+    font-size: 8.7px;
+    font-weight: 900;
+    line-height: 1.18;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.pres-structured-shell .psd-marketshare-table .is-branch {
+    width: 126px;
+    padding: 0 9px;
+    text-align: left;
+}
+
+.pres-structured-shell .psd-marketshare-table thead .is-branch {
+    color: #ffffff;
+    background: #052f67;
+    font-size: 10px;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-marketshare-table tbody th,
+.pres-structured-shell .psd-marketshare-table tbody td {
+    height: 68px;
+}
+
+.pres-structured-shell .psd-marketshare-table tbody th {
+    color: #183b67;
+    background: #f3f7fc;
+    font-size: 11px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-marketshare-table tbody tr:nth-child(even) td {
+    background: #f8fbff;
+}
+
+.pres-structured-shell .psd-marketshare-table tbody tr.is-total > * {
+    color: #ffffff;
+    background: #0c4d99;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-marketshare-table td.is-negative {
+    color: #c62836;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-marketshare-table td.is-positive {
+    color: #08785f;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-marketshare-table .is-empty-row td {
+    height: 92px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.pres-structured-shell .psd-marketshare-table-wrap.is-dense th,
+.pres-structured-shell .psd-marketshare-table-wrap.is-dense td {
+    font-size: 8.8px;
+}
+
+.pres-structured-shell .psd-marketshare-table-wrap.is-ultra-dense th,
+.pres-structured-shell .psd-marketshare-table-wrap.is-ultra-dense td {
+    padding-right: 1px;
+    padding-left: 1px;
+    font-size: 8.1px;
+}
+
+.pres-structured-shell .psd-marketshare-table-wrap.is-ultra-dense .is-branch {
+    width: 116px;
+    padding-right: 6px;
+    padding-left: 6px;
+    font-size: 9.5px;
+}
+
+.pres-structured-shell .psd-marketshare-map-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.48fr) minmax(410px, 0.72fr);
+    gap: 8px;
+}
+
+.pres-structured-shell .psd-marketshare-map-shell {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 32% 25%, rgba(0, 174, 239, 0.14), transparent 34%),
+        linear-gradient(145deg, #edf5fb, #dceaf5);
+}
+
+.pres-structured-shell .psd-marketshare-map {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    outline: 0;
+    background: transparent;
+    font-family: inherit;
+}
+
+.pres-structured-shell .psd-marketshare-map .leaflet-control-container {
+    display: none;
+}
+
+.pres-structured-shell .psd-marketshare-map-state {
+    position: absolute;
+    z-index: 520;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    color: #3a5878;
+    background: rgba(238, 246, 252, 0.88);
+    font-size: 12px;
+    font-weight: 850;
+    pointer-events: none;
+}
+
+.pres-structured-shell .psd-marketshare-map-state i {
+    color: #087ca7;
+    font-size: 24px;
+}
+
+.pres-structured-shell .psd-marketshare-map-state.is-hidden {
+    display: none;
+}
+
+.pres-structured-shell .psd-marketshare-map-state.is-error {
+    color: #9f2431;
+    background: rgba(255, 247, 248, 0.94);
+}
+
+.pres-structured-shell .psd-marketshare-map-legend {
+    position: absolute;
+    z-index: 510;
+    left: 12px;
+    bottom: 12px;
+    display: grid;
+    grid-template-columns: 190px;
+    gap: 5px;
+    padding: 8px 10px;
+    color: #183b67;
+    border: 1px solid rgba(112, 142, 173, 0.42);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 7px 18px rgba(22, 50, 82, 0.14);
+    pointer-events: none;
+}
+
+.pres-structured-shell .psd-marketshare-map-legend > strong {
+    overflow: hidden;
+    font-size: 10px;
+    font-weight: 950;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-map-legend-scale {
+    display: block;
+    height: 8px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #edf4ff, #0b3f72);
+}
+
+.pres-structured-shell .psd-marketshare-map-legend small {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: #607087;
+    font-size: 8px;
+}
+
+.pres-structured-shell .psd-marketshare-map-side {
+    display: grid;
+    grid-template-rows: 104px 100px minmax(0, 1fr) 38px;
+    gap: 7px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-marketshare-executive-card {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    min-width: 0;
+    padding: 8px 10px;
+    overflow: hidden;
+    color: #173b63;
+    border: 1px solid #c7d9ed;
+    border-left: 5px solid #0857c3;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #f6faff, #eaf3fd);
+}
+
+.pres-structured-shell .psd-marketshare-executive-card > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-marketshare-executive-card > header span {
+    color: #0857c3;
+    font-size: 7px;
+    font-weight: 950;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-marketshare-executive-card > header b {
+    flex: 0 0 auto;
+    padding: 2px 5px;
+    color: #ffffff;
+    border-radius: 2px;
+    background: #0857c3;
+    font-size: 6.8px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-marketshare-executive-card > strong {
+    display: block;
+    margin-top: 4px;
+    overflow: hidden;
+    font-size: 11px;
+    font-weight: 950;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-executive-card > p {
+    align-self: center;
+    margin: 4px 0 0;
+    overflow: hidden;
+    color: #536b84;
+    font-size: 7.2px;
+    font-weight: 750;
+    line-height: 1.28;
+}
+
+.pres-structured-shell .psd-marketshare-executive-card.is-green {
+    border-left-color: #078773;
+    background: linear-gradient(135deg, #f2fbf8, #e3f6f0);
+}
+
+.pres-structured-shell .psd-marketshare-executive-card.is-green > header span {
+    color: #087560;
+}
+
+.pres-structured-shell .psd-marketshare-executive-card.is-green > header b {
+    background: #078773;
+}
+
+.pres-structured-shell .psd-marketshare-executive-card.is-amber {
+    border-left-color: #e69b13;
+    background: linear-gradient(135deg, #fffaf0, #fff1cf);
+}
+
+.pres-structured-shell .psd-marketshare-executive-card.is-amber > header span {
+    color: #966100;
+}
+
+.pres-structured-shell .psd-marketshare-executive-card.is-amber > header b {
+    background: #b97800;
+}
+
+.pres-structured-shell .psd-marketshare-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pres-structured-shell .psd-marketshare-kpi-grid article {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    align-content: center;
+    min-width: 0;
+    padding: 6px 9px;
+    color: #183b67;
+    border: 1px solid #cbd9e9;
+    border-left: 4px solid #0857c3;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-marketshare-kpi-grid article.is-accent {
+    border-left-color: #078773;
+    background: #f0fbf8;
+}
+
+.pres-structured-shell .psd-marketshare-kpi-grid article > span {
+    color: #607087;
+    font-size: 8px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-marketshare-kpi-grid article > strong {
+    grid-row: 2;
+    overflow: hidden;
+    font-size: 17px;
+    font-weight: 950;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-kpi-grid article > small {
+    grid-row: 2;
+    align-self: end;
+    color: #7a8ca2;
+    font-size: 8px;
+    font-weight: 800;
+}
+
+.pres-structured-shell .psd-marketshare-selection {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    min-width: 0;
+    padding: 7px 10px;
+    overflow: hidden;
+    color: #ffffff;
+    border-radius: 4px;
+    background: linear-gradient(125deg, #063b82, #087ca7);
+}
+
+.pres-structured-shell .psd-marketshare-selection > span {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 8px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-marketshare-selection > strong {
+    margin-top: 1px;
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 950;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-selection > p {
+    margin: 2px 0 0;
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 8.5px;
+    font-weight: 750;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-ranking {
+    display: grid;
+    grid-template-rows: 42px minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid #cbd9e9;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.pres-structured-shell .psd-marketshare-ranking > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    padding: 5px 9px;
+    color: #183b67;
+    border-bottom: 1px solid #d5e1ee;
+    background: #edf4fb;
+}
+
+.pres-structured-shell .psd-marketshare-ranking > header div {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-marketshare-ranking > header span {
+    color: #607087;
+    font-size: 7px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.pres-structured-shell .psd-marketshare-ranking > header strong {
+    overflow: hidden;
+    font-size: 11px;
+    font-weight: 950;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-ranking > header > b {
+    flex: 0 0 auto;
+    padding: 3px 6px;
+    color: #ffffff;
+    border-radius: 3px;
+    background: #0857c3;
+    font-size: 8px;
+}
+
+.pres-structured-shell .psd-marketshare-ranking > div {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.pres-structured-shell .psd-marketshare-ranking article {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    min-height: 37px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #e1e9f2;
+}
+
+.pres-structured-shell .psd-marketshare-ranking article:last-child {
+    border-bottom: 0;
+}
+
+.pres-structured-shell .psd-marketshare-ranking article > span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    color: #0857c3;
+    border-radius: 3px;
+    background: #eaf2fd;
+    font-size: 8px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-marketshare-ranking article > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto 3px;
+    align-items: center;
+    column-gap: 5px;
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-marketshare-ranking article strong {
+    overflow: hidden;
+    color: #1b334f;
+    font-size: 9px;
+    font-weight: 900;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-ranking article small {
+    overflow: hidden;
+    color: #7a8ca2;
+    font-size: 7px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-ranking article i {
+    display: block;
+    grid-column: 1 / 3;
+    height: 3px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e4ebf3;
+}
+
+.pres-structured-shell .psd-marketshare-ranking article i b {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #00a6d6, #0857c3);
+}
+
+.pres-structured-shell .psd-marketshare-ranking article > em {
+    color: #08785f;
+    font-size: 9px;
+    font-style: normal;
+    font-weight: 950;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-ranking-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.pres-structured-shell .psd-marketshare-source {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 5px 8px;
+    color: #31506f;
+    border: 1px solid #cbd9e9;
+    border-radius: 4px;
+    background: #f5f9fd;
+}
+
+.pres-structured-shell .psd-marketshare-source > i {
+    color: #087ca7;
+    font-size: 15px;
+    text-align: center;
+}
+
+.pres-structured-shell .psd-marketshare-source > span {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.pres-structured-shell .psd-marketshare-source strong,
+.pres-structured-shell .psd-marketshare-source small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pres-structured-shell .psd-marketshare-source strong {
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.pres-structured-shell .psd-marketshare-source small {
+    margin-top: 1px;
+    color: #7a8ca2;
+    font-size: 7px;
+}
+
+.pres-structured-shell .psd-marketshare-map-shell .leaflet-tooltip {
+    padding: 0;
+    color: #183b67;
+    border: 0;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 8px 24px rgba(20, 48, 79, 0.2);
+}
+
+.pres-structured-shell .psd-marketshare-tooltip {
+    display: flex;
+    min-width: 160px;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 9px;
+}
+
+.pres-structured-shell .psd-marketshare-tooltip strong {
+    font-size: 11px;
+    font-weight: 950;
+}
+
+.pres-structured-shell .psd-marketshare-tooltip span {
+    margin-bottom: 3px;
+    color: #607087;
+    font-size: 8px;
+    font-weight: 800;
+}
+
+.pres-structured-shell .psd-marketshare-tooltip small {
+    color: #31506f;
+    font-size: 8px;
+    font-weight: 750;
 }
 
 @media (prefers-reduced-motion: reduce) {

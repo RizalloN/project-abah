@@ -66,10 +66,10 @@ class LinkManagementControllerTest extends TestCase
         $this->assertSame('Area 6', $sppgLink['sheet_name']);
         $this->assertSame(['mapping'], array_keys($marketShareLinks));
         $this->assertSame('Mapping Market Share', $marketShareLinks['mapping']['label']);
-        $this->assertSame('DASHBOARD', $marketShareLinks['mapping']['sheet_name']);
-        $this->assertSame('1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE', $marketShareLinks['mapping']['spreadsheet_id']);
+        $this->assertSame('REKAP', $marketShareLinks['mapping']['sheet_name']);
+        $this->assertSame('1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt', $marketShareLinks['mapping']['spreadsheet_id']);
         $this->assertSame(
-            'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/edit?usp=sharing',
+            'https://docs.google.com/spreadsheets/d/1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
             $marketShareLinks['mapping']['link_url']
         );
     }
@@ -128,11 +128,63 @@ class LinkManagementControllerTest extends TestCase
             ->where('link_key', 'mapping')
             ->first();
 
-        $this->assertSame('DASHBOARD', $row->sheet_name);
-        $this->assertSame('1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE', $row->spreadsheet_id);
+        $this->assertSame('REKAP', $row->sheet_name);
+        $this->assertSame('1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt', $row->spreadsheet_id);
         $this->assertSame(
-            'https://docs.google.com/spreadsheets/d/1aepYbSA8RAFU7RFUh4vOQ-Rp7xALY9q87uXgn6aVYSE/edit?usp=sharing',
+            'https://docs.google.com/spreadsheets/d/1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
             $row->link_url
         );
+    }
+
+    public function test_market_share_mapping_replaces_the_previous_google_workbook(): void
+    {
+        DB::table('external_report_links')->insert([
+            'uniqueid_link' => 'market_share_mapping',
+            'group_key' => 'market_share',
+            'link_key' => 'mapping',
+            'label' => 'Mapping Market Share',
+            'sheet_name' => 'DASHBOARD',
+            'spreadsheet_id' => '1au_fie_dm1BwvxpAtN_1EEFdAOvUuYM0',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1au_fie_dm1BwvxpAtN_1EEFdAOvUuYM0/edit?usp=sharing',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        (new LinkManagementController())->index();
+
+        $this->assertDatabaseHas('external_report_links', [
+            'group_key' => 'market_share',
+            'link_key' => 'mapping',
+            'sheet_name' => 'REKAP',
+            'spreadsheet_id' => '1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+        ]);
+    }
+
+    public function test_market_share_mapping_keeps_a_custom_google_workbook_from_link_management(): void
+    {
+        DB::table('external_report_links')->insert([
+            'uniqueid_link' => 'market_share_mapping',
+            'group_key' => 'market_share',
+            'link_key' => 'mapping',
+            'label' => 'Mapping Market Share',
+            'sheet_name' => 'REKAP',
+            'spreadsheet_id' => 'custom-mapping-workbook',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/custom-mapping-workbook/edit?usp=sharing',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        (new LinkManagementController())->index();
+
+        $this->assertDatabaseHas('external_report_links', [
+            'group_key' => 'market_share',
+            'link_key' => 'mapping',
+            'sheet_name' => 'REKAP',
+            'spreadsheet_id' => 'custom-mapping-workbook',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/custom-mapping-workbook/edit?usp=sharing',
+        ]);
     }
 }

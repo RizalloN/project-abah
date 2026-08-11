@@ -30,6 +30,7 @@ const mergeSummaryPayload = (base, summary) => {
         'timeseries',
         'cover_card_timeseries',
         'digital_strategy',
+        'marketshare',
     ].forEach((key) => {
         if (patch?.[key]?.loading && base?.[key] && !base[key].loading) {
             delete patch[key];
@@ -197,17 +198,19 @@ export class PresentationDataLoader {
     sectionNamesForSlide(index) {
         const sections = new Set();
         const slideMap = {
-            2: ['timeseries'],
-            3: ['timeseries'],
-            4: ['digital'],
+            2: ['marketshare'],
+            3: ['marketshare'],
+            4: ['timeseries'],
             5: ['timeseries'],
-            6: ['productivity', 'timeseries'],
-            7: ['productivity', 'timeseries'],
-            8: ['micro'],
-            9: ['timeseries'],
-            10: ['timeseries'],
+            6: ['digital'],
+            7: ['timeseries'],
+            8: ['productivity', 'timeseries'],
+            9: ['productivity', 'timeseries'],
+            10: ['micro'],
             11: ['timeseries'],
-            12: ['digital'],
+            12: ['timeseries'],
+            13: ['timeseries'],
+            14: ['digital'],
         };
 
         [index - 1, index, index + 1].forEach((slideIndex) => {
@@ -343,7 +346,7 @@ export class PresentationDataLoader {
             this.offlineStore.put(period || serverData?.meta?.period, serverData);
             this.beginProgressiveLoad(
                 period,
-                ['micro'],
+                ['micro', 'marketshare'],
                 { onSection, onComplete, onStatus },
             );
             return serverData;

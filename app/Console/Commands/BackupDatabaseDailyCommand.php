@@ -12,7 +12,7 @@ class BackupDatabaseDailyCommand extends Command
     protected $signature = 'database:backup-daily
         {--dry-run : Validasi konfigurasi dan ruang disk tanpa membuat backup}';
 
-    protected $description = 'Create one verified compressed database backup per day and retain two newest days';
+    protected $description = 'Create one verified compressed database backup per day and retain only the latest day';
 
     public function handle(DailyDatabaseBackupService $backupService): int
     {
@@ -37,7 +37,7 @@ class BackupDatabaseDailyCommand extends Command
         } elseif ($status === 'disabled') {
             $this->warn('Backup database harian dinonaktifkan.');
         } else {
-            $this->info('Backup database hari ini sudah tersedia; dump ulang dilewati.');
+            $this->info('Backup database hari ini tersedia dan lolos verifikasi ulang; dump ulang dilewati.');
         }
 
         if (($result['directory'] ?? '') !== '') {

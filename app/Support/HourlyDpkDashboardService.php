@@ -13,13 +13,17 @@ class HourlyDpkDashboardService
     private const HOURLY_TABLE = 'hourly_dpk';
     private const SSA_TABLE = 'ssa_simpanan';
     private const AREA_BRANCHES = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+    private const AREA_BRANCH_CODES = [
+        'KC Madiun' => '00045',
+        'KC Magetan' => '00049',
+        'KC Ngawi' => '00057',
+        'KC Ponorogo' => '00070',
+    ];
     private const PRODUCTS = ['DEPOSITO', 'GIRO', 'TABUNGAN'];
     private const DELTA_PERIOD_MAP = [
-        'ytd' => 'ytd',
-        'yoy' => 'yoy',
-        'mtm' => 'mtm',
-        'mtd' => 'mtd',
         'dtd' => 'h1',
+        'mtd' => 'mtd',
+        'ytd' => 'ytd',
     ];
 
     public function filters(): array
@@ -51,7 +55,8 @@ class HourlyDpkDashboardService
         $historical = $this->historicalMatrix($periods, $selectedBranch, $selectedProduct, $selectedSegment);
         $hourly = $this->hourlyMatrix($latestDate, $hours, $selectedBranch, $selectedProduct, $selectedSegment);
         $latestHourKey = $this->latestHourKey($hours);
-        $rows = $this->buildRows($historical, $hourly, $periods, $hours, $latestHourKey);
+        $detailRows = $this->buildRows($historical, $hourly, $periods, $hours, $latestHourKey);
+        $rows = $this->withBranchSubtotals($detailRows, $selectedBranch, $periods, $hours);
 
         return [
             'ready' => true,
@@ -62,23 +67,25 @@ class HourlyDpkDashboardService
             'selectedProduct' => $selectedProduct,
             'selectedSegment' => $selectedSegment,
             'scopeLabel' => $selectedBranch !== '' ? $selectedBranch : 'Area 6',
+            'branchCode' => $selectedBranch !== '' ? $this->branchCode($selectedBranch) : '',
             'periods' => $periods,
             'hours' => $hours,
             'latestHour' => $latestHourKey,
             'rows' => $rows,
-            'total' => $this->totalRow($rows, $periods, $hours),
+            'dataRowCount' => count($detailRows),
+            'total' => $this->totalRow($detailRows, $periods, $hours),
         ];
     }
 
     public function exportPayload(?string $branch, ?string $segment = null): array
     {
         $selectedBranch = $this->normalizeBranchFilter($branch);
-        $selectedSegment = $this->normalizeSegmentFilter($segment);
+        $selectedSegment = $selectedBranch !== '' ? 'all' : $this->normalizeSegmentFilter($segment);
         $products = [
             'all' => 'All Simpanan',
-            'DEPOSITO' => 'Deposito',
-            'GIRO' => 'Giro',
             'TABUNGAN' => 'Tabungan',
+            'GIRO' => 'Giro',
+            'DEPOSITO' => 'Deposito',
         ];
 
         $tables = [];
@@ -93,11 +100,16 @@ class HourlyDpkDashboardService
         }
 
         $basePayload = $tables[0]['payload'] ?? $this->emptyPayload('Data belum tersedia.');
+        $isBranchScope = $selectedBranch !== '';
+        $summary = $isBranchScope
+            ? $this->branchSegmentSummary($basePayload)
+            : $this->areaProductSummary($tables, $selectedSegment);
 
         return [
             'generatedAt' => now()->translatedFormat('d M Y H:i') . ' WIB',
             'selectedBranch' => $selectedBranch !== '' ? $selectedBranch : 'all',
             'selectedSegment' => $selectedSegment,
+            'summaryType' => $isBranchScope ? 'segment' : 'product',
             'scopeLabel' => $selectedBranch !== '' ? $selectedBranch : 'Area 6',
             'segmentLabel' => $this->formatSegmentLabel($selectedSegment === 'all' ? 'Semua Segmen' : $selectedSegment),
             'selectedDate' => $basePayload['selectedDate'] ?? null,
@@ -105,8 +117,57 @@ class HourlyDpkDashboardService
             'hours' => $basePayload['hours'] ?? [],
             'latestHour' => $basePayload['latestHour'] ?? null,
             'periods' => $basePayload['periods'] ?? $this->blankPeriods(),
+            'summary' => $summary,
+            'summaryTotal' => $isBranchScope ? (array) ($basePayload['total'] ?? []) : [],
             'tables' => $tables,
         ];
+    }
+
+    private function areaProductSummary(array $tables, string $selectedSegment): array
+    {
+        $summarySegment = $selectedSegment === 'all'
+            ? 'Semua Segmen'
+            : $this->formatSegmentLabel($selectedSegment);
+
+        return collect($tables)->values()->map(function (array $table, int $index) use ($summarySegment): array {
+            $payload = (array) ($table['payload'] ?? []);
+            $latestHour = (string) ($payload['latestHour'] ?? '');
+
+            return [
+                'no' => $index + 1,
+                'segment' => $summarySegment,
+                'produk' => (string) ($table['label'] ?? ''),
+                'posisi' => (float) ($payload['total']['hour_values'][$latestHour] ?? 0),
+            ];
+        })->all();
+    }
+
+    private function branchSegmentSummary(array $payload): array
+    {
+        $latestHour = (string) ($payload['latestHour'] ?? '');
+        $segmentRows = collect((array) ($payload['rows'] ?? []))
+            ->whereIn('row_type', ['subtotal_retail', 'subtotal_micro'])
+            ->keyBy('row_type');
+
+        return collect([
+            'subtotal_retail' => 'Ritel',
+            'subtotal_micro' => 'Mikro',
+        ])->map(function (string $label, string $rowType) use ($segmentRows, $latestHour): array {
+            $row = (array) ($segmentRows->get($rowType) ?? []);
+
+            return [
+                'segment' => $label,
+                'posisi' => (float) ($row['hour_values'][$latestHour] ?? 0),
+                'period_values' => (array) ($row['period_values'] ?? []),
+                'hour_values' => (array) ($row['hour_values'] ?? []),
+                'delta_values' => (array) ($row['delta_values'] ?? []),
+            ];
+        })->values()
+            ->map(function (array $row, int $index): array {
+                $row['no'] = $index + 1;
+
+                return $row;
+            })->all();
     }
 
     private function exportTableDescription(string $label, array $payload, string $selectedSegment): string
@@ -119,7 +180,7 @@ class HourlyDpkDashboardService
         $segment = $selectedSegment === 'all' ? 'semua segmen' : strtolower($this->formatSegmentLabel($selectedSegment));
 
         return "{$label} menampilkan posisi {$scope} pada {$date}"
-            . " dengan jam terakhir {$hourLabel}, filter {$segment}, satuan Rp juta.";
+            ." dengan jam terakhir {$hourLabel}, filter {$segment}, satuan Rp juta.";
     }
 
     private function emptyPayload(string $message): array
@@ -133,10 +194,12 @@ class HourlyDpkDashboardService
             'selectedProduct' => 'all',
             'selectedSegment' => 'all',
             'scopeLabel' => 'Area 6',
+            'branchCode' => '',
             'periods' => $this->blankPeriods(),
             'hours' => [],
             'latestHour' => null,
             'rows' => [],
+            'dataRowCount' => 0,
             'total' => [],
         ];
     }
@@ -235,10 +298,14 @@ class HourlyDpkDashboardService
                 continue;
             }
 
-            $unit = $isAreaScope ? 'Total Cabang' : $this->normalizeOfficeName($record->nama_uker ?? '');
-            $key = $this->rowKey($branch, $unit);
+            $branchCode = $this->branchCode($branch);
+            $unit = $isAreaScope ? $branch : $this->normalizeOfficeName($record->nama_uker ?? '');
+            $unitCode = $isAreaScope ? '' : $this->extractUkerCode($record->nama_uker ?? '');
+            $key = $this->rowKey($branch, $unit, $isAreaScope ? $branchCode : $unitCode);
             $matrix[$key]['branch'] = $branch;
+            $matrix[$key]['branch_code'] = $branchCode;
             $matrix[$key]['unit'] = $unit;
+            $matrix[$key]['unit_code'] = $unitCode;
             $periodKey = Carbon::parse($record->Month_Day_Year_of_Posisi)->toDateString();
             $matrix[$key]['periods'][$periodKey] = (float) ($matrix[$key]['periods'][$periodKey] ?? 0)
                 + (float) $record->total_saldo;
@@ -284,10 +351,14 @@ class HourlyDpkDashboardService
                 continue;
             }
 
-            $unit = $isAreaScope ? 'Total Cabang' : $this->normalizeOfficeName($record->brname ?? '');
-            $key = $this->rowKey($branch, $unit);
+            $branchCode = $this->extractUkerCode($record->mbname ?? '') ?: $this->branchCode($branch);
+            $unit = $isAreaScope ? $branch : $this->normalizeOfficeName($record->brname ?? '');
+            $unitCode = $isAreaScope ? '' : $this->extractUkerCode($record->brname ?? '');
+            $key = $this->rowKey($branch, $unit, $isAreaScope ? $branchCode : $unitCode);
             $matrix[$key]['branch'] = $branch;
+            $matrix[$key]['branch_code'] = $branchCode;
             $matrix[$key]['unit'] = $unit;
+            $matrix[$key]['unit_code'] = $unitCode;
 
             $hourKey = $hasPositionHour && !empty($record->posisi_jam)
                 ? Carbon::parse($record->posisi_jam)->format('Y-m-d H:i:s')
@@ -306,7 +377,20 @@ class HourlyDpkDashboardService
 
     private function buildRows(array $historical, array $hourly, array $periods, array $hours, ?string $latestHourKey): array
     {
-        $keys = collect(array_keys($historical))->merge(array_keys($hourly))->unique()->sort()->values();
+        $keys = collect(array_keys($historical))
+            ->merge(array_keys($hourly))
+            ->unique()
+            ->sortBy(function (string $key) use ($historical, $hourly): string {
+                $base = $hourly[$key] ?? $historical[$key] ?? [];
+
+                return sprintf(
+                    '%08d|%08d|%s',
+                    $this->sortableOfficeCode($base['branch_code'] ?? ''),
+                    $this->sortableOfficeCode($base['unit_code'] ?? ''),
+                    strtoupper((string) ($base['unit'] ?? ''))
+                );
+            })
+            ->values();
         $rows = [];
         $no = 1;
 
@@ -315,7 +399,10 @@ class HourlyDpkDashboardService
             $row = [
                 'no' => $no++,
                 'branch' => (string) ($base['branch'] ?? ''),
+                'branch_code' => (string) ($base['branch_code'] ?? ''),
+                'unit_code' => (string) ($base['unit_code'] ?? ''),
                 'unit' => (string) ($base['unit'] ?? ''),
+                'row_type' => 'detail',
                 'period_values' => [],
                 'hour_values' => [],
                 'delta_values' => [],
@@ -342,6 +429,59 @@ class HourlyDpkDashboardService
         }
 
         return $rows;
+    }
+
+    private function withBranchSubtotals(array $rows, string $selectedBranch, array $periods, array $hours): array
+    {
+        if ($selectedBranch === '' || $rows === []) {
+            return $rows;
+        }
+
+        $groups = ['retail' => [], 'micro' => [], 'other' => []];
+        foreach ($rows as $row) {
+            $groups[$this->officeGroup((string) ($row['unit'] ?? ''))][] = $row;
+        }
+
+        $orderedRows = [];
+        $no = 1;
+        foreach (['retail', 'micro', 'other'] as $group) {
+            foreach ($groups[$group] as $row) {
+                $row['no'] = $no++;
+                $orderedRows[] = $row;
+            }
+
+            if ($groups[$group] === [] || !in_array($group, ['retail', 'micro'], true)) {
+                continue;
+            }
+
+            $orderedRows[] = $this->subtotalRow(
+                $groups[$group],
+                $selectedBranch,
+                $group,
+                $periods,
+                $hours
+            );
+        }
+
+        return $orderedRows;
+    }
+
+    private function subtotalRow(array $rows, string $branch, string $group, array $periods, array $hours): array
+    {
+        $total = $this->totalRow($rows, $periods, $hours);
+        $groupLabel = $group === 'retail' ? 'RITEL' : 'MIKRO';
+
+        return [
+            'no' => '',
+            'branch' => $branch,
+            'branch_code' => (string) ($rows[0]['branch_code'] ?? $this->branchCode($branch)),
+            'unit_code' => '',
+            'unit' => 'TOTAL ' . $groupLabel . ' - ' . strtoupper($branch),
+            'row_type' => 'subtotal_' . $group,
+            'period_values' => $total['period_values'],
+            'hour_values' => $total['hour_values'],
+            'delta_values' => $total['delta_values'],
+        ];
     }
 
     private function totalRow(array $rows, array $periods, array $hours): array
@@ -441,9 +581,55 @@ class HourlyDpkDashboardService
         return ucwords(strtolower($value));
     }
 
-    private function rowKey(string $branch, string $unit): string
+    private function rowKey(string $branch, string $unit, string $unitCode = ''): string
     {
-        return strtoupper($branch . '|' . $unit);
+        return strtoupper($branch . '|' . $this->normalizeUkerCode($unitCode) . '|' . $unit);
+    }
+
+    private function extractUkerCode(mixed $office): string
+    {
+        $office = trim((string) $office);
+        if (preg_match('/^\s*([0-9]+)\s*--/', $office, $matches) === 1) {
+            return (string) $matches[1];
+        }
+
+        return '';
+    }
+
+    private function normalizeUkerCode(mixed $code): string
+    {
+        $digits = preg_replace('/\D+/', '', trim((string) $code)) ?? '';
+
+        return ltrim($digits, '0');
+    }
+
+    private function formatUkerCode(mixed $code): string
+    {
+        $digits = preg_replace('/\D+/', '', trim((string) $code)) ?? '';
+
+        return $digits === '' ? '' : str_pad($digits, 5, '0', STR_PAD_LEFT);
+    }
+
+    private function sortableOfficeCode(mixed $code): int
+    {
+        $digits = preg_replace('/\D+/', '', trim((string) $code)) ?? '';
+
+        return $digits === '' ? 99_999_999 : (int) $digits;
+    }
+
+    private function branchCode(string $branch): string
+    {
+        return self::AREA_BRANCH_CODES[$branch] ?? '';
+    }
+
+    private function officeGroup(string $unit): string
+    {
+        $unit = strtoupper(trim($unit));
+        if (str_starts_with($unit, 'KC ') || str_starts_with($unit, 'KCP ')) {
+            return 'retail';
+        }
+
+        return str_starts_with($unit, 'UNIT ') ? 'micro' : 'other';
     }
 
     private function segmentOptions(): array

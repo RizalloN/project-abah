@@ -394,4 +394,69 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
         $this->assertSame('KC Madiun', $row['kanca']);
         $this->assertSame(2026, $row['tahun']);
     }
+
+    public function test_rka_header_detection_does_not_treat_posisi_budget_row_as_header(): void
+    {
+        $controller = new ImportExcelController();
+        $method = new ReflectionMethod(ImportExcelController::class, 'detectHeaderIndex');
+        $method->setAccessible(true);
+
+        $rows = [
+            [
+                'DESC KANWIL', 'DESC UKER', 'NO URUT', 'RKA KEY', 'MATA ANGGARAN',
+                'PROGNOSA / REALISASI', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+                'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+            ],
+            [
+                'R-KANWIL MALANG', '45-KC Madiun', '183', '7002', 'Posisi CASA Brilink',
+                'Realisasi', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+            ],
+        ];
+
+        $this->assertSame(0, $method->invoke($controller, $rows, 'rka'));
+    }
+
+    public function test_rka_python_header_candidate_must_contain_complete_rka_columns(): void
+    {
+        $controller = new ImportExcelController();
+        $method = new ReflectionMethod(ImportExcelController::class, 'isDetectedHeaderValidForTable');
+        $method->setAccessible(true);
+
+        $this->assertFalse($method->invoke($controller, [
+            'R-KANWIL MALANG', '45-KC Madiun', '183', '7002', 'Posisi CASA Brilink',
+        ], 'rka'));
+        $this->assertTrue($method->invoke($controller, [
+            'DESC KANWIL', 'DESC UKER', 'NO URUT', 'RKA KEY', 'MATA ANGGARAN',
+            'PROGNOSA / REALISASI', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+            'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+        ], 'rka'));
+    }
+
+    public function test_rka_duplicate_guard_is_scoped_by_business_year(): void
+    {
+        DB::table('rka')->insert([
+            'uniqueid_namareport' => 'rka-madiun-2025',
+            'tahun' => 2025,
+            'kanca' => 'KC Madiun',
+        ]);
+        session([
+            'excel_manual_kanca' => 'KC Madiun',
+            'excel_manual_periode' => '2026',
+        ]);
+
+        $controller = new ImportExcelController();
+        $method = new ReflectionMethod(ImportExcelController::class, 'assertDuplicateGuard');
+        $method->setAccessible(true);
+        $method->invoke($controller, 'rka');
+
+        DB::table('rka')->insert([
+            'uniqueid_namareport' => 'rka-madiun-2026',
+            'tahun' => 2026,
+            'kanca' => 'KC Madiun',
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('tahun <b>2026</b>');
+        $method->invoke($controller, 'rka');
+    }
 }

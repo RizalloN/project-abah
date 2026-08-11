@@ -172,7 +172,7 @@ class DashboardPinjamanReportController extends Controller
         $kreditService = app(DashboardPinjamanKreditService::class);
         $periodReferences = $kreditService->calculatePeriodReferences($selectedPeriod);
 
-        $cacheKey = 'dashboard_pinjaman_kredit_unified:v18-strict-uker-kind-rka-cache-refresh:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_kredit_unified:v19-month-end-hide-mom:' . md5(json_encode([
             'cache_version' => $this->kreditCacheVersion(),
             'snapshot_signature' => $this->kreditSnapshotSignature($periodReferences, $selectedKanca),
             'periode' => $selectedPeriod,

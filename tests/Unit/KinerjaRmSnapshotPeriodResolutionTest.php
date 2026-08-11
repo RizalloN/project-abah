@@ -37,6 +37,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             $table->date('periode');
             $table->string('cabang', 100);
             $table->string('unit', 100);
+            $table->string('branch_code', 50)->nullable();
             $table->string('rm', 255);
             $table->string('segmen', 50);
             $table->string('produk', 100);
@@ -253,7 +254,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
     public function test_kinerja_rm_rows_use_comparison_periods_and_realisasi_values(): void
     {
         DB::table('performance_rm_snapshots')->insert([
-            $this->snapshotRow('2026-04-20', 1600000000, 11, 250000000),
+            $this->snapshotRow('2026-04-20', 1600000000, 11, 250000000, ['branch_code' => '45']),
             $this->snapshotRow('2026-03-31', 1200000000, 0, 0),
             $this->snapshotRow('2025-12-31', 1000000000, 0, 0),
             $this->snapshotRow('2025-03-31', 900000000, 0, 0),
@@ -278,6 +279,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(400000000.0, $item['delta_mtd']);
         $this->assertSame(3, $item['ach_deb']);
         $this->assertSame(62500000.0, $item['ach_os']);
+        $this->assertSame('45', $result['rows'][0]['rms']['RM A']['rm_unit_code']);
     }
 
     public function test_kinerja_rm_realisasi_period_uses_selected_daily_position(): void
@@ -580,6 +582,141 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertNull($this->invokePrivateMethod($controller, 'resolveSelectedRmCategory', ['CONSUMER', 'KCP']));
     }
 
+    public function test_retail_performance_uses_latest_report_per_month_and_filters_inactive_rm(): void
+    {
+        DB::table('daily_loan_dinamis')->insert(collect([
+            '2026-01-31',
+            '2026-06-30',
+            '2026-07-31',
+            '2026-08-02',
+            '2026-08-03',
+            '2026-08-07',
+            '2026-08-08',
+        ])->map(fn (string $period): array => ['periode' => $period])->all());
+
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-01-31', 100000000, 2, 100000000, [
+                'branch_code' => '10',
+                'unit' => 'UNIT SEPULUH',
+                'rm' => 'ARIS SULISTYAWAN',
+            ]),
+            $this->snapshotRow('2026-07-31', 500000000, 5, 500000000, [
+                'branch_code' => '10',
+                'unit' => 'UNIT SEPULUH',
+                'rm' => 'ARIS SULISTYAWAN',
+            ]),
+            $this->snapshotRow('2026-08-07', 300000000, 3, 300000000, [
+                'branch_code' => '10',
+                'unit' => 'UNIT SEPULUH',
+                'rm' => 'ARIS SULISTYAWAN',
+            ]),
+            $this->snapshotRow('2026-08-08', 450000000, 4, 450000000, [
+                'branch_code' => '10',
+                'unit' => 'UNIT SEPULUH',
+                'rm' => 'ARIS SULISTYAWAN',
+            ]),
+            $this->snapshotRow('2026-07-31', 250000000, 1, 250000000, [
+                'branch_code' => '2',
+                'unit' => 'UNIT DUA',
+                'rm' => 'RM JULI',
+            ]),
+            $this->snapshotRow('2026-06-30', 900000000, 9, 900000000, [
+                'branch_code' => '1',
+                'unit' => 'UNIT SATU',
+                'rm' => 'RM TIDAK AKTIF',
+            ]),
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $performance = $this->invokePrivateMethod($controller, 'fetchRetailRealizationPerformance', [
+            'CONSUMER', '2026-08-08', null, null, null,
+        ]);
+
+        $this->assertSame('2026-08-08', $performance['meta']['latest_period']);
+        $this->assertSame('2026-08-07', $performance['meta']['previous_report_period']);
+        $this->assertSame(1, $performance['meta']['hidden_inactive_count']);
+        $this->assertSame(['2', '10'], collect($performance['rows'])->pluck('unit_code')->all());
+
+        $aris = collect($performance['rows'])->firstWhere('rm', 'ARIS SULISTYAWAN');
+        $this->assertNotNull($aris);
+        $this->assertSame('ARIS SULISTYAWAN', $aris['rm_display']);
+        $this->assertSame(4, $aris['months']['2026-08']['deb']);
+        $this->assertSame(450000000.0, $aris['months']['2026-08']['rp']);
+        $this->assertSame(11, $aris['accumulated']['deb']);
+        $this->assertSame(1050000000.0, $aris['accumulated']['rp']);
+        $this->assertSame(-50000000.0, $aris['delta']['mom']);
+        $this->assertSame(150000000.0, $aris['delta']['dtd']);
+        $this->assertSame(-3250000000.0, $aris['delta']['mtd']);
+        $this->assertSame(-28550000000.0, $aris['delta']['ytd']);
+        $this->assertSame(4, $aris['quadrant']);
+    }
+
+    public function test_small_retail_performance_uses_closed_month_ratas_and_last_closed_lar(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['periode' => '2026-01-31'],
+            ['periode' => '2026-07-31'],
+            ['periode' => '2026-08-09'],
+        ]);
+
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-01-31', 1000000000, 1, 1000000000, [
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'sml_os' => 50000000,
+                'branch_code' => '45',
+                'rm' => '0001 - RM SMALL',
+            ]),
+            $this->snapshotRow('2026-07-31', 2000000000, 2, 3000000000, [
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'restruk_os' => 100000000,
+                'sml_os' => 100000000,
+                'npl_os' => 100000000,
+                'branch_code' => '45',
+                'rm' => '0001 - RM SMALL',
+            ]),
+            $this->snapshotRow('2026-08-09', 2000000000, 3, 10000000000, [
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'npl_os' => 1000000000,
+                'branch_code' => '45',
+                'rm' => '0001 - RM SMALL',
+            ]),
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $performance = $this->invokePrivateMethod($controller, 'fetchRetailRealizationPerformance', [
+            'SMALL', '2026-08-09', null, null, null,
+        ]);
+
+        $row = $performance['rows'][0];
+
+        $this->assertSame(2, $performance['meta']['closed_month_count']);
+        $this->assertSame('2026-07-31', $performance['meta']['closed_through_period']);
+        $this->assertSame('Jan 26 - Jul 26', $performance['meta']['closed_range_label']);
+        $this->assertTrue($performance['months'][0]['is_closed']);
+        $this->assertFalse($performance['months'][7]['is_closed']);
+        $this->assertEqualsWithDelta(5.0, $row['months']['2026-01']['lar_pct'], 0.0001);
+        $this->assertEqualsWithDelta(15.0, $row['months']['2026-07']['lar_pct'], 0.0001);
+        $this->assertEqualsWithDelta(50.0, $row['months']['2026-08']['lar_pct'], 0.0001);
+        $this->assertSame(2000000000.0, $row['accumulated']['ratas_rp']);
+        $this->assertEqualsWithDelta(15.0, $row['accumulated']['lar_pct'], 0.0001);
+        $this->assertSame(1, $row['quadrant']);
+        $this->assertSame(2000000000.0, $performance['total']['accumulated']['ratas_rp']);
+        $this->assertEqualsWithDelta(15.0, $performance['total']['accumulated']['lar_pct'], 0.0001);
+    }
+
+    public function test_retail_performance_plain_numbers_have_no_grouping_delimiter(): void
+    {
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        $this->assertSame('1235', $this->invokePrivateMethod($controller, 'formatPlainAmountInJuta', [1234567890]));
+        $this->assertSame('1235', $this->invokePrivateMethod($controller, 'formatPlainCount', [1234.6]));
+        $this->assertSame('+1235', $this->invokePrivateMethod($controller, 'formatPlainDeltaInJuta', [1234567890]));
+        $this->assertSame('-1235', $this->invokePrivateMethod($controller, 'formatPlainDeltaInJuta', [-1234567890]));
+    }
+
     private function snapshotRow(
         string $period,
         float $loanOs,
@@ -592,6 +729,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             'periode' => $period,
             'cabang' => 'KC MADIUN',
             'unit' => 'UNIT A',
+            'branch_code' => null,
             'rm' => 'RM A',
             'segmen' => 'CONSUMER',
             'produk' => 'BRIGUNA-KONSUMER',

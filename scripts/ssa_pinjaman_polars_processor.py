@@ -26,13 +26,24 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 
-REQUIRED_HEADERS = {
+SSA_PINJAMAN_COLUMNS = [
     "month_day_year_of_periode",
     "nama_cabang",
     "nama_uker",
     "produk",
+    "produk_dashboard",
+    "segmen",
+    "segmen_lama",
+    "segmen_2025",
+    "segmen_dashboard",
+    "kolektabilitas_one_obligor",
+    "flag_restruk",
     "baki_debet",
-}
+    "jumlah_debitur_aktif",
+    "jumlah_rekening_aktif",
+]
+
+REQUIRED_HEADERS = set(SSA_PINJAMAN_COLUMNS)
 
 INDONESIAN_MONTHS = {
     "januari": "january",
@@ -605,6 +616,10 @@ def stage_trusted_csv(config: dict, source_path: str, output_csv_path: str, deli
     if preview_max_rows is not None:
         filtered_df = filtered_df.head(preview_max_rows)
 
+    # LOAD DATA is positional, so source column order must never decide which
+    # target field receives a value.
+    filtered_df = filtered_df.select(SSA_PINJAMAN_COLUMNS)
+
     send_progress(72, "Fast-path staging aktif. Menulis CSV hasil Polars...", int(filtered_df.height), total_data_rows, 0, "", "polars")
 
     if mode == "preview":
@@ -891,6 +906,8 @@ def stage_ssa_pinjaman(config: dict) -> None:
 
         if df.height == 0:
             raise RuntimeError("Polars tidak menemukan baris data SSA Pinjaman yang valid.")
+
+        df = df.select(SSA_PINJAMAN_COLUMNS)
 
         written_rows = int(df.height)
         skipped_total = int(structural_skipped + validation_skipped)

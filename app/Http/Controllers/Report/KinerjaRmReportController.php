@@ -76,7 +76,14 @@ class KinerjaRmReportController extends Controller
         $comparisonPeriods = $this->resolveKinerjaComparisonPeriods($this->fetchComparisonPeriods(), $selectedPeriod);
         $realisasiPeriod = $this->resolveKinerjaRealisasiPeriod($selectedPeriod, $comparisonPeriods);
 
-        $osRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $comparisonPeriods, $realisasiPeriod, $selectedCabang, $selectedProduct, null, $selectedRmCategory);
+        $retailPerformance = $this->fetchRetailRealizationPerformance(
+            $selectedSegmen,
+            $selectedPeriod,
+            $selectedCabang,
+            $selectedProduct,
+            $selectedRmCategory
+        );
+        $osRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $comparisonPeriods, $realisasiPeriod, $selectedCabang, $selectedProduct, null, $selectedRmCategory, null, true);
         $detailedQualityRows = $this->fetchDetailedQualityRows(
             $selectedSegmen,
             $selectedPeriod,
@@ -96,7 +103,8 @@ class KinerjaRmReportController extends Controller
                 $selectedProduct,
                 $qualityType,
                 $selectedRmCategory,
-                $detailedQualityRows
+                $detailedQualityRows,
+                true
             );
         }
         $nextMonth = $currentDate->copy()->addMonthNoOverflow();
@@ -130,11 +138,18 @@ class KinerjaRmReportController extends Controller
             'nextMonthLabel' => $nextMonth->format('M-y'),
             'rows' => $osRows['rows'],
             'total' => $osRows['total'],
+            'performanceMonths' => $retailPerformance['months'],
+            'performanceRows' => $retailPerformance['rows'],
+            'performanceTotal' => $retailPerformance['total'],
+            'performanceMeta' => $retailPerformance['meta'],
             'qualitySeries' => $qualitySeries,
-            'formatAmount' => fn ($value, int $decimals = 1) => $this->formatAmountInJuta($value, $decimals),
-            'formatSignedAmount' => fn ($value, bool $showArrow = true, int $decimals = 1) => $this->formatSignedAmountInJuta($value, $showArrow, $decimals),
+            'formatAmount' => fn ($value, int $decimals = 0) => $this->formatAmountInJuta($value, 0),
+            'formatSignedAmount' => fn ($value, bool $showArrow = true, int $decimals = 0) => $this->formatSignedAmountInJuta($value, $showArrow, 0),
             'formatCount' => fn ($value) => $this->formatCount($value),
-            'formatPercent' => fn ($value, int $decimals = 1) => $this->formatPercent($value, $decimals),
+            'formatPlainAmount' => fn ($value) => $this->formatPlainAmountInJuta($value),
+            'formatPlainCount' => fn ($value) => $this->formatPlainCount($value),
+            'formatPlainDelta' => fn ($value) => $this->formatPlainDeltaInJuta($value),
+            'formatPercent' => fn ($value, int $decimals = 2) => $this->formatPercent($value, 2),
             'quadrantLabel' => fn ($quadrant) => $this->formatQuadrantLabel($quadrant),
             'quadrantClass' => fn ($quadrant) => $this->formatQuadrantClass($quadrant),
         ];
@@ -167,7 +182,7 @@ class KinerjaRmReportController extends Controller
                 'historyRangeLabel' => $historyRangeLabel,
                 'selectedHistoryYear' => $selectedHistoryYear,
                 'formatAmount' => fn ($value, int $decimals = 0) => $this->formatAmountInJuta($value, $decimals),
-                'formatPercent' => fn ($value, int $decimals = 2) => $this->formatPercent($value, $decimals),
+                'formatPercent' => fn ($value, int $decimals = 2) => $this->formatPercent($value, 2),
             ]);
         }
 
@@ -183,7 +198,7 @@ class KinerjaRmReportController extends Controller
                     'historyRangeLabel' => $historyRangeLabel,
                     'selectedHistoryYear' => $selectedHistoryYear,
                     'formatAmount' => fn ($value, int $decimals = 0) => $this->formatAmountInJuta($value, $decimals),
-                    'formatPercent' => fn ($value, int $decimals = 2) => $this->formatPercent($value, $decimals),
+                    'formatPercent' => fn ($value, int $decimals = 2) => $this->formatPercent($value, 2),
                 ]);
             }
         }
@@ -247,7 +262,7 @@ class KinerjaRmReportController extends Controller
             'historyRangeLabel' => $historyRangeLabel,
             'selectedHistoryYear' => $selectedHistoryYear,
             'formatAmount' => fn ($value, int $decimals = 0) => $this->formatAmountInJuta($value, $decimals),
-            'formatPercent' => fn ($value, int $decimals = 2) => $this->formatPercent($value, $decimals),
+            'formatPercent' => fn ($value, int $decimals = 2) => $this->formatPercent($value, 2),
         ]);
     }
 
@@ -857,6 +872,355 @@ class KinerjaRmReportController extends Controller
         return $selectedPeriod;
     }
 
+    /**
+     * Build one performance row per RM and unit. Monthly figures are MTD
+     * realization snapshots from the latest Daily Loan report in each month,
+     * so multiple imports in the same month are never accumulated twice.
+     *
+     * @return array{
+     *     months:array<int, array{key:string,label:string,short_label:string,period:?string,period_label:string}>,
+     *     rows:array<int, array<string, mixed>>,
+     *     total:array<string, mixed>,
+     *     meta:array<string, mixed>
+     * }
+     */
+    private function fetchRetailRealizationPerformance(
+        string $segmen,
+        string $selectedPeriod,
+        ?string $selectedCabang = null,
+        ?string $selectedProduct = null,
+        ?string $selectedRmCategory = null
+    ): array {
+        $cacheKey = 'kinerja_rm_retail_performance_v3:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+            'segmen' => $segmen,
+            'selected' => $selectedPeriod,
+            'cabang' => $selectedCabang,
+            'produk' => $selectedProduct,
+            'rm_category' => $selectedRmCategory,
+        ]));
+
+        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $selectedCabang, $selectedProduct, $selectedRmCategory) {
+            $selectedDate = Carbon::parse($selectedPeriod)->startOfDay();
+            $yearStart = $selectedDate->copy()->startOfYear()->toDateString();
+            $sourcePeriods = $this->fetchPeriodList(self::SOURCE_TABLE, 'periode')
+                ->filter(fn (string $period): bool => $period >= $yearStart && $period <= $selectedPeriod)
+                ->values();
+
+            if ($sourcePeriods->isEmpty()) {
+                $sourcePeriods = $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode')
+                    ->filter(fn (string $period): bool => $period >= $yearStart && $period <= $selectedPeriod)
+                    ->values();
+            }
+
+            $latestPeriodByMonth = $this->latestPeriodPerMonth($sourcePeriods)
+                ->mapWithKeys(fn (string $period): array => [substr($period, 0, 7) => $period]);
+            $months = [];
+
+            for ($monthNumber = 1; $monthNumber <= $selectedDate->month; $monthNumber++) {
+                $monthDate = Carbon::create($selectedDate->year, $monthNumber, 1);
+                $monthKey = $monthDate->format('Y-m');
+                $period = $latestPeriodByMonth->get($monthKey);
+                $months[] = [
+                    'key' => $monthKey,
+                    'label' => $monthDate->translatedFormat('F Y'),
+                    'short_label' => $monthDate->translatedFormat('M y'),
+                    'period' => $period,
+                    'is_closed' => $period !== null && Carbon::parse($period)->isLastOfMonth(),
+                    'period_label' => $period !== null
+                        ? Carbon::parse($period)->translatedFormat('d M Y')
+                        : '-',
+                ];
+            }
+
+            $latestMonthKey = $selectedDate->format('Y-m');
+            $latestPeriod = $latestPeriodByMonth->get($latestMonthKey, $selectedPeriod);
+            $previousReportPeriod = $sourcePeriods
+                ->filter(fn (string $period): bool => str_starts_with($period, $latestMonthKey) && $period < $latestPeriod)
+                ->sortDesc()
+                ->first();
+            $monthlyPeriods = collect($months)->pluck('period')->filter()->values();
+            $queryPeriods = $monthlyPeriods
+                ->when($previousReportPeriod !== null, fn (Collection $periods) => $periods->push($previousReportPeriod))
+                ->unique()
+                ->values()
+                ->all();
+
+            $manualTargets = Schema::hasTable('performance_targets')
+                ? DB::table('performance_targets')
+                    ->get()
+                    ->groupBy(fn ($item) => strtoupper(trim((string) ($item->category ?? ''))))
+                    ->map(fn ($items) => $items->keyBy(fn ($item) => strtoupper(trim((string) ($item->rm_name ?? '')))))
+                : collect();
+
+            $snapshotRows = collect();
+            if ($queryPeriods !== [] && Schema::hasTable(self::SNAPSHOT_TABLE)) {
+                $productValues = $this->snapshotProductFilterValues($selectedProduct, $segmen);
+                $snapshotRows = DB::table(self::SNAPSHOT_TABLE)
+                    ->whereIn('periode', $queryPeriods)
+                    ->where('segmen', $segmen)
+                    ->when($productValues !== [], function ($query) use ($productValues) {
+                        $query->whereIn('produk', $productValues);
+                    })
+                    ->when($selectedCabang !== null, function ($query) use ($selectedCabang) {
+                        $query->where('cabang', $selectedCabang);
+                    })
+                    ->when($segmen === 'SMALL' && $selectedRmCategory === 'KCP', function ($query) {
+                        $query->whereRaw("UPPER(TRIM(COALESCE(unit, ''))) LIKE 'KCP%'");
+                    })
+                    ->when($segmen === 'SMALL' && $selectedRmCategory === 'KC', function ($query) {
+                        $query->whereRaw("UPPER(TRIM(COALESCE(unit, ''))) NOT LIKE 'KCP%'");
+                    })
+                    ->get();
+            }
+
+            $emptyMetric = static fn (bool $hasData = false): array => [
+                'deb' => 0,
+                'rp' => 0.0,
+                'lar_loan_os' => 0.0,
+                'lar_value' => 0.0,
+                'lar_pct' => null,
+                'has_data' => $hasData,
+            ];
+            $pivoted = [];
+
+            foreach ($snapshotRows as $snapshot) {
+                $rmName = trim($this->mapRmName((string) ($snapshot->rm ?? '')));
+                if ($rmName === '') {
+                    continue;
+                }
+
+                $cabang = trim((string) ($snapshot->cabang ?? ''));
+                $unit = trim((string) ($snapshot->unit ?? ''));
+                $branchCode = trim((string) ($snapshot->branch_code ?? ''));
+                $period = $this->normalizeDate((string) ($snapshot->periode ?? ''));
+                if ($period === null) {
+                    continue;
+                }
+
+                $groupKey = implode('|', [
+                    $this->normalizeCabangKey($cabang),
+                    strtoupper($unit),
+                    strtoupper($branchCode),
+                    strtoupper($rmName),
+                ]);
+                $pivoted[$groupKey] ??= [
+                    'cabang' => $cabang,
+                    'unit' => $unit !== '' ? $unit : $cabang,
+                    'unit_code' => $branchCode !== '' ? $branchCode : ($unit !== '' ? $unit : $cabang),
+                    'rm' => $rmName,
+                    'periods' => [],
+                    'snapshot_quadrant' => null,
+                ];
+                $pivoted[$groupKey]['periods'][$period] ??= $emptyMetric(true);
+                $pivoted[$groupKey]['periods'][$period]['deb'] += (int) round((float) ($snapshot->realisasi_deb ?? 0));
+                $pivoted[$groupKey]['periods'][$period]['rp'] += (float) ($snapshot->realisasi_os ?? 0);
+                $pivoted[$groupKey]['periods'][$period]['lar_loan_os'] += (float) ($snapshot->loan_os ?? 0);
+                $pivoted[$groupKey]['periods'][$period]['lar_value'] += (float) ($snapshot->restruk_os ?? 0)
+                    + (float) ($snapshot->sml_os ?? 0)
+                    + (float) ($snapshot->npl_os ?? 0);
+
+                if ($period === $latestPeriod) {
+                    $pivoted[$groupKey]['snapshot_quadrant'] ??= $this->normalizeQuadrant($snapshot->quadrant ?? null);
+                }
+            }
+
+            $monthsWithReports = collect($months)->filter(fn (array $month): bool => $month['period'] !== null)->values();
+            $activeMonthKeys = $monthsWithReports->take(-2)->pluck('key')->all();
+            $closedMonths = collect($months)
+                ->filter(fn (array $month): bool => (bool) ($month['is_closed'] ?? false))
+                ->values();
+            $closedMonthKeys = $closedMonths->pluck('key')->all();
+            $lastClosedMonth = $closedMonths->last();
+            $lastClosedMonthKey = is_array($lastClosedMonth) ? ($lastClosedMonth['key'] ?? null) : null;
+            $closedMonthCount = count($closedMonthKeys);
+            $previousMonthKey = $selectedDate->copy()->subMonthNoOverflow()->format('Y-m');
+            $previousMonthPeriod = $latestPeriodByMonth->get($previousMonthKey);
+            $targetMonthCount = $selectedDate->month;
+            $rows = [];
+            $hiddenInactiveCount = 0;
+
+            foreach ($pivoted as $data) {
+                $monthMetrics = [];
+                $accumulatedDeb = 0;
+                $accumulatedRp = 0.0;
+
+                foreach ($months as $month) {
+                    $metric = $month['period'] !== null
+                        ? ($data['periods'][$month['period']] ?? $emptyMetric(true))
+                        : $emptyMetric(false);
+                    $monthMetrics[$month['key']] = $metric;
+
+                    if ($metric['has_data']) {
+                        $accumulatedDeb += (int) $metric['deb'];
+                        $accumulatedRp += (float) $metric['rp'];
+                    }
+                }
+
+                foreach ($monthMetrics as &$monthMetric) {
+                    $monthMetric['lar_pct'] = (float) ($monthMetric['lar_loan_os'] ?? 0) > 0
+                        ? (((float) ($monthMetric['lar_value'] ?? 0) / (float) $monthMetric['lar_loan_os']) * 100)
+                        : null;
+                }
+                unset($monthMetric);
+
+                $hasRecentRealization = collect($activeMonthKeys)->contains(function (string $monthKey) use ($monthMetrics): bool {
+                    $metric = $monthMetrics[$monthKey] ?? ['deb' => 0, 'rp' => 0.0];
+
+                    return (int) $metric['deb'] !== 0 || abs((float) $metric['rp']) > 0.001;
+                });
+                if ($activeMonthKeys !== [] && ! $hasRecentRealization) {
+                    $hiddenInactiveCount++;
+                    continue;
+                }
+
+                $nameOnly = strtoupper(trim(explode('-', $data['rm'], 2)[1] ?? $data['rm']));
+                $targetLabel = $selectedProduct ?? $segmen;
+                $target = $this->resolveManualTargetForProduct($manualTargets, $targetLabel, $nameOnly);
+                $targetDeb = (int) ($target['target_jg_deb'] ?? 0);
+                $targetRp = (float) ($target['target_jg_os'] ?? 0.0);
+                $currentMetric = $monthMetrics[$latestMonthKey] ?? $emptyMetric(false);
+                $previousMonthMetric = $previousMonthPeriod !== null
+                    ? ($data['periods'][$previousMonthPeriod] ?? $emptyMetric(true))
+                    : null;
+                $previousReportMetric = $previousReportPeriod !== null
+                    ? ($data['periods'][$previousReportPeriod] ?? $emptyMetric(true))
+                    : null;
+                $averageMonthlyRp = $targetMonthCount > 0 ? $accumulatedRp / $targetMonthCount : 0.0;
+                $closedRpTotal = collect($closedMonthKeys)->sum(
+                    fn (string $monthKey): float => (float) ($monthMetrics[$monthKey]['rp'] ?? 0)
+                );
+                $smallRatasRp = $closedMonthCount > 0 ? $closedRpTotal / $closedMonthCount : null;
+                $smallLarPct = $lastClosedMonthKey !== null
+                    ? ($monthMetrics[$lastClosedMonthKey]['lar_pct'] ?? null)
+                    : null;
+                $quadrant = match ($segmen) {
+                    'CONSUMER' => $this->calculateConsumerQuadrant($averageMonthlyRp, $targetRp),
+                    'SMALL' => $smallRatasRp !== null && $smallLarPct !== null
+                        ? $this->calculateSmallQuadrant($smallRatasRp, (float) $smallLarPct)
+                        : $data['snapshot_quadrant'],
+                    default => $data['snapshot_quadrant'],
+                };
+
+                $rows[] = [
+                    'unit_code' => $data['unit_code'],
+                    'unit' => $data['unit'],
+                    'cabang' => $data['cabang'],
+                    'rm' => $data['rm'],
+                    'rm_display' => trim(explode('-', $data['rm'], 2)[1] ?? $data['rm']),
+                    'target' => ['deb' => $targetDeb, 'rp' => $targetRp],
+                    'months' => $monthMetrics,
+                    'delta' => [
+                        'ytd' => $accumulatedRp - ($targetRp * $targetMonthCount),
+                        'mtd' => (float) $currentMetric['rp'] - $targetRp,
+                        'mom' => $previousMonthMetric !== null
+                            ? (float) $currentMetric['rp'] - (float) $previousMonthMetric['rp']
+                            : null,
+                        'dtd' => $previousReportMetric !== null
+                            ? (float) $currentMetric['rp'] - (float) $previousReportMetric['rp']
+                            : null,
+                    ],
+                    'accumulated' => [
+                        'deb' => $accumulatedDeb,
+                        'rp' => $accumulatedRp,
+                        'ratas_rp' => $smallRatasRp,
+                        'lar_pct' => $smallLarPct,
+                        'closed_month_count' => $closedMonthCount,
+                    ],
+                    'quadrant' => $quadrant,
+                ];
+            }
+
+            usort($rows, function (array $left, array $right): int {
+                $codeOrder = strnatcasecmp((string) $left['unit_code'], (string) $right['unit_code']);
+                if ($codeOrder !== 0) {
+                    return $codeOrder;
+                }
+
+                $unitOrder = strnatcasecmp((string) $left['unit'], (string) $right['unit']);
+
+                return $unitOrder !== 0
+                    ? $unitOrder
+                    : strnatcasecmp((string) $left['rm'], (string) $right['rm']);
+            });
+
+            $total = [
+                'target' => ['deb' => 0, 'rp' => 0.0],
+                'months' => collect($months)->mapWithKeys(fn (array $month): array => [$month['key'] => $emptyMetric($month['period'] !== null)])->all(),
+                'delta' => ['ytd' => 0.0, 'mtd' => 0.0, 'mom' => null, 'dtd' => null],
+                'accumulated' => [
+                    'deb' => 0,
+                    'rp' => 0.0,
+                    'ratas_rp' => null,
+                    'lar_pct' => null,
+                    'closed_month_count' => $closedMonthCount,
+                ],
+            ];
+
+            foreach ($rows as $row) {
+                $total['target']['deb'] += (int) $row['target']['deb'];
+                $total['target']['rp'] += (float) $row['target']['rp'];
+                $total['accumulated']['deb'] += (int) $row['accumulated']['deb'];
+                $total['accumulated']['rp'] += (float) $row['accumulated']['rp'];
+
+                foreach ($months as $month) {
+                    $total['months'][$month['key']]['deb'] += (int) $row['months'][$month['key']]['deb'];
+                    $total['months'][$month['key']]['rp'] += (float) $row['months'][$month['key']]['rp'];
+                    $total['months'][$month['key']]['lar_loan_os'] += (float) ($row['months'][$month['key']]['lar_loan_os'] ?? 0);
+                    $total['months'][$month['key']]['lar_value'] += (float) ($row['months'][$month['key']]['lar_value'] ?? 0);
+                }
+
+                foreach (['ytd', 'mtd'] as $deltaKey) {
+                    $total['delta'][$deltaKey] += (float) $row['delta'][$deltaKey];
+                }
+                foreach (['mom', 'dtd'] as $deltaKey) {
+                    if ($row['delta'][$deltaKey] !== null) {
+                        $total['delta'][$deltaKey] = (float) ($total['delta'][$deltaKey] ?? 0.0) + (float) $row['delta'][$deltaKey];
+                    }
+                }
+            }
+
+            foreach ($months as $month) {
+                $monthKey = $month['key'];
+                $loanOs = (float) ($total['months'][$monthKey]['lar_loan_os'] ?? 0);
+                $total['months'][$monthKey]['lar_pct'] = $loanOs > 0
+                    ? (((float) ($total['months'][$monthKey]['lar_value'] ?? 0) / $loanOs) * 100)
+                    : null;
+            }
+
+            if ($segmen === 'SMALL' && $closedMonthCount > 0) {
+                $totalClosedRp = collect($closedMonthKeys)->sum(
+                    fn (string $monthKey): float => (float) ($total['months'][$monthKey]['rp'] ?? 0)
+                );
+                $total['accumulated']['ratas_rp'] = $totalClosedRp / $closedMonthCount;
+                $total['accumulated']['lar_pct'] = $lastClosedMonthKey !== null
+                    ? ($total['months'][$lastClosedMonthKey]['lar_pct'] ?? null)
+                    : null;
+            }
+
+            return [
+                'months' => $months,
+                'rows' => array_values($rows),
+                'total' => $total,
+                'meta' => [
+                    'latest_period' => $latestPeriod,
+                    'latest_period_label' => Carbon::parse($latestPeriod)->translatedFormat('d M Y'),
+                    'previous_report_period' => $previousReportPeriod,
+                    'previous_report_period_label' => $previousReportPeriod !== null
+                        ? Carbon::parse($previousReportPeriod)->translatedFormat('d M Y')
+                        : null,
+                    'closed_month_count' => $closedMonthCount,
+                    'closed_through_period' => is_array($lastClosedMonth) ? ($lastClosedMonth['period'] ?? null) : null,
+                    'closed_through_period_label' => is_array($lastClosedMonth) ? ($lastClosedMonth['period_label'] ?? null) : null,
+                    'closed_range_label' => $closedMonths->isNotEmpty()
+                        ? $closedMonths->first()['short_label'].' - '.$closedMonths->last()['short_label']
+                        : null,
+                    'hidden_inactive_count' => $hiddenInactiveCount,
+                    'visible_count' => count($rows),
+                ],
+            ];
+        });
+    }
+
     private function fetchBranchRows(
         string $segmen,
         string $selectedPeriod,
@@ -866,7 +1230,8 @@ class KinerjaRmReportController extends Controller
         ?string $selectedProduct = null,
         ?string $qualityType = null,
         ?string $selectedRmCategory = null,
-        ?Collection $detailedQualityRows = null
+        ?Collection $detailedQualityRows = null,
+        bool $sortByUnitCode = false
     ): array
     {
         $comparisonPeriodValues = collect($comparisonPeriods)
@@ -875,7 +1240,7 @@ class KinerjaRmReportController extends Controller
         $comparisonKeys = array_keys($comparisonPeriodValues);
         $emptyComparisonValues = array_fill_keys($comparisonKeys, 0.0);
 
-        $cacheKey = 'kinerja_rm_rows_v23-quality-series-without-realisasi-filter:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_rows_v24-quality-series-without-realisasi-filter:' . $this->reportCacheVersion() . ':' . md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'comparisons' => $comparisonPeriodValues,
@@ -884,10 +1249,11 @@ class KinerjaRmReportController extends Controller
             'produk' => $selectedProduct,
             'quality' => $qualityType,
             'rm_category' => $selectedRmCategory,
+            'sort_by_unit_code' => $sortByUnitCode,
             'quality_source' => $detailedQualityRows !== null ? 'daily-loan-bucket-v1' : 'snapshot',
         ]));
 
-        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $comparisonPeriodValues, $comparisonKeys, $emptyComparisonValues, $realisasiPeriod, $selectedCabang, $selectedProduct, $qualityType, $selectedRmCategory, $detailedQualityRows) {
+        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $comparisonPeriodValues, $comparisonKeys, $emptyComparisonValues, $realisasiPeriod, $selectedCabang, $selectedProduct, $qualityType, $selectedRmCategory, $detailedQualityRows, $sortByUnitCode) {
             if ($segmen === 'CONSUMER'
                 && Schema::hasTable(self::SOURCE_TABLE)
                 && Schema::hasColumn(self::SOURCE_TABLE, 'segmen_kinerja')
@@ -992,6 +1358,7 @@ class KinerjaRmReportController extends Controller
                 $rmKey = trim(strtoupper((string)$row->rm));
                 $prodKey = $this->normalizeProductLabel((string) $row->produk, $segmen) ?? strtoupper(trim((string) $row->produk));
                 $rmUnit = $segmen === 'SMALL' ? strtoupper(trim((string) ($row->unit ?? ''))) : null;
+                $rmUnitCode = strtoupper(trim((string) ($row->branch_code ?? '')));
                 $rmCategory = $segmen === 'SMALL' ? $this->resolveSmallRmCategory($rmUnit) : null;
                 $key = "{$cabKey}|{$rmUnit}|{$rmKey}|{$prodKey}";
 
@@ -1016,6 +1383,7 @@ class KinerjaRmReportController extends Controller
                     'rm' => $row->rm,
                     'rm_category' => $rmCategory,
                     'rm_unit' => $rmUnit,
+                    'rm_unit_code' => $rmUnitCode,
                     'produk' => $row->produk,
                     'quadrant' => null,
                     'curr' => 0.0, 'curr_deb' => 0, 'yoy' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
@@ -1092,6 +1460,7 @@ class KinerjaRmReportController extends Controller
                 $rmName = $this->mapRmName($data['rm']);
                 $rmCategory = $data['rm_category'] ?? null;
                 $rmUnit = $data['rm_unit'] ?? null;
+                $rmUnitCode = $data['rm_unit_code'] ?? null;
                 $rmGroupKey = $this->kinerjaRmGroupKey($rmName, $rmCategory, $rmUnit);
                 $productLabel = $this->normalizeProductLabel($data['produk'], $segmen);
 
@@ -1146,6 +1515,7 @@ class KinerjaRmReportController extends Controller
                         'rm' => $rmName,
                         'rm_category' => $rmCategory,
                         'rm_unit' => $rmUnit,
+                        'rm_unit_code' => $rmUnitCode,
                         'items' => [],
                         'rm_rowspan' => 0,
                         'quadrant' => $quadrant,
@@ -1293,7 +1663,7 @@ class KinerjaRmReportController extends Controller
                 $grandTotals['comparison_deltas'][$periodKey] = $grandTotals['curr'] - ($grandTotals['comparison_values'][$periodKey] ?? 0.0);
             }
 
-            $branches = $this->sortKinerjaRmBranches($branches, $segmen);
+            $branches = $this->sortKinerjaRmBranches($branches, $segmen, $sortByUnitCode);
 
             $totalRecord = [
                 'segmen' => $segmen,
@@ -1516,13 +1886,44 @@ class KinerjaRmReportController extends Controller
         };
     }
 
-    private function sortKinerjaRmBranches(array $branches, string $segmen): array
+    private function sortKinerjaRmBranches(array $branches, string $segmen, bool $sortByUnitCode = false): array
     {
-        uksort($branches, fn (string $left, string $right): int => strnatcasecmp($left, $right));
+        $codeSortKey = static fn ($value): string => trim((string) $value) === '' ? "\xFF" : strtoupper(trim((string) $value));
+        $branchFirstCode = static function (array $branch) use ($codeSortKey): string {
+            $codes = collect((array) ($branch['rms'] ?? []))
+                ->map(fn (array $rmData): string => $codeSortKey($rmData['rm_unit_code'] ?? null))
+                ->sort(fn (string $left, string $right): int => strnatcasecmp($left, $right))
+                ->values();
+
+            return (string) ($codes->first() ?? "\xFF");
+        };
+
+        if ($sortByUnitCode) {
+            uksort($branches, function (string $left, string $right) use ($branches, $branchFirstCode): int {
+                $codeComparison = strnatcasecmp($branchFirstCode($branches[$left]), $branchFirstCode($branches[$right]));
+
+                return $codeComparison !== 0 ? $codeComparison : strnatcasecmp($left, $right);
+            });
+        } else {
+            uksort($branches, fn (string $left, string $right): int => strnatcasecmp($left, $right));
+        }
 
         foreach ($branches as $branchKey => $branch) {
             $rms = (array) ($branch['rms'] ?? []);
-            uksort($rms, fn (string $left, string $right): int => strnatcasecmp($left, $right));
+            if ($sortByUnitCode) {
+                uasort($rms, function (array $left, array $right) use ($codeSortKey): int {
+                    $codeComparison = strnatcasecmp(
+                        $codeSortKey($left['rm_unit_code'] ?? null),
+                        $codeSortKey($right['rm_unit_code'] ?? null)
+                    );
+
+                    return $codeComparison !== 0
+                        ? $codeComparison
+                        : strnatcasecmp((string) ($left['rm'] ?? ''), (string) ($right['rm'] ?? ''));
+                });
+            } else {
+                uksort($rms, fn (string $left, string $right): int => strnatcasecmp($left, $right));
+            }
 
             foreach ($rms as $rmKey => $rmData) {
                 $items = array_values((array) ($rmData['items'] ?? []));
@@ -2167,6 +2568,34 @@ class KinerjaRmReportController extends Controller
         }
 
         return number_format($normalized / 1000000, $decimals, ',', '.');
+    }
+
+    private function formatPlainAmountInJuta(mixed $value): string
+    {
+        $normalized = $this->normalizeNumericValue($value);
+
+        return $normalized === null
+            ? '-'
+            : (string) (int) round($normalized / 1000000);
+    }
+
+    private function formatPlainCount(mixed $value): string
+    {
+        $normalized = $this->normalizeNumericValue($value);
+
+        return $normalized === null ? '-' : (string) (int) round($normalized);
+    }
+
+    private function formatPlainDeltaInJuta(mixed $value): string
+    {
+        $normalized = $this->normalizeNumericValue($value);
+        if ($normalized === null) {
+            return '-';
+        }
+
+        $amount = (int) round($normalized / 1000000);
+
+        return $amount > 0 ? '+' . $amount : (string) $amount;
     }
 
     private function formatSignedAmountInJuta(mixed $value, bool $showArrow = true, int $decimals = 1): string

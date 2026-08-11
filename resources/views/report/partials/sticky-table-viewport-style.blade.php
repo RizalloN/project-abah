@@ -6,10 +6,13 @@
 {{ $wrapperSelector }} {
     --table-sticky-top: 0px;
     --table-scrollbar-space: 0px;
+    height: auto !important;
+    max-height: none !important;
     overflow-x: auto;
-    overflow-y: auto;
+    overflow-y: visible;
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
+    overscroll-behavior-x: contain;
+    overscroll-behavior-y: auto;
     position: relative;
     top: auto;
     background: #ffffff;
@@ -19,7 +22,7 @@
     z-index: 1;
     scrollbar-width: thin;
     scrollbar-color: #cbd5e1 transparent;
-    scrollbar-gutter: stable;
+    scrollbar-gutter: auto;
     box-sizing: border-box;
     padding-bottom: var(--table-scrollbar-space);
 }
@@ -71,10 +74,10 @@
         position: relative;
         top: auto;
         height: auto !important;
-        max-height: min(68vh, 680px) !important;
-        max-height: min(68dvh, 680px) !important;
+        max-height: none !important;
         overflow-x: auto;
-        overflow-y: auto;
-        overscroll-behavior: contain;
+        overflow-y: visible;
+        overscroll-behavior-x: contain;
+        overscroll-behavior-y: auto;
     }
 }

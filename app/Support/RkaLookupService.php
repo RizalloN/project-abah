@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class RkaLookupService
 {
@@ -53,6 +54,37 @@ class RkaLookupService
         10 => 'OCT',
         11 => 'NOV',
         12 => 'DEC',
+    ];
+
+    /**
+     * Workbook breakdown terbaru menyederhanakan sejumlah label mata anggaran.
+     * Alias ini menjaga definisi dashboard lama tetap membaca label sumber baru.
+     */
+    private const MATA_ANGGARAN_ALIASES = [
+        'A.1. DPK RETAIL FUNDING TOTAL' => ['A. DPK RETAIL FUNDING TOTAL'],
+        'A.2. DPK KORPORASI' => ['A. DPK KORPORASI TOTAL'],
+        'A.2.A. GIRO KORPORASI' => ['A. GIRO KORPORASI'],
+        'A.2.B. DEPOSITO KORPORASI' => ['A. DEPOSITO KORPORASI'],
+        'GIRO RETAIL FUNDING TOTAL' => ['A. GIRO RETAIL FUNDING'],
+        'TABUNGAN RETAIL FUNDING TOTAL' => ['A. TABUNGAN RETAIL FUNDING'],
+        'DEPOSITO RETAIL FUNDING TOTAL' => ['A. DEPOSITO RETAIL FUNDING'],
+        'C. 1. A. RECOVERY EKSTRAKOMTABEL MIKRO' => [
+            'C. 1. RECOVERY EKSTRAKOMTABEL MIKRO KLAIM',
+            'C. 1. RECOVERY EKSTRAKOMTABEL MIKRO NON KLAIM',
+        ],
+        'C. 1. B. RECOVERY EKSTRAKOMTABEL KECE' => [
+            'C. 2. RECOVERY EKSTRAKOMTABEL KECE KLAIM',
+            'C. 2. RECOVERY EKSTRAKOMTABEL KECE NON KLAIM',
+        ],
+        'C. 2. RECOVERY EKSTRAKOMTABEL SMALL' => [
+            'C. 3. RECOVERY EKSTRAKOMTABEL SMALL KLAIM',
+            'C. 3. RECOVERY EKSTRAKOMTABEL SMALL NON KLAIM',
+        ],
+        'C. 4. RECOVERY EKSTRAKOMTABEL KONSUMER' => [
+            'C. 5. RECOVERY EKSTRAKOMTABEL KONSUMER KLAIM',
+            'C. 5. RECOVERY EKSTRAKOMTABEL KONSUMER NON KLAIM',
+        ],
+        'C. RECOVERY EKSTRAKOMTABEL' => ['C. RECOVERY EKSTRAKOMTABEL TOTAL'],
     ];
 
     public function resolveMonthColumn(Carbon|string|null $date): string
@@ -317,11 +349,18 @@ class RkaLookupService
             return $this->loadedRowsCache[$cacheKey];
         }
 
-        return $this->loadedRowsCache[$cacheKey] = DB::table('rka')
+        $query = DB::table('rka')
             ->select(array_merge(['kanca', 'desc_uker', 'mata_anggaran'], $normalizedMonthColumns))
-            ->when($year !== null, function ($query) use ($year) {
+            ->when($year !== null, function ($query) use ($year): void {
+                if (Schema::hasColumn('rka', 'tahun')) {
+                    $query->where('tahun', $year);
+                    return;
+                }
+
                 $query->whereYear('created_at', $year);
-            })
+            });
+
+        return $this->loadedRowsCache[$cacheKey] = $query
             ->get()
             ->map(function ($row) use ($normalizedMonthColumns) {
                 $months = [];
@@ -341,6 +380,18 @@ class RkaLookupService
 
     public function availableYears(): array
     {
+        if (Schema::hasColumn('rka', 'tahun')) {
+            return DB::table('rka')
+                ->whereNotNull('tahun')
+                ->distinct()
+                ->orderByDesc('tahun')
+                ->pluck('tahun')
+                ->map(fn ($value) => (int) $value)
+                ->filter(fn (int $value) => $value > 0)
+                ->values()
+                ->all();
+        }
+
         $driver = DB::connection()->getDriverName();
         $yearExpression = $driver === 'sqlite' ? "strftime('%Y', created_at) as year" : 'YEAR(created_at) as year';
 
@@ -409,7 +460,7 @@ class RkaLookupService
     private function matchesDefinition(array $row, array $definition): bool
     {
         if (isset($definition['mata_anggaran'])) {
-            $mataAnggarans = $this->normalizeLookupValues((array) $definition['mata_anggaran']);
+            $mataAnggarans = $this->normalizeMataAnggaranValues((array) $definition['mata_anggaran']);
             if (empty($mataAnggarans)) {
                 return false; // If filter is provided but empty, match nothing (safety)
             }
@@ -488,6 +539,20 @@ class RkaLookupService
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function normalizeMataAnggaranValues(array $values): array
+    {
+        $normalized = $this->normalizeLookupValues($values);
+        $expanded = $normalized;
+
+        foreach ($normalized as $value) {
+            foreach (self::MATA_ANGGARAN_ALIASES[$value] ?? [] as $alias) {
+                $expanded[] = $alias;
+            }
+        }
+
+        return array_values(array_unique($expanded));
     }
 
     private function normalizeLookupValue($value): ?string
@@ -642,25 +707,74 @@ class RkaLookupService
             return self::$flexibleMatchMemo[$cacheKey] = false;
         }
 
-        // Try slug-based matching for better flexibility (matches 'kc-madiun' to '45-KC MADIUN')
-        $ukerSlug = \Illuminate\Support\Str::slug($ukerKey);
-        $labelSlug = \Illuminate\Support\Str::slug($label);
+        $ukerTokens = $this->scopeTokens($ukerKey);
+        $labelTokens = $this->scopeTokens($label);
 
-        if ($labelSlug !== '' && (str_contains($ukerSlug, $labelSlug) || str_contains($labelSlug, $ukerSlug))) {
-            return self::$flexibleMatchMemo[$cacheKey] = true;
-        }
-
-        // Last resort: keyword matching
-        $keywords = array_filter(explode('-', $labelSlug), fn($p) => !in_array($p, ['kc', 'kcp', 'unit']));
-        if (!empty($keywords)) {
-            foreach ($keywords as $word) {
-                if (!str_contains($ukerSlug, $word)) {
-                    return self::$flexibleMatchMemo[$cacheKey] = false;
-                }
-            }
+        if ($this->containsScopeTokenSequence($ukerTokens, $labelTokens)
+            || $this->containsScopeTokenSequence($labelTokens, $ukerTokens)) {
             return self::$flexibleMatchMemo[$cacheKey] = true;
         }
 
         return self::$flexibleMatchMemo[$cacheKey] = false;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function scopeTokens(string $value): array
+    {
+        $normalized = $this->normalizeScopeValue($value);
+        if ($normalized === null) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            preg_split('/[^A-Z0-9]+/u', $normalized) ?: [],
+            static fn (string $token): bool => $token !== ''
+        ));
+    }
+
+    /**
+     * Match a complete ordered token sequence. A sufficiently long final token
+     * may be truncated by the source workbook (for example MADI vs MADIUN), but
+     * short identifiers such as I, II, III, or PON must remain exact tokens.
+     *
+     * @param array<int, string> $haystack
+     * @param array<int, string> $needle
+     */
+    private function containsScopeTokenSequence(array $haystack, array $needle): bool
+    {
+        $haystackCount = count($haystack);
+        $needleCount = count($needle);
+        if ($needleCount === 0 || $needleCount > $haystackCount) {
+            return false;
+        }
+
+        $lastNeedleIndex = $needleCount - 1;
+        for ($start = 0; $start <= $haystackCount - $needleCount; $start++) {
+            $matches = true;
+
+            foreach ($needle as $index => $needleToken) {
+                $haystackToken = $haystack[$start + $index];
+                if ($haystackToken === $needleToken) {
+                    continue;
+                }
+
+                $allowsTruncatedFinalToken = $index === $lastNeedleIndex
+                    && strlen($needleToken) >= 4
+                    && str_starts_with($haystackToken, $needleToken);
+
+                if (!$allowsTruncatedFinalToken) {
+                    $matches = false;
+                    break;
+                }
+            }
+
+            if ($matches) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

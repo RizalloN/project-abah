@@ -46,7 +46,7 @@ class PresentationDeckDataService
                 'period' => $period,
                 'period_label' => Carbon::parse($period)->translatedFormat('d F Y'),
                 'generated_at' => now()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d M Y H:i'),
-                'source_note' => 'Sumber: dashboard_harian_snapshots, RKA dashboard, dan report digital terbaru.',
+                'source_note' => 'Sumber: snapshot dashboard, RKA, Market Share Area 6, Mapping REKAP/DASHBOARD, dan report digital terbaru.',
                 'template' => public_path('BRI_Presentation Template.pptx'),
                 'bri_logo' => public_path('images/bri-logo-template.png'),
                 'danantara_logo' => public_path('images/danantara-logo-template.png'),
@@ -59,6 +59,8 @@ class PresentationDeckDataService
                 'label' => strtoupper($key) . ' ' . Carbon::parse($date)->translatedFormat('d M y'),
             ])->values()->all(),
             'agenda' => [
+                'Market Share Area 6',
+                'Mapping Potensi dan Penetrasi',
                 'Summary Funding Area atau Cabang',
                 'Funding per Produk dan Timeseries',
                 'Rangkuman 8 Strategi Funding',
@@ -71,6 +73,11 @@ class PresentationDeckDataService
                 'Timeseries Kinerja Terintegrasi',
                 'Prioritas Aksi Berikutnya',
             ],
+            'marketshare' => $this->buildMarketShare(
+                (array) data_get($payload, 'marketshare', []),
+                $globalScope,
+                $scopeLabel
+            ),
             'structured' => [
                 'funding' => (array) ($fundingStructureScopes[$payloadScopeKey]
                     ?? $fundingStructureScopes[$globalScope]
@@ -629,6 +636,474 @@ class PresentationDeckDataService
         );
 
         return $selected;
+    }
+
+    /**
+     * @param array<string, mixed> $marketShare
+     * @return array<string, mixed>
+     */
+    private function buildMarketShare(array $marketShare, string $scope, string $scopeLabel): array
+    {
+        $scopeKey = $this->marketShareScopeKey($scope);
+        $area = (array) data_get($marketShare, 'area6', []);
+        $areaSegments = (array) ($area['segments'] ?? []);
+        $areaSegmentKey = (string) ($area['default_segment'] ?? 'dpk');
+        $areaSegment = (array) (
+            $areaSegments[$areaSegmentKey]
+            ?? $areaSegments['dpk']
+            ?? collect($areaSegments)->first()
+            ?? []
+        );
+        $areaSegmentKey = (string) ($areaSegment['key'] ?? $areaSegmentKey ?: 'dpk');
+        $areaKind = (string) ($areaSegment['kind'] ?? 'deposit');
+        $areaRows = array_values(array_filter(
+            (array) ($areaSegment['rows'] ?? []),
+            fn (array $row): bool => $scopeKey === 'area6'
+                || $this->marketShareScopeKey((string) ($row['branch'] ?? '')) === $scopeKey
+        ));
+        $areaRows = array_map(
+            fn (array $row): array => $this->marketShareAreaRow($row, $areaKind),
+            $areaRows
+        );
+        $areaTotal = (array) (
+            collect($areaRows)->firstWhere('total', true)
+            ?? ($scopeKey !== 'area6' ? ($areaRows[0] ?? []) : [])
+        );
+
+        $sektoral = (array) data_get($marketShare, 'sektoral', []);
+        $sektoralScopes = (array) ($sektoral['scopes'] ?? []);
+        $selectedSektoral = (array) (
+            $sektoralScopes[$scopeKey]
+            ?? $sektoralScopes['area6']
+            ?? collect($sektoralScopes)->first()
+            ?? []
+        );
+        $sectorRows = array_values((array) ($selectedSektoral['rows'] ?? []));
+        usort($sectorRows, fn (array $left, array $right): int =>
+            (float) ($right['bri_os'] ?? 0) <=> (float) ($left['bri_os'] ?? 0)
+        );
+
+        $mapping = (array) data_get($marketShare, 'mapping', []);
+        $units = array_values(array_filter(
+            (array) ($mapping['units'] ?? []),
+            fn (array $unit): bool => $scopeKey === 'area6'
+                || strtolower((string) ($unit['branch'] ?? '')) === $scopeKey
+        ));
+        $branches = array_values(array_filter(
+            (array) ($mapping['branches'] ?? []),
+            fn (array $branch): bool => $scopeKey === 'area6'
+                || strtolower((string) ($branch['key'] ?? '')) === $scopeKey
+        ));
+        $mappingTotals = $scopeKey === 'area6'
+            ? (array) ($mapping['area_totals'] ?? [])
+            : (array) data_get($branches, '0.totals', []);
+        if ($mappingTotals === []) {
+            $potential = array_sum(array_map(
+                fn (array $unit): float => (float) data_get($unit, 'values.total.potential', 0),
+                $units
+            ));
+            $existing = array_sum(array_map(
+                fn (array $unit): float => (float) data_get($unit, 'values.total.existing', 0),
+                $units
+            ));
+            $mappingTotals = [
+                'potential' => $potential,
+                'existing' => $existing,
+                'penetration' => $potential > 0 ? ($existing / $potential) * 100 : 0,
+            ];
+        }
+
+        $mappingDashboard = (array) ($mapping['dashboard'] ?? []);
+        $useMappingDashboard = $scopeKey === 'area6' && !empty($mappingDashboard['ready']);
+        if ($useMappingDashboard) {
+            $dashboardMetrics = array_merge(
+                array_values((array) ($mappingDashboard['totalMetrics'] ?? [])),
+                array_values((array) ($mappingDashboard['headlineMetrics'] ?? []))
+            );
+            $dashboardPotential = $this->marketShareMetricNumber(
+                $dashboardMetrics,
+                ['TOTAL POTENSI', 'POTENSI']
+            );
+            $dashboardExisting = $this->marketShareMetricNumber(
+                $dashboardMetrics,
+                ['TOTAL DEBITUR', 'DEBITUR', 'EXISTING']
+            );
+            $dashboardPenetration = $this->marketShareMetricNumber(
+                $dashboardMetrics,
+                ['PENETRASI', 'SHARE TOTAL']
+            );
+
+            if ($dashboardPotential !== null) {
+                $mappingTotals['potential'] = $dashboardPotential;
+            }
+            if ($dashboardExisting !== null) {
+                $mappingTotals['existing'] = $dashboardExisting;
+            }
+            if ($dashboardPenetration !== null) {
+                $mappingTotals['penetration'] = $dashboardPenetration;
+            } elseif ((float) ($mappingTotals['potential'] ?? 0) > 0) {
+                $mappingTotals['penetration'] = ((float) ($mappingTotals['existing'] ?? 0)
+                    / (float) $mappingTotals['potential']) * 100;
+            }
+        }
+
+        $ranking = $units;
+        usort($ranking, fn (array $left, array $right): int =>
+            (float) data_get($right, 'values.total.penetration', 0)
+                <=> (float) data_get($left, 'values.total.penetration', 0)
+        );
+
+        return [
+            'available' => $areaRows !== [] || $selectedSektoral !== [] || !empty($mapping['ready']),
+            'scope_key' => $scopeKey,
+            'scope_label' => $scopeLabel,
+            'area6' => [
+                'available' => $areaRows !== [],
+                'title' => (string) ($area['title'] ?? 'Marketshare - Area 6'),
+                'subtitle' => (string) ($area['subtitle'] ?? ''),
+                'period' => (string) ($area['period'] ?? '-'),
+                'unit' => (string) ($area['unit'] ?? 'Rp dalam Miliar'),
+                'source' => (string) ($area['source'] ?? '-'),
+                'scope_label' => $scopeLabel,
+                'segment_key' => $areaSegmentKey,
+                'segment_label' => (string) ($areaSegment['label'] ?? 'Total DPK'),
+                'kind' => $areaKind,
+                'headers' => (array) ($areaSegment['headers'] ?? []),
+                'insights' => (array) ($areaSegment['insights'] ?? []),
+                'rows' => $areaRows,
+                'total' => $areaTotal,
+            ],
+            'sektoral' => [
+                'available' => $selectedSektoral !== [],
+                'title' => (string) ($sektoral['title'] ?? 'Market Share Sektoral'),
+                'period' => (string) ($sektoral['period'] ?? '-'),
+                'unit' => (string) ($sektoral['unit'] ?? 'Rp dalam Miliar'),
+                'source' => (string) ($sektoral['source'] ?? '-'),
+                'scope_label' => (string) ($selectedSektoral['label'] ?? $scopeLabel),
+                'total' => (array) ($selectedSektoral['total'] ?? []),
+                'rows' => $sectorRows,
+                'top_sectors' => array_slice($sectorRows, 0, 6),
+            ],
+            'mapping' => [
+                'ready' => !empty($mapping['ready']) && $units !== [],
+                'title' => (string) ($mapping['title'] ?? 'Mapping Market Share'),
+                'sheet' => (string) ($mapping['sheet'] ?? 'REKAP'),
+                'updated_at' => (string) ($mapping['updated_at'] ?? '-'),
+                'scope_label' => $scopeLabel,
+                'totals' => $mappingTotals,
+                'cards' => $this->marketShareMappingCards(
+                    $mappingTotals,
+                    $mappingDashboard,
+                    $useMappingDashboard
+                ),
+                'dashboard' => [
+                    'ready' => $useMappingDashboard,
+                    'title' => (string) ($mappingDashboard['title'] ?? ''),
+                    'subtitle' => (string) ($mappingDashboard['subtitle'] ?? ''),
+                    'selectedSector' => (string) ($mappingDashboard['selectedSector'] ?? '-'),
+                    'demographics' => array_values((array) ($mappingDashboard['demographics'] ?? [])),
+                    'headlineMetrics' => array_values((array) ($mappingDashboard['headlineMetrics'] ?? [])),
+                    'totalMetrics' => array_values((array) ($mappingDashboard['totalMetrics'] ?? [])),
+                    'highlights' => $this->marketShareHighlightTexts(
+                        (array) ($mappingDashboard['highlights'] ?? [])
+                    ),
+                    'filters' => (array) ($mappingDashboard['filters'] ?? []),
+                    'charts' => (array) ($mappingDashboard['charts'] ?? []),
+                    'sheet' => (string) ($mappingDashboard['sheet'] ?? 'DASHBOARD'),
+                    'updated_at' => (string) ($mappingDashboard['updated_at'] ?? $mapping['updated_at'] ?? '-'),
+                ],
+                'coverage' => [
+                    'unit_count' => count($units),
+                    'mapped_unit_count' => count(array_filter(
+                        $units,
+                        fn (array $unit): bool => (array) ($unit['district_codes'] ?? []) !== []
+                    )),
+                    'district_count' => count(array_unique(array_merge(...array_map(
+                        fn (array $unit): array => array_map('strval', (array) ($unit['district_codes'] ?? [])),
+                        $units
+                    )))),
+                ],
+                'ranking' => array_slice($ranking, 0, 6),
+                'map_points' => $this->buildMarketShareMapPoints(
+                    $units,
+                    (array) data_get($mapping, 'geojson.features', [])
+                ),
+                'source' => (array) ($mapping['source'] ?? []),
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function marketShareAreaRow(array $row, string $kind): array
+    {
+        $values = array_values((array) ($row['values'] ?? []));
+        if ($kind === 'loan') {
+            $briCurrentIndex = 2;
+            $industryCurrentIndex = 9;
+            $marketShareCurrentIndex = 16;
+            $marketSharePreviousIndex = 15;
+            $briYtdIndex = 6;
+        } elseif ($kind === 'quality') {
+            $briCurrentIndex = 0;
+            $industryCurrentIndex = 8;
+            $marketShareCurrentIndex = 16;
+            $marketSharePreviousIndex = 16;
+            $briYtdIndex = 6;
+        } else {
+            $briCurrentIndex = 2;
+            $industryCurrentIndex = 6;
+            $marketShareCurrentIndex = 14;
+            $marketSharePreviousIndex = 13;
+            $briYtdIndex = 3;
+        }
+
+        $briCurrent = $this->marketShareNumber($values[$briCurrentIndex] ?? null);
+        $industryCurrent = $this->marketShareNumber($values[$industryCurrentIndex] ?? null);
+        $outsideCurrent = $kind === 'deposit'
+            ? $this->marketShareNumber($values[10] ?? null)
+            : null;
+        if ($outsideCurrent === null && $briCurrent !== null && $industryCurrent !== null) {
+            $outsideCurrent = max(0.0, $industryCurrent - $briCurrent);
+        }
+
+        return [
+            'label' => (string) ($row['branch'] ?? '-'),
+            'branch' => (string) ($row['branch'] ?? '-'),
+            'total' => (bool) ($row['total'] ?? false),
+            'bri_current' => $briCurrent,
+            'industry_current' => $industryCurrent,
+            'outside_current' => $outsideCurrent,
+            'market_share_current' => $this->marketShareNumber($values[$marketShareCurrentIndex] ?? null),
+            'market_share_previous' => $this->marketShareNumber($values[$marketSharePreviousIndex] ?? null),
+            'bri_ytd' => $this->marketShareNumber($values[$briYtdIndex] ?? null),
+            'source_values' => $values,
+        ];
+    }
+
+    /** @param array<int, array<string, mixed>> $metrics */
+    private function marketShareMetricNumber(array $metrics, array $labels): ?float
+    {
+        $labels = array_map(fn (string $label): string => $this->marketShareMetricToken($label), $labels);
+        foreach ($metrics as $metric) {
+            $metricLabel = $this->marketShareMetricToken((string) ($metric['label'] ?? ''));
+            if ($metricLabel === '') {
+                continue;
+            }
+            foreach ($labels as $label) {
+                if ($label !== '' && ($metricLabel === $label || str_contains($metricLabel, $label))) {
+                    return $this->marketShareNumber(
+                        $metric['raw'] ?? $metric['numeric'] ?? $metric['value'] ?? null
+                    );
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function marketShareMappingCards(array $totals, array $dashboard, bool $useDashboard): array
+    {
+        $cards = [
+            ['label' => 'POTENSI', 'value' => $totals['potential'] ?? null, 'kind' => 'integer', 'meta' => $useDashboard ? 'Dashboard Area 6' : 'Basis nasabah REKAP'],
+            ['label' => 'EXISTING', 'value' => $totals['existing'] ?? null, 'kind' => 'integer', 'meta' => $useDashboard ? 'Debitur Dashboard' : 'Debitur BRI REKAP'],
+            ['label' => 'PENETRASI', 'value' => $totals['penetration'] ?? null, 'kind' => 'percent', 'meta' => 'Existing / potensi'],
+        ];
+
+        if ($useDashboard) {
+            $demographics = array_values((array) ($dashboard['demographics'] ?? []));
+            $headlineMetrics = array_values((array) ($dashboard['headlineMetrics'] ?? []));
+            $headline = collect($demographics)->first(function (array $metric): bool {
+                return str_contains(
+                    $this->marketShareMetricToken((string) ($metric['label'] ?? '')),
+                    'ORANG'
+                );
+            }) ?? ($demographics[0] ?? null);
+            $usesDemographic = is_array($headline);
+
+            if (!$usesDemographic) {
+                $headline = $headlineMetrics[0] ?? null;
+            }
+
+            if (is_array($headline)) {
+                $headlineLabel = strtoupper((string) ($headline['label'] ?? 'KPI SEKTOR'));
+                $selectedSector = trim((string) ($dashboard['selectedSector'] ?? ''));
+                if (!$usesDemographic) {
+                    $headlineLabel = trim($headlineLabel . ' ' . ($selectedSector !== '' && $selectedSector !== '-'
+                        ? strtoupper($selectedSector)
+                        : 'SEKTOR'));
+                }
+                $cards[] = [
+                    'label' => $headlineLabel,
+                    'value' => $this->marketShareNumber($headline['raw'] ?? $headline['numeric'] ?? $headline['value'] ?? null),
+                    'kind' => 'integer',
+                    'meta' => $usesDemographic ? 'Demografi dashboard' : 'Sektor dashboard terpilih',
+                ];
+            }
+        }
+
+        if (count($cards) < 4) {
+            $cards[] = [
+                'label' => 'GAP PASAR',
+                'value' => max(0.0, (float) ($totals['potential'] ?? 0) - (float) ($totals['existing'] ?? 0)),
+                'kind' => 'integer',
+                'meta' => 'Potensi belum tergarap',
+            ];
+        }
+
+        return array_slice($cards, 0, 4);
+    }
+
+    /** @return array<int, string> */
+    private function marketShareHighlightTexts(array $highlights): array
+    {
+        $texts = [];
+        foreach ($highlights as $highlight) {
+            if (is_string($highlight)) {
+                $text = trim($highlight);
+            } elseif (is_array($highlight)) {
+                $label = trim((string) ($highlight['label'] ?? $highlight['title'] ?? ''));
+                $value = trim((string) ($highlight['value'] ?? $highlight['text'] ?? $highlight['description'] ?? ''));
+                $text = trim($label . ($label !== '' && $value !== '' ? ': ' : '') . $value);
+            } else {
+                $text = '';
+            }
+            if ($text !== '') {
+                $texts[] = $text;
+            }
+        }
+
+        return array_slice($texts, 0, 4);
+    }
+
+    private function marketShareMetricToken(string $value): string
+    {
+        return trim((string) preg_replace('/[^A-Z0-9]+/', ' ', strtoupper($value)));
+    }
+
+    private function marketShareNumber(mixed $value): ?float
+    {
+        if (is_int($value) || is_float($value)) {
+            return (float) $value;
+        }
+        $value = trim((string) $value);
+        if ($value === '' || $value === '-') {
+            return null;
+        }
+
+        $negative = str_starts_with($value, '(') && str_ends_with($value, ')');
+        $normalized = trim($value, "() \t\n\r\0\x0B");
+        $normalized = preg_replace('/[^0-9,\.\-]/', '', $normalized) ?? '';
+        if (preg_match('/^-?\d{1,3}(,\d{3})+(\.\d+)?$/', $normalized)) {
+            $normalized = str_replace(',', '', $normalized);
+        } elseif (preg_match('/^-?\d{1,3}(\.\d{3})+(,\d+)?$/', $normalized)) {
+            $normalized = str_replace('.', '', $normalized);
+            $normalized = str_replace(',', '.', $normalized);
+        } elseif (substr_count($normalized, ',') === 1 && substr_count($normalized, '.') === 0) {
+            $normalized = str_replace(',', '.', $normalized);
+        } else {
+            $normalized = str_replace(',', '', $normalized);
+        }
+        if (!is_numeric($normalized)) {
+            return null;
+        }
+
+        $number = (float) $normalized;
+
+        return $negative ? -abs($number) : $number;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $units
+     * @param array<int, array<string, mixed>> $features
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildMarketShareMapPoints(array $units, array $features): array
+    {
+        $featureCentroids = [];
+        foreach ($features as $feature) {
+            $districtCode = trim((string) data_get($feature, 'properties.KDCPUM', ''));
+            $pairs = $this->marketShareCoordinatePairs(data_get($feature, 'geometry.coordinates', []));
+            if ($districtCode === '' || $pairs === []) {
+                continue;
+            }
+            $featureCentroids[$districtCode] = [
+                'longitude' => array_sum(array_column($pairs, 0)) / count($pairs),
+                'latitude' => array_sum(array_column($pairs, 1)) / count($pairs),
+            ];
+        }
+
+        $rawPoints = [];
+        foreach ($units as $unit) {
+            $centroids = array_values(array_filter(array_map(
+                fn ($code): ?array => $featureCentroids[trim((string) $code)] ?? null,
+                (array) ($unit['district_codes'] ?? [])
+            )));
+            if ($centroids === []) {
+                continue;
+            }
+            $rawPoints[] = [
+                'label' => (string) ($unit['label'] ?? $unit['name'] ?? '-'),
+                'branch_label' => (string) ($unit['branch_label'] ?? '-'),
+                'longitude' => array_sum(array_column($centroids, 'longitude')) / count($centroids),
+                'latitude' => array_sum(array_column($centroids, 'latitude')) / count($centroids),
+                'potential' => (float) data_get($unit, 'values.total.potential', 0),
+                'existing' => (float) data_get($unit, 'values.total.existing', 0),
+                'penetration' => (float) data_get($unit, 'values.total.penetration', 0),
+            ];
+        }
+
+        if ($rawPoints === []) {
+            return [];
+        }
+        $longitudes = array_column($rawPoints, 'longitude');
+        $latitudes = array_column($rawPoints, 'latitude');
+        $minLongitude = min($longitudes);
+        $maxLongitude = max($longitudes);
+        $minLatitude = min($latitudes);
+        $maxLatitude = max($latitudes);
+
+        return array_map(function (array $point) use ($minLongitude, $maxLongitude, $minLatitude, $maxLatitude): array {
+            $point['x'] = $maxLongitude === $minLongitude
+                ? 0.5
+                : (($point['longitude'] - $minLongitude) / ($maxLongitude - $minLongitude));
+            $point['y'] = $maxLatitude === $minLatitude
+                ? 0.5
+                : 1 - (($point['latitude'] - $minLatitude) / ($maxLatitude - $minLatitude));
+            unset($point['longitude'], $point['latitude']);
+
+            return $point;
+        }, $rawPoints);
+    }
+
+    /** @return array<int, array{0: float, 1: float}> */
+    private function marketShareCoordinatePairs(mixed $coordinates): array
+    {
+        if (!is_array($coordinates)) {
+            return [];
+        }
+        if (isset($coordinates[0], $coordinates[1]) && is_numeric($coordinates[0]) && is_numeric($coordinates[1])) {
+            return [[(float) $coordinates[0], (float) $coordinates[1]]];
+        }
+
+        $pairs = [];
+        foreach ($coordinates as $coordinate) {
+            $pairs = array_merge($pairs, $this->marketShareCoordinatePairs($coordinate));
+        }
+
+        return $pairs;
+    }
+
+    private function marketShareScopeKey(string $scope): string
+    {
+        if ($scope === 'area6') {
+            return 'area6';
+        }
+
+        return strtolower(trim((string) preg_replace('/^KC\s+/i', '', $scope)));
     }
 
     private function normaliseScope(string $scope): string

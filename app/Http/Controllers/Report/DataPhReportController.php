@@ -323,17 +323,35 @@ class DataPhReportController extends Controller
     private function fetchRkaTargetsByCode(string $monthColumn, int $year): array
     {
         $rkaDefinitions = [
-            'micro' => ['C. 1. a. Recovery Ekstrakomtabel Mikro', 'C. 1. b. Recovery Ekstrakomtabel Kece'],
-            'small' => ['C. 2. Recovery Ekstrakomtabel Small'],
-            'consumer' => ['C. 4. Recovery Ekstrakomtabel Konsumer'],
-            'total' => ['C. RECOVERY EKSTRAKOMTABEL'],
+            'micro' => [
+                'C. 1. Recovery Ekstrakomtabel Mikro Klaim',
+                'C. 1. Recovery Ekstrakomtabel Mikro Non Klaim',
+                'C. 2. Recovery Ekstrakomtabel Kece Klaim',
+                'C. 2. Recovery Ekstrakomtabel Kece Non Klaim',
+            ],
+            'small' => [
+                'C. 3. Recovery Ekstrakomtabel Small Klaim',
+                'C. 3. Recovery Ekstrakomtabel Small Non Klaim',
+            ],
+            'consumer' => [
+                'C. 5. Recovery Ekstrakomtabel Konsumer Klaim',
+                'C. 5. Recovery Ekstrakomtabel Konsumer Non Klaim',
+            ],
+            'total' => ['C. RECOVERY EKSTRAKOMTABEL Total'],
         ];
 
         $allMataAnggaran = array_merge(...array_values($rkaDefinitions));
 
-        $results = DB::table('rka')
-            ->whereIn('mata_anggaran', $allMataAnggaran)
-            ->whereYear('created_at', $year)
+        $query = DB::table('rka')
+            ->whereIn('mata_anggaran', $allMataAnggaran);
+
+        if (Schema::hasColumn('rka', 'tahun')) {
+            $query->where('tahun', $year);
+        } else {
+            $query->whereYear('created_at', $year);
+        }
+
+        $results = $query
             ->select('desc_uker', 'mata_anggaran', $monthColumn)
             ->get();
 

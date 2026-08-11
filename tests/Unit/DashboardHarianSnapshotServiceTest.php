@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Support\DashboardHarianSnapshotService;
+use App\Support\RkaLookupService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -92,6 +93,51 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(['NPL Rp KUR Mikro'], $definitions['kur_mikro_npl']['mata_anggaran']);
         $this->assertSame(['NPL Rp KUR Kecil'], $definitions['kur_kecil_npl']['mata_anggaran']);
         $this->assertSame(['NPL Rp KPP'], $definitions['kur_kpp_npl']['mata_anggaran']);
+        $this->assertSame(['C. RECOVERY EKSTRAKOMTABEL'], $definitions['rec_dh_total']['mata_anggaran']);
+        $this->assertSame(['KC', 'KCP'], $definitions['rec_dh_small']['uker_contains_any']);
+        $this->assertTrue($definitions['rec_dh_small']['include_kanca_summary']);
+        $this->assertSame([], $definitions['rec_dh_consumer']['mata_anggaran']);
+        $this->assertSame(['UNIT'], $definitions['rec_dh_micro']['uker_contains_any']);
+    }
+
+    public function test_recovery_rka_splits_uker_total_into_ritel_and_mikro_without_cross_counting(): void
+    {
+        Schema::create('rka', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->string('kanca');
+            $table->string('desc_uker');
+            $table->string('mata_anggaran');
+            $table->unsignedSmallInteger('tahun');
+            $table->decimal('jul', 20, 2)->default(0);
+        });
+
+        DB::table('rka')->insert([
+            ['uniqueid_namareport' => 'rec-kc-madiun', 'kanca' => 'KC Madiun', 'desc_uker' => '45-KC Madiun', 'mata_anggaran' => 'C. RECOVERY EKSTRAKOMTABEL Total', 'tahun' => 2026, 'jul' => 21_149_242_323.79],
+            ['uniqueid_namareport' => 'rec-kcp-caruban', 'kanca' => 'KC Madiun', 'desc_uker' => '552-KCP Caruban', 'mata_anggaran' => 'C. RECOVERY EKSTRAKOMTABEL Total', 'tahun' => 2026, 'jul' => 3_423_694_570.63],
+            ['uniqueid_namareport' => 'rec-kcp-dolopo', 'kanca' => 'KC Madiun', 'desc_uker' => '2109-KCP DOLOPO', 'mata_anggaran' => 'C. RECOVERY EKSTRAKOMTABEL Total', 'tahun' => 2026, 'jul' => 2_274_579_906.05],
+            ['uniqueid_namareport' => 'rec-kcp-sudirman', 'kanca' => 'KC Madiun', 'desc_uker' => '2167-KCP SUDIRMAN MADIUN', 'mata_anggaran' => 'C. RECOVERY EKSTRAKOMTABEL Total', 'tahun' => 2026, 'jul' => 2_473_228_443.43],
+            ['uniqueid_namareport' => 'rec-unit-dolopo', 'kanca' => 'KC Madiun', 'desc_uker' => '3212-UNIT DOLOPO MADIUN', 'mata_anggaran' => 'C. RECOVERY EKSTRAKOMTABEL Total', 'tahun' => 2026, 'jul' => 261_000_000],
+            ['uniqueid_namareport' => 'rec-unit-rest', 'kanca' => 'KC Madiun', 'desc_uker' => '3508-UNIT DIPONEGORO MADIUN', 'mata_anggaran' => 'C. RECOVERY EKSTRAKOMTABEL Total', 'tahun' => 2026, 'jul' => 17_785_829_158.14],
+            ['uniqueid_namareport' => 'rec-legacy-small', 'kanca' => 'KC Madiun', 'desc_uker' => '45-KC Madiun', 'mata_anggaran' => 'C. 3. Recovery Ekstrakomtabel Small Klaim', 'tahun' => 2026, 'jul' => 999_000_000_000],
+        ]);
+
+        $dashboard = new DashboardHarianSnapshotService();
+        $definitionsMethod = new \ReflectionMethod($dashboard, 'dashboardRkaMetricDefinitions');
+        $definitionsMethod->setAccessible(true);
+        $definitions = $definitionsMethod->invoke($dashboard);
+        $raw = (new RkaLookupService())->aggregateForScope($definitions, 'jul', 'KC Madiun', null, 2026);
+
+        $finalizeMethod = new \ReflectionMethod($dashboard, 'finalizeRkaMetrics');
+        $finalizeMethod->setAccessible(true);
+        $final = $finalizeMethod->invoke($dashboard, $raw);
+
+        $this->assertSame(29_320_745_243.90, $raw['rec_dh_small']);
+        $this->assertSame(18_046_829_158.14, $raw['rec_dh_micro']);
+        $this->assertSame(47_367_574_402.04, $raw['rec_dh_total']);
+        $this->assertSame(0.0, $raw['rec_dh_consumer']);
+        $this->assertSame(29_320_745_243.90, $final['rec_dh_small']);
+        $this->assertSame(18_046_829_158.14, $final['rec_dh_micro']);
+        $this->assertSame(47_367_574_402.04, $final['rec_dh_total']);
     }
 
     public function test_finalize_rka_metrics_keeps_raw_total_simpanan_and_total_os_values(): void

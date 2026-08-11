@@ -74,6 +74,10 @@ class ImportFileController extends Controller
 
     private function shouldSkipRawLoadDataFastPath(string $tableName, string $filePath, string $delimiter): bool
     {
+        if (strtolower(trim($tableName)) === 'brilink_web_laporan_summary_transaksi_brilink_web') {
+            // BRILINK summary needs vendor-column remapping before preview-selected filters are applied.
+            return true;
+        }
 
         $handle = @fopen($filePath, 'r');
         if ($handle === false) {
@@ -696,7 +700,8 @@ class ImportFileController extends Controller
             return false;
         }
 
-        return stripos($reportData->nama_report, 'BRILINK Web - Laporan Summary Transaksi') !== false
+        return $this->isBrilinkSummaryTable((string) ($reportData->table_name ?? ''))
+            || stripos($reportData->nama_report, 'BRILINK Web - Laporan Summary Transaksi') !== false
             || stripos($reportData->nama_report, 'brilink_web') !== false;
     }
 
@@ -1736,6 +1741,7 @@ class ImportFileController extends Controller
         $tableName = $params['tableName'] ?? $params['table_name'] ?? '';
         $uniqueSuffix = $params['uniqueSuffix'] ?? $params['unique_suffix'] ?? '';
         $isBrilinkSummary = $params['isBrilinkSummary'] ?? $params['is_brilink_summary'] ?? false;
+        $isBrilinkSummary = (bool) $isBrilinkSummary || $this->isBrilinkSummaryTable((string) $tableName);
         $manualPeriode = $this->normalizeManualImportPeriode($tableName, $params['manual_periode'] ?? null);
         $csvHeaders = $params['csvHeaders'] ?? $params['headers'] ?? [];
         $posisiIndex = $params['posisiIndex'] ?? $params['posisi_index'] ?? -1;
@@ -3019,10 +3025,11 @@ class ImportFileController extends Controller
 
         $idReport = session('active_id_report', 1);
         $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
-        $isBrilinkSummary = false;
         $this->releaseSessionLockIfNeeded();
         $isDailyLoan = $this->isDailyLoanReport($reportData);
         $tableName = $this->resolveTableName($reportData);
+        $isBrilinkSummary = $this->isBrilinkSummaryReport($reportData)
+            || $this->isBrilinkSummaryTable($tableName);
         $manualPeriode = null;
         $manualPeriodeLabel = null;
         $manualPeriodeInputType = 'date';
@@ -3045,10 +3052,6 @@ class ImportFileController extends Controller
         $disableArea6AutoFilter = $isDailyLoan || in_array($tableName, [
             'sv_merchant',
         ], true);
-
-        if ($reportData && (stripos($reportData->nama_report, 'BRILINK Web - Laporan Summary Transaksi') !== false || stripos($reportData->nama_report, 'brilink_web') !== false)) {
-            $isBrilinkSummary = true;
-        }
 
         $previewSampleLimit = $isDailyLoan ? self::DAILY_LOAN_PREVIEW_SAMPLE_LIMIT : self::PREVIEW_SAMPLE_LIMIT;
         $previewUniqueScanLimit = $isDailyLoan ? self::DAILY_LOAN_PREVIEW_UNIQUE_SCAN_LIMIT : self::PREVIEW_UNIQUE_SCAN_LIMIT;
@@ -4634,6 +4637,7 @@ class ImportFileController extends Controller
         $idReport = (int) session('active_id_report', 1);
         $isBrilinkSummary = $this->isBrilinkSummaryReport($reportData);
         $tableName = $this->resolveTableName($reportData);
+        $isBrilinkSummary = $isBrilinkSummary || $this->isBrilinkSummaryTable($tableName);
         $uniqueSuffix = $this->resolveUniqueSuffix($tableName);
         $duplicateLookup = [];
         $manualImportPeriode = null;
@@ -4910,6 +4914,7 @@ class ImportFileController extends Controller
                 $syncPeriod = $manualImportPeriode ?? ($params['sample_posisi'] ?? $params['sample_periode'] ?? null);
                 $uniqueSuffix = $params['unique_suffix'] ?? '_MDT';
                 $isBrilinkSummary = (bool) ($params['is_brilink_summary'] ?? false);
+                $isBrilinkSummary = $isBrilinkSummary || $this->isBrilinkSummaryTable($tableName);
                 $csvHeaders = $params['headers'] ?? [];
                 $posisiIndex = (int) ($params['posisi_index'] ?? -1);
                 $tahunIndex = (int) ($params['tahun_index'] ?? -1);
@@ -5356,12 +5361,8 @@ class ImportFileController extends Controller
         // 🔥 1. DETEKSI REPORT (WAJIB SAMA DENGAN PREVIEW)
         $idReport = session('active_id_report', 1);
         $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
-        $isBrilinkSummary = false;
+        $isBrilinkSummary = $this->isBrilinkSummaryReport($reportData);
         $this->releaseSessionLockIfNeeded();
-
-        if ($reportData && (stripos($reportData->nama_report, 'BRILINK Web - Laporan Summary Transaksi') !== false || stripos($reportData->nama_report, 'brilink_web') !== false)) {
-            $isBrilinkSummary = true;
-        }
 
         if (!file_exists($filePath)) {
             $response = [
@@ -5375,6 +5376,7 @@ class ImportFileController extends Controller
         }
 
         $tableName = $this->resolveTableName($reportData);
+        $isBrilinkSummary = $isBrilinkSummary || $this->isBrilinkSummaryTable($tableName);
         try {
             $manualImportPeriode = $this->resolveManualImportPeriodeFromRequest($request, $tableName);
         } catch (\InvalidArgumentException $e) {

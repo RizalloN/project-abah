@@ -10,6 +10,17 @@ const password = process.env.AUDIT_PASSWORD || '';
 const period = process.env.AUDIT_PERIOD || '2026-07-23';
 const usePrognosa = ['1', 'true', 'yes', 'on'].includes(String(process.env.AUDIT_PROGNOSA || '').toLowerCase());
 const renderTimeout = Number(process.env.AUDIT_RENDER_TIMEOUT || 120000);
+const expectedSlideCount = 15;
+const requestedSlideIndexes = String(process.env.AUDIT_SLIDE_FILTER || '')
+    .split(',')
+    .map((value) => Number.parseInt(value.trim(), 10))
+    .filter((value, index, values) => Number.isInteger(value)
+        && value >= 0
+        && value < expectedSlideCount
+        && values.indexOf(value) === index);
+const auditedSlideIndexes = requestedSlideIndexes.length
+    ? requestedSlideIndexes
+    : Array.from({ length: expectedSlideCount }, (_value, index) => index);
 const outputDir = path.resolve(process.env.AUDIT_OUTPUT_DIR || 'storage/framework/testing/presentation-story-audit');
 const chromePath = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const allViewports = [
@@ -122,7 +133,18 @@ async function waitFor(client, predicate, timeout = 60000) {
 
 async function navigate(client, url) {
     await client.send('Page.navigate', { url });
-    await waitFor(client, "document.readyState === 'complete'", 30000);
+    const expectedPath = JSON.stringify(new URL(String(url)).pathname);
+    try {
+        await waitFor(
+            client,
+            `location.pathname === ${expectedPath} && ['interactive', 'complete'].includes(document.readyState) && Boolean(document.body)`,
+            60000,
+        );
+    } catch (error) {
+        const state = await evaluate(client, `({ href: location.href, readyState: document.readyState, title: document.title })`)
+            .catch(() => null);
+        throw new Error(`${error.message}; navigation=${JSON.stringify(state)}`);
+    }
 }
 
 const slideAuditExpression = (index, scopeLabel) => `(() => {
@@ -178,6 +200,23 @@ const slideAuditExpression = (index, scopeLabel) => `(() => {
                 || rect.bottom > slideRect.bottom + 2;
         })
         .map((element) => selector(element));
+    const outsideText = Array.from(slide.querySelectorAll('h1,h2,h3,p,span,strong,small,th,td,label,button'))
+        .filter(visible)
+        .filter((element) => {
+            const rect = element.getBoundingClientRect();
+            return rect.left < slideRect.left - 2
+                || rect.top < slideRect.top - 2
+                || rect.right > slideRect.right + 2
+                || rect.bottom > slideRect.bottom + 2;
+        })
+        .slice(0, 30)
+        .map((element) => ({
+            selector: selector(element),
+            text: String(element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 100),
+            rect: Array.from(element.getBoundingClientRect().toJSON
+                ? Object.values(element.getBoundingClientRect().toJSON()).slice(0, 4)
+                : [element.getBoundingClientRect().left, element.getBoundingClientRect().top, element.getBoundingClientRect().width, element.getBoundingClientRect().height]),
+        }));
     const emptyPanels = Array.from(slide.querySelectorAll(
         '.psd-v2-table-panel,.psd-v2-support-split > section,.psd-panel,.psd-v2-strategy-column,.psd-v2-agenda-list'
     ))
@@ -279,6 +318,7 @@ const slideAuditExpression = (index, scopeLabel) => `(() => {
         layoutOverlaps,
         textClips,
         outside,
+        outsideText,
         emptyPanels,
         minDataFont: fontSizes.length ? Math.min(...fontSizes) : null,
         shellWithinSlide: Boolean(shellRect
@@ -337,7 +377,7 @@ async function activateSlide(client, index) {
                 && !document.getElementById('pres-slide-${index}')?.classList.contains('is-section-loading')
                 && document.getElementById('pres-slide-${index}')?.getAttribute('aria-busy') !== 'true'
                 && document.getElementById('pres-slide-${index}')?.querySelector('.psd-slide, .psd-cover')`,
-            90000,
+            Math.max(90000, renderTimeout),
         );
     } catch (error) {
         const state = await evaluate(client, `(() => {
@@ -358,7 +398,7 @@ async function activateSlide(client, index) {
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         return true;
     })()`);
-    await sleep(index === 11 ? 850 : 350);
+    await sleep(index === 13 ? 850 : 350);
 }
 
 async function capture(client, filename) {
@@ -372,7 +412,7 @@ async function capture(client, filename) {
 
 async function verifyFundingProductSelector(client) {
     const target = await evaluate(client, `(() => {
-        const buttons = Array.from(document.querySelectorAll('#pres-slide-3 [data-psd-funding-product]'));
+        const buttons = Array.from(document.querySelectorAll('#pres-slide-5 [data-psd-funding-product]'));
         const button = buttons.find((item) => item.dataset.psdFundingProduct === 'tabungan')
             || buttons.find((item) => !item.classList.contains('active'));
         if (!button) return null;
@@ -386,12 +426,12 @@ async function verifyFundingProductSelector(client) {
 
     await waitFor(
         client,
-        `document.querySelector('#pres-slide-3 [data-psd-funding-product="${target}"]')?.classList.contains('active')`,
+        `document.querySelector('#pres-slide-5 [data-psd-funding-product="${target}"]')?.classList.contains('active')`,
         10000,
     );
 
     return evaluate(client, `(() => {
-        const slide = document.getElementById('pres-slide-3');
+        const slide = document.getElementById('pres-slide-5');
         const active = slide?.querySelector('[data-psd-funding-product].active');
         const title = String(slide?.querySelector('.psd-v2-trend-panel .psd-panel-title span')?.textContent || '').trim();
         const insight = String(slide?.querySelector('.psd-insight-strip strong')?.textContent || '').trim();
@@ -409,7 +449,7 @@ async function verifyFundingProductSelector(client) {
 
 async function verifyMicroViewSelector(client) {
     const initial = await evaluate(client, `(() => {
-        const slide = document.getElementById('pres-slide-8');
+        const slide = document.getElementById('pres-slide-10');
         const button = slide?.querySelector('[data-psd-micro-view="extreme_low"]');
         const pdwkTable = slide?.querySelector('.psd-micro-branch-table.is-pdwk');
         const activeTable = slide?.querySelector('.psd-micro-branch-table.is-extreme-low');
@@ -444,14 +484,14 @@ async function verifyMicroViewSelector(client) {
         return { available: false, valid: false };
     }
 
-    await evaluate(client, `document.querySelector('#pres-slide-8 [data-psd-micro-view="rm_kur"]')?.click()`);
+    await evaluate(client, `document.querySelector('#pres-slide-10 [data-psd-micro-view="rm_kur"]')?.click()`);
     await waitFor(
         client,
-        "document.querySelector('#pres-slide-8 [data-psd-micro-view=\"rm_kur\"]')?.classList.contains('is-active')",
+        "document.querySelector('#pres-slide-10 [data-psd-micro-view=\"rm_kur\"]')?.classList.contains('is-active')",
         10000,
     );
     const alternate = await evaluate(client, `(() => {
-        const slide = document.getElementById('pres-slide-8');
+        const slide = document.getElementById('pres-slide-10');
         const table = slide?.querySelector('.psd-micro-branch-table.is-tiering');
         const rowOverlaps = Array.from(table?.querySelectorAll('.psd-micro-branch-row') || [])
             .some((row) => {
@@ -467,10 +507,10 @@ async function verifyMicroViewSelector(client) {
         };
     })()`);
 
-    await evaluate(client, `document.querySelector('#pres-slide-8 [data-psd-micro-view="extreme_low"]')?.click()`);
+    await evaluate(client, `document.querySelector('#pres-slide-10 [data-psd-micro-view="extreme_low"]')?.click()`);
     await waitFor(
         client,
-        "document.querySelector('#pres-slide-8 [data-psd-micro-view=\"extreme_low\"]')?.classList.contains('is-active')",
+        "document.querySelector('#pres-slide-10 [data-psd-micro-view=\"extreme_low\"]')?.classList.contains('is-active')",
         10000,
     );
 
@@ -725,29 +765,29 @@ async function auditScope(client, viewport, scopeKey, scopeLabel, takeScreenshot
 
     const results = [];
     const timeseriesSelectors = {
-        2: '#pres-slide-2 .psd-v2-trend-chart[data-psd-timeseries-expand]',
-        3: '#pres-slide-3 .psd-v2-trend-chart[data-psd-timeseries-expand]',
+        4: '#pres-slide-4 .psd-v2-trend-chart[data-psd-timeseries-expand]',
         5: '#pres-slide-5 .psd-v2-trend-chart[data-psd-timeseries-expand]',
-        6: '#pres-slide-6 .psd-v2-trend-chart[data-psd-timeseries-expand]',
         7: '#pres-slide-7 .psd-v2-trend-chart[data-psd-timeseries-expand]',
+        8: '#pres-slide-8 .psd-v2-trend-chart[data-psd-timeseries-expand]',
         9: '#pres-slide-9 .psd-v2-trend-chart[data-psd-timeseries-expand]',
-        10: '#pres-slide-10 .psd-v2-trend-chart[data-psd-timeseries-expand]',
-        11: '#pres-slide-11 [data-psd-timeseries-expand]',
+        11: '#pres-slide-11 .psd-v2-trend-chart[data-psd-timeseries-expand]',
+        12: '#pres-slide-12 .psd-v2-trend-chart[data-psd-timeseries-expand]',
+        13: '#pres-slide-13 [data-psd-timeseries-expand]',
     };
-    for (let index = 0; index < 13; index += 1) {
+    for (const index of auditedSlideIndexes) {
         await activateSlide(client, index);
         const audit = await evaluate(client, slideAuditExpression(index, scopeLabel));
-        if (index === 3) {
+        if (index === 5) {
             audit.fundingProductSelector = await verifyFundingProductSelector(client);
         }
-        if (index === 8) {
+        if (index === 10) {
             audit.microViewSelector = await verifyMicroViewSelector(client);
         }
         if (timeseriesSelectors[index]) {
             audit.timeseriesModal = await verifyTimeseriesModal(
                 client,
                 timeseriesSelectors[index],
-                takeScreenshots && [2, 5, 9, 10, 11].includes(index)
+                takeScreenshots && [4, 7, 11, 12, 13].includes(index)
                     ? `${viewport.name}--${slug(scopeLabel)}--slide-${String(index + 1).padStart(2, '0')}--timeseries-modal.png`
                     : null,
             );
@@ -828,8 +868,8 @@ try {
         try {
             await waitFor(
                 client,
-                "document.querySelectorAll('.apple-slide').length === 13"
-                    + " && document.querySelectorAll('.pres-dot').length === 13"
+                `document.querySelectorAll('.apple-slide').length === ${expectedSlideCount}`
+                    + ` && document.querySelectorAll('.pres-dot').length === ${expectedSlideCount}`
                     + " && typeof window.__presentationLayoutAudit === 'function'"
                     + " && document.querySelector('#pres-slide-0 .psd-cover')",
                 renderTimeout,
@@ -865,27 +905,28 @@ try {
     }
 
     const coverageIssues = [];
-    const expectedIndexes = Array.from({ length: 13 }, (_value, index) => index);
+    const expectedIndexes = auditedSlideIndexes;
+    const expectedScopeAudits = expectedIndexes.length;
     for (const viewport of viewports) {
         const areaResults = results.filter((result) => (
             result.viewport === viewport.name && result.scope === 'Area 6 Konsol'
         ));
-        if (areaResults.length !== 13
+        if (areaResults.length !== expectedScopeAudits
             || areaResults.some((result, index) => result.index !== expectedIndexes[index])) {
-            coverageIssues.push(`${viewport.name}: Area 6 tidak memiliki urutan lengkap 13 slide.`);
+            coverageIssues.push(`${viewport.name}: Area 6 tidak memiliki urutan audit slide ${expectedIndexes.join(', ')}.`);
         }
         if (viewport.branch) {
             const branchResults = results.filter((result) => (
                 result.viewport === viewport.name && result.scope !== 'Area 6 Konsol'
             ));
-            if (branchResults.length !== 13
+            if (branchResults.length !== expectedScopeAudits
                 || branchResults.some((result, index) => result.index !== expectedIndexes[index])) {
-                coverageIssues.push(`${viewport.name}: scope cabang tidak memiliki urutan lengkap 13 slide.`);
+                coverageIssues.push(`${viewport.name}: scope cabang tidak memiliki urutan audit slide ${expectedIndexes.join(', ')}.`);
             }
         }
     }
     const expectedAudits = viewports.reduce(
-        (total, viewport) => total + (viewport.branch ? 26 : 13),
+        (total, viewport) => total + (viewport.branch ? expectedScopeAudits * 2 : expectedScopeAudits),
         0,
     );
     if (results.length !== expectedAudits) {
@@ -907,6 +948,7 @@ try {
         || result.prognosaValid === false
         || !result.shellWithinSlide
         || result.outside?.length
+        || result.outsideText?.length
         || result.emptyPanels?.length
         || (result.viewportHorizontalGap !== null && result.viewportHorizontalGap > 20)
         || result.viewportOverflow);
