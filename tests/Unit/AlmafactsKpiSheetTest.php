@@ -34,7 +34,9 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertSame('mbm', $data['selectedSheetKey']);
         $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'rm-sme', 'mantri', 'consumer'], array_keys($data['sheetOptions']));
         $this->assertSame('KPI MBM', $data['selectedSheet']['sheet']);
-        $this->assertSame('175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('1OmIag7zJ3MdlKMP4hDyUqEvnP1tbbL7j', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('2026-07', $data['selectedPeriod']);
+        $this->assertSame('Juli 2026', $data['selectedPeriodLabel']);
         $this->assertSame(['BO', 'MBM', 'Score'], $data['header']);
         $this->assertCount(3, $data['header']);
         $this->assertCount(3, $data['rows'][0]);
@@ -57,8 +59,8 @@ class AlmafactsKpiSheetTest extends TestCase
         $data = $view->getData();
 
         $this->assertSame('ka-unit', $data['selectedSheetKey']);
-        $this->assertSame('KPI Kaunit', $data['selectedSheet']['sheet']);
-        $this->assertSame('1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('KPI KaUnit', $data['selectedSheet']['sheet']);
+        $this->assertSame('1wI-dsRmkzWb4d0oqILxnh1r4UkM3tGJE', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame(
             ['BO', 'MBM', 'BC', 'Unit Kerja', 'Pencapaian', 'Score', 'Pencapaian', 'Score'],
             $data['header']
@@ -82,7 +84,7 @@ class AlmafactsKpiSheetTest extends TestCase
 
         $this->assertSame('mbm', $data['selectedSheetKey']);
         $this->assertSame('KPI MBM', $data['selectedSheet']['sheet']);
-        $this->assertSame('175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('1OmIag7zJ3MdlKMP4hDyUqEvnP1tbbL7j', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame(['BO', 'MBM', 'Score'], $data['header']);
         $this->assertCount(3, $data['header']);
         $this->assertCount(3, $data['rows'][0]);
@@ -105,7 +107,7 @@ class AlmafactsKpiSheetTest extends TestCase
 
         $this->assertSame('rm-mikro', $data['selectedSheetKey']);
         $this->assertSame('KPI RM Mikro', $data['selectedSheet']['sheet']);
-        $this->assertSame('11dzu4edTyp9UFBicNDughtJ43bzvZguh', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('1NNMRC8w2Z35n6WfKHL9Q9i575jwkMRzF', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame('KPI RM Mikro', $data['summary']['sheet_name']);
         $this->assertSame(
             ['BO', 'Nama', 'BC Uker', 'Uker', 'JG', 'Lama Di UKER 2026', 'Pencapaian', 'Score'],
@@ -142,7 +144,7 @@ class AlmafactsKpiSheetTest extends TestCase
 
         $this->assertSame('rm-sme', $data['selectedSheetKey']);
         $this->assertSame('KPI RM SME', $data['selectedSheet']['sheet']);
-        $this->assertSame('1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame(['BO', 'Uker', 'JG', 'Pencapaian', 'Score', 'Pencapaian', 'Score', 'Score'], $data['header']);
         $this->assertSame(
             ['BO', 'Uker', 'JG', 'AVG Balance Small (Bobot 10%)', 'Posisi OS Small (Bobot 15%)', 'Score'],
@@ -168,9 +170,9 @@ class AlmafactsKpiSheetTest extends TestCase
         $data = $view->getData();
 
         $this->assertSame('mantri', $data['selectedSheetKey']);
-        $this->assertSame('KPI', $data['selectedSheet']['sheet']);
-        $this->assertSame('160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7', $data['selectedSheet']['spreadsheet_id']);
-        $this->assertSame('KPI', $data['summary']['sheet_name']);
+        $this->assertSame('rank', $data['selectedSheet']['sheet']);
+        $this->assertSame('14As5M-bVMRa9OSFEo1mcaH1M1Derm7ca', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('rank', $data['summary']['sheet_name']);
         $this->assertSame(
             ['Key', 'BO', 'MBM', 'Uker', 'Type BRI', 'BC', 'Nama Mantri', 'Status', 'JG', 'Lama Di UKER 2026', 'Pencapaian', 'Score'],
             array_slice($data['header'], 0, 12)
@@ -207,7 +209,7 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertSame('consumer', $data['selectedSheetKey']);
         $this->assertSame('KPI Konsumer', $data['selectedSheet']['label']);
         $this->assertSame('KPI', $data['selectedSheet']['sheet']);
-        $this->assertSame('14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J', $data['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('1a-fr7OnoTIa_aJZ_b-yt_KkLJiJu92McQxv93ab58qQ', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame(2, $data['summary']['row_count']);
         $this->assertSame(['briguna', 'kpr'], array_column($data['tableSections'], 'key'));
         $this->assertSame('KPI Briguna', $data['tableSections'][0]['title']);
@@ -329,6 +331,67 @@ class AlmafactsKpiSheetTest extends TestCase
 
         $this->assertSame(['BO', 'MBM', 'Score'], $view->getData()['header']);
         Http::assertSentCount(1);
+    }
+
+    public function test_kpi_page_keeps_june_and_july_sources_in_separate_periods(): void
+    {
+        Http::fake([
+            'docs.google.com/*' => Http::response(
+                "\"KEY PERFORMING INDICATOR RM SME BO\",\"UKER\",\"JG\",\"Posisi OS Small\",\"\"\n"
+                . "\"\",\"\",\"\",\"15%\",\"\"\n"
+                . "\"1\",\"2\",\"3\",\"4\",\"5\"\n"
+                . "\"00045 -- KC Madiun\",\"00061445 - Unung\",\"JG07\",\"100%\",\"15\"",
+                200
+            ),
+        ]);
+
+        $controller = new AlmafactsDashboardController();
+        $controller->refreshKpiSourceCaches(['rm-sme'], '2026-06');
+        $june = $controller->kpi(
+            Request::create('/report/dashboard-almafacts/kpi/rm-sme', 'GET', ['periode' => '2026-06']),
+            'rm-sme'
+        )->getData();
+
+        $controller->refreshKpiSourceCaches(['rm-sme'], '2026-07');
+        $july = $controller->kpi(
+            Request::create('/report/dashboard-almafacts/kpi/rm-sme', 'GET', ['periode' => '2026-07']),
+            'rm-sme'
+        )->getData();
+
+        $this->assertSame('1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs', $june['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('Juni 2026', $june['selectedPeriodLabel']);
+        $this->assertSame('1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu', $july['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('Juli 2026', $july['selectedPeriodLabel']);
+        $this->assertSame($june['rows'], $july['rows']);
+
+        Http::assertSent(fn ($request): bool => str_contains($request->url(), '1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs'));
+        Http::assertSent(fn ($request): bool => str_contains($request->url(), '1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu'));
+    }
+
+    public function test_kpi_sheet_replaces_error_cells_and_renders_period_selector(): void
+    {
+        Http::fake([
+            'docs.google.com/*' => Http::response(
+                "\"KEY PERFORMING INDICATOR\",\"MBM\",\"SCORE\"\n\"MADIUN\",\"NUR\",\"#ERROR!\"",
+                200
+            ),
+        ]);
+
+        $view = $this->kpiView('mbm');
+        $data = $view->getData();
+        $this->assertSame('-', $data['rows'][0][2]);
+        $this->assertSame(['2026-07', '2026-06'], array_keys($data['periodOptions']));
+
+        $this->actingAs(new User([
+            'pn' => 'test-kpi-period',
+            'name' => 'KPI Period Test',
+            'role' => 'admin',
+        ]));
+        $html = $view->render();
+        $this->assertStringContainsString('id="kpi-period-filter"', $html);
+        $this->assertStringContainsString('Juli 2026', $html);
+        $this->assertStringContainsString('Juni 2026', $html);
+        $this->assertStringNotContainsString('#ERROR!', $html);
     }
 
     public function test_kpi_sticky_header_and_columns_use_runtime_geometry_on_every_viewport(): void

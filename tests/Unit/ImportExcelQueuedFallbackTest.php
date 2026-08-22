@@ -170,6 +170,70 @@ class ImportExcelQueuedFallbackTest extends TestCase
         $this->assertStringContainsString('Direct load berhenti setelah commit.', $failedMessage);
     }
 
+    public function test_daily_loan_lock_exception_returns_success_when_persisted_totals_are_complete(): void
+    {
+        $relativePath = 'testing/queued_fallback_daily_loan.csv';
+        Storage::disk('local')->put($relativePath, "PERIODE,NOMOR_REKENING1,BAKI_DEBET1\n2026-08-18,123,1000\n");
+
+        $service = new ExcelQueuedImportService();
+        $events = [];
+        $failedMessage = null;
+        $updatedStatus = null;
+
+        $result = $service->execute([
+            'job_id' => 52,
+            'params' => [
+                'job_id' => 52,
+                'file_path' => $relativePath,
+                'table_name' => 'daily_loan_dinamis',
+                'header_index' => 0,
+                'active_filters' => [],
+                'total_rows' => 319194,
+                'delimiter' => ',',
+            ],
+            'headers' => ['PERIODE', 'NOMOR_REKENING1', 'BAKI_DEBET1'],
+        ], [
+            'resolve_import_strategy' => fn (string $tableName) => new class {
+                public function importMode(array $context = []): string
+                {
+                    return 'bulk_csv_direct';
+                }
+            },
+            'mark_failed' => function (int $jobId, string $message) use (&$failedMessage): void {
+                $failedMessage = $message;
+            },
+            'find_job' => fn (int $jobId) => (object) [
+                'status' => 'processing',
+                'total_success' => 319193,
+                'total_failed' => 0,
+                'total_files' => 319193,
+            ],
+            'update_job' => function (int $jobId, array $attributes) use (&$updatedStatus): void {
+                $updatedStatus = $attributes['status'] ?? null;
+            },
+            'assert_transactional_table' => fn (string $tableName, string $context) => null,
+            'assert_duplicate_guard' => fn (string $tableName) => null,
+            'is_csv_file' => fn (string $path) => true,
+            'detect_csv_delimiter' => fn (string $path) => ',',
+            'count_csv_data_rows' => fn (string $path, ?string $tableName = null) => 319193,
+            'resolve_csv_data_row_estimate' => fn (?int $totalRows, int $headerIndex) => 319193,
+            'run_csv_pipeline' => fn (array $payload) => app(ImportPipelineService::class)->runCsvPipeline($payload),
+            'process_daily_loan_direct_csv_stream' => function (): bool {
+                throw new \RuntimeException('Import Daily Loan sedang berjalan. Tunggu proses sebelumnya selesai terlebih dahulu.');
+            },
+            'process_staged_csv_stream' => fn (): bool => false,
+        ], function (string $event, array $payload) use (&$events): void {
+            $events[] = [$event, $payload];
+        });
+
+        $this->assertNull($failedMessage);
+        $this->assertSame('completed', $updatedStatus);
+        $this->assertSame('completed', $result['status']);
+        $this->assertSame(319193, $result['total_success']);
+        $this->assertSame('complete', $events[array_key_last($events)][0] ?? null);
+        $this->assertStringContainsString('berhasil', $events[array_key_last($events)][1]['message'] ?? '');
+    }
+
     public function test_daily_loan_strategy_always_forces_direct_mode_even_if_filters_present(): void
     {
         $strategy = new DailyLoanImportStrategy();

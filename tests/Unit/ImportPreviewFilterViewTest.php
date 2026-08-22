@@ -10,7 +10,8 @@ class ImportPreviewFilterViewTest extends TestCase
     {
         $source = file_get_contents(resource_path('views/import/preview.blade.php'));
 
-        $this->assertStringContainsString('class="table-responsive import-preview-table-shell"', $source);
+        $this->assertStringContainsString('class="table-responsive import-preview-table-shell{{ $hidePreviewRowsUntilJs ? \' is-preview-loading\' : \'\' }}"', $source);
+        $this->assertStringContainsString("preview-loading-overlay{{ \$hidePreviewRowsUntilJs ? '' : ' d-none' }}", $source);
         $this->assertStringNotContainsString('class="table-responsive import-preview-table-shell" style="min-height: 450px; max-height: 600px; overflow-y: auto; overflow-x: auto;"', $source);
         $this->assertStringContainsString('.import-preview-filter-menu-portal', $source);
         $this->assertStringContainsString('z-index: 2147483000 !important;', $source);
@@ -54,6 +55,33 @@ class ImportPreviewFilterViewTest extends TestCase
         $this->assertStringContainsString('width: min(520px, calc(100vw - 24px)) !important;', $index);
         $this->assertStringNotContainsString('<div class="swal-import-title">${titleText}</div>', $index);
         $this->assertStringNotContainsString('<div class="swal-import-title">${loadingCopy.title}</div>', $excelPreview);
+    }
+
+    public function test_preview_navigation_keeps_the_active_progress_modal_until_the_new_page_is_ready(): void
+    {
+        $source = file_get_contents(resource_path('views/import/index.blade.php'));
+
+        $this->assertStringContainsString('function navigateToPreparedPreview(redirectUrl', $source);
+        $this->assertStringContainsString("activeProgressBar.style.width = '99%';", $source);
+        $this->assertStringContainsString('Preview siap. Membuka halaman terbaru...', $source);
+        $this->assertStringContainsString('window.location.replace(String(redirectUrl));', $source);
+        $this->assertStringNotContainsString(
+            "window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');",
+            $source
+        );
+        $this->assertStringNotContainsString('window.location.href = evtData.redirect;', $source);
+    }
+
+    public function test_preview_styles_are_registered_in_the_layout_head_section(): void
+    {
+        foreach ([
+            'views/import/preview.blade.php',
+            'views/import/preview_excel.blade.php',
+        ] as $viewPath) {
+            $source = str_replace("\r\n", "\n", file_get_contents(resource_path($viewPath)));
+
+            $this->assertStringContainsString("@endsection\n\n@section('styles')\n<style>", $source, $viewPath);
+        }
     }
 
     public function test_import_index_uses_a_single_step_by_step_upload_workspace(): void

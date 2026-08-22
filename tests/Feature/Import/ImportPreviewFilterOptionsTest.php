@@ -273,3 +273,66 @@ it('maps sv merchant preview display filters to the correct source columns', fun
         File::deleteDirectory($csvDirectory);
     }
 });
+
+it('auto filters sv merchant by nama kci even when area 6 rows are beyond the initial scan', function () {
+    $user = User::factory()->make(['role' => 'admin']);
+
+    DB::table('nama_report')->insert([
+        'id_report' => 102,
+        'nama_report' => 'SV Merchant',
+        'table_name' => 'sv_merchant',
+        'active' => 1,
+        'import_controller' => 'ImportFileController',
+        'requires_manual_periode' => 0,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $csvDirectory = storage_path('app/imports/import_20260817_120000_' . Str::random(5));
+    File::ensureDirectoryExists($csvDirectory, 0750, true);
+    $csvPath = $csvDirectory . DIRECTORY_SEPARATOR . 'sv-merchant-nama-kci.csv';
+    $rows = [
+        'TAHUN|PERIODE|POSISI|KODE KANWIL|NAMA KANWIL|KODE KCI|NAMA KCI|KODE BRANCH|NAMA BRANCH|JENIS|SEGMENTASI JENIS|SV_MERCHANT',
+    ];
+
+    for ($i = 0; $i < 4001; $i++) {
+        $rows[] = "2026|2026-08|2026-08-17|R|KANWIL MALANG|0001|KC BLITAR|{$i}|UNIT BLITAR|AKUMULASI|Ritel|100";
+    }
+
+    foreach ([
+        ['0045', 'KC MADIUN'],
+        ['0049', 'KC MAGETAN'],
+        ['0057', 'KC NGAWI'],
+        ['0070', 'KC PONOROGO'],
+    ] as [$code, $branch]) {
+        $rows[] = "2026|2026-08|2026-08-17|R|KANWIL MALANG|{$code}|{$branch}|{$code}|UNIT {$branch}|AKUMULASI|Ritel|100";
+    }
+
+    File::put($csvPath, implode(PHP_EOL, $rows) . PHP_EOL);
+
+    try {
+        $this->be($user);
+        $session = app('session.store');
+        $session->start();
+        $session->put('active_id_report', 102);
+        $session->put('import_files', [['name' => basename($csvPath), 'path' => $csvPath]]);
+
+        $request = Request::create('/import/preview/direct', 'GET', [
+            'file_path' => $csvPath,
+            'delimiter' => '|',
+        ]);
+        $request->setLaravelSession($session);
+
+        $response = app(ImportFileController::class)->preview($request);
+        $data = $response->getData();
+
+        expect($data['previewData'])->toHaveCount(100);
+        expect($data['disableArea6AutoFilter'])->toBeFalse();
+        expect($data['initialArea6Selections'])->toBe([
+            '6' => ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'],
+        ]);
+        expect($data['hidePreviewRowsUntilJs'])->toBeTrue();
+    } finally {
+        File::deleteDirectory($csvDirectory);
+    }
+});

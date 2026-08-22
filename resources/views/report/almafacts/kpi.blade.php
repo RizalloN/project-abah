@@ -217,7 +217,8 @@
         min-width: 0;
     }
 
-    .kpi-branch-filter {
+    .kpi-branch-filter,
+    .kpi-period-filter {
         display: flex;
         align-items: center;
         gap: .5rem;
@@ -228,7 +229,8 @@
         background: #f8fbff;
     }
 
-    .kpi-branch-filter label {
+    .kpi-branch-filter label,
+    .kpi-period-filter label {
         margin: 0;
         color: #475569;
         font-size: .72rem;
@@ -236,7 +238,8 @@
         white-space: nowrap;
     }
 
-    .kpi-branch-filter select {
+    .kpi-branch-filter select,
+    .kpi-period-filter select {
         min-width: 150px;
         height: 32px;
         border: 0;
@@ -247,7 +250,8 @@
         font-weight: 800;
     }
 
-    .kpi-branch-filter select:disabled {
+    .kpi-branch-filter select:disabled,
+    .kpi-period-filter select:disabled {
         color: #475569;
         cursor: not-allowed;
     }
@@ -266,7 +270,7 @@
 
     .kpi-meta-grid {
         display: grid;
-        grid-template-columns: repeat(3, minmax(160px, 1fr));
+        grid-template-columns: repeat(4, minmax(140px, 1fr));
         gap: .75rem;
         margin-bottom: 1rem;
     }
@@ -708,11 +712,13 @@
 
         .kpi-tabs,
         .kpi-actions,
-        .kpi-branch-filter {
+        .kpi-branch-filter,
+        .kpi-period-filter {
             width: 100%;
         }
 
-        .kpi-branch-filter select {
+        .kpi-branch-filter select,
+        .kpi-period-filter select {
             flex: 1 1 auto;
             min-width: 0;
         }
@@ -759,7 +765,7 @@
         }
 
         .kpi-meta-grid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
         .kpi-excel-table th,
@@ -798,7 +804,7 @@
         <div>
             <div class="kpi-eyebrow">Dashboard Almafacts</div>
             <h1>{{ $selectedSheet['title'] ?? 'KPI' }}</h1>
-            <p>Dashboard KPI bersumber dari Google Spreadsheet dan ditampilkan ulang sebagai tabel internal dengan gaya Excel yang konsisten dengan tema ABAH.</p>
+            <p>Posisi {{ $selectedPeriodLabel }} dari Google Spreadsheet, ditampilkan sebagai tabel internal yang konsisten dan mudah dibandingkan antarperiode.</p>
         </div>
         <div class="kpi-hero-card">
             <span>Sheet Aktif</span>
@@ -809,15 +815,28 @@
     <div class="kpi-toolbar">
         <div class="kpi-tabs">
             @foreach($sheetOptions as $key => $sheet)
-                <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => $key]) }}" class="kpi-tab {{ $selectedSheetKey === $key ? 'active' : '' }}">
+                <a href="{{ route('report.dashboard-almafacts.kpi', array_filter(['sheet' => $key, 'periode' => $selectedPeriod, 'cabang' => $kpiBranchFilter['selected'] !== 'all' ? $kpiBranchFilter['selected'] : null])) }}" class="kpi-tab {{ $selectedSheetKey === $key ? 'active' : '' }}">
                     <i class="{{ $sheet['icon'] }}"></i>
                     {{ $sheet['label'] }}
                 </a>
             @endforeach
         </div>
+        <form method="GET" action="{{ route('report.dashboard-almafacts.kpi') }}" class="kpi-period-filter">
+            <input type="hidden" name="sheet" value="{{ $selectedSheetKey }}">
+            @if(($kpiBranchFilter['selected'] ?? 'all') !== 'all')
+                <input type="hidden" name="cabang" value="{{ $kpiBranchFilter['selected'] }}">
+            @endif
+            <label for="kpi-period-filter">Periode</label>
+            <select id="kpi-period-filter" name="periode" onchange="this.form.submit()">
+                @foreach($periodOptions as $periodValue => $periodLabel)
+                    <option value="{{ $periodValue }}" @selected($selectedPeriod === $periodValue)>{{ $periodLabel }}</option>
+                @endforeach
+            </select>
+        </form>
         @if($kpiBranchFilter['enabled'])
             <form method="GET" action="{{ route('report.dashboard-almafacts.kpi') }}" class="kpi-branch-filter">
                 <input type="hidden" name="sheet" value="{{ $selectedSheetKey }}">
+                <input type="hidden" name="periode" value="{{ $selectedPeriod }}">
                 <label for="kpi-branch-filter">Cabang</label>
                 <select id="kpi-branch-filter" name="cabang" {{ $kpiBranchFilter['locked'] ? 'disabled' : '' }} onchange="this.form.submit()">
                     @foreach($kpiBranchFilter['options'] as $option)
@@ -828,7 +847,7 @@
             </form>
         @endif
         <div class="kpi-actions">
-            <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => $selectedSheetKey, 'refresh' => 1]) }}" class="kpi-action primary">
+            <a href="{{ route('report.dashboard-almafacts.kpi', array_filter(['sheet' => $selectedSheetKey, 'periode' => $selectedPeriod, 'cabang' => $kpiBranchFilter['selected'] !== 'all' ? $kpiBranchFilter['selected'] : null, 'refresh' => 1])) }}" class="kpi-action primary">
                 <i class="fas fa-sync-alt"></i>
                 Refresh
             </a>
@@ -846,6 +865,10 @@
     @endif
 
     <div class="kpi-meta-grid">
+        <div class="kpi-meta">
+            <span>Periode</span>
+            <strong>{{ $selectedPeriodLabel }}</strong>
+        </div>
         <div class="kpi-meta">
             <span>Baris Data</span>
             <strong>{{ number_format((int) ($summary['row_count'] ?? 0), 0, ',', '.') }}</strong>

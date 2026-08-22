@@ -321,6 +321,36 @@ class StatusSyncValidationTest extends TestCase
         $this->assertTrue($method->invoke($this->executionService, $jobId));
     }
 
+    public function test_processing_heartbeat_cannot_overwrite_completed_job(): void
+    {
+        $jobId = 11;
+        $this->createTestJob($jobId, 'completed', [
+            'total_files' => 319193,
+            'total_success' => 319193,
+            'total_failed' => 0,
+            'file_name' => 'daily-loan.csv',
+            'folder_path' => 'imports',
+            'id_report' => 8,
+            'message' => 'Direct LOAD DATA Daily Loan selesai diproses.',
+        ]);
+
+        $this->progressService->cacheProgress($jobId, [
+            'status' => 'processing',
+            'phase' => 'syncing_report',
+            'percent' => 99,
+            'message' => 'Sinkronisasi report hasil import Daily Loan...',
+        ]);
+
+        $this->assertSame(
+            'completed',
+            DB::table('import_jobs')->where('id', $jobId)->value('status')
+        );
+
+        $payload = $this->progressService->getStatusPayload($jobId);
+        $this->assertSame('completed', $payload['status']);
+        $this->assertSame('Direct LOAD DATA Daily Loan selesai diproses.', $payload['message']);
+    }
+
     /**
      * Helper: Create test job
      */

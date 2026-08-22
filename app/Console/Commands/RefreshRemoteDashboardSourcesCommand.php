@@ -18,6 +18,7 @@ class RefreshRemoteDashboardSourcesCommand extends Command
     protected $signature = 'dashboard-sources:refresh
         {--source=all : all, market-share, market-share-mapping, market-share-instansi, kpi, business-cluster, or sppg}
         {--kpi= : Optional comma-separated KPI sheet keys}
+        {--kpi-period=2026-07 : KPI source period (2026-06 or 2026-07)}
         {--queue : Dispatch isolated refresh jobs instead of waiting for remote sources}
         {--only-stale : With --queue, skip sources whose last successful refresh is still fresh}';
 
@@ -41,6 +42,12 @@ class RefreshRemoteDashboardSourcesCommand extends Command
             static fn (string $value): string => trim($value),
             explode(',', (string) $this->option('kpi'))
         )));
+        $kpiPeriod = trim((string) $this->option('kpi-period'));
+        if (!in_array($kpiPeriod, ['2026-06', '2026-07'], true)) {
+            $this->error('Periode KPI tidak didukung. Gunakan 2026-06 atau 2026-07.');
+
+            return self::INVALID;
+        }
 
         if ((bool) $this->option('queue')) {
             $sources = $source === 'all'
@@ -56,7 +63,8 @@ class RefreshRemoteDashboardSourcesCommand extends Command
             foreach ($sources as $sourceName) {
                 RefreshRemoteDashboardSourcesJob::dispatch(
                     [$sourceName],
-                    $sourceName === 'kpi' ? $keys : []
+                    $sourceName === 'kpi' ? $keys : [],
+                    $kpiPeriod
                 );
             }
 
@@ -82,7 +90,7 @@ class RefreshRemoteDashboardSourcesCommand extends Command
         }
 
         if (in_array($source, ['all', 'kpi'], true)) {
-            $results['kpi'] = $almafacts->refreshKpiSourceCaches($keys);
+            $results['kpi'] = $almafacts->refreshKpiSourceCaches($keys, $kpiPeriod);
         }
 
         if (in_array($source, ['all', 'business-cluster'], true)) {

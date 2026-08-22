@@ -32,38 +32,38 @@ class LinkManagementController extends Controller
         'mbm' => [
             'label' => 'KPI MBM',
             'sheet_name' => 'KPI MBM',
-            'spreadsheet_id' => '175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'spreadsheet_id' => '1OmIag7zJ3MdlKMP4hDyUqEvnP1tbbL7j',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1OmIag7zJ3MdlKMP4hDyUqEvnP1tbbL7j/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
         'ka-unit' => [
             'label' => 'KPI KA Unit',
-            'sheet_name' => 'KPI Kaunit',
-            'spreadsheet_id' => '1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'sheet_name' => 'KPI KaUnit',
+            'spreadsheet_id' => '1wI-dsRmkzWb4d0oqILxnh1r4UkM3tGJE',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1wI-dsRmkzWb4d0oqILxnh1r4UkM3tGJE/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
         'rm-mikro' => [
             'label' => 'KPI RM Mikro',
             'sheet_name' => 'KPI RM Mikro',
-            'spreadsheet_id' => '11dzu4edTyp9UFBicNDughtJ43bzvZguh',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/11dzu4edTyp9UFBicNDughtJ43bzvZguh/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'spreadsheet_id' => '1NNMRC8w2Z35n6WfKHL9Q9i575jwkMRzF',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1NNMRC8w2Z35n6WfKHL9Q9i575jwkMRzF/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
         'rm-sme' => [
             'label' => 'KPI RM SME',
             'sheet_name' => 'KPI RM SME',
-            'spreadsheet_id' => '1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'spreadsheet_id' => '1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
         'mantri' => [
             'label' => 'KPI Mantri',
-            'sheet_name' => 'KPI',
-            'spreadsheet_id' => '160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'sheet_name' => 'rank',
+            'spreadsheet_id' => '14As5M-bVMRa9OSFEo1mcaH1M1Derm7ca',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/14As5M-bVMRa9OSFEo1mcaH1M1Derm7ca/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
         'consumer' => [
             'label' => 'KPI Konsumer',
             'sheet_name' => 'KPI',
-            'spreadsheet_id' => '14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'spreadsheet_id' => '1a-fr7OnoTIa_aJZ_b-yt_KkLJiJu92McQxv93ab58qQ',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1a-fr7OnoTIa_aJZ_b-yt_KkLJiJu92McQxv93ab58qQ/edit?gid=942361434#gid=942361434',
         ],
     ];
     private const MARKET_SHARE_DEFAULTS = [
@@ -149,6 +149,7 @@ class LinkManagementController extends Controller
                 foreach (['v5', 'v6', 'v7'] as $cacheVersion) {
                     Cache::forget('dashboard_almafacts:kpi_sheet:' . $cacheVersion . ':' . $key . ':' . md5($spreadsheetId . '|' . $sheetName));
                 }
+                Cache::forget('dashboard_almafacts:kpi_sheet:v8:2026-07:' . $key . ':' . md5($spreadsheetId . '|' . $sheetName));
             }
 
             $sppg = $validated['sppg'] ?? [];

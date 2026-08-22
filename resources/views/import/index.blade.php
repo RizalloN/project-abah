@@ -350,6 +350,41 @@
             return Swal.fire(Object.assign({}, swalTheme, options));
         }
 
+        let previewNavigationInProgress = false;
+
+        function navigateToPreparedPreview(redirectUrl, progressBar = null, progressText = null) {
+            if (!redirectUrl || previewNavigationInProgress) {
+                return false;
+            }
+
+            previewNavigationInProgress = true;
+            const activeProgressBar = progressBar || document.getElementById('swal-progress-bar');
+            const activeProgressText = progressText || document.getElementById('swal-progress-text');
+            const progressPercent = document.getElementById('swal-progress-percent');
+            const progressPhase = document.getElementById('swal-progress-phase');
+
+            if (activeProgressBar) {
+                activeProgressBar.style.width = '99%';
+                activeProgressBar.innerText = '99%';
+                activeProgressBar.setAttribute('aria-valuenow', '99');
+            }
+            if (progressPercent) {
+                progressPercent.textContent = '99%';
+            }
+            if (activeProgressText) {
+                activeProgressText.innerText = 'Preview siap. Membuka halaman terbaru...';
+            }
+            if (progressPhase) {
+                progressPhase.textContent = 'Preview siap. Membuka halaman terbaru...';
+            }
+
+            window.setTimeout(function () {
+                window.location.replace(String(redirectUrl));
+            }, 40);
+
+            return true;
+        }
+
         function isDuplicateImportMessage(message) {
             const text = String(message || '')
                 .replace(/<[^>]*>/g, ' ')
@@ -782,14 +817,7 @@
 
                             settled = true;
                             eventSource.close();
-                            if (uploadProgressBar) {
-                                uploadProgressBar.style.width = '100%';
-                                uploadProgressBar.innerText = '100%';
-                            }
-                            if (typeof window.showRouteLoading === 'function') {
-                                window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
-                            }
-                            window.location.href = readyData.redirect;
+                            navigateToPreparedPreview(readyData.redirect, uploadProgressBar, uploadProgressText);
                             resolve();
                         });
 
@@ -800,16 +828,16 @@
                         });
 
                         eventSource.onerror = function() {
+                            if (previewNavigationInProgress) {
+                                return;
+                            }
                             failPreview('Koneksi progress preview terputus.');
                         };
                     });
                     return;
                 }
 
-                if (typeof window.showRouteLoading === 'function') {
-                    window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
-                }
-                window.location.href = finalizePayload.redirect;
+                navigateToPreparedPreview(finalizePayload.redirect, uploadProgressBar, uploadProgressText);
                 return;
             }
 
@@ -2608,10 +2636,7 @@
                                 try { evtData = JSON.parse(event.data); } catch (_) {}
                                 eventSource.close();
                                 if (evtData.redirect) {
-                                    if (typeof window.showRouteLoading === 'function') {
-                                        window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
-                                    }
-                                    window.location.href = evtData.redirect;
+                                    navigateToPreparedPreview(evtData.redirect, uploadProgressBar, uploadProgressText);
                                 }
                             });
 
@@ -2628,6 +2653,9 @@
                             });
 
                             eventSource.onerror = function() {
+                                if (previewNavigationInProgress) {
+                                    return;
+                                }
                                 eventSource.close();
                                 themedSwal({
                                     icon: 'error',
@@ -2653,19 +2681,13 @@
                                 uploadProgressText.innerText = 'Upload selesai. Membuka halaman preview...';
                             }
 
-                            if (typeof window.showRouteLoading === 'function') {
-                                window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
-                            }
-                            window.location.href = data.redirect;
+                            navigateToPreparedPreview(data.redirect, uploadProgressBar, uploadProgressText);
                             return;
                         }
 
                         if (directRedirect) {
                             if (data.redirect) {
-                                if (typeof window.showRouteLoading === 'function') {
-                                    window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
-                                }
-                                window.location.href = data.redirect;
+                                navigateToPreparedPreview(data.redirect, uploadProgressBar, uploadProgressText);
                                 return;
                             }
 
@@ -2715,10 +2737,10 @@
                             try { evtData = JSON.parse(event.data); } catch (_) {}
                             eventSource.close();
                             if (evtData.redirect) {
-                                if (typeof window.showRouteLoading === 'function') {
-                                    window.showRouteLoading('Memuat halaman', 'Menyiapkan preview data terbaru.');
+                                if (heartbeatTimeout) {
+                                    clearTimeout(heartbeatTimeout);
                                 }
-                                window.location.href = evtData.redirect;
+                                navigateToPreparedPreview(evtData.redirect, uploadProgressBar, uploadProgressText);
                             }
                         });
 
@@ -2737,8 +2759,14 @@
                         // Add heartbeat timeout detection (if no message for 90 sec, something is wrong)
                         var heartbeatTimeout = null;
                         const resetHeartbeatTimeout = () => {
+                            if (previewNavigationInProgress) {
+                                return;
+                            }
                             if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
                             heartbeatTimeout = setTimeout(() => {
+                                if (previewNavigationInProgress) {
+                                    return;
+                                }
                                 eventSource.close();
                                 themedSwal({
                                     icon: 'error',
@@ -2759,6 +2787,9 @@
 
                         eventSource.onerror = function() {
                             if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
+                            if (previewNavigationInProgress) {
+                                return;
+                            }
                             eventSource.close();
                             themedSwal({
                                 icon: 'error',

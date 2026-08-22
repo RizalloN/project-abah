@@ -47,6 +47,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
             $table->string('kanca')->nullable();
             $table->string('unit')->nullable();
             $table->string('segmen_dashboard')->nullable();
+            $table->date('tgl_ph')->nullable();
             $table->decimal('pokok', 20, 2)->nullable();
         });
 
@@ -54,6 +55,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
             $table->date('periode')->index();
             $table->string('uniqueid_namareport')->nullable();
             $table->string('nomor_rekening1')->nullable();
+            $table->string('cifno')->nullable();
             $table->decimal('baki_debet1', 20, 2)->nullable();
             $table->string('kolek_detail')->nullable();
             $table->integer('umur_tunggakan')->nullable();
@@ -69,6 +71,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
             $table->string('cabang1')->nullable();
             $table->string('unit1')->nullable();
             $table->string('nama_debitur1')->nullable();
+            $table->date('tgl_realisasi')->nullable();
             $table->decimal('plafon', 20, 2)->nullable();
             $table->decimal('tunggakan_pokok', 20, 2)->nullable();
             $table->decimal('tunggakan_bunga', 20, 2)->nullable();
@@ -444,6 +447,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
                 'kanca' => 'KC Old',
                 'unit' => 'Unit Old',
                 'segmen_dashboard' => 'Micro',
+                'tgl_ph' => '2026-05-15',
                 'pokok' => 175,
             ],
         ]);
@@ -485,6 +489,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
                 'kanca' => 'KC Old',
                 'unit' => 'Unit Old',
                 'segmen_dashboard' => 'Micro',
+                'tgl_ph' => '2026-05-15',
                 'pokok' => 250,
             ],
             [
@@ -493,6 +498,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
                 'kanca' => 'KC Old',
                 'unit' => 'Unit Old',
                 'segmen_dashboard' => 'Micro',
+                'tgl_ph' => '2026-06-15',
                 'pokok' => 175,
             ],
         ]);
@@ -685,6 +691,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
                 'kolek' => '1',
                 'flag_restruk' => null,
                 'umur_tunggakan' => 0,
+                'tgl_realisasi' => null,
             ],
             [
                 'periode' => '2026-06-30',
@@ -693,6 +700,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
                 'kolek' => '1',
                 'flag_restruk' => 'Y',
                 'umur_tunggakan' => 0,
+                'tgl_realisasi' => null,
             ],
             [
                 'periode' => '2026-06-30',
@@ -701,6 +709,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
                 'kolek' => '4',
                 'flag_restruk' => null,
                 'umur_tunggakan' => 120,
+                'tgl_realisasi' => null,
             ],
             [
                 'periode' => '2026-06-30',
@@ -709,6 +718,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
                 'kolek' => '5',
                 'flag_restruk' => null,
                 'umur_tunggakan' => 365,
+                'tgl_realisasi' => null,
             ],
             [
                 'periode' => '2026-07-10',
@@ -717,6 +727,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
                 'kolek' => '2',
                 'flag_restruk' => null,
                 'umur_tunggakan' => 20,
+                'tgl_realisasi' => null,
             ],
             [
                 'periode' => '2026-07-10',
@@ -725,6 +736,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
                 'kolek' => '1',
                 'flag_restruk' => null,
                 'umur_tunggakan' => 0,
+                'tgl_realisasi' => null,
             ],
             [
                 'periode' => '2026-07-10',
@@ -733,11 +745,13 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
                 'kolek' => '1',
                 'flag_restruk' => null,
                 'umur_tunggakan' => 0,
+                'tgl_realisasi' => '2026-07-05',
             ],
         ]);
         DB::table('lw325_ph')->insert([
             'periode' => '2026-07-10',
             'acctno' => '000C',
+            'tgl_ph' => '2026-07-05',
             'pokok' => 1,
         ]);
 
@@ -750,7 +764,12 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
         $rows = collect($payload['matrix_rows'])->keyBy('label');
 
         $this->assertSame('ready', $payload['status']);
-        $this->assertEqualsWithDelta(999300.85, $payload['grand_total_value'], 0.001);
+        $this->assertEqualsWithDelta(999650.95, $payload['grand_total_value'], 0.001);
+        $this->assertEqualsWithDelta(1000.25, $rows['L']['values'][2], 0.001);
+        $this->assertEqualsWithDelta(500.10, $rows['LR']['values'][0], 0.001);
+        $this->assertEqualsWithDelta(997800.50, $rows['New Account']['total'], 0.001);
+        $this->assertEqualsWithDelta(250.05, $rows['D1']['total'], 0.001);
+        $this->assertEqualsWithDelta(100.05, $rows['M']['total'], 0.001);
         $this->assertEqualsWithDelta(200.15, $rows['L']['metrics']['principal_reduction'], 0.001);
         $this->assertEqualsWithDelta(200.15, $rows['LR']['metrics']['suplesi'], 0.001);
         $this->assertEqualsWithDelta(997800.50, $rows['New Account']['metrics']['suplesi'], 0.001);
@@ -766,7 +785,23 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
         $this->assertSame(2, $reconciliation['exit_accounts']);
         $this->assertSame(1, $reconciliation['ph_accounts']);
         $this->assertSame(1, $reconciliation['lunas_accounts']);
+        $this->assertSame(1, $rows['D1']['metric_debtors']['ph']);
         $this->assertEqualsWithDelta(1850.45, $reconciliation['previous_position'], 0.001);
+        $this->assertEqualsWithDelta(999300.85, $reconciliation['movement_grid_position'], 0.001);
+        $this->assertEqualsWithDelta(999650.95, $reconciliation['matrix_position'], 0.001);
+        $this->assertEqualsWithDelta(997800.50, $reconciliation['portfolio_inflow_position'], 0.001);
+        $this->assertEqualsWithDelta(350.10, $reconciliation['exit_position'], 0.001);
+        $this->assertEqualsWithDelta(1850.45, $reconciliation['basis_less_inflow_position'], 0.001);
+        $this->assertEqualsWithDelta(
+            $reconciliation['previous_position'],
+            $payload['grand_total_value'] - $rows['New Account']['total'],
+            0.001
+        );
+        $this->assertEqualsWithDelta(0.0, $reconciliation['basis_to_opening_difference'], 0.001);
+        $this->assertEqualsWithDelta(0.0, $reconciliation['opening_partition_difference'], 0.001);
+        $this->assertEqualsWithDelta(0.0, $reconciliation['closing_partition_difference'], 0.001);
+        $this->assertEqualsWithDelta(0.0, $reconciliation['inflow_composition_difference'], 0.001);
+        $this->assertEqualsWithDelta(0.0, $reconciliation['suplesi_composition_difference'], 0.001);
         $this->assertEqualsWithDelta(999300.85, $reconciliation['reconstructed_current_position'], 0.001);
         $this->assertEqualsWithDelta(0.0, $reconciliation['difference'], 0.001);
     }
@@ -951,7 +986,8 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
         $payload = $response->getData(true);
 
         $this->assertSame('ready', $payload['status']);
-        $this->assertEqualsWithDelta(80.0, $payload['grand_total_value'], 0.001);
+        $this->assertEqualsWithDelta(100.0, $payload['grand_total_value'], 0.001);
+        $this->assertEqualsWithDelta(80.0, $payload['reconciliation']['current_position'], 0.001);
         $this->assertEqualsWithDelta(20.0, $payload['grand_totals']['metrics']['principal_reduction'], 0.001);
         $this->assertNull($payload['grand_totals']['metrics']['ph']);
         $this->assertSame(0, $payload['reconciliation']['ph_accounts']);
@@ -998,7 +1034,7 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
         ));
         $rows = collect($response->getData(true)['matrix_rows'])->keyBy('label');
 
-        $this->assertEqualsWithDelta(900.0, $rows['L']['values'][0], 0.001);
+        $this->assertEqualsWithDelta(1000.0, $rows['L']['values'][0], 0.001);
         $this->assertNull($rows['New Account']['values'][0]);
         $this->assertEqualsWithDelta(100.0, $rows['L']['metrics']['principal_reduction'], 0.001);
     }
@@ -1111,13 +1147,231 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
 
         $this->assertSame('ready', $payload['status']);
         $this->assertEqualsWithDelta(200.0, $rows['New Account']['values'][0], 0.001);
-        $this->assertSame(2, $payload['reconciliation']['new_accounts']);
+        $this->assertSame(0, $payload['reconciliation']['new_accounts']);
+        $this->assertSame(2, $payload['reconciliation']['portfolio_inflow_accounts']);
+        $this->assertSame(2, $payload['reconciliation']['unverified_inflow_accounts']);
         $this->assertCount(2, $detail['rows']);
         $this->assertEqualsWithDelta(
             200.0,
             collect($detail['rows'])->sum(fn (array $row): float => (float) $row['baki_debet1']),
             0.001
         );
+    }
+
+    public function test_matrix_matches_canonical_account_keys_and_clamps_negative_exposure(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            [
+                'periode' => '2026-06-30',
+                'nomor_rekening1' => '000123',
+                'baki_debet1' => 100,
+                'kolek' => '1',
+                'umur_tunggakan' => 0,
+                'tgl_realisasi' => null,
+            ],
+            [
+                'periode' => '2026-06-30',
+                'nomor_rekening1' => 'NEG-EXIT',
+                'baki_debet1' => -50,
+                'kolek' => '1',
+                'umur_tunggakan' => 0,
+                'tgl_realisasi' => null,
+            ],
+            [
+                'periode' => '2026-07-10',
+                'nomor_rekening1' => '123',
+                'baki_debet1' => 80,
+                'kolek' => '1',
+                'umur_tunggakan' => 0,
+                'tgl_realisasi' => null,
+            ],
+            [
+                'periode' => '2026-07-10',
+                'nomor_rekening1' => 'NEW-NEGATIVE',
+                'baki_debet1' => -25,
+                'kolek' => '1',
+                'umur_tunggakan' => 0,
+                'tgl_realisasi' => '2026-07-05',
+            ],
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-07-10',
+            'acctno' => 'PH-DUMMY',
+            'tgl_ph' => '2026-07-10',
+            'pokok' => 0,
+        ]);
+
+        $payload = (new DashboardPinjamanReportController())->data(Request::create(
+            '/report/dashboard-pinjaman/data',
+            'GET',
+            ['periode' => '2026-07-10', 'refresh' => '1']
+        ))->getData(true);
+        $rows = collect($payload['matrix_rows'])->keyBy('label');
+
+        $this->assertSame('ready', $payload['status']);
+        $this->assertEqualsWithDelta(100.0, $rows['L']['values'][0], 0.001);
+        $this->assertNull($rows['New Account']['values'][0]);
+        $this->assertEqualsWithDelta(20.0, $rows['L']['metrics']['principal_reduction'], 0.001);
+        $this->assertSame(1, $payload['reconciliation']['matched_accounts']);
+        $this->assertSame(1, $payload['reconciliation']['new_accounts']);
+        $this->assertSame('balanced', $payload['reconciliation']['status']);
+        $this->assertEqualsWithDelta(80.0, $payload['reconciliation']['current_position'], 0.001);
+    }
+
+    public function test_matrix_ph_requires_m_bucket_or_current_period_ph_evidence(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['periode' => '2026-06-30', 'nomor_rekening1' => '100000000000001', 'cifno' => 'CIF-1', 'baki_debet1' => 100, 'kolek' => '4', 'umur_tunggakan' => 160],
+            ['periode' => '2026-06-30', 'nomor_rekening1' => '100000000000002', 'cifno' => 'CIF-2', 'baki_debet1' => 200, 'kolek' => '4', 'umur_tunggakan' => 160],
+            ['periode' => '2026-06-30', 'nomor_rekening1' => '100000000000003', 'cifno' => 'CIF-3', 'baki_debet1' => 300, 'kolek' => '5', 'umur_tunggakan' => 365],
+        ]);
+        DB::table('lw325_ph')->insert([
+            ['periode' => '2026-06-30', 'acctno' => '100000000000001', 'tgl_ph' => '2026-05-10', 'pokok' => 90],
+            ['periode' => '2026-06-30', 'acctno' => '100000000000003', 'tgl_ph' => '2026-05-10', 'pokok' => 250],
+            ['periode' => '2026-07-10', 'acctno' => '100000000000001', 'tgl_ph' => '2026-05-10', 'pokok' => 80],
+            ['periode' => '2026-07-10', 'acctno' => '100000000000002', 'tgl_ph' => '2026-07-05', 'pokok' => 175],
+            ['periode' => '2026-07-10', 'acctno' => '100000000000003', 'tgl_ph' => '2026-05-10', 'pokok' => 225],
+        ]);
+
+        $controller = new DashboardPinjamanReportController();
+        $resolveCurrentPh = new ReflectionMethod(DashboardPinjamanReportController::class, 'resolveCurrentMonthPhPeriod');
+        $resolveCurrentPh->setAccessible(true);
+        $hasUsablePh = new ReflectionMethod(DashboardPinjamanReportController::class, 'hasUsableLw325RecoveryPeriod');
+        $hasUsablePh->setAccessible(true);
+        $this->assertSame('2026-07-10', $resolveCurrentPh->invoke($controller, '2026-07-10'));
+        $this->assertTrue($hasUsablePh->invoke($controller, '2026-07-10'));
+
+        $exitRowsMethod = new ReflectionMethod(DashboardPinjamanReportController::class, 'buildDailyLoanExitMetricQuery');
+        $exitRowsMethod->setAccessible(true);
+        $exitRows = $exitRowsMethod->invoke(
+            $controller,
+            '2026-07-10',
+            '2026-06-30',
+            ['segmen' => [], 'produk' => [], 'cabang' => [], 'unit' => []],
+            false,
+            false
+        )->get();
+        $this->assertCount(3, $exitRows, json_encode($exitRows->toArray()));
+        $this->assertSame(
+            ['D2:lunas', 'D2:ph', 'M:ph'],
+            $exitRows
+                ->map(fn ($row) => $row->before_bucket . ':' . $row->metric_type)
+                ->sort()
+                ->values()
+                ->all(),
+            json_encode($exitRows->toArray())
+        );
+
+        $method = new ReflectionMethod(DashboardPinjamanReportController::class, 'buildMatrixExitMetricAggregateQuery');
+        $method->setAccessible(true);
+        $aggregateQuery = $method->invoke(
+            $controller,
+            '2026-07-10',
+            '2026-06-30',
+            ['segmen' => [], 'produk' => [], 'cabang' => [], 'unit' => []],
+            false,
+            false
+        );
+        $rows = $aggregateQuery->get()->keyBy(fn ($row) => $row->before_bucket . ':' . $row->metric_type);
+
+        $this->assertTrue($rows->has('D2:ph'), json_encode([
+            'keys' => $rows->keys()->all(),
+            'sql' => $aggregateQuery->toSql(),
+            'bindings' => $aggregateQuery->getBindings(),
+        ]));
+        $this->assertSame(20000, (int) $rows['D2:ph']->amount_cents);
+        $this->assertSame(10000, (int) $rows['D2:lunas']->amount_cents);
+        $this->assertSame(30000, (int) $rows['M:ph']->amount_cents);
+        $this->assertSame(1, (int) $rows['D2:ph']->debtor_count);
+        $this->assertSame(1, (int) $rows['M:ph']->debtor_count);
+    }
+
+    public function test_matrix_does_not_use_partial_previous_ph_snapshot_as_new_membership_evidence(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-06-30',
+            'nomor_rekening1' => '200000000000001',
+            'cifno' => 'CIF-PARTIAL',
+            'baki_debet1' => 100,
+            'kolek' => '4',
+            'umur_tunggakan' => 160,
+        ]);
+
+        $completePreviousDay = [];
+        for ($index = 1; $index <= 10; $index++) {
+            $completePreviousDay[] = [
+                'periode' => '2026-06-29',
+                'acctno' => '2999999999999' . $index,
+                'tgl_ph' => '2026-05-10',
+                'pokok' => 100,
+            ];
+        }
+        DB::table('lw325_ph')->insert(array_merge($completePreviousDay, [
+            [
+                'periode' => '2026-06-30',
+                'acctno' => '200000000000001',
+                'tgl_ph' => '2026-05-10',
+                'pokok' => 90,
+            ],
+            [
+                'periode' => '2026-07-10',
+                'acctno' => '200000000000001',
+                'tgl_ph' => '2026-05-10',
+                'pokok' => 80,
+            ],
+        ]));
+
+        $controller = new DashboardPinjamanReportController();
+        $method = new ReflectionMethod(DashboardPinjamanReportController::class, 'buildMatrixExitMetricAggregateQuery');
+        $method->setAccessible(true);
+        $rows = $method->invoke(
+            $controller,
+            '2026-07-10',
+            '2026-06-30',
+            ['segmen' => [], 'produk' => [], 'cabang' => [], 'unit' => []],
+            false,
+            false
+        )->get()->keyBy(fn ($row) => $row->before_bucket . ':' . $row->metric_type);
+
+        $this->assertFalse($rows->has('D2:ph'));
+        $this->assertSame(10000, (int) $rows['D2:lunas']->amount_cents);
+    }
+
+    public function test_recovery_period_options_reject_partial_lw325_daily_snapshot(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['periode' => '2026-06-30'],
+            ['periode' => '2026-07-10'],
+            ['periode' => '2026-07-11'],
+        ]);
+
+        $completeRows = [];
+        for ($index = 1; $index <= 10; $index++) {
+            $completeRows[] = [
+                'periode' => '2026-07-10',
+                'acctno' => 'FULL-' . $index,
+                'tgl_ph' => '2026-07-10',
+                'pokok' => 100,
+            ];
+        }
+        $partialRows = [];
+        for ($index = 1; $index <= 5; $index++) {
+            $partialRows[] = [
+                'periode' => '2026-07-11',
+                'acctno' => 'PARTIAL-' . $index,
+                'tgl_ph' => '2026-07-11',
+                'pokok' => 100,
+            ];
+        }
+        DB::table('lw325_ph')->insert(array_merge($completeRows, $partialRows));
+
+        $controller = new DashboardPinjamanReportController();
+        $method = new ReflectionMethod(DashboardPinjamanReportController::class, 'fetchRecoveryReportPeriods');
+        $method->setAccessible(true);
+        $periods = $method->invoke($controller)->all();
+
+        $this->assertContains('2026-07-10', $periods);
+        $this->assertNotContains('2026-07-11', $periods);
     }
 
     public function test_ug_npl_rows_use_revised_arrears_rules_for_due_periodic_general_and_dl_loans(): void

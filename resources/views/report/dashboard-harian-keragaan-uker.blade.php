@@ -747,6 +747,8 @@
         };
         const dataTypeLabels = Object.fromEntries((page.dataTypes || []).map(item => [item.value, item.label]));
         let currentPayload = page.initialData || null;
+        let selectedKancaValue = selectedScalar(page.selected?.kanca, '');
+        let latestRequestId = 0;
 
         function selectedScalar(value, fallback = '') {
             if (Array.isArray(value)) {
@@ -797,14 +799,25 @@
             })}%`;
         }
 
-        function buildSelects(payload) {
-            const filters = (payload && payload.available_filters) || page.filters || {};
-            const selected = page.selected || {};
-            const selectedKanca = els.kanca.value || selectedScalar(selected.kanca, '');
-            const selectedUnit = els.unit.value || selectedScalar(selected.unit_kerja, 'all');
-            const selectedDataType = els.dataType.value || selected.data_type || 'pinjaman';
+        function withSelectedOption(options, selectedValue) {
+            const value = String(selectedValue || '');
+            if (!value || (options || []).some(option => String(option.value ?? '') === value)) {
+                return options || [];
+            }
 
-            els.kanca.innerHTML = `<option value="">Pilih cabang</option>${optionHtml(filters.kanca || [], selectedKanca)}`;
+            return [...(options || []), { value, label: value }];
+        }
+
+        function buildSelects(payload, requestedSelection = {}) {
+            const filters = (payload && payload.available_filters) || page.filters || {};
+            const selected = payload?.selected || page.selected || {};
+            const selectedKanca = requestedSelection.kanca || els.kanca.value || selectedScalar(selected.kanca, '') || selectedKancaValue;
+            const selectedUnit = requestedSelection.unit || els.unit.value || selectedScalar(selected.unit_kerja, 'all');
+            const selectedDataType = requestedSelection.dataType || els.dataType.value || selected.data_type || 'pinjaman';
+
+            selectedKancaValue = selectedKanca;
+
+            els.kanca.innerHTML = `<option value="">Pilih cabang</option>${optionHtml(withSelectedOption(filters.kanca, selectedKanca), selectedKanca)}`;
             els.unit.innerHTML = optionHtml(filters.unit_kerja || [], selectedUnit);
             els.unit.disabled = els.kanca.value === '';
             els.dataType.innerHTML = optionHtml(page.dataTypes || [], selectedDataType);
@@ -952,7 +965,7 @@
             const hasRows = Array.isArray(payload?.rows) && payload.rows.length > 0;
             shell.classList.toggle('is-empty', !hasRows);
             shell.classList.remove('is-loading');
-            els.empty.textContent = els.kanca.value === ''
+            els.empty.textContent = !(selectedKancaValue || els.kanca.value)
                 ? 'Pilih cabang terlebih dahulu untuk menampilkan data.'
                 : 'Data tidak tersedia untuk filter ini.';
 
@@ -967,7 +980,14 @@
         }
 
         async function fetchData(resetUnit = false) {
-            if (!els.kanca.value) {
+            const selection = {
+                kanca: els.kanca.value || '',
+                unit: resetUnit ? 'all' : (els.unit.value || 'all'),
+                dataType: els.dataType.value || 'pinjaman',
+            };
+
+            selectedKancaValue = selection.kanca;
+            if (!selection.kanca) {
                 if (resetUnit) {
                     els.unit.value = 'all';
                 }
@@ -983,10 +1003,12 @@
                 els.unit.value = 'all';
             }
 
+            const requestId = ++latestRequestId;
+
             const params = new URLSearchParams({
-                kanca: els.kanca.value || '',
-                unit_kerja: els.unit.value || 'all',
-                data_type: els.dataType.value || 'pinjaman',
+                kanca: selection.kanca,
+                unit_kerja: selection.unit,
+                data_type: selection.dataType,
                 posisi_terakhir: els.period.value || '',
                 posisi_rka: els.rka.value || '',
             });
@@ -1004,12 +1026,21 @@
                 }
 
                 const payload = await response.json();
-                buildSelects(payload);
+                if (requestId !== latestRequestId) {
+                    return;
+                }
+
+                buildSelects(payload, selection);
                 render(payload);
             } catch (error) {
+                if (requestId !== latestRequestId) {
+                    return;
+                }
+
                 console.error(error);
                 shell.classList.remove('is-loading');
                 shell.classList.add('is-empty');
+                els.empty.textContent = 'Data gagal dimuat. Silakan coba pilih cabang kembali.';
             }
         }
 

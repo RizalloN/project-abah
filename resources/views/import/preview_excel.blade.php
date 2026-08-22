@@ -280,7 +280,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return (hash >>> 0).toString(36);
     }
 
-    const storageKeyPrefix = 'preview_filter_excel_v5_' + stableHash(JSON.stringify({
+    const storageKeyPrefix = 'preview_filter_excel_v6_' + stableHash(JSON.stringify({
         file: filePathValue,
         delimiter: delimiterValue,
         headers: previewHeaders,
@@ -343,6 +343,88 @@ document.addEventListener('DOMContentLoaded', function () {
         return Array.from(new Set(
             (Array.isArray(values) ? values : []).map(normalizeFilterValue)
         ));
+    }
+
+    function replaceFilterOptions(state, values) {
+        const normalizedValues = normalizeFilterValues(values);
+        const previousValues = Array.isArray(state.allValues) ? state.allValues.slice() : [];
+        const previousSelection = new Set(state.selectedValues || []);
+        const hadAllSelected = previousValues.length === 0 || previousSelection.size === previousValues.length;
+
+        state.allValues = normalizedValues;
+        state.selectedValues = hadAllSelected
+            ? new Set(normalizedValues)
+            : new Set(normalizedValues.filter(function (value) {
+                return previousSelection.has(value);
+            }));
+    }
+
+    function priorityFilterHeaderScore(header) {
+        const compactHeader = String(header || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+        if (!compactHeader || compactHeader.includes('kode')) {
+            return 0;
+        }
+
+        if (
+            compactHeader.includes('namakci')
+            || compactHeader.includes('namacabanginduk')
+            || compactHeader.includes('namakantorcabanginduk')
+            || compactHeader.includes('kantorcabanginduk')
+            || compactHeader.includes('kcinduk')
+        ) {
+            return 120;
+        }
+
+        if (compactHeader === 'mbdesc' || compactHeader.includes('mainbranchdescription')) {
+            return 115;
+        }
+
+        if (compactHeader.includes('namakanca') || compactHeader === 'kanca' || compactHeader === 'kci') {
+            return 110;
+        }
+
+        if (
+            compactHeader === 'namacabang'
+            || compactHeader === 'cabang'
+            || compactHeader === 'cabang1'
+            || compactHeader === 'kantorcabang'
+        ) {
+            return 105;
+        }
+
+        if (compactHeader.includes('cabang')) {
+            return 95;
+        }
+
+        if (compactHeader === 'brdesc' || compactHeader.includes('branchdescription')) {
+            return 80;
+        }
+
+        return compactHeader === 'branch' || compactHeader === 'branchname' ? 60 : 0;
+    }
+
+    function getRenderableFilterColumns() {
+        return Object.keys(filterState).filter(function (col) {
+            return Boolean(document.getElementById('list_container_' + col));
+        });
+    }
+
+    function resolvePriorityFilterColumns() {
+        const rankedColumns = getRenderableFilterColumns()
+            .map(function (col) {
+                return {
+                    col: String(col),
+                    score: priorityFilterHeaderScore(previewHeaders[Number(col)] || ''),
+                };
+            })
+            .filter(function (candidate) {
+                return candidate.score > 0;
+            })
+            .sort(function (left, right) {
+                return right.score - left.score || Number(left.col) - Number(right.col);
+            });
+
+        return rankedColumns.length ? [rankedColumns[0].col] : [];
     }
 
     Object.keys(filterOptionsMap).forEach(function (col) {
@@ -613,16 +695,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if ((isInitialPrefetch || Object.keys(activeFilters).length === 0) && !state.fullOptionsLoaded) {
             const cachedValues = getFromLocalStorage(col);
             if (cachedValues) {
-                const normalizedCachedValues = normalizeFilterValues(cachedValues);
-                const previousValues = Array.isArray(state.allValues) ? state.allValues.slice() : [];
-                const previousSelection = new Set(state.selectedValues || []);
-                const hadAllSelected = previousValues.length === 0 || previousSelection.size === previousValues.length;
-                state.allValues = normalizedCachedValues;
-                state.selectedValues = hadAllSelected
-                    ? new Set(normalizedCachedValues)
-                    : new Set(normalizedCachedValues.filter(function (value) {
-                        return previousSelection.has(value);
-                    }));
+                replaceFilterOptions(state, cachedValues);
                 state.fullOptionsLoaded = true;
                 state.loadedSignature = signature;
                 renderFilterList(col);
@@ -661,21 +734,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 throw new Error(payload.message || 'Gagal memuat opsi filter lengkap.');
             }
 
-            const previousValues = Array.isArray(state.allValues) ? state.allValues.slice() : [];
-            const previousSelection = new Set(state.selectedValues || []);
-            const hadAllSelected = previousValues.length === 0 || previousSelection.size === previousValues.length;
             const normalizedValues = normalizeFilterValues(payload.values);
 
             if (state.pendingSignature !== signature || state.needsRefresh) {
                 return;
             }
 
-            state.allValues = normalizedValues;
-            state.selectedValues = hadAllSelected
-                ? new Set(normalizedValues)
-                : new Set(normalizedValues.filter(function (value) {
-                    return previousSelection.has(value);
-                }));
+            replaceFilterOptions(state, normalizedValues);
             state.fullOptionsLoaded = true;
             state.loadedSignature = signature;
             
@@ -708,13 +773,14 @@ document.addEventListener('DOMContentLoaded', function () {
     async function prefetchAllFilterOptions() {
         if (disableFilterPrefetch) return;
 
-        const cols = Object.keys(filterState);
+        let cols = getRenderableFilterColumns();
         if (!cols.length) return;
 
-        // Batasi prefetch jika kolom terlalu banyak (> 8 kolom) untuk mencegah website stuck/freeze
+        // Wide reports hydrate their branch selector first. Other high-cardinality
+        // columns remain available through the existing on-demand request.
         if (cols.length > 8) {
-            console.log('Prefetch skipped because table has too many columns:', cols.length);
-            return;
+            const priorityColumns = resolvePriorityFilterColumns();
+            cols = priorityColumns.length ? priorityColumns : cols.slice(0, 8);
         }
 
         const prefetchPromises = cols.map(col => ensureFullFilterOptions(col, true));
@@ -723,6 +789,17 @@ document.addEventListener('DOMContentLoaded', function () {
         } catch (e) {
             console.warn('Prefetch filter options partially failed:', e);
         }
+    }
+
+    async function prefetchPriorityFilterOptions() {
+        if (disableFilterPrefetch) return;
+
+        const cols = resolvePriorityFilterColumns();
+        if (!cols.length) return;
+
+        await Promise.allSettled(cols.map(function (col) {
+            return ensureFullFilterOptions(col, true);
+        }));
     }
 
     function refreshDependentFilterOptions(excludeCol) {
@@ -924,6 +1001,8 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
+        renderSamplePreviewTable(activeFilters);
+
         if (previewRefreshTimer) {
             clearTimeout(previewRefreshTimer);
         }
@@ -931,7 +1010,7 @@ document.addEventListener('DOMContentLoaded', function () {
         previewRefreshTimer = setTimeout(function () {
             previewRefreshTimer = null;
             renderFilteredPreviewTable(activeFilters);
-        }, 360);
+        }, 180);
     }
 
     /* =========================================================
@@ -1270,6 +1349,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var streamDone = false;
         var reconnectAttempts = 0;
         var forceStartTriggered = false;
+        var terminalVerificationStarted = false;
         var lastProg   = { percent: 12, message: 'Fase Polars...', rows_done: 0, total: 0, speed: 0 };
 
         function statusUrlForJob(jobId) {
@@ -1361,6 +1441,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         function showImportSuccess(d) {
+            if (String((d || {}).status || 'completed') !== 'completed') {
+                showImportFailure((d || {}).message || 'Import tidak selesai dengan status berhasil.');
+                return;
+            }
+
             streamDone = true;
             if (evtSource) evtSource.close();
 
@@ -1532,12 +1617,30 @@ document.addEventListener('DOMContentLoaded', function () {
             });
 
             // ── complete event ──────────────────────────────────────────────
-            evtSource.addEventListener('complete', function (e) {
-                showImportSuccess((function () {
-                    var payload = {};
-                    try { payload = JSON.parse(e.data); } catch (_) {}
-                    return payload;
-                })());
+            evtSource.addEventListener('complete', async function (e) {
+                if (terminalVerificationStarted || streamDone) return;
+                terminalVerificationStarted = true;
+
+                var eventPayload = {};
+                try { eventPayload = JSON.parse(e.data); } catch (_) {}
+
+                if (evtSource) evtSource.close();
+
+                var verifiedPayload = null;
+                try { verifiedPayload = await inspectImportJob(jobId); } catch (_) {}
+
+                if (verifiedPayload && verifiedPayload.status === 'completed') {
+                    showImportSuccess(Object.assign({}, eventPayload, verifiedPayload));
+                    return;
+                }
+
+                if (verifiedPayload && ['failed', 'failed_partial', 'terminated', 'error'].indexOf(verifiedPayload.status) !== -1) {
+                    showImportFailure(verifiedPayload.message || 'Import gagal dijalankan!');
+                    return;
+                }
+
+                terminalVerificationStarted = false;
+                pollImportStatus(jobId);
                 return;
                 var d = {};
                 try { d = JSON.parse(e.data); } catch (_) {}
@@ -1700,6 +1803,12 @@ document.addEventListener('DOMContentLoaded', function () {
     /* =========================================================
        INIT: terapkan filter default lalu tampilkan preview
     ========================================================= */
+    if (filePathValue && filterOptionsUrl) {
+        prefetchPriorityFilterOptions().catch(function (error) {
+            console.warn('Priority filter prefetch failed:', error);
+        });
+    }
+
     Object.keys(filterState).forEach(function (col) {
         renderFilterList(col);
     });
@@ -1720,6 +1829,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
+            var activeFiltersInput = document.getElementById('active_filters_json');
+            try {
+                var activeFilters = JSON.parse(activeFiltersInput ? activeFiltersInput.value || '{}' : '{}');
+                if (Object.keys(activeFilters).length > 0) {
+                    return;
+                }
+            } catch (error) {
+                return;
+            }
+
             rows.slice(0, 100).forEach(function (row) {
                 row.classList.remove('d-none');
             });
@@ -1731,6 +1850,10 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 250);
     });
 </script>
+
+@endsection
+
+@section('styles')
 <style>
     .import-preview-banner,
     .import-preview-card {

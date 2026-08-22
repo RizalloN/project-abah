@@ -41,6 +41,7 @@ class DashboardPinjamanReportController extends Controller
     private const PH_LOOKUP_INDEX = 'idx_lw325ph_period_acct_kanca_unit';
     private const RAW_QUALITY_BUCKETS = ['L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M', 'NPL', 'PH', 'Pay'];
     private const PH_RECOVERY_MIN_ACCOUNT_DISTINCT_RATIO = 0.95;
+    private const PH_RECOVERY_COVERAGE_LOOKBACK_DAYS = 7;
 
     private const QUALITY_BUCKETS = ['L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M'];
     private const HEALTHY_BUCKETS = ['L', 'LR'];
@@ -55,6 +56,7 @@ class DashboardPinjamanReportController extends Controller
     private const OUTPUT_COLUMNS = ['Turunan Pokok', 'Suplesi', 'PH', 'Lunas'];
 
     private array $lw325RecoveryPeriodQuality = [];
+    private array $dailyLoanSimpleAccountGrain = [];
     private const KOLEK_MISMATCH_RULE_LABEL = 'kolek_vs_umur_tunggakan_v3';
     private const MATRIX_MODAL_COLUMNS = [
         'pivot_before_bucket',
@@ -984,7 +986,7 @@ class DashboardPinjamanReportController extends Controller
             ], 422);
         }
 
-        $cacheKey = 'dashboard_pinjaman_matrix_direct:v14-canonical-account-grain:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_matrix_direct:v16-opening-stock-complete:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'comparison' => $comparisonPeriod,
@@ -1018,8 +1020,9 @@ class DashboardPinjamanReportController extends Controller
                         'data_source' => 'daily_loan_dinamis',
                         'ph_source' => self::PH_TABLE,
                         'ph_period_relation' => $phPeriodRelation,
-                        'ph_scope' => 'rekening_keluar_yang_terdapat_di_nominatif_ph',
+                        'ph_scope' => 'rekening_keluar_dengan_bukti_ph_periode_berjalan',
                         'ph_value_basis' => 'os_daily_loan_periode_pembanding',
+                        'matrix_value_basis' => 'total_basis_posisi_pembanding_plus_rekening_masuk_dengan_ph_lunas_tercakup',
                     ];
                 },
                 $forceRefresh,
@@ -1038,8 +1041,9 @@ class DashboardPinjamanReportController extends Controller
                     'data_source' => 'daily_loan_dinamis',
                     'ph_source' => self::PH_TABLE,
                     'ph_period_relation' => $phPeriodRelation,
-                    'ph_scope' => 'rekening_keluar_yang_terdapat_di_nominatif_ph',
+                    'ph_scope' => 'rekening_keluar_dengan_bukti_ph_periode_berjalan',
                     'ph_value_basis' => 'os_daily_loan_periode_pembanding',
+                    'matrix_value_basis' => 'total_basis_posisi_pembanding_plus_rekening_masuk_dengan_ph_lunas_tercakup',
                 ]
             );
 
@@ -1355,12 +1359,17 @@ class DashboardPinjamanReportController extends Controller
             return [
                 'label' => $label,
                 'values' => array_fill(0, count(self::QUALITY_BUCKETS), null),
+                'value_accounts' => array_fill(0, count(self::QUALITY_BUCKETS), 0),
                 'metrics' => [
                     'principal_reduction' => null,
                     'suplesi' => null,
                     'ph' => null,
                     'lunas' => null,
                 ],
+                'metric_accounts' => array_fill_keys(['principal_reduction', 'suplesi', 'ph', 'lunas'], 0),
+                'metric_debtors' => array_fill_keys(['principal_reduction', 'suplesi', 'ph', 'lunas'], 0),
+                'movement_total' => null,
+                'exit_total' => null,
                 'total' => null,
             ];
         })->all();
@@ -1373,16 +1382,31 @@ class DashboardPinjamanReportController extends Controller
                 'ph' => null,
                 'lunas' => null,
             ],
+            'movement_grid_total' => null,
+            'exit_total' => null,
+            'basis_total' => null,
         ];
         $emptyReconciliation = [
             'status' => 'empty',
             'matrix_accounts' => 0,
             'matched_accounts' => 0,
             'new_accounts' => 0,
+            'portfolio_inflow_accounts' => 0,
+            'unverified_inflow_accounts' => 0,
             'exit_accounts' => 0,
             'ph_accounts' => 0,
             'lunas_accounts' => 0,
             'previous_position' => null,
+            'matrix_position' => null,
+            'movement_grid_position' => null,
+            'continuing_opening_position' => null,
+            'continuing_closing_position' => null,
+            'portfolio_inflow_position' => null,
+            'new_realization_position' => null,
+            'unverified_inflow_position' => null,
+            'exit_position' => null,
+            'basis_less_inflow_position' => null,
+            'basis_to_opening_difference' => null,
             'current_position' => null,
             'reconstructed_current_position' => null,
             'difference' => null,
@@ -1394,12 +1418,23 @@ class DashboardPinjamanReportController extends Controller
 
         $startedAt = microtime(true);
         $bucketMap = [];
+        $bucketAccountMap = [];
         $metricMap = [];
+        $metricAccountMap = [];
+        $metricDebtorMap = [];
         $metricSeen = array_fill_keys(['principal_reduction', 'suplesi', 'ph', 'lunas'], false);
         $matchedPreviousCents = 0;
+        $matchedCurrentCents = 0;
+        $portfolioInflowCents = 0;
+        $newRealizationCents = 0;
+        $unverifiedInflowCents = 0;
+        $matchedSuplesiCents = 0;
+        $currentPositionCents = 0;
         $matrixAccountCount = 0;
         $matchedAccountCount = 0;
         $newAccountCount = 0;
+        $portfolioInflowAccountCount = 0;
+        $unverifiedInflowAccountCount = 0;
         $exitAccountCounts = ['ph' => 0, 'lunas' => 0];
 
         try {
@@ -1427,8 +1462,21 @@ class DashboardPinjamanReportController extends Controller
 
                 $matrixAccountCount += (int) ($row->account_count ?? 0);
                 $matchedAccountCount += (int) ($row->matched_account_count ?? 0);
-                $newAccountCount += (int) ($row->new_account_count ?? 0);
+                $newAccountCount += (int) ($row->new_realization_account_count ?? 0);
+                $portfolioInflowAccountCount += (int) ($row->portfolio_inflow_account_count ?? 0);
+                $unverifiedInflowAccountCount += (int) ($row->unverified_inflow_account_count ?? 0);
                 $matchedPreviousCents += (int) ($row->previous_balance_cents ?? 0);
+                $rowCurrentBalanceCents = (int) ($row->current_balance_cents ?? 0);
+                $currentPositionCents += $rowCurrentBalanceCents;
+                $newRealizationCents += (int) ($row->new_realization_balance_cents ?? 0);
+                $unverifiedInflowCents += (int) ($row->unverified_inflow_balance_cents ?? 0);
+                if ($before === 'New Account') {
+                    $portfolioInflowCents += $rowCurrentBalanceCents;
+                } else {
+                    $matchedCurrentCents += $rowCurrentBalanceCents;
+                }
+                $bucketAccountMap[$before][$after] = ($bucketAccountMap[$before][$after] ?? 0)
+                    + (int) ($row->account_count ?? 0);
 
                 if ($amountCents !== 0) {
                     $bucketMap[$before][$after] = ($bucketMap[$before][$after] ?? 0) + $amountCents;
@@ -1443,6 +1491,9 @@ class DashboardPinjamanReportController extends Controller
                 if ($suplesiCents > 0) {
                     $metricMap[$before]['suplesi'] = ($metricMap[$before]['suplesi'] ?? 0) + $suplesiCents;
                     $metricSeen['suplesi'] = true;
+                    if ($before !== 'New Account') {
+                        $matchedSuplesiCents += $suplesiCents;
+                    }
                 }
             }
 
@@ -1472,6 +1523,10 @@ class DashboardPinjamanReportController extends Controller
                 }
 
                 $exitAccountCounts[$metric] += (int) ($row->account_count ?? 0);
+                $metricAccountMap[$before][$metric] = ($metricAccountMap[$before][$metric] ?? 0)
+                    + (int) ($row->account_count ?? 0);
+                $metricDebtorMap[$before][$metric] = ($metricDebtorMap[$before][$metric] ?? 0)
+                    + (int) ($row->debtor_count ?? 0);
                 if ($amountCents <= 0) {
                     continue;
                 }
@@ -1493,18 +1548,23 @@ class DashboardPinjamanReportController extends Controller
         $matrixGrandTotals = array_fill(0, count(self::QUALITY_BUCKETS), 0);
         $metricNames = ['principal_reduction', 'suplesi', 'ph', 'lunas'];
         $metricTotals = array_fill_keys($metricNames, 0);
-        $grandTotalCents = 0;
+        $movementGridTotalCents = 0;
+        $basisGrandTotalCents = 0;
 
         foreach (self::BEFORE_ROWS as $beforeLabel) {
             $values = [];
+            $valueAccounts = [];
             $rowTotalCents = 0;
             $rowMetrics = [];
+            $rowMetricAccounts = [];
+            $rowMetricDebtors = [];
 
             foreach (self::QUALITY_BUCKETS as $index => $afterLabel) {
                 $valueCents = (int) ($bucketMap[$beforeLabel][$afterLabel] ?? 0);
                 $rowTotalCents += $valueCents;
                 $matrixGrandTotals[$index] += $valueCents;
                 $values[] = $valueCents !== 0 ? $this->centsToAmount($valueCents) : null;
+                $valueAccounts[] = (int) ($bucketAccountMap[$beforeLabel][$afterLabel] ?? 0);
             }
 
             foreach ($metricNames as $metricName) {
@@ -1512,15 +1572,26 @@ class DashboardPinjamanReportController extends Controller
                 $hasMetric = array_key_exists($metricName, $metricMap[$beforeLabel] ?? []);
                 $metricTotals[$metricName] += $metricCents;
                 $rowMetrics[$metricName] = $hasMetric ? $this->centsToAmount($metricCents) : null;
+                $rowMetricAccounts[$metricName] = (int) ($metricAccountMap[$beforeLabel][$metricName] ?? 0);
+                $rowMetricDebtors[$metricName] = (int) ($metricDebtorMap[$beforeLabel][$metricName] ?? 0);
             }
 
-            $grandTotalCents += $rowTotalCents;
+            $rowExitCents = (int) ($metricMap[$beforeLabel]['ph'] ?? 0)
+                + (int) ($metricMap[$beforeLabel]['lunas'] ?? 0);
+            $rowBasisTotalCents = $rowTotalCents + $rowExitCents;
+            $movementGridTotalCents += $rowTotalCents;
+            $basisGrandTotalCents += $rowBasisTotalCents;
 
             $matrixRows[] = [
                 'label' => $beforeLabel,
                 'values' => $values,
+                'value_accounts' => $valueAccounts,
                 'metrics' => $rowMetrics,
-                'total' => $rowTotalCents !== 0 ? $this->centsToAmount($rowTotalCents) : null,
+                'metric_accounts' => $rowMetricAccounts,
+                'metric_debtors' => $rowMetricDebtors,
+                'movement_total' => $rowTotalCents !== 0 ? $this->centsToAmount($rowTotalCents) : null,
+                'exit_total' => $rowExitCents !== 0 ? $this->centsToAmount($rowExitCents) : null,
+                'total' => $rowBasisTotalCents !== 0 ? $this->centsToAmount($rowBasisTotalCents) : null,
             ];
         }
 
@@ -1537,29 +1608,79 @@ class DashboardPinjamanReportController extends Controller
                 $matrixGrandTotals
             ),
             'metrics' => $metricGrandTotals,
+            'movement_grid_total' => $movementGridTotalCents !== 0
+                ? $this->centsToAmount($movementGridTotalCents)
+                : null,
+            'exit_total' => ($metricTotals['ph'] + $metricTotals['lunas']) !== 0
+                ? $this->centsToAmount($metricTotals['ph'] + $metricTotals['lunas'])
+                : null,
+            'basis_total' => $basisGrandTotalCents !== 0
+                ? $this->centsToAmount($basisGrandTotalCents)
+                : null,
         ];
         $previousPositionCents = $matchedPreviousCents
             + $metricTotals['ph']
             + $metricTotals['lunas'];
+        $exitPositionCents = $metricTotals['ph'] + $metricTotals['lunas'];
+        $basisLessInflowCents = $basisGrandTotalCents - $portfolioInflowCents;
+        $basisToOpeningDifferenceCents = $basisLessInflowCents - $previousPositionCents;
+        $openingPartitionDifferenceCents = $previousPositionCents
+            - ($matchedPreviousCents + $exitPositionCents);
+        $closingPartitionDifferenceCents = $currentPositionCents
+            - ($matchedCurrentCents + $portfolioInflowCents);
+        $inflowCompositionDifferenceCents = $portfolioInflowCents
+            - ($newRealizationCents + $unverifiedInflowCents);
+        $suplesiCompositionDifferenceCents = $metricTotals['suplesi']
+            - ($matchedSuplesiCents + $portfolioInflowCents);
         $reconstructedCurrentCents = $previousPositionCents
             + $metricTotals['suplesi']
             - $metricTotals['principal_reduction']
-            - $metricTotals['ph']
-            - $metricTotals['lunas'];
-        $reconciliationDifferenceCents = $grandTotalCents - $reconstructedCurrentCents;
+            - $exitPositionCents;
+        $reconciliationDifferenceCents = $currentPositionCents - $reconstructedCurrentCents;
+        $reconciliationIsBalanced = collect([
+            $reconciliationDifferenceCents,
+            $basisToOpeningDifferenceCents,
+            $openingPartitionDifferenceCents,
+            $closingPartitionDifferenceCents,
+            $inflowCompositionDifferenceCents,
+            $suplesiCompositionDifferenceCents,
+        ])->every(fn (int $differenceCents): bool => abs($differenceCents) <= 1);
         $reconciliation = [
-            'status' => abs($reconciliationDifferenceCents) <= 1 ? 'balanced' : 'mismatch',
+            'status' => $reconciliationIsBalanced ? 'balanced' : 'mismatch',
             'matrix_accounts' => $matrixAccountCount,
             'matched_accounts' => $matchedAccountCount,
             'new_accounts' => $newAccountCount,
+            'portfolio_inflow_accounts' => $portfolioInflowAccountCount,
+            'unverified_inflow_accounts' => $unverifiedInflowAccountCount,
             'exit_accounts' => $exitAccountCounts['ph'] + $exitAccountCounts['lunas'],
             'ph_accounts' => $exitAccountCounts['ph'],
             'lunas_accounts' => $exitAccountCounts['lunas'],
             'previous_position' => $this->centsToAmount($previousPositionCents),
-            'current_position' => $this->centsToAmount($grandTotalCents),
+            'matrix_position' => $this->centsToAmount($basisGrandTotalCents),
+            'movement_grid_position' => $this->centsToAmount($movementGridTotalCents),
+            'continuing_opening_position' => $this->centsToAmount($matchedPreviousCents),
+            'continuing_closing_position' => $this->centsToAmount($matchedCurrentCents),
+            'portfolio_inflow_position' => $this->centsToAmount($portfolioInflowCents),
+            'new_realization_position' => $this->centsToAmount($newRealizationCents),
+            'unverified_inflow_position' => $this->centsToAmount($unverifiedInflowCents),
+            'exit_position' => $this->centsToAmount($exitPositionCents),
+            'ph_position' => $this->centsToAmount($metricTotals['ph']),
+            'lunas_position' => $this->centsToAmount($metricTotals['lunas']),
+            'matched_suplesi_position' => $this->centsToAmount($matchedSuplesiCents),
+            'total_suplesi_position' => $this->centsToAmount($metricTotals['suplesi']),
+            'principal_reduction_position' => $this->centsToAmount($metricTotals['principal_reduction']),
+            'basis_less_inflow_position' => $this->centsToAmount($basisLessInflowCents),
+            'basis_to_opening_difference' => $this->centsToAmount($basisToOpeningDifferenceCents),
+            'opening_partition_difference' => $this->centsToAmount($openingPartitionDifferenceCents),
+            'closing_partition_difference' => $this->centsToAmount($closingPartitionDifferenceCents),
+            'inflow_composition_difference' => $this->centsToAmount($inflowCompositionDifferenceCents),
+            'suplesi_composition_difference' => $this->centsToAmount($suplesiCompositionDifferenceCents),
+            'current_position' => $this->centsToAmount($currentPositionCents),
             'reconstructed_current_position' => $this->centsToAmount($reconstructedCurrentCents),
             'difference' => $this->centsToAmount($reconciliationDifferenceCents),
             'formula' => 'previous + suplesi - turunan_pokok - ph - lunas = current',
+            'basis_formula' => 'matrix_total - portfolio_inflow = previous',
+            'matrix_value_basis' => 'total=BD pembanding rekening bertahan + PH + Lunas; New Account=BD berjalan',
         ];
 
         Log::info('Dashboard pinjaman matrix query aggregated.', [
@@ -1575,7 +1696,7 @@ class DashboardPinjamanReportController extends Controller
         return [
             $matrixRows,
             $grandTotals,
-            $grandTotalCents !== 0 ? $this->centsToAmount($grandTotalCents) : null,
+            $basisGrandTotalCents !== 0 ? $this->centsToAmount($basisGrandTotalCents) : null,
             $reconciliation,
         ];
     }
@@ -1670,15 +1791,16 @@ class DashboardPinjamanReportController extends Controller
         $alias = 'curr_detail_source';
         $accountNumber = "TRIM(COALESCE({$alias}.nomor_rekening1, ''))";
         $anonymousAccountKey = $this->buildAnonymousAccountKeyExpression($alias);
+        $canonicalAccountKey = $this->accountKeySql("{$alias}.nomor_rekening1");
         $accountKey = "
             CASE
-                WHEN {$accountNumber} <> '' THEN {$accountNumber}
+                WHEN {$accountNumber} <> '' THEN {$canonicalAccountKey}
                 ELSE {$anonymousAccountKey}
             END
         ";
         $bucketExpression = $this->buildQualityBucketExpression($alias);
         $bucketRankExpression = $this->buildMovementBucketRankExpression("({$bucketExpression})");
-        $balanceExpression = $this->buildExcelSnapshotOsHelperExpression("{$alias}.baki_debet1");
+        $balanceExpression = $this->buildNonNegativeExposureExpression("{$alias}.baki_debet1");
         $rawRows = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
             ->where("{$alias}.periode", $selectedPeriod)
             ->selectRaw("
@@ -1794,7 +1916,10 @@ class DashboardPinjamanReportController extends Controller
             ->selectRaw("
                 COALESCE(prev.bucket, 'New Account') as before_bucket,
                 curr.bucket as after_bucket,
-                SUM(curr.balance_cents) as amount_cents
+                SUM(CASE
+                    WHEN prev.account_number IS NOT NULL THEN prev.balance_cents
+                    ELSE curr.balance_cents
+                END) as amount_cents
             ")
             ->whereNotNull('curr.bucket')
             ->whereIn('curr.bucket', self::QUALITY_BUCKETS)
@@ -1833,8 +1958,12 @@ class DashboardPinjamanReportController extends Controller
             ->selectRaw("
                 COALESCE(prev.bucket, 'New Account') as before_bucket,
                 curr.bucket as after_bucket,
-                SUM(curr.balance_cents) as amount_cents,
+                SUM(CASE
+                    WHEN prev.account_number IS NOT NULL THEN prev.balance_cents
+                    ELSE curr.balance_cents
+                END) as amount_cents,
                 SUM(COALESCE(prev.balance_cents, 0)) as previous_balance_cents,
+                SUM(curr.balance_cents) as current_balance_cents,
                 SUM(
                     CASE
                         WHEN COALESCE(prev.balance_cents, 0) > curr.balance_cents
@@ -1851,7 +1980,37 @@ class DashboardPinjamanReportController extends Controller
                 ) as suplesi_cents,
                 COUNT(*) as account_count,
                 SUM(CASE WHEN prev.account_number IS NOT NULL THEN 1 ELSE 0 END) as matched_account_count,
-                SUM(CASE WHEN prev.account_number IS NULL THEN 1 ELSE 0 END) as new_account_count
+                SUM(CASE
+                    WHEN prev.account_number IS NULL
+                        AND curr.realization_date > '{$comparisonPeriod}'
+                        AND curr.realization_date <= '{$selectedPeriod}'
+                    THEN 1 ELSE 0
+                END) as new_realization_account_count,
+                SUM(CASE
+                    WHEN prev.account_number IS NULL
+                        AND curr.realization_date > '{$comparisonPeriod}'
+                        AND curr.realization_date <= '{$selectedPeriod}'
+                    THEN curr.balance_cents ELSE 0
+                END) as new_realization_balance_cents,
+                SUM(CASE WHEN prev.account_number IS NULL THEN 1 ELSE 0 END) as portfolio_inflow_account_count,
+                SUM(CASE
+                    WHEN prev.account_number IS NULL
+                        AND (
+                            curr.realization_date IS NULL
+                            OR curr.realization_date <= '{$comparisonPeriod}'
+                            OR curr.realization_date > '{$selectedPeriod}'
+                    )
+                    THEN 1 ELSE 0
+                END) as unverified_inflow_account_count,
+                SUM(CASE
+                    WHEN prev.account_number IS NULL
+                        AND (
+                            curr.realization_date IS NULL
+                            OR curr.realization_date <= '{$comparisonPeriod}'
+                            OR curr.realization_date > '{$selectedPeriod}'
+                        )
+                    THEN curr.balance_cents ELSE 0
+                END) as unverified_inflow_balance_cents
             ")
             ->whereNotNull('curr.bucket')
             ->whereIn('curr.bucket', self::QUALITY_BUCKETS)
@@ -1864,11 +2023,16 @@ class DashboardPinjamanReportController extends Controller
                 after_bucket,
                 amount_cents,
                 0 as previous_balance_cents,
+                amount_cents as current_balance_cents,
                 0 as principal_reduction_cents,
                 amount_cents as suplesi_cents,
                 account_count,
                 0 as matched_account_count,
-                account_count as new_account_count
+                0 as new_realization_account_count,
+                0 as new_realization_balance_cents,
+                account_count as portfolio_inflow_account_count,
+                account_count as unverified_inflow_account_count,
+                amount_cents as unverified_inflow_balance_cents
             ');
 
         return DB::query()
@@ -1878,11 +2042,16 @@ class DashboardPinjamanReportController extends Controller
                 after_bucket,
                 SUM(amount_cents) as amount_cents,
                 SUM(previous_balance_cents) as previous_balance_cents,
+                SUM(current_balance_cents) as current_balance_cents,
                 SUM(principal_reduction_cents) as principal_reduction_cents,
                 SUM(suplesi_cents) as suplesi_cents,
                 SUM(account_count) as account_count,
                 SUM(matched_account_count) as matched_account_count,
-                SUM(new_account_count) as new_account_count
+                SUM(new_realization_account_count) as new_realization_account_count,
+                SUM(new_realization_balance_cents) as new_realization_balance_cents,
+                SUM(portfolio_inflow_account_count) as portfolio_inflow_account_count,
+                SUM(unverified_inflow_account_count) as unverified_inflow_account_count,
+                SUM(unverified_inflow_balance_cents) as unverified_inflow_balance_cents
             ')
             ->groupBy('before_bucket', 'after_bucket');
     }
@@ -2030,7 +2199,7 @@ class DashboardPinjamanReportController extends Controller
     ): Builder {
         if (!$comparisonPeriod) {
             return DB::query()
-                ->selectRaw("'New Account' as before_bucket, 'lunas' as metric_type, 0 as amount_cents")
+                ->selectRaw("'New Account' as before_bucket, 'lunas' as metric_type, 0 as amount_cents, '' as debtor_key")
                 ->whereRaw('1 = 0');
         }
 
@@ -2058,31 +2227,63 @@ class DashboardPinjamanReportController extends Controller
 
         if ($hasCurrentPhData) {
             $phAccountKey = $this->phAccountKeySql('ph');
-            $previousAccountKey = $this->accountKeySql('prev_exit_metric.account_number');
+            $previousPhPeriod = $this->resolvePreviousMonthPhPeriod($currentPhPeriod);
             $phAccounts = DB::table('lw325_ph as ph')
                 ->where('ph.periode', $currentPhPeriod)
                 ->whereNotNull('ph.acctno')
                 ->where('ph.acctno', '<>', '')
                 ->selectRaw("{$phAccountKey} as account_number")
+                ->selectRaw('MAX(ph.tgl_ph) as tgl_ph')
                 ->groupByRaw($phAccountKey);
 
             $exitQuery
-                ->leftJoinSub($phAccounts, 'current_ph_accounts', function ($join) use ($previousAccountKey) {
-                    $join->on(DB::raw($previousAccountKey), '=', 'current_ph_accounts.account_number');
-                })
-                ->selectRaw("
+                ->leftJoinSub($phAccounts, 'current_ph_accounts', function ($join) {
+                    $join->on('prev_exit_metric.account_number', '=', 'current_ph_accounts.account_number');
+                });
+
+            $newPhMembershipClause = '';
+            if ($previousPhPeriod !== null && $this->hasUsableLw325RecoveryPeriod($previousPhPeriod)) {
+                $previousPhAccountKey = $this->phAccountKeySql('previous_ph');
+                $previousPhAccounts = DB::table('lw325_ph as previous_ph')
+                    ->where('previous_ph.periode', $previousPhPeriod)
+                    ->whereNotNull('previous_ph.acctno')
+                    ->where('previous_ph.acctno', '<>', '')
+                    ->selectRaw("{$previousPhAccountKey} as account_number")
+                    ->groupByRaw($previousPhAccountKey);
+
+                $exitQuery->leftJoinSub($previousPhAccounts, 'previous_ph_accounts', function ($join) {
+                    $join->on('prev_exit_metric.account_number', '=', 'previous_ph_accounts.account_number');
+                });
+                $newPhMembershipClause = ' OR previous_ph_accounts.account_number IS NULL';
+            }
+
+            $phEvidenceExpression = "
+                current_ph_accounts.account_number IS NOT NULL
+                AND (
+                    prev_exit_metric.bucket = 'M'
+                    OR (
+                        current_ph_accounts.tgl_ph > ?
+                        AND current_ph_accounts.tgl_ph <= ?
+                    )
+                    {$newPhMembershipClause}
+                )
+            ";
+
+            $exitQuery->selectRaw("
                     prev_exit_metric.bucket as before_bucket,
                     CASE
-                        WHEN current_ph_accounts.account_number IS NOT NULL THEN 'ph'
+                        WHEN {$phEvidenceExpression} THEN 'ph'
                         ELSE 'lunas'
                     END as metric_type,
-                    prev_exit_metric.balance_cents as amount_cents
-                ");
+                    prev_exit_metric.balance_cents as amount_cents,
+                    prev_exit_metric.debtor_key as debtor_key
+                ", [$comparisonPeriod, $selectedPeriod]);
         } else {
             $exitQuery->selectRaw("
                 prev_exit_metric.bucket as before_bucket,
                 'unclassified' as metric_type,
-                prev_exit_metric.balance_cents as amount_cents
+                prev_exit_metric.balance_cents as amount_cents,
+                prev_exit_metric.debtor_key as debtor_key
             ");
         }
 
@@ -2107,6 +2308,7 @@ class DashboardPinjamanReportController extends Controller
         return DB::query()
             ->fromSub($exitRows, 'matrix_exit_rows')
             ->selectRaw('before_bucket, metric_type, SUM(amount_cents) as amount_cents, COUNT(*) as account_count')
+            ->selectRaw("COUNT(DISTINCT NULLIF(TRIM(COALESCE(debtor_key, '')), '')) as debtor_count")
             ->whereIn('before_bucket', self::BEFORE_ROWS)
             ->whereIn('metric_type', ['ph', 'lunas'])
             ->where('amount_cents', '>=', 0)
@@ -2126,7 +2328,7 @@ class DashboardPinjamanReportController extends Controller
         }
 
         $alias = 'ph_loan';
-        $balanceExpression = $this->buildExcelSnapshotOsHelperExpression("{$alias}.baki_debet1");
+        $balanceExpression = $this->buildNonNegativeExposureExpression("{$alias}.baki_debet1");
         $currentAccountKey = $this->accountKeySql("{$alias}.nomor_rekening1");
         $previousSnapshot = $comparisonPeriod
             ? $this->buildPreviousBucketLookupQuery($comparisonPeriod, $filters, 'prev_ph_loan', $useComparisonSnapshot)
@@ -2236,9 +2438,31 @@ class DashboardPinjamanReportController extends Controller
 
     private function buildAggregatedLoanSnapshotQuery(string $period, array $filters, string $alias, ?bool $useSnapshot = null)
     {
-        $baseQuery = $this->buildLoanSnapshotQuery($period, $filters, $alias, $useSnapshot);
+        $shouldUseSnapshot = $useSnapshot ?? $this->shouldUseSnapshot($period, $filters);
+        $useSimpleAccountGrain = !$shouldUseSnapshot && $this->hasSimpleDailyLoanAccountGrain($period);
+        $baseQuery = $this->buildLoanSnapshotQuery(
+            $period,
+            $filters,
+            $alias,
+            $shouldUseSnapshot,
+            !$useSimpleAccountGrain,
+            !$useSimpleAccountGrain
+        );
         $balanceColumn = $alias === 'curr' ? 'current_balance' : 'previous_balance';
         $bucketColumn = $alias === 'curr' ? 'after_bucket' : 'before_bucket';
+
+        if ($useSimpleAccountGrain) {
+            return DB::query()
+                ->fromSub($baseQuery, $alias . '_direct')
+                ->selectRaw("
+                    account_number,
+                    CAST(ROUND(COALESCE({$balanceColumn}, 0) * 100, 0) AS SIGNED) as balance_cents,
+                    {$bucketColumn} as bucket,
+                    debtor_key,
+                    realization_date
+                ");
+        }
+
         $bucketRankExpression = $this->buildMovementBucketRankExpression("base.{$bucketColumn}");
 
         $aggregated = DB::query()
@@ -2246,7 +2470,9 @@ class DashboardPinjamanReportController extends Controller
             ->selectRaw("
                 base.account_number,
                 CAST(ROUND(SUM(COALESCE(base.{$balanceColumn}, 0)) * 100, 0) AS SIGNED) as balance_cents,
-                MAX({$bucketRankExpression}) as bucket_rank
+                MAX({$bucketRankExpression}) as bucket_rank,
+                MAX(base.debtor_key) as debtor_key,
+                MAX(base.realization_date) as realization_date
             ")
             ->groupBy('base.account_number');
 
@@ -2255,7 +2481,9 @@ class DashboardPinjamanReportController extends Controller
             ->selectRaw("
                 account_number,
                 balance_cents,
-                {$this->buildMovementBucketLabelExpressionFromRank($alias . '_agg.bucket_rank')} as bucket
+                {$this->buildMovementBucketLabelExpressionFromRank($alias . '_agg.bucket_rank')} as bucket,
+                debtor_key,
+                realization_date
             ");
     }
 
@@ -2294,7 +2522,7 @@ class DashboardPinjamanReportController extends Controller
     private function buildEmptyAggregatedLoanSnapshotQuery()
     {
         return DB::query()
-            ->selectRaw("'' as account_number, 0 as balance_cents, NULL as bucket")
+            ->selectRaw("'' as account_number, 0 as balance_cents, NULL as bucket, '' as debtor_key, NULL as realization_date")
             ->whereRaw('1 = 0');
     }
 
@@ -2324,7 +2552,7 @@ class DashboardPinjamanReportController extends Controller
     ) {
         $bucketExpression = $this->buildQualityBucketExpression($alias);
         $bucketRankExpression = $this->buildMovementBucketRankExpression('anon_rows.after_bucket');
-        $balanceExpression = $this->buildExcelSnapshotOsHelperExpression("{$alias}.baki_debet1");
+        $balanceExpression = $this->buildNonNegativeExposureExpression("{$alias}.baki_debet1");
         $anonymousAccountKey = $this->buildAnonymousAccountKeyExpression($alias);
 
         $rowQuery = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
@@ -2390,20 +2618,33 @@ class DashboardPinjamanReportController extends Controller
             ->groupBy('before_bucket');
     }
 
-    private function buildLoanSnapshotQuery(string $period, array $filters, string $alias, ?bool $useSnapshot = null)
+    private function buildLoanSnapshotQuery(
+        string $period,
+        array $filters,
+        string $alias,
+        ?bool $useSnapshot = null,
+        bool $deduplicateRows = true,
+        bool $canonicalizeAccountKey = true
+    )
     {
         $shouldUseSnapshot = $useSnapshot ?? $this->shouldUseSnapshot($period, $filters);
 
         if ($shouldUseSnapshot) {
+            $snapshotAccountKey = $this->accountKeySql("{$alias}.account_number");
+            $snapshotBalance = $this->buildNonNegativeExposureExpression("{$alias}.loan_balance");
+            $balanceAlias = $alias === 'curr' ? 'current_balance' : 'previous_balance';
+            $bucketAlias = $alias === 'curr' ? 'after_bucket' : 'before_bucket';
             $query = DB::table(self::SNAPSHOT_TABLE . " as {$alias}")
                 ->where("{$alias}.periode", $period)
                 ->whereNotNull("{$alias}.account_number")
                 ->where("{$alias}.account_number", '<>', '')
                 ->selectRaw("
-                    {$alias}.account_number as account_number,
-                    COALESCE({$alias}.loan_balance, 0) as " . ($alias === 'curr' ? 'current_balance' : 'previous_balance') . ",
-                    {$alias}.quality_bucket as " . ($alias === 'curr' ? 'after_bucket' : 'before_bucket')
-                );
+                    {$snapshotAccountKey} as account_number,
+                    {$snapshotBalance} as {$balanceAlias},
+                    {$alias}.quality_bucket as {$bucketAlias},
+                    {$snapshotAccountKey} as debtor_key,
+                    NULL as realization_date
+                ");
 
             $this->applyFilterConstraint($query, "{$alias}.segmen_dashboard", $filters['segmen']);
             $this->applyFilterConstraint($query, "{$alias}.produk_dashboard", $filters['produk']);
@@ -2414,17 +2655,30 @@ class DashboardPinjamanReportController extends Controller
         }
 
         $bucketExpression = $this->buildQualityBucketExpression($alias);
-        $balanceExpression = $this->buildExcelSnapshotOsHelperExpression("{$alias}.baki_debet1");
+        $balanceExpression = $this->buildNonNegativeExposureExpression("{$alias}.baki_debet1");
+        $accountKey = $canonicalizeAccountKey
+            ? $this->accountKeySql("{$alias}.nomor_rekening1")
+            : "{$alias}.nomor_rekening1";
+        $debtorKey = Schema::hasColumn('daily_loan_dinamis', 'cifno')
+            ? "COALESCE(NULLIF(TRIM({$alias}.cifno), ''), {$accountKey})"
+            : $accountKey;
+        $realizationDate = Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi')
+            ? "{$alias}.tgl_realisasi"
+            : 'NULL';
+        $balanceAlias = $alias === 'curr' ? 'current_balance' : 'previous_balance';
+        $bucketAlias = $alias === 'curr' ? 'after_bucket' : 'before_bucket';
 
         $query = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
             ->where("{$alias}.periode", $period)
             ->whereNotNull("{$alias}.nomor_rekening1")
             ->where("{$alias}.nomor_rekening1", '<>', '')
             ->selectRaw("
-                TRIM({$alias}.nomor_rekening1) as account_number,
-                {$balanceExpression} as " . ($alias === 'curr' ? 'current_balance' : 'previous_balance') . ",
-                {$bucketExpression} as " . ($alias === 'curr' ? 'after_bucket' : 'before_bucket')
-            );
+                {$accountKey} as account_number,
+                {$balanceExpression} as {$balanceAlias},
+                {$bucketExpression} as {$bucketAlias},
+                {$debtorKey} as debtor_key,
+                {$realizationDate} as realization_date
+            ");
 
         $this->applyFilterConstraint($query, "{$alias}.segmen_dashboard", $filters['segmen']);
         $this->applyFilterConstraint($query, "{$alias}.produk_dashboard", $filters['produk']);
@@ -2434,7 +2688,52 @@ class DashboardPinjamanReportController extends Controller
         // Import ulang dapat menghasilkan baris identik untuk seluruh rekening
         // pada satu periode. DISTINCT di grain rekening+saldo+bucket mencegah OS
         // menjadi dua kali lipat tanpa menghapus komponen yang memang berbeda.
-        return $query->distinct();
+        return $deduplicateRows ? $query->distinct() : $query;
+    }
+
+    private function hasSimpleDailyLoanAccountGrain(string $period): bool
+    {
+        if (array_key_exists($period, $this->dailyLoanSimpleAccountGrain)) {
+            return $this->dailyLoanSimpleAccountGrain[$period];
+        }
+
+        $cacheKey = 'dashboard_pinjaman_daily_account_grain:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'period' => $period,
+        ]));
+
+        try {
+            $isSimple = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($period): bool {
+                $alias = 'grain_check';
+                $accountColumn = "{$alias}.nomor_rekening1";
+                $trimmedAccount = "TRIM(COALESCE({$accountColumn}, ''))";
+                $canonicalAccount = $this->accountKeySql($accountColumn);
+                $stats = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $this->emptyMatrixFilters())))
+                    ->where("{$alias}.periode", $period)
+                    ->whereNotNull($accountColumn)
+                    ->where($accountColumn, '<>', '')
+                    ->selectRaw('COUNT(*) as row_count')
+                    ->selectRaw("COUNT(DISTINCT {$canonicalAccount}) as account_count")
+                    ->selectRaw("
+                        SUM(CASE
+                            WHEN {$accountColumn} <> {$trimmedAccount}
+                                OR {$canonicalAccount} <> {$trimmedAccount}
+                            THEN 1 ELSE 0
+                        END) as non_canonical_count
+                    ")
+                    ->first();
+
+                $rowCount = (int) ($stats->row_count ?? 0);
+
+                return $rowCount > 0
+                    && $rowCount === (int) ($stats->account_count ?? 0)
+                    && (int) ($stats->non_canonical_count ?? 0) === 0;
+            });
+
+            return $this->dailyLoanSimpleAccountGrain[$period] = (bool) $isSimple;
+        } catch (Throwable) {
+            return $this->dailyLoanSimpleAccountGrain[$period] = false;
+        }
     }
 
     private function buildExcelSnapshotOsHelperExpression(string $column): string
@@ -2443,6 +2742,11 @@ class DashboardPinjamanReportController extends Controller
         // Jangan menebak skala dari trailing zero; Rp997.800 adalah nilai valid,
         // bukan Rp9.978. Pembulatan ke sen dilakukan setelah agregasi rekening.
         return "COALESCE({$column}, 0)";
+    }
+
+    private function buildNonNegativeExposureExpression(string $column): string
+    {
+        return "CASE WHEN COALESCE({$column}, 0) > 0 THEN COALESCE({$column}, 0) ELSE 0 END";
     }
 
     private function buildNormalizedLoanBalanceExpression(string $column): string
@@ -2468,7 +2772,9 @@ class DashboardPinjamanReportController extends Controller
         return DB::query()->selectRaw("
             '' as account_number,
             0 as previous_balance,
-            'New Account' as before_bucket
+            'New Account' as before_bucket,
+            '' as debtor_key,
+            NULL as realization_date
         ")->whereRaw('1 = 0');
     }
 
@@ -2737,7 +3043,7 @@ class DashboardPinjamanReportController extends Controller
 
     private function fetchRecoveryReportPeriods(): Collection
     {
-        $cacheKey = 'dashboard_pinjaman_recovery_periods:v4-daily-comparison-ph-ready:' . $this->reportCacheVersion();
+        $cacheKey = 'dashboard_pinjaman_recovery_periods:v5-ph-coverage-validated:' . $this->reportCacheVersion();
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () {
             if (!Schema::hasTable('daily_loan_dinamis') || !Schema::hasTable(self::PH_TABLE)) {
@@ -2784,10 +3090,11 @@ class DashboardPinjamanReportController extends Controller
                     })
                     ->flip();
 
-            $phQualityByPeriod = DB::table(self::PH_TABLE)
+            $phStatsByPeriod = DB::table(self::PH_TABLE)
                 ->whereNotNull('periode')
                 ->selectRaw('periode')
                 ->selectRaw('COUNT(*) as row_count')
+                ->selectRaw("COUNT(DISTINCT NULLIF(TRIM(COALESCE(acctno, '')), '')) as distinct_account_count")
                 ->selectRaw("
                     SUM(CASE
                         WHEN NULLIF(TRIM(COALESCE(acctno, '')), '') IS NOT NULL
@@ -2812,11 +3119,34 @@ class DashboardPinjamanReportController extends Controller
                     }
 
                     return [$period => [
-                        'usable' => (int) ($row->row_count ?? 0) > 0
-                            && (int) ($row->populated_account_count ?? 0) > 0
-                            && (int) ($row->scientific_account_count ?? 0) === 0,
+                        'row_count' => (int) ($row->row_count ?? 0),
+                        'populated_account_count' => (int) ($row->populated_account_count ?? 0),
+                        'distinct_account_count' => (int) ($row->distinct_account_count ?? 0),
+                        'scientific_account_count' => (int) ($row->scientific_account_count ?? 0),
                     ]];
                 });
+            $phQualityByPeriod = collect();
+            $lastReliablePeriod = null;
+            $lastReliableAccountCount = 0;
+
+            foreach ($phStatsByPeriod->sortKeys() as $period => $stats) {
+                $baseUsable = $stats['row_count'] > 0
+                    && $stats['populated_account_count'] > 0
+                    && $stats['distinct_account_count'] > 0
+                    && $stats['scientific_account_count'] === 0;
+                $coverageUsable = $baseUsable && $this->hasSufficientLw325PeriodCoverage(
+                    $period,
+                    $stats['distinct_account_count'],
+                    $lastReliablePeriod,
+                    $lastReliableAccountCount
+                );
+                $phQualityByPeriod->put($period, ['usable' => $coverageUsable]);
+
+                if ($coverageUsable) {
+                    $lastReliablePeriod = $period;
+                    $lastReliableAccountCount = $stats['distinct_account_count'];
+                }
+            }
             $phPeriodsByMonth = $phQualityByPeriod
                 ->keys()
                 ->groupBy(fn (string $period): string => substr($period, 0, 7))
@@ -3446,10 +3776,69 @@ class DashboardPinjamanReportController extends Controller
                 && $scientificAccountCount === 0
                 && $distinctAccountCount > 0;
 
+            if ($usable) {
+                $periodDate = Carbon::parse($period);
+                $previousStats = DB::table('lw325_ph')
+                    ->whereBetween('periode', [
+                        $periodDate->copy()->subDays(self::PH_RECOVERY_COVERAGE_LOOKBACK_DAYS)->toDateString(),
+                        $periodDate->copy()->subDay()->toDateString(),
+                    ])
+                    ->selectRaw('periode')
+                    ->selectRaw("COUNT(DISTINCT NULLIF(TRIM(COALESCE(acctno, '')), '')) as distinct_account_count")
+                    ->selectRaw("
+                        SUM(CASE
+                            WHEN UPPER(TRIM(COALESCE(acctno, ''))) LIKE '%E+%'
+                                OR UPPER(TRIM(COALESCE(acctno, ''))) LIKE '%E-%'
+                                OR UPPER(TRIM(COALESCE(acctno, ''))) LIKE '%,%E%'
+                            THEN 1 ELSE 0
+                        END) as scientific_account_count
+                    ")
+                    ->groupBy('periode')
+                    ->get()
+                    ->filter(fn ($row): bool => (int) ($row->distinct_account_count ?? 0) > 0
+                        && (int) ($row->scientific_account_count ?? 0) === 0)
+                    ->sortByDesc(fn ($row): int => (int) ($row->distinct_account_count ?? 0))
+                    ->first();
+
+                if ($previousStats !== null) {
+                    $usable = $this->hasSufficientLw325PeriodCoverage(
+                        $period,
+                        $distinctAccountCount,
+                        Carbon::parse($previousStats->periode)->toDateString(),
+                        (int) $previousStats->distinct_account_count
+                    );
+                }
+            }
+
             return $this->lw325RecoveryPeriodQuality[$period] = $usable;
         } catch (Throwable) {
             return $this->lw325RecoveryPeriodQuality[$period] = false;
         }
+    }
+
+    private function hasSufficientLw325PeriodCoverage(
+        string $period,
+        int $accountCount,
+        ?string $referencePeriod,
+        int $referenceAccountCount
+    ): bool {
+        if ($referencePeriod === null || $referenceAccountCount <= 0) {
+            return true;
+        }
+
+        try {
+            $gapDays = Carbon::parse($referencePeriod)->diffInDays(Carbon::parse($period));
+        } catch (Throwable) {
+            return true;
+        }
+
+        if ($gapDays > self::PH_RECOVERY_COVERAGE_LOOKBACK_DAYS) {
+            return true;
+        }
+
+        return $accountCount >= (int) ceil(
+            $referenceAccountCount * self::PH_RECOVERY_MIN_ACCOUNT_DISTINCT_RATIO
+        );
     }
 
     private function rememberPayload(string $cacheKey, $ttl, callable $callback, bool $forceRefresh = false, ?callable $fallback = null)
@@ -4603,20 +4992,23 @@ class DashboardPinjamanReportController extends Controller
 
     private function phAccountKeySql(string $alias): string
     {
-        if (DB::connection()->getDriverName() === 'sqlite') {
-            return "LTRIM(TRIM(COALESCE({$alias}.acctno, '')), '0')";
-        }
-
-        return "TRIM(LEADING '0' FROM TRIM(COALESCE({$alias}.acctno, '')))";
+        return $this->accountKeySql("{$alias}.acctno");
     }
 
     private function accountKeySql(string $column): string
     {
-        if (DB::connection()->getDriverName() === 'sqlite') {
-            return "LTRIM(TRIM(COALESCE({$column}, '')), '0')";
-        }
+        $trimmed = "TRIM(COALESCE({$column}, ''))";
+        $withoutLeadingZeros = DB::connection()->getDriverName() === 'sqlite'
+            ? "LTRIM({$trimmed}, '0')"
+            : "TRIM(LEADING '0' FROM {$trimmed})";
 
-        return "TRIM(LEADING '0' FROM TRIM(COALESCE({$column}, '')))";
+        return "
+            CASE
+                WHEN {$trimmed} = '' THEN ''
+                WHEN {$withoutLeadingZeros} = '' THEN '0'
+                ELSE {$withoutLeadingZeros}
+            END
+        ";
     }
 
     private function applyTrimmedInConstraint(Builder $query, string $column, array $values): void

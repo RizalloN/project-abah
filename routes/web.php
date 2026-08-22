@@ -367,6 +367,8 @@ Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.l
     Route::post('/import/casa-brilink/upload', [ImportCasaBrilinkController::class, 'upload'])->name('import.casabrilink.upload');
     Route::get('/import/casa-brilink/preview', [ImportCasaBrilinkController::class, 'preview'])->name('import.casabrilink.preview');
     Route::post('/import/casa-brilink/preview', [ImportCasaBrilinkController::class, 'preview'])->name('import.casabrilink.preview.refresh');
+    Route::get('/import/casa-brilink/preview/filter-options', [ImportCasaBrilinkController::class, 'previewFilterOptions'])->name('import.casabrilink.filter-options');
+    Route::get('/import/casa-brilink/preview/filtered-rows', [ImportCasaBrilinkController::class, 'previewFilteredRows'])->name('import.casabrilink.filtered-rows');
     Route::get('/import/casa-brilink/prepare-preview', [ImportCasaBrilinkController::class, 'preparePreviewStream'])->name('import.casabrilink.prepare-preview');
     Route::post('/import/casa-brilink/init', [ImportCasaBrilinkController::class, 'initImport'])->name('import.casabrilink.init');
     Route::get('/import/casa-brilink/stream', [ImportCasaBrilinkController::class, 'processImportStream'])->name('import.casabrilink.stream');
@@ -383,6 +385,8 @@ Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.l
     Route::post('/import/report-ph/upload', [ImportReportPhController::class, 'upload'])->name('import.reportph.upload');
     Route::get('/import/report-ph/preview', [ImportReportPhController::class, 'preview'])->name('import.reportph.preview');
     Route::post('/import/report-ph/preview', [ImportReportPhController::class, 'preview'])->name('import.reportph.preview.refresh');
+    Route::get('/import/report-ph/preview/filter-options', [ImportReportPhController::class, 'previewFilterOptions'])->name('import.reportph.filter-options');
+    Route::get('/import/report-ph/preview/filtered-rows', [ImportReportPhController::class, 'previewFilteredRows'])->name('import.reportph.filtered-rows');
     Route::get('/import/report-ph/prepare-preview', [ImportReportPhController::class, 'preparePreviewStream'])->name('import.reportph.prepare-preview');
     Route::post('/import/report-ph/init', [ImportReportPhController::class, 'initImport'])->name('import.reportph.init');
     Route::get('/import/report-ph/stream', [ImportReportPhController::class, 'processImportStream'])->name('import.reportph.stream');
@@ -390,6 +394,8 @@ Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.l
     Route::post('/import/cognos-recovery/upload', [ImportCognosRecoveryController::class, 'upload'])->name('import.cognos-recovery.upload');
     Route::get('/import/cognos-recovery/preview', [ImportCognosRecoveryController::class, 'preview'])->name('import.cognos-recovery.preview');
     Route::post('/import/cognos-recovery/preview', [ImportCognosRecoveryController::class, 'preview'])->name('import.cognos-recovery.preview.refresh');
+    Route::get('/import/cognos-recovery/preview/filter-options', [ImportCognosRecoveryController::class, 'previewFilterOptions'])->name('import.cognos-recovery.filter-options');
+    Route::get('/import/cognos-recovery/preview/filtered-rows', [ImportCognosRecoveryController::class, 'previewFilteredRows'])->name('import.cognos-recovery.filtered-rows');
     Route::get('/import/cognos-recovery/prepare-preview', [ImportCognosRecoveryController::class, 'preparePreviewStream'])->name('import.cognos-recovery.prepare-preview');
     Route::post('/import/cognos-recovery/init', [ImportCognosRecoveryController::class, 'initImport'])->name('import.cognos-recovery.init');
     Route::get('/import/cognos-recovery/stream', [ImportCognosRecoveryController::class, 'processImportStream'])->name('import.cognos-recovery.stream');
@@ -397,6 +403,8 @@ Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.l
     Route::post('/import/cognos-ph/upload', [ImportCognosPhController::class, 'upload'])->name('import.cognos-ph.upload');
     Route::get('/import/cognos-ph/preview', [ImportCognosPhController::class, 'preview'])->name('import.cognos-ph.preview');
     Route::post('/import/cognos-ph/preview', [ImportCognosPhController::class, 'preview'])->name('import.cognos-ph.preview.refresh');
+    Route::get('/import/cognos-ph/preview/filter-options', [ImportCognosPhController::class, 'previewFilterOptions'])->name('import.cognos-ph.filter-options');
+    Route::get('/import/cognos-ph/preview/filtered-rows', [ImportCognosPhController::class, 'previewFilteredRows'])->name('import.cognos-ph.filtered-rows');
     Route::get('/import/cognos-ph/prepare-preview', [ImportCognosPhController::class, 'preparePreviewStream'])->name('import.cognos-ph.prepare-preview');
     Route::post('/import/cognos-ph/init', [ImportCognosPhController::class, 'initImport'])->name('import.cognos-ph.init');
     Route::get('/import/cognos-ph/stream', [ImportCognosPhController::class, 'processImportStream'])->name('import.cognos-ph.stream');

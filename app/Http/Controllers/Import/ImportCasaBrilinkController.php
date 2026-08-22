@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\AuthorizesSessionImportStorageFiles;
 use App\Http\Controllers\Import\Concerns\GeneratesFileIdentifiers;
+use App\Http\Controllers\Import\Concerns\ServesMappedCsvPreviewFilters;
 use App\Services\Import\ImportNotificationSyncService;
 use App\Support\ImportPreviewErrorHandler;
 use App\Support\ReportDataSyncService;
@@ -20,7 +21,11 @@ use Illuminate\Support\Str;
 
 class ImportCasaBrilinkController extends Controller
 {
-    use AllocatesGapIds, AuthorizesSessionImportStorageFiles, GeneratesFileIdentifiers;
+    use AllocatesGapIds, AuthorizesSessionImportStorageFiles, GeneratesFileIdentifiers, ServesMappedCsvPreviewFilters;
+
+    private const PREVIEW_ROW_LIMIT = 100;
+    private const PREVIEW_SCAN_LIMIT = 1000;
+    private const PREVIEW_UNIQUE_LIMIT = 200;
 
     private const HEADER_MAP = [
         'row_num',
@@ -205,54 +210,13 @@ class ImportCasaBrilinkController extends Controller
             return redirect()->route('import.index')->with('error', 'Struktur CSV CASA BRILINK tidak dikenali: ' . $e->getMessage());
         }
 
-        $previewData = [];
-        $uniqueValues = [];
-        foreach ($context['headers'] as $index => $header) {
-            $uniqueValues[$index] = [];
-        }
-
-        $handle = fopen($absolutePath, 'r');
-        if ($handle === false) {
-            return redirect()->route('import.index')->with('error', 'Gagal membuka file CSV CASA BRILINK.');
-        }
-
-        $lineNumber = 0;
-        try {
-            while (($data = fgetcsv($handle, 0, $context['delimiter'])) !== false) {
-                $lineNumber++;
-
-                if ($lineNumber === 1) {
-                    continue;
-                }
-
-                $row = $this->mapCsvRow($context, $data);
-                if ($row === null) {
-                    continue;
-                }
-
-                if (count($previewData) < 2500) {
-                    $previewData[] = $row;
-                }
-
-                foreach ($row as $colIndex => $value) {
-                    if (!isset($uniqueValues[$colIndex]) || count($uniqueValues[$colIndex]) > 5000) {
-                        continue;
-                    }
-
-                    $key = trim((string) ($value ?? ''));
-                    $uniqueValues[$colIndex][$key] = true;
-                }
-            }
-        } finally {
-            fclose($handle);
-        }
-
-        $formattedUniqueValues = [];
-        foreach ($uniqueValues as $index => $valuesMap) {
-            $keys = array_keys($valuesMap);
-            usort($keys, 'strnatcmp');
-            $formattedUniqueValues[$index] = $keys;
-        }
+        [$previewData, $formattedUniqueValues] = $this->collectMappedPreviewSample(
+            $absolutePath,
+            $context,
+            self::PREVIEW_ROW_LIMIT,
+            self::PREVIEW_SCAN_LIMIT,
+            self::PREVIEW_UNIQUE_LIMIT
+        );
 
         session(['casa_brilink_periode' => $periodeInput]);
 
@@ -266,12 +230,15 @@ class ImportCasaBrilinkController extends Controller
             'previewRoute' => route('import.casabrilink.preview.refresh'),
             'initRoute' => route('import.casabrilink.init'),
             'streamRoute' => route('import.casabrilink.stream'),
+            'filterOptionsRoute' => route('import.casabrilink.filter-options'),
+            'filteredRowsRoute' => route('import.casabrilink.filtered-rows'),
             'backRoute' => route('import.index'),
             'manualPeriode' => $periodeInput,
             'manualPeriodeLabel' => Carbon::createFromFormat('Y-m', $periodeInput)->translatedFormat('F Y'),
             'manualPeriodeInputType' => 'month',
             'forceAllFiltersCheckedOnLoad' => true,
             'disableArea6AutoFilter' => true,
+            'deferDependentFilterRefresh' => true,
         ]);
     }
 
@@ -800,6 +767,68 @@ class ImportCasaBrilinkController extends Controller
             'title' => 'Berhasil!',
             'text' => "Sebanyak {$totalSuccess} baris data telah sukses masuk ke tabel <b class='text-uppercase'>{$tableName}</b>.",
         ]);
+    }
+
+    protected function resolveMappedPreviewSource(string $requestedPath, ?string $requestedDelimiter = null): array
+    {
+        [, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            $requestedPath,
+            'casa_brilink_file',
+            ['casa_brilink_imports'],
+            ['csv', 'txt']
+        );
+
+        $periodeInput = (string) session('casa_brilink_periode', '');
+        if ($periodeInput === '') {
+            throw new \RuntimeException('Periode preview CASA BRILINK tidak tersedia. Silakan upload ulang file.');
+        }
+
+        $context = $this->buildCsvContext(
+            $absolutePath,
+            $periodeInput,
+            $requestedDelimiter ?: 'auto'
+        );
+
+        return [$absolutePath, $context];
+    }
+
+    protected function iterateMappedPreviewRows(string $path, array $context, callable $callback): void
+    {
+        $handle = fopen($path, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file CSV CASA BRILINK.');
+        }
+
+        $lineNumber = 0;
+        try {
+            while (($data = fgetcsv($handle, 0, $context['delimiter'])) !== false) {
+                $lineNumber++;
+                if ($lineNumber === 1) {
+                    continue;
+                }
+
+                $row = $this->mapCsvRow($context, $data);
+                if ($row === null) {
+                    continue;
+                }
+
+                if ($callback($row) === false) {
+                    break;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    protected function mappedPreviewCacheNamespace(): string
+    {
+        return 'casa_brilink';
+    }
+
+    protected function mappedPreviewLabel(): string
+    {
+        return 'CASA BRILINK';
     }
 
     private function buildCsvContext(string $path, string $periodeInput, string $requestedDelimiter = 'auto'): array

@@ -714,4 +714,62 @@ class ImportProgressServiceTest extends TestCase
         }
     }
 
+    public function test_get_status_payload_repairs_failed_status_when_all_rows_are_persisted(): void
+    {
+        $progressService = Mockery::mock(ImportProgressService::class)->makePartial();
+        $initialJob = (object) [
+            'id' => 44,
+            'id_report' => 8,
+            'file_name' => 'daily-loan.csv',
+            'folder_path' => storage_path('app/private/excel_imports'),
+            'status' => 'failed',
+            'total_files' => 319332,
+            'total_success' => 319332,
+            'total_failed' => 0,
+            'updated_at' => now()->subDay()->toDateTimeString(),
+        ];
+        $updatedJob = (object) array_merge((array) $initialJob, [
+            'status' => 'completed',
+            'updated_at' => now()->toDateTimeString(),
+        ]);
+
+        Cache::shouldReceive('get')->zeroOrMoreTimes()->andReturn([]);
+        Cache::shouldReceive('put')->zeroOrMoreTimes()->andReturnTrue();
+        Cache::shouldReceive('forget')->zeroOrMoreTimes()->andReturnTrue();
+
+        $importJobsTable = Mockery::mock();
+        $importJobsTable->shouldReceive('where')
+            ->times(3)
+            ->with('id', 44)
+            ->andReturnSelf();
+        $importJobsTable->shouldReceive('first')
+            ->twice()
+            ->andReturn($initialJob, $updatedJob);
+        $importJobsTable->shouldReceive('update')
+            ->once()
+            ->with(Mockery::on(static function (array $attributes): bool {
+                return ($attributes['status'] ?? null) === 'completed'
+                    && (int) ($attributes['total_files'] ?? -1) === 319332
+                    && (int) ($attributes['total_success'] ?? -1) === 319332
+                    && (int) ($attributes['total_failed'] ?? -1) === 0;
+            }))
+            ->andReturn(1);
+
+        $jobsTable = Mockery::mock();
+        $jobsTable->shouldReceive('where')->times(3)->andReturnSelf();
+        $jobsTable->shouldReceive('delete')->once()->andReturn(1);
+
+        DB::shouldReceive('table')->with('import_jobs')
+            ->andReturn($importJobsTable, $importJobsTable, $importJobsTable);
+        DB::shouldReceive('table')->with('jobs')->once()->andReturn($jobsTable);
+
+        $payload = $progressService->getStatusPayload(44);
+
+        $this->assertSame('completed', $payload['status']);
+        $this->assertSame(319332, $payload['total_rows']);
+        $this->assertSame(319332, $payload['total_success']);
+        $this->assertSame(0, $payload['total_failed']);
+        $this->assertSame(100, $payload['percent']);
+    }
+
 }

@@ -923,7 +923,7 @@ class DashboardHarianSnapshotService
         }
 
         $kol = "CAST(NULLIF(TRIM(COALESCE(kolektabilitas_one_obligor, '')), '') AS UNSIGNED)";
-        $unitCodeExpression = "TRIM(COALESCE(NULLIF(id_uker, ''), REGEXP_SUBSTR(TRIM(COALESCE(nama_uker, '')), '^[0-9]+'), TRIM(COALESCE(nama_uker, ''))))";
+        $unitCodeExpression = $this->keragaanUkerUnitCodeExpression(self::LOAN_TABLE);
         $query = DB::table(self::LOAN_TABLE)
             ->whereIn('month_day_year_of_periode', $periods);
 
@@ -948,7 +948,7 @@ class DashboardHarianSnapshotService
             return collect();
         }
 
-        $unitCodeExpression = "TRIM(COALESCE(NULLIF(id_uker, ''), REGEXP_SUBSTR(TRIM(COALESCE(nama_uker, '')), '^[0-9]+'), TRIM(COALESCE(nama_uker, ''))))";
+        $unitCodeExpression = $this->keragaanUkerUnitCodeExpression(self::SAVINGS_TABLE);
         $query = DB::table(self::SAVINGS_TABLE)
             ->whereIn('Month_Day_Year_of_Posisi', $periods);
 
@@ -990,6 +990,21 @@ class DashboardHarianSnapshotService
             ->groupBy('gr.periode', 'unit_code')
             ->orderBy('unit_code')
             ->get();
+    }
+
+    private function keragaanUkerUnitCodeExpression(string $table): string
+    {
+        $rawUnitExpression = "TRIM(COALESCE(nama_uker, ''))";
+
+        if (Schema::hasColumn($table, 'id_uker')) {
+            return "TRIM(COALESCE(NULLIF(id_uker, ''), REGEXP_SUBSTR({$rawUnitExpression}, '^[0-9]+'), {$rawUnitExpression}))";
+        }
+
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return "TRIM(COALESCE(NULLIF(SUBSTR({$rawUnitExpression}, 1, INSTR({$rawUnitExpression} || ' ', ' ') - 1), ''), {$rawUnitExpression}))";
+        }
+
+        return "TRIM(COALESCE(REGEXP_SUBSTR({$rawUnitExpression}, '^[0-9]+'), {$rawUnitExpression}))";
     }
 
     private function applyKeragaanUkerSourceFilters($query, string $kancaColumn, string $unitColumn, array|string|null $kancaKey, array|string|null $unitKey): void
@@ -2601,9 +2616,11 @@ class DashboardHarianSnapshotService
             return $this->unitScopeMapCache[$period] = $this->buildUnitScopeMapFromL1133($period);
         }
 
+        $unitCodeExpression = $this->keragaanUkerUnitCodeExpression(self::LOAN_TABLE);
+
         return $this->unitScopeMapCache[$period] = DB::table(self::LOAN_TABLE)
             ->whereIn('month_day_year_of_periode', $periods)
-            ->selectRaw("CAST(COALESCE(NULLIF(TRIM(id_uker), ''), REGEXP_SUBSTR(TRIM(COALESCE(nama_uker, '')), '^[0-9]+')) AS UNSIGNED) as unit_code")
+            ->selectRaw("CAST({$unitCodeExpression} AS UNSIGNED) as unit_code")
             ->selectRaw("SUBSTRING_INDEX(MAX(CONCAT(month_day_year_of_periode, '|', TRIM(COALESCE(nama_cabang, '')))), '|', -1) as raw_cabang")
             ->selectRaw("SUBSTRING_INDEX(MAX(CONCAT(month_day_year_of_periode, '|', TRIM(COALESCE(nama_uker, '')))), '|', -1) as raw_unit")
             ->groupBy('unit_code')

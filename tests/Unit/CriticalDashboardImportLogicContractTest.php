@@ -30,7 +30,11 @@ class CriticalDashboardImportLogicContractTest extends TestCase
 
         $this->assertStringContainsString("String(finalizePayload.redirect).includes('prepare-preview')", $source);
         $this->assertStringContainsString('new EventSource(finalizePayload.redirect)', $source);
-        $this->assertStringContainsString('window.location.href = readyData.redirect', $source);
+        $this->assertStringContainsString(
+            'navigateToPreparedPreview(readyData.redirect, uploadProgressBar, uploadProgressText)',
+            $source
+        );
+        $this->assertStringContainsString('window.location.replace(String(redirectUrl))', $source);
     }
 
     public function test_excel_init_uses_timeout_and_staging_heartbeat(): void

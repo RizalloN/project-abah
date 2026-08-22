@@ -35,14 +35,15 @@ class RefreshRemoteDashboardSourcesJob implements ShouldBeUnique, ShouldQueue
      */
     public function __construct(
         public array $sources = ['market-share', 'market-share-mapping', 'market-share-instansi', 'kpi', 'business-cluster', 'sppg'],
-        public array $kpiSheetKeys = []
+        public array $kpiSheetKeys = [],
+        public string $kpiPeriod = '2026-07'
     ) {
         $this->onQueue('remote-sources');
     }
 
     public function uniqueId(): string
     {
-        return sha1(implode(',', $this->sources).'|'.implode(',', $this->kpiSheetKeys));
+        return sha1(implode(',', $this->sources).'|'.implode(',', $this->kpiSheetKeys).'|'.$this->kpiPeriod);
     }
 
     public function handle(
@@ -66,7 +67,7 @@ class RefreshRemoteDashboardSourcesJob implements ShouldBeUnique, ShouldQueue
             }
 
             if (in_array('kpi', $this->sources, true)) {
-                $this->refreshSource('kpi', fn () => $almafacts->refreshKpiSourceCaches($this->kpiSheetKeys));
+                $this->refreshSource('kpi', fn () => $almafacts->refreshKpiSourceCaches($this->kpiSheetKeys, $this->kpiPeriod));
             }
 
             if (in_array('business-cluster', $this->sources, true)) {
@@ -86,11 +87,11 @@ class RefreshRemoteDashboardSourcesJob implements ShouldBeUnique, ShouldQueue
             }
 
             foreach ($this->kpiSheetKeys as $sheetKey) {
-                Cache::forget('dashboard_sources:refresh:kpi:'.$sheetKey.':pending');
+                Cache::forget('dashboard_sources:refresh:kpi:'.$this->kpiPeriod.':'.$sheetKey.':pending');
             }
 
             if ($this->kpiSheetKeys === []) {
-                Cache::forget('dashboard_sources:refresh:kpi:all:pending');
+                Cache::forget('dashboard_sources:refresh:kpi:'.$this->kpiPeriod.':all:pending');
             }
 
             foreach (['market-share-instansi', 'business-cluster', 'sppg'] as $source) {

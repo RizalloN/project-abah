@@ -167,7 +167,10 @@ class DashboardHarianController extends Controller
             'dataTypes' => $this->keragaanUkerDataTypes(),
             'initialData' => ($selectedPeriod && $selectedKanca !== null)
                 ? $this->keragaanUkerPayload($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit, $selectedData)
-                    + ['available_filters' => $filters]
+                    + [
+                        'available_filters' => $filters,
+                        'selected' => $this->keragaanUkerSelectedFilters($selectedKanca, $selectedUnit, $selectedPeriod, $selectedRka, $selectedData),
+                    ]
                 : null,
         ];
 
@@ -197,12 +200,16 @@ class DashboardHarianController extends Controller
                 'rows' => [],
                 'totals' => [],
                 'available_filters' => $filters,
+                'selected' => $this->keragaanUkerSelectedFilters($selectedKanca, $selectedUnit, $selectedPeriod, $selectedRka, $selectedData),
             ]);
         }
 
         return response()->json(
             $this->keragaanUkerPayload($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit, $selectedData)
-            + ['available_filters' => $filters]
+            + [
+                'available_filters' => $filters,
+                'selected' => $this->keragaanUkerSelectedFilters($selectedKanca, $selectedUnit, $selectedPeriod, $selectedRka, $selectedData),
+            ]
         );
     }
 
@@ -335,6 +342,23 @@ class DashboardHarianController extends Controller
             ->all();
 
         return $filters;
+    }
+
+    private function keragaanUkerSelectedFilters(
+        array|string|null $selectedKanca,
+        array|string|null $selectedUnit,
+        ?string $selectedPeriod,
+        ?string $selectedRka,
+        string $selectedData
+    ): array
+    {
+        return [
+            'kanca' => $selectedKanca ?? [],
+            'unit_kerja' => $selectedUnit ?? 'all',
+            'posisi_terakhir' => $selectedPeriod,
+            'posisi_rka' => $selectedRka ? substr($selectedRka, 0, 7) : null,
+            'data_type' => $selectedData,
+        ];
     }
 
     private function timeseriesPayload(

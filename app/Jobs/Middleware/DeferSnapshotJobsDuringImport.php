@@ -30,16 +30,43 @@ class DeferSnapshotJobsDuringImport
             $stuckJob = $this->findStuckImportJob();
 
             if ($stuckJob !== null) {
-                Log::warning('Escape hatch: Terminating stuck import job to unblock snapshot queue.', [
-                    'stuck_job_id' => $stuckJob->id,
-                    'stuck_duration_hours' => now()->diffInHours(Carbon::parse($stuckJob->updated_at)),
-                ]);
+                try {
+                    $status = $importProgressService->getStatusPayload((int) $stuckJob->id);
+                    $resolvedStatus = strtolower(trim((string) ($status['status'] ?? '')));
 
-                DB::table('import_jobs')
-                    ->where('id', $stuckJob->id)
-                    ->update(['status' => 'failed', 'updated_at' => now()]);
+                    if (in_array($resolvedStatus, ['staging', 'processing', 'queued'], true)) {
+                        $success = max(0, (int) ($status['total_success'] ?? $stuckJob->total_success ?? 0));
+                        $failed = max(0, (int) ($status['total_failed'] ?? $stuckJob->total_failed ?? 0));
 
-                return $next($job);
+                        $importProgressService->markFailed(
+                            (int) $stuckJob->id,
+                            'Job import tidak memiliki progress lebih dari 4 jam dan telah dihentikan.',
+                            $success,
+                            $failed,
+                            $success > 0 || $failed > 0 ? 'failed_partial' : 'failed'
+                        );
+                        $resolvedStatus = $success > 0 || $failed > 0 ? 'failed_partial' : 'failed';
+                    }
+
+                    Log::warning('Stale import job reconciled before snapshot queue resumed.', [
+                        'stuck_job_id' => $stuckJob->id,
+                        'resolved_status' => $resolvedStatus,
+                        'stuck_duration_hours' => Carbon::parse($stuckJob->updated_at)->diffInHours(now(), true),
+                    ]);
+
+                    return $next($job);
+                } catch (\Throwable $e) {
+                    Log::warning('Stale import status could not be verified; snapshot job remains deferred.', [
+                        'stuck_job_id' => $stuckJob->id,
+                        'message' => $e->getMessage(),
+                    ]);
+
+                    if (method_exists($job, 'release')) {
+                        $job->release(max(1, (int) config('import.snapshot.defer_seconds', 60)));
+                    }
+
+                    return null;
+                }
             }
 
             $attempts = method_exists($job, 'attempts') ? (int) $job->attempts() : 0;

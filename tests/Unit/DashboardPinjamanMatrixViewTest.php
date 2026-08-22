@@ -31,6 +31,13 @@ class DashboardPinjamanMatrixViewTest extends TestCase
         $this->assertStringContainsString('loadMatrix(false, true)', $view);
         $this->assertStringContainsString('REKONSILIASI SESUAI', $view);
         $this->assertStringContainsString('UNIT: RUPIAH', $view);
+        $this->assertStringContainsString('row.metric_debtors?.[col]', $view);
+        $this->assertStringContainsString('debitur / ${formatNumber(accountCount)} rekening', $view);
+        $this->assertStringContainsString('.loan-metric-count {', $view);
+        $this->assertStringContainsString('id="loanOpeningPosition"', $view);
+        $this->assertStringContainsString('id="loanBasisPosition"', $view);
+        $this->assertStringContainsString('reconciliation?.portfolio_inflow_position', $view);
+        $this->assertStringContainsString('Total Basis', $view);
     }
 
     public function test_matrix_endpoint_uses_daily_loan_without_snapshot_warming(): void

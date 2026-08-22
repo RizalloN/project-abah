@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Import;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\AuthorizesImportSourceFiles;
+use App\Http\Controllers\Import\Concerns\BuildsArea6PreviewFilters;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ReportDataSyncService;
@@ -20,9 +21,13 @@ class ImportFileBrimoController extends Controller
 {
     use AllocatesGapIds;
     use AuthorizesImportSourceFiles;
+    use BuildsArea6PreviewFilters;
     use SmartCsvImportSupport;
 
     private const BULK_LOAD_TEMP_DIR = 'app/import_bulk';
+    private const PREVIEW_SAMPLE_LIMIT = 100;
+    private const PREVIEW_UNIQUE_SCAN_LIMIT = 1000;
+    private const PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 400;
 
     private function bulkLoadService(): MySqlBulkLoadService
     {
@@ -70,56 +75,6 @@ class ImportFileBrimoController extends Controller
         }
 
         return null;
-    }
-
-    private function buildInitialArea6Selections(array $headers, array $formattedUniqueValues, array $columnHints): array
-    {
-        $area6Values = array_fill_keys(array_map('strtoupper', [
-            'KC PONOROGO',
-            'KC NGAWI',
-            'KC MAGETAN',
-            'KC MADIUN',
-            'PONOROGO',
-            'NGAWI',
-            'MAGETAN',
-            'MADIUN',
-        ]), true);
-
-        $normalizedHints = array_values(array_filter(array_map('strtoupper', (array) $columnHints), static fn ($hint): bool => $hint !== ''));
-        if (empty($normalizedHints)) {
-            return [];
-        }
-
-        $selections = [];
-        foreach ($headers as $index => $header) {
-            $headerText = strtoupper((string) $header);
-            if ($headerText === '' || str_contains($headerText, 'KODE')) {
-                continue;
-            }
-
-            $matchedHint = false;
-            foreach ($normalizedHints as $hint) {
-                if (str_contains($headerText, $hint)) {
-                    $matchedHint = true;
-                    break;
-                }
-            }
-
-            if (!$matchedHint) {
-                continue;
-            }
-
-            $values = array_map('trim', (array) ($formattedUniqueValues[$index] ?? []));
-            $selected = array_values(array_filter($values, static function (string $value) use ($area6Values): bool {
-                return $value !== '' && isset($area6Values[strtoupper($value)]);
-            }));
-
-            if (!empty($selected)) {
-                $selections[(string) $index] = $selected;
-            }
-        }
-
-        return $selections;
     }
 
     private function hasMeaningfulImportData(array $row, array $ignoredKeys = []): bool
@@ -227,14 +182,14 @@ class ImportFileBrimoController extends Controller
 
     private function readCsvRecord($handle, string $delimiter)
     {
-        $line = fgets($handle);
-        if ($line === false) {
-            return false;
+        while (($line = fgets($handle)) !== false) {
+            $row = $this->smartParseCsvLine((string) $line, $delimiter, false);
+            if ($row !== []) {
+                return $row;
+            }
         }
 
-        $row = $this->smartParseCsvLine((string) $line, $delimiter, false);
-
-        return $row !== [] ? $row : false;
+        return false;
     }
 
     private function writableColumnsForTable(string $tableName): array
@@ -313,9 +268,9 @@ class ImportFileBrimoController extends Controller
 
     public function preview(Request $request)
     {
-        ini_set('memory_limit', '-1');
+        ini_set('memory_limit', '512M');
         ini_set('auto_detect_line_endings', true);
-        ini_set('max_execution_time', 0); 
+        ini_set('max_execution_time', 300);
 
         $request->validate(['file_path' => 'required|string', 'delimiter' => 'nullable|string']);
         $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
@@ -327,19 +282,20 @@ class ImportFileBrimoController extends Controller
         $posisiIndex = -1; 
         $tahunIndex = -1;
         $periodeIndex = -1;
+        $area6ColumnHints = $this->defaultArea6PreviewColumnHints();
+        $area6PreviewColumnIndices = [];
 
         if (in_array($extension, ['csv', 'txt'])) {
             if (($handle = fopen($filePath, 'r')) !== FALSE) {
-                $firstLine = fgets($handle);
-                if ($currentDelimiter === 'auto') {
-                    $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0, '.' => 0];
-                    foreach ($delimiters as $delim => &$count) { $count = substr_count($firstLine, $delim); }
-                    arsort($delimiters); $delimiter = key($delimiters); 
-                } else { $delimiter = $currentDelimiter; }
-                rewind($handle); 
+                $delimiter = $currentDelimiter === 'auto'
+                    ? $this->smartDetectCsvDelimiter($filePath, [',', ';', "\t", '|', '.'])
+                    : $currentDelimiter;
                 
-                $rowCounter = 0; $savedRows = 0;
-                while (($data = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
+                $rowCounter = 0;
+                $savedRows = 0;
+                $scannedRows = 0;
+                $collectUniqueValues = true;
+                while (($data = $this->readCsvRecord($handle, $delimiter)) !== FALSE) {
                     if (empty($data) || implode('', $data) === '') continue;
                     
                     if ($rowCounter == 0) {
@@ -358,8 +314,27 @@ class ImportFileBrimoController extends Controller
                             $uniqueValues[$i] = []; 
                         }
 
+                        $area6PreviewColumnIndices = $this->findArea6PreviewColumnIndices($headers, $area6ColumnHints);
+
                     } else {
                         if (trim($data[0]) === 'TAHUN' || stripos(trim($data[0]), 'textbox') !== false) continue;
+
+                        if (
+                            !$collectUniqueValues
+                            && $savedRows >= self::PREVIEW_SAMPLE_LIMIT
+                            && $area6PreviewColumnIndices !== []
+                        ) {
+                            if (count($data) === count($headers)) {
+                                $this->collectArea6PreviewValues($data, $area6PreviewColumnIndices, $uniqueValues);
+                            }
+
+                            if ($this->hasAllArea6PreviewBranches($uniqueValues, $area6PreviewColumnIndices)) {
+                                break;
+                            }
+
+                            $rowCounter++;
+                            continue;
+                        }
 
                         if (count($data) < count($headers)) {
                             $data = array_pad($data, count($headers), null);
@@ -387,17 +362,44 @@ class ImportFileBrimoController extends Controller
                             } catch (\Exception $e) {}
                         }
 
-                        if ($savedRows < 2500) { 
+                        if ($savedRows < self::PREVIEW_SAMPLE_LIMIT) {
                             $previewData[] = $data; 
                             $savedRows++; 
                         }
-                        
-                        foreach ($data as $i => $val) {
-                            if (isset($uniqueValues[$i])) {
-                                $cleanVal = trim($val);
-                                $uniqueValues[$i][$cleanVal] = true; 
-                                if (count($uniqueValues[$i]) > 5000) { unset($uniqueValues[$i]); }
+
+                        $scannedRows++;
+                        if ($collectUniqueValues) {
+                            foreach ($data as $i => $val) {
+                                if (!isset($uniqueValues[$i])) {
+                                    continue;
+                                }
+
+                                $cleanVal = trim((string) $val);
+                                if (
+                                    count($uniqueValues[$i]) < self::PREVIEW_UNIQUE_LIMIT_PER_COLUMN
+                                    || isset($uniqueValues[$i][$cleanVal])
+                                ) {
+                                    $uniqueValues[$i][$cleanVal] = true;
+                                }
                             }
+
+                            if ($scannedRows >= self::PREVIEW_UNIQUE_SCAN_LIMIT) {
+                                $collectUniqueValues = false;
+                            }
+                        }
+
+                        if ($area6PreviewColumnIndices !== []) {
+                            $this->collectArea6PreviewValues($data, $area6PreviewColumnIndices, $uniqueValues);
+                        }
+
+                        $needsArea6TailScan = $area6PreviewColumnIndices !== []
+                            && !$this->hasAllArea6PreviewBranches($uniqueValues, $area6PreviewColumnIndices);
+                        if (
+                            !$collectUniqueValues
+                            && $savedRows >= self::PREVIEW_SAMPLE_LIMIT
+                            && !$needsArea6TailScan
+                        ) {
+                            break;
                         }
                     }
                     $rowCounter++;
@@ -411,10 +413,12 @@ class ImportFileBrimoController extends Controller
             $keys = array_keys($valuesMap); sort($keys); $formattedUniqueValues[$index] = $keys;
         }
 
-        $area6ColumnHints = ['MBDESC'];
         $initialArea6Selections = $this->buildInitialArea6Selections($headers, $formattedUniqueValues, $area6ColumnHints);
+        $filterableColumnIndices = array_values(array_map('intval', array_keys($formattedUniqueValues)));
+        $displayToSourceMap = range(0, max(count($headers) - 1, 0));
         
         session(['final_import_path' => $filePath]);
+        session(['import_display_to_source_map' => $displayToSourceMap]);
 
         $processRoute = route('import.brimo.process');
 
@@ -423,11 +427,22 @@ class ImportFileBrimoController extends Controller
             'previewData',
             'filePath',
             'formattedUniqueValues',
+            'filterableColumnIndices',
             'currentDelimiter',
             'processRoute'
         ))->with([
             'area6ColumnHints' => $area6ColumnHints,
             'initialArea6Selections' => $initialArea6Selections,
+            'previewRoute' => route('import.brimo.preview'),
+            'filterOptionsRoute' => route('import.preview.filter-options'),
+            'filteredRowsRoute' => route('import.preview.filtered-rows'),
+            'warmIndexRoute' => route('import.preview.warm-index'),
+            'warmPreviewIndexOnLoad' => true,
+            'initialFilterOptionsAreComplete' => false,
+            'disableFilterOptionsLocalCache' => false,
+            'portalFilterDropdowns' => true,
+            'hidePreviewRowsUntilJs' => !empty($initialArea6Selections),
+            'backRoute' => route('import.index'),
         ]);
     }
 
@@ -500,18 +515,9 @@ class ImportFileBrimoController extends Controller
         $writableColumns = $this->writableColumnsForTable($tableName);
 
         if (($handle = fopen($filePath, "r")) !== FALSE) {
-            if ($currentDelimiter === 'auto') {
-                $firstLine = fgets($handle);
-                $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0];
-                foreach ($delimiters as $delim => &$count) {
-                    $count = substr_count($firstLine, $delim);
-                }
-                arsort($delimiters);
-                $delimiter = key($delimiters);
-                rewind($handle);
-            } else {
-                $delimiter = $currentDelimiter;
-            }
+            $delimiter = $currentDelimiter === 'auto'
+                ? $this->smartDetectCsvDelimiter($filePath, [',', ';', "\t", '|', '.'])
+                : $currentDelimiter;
 
             $rowCounter = 0;
             while (($data = $this->readCsvRecord($handle, $delimiter)) !== FALSE) {

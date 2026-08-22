@@ -38,10 +38,31 @@
             'show_loan_reference' => false,
             'lower_is_better' => false,
         ],
+        'lancar' => [
+            'title' => 'Lancar',
+            'subtitle' => 'Kolektabilitas 1',
+            'component' => 'Lancar',
+            'show_loan_reference' => true,
+            'lower_is_better' => false,
+        ],
         'lr' => [
             'title' => 'LR',
-            'subtitle' => 'Lancar Restruk',
+            'subtitle' => 'Kolektabilitas 1 · Flag Restruk Y',
             'component' => 'LR',
+            'show_loan_reference' => true,
+            'lower_is_better' => true,
+        ],
+        'lnr' => [
+            'title' => 'LNR',
+            'subtitle' => 'Kolektabilitas 1 · Flag Restruk N',
+            'component' => 'LNR',
+            'show_loan_reference' => true,
+            'lower_is_better' => false,
+        ],
+        'account_restruk' => [
+            'title' => 'Account Restruk',
+            'subtitle' => 'Flag Restruk Y · Semua Kolektabilitas',
+            'component' => 'Account Restruk',
             'show_loan_reference' => true,
             'lower_is_better' => true,
         ],
@@ -94,13 +115,6 @@
             'show_loan_reference' => true,
             'lower_is_better' => true,
         ],
-        'lar' => [
-            'title' => 'LAR',
-            'subtitle' => 'LR + SML 1 + SML 2 + SML 3 + KL + D1 + D2 + M',
-            'component' => 'LAR',
-            'show_loan_reference' => true,
-            'lower_is_better' => true,
-        ],
     ];
 @endphp
 
@@ -134,8 +148,10 @@
                             <p class="kinerja-quality-intro__title">Kualitas Kredit</p>
                         </div>
                         <div class="kinerja-quality-intro__chips">
+                            <span class="kinerja-report-chip">Lancar = kolek 1</span>
                             <span class="kinerja-report-chip">SML 1-3 = kolek 2</span>
-                            <span class="kinerja-report-chip">LR = lancar restruk</span>
+                            <span class="kinerja-report-chip">LR / LNR = kolek 1 · flag Y / N</span>
+                            <span class="kinerja-report-chip">Account Restruk = seluruh flag Y</span>
                             <span class="kinerja-report-chip">KL = kolek 3</span>
                             <span class="kinerja-report-chip">D1-2 = kolek 4</span>
                             <span class="kinerja-report-chip">M = kolek 5</span>

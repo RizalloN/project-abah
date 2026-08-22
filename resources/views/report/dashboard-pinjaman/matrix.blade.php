@@ -71,6 +71,21 @@
         }
     }
 
+    .loan-metric-value {
+        display: block;
+        white-space: nowrap;
+    }
+
+    .loan-metric-count {
+        display: block;
+        margin-top: 0.2rem;
+        color: #64748b;
+        font-size: 0.64rem;
+        font-weight: 700;
+        line-height: 1.25;
+        white-space: nowrap;
+    }
+
     .loan-filter-item {
         display: flex;
         flex-direction: column;
@@ -417,6 +432,47 @@
         margin: 0 !important;
     }
 
+    .loan-reconciliation-strip {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 1px;
+        margin: -0.35rem 0 1rem;
+        padding: 1px;
+        border: 1px solid #dbe3ec;
+        border-radius: 6px;
+        overflow: hidden;
+        background: #dbe3ec;
+    }
+
+    .loan-reconciliation-item {
+        min-width: 0;
+        padding: 0.65rem 0.75rem;
+        background: #ffffff;
+    }
+
+    .loan-reconciliation-label,
+    .loan-reconciliation-value {
+        display: block;
+        letter-spacing: 0;
+    }
+
+    .loan-reconciliation-label {
+        margin-bottom: 0.2rem;
+        color: #64748b;
+        font-size: 0.64rem;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .loan-reconciliation-value {
+        color: #172033;
+        font-size: 0.82rem;
+        font-variant-numeric: tabular-nums;
+        font-weight: 800;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+    }
+
     @media (max-width: 1399.98px) {
         .loan-filter-shell .loan-filter-modern {
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -424,6 +480,10 @@
     }
 
     @media (max-width: 767.98px) {
+        .loan-reconciliation-strip {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
         .loan-filter-summary-bar {
             grid-template-columns: auto minmax(0, 1fr) auto;
         }
@@ -596,6 +656,29 @@
                     </div>
                 </div>
 
+                <div class="loan-reconciliation-strip" aria-live="polite">
+                    <div class="loan-reconciliation-item">
+                        <span class="loan-reconciliation-label">Posisi Awal</span>
+                        <strong id="loanOpeningPosition" class="loan-reconciliation-value">-</strong>
+                    </div>
+                    <div class="loan-reconciliation-item">
+                        <span class="loan-reconciliation-label">Rekening Masuk</span>
+                        <strong id="loanInflowPosition" class="loan-reconciliation-value">-</strong>
+                    </div>
+                    <div class="loan-reconciliation-item">
+                        <span class="loan-reconciliation-label">Total Basis</span>
+                        <strong id="loanBasisPosition" class="loan-reconciliation-value">-</strong>
+                    </div>
+                    <div class="loan-reconciliation-item">
+                        <span class="loan-reconciliation-label">PH + Lunas</span>
+                        <strong id="loanExitPosition" class="loan-reconciliation-value">-</strong>
+                    </div>
+                    <div class="loan-reconciliation-item">
+                        <span class="loan-reconciliation-label">Posisi Berjalan</span>
+                        <strong id="loanClosingPosition" class="loan-reconciliation-value">-</strong>
+                    </div>
+                </div>
+
                 <div class="loan-table-stage">
                     <div id="loanLoadingOverlay" class="loan-loading-overlay is-hidden">
                         <div class="loan-loading-dot"></div>
@@ -618,7 +701,7 @@
                                 <tr>
                                     <th class="matrix-before">Kualitas Posisi Awal<br><span id="loanComparisonHeadLabel">{{ $formatMatrixPeriod($comparisonPeriod) }}</span></th>
                                     <th colspan="{{ count($matrixColumns) }}" class="matrix-after-group">Kualitas Posisi <span id="loanCurrentHeadLabel">{{ $formatMatrixPeriod($selectedPeriod) }}</span></th>
-                                    <th rowspan="2" class="matrix-total-head">Total Posisi<br><span id="loanTotalValueHeader">Berjalan</span></th>
+                                    <th rowspan="2" class="matrix-total-head" title="Posisi pembanding ditambah rekening masuk; PH dan Lunas sudah tercakup.">Total Basis<br><span id="loanTotalValueHeader">Awal + Inflow</span></th>
                                     <th colspan="4" class="matrix-subhead">Data Output (IDR)</th>
                                 </tr>
                                 <tr>
@@ -722,6 +805,11 @@
         const currentHeadLabel = document.getElementById('loanCurrentHeadLabel');
         const comparisonHeadLabel = document.getElementById('loanComparisonHeadLabel');
         const totalValueHeader = document.getElementById('loanTotalValueHeader');
+        const openingPosition = document.getElementById('loanOpeningPosition');
+        const inflowPosition = document.getElementById('loanInflowPosition');
+        const basisPosition = document.getElementById('loanBasisPosition');
+        const exitPosition = document.getElementById('loanExitPosition');
+        const closingPosition = document.getElementById('loanClosingPosition');
         const drillModal = document.getElementById('loanMatrixDetailModal');
         const drillSubtitle = document.getElementById('loanDrillSubtitle');
         const drillMeta = document.getElementById('loanDrillMeta');
@@ -1228,6 +1316,16 @@
             if (!reconciliationBadge) return;
             reconciliationBadge.classList.remove('badge-light', 'badge-success', 'badge-danger', 'text-muted');
 
+            [
+                [openingPosition, reconciliation?.previous_position],
+                [inflowPosition, reconciliation?.portfolio_inflow_position],
+                [basisPosition, reconciliation?.matrix_position],
+                [exitPosition, reconciliation?.exit_position],
+                [closingPosition, reconciliation?.current_position],
+            ].forEach(([element, value]) => {
+                if (element) element.textContent = value === null || value === undefined ? '-' : formatNumber(value);
+            });
+
             if (reconciliation?.status === 'balanced') {
                 reconciliationBadge.classList.add('badge-success');
                 reconciliationBadge.textContent = 'REKONSILIASI SESUAI';
@@ -1243,7 +1341,7 @@
             }
 
             reconciliationBadge.title = reconciliation
-                ? `Selisih: ${formatNumber(reconciliation.difference)} | Rekening berjalan: ${formatNumber(reconciliation.matrix_accounts)}`
+                ? `Basis - rekening masuk: ${formatNumber(reconciliation.basis_less_inflow_position)} | Posisi awal: ${formatNumber(reconciliation.previous_position)} | Selisih basis: ${formatNumber(reconciliation.basis_to_opening_difference)} | Selisih stock-flow: ${formatNumber(reconciliation.difference)}`
                 : '';
         }
 
@@ -1338,7 +1436,14 @@
             
             for (let i = 0; i < outputColumns.length; i++) {
                 const col = outputColumns[i];
-                html += `<td>${formatNumber(row.metrics[col])}</td>`;
+                const metricValue = row.metrics[col];
+                if (col === 'ph' && metricValue !== null && metricValue !== undefined) {
+                    const accountCount = Number(row.metric_accounts?.[col] || 0);
+                    const debtorCount = Number(row.metric_debtors?.[col] || 0);
+                    html += `<td><span class="loan-metric-value">${formatNumber(metricValue)}</span><small class="loan-metric-count">${formatNumber(debtorCount)} debitur / ${formatNumber(accountCount)} rekening</small></td>`;
+                } else {
+                    html += `<td>${formatNumber(metricValue)}</td>`;
+                }
             }
             
             html += '</tr>';

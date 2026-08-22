@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Import;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\AuthorizesImportSourceFiles;
+use App\Http\Controllers\Import\Concerns\BuildsArea6PreviewFilters;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Jobs\PrepareCsvStagingJob;
 use App\Services\Import\ImportProgressService;
@@ -30,6 +31,7 @@ class ImportFileController extends Controller
 {
     use AllocatesGapIds;
     use AuthorizesImportSourceFiles;
+    use BuildsArea6PreviewFilters;
     use SmartCsvImportSupport;
 
     private ?array $dailyLoanColumnsCache = null;
@@ -52,8 +54,8 @@ class ImportFileController extends Controller
     }
 
     private const SAFE_MEMORY_LIMIT = '512M';
-    private const PREVIEW_SAMPLE_LIMIT = 1200;
-    private const PREVIEW_UNIQUE_SCAN_LIMIT = 4000;
+    private const PREVIEW_SAMPLE_LIMIT = 100;
+    private const PREVIEW_UNIQUE_SCAN_LIMIT = 1000;
     private const PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 400;
     private const LARGE_FILE_THRESHOLD_BYTES = 150 * 1024 * 1024;
     private const LARGE_FILE_PREVIEW_SAMPLE_LIMIT = 100;
@@ -417,56 +419,6 @@ class ImportFileController extends Controller
         }
 
         return null;
-    }
-
-    private function buildInitialArea6Selections(array $headers, array $formattedUniqueValues, array $columnHints): array
-    {
-        $area6Values = array_fill_keys(array_map('strtoupper', [
-            'KC PONOROGO',
-            'KC NGAWI',
-            'KC MAGETAN',
-            'KC MADIUN',
-            'PONOROGO',
-            'NGAWI',
-            'MAGETAN',
-            'MADIUN',
-        ]), true);
-
-        $normalizedHints = array_values(array_filter(array_map('strtoupper', (array) $columnHints), static fn ($hint): bool => $hint !== ''));
-        if (empty($normalizedHints)) {
-            return [];
-        }
-
-        $selections = [];
-        foreach ($headers as $index => $header) {
-            $headerText = strtoupper((string) $header);
-            if ($headerText === '' || str_contains($headerText, 'KODE')) {
-                continue;
-            }
-
-            $matchedHint = false;
-            foreach ($normalizedHints as $hint) {
-                if (str_contains($headerText, $hint)) {
-                    $matchedHint = true;
-                    break;
-                }
-            }
-
-            if (!$matchedHint) {
-                continue;
-            }
-
-            $values = array_map('trim', (array) ($formattedUniqueValues[$index] ?? []));
-            $selected = array_values(array_filter($values, static function (string $value) use ($area6Values): bool {
-                return $value !== '' && isset($area6Values[strtoupper($value)]);
-            }));
-
-            if (!empty($selected)) {
-                $selections[(string) $index] = $selected;
-            }
-        }
-
-        return $selections;
     }
 
     private function isDailyLoanNumericColumn(string $column): bool
@@ -3049,9 +3001,9 @@ class ImportFileController extends Controller
 
         $isJumlahMerchantQrisDetail = $this->isJumlahMerchantQrisDetailReport($reportData) || $tableName === 'jumlah_merchant_qris_detail';
         $isJumlahMerchantDetail = $this->isJumlahMerchantDetailTable($tableName);
-        $disableArea6AutoFilter = $isDailyLoan || in_array($tableName, [
-            'sv_merchant',
-        ], true);
+        $disableArea6AutoFilter = $isDailyLoan;
+        $area6ColumnHints = $isDailyLoan ? [] : $this->defaultArea6PreviewColumnHints();
+        $area6PreviewColumnIndices = [];
 
         $previewSampleLimit = $isDailyLoan ? self::DAILY_LOAN_PREVIEW_SAMPLE_LIMIT : self::PREVIEW_SAMPLE_LIMIT;
         $previewUniqueScanLimit = $isDailyLoan ? self::DAILY_LOAN_PREVIEW_UNIQUE_SCAN_LIMIT : self::PREVIEW_UNIQUE_SCAN_LIMIT;
@@ -3129,6 +3081,9 @@ class ImportFileController extends Controller
                     
                     if ($rowCounter == 0) {
                         $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
+                        $area6PreviewColumnIndices = $disableArea6AutoFilter
+                            ? []
+                            : $this->findArea6PreviewColumnIndices($headers, $area6ColumnHints);
 
                         if (!$isBrilinkSummary) {
                             // OPTIMIZATION 5: Find posisi/tahun indices once, cache them
@@ -3153,6 +3108,24 @@ class ImportFileController extends Controller
                             if ($firstCell === 'TAHUN' || stripos($firstCell, 'textbox') !== false) {
                                 continue;
                             }
+                        }
+
+                        if (
+                            !$isBrilinkSummary
+                            && !$collectUniqueValues
+                            && $savedRows >= $previewSampleLimit
+                            && $area6PreviewColumnIndices !== []
+                        ) {
+                            if (count($data) === count($headers)) {
+                                $this->collectArea6PreviewValues($data, $area6PreviewColumnIndices, $uniqueValues);
+                            }
+
+                            if ($this->hasAllArea6PreviewBranches($uniqueValues, $area6PreviewColumnIndices)) {
+                                break;
+                            }
+
+                            $rowCounter++;
+                            continue;
                         }
 
                         if ($isBrilinkSummary) {
@@ -3270,8 +3243,16 @@ class ImportFileController extends Controller
                             }
                         }
 
-                        // Early exit untuk file besar
-                        if (!$collectUniqueValues && count($previewData) >= $previewSampleLimit) {
+                        if ($area6PreviewColumnIndices !== []) {
+                            $this->collectArea6PreviewValues($data, $area6PreviewColumnIndices, $uniqueValues);
+                        }
+
+                        $needsArea6TailScan = $area6PreviewColumnIndices !== []
+                            && !$this->hasAllArea6PreviewBranches($uniqueValues, $area6PreviewColumnIndices);
+
+                        // Once the regular sample is complete, only continue when the
+                        // authoritative branch column still needs Area 6 discovery.
+                        if (!$collectUniqueValues && count($previewData) >= $previewSampleLimit && !$needsArea6TailScan) {
                             break;
                         }
                     }
@@ -3303,9 +3284,6 @@ class ImportFileController extends Controller
 
         $headers = $this->getPrettyIbbizHeaders($tableName, $headers);
 
-        $area6ColumnHints = $isDailyLoan
-            ? []
-            : ['KANCA', 'KCI', 'BRANCH', 'BRDESC', 'MBDESC', 'CABANG'];
         $initialArea6Selections = $this->buildInitialArea6Selections($headers, $formattedUniqueValues, $area6ColumnHints);
         if ($disableArea6AutoFilter) {
             $initialArea6Selections = [];
@@ -3352,6 +3330,7 @@ class ImportFileController extends Controller
             'warmPreviewIndexOnLoad' => $shouldWarmPreviewIndexOnLoad,
             'disableFilterOptionsLocalCache' => $isJumlahMerchantQrisDetail,
             'portalFilterDropdowns' => true,
+            'hidePreviewRowsUntilJs' => !empty($initialArea6Selections),
             'manualPeriode' => $manualPeriode,
             'manualPeriodeInputType' => $manualPeriodeInputType,
             'manualPeriodeLabel' => $manualPeriodeLabel,

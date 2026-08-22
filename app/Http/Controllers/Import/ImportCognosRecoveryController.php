@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AuthorizesSessionImportStorageFiles;
+use App\Http\Controllers\Import\Concerns\ServesMappedCsvPreviewFilters;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Services\Import\ImportCleanupService;
 use App\Services\Import\MySqlBulkLoadService;
@@ -18,7 +19,7 @@ use Illuminate\Support\Str;
 
 class ImportCognosRecoveryController extends Controller
 {
-    use AuthorizesSessionImportStorageFiles;
+    use AuthorizesSessionImportStorageFiles, ServesMappedCsvPreviewFilters;
 
     use SmartCsvImportSupport;
 
@@ -27,8 +28,9 @@ class ImportCognosRecoveryController extends Controller
     private const REPORT_LABEL = 'Cognos Recovery';
     private const COLUMN_DELIMITER = ';';
     private const BULK_STAGE_DELIMITER = ',';
-    private const PREVIEW_ROW_LIMIT = 2500;
-    private const PREVIEW_UNIQUE_LIMIT = 5000;
+    private const PREVIEW_ROW_LIMIT = 100;
+    private const PREVIEW_SCAN_LIMIT = 1000;
+    private const PREVIEW_UNIQUE_LIMIT = 200;
     private const INSERT_BATCH_SIZE = 1000;
     private const STAGED_CSV_TEMP_DIR = 'app/cognos_recovery_stage';
     private const BULK_LOAD_TEMP_DIR = 'app/import_bulk';
@@ -296,35 +298,13 @@ class ImportCognosRecoveryController extends Controller
             return redirect()->route('import.index')->with('error', 'Struktur CSV ' . self::REPORT_LABEL . ' tidak dikenali: ' . $e->getMessage());
         }
 
-        $previewData = [];
-        $formattedUniqueValues = $this->collectPreviewUniqueValues($workingPath, $context);
-
-        $handle = fopen($workingPath, 'r');
-        if ($handle === false) {
-            return redirect()->route('import.index')->with('error', 'Gagal membuka file CSV ' . self::REPORT_LABEL . '.');
-        }
-
-        $lineNumber = 0;
-        try {
-            while (($line = fgets($handle)) !== false) {
-                $lineNumber++;
-                if ($lineNumber <= $context['header_line']) {
-                    continue;
-                }
-
-                $mapped = $this->mapCsvRow($context, $this->parseCsvLine($line, $context['delimiter']), $lineNumber);
-                if ($mapped === null) {
-                    continue;
-                }
-
-                $previewData[] = $mapped['row'];
-                if (count($previewData) >= self::PREVIEW_ROW_LIMIT) {
-                    break;
-                }
-            }
-        } finally {
-            fclose($handle);
-        }
+        [$previewData, $formattedUniqueValues] = $this->collectMappedPreviewSample(
+            $workingPath,
+            $context,
+            self::PREVIEW_ROW_LIMIT,
+            self::PREVIEW_SCAN_LIMIT,
+            self::PREVIEW_UNIQUE_LIMIT
+        );
 
         return view('import.preview', [
             'headers' => $context['headers'],
@@ -336,10 +316,13 @@ class ImportCognosRecoveryController extends Controller
             'previewRoute' => route('import.cognos-recovery.preview.refresh'),
             'initRoute' => route('import.cognos-recovery.init'),
             'streamRoute' => route('import.cognos-recovery.stream'),
+            'filterOptionsRoute' => route('import.cognos-recovery.filter-options'),
+            'filteredRowsRoute' => route('import.cognos-recovery.filtered-rows'),
             'backRoute' => route('import.index'),
             'lockDelimiterSelector' => true,
             'fixedDelimiterLabel' => 'Delimiter terdeteksi otomatis (;)',
             'disableArea6AutoFilter' => true,
+            'deferDependentFilterRefresh' => true,
         ]);
     }
 
@@ -1572,17 +1555,28 @@ class ImportCognosRecoveryController extends Controller
         return false;
     }
 
-    private function collectPreviewUniqueValues(string $path, array $context): array
+    protected function resolveMappedPreviewSource(string $requestedPath, ?string $requestedDelimiter = null): array
     {
-        $filterableMap = array_flip(self::FILTERABLE_COLUMNS);
-        $uniqueValues = [];
-        foreach ($context['headers'] as $index => $header) {
-            $uniqueValues[$index] = isset($filterableMap[$header]) ? [] : [];
+        [$relativePath] = $this->authorizeSessionImportStorageFile(
+            $requestedPath,
+            'cognos_recovery_file',
+            ['cognos_recovery_imports'],
+            ['csv', 'txt', 'xlsx', 'xls']
+        );
+
+        $workingPath = $this->resolveWorkingImportPath($relativePath);
+        if (!file_exists($workingPath)) {
+            throw new \RuntimeException('File staging ' . self::REPORT_LABEL . ' tidak ditemukan. Silakan upload ulang.');
         }
 
+        return [$workingPath, $this->buildCsvContext($workingPath)];
+    }
+
+    protected function iterateMappedPreviewRows(string $path, array $context, callable $callback): void
+    {
         $handle = fopen($path, 'r');
         if ($handle === false) {
-            return $uniqueValues;
+            throw new \RuntimeException('Gagal membuka file CSV ' . self::REPORT_LABEL . '.');
         }
 
         $lineNumber = 0;
@@ -1593,36 +1587,50 @@ class ImportCognosRecoveryController extends Controller
                     continue;
                 }
 
-                $mapped = $this->mapCsvRow($context, $this->parseCsvLine($line, $context['delimiter']), $lineNumber);
+                $mapped = $this->mapCsvRow(
+                    $context,
+                    $this->parseCsvLine($line, $context['delimiter']),
+                    $lineNumber
+                );
                 if ($mapped === null) {
                     continue;
                 }
 
-                foreach ($mapped['row'] as $index => $value) {
-                    $header = $context['headers'][$index] ?? null;
-                    if (!$header || !isset($filterableMap[$header])) {
-                        continue;
-                    }
-
-                    $normalized = trim((string) ($value ?? ''));
-                    $uniqueValues[$index][$normalized] = true;
-                    if (count($uniqueValues[$index]) > self::PREVIEW_UNIQUE_LIMIT) {
-                        continue;
-                    }
+                if ($callback($mapped['row']) === false) {
+                    break;
                 }
             }
         } finally {
             fclose($handle);
         }
+    }
 
-        $formatted = [];
-        foreach ($uniqueValues as $index => $valuesMap) {
-            $keys = array_keys($valuesMap);
-            usort($keys, 'strnatcmp');
-            $formatted[$index] = $keys;
-        }
+    protected function mappedPreviewCacheNamespace(): string
+    {
+        return 'cognos_recovery';
+    }
 
-        return $formatted;
+    protected function mappedPreviewLabel(): string
+    {
+        return self::REPORT_LABEL;
+    }
+
+    protected function mappedPreviewFilterableColumns(): ?array
+    {
+        return self::FILTERABLE_COLUMNS;
+    }
+
+    private function collectPreviewUniqueValues(string $path, array $context): array
+    {
+        [, $formattedUniqueValues] = $this->collectMappedPreviewSample(
+            $path,
+            $context,
+            0,
+            self::PREVIEW_SCAN_LIMIT,
+            self::PREVIEW_UNIQUE_LIMIT
+        );
+
+        return $formattedUniqueValues;
     }
 
     private function createFilteredCsvStage(

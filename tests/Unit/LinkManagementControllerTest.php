@@ -47,19 +47,20 @@ class LinkManagementControllerTest extends TestCase
         $this->assertSame('KPI RM Mikro', $links['rm-mikro']['label']);
         $this->assertSame('KPI RM SME', $links['rm-sme']['label']);
         $this->assertSame('KPI RM SME', $links['rm-sme']['sheet_name']);
-        $this->assertSame('1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs', $links['rm-sme']['spreadsheet_id']);
+        $this->assertSame('1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu', $links['rm-sme']['spreadsheet_id']);
         $this->assertSame(
-            'https://docs.google.com/spreadsheets/d/1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'https://docs.google.com/spreadsheets/d/1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
             $links['rm-sme']['link_url']
         );
         $this->assertSame('KPI Konsumer', $links['consumer']['label']);
         $this->assertSame('KPI', $links['consumer']['sheet_name']);
-        $this->assertSame('14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J', $links['consumer']['spreadsheet_id']);
-        $this->assertSame('160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7', $links['mantri']['spreadsheet_id']);
+        $this->assertSame('1a-fr7OnoTIa_aJZ_b-yt_KkLJiJu92McQxv93ab58qQ', $links['consumer']['spreadsheet_id']);
+        $this->assertSame('14As5M-bVMRa9OSFEo1mcaH1M1Derm7ca', $links['mantri']['spreadsheet_id']);
+        $this->assertSame('rank', $links['mantri']['sheet_name']);
         $this->assertSame('KPI RM Mikro', $links['rm-mikro']['sheet_name']);
-        $this->assertSame('11dzu4edTyp9UFBicNDughtJ43bzvZguh', $links['rm-mikro']['spreadsheet_id']);
+        $this->assertSame('1NNMRC8w2Z35n6WfKHL9Q9i575jwkMRzF', $links['rm-mikro']['spreadsheet_id']);
         $this->assertSame(
-            'https://docs.google.com/spreadsheets/d/11dzu4edTyp9UFBicNDughtJ43bzvZguh/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'https://docs.google.com/spreadsheets/d/1NNMRC8w2Z35n6WfKHL9Q9i575jwkMRzF/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
             $links['rm-mikro']['link_url']
         );
         $this->assertSame('SPPG', $sppgLink['label']);

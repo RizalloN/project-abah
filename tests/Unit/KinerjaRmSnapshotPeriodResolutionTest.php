@@ -506,6 +506,95 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(2000000.0, $macet['comparison_deltas']['m1']);
     }
 
+    public function test_kinerja_rm_quality_splits_lancar_lnr_lr_and_all_restructured_accounts(): void
+    {
+        $pdo = DB::connection('sqlite')->getPdo();
+        $pdo->sqliteCreateFunction('DATEDIFF', static function ($a, $b): ?int {
+            if ($a === null || $b === null) {
+                return null;
+            }
+
+            return (int) floor((strtotime((string) $a) - strtotime((string) $b)) / 86400);
+        }, 2);
+        $pdo->sqliteCreateFunction('LEAST', static function (...$values) {
+            $values = array_values(array_filter($values, static fn ($value): bool => $value !== null));
+
+            return $values === [] ? null : min($values);
+        });
+
+        Schema::table('daily_loan_dinamis', function (Blueprint $table): void {
+            $table->string('nomor_rekening1')->nullable();
+            $table->decimal('baki_debet1', 20, 2)->nullable();
+            $table->string('kolek_detail')->nullable();
+            $table->string('kolek')->nullable();
+            $table->integer('umur_tunggakan')->nullable();
+            $table->string('flag_restruk')->nullable();
+            $table->date('next_pmt_date')->nullable();
+            $table->date('next_pmt_int_date')->nullable();
+            $table->string('segmen_kinerja')->nullable();
+            $table->string('produk_kinerja')->nullable();
+            $table->string('cabang_normalized')->nullable();
+            $table->string('unit_normalized')->nullable();
+            $table->string('branch_normalized')->nullable();
+            $table->string('rm_normalized')->nullable();
+        });
+
+        $base = [
+            'periode' => '2026-08-16',
+            'kolek_detail' => null,
+            'next_pmt_date' => null,
+            'next_pmt_int_date' => null,
+            'segmen_kinerja' => 'CONSUMER',
+            'produk_kinerja' => 'BRIGUNAKONSUMER',
+            'cabang_normalized' => 'KC MADIUN',
+            'unit_normalized' => 'UNIT A',
+            'branch_normalized' => '45',
+            'rm_normalized' => 'RM A',
+        ];
+
+        DB::table('daily_loan_dinamis')->insert(['periode' => '2026-07-31']);
+        DB::table('daily_loan_dinamis')->insert([
+            array_merge($base, ['nomor_rekening1' => 'LNR-1', 'baki_debet1' => 100, 'kolek' => '1', 'umur_tunggakan' => 0, 'flag_restruk' => 'N']),
+            array_merge($base, ['nomor_rekening1' => 'LR-1', 'baki_debet1' => 200, 'kolek' => '1', 'umur_tunggakan' => 0, 'flag_restruk' => 'Y']),
+            array_merge($base, ['nomor_rekening1' => 'AR-KL-1', 'baki_debet1' => 300, 'kolek' => '3', 'umur_tunggakan' => 100, 'flag_restruk' => 'Y']),
+            array_merge($base, ['nomor_rekening1' => 'SML-1', 'baki_debet1' => 400, 'kolek' => '2', 'umur_tunggakan' => 15, 'flag_restruk' => 'N']),
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $details = $this->invokePrivateMethod($controller, 'fetchDetailedQualityRows', [
+            'CONSUMER',
+            '2026-08-16',
+            [],
+            null,
+            null,
+            null,
+        ]);
+
+        $this->assertCount(1, $details);
+        $detail = $details->first();
+        $this->assertSame(1000.0, $detail->loan_os);
+        $this->assertSame(300.0, $detail->lancar_os);
+        $this->assertSame(100.0, $detail->lancar_non_restruk_os);
+        $this->assertSame(200.0, $detail->restruk_os);
+        $this->assertSame(500.0, $detail->account_restruk_os);
+        $this->assertSame(400.0, $detail->sml_1_os);
+        $this->assertSame(300.0, $detail->kl_os);
+
+        $currentFor = function (string $qualityType) use ($controller, $details): float {
+            $series = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
+                'CONSUMER', '2026-08-16', [], '2026-08-16', null, null,
+                $qualityType, null, $details, true,
+            ]);
+
+            return (float) $series['rows'][0]['rms']['RM A']['items'][0]['curr'];
+        };
+
+        $this->assertSame(300.0, $currentFor('lancar'));
+        $this->assertSame(200.0, $currentFor('lr'));
+        $this->assertSame(100.0, $currentFor('lnr'));
+        $this->assertSame(500.0, $currentFor('account_restruk'));
+    }
+
     public function test_kinerja_rm_small_separates_same_rm_between_kc_and_kcp(): void
     {
         DB::table('performance_rm_snapshots')->insert([

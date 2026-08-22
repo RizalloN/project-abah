@@ -6,12 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Support\UserBranchScope;
 use App\Support\SargableDateFilter;
 use App\Jobs\RefreshRemoteDashboardSourcesJob;
+use App\Services\Reports\KpiPersonnelReferenceSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class AlmafactsDashboardController extends Controller
@@ -92,18 +94,55 @@ class AlmafactsDashboardController extends Controller
         'lar_ratio' => '40. LAR (%)',
         'npl_ratio' => '41. NPL (%)',
     ];
-    private const KPI_SPREADSHEET_ID = '175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU';
-    private const KPI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
-    private const KPI_KA_UNIT_SPREADSHEET_ID = '1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK';
-    private const KPI_KA_UNIT_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
-    private const KPI_RM_MIKRO_SPREADSHEET_ID = '11dzu4edTyp9UFBicNDughtJ43bzvZguh';
-    private const KPI_RM_MIKRO_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/11dzu4edTyp9UFBicNDughtJ43bzvZguh/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
-    private const KPI_MANTRI_SPREADSHEET_ID = '160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7';
-    private const KPI_MANTRI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
-    private const KPI_CONSUMER_SPREADSHEET_ID = '14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J';
-    private const KPI_CONSUMER_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
-    private const KPI_RM_SME_SPREADSHEET_ID = '1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs';
-    private const KPI_RM_SME_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_DEFAULT_PERIOD = '2026-07';
+    private const KPI_PERIOD_OPTIONS = [
+        '2026-07' => 'Juli 2026',
+        '2026-06' => 'Juni 2026',
+    ];
+    private const KPI_SPREADSHEET_ID = '1OmIag7zJ3MdlKMP4hDyUqEvnP1tbbL7j';
+    private const KPI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1OmIag7zJ3MdlKMP4hDyUqEvnP1tbbL7j/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_KA_UNIT_SPREADSHEET_ID = '1wI-dsRmkzWb4d0oqILxnh1r4UkM3tGJE';
+    private const KPI_KA_UNIT_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1wI-dsRmkzWb4d0oqILxnh1r4UkM3tGJE/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_RM_MIKRO_SPREADSHEET_ID = '1NNMRC8w2Z35n6WfKHL9Q9i575jwkMRzF';
+    private const KPI_RM_MIKRO_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1NNMRC8w2Z35n6WfKHL9Q9i575jwkMRzF/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_MANTRI_SPREADSHEET_ID = '14As5M-bVMRa9OSFEo1mcaH1M1Derm7ca';
+    private const KPI_MANTRI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/14As5M-bVMRa9OSFEo1mcaH1M1Derm7ca/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_CONSUMER_SPREADSHEET_ID = '1a-fr7OnoTIa_aJZ_b-yt_KkLJiJu92McQxv93ab58qQ';
+    private const KPI_CONSUMER_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1a-fr7OnoTIa_aJZ_b-yt_KkLJiJu92McQxv93ab58qQ/edit?gid=942361434#gid=942361434';
+    private const KPI_RM_SME_SPREADSHEET_ID = '1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu';
+    private const KPI_RM_SME_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_JUNE_SOURCES = [
+        'mbm' => [
+            'sheet' => 'KPI MBM',
+            'spreadsheet_id' => '175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU',
+            'spreadsheet_url' => 'https://docs.google.com/spreadsheets/d/175qxZv6PZ6Lw3XaN7u1EdPpEjOEXYUsU/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+        ],
+        'ka-unit' => [
+            'sheet' => 'KPI Kaunit',
+            'spreadsheet_id' => '1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK',
+            'spreadsheet_url' => 'https://docs.google.com/spreadsheets/d/1YlsKFIdwdgm9UVG-r8hgSuUn_qTXThMK/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+        ],
+        'rm-mikro' => [
+            'sheet' => 'KPI RM Mikro',
+            'spreadsheet_id' => '11dzu4edTyp9UFBicNDughtJ43bzvZguh',
+            'spreadsheet_url' => 'https://docs.google.com/spreadsheets/d/11dzu4edTyp9UFBicNDughtJ43bzvZguh/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+        ],
+        'rm-sme' => [
+            'sheet' => 'KPI RM SME',
+            'spreadsheet_id' => '1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs',
+            'spreadsheet_url' => 'https://docs.google.com/spreadsheets/d/1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+        ],
+        'mantri' => [
+            'sheet' => 'KPI',
+            'spreadsheet_id' => '160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7',
+            'spreadsheet_url' => 'https://docs.google.com/spreadsheets/d/160V_JvCaoZt3rbUo8GdWj58qt5iqBWg7/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+        ],
+        'consumer' => [
+            'sheet' => 'KPI',
+            'spreadsheet_id' => '14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J',
+            'spreadsheet_url' => 'https://docs.google.com/spreadsheets/d/14GrdTrFjTGMR-OpnbPZqNxCK0jNgEx1J/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+        ],
+    ];
     private const KPI_LINK_TABLE = 'external_report_links';
     private const KPI_LINK_GROUP = 'almafacts_kpi';
     private const KPI_SHEETS = [
@@ -113,15 +152,16 @@ class AlmafactsDashboardController extends Controller
             'sheet' => 'KPI MBM',
             'spreadsheet_id' => self::KPI_SPREADSHEET_ID,
             'spreadsheet_url' => self::KPI_SPREADSHEET_URL,
+            'branch_filter_headers' => ['BO'],
             'icon' => 'fas fa-users-cog',
         ],
         'ka-unit' => [
             'label' => 'KPI KA Unit',
             'title' => 'KPI KA UNIT',
-            'sheet' => 'KPI Kaunit',
+            'sheet' => 'KPI KaUnit',
             'spreadsheet_id' => self::KPI_KA_UNIT_SPREADSHEET_ID,
             'spreadsheet_url' => self::KPI_KA_UNIT_SPREADSHEET_URL,
-            'branch_filter_headers' => ['BO', 'KANCA'],
+            'branch_filter_headers' => ['BC UKER', 'UKER', 'BO', 'KANCA'],
             'icon' => 'fas fa-user-tie',
         ],
         'rm-mikro' => [
@@ -130,7 +170,7 @@ class AlmafactsDashboardController extends Controller
             'sheet' => 'KPI RM Mikro',
             'spreadsheet_id' => self::KPI_RM_MIKRO_SPREADSHEET_ID,
             'spreadsheet_url' => self::KPI_RM_MIKRO_SPREADSHEET_URL,
-            'branch_filter_headers' => ['BO', 'KANCA'],
+            'branch_filter_headers' => ['BC UKER', 'UKER', 'BO', 'KANCA'],
             'expected_header_any' => ['NETT DISBURSEMENT KUR', 'DEBITUR MIKRO', 'RANK'],
             'icon' => 'fas fa-chart-bar',
         ],
@@ -149,7 +189,7 @@ class AlmafactsDashboardController extends Controller
         'mantri' => [
             'label' => 'KPI Mantri',
             'title' => 'KPI MANTRI',
-            'sheet' => 'KPI',
+            'sheet' => 'rank',
             'spreadsheet_id' => self::KPI_MANTRI_SPREADSHEET_ID,
             'spreadsheet_url' => self::KPI_MANTRI_SPREADSHEET_URL,
             'branch_filter_headers' => ['BO', 'KANCA'],
@@ -258,14 +298,15 @@ class AlmafactsDashboardController extends Controller
     public function kpi(Request $request, ?string $sheet = null)
     {
         $selectedSheetKey = $this->resolveKpiSheetKey($sheet ?: $request->input('sheet'));
-        $cacheKey = $this->kpiSheetCacheKey($selectedSheetKey);
-        $selectedSheet = $this->kpiSheetConfig($selectedSheetKey);
+        $selectedPeriod = $this->resolveKpiPeriod($request->input('periode'));
+        $cacheKey = $this->kpiSheetCacheKey($selectedSheetKey, $selectedPeriod);
+        $selectedSheet = $this->kpiSheetConfig($selectedSheetKey, $selectedPeriod);
 
         if ($request->boolean('refresh')) {
-            $this->queueKpiSourceRefresh([$selectedSheetKey]);
+            $this->queueKpiSourceRefresh([$selectedSheetKey], $selectedPeriod);
         }
 
-        $payload = $this->cachedKpiSheetPayload($selectedSheetKey, $cacheKey);
+        $payload = $this->cachedKpiSheetPayload($selectedSheetKey, $selectedPeriod, $cacheKey);
         $kpiBranchFilter = $this->kpiBranchFilter($payload, $selectedSheet, $request->input('cabang'));
         $filteredPayload = $payload;
         $filteredPayload['rows'] = $kpiBranchFilter['rows'];
@@ -279,6 +320,9 @@ class AlmafactsDashboardController extends Controller
             'sheetOptions' => self::KPI_SHEETS,
             'selectedSheetKey' => $selectedSheetKey,
             'selectedSheet' => $selectedSheet,
+            'periodOptions' => self::KPI_PERIOD_OPTIONS,
+            'selectedPeriod' => $selectedPeriod,
+            'selectedPeriodLabel' => self::KPI_PERIOD_OPTIONS[$selectedPeriod],
             'spreadsheetUrl' => $selectedSheet['spreadsheet_url'] ?? self::KPI_SPREADSHEET_URL,
             'csvUrl' => $this->kpiSheetCsvUrl(
                 $selectedSheet['sheet'],
@@ -300,52 +344,73 @@ class AlmafactsDashboardController extends Controller
      * @param  array<int, string>  $sheetKeys
      * @return array<string, array<string, mixed>>
      */
-    public function refreshKpiSourceCaches(array $sheetKeys = []): array
+    public function refreshKpiSourceCaches(array $sheetKeys = [], ?string $period = null): array
     {
+        $selectedPeriod = $this->resolveKpiPeriod($period);
         $keys = $sheetKeys === []
             ? array_keys(self::KPI_SHEETS)
             : array_values(array_filter(array_unique($sheetKeys), fn (string $key): bool => isset(self::KPI_SHEETS[$key])));
         $results = [];
 
         foreach ($keys as $sheetKey) {
-            $lock = Cache::lock('dashboard_sources:refresh:kpi:' . $sheetKey . ':lock', 120);
+            $lock = Cache::lock('dashboard_sources:refresh:kpi:' . $selectedPeriod . ':' . $sheetKey . ':lock', 120);
             if (!$lock->get()) {
                 $results[$sheetKey] = [
                     'success' => true,
                     'skipped' => true,
+                    'period' => $selectedPeriod,
                     'error' => null,
                 ];
                 continue;
             }
 
-            $cacheKey = $this->kpiSheetCacheKey($sheetKey);
+            $cacheKey = $this->kpiSheetCacheKey($sheetKey, $selectedPeriod);
             try {
-                $payload = $this->fetchKpiSheetPayload($sheetKey);
+                $payload = $this->fetchKpiSheetPayload($sheetKey, $selectedPeriod);
                 $success = empty($payload['error']);
+                $referenceSync = null;
 
                 if ($success) {
                     Cache::put($cacheKey, $payload, now()->addDays(2));
                     $this->persistKpiSheetPayload($cacheKey, $payload);
+                    if ($selectedPeriod === self::KPI_DEFAULT_PERIOD && !app()->runningUnitTests()) {
+                        try {
+                            $referenceSync = app(KpiPersonnelReferenceSyncService::class)->sync($sheetKey, $payload);
+                        } catch (\Throwable $exception) {
+                            Log::error('KPI personnel reference synchronization failed.', [
+                                'sheet' => $sheetKey,
+                                'period' => $selectedPeriod,
+                                'error' => $exception->getMessage(),
+                            ]);
+                            $referenceSync = [
+                                'sheet' => $sheetKey,
+                                'skipped' => true,
+                                'error' => $exception->getMessage(),
+                            ];
+                        }
+                    }
                 }
 
                 $results[$sheetKey] = [
                     'success' => $success,
+                    'period' => $selectedPeriod,
                     'row_count' => (int) data_get($payload, 'summary.row_count', 0),
                     'fetched_at' => $payload['fetched_at'] ?? null,
                     'error' => $payload['error'] ?? null,
+                    'reference_sync' => $referenceSync,
                 ];
             } finally {
-                Cache::forget('dashboard_sources:refresh:kpi:' . $sheetKey . ':pending');
+                Cache::forget('dashboard_sources:refresh:kpi:' . $selectedPeriod . ':' . $sheetKey . ':pending');
                 optional($lock)->release();
             }
         }
 
-        Cache::forget('dashboard_sources:refresh:kpi:all:pending');
+        Cache::forget('dashboard_sources:refresh:kpi:' . $selectedPeriod . ':all:pending');
 
         return $results;
     }
 
-    private function cachedKpiSheetPayload(string $sheetKey, string $cacheKey): array
+    private function cachedKpiSheetPayload(string $sheetKey, string $period, string $cacheKey): array
     {
         $payload = Cache::get($cacheKey);
         if (!is_array($payload) || empty($payload['header'])) {
@@ -355,33 +420,47 @@ class AlmafactsDashboardController extends Controller
             }
         }
 
+        if ((!is_array($payload) || empty($payload['header'])) && $period === '2026-06') {
+            $legacyCacheKey = $this->legacyKpiSheetCacheKey($sheetKey, $period);
+            $payload = Cache::get($legacyCacheKey);
+            if (!is_array($payload) || empty($payload['header'])) {
+                $payload = $this->readPersistedKpiSheetPayload($legacyCacheKey);
+            }
+            if (is_array($payload) && !empty($payload['header'])) {
+                Cache::put($cacheKey, $payload, now()->addDays(2));
+                $this->persistKpiSheetPayload($cacheKey, $payload);
+            }
+        }
+
         try {
             $fetchedAt = isset($payload['fetched_at']) ? Carbon::parse((string) $payload['fetched_at']) : null;
         } catch (\Throwable) {
             $fetchedAt = null;
         }
         if ($fetchedAt === null || $fetchedAt->lt(now()->subMinutes(5))) {
-            $this->queueKpiSourceRefresh([$sheetKey]);
+            $this->queueKpiSourceRefresh([$sheetKey], $period);
         }
 
-        return $payload ?? $this->emptyKpiSheetPayload(
+        $payload = $payload ?? $this->emptyKpiSheetPayload(
             'Data KPI sedang disinkronkan di background. Muat ulang halaman setelah proses selesai.'
         );
+
+        return $this->normalizeKpiPayloadErrors($payload);
     }
 
     /** @param array<int, string> $sheetKeys */
-    private function queueKpiSourceRefresh(array $sheetKeys): void
+    private function queueKpiSourceRefresh(array $sheetKeys, string $period): void
     {
         $sheetKeys = array_values(array_filter(array_unique($sheetKeys), fn (string $key): bool => isset(self::KPI_SHEETS[$key])));
         $pendingKey = $sheetKeys === []
-            ? 'dashboard_sources:refresh:kpi:all:pending'
-            : 'dashboard_sources:refresh:kpi:' . implode(',', $sheetKeys) . ':pending';
+            ? 'dashboard_sources:refresh:kpi:' . $period . ':all:pending'
+            : 'dashboard_sources:refresh:kpi:' . $period . ':' . implode(',', $sheetKeys) . ':pending';
 
         if (!Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
             return;
         }
 
-        RefreshRemoteDashboardSourcesJob::dispatch(['kpi'], $sheetKeys);
+        RefreshRemoteDashboardSourcesJob::dispatch(['kpi'], $sheetKeys, $period);
     }
 
     private function persistKpiSheetPayload(string $cacheKey, array $payload): void
@@ -423,9 +502,29 @@ class AlmafactsDashboardController extends Controller
         return array_key_exists($key, self::KPI_SHEETS) ? $key : array_key_first(self::KPI_SHEETS);
     }
 
-    private function fetchKpiSheetPayload(string $sheetKey): array
+    private function resolveKpiPeriod(mixed $value): string
     {
-        $sheet = $this->kpiSheetConfig($sheetKey);
+        $period = trim((string) $value);
+        if (array_key_exists($period, self::KPI_PERIOD_OPTIONS)) {
+            return $period;
+        }
+
+        if ($period !== '') {
+            try {
+                $normalized = Carbon::parse($period)->format('Y-m');
+                if (array_key_exists($normalized, self::KPI_PERIOD_OPTIONS)) {
+                    return $normalized;
+                }
+            } catch (\Throwable) {
+            }
+        }
+
+        return self::KPI_DEFAULT_PERIOD;
+    }
+
+    private function fetchKpiSheetPayload(string $sheetKey, string $period): array
+    {
+        $sheet = $this->kpiSheetConfig($sheetKey, $period);
         $spreadsheetId = $sheet['spreadsheet_id'] ?? self::KPI_SPREADSHEET_ID;
         $sheetNames = array_values(array_unique(array_merge(
             [$sheet['sheet']],
@@ -466,6 +565,7 @@ class AlmafactsDashboardController extends Controller
                         'column_count' => count($parsed['header']),
                         'sheet_name' => $sheetName,
                         'sheet_title' => $parsed['sheet_title'] ?: $sheet['title'],
+                        'period' => $period,
                     ],
                     'fetched_at' => now()->toDateTimeString(),
                     'error' => null,
@@ -502,7 +602,7 @@ class AlmafactsDashboardController extends Controller
 
         foreach ($lines as $line) {
             $cells = array_map(
-                static fn ($value): string => trim((string) $value),
+                fn ($value): string => $this->normalizeKpiSheetCell($value),
                 str_getcsv($line)
             );
 
@@ -606,6 +706,26 @@ class AlmafactsDashboardController extends Controller
     private function isKpiSheetBlankDataCell(mixed $value): bool
     {
         return in_array(trim((string) $value), ['', '-', '--'], true);
+    }
+
+    private function normalizeKpiSheetCell(mixed $value): string
+    {
+        $normalized = trim((string) $value);
+
+        return strtoupper($normalized) === '#ERROR!' ? '-' : $normalized;
+    }
+
+    private function normalizeKpiPayloadErrors(array $payload): array
+    {
+        $payload['rows'] = array_map(
+            fn (array $row): array => array_map(
+                fn ($value): string => $this->normalizeKpiSheetCell($value),
+                $row
+            ),
+            array_values($payload['rows'] ?? [])
+        );
+
+        return $payload;
     }
 
     private function buildKpiSheetHeaderMeta(array $rawHeader, string $sheetKey, ?array $secondHeader = null): array
@@ -1111,20 +1231,33 @@ class AlmafactsDashboardController extends Controller
         );
     }
 
-    private function kpiSheetCacheKey(string $sheetKey): string
+    private function kpiSheetCacheKey(string $sheetKey, string $period): string
     {
-        $sheet = $this->kpiSheetConfig($sheetKey);
+        $sheet = $this->kpiSheetConfig($sheetKey, $period);
+        $sheetName = $sheet['sheet'] ?? $sheetKey;
+        $spreadsheetId = $sheet['spreadsheet_id'] ?? self::KPI_SPREADSHEET_ID;
+
+        return 'dashboard_almafacts:kpi_sheet:v8:' . $period . ':' . $sheetKey . ':' . md5($spreadsheetId . '|' . $sheetName);
+    }
+
+    private function legacyKpiSheetCacheKey(string $sheetKey, string $period): string
+    {
+        $sheet = $this->kpiSheetConfig($sheetKey, $period);
         $sheetName = $sheet['sheet'] ?? $sheetKey;
         $spreadsheetId = $sheet['spreadsheet_id'] ?? self::KPI_SPREADSHEET_ID;
 
         return 'dashboard_almafacts:kpi_sheet:v7:' . $sheetKey . ':' . md5($spreadsheetId . '|' . $sheetName);
     }
 
-    private function kpiSheetConfig(string $sheetKey): array
+    private function kpiSheetConfig(string $sheetKey, string $period): array
     {
         $base = self::KPI_SHEETS[$sheetKey] ?? self::KPI_SHEETS[array_key_first(self::KPI_SHEETS)];
 
-        if (!Schema::hasTable(self::KPI_LINK_TABLE)) {
+        if ($period === '2026-06' && isset(self::KPI_JUNE_SOURCES[$sheetKey])) {
+            $base = array_replace($base, self::KPI_JUNE_SOURCES[$sheetKey]);
+        }
+
+        if ($period !== self::KPI_DEFAULT_PERIOD || !Schema::hasTable(self::KPI_LINK_TABLE)) {
             return $base;
         }
 

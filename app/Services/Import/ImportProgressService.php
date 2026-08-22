@@ -1018,15 +1018,32 @@ class ImportProgressService
             return $job;
         }
 
-        $status = strtolower((string) ($job->status ?? ''));
-        if (!in_array($status, ['queued', 'processing'], true)) {
-            return $job;
-        }
-
         $success = (int) ($job->total_success ?? 0);
         $failed = (int) ($job->total_failed ?? 0);
         $totalRows = max(0, (int) ($job->total_files ?? 0));
         $resolvedTerminalStatus = $this->resolveTerminalStatusFromTotals($success, $failed, $totalRows);
+
+        $status = strtolower((string) ($job->status ?? ''));
+
+        // A stale worker/snapshot safeguard must never turn a fully committed
+        // import into a failed result. Persisted totals are the terminal facts.
+        if (in_array($status, ['failed', 'failed_partial'], true) && $resolvedTerminalStatus === 'completed') {
+            Log::warning('Contradictory import status repaired from persisted totals.', [
+                'job_id' => $jobId,
+                'previous_status' => $status,
+                'total_success' => $success,
+                'total_failed' => $failed,
+                'total_rows' => $totalRows,
+            ]);
+
+            $this->finalizeProcessingJobFromTotals($jobId, 'completed', $success, $failed, $totalRows);
+
+            return $this->findJob($jobId);
+        }
+
+        if (!in_array($status, ['queued', 'processing'], true)) {
+            return $job;
+        }
 
         // A worker can finish writing every row just before its final status update.
         // Reconcile from persisted totals for both queued and processing states so a
@@ -1330,8 +1347,13 @@ class ImportProgressService
 
     private function resolveStatusMessage(object $job, array $progress): string
     {
+        $jobStatus = strtolower(trim((string) ($job->status ?? '')));
+        $progressStatus = strtolower(trim((string) ($progress['status'] ?? '')));
         $progressMessage = trim((string) ($progress['message'] ?? ''));
-        if ($progressMessage !== '') {
+        if (
+            $progressMessage !== ''
+            && (!$this->isTerminalStatus($jobStatus) || $progressStatus === '' || $progressStatus === $jobStatus)
+        ) {
             return $progressMessage;
         }
 
@@ -1340,7 +1362,7 @@ class ImportProgressService
             return $databaseMessage;
         }
 
-        return match (strtolower(trim((string) ($job->status ?? '')))) {
+        return match ($jobStatus) {
             'queued' => 'Job import sedang menunggu di antrian.',
             'staging' => 'Worker menyiapkan CSV staging.',
             'processing' => 'Import sedang diproses.',
@@ -1584,6 +1606,7 @@ class ImportProgressService
         try {
             DB::table('import_jobs')
                 ->where('id', $jobId)
+                ->whereNotIn('status', ['completed', 'failed', 'failed_partial', 'terminated'])
                 ->update([
                     'status' => $status,
                     'updated_at' => now(),

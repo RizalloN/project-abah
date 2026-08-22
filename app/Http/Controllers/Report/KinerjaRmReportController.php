@@ -93,7 +93,7 @@ class KinerjaRmReportController extends Controller
             $selectedRmCategory
         );
         $qualitySeries = ['os' => $osRows];
-        foreach (['lr', 'sml_1', 'sml_2', 'sml_3', 'kl', 'd1', 'd2', 'm', 'lar'] as $qualityType) {
+        foreach (['lancar', 'lr', 'lnr', 'account_restruk', 'sml_1', 'sml_2', 'sml_3', 'kl', 'd1', 'd2', 'm'] as $qualityType) {
             $qualitySeries[$qualityType] = $this->fetchBranchRows(
                 $selectedSegmen,
                 $selectedPeriod,
@@ -1240,7 +1240,7 @@ class KinerjaRmReportController extends Controller
         $comparisonKeys = array_keys($comparisonPeriodValues);
         $emptyComparisonValues = array_fill_keys($comparisonKeys, 0.0);
 
-        $cacheKey = 'kinerja_rm_rows_v24-quality-series-without-realisasi-filter:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_rows_v25-quality-restruk-split:' . $this->reportCacheVersion() . ':' . md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'comparisons' => $comparisonPeriodValues,
@@ -1250,7 +1250,7 @@ class KinerjaRmReportController extends Controller
             'quality' => $qualityType,
             'rm_category' => $selectedRmCategory,
             'sort_by_unit_code' => $sortByUnitCode,
-            'quality_source' => $detailedQualityRows !== null ? 'daily-loan-bucket-v1' : 'snapshot',
+            'quality_source' => $detailedQualityRows !== null ? 'daily-loan-bucket-v2-restruk-split' : 'snapshot',
         ]));
 
         return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $comparisonPeriodValues, $comparisonKeys, $emptyComparisonValues, $realisasiPeriod, $selectedCabang, $selectedProduct, $qualityType, $selectedRmCategory, $detailedQualityRows, $sortByUnitCode) {
@@ -1363,6 +1363,7 @@ class KinerjaRmReportController extends Controller
                 $key = "{$cabKey}|{$rmUnit}|{$rmKey}|{$prodKey}";
 
                 $val = (float) match ($qualityType) {
+                    'lancar' => $row->lancar_os ?? 0,
                     'sml_1' => $row->sml_1_os ?? 0,
                     'sml_2' => $row->sml_2_os ?? 0,
                     'sml_3' => $row->sml_3_os ?? 0,
@@ -1370,8 +1371,9 @@ class KinerjaRmReportController extends Controller
                     'd1' => $row->d1_os ?? 0,
                     'd2' => $row->d2_os ?? 0,
                     'm' => $row->m_os ?? 0,
-                    'lancar_non_restruk' => (float) $row->lancar_os - (float) $row->restruk_os,
+                    'lancar_non_restruk', 'lnr' => $row->lancar_non_restruk_os ?? 0,
                     'lr' => $row->restruk_os,
+                    'account_restruk' => $row->account_restruk_os ?? 0,
                     'sml' => $row->sml_os,
                     'npl' => $row->npl_os,
                     'lar' => (float) $row->restruk_os + (float) $row->sml_os + (float) $row->npl_os,
@@ -1750,7 +1752,7 @@ class KinerjaRmReportController extends Controller
             return collect();
         }
 
-        $cacheKey = 'kinerja_rm_quality_detail_v1:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_quality_detail_v2-restruk-split:' . $this->reportCacheVersion() . ':' . md5(json_encode([
             'segmen' => $segmen,
             'periods' => $periods->all(),
             'cabang' => $selectedCabang,
@@ -1782,6 +1784,7 @@ class KinerjaRmReportController extends Controller
                 ->selectRaw("COALESCE(d.rm_normalized, '') as rm")
                 ->selectRaw("COALESCE(d.produk_kinerja, '') as produk")
                 ->selectRaw("{$bucketExpression} as quality_bucket")
+                ->selectRaw("UPPER(TRIM(COALESCE(d.flag_restruk, ''))) as flag_restruk_normalized")
                 ->selectRaw('SUM(COALESCE(d.baki_debet1, 0)) as quality_os')
                 ->selectRaw('COUNT(DISTINCT d.nomor_rekening1) as quality_deb')
                 ->groupBy(
@@ -1791,7 +1794,8 @@ class KinerjaRmReportController extends Controller
                     'd.branch_normalized',
                     'd.rm_normalized',
                     'd.produk_kinerja',
-                    'quality_bucket'
+                    'quality_bucket',
+                    'flag_restruk_normalized'
                 )
                 ->get();
 
@@ -1816,9 +1820,11 @@ class KinerjaRmReportController extends Controller
                     'produk' => (string) $bucketRow->produk,
                     'loan_os' => 0.0,
                     'lancar_os' => 0.0,
+                    'lancar_non_restruk_os' => 0.0,
                     'sml_os' => 0.0,
                     'npl_os' => 0.0,
                     'restruk_os' => 0.0,
+                    'account_restruk_os' => 0.0,
                     'sml_1_os' => 0.0,
                     'sml_2_os' => 0.0,
                     'sml_3_os' => 0.0,
@@ -1852,6 +1858,7 @@ class KinerjaRmReportController extends Controller
                 }
 
                 $normalizedBucket = strtoupper(trim((string) $bucketRow->quality_bucket));
+                $normalizedFlagRestruk = strtoupper(trim((string) ($bucketRow->flag_restruk_normalized ?? '')));
                 if (in_array($normalizedBucket, ['DPK 1', 'DPK 2', 'DPK 3'], true)) {
                     $rows[$key]->sml_os += $amount;
                 } elseif (in_array($normalizedBucket, ['KL', 'D1', 'D2', 'M'], true)) {
@@ -1861,6 +1868,14 @@ class KinerjaRmReportController extends Controller
                     if ($normalizedBucket === 'LR') {
                         $rows[$key]->restruk_os += $amount;
                     }
+                }
+
+                if ($normalizedBucket === 'L' && $normalizedFlagRestruk === 'N') {
+                    $rows[$key]->lancar_non_restruk_os += $amount;
+                }
+
+                if ($normalizedFlagRestruk === 'Y') {
+                    $rows[$key]->account_restruk_os += $amount;
                 }
             }
 

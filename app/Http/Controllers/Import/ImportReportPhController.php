@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Import;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AuthorizesSessionImportStorageFiles;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Http\Controllers\Import\Concerns\ServesMappedCsvPreviewFilters;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Http\Controllers\Import\Concerns\GeneratesFileIdentifiers;
 use App\Services\Import\ExcelImportJobService;
@@ -31,6 +32,7 @@ class ImportReportPhController extends Controller
     use AuthorizesSessionImportStorageFiles;
 
     use AllocatesGapIds;
+    use ServesMappedCsvPreviewFilters;
     use SmartCsvImportSupport;
     use GeneratesFileIdentifiers;
 
@@ -1163,7 +1165,8 @@ class ImportReportPhController extends Controller
                 'streamRoute' => route('import.reportph.stream'),
                 'backRoute' => route('import.index'),
                 'previewStateKey' => $previewStateKey,
-                'filterOptionsRoute' => route('import.preview.filter-options'),
+                'filterOptionsRoute' => route('import.reportph.filter-options'),
+                'filteredRowsRoute' => route('import.reportph.filtered-rows'),
                 'lockDelimiterSelector' => true,
                 'fixedDelimiterLabel' => 'Koma ( , )',
                 'hideDelimiterCard' => true,
@@ -1263,6 +1266,8 @@ class ImportReportPhController extends Controller
             'lockDelimiterSelector' => true,
             'fixedDelimiterLabel' => 'Delimiter terdeteksi otomatis',
             'disableArea6AutoFilter' => true,
+            'filterOptionsRoute' => route('import.reportph.filter-options'),
+            'filteredRowsRoute' => route('import.reportph.filtered-rows'),
         ]);
     }
 
@@ -1320,7 +1325,7 @@ class ImportReportPhController extends Controller
         $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
         $isFastExcelPreview = $previewMeta !== []
             && (string) ($previewMeta['path'] ?? '') === $relativePath
-            && $this->isExcelFile($absolutePath)
+            && $this->isExcelFile($workingPath)
             && ($stagedCsvPath === '' || !file_exists($stagedCsvPath))
             && $queueHeaders !== [];
 
@@ -2037,6 +2042,81 @@ class ImportReportPhController extends Controller
             'total_failed' => 0,
             'total_rows' => $preparedRows,
         ];
+    }
+
+    protected function resolveMappedPreviewSource(string $requestedPath, ?string $requestedDelimiter = null): array
+    {
+        ini_set('memory_limit', '1024M');
+        set_time_limit(0);
+
+        [$relativePath, $absolutePath] = $this->authorizeSessionImportStorageFile(
+            $requestedPath,
+            'report_ph_file',
+            ['report_ph_imports'],
+            ['csv', 'txt', 'xlsx', 'xls']
+        );
+
+        $workingPath = $this->resolveWorkingImportPath($relativePath);
+        if ($this->isExcelFile($workingPath)) {
+            $excelMeta = $this->detectExcelHeaderViaPython($absolutePath);
+            if ($excelMeta === null) {
+                throw new \RuntimeException('Header Excel ' . self::REPORT_LABEL . ' tidak dapat dibaca untuk filter preview.');
+            }
+
+            $stageResult = $this->stageExcelToCsv(
+                static function (string $_event, array $_payload): void {},
+                $absolutePath,
+                (int) ($excelMeta['header_index'] ?? 0),
+                $this->normalizeExcelHeaders((array) ($excelMeta['header_values'] ?? []))
+            );
+            if ($stageResult === null || !file_exists((string) ($stageResult['staged_csv_path'] ?? ''))) {
+                throw new \RuntimeException('CSV staging ' . self::REPORT_LABEL . ' gagal disiapkan untuk filter preview.');
+            }
+
+            $this->putStagedExcelState($relativePath, $stageResult);
+            $workingPath = (string) $stageResult['staged_csv_path'];
+        }
+
+        return [$workingPath, $this->buildCsvContext($workingPath)];
+    }
+
+    protected function iterateMappedPreviewRows(string $path, array $context, callable $callback): void
+    {
+        $handle = fopen($path, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file CSV ' . self::REPORT_LABEL . '.');
+        }
+
+        $lineNumber = 0;
+        try {
+            while (($sourceRow = $this->readCsvRecord($handle, $context['delimiter'])) !== false) {
+                $lineNumber++;
+                if ($lineNumber <= (int) $context['header_line']) {
+                    continue;
+                }
+
+                $row = $this->mapCsvRow($context, $sourceRow);
+                if ($row === null) {
+                    continue;
+                }
+
+                if ($callback($row) === false) {
+                    break;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    protected function mappedPreviewCacheNamespace(): string
+    {
+        return 'report_ph';
+    }
+
+    protected function mappedPreviewLabel(): string
+    {
+        return self::REPORT_LABEL;
     }
 
     private function buildCsvContext(string $path): array

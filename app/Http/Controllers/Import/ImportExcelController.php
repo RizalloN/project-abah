@@ -2833,11 +2833,14 @@ class ImportExcelController extends Controller
                 $finalTotalRows = (int) ($job->total_files ?? max($totalRows, $totalSuccess + $totalFailed));
 
                 if (in_array($status, ['completed', 'failed_partial'], true)) {
+                    $syncMessage = $status === 'completed'
+                        ? 'Import Daily Loan berhasil. Sinkronisasi dashboard dijalankan di latar belakang.'
+                        : 'Import Daily Loan selesai sebagian. Sinkronisasi dashboard dijalankan di latar belakang.';
                     $syncPayload = [
-                        'status' => 'processing',
+                        'status' => $status,
                         'phase' => 'syncing_report',
-                        'percent' => 99,
-                        'message' => 'Sinkronisasi report hasil import Daily Loan...',
+                        'percent' => 100,
+                        'message' => $syncMessage,
                         'processed_rows' => $totalSuccess + $totalFailed,
                         'total_rows' => $finalTotalRows,
                         'total_success' => $totalSuccess,
@@ -2855,6 +2858,7 @@ class ImportExcelController extends Controller
 
                 $terminalPayload = [
                     'status' => $status,
+                    'message' => $syncMessage ?? null,
                     'total_success' => $totalSuccess,
                     'total_failed' => $totalFailed,
                     'total_rows' => $finalTotalRows,
@@ -8588,15 +8592,24 @@ class ImportExcelController extends Controller
             $status = $failed > 0
                 ? ($inserted > 0 ? 'failed_partial' : 'failed')
                 : 'completed';
+            $terminalMessage = match ($status) {
+                'completed' => $isDailyLoanTable
+                    ? 'Direct LOAD DATA Daily Loan selesai diproses.'
+                    : 'Direct LOAD DATA ' . $directTableLabel . ' selesai diproses.',
+                'failed_partial' => $isDailyLoanTable
+                    ? 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.'
+                    : 'Direct LOAD DATA ' . $directTableLabel . ' selesai dengan kegagalan parsial.',
+                default => $isDailyLoanTable
+                    ? 'Direct LOAD DATA Daily Loan gagal diproses.'
+                    : 'Direct LOAD DATA ' . $directTableLabel . ' gagal diproses.',
+            };
 
             if ($jobId > 0) {
                 $this->progressService()->updateTotals($jobId, $inserted, $failed, $baseTotal, $status, [
                     'status' => $status,
                     'phase' => 'loading',
                     'percent' => 100,
-                    'message' => $status === 'completed'
-                        ? ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai diproses.' : 'Direct LOAD DATA ' . $directTableLabel . ' selesai diproses.')
-                        : ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.' : 'Direct LOAD DATA ' . $directTableLabel . ' selesai dengan kegagalan parsial.'),
+                    'message' => $terminalMessage,
                     'processed_rows' => $inserted + $failed,
                     'total_rows' => $baseTotal,
                     'total_success' => $inserted,
@@ -8608,22 +8621,24 @@ class ImportExcelController extends Controller
                 'status' => $status,
                 'phase' => $status === 'completed' ? 'completed' : 'failed',
                 'percent' => 100,
-                'message' => $isDailyLoanTable
-                    ? 'Direct LOAD DATA Daily Loan selesai diproses.'
-                    : 'Direct LOAD DATA ' . $directTableLabel . ' selesai diproses.',
+                'message' => $terminalMessage,
                 'rows_done' => $inserted,
                 'total' => $baseTotal,
                 'speed' => 0,
             ]);
 
             if ($emitComplete) {
-                $send('complete', [
+                $terminalPayload = [
+                    'status' => $status,
+                    'message' => $terminalMessage,
                     'total_success' => $inserted,
                     'total_failed' => $failed,
                     'total_rows' => $baseTotal,
                     'skipped_rows' => $skippedRows,
                     'skipped_count' => $skippedCount,
-                ]);
+                ];
+
+                $send($status === 'completed' ? 'complete' : 'error', $terminalPayload);
             }
 
             return true;

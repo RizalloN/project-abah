@@ -317,6 +317,45 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertStringContainsString("UPPER(ss.nama_uker) LIKE '%MAGETAN%'", $condition);
     }
 
+    public function test_keragaan_uker_uses_nama_uker_when_ssa_sources_do_not_have_id_uker(): void
+    {
+        $this->createSourceMetadataTables();
+        $service = new DashboardHarianSnapshotService();
+        $reflection = new \ReflectionMethod($service, 'keragaanUkerUnitCodeExpression');
+        $reflection->setAccessible(true);
+
+        $loanExpression = $reflection->invoke($service, 'ssa_pinjaman');
+        $savingsExpression = $reflection->invoke($service, 'ssa_simpanan');
+
+        $this->assertStringNotContainsString('id_uker', $loanExpression);
+        $this->assertStringNotContainsString('id_uker', $savingsExpression);
+        $this->assertStringContainsString('nama_uker', $loanExpression);
+        $this->assertStringContainsString('nama_uker', $savingsExpression);
+
+        DB::table('ssa_pinjaman')->insert([
+            [
+                'month_day_year_of_periode' => '2026-08-17',
+                'nama_cabang' => 'KC Madiun',
+                'nama_uker' => '00045 -- KC Madiun',
+                'baki_debet' => 1_250,
+            ],
+            [
+                'month_day_year_of_periode' => '2026-08-17',
+                'nama_cabang' => 'KC Ngawi',
+                'nama_uker' => '00057 -- KC Ngawi',
+                'baki_debet' => 900,
+            ],
+        ]);
+
+        $fetchRows = new \ReflectionMethod($service, 'fetchKeragaanUkerLoanRows');
+        $fetchRows->setAccessible(true);
+        $rows = $fetchRows->invoke($service, ['2026-08-17'], 'KC Madiun', null);
+
+        $this->assertCount(1, $rows);
+        $this->assertSame('00045', (string) $rows->first()->unit_code);
+        $this->assertSame(1250.0, (float) $rows->first()->pinjaman);
+    }
+
     public function test_filter_options_treat_all_kancas_as_area6_and_hide_units_until_scoped(): void
     {
         $this->createSourceMetadataTables();

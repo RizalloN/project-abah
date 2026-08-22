@@ -463,6 +463,28 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringContainsString('Performance & Kualitas', $table);
         $this->assertStringContainsString("@include('report.kinerjarm-performance-table-section')", $table);
         $this->assertStringContainsString('Navigasi Kinerja RM Ritel', $table);
+        $qualityOrder = [
+            "'os' => [",
+            "'lancar' => [",
+            "'lr' => [",
+            "'lnr' => [",
+            "'account_restruk' => [",
+            "'sml_1' => [",
+            "'sml_2' => [",
+            "'sml_3' => [",
+            "'kl' => [",
+            "'d1' => [",
+            "'d2' => [",
+            "'m' => [",
+        ];
+        $previousPosition = -1;
+        foreach ($qualityOrder as $definition) {
+            $position = strpos($table, $definition);
+            $this->assertNotFalse($position, "Definisi kualitas {$definition} tidak ditemukan.");
+            $this->assertGreaterThan($previousPosition, $position, "Urutan kualitas {$definition} tidak sesuai.");
+            $previousPosition = $position;
+        }
+        $this->assertStringNotContainsString("'lar' => [", $table);
         $this->assertStringContainsString('<p>Kinerja RM Ritel</p>', $sidebar);
         $this->assertStringNotContainsString('Dashboard RM Ritel', $view);
         $this->assertStringNotContainsString('Kinerja RM Performance Report', $view);

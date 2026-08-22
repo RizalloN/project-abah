@@ -6,6 +6,7 @@ use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Jobs\SyncImportedReportJob;
 use App\Services\Import\ImportProgressService;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Mockery;
 use Tests\TestCase;
 
@@ -62,5 +63,45 @@ class DeferSnapshotJobsDuringImportTest extends TestCase
             $middleware,
             static fn ($item): bool => $item instanceof DeferSnapshotJobsDuringImport
         ));
+    }
+
+    public function test_stale_import_is_reconciled_before_snapshot_job_continues(): void
+    {
+        $importProgressService = Mockery::mock(ImportProgressService::class);
+        $importProgressService->shouldReceive('hasActiveProcessingJobs')->once()->andReturnTrue();
+        $importProgressService->shouldReceive('getStatusPayload')
+            ->once()
+            ->with(44)
+            ->andReturn([
+                'status' => 'completed',
+                'total_rows' => 319332,
+                'total_success' => 319332,
+                'total_failed' => 0,
+            ]);
+        $importProgressService->shouldNotReceive('markFailed');
+
+        $query = Mockery::mock();
+        $query->shouldReceive('whereIn')->once()->with('status', ['staging', 'processing'])->andReturnSelf();
+        $query->shouldReceive('where')->once()->with('updated_at', '<', Mockery::type(\DateTimeInterface::class))->andReturnSelf();
+        $query->shouldReceive('orderByDesc')->once()->with('updated_at')->andReturnSelf();
+        $query->shouldReceive('first')->once()->andReturn((object) [
+            'id' => 44,
+            'updated_at' => now()->subHours(5)->toDateTimeString(),
+            'total_success' => 319332,
+            'total_failed' => 0,
+        ]);
+        DB::shouldReceive('table')->once()->with('import_jobs')->andReturn($query);
+
+        $middleware = new DeferSnapshotJobsDuringImport($importProgressService);
+        $nextCalled = false;
+
+        $result = $middleware->handle(new \stdClass(), function () use (&$nextCalled): string {
+            $nextCalled = true;
+
+            return 'continued';
+        });
+
+        $this->assertTrue($nextCalled);
+        $this->assertSame('continued', $result);
     }
 }

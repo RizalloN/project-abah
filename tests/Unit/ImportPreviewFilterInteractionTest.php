@@ -39,8 +39,35 @@ class ImportPreviewFilterInteractionTest extends TestCase
         $this->assertStringContainsString("window.importPreviewFilterBuild = 'merchant-filter-state-v2';", $source);
         $this->assertStringContainsString('const initialArea6Selections = @json($initialArea6Selections ?? []);', $source);
         $this->assertStringContainsString('const configuredInitialValues = normalizeFilterValues(initialArea6Selections[col] || []);', $source);
+        $this->assertStringContainsString('? new Set(configuredInitialValues)', $source);
+        $this->assertStringContainsString('initialSelectionPending: shouldApplyArea6Selection,', $source);
+        $this->assertStringContainsString('!state.initialSelectionPending', $source);
         $this->assertStringNotContainsString('importPreviewToggleSelectAllDirect', $source);
         $this->assertStringNotContainsString('onclick="window.importPreviewToggleSelectAllDirect', $source);
+    }
+
+    public function test_csv_preview_applies_initial_filter_without_showing_stale_rows(): void
+    {
+        $source = file_get_contents(base_path('resources/views/import/preview.blade.php'));
+
+        $this->assertStringContainsString('function updatePreviewTable(immediate = false)', $source);
+        $this->assertStringContainsString('renderSamplePreviewTable(activeFilters);', $source);
+        $this->assertStringContainsString('if (immediate) {', $source);
+        $this->assertStringContainsString('updatePreviewTable(true);', $source);
+        $this->assertStringContainsString("const activeFiltersInput = document.getElementById('active_filters_json');", $source);
+        $this->assertStringContainsString('if (Object.keys(activeFilters).length > 0)', $source);
+        $this->assertStringNotContainsString('if (prefetchFilterOptionsOnLoad && filePathValue && filterOptionsUrl)', $source);
+    }
+
+    #[DataProvider('previewTemplates')]
+    public function test_preview_filters_current_sample_before_waiting_for_server_rows(string $path): void
+    {
+        $source = file_get_contents(base_path($path));
+
+        $this->assertStringContainsString('renderSamplePreviewTable(activeFilters);', $source);
+        $this->assertStringContainsString('}, 180);', $source);
+        $this->assertStringContainsString("document.getElementById('active_filters_json')", $source);
+        $this->assertStringContainsString('if (Object.keys(activeFilters).length > 0)', $source);
     }
 
     #[DataProvider('previewTemplates')]
@@ -61,10 +88,10 @@ class ImportPreviewFilterInteractionTest extends TestCase
     {
         $source = file_get_contents(base_path($path));
 
-        $this->assertStringContainsString(
-            'const hadAllSelected = previousValues.length === 0 || previousSelection.size === previousValues.length;',
-            $source
-        );
+        $this->assertStringContainsString('function replaceFilterOptions(state, values)', $source);
+        $this->assertStringContainsString('previousSelection.size === previousValues.length', $source);
+        $this->assertStringContainsString('replaceFilterOptions(state, cachedValues);', $source);
+        $this->assertStringContainsString('replaceFilterOptions(state, normalizedValues);', $source);
         $this->assertStringNotContainsString(
             'previousSelection.has(value) || previousSelection.size === 0',
             $source
@@ -72,5 +99,42 @@ class ImportPreviewFilterInteractionTest extends TestCase
         $this->assertStringNotContainsString('select-all-cb direct change event fired', $source);
         $this->assertStringNotContainsString('applySelectAllState starting', $source);
         $this->assertStringNotContainsString('applySelectAllState finished', $source);
+    }
+
+    #[DataProvider('previewTemplates')]
+    public function test_wide_previews_prefetch_the_complete_branch_filter_instead_of_skipping_it(string $path): void
+    {
+        $source = file_get_contents(base_path($path));
+
+        $this->assertStringContainsString('function priorityFilterHeaderScore(header)', $source);
+        $this->assertStringContainsString("compactHeader === 'mbdesc'", $source);
+        $this->assertStringContainsString("compactHeader.includes('namakci')", $source);
+        $this->assertStringContainsString("compactHeader === 'kanca'", $source);
+        $this->assertStringContainsString("compactHeader === 'cabang'", $source);
+        $this->assertStringContainsString('function resolvePriorityFilterColumns()', $source);
+        $this->assertStringContainsString('function prefetchPriorityFilterOptions()', $source);
+        $this->assertStringContainsString('prefetchPriorityFilterOptions().catch(function (error)', $source);
+        $this->assertStringNotContainsString('Prefetch skipped because table has too many columns:', $source);
+
+        $priorityPrefetchPosition = strpos($source, 'prefetchPriorityFilterOptions().catch(function (error)');
+        $initialRenderPosition = strrpos($source, 'renderFilterList(col);');
+        $this->assertIsInt($priorityPrefetchPosition);
+        $this->assertIsInt($initialRenderPosition);
+        $this->assertLessThan(
+            $initialRenderPosition,
+            $priorityPrefetchPosition,
+            'Priority branch hydration harus dimulai sebelum daftar sampel pertama dirender.'
+        );
+    }
+
+    public function test_filter_option_cache_versions_invalidate_partial_branch_lists(): void
+    {
+        $csvPreview = file_get_contents(base_path('resources/views/import/preview.blade.php'));
+        $excelPreview = file_get_contents(base_path('resources/views/import/preview_excel.blade.php'));
+
+        $this->assertStringContainsString("const storageKeyPrefix = 'preview_filter_v9_'", $csvPreview);
+        $this->assertStringContainsString("const storageKeyPrefix = 'preview_filter_excel_v6_'", $excelPreview);
+        $this->assertStringNotContainsString("const storageKeyPrefix = 'preview_filter_v8_'", $csvPreview);
+        $this->assertStringNotContainsString("const storageKeyPrefix = 'preview_filter_excel_v5_'", $excelPreview);
     }
 }

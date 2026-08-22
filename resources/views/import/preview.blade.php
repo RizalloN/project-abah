@@ -7,6 +7,7 @@
     $filtersDisabled = !empty($filtersDisabled);
     $lockColumnSelection = !empty($lockColumnSelection);
     $preserveFilterValueWhitespace = !empty($preserveFilterValueWhitespace);
+    $hidePreviewRowsUntilJs = !empty($hidePreviewRowsUntilJs);
     $previewReportTitle = $previewBannerTitle ?? $pageTitle ?? 'Preview Data Import';
     $previewModeLabel = $filtersDisabled ? 'Import full' : 'Preview dengan filter';
 @endphp
@@ -134,7 +135,7 @@
                         </div>
                     @endif
 
-                    <div class="table-responsive import-preview-table-shell">
+                    <div class="table-responsive import-preview-table-shell{{ $hidePreviewRowsUntilJs ? ' is-preview-loading' : '' }}">
                         <table class="table table-bordered table-hover m-0 import-preview-table">
                             <thead class="thead-light sticky-top" style="z-index: 2;">
                                 <tr>
@@ -208,12 +209,6 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                @php
-                                    $hidePreviewRowsUntilJs = ($hidePreviewRowsUntilJs ?? null);
-                                    if ($hidePreviewRowsUntilJs === null) {
-                                        $hidePreviewRowsUntilJs = false;
-                                    }
-                                @endphp
                                 @foreach($previewData as $rowIndex => $row)
                                     <tr class="preview-row{{ $hidePreviewRowsUntilJs ? ' d-none' : '' }}">
                                         <td class="text-center text-muted">{{ $rowIndex + 1 }}</td>
@@ -240,7 +235,7 @@
                                 </tr>
                             </tbody>
                         </table>
-                        <div class="preview-loading-overlay d-none" id="preview-loading-overlay" aria-live="polite">
+                        <div class="preview-loading-overlay{{ $hidePreviewRowsUntilJs ? '' : ' d-none' }}" id="preview-loading-overlay" aria-live="polite">
                             <div class="preview-loading-panel">
                                 <span class="preview-loading-spinner"></span>
                                 <span id="preview-loading-text">Menyaring preview...</span>
@@ -452,7 +447,7 @@
             return (hash >>> 0).toString(36);
         }
 
-        const storageKeyPrefix = 'preview_filter_v8_' + stableHash(JSON.stringify({
+        const storageKeyPrefix = 'preview_filter_v9_' + stableHash(JSON.stringify({
             file: filePathValue,
             delimiter: delimiterValue,
             headers: headers,
@@ -526,6 +521,96 @@
             ));
         }
 
+        function isFilterStateFullySelected(state) {
+            return Boolean(state)
+                && !state.initialSelectionPending
+                && state.selectedValues.size === state.allValues.length;
+        }
+
+        function replaceFilterOptions(state, values) {
+            const normalizedValues = normalizeFilterValues(values);
+            const previousValues = Array.isArray(state.allValues) ? state.allValues.slice() : [];
+            const previousSelection = new Set(state.selectedValues || []);
+            const hadAllSelected = !state.initialSelectionPending
+                && (previousValues.length === 0 || previousSelection.size === previousValues.length);
+
+            state.allValues = normalizedValues;
+            state.selectedValues = hadAllSelected
+                ? new Set(normalizedValues)
+                : new Set(normalizedValues.filter(function (value) {
+                    return previousSelection.has(value);
+                }));
+            state.initialSelectionPending = false;
+        }
+
+        function priorityFilterHeaderScore(header) {
+            const compactHeader = String(header || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+            if (!compactHeader || compactHeader.includes('kode')) {
+                return 0;
+            }
+
+            if (
+                compactHeader.includes('namakci')
+                || compactHeader.includes('namacabanginduk')
+                || compactHeader.includes('namakantorcabanginduk')
+                || compactHeader.includes('kantorcabanginduk')
+                || compactHeader.includes('kcinduk')
+            ) {
+                return 120;
+            }
+
+            if (compactHeader === 'mbdesc' || compactHeader.includes('mainbranchdescription')) {
+                return 115;
+            }
+
+            if (compactHeader.includes('namakanca') || compactHeader === 'kanca' || compactHeader === 'kci') {
+                return 110;
+            }
+
+            if (
+                compactHeader === 'namacabang'
+                || compactHeader === 'cabang'
+                || compactHeader === 'cabang1'
+                || compactHeader === 'kantorcabang'
+            ) {
+                return 105;
+            }
+
+            if (compactHeader.includes('cabang')) {
+                return 95;
+            }
+
+            if (compactHeader === 'brdesc' || compactHeader.includes('branchdescription')) {
+                return 80;
+            }
+
+            return compactHeader === 'branch' || compactHeader === 'branchname' ? 60 : 0;
+        }
+
+        function getRenderableFilterColumns() {
+            return Object.keys(filterState).filter(function (col) {
+                return Boolean(document.getElementById('list_container_' + col));
+            });
+        }
+
+        function resolvePriorityFilterColumns() {
+            const rankedColumns = getRenderableFilterColumns()
+                .map(function (col) {
+                    return {
+                        col: String(col),
+                        score: priorityFilterHeaderScore(headers[Number(col)] || ''),
+                    };
+                })
+                .filter(function (candidate) {
+                    return candidate.score > 0;
+                })
+                .sort(function (left, right) {
+                    return right.score - left.score || Number(left.col) - Number(right.col);
+                });
+
+            return rankedColumns.length ? [rankedColumns[0].col] : [];
+        }
+
         Object.keys(filterOptionsMap).forEach(function (col) {
             const values = normalizeFilterValues(filterOptionsMap[col]);
             const configuredInitialValues = normalizeFilterValues(initialArea6Selections[col] || []);
@@ -533,14 +618,13 @@
                 && !disableArea6AutoFilter
                 && configuredInitialValues.length > 0;
             const selectedValues = shouldApplyArea6Selection
-                ? new Set(values.filter(function (value) {
-                    return configuredInitialValues.includes(value);
-                }))
+                ? new Set(configuredInitialValues)
                 : new Set(values);
 
             filterState[col] = {
                 allValues: values,
                 selectedValues: selectedValues,
+                initialSelectionPending: shouldApplyArea6Selection,
                 fullOptionsLoaded: initialFilterOptionsAreComplete,
                 isLoading: false,
                 loadedSignature: initialFilterOptionsAreComplete ? '{}' : '',
@@ -565,7 +649,7 @@
                         return;
                     }
 
-                    if (state.selectedValues.size === state.allValues.length) {
+                    if (isFilterStateFullySelected(state)) {
                         return;
                     }
 
@@ -732,6 +816,7 @@
                 return;
             }
 
+            state.initialSelectionPending = false;
             const values = getFilteredValues(colIndex);
 
             values.forEach(function (value) {
@@ -751,6 +836,9 @@
 
         window.__previewApplySelectAllState = applySelectAllState;
         window.__importPreviewAfterFilterChanged = function (colIndex) {
+            if (filterState[colIndex]) {
+                filterState[colIndex].initialSelectionPending = false;
+            }
             clearDependentFilterSignatures(colIndex);
             syncSelectAllCheckbox(colIndex, getFilteredValues(colIndex));
             updatePreviewTable();
@@ -827,16 +915,7 @@
             if ((isInitialPrefetch || Object.keys(activeFilters).length === 0) && !state.fullOptionsLoaded) {
                 const cachedValues = getFromLocalStorage(col);
                 if (cachedValues) {
-                    const normalizedCachedValues = normalizeFilterValues(cachedValues);
-                    const previousValues = Array.isArray(state.allValues) ? state.allValues.slice() : [];
-                    const previousSelection = new Set(state.selectedValues || []);
-                    const hadAllSelected = previousValues.length === 0 || previousSelection.size === previousValues.length;
-                    state.allValues = normalizedCachedValues;
-                    state.selectedValues = hadAllSelected
-                        ? new Set(normalizedCachedValues)
-                        : new Set(normalizedCachedValues.filter(function (value) {
-                            return previousSelection.has(value);
-                        }));
+                    replaceFilterOptions(state, cachedValues);
                     state.fullOptionsLoaded = true;
                     state.loadedSignature = signature;
                     renderFilterList(col);
@@ -876,21 +955,13 @@
                     throw new Error(payload.message || 'Gagal memuat opsi filter lengkap.');
                 }
 
-                const previousValues = Array.isArray(state.allValues) ? state.allValues.slice() : [];
-                const previousSelection = new Set(state.selectedValues || []);
-                const hadAllSelected = previousValues.length === 0 || previousSelection.size === previousValues.length;
                 const normalizedValues = normalizeFilterValues(payload.values);
 
                 if (state.pendingSignature !== signature || state.needsRefresh) {
                     return;
                 }
 
-                state.allValues = normalizedValues;
-                state.selectedValues = hadAllSelected
-                    ? new Set(normalizedValues)
-                    : new Set(normalizedValues.filter(function (value) {
-                        return previousSelection.has(value);
-                    }));
+                replaceFilterOptions(state, normalizedValues);
                 state.fullOptionsLoaded = true;
                 state.loadedSignature = signature;
                 // Simpan ke cache untuk next load
@@ -921,16 +992,16 @@
         }
 
         async function prefetchAllFilterOptions() {
-            // Prefetch semua filter options secara parallel saat page load
-            const cols = Object.keys(filterState);
+            let cols = getRenderableFilterColumns();
             if (!cols.length) {
                 return;
             }
 
-            // Batasi prefetch jika kolom terlalu banyak (> 8 kolom) untuk mencegah website stuck/freeze
+            // Wide reports hydrate their branch selector first. Other high-cardinality
+            // columns remain on demand so one preview never launches dozens of scans.
             if (cols.length > 8) {
-                console.log('Prefetch skipped because table has too many columns:', cols.length);
-                return;
+                const priorityColumns = resolvePriorityFilterColumns();
+                cols = priorityColumns.length ? priorityColumns : cols.slice(0, 8);
             }
 
             const prefetchPromises = cols.map(col => ensureFullFilterOptions(col, true));
@@ -939,6 +1010,17 @@
             } catch (e) {
                 console.warn('Prefetch filter options partially failed:', e);
             }
+        }
+
+        async function prefetchPriorityFilterOptions() {
+            const cols = resolvePriorityFilterColumns();
+            if (!cols.length) {
+                return;
+            }
+
+            await Promise.allSettled(cols.map(function (col) {
+                return ensureFullFilterOptions(col, true);
+            }));
         }
 
         function getFilterDropdownFromMenu(menu) {
@@ -1161,7 +1243,7 @@
             }
         }
 
-        function updatePreviewTable() {
+        function updatePreviewTable(immediate = false) {
             let activeFilters = {};
             Object.keys(filterState).forEach(function (col) {
                 const state = filterState[col];
@@ -1169,7 +1251,7 @@
                     return;
                 }
 
-                if (state.selectedValues.size === state.allValues.length) {
+                if (isFilterStateFullySelected(state)) {
                     return;
                 }
 
@@ -1191,14 +1273,23 @@
                 return;
             }
 
+            // Filter the server-rendered sample immediately while the complete
+            // matching rows are fetched from the source file.
+            renderSamplePreviewTable(activeFilters);
+
             if (previewRefreshTimer) {
                 clearTimeout(previewRefreshTimer);
+            }
+
+            if (immediate) {
+                renderFilteredPreviewTable(activeFilters);
+                return;
             }
 
             previewRefreshTimer = setTimeout(function () {
                 previewRefreshTimer = null;
                 renderFilteredPreviewTable(activeFilters);
-            }, 360);
+            }, 180);
         }
 
         function updatePreviewTableLegacy() {
@@ -1209,7 +1300,7 @@
                     return;
                 }
 
-                if (state.selectedValues.size === state.allValues.length) {
+                if (isFilterStateFullySelected(state)) {
                     return;
                 }
 
@@ -1281,7 +1372,7 @@
                     const icon = document.getElementById('icon_filter_' + colIndex);
 
                     if (icon && state) {
-                        if (state.selectedValues.size < state.allValues.length) {
+                        if (!isFilterStateFullySelected(state)) {
                             icon.classList.remove('text-muted');
                             icon.classList.add('text-primary');
                         } else {
@@ -1304,6 +1395,7 @@
                 return;
             }
 
+            state.initialSelectionPending = false;
             const value = normalizeFilterValue(e.target.value);
             if (e.target.checked) {
                 state.selectedValues.add(value);
@@ -1724,7 +1816,7 @@
                         return;
                     }
 
-                    if (state.selectedValues.size < state.allValues.length) {
+                    if (!isFilterStateFullySelected(state)) {
                         activeFilters[colIndex] = Array.from(state.selectedValues);
                     }
                 });
@@ -2355,23 +2447,25 @@
             }
         });
 
+        if (!initialFilterOptionsAreComplete && filePathValue && filterOptionsUrl) {
+            prefetchPriorityFilterOptions().catch(function (error) {
+                console.warn('Priority filter prefetch failed:', error);
+            });
+        }
+
         Object.keys(filterState).forEach(function (col) {
             renderFilterList(col);
         });
-        updatePreviewTable();
-        if (prefetchFilterOptionsOnLoad) {
-            setTimeout(prefetchAllFilterOptions, 0);
-        }
-        if (disableFilterOptionsLocalCache) {
-            setTimeout(prefetchAllFilterOptions, 250);
+        updatePreviewTable(true);
+        if (prefetchFilterOptionsOnLoad || disableFilterOptionsLocalCache) {
+            setTimeout(function () {
+                prefetchAllFilterOptions().catch(function (error) {
+                    console.warn('Prefetch filter options failed:', error);
+                });
+            }, disableFilterOptionsLocalCache ? 250 : 0);
         }
         if (warmPreviewIndexOnLoad) {
             setTimeout(prewarmPreviewIndex, 50);
-        }
-        if (prefetchFilterOptionsOnLoad && filePathValue && filterOptionsUrl) {
-            prefetchAllFilterOptions().catch(function (error) {
-                console.warn('Prefetch filter options failed:', error);
-            });
         }
     });
 </script>
@@ -2380,6 +2474,16 @@
         setTimeout(function () {
             const rows = Array.from(document.querySelectorAll('.preview-row'));
             if (!rows.length || rows.some(function (row) { return !row.classList.contains('d-none'); })) {
+                return;
+            }
+
+            const activeFiltersInput = document.getElementById('active_filters_json');
+            try {
+                const activeFilters = JSON.parse(activeFiltersInput?.value || '{}');
+                if (Object.keys(activeFilters).length > 0) {
+                    return;
+                }
+            } catch (error) {
                 return;
             }
 
@@ -2394,6 +2498,10 @@
         }, 250);
     });
 </script>
+
+@endsection
+
+@section('styles')
 <style>
     .import-preview-settings,
     .import-preview-card {

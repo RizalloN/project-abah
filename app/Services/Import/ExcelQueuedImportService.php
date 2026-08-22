@@ -668,16 +668,79 @@ class ExcelQueuedImportService
 
             return array_merge(['status' => $finalStatus], $payload);
         } catch (\Throwable $e) {
-            Log::error('EXCEL QUEUED IMPORT ERROR: ' . $e->getMessage(), [
+            $errorContext = [
                 'job_id' => $jobId,
                 'table' => $tableName,
                 'exception' => $e::class,
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
-            ]);
+            ];
 
             if (str_starts_with($e->getMessage(), 'Import Hourly DPK dibatalkan:')) {
+                Log::error('EXCEL QUEUED IMPORT ERROR: ' . $e->getMessage(), $errorContext);
+
                 return $fail($e->getMessage());
+            }
+
+            $resolvedTable = strtolower(trim($tableName));
+            $currentResult = $resolveCurrentResult();
+            $currentStatus = strtolower(trim((string) ($currentResult['status'] ?? '')));
+            $currentSuccess = max(0, (int) ($currentResult['total_success'] ?? 0));
+            $currentFailed = max(0, (int) ($currentResult['total_failed'] ?? 0));
+            $currentTotal = max(0, (int) ($currentResult['total_rows'] ?? 0));
+            $persistedImportCompleted = $currentStatus === 'completed'
+                || ($currentTotal > 0 && $currentFailed === 0 && $currentSuccess >= $currentTotal);
+
+            if ($resolvedTable === 'daily_loan_dinamis' && $persistedImportCompleted) {
+                Log::warning('Daily Loan exception reconciled as completed from persisted totals.', array_merge($errorContext, [
+                    'total_success' => $currentSuccess,
+                    'total_failed' => $currentFailed,
+                    'total_rows' => $currentTotal,
+                ]));
+
+                $message = 'Import Daily Loan berhasil. Seluruh ' . number_format($currentSuccess, 0, ',', '.') . ' baris telah tersimpan.';
+                $payload = [
+                    'status' => 'completed',
+                    'message' => $message,
+                    'percent' => 100,
+                    'processed_rows' => $currentSuccess,
+                    'total_rows' => max($currentTotal, $currentSuccess),
+                    'total_success' => $currentSuccess,
+                    'total_failed' => 0,
+                ];
+
+                if ($jobId > 0 && $currentStatus !== 'completed') {
+                    try {
+                        $updateJob($jobId, [
+                            'status' => 'completed',
+                            'total_files' => max($currentTotal, $currentSuccess),
+                            'total_success' => $currentSuccess,
+                            'total_failed' => 0,
+                            'message' => $message,
+                        ], $payload);
+                    } catch (\Throwable $statusException) {
+                        Log::warning('Failed to repair completed Daily Loan import status: ' . $statusException->getMessage(), [
+                            'job_id' => $jobId,
+                        ]);
+                    }
+                }
+
+                $send('complete', $payload);
+
+                return $payload;
+            }
+
+            Log::error('EXCEL QUEUED IMPORT ERROR: ' . $e->getMessage(), $errorContext);
+
+            if (
+                $resolvedTable === 'daily_loan_dinamis'
+                && str_contains($e->getMessage(), 'Import Daily Loan sedang berjalan')
+            ) {
+                return $fail(
+                    'Import Daily Loan lain masih aktif. File pada job ini belum diproses; tunggu proses aktif selesai lalu coba lagi.',
+                    $currentSuccess,
+                    $currentFailed
+                );
             }
 
             return $fail('Fatal Error: ' . $e->getMessage() . ' (line ' . $e->getLine() . ')');
