@@ -1072,6 +1072,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     form.querySelectorAll('.alma-select').forEach(function (select) {
         select.addEventListener('change', function () {
+            if (select.disabled || select.dataset.userBranchLocked === '1') {
+                return;
+            }
             if (window.showRouteLoading) {
                 window.showRouteLoading('Memuat Almafacts', 'Mengambil posisi laba rugi dan target RKA terbaru.', 'page-data-loading');
             }

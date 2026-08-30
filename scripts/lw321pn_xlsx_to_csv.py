@@ -18,11 +18,139 @@ DATE_HEADERS = {
     "TGL JATUH TEMPO",
 }
 
+REQUIRED_HEADERS = {
+    "PERIODE",
+    "KODE_KANWIL",
+    "KANWIL",
+    "KODE_KANCA",
+    "KANCA",
+    "KODE_UKER",
+    "UKER",
+    "CURRENCY",
+    "LN_TYPE",
+    "NOMOR_REKENING",
+    "NAMA_DEBITUR",
+    "PLAFON",
+    "NEXT_PMT_DATE",
+    "NEXT_INT_PMT_DATE",
+    "RATE",
+    "TGL_MENUNGGAK",
+    "TGL_REALISASI",
+    "TGL_JATUH_TEMPO",
+    "JANGKA_WAKTU",
+    "FLAG_RESTRUK",
+    "CIFNO",
+    "KOLEKTIBILITAS_LANCAR",
+    "KOLEKTIBILITAS_DPK",
+    "KOLEKTIBILITAS_KURANG_LANCAR",
+    "KOLEKTIBILITAS_DIRAGUKAN",
+    "KOLEKTIBILITAS_MACET",
+    "TUNGGAKAN_POKOK",
+    "TUNGGAKAN_BUNGA",
+    "TUNGGAKAN_PINALTI",
+    "FREQ_PAYMENT",
+    "FREQ_INT_PAYMENT",
+    "CODE",
+    "DESCRIPTION",
+    "SEGMEN_LV1",
+    "DESC_SEGMEN_LV1",
+    "KOL_ADK",
+    "PN_PENGELOLA_SINGLEPN",
+    "PN_PENGELOLA_1",
+    "PN_PEMRAKARSA",
+    "PN_REFERRAL",
+    "PN_RESTRUK",
+    "PN_PENGELOLA_2",
+    "PN_PEMUTUS",
+    "PN_CRM",
+    "PN_RM_REFERRAL_NAIK_SEGMENTASI",
+    "PN_RM_CRR",
+    "PLAFON_DALAM_IDR",
+    "BALANCE_DALAM_IDR",
+}
+
 SHARED_PREFIX = "__SST__"
 
 
 def emit(payload):
     print(json.dumps(payload, ensure_ascii=False), flush=True)
+
+
+def normalize_header(value):
+    return re.sub(r"[^A-Z0-9]+", "_", str(value or "").strip().upper()).strip("_")
+
+
+def validate_headers(headers):
+    normalized = {normalize_header(header) for header in headers if str(header or "").strip()}
+    missing = sorted(REQUIRED_HEADERS - normalized)
+    if missing:
+        raise RuntimeError(
+            "Schema sumber LW321PN tidak lengkap. Kolom yang hilang: " + ", ".join(missing)
+        )
+
+
+def worksheet_path(archive):
+    preferred = "xl/worksheets/sheet1.xml"
+    if preferred in archive.namelist():
+        return preferred
+
+    resolved = next(
+        (name for name in archive.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")),
+        None,
+    )
+    if resolved is None:
+        raise RuntimeError("Worksheet XLSX tidak ditemukan.")
+
+    return resolved
+
+
+def load_shared_strings(archive):
+    path = "xl/sharedStrings.xml"
+    if path not in archive.namelist():
+        return {}
+
+    values = {}
+    with archive.open(path) as handle:
+        index = -1
+        for event, elem in ET.iterparse(handle, events=("end",)):
+            if not elem.tag.endswith("}si"):
+                continue
+
+            index += 1
+            values[index] = "".join(
+                text_node.text or "" for text_node in elem.iter() if text_node.tag.endswith("}t")
+            )
+            elem.clear()
+
+    return values
+
+
+def worksheet_max_row(archive, sheet_path):
+    with archive.open(sheet_path) as handle:
+        for event, elem in ET.iterparse(handle, events=("start",)):
+            if not elem.tag.endswith("}dimension"):
+                continue
+
+            ref = elem.attrib.get("ref", "")
+            match = re.search(r"[A-Z]+(\d+)$", ref.split(":")[-1].upper())
+            return int(match.group(1)) if match else 0
+
+    return 0
+
+
+def row_values(row, shared_map):
+    values = []
+    for cell in row:
+        if not cell.tag.endswith("}c"):
+            continue
+
+        ref = cell.attrib.get("r", "")
+        index = column_index(ref)
+        while len(values) <= index:
+            values.append("")
+        values[index] = read_cell_value(cell)
+
+    return resolve_shared_values(values, shared_map)
 
 
 def column_index(cell_ref):
@@ -119,14 +247,7 @@ def fast_preview_xlsx(args):
     pending_rows = []
 
     with zipfile.ZipFile(args.input) as archive:
-        sheet_name = "xl/worksheets/sheet1.xml"
-        if sheet_name not in archive.namelist():
-            sheet_name = next(
-                (name for name in archive.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")),
-                None,
-            )
-        if sheet_name is None:
-            raise RuntimeError("Worksheet XLSX tidak ditemukan.")
+        sheet_name = worksheet_path(archive)
 
         with archive.open(sheet_name) as handle:
             for event, row in ET.iterparse(handle, events=("end",)):
@@ -189,6 +310,7 @@ def fast_preview_xlsx(args):
                     str(value).strip() if value and str(value).strip() else f"COL_{index}"
                     for index, value in enumerate(values)
                 ]
+                validate_headers(headers)
                 emit({
                     "type": "progress",
                     "percent": 65,
@@ -267,6 +389,7 @@ def fast_preview_xlsx_fastexcel(args):
                 value.strip() if value and value.strip() else f"COL_{column_index}"
                 for column_index, value in enumerate(values)
             ]
+            validate_headers(headers)
             break
 
     if header_offset is None:
@@ -317,6 +440,95 @@ def fast_preview_xlsx_fastexcel(args):
     })
 
 
+def stream_xlsx_to_csv(args):
+    header_row = None
+    headers = []
+    rows_written = 0
+
+    with zipfile.ZipFile(args.input) as archive:
+        sheet_name = worksheet_path(archive)
+        max_row = worksheet_max_row(archive, sheet_name)
+        shared_map = load_shared_strings(archive)
+
+        with archive.open(sheet_name) as sheet_handle, open(
+            args.output,
+            "w",
+            newline="",
+            encoding="utf-8",
+        ) as output_handle:
+            writer = csv.writer(output_handle)
+
+            for event, row in ET.iterparse(sheet_handle, events=("end",)):
+                if not row.tag.endswith("}row"):
+                    continue
+
+                row_number = int(row.attrib.get("r", "0") or 0)
+                values = row_values(row, shared_map)
+                upper = [str(value).strip().upper() for value in values]
+
+                if header_row is None:
+                    if "PERIODE" in upper and "NOMOR_REKENING" in upper:
+                        header_row = row_number
+                        headers = [
+                            str(value).strip() if value and str(value).strip() else f"COL_{index}"
+                            for index, value in enumerate(values)
+                        ]
+                        validate_headers(headers)
+                        writer.writerow(headers)
+                        emit({
+                            "type": "progress",
+                            "percent": 45,
+                            "message": "Header LW321PN ditemukan. Menulis CSV staging streaming...",
+                            "header_row": header_row,
+                            "headers": len(headers),
+                        })
+                    row.clear()
+                    continue
+
+                normalized = (values + [""] * len(headers))[:len(headers)]
+                if not any(str(value).strip() for value in normalized):
+                    row.clear()
+                    continue
+
+                for index, header in enumerate(headers):
+                    if str(header).strip().upper() in DATE_HEADERS:
+                        normalized[index] = excel_serial_to_date(normalized[index])
+
+                writer.writerow(normalized)
+                rows_written += 1
+
+                if rows_written % max(1, args.progress_every) == 0:
+                    if max_row > header_row:
+                        denominator = max(max_row - header_row, 1)
+                        percent = min(82, 45 + int(rows_written / denominator * 37))
+                    else:
+                        completed_batches = rows_written // max(1, args.progress_every)
+                        percent = min(80, 45 + (completed_batches * 4))
+
+                    emit({
+                        "type": "progress",
+                        "percent": percent,
+                        "message": f"Menulis CSV staging LW321PN... {rows_written} baris",
+                        "rows": rows_written,
+                    })
+
+                row.clear()
+
+    if header_row is None:
+        raise RuntimeError("Header LW321PN tidak ditemukan. Pastikan file memuat PERIODE dan NOMOR_REKENING.")
+
+    emit({
+        "type": "done",
+        "output": args.output,
+        "header_index": 0,
+        "source_header_row": header_row,
+        "headers": headers,
+        "preview_rows": [],
+        "unique_values": {},
+        "total_rows": rows_written,
+    })
+
+
 def main():
     parser = argparse.ArgumentParser(description="Stream LW321PN XLSX to CSV staging.")
     parser.add_argument("--input", required=True)
@@ -334,96 +546,7 @@ def main():
         fast_preview_xlsx(args)
         return
 
-    from openpyxl import load_workbook
-    wb = load_workbook(args.input, read_only=True, data_only=True)
-    ws = wb[wb.sheetnames[0]]
-    worksheet_max_row = ws.max_row or 0
-
-    header_row = None
-    headers = []
-    rows_written = 0
-    preview_rows = []
-    unique_values = {}
-
-    try:
-        handle = None
-        writer = None
-        if not args.preview_only:
-            handle = open(args.output, "w", newline="", encoding="utf-8")
-            writer = csv.writer(handle)
-
-        try:
-            for row_number, row in enumerate(ws.iter_rows(values_only=True), start=1):
-                values = ["" if value is None else str(value) for value in row]
-                upper = [value.strip().upper() for value in values]
-
-                if header_row is None:
-                    if "PERIODE" in upper and "NOMOR_REKENING" in upper:
-                        header_row = row_number
-                        headers = [
-                            value.strip() if value and value.strip() else f"COL_{index}"
-                            for index, value in enumerate(values)
-                        ]
-                        if writer is not None:
-                            writer.writerow(headers)
-                        emit({
-                            "type": "progress",
-                            "percent": 45 if not args.preview_only else 65,
-                            "message": "Header LW321PN ditemukan. Menulis CSV staging..." if not args.preview_only else "Header LW321PN ditemukan. Menyiapkan sampel preview...",
-                            "header_row": header_row,
-                            "headers": len(headers),
-                        })
-                    continue
-
-                if not any(str(value).strip() for value in values):
-                    continue
-
-                normalized = (values + [""] * len(headers))[:len(headers)]
-                if writer is not None:
-                    writer.writerow(normalized)
-                rows_written += 1
-
-                if len(preview_rows) < args.preview_limit:
-                    preview_rows.append(normalized)
-
-                if rows_written <= args.preview_limit:
-                    for index, value in enumerate(normalized):
-                        value = str(value).strip()
-                        if value == "":
-                            value = "(Blank)"
-                        bucket = unique_values.setdefault(index, {})
-                        if len(bucket) < 75:
-                            bucket[value] = True
-
-                if args.preview_only and len(preview_rows) >= args.preview_limit:
-                    break
-
-                if not args.preview_only and rows_written % max(1, args.progress_every) == 0:
-                    emit({
-                        "type": "progress",
-                        "percent": min(78, 45 + int(rows_written / max(ws.max_row or rows_written, 1) * 35)),
-                        "message": f"Menulis CSV staging LW321PN... {rows_written} baris",
-                        "rows": rows_written,
-                    })
-        finally:
-            if handle is not None:
-                handle.close()
-    finally:
-        wb.close()
-
-    if header_row is None:
-        raise RuntimeError("Header LW321PN tidak ditemukan. Pastikan file memuat PERIODE dan NOMOR_REKENING.")
-
-    emit({
-        "type": "done",
-        "output": args.output if not args.preview_only else None,
-        "header_index": 0,
-        "source_header_row": header_row,
-        "headers": headers,
-        "preview_rows": preview_rows,
-        "unique_values": {str(index): list(values.keys()) for index, values in unique_values.items()},
-        "total_rows": max(0, worksheet_max_row - header_row) if args.preview_only else rows_written,
-    })
+    stream_xlsx_to_csv(args)
 
 
 if __name__ == "__main__":

@@ -133,5 +133,25 @@ it('locks native and custom branch filters in the shared admin layout', function
         ->toContain('[data-loan-dropdown-toggle="cabang"]')
         ->toContain('[data-dana-dropdown-toggle="cabang"]')
         ->toContain('[data-daily-dropdown-toggle="kanca"]')
-        ->toContain('event.stopImmediatePropagation()');
+        ->toContain('event.stopImmediatePropagation()')
+        ->toContain("select2.trigger('selection:update'")
+        ->toContain("attributeFilter: ['disabled']")
+        ->not->toContain("select.dispatchEvent(new Event('change'")
+        ->not->toContain("window.jQuery(select).trigger('change.select2')");
+});
+
+it('prevents locked branch selectors from auto submitting their forms', function (): void {
+    $kpi = file_get_contents(resource_path('views/report/almafacts/kpi.blade.php'));
+    $marketShare = file_get_contents(resource_path('views/report/dashboard-dana-market-share-sektoral.blade.php'));
+    $financialHighlight = file_get_contents(resource_path('views/report/almafacts/financial-highlight.blade.php'));
+    $profitAndLoss = file_get_contents(resource_path('views/report/almafacts/kinerja-laba-rugi.blade.php'));
+
+    expect($kpi)
+        ->toContain("@if(!\$kpiBranchFilter['locked']) onchange=\"this.form.submit()\" @endif")
+        ->and($marketShare)
+        ->toContain('@if(!$scopeLocked) onchange="this.form.submit()" @endif')
+        ->and($financialHighlight)
+        ->toContain("branchSelect.disabled || branchSelect.dataset.userBranchLocked === '1'")
+        ->and($profitAndLoss)
+        ->toContain("select.disabled || select.dataset.userBranchLocked === '1'");
 });

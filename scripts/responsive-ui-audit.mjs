@@ -11,7 +11,9 @@ const chromePath = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome
 const loginPn = process.env.AUDIT_PN || 'responsive-audit';
 const loginPassword = process.env.AUDIT_PASSWORD || 'responsive-audit';
 const waitSelector = String(process.env.AUDIT_WAIT_SELECTOR || '').trim();
+const scrollSelector = String(process.env.AUDIT_SCROLL_SELECTOR || '').trim();
 const auditStickyScroll = process.env.AUDIT_STICKY_SCROLL === '1';
+const landingScope = String(process.env.AUDIT_LANDING_SCOPE || '').trim().toLowerCase();
 const positiveInteger = (value, fallback) => {
     const parsed = Number.parseInt(String(value || ''), 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -172,6 +174,7 @@ const auditExpression = `(async () => {
         '.kinerja-table-container', '[class*="table-wrap"]', '[class*="table-scroll"]',
         '[class*="table-container"]', '[class*="table-shell"]',
         '.nav-tabs', '.dropdown-menu', '.select2-dropdown', '.leaflet-container',
+        '.micro-need-filter',
         '.main-sidebar', '.control-sidebar', '.route-loading-overlay'
     ].join(',');
     const isVisible = (element, style, rect) => {
@@ -571,12 +574,65 @@ const auditExpression = `(async () => {
         .slice(0, 12)
         .map(({ element, rect }) => ({ selector: selectorFor(element), width: Math.round(rect.width), height: Math.round(rect.height) }));
 
+    const auditedCards = Array.from(document.querySelectorAll([
+        '.kpi-card', '.area6-card-premium', '.landing-insight', '.chart-panel', '.digital-panel', '.dc',
+        '.sme-ops-intro', '.sme-ops-feature', '.sme-ops-status-item', '.sme-ops-vendor-item',
+        '.micro-ops-section', '.micro-realization-type-card', '.micro-decision-card', '.micro-pattern-card',
+    ].join(',')))
+        .map((element) => ({ element, rect: element.getBoundingClientRect(), style: getComputedStyle(element) }))
+        .filter(({ element, rect, style }) => isVisible(element, style, rect));
+    const clippedCards = auditedCards
+        .map(({ element, rect, style }) => {
+            if (!['hidden', 'clip'].includes(style.overflowX)) {
+                return null;
+            }
+
+            const overflowingChildren = Array.from(element.querySelectorAll('*'))
+                .filter((child) => {
+                    const childStyle = getComputedStyle(child);
+                    const childRect = child.getBoundingClientRect();
+                    if (!isVisible(child, childStyle, childRect)
+                        || ['absolute', 'fixed'].includes(childStyle.position)
+                        || child.closest(ignoredOverflowHosts)) {
+                        return false;
+                    }
+
+                    return childRect.left < rect.left - 2 || childRect.right > rect.right + 2;
+                })
+                .slice(0, 5);
+
+            return overflowingChildren.length ? { element, overflowingChildren } : null;
+        })
+        .filter(Boolean)
+        .slice(0, 20)
+        .map(({ element, overflowingChildren }) => ({
+            selector: selectorFor(element),
+            clientWidth: Math.round(element.clientWidth),
+            scrollWidth: Math.round(element.scrollWidth),
+            children: overflowingChildren.map(selectorFor),
+        }));
+
     const headingElements = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, .card-title, [data-ui="title"]'))
         .map((element) => {
             const rect = element.getBoundingClientRect();
             return { element, rect: visibleRectWithinAncestors(element, rect), style: getComputedStyle(element) };
         })
         .filter(({ element, rect, style }) => isVisible(element, style, rect));
+    const narrowHeadings = headingElements
+        .map(({ element, rect, style }) => {
+            const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.25 || 16;
+            const text = (element.textContent || '').replace(/\s+/g, ' ').trim();
+            return { element, rect, lineHeight, text };
+        })
+        .filter(({ rect, lineHeight, text }) => text.length >= 10 && rect.width < 72 && rect.height > lineHeight * 3.25)
+        .slice(0, 12)
+        .map(({ element, rect, lineHeight, text }) => ({
+            selector: selectorFor(element),
+            text: text.slice(0, 120),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            estimatedLines: Math.round((rect.height / lineHeight) * 10) / 10,
+        }));
     const interactiveElements = Array.from(document.querySelectorAll('button, a.btn, [role="button"], input:not([type="hidden"]), select, textarea'))
         .filter((element) => !element.classList.contains('select2-hidden-accessible') && element.getAttribute('aria-hidden') !== 'true')
         .map((element) => {
@@ -627,6 +683,8 @@ const auditExpression = `(async () => {
             horizontalOverflow: document.documentElement.scrollWidth > viewportWidth + 1,
         },
         horizontalOffenders: horizontalOffenders.slice(0, 20),
+        clippedCards,
+        narrowHeadings,
         undersizedControls,
         interactiveOverlaps: interactiveOverlaps.slice(0, 12),
         tableMetrics,
@@ -706,13 +764,114 @@ try {
             });
             runtimeErrors.length = 0;
             await navigate(client, new URL(route, baseUrl).toString());
+            let landingScopeState = null;
+            if (landingScope && new URL(route, baseUrl).pathname === '/dashboard') {
+                const activation = await evaluate(client, `(() => {
+                    const scope = ${JSON.stringify(landingScope)};
+                    const button = document.querySelector('[data-area6-scope="' + scope + '"]');
+                    if (!button) return { clicked: false, scope };
+                    button.click();
+                    return { clicked: true, scope };
+                })()`);
+                if (!activation?.clicked) {
+                    throw new Error(`Trigger landing scope tidak ditemukan: ${landingScope}`);
+                }
+
+                const readyPredicate = landingScope === 'micro'
+                    ? "document.querySelector('.db-shell.micro-performance-active') && document.querySelector('[data-micro-performance-ready=\"1\"]')"
+                    : `document.querySelector('[data-area6-content-scope="${landingScope}"]:not(.d-none)')`;
+                await waitForPage(client, readyPredicate, waitSelectorTimeoutMs);
+                landingScopeState = await evaluate(client, `(() => {
+                    const scope = ${JSON.stringify(landingScope)};
+                    const visible = (element) => {
+                        if (!element) return false;
+                        const style = getComputedStyle(element);
+                        const rect = element.getBoundingClientRect();
+                        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+                    };
+                    const shell = document.querySelector('.db-shell');
+                    const content = document.querySelector('[data-area6-content-scope="' + scope + '"]');
+                    const grid = content?.querySelector('.area6-card-grid');
+                    const cards = Array.from(grid?.querySelectorAll('.area6-card-premium') || []).filter(visible);
+                    const segments = Array.from(content?.querySelectorAll('.area6-segment-container') || []).filter(visible);
+                    const microProductRows = Array.from(content?.querySelectorAll('.area6-segment-card .asc-tr-data') || [])
+                        .filter(visible)
+                        .map((row) => row.querySelector('.asc-seg-name')?.textContent?.trim() || '');
+                    const desk = document.getElementById('micro-performance-dashboard');
+                    const hero = desk?.querySelector('.micro-ops-hero');
+                    const mantriIllustration = desk?.querySelector('.micro-mantri-stage__visual svg');
+                    const realizationCards = Array.from(desk?.querySelectorAll('.micro-realization-stack .micro-realization-type-card') || []).filter(visible);
+                    const pdwkStatuses = Array.from(desk?.querySelectorAll('[data-micro-pdwk-panel]:not([hidden]) .micro-pdwk-status') || []).filter(visible);
+                    const pdwkRoleButtons = Array.from(desk?.querySelectorAll('[data-micro-pdwk-role]') || []).filter(visible);
+                    const oneTimeInteractive = desk?.querySelector('[data-micro-one-time-detail], [data-micro-nominative-modal]');
+                    const mantriSummaryTable = desk?.querySelector('.micro-mantri-table--summary');
+                    const mantriTierTables = Array.from(desk?.querySelectorAll('.micro-mantri-table--tiers') || []).filter(visible);
+                    const microDeskText = desk?.textContent || '';
+                    const horizontalComposition = content?.querySelector('.total-composition-card--micro .tcc-horizontal-chart');
+                    const horizontalCompositionRows = Array.from(horizontalComposition?.querySelectorAll('.tcc-horizontal-row') || []).filter(visible);
+                    const musimanBreakdown = desk?.querySelector('.micro-pattern-card.pattern-musiman .micro-pattern-card__breakdown');
+                    const contentRect = content?.getBoundingClientRect();
+                    const gridRect = grid?.getBoundingClientRect();
+                    const lastCardRect = cards.at(-1)?.getBoundingClientRect();
+                    const resolvedColumns = grid ? getComputedStyle(grid).gridTemplateColumns : '';
+                    return {
+                        scope,
+                        active: Boolean(document.querySelector('.area6-scope-btn.active[data-area6-scope="' + scope + '"]')),
+                        shellModeActive: scope !== 'micro' || shell?.classList.contains('micro-performance-active'),
+                        coreVisible: visible(content),
+                        cardCount: cards.length,
+                        recoveryVisible: cards.some((card) => card.dataset.metric === 'recovery'),
+                        segmentContainersVisible: segments.length,
+                        microProductRows,
+                        microProductRowCount: microProductRows.length,
+                        microDeskVisible: scope !== 'micro' || visible(desk),
+                        heroRemoved: scope !== 'micro' || !hero,
+                        illustrationVisible: scope !== 'micro' || visible(mantriIllustration),
+                        mantriIllustrationVisible: scope !== 'micro' || visible(mantriIllustration),
+                        realizationCardCount: realizationCards.length,
+                        pdwkStatusCount: pdwkStatuses.length,
+                        pdwkRoleButtonCount: pdwkRoleButtons.length,
+                        oneTimeInteractiveRemoved: scope !== 'micro' || !oneTimeInteractive,
+                        mantriSummaryVisible: scope !== 'micro' || visible(mantriSummaryTable),
+                        mantriTierTableCount: mantriTierTables.length,
+                        hasPlafondMetric: scope !== 'micro' || microDeskText.includes('Plafon (Realisasi Baru)'),
+                        hasNettMetric: scope !== 'micro' || microDeskText.includes('Nett Disbursement'),
+                        hasCifLabel: scope === 'micro' && /\bCIF\b/.test(microDeskText),
+                        horizontalCompositionVisible: scope !== 'micro' || visible(horizontalComposition),
+                        horizontalCompositionRowCount: horizontalCompositionRows.length,
+                        musimanBreakdownVisible: scope !== 'micro' || visible(musimanBreakdown),
+                        gridColumnCount: resolvedColumns && resolvedColumns !== 'none'
+                            ? resolvedColumns.trim().split(/\\s+/).length
+                            : 0,
+                        centerDelta: contentRect && gridRect
+                            ? Math.abs((contentRect.left + contentRect.right - gridRect.left - gridRect.right) / 2)
+                            : null,
+                        lastCardCenterDelta: contentRect && lastCardRect
+                            ? Math.abs((contentRect.left + contentRect.right - lastCardRect.left - lastCardRect.right) / 2)
+                            : null,
+                    };
+                })()`);
+            }
             if (waitSelector) {
                 await waitForPage(client, `document.querySelectorAll(${JSON.stringify(waitSelector)}).length > 0`, waitSelectorTimeoutMs);
+            }
+            if (scrollSelector) {
+                const didScroll = await evaluate(client, `(() => {
+                    const element = document.querySelector(${JSON.stringify(scrollSelector)});
+                    if (!element) return false;
+                    element.scrollIntoView({ block: 'start', inline: 'nearest' });
+                    return true;
+                })()`);
+                if (!didScroll) {
+                    throw new Error(`Selector scroll audit tidak ditemukan: ${scrollSelector}`);
+                }
+                await sleep(500);
             }
             const pageResult = await evaluate(client, auditExpression);
             pageResult.route = route;
             pageResult.viewportName = viewport.name;
             pageResult.runtimeErrors = [...runtimeErrors];
+            pageResult.landingScopeState = landingScopeState;
 
             const screenshot = await client.send('Page.captureScreenshot', {
                 format: 'png',
@@ -731,6 +890,37 @@ try {
         || (table.horizontalColumns.tested && !table.horizontalColumns.frozen)
         || table.transparentStickyCells.length > 0
     );
+    const landingScopeAuditFailed = (result) => {
+        const state = result.landingScopeState;
+        if (!state) return false;
+        if (!state.active || !state.shellModeActive || !state.coreVisible) return true;
+        if (state.scope !== 'micro') return false;
+        const expectedColumns = result.viewport.width >= 1200 ? 3 : (result.viewport.width >= 768 ? 2 : 1);
+
+        return state.cardCount !== 3
+            || state.recoveryVisible
+            || state.segmentContainersVisible < 2
+            || state.microProductRowCount !== 5
+            || state.microProductRows.includes('OS MIKRO')
+            || !state.microDeskVisible
+            || !state.heroRemoved
+            || !state.mantriIllustrationVisible
+            || state.realizationCardCount !== 2
+            || state.pdwkStatusCount !== 4
+            || state.pdwkRoleButtonCount < 1
+            || !state.oneTimeInteractiveRemoved
+            || !state.mantriSummaryVisible
+            || state.mantriTierTableCount !== 2
+            || !state.hasPlafondMetric
+            || !state.hasNettMetric
+            || state.hasCifLabel
+            || !state.horizontalCompositionVisible
+            || state.horizontalCompositionRowCount !== 4
+            || !state.musimanBreakdownVisible
+            || state.gridColumnCount !== expectedColumns
+            || (state.centerDelta !== null && state.centerDelta > 4)
+            || (expectedColumns < 3 && state.lastCardCenterDelta !== null && state.lastCardCenterDelta > 4);
+    };
     const summary = {
         generatedAt: new Date().toISOString(),
         baseUrl,
@@ -740,10 +930,13 @@ try {
         failures: results.filter((result) => !result.applicationError && (
             result.document.horizontalOverflow
             || result.horizontalOffenders.length > 0
+            || result.clippedCards.length > 0
+            || result.narrowHeadings.length > 0
             || result.interactiveOverlaps.length > 0
             || result.nestedVerticalTableScrolls.length > 0
             || result.runtimeErrors.length > 0
             || result.stickyAudits.some(stickyAuditFailed)
+            || landingScopeAuditFailed(result)
         )),
         applicationErrors: results.filter((result) => result.applicationError),
     };
@@ -755,11 +948,15 @@ try {
         size: `${result.viewport.width}x${result.viewport.height}`,
         overflow: result.document.horizontalOverflow,
         offenders: result.horizontalOffenders.length,
+        clippedCards: result.clippedCards.length,
+        narrowHeadings: result.narrowHeadings.length,
         overlaps: result.interactiveOverlaps.length,
         smallControls: result.undersizedControls.length,
         tables: result.tableMetrics.length,
         nestedTableScrolls: result.nestedVerticalTableScrolls.length,
         stickyFailures: result.stickyAudits.filter(stickyAuditFailed).length,
+        landingScopeFailed: landingScopeAuditFailed(result),
+        landingScopeState: result.landingScopeState,
         jsErrors: result.runtimeErrors.length,
         applicationError: result.applicationError,
     }));

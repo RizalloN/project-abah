@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
+use App\Support\DailyLoanManualSegmentRule;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\ReportCacheVersion;
 use App\Support\ReportDataSyncService;
@@ -398,26 +399,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         return DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->where(function ($query) use ($requiredColumns): void {
-                if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')
-                    && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
-                    $query->whereNull('shadow_built_at')
-                        ->orWhereColumn('shadow_built_at', '<', 'updated_at');
-
-                    return;
-                }
-
-                foreach ($requiredColumns as $column) {
-                    $query->orWhereNull($column);
-                }
-
-                if (Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')
-                    && Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus1')) {
-                    $query->orWhere(function ($pnQuery): void {
-                        $pnQuery->whereNull('pn_pemutus_normalized')
-                            ->whereRaw("LENGTH(TRIM(COALESCE(pn_pemutus1, ''))) > 0");
-                    });
-                }
-
+                DailyLoanManualSegmentRule::applyPendingShadowPredicate($query, $requiredColumns);
             })
             ->exists() ? 1 : 0;
     }

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\DailyLoanManualSegmentRule;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -478,26 +479,7 @@ class BackfillShadowColumnsCommand extends Command
      */
     private function applyShadowBackfillPredicate($query, array $requiredColumns): void
     {
-        if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at') && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
-            $query
-                ->whereNull('shadow_built_at')
-                ->orWhereColumn('shadow_built_at', '<', 'updated_at');
-
-            return;
-        }
-
-        foreach ($requiredColumns as $column) {
-            $query->orWhereNull($column);
-        }
-
-        if (Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')
-            && Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus1')) {
-            $query->orWhere(function ($pnQuery): void {
-                $pnQuery->whereNull('pn_pemutus_normalized')
-                    ->whereRaw("LENGTH(TRIM(COALESCE(pn_pemutus1, ''))) > 0");
-            });
-        }
-
+        DailyLoanManualSegmentRule::applyPendingShadowPredicate($query, $requiredColumns);
     }
 
     private function validateCompletion(string $period, int $processedRows = 0): array
@@ -543,8 +525,8 @@ class BackfillShadowColumnsCommand extends Command
         $firstId = (string) reset($rowIds);
         $lastId = (string) end($rowIds);
         $updates = [
-            'segmen_kinerja' => DB::raw("UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(segmen_dashboard, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))"),
-            'produk_kinerja' => DB::raw("UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(produk_dashboard, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))"),
+            'segmen_kinerja' => DB::raw(DailyLoanManualSegmentRule::segmentSql()),
+            'produk_kinerja' => DB::raw(DailyLoanManualSegmentRule::productSql()),
             'cabang_normalized' => DB::raw("UPPER(TRIM(COALESCE(cabang1, '')))"),
             'unit_normalized' => DB::raw("UPPER(TRIM(COALESCE(unit1, '')))"),
             'branch_normalized' => DB::raw("UPPER(TRIM(COALESCE(branch1, '')))"),

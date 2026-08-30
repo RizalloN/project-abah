@@ -3594,7 +3594,12 @@ class ImportExcelController extends Controller
                 'db_candidates' => $mappedDbCandidates,
                 'source_pre_normalized' => $fastSourcePreNormalized,
                 'allow_locale_date_text' => $this->allowsLocaleDateTextForImport($tableName),
-                'preserve_source_text' => $normalizedTableName === 'simpanan_multipn'
+                'preserve_source_text' => in_array($normalizedTableName, ['simpanan_multipn', 'lw321pn'], true)
+                    && $hasTextualTarget
+                    && !isset($dateColumnsLookup[$normalizedHeader])
+                    && !isset($decimalColumnsLookup[$normalizedHeader])
+                    && !isset($integerColumnsLookup[$normalizedHeader]),
+                'preserve_source_text_exact' => $normalizedTableName === 'lw321pn'
                     && $hasTextualTarget
                     && !isset($dateColumnsLookup[$normalizedHeader])
                     && !isset($decimalColumnsLookup[$normalizedHeader])
@@ -6869,6 +6874,11 @@ class ImportExcelController extends Controller
                 : $this->buildDirectLoadIntegerExpression($columnExpression);
         }
 
+        if (!empty($rule['preserve_source_text_exact'])) {
+            return "CASE WHEN {$columnExpression} IS NULL OR {$columnExpression} = '\\\\N' "
+                . "THEN NULL ELSE {$columnExpression} END";
+        }
+
         return $this->buildDirectLoadTextExpression($columnExpression, true);
     }
 
@@ -7103,6 +7113,19 @@ class ImportExcelController extends Controller
         $guard = app(ImportDuplicateGuardService::class);
         foreach ($normalizedPeriods as $period) {
             $guard->assertSlotEmpty('daily_loan_dinamis', ['periode' => $period]);
+        }
+    }
+
+    private function assertLw321PnImportPeriodsEmptyOrFail(array $periods): void
+    {
+        $normalizedPeriods = $this->normalizeDailyLoanReplacePeriods($periods);
+        if ($normalizedPeriods === []) {
+            throw new \RuntimeException('Import LW321PN dibatalkan: periode sumber tidak dapat divalidasi.');
+        }
+
+        $guard = app(ImportDuplicateGuardService::class);
+        foreach ($normalizedPeriods as $period) {
+            $guard->assertSlotEmpty('lw321pn', ['periode' => $period]);
         }
     }
 
@@ -8031,7 +8054,7 @@ class ImportExcelController extends Controller
         }
 
         if ($this->isLw321PnTable($tableName)) {
-            return 'WHERE src.`periode` IS NOT NULL AND src.`no_rekening` IS NOT NULL';
+            return 'WHERE src.`periode` IS NOT NULL AND src.`no_rekening` IS NOT NULL AND src.`balance_dalam_idr` IS NOT NULL';
         }
 
         if ($this->isLw321NpdTable($tableName)) {
@@ -8298,6 +8321,13 @@ class ImportExcelController extends Controller
                 $baseTotal = $eligibleRows;
             }
 
+            if ($isLw321Pn && $loadedRows !== $baseTotal) {
+                $invalidRows = max(0, $loadedRows - $baseTotal);
+                throw new \RuntimeException(
+                    "Import LW321PN dibatalkan: {$invalidRows} baris memiliki PERIODE, NOMOR_REKENING, atau BALANCE DALAM IDR yang tidak valid. Tidak ada data yang ditulis."
+                );
+            }
+
             if ($jobId > 0) {
                 $this->progressService()->updateJob($jobId, [
                     'total_files' => $baseTotal,
@@ -8316,10 +8346,19 @@ class ImportExcelController extends Controller
                 throw new \RuntimeException("Import {$label} sedang berjalan di background. Silakan tunggu.");
             }
 
-            if ($isDailyLoan) {
-                $this->assertDailyLoanImportPeriodsEmptyOrFail(
-                    $this->collectDailyLoanPeriodsFromFastPathStage($stagingTable, $innerSelectSql, $whereClauses)
-                );
+            try {
+                if ($isDailyLoan) {
+                    $this->assertDailyLoanImportPeriodsEmptyOrFail(
+                        $this->collectDailyLoanPeriodsFromFastPathStage($stagingTable, $innerSelectSql, $whereClauses)
+                    );
+                } elseif ($isLw321Pn) {
+                    $this->assertLw321PnImportPeriodsEmptyOrFail(
+                        $this->collectDailyLoanPeriodsFromFastPathStage($stagingTable, $innerSelectSql, $whereClauses)
+                    );
+                }
+            } catch (\Throwable $e) {
+                $this->releaseMysqlAdvisoryLockOnDb($lockName);
+                throw $e;
             }
 
             $inserted = 0;
@@ -8332,17 +8371,32 @@ class ImportExcelController extends Controller
                     DB::statement('SET @skip_snapshot_invalidation = 1');
                     $sqlModeRow = DB::selectOne('SELECT @@SESSION.sql_mode AS session_sql_mode');
                     $sessionSqlMode = (string) ($sqlModeRow->session_sql_mode ?? '');
-                    $relaxedModes = array_values(array_filter(array_map('trim', explode(',', $sessionSqlMode))));
-                    $relaxedModes = array_values(array_filter($relaxedModes, static function (string $mode): bool {
-                        return !in_array(strtoupper($mode), ['STRICT_TRANS_TABLES', 'STRICT_ALL_TABLES'], true);
-                    }));
-                    DB::statement('SET SESSION sql_mode = ?', [implode(',', $relaxedModes)]);
+                    $importSqlModes = array_values(array_filter(array_map('trim', explode(',', $sessionSqlMode))));
+                    if ($isLw321Pn) {
+                        $hasStrictMode = count(array_filter($importSqlModes, static function (string $mode): bool {
+                            return in_array(strtoupper($mode), ['STRICT_TRANS_TABLES', 'STRICT_ALL_TABLES'], true);
+                        })) > 0;
+                        if (!$hasStrictMode) {
+                            $importSqlModes[] = 'STRICT_TRANS_TABLES';
+                        }
+                    } else {
+                        $importSqlModes = array_values(array_filter($importSqlModes, static function (string $mode): bool {
+                            return !in_array(strtoupper($mode), ['STRICT_TRANS_TABLES', 'STRICT_ALL_TABLES'], true);
+                        }));
+                    }
+                    DB::statement('SET SESSION sql_mode = ?', [implode(',', array_unique($importSqlModes))]);
 
                     if ($isDlyKapResegmentasi) {
                         $this->deleteDlyKapResegmentasiScopesFromFastPathStage($stagingTable, $innerSelectSql, $whereClauses);
                     }
 
                     $inserted = DB::affectingStatement($sql);
+
+                    if ($isLw321Pn && $inserted !== $baseTotal) {
+                        throw new \RuntimeException(
+                            "Import LW321PN tidak lengkap: {$inserted} dari {$baseTotal} baris terpetakan. Transaksi dibatalkan."
+                        );
+                    }
 
                     if ($isLw321Npd) {
                         $this->assertLw321NpdPositionColumnsLoaded($context, $inserted);
@@ -11444,7 +11498,7 @@ class ImportExcelController extends Controller
         $scriptPath = base_path('scripts/lw321pn_xlsx_to_csv.py');
 
         if (!$pythonExe || !file_exists($scriptPath)) {
-            throw new \RuntimeException('Python/openpyxl tidak tersedia untuk staging preview LW321PN.');
+            throw new \RuntimeException('Python tidak tersedia untuk staging preview LW321PN.');
         }
 
         $tempDirectory = storage_path('app/excel_stage');
@@ -11536,6 +11590,9 @@ class ImportExcelController extends Controller
 
                 usleep(100000);
             }
+        } catch (\Throwable $e) {
+            @unlink($outputPath);
+            throw $e;
         } finally {
             if (isset($pipes[1]) && is_resource($pipes[1])) {
                 fclose($pipes[1]);
@@ -12375,7 +12432,7 @@ class ImportExcelController extends Controller
                     return false;
                 }
             } else {
-                // Excel file: coba Python dulu (openpyxl read-only, lebih cepat)
+                // Excel file: coba staging Python streaming terlebih dahulu.
                 try {
                     if ($this->isLw321PnTable($tableName)) {
                         $stageResult = $this->stageLw321PnExcelToCsv($path, null, false);
@@ -12852,16 +12909,31 @@ class ImportExcelController extends Controller
             $reportLabel = $isPn ? 'LW321PN' : ($isNpd ? 'LW321 NPD' : 'LW321 NPDD');
 
             try {
-                $stage = $isPn
-                    ? $this->stageLw321PnExcelToCsv($path, null, false)
-                    : ($isNpd
-                        ? $this->stageLw321NpdExcelToCsv($path, null, false)
-                        : $this->stageLw321NpddExcelToCsv($path, null, false));
-                $stagedCsvPath = (string) ($stage['absolute_path'] ?? '');
-                $lw321VariantStagedHeaders = array_values((array) ($stage['headers'] ?? []));
+                if ($isPn) {
+                    $lw321VariantStagedHeaders = array_values((array) (
+                        $previewMetaForHeaders['source_headers']
+                        ?? $previewMetaForHeaders['normalized_headers']
+                        ?? []
+                    ));
 
-                if ($stagedCsvPath === '' || !file_exists($stagedCsvPath)) {
-                    throw new \RuntimeException("CSV staging {$reportLabel} tidak terbentuk.");
+                    if ($lw321VariantStagedHeaders === []) {
+                        $stage = $this->stageLw321PnExcelToCsv($path, null, true);
+                        $lw321VariantStagedHeaders = array_values((array) ($stage['headers'] ?? []));
+                    }
+
+                    if ($lw321VariantStagedHeaders === []) {
+                        throw new \RuntimeException('Header LW321PN tidak dapat divalidasi.');
+                    }
+                } else {
+                    $stage = $isNpd
+                        ? $this->stageLw321NpdExcelToCsv($path, null, false)
+                        : $this->stageLw321NpddExcelToCsv($path, null, false);
+                    $stagedCsvPath = (string) ($stage['absolute_path'] ?? '');
+                    $lw321VariantStagedHeaders = array_values((array) ($stage['headers'] ?? []));
+
+                    if ($stagedCsvPath === '' || !file_exists($stagedCsvPath)) {
+                        throw new \RuntimeException("CSV staging {$reportLabel} tidak terbentuk.");
+                    }
                 }
             } catch (\Throwable $e) {
                 Log::error("initExcelImport: Gagal staging normalisasi {$reportLabel}", [

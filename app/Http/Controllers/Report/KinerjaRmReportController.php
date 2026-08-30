@@ -57,6 +57,634 @@ class KinerjaRmReportController extends Controller
         private readonly RkaLookupService $rkaLookup
     ) {}
 
+    /**
+     * Reuse the SMALL performance calculation for the landing dashboard.
+     * The rows intentionally come from the same method as the KPI report so
+     * the quadrant count cannot drift from the detailed page.
+     *
+     * @return array<string, mixed>
+     */
+    public function landingSmallQuadrantSummary(?string $requestedPeriod = null): array
+    {
+        $availablePeriods = $this->fetchAvailablePeriods();
+        $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $requestedPeriod)
+            ?? $availablePeriods->first()
+            ?? Carbon::now()->toDateString();
+        $performance = $this->fetchRetailRealizationPerformance(
+            'SMALL',
+            $selectedPeriod,
+            null,
+            null,
+            null,
+            true
+        );
+        $branchOrder = collect(['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'])
+            ->flip();
+        $latestPerformanceMonth = substr((string) data_get($performance, 'meta.latest_period', $selectedPeriod), 0, 7);
+        $recentPerformanceMonths = collect($performance['months'] ?? [])
+            ->filter(static fn (array $month): bool => ! empty($month['period']))
+            ->take(-2)
+            ->pluck('key')
+            ->filter()
+            ->values();
+
+        $normalizedRows = collect($performance['rows'] ?? [])
+            ->map(function (array $row) use ($latestPerformanceMonth, $recentPerformanceMonths): array {
+                $quadrant = $this->normalizeQuadrant($row['quadrant'] ?? null);
+                $branch = strtoupper(trim((string) ($row['cabang'] ?? '')));
+                $rawRm = trim((string) ($row['rm'] ?? ''));
+                $rmDisplay = trim((string) ($row['rm_display'] ?? ''));
+                if ($rmDisplay === '') {
+                    $rmDisplay = trim($rawRm, " \t\n\r\0\x0B-");
+                }
+
+                return [
+                    'branch' => $branch,
+                    'unit_code' => trim((string) ($row['unit_code'] ?? '')),
+                    'unit' => trim((string) ($row['unit'] ?? '')),
+                    'rm' => $rmDisplay,
+                    'rm_identity' => $this->landingSmallRmIdentity($rawRm, $rmDisplay),
+                    'quadrant' => $quadrant,
+                    'ratas_rp' => is_numeric(data_get($row, 'accumulated.ratas_rp'))
+                        ? (float) data_get($row, 'accumulated.ratas_rp')
+                        : null,
+                    'realization_deb' => (int) data_get($row, 'months.'.$latestPerformanceMonth.'.deb', 0),
+                    'realization_rp' => (float) data_get($row, 'months.'.$latestPerformanceMonth.'.rp', 0),
+                    'has_recent_realization' => $recentPerformanceMonths->contains(function (string $month) use ($row): bool {
+                        return (int) data_get($row, 'months.'.$month.'.deb', 0) > 0
+                            || abs((float) data_get($row, 'months.'.$month.'.rp', 0)) > 0.001;
+                    }),
+                    'latest_loan_os' => (float) ($row['latest_loan_os'] ?? 0),
+                    'latest_has_data' => (bool) ($row['latest_has_data'] ?? false),
+                    'months' => (array) ($row['months'] ?? []),
+                ];
+            })
+            ->filter(fn (array $row): bool => in_array($row['branch'], ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'], true)
+                && $row['rm'] !== '');
+        $normalizedRows = $this->filterLatestSmallRmAssignments($normalizedRows)
+            ->unique(fn (array $row): string => implode('|', [
+                $row['branch'],
+                strtoupper($row['unit_code']),
+                strtoupper($row['rm']),
+            ]))
+            ->sort(function (array $left, array $right) use ($branchOrder): int {
+                $branchComparison = ((int) $branchOrder->get($left['branch'], 99))
+                    <=> ((int) $branchOrder->get($right['branch'], 99));
+                if ($branchComparison !== 0) {
+                    return $branchComparison;
+                }
+
+                $unitComparison = strnatcasecmp($left['unit_code'], $right['unit_code']);
+
+                return $unitComparison !== 0
+                    ? $unitComparison
+                    : strnatcasecmp($left['rm'], $right['rm']);
+            })
+            ->values();
+        $rows = $normalizedRows
+            ->filter(fn (array $row): bool => $row['quadrant'] !== null)
+            ->values();
+
+        $branches = $rows
+            ->groupBy('branch')
+            ->map(function (Collection $branchRows, string $branch): array {
+                $totalRm = $branchRows->count();
+                $quadrants = [];
+                foreach ([1, 2, 3, 4] as $quadrant) {
+                    $count = $branchRows->where('quadrant', $quadrant)->count();
+                    $quadrants[$quadrant] = [
+                        'count' => $count,
+                        'percentage' => $totalRm > 0 ? ($count / $totalRm) * 100 : 0.0,
+                    ];
+                }
+
+                return [
+                    'branch' => $branch,
+                    'total_rm' => $totalRm,
+                    'quadrants' => $quadrants,
+                    'rms' => $branchRows->all(),
+                ];
+            })
+            ->sortBy(fn (array $branch): int => (int) $branchOrder->get($branch['branch'], 99))
+            ->values()
+            ->all();
+
+        return [
+            'period' => $selectedPeriod,
+            'period_label' => Carbon::parse($selectedPeriod)->translatedFormat('d M Y'),
+            'total_rm' => $rows->count(),
+            'branches' => $branches,
+            'realization_tiers' => $this->landingSmallRealizationTiers(
+                $normalizedRows,
+                (string) data_get($performance, 'meta.latest_period_label', Carbon::parse($selectedPeriod)->translatedFormat('d M Y'))
+            ),
+            'unproductive' => $this->landingSmallUnproductive(
+                $normalizedRows,
+                (array) ($performance['months'] ?? [])
+            ),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array<string, mixed>
+     */
+    private function landingSmallRealizationTiers(Collection $rows, string $periodLabel): array
+    {
+        $definitions = [
+            'lt_500' => ['label' => '< Rp 500 jt'],
+            '500_1000' => ['label' => 'Rp 500 - <1.000 jt'],
+            '1000_1600' => ['label' => 'Rp 1.000 - 1.600 jt'],
+            'gte_1600' => ['label' => '> Rp 1.600 jt'],
+        ];
+        $branchLabels = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $classifiedRows = $rows
+            ->filter(static fn (array $row): bool => is_numeric($row['realization_rp'] ?? null))
+            ->map(function (array $row): array {
+                $value = (float) $row['realization_rp'];
+                $row['tier'] = match (true) {
+                    $value < 500_000_000 => 'lt_500',
+                    $value < 1_000_000_000 => '500_1000',
+                    $value <= 1_600_000_000 => '1000_1600',
+                    default => 'gte_1600',
+                };
+
+                return $row;
+            })
+            ->values();
+
+        $metricBuilder = static function (Collection $scopeRows) use ($definitions): array {
+            $total = $scopeRows->count();
+            $metrics = [];
+            foreach ($definitions as $key => $definition) {
+                $tierRows = $scopeRows->where('tier', $key);
+                $metrics[$key] = [
+                    'key' => $key,
+                    'label' => $definition['label'],
+                    'rm_count' => $tierRows->count(),
+                    'amount' => (float) $tierRows->sum('realization_rp'),
+                    'percentage' => $total > 0 ? ($tierRows->count() / $total) * 100 : 0.0,
+                    'rms' => $tierRows->map(static fn (array $row): array => [
+                        'rm' => $row['rm'],
+                        'unit_code' => $row['unit_code'],
+                        'unit' => $row['unit'],
+                        'realization_rp' => (float) $row['realization_rp'],
+                    ])->values()->all(),
+                ];
+            }
+
+            return $metrics;
+        };
+
+        return [
+            'available' => $classifiedRows->isNotEmpty(),
+            'basis' => 'Realisasi bulan berjalan sampai '.$periodLabel,
+            'period_label' => $periodLabel,
+            'total_rm' => $classifiedRows->count(),
+            'totals' => $metricBuilder($classifiedRows),
+            'branches' => collect($branchLabels)->map(function (string $branch) use ($classifiedRows, $metricBuilder): array {
+                $branchRows = $classifiedRows->where('branch', $branch)->values();
+
+                return [
+                    'branch' => $branch,
+                    'total_rm' => $branchRows->count(),
+                    'tiers' => $metricBuilder($branchRows),
+                ];
+            })->all(),
+        ];
+    }
+
+    private function landingSmallRmIdentity(string $rawRm, string $displayName): string
+    {
+        if (preg_match('/^\s*0*(\d{5,})\s*-/', $rawRm, $matches) === 1) {
+            return 'PN:'.ltrim($matches[1], '0');
+        }
+
+        return 'NAME:'.preg_replace('/[^A-Z0-9]+/', '', strtoupper($displayName));
+    }
+
+    /**
+     * Daily Loan menjadi sumber utama identitas, unit, cabang, dan aktivitas RM.
+     * BRIHC hanya melengkapi status jabatan ketika rekening lama masih membawa
+     * nama pengelola yang sudah mutasi atau alih fungsi.
+     *
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function filterLatestSmallRmAssignments(Collection $rows): Collection
+    {
+        $references = $this->latestSmallRmReferences($rows);
+        if ($references->isNotEmpty()) {
+            $matchedRosterIdentities = collect();
+            $rows = $rows
+                ->map(function (array $row) use ($references, $matchedRosterIdentities): array {
+                    $reference = (array) $references->get((string) $row['rm_identity'], []);
+                    $primaryIdentity = (string) ($reference['primary_identity'] ?? $row['rm_identity']);
+                    $hasCurrentRealization = (int) ($row['realization_deb'] ?? 0) > 0
+                        || abs((float) ($row['realization_rp'] ?? 0)) > 0.001;
+                    $hasRecentRealization = (bool) ($row['has_recent_realization'] ?? false);
+                    $hasReference = $reference !== [];
+                    $isActiveReference = (bool) ($reference['is_active_small'] ?? false);
+                    $isActive = $hasCurrentRealization || $isActiveReference;
+                    $assignedBranch = (string) ($reference['branch'] ?? '');
+                    $assignedUnitCode = preg_replace('/\D+/', '', (string) ($reference['unit_code'] ?? ''));
+                    $rowUnitCode = preg_replace('/\D+/', '', (string) ($row['unit_code'] ?? ''));
+                    $row['roster_assignment_match'] = $assignedBranch === $row['branch']
+                        && ($assignedUnitCode === '' || $rowUnitCode === '' || $assignedUnitCode === $rowUnitCode);
+                    $row['is_active_rm'] = $isActive;
+                    $row['activity_source'] = match (true) {
+                        $hasCurrentRealization => 'daily_loan_current_realization',
+                        $isActiveReference => 'brihc_active_role',
+                        $hasReference => 'brihc_role_mismatch',
+                        $hasRecentRealization => 'daily_loan_historical_only',
+                        default => 'stale_daily_loan_portfolio',
+                    };
+                    if ($isActiveReference) {
+                        $matchedRosterIdentities->put($primaryIdentity, true);
+                    }
+                    $row['rm_identity'] = $primaryIdentity;
+                    $row['roster_only'] = false;
+
+                    return $row;
+                })
+                ->filter(static fn (array $row): bool => (bool) ($row['is_active_rm'] ?? false));
+
+            $rows = $this->enrichUnresolvedDailyLoanRmNames($rows, $references, $matchedRosterIdentities);
+
+            $rosterOnlyRows = $references
+                ->values()
+                ->filter(static fn (array $reference): bool => (bool) ($reference['is_active_small'] ?? false))
+                ->unique('primary_identity')
+                ->reject(fn (array $assignment): bool => $matchedRosterIdentities->has((string) $assignment['primary_identity']))
+                ->map(static fn (array $assignment): array => [
+                    'branch' => (string) $assignment['branch'],
+                    'unit_code' => (string) $assignment['unit_code'],
+                    'unit' => (string) $assignment['unit'],
+                    'rm' => (string) $assignment['name'],
+                    'rm_identity' => (string) $assignment['primary_identity'],
+                    // Tanpa rekening kelolaan di Daily Loan, produktivitas dan LAR sama-sama nol.
+                    'quadrant' => 3,
+                    'ratas_rp' => 0.0,
+                    'realization_deb' => 0,
+                    'realization_rp' => 0.0,
+                    'has_recent_realization' => false,
+                    'latest_loan_os' => 0.0,
+                    'latest_has_data' => false,
+                    'months' => [],
+                    'roster_only' => true,
+                    'roster_assignment_match' => true,
+                    'is_active_rm' => true,
+                    'activity_source' => 'brihc_active_role',
+                ]);
+
+            $rows = $rows
+                ->concat($rosterOnlyRows)
+                ->groupBy('rm_identity')
+                ->map(function (Collection $identityRows): array {
+                    return $identityRows
+                        ->sort(function (array $left, array $right): int {
+                            $leftCurrent = (int) ($left['realization_deb'] ?? 0) > 0
+                                || abs((float) ($left['realization_rp'] ?? 0)) > 0.001;
+                            $rightCurrent = (int) ($right['realization_deb'] ?? 0) > 0
+                                || abs((float) ($right['realization_rp'] ?? 0)) > 0.001;
+                            $comparison = ((int) $rightCurrent) <=> ((int) $leftCurrent);
+                            if ($comparison !== 0) {
+                                return $comparison;
+                            }
+
+                            foreach (['has_recent_realization', 'latest_has_data'] as $flag) {
+                                $comparison = ((int) ($right[$flag] ?? false)) <=> ((int) ($left[$flag] ?? false));
+                                if ($comparison !== 0) {
+                                    return $comparison;
+                                }
+                            }
+
+                            foreach (['latest_loan_os', 'realization_rp'] as $metric) {
+                                $comparison = abs((float) ($right[$metric] ?? 0)) <=> abs((float) ($left[$metric] ?? 0));
+                                if ($comparison !== 0) {
+                                    return $comparison;
+                                }
+                            }
+
+                            $comparison = ((int) ($right['roster_assignment_match'] ?? false))
+                                <=> ((int) ($left['roster_assignment_match'] ?? false));
+                            if ($comparison !== 0) {
+                                return $comparison;
+                            }
+
+                            return ((int) (($right['quadrant'] ?? null) !== null))
+                                <=> ((int) (($left['quadrant'] ?? null) !== null));
+                        })
+                        ->first();
+                })
+                ->values();
+        }
+
+        return $rows
+            ->groupBy('rm_identity')
+            ->flatMap(function (Collection $identityRows): Collection {
+                $branches = $identityRows->groupBy('branch');
+                if ($branches->count() <= 1 || ! str_starts_with((string) $identityRows->first()['rm_identity'], 'PN:')) {
+                    return $identityRows;
+                }
+
+                $activeBranch = $branches
+                    ->map(function (Collection $branchRows, string $branch): array {
+                        return [
+                            'branch' => $branch,
+                            'loan_os' => (float) $branchRows->sum('latest_loan_os'),
+                            'realization_rp' => (float) $branchRows->sum('realization_rp'),
+                            'has_latest' => $branchRows->contains(
+                                static fn (array $row): bool => (bool) ($row['latest_has_data'] ?? false)
+                            ),
+                        ];
+                    })
+                    ->sort(function (array $left, array $right): int {
+                        foreach (['loan_os', 'realization_rp'] as $metric) {
+                            $comparison = $right[$metric] <=> $left[$metric];
+                            if ($comparison !== 0) {
+                                return $comparison;
+                            }
+                        }
+
+                        $latestComparison = ((int) $right['has_latest']) <=> ((int) $left['has_latest']);
+
+                        return $latestComparison !== 0
+                            ? $latestComparison
+                            : strnatcasecmp($left['branch'], $right['branch']);
+                    })
+                    ->first();
+
+                return $branches->get((string) ($activeBranch['branch'] ?? ''), collect());
+            })
+            ->values();
+    }
+
+    /**
+     * BRIHC adalah referensi pelengkap status jabatan. Identitas serta penempatan
+     * yang sudah tersedia pada Daily Loan tidak pernah ditimpa oleh data ini.
+     *
+     * @param  Collection<int, array<string, mixed>>  $dailyLoanRows
+     * @return Collection<string, array{primary_identity:string,name:string,branch:string,unit:string,unit_code:string,is_active_small:bool}>
+     */
+    private function latestSmallRmReferences(Collection $dailyLoanRows): Collection
+    {
+        if (! Schema::hasTable('brihc_pemasar')) {
+            return collect();
+        }
+
+        $requiredColumns = ['pernr', 'completename', 'positiondesc', 'psadesc', 'bc'];
+        if (collect($requiredColumns)->contains(
+            static fn (string $column): bool => ! Schema::hasColumn('brihc_pemasar', $column)
+        )) {
+            return collect();
+        }
+
+        $allowedBranches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $candidatePns = $dailyLoanRows
+            ->pluck('rm_identity')
+            ->filter(static fn (string $identity): bool => str_starts_with($identity, 'PN:'))
+            ->map(static fn (string $identity): string => substr($identity, 3))
+            ->filter()
+            ->flatMap(static fn (string $pn): array => [$pn, str_pad($pn, 8, '0', STR_PAD_LEFT)])
+            ->unique()
+            ->values()
+            ->all();
+        $candidateNames = $dailyLoanRows
+            ->pluck('rm')
+            ->map(static fn (string $name): string => trim($name))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $selectedColumns = $requiredColumns;
+        if (Schema::hasColumn('brihc_pemasar', 'orgdesc')) {
+            $selectedColumns[] = 'orgdesc';
+        }
+        if (Schema::hasColumn('brihc_pemasar', 'updated_at')) {
+            $selectedColumns[] = 'updated_at';
+        }
+
+        $records = DB::table('brihc_pemasar')
+            ->where(function ($query) use ($allowedBranches, $candidatePns, $candidateNames): void {
+                $query->where(function ($activeQuery) use ($allowedBranches): void {
+                    $activeQuery
+                        ->whereRaw("UPPER(TRIM(COALESCE(positiondesc, ''))) IN ('RM BISNIS KECIL', 'RM SMALL', 'RM SME')")
+                        ->whereIn(DB::raw('UPPER(TRIM(psadesc))'), $allowedBranches);
+                });
+                if ($candidatePns !== []) {
+                    $query->orWhereIn('pernr', $candidatePns);
+                }
+                if ($candidateNames !== []) {
+                    $query->orWhereIn('completename', $candidateNames);
+                }
+            })
+            ->get($selectedColumns)
+            ->map(function (object $record): array {
+                $pn = ltrim(preg_replace('/\D+/', '', (string) ($record->pernr ?? '')), '0');
+                $nameKey = preg_replace('/[^A-Z0-9]+/', '', strtoupper((string) ($record->completename ?? '')));
+                $unitCode = preg_replace('/\D+/', '', (string) ($record->bc ?? ''));
+                $name = trim((string) ($record->completename ?? ''));
+                $branch = strtoupper(trim((string) ($record->psadesc ?? '')));
+                $unit = strtoupper(trim((string) ($record->orgdesc ?? '')));
+                if ($unit === '' || str_starts_with($unit, 'FUNGSI BISNIS')) {
+                    $unit = $branch;
+                }
+                $role = strtoupper(trim((string) ($record->positiondesc ?? '')));
+                $pnIdentity = $pn !== '' ? 'PN:'.$pn : '';
+                $nameIdentity = $nameKey !== '' ? 'NAME:'.$nameKey : '';
+
+                return [
+                    'primary_identity' => $pnIdentity !== '' ? $pnIdentity : $nameIdentity,
+                    'pn_identity' => $pnIdentity,
+                    'name_identity' => $nameIdentity,
+                    'name' => $name,
+                    'branch' => $branch,
+                    'unit' => $unit,
+                    'unit_code' => $unitCode,
+                    'role' => $role,
+                    'is_active_small' => in_array($role, ['RM BISNIS KECIL', 'RM SMALL', 'RM SME'], true)
+                        && in_array($branch, ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'], true),
+                    'reference_updated_at' => (string) ($record->updated_at ?? ''),
+                ];
+            })
+            ->filter(static fn (array $record): bool => $record['branch'] !== ''
+                && $record['name'] !== ''
+                && $record['primary_identity'] !== '')
+            ->values();
+
+        $latestByPn = $records
+            ->filter(static fn (array $record): bool => $record['pn_identity'] !== '')
+            ->groupBy('pn_identity')
+            ->map(fn (Collection $pnRecords): array => $this->selectLatestRmReference($pnRecords));
+        $latestByName = $records
+            ->filter(static fn (array $record): bool => $record['name_identity'] !== '')
+            ->groupBy('name_identity')
+            ->filter(static fn (Collection $nameRecords): bool => $nameRecords->pluck('pn_identity')->unique()->count() === 1)
+            ->map(fn (Collection $nameRecords): array => $this->selectLatestRmReference($nameRecords));
+
+        return $latestByPn->union($latestByName);
+    }
+
+    /**
+     * Isi nama yang kosong hanya ketika satu PN Daily Loan dan satu RM aktif
+     * BRIHC bertemu secara unik pada cabang + unit yang sama. PN dan penempatan
+     * Daily Loan tetap dipertahankan agar referensi tidak mengambil alih sumber.
+     *
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @param  Collection<string, array<string, mixed>>  $references
+     * @param  Collection<string, bool>  $matchedRosterIdentities
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function enrichUnresolvedDailyLoanRmNames(
+        Collection $rows,
+        Collection $references,
+        Collection $matchedRosterIdentities
+    ): Collection {
+        $unresolvedUnitCounts = $rows
+            ->filter(fn (array $row): bool => $this->isUnresolvedDailyLoanRmName((string) ($row['rm'] ?? '')))
+            ->countBy(fn (array $row): string => $this->rmAssignmentKey($row));
+        $availableRoster = $references
+            ->values()
+            ->filter(static fn (array $reference): bool => (bool) ($reference['is_active_small'] ?? false))
+            ->unique('primary_identity')
+            ->reject(fn (array $reference): bool => $matchedRosterIdentities->has((string) $reference['primary_identity']))
+            ->groupBy(fn (array $reference): string => $this->rmAssignmentKey($reference));
+
+        return $rows->map(function (array $row) use ($unresolvedUnitCounts, $availableRoster, $matchedRosterIdentities): array {
+            if (! $this->isUnresolvedDailyLoanRmName((string) ($row['rm'] ?? ''))) {
+                return $row;
+            }
+
+            $assignmentKey = $this->rmAssignmentKey($row);
+            $candidates = $availableRoster->get($assignmentKey, collect())
+                ->reject(fn (array $reference): bool => $matchedRosterIdentities->has((string) $reference['primary_identity']))
+                ->values();
+            if ((int) $unresolvedUnitCounts->get($assignmentKey, 0) !== 1 || $candidates->count() !== 1) {
+                return $row;
+            }
+
+            $candidate = (array) $candidates->first();
+            $candidateName = trim((string) ($candidate['name'] ?? ''));
+            if ($candidateName === '') {
+                return $row;
+            }
+
+            $matchedRosterIdentities->put((string) $candidate['primary_identity'], true);
+            $row['rm'] = $candidateName;
+            $row['name_enriched_from_brihc'] = true;
+            $row['matched_reference_identity'] = (string) $candidate['primary_identity'];
+
+            return $row;
+        });
+    }
+
+    private function isUnresolvedDailyLoanRmName(string $name): bool
+    {
+        $normalized = trim($name, " \t\n\r\0\x0B-");
+
+        return $normalized === '' || preg_match('/^0*\d{5,}$/', $normalized) === 1;
+    }
+
+    /** @param array<string, mixed> $assignment */
+    private function rmAssignmentKey(array $assignment): string
+    {
+        $branch = strtoupper(trim((string) ($assignment['branch'] ?? '')));
+        $unitCode = ltrim(preg_replace('/\D+/', '', (string) ($assignment['unit_code'] ?? '')), '0');
+        $unit = preg_replace('/[^A-Z0-9]+/', '', strtoupper((string) ($assignment['unit'] ?? '')));
+
+        return $branch.'|'.($unitCode !== '' ? 'BC:'.$unitCode : 'UNIT:'.$unit);
+    }
+
+    /** @param Collection<int, array<string, mixed>> $records */
+    private function selectLatestRmReference(Collection $records): array
+    {
+        $latestTimestamp = (string) $records->max('reference_updated_at');
+        $latestRecords = $latestTimestamp !== ''
+            ? $records->where('reference_updated_at', $latestTimestamp)
+            : $records;
+        $selected = (array) ($latestRecords->firstWhere('is_active_small', true) ?? $latestRecords->first() ?? []);
+        $selected['is_active_small'] = $latestRecords->contains(
+            static fn (array $record): bool => (bool) ($record['is_active_small'] ?? false)
+        );
+
+        return $selected;
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @param  array<int, array<string, mixed>>  $months
+     * @return array<string, mixed>
+     */
+    private function landingSmallUnproductive(Collection $rows, array $months): array
+    {
+        $closedMonths = collect($months)
+            ->filter(static fn (array $month): bool => (bool) ($month['is_closed'] ?? false))
+            ->take(-6)
+            ->values();
+        $monthKeys = $closedMonths->pluck('key')->reverse()->values();
+        $definitions = [
+            'month_1' => ['label' => '1 bulan', 'minimum' => 1],
+            'month_3' => ['label' => '3 bulan berturut-turut', 'minimum' => 3],
+            'month_6' => ['label' => '6 bulan berturut-turut', 'minimum' => 6],
+        ];
+        $eligibleRows = $rows->map(function (array $row) use ($monthKeys): array {
+            $consecutive = 0;
+            foreach ($monthKeys as $monthKey) {
+                $amount = (float) data_get($row, 'months.'.$monthKey.'.rp', 0);
+                if (abs($amount) > 0.001) {
+                    break;
+                }
+                $consecutive++;
+            }
+            $row['inactive_months'] = $consecutive;
+
+            return $row;
+        })->values();
+
+        $metricBuilder = static function (Collection $scopeRows) use ($definitions, $monthKeys): array {
+            $metrics = [];
+            foreach ($definitions as $key => $definition) {
+                $minimum = $definition['minimum'];
+                $matches = $monthKeys->count() >= $minimum
+                    ? $scopeRows->filter(static fn (array $row): bool => (int) ($row['inactive_months'] ?? 0) >= $minimum)->values()
+                    : collect();
+                $metrics[$key] = [
+                    'key' => $key,
+                    'label' => $definition['label'],
+                    'count' => $matches->count(),
+                    'percentage' => $scopeRows->isNotEmpty() ? ($matches->count() / $scopeRows->count()) * 100 : 0.0,
+                    'rms' => $matches->map(static fn (array $row): array => [
+                        'rm' => $row['rm'],
+                        'unit_code' => $row['unit_code'],
+                        'unit' => $row['unit'],
+                    ])->all(),
+                ];
+            }
+
+            return $metrics;
+        };
+
+        $branchLabels = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+
+        return [
+            'available' => $closedMonths->isNotEmpty() && $eligibleRows->isNotEmpty(),
+            'period_label' => $closedMonths->isNotEmpty()
+                ? $closedMonths->first()['short_label'].' - '.$closedMonths->last()['short_label']
+                : '-',
+            'totals' => $metricBuilder($eligibleRows),
+            'branches' => collect($branchLabels)->map(function (string $branch) use ($eligibleRows, $metricBuilder): array {
+                $branchRows = $eligibleRows->where('branch', $branch)->values();
+
+                return [
+                    'branch' => $branch,
+                    'total_rm' => $branchRows->count(),
+                    'metrics' => $metricBuilder($branchRows),
+                ];
+            })->all(),
+        ];
+    }
+
     public function index(Request $request): View
     {
         $availablePeriods = $this->fetchAvailablePeriods();
@@ -889,17 +1517,19 @@ class KinerjaRmReportController extends Controller
         string $selectedPeriod,
         ?string $selectedCabang = null,
         ?string $selectedProduct = null,
-        ?string $selectedRmCategory = null
+        ?string $selectedRmCategory = null,
+        bool $includeInactive = false
     ): array {
-        $cacheKey = 'kinerja_rm_retail_performance_v3:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_retail_performance_v5-daily-loan-rm-authority:' . $this->reportCacheVersion() . ':' . md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'cabang' => $selectedCabang,
             'produk' => $selectedProduct,
             'rm_category' => $selectedRmCategory,
+            'include_inactive' => $includeInactive,
         ]));
 
-        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $selectedCabang, $selectedProduct, $selectedRmCategory) {
+        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $selectedCabang, $selectedProduct, $selectedRmCategory, $includeInactive) {
             $selectedDate = Carbon::parse($selectedPeriod)->startOfDay();
             $yearStart = $selectedDate->copy()->startOfYear()->toDateString();
             $sourcePeriods = $this->fetchPeriodList(self::SOURCE_TABLE, 'periode')
@@ -1068,7 +1698,7 @@ class KinerjaRmReportController extends Controller
 
                     return (int) $metric['deb'] !== 0 || abs((float) $metric['rp']) > 0.001;
                 });
-                if ($activeMonthKeys !== [] && ! $hasRecentRealization) {
+                if (! $includeInactive && $activeMonthKeys !== [] && ! $hasRecentRealization) {
                     $hiddenInactiveCount++;
                     continue;
                 }
@@ -1107,6 +1737,8 @@ class KinerjaRmReportController extends Controller
                     'cabang' => $data['cabang'],
                     'rm' => $data['rm'],
                     'rm_display' => trim(explode('-', $data['rm'], 2)[1] ?? $data['rm']),
+                    'latest_loan_os' => (float) ($currentMetric['lar_loan_os'] ?? 0),
+                    'latest_has_data' => (bool) ($currentMetric['has_data'] ?? false),
                     'target' => ['deb' => $targetDeb, 'rp' => $targetRp],
                     'months' => $monthMetrics,
                     'delta' => [

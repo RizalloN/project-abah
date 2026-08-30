@@ -47,6 +47,11 @@ class ImportDuplicateGuardService
             'slot_columns'     => ['periode'],
             'slot_label'       => 'periode',
         ],
+        'lw321pn' => [
+            'slot_table'       => 'lw321pn',
+            'slot_columns'     => ['periode'],
+            'slot_label'       => 'periode',
+        ],
         'brihc' => [
             'slot_table'       => 'brihc',
             'slot_columns'     => ['periode'],

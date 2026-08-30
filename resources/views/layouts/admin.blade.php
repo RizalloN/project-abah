@@ -2147,7 +2147,7 @@
         }
 
         function lockSelect(select) {
-            if (!isBranchField(select) || select.dataset.userBranchLocked === '1') {
+            if (!isBranchField(select)) {
                 return;
             }
 
@@ -2157,23 +2157,36 @@
                 return;
             }
 
+            const stateChanged = select.dataset.userBranchLocked !== '1'
+                || !select.disabled
+                || options.some(function (option) {
+                    return option.selected !== (option === match)
+                        || option.hidden !== (option !== match);
+                });
+
             options.forEach(function (option) {
                 option.selected = option === match;
                 option.hidden = option !== match;
             });
-            select.disabled = true;
+            if (!select.disabled) {
+                select.disabled = true;
+            }
             select.dataset.userBranchLocked = '1';
             select.classList.add('user-branch-scope-lock');
             select.title = 'Akses data dikunci untuk ' + scope.label;
-            select.dispatchEvent(new Event('change', { bubbles: true }));
 
-            if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
-                window.jQuery(select).trigger('change.select2');
+            if (stateChanged && window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
+                const select2 = window.jQuery(select).data('select2');
+                if (select2 && select2.dataAdapter && typeof select2.dataAdapter.current === 'function') {
+                    select2.dataAdapter.current(function (data) {
+                        select2.trigger('selection:update', { data: data });
+                    });
+                }
             }
         }
 
         function lockChoice(input) {
-            if (!isBranchField(input) || input.dataset.userBranchLocked === '1') {
+            if (!isBranchField(input)) {
                 return;
             }
 
@@ -2182,7 +2195,9 @@
                 value: input.value,
                 textContent: label ? label.textContent : ''
             });
-            input.disabled = true;
+            if (!input.disabled) {
+                input.disabled = true;
+            }
             input.dataset.userBranchLocked = '1';
             input.classList.add('user-branch-scope-lock');
 
@@ -2206,7 +2221,9 @@
         }
 
         function lockBranchToggle(toggle) {
-            toggle.disabled = true;
+            if (!toggle.disabled) {
+                toggle.disabled = true;
+            }
             toggle.setAttribute('aria-disabled', 'true');
             toggle.setAttribute('aria-expanded', 'false');
             toggle.dataset.userBranchLocked = '1';
@@ -2313,20 +2330,61 @@
             lockBranchControls(document);
         }, true);
 
+        function mutationLockRoot(node) {
+            if (!(node instanceof Element)) {
+                return null;
+            }
+
+            const parentSelect = node.closest('select');
+            if (parentSelect && isBranchField(parentSelect)) {
+                return parentSelect;
+            }
+
+            if ((node.matches(branchChoiceSelector) && isBranchField(node))
+                || node.matches(branchOptionSelector)
+                || node.matches(branchToggleSelector)
+                || node.matches(branchMenuSelector)) {
+                return node;
+            }
+
+            if (node.querySelector(branchOptionSelector + ', ' + branchToggleSelector + ', ' + branchMenuSelector)) {
+                return node;
+            }
+
+            const nestedBranchField = Array.from(node.querySelectorAll('select, ' + branchChoiceSelector))
+                .find(isBranchField);
+
+            return nestedBranchField ? node : null;
+        }
+
         const observer = new MutationObserver(function (mutations) {
+            const roots = new Set();
+
             mutations.forEach(function (mutation) {
+                if (mutation.type === 'attributes') {
+                    const root = mutationLockRoot(mutation.target);
+                    if (root) {
+                        roots.add(root);
+                    }
+                    return;
+                }
+
                 mutation.addedNodes.forEach(function (node) {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        lockBranchControls(node);
-                        const parentSelect = node.closest ? node.closest('select') : null;
-                        if (parentSelect) {
-                            lockSelect(parentSelect);
-                        }
+                    const root = mutationLockRoot(node);
+                    if (root) {
+                        roots.add(root);
                     }
                 });
             });
+
+            roots.forEach(lockBranchControls);
         });
-        observer.observe(document.body, { childList: true, subtree: true });
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['disabled']
+        });
     })();
 </script>
 @endif

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Support\DailyLoanManualSegmentRule;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -122,30 +123,15 @@ class ProcessShadowBackfillJob implements ShouldQueue
             $hasPendingRows = DB::table('daily_loan_dinamis')
                 ->where('periode', $period)
                 ->where(function ($q) {
-                    if (\Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')
-                        && \Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
-                        $q->whereNull('shadow_built_at')
-                            ->orWhereColumn('shadow_built_at', '<', 'updated_at');
-
-                        return;
-                    }
-
-                    $q->whereNull('segmen_kinerja')
-                        ->orWhereNull('produk_kinerja')
-                        ->orWhereNull('cabang_normalized')
-                        ->orWhereNull('unit_normalized')
-                        ->orWhereNull('branch_normalized')
-                        ->orWhereNull('rm_normalized')
-                        ->orWhereNull('cifno_clean');
-
-                    if (\Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')
-                        && \Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus1')) {
-                        $q->orWhere(function ($pnQuery): void {
-                            $pnQuery->whereNull('pn_pemutus_normalized')
-                                ->whereRaw("LENGTH(TRIM(COALESCE(pn_pemutus1, ''))) > 0");
-                        });
-                    }
-
+                    DailyLoanManualSegmentRule::applyPendingShadowPredicate($q, [
+                        'segmen_kinerja',
+                        'produk_kinerja',
+                        'cabang_normalized',
+                        'unit_normalized',
+                        'branch_normalized',
+                        'rm_normalized',
+                        'cifno_clean',
+                    ]);
                 })
                 ->exists();
 

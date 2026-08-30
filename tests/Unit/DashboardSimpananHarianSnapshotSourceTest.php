@@ -432,6 +432,10 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $this->assertArrayHasKey('segment_performance', $payload);
         $segPerf = $payload['segment_performance'];
         $this->assertArrayHasKey('segments', $segPerf);
+        $this->assertArrayHasKey('previous_rka_month_year', $segPerf);
+        $this->assertArrayHasKey('previous_pct_fmt', data_get($segPerf, 'total.os'));
+        $this->assertArrayHasKey('previous_pct_fmt', data_get($segPerf, 'total.sml'));
+        $this->assertArrayHasKey('previous_pct_fmt', data_get($segPerf, 'total.npl'));
         $this->assertCount(3, $segPerf['segments']);
 
         // Check SME

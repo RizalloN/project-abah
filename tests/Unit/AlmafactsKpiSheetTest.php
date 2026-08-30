@@ -281,6 +281,11 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertSame('KC Madiun', $data['kpiBranchFilter']['selected']);
         $this->assertSame(['KC Madiun'], array_column($data['kpiBranchFilter']['options'], 'value'));
         $this->assertSame(1, $data['summary']['row_count']);
+
+        $rendered = $view->render();
+        $this->assertSame(1, preg_match('/<select[^>]+id="kpi-branch-filter"[^>]*>/', $rendered, $matches));
+        $this->assertStringContainsString('disabled', $matches[0]);
+        $this->assertStringNotContainsString('onchange=', $matches[0]);
     }
 
     public function test_kpi_page_reads_two_row_header_with_pencp_and_nilai_as_sortable_columns(): void

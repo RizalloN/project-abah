@@ -46,7 +46,7 @@
             <label for="mss-cabang">Wilayah</label>
             <div class="mss-select-wrap {{ $scopeLocked ? 'is-locked' : '' }}">
                 <i class="fas {{ $scopeLocked ? 'fa-lock' : 'fa-map-marked-alt' }}"></i>
-                <select id="mss-cabang" name="cabang" @disabled($scopeLocked) onchange="this.form.submit()">
+                <select id="mss-cabang" name="cabang" @disabled($scopeLocked) @if(!$scopeLocked) onchange="this.form.submit()" @endif>
                     @foreach($scopes as $key => $label)
                         <option value="{{ $key }}" @selected($selectedScope === $key)>{{ $label }}</option>
                     @endforeach

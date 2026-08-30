@@ -2,6 +2,14 @@
 
 - Before adding or changing MySQL indexes, inspect existing indexes for exact duplicates and left-prefix coverage. Do not add redundant indexes, especially on large `project_abah` tables such as `simpanan_multipn`, because the database has already been optimized and duplicate indexes significantly inflate storage and import cost.
 
+## Repository Knowledge Graph
+
+- Start repository-wide investigation at `PROJECT_MAP.md` and `docs/knowledge-graph/README.md` instead of loading broad source trees into context.
+- Before relying on generated relationships, run `php artisan knowledge:graph --check`. Rebuild stale output with `php artisan knowledge:graph --build`.
+- Query the smallest useful neighborhood with `php artisan knowledge:graph <symbol|path|route|view|table|command> --depth=1 --limit=60`. Increase depth only when the first neighborhood does not expose the required flow.
+- Use `--domain=<name>` to constrain ambiguous terms. Domain summaries live under `docs/knowledge-graph/domains/`.
+- The graph is navigation evidence. Validate business rules, SQL semantics, runtime data, and rendered UI against current source and tests before changing behavior.
+
 ## Safety Rules & Rollback Prevention
 
 - **DO NOT run destructive Git commands**: NEVER run Git commands that discard unstaged local changes, delete unstaged files, or reset the working directory (e.g., `git checkout -- <file>`, `git checkout <file>`, `git reset`, `git reset --hard`, `git stash`, `git clean`) on user-facing source, view, controller, test, or config files (such as `resources/views/...`, `app/...`, `routes/...`, `config/...`, `tests/...`) without explicit user permission.

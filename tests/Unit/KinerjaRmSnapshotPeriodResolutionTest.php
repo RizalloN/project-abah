@@ -54,6 +54,16 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             $table->tinyInteger('quadrant')->nullable();
             $table->timestamps();
         });
+        Schema::create('brihc_pemasar', function (Blueprint $table) {
+            $table->id();
+            $table->string('pernr')->nullable();
+            $table->string('completename')->nullable();
+            $table->string('positiondesc')->nullable();
+            $table->string('psadesc')->nullable();
+            $table->string('orgdesc')->nullable();
+            $table->string('bc')->nullable();
+            $table->timestamps();
+        });
 
         Cache::forget('report_cache_version:pinjaman');
         Cache::forget('report_cache_version:simpanan');
@@ -174,6 +184,272 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $periods = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', []);
 
         $this->assertSame(['2026-04-20', '2026-03-31', '2025-12-31'], $periods->all());
+    }
+
+    public function test_landing_small_quadrant_summary_reuses_kpi_rows_and_keeps_pn_fallback(): void
+    {
+        DB::table('daily_loan_dinamis')->insert(['periode' => '2026-08-22']);
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-08-22', 1000000000, 1, 500000000, [
+                'cabang' => 'KC MADIUN',
+                'unit' => 'KC MADIUN',
+                'branch_code' => '45',
+                'rm' => '00123456 - RM SATU',
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'quadrant' => 1,
+            ]),
+            $this->snapshotRow('2026-08-22', 1000000000, 1, 500000000, [
+                'cabang' => 'KC MADIUN',
+                'unit' => 'KCP CARUBAN',
+                'branch_code' => '552',
+                'rm' => '00876543 -',
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'quadrant' => 4,
+            ]),
+            $this->snapshotRow('2026-08-22', 1000000000, 1, 500000000, [
+                'cabang' => 'KC NGAWI',
+                'unit' => 'KC NGAWI',
+                'branch_code' => '57',
+                'rm' => '00999999 - RM NGAWI',
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'quadrant' => 2,
+            ]),
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $summary = $controller->landingSmallQuadrantSummary('2026-08-22');
+
+        $this->assertSame(3, $summary['total_rm']);
+        $this->assertSame(['KC MADIUN', 'KC NGAWI'], array_column($summary['branches'], 'branch'));
+        $this->assertSame(2, $summary['branches'][0]['total_rm']);
+        $this->assertSame(1, $summary['branches'][0]['quadrants'][1]['count']);
+        $this->assertSame(1, $summary['branches'][0]['quadrants'][4]['count']);
+        $this->assertSame('00876543', $summary['branches'][0]['rms'][1]['rm']);
+    }
+
+    public function test_landing_small_summary_builds_non_overlapping_tiers_and_consecutive_inactivity(): void
+    {
+        $closedPeriods = ['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31', '2026-06-30', '2026-07-31'];
+        DB::table('daily_loan_dinamis')->insert(collect([...$closedPeriods, '2026-08-22'])
+            ->map(fn (string $period): array => ['periode' => $period])
+            ->all());
+
+        $snapshots = [];
+        foreach ($closedPeriods as $period) {
+            $snapshots[] = $this->snapshotRow($period, 1_000_000_000, 1, 600_000_000, [
+                'cabang' => 'KC MADIUN', 'branch_code' => '45', 'rm' => '0001 - RM AKTIF',
+                'segmen' => 'SMALL', 'produk' => 'SMALL',
+            ]);
+        }
+        foreach (array_slice($closedPeriods, 0, 6) as $period) {
+            $snapshots[] = $this->snapshotRow($period, 1_000_000_000, 1, 1_200_000_000, [
+                'cabang' => 'KC MADIUN', 'branch_code' => '45', 'rm' => '0002 - RM SATU BULAN',
+                'segmen' => 'SMALL', 'produk' => 'SMALL',
+            ]);
+        }
+        $snapshots[] = $this->snapshotRow('2026-01-31', 1_000_000_000, 1, 300_000_000, [
+            'cabang' => 'KC NGAWI', 'branch_code' => '57', 'rm' => '0003 - RM ENAM BULAN',
+            'segmen' => 'SMALL', 'produk' => 'SMALL',
+        ]);
+        $snapshots[] = $this->snapshotRow('2026-01-31', 1_000_000_000, 0, 0, [
+            'cabang' => 'KC NGAWI', 'branch_code' => '57', 'rm' => '0004 - RM NIHIL',
+            'segmen' => 'SMALL', 'produk' => 'SMALL',
+        ]);
+        $snapshots[] = $this->snapshotRow('2026-08-22', 1_000_000_000, 1, 600_000_000, [
+            'cabang' => 'KC MADIUN', 'branch_code' => '45', 'rm' => '0001 - RM AKTIF',
+            'segmen' => 'SMALL', 'produk' => 'SMALL',
+        ]);
+        DB::table('performance_rm_snapshots')->insert($snapshots);
+
+        $summary = (new KinerjaRmReportController(Mockery::mock(RkaLookupService::class)))
+            ->landingSmallQuadrantSummary('2026-08-22');
+
+        $this->assertSame(4, data_get($summary, 'realization_tiers.total_rm'));
+        $this->assertSame(3, data_get($summary, 'realization_tiers.totals.lt_500.rm_count'));
+        $this->assertSame(1, data_get($summary, 'realization_tiers.totals.500_1000.rm_count'));
+        $this->assertSame(0, data_get($summary, 'realization_tiers.totals.1000_1600.rm_count'));
+        $this->assertSame(3, data_get($summary, 'unproductive.totals.month_1.count'));
+        $this->assertSame(2, data_get($summary, 'unproductive.totals.month_3.count'));
+        $this->assertSame(2, data_get($summary, 'unproductive.totals.month_6.count'));
+        $this->assertNotEmpty(data_get($summary, 'realization_tiers.totals.lt_500.rms'));
+    }
+
+    public function test_landing_small_summary_uses_daily_loan_realization_as_assignment_authority(): void
+    {
+        DB::table('daily_loan_dinamis')->insert(['periode' => '2026-08-22']);
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-08-22', 1_750_000_000, 1, 600_000_000, [
+                'cabang' => 'KC PONOROGO',
+                'unit' => 'KC PONOROGO',
+                'branch_code' => '70',
+                'rm' => '00089738 - ARDINI',
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'quadrant' => 1,
+            ]),
+            $this->snapshotRow('2026-08-22', 900_000_000, 0, 0, [
+                'cabang' => 'KC MAGETAN',
+                'unit' => 'KC MAGETAN',
+                'branch_code' => '49',
+                'rm' => '00089738 - ARDINI',
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'quadrant' => 4,
+            ]),
+        ]);
+        DB::table('brihc_pemasar')->insert([
+            'pernr' => '89738',
+            'completename' => 'Ardini',
+            'positiondesc' => 'RM BISNIS KECIL',
+            'psadesc' => 'KC Magetan',
+            'bc' => '49',
+        ]);
+
+        $summary = (new KinerjaRmReportController(Mockery::mock(RkaLookupService::class)))
+            ->landingSmallQuadrantSummary('2026-08-22');
+
+        $this->assertSame(1, $summary['total_rm']);
+        $this->assertSame('KC PONOROGO', data_get($summary, 'branches.0.branch'));
+        $this->assertSame('ARDINI', data_get($summary, 'branches.0.rms.0.rm'));
+        $this->assertSame(1, data_get($summary, 'branches.0.rms.0.quadrant'));
+        $this->assertNull(collect($summary['branches'])->firstWhere('branch', 'KC MAGETAN'));
+    }
+
+    public function test_landing_small_summary_uses_active_brihc_roster_and_keeps_zero_realization_rm(): void
+    {
+        DB::table('daily_loan_dinamis')->insert(['periode' => '2026-08-22']);
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-08-22', 1_750_000_000, 1, 600_000_000, [
+                'cabang' => 'KC MADIUN',
+                'unit' => 'KC MADIUN',
+                'branch_code' => '45',
+                'rm' => '00000100 - RM AKTIF',
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'quadrant' => 1,
+            ]),
+            $this->snapshotRow('2026-08-22', 1_250_000_000, 1, 500_000_000, [
+                'cabang' => 'KC MADIUN',
+                'unit' => 'KC MADIUN',
+                'branch_code' => '45',
+                'rm' => '00000200 - RM ALIH FUNGSI',
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'realisasi_deb' => 0,
+                'realisasi_os' => 0,
+                'quadrant' => 2,
+            ]),
+        ]);
+        DB::table('brihc_pemasar')->insert([
+            [
+                'pernr' => '100',
+                'completename' => 'RM Aktif',
+                'positiondesc' => 'RM BISNIS KECIL',
+                'psadesc' => 'KC Madiun',
+                'bc' => '45',
+            ],
+            [
+                'pernr' => '300',
+                'completename' => 'RM Belum Realisasi',
+                'positiondesc' => 'RM BISNIS KECIL',
+                'psadesc' => 'KC Ngawi',
+                'bc' => '57',
+            ],
+            [
+                'pernr' => '200',
+                'completename' => 'RM Alih Fungsi',
+                'positiondesc' => 'RM SMALL RECOVERY',
+                'psadesc' => 'KC Madiun',
+                'bc' => '45',
+            ],
+        ]);
+
+        $summary = (new KinerjaRmReportController(Mockery::mock(RkaLookupService::class)))
+            ->landingSmallQuadrantSummary('2026-08-22');
+
+        $rows = collect($summary['branches'])->flatMap(fn (array $branch): array => $branch['rms'])->values();
+
+        $this->assertSame(2, $summary['total_rm']);
+        $this->assertSame(['RM AKTIF', 'RM Belum Realisasi'], $rows->pluck('rm')->sort()->values()->all());
+        $this->assertFalse($rows->contains(fn (array $row): bool => $row['rm'] === 'RM ALIH FUNGSI'));
+        $this->assertSame(3, $rows->firstWhere('rm', 'RM Belum Realisasi')['quadrant']);
+        $this->assertSame(0.0, $rows->firstWhere('rm', 'RM Belum Realisasi')['realization_rp']);
+        $this->assertSame(1, data_get($summary, 'realization_tiers.totals.lt_500.rm_count'));
+    }
+
+    public function test_landing_small_activity_keeps_current_daily_loan_identity_and_uses_brihc_only_for_status(): void
+    {
+        DB::table('daily_loan_dinamis')->insert(['periode' => '2026-08-22']);
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-08-22', 1_000_000_000, 1, 700_000_000, [
+                'cabang' => 'KC MADIUN',
+                'unit' => 'KCP CARUBAN',
+                'branch_code' => '552',
+                'rm' => '00154635 - BAYU WIDHIYANTO DAILY LOAN',
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'quadrant' => 1,
+            ]),
+            $this->snapshotRow('2026-08-22', 800_000_000, 0, 0, [
+                'cabang' => 'KC PONOROGO',
+                'unit' => 'KC PONOROGO',
+                'branch_code' => '70',
+                'rm' => '00069900 - ARI PRASETIAWAN',
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'quadrant' => 4,
+            ]),
+            $this->snapshotRow('2026-08-22', 400_000_000, 1, 149_000_000, [
+                'cabang' => 'KC PONOROGO',
+                'unit' => 'KCP SUDIRMAN PONOROGO',
+                'branch_code' => '2204',
+                'rm' => '00393996 -',
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'quadrant' => 3,
+            ]),
+        ]);
+        DB::table('brihc_pemasar')->insert([
+            [
+                'pernr' => '154635',
+                'completename' => 'Bayu Widhiyanto',
+                'positiondesc' => 'RM SMALL RECOVERY',
+                'psadesc' => 'KC Ponorogo',
+                'orgdesc' => 'FUNGSI RECOVERY',
+                'bc' => '70',
+            ],
+            [
+                'pernr' => '69900',
+                'completename' => 'Ari Prasetiawan',
+                'positiondesc' => 'SBM',
+                'psadesc' => 'KC Probolinggo',
+                'orgdesc' => 'FUNGSI BISNIS MIKRO',
+                'bc' => '79',
+            ],
+            [
+                'pernr' => '359321',
+                'completename' => 'Asya Sabilia',
+                'positiondesc' => 'RM BISNIS KECIL',
+                'psadesc' => 'KC Ponorogo',
+                'orgdesc' => 'KCP SUDIRMAN PONOROGO',
+                'bc' => '2204',
+            ],
+        ]);
+
+        $summary = (new KinerjaRmReportController(Mockery::mock(RkaLookupService::class)))
+            ->landingSmallQuadrantSummary('2026-08-22');
+        $rows = collect($summary['branches'])->flatMap(fn (array $branch): array => $branch['rms'])->values();
+
+        $this->assertSame(2, $summary['total_rm']);
+        $bayu = $rows->firstWhere('rm', 'BAYU WIDHIYANTO DAILY LOAN');
+        $this->assertSame('KC MADIUN', data_get($bayu, 'branch'));
+        $this->assertSame('KCP CARUBAN', data_get($bayu, 'unit'));
+        $this->assertSame('Asya Sabilia', data_get($rows->firstWhere('unit_code', '2204'), 'rm'));
+        $this->assertSame('PN:393996', data_get($rows->firstWhere('unit_code', '2204'), 'rm_identity'));
+        $this->assertFalse($rows->contains(fn (array $row): bool => str_contains($row['rm'], 'ARI PRASETIAWAN')));
     }
 
     public function test_kinerja_rm_requested_mid_month_uses_latest_period_in_that_month(): void

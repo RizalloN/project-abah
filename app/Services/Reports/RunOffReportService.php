@@ -3,6 +3,7 @@
 namespace App\Services\Reports;
 
 use App\Support\ReportCacheVersion;
+use App\Support\ReportIndexHintResolver;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -146,7 +147,15 @@ class RunOffReportService
      */
     private function resolvePeriodContext(): array
     {
-        $period = DB::table(self::TABLE)->whereNotNull('periode')->max('periode');
+        $tableSql = app(ReportIndexHintResolver::class)->qualify(
+            self::TABLE,
+            null,
+            ['idx_loan_periode_rek', 'idx_loan_periode_cif', 'idx_snapshot_filter_optimized']
+        );
+        $period = DB::table(DB::raw($tableSql))
+            ->whereNotNull('periode')
+            ->orderByDesc('periode')
+            ->value('periode');
 
         if ($period === null || trim((string) $period) === '') {
             return [

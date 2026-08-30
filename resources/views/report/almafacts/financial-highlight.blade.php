@@ -998,6 +998,9 @@
 
         if (branchSelect && form) {
             branchSelect.addEventListener('change', function () {
+                if (branchSelect.disabled || branchSelect.dataset.userBranchLocked === '1') {
+                    return;
+                }
                 form.submit();
             });
         }

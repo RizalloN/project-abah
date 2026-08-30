@@ -838,7 +838,7 @@
                 <input type="hidden" name="sheet" value="{{ $selectedSheetKey }}">
                 <input type="hidden" name="periode" value="{{ $selectedPeriod }}">
                 <label for="kpi-branch-filter">Cabang</label>
-                <select id="kpi-branch-filter" name="cabang" {{ $kpiBranchFilter['locked'] ? 'disabled' : '' }} onchange="this.form.submit()">
+                <select id="kpi-branch-filter" name="cabang" @disabled($kpiBranchFilter['locked']) @if(!$kpiBranchFilter['locked']) onchange="this.form.submit()" @endif>
                     @foreach($kpiBranchFilter['options'] as $option)
                         <option value="{{ $option['value'] }}" @selected($kpiBranchFilter['selected'] === $option['value'])>{{ $option['label'] }}</option>
                     @endforeach

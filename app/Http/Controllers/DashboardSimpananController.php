@@ -24,6 +24,10 @@ use App\Support\SimpananMultiPnSnapshotGate;
 use App\Support\DashboardDanaService;
 use App\Support\CrasMappingService;
 use App\Support\HourlyDpkDashboardService;
+use App\Support\LandingMicroPerformanceService;
+use App\Support\LandingLoanAnalyticsService;
+use App\Support\LandingPrognosaCardService;
+use App\Support\LandingSmeOperationalService;
 use App\Support\MarketShareArea6Report;
 use App\Support\MarketShareSektoralReport;
 use App\Support\ReportCacheVersion;
@@ -48,7 +52,7 @@ class DashboardSimpananController extends Controller
     private const EXTERNAL_REPORT_LINK_TABLE = 'external_report_links';
     private const MARKET_SHARE_LINK_GROUP = 'market_share';
     private const MARKET_SHARE_MAPPING_LINK_KEY = 'mapping';
-    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v19';
+    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v24_scoped_area_insights';
     private const CACHE_LOCK_SECONDS = 20;
     private const SNAPSHOT_SUMMARY_TABLE = 'dashboard_simpanan_snapshots';
     private const SNAPSHOT_BRANCH_TABLE = 'dashboard_simpanan_branch_snapshots';
@@ -58,6 +62,9 @@ class DashboardSimpananController extends Controller
     private const OFFICE_VIEWER_MAX_BYTES = 25 * 1024 * 1024;
     private array $snapshotExistsMemo = [];
     private array $snapshotPeriodMemo = [];
+    private bool $landingBranchScopeConfigured = false;
+    private ?array $landingBranchScope = null;
+    private string $landingBranchKey = UserBranchScope::AREA_SCOPE;
 
     private static array $hasTableMemo = [];
     private static array $hasColumnMemo = [];
@@ -81,6 +88,7 @@ class DashboardSimpananController extends Controller
 
     public function index(Request $request): View
     {
+        $this->configureLandingBranchScope($request);
         $periodsService = app(\App\Support\DashboardHarianSnapshotService::class);
         $availablePeriods = $periodsService->fetchPeriods();
         
@@ -108,11 +116,123 @@ class DashboardSimpananController extends Controller
             $selectedPeriod,
             $request->filled('_area6')
         );
+        $dashboard = app(LandingPrognosaCardService::class)->decorateDashboard(
+            $dashboard,
+            $this->landingPrognosaSourceScope()
+        );
+        $lockedBranchScope = UserBranchScope::current();
+        $landingBranchOptions = $lockedBranchScope !== null
+            ? [$lockedBranchScope['key'] => $lockedBranchScope['label']]
+            : UserBranchScope::options();
 
         return view('dashboard', [
             'dashboard' => $dashboard,
             'periods' => $availablePeriods,
             'selectedPeriod' => $selectedPeriod,
+            'landingBranchOptions' => $landingBranchOptions,
+            'selectedLandingBranch' => $this->landingBranchCacheKey(),
+            'landingBranchLocked' => $lockedBranchScope !== null,
+            'landingBranchLabel' => $this->dashboardScopeLabel(),
+        ]);
+    }
+
+    public function smeOperations(Request $request): View
+    {
+        $this->configureLandingBranchScope($request);
+        $branchScope = $this->effectiveDashboardBranchScope();
+        $smeOperations = app(LandingSmeOperationalService::class)->payload(
+            $branchScope,
+            $request->boolean('refresh')
+        );
+        $smeOperations['restructuring_frequency'] = app(LandingLoanAnalyticsService::class)->restructuringFrequency(
+            $request->query('periode'),
+            $branchScope,
+            $request->boolean('refresh')
+        );
+
+        return view('dashboard.partials.sme-operations', compact('smeOperations'));
+    }
+
+    public function smeVendorNominatives(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $this->configureLandingBranchScope($request);
+        $vendor = strtolower(trim((string) $request->query('vendor')));
+
+        try {
+            $payload = app(LandingSmeOperationalService::class)->vendorNominatives(
+                $vendor,
+                $this->effectiveDashboardBranchScope(),
+                $request->boolean('refresh')
+            );
+        } catch (\InvalidArgumentException $exception) {
+            abort(404, $exception->getMessage());
+        }
+
+        return response()->json($payload);
+    }
+
+    public function microPerformance(Request $request): View
+    {
+        $this->configureLandingBranchScope($request);
+        $microPerformance = app(LandingMicroPerformanceService::class)->payload(
+            $request->query('periode'),
+            $this->effectiveDashboardBranchScope(),
+            $request->boolean('refresh')
+        );
+
+        return view('dashboard.partials.micro-performance', compact('microPerformance'));
+    }
+
+    public function microOneTimeNominatives(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $this->configureLandingBranchScope($request);
+
+        try {
+            $payload = app(LandingMicroPerformanceService::class)->oneTimePaymentNominatives(
+                $request->query('periode'),
+                $this->effectiveDashboardBranchScope(),
+                strtolower(trim((string) $request->query('product'))),
+                strtolower(trim((string) $request->query('term')))
+            );
+        } catch (\InvalidArgumentException $exception) {
+            abort(404, $exception->getMessage());
+        }
+
+        return response()->json($payload);
+    }
+
+    public function loanAnalytics(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $this->configureLandingBranchScope($request);
+        $scope = strtolower(trim((string) $request->query('scope')));
+        abort_unless(in_array($scope, ['sme', 'consumer', 'micro'], true), 404);
+
+        $analytics = app(LandingLoanAnalyticsService::class)->payload(
+            $request->query('periode'),
+            $this->effectiveDashboardBranchScope(),
+            $request->boolean('refresh'),
+            $scope
+        );
+        $contentPortfolio = [
+            'quality_timeseries' => (array) data_get($analytics, 'quality.'.$scope, []),
+            'tariff_relief' => $scope === 'sme'
+                ? (array) data_get($analytics, 'tariff_relief', [])
+                : [],
+        ];
+
+        return response()->json([
+            'scope' => $scope,
+            'quality_html' => view('dashboard.partials.loan-quality-timeseries', [
+                'contentPortfolio' => $contentPortfolio,
+                'contentScopeKey' => $scope,
+            ])->render(),
+            'tariff_html' => $scope === 'sme'
+                ? view('dashboard.partials.tariff-relief', [
+                    'contentPortfolio' => $contentPortfolio,
+                    'contentScopeKey' => $scope,
+                ])->render()
+                : '',
+            'meta' => (array) data_get($analytics, 'meta', []),
         ]);
     }
 
@@ -3863,14 +3983,20 @@ class DashboardSimpananController extends Controller
 
     public function area6Data(Request $request)
     {
+        $this->configureLandingBranchScope($request);
         $selectedPeriod = $request->query('periode');
         $loanPeriods = $this->resolveLoanDashboardPeriods($selectedPeriod ?: null);
         $loanPeriod = $loanPeriods[0] ?? null;
 
         $area6Portfolio = $this->buildArea6PortfolioLanding($loanPeriod);
 
+        $dashboard = app(LandingPrognosaCardService::class)->decorateDashboard(
+            ['area6_portfolio' => $area6Portfolio],
+            $this->landingPrognosaSourceScope()
+        );
+
         return response()->json([
-            'area6_portfolio' => $area6Portfolio,
+            'area6_portfolio' => data_get($dashboard, 'area6_portfolio', $area6Portfolio),
         ]);
     }
 
@@ -5985,11 +6111,11 @@ class DashboardSimpananController extends Controller
         $detailPeriod = data_get($area6Portfolio, 'loan_detail_period') ?: $this->resolveArea6DailyLoanPeriod($loanPeriod);
 
         return [
-            'title' => 'Ringkasan Eksekutif Area 6',
-            'subtitle' => 'Laba rugi, putusan mikro, dan realisasi segmen pada periode aktif.',
+            'title' => 'Ringkasan Eksekutif '.$this->dashboardScopeLabel(),
+            'subtitle' => 'Laba rugi, kewenangan putusan BOH/PDWK, dan realisasi MTD per segmen.',
             'profit' => $this->buildLandingProfitLossSummary(),
             'decision' => $this->buildLandingDecisionSummary($detailPeriod),
-            'realization' => $this->buildLandingSegmentRealizationSummary($area6Portfolio),
+            'realization' => $this->buildLandingSegmentRealizationSummary($detailPeriod),
         ];
     }
 
@@ -6044,8 +6170,8 @@ class DashboardSimpananController extends Controller
     private function emptyLandingExecutiveSummary(): array
     {
         return [
-            'title' => 'Ringkasan Eksekutif Area 6',
-            'subtitle' => 'Laba rugi, putusan mikro, dan realisasi segmen pada periode aktif.',
+            'title' => 'Ringkasan Eksekutif '.$this->dashboardScopeLabel(),
+            'subtitle' => 'Laba rugi, kewenangan putusan BOH/PDWK, dan realisasi MTD per segmen.',
             'profit' => [
                 'available' => false,
                 'period' => null,
@@ -6062,9 +6188,27 @@ class DashboardSimpananController extends Controller
                 'period_label' => 'Belum ada data',
                 'source' => 'Kinerja RM Mikro - Unit per Pemutus',
                 'items' => [],
+                'total_deb' => 0,
+                'total_deb_fmt' => '0 deb',
+                'total_nominal' => 0.0,
+                'total_nominal_fmt' => 'Rp0',
+                'pdwk_deb' => 0,
+                'pdwk_deb_fmt' => '0 deb',
+                'pdwk_nominal' => 0.0,
+                'pdwk_nominal_fmt' => 'Rp0',
+                'override_deb' => 0,
+                'override_deb_fmt' => '0 deb',
+                'override_nominal' => 0.0,
+                'override_nominal_fmt' => 'Rp0',
             ],
             'realization' => [
                 'available' => false,
+                'period' => null,
+                'period_label' => 'Belum ada data',
+                'total_deb' => 0,
+                'total_deb_fmt' => '0 deb',
+                'total_nominal' => 0.0,
+                'total_nominal_fmt' => 'Rp0',
                 'default_scope' => 'area6',
                 'scopes' => [],
             ],
@@ -6112,6 +6256,19 @@ class DashboardSimpananController extends Controller
                 ->all();
 
             $total = array_sum(array_column($branches, 'nominal'));
+            $absoluteTotal = array_sum(array_map(
+                static fn (array $branch): float => abs((float) $branch['nominal']),
+                $branches
+            ));
+            $branches = collect($branches)
+                ->map(function (array $branch) use ($absoluteTotal): array {
+                    $branch['contribution_pct'] = $absoluteTotal > 0.0
+                        ? (abs((float) $branch['nominal']) / $absoluteTotal) * 100
+                        : 0.0;
+
+                    return $branch;
+                })
+                ->all();
             $previousPeriod = DB::table('ssa_almafacts')
                 ->where('keterangan', '15. Laba Setelah Pajak')
                 ->whereIn('kanca_konsolidasi', $this->dashboardBranchDisplayNames())
@@ -6132,6 +6289,10 @@ class DashboardSimpananController extends Controller
                 'period_label' => $this->formatPeriodLabel($period),
                 'total' => $total,
                 'total_fmt' => $this->formatCurrencyCompact($total),
+                'previous_period' => $previousPeriod,
+                'previous_period_label' => $previousPeriod ? $this->formatPeriodLabel($previousPeriod) : '-',
+                'previous_total' => $previousTotal,
+                'previous_total_fmt' => $this->formatCurrencyCompact($previousTotal),
                 'delta_fmt' => $this->formatSignedPercent($delta),
                 'delta_class' => $this->deltaClass($delta),
                 'branches' => $branches,
@@ -6153,85 +6314,114 @@ class DashboardSimpananController extends Controller
             return $empty;
         }
 
-        $payload = $this->invokeKinerjaRmMikroPayload('unit_pemutus', $period, true);
-        $dataPeriod = data_get($payload, 'meta.data_period');
-        $refreshPending = (bool) data_get($payload, 'meta.refresh_pending', false);
+        $payload = app(LandingMicroPerformanceService::class)->decisionSummary(
+            $period,
+            $this->effectiveDashboardBranchScope()
+        );
+        $dataPeriod = data_get($payload, 'period');
         if (!$dataPeriod) {
-            return array_merge($empty, [
-                'requested_period' => $period,
-                'data_period' => null,
-                'refresh_pending' => $refreshPending,
-            ]);
+            return array_merge($empty, ['requested_period' => $period]);
         }
 
-        $total = (array) data_get($payload, 'total', []);
-        $kurRitelTotals = $this->buildLandingKurRitelDecisionTotals($dataPeriod);
-
-        $items = [
-            [
-                'key' => 'pinca_boh',
-                'label' => 'Pinca/BOH',
-                'deb' => (int) ($total['pinca_mtd_deb'] ?? 0) + (int) data_get($kurRitelTotals, 'pinca.deb', 0),
-                'nominal' => (float) ($total['pinca_mtd_os'] ?? 0.0) + (float) data_get($kurRitelTotals, 'pinca.nominal', 0.0),
-                'kur_ritel_deb' => (int) data_get($kurRitelTotals, 'pinca.deb', 0),
-                'kur_ritel_nominal' => (float) data_get($kurRitelTotals, 'pinca.nominal', 0.0),
+        $sourceItems = collect((array) data_get($payload, 'decisions', []))->keyBy('key');
+        $definitions = [
+            'boh' => [
+                'label' => 'BOH',
                 'icon' => 'fas fa-user-tie',
+                'tone' => 'navy',
+                'pdwk_rule' => '> Rp250 jt',
+                'override_rule' => '< Rp250 jt',
             ],
-            [
-                'key' => 'k_unit',
-                'label' => 'K Unit',
-                'deb' => (int) ($total['kaunit_mtd_deb'] ?? 0) + (int) data_get($kurRitelTotals, 'kaunit.deb', 0),
-                'nominal' => (float) ($total['kaunit_mtd_os'] ?? 0.0) + (float) data_get($kurRitelTotals, 'kaunit.nominal', 0.0),
-                'kur_ritel_deb' => (int) data_get($kurRitelTotals, 'kaunit.deb', 0),
-                'kur_ritel_nominal' => (float) data_get($kurRitelTotals, 'kaunit.nominal', 0.0),
-                'icon' => 'fas fa-store-alt',
+            'sboh' => [
+                'label' => 'SBOH / Pinca Pembantu',
+                'icon' => 'fas fa-building',
+                'tone' => 'cyan',
+                'pdwk_rule' => '',
+                'override_rule' => '',
             ],
-            [
-                'key' => 'mbm',
+            'mbm' => [
                 'label' => 'MBM',
-                'deb' => (int) ($total['mbm_mtd_deb'] ?? 0) + (int) data_get($kurRitelTotals, 'mbm.deb', 0),
-                'nominal' => (float) ($total['mbm_mtd_os'] ?? 0.0) + (float) data_get($kurRitelTotals, 'mbm.nominal', 0.0),
-                'kur_ritel_deb' => (int) data_get($kurRitelTotals, 'mbm.deb', 0),
-                'kur_ritel_nominal' => (float) data_get($kurRitelTotals, 'mbm.nominal', 0.0),
                 'icon' => 'fas fa-user-shield',
+                'tone' => 'amber',
+                'pdwk_rule' => 'Rp100 jt - Rp250 jt',
+                'override_rule' => '< Rp100 jt',
+            ],
+            'ka_unit' => [
+                'label' => 'Ka Unit',
+                'icon' => 'fas fa-store-alt',
+                'tone' => 'green',
+                'pdwk_rule' => 's.d. Rp100 jt',
+                'override_rule' => '> Rp100 jt',
             ],
         ];
 
-        $items = collect($items)
-            ->map(function (array $item): array {
-                $item['nominal_fmt'] = $this->formatCurrencyCompact((float) $item['nominal']);
-                $item['deb_fmt'] = $this->formatInteger((int) $item['deb']) . ' deb';
-                $item['kur_ritel_nominal_fmt'] = $this->formatCurrencyCompact((float) $item['kur_ritel_nominal']);
-                $item['kur_ritel_deb_fmt'] = $this->formatInteger((int) $item['kur_ritel_deb']) . ' deb';
-                $item['kur_ritel_note'] = (int) $item['kur_ritel_deb'] > 0
-                    ? 'KUR Ritel 2015: ' . $item['kur_ritel_deb_fmt'] . ' | ' . $item['kur_ritel_nominal_fmt']
-                    : null;
+        $items = collect($definitions)->map(function (array $definition, string $key) use ($sourceItems): array {
+            $source = (array) ($sourceItems->get($key) ?? []);
+            $branches = collect((array) data_get($source, 'branches', []))
+                ->map(function (array $branch): array {
+                    return array_merge($branch, [
+                        'deb_fmt' => $this->formatInteger((int) data_get($branch, 'deb', 0)).' deb',
+                        'nominal_fmt' => $this->formatCurrencyCompact((float) data_get($branch, 'amount', 0.0)),
+                        'pdwk_deb' => (int) data_get($branch, 'primary_deb', 0),
+                        'pdwk_deb_fmt' => $this->formatInteger((int) data_get($branch, 'primary_deb', 0)).' deb',
+                        'pdwk_nominal' => (float) data_get($branch, 'primary_amount', 0.0),
+                        'pdwk_nominal_fmt' => $this->formatCurrencyCompact((float) data_get($branch, 'primary_amount', 0.0)),
+                        'override_deb_fmt' => $this->formatInteger((int) data_get($branch, 'override_deb', 0)).' deb',
+                        'override_nominal_fmt' => $this->formatCurrencyCompact((float) data_get($branch, 'override_amount', 0.0)),
+                    ]);
+                })
+                ->values();
+            $pdwkDeb = (int) $branches->sum('pdwk_deb');
+            $pdwkNominal = (float) $branches->sum('pdwk_nominal');
+            $overrideDeb = (int) $branches->sum('override_deb');
+            $overrideNominal = (float) $branches->sum('override_amount');
 
-                return $item;
-            })
-            ->all();
+            return array_merge($definition, [
+                'key' => $key,
+                'deb' => $pdwkDeb + $overrideDeb,
+                'deb_fmt' => $this->formatInteger($pdwkDeb + $overrideDeb).' deb',
+                'nominal' => $pdwkNominal + $overrideNominal,
+                'nominal_fmt' => $this->formatCurrencyCompact($pdwkNominal + $overrideNominal),
+                'pdwk_deb' => $pdwkDeb,
+                'pdwk_deb_fmt' => $this->formatInteger($pdwkDeb).' deb',
+                'pdwk_nominal' => $pdwkNominal,
+                'pdwk_nominal_fmt' => $this->formatCurrencyCompact($pdwkNominal),
+                'override_deb' => $overrideDeb,
+                'override_deb_fmt' => $this->formatInteger($overrideDeb).' deb',
+                'override_nominal' => $overrideNominal,
+                'override_nominal_fmt' => $this->formatCurrencyCompact($overrideNominal),
+                'branches' => $branches->all(),
+            ]);
+        })->values()->all();
 
-        $kurRitelDeb = array_sum(array_column($items, 'kur_ritel_deb'));
-        $kurRitelNominal = array_sum(array_column($items, 'kur_ritel_nominal'));
+        $totalDeb = array_sum(array_column($items, 'deb'));
+        $totalNominal = array_sum(array_column($items, 'nominal'));
+        $pdwkDeb = array_sum(array_column($items, 'pdwk_deb'));
+        $pdwkNominal = array_sum(array_column($items, 'pdwk_nominal'));
+        $overrideDeb = array_sum(array_column($items, 'override_deb'));
+        $overrideNominal = array_sum(array_column($items, 'override_nominal'));
 
         return [
-            'available' => collect($items)->contains(fn (array $item) => (int) $item['deb'] > 0 || (float) $item['nominal'] !== 0.0),
+            'available' => (bool) data_get($payload, 'available', false),
             'period' => $dataPeriod,
             'data_period' => $dataPeriod,
             'requested_period' => $period,
-            'refresh_pending' => $refreshPending,
             'period_label' => $this->formatPeriodLabel($dataPeriod),
-            'source' => 'Kinerja RM Mikro - Unit per Pemutus, termasuk KUR Ritel 2015',
+            'source' => (string) data_get($payload, 'source', 'Daily Loan Dinamis - resolver PDWK Mikro'),
             'items' => $items,
-            'total_deb' => array_sum(array_column($items, 'deb')),
-            'total_nominal' => array_sum(array_column($items, 'nominal')),
-            'total_deb_fmt' => $this->formatInteger((int) array_sum(array_column($items, 'deb'))) . ' deb',
-            'total_nominal_fmt' => $this->formatCurrencyCompact((float) array_sum(array_column($items, 'nominal'))),
-            'kur_ritel_deb' => $kurRitelDeb,
-            'kur_ritel_nominal' => $kurRitelNominal,
-            'kur_ritel_deb_fmt' => $this->formatInteger((int) $kurRitelDeb) . ' deb',
-            'kur_ritel_nominal_fmt' => $this->formatCurrencyCompact((float) $kurRitelNominal),
-            'note' => 'Termasuk KUR Ritel 2015 pada bucket Pinca/BOH, K Unit, dan MBM.',
+            'total_deb' => $totalDeb,
+            'total_nominal' => $totalNominal,
+            'total_deb_fmt' => $this->formatInteger($totalDeb).' deb',
+            'total_nominal_fmt' => $this->formatCurrencyCompact($totalNominal),
+            'pdwk_deb' => $pdwkDeb,
+            'pdwk_deb_fmt' => $this->formatInteger($pdwkDeb).' deb',
+            'pdwk_nominal' => $pdwkNominal,
+            'pdwk_nominal_fmt' => $this->formatCurrencyCompact($pdwkNominal),
+            'override_deb' => $overrideDeb,
+            'override_deb_fmt' => $this->formatInteger($overrideDeb).' deb',
+            'override_nominal' => $overrideNominal,
+            'override_nominal_fmt' => $this->formatCurrencyCompact($overrideNominal),
+            'note' => 'Klasifikasi memakai rekening terdeduplikasi, referensi BRIHC, dan override PGS yang sama dengan trigger Mikro.',
         ];
     }
 
@@ -6316,93 +6506,133 @@ class DashboardSimpananController extends Controller
         return $blank;
     }
 
-    private function buildLandingSegmentRealizationSummary(array $area6Portfolio): array
+    private function buildLandingSegmentRealizationSummary(?string $period): array
     {
-        $source = data_get($area6Portfolio, 'scopes.area6.segment_performance');
-        if (!$source) {
-            return [
-                'available' => false,
-                'default_scope' => 'area6',
-                'scopes' => [],
-            ];
+        $empty = $this->emptyLandingExecutiveSummary()['realization'];
+        if (!$period || !$this->hasTable('daily_loan_dinamis')) {
+            return $empty;
         }
 
-        $segmentsByKey = collect(data_get($source, 'segments', []))
-            ->mapWithKeys(function (array $segment): array {
-                $key = $this->landingSegmentKey((string) ($segment['label'] ?? ''));
+        foreach (['periode', 'tgl_realisasi', 'plafon', 'cabang1'] as $column) {
+            if (!$this->hasColumn('daily_loan_dinamis', $column)) {
+                return $empty;
+            }
+        }
 
-                return $key ? [$key => $segment] : [];
-            });
+        $hasSegmentKinerja = $this->hasColumn('daily_loan_dinamis', 'segmen_kinerja');
+        $hasSegmentDashboard = $this->hasColumn('daily_loan_dinamis', 'segmen_dashboard');
+        $segmentSql = match (true) {
+            $hasSegmentKinerja && $hasSegmentDashboard => "UPPER(TRIM(COALESCE(NULLIF(d.segmen_kinerja, ''), d.segmen_dashboard, '')))",
+            $hasSegmentKinerja => "UPPER(TRIM(COALESCE(d.segmen_kinerja, '')))",
+            $hasSegmentDashboard => "UPPER(TRIM(COALESCE(d.segmen_dashboard, '')))",
+            default => "''",
+        };
+        if (!$hasSegmentKinerja && !$hasSegmentDashboard) {
+            return $empty;
+        }
+        $fallbackAccountSql = $this->hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
+            ? 'd.uniqueid_namareport'
+            : 'd.cabang1';
+        $accountSql = $this->hasColumn('daily_loan_dinamis', 'nomor_rekening1')
+            ? "COALESCE(NULLIF(TRIM(d.nomor_rekening1), ''), {$fallbackAccountSql})"
+            : $fallbackAccountSql;
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
 
-        $segments = collect(['sme', 'consumer', 'micro'])
-            ->map(function (string $segmentKey) use ($segmentsByKey): ?array {
-                $segment = $segmentsByKey->get($segmentKey);
-                if (!$segment) {
-                    return null;
-                }
+        $query = DB::table('daily_loan_dinamis as d')
+            ->where('d.periode', $period)
+            ->whereBetween('d.tgl_realisasi', [$periodStart, $period])
+            ->whereRaw("{$segmentSql} <> ''");
+        $this->applyDashboardBranchScope($query, 'd.cabang1');
 
-                return $this->formatLandingRealizationSegment($segmentKey, $segment);
-            })
-            ->filter()
+        $accountRows = $query
+            ->selectRaw("{$segmentSql} as segment_key")
+            ->selectRaw("{$accountSql} as account_key")
+            ->selectRaw('MAX(COALESCE(d.plafon, 0)) as amount')
+            ->groupBy('segment_key', 'account_key')
+            ->get()
+            ->groupBy(fn ($row): string => strtoupper(trim((string) ($row->account_key ?? ''))))
+            ->map(fn (Collection $duplicates) => $duplicates->sortByDesc(fn ($row): float => (float) ($row->amount ?? 0.0))->first())
+            ->filter(fn ($row): bool => (float) ($row->amount ?? 0.0) > 0.0)
             ->values();
 
-        $totalRealization = (float) $segments->sum('realization');
-        $totalTarget = (float) $segments->sum('target');
-        $totalPct = $totalTarget > 0 ? ($totalRealization / $totalTarget) * 100 : 0.0;
-        $area6Total = [
-            'key' => 'area6_total',
-            'label' => 'Area 6 Total',
-            'icon' => 'fas fa-layer-group',
-            'realization' => $totalRealization,
-            'target' => $totalTarget,
-            'realization_fmt' => $this->formatCurrencyCompact($totalRealization),
-            'target_fmt' => $this->formatCurrencyCompact($totalTarget),
-            'pct_fmt' => number_format($totalPct, 2, ',', '.') . '%',
-            'pct_color' => $this->getArea6AchievementColor($totalPct, 'os'),
+        $segmentDefinitions = [
+            'SMALL' => ['key' => 'sme', 'label' => 'SME / Small', 'icon' => 'fas fa-briefcase', 'tone' => 'navy'],
+            'SME' => ['key' => 'sme', 'label' => 'SME / Small', 'icon' => 'fas fa-briefcase', 'tone' => 'navy'],
+            'CONSUMER' => ['key' => 'consumer', 'label' => 'Konsumer', 'icon' => 'fas fa-users', 'tone' => 'cyan'],
+            'KONSUMER' => ['key' => 'consumer', 'label' => 'Konsumer', 'icon' => 'fas fa-users', 'tone' => 'cyan'],
+            'MICRO' => ['key' => 'micro', 'label' => 'Mikro', 'icon' => 'fas fa-store', 'tone' => 'green'],
+            'MIKRO' => ['key' => 'micro', 'label' => 'Mikro', 'icon' => 'fas fa-store', 'tone' => 'green'],
+            'MEDIUM' => ['key' => 'medium', 'label' => 'Medium', 'icon' => 'fas fa-city', 'tone' => 'amber'],
         ];
+        $segments = $accountRows
+            ->groupBy(function ($row) use ($segmentDefinitions): string {
+                $raw = strtoupper(trim((string) ($row->segment_key ?? '')));
 
+                return (string) data_get($segmentDefinitions, $raw.'.key', strtolower(preg_replace('/\s+/', '_', $raw) ?? $raw));
+            })
+            ->map(function (Collection $rows, string $segmentKey) use ($segmentDefinitions): array {
+                $raw = strtoupper(trim((string) ($rows->first()->segment_key ?? '')));
+                $definition = $segmentDefinitions[$raw] ?? [
+                    'key' => $segmentKey,
+                    'label' => ucwords(strtolower(str_replace('_', ' ', $raw))),
+                    'icon' => 'fas fa-layer-group',
+                    'tone' => 'slate',
+                ];
+
+                return $definition + [
+                    'deb' => $rows->count(),
+                    'nominal' => (float) $rows->sum(fn ($row): float => (float) ($row->amount ?? 0.0)),
+                ];
+            })
+            ->sortBy(fn (array $segment): int => match ($segment['key']) {
+                'sme' => 1,
+                'consumer' => 2,
+                'micro' => 3,
+                'medium' => 4,
+                default => 99,
+            })
+            ->values();
+
+        $totalDeb = (int) $segments->sum('deb');
+        $totalNominal = (float) $segments->sum('nominal');
+        $segments = $segments->map(function (array $segment) use ($totalNominal): array {
+            $segment['deb_fmt'] = $this->formatInteger((int) $segment['deb']).' deb';
+            $segment['nominal_fmt'] = $this->formatCurrencyCompact((float) $segment['nominal']);
+            $segment['share'] = $totalNominal > 0.0 ? ((float) $segment['nominal'] / $totalNominal) * 100 : 0.0;
+            $segment['share_fmt'] = number_format((float) $segment['share'], 2, ',', '.').'%';
+
+            return $segment;
+        });
+        $total = [
+            'key' => 'area6_total',
+            'label' => $this->dashboardScopeLabel().' Total',
+            'icon' => 'fas fa-layer-group',
+            'tone' => 'blue',
+            'deb' => $totalDeb,
+            'deb_fmt' => $this->formatInteger($totalDeb).' deb',
+            'nominal' => $totalNominal,
+            'nominal_fmt' => $this->formatCurrencyCompact($totalNominal),
+            'share' => 100.0,
+            'share_fmt' => '100,00%',
+        ];
         $scopes = [
-            'area6' => [
-                'label' => 'Area 6',
-                'segments' => array_merge([$area6Total], $segments->all()),
-            ],
-            'sme' => [
-                'label' => 'SME',
-                'segments' => $segments->where('key', 'sme')->values()->all(),
-            ],
-            'consumer' => [
-                'label' => 'Konsumer',
-                'segments' => $segments->where('key', 'consumer')->values()->all(),
-            ],
-            'micro' => [
-                'label' => 'Micro',
-                'segments' => $segments->where('key', 'micro')->values()->all(),
-            ],
+            'area6' => ['label' => $this->dashboardScopeLabel(), 'segments' => [$total, ...$segments->all()]],
+            'sme' => ['label' => 'SME', 'segments' => $segments->where('key', 'sme')->values()->all()],
+            'consumer' => ['label' => 'Konsumer', 'segments' => $segments->where('key', 'consumer')->values()->all()],
+            'micro' => ['label' => 'Mikro', 'segments' => $segments->where('key', 'micro')->values()->all()],
         ];
 
         return [
-            'available' => !empty($scopes),
+            'available' => $segments->isNotEmpty(),
+            'period' => $period,
+            'period_label' => $this->formatPeriodLabel($period),
+            'total_deb' => $totalDeb,
+            'total_deb_fmt' => $this->formatInteger($totalDeb).' deb',
+            'total_nominal' => $totalNominal,
+            'total_nominal_fmt' => $this->formatCurrencyCompact($totalNominal),
             'default_scope' => 'area6',
             'scopes' => $scopes,
-        ];
-    }
-
-    private function formatLandingRealizationSegment(string $segmentKey, array $segment): array
-    {
-        $os = (array) data_get($segment, 'os', []);
-        $realization = (float) data_get($os, 'realization', 0.0);
-        $target = (float) data_get($os, 'target', 0.0);
-
-        return [
-            'key' => $segmentKey,
-            'label' => $this->landingSegmentDisplayLabel($segmentKey),
-            'icon' => (string) data_get($segment, 'icon', 'fas fa-chart-line'),
-            'realization' => $realization,
-            'target' => $target,
-            'realization_fmt' => $this->formatCurrencyCompact($realization),
-            'target_fmt' => $this->formatCurrencyCompact($target),
-            'pct_fmt' => (string) data_get($os, 'pct_fmt', '0,00%'),
-            'pct_color' => (string) data_get($os, 'pct_color', 'blue'),
+            'source' => 'Daily Loan Dinamis - plafon realisasi MTD terdeduplikasi per rekening',
         ];
     }
 
@@ -6944,10 +7174,12 @@ class DashboardSimpananController extends Controller
 
     private function deferDashboardPayloadRefresh(string $payloadCacheKey, string $latestCacheKey, string $stableLatestCacheKey): void
     {
+        $landingBranchKey = $this->landingBranchCacheKey();
         WarmDashboardSimpananCacheJob::dispatch('dashboard-payload', compact(
             'payloadCacheKey',
             'latestCacheKey',
-            'stableLatestCacheKey'
+            'stableLatestCacheKey',
+            'landingBranchKey'
         ));
     }
 
@@ -7444,9 +7676,9 @@ class DashboardSimpananController extends Controller
     {
         $dailyLoanPeriod = $this->resolveArea6DailyLoanPeriod($loanPeriod);
         $cacheVersion = $this->reportCacheVersion();
-        $cacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':lr_daily_v3_recovery';
-        $latestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':lr_daily_v3_recovery';
-        $stableLatestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:stable:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':lr_daily_v3_recovery';
+        $cacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':v5_prevmonth:weekly_actuals_v2';
+        $latestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':v5_prevmonth:weekly_actuals_v2';
+        $stableLatestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:stable:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':v5_prevmonth:weekly_actuals_v2';
 
         if ($forceFresh) {
             $freshPayload = $this->buildArea6PortfolioLandingFresh($loanPeriod, $dailyLoanPeriod);
@@ -7524,18 +7756,24 @@ class DashboardSimpananController extends Controller
 
     private function deferArea6PortfolioRefresh(string $cacheKey, string $latestCacheKey, string $stableLatestCacheKey, ?string $loanPeriod, ?string $dailyLoanPeriod): void
     {
+        $landingBranchKey = $this->landingBranchCacheKey();
         WarmDashboardSimpananCacheJob::dispatch('area6-portfolio', compact(
             'cacheKey',
             'latestCacheKey',
             'stableLatestCacheKey',
             'loanPeriod',
-            'dailyLoanPeriod'
+            'dailyLoanPeriod',
+            'landingBranchKey'
         ));
     }
 
     /** @param array<string, mixed> $context */
     public function warmDashboardSimpananCache(string $type, array $context): void
     {
+        if (array_key_exists('landingBranchKey', $context)) {
+            $this->configureLandingBranchFromKey((string) $context['landingBranchKey']);
+        }
+
         $period = trim((string) ($context['period'] ?? ''));
         $cacheKey = $type === 'micro-readiness' && $period !== ''
             ? 'dashboard_simpanan:micro_readiness_warm:'
@@ -7865,8 +8103,8 @@ class DashboardSimpananController extends Controller
         $dailyLoanPeriodLabel = $this->formatSourcePeriodLabel($dailyLoanPeriod);
 
         $periodDate = $harian['period'] ? Carbon::parse($harian['period']) : null;
-        $periodFormat = $periodDate ? $periodDate->translatedFormat('d F Y') : '19 Mei 2026';
-        $rkaMonthYear = $periodDate ? $periodDate->translatedFormat('F y') : 'Mei 26';
+        $periodFormat = $periodDate ? $periodDate->locale('id')->translatedFormat('d F Y') : '19 Mei 2026';
+        $rkaMonthYear = $periodDate ? $periodDate->locale('id')->translatedFormat('F y') : 'Mei 26';
 
         // Aggregate Retail (KC + KCP) branch performance
         $maxSimpananRetail = 0.0;
@@ -7954,6 +8192,10 @@ class DashboardSimpananController extends Controller
             'consumer' => $this->buildArea6PortfolioScopePayload('consumer', $harian['period'], $periodFormat, $rkaMonthYear, null, $dailyLoanPeriod),
             'micro' => $this->buildArea6PortfolioScopePayload('micro', $harian['period'], $periodFormat, $rkaMonthYear, null, $dailyLoanPeriod),
         ];
+        $weeklyActuals = $this->buildArea6PortfolioWeeklyActuals($harian['period'], array_keys($scopePayloads));
+        foreach ($scopePayloads as $scopeKey => $scopePayload) {
+            $scopePayloads[$scopeKey]['prognosa_actuals'] = $weeklyActuals[$scopeKey] ?? [];
+        }
 
         return [
             'title' => 'Kinerja Area 6',
@@ -8013,6 +8255,72 @@ class DashboardSimpananController extends Controller
         ];
     }
 
+    /**
+     * Resolve one actual position for every weekly forecast cutoff. Closed weeks
+     * use the last snapshot on/before day 7, 14, or 21; the active/future week
+     * uses the newest available position, while W4 also covers a fifth week.
+     *
+     * @param  array<int, string>  $scopeKeys
+     * @return array<string, array<string, mixed>>
+     */
+    private function buildArea6PortfolioWeeklyActuals(?string $period, array $scopeKeys): array
+    {
+        if (!$period || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return [];
+        }
+
+        $positionDate = Carbon::parse($period)->startOfDay();
+        $monthStart = $positionDate->copy()->startOfMonth();
+        $cutoffs = [
+            1 => $monthStart->copy()->day(min(7, $monthStart->daysInMonth)),
+            2 => $monthStart->copy()->day(min(14, $monthStart->daysInMonth)),
+            3 => $monthStart->copy()->day(min(21, $monthStart->daysInMonth)),
+            4 => $monthStart->copy()->endOfMonth(),
+        ];
+        $rawWeeks = [];
+
+        foreach ($cutoffs as $week => $cutoff) {
+            $targetDate = $cutoff->greaterThan($positionDate) ? $positionDate->copy() : $cutoff->copy();
+            $actualPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($targetDate->toDateString());
+            $actualDate = $actualPeriod ? Carbon::parse($actualPeriod)->startOfDay() : null;
+            $sameMonth = $actualDate instanceof Carbon && $actualDate->isSameMonth($monthStart);
+
+            $rawWeeks['W'.$week] = [
+                'actual_period' => $sameMonth ? $actualDate->toDateString() : null,
+                'position_label' => $sameMonth ? $actualDate->locale('id')->translatedFormat('d M y') : 'Belum ada posisi',
+                'cutoff_label' => $cutoff->locale('id')->translatedFormat('d M y'),
+                'state_label' => $positionDate->greaterThanOrEqualTo($cutoff) ? 'Tutup' : 'Berjalan',
+                'is_elapsed' => $positionDate->greaterThanOrEqualTo($cutoff),
+                'metrics' => $sameMonth
+                    ? $this->area6ScopeSnapshotMetrics($actualDate->toDateString(), 'area6')
+                    : null,
+            ];
+        }
+
+        $scopedWeeks = [];
+        foreach ($scopeKeys as $scopeKey) {
+            $metricKeys = $this->area6PortfolioMetricKeys($scopeKey);
+            foreach ($rawWeeks as $weekLabel => $week) {
+                $metrics = $week['metrics'];
+                $scopedWeeks[$scopeKey][$weekLabel] = [
+                    'actual_period' => $week['actual_period'],
+                    'position_label' => $week['position_label'],
+                    'cutoff_label' => $week['cutoff_label'],
+                    'state_label' => $week['state_label'],
+                    'is_elapsed' => $week['is_elapsed'],
+                    'metrics' => [
+                        'os' => $metrics ? (float) ($metrics->{$metricKeys['os_metric']} ?? 0.0) : null,
+                        'sml' => $metrics ? (float) ($metrics->{$metricKeys['sml_metric']} ?? 0.0) : null,
+                        'npl' => $metrics ? (float) ($metrics->{$metricKeys['npl_metric']} ?? 0.0) : null,
+                        'recovery' => $metrics ? (float) ($metrics->{$metricKeys['recovery_metric']} ?? 0.0) : null,
+                    ],
+                ];
+            }
+        }
+
+        return $scopedWeeks;
+    }
+
     private function buildArea6PortfolioScopePayload(string $scopeKey, ?string $period, string $periodFormat, string $rkaMonthYear, ?array $unitKeys, ?string $dailyLoanPeriod = null): array
     {
         $service = app(DashboardHarianSnapshotService::class);
@@ -8067,6 +8375,7 @@ class DashboardSimpananController extends Controller
         $cards = [
             [
                 'key' => 'os',
+                'realization_raw' => $osRealization,
                 'header_title' => 'OUTSTANDING (OS)',
                 'realization_value' => number_format(round($osRealization / 1000000), 0, ',', '.'),
                 'realization_label' => $metricKeys['os_label'] . ' per ' . $periodFormat,
@@ -8093,6 +8402,7 @@ class DashboardSimpananController extends Controller
             ],
             [
                 'key' => 'sml',
+                'realization_raw' => $smlRealization,
                 'header_title' => 'SPECIAL MENTION LOAN (SML)',
                 'realization_value' => number_format(round($smlRealization / 1000000), 0, ',', '.'),
                 'realization_label' => $metricKeys['sml_label'] . ' per ' . $periodFormat,
@@ -8119,6 +8429,7 @@ class DashboardSimpananController extends Controller
             ],
             [
                 'key' => 'npl',
+                'realization_raw' => $nplRealization,
                 'header_title' => 'NON-PERFORMING LOAN (NPL)',
                 'realization_value' => number_format(round($nplRealization / 1000000), 0, ',', '.'),
                 'realization_label' => $metricKeys['npl_label'] . ' per ' . $periodFormat,
@@ -8148,6 +8459,7 @@ class DashboardSimpananController extends Controller
         if ($scopeKey === 'area6') {
             $cards[] = [
                 'key' => 'recovery',
+                'realization_raw' => $recoveryRealization,
                 'header_title' => 'RECOVERY DH',
                 'realization_value' => number_format(round($recoveryRealization / 1000000), 0, ',', '.'),
                 'realization_label' => 'Recovery per ' . $periodFormat,
@@ -8193,6 +8505,7 @@ class DashboardSimpananController extends Controller
                 'os_metric' => 'sme_os',
                 'sml_metric' => 'sme_sml',
                 'npl_metric' => 'sme_npl',
+                'recovery_metric' => 'rec_dh_small',
                 'os_label' => 'OS SME',
                 'sml_label' => 'SML SME',
                 'npl_label' => 'NPL SME',
@@ -8204,6 +8517,7 @@ class DashboardSimpananController extends Controller
                 'os_metric' => 'consumer_os',
                 'sml_metric' => 'consumer_sml',
                 'npl_metric' => 'consumer_npl',
+                'recovery_metric' => 'rec_dh_consumer',
                 'os_label' => 'OS Konsumer',
                 'sml_label' => 'SML Konsumer',
                 'npl_label' => 'NPL Konsumer',
@@ -8215,6 +8529,7 @@ class DashboardSimpananController extends Controller
                 'os_metric' => 'micro_os',
                 'sml_metric' => 'micro_sml',
                 'npl_metric' => 'micro_npl',
+                'recovery_metric' => 'rec_dh_micro',
                 'os_label' => 'OS Micro',
                 'sml_label' => 'SML Micro',
                 'npl_label' => 'NPL Micro',
@@ -8226,6 +8541,7 @@ class DashboardSimpananController extends Controller
                 'os_metric' => 'total_os_non_commercial',
                 'sml_metric' => 'total_sml_abs_non_commercial',
                 'npl_metric' => 'total_npl_abs_non_commercial',
+                'recovery_metric' => 'rec_dh_total',
                 'os_label' => 'OS',
                 'sml_label' => 'SML',
                 'npl_label' => 'NPL',
@@ -8411,6 +8727,21 @@ class DashboardSimpananController extends Controller
             'sme_npl' => 0.0,
             'consumer_npl' => 0.0,
             'micro_npl' => 0.0,
+            'briguna_mikro_os' => 0.0,
+            'briguna_mikro_sml' => 0.0,
+            'briguna_mikro_npl' => 0.0,
+            'kupedes_os' => 0.0,
+            'kupedes_sml' => 0.0,
+            'kupedes_npl' => 0.0,
+            'kur_mikro_os' => 0.0,
+            'kur_mikro_sml' => 0.0,
+            'kur_mikro_npl' => 0.0,
+            'kur_kecil_os' => 0.0,
+            'kur_kecil_sml' => 0.0,
+            'kur_kecil_npl' => 0.0,
+            'kur_kpp_os' => 0.0,
+            'kur_kpp_sml' => 0.0,
+            'kur_kpp_npl' => 0.0,
             'rec_dh_total' => 0.0,
             'rec_dh_small' => 0.0,
             'rec_dh_consumer' => 0.0,
@@ -8439,6 +8770,21 @@ class DashboardSimpananController extends Controller
             ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(sme_npl, 0) <> 0 THEN COALESCE(sme_npl, 0) ELSE COALESCE(kecil_non_cashcoll_npl, 0) + COALESCE(cashcoll_npl, 0) END), 0) as sme_npl')
             ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(consumer_npl, 0) <> 0 THEN COALESCE(consumer_npl, 0) ELSE COALESCE(briguna_konsumer_npl, 0) + COALESCE(kpr_npl, 0) + COALESCE(kkb_npl, 0) END), 0) as consumer_npl')
             ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(micro_npl, 0) <> 0 THEN COALESCE(micro_npl, 0) ELSE COALESCE(briguna_mikro_npl, 0) + COALESCE(kupedes_npl, 0) + COALESCE(kur_mikro_npl, 0) + COALESCE(kur_kecil_npl, 0) + COALESCE(kur_kpp_npl, 0) END), 0) as micro_npl')
+            ->selectRaw('COALESCE(SUM(COALESCE(briguna_mikro_os, 0)), 0) as briguna_mikro_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(briguna_mikro_sml, 0)), 0) as briguna_mikro_sml')
+            ->selectRaw('COALESCE(SUM(COALESCE(briguna_mikro_npl, 0)), 0) as briguna_mikro_npl')
+            ->selectRaw('COALESCE(SUM(COALESCE(kupedes_os, 0)), 0) as kupedes_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(kupedes_sml, 0)), 0) as kupedes_sml')
+            ->selectRaw('COALESCE(SUM(COALESCE(kupedes_npl, 0)), 0) as kupedes_npl')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_mikro_os, 0)), 0) as kur_mikro_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_mikro_sml, 0)), 0) as kur_mikro_sml')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_mikro_npl, 0)), 0) as kur_mikro_npl')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_kecil_os, 0)), 0) as kur_kecil_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_kecil_sml, 0)), 0) as kur_kecil_sml')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_kecil_npl, 0)), 0) as kur_kecil_npl')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_kpp_os, 0)), 0) as kur_kpp_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_kpp_sml, 0)), 0) as kur_kpp_sml')
+            ->selectRaw('COALESCE(SUM(COALESCE(kur_kpp_npl, 0)), 0) as kur_kpp_npl')
             ->selectRaw('COALESCE(SUM(COALESCE(rec_dh_total, 0)), 0) as rec_dh_total')
             ->selectRaw('COALESCE(SUM(COALESCE(rec_dh_small, 0)), 0) as rec_dh_small')
             ->selectRaw('COALESCE(SUM(COALESCE(rec_dh_consumer, 0)), 0) as rec_dh_consumer')
@@ -8481,7 +8827,11 @@ class DashboardSimpananController extends Controller
                 ['label' => 'OS KONSUMER', 'icon' => 'fas fa-users', 'os' => 'consumer_os', 'sml' => 'consumer_sml', 'npl' => 'consumer_npl'],
             ],
             'micro' => [
-                ['label' => 'OS MIKRO', 'icon' => 'fas fa-store', 'os' => 'micro_os', 'sml' => 'micro_sml', 'npl' => 'micro_npl'],
+                ['label' => 'KUR Mikro', 'icon' => 'fas fa-hand-holding-usd', 'os' => 'kur_mikro_os', 'sml' => 'kur_mikro_sml', 'npl' => 'kur_mikro_npl'],
+                ['label' => 'Kupedes', 'icon' => 'fas fa-store', 'os' => 'kupedes_os', 'sml' => 'kupedes_sml', 'npl' => 'kupedes_npl'],
+                ['label' => 'KUR Kecil', 'icon' => 'fas fa-building', 'os' => 'kur_kecil_os', 'sml' => 'kur_kecil_sml', 'npl' => 'kur_kecil_npl'],
+                ['label' => 'KUR KPP', 'icon' => 'fas fa-briefcase', 'os' => 'kur_kpp_os', 'sml' => 'kur_kpp_sml', 'npl' => 'kur_kpp_npl'],
+                ['label' => 'Briguna Mikro', 'icon' => 'fas fa-id-badge', 'os' => 'briguna_mikro_os', 'sml' => 'briguna_mikro_sml', 'npl' => 'briguna_mikro_npl'],
             ],
             default => [
                 ['label' => 'OS SME', 'icon' => 'fas fa-briefcase', 'os' => 'sme_os', 'sml' => 'sme_sml', 'npl' => 'sme_npl'],
@@ -8519,13 +8869,60 @@ class DashboardSimpananController extends Controller
         $totalOs = $this->formatArea6ScopeSegmentTotal($totals['os']['realization'], $totals['os']['target'], 'os');
         $totalSml = $this->formatArea6ScopeSegmentTotal($totals['sml']['realization'], $totals['sml']['target'], 'sml');
         $totalNpl = $this->formatArea6ScopeSegmentTotal($totals['npl']['realization'], $totals['npl']['target'], 'npl');
+        $previousAchievement = $period !== null
+            ? $this->buildArea6PreviousMonthSegmentAchievement($scopeKey, $segmentDefinitions, $period, $unitKeys)
+            : [];
+        $totalOs['previous_pct_fmt'] = data_get($previousAchievement, 'metrics.os.pct_fmt', '-');
+        $totalOs['previous_pct_color'] = data_get($previousAchievement, 'metrics.os.pct_color', 'muted');
+        $totalSml['previous_pct_fmt'] = data_get($previousAchievement, 'metrics.sml.pct_fmt', '-');
+        $totalSml['previous_pct_color'] = data_get($previousAchievement, 'metrics.sml.pct_color', 'muted');
+        $totalNpl['previous_pct_fmt'] = data_get($previousAchievement, 'metrics.npl.pct_fmt', '-');
+        $totalNpl['previous_pct_color'] = data_get($previousAchievement, 'metrics.npl.pct_color', 'muted');
         
         // Fetch restruk_os (kolek 1 flag_restruk = Y)
         $restrukOs = 0.0;
-        if ($dailyLoanPeriod && $this->hasTable('daily_loan_dinamis') && !in_array($scopeKey, ['sme', 'consumer', 'micro'], true)) {
+        $segmentScope = match ($scopeKey) {
+            'sme' => ['SMALL'],
+            'consumer' => ['CONSUMER'],
+            'micro' => ['MICRO'],
+            'ritel' => ['SMALL', 'CONSUMER'],
+            default => [],
+        };
+        $restrukResolved = false;
+        if (
+            $dailyLoanPeriod
+            && $this->hasTable('performance_rm_cabang_snapshots')
+            && $this->hasColumn('performance_rm_cabang_snapshots', 'restruk_os')
+        ) {
+            $snapshotQuery = DB::table('performance_rm_cabang_snapshots')
+                ->where('periode', $dailyLoanPeriod)
+                ->whereIn(DB::raw('UPPER(TRIM(cabang))'), $this->dashboardBranchNames());
+            if ($segmentScope !== []) {
+                $snapshotQuery->whereIn(DB::raw('UPPER(TRIM(segmen))'), $segmentScope);
+            }
+            $snapshotRestruk = $snapshotQuery
+                ->selectRaw('COUNT(*) AS row_count, COALESCE(SUM(restruk_os), 0) AS restruk_os')
+                ->first();
+            if ((int) ($snapshotRestruk->row_count ?? 0) > 0) {
+                $restrukOs = (float) ($snapshotRestruk->restruk_os ?? 0);
+                $restrukResolved = true;
+            }
+        }
+
+        if (
+            $dailyLoanPeriod
+            && ! $restrukResolved
+            && $this->hasTable('daily_loan_dinamis')
+            && collect(['cabang1', 'segmen_kinerja', 'kolek', 'flag_restruk', 'baki_debet1'])
+                ->every(fn (string $column): bool => $this->hasColumn('daily_loan_dinamis', $column))
+        ) {
             $q = DB::table('daily_loan_dinamis')
                 ->where('periode', $dailyLoanPeriod)
                 ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), $this->dashboardBranchNames());
+
+            if ($segmentScope !== []) {
+                $q->whereIn(DB::raw('UPPER(TRIM(segmen_kinerja))'), $segmentScope);
+            }
             
             if (!empty($unitKeys)) {
                 $q->whereIn(DB::raw('UPPER(TRIM(unit1))'), array_map('strtoupper', $unitKeys));
@@ -8549,6 +8946,7 @@ class DashboardSimpananController extends Controller
 
         return [
             'rka_month_year' => $rkaMonthYear,
+            'previous_rka_month_year' => data_get($previousAchievement, 'label', '-'),
             'period_format' => $periodFormat,
             'segments' => $segments,
             'total' => [
@@ -8593,6 +8991,67 @@ class DashboardSimpananController extends Controller
                 ]
             ],
         ];
+    }
+
+    /**
+     * Membaca posisi dan RKA bulan sebelumnya dengan pipeline yang sama seperti
+     * bulan berjalan agar persentase OS/SML/NPL tetap konsisten.
+     *
+     * @param  array<int, array<string, string>>  $segmentDefinitions
+     * @param  array<int, string>|null  $unitKeys
+     * @return array<string, mixed>
+     */
+    private function buildArea6PreviousMonthSegmentAchievement(string $scopeKey, array $segmentDefinitions, string $period, ?array $unitKeys): array
+    {
+        try {
+            $previousTarget = Carbon::parse($period)->startOfMonth()->subDay()->toDateString();
+            $previousPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($previousTarget);
+            if ($previousPeriod === null) {
+                return [];
+            }
+
+            $service = app(DashboardHarianSnapshotService::class);
+            $payload = $service->buildDashboardPayload(
+                $previousPeriod,
+                null,
+                $this->dashboardBranchNames(),
+                $unitKeys
+            );
+            $rows = collect($payload['rows'] ?? []);
+            $snapshotMetrics = $this->area6ScopeSnapshotMetrics($previousPeriod, $scopeKey);
+            $totals = [
+                'os' => ['realization' => 0.0, 'target' => 0.0],
+                'sml' => ['realization' => 0.0, 'target' => 0.0],
+                'npl' => ['realization' => 0.0, 'target' => 0.0],
+            ];
+
+            foreach ($segmentDefinitions as $definition) {
+                foreach (['os', 'sml', 'npl'] as $metricKey) {
+                    $rowKey = $definition[$metricKey];
+                    $metric = $this->parseSegmentMetricWithCurrent(
+                        $rows->firstWhere('key', $rowKey),
+                        $metricKey,
+                        (float) ($snapshotMetrics->{$rowKey} ?? 0.0)
+                    );
+                    $totals[$metricKey]['realization'] += (float) $metric['realization'];
+                    $totals[$metricKey]['target'] += (float) $metric['target'];
+                }
+            }
+
+            return [
+                'period' => $previousPeriod,
+                'label' => Carbon::parse($previousPeriod)->locale('id')->translatedFormat('F y'),
+                'metrics' => [
+                    'os' => $this->formatArea6ScopeSegmentTotal($totals['os']['realization'], $totals['os']['target'], 'os'),
+                    'sml' => $this->formatArea6ScopeSegmentTotal($totals['sml']['realization'], $totals['sml']['target'], 'sml'),
+                    'npl' => $this->formatArea6ScopeSegmentTotal($totals['npl']['realization'], $totals['npl']['target'], 'npl'),
+                ],
+            ];
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return [];
+        }
     }
 
     private function formatArea6ScopeSegmentTotal(float $realization, float $target, string $type): array
@@ -9856,7 +10315,7 @@ class DashboardSimpananController extends Controller
 
     private function queryPeriodSummaryFromSnapshot(string $period): ?array
     {
-        if (UserBranchScope::current() !== null) {
+        if ($this->effectiveDashboardBranchScope() !== null) {
             return null;
         }
 
@@ -10808,7 +11267,7 @@ class DashboardSimpananController extends Controller
 
             $branchColumn = collect(['branch_label', 'cabang', 'kanca', 'kantor_cabang', 'branch_office'])
                 ->first(fn (string $column): bool => Schema::hasColumn($tableName, $column));
-            if (UserBranchScope::current() !== null && $branchColumn === null) {
+            if ($this->effectiveDashboardBranchScope() !== null && $branchColumn === null) {
                 return null;
             }
 
@@ -11315,9 +11774,56 @@ class DashboardSimpananController extends Controller
         ];
     }
 
+    private function configureLandingBranchScope(Request $request): void
+    {
+        $lockedScope = UserBranchScope::current();
+        if ($lockedScope !== null) {
+            $this->landingBranchScopeConfigured = true;
+            $this->landingBranchScope = $lockedScope;
+            $this->landingBranchKey = $lockedScope['key'];
+
+            return;
+        }
+
+        $this->configureLandingBranchFromKey((string) $request->query('cabang', UserBranchScope::AREA_SCOPE));
+    }
+
+    private function configureLandingBranchFromKey(string $branchKey): void
+    {
+        $normalizedKey = strtolower(trim($branchKey));
+        $scope = $normalizedKey === UserBranchScope::AREA_SCOPE
+            ? null
+            : UserBranchScope::forKey($normalizedKey);
+
+        $this->landingBranchScopeConfigured = true;
+        $this->landingBranchScope = $scope;
+        $this->landingBranchKey = $scope['key'] ?? UserBranchScope::AREA_SCOPE;
+    }
+
+    private function effectiveDashboardBranchScope(): ?array
+    {
+        return $this->landingBranchScopeConfigured
+            ? $this->landingBranchScope
+            : UserBranchScope::current();
+    }
+
+    private function landingBranchCacheKey(): string
+    {
+        if ($this->landingBranchScopeConfigured) {
+            return $this->landingBranchKey;
+        }
+
+        return UserBranchScope::cacheKey();
+    }
+
+    private function landingPrognosaSourceScope(): string
+    {
+        return $this->effectiveDashboardBranchScope()['upper_label'] ?? UserBranchScope::AREA_SCOPE;
+    }
+
     private function dashboardBranchNames(): array
     {
-        $scope = UserBranchScope::current();
+        $scope = $this->effectiveDashboardBranchScope();
         if ($scope !== null) {
             return [$scope['upper_label']];
         }
@@ -11329,19 +11835,19 @@ class DashboardSimpananController extends Controller
 
     private function dashboardBranchDisplayNames(): array
     {
-        $scope = UserBranchScope::current();
+        $scope = $this->effectiveDashboardBranchScope();
 
         return $scope !== null ? [$scope['label']] : self::AREA_6_BRANCH_LABELS;
     }
 
     private function dashboardScopeLabel(): string
     {
-        return UserBranchScope::current()['label'] ?? 'Area 6';
+        return $this->effectiveDashboardBranchScope()['label'] ?? 'Area 6';
     }
 
     private function applyDashboardBranchScope($query, string $column): void
     {
-        $scope = UserBranchScope::current();
+        $scope = $this->effectiveDashboardBranchScope();
         if ($scope === null) {
             return;
         }
@@ -11467,6 +11973,6 @@ class DashboardSimpananController extends Controller
     private function reportCacheVersion(): string
     {
         return ReportCacheVersion::composite(['simpanan', 'pinjaman', 'harian'])
-            . ':scope:' . UserBranchScope::cacheKey();
+            . ':scope:' . $this->landingBranchCacheKey();
     }
 }

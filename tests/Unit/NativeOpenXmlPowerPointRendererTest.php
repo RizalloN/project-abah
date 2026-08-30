@@ -10,7 +10,7 @@ use ZipArchive;
 
 class NativeOpenXmlPowerPointRendererTest extends TestCase
 {
-    public function test_native_renderer_creates_a_thirteen_slide_editable_pptx(): void
+    public function test_native_renderer_creates_a_fifteen_slide_editable_pptx(): void
     {
         $output = storage_path('framework/testing/native-presentation-test.pptx');
         File::ensureDirectoryExists(dirname($output));
@@ -23,7 +23,7 @@ class NativeOpenXmlPowerPointRendererTest extends TestCase
                 $output
             );
 
-            $this->assertSame(13, $result['slide_count']);
+            $this->assertSame(15, $result['slide_count']);
             $this->assertSame('native-openxml', $result['renderer']);
             $this->assertFileExists($output);
             $this->assertGreaterThan(10000, filesize($output));
@@ -32,7 +32,7 @@ class NativeOpenXmlPowerPointRendererTest extends TestCase
             $this->assertTrue($zip->open($output) === true);
             try {
                 $presentation = (string) $zip->getFromName('ppt/presentation.xml');
-                $this->assertSame(13, preg_match_all('#<p:sldId\b#', $presentation));
+                $this->assertSame(15, preg_match_all('#<p:sldId\b#', $presentation));
                 $this->assertNotFalse($zip->locateName('ppt/media/presentation-bri.png'));
                 $this->assertNotFalse($zip->locateName('ppt/media/presentation-danantara.png'));
 
@@ -43,20 +43,16 @@ class NativeOpenXmlPowerPointRendererTest extends TestCase
                         $physicalSlides[] = $entry;
                     }
                 }
-                $this->assertCount(13, $physicalSlides);
-                $this->assertFalse($zip->locateName('ppt/slides/slide14.xml'));
-                $this->assertFalse($zip->locateName('ppt/slides/slide15.xml'));
-                $this->assertFalse($zip->locateName('ppt/slides/_rels/slide14.xml.rels'));
-                $this->assertFalse($zip->locateName('ppt/slides/_rels/slide15.xml.rels'));
+                $this->assertCount(15, $physicalSlides);
+                $this->assertFalse($zip->locateName('ppt/slides/slide16.xml'));
+                $this->assertFalse($zip->locateName('ppt/slides/_rels/slide16.xml.rels'));
 
                 $presentationRelationships = (string) $zip->getFromName('ppt/_rels/presentation.xml.rels');
                 $contentTypes = (string) $zip->getFromName('[Content_Types].xml');
-                $this->assertStringNotContainsString('slides/slide14.xml', $presentationRelationships);
-                $this->assertStringNotContainsString('slides/slide15.xml', $presentationRelationships);
-                $this->assertStringNotContainsString('/ppt/slides/slide14.xml', $contentTypes);
-                $this->assertStringNotContainsString('/ppt/slides/slide15.xml', $contentTypes);
+                $this->assertStringNotContainsString('slides/slide16.xml', $presentationRelationships);
+                $this->assertStringNotContainsString('/ppt/slides/slide16.xml', $contentTypes);
 
-                foreach (range(1, 13) as $slideNumber) {
+                foreach (range(1, 15) as $slideNumber) {
                     $slide = (string) $zip->getFromName("ppt/slides/slide{$slideNumber}.xml");
                     $this->assertNotSame('', $slide);
                     $document = new DOMDocument();
@@ -74,10 +70,10 @@ class NativeOpenXmlPowerPointRendererTest extends TestCase
 
                 $this->assertStringContainsString('Performance Review - Area 6 Region 13', (string) $zip->getFromName('ppt/slides/slide1.xml'));
                 $this->assertStringContainsString('Ikhtisar dan Alur Pembahasan', (string) $zip->getFromName('ppt/slides/slide2.xml'));
-                $this->assertStringContainsString('Performance Funding / Dana - Ringkasan Eksekutif', (string) $zip->getFromName('ppt/slides/slide3.xml'));
-                $this->assertStringContainsString('Rangkuman 8 Strategi Funding', (string) $zip->getFromName('ppt/slides/slide5.xml'));
-                $this->assertStringContainsString('Pinjaman Mikro', (string) $zip->getFromName('ppt/slides/slide9.xml'));
-                $this->assertStringContainsString('Prioritas 30 Hari Berikutnya', (string) $zip->getFromName('ppt/slides/slide13.xml'));
+                $this->assertStringContainsString('Performance Funding / Dana - Ringkasan Eksekutif', (string) $zip->getFromName('ppt/slides/slide5.xml'));
+                $this->assertStringContainsString('Rangkuman 8 Strategi Funding', (string) $zip->getFromName('ppt/slides/slide7.xml'));
+                $this->assertStringContainsString('Pinjaman Mikro', (string) $zip->getFromName('ppt/slides/slide11.xml'));
+                $this->assertStringContainsString('Prioritas 30 Hari Berikutnya', (string) $zip->getFromName('ppt/slides/slide15.xml'));
             } finally {
                 $zip->close();
             }
@@ -143,7 +139,7 @@ class NativeOpenXmlPowerPointRendererTest extends TestCase
             $zip = new ZipArchive();
             $this->assertTrue($zip->open($output) === true);
             try {
-                $slide = (string) $zip->getFromName('ppt/slides/slide3.xml');
+                $slide = (string) $zip->getFromName('ppt/slides/slide5.xml');
                 $this->assertStringContainsString('PROGNOSA W4', $slide);
                 $this->assertStringContainsString('25 Jul 26', $slide);
                 $this->assertStringContainsString('D PROG', $slide);

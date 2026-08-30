@@ -3,6 +3,8 @@
 namespace App\Services\Presentation;
 
 use Carbon\Carbon;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -19,23 +21,23 @@ class PresentationPrognosaWeeklyService
 {
     private const SPREADSHEET_ID = '1HpvFkAVzSYhAdIeDr1uZ9XIhBhuCMbpUv0Lm8qrq0oY';
 
-    private const CACHE_KEY = 'presentation:prognosa_weekly:v1';
+    private const CACHE_KEY = 'presentation:prognosa_weekly:v3';
 
-    private const STABLE_CACHE_KEY = 'presentation:prognosa_weekly:stable:v1';
+    private const STABLE_CACHE_KEY = 'presentation:prognosa_weekly:stable:v3';
 
-    /** @var array<string, string> */
+    /** @var array<string, array<int, string>> */
     private const SHEETS = [
-        'area6' => 'area',
-        'KC MADIUN' => 'madiun',
-        'KC MAGETAN' => 'magetan',
-        'KC NGAWI' => 'ngawi',
-        'KC PONOROGO' => 'ponorogo',
+        'area6' => ['Report AREA', 'area'],
+        'KC MADIUN' => ['MADIUN', 'madiun'],
+        'KC MAGETAN' => ['MAGETAN', 'magetan'],
+        'KC NGAWI' => ['NGAWI', 'ngawi'],
+        'KC PONOROGO' => ['PONOROGO', 'ponorogo'],
     ];
 
     /** @return array<string, mixed> */
     public function payload(bool $forceFresh = false): array
     {
-        if (!$forceFresh) {
+        if (! $forceFresh) {
             $cached = Cache::get(self::CACHE_KEY);
             if (is_array($cached)) {
                 return $cached;
@@ -46,6 +48,7 @@ class PresentationPrognosaWeeklyService
             $payload = $this->downloadAndParse();
             Cache::put(self::CACHE_KEY, $payload, now()->addMinutes(10));
             Cache::put(self::STABLE_CACHE_KEY, $payload, now()->addDays(3));
+            $this->persistLocalPayload($payload);
 
             return $payload;
         } catch (Throwable $exception) {
@@ -72,7 +75,7 @@ class PresentationPrognosaWeeklyService
     /** @return array<string, mixed> */
     public function parseWorkbook(string $path): array
     {
-        if (!is_file($path)) {
+        if (! is_file($path)) {
             throw new RuntimeException('File workbook Prognosa Weekly tidak ditemukan.');
         }
 
@@ -91,6 +94,65 @@ class PresentationPrognosaWeeklyService
     /** @return array<string, mixed> */
     private function downloadAndParse(): array
     {
+        try {
+            return $this->downloadCsvAndParse();
+        } catch (Throwable $csvException) {
+            try {
+                return $this->downloadWorkbookAndParse();
+            } catch (Throwable $workbookException) {
+                throw new RuntimeException(
+                    'Prognosa Weekly gagal dimuat dari CSV dan workbook. CSV: '
+                    .$csvException->getMessage()
+                    .' Workbook: '
+                    .$workbookException->getMessage(),
+                    0,
+                    $workbookException
+                );
+            }
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function downloadCsvAndParse(): array
+    {
+        $responses = Http::pool(function (Pool $pool): array {
+            $requests = [];
+
+            foreach (self::SHEETS as $scopeKey => $sheetNames) {
+                $requests[] = $pool->as($scopeKey)
+                    ->connectTimeout(5)
+                    ->timeout(15)
+                    ->get($this->csvUrl($sheetNames[0]));
+            }
+
+            return $requests;
+        });
+
+        $csvByScope = [];
+        foreach (self::SHEETS as $scopeKey => $sheetNames) {
+            $response = $responses[$scopeKey] ?? null;
+            if (! $response instanceof Response || ! $response->successful()) {
+                $response = Http::connectTimeout(5)
+                    ->timeout(15)
+                    ->retry(1, 250)
+                    ->get($this->csvUrl($sheetNames[0]));
+            }
+
+            if (! $response->successful() || trim($response->body()) === '') {
+                throw new RuntimeException(
+                    "Sheet Prognosa Weekly {$sheetNames[0]} gagal dimuat (status {$response->status()})."
+                );
+            }
+
+            $csvByScope[$scopeKey] = $response->body();
+        }
+
+        return $this->parseCsvSources($csvByScope);
+    }
+
+    /** @return array<string, mixed> */
+    private function downloadWorkbookAndParse(): array
+    {
         $response = Http::connectTimeout(5)
             ->timeout(20)
             ->retry(2, 300)
@@ -99,9 +161,9 @@ class PresentationPrognosaWeeklyService
                 self::SPREADSHEET_ID
             ));
 
-        if (!$response->successful() || $response->body() === '') {
+        if (! $response->successful() || $response->body() === '') {
             throw new RuntimeException(
-                'Workbook Prognosa Weekly gagal dimuat (status ' . $response->status() . ').'
+                'Workbook Prognosa Weekly gagal dimuat (status '.$response->status().').'
             );
         }
 
@@ -132,13 +194,39 @@ class PresentationPrognosaWeeklyService
         );
     }
 
+    private function localPayloadPath(): string
+    {
+        $workbookPath = $this->localFallbackPath();
+        $extensionPosition = strrpos($workbookPath, '.');
+
+        return $extensionPosition === false
+            ? $workbookPath.'.json'
+            : substr($workbookPath, 0, $extensionPosition).'.json';
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function persistLocalPayload(array $payload): void
+    {
+        $targetPath = $this->localPayloadPath();
+
+        try {
+            File::ensureDirectoryExists(dirname($targetPath));
+            $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            if ($json === false || file_put_contents($targetPath, $json, LOCK_EX) === false) {
+                report(new RuntimeException('Fallback payload Prognosa Weekly tidak dapat diperbarui.'));
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+    }
+
     private function persistLocalFallback(string $sourcePath): void
     {
         $targetPath = $this->localFallbackPath();
 
         try {
             File::ensureDirectoryExists(dirname($targetPath));
-            if (!@copy($sourcePath, $targetPath)) {
+            if (! @copy($sourcePath, $targetPath)) {
                 report(new RuntimeException('Fallback lokal Prognosa Weekly tidak dapat diperbarui.'));
             }
         } catch (Throwable $exception) {
@@ -149,8 +237,29 @@ class PresentationPrognosaWeeklyService
     /** @return array<string, mixed>|null */
     private function localFallbackPayload(Throwable $refreshException): ?array
     {
+        $payloadPath = $this->localPayloadPath();
+        if (is_file($payloadPath)) {
+            try {
+                $payload = json_decode((string) file_get_contents($payloadPath), true, 512, JSON_THROW_ON_ERROR);
+                if (is_array($payload) && (bool) data_get($payload, 'meta.available', false)) {
+                    data_set($payload, 'meta.stale', true);
+                    data_set($payload, 'meta.fallback', 'local-payload');
+                    data_set(
+                        $payload,
+                        'meta.local_updated_at',
+                        Carbon::createFromTimestamp(filemtime($payloadPath))->toDateTimeString()
+                    );
+                    data_set($payload, 'meta.refresh_error', $refreshException->getMessage());
+
+                    return $payload;
+                }
+            } catch (Throwable $payloadException) {
+                report($payloadException);
+            }
+        }
+
         $path = $this->localFallbackPath();
-        if (!is_file($path)) {
+        if (! is_file($path)) {
             return null;
         }
 
@@ -169,29 +278,527 @@ class PresentationPrognosaWeeklyService
         }
     }
 
+    private function csvUrl(string $sheetName): string
+    {
+        return sprintf(
+            'https://docs.google.com/spreadsheets/d/%s/gviz/tq?%s',
+            self::SPREADSHEET_ID,
+            http_build_query(['tqx' => 'out:csv', 'sheet' => $sheetName])
+        );
+    }
+
+    private function sourceUrl(): string
+    {
+        return sprintf(
+            'https://docs.google.com/spreadsheets/d/%s/edit?gid=1650926605#gid=1650926605',
+            self::SPREADSHEET_ID
+        );
+    }
+
+    /**
+     * @param  array<string, string>  $csvByScope
+     * @return array<string, mixed>
+     */
+    private function parseCsvSources(array $csvByScope): array
+    {
+        $matrices = [];
+        foreach ($csvByScope as $scopeKey => $csv) {
+            $matrices[$scopeKey] = $this->parseCsvMatrix($csv);
+        }
+
+        if (! isset($matrices['area6'])) {
+            throw new RuntimeException('Sheet Report AREA untuk acuan Prognosa PPT tidak tersedia.');
+        }
+
+        $areaLayout = $this->resolveCsvLayout($matrices['area6']);
+        $positionDate = $areaLayout['latest_date'] ?? null;
+        if (! $positionDate instanceof Carbon) {
+            throw new RuntimeException('Periode posisi terbaru pada sheet Report AREA tidak ditemukan.');
+        }
+
+        $forecastDate = now()->startOfDay();
+        $preferredWeek = $this->weekOfMonth($forecastDate);
+        $availableWeeks = $this->availableCsvWeeks($matrices['area6'], $areaLayout);
+        $week = $this->resolveAvailableCsvWeek($matrices['area6'], $areaLayout, $preferredWeek);
+        $scopes = [];
+        foreach ($matrices as $scopeKey => $matrix) {
+            $layout = $this->resolveCsvLayout($matrix);
+            $weeklyScopes = [];
+            foreach ($availableWeeks as $availableWeek) {
+                $weeklyScopes['W'.$availableWeek] = $this->parseCsvScope(
+                    $matrix,
+                    $layout,
+                    $availableWeek,
+                    (int) $layout['actual_column']
+                );
+            }
+
+            $selectedScope = $weeklyScopes['W'.$week] ?? $this->parseCsvScope(
+                $matrix,
+                $layout,
+                $week,
+                (int) $layout['actual_column']
+            );
+            $selectedScope['weeks'] = $weeklyScopes;
+            $scopes[$scopeKey] = $selectedScope;
+        }
+
+        return [
+            'meta' => array_merge($this->csvMetadata($forecastDate, $positionDate, $week, $availableWeeks), [
+                'available' => true,
+                'stale' => false,
+                'source' => 'Prognosa > Prognosa Weekly',
+                'source_url' => $this->sourceUrl(),
+                'source_sheet' => self::SHEETS['area6'][0],
+                'fetched_at' => now()->toDateTimeString(),
+            ]),
+            'scopes' => $scopes,
+        ];
+    }
+
+    /** @return array<int, array<int, string>> */
+    private function parseCsvMatrix(string $csv): array
+    {
+        $csv = trim($csv);
+        if ($csv === '' || str_contains(strtolower(substr($csv, 0, 300)), '<html')) {
+            throw new RuntimeException('Sumber Prognosa Weekly tidak mengembalikan CSV yang valid.');
+        }
+
+        $stream = fopen('php://temp', 'r+');
+        if ($stream === false) {
+            throw new RuntimeException('CSV sementara Prognosa Weekly tidak dapat dibaca.');
+        }
+
+        try {
+            fwrite($stream, $csv);
+            rewind($stream);
+            $rows = [];
+
+            while (($row = fgetcsv($stream, null, ',', '"', '')) !== false) {
+                $cleaned = array_map(
+                    fn (mixed $value): string => $this->cleanCsvCell((string) $value),
+                    $row
+                );
+                if (collect($cleaned)->contains(static fn (string $value): bool => $value !== '')) {
+                    $rows[] = $cleaned;
+                }
+            }
+
+            if (count($rows) < 2) {
+                throw new RuntimeException('Sheet Prognosa Weekly belum memiliki tabel yang dapat dibaca.');
+            }
+
+            return $rows;
+        } finally {
+            fclose($stream);
+        }
+    }
+
+    /**
+     * @param  array<int, array<int, string>>  $matrix
+     * @return array{header_row: int, label_column: int, forecast_base_column: int, actual_column: int, latest_date: ?Carbon}
+     */
+    private function resolveCsvLayout(array $matrix): array
+    {
+        $headerRow = null;
+        $labelColumn = null;
+
+        foreach (array_slice($matrix, 0, 5, true) as $rowIndex => $row) {
+            foreach ($row as $columnIndex => $value) {
+                if ($this->normaliseLabel($value) === 'KETERANGAN') {
+                    $headerRow = (int) $rowIndex;
+                    $labelColumn = (int) $columnIndex;
+                    break 2;
+                }
+            }
+        }
+
+        if ($headerRow === null || $labelColumn === null) {
+            throw new RuntimeException('Header KETERANGAN pada sheet Prognosa Weekly tidak ditemukan.');
+        }
+
+        $forecastBase = null;
+        foreach (array_slice($matrix, $headerRow, 3, true) as $row) {
+            foreach ($row as $columnIndex => $value) {
+                if ($this->normaliseLabel($value) === 'PROGNOSA WEEK 1') {
+                    $forecastBase = (int) $columnIndex;
+                    break 2;
+                }
+            }
+        }
+        if ($forecastBase === null) {
+            foreach (array_slice($matrix, $headerRow, 3, true) as $row) {
+                foreach ($row as $columnIndex => $value) {
+                    if ($this->normaliseLabel($value) === 'PROGNOSA') {
+                        $forecastBase = (int) $columnIndex;
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        if ($forecastBase === null) {
+            throw new RuntimeException('Kolom Prognosa Week 1 pada sheet Prognosa Weekly tidak ditemukan.');
+        }
+
+        $dateCandidates = [];
+        foreach (array_slice($matrix, $headerRow, 4, true) as $row) {
+            foreach ($row as $columnIndex => $value) {
+                if ((int) $columnIndex >= $forecastBase) {
+                    continue;
+                }
+
+                $date = $this->dateFromText($value);
+                if ($date) {
+                    $dateCandidates[] = [
+                        'column' => (int) $columnIndex,
+                        'date' => $date,
+                    ];
+                }
+            }
+        }
+
+        usort(
+            $dateCandidates,
+            static fn (array $left, array $right): int => $left['date']->timestamp <=> $right['date']->timestamp
+        );
+        $latest = $dateCandidates === [] ? null : end($dateCandidates);
+
+        return [
+            'header_row' => $headerRow,
+            'label_column' => $labelColumn,
+            'forecast_base_column' => $forecastBase,
+            'actual_column' => (int) ($latest['column'] ?? max($labelColumn + 1, $forecastBase - 2)),
+            'latest_date' => $latest['date'] ?? null,
+        ];
+    }
+
+    /**
+     * @param  array<int, array<int, string>>  $matrix
+     * @param  array{header_row: int, label_column: int, forecast_base_column: int, actual_column: int, latest_date: ?Carbon}  $layout
+     * @return array<string, mixed>
+     */
+    private function parseCsvScope(array $matrix, array $layout, int $week, int $actualColumn): array
+    {
+        $rows = $this->csvMetricRows($matrix, (int) $layout['label_column']);
+        $forecastColumn = (int) $layout['forecast_base_column'] + $week - 1;
+        $metrics = [];
+
+        foreach ($rows as $metric => $metricRows) {
+            $forecast = $this->sumCsvRows($matrix, $metricRows, $forecastColumn);
+            $sourceActual = $this->sumCsvRows($matrix, $metricRows, $actualColumn);
+            $metrics[$metric] = [
+                'available' => $forecast !== null,
+                'value' => $forecast === null ? null : $forecast * 1_000_000,
+                'source_actual' => $sourceActual === null ? null : $sourceActual * 1_000_000,
+            ];
+        }
+
+        return [
+            'available' => collect($metrics)->contains(
+                static fn (array $metric): bool => (bool) ($metric['available'] ?? false)
+            ),
+            'metrics' => $metrics,
+        ];
+    }
+
+    /**
+     * @param  array<int, array<int, string>>  $matrix
+     * @return array<string, array<int, int>>
+     */
+    private function csvMetricRows(array $matrix, int $labelColumn): array
+    {
+        $lastRow = count($matrix) - 1;
+        $osStart = $this->requiredCsvRow($matrix, ['PINJAMAN'], 0, $lastRow, $labelColumn);
+        $smlStart = $this->requiredCsvRow($matrix, ['SML'], $osStart + 1, $lastRow, $labelColumn);
+        $nplStart = $this->requiredCsvRow($matrix, ['NPL'], $smlStart + 1, $lastRow, $labelColumn);
+        $fundingStart = $this->requiredCsvRow(
+            $matrix,
+            ['DANA PIHAK KE TIGA'],
+            $nplStart + 1,
+            $lastRow,
+            $labelColumn
+        );
+        $recoveryStart = $this->firstCsvRowByLabels(
+            $matrix,
+            ['RECOVERY DH'],
+            $fundingStart + 1,
+            $lastRow,
+            $labelColumn
+        );
+        $fundingEnd = $recoveryStart === null ? $lastRow : $recoveryStart - 1;
+        $fundingTotal = $this->requiredCsvRow(
+            $matrix,
+            ['TOTAL RITEL MICRO WHOLESALE', '1 SIMPANAN'],
+            $fundingStart,
+            $fundingEnd,
+            $labelColumn
+        );
+
+        $lastFundingRow = function (array $labels) use ($matrix, $fundingStart, $fundingEnd, $labelColumn): array {
+            $matches = $this->csvRowsByLabels($matrix, $labels, $fundingStart, $fundingEnd, $labelColumn);
+
+            return $matches === [] ? [] : [(int) end($matches)];
+        };
+
+        $rows = [
+            'simpanan' => [$fundingTotal],
+            'funding_retail' => [$this->requiredCsvRow($matrix, ['RITEL'], $fundingStart, $fundingTotal - 1, $labelColumn)],
+            'funding_micro' => [$this->requiredCsvRow($matrix, ['MICRO'], $fundingStart, $fundingTotal - 1, $labelColumn)],
+            'funding_wholesale' => [$this->requiredCsvRow($matrix, ['WHOLESALE'], $fundingStart, $fundingEnd, $labelColumn)],
+            'giro' => $lastFundingRow(['GIRO']),
+            'tabungan' => $lastFundingRow(['TABUNGAN']),
+            'deposito' => $lastFundingRow(['DEPOSITO']),
+            'os' => [$osStart],
+            'sml' => [$smlStart],
+            'npl' => [$nplStart],
+            'recovery' => $recoveryStart === null ? [] : [$recoveryStart],
+        ];
+
+        $sections = [
+            'os' => [$osStart, $smlStart - 1],
+            'sml' => [$smlStart, $nplStart - 1],
+            'npl' => [$nplStart, $fundingStart - 1],
+        ];
+        $creditRows = [
+            'sme' => ['KECIL KOMERSIAL', 'B SME'],
+            'consumer' => ['CONSUMER', 'KONSUMER', 'C KONSUMER'],
+            'micro' => ['MICRO', 'D MIKRO'],
+            'sme_non_cashcoll' => ['KECIL KOMERSIAL', 'KECIL NON CASHCOLL'],
+            'sme_cashcoll' => ['CASHCOLL'],
+            'consumer_briguna' => ['BRIGUNA RITEL', 'BRIGUNA'],
+            'consumer_kpr' => ['KPR'],
+            'micro_briguna' => ['BRIGUNA MIKRO'],
+            'micro_kupedes' => ['KUPEDES'],
+            'micro_kur_mikro' => ['KUR MIKRO'],
+            'micro_kur_kecil' => ['KUR KECIL'],
+            'micro_kpp' => ['KREDIT MIKRO KPP', 'KUR KPP'],
+        ];
+
+        foreach ($sections as $suffix => [$start, $end]) {
+            foreach ($creditRows as $metric => $labels) {
+                $row = $this->firstCsvRowByLabels($matrix, $labels, $start, $end, $labelColumn);
+                $rows["{$metric}_{$suffix}"] = $row === null ? [] : [$row];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Choose the latest populated week up to the calendar week. This keeps a
+     * fifth-week date on W4 and falls back when the newest source column is blank.
+     *
+     * @param  array<int, array<int, string>>  $matrix
+     * @param  array{header_row: int, label_column: int, forecast_base_column: int, actual_column: int, latest_date: ?Carbon}  $layout
+     */
+    private function resolveAvailableCsvWeek(array $matrix, array $layout, int $preferredWeek): int
+    {
+        $availableWeeks = $this->availableCsvWeeks($matrix, $layout);
+        $preferredWeek = min(4, max(1, $preferredWeek));
+        $eligibleWeeks = array_values(array_filter(
+            $availableWeeks,
+            static fn (int $week): bool => $week <= $preferredWeek
+        ));
+
+        if ($eligibleWeeks !== []) {
+            return (int) end($eligibleWeeks);
+        }
+
+        return (int) ($availableWeeks[0] ?? 1);
+    }
+
+    /**
+     * @param  array<int, array<int, string>>  $matrix
+     * @param  array{header_row: int, label_column: int, forecast_base_column: int, actual_column: int, latest_date: ?Carbon}  $layout
+     * @return array<int, int>
+     */
+    private function availableCsvWeeks(array $matrix, array $layout): array
+    {
+        $metricRows = $this->csvMetricRows($matrix, (int) $layout['label_column']);
+        $rows = array_values(array_unique(array_merge(...array_values($metricRows))));
+        $forecastBase = (int) $layout['forecast_base_column'];
+        $availableWeeks = [];
+
+        for ($week = 1; $week <= 4; $week++) {
+            $column = $forecastBase + $week - 1;
+            foreach ($rows as $row) {
+                if ($this->parseLocaleNumber($matrix[$row][$column] ?? null) !== null) {
+                    $availableWeeks[] = $week;
+                    break;
+                }
+            }
+        }
+
+        return $availableWeeks === [] ? [1] : $availableWeeks;
+    }
+
+    /**
+     * @param  array<int, array<int, string>>  $matrix
+     * @param  array<int, string>  $labels
+     */
+    private function requiredCsvRow(
+        array $matrix,
+        array $labels,
+        int $start,
+        int $end,
+        int $labelColumn
+    ): int {
+        $row = $this->firstCsvRowByLabels($matrix, $labels, $start, $end, $labelColumn);
+        if ($row === null) {
+            throw new RuntimeException("Baris Prognosa Weekly '".implode(' / ', $labels)."' tidak ditemukan.");
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param  array<int, array<int, string>>  $matrix
+     * @param  array<int, string>  $labels
+     */
+    private function firstCsvRowByLabels(
+        array $matrix,
+        array $labels,
+        int $start,
+        int $end,
+        int $labelColumn
+    ): ?int {
+        return $this->csvRowsByLabels($matrix, $labels, $start, $end, $labelColumn)[0] ?? null;
+    }
+
+    /**
+     * @param  array<int, array<int, string>>  $matrix
+     * @param  array<int, string>  $labels
+     * @return array<int, int>
+     */
+    private function csvRowsByLabels(
+        array $matrix,
+        array $labels,
+        int $start,
+        int $end,
+        int $labelColumn
+    ): array {
+        $needles = array_map(fn (string $label): string => $this->normaliseLabel($label), $labels);
+        $matches = [];
+
+        for ($row = max(0, $start); $row <= min($end, count($matrix) - 1); $row++) {
+            $label = $this->normaliseLabel((string) ($matrix[$row][$labelColumn] ?? ''));
+            if (in_array($label, $needles, true)) {
+                $matches[] = $row;
+            }
+        }
+
+        return $matches;
+    }
+
+    /**
+     * @param  array<int, array<int, string>>  $matrix
+     * @param  array<int, int>  $rows
+     */
+    private function sumCsvRows(array $matrix, array $rows, int $column): ?float
+    {
+        $sum = 0.0;
+        $hasValue = false;
+
+        foreach ($rows as $row) {
+            $value = $this->parseLocaleNumber($matrix[$row][$column] ?? null);
+            if ($value === null) {
+                continue;
+            }
+
+            $sum += $value;
+            $hasValue = true;
+        }
+
+        return $hasValue ? $sum : null;
+    }
+
+    private function parseLocaleNumber(mixed $value): ?float
+    {
+        $value = $this->cleanCsvCell((string) $value);
+        if ($value === '' || $value === '-') {
+            return null;
+        }
+
+        $negativeParentheses = str_starts_with($value, '(') && str_ends_with($value, ')');
+        $value = trim($value, "() \t\n\r\0\x0B");
+        $value = str_replace(['%', 'Rp', ' '], '', $value);
+
+        if (str_contains($value, ',') && str_contains($value, '.')) {
+            $value = str_replace('.', '', $value);
+            $value = str_replace(',', '.', $value);
+        } elseif (str_contains($value, ',')) {
+            $value = str_replace(',', '.', $value);
+        } elseif (substr_count($value, '.') > 1 || preg_match('/^-?\d{1,3}\.\d{3}$/', $value) === 1) {
+            $value = str_replace('.', '', $value);
+        }
+
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        $number = (float) $value;
+
+        return $negativeParentheses ? -abs($number) : $number;
+    }
+
+    private function cleanCsvCell(string $value): string
+    {
+        $value = str_replace(["\u{00A0}", "\r", "\n"], [' ', ' ', ' '], $value);
+
+        return trim((string) preg_replace('/\s+/u', ' ', $value));
+    }
+
+    /** @return array<string, mixed> */
+    private function csvMetadata(Carbon $forecastDate, Carbon $positionDate, int $week, array $availableWeeks): array
+    {
+        $localizedForecastDate = $forecastDate->copy()->locale('id');
+        $localizedPositionDate = $positionDate->copy()->locale('id');
+
+        return [
+            'forecast_date' => $forecastDate->toDateString(),
+            'forecast_date_label' => $localizedForecastDate->translatedFormat('d M y'),
+            'position_date' => $positionDate->toDateString(),
+            'position_date_label' => $localizedPositionDate->translatedFormat('d M y'),
+            'week_number' => $week,
+            'week_label' => 'W'.$week,
+            'available_weeks' => array_values($availableWeeks),
+            'label' => 'Prognosa W'.$week.' '.$localizedForecastDate->translatedFormat('F Y'),
+        ];
+    }
+
     /** @return array<string, mixed> */
     private function parseSpreadsheet(Spreadsheet $workbook): array
     {
         $scopes = [];
         $meta = null;
 
-        foreach (self::SHEETS as $scopeKey => $sheetName) {
-            $sheet = $this->worksheet($workbook, $sheetName);
-            if (!$sheet) {
+        foreach (self::SHEETS as $scopeKey => $sheetNames) {
+            $sheet = null;
+            foreach ($sheetNames as $sheetName) {
+                $sheet = $this->worksheet($workbook, $sheetName);
+                if ($sheet) {
+                    break;
+                }
+            }
+            if (! $sheet) {
                 continue;
             }
 
             $columns = $this->resolvePositionColumns($sheet);
-            if (!$columns) {
+            if (! $columns) {
                 continue;
             }
 
             $scopePayload = $this->parseScope($sheet, $columns);
-            $scopes[$scopeKey] = $scopePayload;
+            $week = $this->weekOfMonth($columns['forecast_date']);
+            $scopes[$scopeKey] = array_merge($scopePayload, [
+                'weeks' => ['W'.$week => $scopePayload],
+            ]);
             $meta ??= $this->metadata($columns);
         }
 
-        if ($scopes === [] || !$meta) {
+        if ($scopes === [] || ! $meta) {
             throw new RuntimeException('Struktur workbook Prognosa Weekly belum dapat dikenali.');
         }
 
@@ -200,10 +807,7 @@ class PresentationPrognosaWeeklyService
                 'available' => true,
                 'stale' => false,
                 'source' => 'Prognosa > Prognosa Weekly',
-                'source_url' => sprintf(
-                    'https://docs.google.com/spreadsheets/d/%s/edit',
-                    self::SPREADSHEET_ID
-                ),
+                'source_url' => $this->sourceUrl(),
                 'fetched_at' => now()->toDateTimeString(),
             ]),
             'scopes' => $scopes,
@@ -238,7 +842,7 @@ class PresentationPrognosaWeeklyService
         for ($row = 1; $row <= min(15, $sheet->getHighestRow()); $row++) {
             for ($column = 1; $column <= $highestColumn; $column++) {
                 $label = $this->normaliseLabel($this->formattedCell($sheet, $column, $row));
-                if (!str_contains($label, 'UPDATE POSISI')) {
+                if (! str_contains($label, 'UPDATE POSISI')) {
                     continue;
                 }
 
@@ -323,7 +927,7 @@ class PresentationPrognosaWeeklyService
         $smlStart = $this->findRow($sheet, 'Total SML (ABS) Non Commercial', 1, $highestRow);
         $nplStart = $this->findRow($sheet, 'Total NPL (ABS) Non Commercial', 1, $highestRow);
 
-        if (!$fundingStart || !$osStart || !$smlStart || !$nplStart) {
+        if (! $fundingStart || ! $osStart || ! $smlStart || ! $nplStart) {
             throw new RuntimeException('Blok Funding/OS/SML/NPL pada Prognosa Weekly tidak lengkap.');
         }
 
@@ -344,6 +948,9 @@ class PresentationPrognosaWeeklyService
             'sml' => [$smlStart],
             'npl' => [$nplStart],
         ];
+
+        $recoveryRow = $this->findRow($sheet, 'Recovery DH', $nplStart, $highestRow);
+        $rows['recovery'] = $recoveryRow ? [$recoveryRow] : [];
 
         $sectionDefinitions = [
             'os' => [$osStart, $osEnd],
@@ -379,7 +986,7 @@ class PresentationPrognosaWeeklyService
     private function requiredRow(Worksheet $sheet, string $label, int $start, int $end): int
     {
         $row = $this->findRow($sheet, $label, $start, $end);
-        if (!$row) {
+        if (! $row) {
             throw new RuntimeException("Baris Prognosa Weekly '{$label}' tidak ditemukan.");
         }
 
@@ -431,7 +1038,7 @@ class PresentationPrognosaWeeklyService
 
     private function numericCell(Worksheet $sheet, int $column, int $row): ?float
     {
-        $cell = $sheet->getCell(Coordinate::stringFromColumnIndex($column) . $row);
+        $cell = $sheet->getCell(Coordinate::stringFromColumnIndex($column).$row);
 
         try {
             $value = $cell->getCalculatedValue();
@@ -454,7 +1061,7 @@ class PresentationPrognosaWeeklyService
     }
 
     /**
-     * @param array{actual_date: Carbon, forecast_date: Carbon} $columns
+     * @param  array{actual_date: Carbon, forecast_date: Carbon}  $columns
      * @return array<string, mixed>
      */
     private function metadata(array $columns): array
@@ -471,33 +1078,31 @@ class PresentationPrognosaWeeklyService
             'position_date' => $actualDate->toDateString(),
             'position_date_label' => $actualDate->translatedFormat('d M y'),
             'week_number' => $week,
-            'week_label' => 'W' . $week,
-            'label' => 'Prognosa W' . $week,
+            'week_label' => 'W'.$week,
+            'available_weeks' => [$week],
+            'label' => 'Prognosa W'.$week,
         ];
     }
 
     private function weekOfMonth(Carbon $date): int
     {
-        $firstMonday = $date->copy()->startOfMonth();
-        if ($firstMonday->dayOfWeek !== Carbon::MONDAY) {
-            $firstMonday->next(Carbon::MONDAY);
-        }
-        if ($date->lessThan($firstMonday)) {
-            return 1;
-        }
-
-        return 2 + intdiv((int) $firstMonday->diffInDays($date), 7);
+        return min(4, max(1, intdiv(max(1, $date->day) - 1, 7) + 1));
     }
 
     private function dateFromCell(Worksheet $sheet, int $column, int $row): ?Carbon
     {
-        $cell = $sheet->getCell(Coordinate::stringFromColumnIndex($column) . $row);
+        $cell = $sheet->getCell(Coordinate::stringFromColumnIndex($column).$row);
         $raw = $cell->getValue();
         if (is_numeric($raw) && ExcelDate::isDateTime($cell)) {
             return Carbon::instance(ExcelDate::excelToDateTimeObject((float) $raw))->startOfDay();
         }
 
-        $value = Str::upper(Str::ascii($this->formattedCell($sheet, $column, $row)));
+        return $this->dateFromText($this->formattedCell($sheet, $column, $row));
+    }
+
+    private function dateFromText(string $text): ?Carbon
+    {
+        $value = Str::upper(Str::ascii($text));
         $months = [
             'JANUARI' => 1,
             'JANUARY' => 1,
@@ -534,7 +1139,7 @@ class PresentationPrognosaWeeklyService
         ];
         $monthPattern = implode('|', array_map('preg_quote', array_keys($months)));
 
-        if (!preg_match('/\b(\d{1,2})\s+(' . $monthPattern . ')\s+(\d{2,4})\b/', $value, $match)) {
+        if (! preg_match('/\b(\d{1,2})\s+('.$monthPattern.')\s+(\d{2,4})\b/', $value, $match)) {
             return null;
         }
 
@@ -553,7 +1158,7 @@ class PresentationPrognosaWeeklyService
     private function formattedCell(Worksheet $sheet, int $column, int $row): string
     {
         return trim((string) $sheet->getCell(
-            Coordinate::stringFromColumnIndex($column) . $row
+            Coordinate::stringFromColumnIndex($column).$row
         )->getFormattedValue());
     }
 
@@ -572,6 +1177,7 @@ class PresentationPrognosaWeeklyService
                 'available' => false,
                 'stale' => false,
                 'source' => 'Prognosa > Prognosa Weekly',
+                'available_weeks' => [],
                 'error' => $message,
             ],
             'scopes' => [],

@@ -350,7 +350,10 @@ class NativeOpenXmlPowerPointRenderer
 
             $xml .= $this->shape(0.72, 3.32, 10.18, 5.96, 'FFFFFF', 'D4E2F2', 0.04, 800);
             $xml .= $this->text('KONTRIBUSI SEKTOR UTAMA', 1.02, 3.58, 5.5, 0.28, 12, '0866D4', true);
-            $maximum = max(1.0, ...array_map(fn (array $row): float => (float) ($row['industry_os'] ?? 0), $rows));
+            $maximum = max(array_merge(
+                [1.0],
+                array_map(fn (array $row): float => (float) ($row['industry_os'] ?? 0), $rows)
+            ));
             foreach (array_slice($rows, 0, 6) as $index => $row) {
                 $y = 4.08 + ($index * 0.79);
                 $industry = max(0.0, (float) ($row['industry_os'] ?? 0));
