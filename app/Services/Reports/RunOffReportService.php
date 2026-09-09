@@ -21,6 +21,7 @@ class RunOffReportService
         'produk_dashboard',
         'description',
         'npb_pokok_la',
+        'baki_debet1',
         'next_pmt_date',
         'next_pmt_int_date',
     ];
@@ -201,8 +202,15 @@ class RunOffReportService
         string $dueEnd
     ): array
     {
+        // A schedule can remain in the month after the account has been paid off.
+        // Keep one current account snapshot so remaining Run Off only includes
+        // accounts with an outstanding balance at the latest position.
         $latestPaymentDates = DB::table(self::TABLE . ' as latest_source')
-            ->selectRaw('TRIM(latest_source.nomor_rekening1) AS account_key, MIN(latest_source.next_pmt_date) AS next_pmt_date')
+            ->selectRaw(
+                'TRIM(latest_source.nomor_rekening1) AS account_key, '
+                . 'MIN(latest_source.next_pmt_date) AS next_pmt_date, '
+                . 'MAX(COALESCE(latest_source.baki_debet1, 0)) AS baki_debet1'
+            )
             ->where('latest_source.periode', $latestPeriod)
             ->whereNotNull('latest_source.nomor_rekening1')
             ->whereRaw("TRIM(latest_source.nomor_rekening1) <> ''")
@@ -234,8 +242,10 @@ class RunOffReportService
                 'baseline.cabang, baseline.segment, baseline.product_label, '
                 . 'COUNT(*) AS baseline_accounts, '
                 . 'SUM(baseline.npb_pokok_la) AS baseline_amount, '
-                . 'SUM(CASE WHEN latest_payment.next_pmt_date BETWEEN ? AND ? THEN 1 ELSE 0 END) AS remaining_accounts, '
                 . 'SUM(CASE WHEN latest_payment.next_pmt_date BETWEEN ? AND ? '
+                . 'AND latest_payment.baki_debet1 > 0 THEN 1 ELSE 0 END) AS remaining_accounts, '
+                . 'SUM(CASE WHEN latest_payment.next_pmt_date BETWEEN ? AND ? '
+                . 'AND latest_payment.baki_debet1 > 0 '
                 . 'THEN baseline.npb_pokok_la ELSE 0 END) AS remaining_amount',
                 [$dueStart, $dueEnd, $dueStart, $dueEnd]
             )
@@ -520,7 +530,7 @@ class RunOffReportService
 
     private function cacheKey(int $cacheVersion, string $latestPeriod, string $baselinePeriod): string
     {
-        return 'report:run_off:daily_loan:v2:'
+        return 'report:run_off:daily_loan:v3:'
             . $cacheVersion
             . ':' . $latestPeriod . ':' . $baselinePeriod;
     }

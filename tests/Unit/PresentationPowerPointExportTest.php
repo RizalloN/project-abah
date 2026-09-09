@@ -597,10 +597,10 @@ class PresentationPowerPointExportTest extends TestCase
         $this->assertStringContainsString("buildPresentationPdwkSummary(\$requestedPeriod)", $controller);
         $this->assertStringContainsString("invokeKinerjaRmMikroPayload('rekap_mantri', \$period, true)", $controller);
         $this->assertStringContainsString("'refresh_pending' => \$refreshPending", $controller);
-        $this->assertStringContainsString("'label' => 'K Unit'", $controller);
-        $this->assertStringContainsString("'label' => 'MBM'", $controller);
-        $this->assertStringContainsString("'boh',", $controller);
-        $this->assertStringContainsString("'BOH',", $controller);
+        $this->assertStringContainsString("'K Unit'", $controller);
+        $this->assertStringContainsString("'MBM'", $controller);
+        $this->assertStringContainsString("'boh'", $controller);
+        $this->assertStringContainsString("'BOH'", $controller);
     }
 
     public function test_micro_pdwk_and_nominal_timeseries_overlay_are_available_in_both_outputs(): void
@@ -754,9 +754,9 @@ class PresentationPowerPointExportTest extends TestCase
         $this->assertStringContainsString("->where('segmen_kinerja', 'MICRO')", $controller);
         $this->assertStringContainsString("'extreme_low_mantri' => \$this->buildPresentationExtremeLowMantri(\$requestedPeriod)", $controller);
         $this->assertStringContainsString("'rm_kur_tiering' => \$this->buildPresentationRmKurTiering(\$requestedPeriod)", $controller);
-        $this->assertStringContainsString('->buildEmbeddedPayload($category, $period, $mantri, $extremeLowView)', $controller);
+        $this->assertStringContainsString('->buildEmbeddedPayload($category, $period, $mantri, $extremeLowView, $preferBrihcRoster)', $controller);
         $this->assertStringContainsString("'per_cabang'", $controller);
-        $this->assertStringContainsString(':ppt_deck_v20_marketshare_area6', $controller);
+        $this->assertStringContainsString(':ppt_deck_v21_brihc_primary_roster', $controller);
         $this->assertStringContainsString("\$lockSeconds = \$type === 'presentation-payload' ? 300", $controller);
         $this->assertStringContainsString('buildPresentationSummaryPayload', $controller);
         $this->assertStringContainsString("'summary-only'", $controller);

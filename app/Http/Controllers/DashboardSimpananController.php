@@ -24,10 +24,14 @@ use App\Support\SimpananMultiPnSnapshotGate;
 use App\Support\DashboardDanaService;
 use App\Support\CrasMappingService;
 use App\Support\HourlyDpkDashboardService;
+use App\Support\LandingConsumerOperationalService;
 use App\Support\LandingMicroPerformanceService;
+use App\Support\LandingMicroPipelineService;
 use App\Support\LandingLoanAnalyticsService;
+use App\Support\LandingLoanRiskCacheService;
 use App\Support\LandingPrognosaCardService;
 use App\Support\LandingSmeOperationalService;
+use App\Support\LoanQualityBucketMapper;
 use App\Support\MarketShareArea6Report;
 use App\Support\MarketShareSektoralReport;
 use App\Support\ReportCacheVersion;
@@ -52,7 +56,7 @@ class DashboardSimpananController extends Controller
     private const EXTERNAL_REPORT_LINK_TABLE = 'external_report_links';
     private const MARKET_SHARE_LINK_GROUP = 'market_share';
     private const MARKET_SHARE_MAPPING_LINK_KEY = 'mapping';
-    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v24_scoped_area_insights';
+    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v26_period_scoped_portfolio';
     private const CACHE_LOCK_SECONDS = 20;
     private const SNAPSHOT_SUMMARY_TABLE = 'dashboard_simpanan_snapshots';
     private const SNAPSHOT_BRANCH_TABLE = 'dashboard_simpanan_branch_snapshots';
@@ -68,6 +72,12 @@ class DashboardSimpananController extends Controller
 
     private static array $hasTableMemo = [];
     private static array $hasColumnMemo = [];
+
+    public static function clearSchemaMemo(): void
+    {
+        self::$hasTableMemo = [];
+        self::$hasColumnMemo = [];
+    }
 
     private function hasTable(string $table): bool
     {
@@ -105,7 +115,9 @@ class DashboardSimpananController extends Controller
                 . ':'
                 . self::LANDING_SOURCE_CACHE_VERSION
                 . ':v'
-                . $this->reportCacheVersion();
+                . $this->reportCacheVersion()
+                . ':risk-v'
+                . app(LandingLoanRiskCacheService::class)->generation();
 
             Cache::forget($payloadCacheKey);
         }
@@ -134,6 +146,496 @@ class DashboardSimpananController extends Controller
             'landingBranchLocked' => $lockedBranchScope !== null,
             'landingBranchLabel' => $this->dashboardScopeLabel(),
         ]);
+    }
+
+    public function landingSimpanan(Request $request): View
+    {
+        $this->configureLandingBranchScope($request);
+        $periodsService = app(\App\Support\DashboardHarianSnapshotService::class);
+        $availablePeriods = $periodsService->fetchPeriods();
+
+        $selectedPeriod = $request->input('periode');
+        if ($selectedPeriod && !$availablePeriods->contains($selectedPeriod)) {
+            $selectedPeriod = $availablePeriods->first();
+        } else {
+            $selectedPeriod ??= $availablePeriods->first();
+        }
+
+        if ($request->filled('_refresh') || $request->filled('_area6')) {
+            $cacheVersion = $this->reportCacheVersion();
+            $branchKey = $this->landingBranchCacheKey();
+            Cache::forget("landing_simpanan:payload:{$selectedPeriod}:{$branchKey}:v{$cacheVersion}");
+        }
+
+        $dashboard = $this->buildLandingSimpananPayload($selectedPeriod);
+        $dashboard = app(LandingPrognosaCardService::class)->decorateDashboard(
+            $dashboard,
+            $this->landingPrognosaSourceScope()
+        );
+        $lockedBranchScope = UserBranchScope::current();
+        $landingBranchOptions = $lockedBranchScope !== null
+            ? [$lockedBranchScope['key'] => $lockedBranchScope['label']]
+            : UserBranchScope::options();
+
+        return view('dashboard.simpanan', [
+            'dashboard' => $dashboard,
+            'periods' => $availablePeriods,
+            'selectedPeriod' => $selectedPeriod,
+            'landingBranchOptions' => $landingBranchOptions,
+            'selectedLandingBranch' => $this->landingBranchCacheKey(),
+            'landingBranchLocked' => $lockedBranchScope !== null,
+            'landingBranchLabel' => $this->dashboardScopeLabel(),
+        ]);
+    }
+
+    private function buildLandingSimpananPayload(?string $selectedPeriod = null): array
+    {
+        $cacheVersion = $this->reportCacheVersion();
+        $branchKey = $this->landingBranchCacheKey();
+        $periodKey = $selectedPeriod ?: 'latest';
+        $cacheKey = "landing_simpanan:payload:{$periodKey}:{$branchKey}:v{$cacheVersion}";
+
+        return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($selectedPeriod) {
+            return $this->buildLandingSimpananPayloadFresh($selectedPeriod);
+        });
+    }
+
+    private function buildLandingSimpananPayloadFresh(?string $selectedPeriod = null): array
+    {
+        $harianService = app(DashboardHarianSnapshotService::class);
+        $availablePeriods = $harianService->fetchPeriods();
+        $period = $selectedPeriod && $availablePeriods->contains($selectedPeriod)
+            ? $selectedPeriod
+            : $availablePeriods->first();
+
+        if (!$period) {
+            return [
+                'period' => null,
+                'period_label' => 'Belum ada data',
+                'area6_portfolio' => [],
+                'kpi_summary' => [],
+            ];
+        }
+
+        $periodDate = Carbon::parse($period);
+        $periodFormat = $periodDate->locale('id')->translatedFormat('d F Y');
+        $rkaMonthYear = $periodDate->locale('id')->translatedFormat('F y');
+        $scopeLabel = $this->dashboardScopeLabel();
+        $branchNames = $this->dashboardBranchNames();
+
+        $periodPayload = $harianService->buildDashboardPayload($period, null, $branchNames);
+        $rows = collect($periodPayload['rows'] ?? [])->keyBy('key');
+
+        $scopeKeyMap = [
+            'area6' => [
+                'label' => 'Area 6',
+                'caption' => 'Konsolidasi',
+                'description' => 'Seluruh cabang dan seluruh segmen simpanan.',
+                'tabungan' => ['tabungan_ritel', 'tabungan_mikro', 'tabungan_wholesale'],
+                'deposito' => ['deposito_ritel', 'deposito_mikro', 'deposito_wholesale'],
+                'giro' => ['giro_ritel', 'giro_mikro', 'giro_wholesale'],
+                'total' => ['total_simpanan'],
+            ],
+            'ritel' => [
+                'label' => 'Ritel',
+                'caption' => 'Retail Banking',
+                'description' => 'Simpanan ritel (KC dan KCP).',
+                'tabungan' => ['tabungan_ritel'],
+                'deposito' => ['deposito_ritel'],
+                'giro' => ['giro_ritel'],
+                'total' => ['simpanan_ritel'],
+            ],
+            'micro' => [
+                'label' => 'Mikro',
+                'caption' => 'Micro Banking',
+                'description' => 'Simpanan mikro (Unit Mikro).',
+                'tabungan' => ['tabungan_mikro'],
+                'deposito' => ['deposito_mikro'],
+                'giro' => ['giro_mikro'],
+                'total' => ['simpanan_mikro'],
+            ],
+            'wholesale' => [
+                'label' => 'Wholesale',
+                'caption' => 'Wholesale Banking',
+                'description' => 'Simpanan korporasi / wholesale.',
+                'tabungan' => ['tabungan_wholesale'],
+                'deposito' => ['deposito_wholesale'],
+                'giro' => ['giro_wholesale'],
+                'total' => ['simpanan_wholesale'],
+            ],
+        ];
+
+        $scopePayloads = [];
+        foreach ($scopeKeyMap as $sKey => $sDef) {
+            $tabCard = $this->buildSimpananScopeCard('tabungan', 'Tabungan', $sDef['tabungan'], $rows, $periodFormat, $rkaMonthYear, 'blue', 'fas fa-piggy-bank');
+            $depCard = $this->buildSimpananScopeCard('deposito', 'Deposito', $sDef['deposito'], $rows, $periodFormat, $rkaMonthYear, 'teal', 'fas fa-money-check-alt');
+            $giroCard = $this->buildSimpananScopeCard('giro', 'Giro', $sDef['giro'], $rows, $periodFormat, $rkaMonthYear, 'purple', 'fas fa-file-invoice-dollar');
+
+            $scopePayloads[$sKey] = [
+                'scope_key' => $sKey,
+                'label' => $sDef['label'],
+                'caption' => $sDef['caption'],
+                'description' => $sDef['description'],
+                'cards' => [$tabCard, $depCard, $giroCard],
+            ];
+        }
+
+        $weeklyActuals = $this->buildSimpananPortfolioWeeklyActuals($period, array_keys($scopeKeyMap));
+        foreach ($scopePayloads as $sKey => $sVal) {
+            $scopePayloads[$sKey]['prognosa_actuals'] = $weeklyActuals[$sKey] ?? [];
+        }
+
+        $branchesData = $this->buildSimpananBranchesBreakdown($period);
+
+        $totRow = $rows->get('total_simpanan');
+        $totCurrent = (float) data_get($totRow, 'values.current', 0);
+        $totRka = (float) data_get($totRow, 'values.rka', 0);
+        $totPct = $totRka > 0 ? ($totCurrent / $totRka) * 100 : 0;
+        $totGap = $totCurrent - $totRka;
+
+        $tabTotalCurrent = (float) data_get($scopePayloads['area6']['cards'][0], 'realization_raw', 0);
+        $depTotalCurrent = (float) data_get($scopePayloads['area6']['cards'][1], 'realization_raw', 0);
+        $giroTotalCurrent = (float) data_get($scopePayloads['area6']['cards'][2], 'realization_raw', 0);
+        $casaTotalCurrent = $tabTotalCurrent + $giroTotalCurrent;
+        $casaRatio = $totCurrent > 0 ? ($casaTotalCurrent / $totCurrent) * 100 : 0;
+
+        $area6Portfolio = [
+            'title' => 'Kinerja Simpanan ' . $scopeLabel,
+            'subtitle' => 'Ringkasan posisi dan kinerja Simpanan (Tabungan, Deposito, Giro) ' . $scopeLabel . '.',
+            'period' => $period,
+            'period_label' => $this->formatSourcePeriodLabel($period),
+            'default_scope' => 'area6',
+            'cards' => $scopePayloads['area6']['cards'],
+            'scopes' => $scopePayloads,
+            'ranking_modes' => [
+                'area6' => [
+                    'label' => 'Area 6',
+                    'caption' => 'Konsolidasi',
+                    'description' => 'Seluruh cabang dan seluruh segmen simpanan.',
+                    'branches' => $branchesData,
+                ],
+                'ritel' => [
+                    'label' => 'Ritel',
+                    'caption' => 'Retail Banking',
+                    'description' => 'Simpanan ritel (KC dan KCP).',
+                    'branches' => $branchesData,
+                ],
+                'micro' => [
+                    'label' => 'Mikro',
+                    'caption' => 'Micro Banking',
+                    'description' => 'Simpanan mikro.',
+                    'branches' => $branchesData,
+                ],
+                'wholesale' => [
+                    'label' => 'Wholesale',
+                    'caption' => 'Wholesale Banking',
+                    'description' => 'Simpanan wholesale.',
+                    'branches' => $branchesData,
+                ],
+            ],
+            'branches' => $branchesData,
+        ];
+
+        return [
+            'period' => $period,
+            'period_label' => $this->formatSourcePeriodLabel($period),
+            'area6_portfolio' => $area6Portfolio,
+            'kpi_summary' => [
+                'total_simpanan' => [
+                    'value' => number_format(round($totCurrent / 1_000_000), 0, ',', '.'),
+                    'value_full' => $this->formatCurrencyFull($totCurrent),
+                    'target' => number_format(round($totRka / 1_000_000), 0, ',', '.'),
+                    'pct' => number_format($totPct, 2, ',', '.') . '%',
+                    'gap' => $this->formatArea6CardGap($totGap),
+                    'trend_mtm' => $this->formatArea6CardDelta((float) data_get($totRow, 'deltas.mtm', 0), 'os')['value'] ?? '-',
+                    'trend_ytd' => $this->formatArea6CardDelta((float) data_get($totRow, 'deltas.ytd', 0), 'os')['value'] ?? '-',
+                    'trend_mtm_delta' => $this->formatArea6CardDelta((float) data_get($totRow, 'deltas.mtm', 0), 'os'),
+                    'trend_ytd_delta' => $this->formatArea6CardDelta((float) data_get($totRow, 'deltas.ytd', 0), 'os'),
+                ],
+                'casa' => [
+                    'value' => number_format(round($casaTotalCurrent / 1_000_000), 0, ',', '.'),
+                    'value_full' => $this->formatCurrencyFull($casaTotalCurrent),
+                    'ratio' => number_format($casaRatio, 2, ',', '.') . '%',
+                    'tabungan_share' => $totCurrent > 0 ? number_format(($tabTotalCurrent / $totCurrent) * 100, 2, ',', '.') . '%' : '0%',
+                    'giro_share' => $totCurrent > 0 ? number_format(($giroTotalCurrent / $totCurrent) * 100, 2, ',', '.') . '%' : '0%',
+                ],
+            ],
+        ];
+    }
+
+    private function buildSimpananScopeCard(
+        string $productKey,
+        string $productLabel,
+        array $rowKeys,
+        Collection $rows,
+        string $periodFormat,
+        string $rkaMonthYear,
+        string $tone,
+        string $icon
+    ): array {
+        $current = 0.0;
+        $rka = 0.0;
+        $dtd = 0.0;
+        $mtd = 0.0;
+        $mtm = 0.0;
+        $ytd = 0.0;
+
+        foreach ($rowKeys as $key) {
+            $row = $rows->get($key);
+            if ($row) {
+                $current += (float) data_get($row, 'values.current', 0.0);
+                $rka += (float) data_get($row, 'values.rka', 0.0);
+                $dtd += (float) data_get($row, 'deltas.dtd', 0.0);
+                $mtd += (float) data_get($row, 'deltas.mtd', 0.0);
+                $mtm += (float) data_get($row, 'deltas.mtm', 0.0);
+                $ytd += (float) data_get($row, 'deltas.ytd', 0.0);
+            }
+        }
+
+        $pct = $rka > 0 ? ($current / $rka) * 100 : 0.0;
+        $gap = $current - $rka;
+
+        return [
+            'key' => $productKey,
+            'realization_raw' => $current,
+            'header_title' => strtoupper($productLabel),
+            'realization_value' => number_format(round($current / 1_000_000), 0, ',', '.'),
+            'realization_label' => $productLabel . ' per ' . $periodFormat,
+            'target_value' => number_format(round($rka / 1_000_000), 0, ',', '.'),
+            'target_label' => 'RKA ' . $rkaMonthYear,
+            'pct_value' => $this->formatArea6AchievementPercent($pct, $gap >= 0),
+            'pct_label' => '% Penc. RKA ' . $rkaMonthYear,
+            'pct_color' => $this->getArea6AchievementColor($pct, 'os'),
+            'gap_value' => $this->formatArea6CardGap($gap),
+            'gap_label' => 'Gap thd RKA ' . $rkaMonthYear,
+            'gap_color' => $gap >= 0 ? 'green' : 'red',
+            'deltas' => [
+                'dtd' => $this->formatArea6CardDelta($dtd, 'os'),
+                'mtd' => $this->formatArea6CardDelta($mtd, 'os'),
+                'ytd' => $this->formatArea6CardDelta($ytd, 'os'),
+                'mom' => $this->formatArea6CardDelta($mtm, 'os'),
+            ],
+            'tone' => $tone,
+            'icon' => $icon,
+            'detail_payload' => $this->buildLandingSourceDetail($productLabel . ' Area 6', $periodFormat, self::HARIAN_SNAPSHOT_TABLE, [
+                ['label' => 'Total ' . $productLabel, 'value' => $this->formatCurrencyFull($current), 'source' => self::HARIAN_SNAPSHOT_TABLE],
+                ['label' => 'Target RKA', 'value' => $this->formatCurrencyFull($rka), 'source' => 'rka'],
+            ], 'Sumber mengikuti snapshot Dashboard Harian terbaru.'),
+        ];
+    }
+
+    private function buildSimpananPortfolioWeeklyActuals(?string $period, array $scopeKeys): array
+    {
+        if (!$period || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return [];
+        }
+
+        $positionDate = Carbon::parse($period)->startOfDay();
+        $monthStart = $positionDate->copy()->startOfMonth();
+        $calendarService = app(LandingSmeOperationalService::class);
+        $cutoffs = $calendarService->forecastWeekCutoffs($positionDate);
+        $activeWeek = collect($cutoffs)
+            ->search(fn (Carbon $cutoff): bool => $positionDate->lessThanOrEqualTo($cutoff));
+        $activeWeek = $activeWeek === false ? (int) array_key_last($cutoffs) : (int) $activeWeek;
+        $rawWeeks = [];
+
+        foreach ($cutoffs as $week => $cutoff) {
+            $isElapsed = $positionDate->greaterThanOrEqualTo($cutoff);
+            $isActive = ! $isElapsed && $week === $activeWeek;
+            $targetDate = $isElapsed ? $cutoff->copy() : ($isActive ? $positionDate->copy() : null);
+            $actualPeriod = $targetDate
+                ? $this->resolveHarianSnapshotPeriodOnOrBefore($targetDate->toDateString())
+                : null;
+            $actualDate = $actualPeriod ? Carbon::parse($actualPeriod)->startOfDay() : null;
+            $sameMonth = $actualDate instanceof Carbon && $actualDate->isSameMonth($monthStart);
+
+            $rawWeeks['W'.$week] = [
+                'actual_period' => $sameMonth ? $actualDate->toDateString() : null,
+                'position_label' => $sameMonth ? $actualDate->locale('id')->translatedFormat('d M y') : 'Belum ada posisi',
+                'cutoff_label' => $cutoff->locale('id')->translatedFormat('d M y'),
+                'state_label' => $isElapsed ? 'Tutup' : ($isActive ? 'Berjalan' : 'Belum dimulai'),
+                'is_elapsed' => $isElapsed,
+                'metrics' => $sameMonth
+                    ? $this->simpananScopeSnapshotMetrics($actualDate->toDateString(), 'area6')
+                    : null,
+            ];
+        }
+
+        $latestActualPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($positionDate->toDateString());
+        $latestActualDate = $latestActualPeriod ? Carbon::parse($latestActualPeriod)->startOfDay() : null;
+        $latestActualIsSameMonth = $latestActualDate instanceof Carbon && $latestActualDate->isSameMonth($monthStart);
+        $latestActual = [
+            'actual_period' => $latestActualIsSameMonth ? $latestActualDate->toDateString() : null,
+            'position_label' => $latestActualIsSameMonth ? $latestActualDate->locale('id')->translatedFormat('d M y') : 'Belum ada posisi',
+            'cutoff_label' => 'Posisi berjalan',
+            'state_label' => 'Posisi berjalan',
+            'is_elapsed' => true,
+            'metrics' => $latestActualIsSameMonth
+                ? $this->simpananScopeSnapshotMetrics($latestActualDate->toDateString(), 'area6')
+                : null,
+        ];
+
+        $scopedWeeks = [];
+        foreach ($scopeKeys as $scopeKey) {
+            foreach ($rawWeeks as $weekLabel => $week) {
+                $metrics = $week['metrics'];
+                $scopedWeeks[$scopeKey][$weekLabel] = [
+                    'actual_period' => $week['actual_period'],
+                    'position_label' => $week['position_label'],
+                    'cutoff_label' => $week['cutoff_label'],
+                    'state_label' => $week['state_label'],
+                    'is_elapsed' => $week['is_elapsed'],
+                    'metrics' => [
+                        'tabungan' => $metrics['tabungan'] ?? null,
+                        'deposito' => $metrics['deposito'] ?? null,
+                        'giro' => $metrics['giro'] ?? null,
+                        'simpanan' => $metrics['simpanan'] ?? null,
+                    ],
+                ];
+            }
+
+            $metrics = $latestActual['metrics'];
+            $scopedWeeks[$scopeKey]['latest'] = [
+                'actual_period' => $latestActual['actual_period'],
+                'position_label' => $latestActual['position_label'],
+                'cutoff_label' => $latestActual['cutoff_label'],
+                'state_label' => $latestActual['state_label'],
+                'is_elapsed' => $latestActual['is_elapsed'],
+                'metrics' => [
+                    'tabungan' => $metrics['tabungan'] ?? null,
+                    'deposito' => $metrics['deposito'] ?? null,
+                    'giro' => $metrics['giro'] ?? null,
+                    'simpanan' => $metrics['simpanan'] ?? null,
+                ],
+            ];
+        }
+
+        return $scopedWeeks;
+    }
+
+    private function simpananScopeSnapshotMetrics(string $period, string $scopeKey = 'area6'): array
+    {
+        if ($period === '' || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return ['tabungan' => 0.0, 'deposito' => 0.0, 'giro' => 0.0, 'simpanan' => 0.0];
+        }
+
+        $query = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->where('snapshot_period', $period)
+            ->whereIn(DB::raw('UPPER(TRIM(kanca_label))'), $this->dashboardBranchNames());
+
+        $this->applyArea6PortfolioScope($query, $scopeKey);
+
+        $row = $query
+            ->selectRaw('COALESCE(SUM(COALESCE(total_simpanan, 0)), 0) as total_simpanan')
+            ->selectRaw('COALESCE(SUM(COALESCE(tabungan_ritel, 0)), 0) as tabungan_ritel')
+            ->selectRaw('COALESCE(SUM(COALESCE(tabungan_mikro, 0)), 0) as tabungan_mikro')
+            ->selectRaw('COALESCE(SUM(COALESCE(tabungan_wholesale, 0)), 0) as tabungan_wholesale')
+            ->selectRaw('COALESCE(SUM(COALESCE(deposito_ritel, 0)), 0) as deposito_ritel')
+            ->selectRaw('COALESCE(SUM(COALESCE(deposito_mikro, 0)), 0) as deposito_mikro')
+            ->selectRaw('COALESCE(SUM(COALESCE(deposito_wholesale, 0)), 0) as deposito_wholesale')
+            ->selectRaw('COALESCE(SUM(COALESCE(giro_ritel, 0)), 0) as giro_ritel')
+            ->selectRaw('COALESCE(SUM(COALESCE(giro_mikro, 0)), 0) as giro_mikro')
+            ->selectRaw('COALESCE(SUM(COALESCE(giro_wholesale, 0)), 0) as giro_wholesale')
+            ->first();
+
+        if (!$row) {
+            return ['tabungan' => 0.0, 'deposito' => 0.0, 'giro' => 0.0, 'simpanan' => 0.0];
+        }
+
+        if ($scopeKey === 'ritel') {
+            return [
+                'tabungan' => (float) $row->tabungan_ritel,
+                'deposito' => (float) $row->deposito_ritel,
+                'giro' => (float) $row->giro_ritel,
+                'simpanan' => (float) ($row->tabungan_ritel + $row->deposito_ritel + $row->giro_ritel),
+            ];
+        }
+
+        if ($scopeKey === 'micro') {
+            return [
+                'tabungan' => (float) $row->tabungan_mikro,
+                'deposito' => (float) $row->deposito_mikro,
+                'giro' => (float) $row->giro_mikro,
+                'simpanan' => (float) ($row->tabungan_mikro + $row->deposito_mikro + $row->giro_mikro),
+            ];
+        }
+
+        if ($scopeKey === 'wholesale') {
+            return [
+                'tabungan' => (float) $row->tabungan_wholesale,
+                'deposito' => (float) $row->deposito_wholesale,
+                'giro' => (float) $row->giro_wholesale,
+                'simpanan' => (float) ($row->tabungan_wholesale + $row->deposito_wholesale + $row->giro_wholesale),
+            ];
+        }
+
+        return [
+            'tabungan' => (float) ($row->tabungan_ritel + $row->tabungan_mikro + $row->tabungan_wholesale),
+            'deposito' => (float) ($row->deposito_ritel + $row->deposito_mikro + $row->deposito_wholesale),
+            'giro' => (float) ($row->giro_ritel + $row->giro_mikro + $row->giro_wholesale),
+            'simpanan' => (float) $row->total_simpanan,
+        ];
+    }
+
+    private function buildSimpananBranchesBreakdown(string $period): array
+    {
+        if (!$period || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return [];
+        }
+
+        $branchLabelCol = Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_label') ? 'kanca_label' : 'branch_label';
+
+        $rows = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+            ->where('snapshot_period', $period)
+            ->whereIn(DB::raw("UPPER(TRIM({$branchLabelCol}))"), $this->dashboardBranchNames())
+            ->where(function ($q) {
+                $q->where('unit_key', '')
+                    ->orWhereNull('unit_key')
+                    ->orWhere('unit_label', 'like', '%Konsol%')
+                    ->orWhere('unit_label', '');
+            })
+            ->selectRaw("UPPER(TRIM({$branchLabelCol})) as branch_key")
+            ->selectRaw("COALESCE(SUM(total_simpanan), 0) as total_simpanan")
+            ->selectRaw("COALESCE(SUM(tabungan_ritel + tabungan_mikro + tabungan_wholesale), 0) as total_tabungan")
+            ->selectRaw("COALESCE(SUM(deposito_ritel + deposito_mikro + deposito_wholesale), 0) as total_deposito")
+            ->selectRaw("COALESCE(SUM(giro_ritel + giro_mikro + giro_wholesale), 0) as total_giro")
+            ->groupBy('branch_key')
+            ->get()
+            ->keyBy('branch_key');
+
+        $result = [];
+        $totalAll = 0.0;
+        foreach ($this->dashboardBranchDisplayNames() as $displayName) {
+            $key = strtoupper(trim($displayName));
+            $r = $rows->get($key);
+            $simpanan = $r ? (float) $r->total_simpanan : 0.0;
+            $tabungan = $r ? (float) $r->total_tabungan : 0.0;
+            $deposito = $r ? (float) $r->total_deposito : 0.0;
+            $giro = $r ? (float) $r->total_giro : 0.0;
+            $totalAll += $simpanan;
+
+            $result[$displayName] = [
+                'name' => $displayName,
+                'simpanan' => $simpanan,
+                'simpanan_fmt' => $this->formatCurrencyCompact($simpanan),
+                'tabungan' => $tabungan,
+                'tabungan_fmt' => $this->formatCurrencyCompact($tabungan),
+                'deposito' => $deposito,
+                'deposito_fmt' => $this->formatCurrencyCompact($deposito),
+                'giro' => $giro,
+                'giro_fmt' => $this->formatCurrencyCompact($giro),
+                'casa' => $tabungan + $giro,
+                'casa_fmt' => $this->formatCurrencyCompact($tabungan + $giro),
+                'casa_ratio_fmt' => $simpanan > 0 ? number_format((($tabungan + $giro) / $simpanan) * 100, 2, ',', '.') . '%' : '0%',
+            ];
+        }
+
+        foreach ($result as $displayName => $data) {
+            $result[$displayName]['share_pct'] = $totalAll > 0 ? ($data['simpanan'] / $totalAll) * 100 : 0.0;
+            $result[$displayName]['share_pct_fmt'] = number_format($result[$displayName]['share_pct'], 2, ',', '.') . '%';
+        }
+
+        return array_values($result);
     }
 
     public function smeOperations(Request $request): View
@@ -171,16 +673,54 @@ class DashboardSimpananController extends Controller
         return response()->json($payload);
     }
 
-    public function microPerformance(Request $request): View
+    public function consumerOperations(Request $request): View
     {
         $this->configureLandingBranchScope($request);
-        $microPerformance = app(LandingMicroPerformanceService::class)->payload(
+        $consumerOperations = app(LandingConsumerOperationalService::class)->payload(
             $request->query('periode'),
             $this->effectiveDashboardBranchScope(),
             $request->boolean('refresh')
         );
 
+        return view('dashboard.partials.consumer-operations', compact('consumerOperations'));
+    }
+
+    public function microPerformance(Request $request): View
+    {
+        $this->configureLandingBranchScope($request);
+        $branchScope = $this->effectiveDashboardBranchScope();
+        $microPerformance = app(LandingMicroPerformanceService::class)->payload(
+            $request->query('periode'),
+            $branchScope,
+            $request->boolean('refresh')
+        );
+        $microPerformance['rm_kur_productivity'] = $this->buildLandingRmKurProductivity(
+            data_get($microPerformance, 'meta.period'),
+            $branchScope
+        );
+        $microPerformance['pipeline'] = app(LandingMicroPipelineService::class)->payload(
+            $branchScope
+        );
+
         return view('dashboard.partials.micro-performance', compact('microPerformance'));
+    }
+
+    public function microPipeline(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $this->configureLandingBranchScope($request);
+
+        return response()->json(app(LandingMicroPipelineService::class)->records(
+            $this->effectiveDashboardBranchScope(),
+            $request->validate([
+                'dataset' => ['nullable', 'in:prewash,slik_hijau'],
+                'status' => ['nullable', 'string', 'max:24'],
+                'source' => ['nullable', 'string', 'max:180'],
+                'product' => ['nullable', 'string', 'max:100'],
+                'search' => ['nullable', 'string', 'max:100'],
+                'page' => ['nullable', 'integer', 'min:1'],
+                'per_page' => ['nullable', 'integer', 'min:10', 'max:50'],
+            ])
+        ));
     }
 
     public function microOneTimeNominatives(Request $request): \Illuminate\Http\JsonResponse
@@ -3978,7 +4518,7 @@ class DashboardSimpananController extends Controller
         return 'dashboard_simpanan:presentation_micro_payload:'
             . ($period ?? 'null') . ':'
             . self::LANDING_SOURCE_CACHE_VERSION . ':v'
-            . $this->reportCacheVersion() . ':ppt_deck_v17_monthly_overlay_timeseries';
+            . $this->reportCacheVersion() . ':ppt_deck_v18_brihc_primary_roster';
     }
 
     public function area6Data(Request $request)
@@ -4207,7 +4747,7 @@ class DashboardSimpananController extends Controller
         return 'dashboard_simpanan:presentation_payload:'
             . ($period ?? 'null') . ':'
             . self::LANDING_SOURCE_CACHE_VERSION . ':v'
-            . $this->reportCacheVersion() . ':ppt_deck_v20_marketshare_area6';
+            . $this->reportCacheVersion() . ':ppt_deck_v21_brihc_primary_roster';
     }
 
     private function presentationStablePayloadCacheKey(?string $period): string
@@ -4215,7 +4755,7 @@ class DashboardSimpananController extends Controller
         return 'dashboard_simpanan:presentation_payload:stable:'
             . ($period ?? 'null') . ':'
             . self::LANDING_SOURCE_CACHE_VERSION . ':v'
-            . $this->reportCacheVersion() . ':ppt_deck_v20_marketshare_area6';
+            . $this->reportCacheVersion() . ':ppt_deck_v21_brihc_primary_roster';
     }
 
     private function presentationSummaryPayloadCacheKey(?string $period): string
@@ -4223,7 +4763,7 @@ class DashboardSimpananController extends Controller
         return 'dashboard_simpanan:presentation_summary_payload:'
             . ($period ?? 'null') . ':'
             . self::LANDING_SOURCE_CACHE_VERSION . ':v'
-            . $this->reportCacheVersion() . ':ppt_deck_v20_marketshare_area6';
+            . $this->reportCacheVersion() . ':ppt_deck_v21_brihc_primary_roster';
     }
 
     private function deferPresentationPayloadRefresh(?string $period): void
@@ -5982,7 +6522,7 @@ class DashboardSimpananController extends Controller
 
     private function buildPresentationRmKurMicro(?string $period): array
     {
-        $payload = $this->invokeKinerjaRmMikroPayload('per_rm', $period, false);
+        $payload = $this->invokeKinerjaRmMikroPayload('per_rm', $period, false, null, true);
         $dataPeriod = data_get($payload, 'meta.data_period', $period);
         $rows = collect($payload['rows'] ?? [])
             ->sortByDesc(fn (array $row) => (float) ($row['realisasi_os'] ?? 0))
@@ -6016,6 +6556,65 @@ class DashboardSimpananController extends Controller
                 'realisasi_deb' => (int) data_get($payload, 'total.realisasi_deb', 0),
                 'realisasi_os' => (float) data_get($payload, 'total.realisasi_os', 0.0),
                 'realisasi_os_fmt' => $this->formatCurrencyCompact((float) data_get($payload, 'total.realisasi_os', 0.0)),
+            ],
+        ];
+    }
+
+    /** @param  array<string, mixed>|null  $branchScope */
+    private function buildLandingRmKurProductivity(?string $period, ?array $branchScope): array
+    {
+        $payload = $this->invokeKinerjaRmMikroPayload('per_rm', $period, false, null, true);
+        $scopeBranch = strtoupper(trim((string) ($branchScope['upper_label'] ?? '')));
+        $rows = collect($payload['rows'] ?? []);
+
+        if ($scopeBranch !== '') {
+            $rows = $rows->filter(
+                static fn (array $row): bool => strtoupper(trim((string) ($row['cabang'] ?? ''))) === $scopeBranch
+            );
+        }
+
+        $rows = $rows
+            ->sortByDesc(fn (array $row): float => (float) ($row['realisasi_os'] ?? 0))
+            ->map(static function (array $row): array {
+                $realisasiDeb = (int) ($row['realisasi_deb'] ?? 0);
+                $realisasiOs = (float) ($row['realisasi_os'] ?? 0);
+
+                return [
+                    'pn' => (string) ($row['pn'] ?? '-'),
+                    'nama' => (string) ($row['nama'] ?? $row['rm'] ?? '-'),
+                    'branch_code' => (string) ($row['branch_code'] ?? '-'),
+                    'cabang' => (string) ($row['cabang'] ?? '-'),
+                    'unit' => (string) ($row['unit'] ?? '-'),
+                    'realisasi_deb' => $realisasiDeb,
+                    'realisasi_os' => $realisasiOs,
+                    'average_per_debtor' => $realisasiDeb > 0 ? $realisasiOs / $realisasiDeb : 0.0,
+                ];
+            })
+            ->values();
+
+        $rmCount = $rows->count();
+        $realisasiDeb = (int) $rows->sum('realisasi_deb');
+        $realisasiOs = (float) $rows->sum('realisasi_os');
+        $dataPeriod = data_get($payload, 'meta.data_period', $period);
+
+        return [
+            'available' => $rows->isNotEmpty(),
+            'source' => 'Daily Loan Dinamis - Kredit Mikro KUR Ritel 2015; roster utama BRIHC',
+            'period' => $dataPeriod,
+            'data_period' => $dataPeriod,
+            'period_label' => $dataPeriod
+                ? Carbon::parse((string) $dataPeriod)->translatedFormat('d M Y')
+                : '-',
+            'requested_period' => data_get($payload, 'meta.requested_period', $period),
+            'refresh_pending' => (bool) data_get($payload, 'meta.refresh_pending', false),
+            'scope_label' => (string) ($branchScope['label'] ?? 'Area 6'),
+            'rows' => $rows->all(),
+            'total' => [
+                'rm_count' => $rmCount,
+                'realisasi_deb' => $realisasiDeb,
+                'realisasi_os' => $realisasiOs,
+                'average_per_rm' => $rmCount > 0 ? $realisasiOs / $rmCount : 0.0,
+                'average_per_debtor' => $realisasiDeb > 0 ? $realisasiOs / $realisasiDeb : 0.0,
             ],
         ];
     }
@@ -6134,21 +6733,34 @@ class DashboardSimpananController extends Controller
         }
 
         $cacheKey = $this->landingDecisionSummaryCacheKey($requestedPeriod);
+        $durableKey = 'dashboard_simpanan:landing_decision:durable:' . $requestedPeriod . ':' . $this->landingBranchCacheKey();
 
         if ($forceFresh) {
             Cache::forget($cacheKey);
+            Cache::forget($durableKey);
         }
 
         $decision = Cache::get($cacheKey);
         if (!is_array($decision)) {
-            $decision = $this->buildLandingDecisionSummary($requestedPeriod);
-            Cache::put(
-                $cacheKey,
-                $decision,
-                !empty($decision['refresh_pending'])
-                    ? now()->addSeconds(30)
-                    : now()->addMinutes(5)
-            );
+            $durableFallback = Cache::get($durableKey);
+            if (is_array($durableFallback)) {
+                $decision = $durableFallback;
+                $landingBranchKey = $this->landingBranchCacheKey();
+                WarmDashboardSimpananCacheJob::dispatch('micro-readiness', [
+                    'period' => $requestedPeriod,
+                    'landingBranchKey' => $landingBranchKey,
+                ]);
+            } else {
+                $decision = $this->buildLandingDecisionSummary($requestedPeriod);
+                Cache::put(
+                    $cacheKey,
+                    $decision,
+                    !empty($decision['refresh_pending'])
+                        ? now()->addSeconds(30)
+                        : now()->addMinutes(5)
+                );
+                Cache::put($durableKey, $decision, now()->addDays(7));
+            }
         }
 
         if (!isset($dashboard['landing_summary']) || !is_array($dashboard['landing_summary'])) {
@@ -6669,7 +7281,8 @@ class DashboardSimpananController extends Controller
         string $category,
         ?string $period,
         bool $mantri,
-        ?string $extremeLowView = null
+        ?string $extremeLowView = null,
+        bool $preferBrihcRoster = false
     ): array
     {
         if (!$period) {
@@ -6678,7 +7291,7 @@ class DashboardSimpananController extends Controller
 
         try {
             return app(\App\Http\Controllers\Report\KinerjaRmMikroReportController::class)
-                ->buildEmbeddedPayload($category, $period, $mantri, $extremeLowView);
+                ->buildEmbeddedPayload($category, $period, $mantri, $extremeLowView, $preferBrihcRoster);
         } catch (Throwable $e) {
             Log::warning('Payload presentasi Kinerja RM Mikro gagal dibaca.', [
                 'category' => $category,
@@ -7104,54 +7717,77 @@ class DashboardSimpananController extends Controller
     private function buildDashboardPayload(?string $selectedPeriod = null): array
     {
         $cacheVersion = $this->reportCacheVersion();
+        $riskVersion = app(LandingLoanRiskCacheService::class)->generation();
+        $periodPrefix = $selectedPeriod ? ($selectedPeriod . ':') : '';
+        $branchKey = $this->landingBranchCacheKey();
         
-        if ($selectedPeriod) {
-            $payloadCacheKey = 'dashboard_simpanan:payload:' . $selectedPeriod . ':' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion;
-            
-            return Cache::remember($payloadCacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($selectedPeriod) {
-                return $this->buildDashboardPayloadFresh($selectedPeriod);
-            });
-        }
+        $payloadCacheKey = 'dashboard_simpanan:payload:' . $periodPrefix . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion . ':risk-v' . $riskVersion;
+        $latestCacheKey = 'dashboard_simpanan:payload:' . $periodPrefix . self::LANDING_SOURCE_CACHE_VERSION . ':latest:v' . $cacheVersion . ':risk-v' . $riskVersion;
+        $stableLatestCacheKey = 'dashboard_simpanan:payload:' . $periodPrefix . self::LANDING_SOURCE_CACHE_VERSION . ':latest:stable:v' . $cacheVersion . ':risk-v' . $riskVersion;
+        $durableFallbackKey = 'dashboard_simpanan:payload:' . $periodPrefix . self::LANDING_SOURCE_CACHE_VERSION . ':durable:' . $branchKey;
 
-        $payloadCacheKey = 'dashboard_simpanan:payload:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion;
-        $latestCacheKey = 'dashboard_simpanan:payload:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:v' . $cacheVersion;
-        $stableLatestCacheKey = 'dashboard_simpanan:payload:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:stable:v' . $cacheVersion;
+        // 1. Primary fresh cache (TTL 30 minutes)
         $cachedPayload = Cache::get($payloadCacheKey);
-
         if (is_array($cachedPayload)) {
             return $cachedPayload;
         }
 
+        // 2. Latest cache (TTL 60 minutes) -> Serve immediately and revalidate asynchronously
         $latestPayload = Cache::get($latestCacheKey);
-
         if (is_array($latestPayload)) {
             Cache::put($payloadCacheKey, $latestPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
-            $this->deferDashboardPayloadRefresh($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey);
+            $this->deferDashboardPayloadRefresh($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey, $selectedPeriod, $durableFallbackKey);
 
             return $latestPayload;
         }
 
+        // 3. Stable cache for current version (TTL 24 hours) -> Serve immediately and revalidate asynchronously
         $stableLatestPayload = Cache::get($stableLatestCacheKey);
-
         if (is_array($stableLatestPayload)) {
             Cache::put($payloadCacheKey, $stableLatestPayload, now()->addSeconds(30));
-            $this->deferDashboardPayloadRefresh($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey);
+            $this->deferDashboardPayloadRefresh($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey, $selectedPeriod, $durableFallbackKey);
 
             return $stableLatestPayload;
         }
 
+        // 4. Cross-version durable fallback -> Serves last stable data (<50ms) across version bumps
+        $durableFallback = Cache::get($durableFallbackKey);
+        if (is_array($durableFallback)) {
+            Cache::put($payloadCacheKey, $durableFallback, now()->addSeconds(30));
+            $this->deferDashboardPayloadRefresh($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey, $selectedPeriod, $durableFallbackKey);
+
+            return $durableFallback;
+        }
+
+        // 5. Absolute cold start: Acquire atomic lock with wait timeout to prevent cache stampede
         $lock = Cache::lock($payloadCacheKey . ':lock', self::CACHE_LOCK_SECONDS);
         $locked = false;
 
         try {
-            $locked = $lock->get();
+            try {
+                $locked = $lock->block(3);
+            } catch (Throwable) {
+                $locked = $lock->get();
+            }
 
             if ($locked) {
-                return $this->cacheFreshDashboardPayload($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey);
+                $populated = Cache::get($payloadCacheKey);
+                if (is_array($populated)) {
+                    return $populated;
+                }
+
+                return $this->cacheFreshDashboardPayload(
+                    $payloadCacheKey,
+                    $latestCacheKey,
+                    $stableLatestCacheKey,
+                    $selectedPeriod,
+                    $durableFallbackKey
+                );
             }
         } catch (Throwable $e) {
-            Log::warning('Dashboard simpanan payload gagal dimuat langsung.', [
+            Log::warning('Dashboard simpanan payload lock failed, computing fresh.', [
                 'error' => $e->getMessage(),
+                'period' => $selectedPeriod,
             ]);
         } finally {
             if ($locked) {
@@ -7159,27 +7795,67 @@ class DashboardSimpananController extends Controller
             }
         }
 
+        // 6. Fallback if lock was held by another concurrent request
+        $retryPayload = Cache::get($payloadCacheKey)
+            ?: Cache::get($latestCacheKey)
+            ?: Cache::get($stableLatestCacheKey)
+            ?: Cache::get($durableFallbackKey);
+
+        if (is_array($retryPayload)) {
+            return $retryPayload;
+        }
+
+        // Last resort: generate fresh if absolutely no cache exists anywhere
+        try {
+            return $this->cacheFreshDashboardPayload(
+                $payloadCacheKey,
+                $latestCacheKey,
+                $stableLatestCacheKey,
+                $selectedPeriod,
+                $durableFallbackKey
+            );
+        } catch (Throwable $e) {
+            Log::warning('Dashboard simpanan payload gagal dimuat langsung.', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         return $this->emptyDashboard(false);
     }
 
-    private function cacheFreshDashboardPayload(string $payloadCacheKey, string $latestCacheKey, string $stableLatestCacheKey): array
-    {
-        $freshPayload = $this->buildDashboardPayloadFresh();
+    private function cacheFreshDashboardPayload(
+        string $payloadCacheKey,
+        string $latestCacheKey,
+        string $stableLatestCacheKey,
+        ?string $selectedPeriod = null,
+        ?string $durableFallbackKey = null
+    ): array {
+        $freshPayload = $this->buildDashboardPayloadFresh($selectedPeriod);
         Cache::put($payloadCacheKey, $freshPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
         Cache::put($latestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
-        Cache::put($stableLatestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
+        Cache::put($stableLatestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES * 24));
+        if ($durableFallbackKey) {
+            Cache::put($durableFallbackKey, $freshPayload, now()->addDays(7));
+        }
 
         return $freshPayload;
     }
 
-    private function deferDashboardPayloadRefresh(string $payloadCacheKey, string $latestCacheKey, string $stableLatestCacheKey): void
-    {
+    private function deferDashboardPayloadRefresh(
+        string $payloadCacheKey,
+        string $latestCacheKey,
+        string $stableLatestCacheKey,
+        ?string $selectedPeriod = null,
+        ?string $durableFallbackKey = null
+    ): void {
         $landingBranchKey = $this->landingBranchCacheKey();
         WarmDashboardSimpananCacheJob::dispatch('dashboard-payload', compact(
             'payloadCacheKey',
             'latestCacheKey',
             'stableLatestCacheKey',
-            'landingBranchKey'
+            'landingBranchKey',
+            'selectedPeriod',
+            'durableFallbackKey'
         ));
     }
 
@@ -7676,9 +8352,10 @@ class DashboardSimpananController extends Controller
     {
         $dailyLoanPeriod = $this->resolveArea6DailyLoanPeriod($loanPeriod);
         $cacheVersion = $this->reportCacheVersion();
-        $cacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':v5_prevmonth:weekly_actuals_v2';
-        $latestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':v5_prevmonth:weekly_actuals_v2';
-        $stableLatestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:stable:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':v5_prevmonth:weekly_actuals_v2';
+        $riskVersion = app(LandingLoanRiskCacheService::class)->generation();
+        $cacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':v6_micro_quality:weekly_actuals_v4:sml_npl_delta_color_v1:risk-v' . $riskVersion;
+        $latestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':v6_micro_quality:weekly_actuals_v4:sml_npl_delta_color_v1:risk-v' . $riskVersion;
+        $stableLatestCacheKey = 'dashboard_simpanan:area6_portfolio:' . self::LANDING_SOURCE_CACHE_VERSION . ':latest:stable:v' . $cacheVersion . ':' . ($loanPeriod ?? 'none') . ':daily:' . ($dailyLoanPeriod ?? 'none') . ':v6_micro_quality:weekly_actuals_v4:sml_npl_delta_color_v1:risk-v' . $riskVersion;
 
         if ($forceFresh) {
             $freshPayload = $this->buildArea6PortfolioLandingFresh($loanPeriod, $dailyLoanPeriod);
@@ -7811,6 +8488,9 @@ class DashboardSimpananController extends Controller
                         : now()->addMinutes(5)
                 );
 
+                $durableDecisionKey = 'dashboard_simpanan:landing_decision:durable:' . $period . ':' . $this->landingBranchCacheKey();
+                Cache::put($durableDecisionKey, $decision, now()->addDays(7));
+
                 return;
             }
 
@@ -7818,7 +8498,9 @@ class DashboardSimpananController extends Controller
                 $this->cacheFreshDashboardPayload(
                     $cacheKey,
                     (string) ($context['latestCacheKey'] ?? ''),
-                    (string) ($context['stableLatestCacheKey'] ?? '')
+                    (string) ($context['stableLatestCacheKey'] ?? ''),
+                    $context['selectedPeriod'] ?? null,
+                    $context['durableFallbackKey'] ?? null
                 );
 
                 return;
@@ -7858,7 +8540,7 @@ class DashboardSimpananController extends Controller
 
     private function buildArea6PortfolioLandingFresh(?string $loanPeriod, ?string $dailyLoanPeriod = null): array
     {
-        $harian = $this->fetchArea6HarianPortfolio();
+        $harian = $this->fetchArea6HarianPortfolio($loanPeriod);
         $dailyLoanPeriod ??= $this->resolveArea6DailyLoanPeriod($loanPeriod);
 
         // Fetch unified rankings (KC, KCP, and Unit combined)
@@ -8257,8 +8939,9 @@ class DashboardSimpananController extends Controller
 
     /**
      * Resolve one actual position for every weekly forecast cutoff. Closed weeks
-     * use the last snapshot on/before day 7, 14, or 21; the active/future week
-     * uses the newest available position, while W4 also covers a fifth week.
+     * use the last snapshot on/before each Saturday. The active forecast week
+     * also carries the newest running position, so the last available forecast
+     * remains comparable after its Saturday cutoff when a W5 forecast is absent.
      *
      * @param  array<int, string>  $scopeKeys
      * @return array<string, array<string, mixed>>
@@ -8271,17 +8954,20 @@ class DashboardSimpananController extends Controller
 
         $positionDate = Carbon::parse($period)->startOfDay();
         $monthStart = $positionDate->copy()->startOfMonth();
-        $cutoffs = [
-            1 => $monthStart->copy()->day(min(7, $monthStart->daysInMonth)),
-            2 => $monthStart->copy()->day(min(14, $monthStart->daysInMonth)),
-            3 => $monthStart->copy()->day(min(21, $monthStart->daysInMonth)),
-            4 => $monthStart->copy()->endOfMonth(),
-        ];
+        $calendarService = app(LandingSmeOperationalService::class);
+        $cutoffs = $calendarService->forecastWeekCutoffs($positionDate);
+        $activeWeek = collect($cutoffs)
+            ->search(fn (Carbon $cutoff): bool => $positionDate->lessThanOrEqualTo($cutoff));
+        $activeWeek = $activeWeek === false ? (int) array_key_last($cutoffs) : (int) $activeWeek;
         $rawWeeks = [];
 
         foreach ($cutoffs as $week => $cutoff) {
-            $targetDate = $cutoff->greaterThan($positionDate) ? $positionDate->copy() : $cutoff->copy();
-            $actualPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($targetDate->toDateString());
+            $isElapsed = $positionDate->greaterThanOrEqualTo($cutoff);
+            $isActive = ! $isElapsed && $week === $activeWeek;
+            $targetDate = $isElapsed ? $cutoff->copy() : ($isActive ? $positionDate->copy() : null);
+            $actualPeriod = $targetDate
+                ? $this->resolveHarianSnapshotPeriodOnOrBefore($targetDate->toDateString())
+                : null;
             $actualDate = $actualPeriod ? Carbon::parse($actualPeriod)->startOfDay() : null;
             $sameMonth = $actualDate instanceof Carbon && $actualDate->isSameMonth($monthStart);
 
@@ -8289,13 +8975,27 @@ class DashboardSimpananController extends Controller
                 'actual_period' => $sameMonth ? $actualDate->toDateString() : null,
                 'position_label' => $sameMonth ? $actualDate->locale('id')->translatedFormat('d M y') : 'Belum ada posisi',
                 'cutoff_label' => $cutoff->locale('id')->translatedFormat('d M y'),
-                'state_label' => $positionDate->greaterThanOrEqualTo($cutoff) ? 'Tutup' : 'Berjalan',
-                'is_elapsed' => $positionDate->greaterThanOrEqualTo($cutoff),
+                'state_label' => $isElapsed ? 'Tutup' : ($isActive ? 'Berjalan' : 'Belum dimulai'),
+                'is_elapsed' => $isElapsed,
                 'metrics' => $sameMonth
                     ? $this->area6ScopeSnapshotMetrics($actualDate->toDateString(), 'area6')
                     : null,
             ];
         }
+
+        $latestActualPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($positionDate->toDateString());
+        $latestActualDate = $latestActualPeriod ? Carbon::parse($latestActualPeriod)->startOfDay() : null;
+        $latestActualIsSameMonth = $latestActualDate instanceof Carbon && $latestActualDate->isSameMonth($monthStart);
+        $latestActual = [
+            'actual_period' => $latestActualIsSameMonth ? $latestActualDate->toDateString() : null,
+            'position_label' => $latestActualIsSameMonth ? $latestActualDate->locale('id')->translatedFormat('d M y') : 'Belum ada posisi',
+            'cutoff_label' => 'Posisi berjalan',
+            'state_label' => 'Posisi berjalan',
+            'is_elapsed' => true,
+            'metrics' => $latestActualIsSameMonth
+                ? $this->area6ScopeSnapshotMetrics($latestActualDate->toDateString(), 'area6')
+                : null,
+        ];
 
         $scopedWeeks = [];
         foreach ($scopeKeys as $scopeKey) {
@@ -8316,6 +9016,21 @@ class DashboardSimpananController extends Controller
                     ],
                 ];
             }
+
+            $metrics = $latestActual['metrics'];
+            $scopedWeeks[$scopeKey]['latest'] = [
+                'actual_period' => $latestActual['actual_period'],
+                'position_label' => $latestActual['position_label'],
+                'cutoff_label' => $latestActual['cutoff_label'],
+                'state_label' => $latestActual['state_label'],
+                'is_elapsed' => $latestActual['is_elapsed'],
+                'metrics' => [
+                    'os' => $metrics ? (float) ($metrics->{$metricKeys['os_metric']} ?? 0.0) : null,
+                    'sml' => $metrics ? (float) ($metrics->{$metricKeys['sml_metric']} ?? 0.0) : null,
+                    'npl' => $metrics ? (float) ($metrics->{$metricKeys['npl_metric']} ?? 0.0) : null,
+                    'recovery' => $metrics ? (float) ($metrics->{$metricKeys['recovery_metric']} ?? 0.0) : null,
+                ],
+            ];
         }
 
         return $scopedWeeks;
@@ -8355,6 +9070,14 @@ class DashboardSimpananController extends Controller
         $recoveryGap = $recoveryRealization - $recoveryTarget;
 
         $scopeLabel = $this->area6ScopeLabel($scopeKey);
+        $segmentPerformance = $this->buildArea6ScopeSegmentPerformance($scopeKey, $rows, $snapshotMetrics, $rkaMonthYear, $periodFormat, $period, $unitKeys, $dailyLoanPeriod);
+
+        $previousPcts = [
+            'os' => data_get($segmentPerformance, 'total.os.previous_pct'),
+            'sml' => data_get($segmentPerformance, 'total.sml.previous_pct'),
+            'npl' => data_get($segmentPerformance, 'total.npl.previous_pct'),
+        ];
+
         $overallTrends = $this->buildArea6ScopeOverallTrends(
             $scopeKey,
             $period,
@@ -8365,7 +9088,8 @@ class DashboardSimpananController extends Controller
                 'sml' => [$smlRealization, $smlTarget, $smlPct, $smlGap],
                 'npl' => [$nplRealization, $nplTarget, $nplPct, $nplGap],
             ],
-            $metricKeys
+            $metricKeys,
+            $previousPcts
         );
 
         $osMomDelta = (float) data_get($overallTrends, 'os.mom_delta', 0.0);
@@ -8381,7 +9105,7 @@ class DashboardSimpananController extends Controller
                 'realization_label' => $metricKeys['os_label'] . ' per ' . $periodFormat,
                 'target_value' => number_format(round($osTarget / 1000000), 0, ',', '.'),
                 'target_label' => 'RKA ' . $rkaMonthYear,
-                'pct_value' => number_format($osPct, 2, ',', '.') . '%',
+                'pct_value' => $this->formatArea6AchievementPercent($osPct, $osGap >= 0),
                 'pct_label' => '% Penc. RKA ' . $rkaMonthYear,
                 'pct_color' => $this->getArea6AchievementColor($osPct, 'os'),
                 'gap_value' => $this->formatArea6CardGap($osGap),
@@ -8408,7 +9132,7 @@ class DashboardSimpananController extends Controller
                 'realization_label' => $metricKeys['sml_label'] . ' per ' . $periodFormat,
                 'target_value' => number_format(round($smlTarget / 1000000), 0, ',', '.'),
                 'target_label' => 'RKA ' . $rkaMonthYear,
-                'pct_value' => number_format($smlPct, 2, ',', '.') . '%',
+                'pct_value' => $this->formatArea6AchievementPercent($smlPct, $smlGap >= 0),
                 'pct_label' => '% Penc. RKA ' . $rkaMonthYear,
                 'pct_color' => $this->getArea6AchievementColor($smlPct, 'sml'),
                 'gap_value' => $this->formatArea6CardGap($smlGap),
@@ -8435,7 +9159,7 @@ class DashboardSimpananController extends Controller
                 'realization_label' => $metricKeys['npl_label'] . ' per ' . $periodFormat,
                 'target_value' => number_format(round($nplTarget / 1000000), 0, ',', '.'),
                 'target_label' => 'RKA ' . $rkaMonthYear,
-                'pct_value' => number_format($nplPct, 2, ',', '.') . '%',
+                'pct_value' => $this->formatArea6AchievementPercent($nplPct, $nplGap >= 0),
                 'pct_label' => '% Penc. RKA ' . $rkaMonthYear,
                 'pct_color' => $this->getArea6AchievementColor($nplPct, 'npl'),
                 'gap_value' => $this->formatArea6CardGap($nplGap),
@@ -8465,7 +9189,7 @@ class DashboardSimpananController extends Controller
                 'realization_label' => 'Recovery per ' . $periodFormat,
                 'target_value' => number_format(round($recoveryTarget / 1000000), 0, ',', '.'),
                 'target_label' => 'RKA ' . $rkaMonthYear,
-                'pct_value' => number_format($recoveryPct, 2, ',', '.') . '%',
+                'pct_value' => $this->formatArea6AchievementPercent($recoveryPct, $recoveryGap >= 0),
                 'pct_label' => '% Penc. RKA ' . $rkaMonthYear,
                 'pct_color' => $this->getArea6AchievementColor($recoveryPct, 'os'),
                 'gap_value' => $this->formatArea6CardGap($recoveryGap),
@@ -8485,8 +9209,6 @@ class DashboardSimpananController extends Controller
                 ], 'Recovery ditampilkan pada scope Area 6 dari snapshot Dashboard Harian terbaru.'),
             ];
         }
-
-        $segmentPerformance = $this->buildArea6ScopeSegmentPerformance($scopeKey, $rows, $snapshotMetrics, $rkaMonthYear, $periodFormat, $period, $unitKeys, $dailyLoanPeriod);
 
         return [
             'cards' => $cards,
@@ -8640,7 +9362,7 @@ class DashboardSimpananController extends Controller
         };
     }
 
-    private function buildArea6ScopeOverallTrends(string $scopeKey, ?string $period, ?string $mtmPeriod, ?string $mtdPeriod, array $currentMetrics, ?array $metricKeys = null): array
+    private function buildArea6ScopeOverallTrends(string $scopeKey, ?string $period, ?string $mtmPeriod, ?string $mtdPeriod, array $currentMetrics, ?array $metricKeys = null, ?array $previousPcts = null): array
     {
         $metricKeys ??= $this->area6PortfolioMetricKeys($scopeKey);
         $date4 = $period ?? '2026-05-19';
@@ -8679,13 +9401,13 @@ class DashboardSimpananController extends Controller
 
         return [
             'dates' => $formattedDates,
-            'os' => $this->buildArea6TrendMetric($values['os'], $currentMetrics['os'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, $metricKeys['os_metric']), 'os'),
-            'sml' => $this->buildArea6TrendMetric($values['sml'], $currentMetrics['sml'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, $metricKeys['sml_metric']), 'sml'),
-            'npl' => $this->buildArea6TrendMetric($values['npl'], $currentMetrics['npl'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, $metricKeys['npl_metric']), 'npl'),
+            'os' => $this->buildArea6TrendMetric($values['os'], $currentMetrics['os'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, $metricKeys['os_metric']), 'os', $previousPcts['os'] ?? null),
+            'sml' => $this->buildArea6TrendMetric($values['sml'], $currentMetrics['sml'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, $metricKeys['sml_metric']), 'sml', $previousPcts['sml'] ?? null),
+            'npl' => $this->buildArea6TrendMetric($values['npl'], $currentMetrics['npl'], $this->snapshotMetricDelta($historicalMetrics, $date4, $date2, $metricKeys['npl_metric']), 'npl', $previousPcts['npl'] ?? null),
         ];
     }
 
-    private function buildArea6TrendMetric(array $values, array $metric, float $momDelta, string $type): array
+    private function buildArea6TrendMetric(array $values, array $metric, float $momDelta, string $type, ?float $previousPct = null): array
     {
         [$realization, $target, $pct, $gap] = $metric;
         $points = $this->calculateSvgPoints($values);
@@ -8696,6 +9418,23 @@ class DashboardSimpananController extends Controller
 
         $threshold = $type === 'os' ? 95 : 80;
 
+        if ($previousPct !== null) {
+            $diff = round($pct, 2) - round($previousPct, 2);
+            if ($diff > 0.0) {
+                $statusArrow = 'up';
+                $statusBg = 'green';
+            } elseif ($diff < 0.0) {
+                $statusArrow = 'down';
+                $statusBg = 'red';
+            } else {
+                $statusArrow = 'minus';
+                $statusBg = 'amber';
+            }
+        } else {
+            $statusArrow = $gap >= 0 ? 'up' : 'down';
+            $statusBg = $gap >= 0 ? 'green' : 'red';
+        }
+
         return [
             'values' => $values,
             'points' => $points,
@@ -8703,10 +9442,12 @@ class DashboardSimpananController extends Controller
             'latest' => number_format(round($realization / 1000000), 0, ',', '.'),
             'rka' => number_format(round($target / 1000000), 0, ',', '.'),
             'pct' => number_format($pct, 2, ',', '.') . '%',
+            'pct_raw' => $pct,
+            'previous_pct' => $previousPct,
             'gap' => $this->formatArea6CardGap($gap),
             'gap_color' => $gap >= 0 ? 'green' : 'red',
-            'status_arrow' => $gap >= 0 ? 'up' : 'down',
-            'status_bg' => $gap >= 0 ? 'green' : 'red',
+            'status_arrow' => $statusArrow,
+            'status_bg' => $statusBg,
             'pct_color' => $pct >= 100 ? 'green' : ($pct >= $threshold ? 'amber' : 'red'),
             'mom_delta' => $momDelta,
         ];
@@ -8742,6 +9483,12 @@ class DashboardSimpananController extends Controller
             'kur_kpp_os' => 0.0,
             'kur_kpp_sml' => 0.0,
             'kur_kpp_npl' => 0.0,
+            'briguna_konsumer_os' => 0.0,
+            'briguna_konsumer_sml' => 0.0,
+            'briguna_konsumer_npl' => 0.0,
+            'kpr_os' => 0.0,
+            'kpr_sml' => 0.0,
+            'kpr_npl' => 0.0,
             'rec_dh_total' => 0.0,
             'rec_dh_small' => 0.0,
             'rec_dh_consumer' => 0.0,
@@ -8770,6 +9517,12 @@ class DashboardSimpananController extends Controller
             ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(sme_npl, 0) <> 0 THEN COALESCE(sme_npl, 0) ELSE COALESCE(kecil_non_cashcoll_npl, 0) + COALESCE(cashcoll_npl, 0) END), 0) as sme_npl')
             ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(consumer_npl, 0) <> 0 THEN COALESCE(consumer_npl, 0) ELSE COALESCE(briguna_konsumer_npl, 0) + COALESCE(kpr_npl, 0) + COALESCE(kkb_npl, 0) END), 0) as consumer_npl')
             ->selectRaw('COALESCE(SUM(CASE WHEN COALESCE(micro_npl, 0) <> 0 THEN COALESCE(micro_npl, 0) ELSE COALESCE(briguna_mikro_npl, 0) + COALESCE(kupedes_npl, 0) + COALESCE(kur_mikro_npl, 0) + COALESCE(kur_kecil_npl, 0) + COALESCE(kur_kpp_npl, 0) END), 0) as micro_npl')
+            ->selectRaw('COALESCE(SUM(COALESCE(briguna_konsumer_os, 0)), 0) as briguna_konsumer_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(briguna_konsumer_sml, 0)), 0) as briguna_konsumer_sml')
+            ->selectRaw('COALESCE(SUM(COALESCE(briguna_konsumer_npl, 0)), 0) as briguna_konsumer_npl')
+            ->selectRaw('COALESCE(SUM(COALESCE(kpr_os, 0)), 0) as kpr_os')
+            ->selectRaw('COALESCE(SUM(COALESCE(kpr_sml, 0)), 0) as kpr_sml')
+            ->selectRaw('COALESCE(SUM(COALESCE(kpr_npl, 0)), 0) as kpr_npl')
             ->selectRaw('COALESCE(SUM(COALESCE(briguna_mikro_os, 0)), 0) as briguna_mikro_os')
             ->selectRaw('COALESCE(SUM(COALESCE(briguna_mikro_sml, 0)), 0) as briguna_mikro_sml')
             ->selectRaw('COALESCE(SUM(COALESCE(briguna_mikro_npl, 0)), 0) as briguna_mikro_npl')
@@ -8820,7 +9573,8 @@ class DashboardSimpananController extends Controller
                 ['label' => 'OS SME', 'icon' => 'fas fa-briefcase', 'os' => 'sme_os', 'sml' => 'sme_sml', 'npl' => 'sme_npl'],
             ],
             'consumer' => [
-                ['label' => 'OS KONSUMER', 'icon' => 'fas fa-users', 'os' => 'consumer_os', 'sml' => 'consumer_sml', 'npl' => 'consumer_npl'],
+                ['label' => 'Briguna', 'icon' => 'fas fa-id-badge', 'os' => 'briguna_konsumer_os', 'sml' => 'briguna_konsumer_sml', 'npl' => 'briguna_konsumer_npl'],
+                ['label' => 'KPR', 'icon' => 'fas fa-home', 'os' => 'kpr_os', 'sml' => 'kpr_sml', 'npl' => 'kpr_npl'],
             ],
             'ritel' => [
                 ['label' => 'OS SME', 'icon' => 'fas fa-briefcase', 'os' => 'sme_os', 'sml' => 'sme_sml', 'npl' => 'sme_npl'],
@@ -8842,20 +9596,63 @@ class DashboardSimpananController extends Controller
 
         $segments = [];
         $totals = [
-            'os' => ['realization' => 0.0, 'target' => 0.0],
-            'sml' => ['realization' => 0.0, 'target' => 0.0],
-            'npl' => ['realization' => 0.0, 'target' => 0.0],
+            'os' => ['realization' => 0.0, 'target' => 0.0, 'ytd' => 0.0, 'mtd' => 0.0],
+            'sml' => ['realization' => 0.0, 'target' => 0.0, 'ytd' => 0.0, 'mtd' => 0.0],
+            'npl' => ['realization' => 0.0, 'target' => 0.0, 'ytd' => 0.0, 'mtd' => 0.0],
         ];
+        $referencePositions = $scopeKey === 'micro' && $period
+            ? $this->buildMicroReferencePositions($period)
+            : [];
+        $ytdMetrics = data_get($referencePositions, 'ytd.metrics');
+        $mtdMetrics = data_get($referencePositions, 'mtd.metrics');
 
         foreach ($segmentDefinitions as $definition) {
             $os = $this->parseSegmentMetricWithCurrent($rows->firstWhere('key', $definition['os']), 'os', (float) ($snapshotMetrics->{$definition['os']} ?? 0.0));
             $sml = $this->parseSegmentMetricWithCurrent($rows->firstWhere('key', $definition['sml']), 'sml', (float) ($snapshotMetrics->{$definition['sml']} ?? 0.0));
             $npl = $this->parseSegmentMetricWithCurrent($rows->firstWhere('key', $definition['npl']), 'npl', (float) ($snapshotMetrics->{$definition['npl']} ?? 0.0));
 
-            foreach (['os' => $os, 'sml' => $sml, 'npl' => $npl] as $metricKey => $metric) {
+            $productMetrics = ['os' => $os, 'sml' => $sml, 'npl' => $npl];
+            foreach ($productMetrics as $metricKey => $metric) {
+                if ($scopeKey === 'micro') {
+                    $sourceKey = $definition[$metricKey];
+                    $ytdValue = (float) ($ytdMetrics->{$sourceKey} ?? 0.0);
+                    $mtdValue = (float) ($mtdMetrics->{$sourceKey} ?? 0.0);
+                    $realizationVal = (float) ($metric['realization'] ?? 0.0);
+
+                    $ytdDiff = $realizationVal - $ytdValue;
+                    $mtdDiff = $realizationVal - $mtdValue;
+
+                    $metric['ytd_position'] = $ytdValue;
+                    $metric['ytd_diff'] = $ytdDiff;
+                    $metric['ytd_position_fmt'] = ($ytdDiff < 0 ? '(' : '').$this->formatArea6Juta(abs($ytdDiff)).($ytdDiff < 0 ? ')' : '');
+                    $metric['ytd_tone'] = $metricKey === 'os'
+                        ? ($ytdDiff > 0 ? 'green' : ($ytdDiff < 0 ? 'red' : 'neutral'))
+                        : ($ytdDiff < 0 ? 'green' : ($ytdDiff > 0 ? 'red' : 'neutral'));
+
+                    $metric['mtd_position'] = $mtdValue;
+                    $metric['mtd_diff'] = $mtdDiff;
+                    $metric['mtd_position_fmt'] = ($mtdDiff < 0 ? '(' : '').$this->formatArea6Juta(abs($mtdDiff)).($mtdDiff < 0 ? ')' : '');
+                    $metric['mtd_tone'] = $metricKey === 'os'
+                        ? ($mtdDiff > 0 ? 'green' : ($mtdDiff < 0 ? 'red' : 'neutral'))
+                        : ($mtdDiff < 0 ? 'green' : ($mtdDiff > 0 ? 'red' : 'neutral'));
+
+                    $totals[$metricKey]['ytd'] += $ytdValue;
+                    $totals[$metricKey]['mtd'] += $mtdValue;
+
+                    $maxVal = max($realizationVal, (float) ($metric['target'] ?? 0.0), abs($ytdDiff), abs($mtdDiff));
+                    $metric['penc_bar_width'] = $maxVal > 0 ? ($realizationVal / $maxVal) * 100 : 0.0;
+                    $metric['rka_bar_width'] = $maxVal > 0 ? ((float) ($metric['target'] ?? 0.0) / $maxVal) * 100 : 0.0;
+                    $metric['ytd_bar_width'] = $maxVal > 0 ? (abs($ytdDiff) / $maxVal) * 100 : 0.0;
+                    $metric['mtd_bar_width'] = $maxVal > 0 ? (abs($mtdDiff) / $maxVal) * 100 : 0.0;
+                }
                 $totals[$metricKey]['realization'] += (float) $metric['realization'];
                 $totals[$metricKey]['target'] += (float) $metric['target'];
+                $productMetrics[$metricKey] = $metric;
             }
+
+            $os = $productMetrics['os'];
+            $sml = $productMetrics['sml'];
+            $npl = $productMetrics['npl'];
 
             $segments[] = [
                 'label' => $definition['label'],
@@ -8869,13 +9666,53 @@ class DashboardSimpananController extends Controller
         $totalOs = $this->formatArea6ScopeSegmentTotal($totals['os']['realization'], $totals['os']['target'], 'os');
         $totalSml = $this->formatArea6ScopeSegmentTotal($totals['sml']['realization'], $totals['sml']['target'], 'sml');
         $totalNpl = $this->formatArea6ScopeSegmentTotal($totals['npl']['realization'], $totals['npl']['target'], 'npl');
+        if ($scopeKey === 'micro') {
+            $totalMetrics = ['os' => $totalOs, 'sml' => $totalSml, 'npl' => $totalNpl];
+            foreach ($totalMetrics as $metricKey => $metric) {
+                $ytdVal = (float) ($totals[$metricKey]['ytd'] ?? 0.0);
+                $mtdVal = (float) ($totals[$metricKey]['mtd'] ?? 0.0);
+                $totRealization = (float) ($totals[$metricKey]['realization'] ?? 0.0);
+
+                $totYtdDiff = $totRealization - $ytdVal;
+                $totMtdDiff = $totRealization - $mtdVal;
+
+                $metric['ytd_position'] = $ytdVal;
+                $metric['ytd_diff'] = $totYtdDiff;
+                $metric['ytd_position_fmt'] = ($totYtdDiff < 0 ? '(' : '').$this->formatArea6Juta(abs($totYtdDiff)).($totYtdDiff < 0 ? ')' : '');
+                $metric['ytd_tone'] = $metricKey === 'os'
+                    ? ($totYtdDiff > 0 ? 'green' : ($totYtdDiff < 0 ? 'red' : 'neutral'))
+                    : ($totYtdDiff < 0 ? 'green' : ($totYtdDiff > 0 ? 'red' : 'neutral'));
+
+                $metric['mtd_position'] = $mtdVal;
+                $metric['mtd_diff'] = $totMtdDiff;
+                $metric['mtd_position_fmt'] = ($totMtdDiff < 0 ? '(' : '').$this->formatArea6Juta(abs($totMtdDiff)).($totMtdDiff < 0 ? ')' : '');
+                $metric['mtd_tone'] = $metricKey === 'os'
+                    ? ($totMtdDiff > 0 ? 'green' : ($totMtdDiff < 0 ? 'red' : 'neutral'))
+                    : ($totMtdDiff < 0 ? 'green' : ($totMtdDiff > 0 ? 'red' : 'neutral'));
+
+                $maxTotal = max($totRealization, (float) ($totals[$metricKey]['target'] ?? 0.0), abs($totYtdDiff), abs($totMtdDiff));
+                $metric['penc_bar_width'] = $maxTotal > 0 ? ($totRealization / $maxTotal) * 100 : 0.0;
+                $metric['rka_bar_width'] = $maxTotal > 0 ? ((float) ($totals[$metricKey]['target'] ?? 0.0) / $maxTotal) * 100 : 0.0;
+                $metric['ytd_bar_width'] = $maxTotal > 0 ? (abs($totYtdDiff) / $maxTotal) * 100 : 0.0;
+                $metric['mtd_bar_width'] = $maxTotal > 0 ? (abs($totMtdDiff) / $maxTotal) * 100 : 0.0;
+
+                $totalMetrics[$metricKey] = $metric;
+            }
+
+            $totalOs = $totalMetrics['os'];
+            $totalSml = $totalMetrics['sml'];
+            $totalNpl = $totalMetrics['npl'];
+        }
         $previousAchievement = $period !== null
             ? $this->buildArea6PreviousMonthSegmentAchievement($scopeKey, $segmentDefinitions, $period, $unitKeys)
             : [];
+        $totalOs['previous_pct'] = data_get($previousAchievement, 'metrics.os.pct', null);
         $totalOs['previous_pct_fmt'] = data_get($previousAchievement, 'metrics.os.pct_fmt', '-');
         $totalOs['previous_pct_color'] = data_get($previousAchievement, 'metrics.os.pct_color', 'muted');
+        $totalSml['previous_pct'] = data_get($previousAchievement, 'metrics.sml.pct', null);
         $totalSml['previous_pct_fmt'] = data_get($previousAchievement, 'metrics.sml.pct_fmt', '-');
         $totalSml['previous_pct_color'] = data_get($previousAchievement, 'metrics.sml.pct_color', 'muted');
+        $totalNpl['previous_pct'] = data_get($previousAchievement, 'metrics.npl.pct', null);
         $totalNpl['previous_pct_fmt'] = data_get($previousAchievement, 'metrics.npl.pct_fmt', '-');
         $totalNpl['previous_pct_color'] = data_get($previousAchievement, 'metrics.npl.pct_color', 'muted');
         
@@ -8943,11 +9780,15 @@ class DashboardSimpananController extends Controller
         $larPct = $totalOsRealization > 0 ? ($larRealization / $totalOsRealization) * 100 : 0.0;
         $healthyPct = max(0.0, 100.0 - $larPct);
         $lrPct = $totalOsRealization > 0 ? ($restrukOs / $totalOsRealization) * 100 : 0.0;
+        $microQuality = $scopeKey === 'micro'
+            ? $this->buildMicroQualityComposition($period, $dailyLoanPeriod, $unitKeys, (float) $totalOsRealization)
+            : [];
 
         return [
             'rka_month_year' => $rkaMonthYear,
             'previous_rka_month_year' => data_get($previousAchievement, 'label', '-'),
             'period_format' => $periodFormat,
+            'reference_positions' => $referencePositions,
             'segments' => $segments,
             'total' => [
                 'os' => $totalOs,
@@ -8988,9 +9829,251 @@ class DashboardSimpananController extends Controller
                 'center' => [
                     'pct' => number_format($larPct, 2, ',', '.') . '%',
                     'label' => 'LAR SHARE',
-                ]
+                ],
+                'micro_quality' => $microQuality,
             ],
         ];
+    }
+
+    /** @return array<string, mixed> */
+    private function buildMicroReferencePositions(string $period): array
+    {
+        $positionDate = Carbon::parse($period)->startOfDay();
+        $targets = [
+            'ytd' => $positionDate->copy()->subYear()->endOfYear(),
+            'mtd' => $positionDate->copy()->startOfMonth()->subDay(),
+        ];
+        $labels = ['ytd' => 'Posisi YTD', 'mtd' => 'Posisi MTD'];
+        $references = [];
+
+        foreach ($targets as $key => $targetDate) {
+            $resolvedPeriod = $this->resolveHarianSnapshotPeriodOnOrBefore($targetDate->toDateString());
+            $effectiveDate = $resolvedPeriod ? Carbon::parse($resolvedPeriod) : $targetDate;
+            $monthYear = $effectiveDate->locale('id')->translatedFormat('M y');
+            $references[$key] = [
+                'period' => $resolvedPeriod,
+                'month_year' => $monthYear,
+                'label' => $resolvedPeriod
+                    ? $labels[$key].' '.$effectiveDate->locale('id')->translatedFormat('d M y')
+                    : $labels[$key].' '.$monthYear,
+                'metrics' => $resolvedPeriod
+                    ? $this->area6ScopeSnapshotMetrics($resolvedPeriod, 'micro')
+                    : null,
+            ];
+        }
+
+        return $references;
+    }
+
+    private function formatArea6Juta(float $value): string
+    {
+        return number_format(round($value / 1_000_000), 0, ',', '.');
+    }
+
+    /** @return array<string, mixed> */
+    private function buildMicroQualityComposition(?string $period, ?string $dailyLoanPeriod, ?array $unitKeys, float $totalPortfolioBalance = 0.0): array
+    {
+        if (! $period) {
+            return ['available' => false, 'items' => []];
+        }
+
+        $previousTarget = Carbon::parse($period)->startOfMonth()->subDay()->toDateString();
+        $dailyCurrentPeriod = $dailyLoanPeriod;
+        $dailyPreviousPeriod = $this->resolveTablePeriodOnOrBefore('daily_loan_dinamis', 'periode', $previousTarget);
+        $ssaCurrentPeriod = $this->resolveTablePeriodOnOrBefore('ssa_pinjaman', 'month_day_year_of_periode', $period);
+        $ssaPreviousPeriod = $this->resolveTablePeriodOnOrBefore('ssa_pinjaman', 'month_day_year_of_periode', $previousTarget);
+
+        $dailyCurrent = $this->microDailyQualityTotals($dailyCurrentPeriod, $unitKeys);
+        $dailyPrevious = $this->microDailyQualityTotals($dailyPreviousPeriod, $unitKeys);
+        $ssaCurrent = $this->microSsaNplTotals($ssaCurrentPeriod, $unitKeys);
+        $ssaPrevious = $this->microSsaNplTotals($ssaPreviousPeriod, $unitKeys);
+        $definitions = [
+            ['key' => 'lr', 'label' => 'LR', 'group' => 'LR', 'source_key' => 'LR', 'tone' => 'purple', 'current' => $dailyCurrent, 'previous' => $dailyPrevious],
+            ['key' => 'sml1', 'label' => 'SML 1', 'group' => 'SML', 'source_key' => 'DPK 1', 'tone' => 'blue', 'current' => $dailyCurrent, 'previous' => $dailyPrevious],
+            ['key' => 'sml2', 'label' => 'SML 2', 'group' => 'SML', 'source_key' => 'DPK 2', 'tone' => 'cyan', 'current' => $dailyCurrent, 'previous' => $dailyPrevious],
+            ['key' => 'sml3', 'label' => 'SML 3', 'group' => 'SML', 'source_key' => 'DPK 3', 'tone' => 'amber', 'current' => $dailyCurrent, 'previous' => $dailyPrevious],
+            ['key' => 'kl', 'label' => 'KL', 'group' => 'NPL', 'source_key' => '3', 'tone' => 'orange', 'current' => $ssaCurrent, 'previous' => $ssaPrevious],
+            ['key' => 'd', 'label' => 'D', 'group' => 'NPL', 'source_key' => '4', 'tone' => 'red', 'current' => $ssaCurrent, 'previous' => $ssaPrevious],
+            ['key' => 'm', 'label' => 'M', 'group' => 'NPL', 'source_key' => '5', 'tone' => 'crimson', 'current' => $ssaCurrent, 'previous' => $ssaPrevious],
+        ];
+        $currentTotal = collect($definitions)->sum(fn (array $definition): float => (float) ($definition['current'][$definition['source_key']] ?? 0.0));
+        $previousTotal = collect($definitions)->sum(fn (array $definition): float => (float) ($definition['previous'][$definition['source_key']] ?? 0.0));
+        $portfolioTotal = $totalPortfolioBalance > 0 ? $totalPortfolioBalance : $currentTotal;
+        $larPct = $portfolioTotal > 0 ? ($currentTotal / $portfolioTotal) * 100 : 0.0;
+        $previousLarPct = $portfolioTotal > 0 ? ($previousTotal / $portfolioTotal) * 100 : 0.0;
+        $maxItemPct = 0.0;
+
+        $items = collect($definitions)->map(function (array $definition) use ($currentTotal, $previousTotal, $portfolioTotal, &$maxItemPct): array {
+            $position = (float) ($definition['current'][$definition['source_key']] ?? 0.0);
+            $previous = (float) ($definition['previous'][$definition['source_key']] ?? 0.0);
+            $mtd = $position - $previous;
+            $portfolioPct = $portfolioTotal > 0 ? ($position / $portfolioTotal) * 100 : 0.0;
+            $previousPortfolioPct = $portfolioTotal > 0 ? ($previous / $portfolioTotal) * 100 : 0.0;
+
+            if ($portfolioPct > $maxItemPct) {
+                $maxItemPct = $portfolioPct;
+            }
+            if ($previousPortfolioPct > $maxItemPct) {
+                $maxItemPct = $previousPortfolioPct;
+            }
+
+            return [
+                'key' => $definition['key'],
+                'label' => $definition['label'],
+                'group' => $definition['group'],
+                'tone' => $definition['tone'],
+                'position' => $position,
+                'position_fmt' => $this->formatArea6Juta($position),
+                'share_fmt' => number_format($currentTotal > 0 ? ($position / $currentTotal) * 100 : 0, 2, ',', '.').'%',
+                'portfolio_pct' => $portfolioPct,
+                'portfolio_pct_fmt' => number_format($portfolioPct, 2, ',', '.').'%',
+                'previous_position' => $previous,
+                'previous_position_fmt' => $this->formatArea6Juta($previous),
+                'previous_share_fmt' => number_format($previousTotal > 0 ? ($previous / $previousTotal) * 100 : 0, 2, ',', '.').'%',
+                'previous_portfolio_pct' => $previousPortfolioPct,
+                'previous_portfolio_pct_fmt' => number_format($previousPortfolioPct, 2, ',', '.').'%',
+                'mtd' => $mtd,
+                'mtd_fmt' => ($mtd < 0 ? '(' : '').$this->formatArea6Juta(abs($mtd)).($mtd < 0 ? ')' : ''),
+                'mtd_direction' => $mtd > 0 ? 'up' : ($mtd < 0 ? 'down' : 'flat'),
+            ];
+        })->map(function (array $item) use ($maxItemPct): array {
+            $width = $maxItemPct > 0 ? min(100, max(6, ($item['portfolio_pct'] / $maxItemPct) * 100)) : 0;
+            $prevWidth = $maxItemPct > 0 ? min(100, max(6, ($item['previous_portfolio_pct'] / $maxItemPct) * 100)) : 0;
+            $item['bar_width'] = $width;
+            $item['previous_bar_width'] = $prevWidth;
+            $item['mtd_bar_width'] = $prevWidth;
+
+            return $item;
+        })->all();
+
+        $positionLabel = Carbon::parse($period)->locale('id')->translatedFormat('d M y');
+        $previousPositionLabel = Carbon::parse($previousTarget)->locale('id')->translatedFormat('d M y');
+
+        return [
+            'available' => $dailyCurrentPeriod !== null || $ssaCurrentPeriod !== null,
+            'position_label' => $positionLabel,
+            'previous_position_label' => $previousPositionLabel,
+            'mtd_label' => $previousPositionLabel,
+            'mtd_reference_label' => $previousPositionLabel,
+            'sources' => [
+                'lr' => ['name' => 'Daily Loan Dinamis', 'period' => $dailyCurrentPeriod, 'previous_period' => $dailyPreviousPeriod],
+                'sml' => ['name' => 'Daily Loan Dinamis', 'period' => $dailyCurrentPeriod, 'previous_period' => $dailyPreviousPeriod],
+                'npl' => ['name' => 'SSA Pinjaman', 'period' => $ssaCurrentPeriod, 'previous_period' => $ssaPreviousPeriod],
+            ],
+            'total' => [
+                'position' => $currentTotal,
+                'position_fmt' => $this->formatArea6Juta($currentTotal),
+                'portfolio_pct' => $larPct,
+                'portfolio_pct_fmt' => number_format($larPct, 2, ',', '.').'%',
+                'bar_width' => 100,
+                'previous_position' => $previousTotal,
+                'previous_position_fmt' => $this->formatArea6Juta($previousTotal),
+                'previous_portfolio_pct' => $previousLarPct,
+                'previous_portfolio_pct_fmt' => number_format($previousLarPct, 2, ',', '.').'%',
+                'previous_bar_width' => 100,
+                'mtd' => $currentTotal - $previousTotal,
+                'mtd_bar_width' => 100,
+                'mtd_fmt' => ($currentTotal - $previousTotal < 0 ? '(' : '').$this->formatArea6Juta(abs($currentTotal - $previousTotal)).($currentTotal - $previousTotal < 0 ? ')' : ''),
+                'mtd_direction' => ($currentTotal - $previousTotal) > 0 ? 'up' : (($currentTotal - $previousTotal) < 0 ? 'down' : 'flat'),
+            ],
+            'items' => $items,
+        ];
+    }
+
+    private function resolveTablePeriodOnOrBefore(string $table, string $column, string $target): ?string
+    {
+        if (! $this->hasTable($table) || ! $this->hasColumn($table, $column)) {
+            return null;
+        }
+
+        $value = DB::table($table)->where($column, '<=', $target)->max($column);
+        if (! $value) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /** @return array<string, float> */
+    private function microDailyQualityTotals(?string $period, ?array $unitKeys): array
+    {
+        $required = ['periode', 'cabang1', 'segmen_kinerja', 'baki_debet1', 'kolek_detail', 'umur_tunggakan', 'flag_restruk', 'kolek', 'next_pmt_date', 'next_pmt_int_date'];
+        if (! $period || ! $this->hasTable('daily_loan_dinamis') || ! collect($required)->every(fn (string $column): bool => $this->hasColumn('daily_loan_dinamis', $column))) {
+            return [];
+        }
+
+        $bucketExpression = $this->microDailyQualityBucketExpression();
+        $query = DB::table('daily_loan_dinamis as d')
+            ->where('d.periode', $period)
+            ->where(DB::raw("UPPER(TRIM(COALESCE(d.segmen_kinerja, '')))"), 'MICRO');
+        $this->applyDashboardBranchNamesScope($query, 'd.cabang1');
+        if ($unitKeys && $this->hasColumn('daily_loan_dinamis', 'unit1')) {
+            $query->whereIn(DB::raw('UPPER(TRIM(d.unit1))'), array_map('strtoupper', $unitKeys));
+        }
+
+        $classifiedRows = $query
+            ->selectRaw("{$bucketExpression} as quality_bucket")
+            ->selectRaw('d.baki_debet1 as amount');
+
+        return DB::query()
+            ->fromSub($classifiedRows, 'micro_quality_rows')
+            ->whereIn('quality_bucket', ['LR', 'DPK 1', 'DPK 2', 'DPK 3'])
+            ->select('quality_bucket')
+            ->selectRaw('COALESCE(SUM(amount), 0) as amount')
+            ->groupBy('quality_bucket')
+            ->pluck('amount', 'quality_bucket')
+            ->map(fn ($value): float => (float) $value)
+            ->all();
+    }
+
+    private function microDailyQualityBucketExpression(): string
+    {
+        if (DB::connection()->getDriverName() !== 'sqlite') {
+            return LoanQualityBucketMapper::buildSqlExpression('d');
+        }
+
+        return "
+            CASE
+                WHEN UPPER(TRIM(COALESCE(d.flag_restruk, ''))) = 'Y' AND (CAST(d.kolek AS INTEGER) = 1 OR UPPER(TRIM(COALESCE(d.kolek_detail, ''))) IN ('L', 'LR')) THEN 'LR'
+                WHEN UPPER(TRIM(COALESCE(d.kolek_detail, ''))) IN ('DPK1', 'DPK 1', 'SML1', 'SML 1') THEN 'DPK 1'
+                WHEN UPPER(TRIM(COALESCE(d.kolek_detail, ''))) IN ('DPK2', 'DPK 2', 'SML2', 'SML 2') THEN 'DPK 2'
+                WHEN UPPER(TRIM(COALESCE(d.kolek_detail, ''))) IN ('DPK3', 'DPK 3', 'SML3', 'SML 3') THEN 'DPK 3'
+                WHEN CAST(d.kolek AS INTEGER) = 2 AND d.umur_tunggakan IS NOT NULL AND d.umur_tunggakan < 31 THEN 'DPK 1'
+                WHEN CAST(d.kolek AS INTEGER) = 2 AND d.umur_tunggakan IS NOT NULL AND d.umur_tunggakan < 61 THEN 'DPK 2'
+                WHEN CAST(d.kolek AS INTEGER) = 2 THEN 'DPK 3'
+                ELSE UPPER(TRIM(COALESCE(d.kolek_detail, '')))
+            END
+        ";
+    }
+
+    /** @return array<string, float> */
+    private function microSsaNplTotals(?string $period, ?array $unitKeys): array
+    {
+        $required = ['month_day_year_of_periode', 'nama_cabang', 'nama_uker', 'segmen_dashboard', 'kolektabilitas_one_obligor', 'baki_debet'];
+        if (! $period || ! $this->hasTable('ssa_pinjaman') || ! collect($required)->every(fn (string $column): bool => $this->hasColumn('ssa_pinjaman', $column))) {
+            return [];
+        }
+
+        $query = DB::table('ssa_pinjaman')
+            ->where('month_day_year_of_periode', $period)
+            ->where(DB::raw("UPPER(TRIM(COALESCE(segmen_dashboard, '')))"), 'MICRO')
+            ->whereIn('kolektabilitas_one_obligor', [3, 4, 5]);
+        $this->applyDashboardBranchNamesScope($query, 'nama_cabang');
+        if ($unitKeys) {
+            $query->whereIn(DB::raw('UPPER(TRIM(nama_uker))'), array_map('strtoupper', $unitKeys));
+        }
+
+        return $query
+            ->selectRaw('CAST(kolektabilitas_one_obligor AS CHAR) as kolek')
+            ->selectRaw('COALESCE(SUM(baki_debet), 0) as amount')
+            ->groupBy('kolektabilitas_one_obligor')
+            ->pluck('amount', 'kolek')
+            ->map(fn ($value): float => (float) $value)
+            ->all();
     }
 
     /**
@@ -9064,6 +10147,7 @@ class DashboardSimpananController extends Controller
         return [
             'realization_fmt' => number_format(round($realization / 1000000), 0, ',', '.'),
             'target_fmt' => number_format(round($target / 1000000), 0, ',', '.'),
+            'pct' => $pct,
             'pct_fmt' => number_format($pct, 2, ',', '.') . '%',
             'pct_color' => $this->getArea6AchievementColor($pct, $type),
             'penc_bar_width' => $max > 0 ? ($realization / $max) * 100 : 0.0,
@@ -9205,11 +10289,12 @@ class DashboardSimpananController extends Controller
             $type = 'up';
         }
         
-        if ($metricType === 'os') {
-            $color = $isNegative ? 'red' : 'green';
+        if (in_array($metricType, ['sml', 'npl'], true)) {
+            // SML & NPL: jika nilainya turun (*) adalah hijau dan jika naik adalah merah
+            $color = $isNegative ? 'green' : ($scaled > 0 ? 'red' : 'green');
         } else {
-            // SML/NPL: always red in the mockup
-            $color = 'red';
+            // OS / Recovery: jika nilainya turun adalah merah dan jika naik adalah hijau
+            $color = $isNegative ? 'red' : 'green';
         }
         
         return [
@@ -9232,6 +10317,16 @@ class DashboardSimpananController extends Controller
         } else {
             return '+' . $formattedVal;
         }
+    }
+
+    private function formatArea6AchievementPercent(float $pct, bool $isAchieved): string
+    {
+        $formatted = number_format($pct, 2, ',', '.');
+        if (! $isAchieved && ($formatted === '100,00' || $pct >= 100.0)) {
+            $formatted = '99,99';
+        }
+
+        return $formatted . '%';
     }
 
     private function getArea6AchievementColor(float $pct, string $metricType): string
@@ -9337,7 +10432,7 @@ class DashboardSimpananController extends Controller
         });
     }
 
-    private function fetchArea6HarianPortfolio(): array
+    private function fetchArea6HarianPortfolio(?string $requestedPeriod = null): array
     {
         $empty = [
             'period' => null,
@@ -9362,7 +10457,20 @@ class DashboardSimpananController extends Controller
             return $empty;
         }
 
-        $period = $this->area6HarianSnapshotSummaryQuery()->max('snapshot_period');
+        $periodQuery = $this->area6HarianSnapshotSummaryQuery();
+        if ($requestedPeriod) {
+            try {
+                $periodQuery->where(
+                    'snapshot_period',
+                    '<=',
+                    Carbon::parse($requestedPeriod)->toDateString()
+                );
+            } catch (\Throwable) {
+                // Ignore malformed period strings gracefully
+            }
+        }
+
+        $period = $periodQuery->max('snapshot_period');
         if (!$period) {
             return $empty;
         }
@@ -9767,151 +10875,116 @@ class DashboardSimpananController extends Controller
 
     private function buildArea6KtsRanking(?string $period, string $scope = 'unit'): array
     {
-        $empty = ['total_count' => 0, 'total_os' => 0.0, 'rows' => []];
-        if (!$period || !Schema::hasTable('daily_loan_dinamis')) {
-            return $empty;
-        }
-
-        foreach (['cabang1', 'unit1', 'status_rekening1', 'baki_debet1', 'kolek', 'umur_tunggakan'] as $column) {
-            if (!Schema::hasColumn('daily_loan_dinamis', $column)) {
-                return $empty;
-            }
-        }
-
-        $cacheKey = 'dashboard_simpanan:area6_kts_top5:v' . $this->reportCacheVersion() . ':' . $period . ':' . $scope;
-
-        return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($period, $scope) {
-            $actualKolekExpression = "CAST(kolek AS UNSIGNED)";
-            $umurTunggakanExpression = "CAST(umur_tunggakan AS SIGNED)";
-            $expectedKolekExpression = "CASE
-                WHEN {$umurTunggakanExpression} <= 0 THEN 1
-                WHEN {$umurTunggakanExpression} <= 90 THEN 2
-                WHEN {$umurTunggakanExpression} <= 120 THEN 3
-                WHEN {$umurTunggakanExpression} <= 180 THEN 4
-                ELSE 5
-            END";
-
-            $baseQuery = DB::table('daily_loan_dinamis')
-                ->where('periode', $period)
-                ->whereIn('cabang1', $this->dashboardBranchDisplayNames())
-                ->whereIn('status_rekening1', ['1', '3'])
-                ->where('baki_debet1', '>', 0)
-                ->whereIn('kolek', ['1', '2', '3', '4', '5'])
-                ->whereNotNull('umur_tunggakan')
-                ->whereRaw("{$actualKolekExpression} <> {$expectedKolekExpression}");
-
-            $groupColumns = $scope === 'branch' ? ['cabang1'] : ['cabang1', 'unit1'];
-            $rankedRows = (clone $baseQuery)
-                ->select($groupColumns)
-                ->selectRaw('COUNT(*) as mismatch_count')
-                ->selectRaw('COALESCE(SUM(COALESCE(baki_debet1, 0)), 0) as outstanding_balance');
-
-            $this->applyArea6DailyLoanUnitScope($rankedRows, $scope);
-
-            $rankedRows = $rankedRows
-                ->groupBy($groupColumns)
-                ->orderByDesc('mismatch_count')
-                ->orderByDesc('outstanding_balance')
-                ->limit(5)
-                ->get();
-
-            $total = (clone $baseQuery)
-                ->selectRaw('COUNT(*) as mismatch_count')
-                ->selectRaw('COALESCE(SUM(COALESCE(baki_debet1, 0)), 0) as outstanding_balance')
-                ->first();
-
-            $ranked = $rankedRows
-                ->map(function ($row, int $index) use ($scope) {
-                    return [
-                        'rank' => $index + 1,
-                        'label' => $scope === 'branch' ? (string) ($row->cabang1 ?? '-') : (string) ($row->unit1 ?? '-'),
-                        'meta' => in_array($scope, ['unit', 'unit_kerja']) ? (string) ($row->cabang1 ?? 'Area 6') : 'Ritel Area 6',
-                        'value' => $this->formatInteger((int) ($row->mismatch_count ?? 0)) . ' rek',
-                        'sub' => $this->formatCurrencyCompact((float) ($row->outstanding_balance ?? 0)),
-                    ];
-                })
-                ->all();
-
-            return [
-                'total_count' => (int) ($total->mismatch_count ?? 0),
-                'total_os' => (float) ($total->outstanding_balance ?? 0),
-                'rows' => $ranked,
-            ];
-        });
+        return $this->buildArea6LoanRiskRanking(
+            $period,
+            $scope,
+            'kts_count',
+            'kts_os',
+            'total_os'
+        );
     }
 
     private function buildArea6SmallArrearsRanking(?string $period, string $scope = 'unit'): array
     {
-        $empty = ['total_count' => 0, 'total_amount' => 0.0, 'rows' => []];
-        if (!$period || !Schema::hasTable('daily_loan_dinamis')) {
+        return $this->buildArea6LoanRiskRanking(
+            $period,
+            $scope,
+            'small_arrears_count',
+            'small_arrears_amount',
+            'total_amount'
+        );
+    }
+
+    private function buildArea6LoanRiskRanking(
+        ?string $period,
+        string $scope,
+        string $countField,
+        string $amountField,
+        string $totalAmountField
+    ): array {
+        $empty = ['total_count' => 0, $totalAmountField => 0.0, 'rows' => []];
+        if (!$period) {
             return $empty;
         }
 
-        foreach (['cabang1', 'unit1', 'tunggakan_pokok', 'tunggakan_bunga'] as $column) {
-            if (!Schema::hasColumn('daily_loan_dinamis', $column)) {
-                return $empty;
-            }
-        }
+        $snapshot = app(LandingLoanRiskCacheService::class)->snapshot($period);
+        $allowedBranches = array_fill_keys(array_map(
+            static fn (string $branch): string => strtoupper(trim($branch)),
+            $this->dashboardBranchDisplayNames()
+        ), true);
 
-        $cacheKey = 'dashboard_simpanan:area6_small_arrears_top5:v' . $this->reportCacheVersion() . ':' . $period . ':' . $scope;
+        $totals = $this->effectiveDashboardBranchScope() === null
+            ? (array) ($snapshot['area_totals'] ?? [])
+            : collect((array) ($snapshot['branch_totals'] ?? []))
+                ->first(fn ($row, $branch): bool => isset($allowedBranches[strtoupper(trim((string) $branch))]), []);
 
-        return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($period, $scope) {
-            $accountColumn = Schema::hasColumn('daily_loan_dinamis', 'nomor_rekening1') ? 'nomor_rekening1' : null;
-            $penaltyColumn = Schema::hasColumn('daily_loan_dinamis', 'tunggakan_penalti')
-                ? 'tunggakan_penalti'
-                : (Schema::hasColumn('daily_loan_dinamis', 'tunggakan_pinalti') ? 'tunggakan_pinalti' : null);
-            $totalExpression = 'COALESCE(tunggakan_pokok, 0) + COALESCE(tunggakan_bunga, 0)';
-            if ($penaltyColumn !== null) {
-                $totalExpression .= " + COALESCE({$penaltyColumn}, 0)";
-            }
+        $rows = $scope === 'branch'
+            ? array_values((array) ($snapshot['branch_totals'] ?? []))
+            : array_values((array) ($snapshot['rows'] ?? []));
 
-            $groupColumns = $scope === 'branch' ? ['cabang1'] : ['cabang1', 'unit1'];
-            $query = DB::table('daily_loan_dinamis')
-                ->where('periode', $period)
-                ->whereIn('cabang1', $this->dashboardBranchDisplayNames())
-                ->whereRaw("({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000")
-                ->select($groupColumns)
-                ->selectRaw('SUM(' . $totalExpression . ') as total_amount');
-
-            if ($scope !== 'branch') {
-                $this->applyArea6DailyLoanUnitScope($query, $scope);
+        $rows = array_values(array_filter($rows, function ($row) use ($allowedBranches, $scope): bool {
+            $row = (array) $row;
+            $branch = strtoupper(trim((string) ($row['branch'] ?? '')));
+            if (!isset($allowedBranches[$branch])) {
+                return false;
             }
 
-            if ($accountColumn !== null) {
-                $query->selectRaw("COUNT(DISTINCT {$accountColumn}) as current_count");
-            } else {
-                $query->selectRaw('COUNT(*) as current_count');
+            if ($scope === 'branch') {
+                return true;
             }
 
-            $rows = $query
-                ->groupBy($groupColumns)
-                ->orderByDesc('current_count')
-                ->orderByDesc('total_amount')
-                ->limit(5)
-                ->get();
+            $unit = strtoupper(trim((string) ($row['unit'] ?? '')));
+            if ($unit === '') {
+                return false;
+            }
 
-            $total = DB::table('daily_loan_dinamis')
-                ->where('periode', $period)
-                ->whereIn('cabang1', $this->dashboardBranchDisplayNames())
-                ->whereRaw("({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000")
-                ->selectRaw(($accountColumn !== null ? "COUNT(DISTINCT {$accountColumn})" : 'COUNT(*)') . ' as total_count')
-                ->selectRaw('SUM(' . $totalExpression . ') as total_amount')
-                ->first();
+            return match ($scope) {
+                'unit_kerja' => true,
+                'retail' => str_starts_with($unit, 'KC ') || str_starts_with($unit, 'KCP '),
+                default => str_starts_with($unit, 'UNIT '),
+            };
+        }));
 
-            return [
-                'total_count' => (int) ($total->total_count ?? 0),
-                'total_amount' => (float) ($total->total_amount ?? 0),
-                'rows' => $rows->map(function ($row, int $index) use ($scope) {
-                    return [
-                        'rank' => $index + 1,
-                        'label' => $scope === 'branch' ? (string) ($row->cabang1 ?? '-') : (string) ($row->unit1 ?? '-'),
-                        'meta' => in_array($scope, ['unit', 'unit_kerja']) ? (string) ($row->cabang1 ?? 'Area 6') : 'Ritel Area 6',
-                        'value' => $this->formatInteger((int) ($row->current_count ?? 0)) . ' rek',
-                        'sub' => $this->formatCurrencyCompact((float) ($row->total_amount ?? 0)),
-                    ];
-                })->all(),
-            ];
+        usort($rows, function ($left, $right) use ($countField, $amountField, $scope): int {
+            $left = (array) $left;
+            $right = (array) $right;
+            $countOrder = (int) ($right[$countField] ?? 0) <=> (int) ($left[$countField] ?? 0);
+            if ($countOrder !== 0) {
+                return $countOrder;
+            }
+
+            $amountOrder = (float) ($right[$amountField] ?? 0) <=> (float) ($left[$amountField] ?? 0);
+            if ($amountOrder !== 0) {
+                return $amountOrder;
+            }
+
+            $labelField = $scope === 'branch' ? 'branch' : 'unit';
+
+            return strcasecmp((string) ($left[$labelField] ?? ''), (string) ($right[$labelField] ?? ''));
         });
+
+        $ranked = collect(array_slice($rows, 0, 5))
+            ->map(function ($row, int $index) use ($scope, $countField, $amountField): array {
+                $row = (array) $row;
+
+                return [
+                    'rank' => $index + 1,
+                    'label' => (string) ($row[$scope === 'branch' ? 'branch' : 'unit'] ?? '-'),
+                    'meta' => in_array($scope, ['unit', 'unit_kerja'], true)
+                        ? (string) ($row['branch'] ?? 'Area 6')
+                        : 'Ritel Area 6',
+                    'value' => $this->formatInteger((int) ($row[$countField] ?? 0)) . ' rek',
+                    'sub' => $this->formatCurrencyCompact((float) ($row[$amountField] ?? 0)),
+                ];
+            })
+            ->all();
+
+        return [
+            'total_count' => (int) ($totals[$countField] ?? 0),
+            $totalAmountField => (float) ($totals[$amountField] ?? 0),
+            'rows' => $ranked,
+            'refresh_pending' => (bool) ($snapshot['refresh_pending'] ?? false),
+        ];
     }
 
     private function applyArea6DailyLoanUnitScope($query, string $scope): void
@@ -11831,6 +12904,16 @@ class DashboardSimpananController extends Controller
         static $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
 
         return $branches;
+    }
+
+    private function applyDashboardBranchNamesScope($query, string $column): void
+    {
+        $query->where(function ($branchQuery) use ($column): void {
+            foreach ($this->dashboardBranchNames() as $index => $branch) {
+                $method = $index === 0 ? 'whereRaw' : 'orWhereRaw';
+                $branchQuery->{$method}("UPPER(TRIM(COALESCE({$column}, ''))) LIKE ?", ['%'.$branch.'%']);
+            }
+        });
     }
 
     private function dashboardBranchDisplayNames(): array

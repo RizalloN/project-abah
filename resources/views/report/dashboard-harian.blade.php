@@ -734,6 +734,31 @@
         color: #ffffff;
     }
 
+    .daily-dropdown-radio {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 16px;
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid #b8cbe7;
+        border-radius: 50%;
+        background: #ffffff;
+    }
+
+    .daily-dropdown-radio::after {
+        content: '';
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--bri-blue-main);
+        transform: scale(0);
+        transition: transform 140ms ease;
+    }
+
+    .daily-dropdown-option.is-active .daily-dropdown-radio::after {
+        transform: scale(1);
+    }
+
     .daily-dropdown-label {
         flex: 1 1 auto;
         overflow: hidden;
@@ -1278,6 +1303,59 @@
     .daily-table .row-depth-1 .metric-label { padding-left: 0.2rem; font-weight: 700; color: #002060; }
     .daily-table .row-depth-2 .metric-label { padding-left: 0.75rem; color: #002060; font-weight: 500;}
     .daily-table .row-depth-3 .metric-label { padding-left: 1.3rem; color: #5f6f85; font-size: 0.68rem; }
+    .daily-table .row-depth-4 .metric-label { padding-left: 1.9rem; color: #64748b; font-size: 0.67rem; }
+
+    .daily-table .office-breakdown-row td {
+        background: #f8fbff;
+        border-top-color: #dbeafe;
+        color: #334155;
+        font-size: 0.69rem;
+    }
+
+    .daily-table .office-breakdown-row .sticky-label {
+        background: #eef6ff;
+        box-shadow: inset 3px 0 0 #0b57d0;
+    }
+
+    .daily-table .office-breakdown-row .metric-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding-left: 0.8rem;
+        color: #123b70;
+        font-weight: 700;
+    }
+
+    .daily-table .office-breakdown-row .metric-label::before {
+        content: '\f1ad';
+        font-family: "Font Awesome 5 Free";
+        font-size: 0.66rem;
+        font-weight: 900;
+        color: #0b57d0;
+    }
+
+    .daily-table .office-breakdown-kcp .sticky-label {
+        box-shadow: inset 3px 0 0 #0891b2;
+    }
+
+    .daily-table .office-breakdown-kcp .metric-label::before {
+        color: #0891b2;
+    }
+
+    .daily-table .office-breakdown-child-row td {
+        background: #ffffff;
+        color: #475569;
+        font-size: 0.68rem;
+    }
+
+    .daily-table .office-breakdown-child-row .sticky-label {
+        background: #ffffff;
+    }
+
+    .daily-table .office-breakdown-child-row:hover td,
+    .daily-table .office-breakdown-child-row:hover .sticky-label {
+        background: #f3f8ff;
+    }
 
     /* Sub-Segment Highlights (Contrast but pleasant) */
     .section-ritel td, 
@@ -2412,8 +2490,8 @@
                                         <span class="daily-dropdown-toggle-text text-truncate">Area 6</span>
                                         <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
                                     </button>
-                                    <div class="daily-dropdown-menu" data-daily-dropdown-menu="kanca"></div>
-                                    <select id="filter-kanca" name="kanca" class="form-control daily-filter-native" multiple></select>
+                                    <div class="daily-dropdown-menu" data-daily-dropdown-menu="kanca" role="listbox" aria-multiselectable="false"></div>
+                                    <select id="filter-kanca" name="kanca" class="form-control daily-filter-native"></select>
                                 </div>
                             </div>
                         </div>
@@ -3078,16 +3156,8 @@
 
         const buildKancaToggleLabel = function (options, selectedValues) {
             const normalized = normalizeArraySelection(selectedValues);
-            const kancaOptions = (options || []).filter(function (opt) {
-                return opt.value && opt.value !== 'all';
-            });
-            const totalKancaCount = kancaOptions.length;
 
             if (!normalized.length) {
-                return 'Area 6';
-            }
-
-            if (totalKancaCount > 0 && normalized.length === totalKancaCount) {
                 return 'Area 6';
             }
 
@@ -3117,7 +3187,8 @@
                 return true;
             }
 
-            return kancaValues.length > 0
+            return normalized.length > 1
+                && kancaValues.length > 0
                 && normalized.length === kancaValues.length
                 && kancaValues.every(function (value) { return normalized.includes(value); });
         };
@@ -3128,17 +3199,25 @@
                 return;
             }
 
-            const normalized = normalizeArraySelection(selectedValues);
-            setNativeSelectOptions(selects.kanca, options, normalized, true);
-            const area6Active = isArea6KancaSelection(options, normalized);
+            const availableValues = (options || [])
+                .map(function (option) { return String(option.value || ''); })
+                .filter(function (value) { return value && value !== 'all'; });
+            const requestedValues = normalizeArraySelection(selectedValues)
+                .filter(function (value) { return availableValues.includes(value); });
+            const normalized = isArea6KancaSelection(options, requestedValues)
+                ? []
+                : requestedValues.slice(0, 1);
+            const selectedValue = normalized[0] || 'all';
+            setNativeSelectOptions(selects.kanca, options, selectedValue, false);
+            const area6Active = normalized.length === 0;
 
             dropdown.menu.innerHTML = (options || []).map(function (option) {
                 const value = String(option.value || 'all');
                 const isAll = value === 'all';
                 const isActive = isAll ? area6Active : (!area6Active && normalized.includes(value));
 
-                return '<button type="button" class="daily-dropdown-option ' + (isActive ? 'is-active' : '') + '" data-kanca-option="' + escapeHtml(value) + '">' +
-                    '<span class="daily-dropdown-check"><i class="fas fa-check"></i></span>' +
+                return '<button type="button" role="option" aria-selected="' + (isActive ? 'true' : 'false') + '" class="daily-dropdown-option ' + (isActive ? 'is-active' : '') + '" data-kanca-option="' + escapeHtml(value) + '">' +
+                    '<span class="daily-dropdown-radio" aria-hidden="true"></span>' +
                     '<span class="daily-dropdown-label">' + escapeHtml(option.label || value) + '</span>' +
                 '</button>';
             }).join('');
@@ -3772,8 +3851,16 @@
                 if (blockClassMap[row.key]) {
                     rowClasses.push(blockClassMap[row.key]);
                 }
-                if (sectionClassMap[row.key]) {
-                    rowClasses.push(sectionClassMap[row.key]);
+                const sectionKey = row.parent_key || row.key;
+                if (!row.office_breakdown && !row.office_breakdown_child && sectionClassMap[sectionKey]) {
+                    rowClasses.push(sectionClassMap[sectionKey]);
+                }
+                if (row.office_breakdown) {
+                    rowClasses.push('office-breakdown-row');
+                    rowClasses.push('office-breakdown-' + (row.office_type || 'kc'));
+                }
+                if (row.office_breakdown_child) {
+                    rowClasses.push('office-breakdown-child-row');
                 }
                 if (row.hiddenByScope || (scopeMode !== 'all' && row.hiddenByScope)) {
                     rowClasses.push('row-hidden-by-scope');
@@ -4435,26 +4522,18 @@ if (window.jQuery && captureModal) {
                 if (!option || !selects.kanca) return;
 
                 const value = String(option.getAttribute('data-kanca-option') || 'all');
-                let nextValues = getSelectedKancaValues();
-                const area6Active = isArea6KancaSelection(latestFilters.kanca || [], nextValues);
-
-                if (value === 'all') {
-                    nextValues = [];
-                } else if (area6Active) {
-                    nextValues = [value];
-                } else if (nextValues.includes(value)) {
-                    nextValues = nextValues.filter(function (item) { return item !== value; });
-                } else {
-                    nextValues.push(value);
-                }
+                const nextValues = value === 'all' ? [] : [value];
 
                 Array.from(selects.kanca.options).forEach(function (nativeOption) {
                     const nativeValue = String(nativeOption.value || '');
-                    nativeOption.selected = nativeValue !== 'all' && nextValues.includes(nativeValue);
+                    nativeOption.selected = nextValues.length === 0
+                        ? nativeValue === 'all'
+                        : nativeValue === nextValues[0];
                 });
 
                 renderKancaDropdown(latestFilters.kanca || [], nextValues);
                 syncUnitSelect(latestFilters, selects.unit_kerja.value || 'all');
+                closeDropdown('kanca');
                 refreshUnitOptions();
             });
         }

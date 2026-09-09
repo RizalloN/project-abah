@@ -2,10 +2,12 @@
 
 namespace App\Console\Commands;
 
+use App\Support\ConsumerRmPositionHistoryStore;
 use App\Support\ReportCacheVersion;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Cache\Lock;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -16,10 +18,28 @@ use Throwable;
 
 class PruneReportDailyHistoryCommand extends Command
 {
+    private ?CarbonImmutable $deadline = null;
+
     private const TARGETS = [
         'daily_loan_dinamis' => 'periode',
         'lw325_ph' => 'periode',
+        'lw321pn' => 'periode',
         'simpanan_multipn' => 'posisi',
+        'hourly_dpk' => 'posisi',
+        'dly_kap_resegmentasi' => 'periode',
+        'dashboard_pinjaman_snapshots' => 'periode',
+        'dashboard_pinjaman_chart_periodik_snapshots' => 'periode',
+    ];
+
+    /**
+     * These sources deliberately retain their complete history. They drive
+     * presentation and dashboard time-series, so monthly-only retention here
+     * would silently remove points used by the charts.
+     */
+    private const TIMESERIES_EXCLUDED_TABLES = [
+        'ssa_simpanan',
+        'ssa_pinjaman',
+        'gi405_recovery',
     ];
 
     private const ACTIVE_IMPORT_STATUSES = ['queued', 'staging', 'processing'];
@@ -28,14 +48,23 @@ class PruneReportDailyHistoryCommand extends Command
         {--execute : Jalankan penghapusan; tanpa opsi ini command hanya menampilkan dry-run}
         {--keep-full-month=* : Bulan yang dipertahankan lengkap dalam format YYYY-MM}
         {--chunk=50000 : Jumlah maksimum baris per transaksi DELETE}
-        {--sleep-ms=25 : Jeda antarbatch untuk mengurangi tekanan I/O}';
+        {--sleep-ms=25 : Jeda antarbatch untuk mengurangi tekanan I/O}
+        {--lock-retries=5 : Jumlah retry untuk lock wait timeout atau deadlock transient}
+        {--retry-sleep-ms=1000 : Jeda dasar retry lock dalam milidetik}
+        {--max-runtime=0 : Batas menit eksekusi; 0 berarti tanpa batas dan cocok untuk maintenance manual}';
 
-    protected $description = 'Sisakan posisi terakhir per bulan dan pertahankan dua bulan terbaru secara lengkap';
+    protected $description = 'Sisakan posisi terakhir per bulan, pertahankan dua bulan terbaru, dan kecualikan sumber timeseries';
 
     public function handle(): int
     {
         $chunkSize = max(1_000, min(200_000, (int) $this->option('chunk')));
         $sleepMilliseconds = max(0, min(5_000, (int) $this->option('sleep-ms')));
+        $lockRetries = max(0, min(20, (int) $this->option('lock-retries')));
+        $retrySleepMilliseconds = max(100, min(30_000, (int) $this->option('retry-sleep-ms')));
+        $maxRuntimeMinutes = max(0, min(720, (int) $this->option('max-runtime')));
+        $this->deadline = $maxRuntimeMinutes > 0
+            ? CarbonImmutable::now()->addMinutes($maxRuntimeMinutes)
+            : null;
 
         try {
             $protectedMonths = $this->resolveProtectedMonths();
@@ -70,6 +99,9 @@ class PruneReportDailyHistoryCommand extends Command
             'protected_months' => $protectedMonths,
             'chunk_size' => $chunkSize,
             'sleep_ms' => $sleepMilliseconds,
+            'lock_retries' => $lockRetries,
+            'retry_sleep_ms' => $retrySleepMilliseconds,
+            'max_runtime_minutes' => $maxRuntimeMinutes,
             'planned_delete_rows' => $this->sumPlanValue($plan, 'delete_rows'),
             'deleted_rows' => 0,
             'tables' => [],
@@ -90,6 +122,8 @@ class PruneReportDailyHistoryCommand extends Command
                     $tablePlan,
                     $chunkSize,
                     $sleepMilliseconds,
+                    $lockRetries,
+                    $retrySleepMilliseconds,
                     $audit,
                     $auditPath
                 );
@@ -98,6 +132,23 @@ class PruneReportDailyHistoryCommand extends Command
                     $this->bumpRelevantCacheVersions($table);
                     $cacheInvalidatedTables[] = $table;
                 }
+
+                if ($this->runtimeLimitReached()) {
+                    break;
+                }
+            }
+
+            if ($this->runtimeLimitReached()) {
+                $audit['status'] = 'partial';
+                $audit['finished_at'] = now()->toIso8601String();
+                $audit['cache_invalidated_tables'] = $cacheInvalidatedTables;
+                $audit['remaining_candidate_rows'] = null;
+                $this->persistAudit($auditPath, $audit);
+
+                $this->warn('Batas durasi tercapai. Pembersihan parsial tersimpan dan akan dilanjutkan pada eksekusi berikutnya.');
+                $this->line('Audit: '.$auditPath);
+
+                return self::SUCCESS;
             }
 
             $remainingPlan = $this->buildPlan($protectedMonths);
@@ -225,6 +276,8 @@ class PruneReportDailyHistoryCommand extends Command
         array $tablePlan,
         int $chunkSize,
         int $sleepMilliseconds,
+        int $lockRetries,
+        int $retrySleepMilliseconds,
         array &$audit,
         string $auditPath
     ): int {
@@ -256,12 +309,24 @@ class PruneReportDailyHistoryCommand extends Command
             $periodDeleted = 0;
             $batchNumber = 0;
 
+            if ($table === 'daily_loan_dinamis') {
+                $this->captureAndVerifyDailyLoanArchive($period['date']);
+            }
+
             do {
                 $this->assertNoActiveImports();
-                $deleted = DB::table($table)
-                    ->where($periodColumn, $period['date'])
-                    ->limit($chunkSize)
-                    ->delete();
+                if ($this->runtimeLimitReached()) {
+                    return $tableDeleted;
+                }
+
+                $deleted = $this->deleteBatchWithRetry(
+                    $table,
+                    $periodColumn,
+                    $period['date'],
+                    $chunkSize,
+                    $lockRetries,
+                    $retrySleepMilliseconds
+                );
 
                 $deleted = (int) $deleted;
                 $periodDeleted += $deleted;
@@ -282,6 +347,10 @@ class PruneReportDailyHistoryCommand extends Command
                     usleep($sleepMilliseconds * 1_000);
                 }
             } while ($deleted > 0);
+
+            if ($this->runtimeLimitReached()) {
+                return $tableDeleted;
+            }
 
             $remaining = (int) DB::table($table)
                 ->where($periodColumn, $period['date'])
@@ -308,8 +377,47 @@ class PruneReportDailyHistoryCommand extends Command
         return $tableDeleted;
     }
 
+    /**
+     * Archive the exact source period before the first destructive batch.
+     * Pruning intentionally fails closed when the archive table is unavailable
+     * or the copied rows cannot be verified.
+     *
+     * @return array<string, mixed>
+     */
+    private function captureAndVerifyDailyLoanArchive(string $period): array
+    {
+        try {
+            $result = app(ConsumerRmPositionHistoryStore::class)->capturePeriod($period);
+        } catch (Throwable $exception) {
+            throw new RuntimeException(
+                "Arsip posisi RM Konsumer periode {$period} tidak tersedia atau gagal dibuat; Daily Loan tidak dihapus.",
+                0,
+                $exception
+            );
+        }
+
+        $verified = ($result['verified'] ?? false) === true;
+        $skipped = ($result['skipped'] ?? false) === true;
+        if (! $verified || $skipped) {
+            $reason = trim((string) ($result['reason'] ?? 'hasil capture tidak terverifikasi'));
+
+            throw new RuntimeException(
+                "Arsip posisi RM Konsumer periode {$period} belum terverifikasi ({$reason}); Daily Loan tidak dihapus."
+            );
+        }
+
+        return $result;
+    }
+
     private function assertTargetSchemaIsSafe(): void
     {
+        $overlap = array_values(array_intersect(array_keys(self::TARGETS), self::TIMESERIES_EXCLUDED_TABLES));
+        if ($overlap !== []) {
+            throw new RuntimeException(
+                'Target retensi tidak boleh memuat sumber timeseries: '.implode(', ', $overlap).'.'
+            );
+        }
+
         foreach (self::TARGETS as $table => $periodColumn) {
             if (! Schema::hasTable($table) || ! Schema::hasColumn($table, $periodColumn)) {
                 throw new RuntimeException("Target {$table}.{$periodColumn} tidak tersedia.");
@@ -386,6 +494,7 @@ class PruneReportDailyHistoryCommand extends Command
         $this->info('RENCANA RETENSI DATA HARIAN');
         $this->line('Bulan lengkap: '.implode(', ', $protectedMonths));
         $this->line('Bulan lainnya: hanya posisi terakhir yang tersedia pada masing-masing bulan.');
+        $this->line('Dikecualikan (timeseries): '.implode(', ', self::TIMESERIES_EXCLUDED_TABLES).'.');
         $this->newLine();
 
         $rows = [];
@@ -414,15 +523,65 @@ class PruneReportDailyHistoryCommand extends Command
 
     private function bumpRelevantCacheVersions(string $table): void
     {
-        if ($table === 'simpanan_multipn') {
-            ReportCacheVersion::bump('simpanan');
-            ReportCacheVersion::bump('harian');
+        $scopes = match ($table) {
+            'simpanan_multipn', 'hourly_dpk' => ['simpanan', 'harian'],
+            'dly_kap_resegmentasi' => ['harian'],
+            default => ['pinjaman', 'harian'],
+        };
 
-            return;
+        foreach ($scopes as $scope) {
+            ReportCacheVersion::bump($scope);
+        }
+    }
+
+    private function runtimeLimitReached(): bool
+    {
+        return $this->deadline !== null && CarbonImmutable::now()->greaterThanOrEqualTo($this->deadline);
+    }
+
+    private function deleteBatchWithRetry(
+        string $table,
+        string $periodColumn,
+        string $period,
+        int $chunkSize,
+        int $lockRetries,
+        int $retrySleepMilliseconds
+    ): int {
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                return (int) DB::table($table)
+                    ->where($periodColumn, $period)
+                    ->limit($chunkSize)
+                    ->delete();
+            } catch (QueryException $exception) {
+                if (! $this->isRetryableLockException($exception) || $attempt >= $lockRetries) {
+                    throw $exception;
+                }
+
+                $delay = min(30_000, $retrySleepMilliseconds * ($attempt + 1));
+                $this->warn(sprintf(
+                    '  %s: lock database, retry %d/%d dalam %d ms.',
+                    $period,
+                    $attempt + 1,
+                    $lockRetries,
+                    $delay
+                ));
+                usleep($delay * 1_000);
+            }
+        }
+    }
+
+    private function isRetryableLockException(QueryException $exception): bool
+    {
+        $driverCode = (int) ($exception->errorInfo[1] ?? 0);
+        if (in_array($driverCode, [1205, 1213], true)) {
+            return true;
         }
 
-        ReportCacheVersion::bump('pinjaman');
-        ReportCacheVersion::bump('harian');
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'lock wait timeout')
+            || str_contains($message, 'deadlock found');
     }
 
     private function sumPlanValue(array $plan, string $key): int

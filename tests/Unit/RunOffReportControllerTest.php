@@ -29,6 +29,7 @@ class RunOffReportControllerTest extends TestCase
             $table->string('produk_dashboard')->nullable();
             $table->string('description')->nullable();
             $table->decimal('npb_pokok_la', 20, 2)->nullable();
+            $table->decimal('baki_debet1', 20, 2)->nullable();
             $table->date('next_pmt_date')->nullable();
             $table->date('next_pmt_int_date')->nullable();
         });
@@ -130,6 +131,26 @@ class RunOffReportControllerTest extends TestCase
         $this->assertSame([], $report['rows']);
     }
 
+    public function test_it_excludes_a_paid_off_account_even_when_its_schedule_remains_in_the_month(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            $this->row('2026-06-30', 'KC Madiun', 'MIC-PAID', 'Micro', 'Kupedes', '250.00', '2026-07-10', null, null, '1000.00'),
+            $this->row('2026-07-25', 'KC Madiun', 'MIC-PAID', 'Micro', 'Kupedes', '250.00', '2026-07-10', null, null, '0.00'),
+        ]);
+
+        $report = app(RunOffReportService::class)->build();
+        $row = collect($report['rows'])->first(fn (array $row): bool =>
+            $row['category'] === 'MICRO TOTAL' && $row['branch'] === 'KC Madiun'
+        );
+
+        $this->assertSame(1, $row['baseline_accounts']);
+        $this->assertSame(25000, $row['baseline_amount_cents']);
+        $this->assertSame(0, $row['remaining_accounts']);
+        $this->assertSame(0, $row['remaining_amount_cents']);
+        $this->assertSame(1, $row['paid_accounts']);
+        $this->assertSame(25000, $row['paid_amount_cents']);
+    }
+
     public function test_controller_renders_three_metric_groups(): void
     {
         $this->seedRunOffFixtures();
@@ -177,7 +198,8 @@ class RunOffReportControllerTest extends TestCase
         string $amount,
         ?string $principalDate,
         ?string $interestDate,
-        ?string $description = null
+        ?string $description = null,
+        string $balance = '1.00'
     ): array {
         return [
             'periode' => $period,
@@ -187,6 +209,7 @@ class RunOffReportControllerTest extends TestCase
             'produk_dashboard' => $product,
             'description' => $description ?? ($segment === 'Micro' ? strtoupper($product) : null),
             'npb_pokok_la' => $amount,
+            'baki_debet1' => $balance,
             'next_pmt_date' => $principalDate,
             'next_pmt_int_date' => $interestDate,
         ];

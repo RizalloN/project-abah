@@ -24,6 +24,8 @@ class DashboardHarianSnapshotService
     private const AUTO_SYNC_RECENT_SOURCE_HOURS = 6;
     private const AREA_6_LABEL = 'Area 6';
     private const ALL_UNIT_LABEL = 'Semua Unit Kerja';
+    public const ALL_UNIT_KONSOL_VALUE = 'all-konsol';
+    public const ALL_UNIT_KONSOL_LABEL = 'Semua Unit Kerja (Konsol)';
     private const METRIC_COLUMNS = [
         'ph_tupok',
         'ph_lunas',
@@ -198,6 +200,67 @@ class DashboardHarianSnapshotService
         ['key' => 'rec_dh_total', 'label' => '7. Rec DH per Segmen', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'rec_dh_small', 'label' => 'Ritel', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
         ['key' => 'rec_dh_micro', 'label' => 'Micro', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+    ];
+    private const OFFICE_BREAKDOWN_STRUCTURE = [
+        'simpanan_ritel' => [
+            'prefix' => 'A',
+            'children' => [
+                ['key' => 'giro_ritel', 'depth' => 3],
+                ['key' => 'tabungan_ritel', 'depth' => 3],
+                ['key' => 'deposito_ritel', 'depth' => 3],
+            ],
+        ],
+        'sme_os' => [
+            'prefix' => 'B',
+            'hidden_children' => ['medium_os'],
+            'children' => [
+                ['key' => 'kecil_os', 'depth' => 3],
+                ['key' => 'kecil_non_cashcoll_os', 'depth' => 4],
+                ['key' => 'cashcoll_os', 'depth' => 4],
+            ],
+        ],
+        'consumer_os' => [
+            'prefix' => 'C',
+            'children' => [
+                ['key' => 'briguna_konsumer_os', 'depth' => 3],
+                ['key' => 'kpr_os', 'depth' => 3],
+                ['key' => 'kkb_os', 'depth' => 3],
+            ],
+        ],
+        'sme_sml' => [
+            'prefix' => 'B',
+            'hidden_children' => ['medium_sml'],
+            'children' => [
+                ['key' => 'kecil_sml', 'depth' => 3],
+                ['key' => 'kecil_non_cashcoll_sml', 'depth' => 4],
+                ['key' => 'cashcoll_sml', 'depth' => 4],
+            ],
+        ],
+        'consumer_sml' => [
+            'prefix' => 'C',
+            'children' => [
+                ['key' => 'briguna_konsumer_sml', 'depth' => 3],
+                ['key' => 'kpr_sml', 'depth' => 3],
+                ['key' => 'kkb_sml', 'depth' => 3],
+            ],
+        ],
+        'sme_npl' => [
+            'prefix' => 'B',
+            'hidden_children' => ['medium_npl'],
+            'children' => [
+                ['key' => 'kecil_npl', 'depth' => 3],
+                ['key' => 'kecil_non_cashcoll_npl', 'depth' => 4],
+                ['key' => 'cashcoll_npl', 'depth' => 4],
+            ],
+        ],
+        'consumer_npl' => [
+            'prefix' => 'C',
+            'children' => [
+                ['key' => 'briguna_konsumer_npl', 'depth' => 3],
+                ['key' => 'kpr_npl', 'depth' => 3],
+                ['key' => 'kkb_npl', 'depth' => 3],
+            ],
+        ],
     ];
 
     public function rebuild(?string $period = null, bool $force = false, ?callable $progress = null): array
@@ -767,7 +830,16 @@ class DashboardHarianSnapshotService
         $periods = collect($positionKeys)
             ->mapWithKeys(fn (string $key): array => [$key => $comparison[$key] ?? null])
             ->all();
-        $sourceRows = $this->fetchKeragaanUkerSourceRows($type, array_values(array_filter($periods)), $kancaKey, $unitKey);
+        $isRetailConsolidated = $this->isKeragaanUkerKonsolScope($unitKey);
+        $sourceRows = $this->fetchKeragaanUkerSourceRows(
+            $type,
+            array_values(array_filter($periods)),
+            $kancaKey,
+            $isRetailConsolidated ? null : $unitKey
+        );
+        if ($isRetailConsolidated) {
+            $sourceRows = $this->consolidateKeragaanUkerRetailRows($sourceRows, $type);
+        }
         $metrics = $this->keragaanUkerMetricDefinitions($type);
         $monthColumn = $resolvedRka ? $this->rkaLookupService()->resolveMonthColumn(Carbon::parse($resolvedRka)) : null;
         $rkaYear = $resolvedRka ? (int) Carbon::parse($resolvedRka)->format('Y') : null;
@@ -779,15 +851,14 @@ class DashboardHarianSnapshotService
                 $first = $unitRows->sortByDesc('period')->first();
                 $kancaLabel = (string) ($first['kanca_label'] ?? '');
                 $unitLabel = (string) ($first['unit_label'] ?? '');
-                $rkaMetrics = ($monthColumn && $rkaYear)
-                    ? $this->finalizeRkaMetrics($this->rkaLookupService()->aggregateForScope(
-                        $rkaDefinitions,
-                        $monthColumn,
-                        $kancaLabel !== '' ? $kancaLabel : null,
-                        $unitLabel !== '' ? $unitLabel : null,
-                        $rkaYear
-                    ))
-                    : $this->emptyMetrics();
+                $rkaMetrics = $this->keragaanUkerRkaMetricsForRows(
+                    $unitRows,
+                    $rkaDefinitions,
+                    $monthColumn,
+                    $rkaYear,
+                    $kancaLabel,
+                    $unitLabel
+                );
 
                 $unit = [
                     'unit_code' => (string) ($first['unit_code'] ?? ''),
@@ -844,7 +915,9 @@ class DashboardHarianSnapshotService
                 'rka_period' => $resolvedRka,
                 'data_type' => $type,
                 'scope_label' => $this->displayFilterLabel($kancaKey, self::AREA_6_LABEL, $period, 'kanca', $kancaKey, $unitKey),
-                'unit_label' => $this->displayFilterLabel($unitKey, self::ALL_UNIT_LABEL, $period, 'unit_kerja', $kancaKey, $unitKey),
+                'unit_label' => $isRetailConsolidated
+                    ? self::ALL_UNIT_KONSOL_LABEL
+                    : $this->displayFilterLabel($unitKey, self::ALL_UNIT_LABEL, $period, 'unit_kerja', $kancaKey, $unitKey),
                 'value_scale' => 'million',
             ],
             'columns' => [
@@ -914,6 +987,122 @@ class DashboardHarianSnapshotService
             ->map(fn ($row) => $this->mapKeragaanUkerRawRow($row, $type))
             ->filter()
             ->values();
+    }
+
+    private function isKeragaanUkerKonsolScope(array|string|null $unitKey): bool
+    {
+        if (is_array($unitKey)) {
+            return count($unitKey) === 1
+                && trim((string) reset($unitKey)) === self::ALL_UNIT_KONSOL_VALUE;
+        }
+
+        return trim((string) $unitKey) === self::ALL_UNIT_KONSOL_VALUE;
+    }
+
+    private function consolidateKeragaanUkerRetailRows(Collection $sourceRows, string $type): Collection
+    {
+        $retailOfficeRows = $sourceRows->filter(fn (array $row): bool => $this->isKeragaanUkerRetailOfficeRow($row));
+        if ($retailOfficeRows->isEmpty()) {
+            return $sourceRows;
+        }
+
+        $nonRetailRows = $sourceRows->reject(fn (array $row): bool => $this->isKeragaanUkerRetailOfficeRow($row));
+        $metrics = $this->keragaanUkerMetricDefinitions($type);
+        $consolidatedRetailRows = $retailOfficeRows
+            ->groupBy(fn (array $row): string => ($row['period'] ?? '') . '|' . ($row['kanca_label'] ?? ''))
+            ->map(function (Collection $officeRows) use ($metrics): array {
+                $kcRow = $officeRows->first(fn (array $row): bool => str_starts_with(strtoupper((string) ($row['unit_label'] ?? '')), 'KC '));
+                $first = $kcRow ?? $officeRows->first();
+                $rawCabang = (string) ($first['raw_cabang'] ?? '');
+                $unitCode = $kcRow
+                    ? (string) ($kcRow['unit_code'] ?? '')
+                    : $this->extractUkerCode('', $rawCabang);
+
+                $consolidated = [
+                    'period' => (string) ($first['period'] ?? ''),
+                    'unit_code' => $unitCode,
+                    'raw_cabang' => $rawCabang,
+                    'raw_unit' => (string) ($first['raw_unit'] ?? ''),
+                    'kanca_label' => (string) ($first['kanca_label'] ?? ''),
+                    'unit_label' => (string) ($first['kanca_label'] ?? ''),
+                    'consolidated_retail' => true,
+                    'rka_scope_units' => $officeRows
+                        ->pluck('unit_label')
+                        ->map(fn ($label): string => trim((string) $label))
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->all(),
+                ];
+
+                foreach ($metrics as $metric) {
+                    $sourceKey = $metric['source_key'];
+                    $consolidated[$sourceKey] = $officeRows->sum(
+                        fn (array $row): float => (float) ($row[$sourceKey] ?? 0)
+                    );
+                }
+
+                return $consolidated;
+            })
+            ->values();
+
+        return $nonRetailRows->concat($consolidatedRetailRows)->values();
+    }
+
+    private function isKeragaanUkerRetailOfficeRow(array $row): bool
+    {
+        $unitLabel = strtoupper(trim((string) ($row['unit_label'] ?? '')));
+
+        return str_starts_with($unitLabel, 'KC ') || str_starts_with($unitLabel, 'KCP ');
+    }
+
+    private function keragaanUkerRkaMetricsForRows(
+        Collection $unitRows,
+        array $rkaDefinitions,
+        ?string $monthColumn,
+        ?int $rkaYear,
+        string $kancaLabel,
+        string $unitLabel
+    ): array {
+        if (!$monthColumn || !$rkaYear) {
+            return $this->emptyMetrics();
+        }
+
+        $rkaScopeUnits = $unitRows
+            ->pluck('rka_scope_units')
+            ->filter(fn ($scopes): bool => is_array($scopes))
+            ->flatten()
+            ->map(fn ($scope): string => trim((string) $scope))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($rkaScopeUnits->isEmpty()) {
+            return $this->finalizeRkaMetrics($this->rkaLookupService()->aggregateForScope(
+                $rkaDefinitions,
+                $monthColumn,
+                $kancaLabel !== '' ? $kancaLabel : null,
+                $unitLabel !== '' ? $unitLabel : null,
+                $rkaYear
+            ));
+        }
+
+        $rawRkaMetrics = array_fill_keys(array_keys($rkaDefinitions), 0.0);
+        foreach ($rkaScopeUnits as $rkaScopeUnit) {
+            $scopeMetrics = $this->rkaLookupService()->aggregateForScope(
+                $rkaDefinitions,
+                $monthColumn,
+                $kancaLabel !== '' ? $kancaLabel : null,
+                $rkaScopeUnit,
+                $rkaYear
+            );
+
+            foreach ($scopeMetrics as $key => $value) {
+                $rawRkaMetrics[$key] = (float) ($rawRkaMetrics[$key] ?? 0) + (float) $value;
+            }
+        }
+
+        return $this->finalizeRkaMetrics($rawRkaMetrics);
     }
 
     private function fetchKeragaanUkerLoanRows(array $periods, array|string|null $kancaKey, array|string|null $unitKey): Collection
@@ -1101,6 +1290,7 @@ class DashboardHarianSnapshotService
         $mapped = [
             'period' => $period,
             'unit_code' => $unitCode,
+            'raw_cabang' => $rawCabang,
             'raw_unit' => $rawUnit,
             'kanca_label' => $kancaLabel,
             'unit_label' => $unitLabel,
@@ -1445,6 +1635,40 @@ class DashboardHarianSnapshotService
             ];
         })->values()->all();
 
+        $officeBreakdown = $this->buildSelectedBranchOfficeBreakdown(
+            $selectedPeriod,
+            $comparisonPeriods,
+            $neededPeriods,
+            $kancaKey,
+            $unitKey
+        );
+
+        if ($officeBreakdown !== []) {
+            $activeStructures = collect(self::OFFICE_BREAKDOWN_STRUCTURE)
+                ->only(array_keys($officeBreakdown));
+            $officeChildKeys = $activeStructures
+                ->flatMap(function (array $structure): array {
+                    return array_merge(
+                        collect($structure['children'] ?? [])->pluck('key')->all(),
+                        $structure['hidden_children'] ?? []
+                    );
+                })
+                ->unique()
+                ->all();
+            $expandedRows = [];
+            foreach ($rows as $row) {
+                if (in_array($row['key'], $officeChildKeys, true)) {
+                    continue;
+                }
+
+                $expandedRows[] = $row;
+                foreach ($officeBreakdown[$row['key']] ?? [] as $officeRow) {
+                    $expandedRows[] = $officeRow;
+                }
+            }
+            $rows = $expandedRows;
+        }
+
         $source = $this->canUseSnapshotMetrics()
             ? self::SNAPSHOT_TABLE
             : 'snapshot_unavailable';
@@ -1474,6 +1698,199 @@ class DashboardHarianSnapshotService
                 'current_total_os' => (float) ($currentMetrics['total_os'] ?? 0),
             ],
         ];
+    }
+
+    private function buildSelectedBranchOfficeBreakdown(
+        string $selectedPeriod,
+        array $comparisonPeriods,
+        array $neededPeriods,
+        array|string|null $kancaKey,
+        array|string|null $unitKey
+    ): array {
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+
+        if (count($normalizedKanca) !== 1 || $normalizedUnit !== [] || !$this->canUseSnapshotMetrics()) {
+            return [];
+        }
+
+        $kancaLabel = $this->normalizeKancaLabel($normalizedKanca[0]);
+        $kancaSlug = $this->slugKey($kancaLabel !== '' ? $kancaLabel : $normalizedKanca[0]);
+        $offices = DB::table(self::SNAPSHOT_TABLE)
+            ->where('snapshot_period', $selectedPeriod)
+            ->where('kanca_key', $kancaSlug)
+            ->whereColumn('unit_key', '<>', 'kanca_key')
+            ->select(['unit_key', 'unit_label'])
+            ->get()
+            ->map(function ($office): ?array {
+                $label = trim((string) ($office->unit_label ?? ''));
+                $type = preg_match('/^KCP\b/i', $label) === 1
+                    ? 'kcp'
+                    : (preg_match('/^KC\b/i', $label) === 1 ? 'kc' : null);
+
+                if ($type === null) {
+                    return null;
+                }
+
+                return [
+                    'unit_key' => (string) ($office->unit_key ?? ''),
+                    'unit_label' => $label,
+                    'office_type' => $type,
+                ];
+            })
+            ->filter()
+            ->unique('unit_key')
+            ->sortBy(fn (array $office): string => ($office['office_type'] === 'kc' ? '0' : '1') . '|' . $office['unit_label'])
+            ->values();
+
+        if ($offices->isEmpty()) {
+            return [];
+        }
+
+        $definitions = collect(self::ROW_DEFINITIONS)->keyBy('key');
+        $breakdown = [];
+        $officeNumbersByParent = [];
+
+        foreach ($offices as $office) {
+            $metricsByPeriod = $this->loadMetricsForPeriods($neededPeriods, $normalizedKanca, $office['unit_key']);
+            $emptyMetrics = $this->finalizeMetrics($this->emptyMetrics());
+            $currentMetrics = $metricsByPeriod[$selectedPeriod] ?? $emptyMetrics;
+            $rkaMetrics = $this->buildRkaMetrics(
+                $comparisonPeriods['rka'],
+                $selectedPeriod,
+                $normalizedKanca,
+                $office['unit_label'],
+                false
+            );
+            $rkaDecMetrics = $this->buildRkaMetrics(
+                $comparisonPeriods['rka'],
+                $selectedPeriod,
+                $normalizedKanca,
+                $office['unit_label'],
+                true
+            );
+
+            $buildMetricRow = function (
+                string $metricKey,
+                string $rowKey,
+                string $label,
+                int $depth,
+                string $parentKey,
+                bool $isOfficeHeading
+            ) use (
+                $comparisonPeriods,
+                $currentMetrics,
+                $definitions,
+                $emptyMetrics,
+                $metricsByPeriod,
+                $office,
+                $rkaDecMetrics,
+                $rkaMetrics,
+                $selectedPeriod
+            ): ?array {
+                $definition = $definitions->get($metricKey);
+                if (!$definition) {
+                    return null;
+                }
+
+                $values = [];
+                foreach (['yoy', 'ytd', 'm2', 'mtm', 'mtd', 'h1'] as $periodKey) {
+                    $period = $comparisonPeriods[$periodKey] ?? null;
+                    $values[$periodKey] = $period
+                        ? (float) (($metricsByPeriod[$period] ?? $emptyMetrics)[$metricKey] ?? 0)
+                        : 0.0;
+                }
+
+                $current = (float) ($currentMetrics[$metricKey] ?? 0);
+                $rka = (float) ($rkaMetrics[$metricKey] ?? 0);
+                $values['current'] = $current;
+                $values['rka'] = $rka;
+                $values['rka_dec'] = (float) ($rkaDecMetrics[$metricKey] ?? 0);
+                $values['penc_pct'] = $this->safePercent($current, $rka);
+
+                return [
+                    'key' => $rowKey,
+                    'parent_key' => $parentKey,
+                    'source_metric_key' => $metricKey,
+                    'label' => $label,
+                    'type' => $definition['type'],
+                    'depth' => $depth,
+                    'accent' => $isOfficeHeading ? 'office' : 'office-detail',
+                    'office_breakdown' => $isOfficeHeading,
+                    'office_breakdown_child' => !$isOfficeHeading,
+                    'office_type' => $office['office_type'],
+                    'values' => $values,
+                    'deltas' => [
+                        'yoy' => $current - $values['yoy'],
+                        'ytd' => $current - $values['ytd'],
+                        'mtm' => $current - $values['mtm'],
+                        'mtd' => $current - $values['mtd'],
+                        'dtd' => $current - $values['h1'],
+                    ],
+                ];
+            };
+
+            foreach (self::OFFICE_BREAKDOWN_STRUCTURE as $parentKey => $structure) {
+                if ($office['office_type'] === 'kcp' && abs((float) ($currentMetrics[$parentKey] ?? 0)) < 0.000001) {
+                    continue;
+                }
+
+                $officeNumbersByParent[$parentKey] = ($officeNumbersByParent[$parentKey] ?? 0) + 1;
+                $officeNumber = $officeNumbersByParent[$parentKey];
+                $officeHeading = $buildMetricRow(
+                    $parentKey,
+                    $parentKey . '__office__' . $office['unit_key'],
+                    $structure['prefix'] . '.' . $officeNumber . ' ' . $office['unit_label'],
+                    2,
+                    $parentKey,
+                    true
+                );
+
+                if ($officeHeading) {
+                    $breakdown[$parentKey][] = $officeHeading;
+                }
+
+                foreach ($structure['children'] as $child) {
+                    $childKey = (string) ($child['key'] ?? '');
+                    $childDefinition = $definitions->get($childKey);
+                    if (!$childDefinition) {
+                        continue;
+                    }
+
+                    $childRow = $buildMetricRow(
+                        $childKey,
+                        $childKey . '__office_detail__' . $office['unit_key'],
+                        (string) ($childDefinition['label'] ?? $childKey),
+                        (int) ($child['depth'] ?? 3),
+                        $parentKey,
+                        false
+                    );
+
+                    if ($childRow) {
+                        $breakdown[$parentKey][] = $childRow;
+                    }
+                }
+            }
+        }
+
+        foreach ($breakdown as $parentKey => $rows) {
+            $officeRows = collect($rows)
+                ->filter(fn (array $row): bool => (bool) ($row['office_breakdown'] ?? false));
+            $hasKcValue = $officeRows->contains(function (array $row): bool {
+                return ($row['office_type'] ?? null) === 'kc'
+                    && abs((float) ($row['values']['current'] ?? 0)) >= 0.000001;
+            });
+            $hasKcpValue = $officeRows->contains(function (array $row): bool {
+                return ($row['office_type'] ?? null) === 'kcp'
+                    && abs((float) ($row['values']['current'] ?? 0)) >= 0.000001;
+            });
+
+            if (!$hasKcValue || !$hasKcpValue) {
+                unset($breakdown[$parentKey]);
+            }
+        }
+
+        return $breakdown;
     }
 
     private function isArea6KancaSelection(array $normalizedKanca, Collection $kancas): bool

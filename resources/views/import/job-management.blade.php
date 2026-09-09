@@ -3,14 +3,24 @@
 @section('title', 'Kelola Job')
 
 @section('content')
-<div class="container-fluid pt-3 pb-4">
-    <div class="job-page-heading d-flex justify-content-between align-items-center mb-3">
-        <h2 class="h4 font-weight-bold text-dark mb-0"><i class="fas fa-tasks text-primary mr-2"></i> Job Management</h2>
-        <span class="text-muted small">Monitor realtime queue import & snapshot.</span>
+<div class="container-fluid pt-2 pb-4">
+    <!-- Hero Header -->
+    <div class="job-management-hero mb-4">
+        <div class="job-management-hero__glow"></div>
+        <div class="job-page-heading d-flex align-items-center justify-content-between flex-wrap position-relative">
+            <div class="pr-3">
+                <span class="job-management-hero__eyebrow"><i class="fas fa-microchip mr-1"></i> Queue &amp; Worker Control</span>
+                <h2 class="job-management-hero__title h4 font-weight-bold text-white mb-0"><i class="fas fa-tasks mr-2"></i> Manajemen Job &amp; Antrian</h2>
+                <p class="job-management-hero__text mb-0">Pemantauan realtime status antrean import, snapshot rebuild, dan worker execution.</p>
+            </div>
+            <div class="job-management-hero__badge mt-3 mt-md-0">
+                <i class="fas fa-circle text-success mr-2 status-pulse-dot"></i> Worker Aktif
+            </div>
+        </div>
     </div>
 
     <!-- Keep main wrapper and data attributes intact -->
-    <div class="card border-0 shadow-sm" style="border-radius: 12px; overflow: hidden;" id="job-management-card"
+    <div class="card border-0 shadow-sm job-management-main-card" id="job-management-card"
         data-fetch-url="{{ route('job-management.data') }}"
         data-clear-url="{{ route('job-management.clear') }}"
         data-bulk-delete-url="{{ route('job-management.bulk-destroy') }}"
@@ -27,27 +37,30 @@
         <!-- Toolbar & Stats -->
         <div class="card-header bg-white border-bottom py-3 px-4 job-management-toolbar">
             <div class="row align-items-center">
-                <div class="col-lg-5 d-flex justify-content-between pr-4 border-right job-summary-grid">
-                    <div class="text-center">
-                        <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Aktif</div>
-                        <div class="h5 mb-0 text-primary font-weight-bold" id="summary-active">0</div>
+                <!-- Telemetry Stats Strip -->
+                <div class="col-xl-5 col-lg-5 d-flex justify-content-between pr-lg-4 border-right job-summary-grid">
+                    <div class="job-summary-item text-center">
+                        <div class="job-summary-label">Aktif</div>
+                        <div class="job-summary-val text-primary" id="summary-active">0</div>
                     </div>
-                    <div class="text-center">
-                        <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Queued</div>
-                        <div class="h5 mb-0 text-warning font-weight-bold" id="summary-queued">0</div>
+                    <div class="job-summary-item text-center">
+                        <div class="job-summary-label">Queued</div>
+                        <div class="job-summary-val text-warning" id="summary-queued">0</div>
                     </div>
-                    <div class="text-center">
-                        <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Processing</div>
-                        <div class="h5 mb-0 text-success font-weight-bold" id="summary-processing">0</div>
+                    <div class="job-summary-item text-center">
+                        <div class="job-summary-label">Processing</div>
+                        <div class="job-summary-val text-success" id="summary-processing">0</div>
                     </div>
-                    <div class="text-center">
-                        <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Hari Ini</div>
-                        <div class="h5 mb-0 text-info font-weight-bold" id="summary-today">0</div>
+                    <div class="job-summary-item text-center">
+                        <div class="job-summary-label">Hari Ini</div>
+                        <div class="job-summary-val text-info" id="summary-today">0</div>
                     </div>
                 </div>
-                <div class="col-lg-7 pl-4 job-filter-panel">
-                    <div class="d-flex align-items-center justify-content-end flex-wrap gap-2 job-filter-controls">
-                        <select id="job-filter-status" class="form-control form-control-sm" style="width: auto; border-radius: 6px;">
+
+                <!-- Filters & Action Panel -->
+                <div class="col-xl-7 col-lg-7 pl-lg-4 job-filter-panel mt-3 mt-lg-0">
+                    <div class="d-flex align-items-center justify-content-lg-end flex-wrap job-filter-controls" style="gap: 8px;">
+                        <select id="job-filter-status" class="form-control form-control-sm custom-select job-status-select">
                             <option value="all">Semua Status</option>
                             <option value="queued">Queued</option>
                             <option value="processing">Processing</option>
@@ -56,35 +69,46 @@
                             <option value="failed">Failed</option>
                             <option value="failed_partial">Gagal Sebagian</option>
                         </select>
-                        <input type="text" id="job-filter-search" class="form-control form-control-sm mx-2" placeholder="Cari job..." style="width: 180px; border-radius: 6px;">
-                        
-                        <div class="custom-control custom-checkbox mr-3 mt-1">
-                            <input type="checkbox" class="custom-control-input" id="job-filter-active-only">
-                            <label class="custom-control-label font-weight-bold text-muted" style="font-size: 0.8rem;" for="job-filter-active-only">Aktif</label>
+
+                        <div class="input-group input-group-sm job-filter-search-group">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text bg-white border-right-0 text-muted"><i class="fas fa-search"></i></span>
+                            </div>
+                            <input type="text" id="job-filter-search" class="form-control border-left-0 pl-0" placeholder="Cari job...">
                         </div>
-                        <div class="custom-control custom-checkbox mr-3 mt-1">
+                        
+                        <div class="custom-control custom-switch d-inline-flex align-items-center mx-1">
+                            <input type="checkbox" class="custom-control-input" id="job-filter-active-only">
+                            <label class="custom-control-label font-weight-bold text-muted" style="font-size: 0.8rem; cursor: pointer; user-select: none;" for="job-filter-active-only">Aktif</label>
+                        </div>
+                        <div class="custom-control custom-switch d-inline-flex align-items-center mx-1">
                             <input type="checkbox" class="custom-control-input" id="job-auto-refresh" checked>
-                            <label class="custom-control-label font-weight-bold text-muted" style="font-size: 0.8rem;" for="job-auto-refresh">Auto</label>
+                            <label class="custom-control-label font-weight-bold text-muted" style="font-size: 0.8rem; cursor: pointer; user-select: none;" for="job-auto-refresh">Auto</label>
                         </div>
 
-                        <button type="button" id="btn-job-refresh" class="btn btn-sm btn-primary" style="border-radius: 6px;"><i class="fas fa-sync-alt"></i></button>
-                        <button type="button" id="btn-job-clear" class="btn btn-sm btn-outline-danger ml-1" style="border-radius: 6px;"><i class="fas fa-trash-alt"></i></button>
+                        <div class="d-inline-flex align-items-center" style="gap: 4px;">
+                            <button type="button" id="btn-job-refresh" class="btn btn-sm job-btn-primary" title="Refresh data"><i class="fas fa-sync-alt"></i></button>
+                            <button type="button" id="btn-job-clear" class="btn btn-sm job-btn-outline-danger" title="Bersihkan riwayat job"><i class="fas fa-trash-alt"></i></button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="card-body p-4 bg-light">
-            <div id="job-management-notice" class="alert alert-info d-none mb-4 shadow-sm border-0" style="border-radius: 8px;"></div>
-            <div id="job-management-queue-health" class="alert alert-warning d-none mb-4 shadow-sm border-0" style="border-radius: 8px;"></div>
+            <div id="job-management-notice" class="alert alert-info d-none mb-4 shadow-sm border-0" style="border-radius: 10px;"></div>
+            <div id="job-management-queue-health" class="alert alert-warning d-none mb-4 shadow-sm border-0" style="border-radius: 10px;"></div>
 
             <!-- Active & Snapshot Grids -->
             <div class="row">
                 <!-- Import Jobs -->
                 <div class="col-12 mb-4">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h6 class="font-weight-bold mb-0 text-dark"><i class="fas fa-hourglass-half text-success mr-2"></i> Import Jobs Aktif</h6>
-                        <span class="badge badge-success badge-pill px-3 py-1" id="active-job-count-label">0</span>
+                        <h6 class="font-weight-bold mb-0 text-dark d-flex align-items-center" style="font-size: 0.95rem;">
+                            <span class="job-section-icon mr-2 text-success"><i class="fas fa-hourglass-half"></i></span>
+                            Import Jobs Aktif
+                        </h6>
+                        <span class="badge badge-success badge-pill px-3 py-1 font-weight-bold" id="active-job-count-label">0</span>
                     </div>
                     <div id="active-jobs-grid" class="row"></div>
                 </div>
@@ -94,8 +118,11 @@
                 <!-- Snapshot Jobs -->
                 <div class="col-lg-6 mb-4">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h6 class="font-weight-bold mb-0 text-dark"><i class="fas fa-clone text-primary mr-2"></i> Snapshot Jobs Aktif</h6>
-                        <span class="badge badge-primary badge-pill px-3 py-1" id="snapshot-job-count-label">0</span>
+                        <h6 class="font-weight-bold mb-0 text-dark d-flex align-items-center" style="font-size: 0.95rem;">
+                            <span class="job-section-icon mr-2 text-primary"><i class="fas fa-clone"></i></span>
+                            Snapshot Jobs Aktif
+                        </h6>
+                        <span class="badge badge-primary badge-pill px-3 py-1 font-weight-bold" id="snapshot-job-count-label">0</span>
                     </div>
                     <div id="snapshot-jobs-grid" class="row"></div>
                 </div>
@@ -103,8 +130,11 @@
                 <!-- Managed Delete Jobs -->
                 <div class="col-lg-6 mb-4">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h6 class="font-weight-bold mb-0 text-dark"><i class="fas fa-trash-alt text-danger mr-2"></i> Delete Jobs Aktif</h6>
-                        <span class="badge badge-danger badge-pill px-3 py-1" id="managed-delete-job-count-label">0</span>
+                        <h6 class="font-weight-bold mb-0 text-dark d-flex align-items-center" style="font-size: 0.95rem;">
+                            <span class="job-section-icon mr-2 text-danger"><i class="fas fa-trash-alt"></i></span>
+                            Delete Jobs Aktif
+                        </h6>
+                        <span class="badge badge-danger badge-pill px-3 py-1 font-weight-bold" id="managed-delete-job-count-label">0</span>
                     </div>
                     <div id="managed-delete-jobs-grid" class="row"></div>
                 </div>
@@ -113,49 +143,55 @@
             <!-- Raw Queue -->
             <div class="mb-4">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h6 class="font-weight-bold mb-0 text-dark"><i class="fas fa-database text-warning mr-2"></i> Queue Raw</h6>
+                    <h6 class="font-weight-bold mb-0 text-dark d-flex align-items-center" style="font-size: 0.95rem;">
+                        <span class="job-section-icon mr-2 text-warning"><i class="fas fa-database"></i></span>
+                        Antrian Raw Database
+                    </h6>
                     <div>
-                        <span class="badge badge-warning badge-pill px-3 py-1 mr-2" id="raw-queue-job-count-label">0</span>
-                        <button type="button" id="btn-purge-queue-jobs" class="btn btn-sm py-1 btn-outline-danger" style="border-radius: 6px;"><i class="fas fa-broom mr-1"></i>Purge Pending</button>
+                        <span class="badge badge-warning badge-pill px-3 py-1 mr-2 font-weight-bold" id="raw-queue-job-count-label">0</span>
+                        <button type="button" id="btn-purge-queue-jobs" class="btn btn-sm py-1 btn-outline-danger" style="border-radius: 8px;"><i class="fas fa-broom mr-1"></i>Purge Pending</button>
                     </div>
                 </div>
                 <div id="raw-queue-jobs-grid" class="row"></div>
             </div>
 
             <!-- History Table -->
-            <div class="card border-0 shadow-sm" style="border-radius: 12px; overflow: hidden;">
-                <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center flex-wrap">
-                    <h6 class="font-weight-bold mb-0"><i class="fas fa-history text-secondary mr-2"></i> Riwayat Jobs</h6>
+            <div class="card border-0 shadow-sm job-history-card" style="border-radius: 14px; overflow: hidden;">
+                <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center flex-wrap" style="border-bottom: 1px solid #e2e8f0;">
+                    <h6 class="font-weight-bold mb-0 text-dark d-flex align-items-center" style="font-size: 0.95rem;">
+                        <span class="job-section-icon mr-2 text-secondary"><i class="fas fa-history"></i></span>
+                        Riwayat Eksekusi Job
+                    </h6>
                     <div class="d-flex align-items-center">
-                        <span class="text-muted small mr-3" id="job-pagination-meta">0 job</span>
+                        <span class="text-muted small mr-3 font-weight-bold" id="job-pagination-meta">0 job</span>
                         <div class="custom-control custom-checkbox d-inline-block">
                             <input type="checkbox" class="custom-control-input" id="job-select-all">
-                            <label class="custom-control-label small text-muted font-weight-bold mt-1" for="job-select-all">Pilih Semua</label>
+                            <label class="custom-control-label small text-muted font-weight-bold mt-1" style="cursor: pointer;" for="job-select-all">Pilih Semua</label>
                         </div>
-                        <span class="badge badge-secondary mx-3 px-2 py-1" id="job-selected-count">0 terpilih</span>
-                        <button type="button" id="btn-job-delete-selected" class="btn btn-sm btn-outline-danger" style="border-radius: 6px;" disabled><i class="fas fa-trash-alt"></i> Hapus</button>
+                        <span class="badge badge-light border mx-3 px-2 py-1 font-weight-bold" id="job-selected-count">0 terpilih</span>
+                        <button type="button" id="btn-job-delete-selected" class="btn btn-sm job-btn-outline-danger" style="border-radius: 8px;" disabled><i class="fas fa-trash-alt mr-1"></i> Hapus Terpilih</button>
                     </div>
                 </div>
                 <div class="table-responsive bg-white">
-                    <table class="table table-hover mb-0" style="font-size: 0.85rem;">
-                        <thead class="bg-light text-muted">
+                    <table class="table table-hover mb-0 job-management-table" style="font-size: 0.88rem;">
+                        <thead>
                             <tr>
                                 <th class="text-center border-top-0 border-bottom-0" style="width: 50px;"><i class="far fa-check-square"></i></th>
                                 <th class="border-top-0 border-bottom-0">ID</th>
                                 <th class="border-top-0 border-bottom-0">Report</th>
                                 <th class="border-top-0 border-bottom-0">File</th>
                                 <th class="border-top-0 border-bottom-0">Status</th>
-                                <th class="border-top-0 border-bottom-0" style="width: 200px;">Progress</th>
+                                <th class="border-top-0 border-bottom-0" style="width: 220px;">Progress</th>
                                 <th class="border-top-0 border-bottom-0">Updated</th>
                                 <th class="text-center border-top-0 border-bottom-0">Aksi</th>
                             </tr>
                         </thead>
                         <tbody id="job-table-body">
-                            <tr><td colspan="8" class="text-center text-muted py-4">Memuat data...</td></tr>
+                            <tr><td colspan="8" class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat data...</td></tr>
                         </tbody>
                     </table>
                 </div>
-                <div id="job-pagination" class="card-footer bg-white d-none py-3 px-4"></div>
+                <div id="job-pagination" class="card-footer bg-white d-none py-3 px-4" style="border-top: 1px solid #e2e8f0;"></div>
             </div>
         </div>
     </div>
@@ -175,7 +211,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const activeOnly = document.getElementById('job-filter-active-only');
     const selectAll = document.getElementById('job-select-all');
     const selectedCount = document.getElementById('job-selected-count');
-    const snapshotGrid = document.getElementById('snapshot-jobs-grid'); // Keep this ID
+    const snapshotGrid = document.getElementById('snapshot-jobs-grid');
     const snapshotJobCountLabel = document.getElementById('snapshot-job-count-label');
     const activeGrid = document.getElementById('active-jobs-grid');
     const rawQueueGrid = document.getElementById('raw-queue-jobs-grid');
@@ -220,18 +256,18 @@ document.addEventListener('DOMContentLoaded', function () {
         const reserved = Number(summary.reserved || 0);
         rawQueueJobCountLabel.textContent = `${total.toLocaleString('id-ID')} job (${pending} pending, ${reserved} reserved)`;
         if (!Array.isArray(items) || items.length === 0) {
-            rawQueueGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-database"></i>Tidak ada queue job yang terdeteksi di tabel <code>jobs</code>.</div></div>`;
+            rawQueueGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-database fa-2x mb-2 d-block text-muted opacity-50"></i>Tidak ada queue job yang terdeteksi di tabel <code>jobs</code>.</div></div>`;
             return;
         }
-        rawQueueGrid.innerHTML = `<div class="col-12"><div class="raw-queue-table-wrap"><table class="table table-hover mb-0 job-management-table"><thead><tr class="job-management-table__header"><th>ID</th><th>Queue</th><th>Job Class</th><th>Parameter</th><th>Status</th><th>Usia</th><th>Dibuat</th><th class="text-center">Aksi</th></tr></thead><tbody>${items.map((job) => `<tr><td class="font-weight-bold" style="color:#b45309;">#${job.id}</td><td><span class="badge badge-light" style="font-size:.78rem;font-weight:700;">${escapeHtml(job.queue)}</span></td><td><div class="job-table-primary" style="font-size:.88rem;">${escapeHtml(job.class_name)}</div></td><td><div class="job-table-secondary" style="font-size:.8rem;">${escapeHtml(job.job_data_label || '-')}</div></td><td><span class="job-status-badge job-status-badge--${escapeHtml(job.status_tone)}">${escapeHtml(job.status_label)}</span></td><td><div class="job-table-secondary">${escapeHtml(job.age_label || '-')}</div></td><td><div class="job-table-secondary">${escapeHtml(job.created_at_label || '-')}</div></td><td class="text-center"><div class="job-table-actions">${forceRunQueueJobButton(job)}${deleteQueueJobButton(job)}</div></td></tr>`).join('')}</tbody></table></div></div>`;
+        rawQueueGrid.innerHTML = `<div class="col-12"><div class="raw-queue-table-wrap"><table class="table table-hover mb-0 job-management-table"><thead><tr class="job-management-table__header"><th>ID</th><th>Queue</th><th>Job Class</th><th>Parameter</th><th>Status</th><th>Usia</th><th>Dibuat</th><th class="text-center">Aksi</th></tr></thead><tbody>${items.map((job) => `<tr><td class="font-weight-bold" style="color:#b45309;">#${job.id}</td><td><span class="badge badge-light border" style="font-size:.78rem;font-weight:700;">${escapeHtml(job.queue)}</span></td><td><div class="job-table-primary" style="font-size:.88rem;">${escapeHtml(job.class_name)}</div></td><td><div class="job-table-secondary" style="font-size:.8rem;">${escapeHtml(job.job_data_label || '-')}</div></td><td><span class="job-status-badge job-status-badge--${escapeHtml(job.status_tone)}">${escapeHtml(job.status_label)}</span></td><td><div class="job-table-secondary">${escapeHtml(job.age_label || '-')}</div></td><td><div class="job-table-secondary">${escapeHtml(job.created_at_label || '-')}</div></td><td class="text-center"><div class="job-table-actions">${forceRunQueueJobButton(job)}${deleteQueueJobButton(job)}</div></td></tr>`).join('')}</tbody></table></div></div>`;
     }
     function rowCheckbox(job) { if (!job.can_delete) return '<span class="text-muted small">-</span>'; const checked = selectedJobIds.has(String(job.id)) ? 'checked' : ''; return `<input type="checkbox" class="job-row-check" data-job-id="${job.id}" aria-label="Pilih job ${job.id}" ${checked}>`; }
     function syncSelectionState() { const selectableIds = currentJobs.filter((job) => job.can_delete).map((job) => String(job.id)); const selectedOnPage = selectableIds.filter((id) => selectedJobIds.has(id)); selectAll.checked = selectableIds.length > 0 && selectedOnPage.length === selectableIds.length; selectAll.indeterminate = selectedOnPage.length > 0 && selectedOnPage.length < selectableIds.length; selectedCount.textContent = `${selectedJobIds.size} job dipilih`; btnDeleteSelected.disabled = selectedJobIds.size === 0; }
     function renderSummary(summary) { document.getElementById('summary-active').textContent = Number(summary.active_jobs || 0).toLocaleString('id-ID'); document.getElementById('summary-queued').textContent = Number(summary.queued_jobs || 0).toLocaleString('id-ID'); document.getElementById('summary-processing').textContent = Number(summary.processing_jobs || 0).toLocaleString('id-ID'); document.getElementById('summary-today').textContent = Number(summary.today_jobs || 0).toLocaleString('id-ID'); }
-    function renderSnapshotJobs(items, summary = {}) { const activeCount = Number(summary.active_jobs || 0); snapshotJobCountLabel.textContent = `${activeCount.toLocaleString('id-ID')} job snapshot aktif`; if (!Array.isArray(items) || items.length === 0) { snapshotGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-clone"></i>Belum ada rebuild snapshot yang sedang antre atau berjalan.</div></div>`; return; } snapshotGrid.innerHTML = items.map((job) => `<div class="col-xl-6 mb-3"><div class="job-active-card job-active-card--snapshot"><div class="job-active-card__header"><div><div class="job-active-card__title">${escapeHtml(job.report_name)}</div><div class="job-active-card__sub">${escapeHtml(job.file_name)} • ${escapeHtml(job.id)}</div></div>${statusBadge(job)}</div><div class="job-active-card__body">${progressMarkup(job)}<div class="job-active-card__message">${escapeHtml(job.message || '-')}</div><div class="job-active-card__meta">${snapshotDetailMarkup(job)}<span><i class="fas fa-history mr-1"></i>${escapeHtml(job.updated_at_label || '-')}</span><span><i class="far fa-clock mr-1"></i>${escapeHtml(job.duration_label || '-')}</span>${job.queue_name ? `<span><i class="fas fa-server mr-1"></i>${escapeHtml(job.queue_name)}</span>` : ''}</div></div><div class="job-active-card__footer"><span class="job-active-card__hint">${job.status === 'failed' ? 'Snapshot stale ditandai gagal otomatis agar progress tidak menggantung.' : 'Snapshot rebuild dipantau dari cache state report management.'}</span><div class="job-active-card__actions">${forceStartButton(job, false, true)}</div></div></div></div>`).join(''); }
-    function renderActiveJobs(items) { activeJobCountLabel.textContent = `${Number(items.length || 0).toLocaleString('id-ID')} job aktif`; if (!Array.isArray(items) || items.length === 0) { activeGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-hourglass-half"></i>Belum ada job dengan status queued atau processing.</div></div>`; return; } activeGrid.innerHTML = items.map((job) => `<div class="col-xl-6 mb-3"><div class="job-active-card"><div class="job-active-card__header"><div><div class="job-active-card__title">#${job.id} • ${escapeHtml(job.report_name)}</div><div class="job-active-card__sub">${escapeHtml(job.file_name)}${job.table_name ? ' • ' + escapeHtml(job.table_name) : ''}</div></div>${statusBadge(job)}</div><div class="job-active-card__body">${progressMarkup(job)}<div class="job-active-card__message">${escapeHtml(job.message || '-')}</div><div class="job-active-card__meta"><span><i class="far fa-user mr-1"></i>${escapeHtml(job.created_by_name || 'System')}</span><span><i class="far fa-clock mr-1"></i>${escapeHtml(job.duration_label || '-')}</span><span><i class="fas fa-history mr-1"></i>${escapeHtml(job.updated_at_label || '-')}</span></div></div><div class="job-active-card__footer">${job.termination_requested ? '<span class="job-active-card__hint">Permintaan terminate sudah dikirim ke worker.</span>' : '<span class="job-active-card__hint">Job aktif masih dapat dihentikan dari halaman ini.</span>'}<div class="job-active-card__actions">${forceStartButton(job)}${terminateButton(job)}</div></div></div></div>`).join(''); }
-    function renderManagedDeleteJobs(items, summary = {}) { const activeCount = Number(summary.active_jobs || 0); managedDeleteJobCountLabel.textContent = `${activeCount.toLocaleString('id-ID')} job delete aktif`; if (!Array.isArray(items) || items.length === 0) { managedDeleteGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-trash-alt"></i>Belum ada progress delete yang sedang antre atau berjalan.</div></div>`; return; } managedDeleteGrid.innerHTML = items.map((job) => `<div class="col-xl-6 mb-3"><div class="job-active-card job-active-card--delete"><div class="job-active-card__header"><div><div class="job-active-card__title">#${escapeHtml(job.id)} • ${escapeHtml(job.report_name || 'Managed Delete')}</div><div class="job-active-card__sub">${escapeHtml(job.table_name || '-')} • ${escapeHtml(job.file_name || '-')}</div></div>${statusBadge(job)}</div><div class="job-active-card__body">${progressMarkup(job)}<div class="job-active-card__message">${escapeHtml(job.message || '-')}</div><div class="job-active-card__meta"><span><i class="fas fa-layer-group mr-1"></i>${escapeHtml(job.stage_label || job.phase || '-')}</span><span><i class="fas fa-stream mr-1"></i>${Number(job.scope_count || 0).toLocaleString('id-ID')} scope</span><span><i class="fas fa-history mr-1"></i>${escapeHtml(job.updated_at_label || '-')}</span><span><i class="far fa-clock mr-1"></i>${escapeHtml(job.duration_label || '-')}</span>${job.queue_name ? `<span><i class="fas fa-server mr-1"></i>${escapeHtml(job.queue_name)}${job.queue_job_id ? ' #' + escapeHtml(job.queue_job_id) : ''}</span>` : ''}</div></div><div class="job-active-card__footer">${job.can_cancel ? (job.termination_requested ? '<span class="job-active-card__hint">Force stop sudah dikirim.</span>' : '<span class="job-active-card__hint">Delete aktif masih bisa dihentikan dari halaman ini.</span>') : '<span class="job-active-card__hint">Delete ini sudah terminal atau tidak lagi di antrean.</span>'}<div class="job-active-card__actions">${forceStopDeleteButton(job)}${cancelDeleteButton(job)}</div></div></div></div>`).join(''); }
-    function renderTable(items) { currentJobs = Array.isArray(items) ? items : []; if (currentJobs.length === 0) { tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-5">Tidak ada data job untuk filter ini.</td></tr>'; syncSelectionState(); return; } tableBody.innerHTML = currentJobs.map((job) => `<tr><td class="text-center job-col-check">${rowCheckbox(job)}</td><td class="font-weight-bold" style="color: var(--jm-primary-color);">#${job.id}</td><td><div class="job-table-primary">${escapeHtml(job.report_name)}</div><div class="job-table-secondary">${escapeHtml(job.table_name || '-')}</div></td><td><div class="job-table-primary">${escapeHtml(job.file_name)}</div><div class="job-table-secondary">By ${escapeHtml(job.created_by_name || 'System')}</div></td><td>${statusBadge(job)}</td><td>${progressMarkup(job)}<div class="job-table-secondary mt-1">${escapeHtml(job.message || '-')}</div></td><td><div class="job-table-primary">${escapeHtml(job.updated_at_label || '-')}</div><div class="job-table-secondary">Durasi ${escapeHtml(job.duration_label || '-')}</div></td><td class="text-center"><div class="job-table-actions">${forceStartButton(job, true)}${terminateButton(job, true)}${deleteButton(job, true)}</div></td></tr>`).join(''); syncSelectionState(); }
+    function renderSnapshotJobs(items, summary = {}) { const activeCount = Number(summary.active_jobs || 0); snapshotJobCountLabel.textContent = `${activeCount.toLocaleString('id-ID')} job snapshot aktif`; if (!Array.isArray(items) || items.length === 0) { snapshotGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-clone fa-2x mb-2 d-block text-muted opacity-50"></i>Belum ada rebuild snapshot yang sedang antre atau berjalan.</div></div>`; return; } snapshotGrid.innerHTML = items.map((job) => `<div class="col-xl-6 mb-3"><div class="job-active-card job-active-card--snapshot"><div class="job-active-card__header"><div><div class="job-active-card__title">${escapeHtml(job.report_name)}</div><div class="job-active-card__sub">${escapeHtml(job.file_name)} • ${escapeHtml(job.id)}</div></div>${statusBadge(job)}</div><div class="job-active-card__body">${progressMarkup(job)}<div class="job-active-card__message">${escapeHtml(job.message || '-')}</div><div class="job-active-card__meta">${snapshotDetailMarkup(job)}<span><i class="fas fa-history mr-1"></i>${escapeHtml(job.updated_at_label || '-')}</span><span><i class="far fa-clock mr-1"></i>${escapeHtml(job.duration_label || '-')}</span>${job.queue_name ? `<span><i class="fas fa-server mr-1"></i>${escapeHtml(job.queue_name)}</span>` : ''}</div></div><div class="job-active-card__footer"><span class="job-active-card__hint">${job.status === 'failed' ? 'Snapshot stale ditandai gagal otomatis.' : 'Rebuild dipantau dari cache report management.'}</span><div class="job-active-card__actions">${forceStartButton(job, false, true)}</div></div></div></div>`).join(''); }
+    function renderActiveJobs(items) { activeJobCountLabel.textContent = `${Number(items.length || 0).toLocaleString('id-ID')} job aktif`; if (!Array.isArray(items) || items.length === 0) { activeGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-hourglass-half fa-2x mb-2 d-block text-muted opacity-50"></i>Belum ada job dengan status queued atau processing.</div></div>`; return; } activeGrid.innerHTML = items.map((job) => `<div class="col-xl-6 mb-3"><div class="job-active-card"><div class="job-active-card__header"><div><div class="job-active-card__title">#${job.id} • ${escapeHtml(job.report_name)}</div><div class="job-active-card__sub">${escapeHtml(job.file_name)}${job.table_name ? ' • ' + escapeHtml(job.table_name) : ''}</div></div>${statusBadge(job)}</div><div class="job-active-card__body">${progressMarkup(job)}<div class="job-active-card__message">${escapeHtml(job.message || '-')}</div><div class="job-active-card__meta"><span><i class="far fa-user mr-1"></i>${escapeHtml(job.created_by_name || 'System')}</span><span><i class="far fa-clock mr-1"></i>${escapeHtml(job.duration_label || '-')}</span><span><i class="fas fa-history mr-1"></i>${escapeHtml(job.updated_at_label || '-')}</span></div></div><div class="job-active-card__footer">${job.termination_requested ? '<span class="job-active-card__hint">Permintaan terminate dikirim.</span>' : '<span class="job-active-card__hint">Job aktif dapat dihentikan kapan saja.</span>'}<div class="job-active-card__actions">${forceStartButton(job)}${terminateButton(job)}</div></div></div></div>`).join(''); }
+    function renderManagedDeleteJobs(items, summary = {}) { const activeCount = Number(summary.active_jobs || 0); managedDeleteJobCountLabel.textContent = `${activeCount.toLocaleString('id-ID')} job delete aktif`; if (!Array.isArray(items) || items.length === 0) { managedDeleteGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-trash-alt fa-2x mb-2 d-block text-muted opacity-50"></i>Belum ada progress delete yang sedang antre atau berjalan.</div></div>`; return; } managedDeleteGrid.innerHTML = items.map((job) => `<div class="col-xl-6 mb-3"><div class="job-active-card job-active-card--delete"><div class="job-active-card__header"><div><div class="job-active-card__title">#${escapeHtml(job.id)} • ${escapeHtml(job.report_name || 'Managed Delete')}</div><div class="job-active-card__sub">${escapeHtml(job.table_name || '-')} • ${escapeHtml(job.file_name || '-')}</div></div>${statusBadge(job)}</div><div class="job-active-card__body">${progressMarkup(job)}<div class="job-active-card__message">${escapeHtml(job.message || '-')}</div><div class="job-active-card__meta"><span><i class="fas fa-layer-group mr-1"></i>${escapeHtml(job.stage_label || job.phase || '-')}</span><span><i class="fas fa-stream mr-1"></i>${Number(job.scope_count || 0).toLocaleString('id-ID')} scope</span><span><i class="fas fa-history mr-1"></i>${escapeHtml(job.updated_at_label || '-')}</span><span><i class="far fa-clock mr-1"></i>${escapeHtml(job.duration_label || '-')}</span>${job.queue_name ? `<span><i class="fas fa-server mr-1"></i>${escapeHtml(job.queue_name)}${job.queue_job_id ? ' #' + escapeHtml(job.queue_job_id) : ''}</span>` : ''}</div></div><div class="job-active-card__footer">${job.can_cancel ? (job.termination_requested ? '<span class="job-active-card__hint">Force stop sudah dikirim.</span>' : '<span class="job-active-card__hint">Delete aktif dapat dibatalkan dengan aman.</span>') : '<span class="job-active-card__hint">Delete ini sudah selesai atau tidak aktif.</span>'}<div class="job-active-card__actions">${forceStopDeleteButton(job)}${cancelDeleteButton(job)}</div></div></div></div>`).join(''); }
+    function renderTable(items) { currentJobs = Array.isArray(items) ? items : []; if (currentJobs.length === 0) { tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-5"><i class="fas fa-inbox fa-2x mb-2 d-block text-muted opacity-50"></i>Tidak ada data job untuk filter ini.</td></tr>'; syncSelectionState(); return; } tableBody.innerHTML = currentJobs.map((job) => `<tr><td class="text-center job-col-check">${rowCheckbox(job)}</td><td class="font-weight-bold" style="color: #0857c3;">#${job.id}</td><td><div class="job-table-primary">${escapeHtml(job.report_name)}</div><div class="job-table-secondary">${escapeHtml(job.table_name || '-')}</div></td><td><div class="job-table-primary">${escapeHtml(job.file_name)}</div><div class="job-table-secondary">By ${escapeHtml(job.created_by_name || 'System')}</div></td><td>${statusBadge(job)}</td><td>${progressMarkup(job)}<div class="job-table-secondary mt-1">${escapeHtml(job.message || '-')}</div></td><td><div class="job-table-primary">${escapeHtml(job.updated_at_label || '-')}</div><div class="job-table-secondary">Durasi ${escapeHtml(job.duration_label || '-')}</div></td><td class="text-center"><div class="job-table-actions">${forceStartButton(job, true)}${terminateButton(job, true)}${deleteButton(job, true)}</div></td></tr>`).join(''); syncSelectionState(); }
     function renderPagination(meta) { const total = Number(meta.total || 0); paginationMeta.textContent = `${total.toLocaleString('id-ID')} job`; if (!meta.last_page || meta.last_page <= 1) { pagination.classList.add('d-none'); pagination.innerHTML = ''; return; } const buttons = []; for (let page = 1; page <= meta.last_page; page++) { buttons.push(`<button type="button" class="job-page-btn ${page === meta.current_page ? 'is-active' : ''}" data-page="${page}">${page}</button>`); } pagination.innerHTML = `<div class="job-management-pagination__meta">Menampilkan ${meta.from || 0}-${meta.to || 0} dari ${total.toLocaleString('id-ID')} job</div><div class="job-management-pagination__actions">${buttons.join('')}</div>`; pagination.classList.remove('d-none'); }
     async function fetchData(page = 1) { if (loading) { refreshRequestedWhileLoading = true; return; } loading = true; currentPage = page; try { const params = new URLSearchParams({ page: String(page), status: filterStatus.value || 'all', search: filterSearch.value || '', active_only: activeOnly.checked ? '1' : '0' }); const response = await fetch(`${card.dataset.fetchUrl}?${params.toString()}`, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } }); const payload = await response.json().catch(() => ({})); if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal memuat data job.'); hideNotice(); renderQueueHealth(payload.queue_health || null); renderSummary(payload.summary || {}); renderSnapshotJobs(payload.snapshot_jobs || [], payload.snapshot_summary || {}); renderRawQueueJobs(payload.raw_queue_jobs || [], payload.raw_queue_summary || {}); renderManagedDeleteJobs(payload.managed_delete_jobs || [], payload.managed_delete_summary || {}); renderActiveJobs(payload.active_jobs || []); renderTable(payload.jobs || []); renderPagination(payload.pagination || {}); } catch (error) { showNotice(error.message || 'Gagal memuat data job.', 'warning'); } finally { loading = false; if (refreshRequestedWhileLoading && !document.hidden) { refreshRequestedWhileLoading = false; fetchData(currentPage); } } }
     async function forceStartJob(jobId) { const confirmation = await Swal.fire({ icon: 'warning', title: 'Force start job ini?', text: 'Job queued akan diproses langsung tanpa menunggu worker queue.', showCancelButton: true, confirmButtonText: 'Force Start', cancelButtonText: 'Batal' }); if (!confirmation.isConfirmed) return; const response = await fetch(templateUrl(card.dataset.forceStartUrlTemplate, jobId), { method: 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken }, body: JSON.stringify({}) }); const payload = await response.json().catch(() => ({})); if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal force start job.'); showNotice(payload.message || 'Force start dijalankan.', 'info'); await fetchData(currentPage); }
@@ -270,34 +306,403 @@ document.addEventListener('DOMContentLoaded', function () {
 
 @section('styles')
 <style>
-/* Simplified UI CSS matching JS logic but modern */
-.job-active-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.25rem; height: 100%; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
-.job-active-card__header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; }
-.job-active-card__title { font-weight: 700; color: #1e293b; font-size: 0.95rem; }
-.job-active-card__sub { font-size: 0.8rem; color: #64748b; }
-.job-active-card__body { display: flex; flex-direction: column; gap: 0.5rem; }
-.job-active-card__message { font-size: 0.85rem; color: #3b82f6; font-weight: 600; }
-.job-active-card__meta { display: flex; gap: 1rem; font-size: 0.75rem; color: #64748b; margin-top: 0.5rem; flex-wrap: wrap; }
-.job-active-card__footer { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
-.job-active-card__hint { font-size: 0.75rem; color: #94a3b8; }
-.job-active-card__actions { display: flex; gap: 0.5rem; }
+/* ==========================================================================
+   BRI Nusantara - Modern Luxury Theme for Job Management
+   ========================================================================== */
 
-.job-status-badge { display: inline-flex; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
-.job-status-badge--info { background: #eff6ff; color: #2563eb; }
-.job-status-badge--warning { background: #fffbeb; color: #d97706; }
-.job-status-badge--success { background: #f0fdf4; color: #16a34a; }
-.job-status-badge--danger { background: #fef2f2; color: #ef4444; }
-.job-status-badge--dark { background: #f1f5f9; color: #1e293b; }
-.job-status-badge--muted { background: #f1f5f9; color: #64748b; }
+/* 1. Hero Header */
+.job-management-hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: 16px;
+    padding: 1.5rem 2rem;
+    background: linear-gradient(135deg, #071d41 0%, #0857c3 55%, #0284c7 100%);
+    color: #ffffff;
+    box-shadow: 0 10px 25px -5px rgba(8, 87, 195, 0.25), 0 8px 10px -6px rgba(8, 87, 195, 0.2);
+    background-image: 
+        radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+        linear-gradient(135deg, #071d41 0%, #0857c3 55%, #0284c7 100%);
+    background-size: 20px 20px, 100% 100%;
+}
+.job-management-hero__glow {
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 380px;
+    height: 380px;
+    background: radial-gradient(circle, rgba(113, 197, 232, 0.2) 0%, rgba(8, 87, 195, 0) 70%);
+    pointer-events: none;
+}
+.job-management-hero__eyebrow {
+    display: inline-flex;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #e0f2fe;
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.job-management-hero__title {
+    color: #ffffff;
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.3rem;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+.job-management-hero__text {
+    color: #e2e8f0;
+    font-size: 0.9rem;
+    max-width: 680px;
+    line-height: 1.5;
+}
+.job-management-hero__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 1.1rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    color: #ffffff;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.status-pulse-dot {
+    font-size: 0.65rem;
+    animation: pulseGlow 2s infinite ease-in-out;
+}
+@keyframes pulseGlow {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+}
 
-.job-progress { height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; margin-top: 0.5rem; }
-.job-progress__bar { height: 100%; background: #3b82f6; transition: width 0.3s ease; }
-.job-progress__meta { display: flex; justify-content: space-between; font-size: 0.75rem; color: #64748b; margin-top: 0.25rem; }
+/* 2. Main Executive Card */
+.job-management-main-card {
+    border-radius: 16px !important;
+    overflow: hidden;
+    border: 1px solid rgba(8, 87, 195, 0.1) !important;
+    box-shadow: 0 10px 30px rgba(8, 87, 195, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+    background: #ffffff;
+}
 
-.job-table-primary { font-weight: 600; color: #1e293b; }
-.job-table-secondary { font-size: 0.8rem; color: #64748b; }
-.job-table-actions { display: flex; gap: 0.4rem; justify-content: center; }
-.job-table-action { border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+/* 3. Toolbar & Telemetry */
+.job-management-toolbar {
+    background: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+}
+.job-summary-item {
+    flex: 1 1 0;
+    min-width: 60px;
+    padding: 0 0.5rem;
+}
+.job-summary-label {
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 0.2rem;
+}
+.job-summary-val {
+    font-size: 1.25rem;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+}
+
+.job-status-select {
+    width: 150px !important;
+    min-width: 140px;
+    height: 36px !important;
+    border-radius: 8px !important;
+    border: 1px solid #cbd5e1 !important;
+    font-size: 0.82rem !important;
+    font-weight: 600 !important;
+    color: #1e293b !important;
+    background-color: #ffffff !important;
+    box-shadow: none !important;
+    padding: 0.25rem 1.75rem 0.25rem 0.65rem !important;
+    cursor: pointer;
+}
+.job-status-select:focus {
+    border-color: #0857c3 !important;
+    box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.15) !important;
+}
+
+.job-filter-search-group {
+    width: 175px !important;
+    height: 36px !important;
+}
+.job-filter-search-group .input-group-text {
+    border-radius: 8px 0 0 8px !important;
+    border-color: #cbd5e1 !important;
+    height: 36px !important;
+    font-size: 0.8rem;
+    padding: 0 0.65rem;
+}
+.job-filter-search-group .form-control {
+    border-radius: 0 8px 8px 0 !important;
+    border-color: #cbd5e1 !important;
+    height: 36px !important;
+    font-size: 0.82rem !important;
+    padding: 0.25rem 0.65rem !important;
+}
+.job-filter-search-group .form-control:focus {
+    border-color: #0857c3 !important;
+    box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.15) !important;
+}
+
+.custom-switch .custom-control-label::before {
+    height: 1.15rem;
+    width: 2rem;
+    border-radius: 1rem;
+}
+.custom-switch .custom-control-label::after {
+    width: calc(1.15rem - 4px);
+    height: calc(1.15rem - 4px);
+    border-radius: calc(1.15rem / 2);
+}
+.custom-switch .custom-control-input:checked ~ .custom-control-label::before {
+    background-color: #0857c3;
+    border-color: #0857c3;
+}
+
+/* Buttons */
+.job-btn-primary {
+    border-radius: 8px !important;
+    font-weight: 700;
+    height: 36px;
+    min-width: 36px;
+    padding: 0 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0857c3 0%, #0284c7 100%);
+    color: #ffffff;
+    border: 0;
+    box-shadow: 0 2px 8px rgba(8, 87, 195, 0.25);
+    transition: all 0.2s ease;
+}
+.job-btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(8, 87, 195, 0.35);
+    color: #ffffff;
+}
+.job-btn-outline-danger {
+    border-radius: 8px !important;
+    font-weight: 700;
+    height: 36px;
+    min-width: 36px;
+    padding: 0 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #fca5a5;
+    color: #dc2626;
+    background: #ffffff;
+    transition: all 0.2s ease;
+}
+.job-btn-outline-danger:hover:not(:disabled) {
+    background: #fef2f2;
+    border-color: #dc2626;
+    color: #b91c1c;
+}
+.job-btn-outline-danger:disabled {
+    opacity: 0.45;
+    border-color: #e2e8f0;
+    color: #94a3b8;
+}
+
+/* 4. Active Cards */
+.job-section-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+}
+.job-active-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 1.25rem 1.4rem;
+    height: 100%;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+.job-active-card:hover {
+    border-color: #93c5fd;
+    box-shadow: 0 6px 20px rgba(8, 87, 195, 0.08);
+    transform: translateY(-2px);
+}
+.job-active-card--snapshot {
+    border-left: 4px solid #0857c3;
+}
+.job-active-card--delete {
+    border-left: 4px solid #dc2626;
+}
+.job-active-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.85rem;
+}
+.job-active-card__title {
+    font-weight: 800;
+    color: #0f172a;
+    font-size: 1rem;
+    letter-spacing: -0.01em;
+}
+.job-active-card__sub {
+    font-size: 0.82rem;
+    color: #64748b;
+    font-weight: 500;
+}
+.job-active-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.job-active-card__message {
+    font-size: 0.88rem;
+    color: #0857c3;
+    font-weight: 600;
+}
+.job-active-card__meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.78rem;
+    color: #64748b;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+}
+.job-active-card__footer {
+    margin-top: 1.15rem;
+    padding-top: 0.95rem;
+    border-top: 1px solid #f1f5f9;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.job-active-card__hint {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    font-weight: 500;
+}
+.job-active-card__actions {
+    display: flex;
+    gap: 0.5rem;
+}
+.job-active-card__action {
+    border-radius: 8px !important;
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 0.35rem 0.85rem;
+}
+
+/* Status Badges */
+.job-status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.85rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.job-status-badge--info {
+    background: #eff6ff;
+    color: #0857c3;
+    border: 1px solid #bfdbfe;
+}
+.job-status-badge--warning {
+    background: #fffbeb;
+    color: #d97706;
+    border: 1px solid #fde68a;
+}
+.job-status-badge--success {
+    background: #ecfdf5;
+    color: #059669;
+    border: 1px solid #a7f3d0;
+}
+.job-status-badge--danger {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fca5a5;
+}
+.job-status-badge--dark {
+    background: #f1f5f9;
+    color: #0f172a;
+    border: 1px solid #cbd5e1;
+}
+.job-status-badge--muted {
+    background: #f8fafc;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+}
+
+/* Progress */
+.job-progress {
+    height: 7px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    overflow: hidden;
+    margin-top: 0.4rem;
+}
+.job-progress__bar {
+    height: 100%;
+    background: linear-gradient(90deg, #0857c3, #0284c7);
+    transition: width 0.3s ease;
+    border-radius: 999px;
+}
+.job-progress__meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    color: #64748b;
+    margin-top: 0.25rem;
+    font-weight: 600;
+}
+
+/* Tables & Controls */
+.job-table-primary {
+    font-weight: 700;
+    color: #0f172a;
+}
+.job-table-secondary {
+    font-size: 0.8rem;
+    color: #64748b;
+}
+.job-table-actions {
+    display: flex;
+    gap: 0.4rem;
+    justify-content: center;
+}
+.job-table-action {
+    border-radius: 8px !important;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 0.3rem 0.75rem;
+}
+
 #btn-purge-queue-jobs { min-height: 32px; }
 .job-row-check {
     width: 32px;
@@ -307,15 +712,99 @@ document.addEventListener('DOMContentLoaded', function () {
     cursor: pointer;
 }
 
-.job-management-empty { padding: 1.5rem; border-radius: 12px; background: #fff; border: 1px dashed #cbd5e1; text-align: center; color: #64748b; font-size: 0.85rem; font-weight: 600; }
+.job-management-empty {
+    padding: 2rem;
+    border-radius: 14px;
+    background: #ffffff;
+    border: 1px dashed #cbd5e1;
+    text-align: center;
+    color: #64748b;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
 
-.job-management-pagination__meta { font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 0.5rem; display: none; }
-.job-management-pagination__actions { display: flex; gap: 0.25rem; flex-wrap: wrap; }
-.job-page-btn { min-width: 32px; height: 32px; border-radius: 6px; border: 1px solid #e2e8f0; background: #fff; color: #475569; font-weight: 600; font-size: 0.85rem; }
-.job-page-btn.is-active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.job-management-pagination__meta {
+    font-size: 0.85rem;
+    color: #64748b;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: none;
+}
+.job-management-pagination__actions {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+.job-page-btn {
+    min-width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #475569;
+    font-weight: 700;
+    font-size: 0.85rem;
+    transition: all 0.15s ease;
+}
+.job-page-btn:hover:not(:disabled) {
+    background: #f8fafc;
+    border-color: #93c5fd;
+    color: #0857c3;
+}
+.job-page-btn.is-active {
+    background: #0857c3;
+    color: #ffffff;
+    border-color: #0857c3;
+    box-shadow: 0 2px 8px rgba(8, 87, 195, 0.25);
+}
 
-.raw-queue-table-wrap { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #fff; }
+.raw-queue-table-wrap {
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #ffffff;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.02);
+}
+.job-management-table thead th {
+    background: #f8fafc;
+    border-bottom: 2px solid #e2e8f0;
+    color: #475569;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.95rem 1.25rem;
+}
+.job-management-table tbody td {
+    padding: 0.85rem 1.25rem;
+    border-top: 1px solid #f1f5f9;
+    vertical-align: middle;
+}
 
+/* Notices */
+.job-management-notice {
+    padding: 1rem 1.35rem;
+    border-radius: 12px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    line-height: 1.5;
+    margin-bottom: 1.25rem;
+}
+.job-management-notice--info {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #0857c3;
+}
+.job-management-notice--warning {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    color: #d97706;
+}
+.job-management-notice--subtle {
+    opacity: 0.85;
+}
+
+/* Mobile Responsive */
 @media (max-width: 767.98px) {
     .job-page-heading {
         display: grid !important;
@@ -346,7 +835,7 @@ document.addEventListener('DOMContentLoaded', function () {
         min-width: 0;
         padding: 0.45rem 0.35rem;
         border: 1px solid #e2e8f0;
-        border-radius: 6px;
+        border-radius: 8px;
         background: #f8fafc;
     }
 
@@ -388,3 +877,4 @@ document.addEventListener('DOMContentLoaded', function () {
 }
 </style>
 @endsection
+

@@ -11,7 +11,7 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
         $layout = file_get_contents(resource_path('views/layouts/admin.blade.php'));
 
         $this->assertStringContainsString('.content-wrapper .abah-table-scroll', $layout);
-        $this->assertStringContainsString('max-height: min(72vh, 820px)', $layout);
+        $this->assertStringContainsString('max-height: none !important;', $layout);
         $this->assertStringContainsString('.content-wrapper .abah-table-managed thead th', $layout);
         $this->assertStringContainsString('position: sticky;', $layout);
         $this->assertStringContainsString('ensureWrapper', $layout);
@@ -39,7 +39,7 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
         $this->assertStringContainsString('.casa-shell', $layout);
         $this->assertStringContainsString('.dormant-shell', $layout);
         $this->assertStringContainsString('.kinerja-konsumer-filters', $layout);
-        $this->assertStringContainsString('max-height: calc(100vh - 118px)', $layout);
+        $this->assertStringContainsString('max-height: none !important', $layout);
     }
 
     public function test_admin_layout_uses_device_safe_contracts_without_broad_component_wildcards(): void
@@ -55,7 +55,7 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
         $this->assertStringContainsString('[data-ui="actions"]', $layout);
         $this->assertStringContainsString('@media (max-width: 359.98px)', $layout);
         $this->assertStringContainsString('@media (pointer: coarse)', $layout);
-        $this->assertStringContainsString('max-height: max(420px, calc(100dvh - 150px));', $layout);
+        $this->assertStringContainsString('max-height: none !important;', $layout);
         $this->assertStringContainsString('.swal2-popup', $layout);
         $this->assertStringContainsString('.modal-body', $layout);
         $this->assertStringNotContainsString('[class*="-filter-"]', $layout);
@@ -82,12 +82,10 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
         $this->assertStringContainsString('position: relative;', $style);
         $this->assertStringContainsString('{{ $wrapperSelector }} {{ $tableSelector }} thead th', $style);
         $this->assertStringContainsString('position: sticky;', $style);
-        $this->assertStringContainsString('max-height: min(68dvh, 680px) !important;', $style);
-        $this->assertStringContainsString('overflow-y: auto;', $style);
-        $this->assertStringContainsString('scrollbar-gutter: stable;', $style);
+        $this->assertStringContainsString('max-height: none !important;', $style);
+        $this->assertStringContainsString('overflow-y: visible;', $style);
+        $this->assertStringContainsString('scrollbar-gutter: auto;', $style);
         $this->assertStringNotContainsString('scrollbar-gutter: stable both-edges;', $style);
-        $this->assertStringNotContainsString('max-height: none !important;', $style);
-        $this->assertStringNotContainsString('overflow-y: visible;', $style);
         $this->assertStringNotContainsString('top: var(--table-sticky-top);', $style);
     }
 }

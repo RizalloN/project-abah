@@ -20,6 +20,8 @@ class KinerjaNonPtpReportController extends Controller
 
     private const NOMINATIVE_PER_PAGE = 25;
 
+    private const AGGREGATE_CACHE_HOURS = 6;
+
     private const AREA_6_BRANCHES = [
         'KC Madiun',
         'KC Magetan',
@@ -312,7 +314,7 @@ class KinerjaNonPtpReportController extends Controller
             ReportCacheVersion::composite(['pinjaman']),
         ]));
 
-        return Cache::remember($cacheKey, now()->addMinutes(10), fn (): Collection => $this->summaryRows(
+        return Cache::remember($cacheKey, now()->addHours(self::AGGREGATE_CACHE_HOURS), fn (): Collection => $this->summaryRows(
             $period,
             $comparisonPeriod,
             $previousComparisonPeriod,
@@ -370,7 +372,7 @@ class KinerjaNonPtpReportController extends Controller
             ReportCacheVersion::composite(['pinjaman']),
         ]));
 
-        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($periodPlan, $branch, $segment): Collection {
+        return Cache::remember($cacheKey, now()->addHours(self::AGGREGATE_CACHE_HOURS), function () use ($periodPlan, $branch, $segment): Collection {
             $rows = collect();
 
             foreach ($periodPlan as $plan) {
@@ -433,14 +435,21 @@ class KinerjaNonPtpReportController extends Controller
     private function monthlyRecapForPeriod(string $period, string $comparisonPeriod, ?string $previousComparisonPeriod, string $branch, string $segment): Collection
     {
         if ($branch === 'all') {
-            return collect(self::AREA_6_BRANCHES)
-                ->flatMap(fn (string $scopeBranch): Collection => $this->monthlyRecapForPeriod(
-                    $period,
-                    $comparisonPeriod,
-                    $previousComparisonPeriod,
-                    $scopeBranch,
-                    $segment
-                ))
+            return $this->summaryRows($period, $comparisonPeriod, $previousComparisonPeriod, $branch, $segment)
+                ->map(fn (object $row): object => (object) [
+                    'branch_label' => $row->dimension_label,
+                    'period' => $period,
+                    'comparison_period' => $comparisonPeriod,
+                    'previous_comparison_period' => $previousComparisonPeriod,
+                    'previous_ptp_count' => $row->previous_ptp_count,
+                    'previous_ptp_baki' => $row->previous_ptp_baki,
+                    'current_ptp_count' => $row->current_ptp_count,
+                    'current_ptp_baki' => $row->current_ptp_baki,
+                    'ptp_to_non_count' => $row->ptp_to_non_count,
+                    'ptp_to_non_baki' => $row->ptp_to_non_baki,
+                    'non_to_ptp_count' => $row->non_to_ptp_count,
+                    'non_to_ptp_baki' => $row->non_to_ptp_baki,
+                ])
                 ->sortBy('branch_label')
                 ->values();
         }

@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Http\Controllers\DashboardSimpananController;
 use App\Http\Controllers\Report\KinerjaRmMikroReportController;
 use App\Jobs\SyncImportedReportJob;
+use App\Support\UserBranchScope;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -265,6 +266,64 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame(500000000.0, (float) $payload['total']['realisasi_os']);
     }
 
+    public function test_presentation_rm_kur_uses_brihc_assignment_and_daily_loan_only_as_personnel_fallback(): void
+    {
+        Queue::fake();
+        DB::table('performance_rm_snapshots')->insert([
+            [
+                'periode' => '2026-07-24',
+                'cabang' => 'KC MADIUN',
+                'unit' => 'UNIT DAILY',
+                'branch_code' => '001',
+                'rm' => '00000001 - NAMA DAILY LAMA',
+                'segmen' => 'MICRO',
+                'produk' => 'KUR-MIKRO',
+                'total_deb' => 1,
+                'loan_os' => 125000000,
+                'realisasi_deb' => 1,
+                'realisasi_os' => 125000000,
+            ],
+            [
+                'periode' => '2026-07-24',
+                'cabang' => 'KC MADIUN',
+                'unit' => 'UNIT DAILY',
+                'branch_code' => '001',
+                'rm' => '00000002 - DAILY BACKUP',
+                'segmen' => 'MICRO',
+                'produk' => 'KUR-MIKRO',
+                'total_deb' => 1,
+                'loan_os' => 100000000,
+                'realisasi_deb' => 1,
+                'realisasi_os' => 100000000,
+            ],
+        ]);
+        $this->insertBrihcPemasar([
+            'pernr' => '00000001',
+            'completename' => 'NAMA BRIHC UTAMA',
+            'positiondesc' => 'RM MIKRO',
+            'psadesc' => 'KC Ngawi',
+            'orgdesc' => 'UNIT BRIHC',
+        ]);
+
+        $controller = new KinerjaRmMikroReportController();
+        $dailyAuthority = $this->invokePrivateMethod($controller, 'perRmPayload', '2026-07-24');
+        $landingPayload = $this->invokePrivateMethod(
+            new DashboardSimpananController(),
+            'buildPresentationRmKurMicro',
+            '2026-07-24'
+        );
+
+        $this->assertSame(
+            'NAMA DAILY LAMA',
+            data_get(collect($dailyAuthority['rows'])->firstWhere('pn', '00000001'), 'nama')
+        );
+        $brihcRow = collect($landingPayload['rows'])->firstWhere('nama', 'NAMA BRIHC UTAMA');
+        $this->assertSame('KC NGAWI', data_get($brihcRow, 'cabang'));
+        $this->assertSame('UNIT BRIHC', data_get($brihcRow, 'unit'));
+        $this->assertSame(125000000.0, data_get($brihcRow, 'realisasi_os'));
+        $this->assertNotNull(collect($landingPayload['rows'])->firstWhere('nama', 'DAILY BACKUP'));
+    }
+
     public function test_mantri_payload_excludes_kur_ritel_but_includes_kur_mikro_baru(): void
     {
         $this->insertDailyLoan([
@@ -331,6 +390,68 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame(2, (int) $payload['total']['jumlah_mantri']);
     }
 
+    public function test_mantri_productivity_uses_active_brihc_roster_and_excludes_collection_role(): void
+    {
+        $this->insertBrihcPemasar([
+            'uniqueid_namareport' => 'ACTIVE-MANTRI-1',
+            'pernr' => '1',
+            'pn_mantri' => '1',
+            'completename' => 'Mantri Aktif',
+            'positiondesc' => 'MANTRI',
+        ]);
+        $this->insertBrihcPemasar([
+            'uniqueid_namareport' => 'ACTIVE-MANTRI-BRIGUNA-3',
+            'pernr' => '3',
+            'pn_mantri' => '3',
+            'completename' => 'Mantri Briguna Aktif',
+            'positiondesc' => 'MANTRI BRIGUNA',
+        ]);
+        $this->insertBrihcPemasar([
+            'uniqueid_namareport' => 'CHANGED-MANTRI-COLLECTION-2',
+            'pernr' => '2',
+            'pn_mantri' => '2',
+            'positiondesc' => 'MANTRI COLLECTION',
+        ]);
+
+        foreach ([
+            ['pn' => '0001', 'name' => 'Mantri Aktif', 'account' => 'ACTIVE-1'],
+            ['pn' => '0002', 'name' => 'Mantri Collection', 'account' => 'COLLECTION-1'],
+            ['pn' => '0003', 'name' => 'Mantri Briguna Aktif', 'account' => 'BRIGUNA-1'],
+        ] as $fixture) {
+            $this->insertDailyLoan([
+                'pn_pengelola1' => $fixture['pn'].' - '.$fixture['name'],
+                'rm_normalized' => $fixture['pn'].' - '.strtoupper($fixture['name']),
+                'nomor_rekening1' => $fixture['account'],
+                'plafon' => 100000000,
+            ]);
+        }
+        $this->insertDailyLoan([
+            'branch_normalized' => '002',
+            'unit_normalized' => 'UNIT LAMA',
+            'unit1' => 'UNIT LAMA',
+            'pn_pengelola1' => '0001 - Mantri Aktif',
+            'rm_normalized' => '0001 - MANTRI AKTIF',
+            'nomor_rekening1' => 'ACTIVE-2',
+            'plafon' => 50000000,
+        ]);
+
+        $controller = new KinerjaRmMikroReportController();
+        $roster = $this->invokePrivateMethod($controller, 'activeMantriRosterState');
+        $sourceRows = $this->invokePrivateMethod($controller, 'mantriSourceQuery', '2026-05-06')->get();
+
+        $this->assertSame(['1', '3'], $roster['keys']);
+        $this->assertSame(['1', '3'], $sourceRows->pluck('owner_pn')->unique()->sort()->values()->all());
+
+        $payload = $this->invokePrivateMethod($controller, 'mantriProductivityPayload', '2026-05-06');
+        $names = collect($payload['rows'])->pluck('nama_mantri')->all();
+
+        $this->assertSame(['Mantri Aktif', 'Mantri Briguna Aktif'], $names);
+        $this->assertNotContains('Mantri Collection', $names);
+        $this->assertSame(2, (int) $payload['total']['jumlah_mantri']);
+        $this->assertSame(250000000.0, (float) $payload['total']['realisasi_os']);
+        $this->assertSame(150000000.0, (float) collect($payload['rows'])->firstWhere('pn_mantri', '00000001')['realisasi_os']);
+    }
+
     public function test_mantri_quadrant_payload_counts_each_mantri_per_unit(): void
     {
         $this->insertDailyLoan([
@@ -376,7 +497,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame(4, (int) $payload['total']['jumlah_mantri']);
     }
 
-    public function test_extreme_low_mantri_payload_starts_from_daily_loan_and_only_checks_brihc_pt_unit_status(): void
+    public function test_extreme_low_mantri_payload_uses_active_brihc_mantri_role_and_pt_unit_status(): void
     {
         $this->insertBrihcPemasar([
             'uniqueid_namareport' => 'MANTRI-1',
@@ -485,24 +606,24 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame('per_unit_kerja', $payload['view']);
         $this->assertCount(1, $payload['rows']);
         $this->assertNotNull($unitRow);
-        $this->assertSame(4, (int) $unitRow['total_mantri']);
-        $this->assertSame(3, (int) $unitRow['buckets']['el_0_100']['deb']);
+        $this->assertSame(3, (int) $unitRow['total_mantri']);
+        $this->assertSame(2, (int) $unitRow['buckets']['el_0_100']['deb']);
         $this->assertSame(1, (int) $unitRow['buckets']['el_200_400']['deb']);
-        $this->assertSame(4, (int) $unitRow['extreme_low']['deb']);
-        $this->assertSame(4, (int) $payload['total']['total_mantri']);
-        $this->assertSame(4, (int) $payload['total']['extreme_low']['deb']);
+        $this->assertSame(3, (int) $unitRow['extreme_low']['deb']);
+        $this->assertSame(3, (int) $payload['total']['total_mantri']);
+        $this->assertSame(3, (int) $payload['total']['extreme_low']['deb']);
 
         $branchPayload = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'mantriExtremeLowPayload', '2026-05-31', 'per_cabang');
         $branchRow = collect($branchPayload['rows'])->firstWhere('branch_office', 'KC MADIUN');
 
         $this->assertSame('per_cabang', $branchPayload['view']);
         $this->assertNotNull($branchRow);
-        $this->assertSame(4, (int) $branchRow['total_mantri']);
-        $this->assertSame(3, (int) $branchRow['buckets']['el_0_100']['deb']);
+        $this->assertSame(3, (int) $branchRow['total_mantri']);
+        $this->assertSame(2, (int) $branchRow['buckets']['el_0_100']['deb']);
         $this->assertSame(1, (int) $branchRow['buckets']['el_200_400']['deb']);
-        $this->assertSame(4, (int) $branchRow['extreme_low']['deb']);
-        $this->assertSame(4, (int) $branchRow['under_800']['deb']);
-        $this->assertEqualsWithDelta(75.0, $branchRow['buckets']['el_0_100']['pct'], 0.0001);
+        $this->assertSame(3, (int) $branchRow['extreme_low']['deb']);
+        $this->assertSame(3, (int) $branchRow['under_800']['deb']);
+        $this->assertEqualsWithDelta(66.6667, $branchRow['buckets']['el_0_100']['pct'], 0.0001);
         $this->assertEqualsWithDelta(100.0, $branchRow['extreme_low']['pct'], 0.0001);
         $this->assertEqualsWithDelta(100.0, $branchRow['under_800']['pct'], 0.0001);
     }
@@ -844,6 +965,65 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame(2350000000.0, $payload['total']['total']['os']);
     }
 
+    public function test_landing_rm_kur_productivity_respects_selected_branch_and_recalculates_totals(): void
+    {
+        Queue::fake();
+
+        DB::table('performance_rm_snapshots')->insert([
+            [
+                'periode' => '2026-07-24',
+                'cabang' => 'KC MADIUN',
+                'unit' => 'FUNGSI BISNIS MIKRO',
+                'branch_code' => '45',
+                'rm' => '0001 - RM SATU',
+                'segmen' => 'MICRO',
+                'produk' => 'KUR-MIKRO',
+                'realisasi_deb' => 2,
+                'realisasi_os' => 500000000,
+            ],
+            [
+                'periode' => '2026-07-24',
+                'cabang' => 'KC MADIUN',
+                'unit' => 'KC MADIUN',
+                'branch_code' => '45',
+                'rm' => '0002 - RM DUA',
+                'segmen' => 'MICRO',
+                'produk' => 'KUR-MIKRO',
+                'realisasi_deb' => 1,
+                'realisasi_os' => 250000000,
+            ],
+            [
+                'periode' => '2026-07-24',
+                'cabang' => 'KC NGAWI',
+                'unit' => 'FUNGSI BISNIS MIKRO',
+                'branch_code' => '57',
+                'rm' => '0003 - RM NGAWI',
+                'segmen' => 'MICRO',
+                'produk' => 'KUR-MIKRO',
+                'realisasi_deb' => 4,
+                'realisasi_os' => 800000000,
+            ],
+        ]);
+
+        $payload = $this->invokePrivateMethod(
+            new DashboardSimpananController,
+            'buildLandingRmKurProductivity',
+            '2026-07-24',
+            UserBranchScope::forKey('madiun')
+        );
+
+        $this->assertTrue($payload['available']);
+        $this->assertSame('2026-07-24', $payload['data_period']);
+        $this->assertSame('KC Madiun', $payload['scope_label']);
+        $this->assertSame(['RM SATU', 'RM DUA'], collect($payload['rows'])->pluck('nama')->all());
+        $this->assertNotContains('RM NGAWI', collect($payload['rows'])->pluck('nama')->all());
+        $this->assertSame(2, $payload['total']['rm_count']);
+        $this->assertSame(3, $payload['total']['realisasi_deb']);
+        $this->assertSame(750000000.0, $payload['total']['realisasi_os']);
+        $this->assertSame(375000000.0, $payload['total']['average_per_rm']);
+        $this->assertSame(250000000.0, $payload['total']['average_per_debtor']);
+    }
+
     private function insertDailyLoan(array $overrides): void
     {
         DB::table('daily_loan_dinamis')->insert(array_merge([
@@ -879,7 +1059,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             'esgdesc' => 'PT',
             'psadesc' => 'KC Madiun',
             'orgdesc' => 'Unit Test',
-            'positiondesc' => 'Associate Mantri 1',
+            'positiondesc' => 'MANTRI',
             'pn_mantri' => '6494 | 0001 - Mantri Test',
             'status' => null,
         ], $overrides));

@@ -4960,7 +4960,7 @@ class DashboardPinjamanReportController extends Controller
             1 => $isRestruk ? 'LR' : 'L',
             2 => $umur < 31 ? 'SML 1' : ($umur < 61 ? 'SML 2' : 'SML 3'),
             3 => 'KL',
-            4 => $umur < 150 ? 'D1' : 'D2',
+            4 => $umur <= 150 ? 'D1' : 'D2',
             default => 'M',
         };
     }

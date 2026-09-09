@@ -138,7 +138,7 @@ final class LandingPrognosaCardService
             $forecast = data_get($metrics, $metricKey.'.value');
             $forecastAvailable = (bool) data_get($metrics, $metricKey.'.available', false)
                 && is_numeric($forecast);
-            $actualPayload = data_get($scopePayload, ['prognosa_actuals', $candidateWeek], []);
+            $actualPayload = $this->actualPayloadForWeek($scopePayload, $candidateWeek, $weekLabel);
             $actual = data_get($actualPayload, ['metrics', $cardKey]);
 
             if (! is_numeric($actual) && $candidateWeek === $weekLabel) {
@@ -154,6 +154,7 @@ final class LandingPrognosaCardService
             $achievement = $forecastValue !== null && $actualValue !== null
                 ? $this->achievement($actualValue, $forecastValue, $lowerIsBetter)
                 : null;
+            $isAchieved = $this->isTargetAchieved($actualValue, $forecastValue, $lowerIsBetter);
 
             $weeklyCards[$candidateWeek] = [
                 'available' => $forecastAvailable,
@@ -170,12 +171,8 @@ final class LandingPrognosaCardService
                 'is_elapsed' => (bool) data_get($actualPayload, 'is_elapsed', false),
                 'achievement_label' => '% Penc. Prognosa',
                 'achievement_raw' => $achievement,
-                'achievement' => $achievement === null
-                    ? '-'
-                    : number_format($achievement, 2, ',', '.').'%',
-                'achievement_color' => $achievement === null
-                    ? 'muted'
-                    : ($achievement >= 100 ? 'green' : 'red'),
+                'achievement' => $this->formatAchievement($achievement, $isAchieved),
+                'achievement_color' => $this->achievementColor($achievement, $isAchieved),
                 'stale' => (bool) ($meta['stale'] ?? false),
             ];
         }
@@ -217,7 +214,7 @@ final class LandingPrognosaCardService
     ): array {
         $weeks = [];
         foreach ($availableWeeks as $weekLabel) {
-            $actual = data_get($scopePayload, ['prognosa_actuals', $weekLabel], []);
+            $actual = $this->actualPayloadForWeek($scopePayload, $weekLabel, $activeWeek);
             $forecast = data_get($forecastScope, ['weeks', $weekLabel], []);
             if (! is_array($forecast) || $forecast === []) {
                 $forecast = $weekLabel === $activeWeek ? $forecastScope : [];
@@ -246,6 +243,42 @@ final class LandingPrognosaCardService
         ];
     }
 
+    /**
+     * The selected week is the most recent available forecast. Its achievement
+     * must be measured against the latest actual position, not kept at an old
+     * Saturday cutoff when the workbook has no following week yet.
+     *
+     * @param  array<string, mixed>  $scopePayload
+     * @return array<string, mixed>
+     */
+    private function actualPayloadForWeek(array $scopePayload, string $weekLabel, string $activeWeek): array
+    {
+        $cutoffActual = data_get($scopePayload, ['prognosa_actuals', $weekLabel], []);
+        if (! is_array($cutoffActual) || $weekLabel !== $activeWeek) {
+            return is_array($cutoffActual) ? $cutoffActual : [];
+        }
+
+        $latestActual = data_get($scopePayload, ['prognosa_actuals', 'latest'], []);
+        if (! is_array($latestActual) || ! $this->isNewerActual($latestActual, $cutoffActual)) {
+            return $cutoffActual;
+        }
+
+        return array_merge($latestActual, [
+            'cutoff_label' => (string) data_get($cutoffActual, 'cutoff_label', data_get($latestActual, 'cutoff_label', '')),
+            'forecast_cutoff_label' => (string) data_get($cutoffActual, 'cutoff_label', ''),
+            'comparison_mode' => 'running_position',
+        ]);
+    }
+
+    /** @param array<string, mixed> $latestActual @param array<string, mixed> $cutoffActual */
+    private function isNewerActual(array $latestActual, array $cutoffActual): bool
+    {
+        $latestPeriod = (string) data_get($latestActual, 'actual_period', '');
+        $cutoffPeriod = (string) data_get($cutoffActual, 'actual_period', '');
+
+        return $latestPeriod !== '' && ($cutoffPeriod === '' || $latestPeriod > $cutoffPeriod);
+    }
+
     /** @return array<string, mixed> */
     private function forecastMetricsForWeek(array $forecastScope, string $weekLabel, string $activeWeek): array
     {
@@ -266,7 +299,7 @@ final class LandingPrognosaCardService
             ->map(function (mixed $week): ?string {
                 $label = is_numeric($week) ? 'W'.(int) $week : strtoupper(trim((string) $week));
 
-                return preg_match('/^W[1-4]$/', $label) === 1 ? $label : null;
+                return preg_match('/^W[1-5]$/', $label) === 1 ? $label : null;
             })
             ->filter()
             ->values();
@@ -274,7 +307,7 @@ final class LandingPrognosaCardService
         if ($weeks->isEmpty()) {
             $weeks = collect(array_keys((array) ($forecastScope['weeks'] ?? [])))
                 ->map(fn (mixed $week): string => strtoupper(trim((string) $week)))
-                ->filter(static fn (string $week): bool => preg_match('/^W[1-4]$/', $week) === 1)
+                ->filter(static fn (string $week): bool => preg_match('/^W[1-5]$/', $week) === 1)
                 ->values();
         }
 
@@ -295,7 +328,7 @@ final class LandingPrognosaCardService
     {
         $week = strtoupper(trim($week));
 
-        return preg_match('/^W[1-4]$/', $week) === 1 ? $week : 'W1';
+        return preg_match('/^W[1-5]$/', $week) === 1 ? $week : 'W1';
     }
 
     private function formatMillions(float $value): string
@@ -323,5 +356,60 @@ final class LandingPrognosaCardService
         $value = str_replace(',', '.', $value);
 
         return is_numeric($value) ? (float) $value : 0.0;
+    }
+
+    private function isTargetAchieved(?float $actual, ?float $forecast, bool $lowerIsBetter): ?bool
+    {
+        if ($actual === null || $forecast === null) {
+            return null;
+        }
+
+        if (abs($actual - $forecast) < 0.000001) {
+            return true;
+        }
+
+        if (abs($actual) >= 1_000_000 || abs($forecast) >= 1_000_000) {
+            $displayedActual = (int) round($actual / 1_000_000);
+            $displayedForecast = (int) round($forecast / 1_000_000);
+
+            if ($displayedActual === $displayedForecast) {
+                return true;
+            }
+
+            if ($lowerIsBetter) {
+                return $displayedActual < $displayedForecast || $actual <= $forecast;
+            }
+
+            return $displayedActual > $displayedForecast || $actual >= $forecast;
+        }
+
+        return $lowerIsBetter ? ($actual <= $forecast) : ($actual >= $forecast);
+    }
+
+    private function formatAchievement(?float $achievement, ?bool $isAchieved): string
+    {
+        if ($achievement === null || $isAchieved === null) {
+            return '-';
+        }
+
+        if ($isAchieved) {
+            return number_format(max(100.0, $achievement), 2, ',', '.').'%';
+        }
+
+        $formatted = number_format($achievement, 2, ',', '.');
+        if ($formatted === '100,00' || $achievement >= 100.0) {
+            $formatted = '99,99';
+        }
+
+        return $formatted.'%';
+    }
+
+    private function achievementColor(?float $achievement, ?bool $isAchieved): string
+    {
+        if ($achievement === null || $isAchieved === null) {
+            return 'muted';
+        }
+
+        return $isAchieved ? 'green' : 'red';
     }
 }

@@ -68,7 +68,7 @@ class CriticalDashboardImportLogicContractTest extends TestCase
     {
         $source = file_get_contents(base_path('app/Http/Controllers/DashboardPinjamanReportController.php'));
 
-        $this->assertStringContainsString('dashboard_pinjaman_kredit_unified:v18-strict-uker-kind-rka-cache-refresh', $source);
+        $this->assertStringContainsString('dashboard_pinjaman_kredit_unified:v19-month-end-hide-mom', $source);
         $this->assertStringContainsString('kreditSnapshotSignature', $source);
         $this->assertStringContainsString("ReportCacheVersion::composite(['harian', 'pinjaman', 'simpanan'])", $source);
     }

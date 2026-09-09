@@ -25,8 +25,8 @@ class LoanQualityBucketMapperTest extends TestCase
         $this->assertSame('DPK 3', LoanQualityBucketMapper::map('L', 274, null, null, '2'));
         $this->assertSame('DPK 3', LoanQualityBucketMapper::map('L', null, null, null, '2'));
         $this->assertSame('D1', LoanQualityBucketMapper::map('M', 149, null, null, '4'));
-        $this->assertSame('D2', LoanQualityBucketMapper::map('M', 150, null, null, '4'));
-        $this->assertSame('D2', LoanQualityBucketMapper::map('M', 179, null, null, '4'));
+        $this->assertSame('D1', LoanQualityBucketMapper::map('M', 150, null, null, '4'));
+        $this->assertSame('D2', LoanQualityBucketMapper::map('M', 180, null, null, '4'));
         $this->assertSame('D2', LoanQualityBucketMapper::map('M', 1323, null, null, '4'));
         $this->assertSame('D2', LoanQualityBucketMapper::map('M', null, null, null, '4'));
     }

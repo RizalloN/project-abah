@@ -6,6 +6,7 @@ use App\Jobs\EnsureImportedSnapshotsFreshJob;
 use App\Jobs\RebuildDashboardHarianSnapshotJob;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\DashboardHarianSnapshotDirtyPeriodQueue;
+use App\Support\ConsumerRmPositionHistoryStore;
 use App\Support\PartitionMaintenanceService;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
@@ -28,6 +29,48 @@ class ReportDataSyncServiceTest extends TestCase
     {
         Mockery::close();
         parent::tearDown();
+    }
+
+    public function test_lw321_uses_snapshot_maintenance_like_daily_loan(): void
+    {
+        $service = new ReportDataSyncService(
+            Mockery::mock(ReportSnapshotBuilder::class),
+            Mockery::mock(DashboardHarianSnapshotService::class),
+            Mockery::mock(PartitionMaintenanceService::class),
+            Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class)
+        );
+
+        $this->assertSame('snapshot', $service->resolvePostDeleteMaintenanceMode('lw321pn'));
+    }
+
+    public function test_daily_loan_archive_failure_does_not_break_snapshot_sync_compatibility(): void
+    {
+        Bus::fake();
+
+        $service = new ReportDataSyncService(
+            Mockery::mock(ReportSnapshotBuilder::class),
+            Mockery::mock(DashboardHarianSnapshotService::class),
+            Mockery::mock(PartitionMaintenanceService::class),
+            Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class)
+        );
+        $archive = new class {
+            public bool $replaceVerified = false;
+
+            public function capturePeriod(string $period, bool $replaceVerified = false): array
+            {
+                $this->replaceVerified = $replaceVerified;
+
+                throw new \RuntimeException('archive table has not been migrated');
+            }
+        };
+        $this->app->instance(ConsumerRmPositionHistoryStore::class, $archive);
+
+        $method = new \ReflectionMethod($service, 'syncDailyLoan');
+        $method->setAccessible(true);
+        $method->invoke($service, '2026-07-31', 77, 'unit-test', null);
+
+        Bus::assertBatched(fn ($batch): bool => $batch->name === 'daily_loan:2026-07-31');
+        $this->assertTrue($archive->replaceVerified);
     }
 
     public function test_rasio_snapshot_rebuild_uses_dedicated_lock(): void

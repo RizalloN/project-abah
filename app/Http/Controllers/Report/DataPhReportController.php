@@ -159,7 +159,7 @@ class DataPhReportController extends Controller
                 }
 
                 foreach ($area6Branches as $index => $branchOffice) {
-                    $curr = $branchCurrentMetrics[$branchOffice] ?? $this->emptyDataPhMetrics();
+                    $curr = $branchCurrentMetrics[$branchOffice] ?? $this->emptyDataPhRecoveryMetrics();
                     $prev = $branchM1Metrics[$branchOffice] ?? $this->emptyDataPhMetrics();
                     $yoy = $branchYoyMetrics[$branchOffice] ?? $this->emptyDataPhMetrics();
                     $ytd = $branchYtdMetrics[$branchOffice] ?? $this->emptyDataPhMetrics();
@@ -174,6 +174,10 @@ class DataPhReportController extends Controller
                         'recovery_ytd' => $ytd,
                         'recovery_m1' => $prev,
                         'recovery_curr' => $curr,
+                        'tupok' => $curr['tupok'] ?? $this->emptyDataPhMetrics(),
+                        'lunas' => $curr['lunas'] ?? $this->emptyDataPhMetrics(),
+                        'non_klaim' => $curr['non_klaim'] ?? $this->emptyDataPhMetrics(),
+                        'klaim' => $curr['klaim'] ?? $this->emptyDataPhMetrics(),
                         'sisa_ph' => $sisaPh,
                         'delta_yoy' => $this->diffDataPhMetrics($curr, $yoy),
                         'delta_ytd' => $this->diffDataPhMetrics($curr, $ytd),
@@ -193,7 +197,7 @@ class DataPhReportController extends Controller
                 foreach ($units as $index => $u) {
                     $lookupKey = trim(strtoupper($u->cabang)) . '|' . $this->normalizeUnitName($u->unit);
 
-                    $curr = $currentMetrics[$lookupKey] ?? $this->emptyDataPhMetrics();
+                    $curr = $currentMetrics[$lookupKey] ?? $this->emptyDataPhRecoveryMetrics();
                     $prev = $m1Metrics[$lookupKey] ?? $this->emptyDataPhMetrics();
                     $yoy = $yoyMetrics[$lookupKey] ?? $this->emptyDataPhMetrics();
                     $ytd = $ytdMetrics[$lookupKey] ?? $this->emptyDataPhMetrics();
@@ -208,6 +212,10 @@ class DataPhReportController extends Controller
                         'recovery_ytd' => $ytd,
                         'recovery_m1' => $prev,
                         'recovery_curr' => $curr,
+                        'tupok' => $curr['tupok'] ?? $this->emptyDataPhMetrics(),
+                        'lunas' => $curr['lunas'] ?? $this->emptyDataPhMetrics(),
+                        'non_klaim' => $curr['non_klaim'] ?? $this->emptyDataPhMetrics(),
+                        'klaim' => $curr['klaim'] ?? $this->emptyDataPhMetrics(),
                         'sisa_ph' => $sisaPh,
                         'delta_yoy' => $this->diffDataPhMetrics($curr, $yoy),
                         'delta_ytd' => $this->diffDataPhMetrics($curr, $ytd),
@@ -581,6 +589,21 @@ class DataPhReportController extends Controller
         ];
     }
 
+    private function emptyDataPhRecoveryMetrics(): array
+    {
+        return [
+            'micro' => 0.0,
+            'small' => 0.0,
+            'consumer_briguna' => 0.0,
+            'consumer_kpr' => 0.0,
+            'total' => 0.0,
+            'tupok' => $this->emptyDataPhMetrics(),
+            'lunas' => $this->emptyDataPhMetrics(),
+            'non_klaim' => $this->emptyDataPhMetrics(),
+            'klaim' => $this->emptyDataPhMetrics(),
+        ];
+    }
+
     private function diffDataPhMetrics(array $current, array $comparison): array
     {
         $diff = $this->emptyDataPhMetrics();
@@ -599,6 +622,10 @@ class DataPhReportController extends Controller
 
         $metricGroups = [
             'sisa_ph',
+            'tupok',
+            'lunas',
+            'non_klaim',
+            'klaim',
             'recovery_yoy',
             'recovery_ytd',
             'recovery_m1',
@@ -663,6 +690,9 @@ class DataPhReportController extends Controller
     {
         foreach ($metrics as $group) {
             foreach ((array) $group as $value) {
+                if (is_array($value)) {
+                    continue;
+                }
                 if (abs((float) $value) > 0.0001) {
                     return true;
                 }
@@ -670,6 +700,37 @@ class DataPhReportController extends Controller
         }
 
         return false;
+    }
+
+    private function addDataPhRecoveryMetric(
+        array &$metrics,
+        string $key,
+        ?string $segmentKey,
+        float $tupok,
+        float $lunas,
+        float $nonKlaim,
+        float $klaim,
+        float $total
+    ): void {
+        if (!$segmentKey) {
+            return;
+        }
+
+        $metrics[$key] ??= $this->emptyDataPhRecoveryMetrics();
+        $metrics[$key][$segmentKey] += $total;
+        $metrics[$key]['total'] += $total;
+
+        $metrics[$key]['tupok'][$segmentKey] += $tupok;
+        $metrics[$key]['tupok']['total'] += $tupok;
+
+        $metrics[$key]['lunas'][$segmentKey] += $lunas;
+        $metrics[$key]['lunas']['total'] += $lunas;
+
+        $metrics[$key]['non_klaim'][$segmentKey] += $nonKlaim;
+        $metrics[$key]['non_klaim']['total'] += $nonKlaim;
+
+        $metrics[$key]['klaim'][$segmentKey] += $klaim;
+        $metrics[$key]['klaim']['total'] += $klaim;
     }
 
     private function addDataPhMetric(array &$metrics, string $key, ?string $segmentKey, float $value): void
@@ -883,29 +944,45 @@ class DataPhReportController extends Controller
 
     private function getBranchOfficeRecoveryMetricsFromCognos(string $period, array $branchOffices = []): array
     {
+        $hasCognosKlaim = Schema::hasColumn('cognos_recovery', 'recovery_klaim');
+        $hasCognosNonKlaim = Schema::hasColumn('cognos_recovery', 'recovery_non_klaim');
+
         $query = DB::table('cognos_recovery')
             ->where('periode', $period)
             ->whereIn('cabang', $branchOffices)
             ->select('cabang', 'segmen_2', 'produk')
-            ->selectRaw('SUM(total_recovery) as total_recovery')
-            ->groupBy('cabang', 'segmen_2', 'produk');
+            ->selectRaw('SUM(COALESCE(total_recovery, 0)) as total_recovery');
+
+        if ($hasCognosKlaim) {
+            $query->selectRaw('SUM(COALESCE(recovery_klaim, 0)) as recovery_klaim');
+        }
+        if ($hasCognosNonKlaim) {
+            $query->selectRaw('SUM(COALESCE(recovery_non_klaim, 0)) as recovery_non_klaim');
+        }
+
+        $query->groupBy('cabang', 'segmen_2', 'produk');
 
         $data = $query->get();
 
         $metrics = [];
         foreach ($branchOffices as $branch) {
-            $metrics[$branch] = $this->emptyDataPhMetrics();
+            $metrics[$branch] = $this->emptyDataPhRecoveryMetrics();
         }
 
         foreach ($data as $row) {
             $key = $row->cabang;
             if (!isset($metrics[$key])) {
-                $metrics[$key] = $this->emptyDataPhMetrics();
+                $metrics[$key] = $this->emptyDataPhRecoveryMetrics();
             }
 
-            $val = (float) $row->total_recovery;
+            $total = (float) $row->total_recovery;
+            $klaim = $hasCognosKlaim ? (float) ($row->recovery_klaim ?? 0) : 0.0;
+            $nonKlaim = $hasCognosNonKlaim ? (float) ($row->recovery_non_klaim ?? 0) : $total;
+            $tupok = $nonKlaim;
+            $lunas = 0.0;
+
             $segmentKey = $this->classifyCognosRecoverySegment($row->segmen_2, $row->produk);
-            $this->addDataPhMetric($metrics, $key, $segmentKey, $val);
+            $this->addDataPhRecoveryMetric($metrics, $key, $segmentKey, $tupok, $lunas, $nonKlaim, $klaim, $total);
         }
 
         return $metrics;
@@ -916,7 +993,7 @@ class DataPhReportController extends Controller
     {
         $metrics = [];
         foreach ($branchOffices as $branch) {
-            $metrics[$branch] = $this->emptyDataPhMetrics();
+            $metrics[$branch] = $this->emptyDataPhRecoveryMetrics();
         }
 
         if (!Schema::hasTable('lw325_ph')) return $metrics;
@@ -929,8 +1006,15 @@ class DataPhReportController extends Controller
 
         if (!$m1Period) return $metrics;
 
+        $hasFlagKlaim = Schema::hasColumn('lw325_ph', 'flag_klaim');
+        $hasClmamt = Schema::hasColumn('lw325_ph', 'clmamt');
+
         $currentAccountKey = $this->phAccountKeySql('n');
         $previousAccountKey = $this->phAccountKeySql('o');
+
+        $flagExpr = $hasFlagKlaim
+            ? "CASE WHEN UPPER(TRIM(COALESCE(o.flag_klaim, ''))) = 'Y' THEN 'Y' ELSE 'N' END"
+            : "'N'";
 
         $currentRows = DB::table('lw325_ph as n')
             ->where('n.periode', $period)
@@ -948,40 +1032,119 @@ class DataPhReportController extends Controller
             ->selectRaw("o.kanca")
             ->selectRaw("o.segmen_dashboard")
             ->selectRaw("o.produk_dashboard")
+            ->selectRaw("{$flagExpr} as flag_klaim")
             ->selectRaw('SUM(COALESCE(o.pokok, 0)) as old_pokok')
-            ->groupByRaw("{$previousAccountKey}, o.kanca, o.segmen_dashboard, o.produk_dashboard");
+            ->groupByRaw("{$previousAccountKey}, o.kanca, o.segmen_dashboard, o.produk_dashboard, {$flagExpr}");
 
         if (!empty($branchOffices)) {
             $previousRows->whereIn('o.kanca', $branchOffices);
         }
 
-        $amountExpression = "
-            CASE
-                WHEN n.account_key IS NULL THEN COALESCE(o.old_pokok, 0)
-                WHEN COALESCE(o.old_pokok, 0) > COALESCE(n.current_pokok, 0)
-                THEN COALESCE(o.old_pokok, 0) - COALESCE(n.current_pokok, 0)
-                ELSE 0
-            END
-        ";
-
-        $results = DB::query()
+        $existResults = DB::query()
             ->fromSub($previousRows, 'o')
             ->leftJoinSub($currentRows, 'n', function ($join) {
                 $join->on('o.account_key', '=', 'n.account_key');
             })
-            ->select('o.kanca', 'o.segmen_dashboard', 'o.produk_dashboard')
-            ->selectRaw("SUM({$amountExpression}) as total")
-            ->whereRaw("({$amountExpression}) > 0")
-            ->groupBy('o.kanca', 'o.segmen_dashboard', 'o.produk_dashboard')
+            ->select('o.kanca', 'o.segmen_dashboard', 'o.produk_dashboard', 'o.flag_klaim')
+            ->selectRaw("
+                SUM(CASE WHEN n.account_key IS NOT NULL AND o.old_pokok > COALESCE(n.current_pokok, 0) THEN o.old_pokok - n.current_pokok ELSE 0 END) as tupok,
+                SUM(CASE WHEN n.account_key IS NULL THEN o.old_pokok ELSE 0 END) as lunas
+            ")
+            ->groupBy('o.kanca', 'o.segmen_dashboard', 'o.produk_dashboard', 'o.flag_klaim')
             ->get();
 
-        foreach ($results as $row) {
+        foreach ($existResults as $row) {
             $key = $row->kanca;
             if (!isset($metrics[$key])) continue;
 
-            $val = (float)$row->total;
             $segmentKey = $this->classifyPhSegment($row->segmen_dashboard, $row->produk_dashboard);
-            $this->addDataPhMetric($metrics, $key, $segmentKey, $val);
+            if (!$segmentKey) continue;
+
+            $tupok = (float) $row->tupok;
+            $lunas = (float) $row->lunas;
+
+            if ($row->flag_klaim === 'Y') {
+                $klaimPortion = 0.30 * ($tupok + $lunas);
+                $this->addDataPhRecoveryMetric(
+                    $metrics,
+                    $key,
+                    $segmentKey,
+                    0.0,
+                    0.0,
+                    0.0,
+                    $klaimPortion,
+                    $klaimPortion
+                );
+            } else {
+                $nonKlaim = $tupok + $lunas;
+                $this->addDataPhRecoveryMetric(
+                    $metrics,
+                    $key,
+                    $segmentKey,
+                    $tupok,
+                    $lunas,
+                    $nonKlaim,
+                    0.0,
+                    $nonKlaim
+                );
+            }
+        }
+
+        if ($hasFlagKlaim && $hasClmamt) {
+            $newClaimsCurrent = DB::table('lw325_ph as n')
+                ->where('n.periode', $period)
+                ->whereNotNull('n.acctno')
+                ->where('n.acctno', '<>', '')
+                ->whereRaw("UPPER(TRIM(COALESCE(n.flag_klaim, ''))) = 'Y'")
+                ->selectRaw("{$currentAccountKey} as account_key")
+                ->selectRaw('n.kanca')
+                ->selectRaw('n.segmen_dashboard')
+                ->selectRaw('n.produk_dashboard')
+                ->selectRaw('SUM(COALESCE(n.clmamt, 0)) as clmamt_baru')
+                ->groupByRaw("{$currentAccountKey}, n.kanca, n.segmen_dashboard, n.produk_dashboard");
+
+            if (!empty($branchOffices)) {
+                $newClaimsCurrent->whereIn('n.kanca', $branchOffices);
+            }
+
+            $oldAccounts = DB::table('lw325_ph as o')
+                ->where('o.periode', $m1Period)
+                ->whereNotNull('o.acctno')
+                ->where('o.acctno', '<>', '')
+                ->selectRaw("DISTINCT {$previousAccountKey} as account_key");
+
+            $newClaimResults = DB::query()
+                ->fromSub($newClaimsCurrent, 'n')
+                ->leftJoinSub($oldAccounts, 'o', function ($join) {
+                    $join->on('n.account_key', '=', 'o.account_key');
+                })
+                ->whereNull('o.account_key')
+                ->select('n.kanca', 'n.segmen_dashboard', 'n.produk_dashboard')
+                ->selectRaw('SUM(COALESCE(n.clmamt_baru, 0)) as clmamt_baru')
+                ->groupBy('n.kanca', 'n.segmen_dashboard', 'n.produk_dashboard')
+                ->get();
+
+            foreach ($newClaimResults as $row) {
+                $key = $row->kanca;
+                if (!isset($metrics[$key])) continue;
+
+                $segmentKey = $this->classifyPhSegment($row->segmen_dashboard, $row->produk_dashboard);
+                if (!$segmentKey) continue;
+
+                $clmamt = (float) $row->clmamt_baru;
+                if ($clmamt > 0) {
+                    $this->addDataPhRecoveryMetric(
+                        $metrics,
+                        $key,
+                        $segmentKey,
+                        0.0,
+                        0.0,
+                        0.0,
+                        $clmamt,
+                        $clmamt
+                    );
+                }
+            }
         }
 
         return $metrics;
@@ -1028,8 +1191,15 @@ class DataPhReportController extends Controller
 
         if (!$m1Period) return $metrics;
 
+        $hasFlagKlaim = Schema::hasColumn('lw325_ph', 'flag_klaim');
+        $hasClmamt = Schema::hasColumn('lw325_ph', 'clmamt');
+
         $currentAccountKey = $this->phAccountKeySql('n');
         $previousAccountKey = $this->phAccountKeySql('o');
+
+        $flagExpr = $hasFlagKlaim
+            ? "CASE WHEN UPPER(TRIM(COALESCE(o.flag_klaim, ''))) = 'Y' THEN 'Y' ELSE 'N' END"
+            : "'N'";
 
         $currentRows = DB::table('lw325_ph as n')
             ->where('n.periode', $period)
@@ -1048,8 +1218,9 @@ class DataPhReportController extends Controller
             ->selectRaw("o.unit")
             ->selectRaw("o.segmen_dashboard")
             ->selectRaw("o.produk_dashboard")
+            ->selectRaw("{$flagExpr} as flag_klaim")
             ->selectRaw('SUM(COALESCE(o.pokok, 0)) as old_pokok')
-            ->groupByRaw("{$previousAccountKey}, o.kanca, o.unit, o.segmen_dashboard, o.produk_dashboard");
+            ->groupByRaw("{$previousAccountKey}, o.kanca, o.unit, o.segmen_dashboard, o.produk_dashboard, {$flagExpr}");
 
         if (!empty($kancas)) {
             $previousRows->whereIn('o.kanca', $kancas);
@@ -1060,35 +1231,120 @@ class DataPhReportController extends Controller
             $previousRows->where(DB::raw('TRIM(UPPER(o.unit))'), $normalizedUnit);
         }
 
-        $amountExpression = "
-            CASE
-                WHEN n.account_key IS NULL THEN COALESCE(o.old_pokok, 0)
-                WHEN COALESCE(o.old_pokok, 0) > COALESCE(n.current_pokok, 0)
-                THEN COALESCE(o.old_pokok, 0) - COALESCE(n.current_pokok, 0)
-                ELSE 0
-            END
-        ";
-
-        $results = DB::query()
+        $existResults = DB::query()
             ->fromSub($previousRows, 'o')
             ->leftJoinSub($currentRows, 'n', function ($join) {
                 $join->on('o.account_key', '=', 'n.account_key');
             })
-            ->select('o.kanca', 'o.unit', 'o.segmen_dashboard', 'o.produk_dashboard')
-            ->selectRaw("SUM({$amountExpression}) as total")
-            ->whereRaw("({$amountExpression}) > 0")
-            ->groupBy('o.kanca', 'o.unit', 'o.segmen_dashboard', 'o.produk_dashboard')
+            ->select('o.kanca', 'o.unit', 'o.segmen_dashboard', 'o.produk_dashboard', 'o.flag_klaim')
+            ->selectRaw("
+                SUM(CASE WHEN n.account_key IS NOT NULL AND o.old_pokok > COALESCE(n.current_pokok, 0) THEN o.old_pokok - n.current_pokok ELSE 0 END) as tupok,
+                SUM(CASE WHEN n.account_key IS NULL THEN o.old_pokok ELSE 0 END) as lunas
+            ")
+            ->groupBy('o.kanca', 'o.unit', 'o.segmen_dashboard', 'o.produk_dashboard', 'o.flag_klaim')
             ->get();
 
-        foreach ($results as $row) {
+        foreach ($existResults as $row) {
             $key = trim(strtoupper($row->kanca)) . '|' . $this->normalizeUnitName($row->unit);
             if (!isset($metrics[$key])) {
-                $metrics[$key] = $this->emptyDataPhMetrics();
+                $metrics[$key] = $this->emptyDataPhRecoveryMetrics();
             }
 
-            $val = (float)$row->total;
             $segmentKey = $this->classifyPhSegment($row->segmen_dashboard, $row->produk_dashboard);
-            $this->addDataPhMetric($metrics, $key, $segmentKey, $val);
+            if (!$segmentKey) continue;
+
+            $tupok = (float) $row->tupok;
+            $lunas = (float) $row->lunas;
+
+            if ($row->flag_klaim === 'Y') {
+                $klaimPortion = 0.30 * ($tupok + $lunas);
+                $this->addDataPhRecoveryMetric(
+                    $metrics,
+                    $key,
+                    $segmentKey,
+                    0.0,
+                    0.0,
+                    0.0,
+                    $klaimPortion,
+                    $klaimPortion
+                );
+            } else {
+                $nonKlaim = $tupok + $lunas;
+                $this->addDataPhRecoveryMetric(
+                    $metrics,
+                    $key,
+                    $segmentKey,
+                    $tupok,
+                    $lunas,
+                    $nonKlaim,
+                    0.0,
+                    $nonKlaim
+                );
+            }
+        }
+
+        if ($hasFlagKlaim && $hasClmamt) {
+            $newClaimsCurrent = DB::table('lw325_ph as n')
+                ->where('n.periode', $period)
+                ->whereNotNull('n.acctno')
+                ->where('n.acctno', '<>', '')
+                ->whereRaw("UPPER(TRIM(COALESCE(n.flag_klaim, ''))) = 'Y'")
+                ->selectRaw("{$currentAccountKey} as account_key")
+                ->selectRaw('n.kanca')
+                ->selectRaw('n.unit')
+                ->selectRaw('n.segmen_dashboard')
+                ->selectRaw('n.produk_dashboard')
+                ->selectRaw('SUM(COALESCE(n.clmamt, 0)) as clmamt_baru')
+                ->groupByRaw("{$currentAccountKey}, n.kanca, n.unit, n.segmen_dashboard, n.produk_dashboard");
+
+            if (!empty($kancas)) {
+                $newClaimsCurrent->whereIn('n.kanca', $kancas);
+            }
+            if ($unit !== 'all') {
+                $normalizedUnit = $this->normalizeUnitName($unit);
+                $newClaimsCurrent->where(DB::raw('TRIM(UPPER(n.unit))'), $normalizedUnit);
+            }
+
+            $oldAccounts = DB::table('lw325_ph as o')
+                ->where('o.periode', $m1Period)
+                ->whereNotNull('o.acctno')
+                ->where('o.acctno', '<>', '')
+                ->selectRaw("DISTINCT {$previousAccountKey} as account_key");
+
+            $newClaimResults = DB::query()
+                ->fromSub($newClaimsCurrent, 'n')
+                ->leftJoinSub($oldAccounts, 'o', function ($join) {
+                    $join->on('n.account_key', '=', 'o.account_key');
+                })
+                ->whereNull('o.account_key')
+                ->select('n.kanca', 'n.unit', 'n.segmen_dashboard', 'n.produk_dashboard')
+                ->selectRaw('SUM(COALESCE(n.clmamt_baru, 0)) as clmamt_baru')
+                ->groupBy('n.kanca', 'n.unit', 'n.segmen_dashboard', 'n.produk_dashboard')
+                ->get();
+
+            foreach ($newClaimResults as $row) {
+                $key = trim(strtoupper($row->kanca)) . '|' . $this->normalizeUnitName($row->unit);
+                if (!isset($metrics[$key])) {
+                    $metrics[$key] = $this->emptyDataPhRecoveryMetrics();
+                }
+
+                $segmentKey = $this->classifyPhSegment($row->segmen_dashboard, $row->produk_dashboard);
+                if (!$segmentKey) continue;
+
+                $clmamt = (float) $row->clmamt_baru;
+                if ($clmamt > 0) {
+                    $this->addDataPhRecoveryMetric(
+                        $metrics,
+                        $key,
+                        $segmentKey,
+                        0.0,
+                        0.0,
+                        0.0,
+                        $clmamt,
+                        $clmamt
+                    );
+                }
+            }
         }
 
         return $metrics;
@@ -1127,12 +1383,23 @@ class DataPhReportController extends Controller
     private function getRecoveryMetricsFromCognos(string $period, array $kancas = [], string $unit = 'all'): array
     {
         $area6 = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+        $hasCognosKlaim = Schema::hasColumn('cognos_recovery', 'recovery_klaim');
+        $hasCognosNonKlaim = Schema::hasColumn('cognos_recovery', 'recovery_non_klaim');
+
         $query = DB::table('cognos_recovery')
             ->where('periode', $period)
             ->whereIn('cabang', $area6)
             ->select('cabang', 'unit_kerja', 'segmen_2', 'produk')
-            ->selectRaw('SUM(total_recovery) as total_recovery')
-            ->groupBy('cabang', 'unit_kerja', 'segmen_2', 'produk');
+            ->selectRaw('SUM(COALESCE(total_recovery, 0)) as total_recovery');
+
+        if ($hasCognosKlaim) {
+            $query->selectRaw('SUM(COALESCE(recovery_klaim, 0)) as recovery_klaim');
+        }
+        if ($hasCognosNonKlaim) {
+            $query->selectRaw('SUM(COALESCE(recovery_non_klaim, 0)) as recovery_non_klaim');
+        }
+
+        $query->groupBy('cabang', 'unit_kerja', 'segmen_2', 'produk');
 
         if (!empty($kancas)) {
             $query->whereIn('cabang', $kancas);
@@ -1147,12 +1414,17 @@ class DataPhReportController extends Controller
         foreach ($data as $row) {
             $key = trim(strtoupper($row->cabang)) . '|' . $this->normalizeUnitName($row->unit_kerja);
             if (!isset($metrics[$key])) {
-                $metrics[$key] = $this->emptyDataPhMetrics();
+                $metrics[$key] = $this->emptyDataPhRecoveryMetrics();
             }
 
-            $val = (float)$row->total_recovery;
+            $total = (float) $row->total_recovery;
+            $klaim = $hasCognosKlaim ? (float) ($row->recovery_klaim ?? 0) : 0.0;
+            $nonKlaim = $hasCognosNonKlaim ? (float) ($row->recovery_non_klaim ?? 0) : $total;
+            $tupok = $nonKlaim;
+            $lunas = 0.0;
+
             $segmentKey = $this->classifyCognosRecoverySegment($row->segmen_2, $row->produk);
-            $this->addDataPhMetric($metrics, $key, $segmentKey, $val);
+            $this->addDataPhRecoveryMetric($metrics, $key, $segmentKey, $tupok, $lunas, $nonKlaim, $klaim, $total);
         }
 
         return $metrics;

@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use RuntimeException;
@@ -30,6 +31,12 @@ class SyncBrihcReferenceCommand extends Command
     private const PDWK_REQUIRED_HEADERS = [
         'PN',
         'NAMA',
+        'JABATAN',
+    ];
+
+    private const MANTRI_REFERENCE_REQUIRED_HEADERS = [
+        'PERSONALNUMBER',
+        'NAMAPEKERJA',
         'JABATAN',
     ];
 
@@ -69,9 +76,13 @@ class SyncBrihcReferenceCommand extends Command
                 'roles' => array_keys($source['role_tokens']),
                 'source_format' => $source['format'],
                 'sync_brihc_pemasar' => $source['sync_brihc_pemasar'],
-                'would_delete_brihc' => $this->countReferenceRows('brihc', 'jabatan', $source['role_tokens']),
+                'would_delete_brihc' => $source['format'] === 'mantri_reference'
+                    ? 0
+                    : $this->countReferenceRows('brihc', 'jabatan', $source['role_tokens']),
                 'would_delete_brihc_pemasar' => $source['sync_brihc_pemasar']
-                    ? $this->countReferenceRows('brihc_pemasar', 'positiondesc', $source['role_tokens'])
+                    ? ($source['format'] === 'mantri_reference'
+                        ? $this->countReferenceRowsForBranches('brihc_pemasar', 'positiondesc', $source['role_tokens'], $source['branch_labels'])
+                        : $this->countReferenceRows('brihc_pemasar', 'positiondesc', $source['role_tokens']))
                     : 0,
                 'dry_run' => $dryRun,
             ];
@@ -84,14 +95,40 @@ class SyncBrihcReferenceCommand extends Command
 
             $timestamp = now()->toDateTimeString();
             $result = DB::transaction(function () use ($source, $timestamp): array {
-                $deletedBrihc = $this->deleteReferenceRows('brihc', 'jabatan', $source['role_tokens']);
-                $this->insertInChunks('brihc', $this->brihcRows($source['rows'], $timestamp));
+                $isScopedMantriReference = $source['format'] === 'mantri_reference';
+                $deletedBrihc = $isScopedMantriReference
+                    ? 0
+                    : $this->deleteReferenceRows('brihc', 'jabatan', $source['role_tokens']);
+                $brihcRows = $this->brihcRows($source['rows'], $timestamp);
+                if ($isScopedMantriReference) {
+                    $this->upsertInChunks('brihc', $brihcRows, ['uniqueid_brihc'], ['pn', 'nama', 'jabatan', 'updated_at']);
+                } else {
+                    $this->insertInChunks('brihc', $brihcRows);
+                }
 
                 $deletedPemasar = 0;
                 $insertedPemasar = 0;
                 if ($source['sync_brihc_pemasar']) {
-                    $deletedPemasar = $this->deleteReferenceRows('brihc_pemasar', 'positiondesc', $source['role_tokens']);
-                    $this->insertInChunks('brihc_pemasar', $this->brihcPemasarRows($source['rows'], $timestamp));
+                    $deletedPemasar = $isScopedMantriReference
+                        ? $this->deleteReferenceRowsForBranches('brihc_pemasar', 'positiondesc', $source['role_tokens'], $source['branch_labels'])
+                        : $this->deleteReferenceRows('brihc_pemasar', 'positiondesc', $source['role_tokens']);
+                    $brihcPemasarRows = $this->brihcPemasarRows($source['rows'], $timestamp);
+                    if ($isScopedMantriReference) {
+                        // A Mantri can move in from a branch outside the scoped cleanup.
+                        // The deterministic reference key must update that existing row,
+                        // rather than causing the entire atomic synchronization to fail.
+                        $this->upsertInChunks(
+                            'brihc_pemasar',
+                            $brihcPemasarRows,
+                            ['uniqueid_namareport'],
+                            array_values(array_filter(
+                                array_keys($brihcPemasarRows[0] ?? []),
+                                static fn (string $column): bool => ! in_array($column, ['uniqueid_namareport', 'created_at'], true)
+                            ))
+                        );
+                    } else {
+                        $this->insertInChunks('brihc_pemasar', $brihcPemasarRows);
+                    }
                     $insertedPemasar = count($source['rows']);
                 }
 
@@ -110,6 +147,7 @@ class SyncBrihcReferenceCommand extends Command
                 'cache_version_bumped' => 'pinjaman',
                 'preserved' => [
                     'brihc_roles_outside_source' => 'not changed',
+                    'brihc_pemasar_outside_source_branches' => $source['format'] === 'mantri_reference' ? 'not changed' : null,
                     'brihc_pemasar' => $source['sync_brihc_pemasar'] ? 'synchronized' : 'not changed',
                     'wilayah_mbm' => 'not changed',
                 ],
@@ -149,15 +187,24 @@ class SyncBrihcReferenceCommand extends Command
         $header = $this->findHeader($sheet);
         $headerIndexes = $header['indexes'];
         $isPdwkFormat = $header['format'] === 'pdwk';
+        $isMantriReferenceFormat = $header['format'] === 'mantri_reference';
 
         $recordsByPn = [];
         $duplicatePnSkipped = 0;
         $sourceRows = 0;
 
         for ($rowNumber = $header['row'] + 1; $rowNumber <= $sheet->getHighestDataRow(); $rowNumber++) {
-            $pnHeader = $isPdwkFormat ? 'PN' : 'PERNR';
-            $nameHeader = $isPdwkFormat ? 'NAMA' : 'COMPLETENAME';
-            $roleHeader = $isPdwkFormat ? 'JABATAN' : 'KELOMPOKJABATAN';
+            $pnHeader = match (true) {
+                $isPdwkFormat => 'PN',
+                $isMantriReferenceFormat => 'PERSONALNUMBER',
+                default => 'PERNR',
+            };
+            $nameHeader = match (true) {
+                $isPdwkFormat => 'NAMA',
+                $isMantriReferenceFormat => 'NAMAPEKERJA',
+                default => 'COMPLETENAME',
+            };
+            $roleHeader = $isPdwkFormat ? 'JABATAN' : ($isMantriReferenceFormat ? 'JABATAN' : 'KELOMPOKJABATAN');
             $rawPn = $this->sourceValue($sheet, $rowNumber, $headerIndexes, $pnHeader);
             $name = $this->sourceValue($sheet, $rowNumber, $headerIndexes, $nameHeader);
             $sourceRole = $this->normalizeRole($this->sourceValue($sheet, $rowNumber, $headerIndexes, $roleHeader));
@@ -185,16 +232,19 @@ class SyncBrihcReferenceCommand extends Command
                 'pn' => $pn,
                 'nama' => $name,
                 'jabatan' => $role,
-                'gender' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, 'GENDER'),
+                'gender' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, $isMantriReferenceFormat ? 'JENISKELAMIN' : 'GENDER'),
                 'jg' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, 'JG'),
                 'age' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, 'AGE'),
                 'esgdesc' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, 'ESGDESC'),
                 'padesc' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, 'PADESC'),
-                'psadesc' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, 'PSADESC'),
-                'orgdesc' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, 'ORGDESC'),
+                'psadesc' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, $isMantriReferenceFormat ? 'KANCAINDUK' : 'PSADESC'),
+                'orgdesc' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, $isMantriReferenceFormat ? 'ORGHDESK' : 'ORGDESC')
+                    ?? $this->sourceValue($sheet, $rowNumber, $headerIndexes, 'UNITKERJA'),
                 'mkj' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, 'MKJ'),
                 'descprogrammasuk' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, 'DESCPROGRAMMASUK'),
-                'bc' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, 'KODEBRANCH'),
+                'bc' => $this->sourceValue($sheet, $rowNumber, $headerIndexes, $isMantriReferenceFormat ? 'KODEUNITKERJA' : 'KODEBRANCH'),
+                'tmt_masuk' => $this->sourceDateValue($sheet, $rowNumber, $headerIndexes, 'TMTMASUK'),
+                'tmt_jabatan' => $this->sourceDateValue($sheet, $rowNumber, $headerIndexes, 'TMTJABATAN'),
             ];
         }
 
@@ -211,6 +261,12 @@ class SyncBrihcReferenceCommand extends Command
             'role_tokens' => $roleTokens,
             'format' => $header['format'],
             'sync_brihc_pemasar' => ! $isPdwkFormat,
+            'branch_labels' => $isMantriReferenceFormat
+                ? array_values(array_unique(array_filter(array_map(
+                    static fn (array $record): string => strtoupper(trim((string) ($record['psadesc'] ?? ''))),
+                    $recordsByPn
+                ))))
+                : [],
         ];
     }
 
@@ -370,6 +426,8 @@ class SyncBrihcReferenceCommand extends Command
             'mkj' => null,
             'descprogrammasuk' => null,
             'bc' => $bc !== '' ? $bc : $branch['code'],
+            'tmt_masuk' => null,
+            'tmt_jabatan' => null,
         ];
     }
 
@@ -439,6 +497,10 @@ class SyncBrihcReferenceCommand extends Command
                 return ['row' => $rowNumber, 'indexes' => $indexes, 'format' => 'personnel'];
             }
 
+            if ($this->hasHeaders($indexes, self::MANTRI_REFERENCE_REQUIRED_HEADERS)) {
+                return ['row' => $rowNumber, 'indexes' => $indexes, 'format' => 'mantri_reference'];
+            }
+
             if ($this->hasHeaders($indexes, self::PDWK_REQUIRED_HEADERS)) {
                 return ['row' => $rowNumber, 'indexes' => $indexes, 'format' => 'pdwk'];
             }
@@ -447,6 +509,8 @@ class SyncBrihcReferenceCommand extends Command
         throw new RuntimeException(
             'Header wajib tidak ditemukan. Format yang didukung: '
             .implode(', ', self::PERSONNEL_REQUIRED_HEADERS)
+            .' atau '
+            .implode(', ', self::MANTRI_REFERENCE_REQUIRED_HEADERS)
             .' atau '
             .implode(', ', self::PDWK_REQUIRED_HEADERS)
         );
@@ -476,6 +540,35 @@ class SyncBrihcReferenceCommand extends Command
         $value = trim((string) $sheet->getCell($coordinate)->getFormattedValue());
 
         return $value !== '' ? $value : null;
+    }
+
+    /** @param array<string, int> $headerIndexes */
+    private function sourceDateValue(Worksheet $sheet, int $rowNumber, array $headerIndexes, string $header): ?string
+    {
+        $index = $headerIndexes[$header] ?? null;
+        if ($index === null) {
+            return null;
+        }
+
+        $cell = $sheet->getCell(Coordinate::stringFromColumnIndex($index + 1).$rowNumber);
+        $rawValue = $cell->getValue();
+        if (is_numeric($rawValue) && (float) $rawValue > 20_000 && (float) $rawValue < 80_000) {
+            return ExcelDate::excelToDateTimeObject((float) $rawValue)->format('Y-m-d');
+        }
+
+        $value = trim((string) $cell->getFormattedValue());
+        if ($value === '' || str_starts_with($value, '#')) {
+            return null;
+        }
+
+        foreach (['Y-m-d', 'd/m/Y', 'd-m-Y', 'd M Y'] as $format) {
+            $date = \DateTimeImmutable::createFromFormat('!'.$format, $value);
+            if ($date instanceof \DateTimeImmutable) {
+                return $date->format('Y-m-d');
+            }
+        }
+
+        return null;
     }
 
     private function isPdwkStructuralRow(?string $pn, ?string $name, string $role): bool
@@ -539,6 +632,8 @@ class SyncBrihcReferenceCommand extends Command
                 'pn_mantri' => $isMantri ? $record['pn'] : '-',
                 'status' => $record['descprogrammasuk'],
                 'jg' => $record['jg'],
+                'tmt_masuk' => $record['tmt_masuk'],
+                'tmt_jabatan' => $record['tmt_jabatan'],
                 'created_at' => $timestamp,
                 'updated_at' => $timestamp,
             ];
@@ -561,6 +656,34 @@ class SyncBrihcReferenceCommand extends Command
     private function countReferenceRows(string $table, string $roleColumn, array $roleTokens): int
     {
         return $this->referenceRowsQuery($table, $roleColumn, $roleTokens)->count();
+    }
+
+    /** @param array<string, string> $roleTokens @param array<int, string> $branchLabels */
+    private function deleteReferenceRowsForBranches(string $table, string $roleColumn, array $roleTokens, array $branchLabels): int
+    {
+        return $this->referenceRowsForBranchesQuery($table, $roleColumn, $roleTokens, $branchLabels)->delete();
+    }
+
+    /** @param array<string, string> $roleTokens @param array<int, string> $branchLabels */
+    private function countReferenceRowsForBranches(string $table, string $roleColumn, array $roleTokens, array $branchLabels): int
+    {
+        return $this->referenceRowsForBranchesQuery($table, $roleColumn, $roleTokens, $branchLabels)->count();
+    }
+
+    /** @param array<string, string> $roleTokens @param array<int, string> $branchLabels */
+    private function referenceRowsForBranchesQuery(string $table, string $roleColumn, array $roleTokens, array $branchLabels): mixed
+    {
+        $query = $this->referenceRowsQuery($table, $roleColumn, $roleTokens);
+        $branches = array_values(array_unique(array_filter(array_map(
+            static fn (string $branch): string => strtoupper(trim($branch)),
+            $branchLabels
+        ))));
+
+        if ($branches === [] || ! Schema::hasColumn($table, 'psadesc')) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereIn(DB::raw("UPPER(TRIM(COALESCE(psadesc, '')) )"), $branches);
     }
 
     /** @param array<string, string> $roleTokens */
@@ -587,6 +710,14 @@ class SyncBrihcReferenceCommand extends Command
     {
         foreach (array_chunk($rows, 500) as $chunk) {
             DB::table($table)->insert($chunk);
+        }
+    }
+
+    /** @param array<int, array<string, mixed>> $rows @param array<int, string> $uniqueBy @param array<int, string> $updateColumns */
+    private function upsertInChunks(string $table, array $rows, array $uniqueBy, array $updateColumns): void
+    {
+        foreach (array_chunk($rows, 500) as $chunk) {
+            DB::table($table)->upsert($chunk, $uniqueBy, $updateColumns);
         }
     }
 

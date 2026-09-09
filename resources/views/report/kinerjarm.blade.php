@@ -2212,6 +2212,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const rm = $(this).data('rm-name');
         const segmen = $(this).data('segment');
         const periode = $(this).data('period');
+        const produk = $(this).data('product');
         
         const modal = new bootstrap.Modal(document.getElementById('rmDetailModal'));
         const content = $('#rmDetailModalContent');
@@ -2231,7 +2232,8 @@ document.addEventListener('DOMContentLoaded', function() {
         $.get("{{ route('report.dashboard-pinjaman.kinerjarm.history') }}", {
             rm: rm,
             segmen: segmen,
-            periode: periode
+            periode: periode,
+            produk: produk
         })
         .done(function(html) {
             content.html(html);

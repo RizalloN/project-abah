@@ -64,7 +64,7 @@ class SsaSimpananBusinessSegmentBackfillService
             foreach ($periods as $periodInfo) {
                 $period = (string) $periodInfo->periode;
                 $rows = DB::table('ssa_simpanan')
-                    ->whereDate('Month_Day_Year_of_Posisi', $period)
+                    ->where('Month_Day_Year_of_Posisi', $period)
                     ->orderBy('id')
                     ->get([
                         'id', 'nama_cabang', 'nama_uker', 'produk', 'segmentasi',

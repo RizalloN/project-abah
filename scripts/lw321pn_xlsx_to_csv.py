@@ -440,7 +440,82 @@ def fast_preview_xlsx_fastexcel(args):
     })
 
 
-def stream_xlsx_to_csv(args):
+def stream_xlsx_to_csv_fastexcel(args):
+    import fastexcel
+    import polars as pl
+
+    temporary_output = args.output + ".fastexcel"
+
+    try:
+        reader = fastexcel.read_excel(args.input)
+        sheet = reader.load_sheet_by_idx(
+            0,
+            header_row=None,
+            schema_sample_rows=1000,
+            dtype_coercion="coerce",
+        )
+        frame = sheet.to_polars()
+
+        header_index = None
+        headers = []
+        for row_index, row in enumerate(frame.head(64).iter_rows()):
+            upper = [str(value or "").strip().upper() for value in row]
+            if "PERIODE" not in upper or "NOMOR_REKENING" not in upper:
+                continue
+
+            header_index = row_index
+            headers = [
+                str(value).strip() if str(value or "").strip() else f"COL_{index}"
+                for index, value in enumerate(row)
+            ]
+            validate_headers(headers)
+            break
+
+        if header_index is None:
+            raise RuntimeError("Header LW321PN tidak ditemukan. Pastikan file memuat PERIODE dan NOMOR_REKENING.")
+
+        emit({
+            "type": "progress",
+            "percent": 45,
+            "message": "Header LW321PN ditemukan. Menulis CSV staging cepat...",
+            "header_row": header_index + 1,
+            "headers": len(headers),
+        })
+
+        data = frame.slice(header_index + 1)
+        data.columns = headers
+        if data.height > 0:
+            non_blank_row = pl.any_horizontal(*[
+                pl.col(column).cast(pl.String).fill_null("").str.strip_chars().ne("")
+                for column in headers
+            ])
+            data = data.filter(non_blank_row)
+
+        emit({
+            "type": "progress",
+            "percent": 75,
+            "message": "Menulis CSV staging LW321PN dengan fast reader...",
+            "rows": data.height,
+        })
+        data.write_csv(temporary_output, include_header=True)
+        os.replace(temporary_output, args.output)
+    finally:
+        if os.path.exists(temporary_output):
+            os.unlink(temporary_output)
+
+    emit({
+        "type": "done",
+        "output": args.output,
+        "header_index": 0,
+        "source_header_row": header_index + 1,
+        "headers": headers,
+        "preview_rows": [],
+        "unique_values": {},
+        "total_rows": data.height,
+    })
+
+
+def stream_xlsx_to_csv_xml(args):
     header_row = None
     headers = []
     rows_written = 0
@@ -527,6 +602,20 @@ def stream_xlsx_to_csv(args):
         "unique_values": {},
         "total_rows": rows_written,
     })
+
+
+def stream_xlsx_to_csv(args):
+    try:
+        stream_xlsx_to_csv_fastexcel(args)
+        return
+    except ImportError:
+        pass
+    except Exception:
+        # Parser XML lama tetap menjadi fallback untuk workbook yang tidak
+        # didukung penuh oleh fast reader, tanpa mengurangi kontrak data.
+        pass
+
+    stream_xlsx_to_csv_xml(args)
 
 
 def main():

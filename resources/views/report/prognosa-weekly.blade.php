@@ -4,7 +4,18 @@
 
 @php
     $selectedSheetLabel = (string) data_get($selectedSheet ?? [], 'label', 'Area 6');
-    $selectedWeek = max(1, min(4, (int) ($activeForecastWeek ?? 1)));
+    $availableWeeks = collect($availableForecastWeeks ?? [])
+        ->map(static fn (mixed $week): int => (int) $week)
+        ->filter(static fn (int $week): bool => $week >= 1 && $week <= 5)
+        ->unique()
+        ->sort()
+        ->values()
+        ->all();
+    $availableWeeks = $availableWeeks !== [] ? $availableWeeks : [1];
+    $selectedWeek = (int) ($activeForecastWeek ?? $availableWeeks[0]);
+    if (!in_array($selectedWeek, $availableWeeks, true)) {
+        $selectedWeek = $availableWeeks[0];
+    }
 
     $columnModes = [
         'all' => 'Semua',
@@ -1344,7 +1355,7 @@
                 </div>
                 <form class="prognosa-week-options" method="GET" action="{{ route('prognosa.weekly') }}">
                     <input type="hidden" name="sheet" value="{{ $selectedSheetKey }}">
-                    @foreach(range(1, 4) as $week)
+                    @foreach($availableWeeks as $week)
                         <button type="submit"
                                 name="week"
                                 value="{{ $week }}"

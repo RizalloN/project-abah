@@ -10,10 +10,13 @@ use Throwable;
 class SnapshotSourceSignatureService
 {
     private const TABLE = 'snapshot_source_signatures';
+
     private const SIGNATURE_VERSION = 'snapshot-source-v1';
+
     private const BUCKET_SIGNATURE_VERSION = 'snapshot-source-v2-buckets';
+
     private const SNAPSHOT_FORMULA_VERSIONS = [
-        'performance_rm_snapshots' => 'performance-rm-v17-description-manual-segment',
+        'performance_rm_snapshots' => 'performance-rm-v26-consumer-first-seen-attribution',
     ];
 
     private const NUMERIC_COLUMNS = [
@@ -64,8 +67,8 @@ class SnapshotSourceSignatureService
         if ($sourceTable === ''
             || $periodColumn === ''
             || $period === ''
-            || !Schema::hasTable($sourceTable)
-            || !$this->tableHasColumn($sourceTable, $periodColumn)) {
+            || ! Schema::hasTable($sourceTable)
+            || ! $this->tableHasColumn($sourceTable, $periodColumn)) {
             return null;
         }
 
@@ -81,22 +84,22 @@ class SnapshotSourceSignatureService
                 continue;
             }
 
-            if (!$this->tableHasColumn($sourceTable, $column)) {
+            if (! $this->tableHasColumn($sourceTable, $column)) {
                 continue;
             }
 
-            $alias = 'max_' . $column;
-            $query->selectRaw('MAX(' . $grammar->wrap($column) . ') as ' . $alias);
+            $alias = 'max_'.$column;
+            $query->selectRaw('MAX('.$grammar->wrap($column).') as '.$alias);
             $selectedAliases[] = $alias;
         }
 
         foreach (self::NUMERIC_COLUMNS[$sourceTable] ?? [] as $column) {
-            if (!$this->tableHasColumn($sourceTable, $column)) {
+            if (! $this->tableHasColumn($sourceTable, $column)) {
                 continue;
             }
 
-            $alias = 'sum_' . preg_replace('/[^A-Za-z0-9_]/', '_', $column);
-            $query->selectRaw('COALESCE(SUM(COALESCE(' . $grammar->wrap($column) . ', 0)), 0) as ' . $alias);
+            $alias = 'sum_'.preg_replace('/[^A-Za-z0-9_]/', '_', $column);
+            $query->selectRaw('COALESCE(SUM(COALESCE('.$grammar->wrap($column).', 0)), 0) as '.$alias);
             $selectedAliases[] = $alias;
         }
 
@@ -124,7 +127,7 @@ class SnapshotSourceSignatureService
                 : ($this->tableHasColumn($sourceTable, 'created_at') ? 'created_at' : null);
 
             if ($timestampColumn !== null) {
-                $timestampAlias = 'max_' . $timestampColumn;
+                $timestampAlias = 'max_'.$timestampColumn;
                 $row[$timestampAlias] = DB::table($sourceTable)
                     ->where($periodColumn, $period)
                     ->max($timestampColumn);
@@ -161,15 +164,15 @@ class SnapshotSourceSignatureService
         $grammar = DB::connection()->getQueryGrammar();
         $query = DB::table($sourceTable)
             ->where($periodColumn, $period)
-            ->selectRaw("UPPER(TRIM(COALESCE(" . $grammar->wrap($bucketColumn) . ", ''))) as bucket_key")
+            ->selectRaw('UPPER(TRIM(COALESCE('.$grammar->wrap($bucketColumn).", ''))) as bucket_key")
             ->selectRaw('COUNT(*) as source_row_count');
 
         foreach (self::NUMERIC_COLUMNS[$sourceTable] ?? [] as $column) {
-            if (!$this->tableHasColumn($sourceTable, $column)) {
+            if (! $this->tableHasColumn($sourceTable, $column)) {
                 continue;
             }
 
-            $query->selectRaw('COALESCE(SUM(COALESCE(' . $grammar->wrap($column) . ', 0)), 0) as sum_' . preg_replace('/[^A-Za-z0-9_]/', '_', $column));
+            $query->selectRaw('COALESCE(SUM(COALESCE('.$grammar->wrap($column).', 0)), 0) as sum_'.preg_replace('/[^A-Za-z0-9_]/', '_', $column));
         }
 
         return $query
@@ -218,7 +221,7 @@ class SnapshotSourceSignatureService
             return false;
         }
 
-        if (!array_key_exists($table, $this->tableColumns)) {
+        if (! array_key_exists($table, $this->tableColumns)) {
             try {
                 $this->tableColumns[$table] = array_fill_keys(
                     array_map(
@@ -241,9 +244,8 @@ class SnapshotSourceSignatureService
         string $periodKey,
         ?array $sourceMetadata,
         ?int $snapshotRowCount = null
-    ): bool
-    {
-        if ($sourceMetadata === null || !Schema::hasTable(self::TABLE)) {
+    ): bool {
+        if ($sourceMetadata === null || ! Schema::hasTable(self::TABLE)) {
             return false;
         }
 
@@ -265,7 +267,7 @@ class SnapshotSourceSignatureService
         }
 
         if ($formulaVersion !== null) {
-            if (!is_array($context) || (string) ($context['snapshot_formula_version'] ?? '') !== $formulaVersion) {
+            if (! is_array($context) || (string) ($context['snapshot_formula_version'] ?? '') !== $formulaVersion) {
                 return false;
             }
         }
@@ -282,9 +284,9 @@ class SnapshotSourceSignatureService
         }
 
         return hash_equals(
-                (string) ($existing->source_signature ?? ''),
-                (string) ($sourceMetadata['source_signature'] ?? '')
-            );
+            (string) ($existing->source_signature ?? ''),
+            (string) ($sourceMetadata['source_signature'] ?? '')
+        );
     }
 
     public function markBuilt(
@@ -294,7 +296,7 @@ class SnapshotSourceSignatureService
         array $sourceMetadata,
         array $context = []
     ): void {
-        if (!Schema::hasTable(self::TABLE)) {
+        if (! Schema::hasTable(self::TABLE)) {
             return;
         }
 
@@ -333,11 +335,10 @@ class SnapshotSourceSignatureService
      * source that actually has rows for the given period. Sources without rows
      * are silently skipped (they did not contribute to this snapshot).
      *
-     * @param string $snapshotTable
-     * @param string $period Canonical period key (must match what
-     *                       EnsureImportedSnapshotsFreshJob will look up).
-     * @param array<int, array{source_table: string, period_column: string}> $candidates
-     * @param array<string, mixed> $context
+     * @param  string  $period  Canonical period key (must match what
+     *                          EnsureImportedSnapshotsFreshJob will look up).
+     * @param  array<int, array{source_table: string, period_column: string}>  $candidates
+     * @param  array<string, mixed>  $context
      * @return array<string, bool> source_table => marked
      */
     public function markBuiltForApplicableSources(
@@ -347,7 +348,7 @@ class SnapshotSourceSignatureService
         array $context = []
     ): array {
         $period = trim($period);
-        if ($period === '' || !Schema::hasTable(self::TABLE)) {
+        if ($period === '' || ! Schema::hasTable(self::TABLE)) {
             return [];
         }
 
@@ -368,6 +369,7 @@ class SnapshotSourceSignatureService
 
             if ($metadata === null) {
                 $results[$sourceTable] = false;
+
                 continue;
             }
 

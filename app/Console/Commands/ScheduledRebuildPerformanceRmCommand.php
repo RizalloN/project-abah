@@ -6,7 +6,6 @@ use App\Support\ReportCacheVersion;
 use App\Support\ReportSnapshotBuilder;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -39,7 +38,8 @@ class ScheduledRebuildPerformanceRmCommand extends Command
             $rebuilt = [];
             foreach ($periods as $period) {
                 try {
-                    $count = $this->builder->buildPerformanceRmPeriodSnapshot($period, false);
+                    $result = $this->builder->rebuildPerformanceRm($period, false);
+                    $count = (int) ($result[$period] ?? 0);
                     if ($count > 0) {
                         $rebuilt[] = ['period' => $period, 'rows' => $count];
                     }
@@ -48,7 +48,7 @@ class ScheduledRebuildPerformanceRmCommand extends Command
                 }
             }
 
-            if (!empty($rebuilt)) {
+            if (! empty($rebuilt)) {
                 ReportCacheVersion::bump('pinjaman');
             }
 
@@ -60,15 +60,10 @@ class ScheduledRebuildPerformanceRmCommand extends Command
 
             return self::SUCCESS;
         } catch (Throwable $e) {
-            $this->error('Scheduled RM snapshot rebuild failed: ' . $e->getMessage());
+            $this->error('Scheduled RM snapshot rebuild failed: '.$e->getMessage());
             Log::error('Scheduled RM snapshot rebuild failed', ['error' => $e->getMessage()]);
 
             return self::FAILURE;
         }
-    }
-
-    private function buildPerformanceRmPeriodSnapshot(string $period, bool $force = false): int
-    {
-        return $this->builder->buildPerformanceRmPeriodSnapshot($period, $force);
     }
 }

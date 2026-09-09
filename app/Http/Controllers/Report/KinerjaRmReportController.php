@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\SyncImportedReportJob;
+use App\Support\ConsumerKanwilReference;
+use App\Support\LandingConsumerOperationalService;
 use App\Support\LoanQualityBucketMapper;
-use App\Support\RkaLookupService;
 use App\Support\ReportCacheVersion;
+use App\Support\RkaLookupService;
+use App\Support\SmallRmRealizationCalculator;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -19,38 +22,46 @@ use Illuminate\View\View;
 class KinerjaRmReportController extends Controller
 {
     private const DEFAULT_TITLE = 'Performance Per RM';
+
     private const SEGMENT_LABEL = 'KPR';
+
     private const SOURCE_TABLE = 'daily_loan_dinamis';
+
     private const SNAPSHOT_TABLE = 'performance_rm_snapshots';
-    
+
     // Mapping segmen ke product options
     private const SEGMENT_PRODUCT_MAP = [
-        'CONSUMER' => ['CONSUMER'],
+        'CONSUMER' => ['BRIGUNA-KONSUMER', 'KPR'],
         'SMALL' => ['COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'SMALL'],
         'MICRO' => ['BRIGUNA-MIKRO', 'KUPEDES', 'KUR-MIKRO', 'CASHCOLLATERAL', 'KPR', 'KUR-SMALL'],
     ];
-    
+
     private const AVAILABLE_SEGMENTS = ['CONSUMER', 'SMALL'];
+
     private const DEFAULT_SEGMENT = 'CONSUMER';
+
     private const SMALL_RM_CATEGORIES = [
         'KC' => 'RM KC',
         'KCP' => 'RM KCP',
     ];
+
     private const CONSUMER_MONTHLY_TARGETS = [
         'ARISSULISTYAWAN' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
         'ZULFAENDYCRISMANA' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
         'RATNADWISISWIYANTORO' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
-        'RIDHOARDIANTO' => ['target_jg_deb' => 15, 'target_jg_os' => 3700000000.0],
+        'RIDHOARDIANTO' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
         'DIMASPERDANAHADIWIJAYA' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
         'RONSROHANATALIBATA' => ['target_jg_deb' => 20, 'target_jg_os' => 3750000000.0],
         'RONAROHANATALIBATA' => ['target_jg_deb' => 20, 'target_jg_os' => 3750000000.0],
         'ARDINI' => ['target_jg_deb' => 20, 'target_jg_os' => 3850000000.0],
-        'NAVANYOGAPRATAMA' => ['target_jg_deb' => 16, 'target_jg_os' => 1900000000.0],
+        'NAVANYOGAPRATAMA' => ['target_jg_deb' => 18, 'target_jg_os' => 3550000000.0],
+        'NOVANYOGAPRATAMA' => ['target_jg_deb' => 18, 'target_jg_os' => 3550000000.0],
         'MUHAMADSYAMSUDINHIMAWIJAYA' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
         'BAGUSPRASETYO' => ['target_jg_deb' => 20, 'target_jg_os' => 3750000000.0],
         'ARIANISETYOPALUPI' => ['target_jg_deb' => 20, 'target_jg_os' => 3750000000.0],
         'TITINOKTAVIA' => ['target_jg_deb' => 20, 'target_jg_os' => 3850000000.0],
         'FARIDRAMOLDONI' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
+        'FARIDROMADLONI' => ['target_jg_deb' => 19, 'target_jg_os' => 3700000000.0],
     ];
 
     public function __construct(
@@ -264,9 +275,9 @@ class KinerjaRmReportController extends Controller
     }
 
     /**
-     * Daily Loan menjadi sumber utama identitas, unit, cabang, dan aktivitas RM.
-     * BRIHC hanya melengkapi status jabatan ketika rekening lama masih membawa
-     * nama pengelola yang sudah mutasi atau alih fungsi.
+     * BRIHC adalah roster utama untuk identitas, unit, cabang, dan jabatan RM.
+     * Metrik nominatif Daily Loan tetap dipertahankan untuk RM yang sama, lalu
+     * dipakai sebagai fallback hanya bila RM tersebut tidak ditemukan di BRIHC.
      *
      * @param  Collection<int, array<string, mixed>>  $rows
      * @return Collection<int, array<string, mixed>>
@@ -278,38 +289,45 @@ class KinerjaRmReportController extends Controller
             $matchedRosterIdentities = collect();
             $rows = $rows
                 ->map(function (array $row) use ($references, $matchedRosterIdentities): array {
-                    $reference = (array) $references->get((string) $row['rm_identity'], []);
-                    $primaryIdentity = (string) ($reference['primary_identity'] ?? $row['rm_identity']);
-                    $hasCurrentRealization = (int) ($row['realization_deb'] ?? 0) > 0
-                        || abs((float) ($row['realization_rp'] ?? 0)) > 0.001;
-                    $hasRecentRealization = (bool) ($row['has_recent_realization'] ?? false);
+                    $reference = $this->latestSmallRmReferenceForRow($row, $references);
                     $hasReference = $reference !== [];
                     $isActiveReference = (bool) ($reference['is_active_small'] ?? false);
-                    $isActive = $hasCurrentRealization || $isActiveReference;
+                    if (! $hasReference) {
+                        $row['roster_only'] = false;
+                        $row['roster_assignment_match'] = false;
+                        $row['is_active_rm'] = true;
+                        $row['activity_source'] = 'daily_loan_backup';
+
+                        return $row;
+                    }
+
+                    if (! $isActiveReference) {
+                        $row['is_active_rm'] = false;
+                        $row['activity_source'] = 'brihc_role_mismatch';
+
+                        return $row;
+                    }
+
+                    $primaryIdentity = (string) $reference['primary_identity'];
                     $assignedBranch = (string) ($reference['branch'] ?? '');
                     $assignedUnitCode = preg_replace('/\D+/', '', (string) ($reference['unit_code'] ?? ''));
+                    $dailyBranch = (string) ($row['branch'] ?? '');
                     $rowUnitCode = preg_replace('/\D+/', '', (string) ($row['unit_code'] ?? ''));
-                    $row['roster_assignment_match'] = $assignedBranch === $row['branch']
-                        && ($assignedUnitCode === '' || $rowUnitCode === '' || $assignedUnitCode === $rowUnitCode);
-                    $row['is_active_rm'] = $isActive;
-                    $row['activity_source'] = match (true) {
-                        $hasCurrentRealization => 'daily_loan_current_realization',
-                        $isActiveReference => 'brihc_active_role',
-                        $hasReference => 'brihc_role_mismatch',
-                        $hasRecentRealization => 'daily_loan_historical_only',
-                        default => 'stale_daily_loan_portfolio',
-                    };
-                    if ($isActiveReference) {
-                        $matchedRosterIdentities->put($primaryIdentity, true);
-                    }
+                    $matchedRosterIdentities->put($primaryIdentity, true);
+                    $row['branch'] = $assignedBranch;
+                    $row['unit_code'] = (string) ($reference['unit_code'] ?: $row['unit_code']);
+                    $row['unit'] = (string) ($reference['unit'] ?: $row['unit']);
+                    $row['rm'] = (string) ($reference['name'] ?: $row['rm']);
                     $row['rm_identity'] = $primaryIdentity;
                     $row['roster_only'] = false;
+                    $row['roster_assignment_match'] = $assignedBranch === $dailyBranch
+                        && ($assignedUnitCode === '' || $rowUnitCode === '' || $assignedUnitCode === $rowUnitCode);
+                    $row['is_active_rm'] = true;
+                    $row['activity_source'] = 'brihc_active_roster';
 
                     return $row;
                 })
                 ->filter(static fn (array $row): bool => (bool) ($row['is_active_rm'] ?? false));
-
-            $rows = $this->enrichUnresolvedDailyLoanRmNames($rows, $references, $matchedRosterIdentities);
 
             $rosterOnlyRows = $references
                 ->values()
@@ -421,8 +439,8 @@ class KinerjaRmReportController extends Controller
     }
 
     /**
-     * BRIHC adalah referensi pelengkap status jabatan. Identitas serta penempatan
-     * yang sudah tersedia pada Daily Loan tidak pernah ditimpa oleh data ini.
+     * Mengambil roster BRIHC aktif sekaligus kecocokan personel Daily Loan untuk
+     * menentukan kapan nominatif harus dipakai sebagai fallback.
      *
      * @param  Collection<int, array<string, mixed>>  $dailyLoanRows
      * @return Collection<string, array{primary_identity:string,name:string,branch:string,unit:string,unit_code:string,is_active_small:bool}>
@@ -524,6 +542,32 @@ class KinerjaRmReportController extends Controller
             ->map(fn (Collection $nameRecords): array => $this->selectLatestRmReference($nameRecords));
 
         return $latestByPn->union($latestByName);
+    }
+
+    /**
+     * Untuk PN/nama nominatif yang tidak dapat dipakai, BRIHC tetap boleh
+     * menjadi sumber utama jika hanya ada satu RM aktif pada cabang dan unit
+     * yang sama. Kecocokan ambigu sengaja dibiarkan sebagai fallback Daily Loan.
+     *
+     * @param  array<string, mixed>  $row
+     * @param  Collection<string, array<string, mixed>>  $references
+     * @return array<string, mixed>
+     */
+    private function latestSmallRmReferenceForRow(array $row, Collection $references): array
+    {
+        $directReference = (array) $references->get((string) ($row['rm_identity'] ?? ''), []);
+        if ($directReference !== [] || ! $this->isUnresolvedDailyLoanRmName((string) ($row['rm'] ?? ''))) {
+            return $directReference;
+        }
+
+        $candidates = $references
+            ->values()
+            ->filter(static fn (array $reference): bool => (bool) ($reference['is_active_small'] ?? false))
+            ->filter(fn (array $reference): bool => $this->rmAssignmentKey($reference) === $this->rmAssignmentKey($row))
+            ->unique('primary_identity')
+            ->values();
+
+        return $candidates->count() === 1 ? (array) $candidates->first() : [];
     }
 
     /**
@@ -692,7 +736,7 @@ class KinerjaRmReportController extends Controller
         $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $request->input('periode'))
             ?? $availablePeriods->first()
             ?? Carbon::now()->toDateString();
-        $this->queueDailyLoanSnapshotSyncIfNeeded($selectedPeriod, static::class . '::index');
+        $this->queueDailyLoanSnapshotSyncIfNeeded($selectedPeriod, static::class.'::index');
 
         $availableCabangs = $this->fetchAvailableCabangsBySegmen($selectedSegmen);
         $selectedCabang = $this->resolveSelectedCabang($availableCabangs, $request->input('cabang1'));
@@ -784,6 +828,7 @@ class KinerjaRmReportController extends Controller
 
         if ($request->ajax()) {
             $this->releaseSessionLockIfNeeded();
+
             return view('report.kinerjarm-table', $viewData);
         }
 
@@ -795,17 +840,26 @@ class KinerjaRmReportController extends Controller
         $rm = $request->input('rm');
         $segmen = $request->input('segmen');
         $selectedPeriod = $request->input('periode');
+        $selectedConsumerProduct = $this->resolveSelectedProduct(
+            $request->input('produk'),
+            'CONSUMER'
+        );
         [$historyStart, $historyEnd] = $this->resolveHistoryDateRange((string) $selectedPeriod);
         $historyRangeLabel = Carbon::parse($historyStart)->translatedFormat('M Y')
-            . ' - '
-            . Carbon::parse($historyEnd)->translatedFormat('M Y');
+            .' - '
+            .Carbon::parse($historyEnd)->translatedFormat('M Y');
         $selectedHistoryYear = Carbon::parse($selectedPeriod)->year;
 
         if (strtoupper(trim((string) $segmen)) === 'CONSUMER') {
             return view('report.kinerjarm-detail-modal', [
                 'rm' => $rm,
                 'segmen' => $segmen,
-                'details' => $this->fetchConsumerNetDisbursementHistoryDetails((string) $rm, (string) $selectedPeriod),
+                'selectedProduct' => $selectedConsumerProduct,
+                'details' => $this->fetchConsumerNetDisbursementHistoryDetails(
+                    (string) $rm,
+                    (string) $selectedPeriod,
+                    $selectedConsumerProduct
+                ),
                 'detailMode' => 'consumer_surplus',
                 'historyRangeLabel' => $historyRangeLabel,
                 'selectedHistoryYear' => $selectedHistoryYear,
@@ -837,10 +891,10 @@ class KinerjaRmReportController extends Controller
             ->whereBetween('periode', [$historyStart, $historyEnd])
             ->orderByDesc('periode')
             ->get();
-            
+
         // Group by Month and Branch
         $groups = $history->groupBy(function ($row) {
-            return Carbon::parse($row->periode)->format('Y-m') . '|' . $row->cabang;
+            return Carbon::parse($row->periode)->format('Y-m').'|'.$row->cabang;
         });
 
         $details = $groups->map(function ($group) {
@@ -854,13 +908,13 @@ class KinerjaRmReportController extends Controller
             $restrukOs = $latestDateRows->sum('restruk_os');
             $realisasiOs = $latestDateRows->sum('realisasi_os');
 
-            $lar = (float)$restrukOs + (float)$smlOs + (float)$nplOs;
+            $lar = (float) $restrukOs + (float) $smlOs + (float) $nplOs;
             $pctLar = $loanOs > 0 ? ($lar / $loanOs) * 100 : 0;
-            
+
             // Re-calculate A/B (Target 1600M)
             $isRealizA = ($realisasiOs / 1000000) >= 1600;
             $isLarA = $pctLar < 17.5;
-            
+
             return [
                 'periode' => Carbon::parse($latestDate)->translatedFormat('M Y'),
                 'periode_raw' => $latestDate,
@@ -872,7 +926,7 @@ class KinerjaRmReportController extends Controller
                 'penc_realisasi' => $isRealizA ? 'A' : 'B',
                 'pct_lar' => $pctLar,
                 'penc_lar' => $isLarA ? 'A' : 'B',
-                'sort_date' => $latestDate
+                'sort_date' => $latestDate,
             ];
         })->filter(function (array $detail) {
             return abs((float) $detail['lar_value']) > 0
@@ -882,7 +936,7 @@ class KinerjaRmReportController extends Controller
             ['sort_date', 'asc'],
             ['cabang', 'asc'],
         ])->values();
-        
+
         return view('report.kinerjarm-detail-modal', [
             'rm' => $rm,
             'segmen' => $segmen,
@@ -906,7 +960,7 @@ class KinerjaRmReportController extends Controller
 
     private function fetchSmallHistoryDetails(string $rm, string $selectedPeriod): Collection
     {
-        if (!Schema::hasTable(self::SOURCE_TABLE)) {
+        if (! Schema::hasTable(self::SOURCE_TABLE)) {
             return collect();
         }
 
@@ -935,6 +989,19 @@ class KinerjaRmReportController extends Controller
             return collect();
         }
 
+        $smallRealization = (new SmallRmRealizationCalculator)->calculate(
+            $targetPeriods,
+            [],
+            null,
+            null,
+            $rmKeys
+        );
+        $coveredRealizationPeriods = (array) ($smallRealization['covered_periods'] ?? []);
+        $realizationByPeriodBranch = collect($smallRealization['rows'] ?? [])
+            ->groupBy(fn (array $row): string => (string) ($row['period'] ?? '')
+                .'|'.$this->normalizeCabangKey((string) ($row['cabang'] ?? '')))
+            ->map(static fn (Collection $rows): float => (float) $rows->sum('rp'));
+
         $realisasiDateColumn = Schema::hasColumn(self::SOURCE_TABLE, 'tgl_realisasi1')
             ? 'tgl_realisasi1'
             : 'tgl_realisasi';
@@ -957,18 +1024,22 @@ class KinerjaRmReportController extends Controller
             ->groupBy('periode', 'cabang')
             ->get();
 
-        return $dbRows->map(function ($row) {
+        return $dbRows->map(function ($row) use ($coveredRealizationPeriods, $realizationByPeriodBranch) {
             $loanOs = (float) $row->loan_os;
             $smlOs = (float) $row->sml_os;
             $nplOs = (float) $row->npl_os;
             $restrukOs = (float) $row->restruk_os;
-            $realisasiOs = (float) $row->realisasi_os;
+            $period = (string) $row->periode;
+            $realizationKey = $period.'|'.$this->normalizeCabangKey((string) ($row->cabang ?? ''));
+            $realisasiOs = isset($coveredRealizationPeriods[$period])
+                ? (float) $realizationByPeriodBranch->get($realizationKey, 0.0)
+                : (float) $row->realisasi_os;
 
             $lar = $restrukOs + $smlOs + $nplOs;
             $pctLar = $loanOs > 0 ? ($lar / $loanOs) * 100 : 0;
 
             $isRealizA = ($realisasiOs / 1000000) >= 1600;
-            $isLarA = $pctLar < 17.5;
+            $isLarA = $pctLar < 15.0;
 
             return [
                 'periode' => Carbon::parse($row->periode)->translatedFormat('M Y'),
@@ -981,7 +1052,7 @@ class KinerjaRmReportController extends Controller
                 'penc_realisasi' => $isRealizA ? 'A' : 'B',
                 'pct_lar' => $pctLar,
                 'penc_lar' => $isLarA ? 'A' : 'B',
-                'sort_date' => $row->periode
+                'sort_date' => $row->periode,
             ];
         })->filter(function (array $detail) {
             return abs((float) $detail['lar_value']) > 0
@@ -1014,9 +1085,23 @@ class KinerjaRmReportController extends Controller
                     : 0.0;
                 $lastClosedPeriod = (string) $monthlyDetails->keys()->last();
                 $lastClosedDetails = $monthlyDetails->get($lastClosedPeriod, collect());
+                $previousClosedPeriod = $monthlyDetails->count() > 1
+                    ? (string) $monthlyDetails->keys()->values()->get($monthlyDetails->count() - 2)
+                    : '';
+                $previousClosedDetails = $previousClosedPeriod !== ''
+                    ? $monthlyDetails->get($previousClosedPeriod, collect())
+                    : collect();
                 $loanOs = (float) $lastClosedDetails->sum('loan_os');
                 $larValue = (float) $lastClosedDetails->sum('lar_value');
                 $larPct = $loanOs > 0 ? ($larValue / $loanOs) * 100 : 0.0;
+                $previousLoanOs = (float) $previousClosedDetails->sum('loan_os');
+                $previousLarValue = (float) $previousClosedDetails->sum('lar_value');
+                $previousLarPct = $previousLoanOs > 0
+                    ? ($previousLarValue / $previousLoanOs) * 100
+                    : null;
+                $isQualityA = $previousLarPct !== null
+                    && $previousLarPct < 2.0
+                    && $larPct < 15.0;
 
                 return [
                     'month_count' => $monthCount,
@@ -1027,7 +1112,8 @@ class KinerjaRmReportController extends Controller
                     'realisasi_os' => $ratasRealisasiOs,
                     'penc_realisasi' => ($ratasRealisasiOs / 1000000) >= 1600 ? 'A' : 'B',
                     'pct_lar' => $larPct,
-                    'penc_lar' => $larPct < 17.5 ? 'A' : 'B',
+                    'previous_pct_lar' => $previousLarPct,
+                    'penc_lar' => $isQualityA ? 'A' : 'B',
                 ];
             })
             ->all();
@@ -1050,21 +1136,27 @@ class KinerjaRmReportController extends Controller
         return $dateColumn;
     }
 
-    private function fetchConsumerNetDisbursementHistoryDetails(string $rm, string $selectedPeriod): Collection
+    private function fetchConsumerNetDisbursementHistoryDetails(
+        string $rm,
+        string $selectedPeriod,
+        ?string $selectedProduct = null
+    ): Collection
     {
-        if (!Schema::hasTable(self::SOURCE_TABLE)) {
+        if (! Schema::hasTable(self::SOURCE_TABLE) || ! Schema::hasTable(self::SNAPSHOT_TABLE)) {
             return collect();
         }
 
         [$historyStart, $periodEnd] = $this->resolveHistoryDateRange($selectedPeriod);
-        $rmKeys = $this->consumerRmLookupKeys($rm);
-        $target = $this->resolveConsumerMonthlyTargetForRm($rm);
+        $snapshotProducts = $selectedProduct !== null
+            ? $this->snapshotProductFilterValues($selectedProduct, 'CONSUMER')
+            : ['BRIGUNA-KONSUMER', 'KPR'];
+        $target = $this->resolveConsumerMonthlyTargetForRm($rm, $selectedProduct);
 
-        $periods = DB::table(self::SOURCE_TABLE)
+        $periods = DB::table(self::SNAPSHOT_TABLE)
             ->whereBetween('periode', [$historyStart, $periodEnd])
-            ->whereIn('segmen_kinerja', ['CONSUMER'])
-            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->whereIn('rm_normalized', $rmKeys)
+            ->where('segmen', 'CONSUMER')
+            ->whereIn('produk', $snapshotProducts)
+            ->where('rm', $rm)
             ->select('periode')
             ->distinct()
             ->orderBy('periode')
@@ -1087,6 +1179,7 @@ class KinerjaRmReportController extends Controller
             $previousByProduct = DB::table(self::SNAPSHOT_TABLE)
                 ->where('periode', $previousPeriod)
                 ->where('segmen', 'CONSUMER')
+                ->whereIn('produk', $snapshotProducts)
                 ->where('rm', $rm)
                 ->get()
                 ->keyBy(fn ($row): string => strtoupper(trim((string) ($row->produk ?? ''))));
@@ -1094,13 +1187,13 @@ class KinerjaRmReportController extends Controller
             $monthlySnapshots = DB::table(self::SNAPSHOT_TABLE)
                 ->where('periode', $period)
                 ->where('segmen', 'CONSUMER')
+                ->whereIn('produk', $snapshotProducts)
                 ->where('rm', $rm)
                 ->orderBy('produk')
                 ->get();
 
             foreach ($monthlySnapshots as $snapshot) {
-                $product = $this->normalizeProductLabel((string) ($snapshot->produk ?? ''), 'CONSUMER')
-                    ?? strtoupper(trim((string) ($snapshot->produk ?? '')));
+                $product = $this->consumerProductLabel((string) ($snapshot->produk ?? ''));
                 $previous = $previousByProduct->get(strtoupper(trim((string) ($snapshot->produk ?? ''))));
 
                 $details->push([
@@ -1133,7 +1226,7 @@ class KinerjaRmReportController extends Controller
         return $details->sortBy([
             ['periode_raw', 'asc'],
             ['is_summary', 'desc'],
-            ['surplus_plafon', 'desc']
+            ['surplus_plafon', 'desc'],
         ])->values();
     }
 
@@ -1150,7 +1243,7 @@ class KinerjaRmReportController extends Controller
     }
 
     /**
-     * @param array{target_jg_deb:int, target_jg_os:float} $target
+     * @param  array{target_jg_deb:int, target_jg_os:float}  $target
      */
     private function fetchConsumerSurplusAccountDetails(array $rmKeys, string $period, string $previousPeriod, array $target): Collection
     {
@@ -1175,7 +1268,7 @@ class KinerjaRmReportController extends Controller
             ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
             ->selectRaw("COALESCE(rm_normalized, UPPER(TRIM(pn_pengelola1)), '') as rm")
             ->selectRaw("{$productSql} as produk")
-            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+            ->selectRaw('UPPER(TRIM(nomor_rekening1)) as account_key')
             ->selectRaw('nomor_rekening1')
             ->selectRaw('MAX(nama_debitur1) as nama_debitur1')
             ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as current_os')
@@ -1200,7 +1293,7 @@ class KinerjaRmReportController extends Controller
             ->whereIn('segmen_kinerja', ['CONSUMER'])
             ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
             ->whereIn(DB::raw('UPPER(TRIM(nomor_rekening1))'), $accountKeys)
-            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
+            ->selectRaw('UPPER(TRIM(nomor_rekening1)) as account_key')
             ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as previous_os')
             ->groupBy('account_key')
             ->get()
@@ -1257,7 +1350,7 @@ class KinerjaRmReportController extends Controller
     /**
      * @return array{target_jg_deb:int, target_jg_os:float}
      */
-    private function resolveConsumerMonthlyTargetForRm(string $rm): array
+    private function resolveConsumerMonthlyTargetForRm(string $rm, ?string $selectedProduct = null): array
     {
         $manualTargets = Schema::hasTable('performance_targets')
             ? DB::table('performance_targets')
@@ -1267,7 +1360,22 @@ class KinerjaRmReportController extends Controller
             : collect();
         $rmName = trim(explode('-', $rm, 2)[1] ?? $rm);
 
-        return $this->resolveManualTargetForProduct($manualTargets, 'CONSUMER', $rmName);
+        return $this->resolveManualTargetForProduct(
+            $manualTargets,
+            $selectedProduct ?? 'CONSUMER',
+            $rmName
+        );
+    }
+
+    private function consumerProductLabel(string $product): string
+    {
+        $token = preg_replace('/[^A-Z0-9]/', '', strtoupper(trim($product))) ?? '';
+
+        return match ($token) {
+            'BRIGUNAKONSUMER' => 'BRIGUNA-KONSUMER',
+            'KPR' => 'KPR',
+            default => strtoupper(trim($product)),
+        };
     }
 
     private function consumerRmLookupKeys(string $rm): array
@@ -1284,7 +1392,7 @@ class KinerjaRmReportController extends Controller
 
     private function fetchAvailablePeriods(): Collection
     {
-        $cacheKey = 'kinerja_rm_periods_v4:' . $this->reportCacheVersion();
+        $cacheKey = 'kinerja_rm_periods_v4:'.$this->reportCacheVersion();
 
         return Cache::remember($cacheKey, 600, function () {
             $periods = $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode')
@@ -1300,7 +1408,7 @@ class KinerjaRmReportController extends Controller
 
     private function fetchComparisonPeriods(): Collection
     {
-        $cacheKey = 'kinerja_rm_comparison_periods_v1:' . $this->reportCacheVersion();
+        $cacheKey = 'kinerja_rm_comparison_periods_v1:'.$this->reportCacheVersion();
 
         return Cache::remember($cacheKey, 600, function () {
             return $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode')
@@ -1313,8 +1421,8 @@ class KinerjaRmReportController extends Controller
 
     private function fetchAvailableCabangsBySegmen(string $segmen): Collection
     {
-        $cacheKey = 'kinerja_rm_cabangs_v3:' . $this->reportCacheVersion() . ':' . $segmen;
-        
+        $cacheKey = 'kinerja_rm_cabangs_v3:'.$this->reportCacheVersion().':'.$segmen;
+
         return Cache::remember($cacheKey, 1800, function () use ($segmen) {
             return DB::table(self::SNAPSHOT_TABLE)
                 ->where('segmen', $segmen)
@@ -1330,7 +1438,7 @@ class KinerjaRmReportController extends Controller
 
     private function fetchPeriodList(string $table, string $column): Collection
     {
-        if (!Schema::hasTable($table) || !Schema::hasColumn($table, $column)) {
+        if (! Schema::hasTable($table) || ! Schema::hasColumn($table, $column)) {
             return collect();
         }
 
@@ -1381,11 +1489,11 @@ class KinerjaRmReportController extends Controller
     private function resolveSelectedSegmen(?string $requestedSegmen): string
     {
         $normalized = strtoupper(trim((string) $requestedSegmen));
-        
+
         if (in_array($normalized, self::AVAILABLE_SEGMENTS, true)) {
             return $normalized;
         }
-        
+
         return self::DEFAULT_SEGMENT;
     }
 
@@ -1402,13 +1510,19 @@ class KinerjaRmReportController extends Controller
 
     private function resolveSelectedProduct(?string $requestedProduct, string $segmen = 'CONSUMER'): ?string
     {
-        $normalized = $this->normalizeProductLabel($requestedProduct);
+        $normalized = $segmen === 'CONSUMER'
+            ? match (preg_replace('/[^A-Z0-9]/', '', strtoupper(trim((string) $requestedProduct))) ?? '') {
+                'BRIGUNAKONSUMER' => 'BRIGUNA-KONSUMER',
+                'KPR' => 'KPR',
+                default => null,
+            }
+            : $this->normalizeProductLabel($requestedProduct, $segmen);
         $productOptions = self::SEGMENT_PRODUCT_MAP[$segmen] ?? [];
-        
+
         if ($normalized !== null && in_array($normalized, $productOptions, true)) {
             return $normalized;
         }
-        
+
         return null;
     }
 
@@ -1433,10 +1547,10 @@ class KinerjaRmReportController extends Controller
     private function kinerjaRmGroupKey(string $rmName, ?string $rmCategory, ?string $rmUnit = null): string
     {
         if ($rmUnit !== null && trim($rmUnit) !== '') {
-            return $rmName . '|' . strtoupper(trim($rmUnit));
+            return $rmName.'|'.strtoupper(trim($rmUnit));
         }
 
-        return $rmCategory !== null ? $rmName . '|' . $rmCategory : $rmName;
+        return $rmCategory !== null ? $rmName.'|'.$rmCategory : $rmName;
     }
 
     private function resolveClosestPeriod(Collection $periods, Carbon $target): ?string
@@ -1520,7 +1634,7 @@ class KinerjaRmReportController extends Controller
         ?string $selectedRmCategory = null,
         bool $includeInactive = false
     ): array {
-        $cacheKey = 'kinerja_rm_retail_performance_v5-daily-loan-rm-authority:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_retail_performance_v13-consumer-product-split:'.$this->reportCacheVersion().':'.md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'cabang' => $selectedCabang,
@@ -1582,16 +1696,16 @@ class KinerjaRmReportController extends Controller
                     ->map(fn ($items) => $items->keyBy(fn ($item) => strtoupper(trim((string) ($item->rm_name ?? '')))))
                 : collect();
 
+            $productValues = $this->snapshotProductFilterValues($selectedProduct, $segmen);
             $snapshotRows = collect();
             if ($queryPeriods !== [] && Schema::hasTable(self::SNAPSHOT_TABLE)) {
-                $productValues = $this->snapshotProductFilterValues($selectedProduct, $segmen);
                 $snapshotRows = DB::table(self::SNAPSHOT_TABLE)
                     ->whereIn('periode', $queryPeriods)
                     ->where('segmen', $segmen)
                     ->when($productValues !== [], function ($query) use ($productValues) {
                         $query->whereIn('produk', $productValues);
                     })
-                    ->when($selectedCabang !== null, function ($query) use ($selectedCabang) {
+                    ->when($selectedCabang !== null && $segmen !== 'CONSUMER', function ($query) use ($selectedCabang) {
                         $query->where('cabang', $selectedCabang);
                     })
                     ->when($segmen === 'SMALL' && $selectedRmCategory === 'KCP', function ($query) {
@@ -1601,6 +1715,19 @@ class KinerjaRmReportController extends Controller
                         $query->whereRaw("UPPER(TRIM(COALESCE(unit, ''))) NOT LIKE 'KCP%'");
                     })
                     ->get();
+            }
+
+            if ($segmen === 'CONSUMER') {
+                $consumerAssignments = app(LandingConsumerOperationalService::class);
+                $snapshotRows = $consumerAssignments
+                    ->applyLatestConsumerSnapshotAssignments(
+                        $consumerAssignments->applyBrihcPrimaryConsumerAssignments($snapshotRows, (string) $latestPeriod)
+                    );
+                $snapshotRows = $snapshotRows
+                    ->when($selectedCabang !== null, fn (Collection $rows): Collection => $rows
+                        ->filter(fn (object $row): bool => $this->normalizeCabangKey((string) ($row->cabang ?? ''))
+                            === $this->normalizeCabangKey($selectedCabang))
+                        ->values());
             }
 
             $emptyMetric = static fn (bool $hasData = false): array => [
@@ -1627,12 +1754,18 @@ class KinerjaRmReportController extends Controller
                     continue;
                 }
 
-                $groupKey = implode('|', [
-                    $this->normalizeCabangKey($cabang),
-                    strtoupper($unit),
-                    strtoupper($branchCode),
-                    strtoupper($rmName),
-                ]);
+                $groupKey = $segmen === 'CONSUMER'
+                    ? implode('|', [
+                        $this->normalizeCabangKey($cabang),
+                        'CONSUMER',
+                        strtoupper($rmName),
+                    ])
+                    : implode('|', [
+                        $this->normalizeCabangKey($cabang),
+                        strtoupper($unit),
+                        strtoupper($branchCode),
+                        strtoupper($rmName),
+                    ]);
                 $pivoted[$groupKey] ??= [
                     'cabang' => $cabang,
                     'unit' => $unit !== '' ? $unit : $cabang,
@@ -1654,6 +1787,21 @@ class KinerjaRmReportController extends Controller
                 }
             }
 
+            $smallRealization = [
+                'covered_periods' => [],
+                'rows' => [],
+                'diagnostics' => [],
+            ];
+            if ($segmen === 'SMALL' && $monthlyPeriods->isNotEmpty()) {
+                $smallRealization = (new SmallRmRealizationCalculator)->calculate(
+                    $monthlyPeriods->all(),
+                    $productValues,
+                    $selectedCabang,
+                    $selectedRmCategory
+                );
+                $pivoted = $this->applySmallRealizationMetrics($pivoted, $smallRealization, $emptyMetric);
+            }
+
             $monthsWithReports = collect($months)->filter(fn (array $month): bool => $month['period'] !== null)->values();
             $activeMonthKeys = $monthsWithReports->take(-2)->pluck('key')->all();
             $closedMonths = collect($months)
@@ -1662,6 +1810,12 @@ class KinerjaRmReportController extends Controller
             $closedMonthKeys = $closedMonths->pluck('key')->all();
             $lastClosedMonth = $closedMonths->last();
             $lastClosedMonthKey = is_array($lastClosedMonth) ? ($lastClosedMonth['key'] ?? null) : null;
+            $previousClosedMonth = $closedMonths->count() > 1
+                ? $closedMonths->get($closedMonths->count() - 2)
+                : null;
+            $previousClosedMonthKey = is_array($previousClosedMonth)
+                ? ($previousClosedMonth['key'] ?? null)
+                : null;
             $closedMonthCount = count($closedMonthKeys);
             $previousMonthKey = $selectedDate->copy()->subMonthNoOverflow()->format('Y-m');
             $previousMonthPeriod = $latestPeriodByMonth->get($previousMonthKey);
@@ -1676,7 +1830,7 @@ class KinerjaRmReportController extends Controller
 
                 foreach ($months as $month) {
                     $metric = $month['period'] !== null
-                        ? ($data['periods'][$month['period']] ?? $emptyMetric(true))
+                        ? ($data['periods'][$month['period']] ?? $emptyMetric(false))
                         : $emptyMetric(false);
                     $monthMetrics[$month['key']] = $metric;
 
@@ -1700,14 +1854,29 @@ class KinerjaRmReportController extends Controller
                 });
                 if (! $includeInactive && $activeMonthKeys !== [] && ! $hasRecentRealization) {
                     $hiddenInactiveCount++;
+
                     continue;
                 }
 
                 $nameOnly = strtoupper(trim(explode('-', $data['rm'], 2)[1] ?? $data['rm']));
                 $targetLabel = $selectedProduct ?? $segmen;
-                $target = $this->resolveManualTargetForProduct($manualTargets, $targetLabel, $nameOnly);
+                $target = $this->resolveManualTargetForProduct($manualTargets, $targetLabel, $data['rm']);
+                if ($target['target_jg_os'] <= 0.0) {
+                    $target = $this->resolveManualTargetForProduct($manualTargets, $targetLabel, $nameOnly);
+                }
                 $targetDeb = (int) ($target['target_jg_deb'] ?? 0);
                 $targetRp = (float) ($target['target_jg_os'] ?? 0.0);
+
+                if ($segmen === 'CONSUMER') {
+                    foreach ($monthMetrics as &$mMetric) {
+                        if ($mMetric['has_data'] && $targetRp > 0) {
+                            $mMetric['quadrant'] = $this->calculateConsumerQuadrant($mMetric['rp'], $targetRp);
+                        } else {
+                            $mMetric['quadrant'] = null;
+                        }
+                    }
+                    unset($mMetric);
+                }
                 $currentMetric = $monthMetrics[$latestMonthKey] ?? $emptyMetric(false);
                 $previousMonthMetric = $previousMonthPeriod !== null
                     ? ($data['periods'][$previousMonthPeriod] ?? $emptyMetric(true))
@@ -1716,17 +1885,31 @@ class KinerjaRmReportController extends Controller
                     ? ($data['periods'][$previousReportPeriod] ?? $emptyMetric(true))
                     : null;
                 $averageMonthlyRp = $targetMonthCount > 0 ? $accumulatedRp / $targetMonthCount : 0.0;
-                $closedRpTotal = collect($closedMonthKeys)->sum(
+                $firstActiveClosedMonthIndex = $closedMonths->search(
+                    fn (array $month): bool => (bool) ($monthMetrics[$month['key']]['has_data'] ?? false)
+                );
+                $rmClosedMonthKeys = $firstActiveClosedMonthIndex === false
+                    ? []
+                    : $closedMonths->slice((int) $firstActiveClosedMonthIndex)->pluck('key')->all();
+                $rmClosedMonthCount = count($rmClosedMonthKeys);
+                $closedRpTotal = collect($rmClosedMonthKeys)->sum(
                     fn (string $monthKey): float => (float) ($monthMetrics[$monthKey]['rp'] ?? 0)
                 );
-                $smallRatasRp = $closedMonthCount > 0 ? $closedRpTotal / $closedMonthCount : null;
+                $smallRatasRp = $rmClosedMonthCount > 0 ? $closedRpTotal / $rmClosedMonthCount : null;
                 $smallLarPct = $lastClosedMonthKey !== null
                     ? ($monthMetrics[$lastClosedMonthKey]['lar_pct'] ?? null)
+                    : null;
+                $smallPreviousLarPct = $previousClosedMonthKey !== null
+                    ? ($monthMetrics[$previousClosedMonthKey]['lar_pct'] ?? null)
                     : null;
                 $quadrant = match ($segmen) {
                     'CONSUMER' => $this->calculateConsumerQuadrant($averageMonthlyRp, $targetRp),
                     'SMALL' => $smallRatasRp !== null && $smallLarPct !== null
-                        ? $this->calculateSmallQuadrant($smallRatasRp, (float) $smallLarPct)
+                        ? $this->calculateSmallPerformanceQuadrant(
+                            $smallRatasRp,
+                            $smallPreviousLarPct,
+                            (float) $smallLarPct
+                        )
                         : $data['snapshot_quadrant'],
                     default => $data['snapshot_quadrant'],
                 };
@@ -1756,7 +1939,13 @@ class KinerjaRmReportController extends Controller
                         'rp' => $accumulatedRp,
                         'ratas_rp' => $smallRatasRp,
                         'lar_pct' => $smallLarPct,
-                        'closed_month_count' => $closedMonthCount,
+                        'previous_lar_pct' => $smallPreviousLarPct,
+                        'quality_grade' => $smallLarPct !== null
+                            ? (($smallPreviousLarPct !== null
+                                && (float) $smallPreviousLarPct < 2.0
+                                && (float) $smallLarPct < 15.0) ? 'A' : 'B')
+                            : null,
+                        'closed_month_count' => $segmen === 'SMALL' ? $rmClosedMonthCount : $closedMonthCount,
                     ],
                     'quadrant' => $quadrant,
                 ];
@@ -1843,6 +2032,14 @@ class KinerjaRmReportController extends Controller
                     'closed_month_count' => $closedMonthCount,
                     'closed_through_period' => is_array($lastClosedMonth) ? ($lastClosedMonth['period'] ?? null) : null,
                     'closed_through_period_label' => is_array($lastClosedMonth) ? ($lastClosedMonth['period_label'] ?? null) : null,
+                    'quality_previous_period' => is_array($previousClosedMonth) ? ($previousClosedMonth['period'] ?? null) : null,
+                    'quality_previous_period_label' => is_array($previousClosedMonth) ? ($previousClosedMonth['period_label'] ?? null) : null,
+                    'quality_thresholds' => $segmen === 'SMALL'
+                        ? ['previous_lar_pct' => 2.0, 'managed_lar_pct' => 15.0]
+                        : null,
+                    'small_realization_diagnostics' => $segmen === 'SMALL'
+                        ? ($smallRealization['diagnostics'] ?? [])
+                        : null,
                     'closed_range_label' => $closedMonths->isNotEmpty()
                         ? $closedMonths->first()['short_label'].' - '.$closedMonths->last()['short_label']
                         : null,
@@ -1864,15 +2061,14 @@ class KinerjaRmReportController extends Controller
         ?string $selectedRmCategory = null,
         ?Collection $detailedQualityRows = null,
         bool $sortByUnitCode = false
-    ): array
-    {
+    ): array {
         $comparisonPeriodValues = collect($comparisonPeriods)
             ->mapWithKeys(fn (array $period, string $key): array => [$key => $period['period'] ?? null])
             ->all();
         $comparisonKeys = array_keys($comparisonPeriodValues);
         $emptyComparisonValues = array_fill_keys($comparisonKeys, 0.0);
 
-        $cacheKey = 'kinerja_rm_rows_v25-quality-restruk-split:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_rows_v26-consumer-product-split:'.$this->reportCacheVersion().':'.md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'comparisons' => $comparisonPeriodValues,
@@ -1987,7 +2183,7 @@ class KinerjaRmReportController extends Controller
             $pivoted = [];
             foreach ($dbRows as $row) {
                 $cabKey = $this->normalizeCabangKey($row->cabang);
-                $rmKey = trim(strtoupper((string)$row->rm));
+                $rmKey = trim(strtoupper((string) $row->rm));
                 $prodKey = $this->normalizeProductLabel((string) $row->produk, $segmen) ?? strtoupper(trim((string) $row->produk));
                 $rmUnit = $segmen === 'SMALL' ? strtoupper(trim((string) ($row->unit ?? ''))) : null;
                 $rmUnitCode = strtoupper(trim((string) ($row->branch_code ?? '')));
@@ -2033,7 +2229,7 @@ class KinerjaRmReportController extends Controller
 
                 if ($row->periode === $selectedPeriod) {
                     $pivoted[$key]['curr'] += $val;
-                    $pivoted[$key]['curr_deb'] += (int)$row->total_deb;
+                    $pivoted[$key]['curr_deb'] += (int) $row->total_deb;
                     $pivoted[$key]['loan_os_reference'] += (float) $row->loan_os;
                     $quadrant = $row->quadrant ?? null;
                     $pivoted[$key]['quadrant'] ??= $quadrant;
@@ -2077,7 +2273,7 @@ class KinerjaRmReportController extends Controller
                         : 0;
                     $pivoted[$key]['lar_has_data'] = true;
                 }
-                
+
                 foreach ($comparisonPeriodValues as $periodKey => $periodValue) {
                     if ($periodValue !== null && $row->periode === $periodValue) {
                         $pivoted[$key]['comparison_values'][$periodKey] += $val;
@@ -2096,9 +2292,13 @@ class KinerjaRmReportController extends Controller
                 $rmUnit = $data['rm_unit'] ?? null;
                 $rmUnitCode = $data['rm_unit_code'] ?? null;
                 $rmGroupKey = $this->kinerjaRmGroupKey($rmName, $rmCategory, $rmUnit);
-                $productLabel = $this->normalizeProductLabel($data['produk'], $segmen);
+                $productLabel = $segmen === 'CONSUMER' && $selectedProduct !== null
+                    ? $selectedProduct
+                    : $this->normalizeProductLabel($data['produk'], $segmen);
 
-                if ($rmName === '' || $productLabel === null) continue;
+                if ($rmName === '' || $productLabel === null) {
+                    continue;
+                }
 
                 if ($qualityType === null
                     && $segmen === 'SMALL'
@@ -2109,7 +2309,7 @@ class KinerjaRmReportController extends Controller
 
                 // Check if all performance OS values are strictly zero
                 $hasPerformanceValue = abs((float) $data['curr']) > 0.001;
-                if (!$hasPerformanceValue) {
+                if (! $hasPerformanceValue) {
                     foreach ($data['comparison_values'] as $val) {
                         if (abs((float) $val) > 0.001) {
                             $hasPerformanceValue = true;
@@ -2118,7 +2318,7 @@ class KinerjaRmReportController extends Controller
                     }
                 }
 
-                if (!$hasPerformanceValue) {
+                if (! $hasPerformanceValue) {
                     continue;
                 }
 
@@ -2127,7 +2327,7 @@ class KinerjaRmReportController extends Controller
                     : $data['quadrant'];
 
                 $cabangKey = $this->normalizeCabangKey($cabangName);
-                if (!isset($branches[$cabangKey])) {
+                if (! isset($branches[$cabangKey])) {
                     $branches[$cabangKey] = [
                         'cabang' => $cabangName,
                         'rms' => [],
@@ -2144,7 +2344,7 @@ class KinerjaRmReportController extends Controller
                     ];
                 }
 
-                if (!isset($branches[$cabangKey]['rms'][$rmGroupKey])) {
+                if (! isset($branches[$cabangKey]['rms'][$rmGroupKey])) {
                     $branches[$cabangKey]['rms'][$rmGroupKey] = [
                         'rm' => $rmName,
                         'rm_category' => $rmCategory,
@@ -2158,7 +2358,10 @@ class KinerjaRmReportController extends Controller
 
                 // Manual Targets from database
                 $nameOnly = strtoupper(trim(explode('-', $rmName)[1] ?? $rmName));
-                $target = $this->resolveManualTargetForProduct($manualTargets, $productLabel, $nameOnly);
+                $target = $this->resolveManualTargetForProduct($manualTargets, $productLabel, $rmName);
+                if ($target['target_jg_os'] <= 0.0) {
+                    $target = $this->resolveManualTargetForProduct($manualTargets, $productLabel, $nameOnly);
+                }
                 $tDeb = (int) ($target['target_jg_deb'] ?? 0);
                 $tOs = (float) ($target['target_jg_os'] ?? 0.0);
                 $realisasiDivisor = match ($segmen) {
@@ -2356,12 +2559,12 @@ class KinerjaRmReportController extends Controller
             'rm_normalized',
         ];
 
-        if (!Schema::hasTable(self::SOURCE_TABLE)) {
+        if (! Schema::hasTable(self::SOURCE_TABLE)) {
             return collect();
         }
 
         foreach ($requiredColumns as $column) {
-            if (!Schema::hasColumn(self::SOURCE_TABLE, $column)) {
+            if (! Schema::hasColumn(self::SOURCE_TABLE, $column)) {
                 return collect();
             }
         }
@@ -2384,7 +2587,7 @@ class KinerjaRmReportController extends Controller
             return collect();
         }
 
-        $cacheKey = 'kinerja_rm_quality_detail_v2-restruk-split:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_quality_detail_v3-consumer-product-split:'.$this->reportCacheVersion().':'.md5(json_encode([
             'segmen' => $segmen,
             'periods' => $periods->all(),
             'cabang' => $selectedCabang,
@@ -2394,7 +2597,7 @@ class KinerjaRmReportController extends Controller
 
         return Cache::remember($cacheKey, 300, function () use ($segmen, $periods, $sourceProducts, $selectedCabang, $selectedRmCategory): Collection {
             $bucketExpression = LoanQualityBucketMapper::buildSqlExpression('d');
-            $bucketRows = DB::table(self::SOURCE_TABLE . ' as d')
+            $bucketRows = DB::table(self::SOURCE_TABLE.' as d')
                 ->whereIn('d.periode', $periods->all())
                 ->where('d.segmen_kinerja', $segmen)
                 ->whereIn('d.produk_kinerja', $sourceProducts)
@@ -2518,11 +2721,17 @@ class KinerjaRmReportController extends Controller
     private function sourceQualityProductValues(string $segmen, ?string $selectedProduct): array
     {
         $normalizedProduct = $selectedProduct !== null
-            ? $this->normalizeProductLabel($selectedProduct, $segmen)
+            ? ($segmen === 'CONSUMER'
+                ? (preg_replace('/[^A-Z0-9]/', '', strtoupper($selectedProduct)) ?? '')
+                : $this->normalizeProductLabel($selectedProduct, $segmen))
             : null;
 
         return match ($segmen) {
-            'CONSUMER' => ['BRIGUNAKONSUMER', 'KPR'],
+            'CONSUMER' => match ($normalizedProduct) {
+                'BRIGUNAKONSUMER' => ['BRIGUNAKONSUMER'],
+                'KPR' => ['KPR'],
+                default => ['BRIGUNAKONSUMER', 'KPR'],
+            },
             'SMALL' => match ($normalizedProduct) {
                 'COMMERCIAL' => ['COMMERCIAL'],
                 'CASHCALL' => ['CASHCALL'],
@@ -2616,9 +2825,8 @@ class KinerjaRmReportController extends Controller
         array $periods,
         ?string $selectedCabang = null,
         ?string $selectedProduct = null
-    ): Collection
-    {
-        if (!Schema::hasTable(self::SOURCE_TABLE) || !Schema::hasTable(self::SNAPSHOT_TABLE)) {
+    ): Collection {
+        if (! Schema::hasTable(self::SOURCE_TABLE) || ! Schema::hasTable(self::SNAPSHOT_TABLE)) {
             return collect();
         }
 
@@ -2720,6 +2928,15 @@ class KinerjaRmReportController extends Controller
             return [];
         }
 
+        if ($segmen === 'CONSUMER') {
+            return match (preg_replace('/[^A-Z0-9]/', '', strtoupper($selectedProduct)) ?? '') {
+                'BRIGUNAKONSUMER' => ['BRIGUNA-KONSUMER'],
+                'KPR' => ['KPR'],
+                'CONSUMER' => ['BRIGUNA-KONSUMER', 'KPR'],
+                default => [],
+            };
+        }
+
         $normalized = $this->normalizeProductLabel($selectedProduct, $segmen);
 
         if ($normalized === null) {
@@ -2739,18 +2956,53 @@ class KinerjaRmReportController extends Controller
      * SMALL is resolved from the legacy product categories so the merged label
      * does not drop target data when the backing table still stores legacy rows.
      *
-     * @param Collection<string, Collection<string, object>> $manualTargets
+     * @param  Collection<string, Collection<string, object>>  $manualTargets
      * @return array{target_jg_deb:int, target_jg_os:float}
      */
-    private function resolveManualTargetForProduct(Collection $manualTargets, string $productLabel, string $rmName): array
-    {
-        if ($productLabel === 'CONSUMER') {
+    private function resolveManualTargetForProduct(
+        Collection $manualTargets,
+        string $productLabel,
+        string $rmName
+    ): array {
+        if (in_array($productLabel, ['CONSUMER', 'BRIGUNA-KONSUMER'], true)) {
+            $kanwilFound = ConsumerKanwilReference::findRm($rmName);
+            if ($kanwilFound !== null && $kanwilFound['target_os'] > 0) {
+                return [
+                    'target_jg_deb' => $kanwilFound['target_deb'],
+                    'target_jg_os' => $kanwilFound['target_os'],
+                ];
+            }
+
             $consumerTargetKey = preg_replace('/[^A-Z0-9]/', '', strtoupper($rmName)) ?? '';
             $consumerTarget = self::CONSUMER_MONTHLY_TARGETS[$consumerTargetKey] ?? null;
 
             if ($consumerTarget !== null) {
                 return $consumerTarget;
             }
+
+            $lookupCategories = $productLabel === 'BRIGUNA-KONSUMER'
+                ? ['BRIGUNA-KONSUMER', 'CONSUMER']
+                : ['BRIGUNA-KONSUMER', 'KPR', 'CONSUMER'];
+            foreach ($lookupCategories as $category) {
+                $target = $manualTargets[$category][$rmName] ?? null;
+                if ($target !== null && ((float) ($target->target_os ?? 0) > 0 || (int) ($target->target_deb ?? 0) > 0)) {
+                    return [
+                        'target_jg_deb' => (int) ($target->target_deb ?? 0),
+                        'target_jg_os' => (float) ($target->target_os ?? 0.0),
+                    ];
+                }
+            }
+
+            if ($productLabel === 'BRIGUNA-KONSUMER') {
+                return ['target_jg_deb' => 0, 'target_jg_os' => 0.0];
+            }
+
+            $fallback = ConsumerKanwilReference::resolveTarget($rmName);
+
+            return [
+                'target_jg_deb' => $fallback['target_deb'],
+                'target_jg_os' => $fallback['target_os'],
+            ];
         }
 
         $lookupCategories = match ($productLabel) {
@@ -2784,7 +3036,7 @@ class KinerjaRmReportController extends Controller
         ?string $selectedCabang = null,
         ?string $selectedProduct = null
     ): ?string {
-        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+        if (! Schema::hasTable(self::SNAPSHOT_TABLE)) {
             return null;
         }
 
@@ -2821,7 +3073,7 @@ class KinerjaRmReportController extends Controller
         ?string $selectedCabang = null,
         ?string $selectedProduct = null
     ): array {
-        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+        if (! Schema::hasTable(self::SNAPSHOT_TABLE)) {
             return [];
         }
 
@@ -2890,7 +3142,7 @@ class KinerjaRmReportController extends Controller
         ?string $selectedCabang = null,
         ?string $selectedProduct = null
     ): ?string {
-        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+        if (! Schema::hasTable(self::SNAPSHOT_TABLE)) {
             return null;
         }
 
@@ -2917,7 +3169,7 @@ class KinerjaRmReportController extends Controller
 
     private function snapshotRealisasiLooksStale(string $period): bool
     {
-        if (!Schema::hasTable(self::SNAPSHOT_TABLE) || !Schema::hasTable(self::SOURCE_TABLE)) {
+        if (! Schema::hasTable(self::SNAPSHOT_TABLE) || ! Schema::hasTable(self::SOURCE_TABLE)) {
             return false;
         }
 
@@ -2937,8 +3189,8 @@ class KinerjaRmReportController extends Controller
             return true;
         }
 
-        if (!Schema::hasColumn(self::SNAPSHOT_TABLE, 'realisasi_deb')
-            || (!Schema::hasColumn(self::SOURCE_TABLE, 'tgl_realisasi') && !Schema::hasColumn(self::SOURCE_TABLE, 'tgl_realisasi1'))) {
+        if (! Schema::hasColumn(self::SNAPSHOT_TABLE, 'realisasi_deb')
+            || (! Schema::hasColumn(self::SOURCE_TABLE, 'tgl_realisasi') && ! Schema::hasColumn(self::SOURCE_TABLE, 'tgl_realisasi1'))) {
             return false;
         }
 
@@ -2960,6 +3212,7 @@ class KinerjaRmReportController extends Controller
         }
 
         $date = Carbon::parse($period);
+
         return DB::table(self::SOURCE_TABLE)
             ->where('periode', $period)
             ->whereRaw("{$realisasiDateExpression} BETWEEN ? AND ?", [
@@ -2973,9 +3226,9 @@ class KinerjaRmReportController extends Controller
     {
         $period = $this->normalizeDate($period);
         if ($period === null
-            || !Schema::hasTable(self::SOURCE_TABLE)
-            || !Schema::hasTable(self::SNAPSHOT_TABLE)
-            || !DB::table(self::SOURCE_TABLE)->where('periode', $period)->exists()) {
+            || ! Schema::hasTable(self::SOURCE_TABLE)
+            || ! Schema::hasTable(self::SNAPSHOT_TABLE)
+            || ! DB::table(self::SOURCE_TABLE)->where('periode', $period)->exists()) {
             return;
         }
 
@@ -2991,12 +3244,12 @@ class KinerjaRmReportController extends Controller
             || ($lastUpdated !== null && $this->dailyLoanSourceUpdatedAfter($period, $lastUpdated))
             || $this->snapshotRealisasiLooksStale($period);
 
-        if (!$needsSync) {
+        if (! $needsSync) {
             return;
         }
 
-        $pendingKey = 'snapshot:daily_loan:auto-sync:view:performance_rm:' . $period;
-        if (!Cache::add($pendingKey, true, now()->addMinutes(10))) {
+        $pendingKey = 'snapshot:daily_loan:auto-sync:view:performance_rm:'.$period;
+        if (! Cache::add($pendingKey, true, now()->addMinutes(10))) {
             return;
         }
 
@@ -3013,7 +3266,7 @@ class KinerjaRmReportController extends Controller
         $hasUpdatedAt = Schema::hasColumn(self::SOURCE_TABLE, 'updated_at');
         $hasCreatedAt = Schema::hasColumn(self::SOURCE_TABLE, 'created_at');
 
-        if (!$hasUpdatedAt && !$hasCreatedAt) {
+        if (! $hasUpdatedAt && ! $hasCreatedAt) {
             return false;
         }
 
@@ -3031,12 +3284,12 @@ class KinerjaRmReportController extends Controller
             ->exists();
     }
 
-
     private function mapRmName(string $rmName): string
     {
         if (str_contains(strtoupper($rmName), '00385844 -')) {
             return '00385844 - Glagah Mahestya Yahya';
         }
+
         return $rmName;
     }
 
@@ -3101,7 +3354,7 @@ class KinerjaRmReportController extends Controller
         $normalized = preg_replace('/[^A-Z0-9]/', '', strtoupper(trim((string) $value))) ?? '';
 
         // Normalize based on segmen
-        $productMap = match($segmen) {
+        $productMap = match ($segmen) {
             'CONSUMER' => [
                 'CONSUMER' => 'CONSUMER',
                 'BRIGUNAKONSUMER' => 'CONSUMER',
@@ -3242,7 +3495,7 @@ class KinerjaRmReportController extends Controller
 
         $amount = (int) round($normalized / 1000000);
 
-        return $amount > 0 ? '+' . $amount : (string) $amount;
+        return $amount > 0 ? '+'.$amount : (string) $amount;
     }
 
     private function formatSignedAmountInJuta(mixed $value, bool $showArrow = true, int $decimals = 1): string
@@ -3269,7 +3522,7 @@ class KinerjaRmReportController extends Controller
         $display = number_format(abs($amount), $decimals, ',', '.');
 
         if ($amount < 0 && ! $showArrow) {
-            $display = '-' . $display;
+            $display = '-'.$display;
         }
 
         return "<span class='delta-indicator {$cls}'>{$icon}{$prefix}{$display}</span>";
@@ -3310,6 +3563,135 @@ class KinerjaRmReportController extends Controller
         return in_array($quadrantValue, [1, 2, 3, 4], true) ? $quadrantValue : null;
     }
 
+    /**
+     * Replace manager-attributed SMALL snapshot realization with gross source
+     * realization by initiator while retaining snapshot OS and quality metrics.
+     *
+     * @param  array<string, array<string, mixed>>  $pivoted
+     * @param  array<string, mixed>  $calculation
+     * @return array<string, array<string, mixed>>
+     */
+    private function applySmallRealizationMetrics(array $pivoted, array $calculation, callable $emptyMetric): array
+    {
+        $coveredPeriods = (array) ($calculation['covered_periods'] ?? []);
+        if ($coveredPeriods === []) {
+            return $pivoted;
+        }
+
+        foreach ($pivoted as &$data) {
+            foreach ($coveredPeriods as $period => $isCovered) {
+                if (! $isCovered || ! isset($data['periods'][$period])) {
+                    continue;
+                }
+
+                $data['periods'][$period]['deb'] = 0;
+                $data['periods'][$period]['rp'] = 0.0;
+            }
+        }
+        unset($data);
+
+        $exactAssignments = [];
+        $branchAssignments = [];
+        foreach ($pivoted as $groupKey => $data) {
+            $assignmentKey = $this->smallPerformanceAssignmentKey(
+                (string) ($data['cabang'] ?? ''),
+                (string) ($data['unit'] ?? ''),
+                (string) ($data['unit_code'] ?? ''),
+                (string) ($data['rm'] ?? '')
+            );
+            $exactAssignments[$assignmentKey] = $groupKey;
+            $branchKey = $this->smallPerformanceBranchIdentityKey(
+                (string) ($data['cabang'] ?? ''),
+                (string) ($data['rm'] ?? '')
+            );
+            $branchAssignments[$branchKey][] = $groupKey;
+        }
+
+        foreach ((array) ($calculation['rows'] ?? []) as $sourceRow) {
+            $period = (string) ($sourceRow['period'] ?? '');
+            $rm = trim($this->mapRmName((string) ($sourceRow['rm'] ?? '')));
+            $cabang = trim((string) ($sourceRow['cabang'] ?? ''));
+            $unit = trim((string) ($sourceRow['unit'] ?? ''));
+            $branchCode = trim((string) ($sourceRow['branch_code'] ?? ''));
+            $debitur = (int) ($sourceRow['deb'] ?? 0);
+            $amount = (float) ($sourceRow['rp'] ?? 0);
+            if ($period === '' || $rm === '') {
+                continue;
+            }
+
+            $assignmentKey = $this->smallPerformanceAssignmentKey($cabang, $unit, $branchCode, $rm);
+            $groupKey = $exactAssignments[$assignmentKey] ?? null;
+            if ($groupKey === null) {
+                $branchKey = $this->smallPerformanceBranchIdentityKey($cabang, $rm);
+                $branchCandidates = array_values(array_unique($branchAssignments[$branchKey] ?? []));
+                if (count($branchCandidates) === 1) {
+                    $groupKey = $branchCandidates[0];
+                }
+            }
+
+            if ($groupKey === null) {
+                if ($debitur === 0 && abs($amount) <= 0.0001) {
+                    continue;
+                }
+
+                $groupKey = implode('|', [
+                    $this->normalizeCabangKey($cabang),
+                    strtoupper($unit),
+                    strtoupper($branchCode),
+                    strtoupper($rm),
+                ]);
+                $pivoted[$groupKey] = [
+                    'cabang' => $cabang,
+                    'unit' => $unit !== '' ? $unit : $cabang,
+                    'unit_code' => $branchCode !== '' ? $branchCode : ($unit !== '' ? $unit : $cabang),
+                    'rm' => $rm,
+                    'periods' => [],
+                    'snapshot_quadrant' => null,
+                ];
+                $exactAssignments[$assignmentKey] = $groupKey;
+                $branchAssignments[$this->smallPerformanceBranchIdentityKey($cabang, $rm)][] = $groupKey;
+            }
+
+            $pivoted[$groupKey]['periods'][$period] ??= $emptyMetric(true);
+            $pivoted[$groupKey]['periods'][$period]['has_data'] = true;
+            $pivoted[$groupKey]['periods'][$period]['deb'] += $debitur;
+            $pivoted[$groupKey]['periods'][$period]['rp'] += $amount;
+        }
+
+        return $pivoted;
+    }
+
+    private function smallPerformanceAssignmentKey(string $cabang, string $unit, string $branchCode, string $rm): string
+    {
+        return implode('|', [
+            $this->normalizeCabangKey($cabang),
+            strtoupper(trim($unit)),
+            $this->normalizeSmallPerformanceBranchCode($branchCode),
+            $this->smallPerformanceRmIdentity($rm),
+        ]);
+    }
+
+    private function smallPerformanceBranchIdentityKey(string $cabang, string $rm): string
+    {
+        return $this->normalizeCabangKey($cabang).'|'.$this->smallPerformanceRmIdentity($rm);
+    }
+
+    private function smallPerformanceRmIdentity(string $rm): string
+    {
+        $displayName = trim(explode('-', $rm, 2)[1] ?? $rm);
+
+        return $this->landingSmallRmIdentity($rm, $displayName);
+    }
+
+    private function normalizeSmallPerformanceBranchCode(string $value): string
+    {
+        if (preg_match('/\d+/', $value, $matches) === 1) {
+            return ltrim($matches[0], '0') ?: '0';
+        }
+
+        return strtoupper(trim($value));
+    }
+
     private function calculateSmallQuadrantsByRm(array $pivoted, int $periodCount): array
     {
         $inputs = [];
@@ -3342,7 +3724,7 @@ class KinerjaRmReportController extends Controller
 
         $quadrants = [];
         foreach ($inputs as $rmName => $input) {
-            if ($periodCount <= 0 || !$input['lar_has_data'] || (float) $input['lar_loan_os'] <= 0) {
+            if ($periodCount <= 0 || ! $input['lar_has_data'] || (float) $input['lar_loan_os'] <= 0) {
                 if ($input['snapshot_quadrant'] !== null) {
                     $quadrants[$rmName] = $input['snapshot_quadrant'];
                 }
@@ -3371,6 +3753,24 @@ class KinerjaRmReportController extends Controller
         };
     }
 
+    private function calculateSmallPerformanceQuadrant(
+        float $ratasOs,
+        ?float $previousLarPct,
+        float $managedLarPct
+    ): int {
+        $isRatasA = ($ratasOs / 1000000) >= 1600;
+        $isQualityA = $previousLarPct !== null
+            && $previousLarPct < 2.0
+            && $managedLarPct < 15.0;
+
+        return match (true) {
+            $isRatasA && $isQualityA => 1,
+            $isRatasA => 2,
+            $isQualityA => 3,
+            default => 4,
+        };
+    }
+
     private function calculateConsumerQuadrant(mixed $achievementOs, float $targetOs): ?int
     {
         $achievement = $this->normalizeNumericValue($achievementOs);
@@ -3379,27 +3779,20 @@ class KinerjaRmReportController extends Controller
             return null;
         }
 
-        $achievementPct = ($achievement / $targetOs) * 100;
-
-        return match (true) {
-            $achievementPct >= 105.0 => 1,
-            $achievementPct >= 100.0 => 2,
-            $achievementPct >= 50.0 => 3,
-            default => 4,
-        };
+        return ConsumerKanwilReference::calculateQuadrant((float) $achievement, $targetOs);
     }
 
     private function formatQuadrantLabel(mixed $quadrant): string
     {
         $normalized = $this->normalizeQuadrant($quadrant);
 
-        return $normalized !== null ? 'Kuadran ' . $normalized : '-';
+        return $normalized !== null ? 'Kuadran '.$normalized : '-';
     }
 
     private function formatQuadrantClass(mixed $quadrant): string
     {
         $normalized = $this->normalizeQuadrant($quadrant);
 
-        return $normalized !== null ? 'q' . $normalized : '';
+        return $normalized !== null ? 'q'.$normalized : '';
     }
 }

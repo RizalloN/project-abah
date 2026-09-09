@@ -8,7 +8,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | command | 1 |
 | file | 12 |
-| method | 99 |
+| method | 100 |
 | route | 4 |
 | class | 10 |
 | table | 1 |
@@ -23,12 +23,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `payload` | method | 13 | `app/Support/CrasLpgPortfolioService.php:43` |
 | `handle` | method | 12 | `app/Console/Commands/SyncCrasLpgReferenceCommand.php:18` |
 | `payload` | method | 12 | `app/Support/CrasMappingService.php:70` |
+| `test_mapping_refresh_atomically_replaces_cache_only_with_valid_workbook` | method | 12 | `tests/Unit/RemoteDashboardSourceTest.php:55` |
 | `SyncCrasLpgReferenceCommand` | class | 11 | `app/Console/Commands/SyncCrasLpgReferenceCommand.php:10` |
 | `payload` | method | 11 | `app/Support/MarketShareSektoralReport.php:101` |
 | `CrasLpgReference` | class | 10 | `app/Support/CrasLpgReference.php:8` |
 | `MarketShareSektoralReport` | class | 10 | `app/Support/MarketShareSektoralReport.php:5` |
 | `mappedRows` | method | 10 | `app/Support/CrasLpgPortfolioService.php:119` |
-| `test_mapping_refresh_atomically_replaces_cache_only_with_valid_workbook` | method | 10 | `tests/Unit/RemoteDashboardSourceTest.php:55` |
 | `aggregateInPhp` | method | 9 | `app/Support/CrasLpgPortfolioService.php:207` |
 | `aggregateUnits` | method | 9 | `app/Support/CrasMappingService.php:273` |
 | `normalize` | method | 9 | `app/Support/CrasLpgReference.php:56` |
@@ -81,18 +81,18 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | marketshare -> core (calls) | 22 |
-| marketshare -> core (instantiates) | 11 |
+| marketshare -> core (instantiates) | 13 |
 | marketshare -> core (accepts) | 8 |
 | marketshare -> access-control (protected_by) | 8 |
-| tests -> marketshare (contains) | 7 |
+| tests -> marketshare (contains) | 8 |
 | dashboard-simpanan -> marketshare (calls) | 6 |
 | marketshare -> import (instantiates) | 6 |
 | access-control -> marketshare (references_route) | 4 |
 | marketshare -> bank-pipeline (dispatches_to) | 4 |
+| marketshare -> dashboard-simpanan (references_route) | 3 |
 | marketshare -> core (writes_table) | 3 |
 | marketshare -> tests (extends) | 3 |
 | presentation -> marketshare (contains) | 3 |
-| marketshare -> dashboard-simpanan (references_route) | 2 |
 | dashboard-simpanan -> marketshare (references_route) | 2 |
 | marketshare -> access-control (calls) | 2 |
 | marketshare -> presentation (instantiates) | 2 |

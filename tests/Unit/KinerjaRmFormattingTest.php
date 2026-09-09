@@ -35,6 +35,12 @@ class KinerjaRmFormattingTest extends TestCase
 
         $this->assertSame('CONSUMER', $this->invokePrivateMethod($controller, 'normalizeProductLabel', ['Briguna Konsumer', 'CONSUMER']));
         $this->assertSame('CONSUMER', $this->invokePrivateMethod($controller, 'normalizeProductLabel', ['kpr', 'CONSUMER']));
+        $this->assertSame('BRIGUNA-KONSUMER', $this->invokePrivateMethod($controller, 'resolveSelectedProduct', ['Briguna Konsumer', 'CONSUMER']));
+        $this->assertSame('KPR', $this->invokePrivateMethod($controller, 'resolveSelectedProduct', ['kpr', 'CONSUMER']));
+        $this->assertSame(['BRIGUNA-KONSUMER'], $this->invokePrivateMethod($controller, 'snapshotProductFilterValues', ['Briguna Konsumer', 'CONSUMER']));
+        $this->assertSame(['KPR'], $this->invokePrivateMethod($controller, 'snapshotProductFilterValues', ['kpr', 'CONSUMER']));
+        $this->assertSame(['BRIGUNAKONSUMER'], $this->invokePrivateMethod($controller, 'sourceQualityProductValues', ['CONSUMER', 'Briguna Konsumer']));
+        $this->assertSame(['KPR'], $this->invokePrivateMethod($controller, 'sourceQualityProductValues', ['CONSUMER', 'kpr']));
 
         $this->assertSame('CASHCALL', $this->invokePrivateMethod($controller, 'normalizeProductLabel', ['cashcall', 'SMALL']));
         $this->assertNull($this->invokePrivateMethod($controller, 'normalizeProductLabel', ['cashcoll', 'SMALL']));
@@ -65,6 +71,38 @@ class KinerjaRmFormattingTest extends TestCase
 
         $this->assertSame(20, $ronaTarget['target_jg_deb']);
         $this->assertSame(3750000000.0, $ronaTarget['target_jg_os']);
+
+        $ridhoTarget = $this->invokePrivateMethod($controller, 'resolveManualTargetForProduct', [
+            collect(),
+            'CONSUMER',
+            'Ridho Ardianto',
+        ]);
+        $novanTarget = $this->invokePrivateMethod($controller, 'resolveManualTargetForProduct', [
+            collect(),
+            'CONSUMER',
+            'Novan Yoga Pratama',
+        ]);
+        $faridTarget = $this->invokePrivateMethod($controller, 'resolveManualTargetForProduct', [
+            collect(),
+            'CONSUMER',
+            'Farid Romadloni',
+        ]);
+
+        $this->assertSame(19, $ridhoTarget['target_jg_deb']);
+        $this->assertSame(3700000000.0, $ridhoTarget['target_jg_os']);
+        $this->assertSame(18, $novanTarget['target_jg_deb']);
+        $this->assertSame(3550000000.0, $novanTarget['target_jg_os']);
+        $this->assertSame(19, $faridTarget['target_jg_deb']);
+        $this->assertSame(3700000000.0, $faridTarget['target_jg_os']);
+
+        $brigunaTarget = $this->invokePrivateMethod($controller, 'resolveManualTargetForProduct', [
+            collect(),
+            'BRIGUNA-KONSUMER',
+            'Dimas Perdana Hadi Wijaya',
+        ]);
+
+        $this->assertSame(19, $brigunaTarget['target_jg_deb']);
+        $this->assertSame(3700000000.0, $brigunaTarget['target_jg_os']);
     }
 
     public function test_controller_calculates_consumer_quadrant_from_target_achievement(): void
@@ -453,6 +491,9 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringContainsString("@section('title', 'Kinerja RM Ritel')", $view);
         $this->assertStringContainsString('Kinerja RM Ritel', $view);
         $this->assertStringContainsString('Kinerja-RM-Ritel', $view);
+        $this->assertStringContainsString("const produk = $(this).data('product');", $view);
+        $this->assertStringContainsString('produk: produk', $view);
+        $this->assertStringContainsString('data-product="{{ $selectedProduct ?? \'\' }}"', file_get_contents(resource_path('views/report/kinerjarm-performance-table-section.blade.php')));
         $this->assertStringContainsString('.rm-ritel-page .kinerja-table-container::-webkit-scrollbar-thumb', $view);
         $this->assertStringContainsString('scrollbar-color: #cbd5e1 #ffffff', $view);
         $this->assertStringContainsString('--kinerja-branch-column-width: 94px;', $view);

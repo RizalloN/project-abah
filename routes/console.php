@@ -313,6 +313,12 @@ Schedule::command('cache:maintenance')
     ->withoutOverlapping(120)
     ->runInBackground();
 
+Schedule::command('micro-pipeline:sync')
+    ->dailyAt('05:30')
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping(60)
+    ->runInBackground();
+
 Schedule::command('dashboard-sources:refresh --queue --only-stale')
     ->everyFiveMinutes()
     ->withoutOverlapping(10)

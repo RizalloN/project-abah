@@ -19,9 +19,9 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class PrognosaWeeklyController extends Controller
 {
-    private const SPREADSHEET_ID = '1HpvFkAVzSYhAdIeDr1uZ9XIhBhuCMbpUv0Lm8qrq0oY';
+    private const SPREADSHEET_ID = '1qta-IbVG5edMAy36Ku-GCvs_sesfmmXt';
 
-    private const SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1HpvFkAVzSYhAdIeDr1uZ9XIhBhuCMbpUv0Lm8qrq0oY/edit?usp=sharing';
+    private const SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1qta-IbVG5edMAy36Ku-GCvs_sesfmmXt/edit?usp=sharing';
 
     private const REPORT_FIRST_COLUMN = 2; // B
 
@@ -40,13 +40,6 @@ class PrognosaWeeklyController extends Controller
     private const AREA_6_KANCA = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
 
     private const DISPLAY_POSITION_KEYS = ['yoy', 'ytd', 'm2', 'mtm', 'mtd', 'h1', 'current'];
-
-    private const FORECAST_COLUMN_BY_WEEK = [
-        1 => 8,
-        2 => 9,
-        3 => 10,
-        4 => 11,
-    ];
 
     private const RUN_OFF_SNAPSHOT_PERIOD = '2026-08-23';
 
@@ -132,16 +125,14 @@ class PrognosaWeeklyController extends Controller
 
     /** @var array<string, array{label: string, sheet: string}> */
     private const SHEETS = [
-        'area' => ['label' => 'Area 6', 'sheet' => 'Report AREA'],
-        'madiun' => ['label' => 'KC Madiun', 'sheet' => 'MADIUN'],
-        'magetan' => ['label' => 'KC Magetan', 'sheet' => 'MAGETAN'],
-        'ngawi' => ['label' => 'KC Ngawi', 'sheet' => 'NGAWI'],
-        'ponorogo' => ['label' => 'KC Ponorogo', 'sheet' => 'PONOROGO'],
+        'area' => ['label' => 'Area 6', 'sheet' => 'Area 6'],
+        'madiun' => ['label' => 'KC Madiun', 'sheet' => 'KC Madiun'],
+        'magetan' => ['label' => 'KC Magetan', 'sheet' => 'KC Magetan'],
+        'ngawi' => ['label' => 'KC Ngawi', 'sheet' => 'KC Ngawi'],
+        'ponorogo' => ['label' => 'KC Ponorogo', 'sheet' => 'KC Ponorogo'],
     ];
 
-    public function __construct(private ?DashboardHarianSnapshotService $dashboardHarianSnapshotService = null)
-    {
-    }
+    public function __construct(private ?DashboardHarianSnapshotService $dashboardHarianSnapshotService = null) {}
 
     public function index(Request $request, ?string $sheet = null): View
     {
@@ -195,6 +186,7 @@ class PrognosaWeeklyController extends Controller
             'sourceSheets' => $payload['source_sheets'] ?? [],
             'latestForecastLabel' => $payload['latest_forecast_label'] ?? null,
             'activeForecastWeek' => $payload['active_forecast_week'] ?? null,
+            'availableForecastWeeks' => $payload['available_forecast_weeks'] ?? [],
             'title' => $payload['title'] ?? 'Weekly Prognosa',
             'latestDate' => $payload['latest_date'] ?? null,
             'fetchedAt' => $payload['fetched_at'] ?? null,
@@ -265,7 +257,7 @@ class PrognosaWeeklyController extends Controller
     /** @return array<int, string> */
     private function sourceSheetKeys(string $sheetKey): array
     {
-        return $sheetKey === 'area' ? self::BRANCH_KEYS : [$sheetKey];
+        return [$sheetKey];
     }
 
     /**
@@ -343,7 +335,7 @@ class PrognosaWeeklyController extends Controller
 
     private function cacheKey(string $sheetKey): string
     {
-        return 'prognosa_weekly:forecast:v5:area6_consolidated:'.$sheetKey;
+        return 'prognosa_weekly:forecast:v8:source_direct:'.$sheetKey;
     }
 
     /**
@@ -407,31 +399,24 @@ class PrognosaWeeklyController extends Controller
     /** @return array{headers: array<int, string>, rows: array<int, array<int, string>>} */
     private function parseWorksheetMatrix(Worksheet $sheet): array
     {
-        $headers = [];
-        for ($column = self::REPORT_FIRST_COLUMN; $column <= self::REPORT_LAST_COLUMN; $column++) {
-            $group = $this->worksheetDisplayValue($sheet, $column, self::WORKBOOK_GROUP_HEADER_ROW, false);
-            $label = $this->worksheetDisplayValue($sheet, $column, self::WORKBOOK_COLUMN_HEADER_ROW, false);
-            $headers[] = trim(implode(' ', array_filter([$group, $label])));
-        }
+        $sourceRows = [];
+        $highestColumn = min(
+            self::REPORT_LAST_COLUMN,
+            Coordinate::columnIndexFromString($sheet->getHighestColumn())
+        );
 
-        if (! str_contains(strtoupper($headers[1] ?? ''), 'KETERANGAN')) {
-            throw new \RuntimeException('Header KETERANGAN tidak ditemukan pada workbook.');
-        }
-
-        $rows = [];
-        for ($row = self::WORKBOOK_DATA_START_ROW; $row <= $sheet->getHighestRow(); $row++) {
+        for ($row = 1; $row <= $sheet->getHighestRow(); $row++) {
             $values = [];
-            for ($column = self::REPORT_FIRST_COLUMN; $column <= self::REPORT_LAST_COLUMN; $column++) {
-                $reportIndex = $column - self::REPORT_FIRST_COLUMN;
-                $values[] = $this->worksheetDisplayValue($sheet, $column, $row, $reportIndex >= 2);
+            for ($column = 1; $column <= $highestColumn; $column++) {
+                $values[] = $this->worksheetDisplayValue($sheet, $column, $row, false);
             }
 
             if ($this->rowHasValue($values)) {
-                $rows[] = $values;
+                $sourceRows[] = $values;
             }
         }
 
-        return ['headers' => $headers, 'rows' => $rows];
+        return $this->normalizeSourceMatrix($sourceRows, 'workbook');
     }
 
     private function worksheetDisplayValue(
@@ -448,11 +433,7 @@ class PrognosaWeeklyController extends Controller
         }
 
         if ($formatNumeric && is_numeric($value)) {
-            $reportIndex = $column - self::REPORT_FIRST_COLUMN;
-
-            return $reportIndex >= 32
-                ? $this->formatRatio((float) $value)
-                : $this->formatNumber((float) $value);
+            return $this->formatNumber((float) $value);
         }
 
         return $this->cleanCell((string) $value);
@@ -480,19 +461,88 @@ class PrognosaWeeklyController extends Controller
             fclose($stream);
         }
 
+        return $this->normalizeSourceMatrix($sourceRows, 'CSV');
+    }
+
+    /**
+     * Both the previous raw report and the current Dashboard Harian export are
+     * normalised to an internal matrix whose indicator is always column index 1.
+     *
+     * @param  array<int, array<int, string>>  $sourceRows
+     * @return array{headers: array<int, string>, rows: array<int, array<int, string>>}
+     */
+    private function normalizeSourceMatrix(array $sourceRows, string $sourceLabel): array
+    {
         if (count($sourceRows) < 2) {
-            throw new \RuntimeException('Sheet belum memiliki tabel Weekly Prognosa.');
+            throw new \RuntimeException("Sheet {$sourceLabel} belum memiliki tabel Weekly Prognosa.");
         }
 
-        $headers = $this->sliceReportColumns($sourceRows[0]);
+        $headerRow = null;
+        $labelColumn = null;
+        foreach (array_slice($sourceRows, 0, 15, true) as $rowIndex => $sourceRow) {
+            foreach ($sourceRow as $columnIndex => $value) {
+                if ($this->normalizeIndicatorLabel((string) $value) === 'KETERANGAN') {
+                    $headerRow = (int) $rowIndex;
+                    $labelColumn = (int) $columnIndex;
+                    break 2;
+                }
+            }
+        }
+
+        if ($headerRow === null || $labelColumn === null) {
+            throw new \RuntimeException("Header KETERANGAN tidak ditemukan pada {$sourceLabel}.");
+        }
+
+        $headerRows = [$headerRow];
+        if ($headerRow > 0 && $this->looksLikeReportHeader($sourceRows[$headerRow - 1] ?? [])) {
+            array_unshift($headerRows, $headerRow - 1);
+        }
+        if ($this->looksLikeReportHeader($sourceRows[$headerRow + 1] ?? [])) {
+            $headerRows[] = $headerRow + 1;
+        }
+
+        $highestColumn = 0;
+        foreach ($sourceRows as $sourceRow) {
+            $highestColumn = max($highestColumn, count($sourceRow));
+        }
+        $firstColumn = max(0, $labelColumn - 1);
+        $prependIdentityColumn = $labelColumn === 0;
+        $columnCount = max(self::REPORT_COLUMN_COUNT, $highestColumn - $firstColumn + ($prependIdentityColumn ? 1 : 0));
+
+        $headers = array_fill(0, $columnCount, '');
+        foreach ($headerRows as $candidateRow) {
+            $sourceRow = $sourceRows[$candidateRow] ?? [];
+            for ($column = $firstColumn; $column < $highestColumn; $column++) {
+                $targetColumn = $column - $firstColumn + ($prependIdentityColumn ? 1 : 0);
+                $value = $this->cleanCell((string) ($sourceRow[$column] ?? ''));
+                if ($value === '') {
+                    continue;
+                }
+
+                $current = $headers[$targetColumn] ?? '';
+                if ($current === '' || ! str_contains(
+                    $this->normalizeIndicatorLabel($current),
+                    $this->normalizeIndicatorLabel($value)
+                )) {
+                    $headers[$targetColumn] = trim($current.' '.$value);
+                }
+            }
+        }
+
         if (! str_contains(strtoupper($headers[1] ?? ''), 'KETERANGAN')) {
-            throw new \RuntimeException('Header KETERANGAN tidak ditemukan pada CSV.');
+            throw new \RuntimeException("Header KETERANGAN tidak dapat dinormalisasi dari {$sourceLabel}.");
         }
 
         $rows = [];
-        foreach (array_slice($sourceRows, 1) as $sourceRow) {
-            $row = $this->sliceReportColumns($sourceRow);
-            if ($this->rowHasValue($row)) {
+        $dataStart = max($headerRows) + 1;
+        foreach (array_slice($sourceRows, $dataStart) as $sourceRow) {
+            $row = array_fill(0, $columnCount, '');
+            for ($column = $firstColumn; $column < $highestColumn; $column++) {
+                $targetColumn = $column - $firstColumn + ($prependIdentityColumn ? 1 : 0);
+                $row[$targetColumn] = $this->cleanCell((string) ($sourceRow[$column] ?? ''));
+            }
+
+            if ($this->cleanCell((string) ($row[1] ?? '')) !== '') {
                 $rows[] = $row;
             }
         }
@@ -500,16 +550,21 @@ class PrognosaWeeklyController extends Controller
         return ['headers' => $headers, 'rows' => $rows];
     }
 
-    /** @return array<int, string> */
-    private function sliceReportColumns(array $row): array
+    private function looksLikeReportHeader(array $row): bool
     {
-        $row = array_pad($row, self::REPORT_LAST_COLUMN, '');
+        $matches = 0;
+        foreach ($row as $value) {
+            $label = $this->normalizeIndicatorLabel((string) $value);
+            if (
+                preg_match('/\bWEEK\s*\d+\b/', $label) === 1
+                || preg_match('/\b\d{1,2}\s+(?:JAN|FEB|MAR|APR|MEI|MAY|JUN|JUL|AGU|AUG|SEP|OKT|OCT|NOV|DES|DEC)[A-Z]*\s+\d{2,4}\b/', $label) === 1
+                || in_array($label, ['POSISI', 'PROGNOSA', 'DELTA', 'RKA', 'PENCAPAIAN RKA'], true)
+            ) {
+                $matches++;
+            }
+        }
 
-        return array_values(array_slice(
-            $row,
-            self::REPORT_FIRST_COLUMN - 1,
-            self::REPORT_COLUMN_COUNT
-        ));
+        return $matches >= 2;
     }
 
     private function rowHasValue(array $row): bool
@@ -530,6 +585,61 @@ class PrognosaWeeklyController extends Controller
         return trim((string) preg_replace('/\s+/u', ' ', $value));
     }
 
+    /** @return array<int, int> */
+    private function forecastColumnsFromHeaders(array $headers): array
+    {
+        $columns = [];
+        $started = false;
+
+        foreach ($headers as $index => $header) {
+            $label = strtoupper($this->cleanCell((string) $header));
+            if (preg_match('/\bWEEK\s*(\d{1,2})\b/i', $label, $matches) !== 1) {
+                if ($started) {
+                    break;
+                }
+
+                continue;
+            }
+
+            $week = (int) $matches[1];
+            if (! $started && $week !== 1) {
+                continue;
+            }
+            if ($started && $week !== count($columns) + 1) {
+                break;
+            }
+
+            $started = true;
+            $columns[$week] = (int) $index;
+        }
+
+        return $columns;
+    }
+
+    /**
+     * @param  array<int, int>  $forecastColumns
+     * @return array<int, string>
+     */
+    private function forecastDatesFromHeaders(array $headers, array $forecastColumns): array
+    {
+        $dates = [];
+        foreach ($forecastColumns as $week => $column) {
+            $header = $this->cleanCell((string) ($headers[$column] ?? ''));
+            if (preg_match('/(\d{1,2})\s+([[:alpha:]]+)\s+(\d{2,4})/iu', $header, $matches) !== 1) {
+                continue;
+            }
+
+            try {
+                $dates[(int) $week] = Carbon::parse($this->normaliseMonthName(
+                    $matches[1].' '.$matches[2].' '.$matches[3]
+                ))->toDateString();
+            } catch (\Throwable) {
+            }
+        }
+
+        return $dates;
+    }
+
     /**
      * @param  array<string, array{headers: array<int, string>, rows: array<int, array<int, string>>}>  $matrices
      */
@@ -543,15 +653,27 @@ class PrognosaWeeklyController extends Controller
         }
 
         $baseMatrix = $matrices[$sourceKeys[0]];
-        $rows = $sheetKey === 'area'
-            ? $this->consolidateAreaRows($matrices)
-            : $baseMatrix['rows'];
+        $forecastColumns = $this->forecastColumnsFromHeaders($baseMatrix['headers']);
+        if ($forecastColumns === []) {
+            throw new \RuntimeException('Kolom Week Prognosa tidak ditemukan pada sumber spreadsheet.');
+        }
+
+        foreach (array_slice($sourceKeys, 1) as $sourceKey) {
+            if ($this->forecastColumnsFromHeaders($matrices[$sourceKey]['headers']) !== $forecastColumns) {
+                throw new \RuntimeException("Struktur kolom Week Prognosa sheet {$sourceKey} tidak sejajar.");
+            }
+        }
+
+        $rows = $baseMatrix['rows'];
 
         return [
             'title' => $sheetKey === 'area'
                 ? 'Monitoring PTP - Konsolidasi Area 6'
                 : 'Monitoring PTP - '.self::SHEETS[$sheetKey]['label'],
             'forecast_rows' => $rows,
+            'forecast_columns' => $forecastColumns,
+            'forecast_dates' => $this->forecastDatesFromHeaders($baseMatrix['headers'], $forecastColumns),
+            'available_forecast_weeks' => array_keys($forecastColumns),
             'source_sheets' => array_map(
                 static fn (string $key): string => self::SHEETS[$key]['label'],
                 $sourceKeys
@@ -565,8 +687,7 @@ class PrognosaWeeklyController extends Controller
         string $sheetKey,
         array $forecastPayload,
         mixed $requestedWeek = null
-    ): array
-    {
+    ): array {
         $service = $this->dashboardHarianSnapshotService ??= app(DashboardHarianSnapshotService::class);
         $selectedPeriod = $service->resolveEffectivePeriod(null);
         if ($selectedPeriod === null) {
@@ -584,11 +705,18 @@ class PrognosaWeeklyController extends Controller
         }
 
         $runOffContext = $this->buildRunOffContext($sheetKey);
-        $activeWeek = $this->resolveForecastWeek($selectedPeriod, $requestedWeek);
+        $forecastColumns = (array) ($forecastPayload['forecast_columns'] ?? []);
+        $availableWeeks = array_values(array_map('intval', array_keys($forecastColumns)));
+        $activeWeek = $this->resolveForecastWeek(
+            $selectedPeriod,
+            $requestedWeek,
+            $availableWeeks,
+            (array) ($forecastPayload['forecast_dates'] ?? [])
+        );
         $rows = $this->buildDashboardAlignedRows(
             $forecastPayload['forecast_rows'] ?? [],
             $dailyPayload['rows'],
-            $activeWeek,
+            (int) ($forecastColumns[$activeWeek] ?? -1),
             $runOffContext['segments']
         );
         $latestDate = $this->formatIndonesianDate(Carbon::parse($selectedPeriod));
@@ -599,6 +727,7 @@ class PrognosaWeeklyController extends Controller
             'latest_date' => $latestDate,
             'latest_forecast_label' => $latestForecastLabel,
             'active_forecast_week' => $activeWeek,
+            'available_forecast_weeks' => $availableWeeks,
             'header_groups' => $this->headerGroups($dailyPayload),
             'header_columns' => $this->headerColumns($dailyPayload, $activeWeek, $runOffContext),
             'rows' => $rows,
@@ -645,16 +774,53 @@ class PrognosaWeeklyController extends Controller
         ];
     }
 
-    private function resolveForecastWeek(string $selectedPeriod, mixed $requestedWeek = null): int
-    {
+    /**
+     * @param  array<int, int>  $availableWeeks
+     * @param  array<int, string>  $forecastDates
+     */
+    private function resolveForecastWeek(
+        string $selectedPeriod,
+        mixed $requestedWeek = null,
+        array $availableWeeks = [],
+        array $forecastDates = []
+    ): int {
+        sort($availableWeeks);
+        if ($availableWeeks === []) {
+            throw new \RuntimeException('Week Prognosa yang tersedia tidak dapat ditentukan.');
+        }
+
         $requestedWeek = filter_var($requestedWeek, FILTER_VALIDATE_INT);
-        if (is_int($requestedWeek) && isset(self::FORECAST_COLUMN_BY_WEEK[$requestedWeek])) {
+        if (is_int($requestedWeek) && in_array($requestedWeek, $availableWeeks, true)) {
             return $requestedWeek;
         }
 
-        $day = (int) Carbon::parse($selectedPeriod)->format('j');
+        $today = now()->startOfDay();
+        foreach ($availableWeeks as $week) {
+            $targetDate = $forecastDates[$week] ?? null;
+            if (! is_string($targetDate) || $targetDate === '') {
+                continue;
+            }
 
-        return min(4, max(1, intdiv(max(1, $day) - 1, 7) + 1));
+            try {
+                if ($today->lessThanOrEqualTo(Carbon::parse($targetDate)->startOfDay())) {
+                    return $week;
+                }
+            } catch (\Throwable) {
+            }
+        }
+
+        if ($forecastDates !== []) {
+            return (int) end($availableWeeks);
+        }
+
+        $day = (int) Carbon::parse($selectedPeriod)->format('j');
+        $preferredWeek = max(1, intdiv(max(1, $day) - 1, 7) + 1);
+        $eligibleWeeks = array_values(array_filter(
+            $availableWeeks,
+            static fn (int $week): bool => $week <= $preferredWeek
+        ));
+
+        return (int) ($eligibleWeeks === [] ? $availableWeeks[0] : end($eligibleWeeks));
     }
 
     /**
@@ -665,10 +831,9 @@ class PrognosaWeeklyController extends Controller
     private function buildDashboardAlignedRows(
         array $forecastRows,
         array $dailyRows,
-        int $activeWeek,
+        int $forecastColumn,
         array $runOffSegments
-    ): array
-    {
+    ): array {
         $dailyRowsByKey = [];
         foreach ($dailyRows as $dailyRow) {
             $key = (string) ($dailyRow['key'] ?? '');
@@ -677,7 +842,9 @@ class PrognosaWeeklyController extends Controller
             }
         }
 
-        $forecastColumn = self::FORECAST_COLUMN_BY_WEEK[$activeWeek];
+        if ($forecastColumn < 0) {
+            throw new \RuntimeException('Kolom target Week Prognosa aktif tidak ditemukan.');
+        }
         $context = [
             'section' => 'pinjaman',
             'loan_family' => 'os',
@@ -694,6 +861,7 @@ class PrognosaWeeklyController extends Controller
             $metricKeys = $this->forecastMetricKeys($context, $normalizedLabel);
             $isLowerBetter = $context['section'] === 'pinjaman'
                 && in_array($context['loan_family'], ['sml', 'npl'], true);
+            $isPercentage = $this->isPercentageIndicator($normalizedLabel);
 
             $cells = [
                 $this->displayCell($number),
@@ -706,33 +874,42 @@ class PrognosaWeeklyController extends Controller
                 if ($positionKey === 'current') {
                     $currentRaw = $rawValue;
                 }
-                $millions = $rawValue !== null ? $rawValue / 1_000_000 : null;
+                $millions = $rawValue !== null
+                    ? ($isPercentage ? $rawValue : $rawValue / 1_000_000)
+                    : null;
                 $cells[] = $this->displayCell(
-                    $this->formatDisplayNumber($millions),
-                    $millions
+                    $isPercentage ? $this->formatDisplayPercent($millions) : $this->formatDisplayNumber($millions),
+                    $millions,
+                    '',
+                    $isPercentage
                 );
             }
 
             $forecastValue = $this->parseLocaleNumber($forecastRow[$forecastColumn] ?? '');
             $cells[] = $this->displayCell(
-                $this->formatDisplayNumber($forecastValue),
-                $forecastValue
+                $isPercentage ? $this->formatDisplayPercent($forecastValue) : $this->formatDisplayNumber($forecastValue),
+                $forecastValue,
+                '',
+                $isPercentage
             );
 
             $delta = $currentRaw !== null && $forecastValue !== null
                 ? ($currentRaw / 1_000_000) - $forecastValue
                 : null;
             $cells[] = $this->displayCell(
-                $this->formatDisplayNumber($delta),
+                $isPercentage ? $this->formatDisplayPercent($delta) : $this->formatDisplayNumber($delta),
                 $delta,
-                $this->deltaTone($delta, $isLowerBetter)
+                $this->deltaTone($delta, $isLowerBetter),
+                $isPercentage
             );
 
-            $currentMillions = $currentRaw !== null ? $currentRaw / 1_000_000 : null;
+            $currentMillions = $currentRaw !== null
+                ? ($isPercentage ? $currentRaw : $currentRaw / 1_000_000)
+                : null;
             foreach (['rka', 'rka_dec'] as $rkaKey) {
                 $rkaRaw = $this->aggregateDailyMetric($dailyRowsByKey, $metricKeys, $rkaKey);
                 $rkaMillions = $rkaRaw !== null && abs($rkaRaw) > 0.000001
-                    ? $rkaRaw / 1_000_000
+                    ? ($isPercentage ? $rkaRaw : $rkaRaw / 1_000_000)
                     : null;
                 $rkaGap = $currentMillions !== null && $rkaMillions !== null
                     ? $currentMillions - $rkaMillions
@@ -744,13 +921,16 @@ class PrognosaWeeklyController extends Controller
                 );
 
                 $cells[] = $this->displayCell(
-                    $this->formatDisplayNumber($rkaMillions),
-                    $rkaMillions
+                    $isPercentage ? $this->formatDisplayPercent($rkaMillions) : $this->formatDisplayNumber($rkaMillions),
+                    $rkaMillions,
+                    '',
+                    $isPercentage
                 );
                 $cells[] = $this->displayCell(
-                    $this->formatDisplayNumber($rkaGap),
+                    $isPercentage ? $this->formatDisplayPercent($rkaGap) : $this->formatDisplayNumber($rkaGap),
                     $rkaGap,
-                    $this->deltaTone($rkaGap, $isLowerBetter)
+                    $this->deltaTone($rkaGap, $isLowerBetter),
+                    $isPercentage
                 );
                 $cells[] = $this->displayCell(
                     $this->formatDisplayPercent($achievement),
@@ -797,8 +977,8 @@ class PrognosaWeeklyController extends Controller
     private function runOffForIndicator(array $segments, string $label, string $segmentContext): ?array
     {
         $segmentKey = match ($label) {
-            'PINJAMAN' => 'total',
-            'MICRO', 'MICRO TOTAL', 'TOTAL KUPEDES KUR KPP BRIGUNA',
+            'PINJAMAN', '2 OS TOTAL' => 'total',
+            'MICRO', 'MICRO TOTAL', 'C MIKRO', 'D MIKRO', 'TOTAL KUPEDES KUR KPP BRIGUNA',
             'TOTAL KUPEDES KUR KPP DAN BRIGUNA' => 'micro',
             'KUR KECIL' => 'micro_kur_kecil',
             'KUPEDES' => 'micro_kupedes',
@@ -806,7 +986,7 @@ class PrognosaWeeklyController extends Controller
             'KUR MIKRO' => 'micro_kur_mikro',
             'KPP', 'KUR KPP', 'KREDIT MIKRO KPP' => 'micro_kpp',
             'RITEL' => 'retail',
-            'KECIL KOMERSIAL', 'SMALL', 'SME' => 'small',
+            'A SME', 'B SME', 'KECIL', 'KECIL KOMERSIAL', 'SMALL', 'SME' => 'small',
             'COMMERCIAL', 'KECIL NON CASHCALL', 'KECIL NON CASHCOLL' => 'small_commercial',
             'CASHCALL', 'CASHCOLL' => 'small_cashcall',
             'CONSUMER', 'KONSUMER' => 'consumer',
@@ -826,29 +1006,29 @@ class PrognosaWeeklyController extends Controller
     /** @return array{section: string, loan_family: string, loan_segment: string, dpk_scope: string} */
     private function updateForecastContext(array $context, string $label): array
     {
-        if ($label === 'PINJAMAN') {
+        if (in_array($label, ['PINJAMAN', '2 OS TOTAL'], true)) {
             return ['section' => 'pinjaman', 'loan_family' => 'os', 'loan_segment' => 'total', 'dpk_scope' => ''];
         }
-        if ($label === 'SML') {
+        if (in_array($label, ['SML', '3 TOTAL SML NON COMMERCIAL', 'TOTAL SML ABS NON COMMERCIAL'], true)) {
             return ['section' => 'pinjaman', 'loan_family' => 'sml', 'loan_segment' => '', 'dpk_scope' => ''];
         }
-        if ($label === 'NPL') {
+        if (in_array($label, ['NPL', '4 TOTAL NPL NON COMMERCIAL', 'TOTAL NPL ABS NON COMMERCIAL'], true)) {
             return ['section' => 'pinjaman', 'loan_family' => 'npl', 'loan_segment' => '', 'dpk_scope' => ''];
         }
-        if ($label === 'DANA PIHAK KE TIGA') {
+        if (in_array($label, ['DANA PIHAK KE TIGA', '1 SIMPANAN'], true)) {
             return ['section' => 'dpk', 'loan_family' => '', 'loan_segment' => '', 'dpk_scope' => ''];
         }
-        if ($label === 'RECOVERY DH') {
+        if (in_array($label, ['RECOVERY DH', '7 REC DH PER SEGMEN'], true)) {
             return ['section' => 'recovery', 'loan_family' => '', 'loan_segment' => '', 'dpk_scope' => ''];
         }
 
         if ($context['section'] === 'pinjaman' && $context['loan_family'] === 'os') {
             $context['loan_segment'] = match ($label) {
-                'MICRO', 'MICRO TOTAL' => 'micro',
+                'MICRO', 'MICRO TOTAL', 'C MIKRO', 'D MIKRO' => 'micro',
                 'RITEL' => 'retail',
-                'KECIL KOMERSIAL', 'SMALL', 'SME', 'COMMERCIAL',
+                'A SME', 'B SME', 'KECIL', 'KECIL KOMERSIAL', 'SMALL', 'SME', 'COMMERCIAL',
                 'KECIL NON CASHCALL', 'KECIL NON CASHCOLL', 'CASHCALL', 'CASHCOLL' => 'small',
-                'CONSUMER', 'KONSUMER', 'CONSUMER TOTAL' => 'consumer',
+                'B KONSUMER', 'C KONSUMER', 'CONSUMER', 'KONSUMER', 'CONSUMER TOTAL' => 'consumer',
                 default => $context['loan_segment'],
             };
 
@@ -860,11 +1040,11 @@ class PrognosaWeeklyController extends Controller
         }
 
         $context['dpk_scope'] = match ($label) {
-            'RITEL' => 'ritel',
-            'MICRO' => 'micro',
+            'RITEL', 'A RITEL' => 'ritel',
+            'MICRO', 'B MIKRO' => 'micro',
             'TOTAL RITEL MICRO NON WHOLESALE' => 'non_wholesale',
-            'WHOLESALE' => 'wholesale',
-            'TOTAL RITEL MICRO DAN WHOLESALE' => 'total',
+            'WHOLESALE', 'C WHOLESALE' => 'wholesale',
+            'TOTAL RITEL MICRO DAN WHOLESALE', '1 SIMPANAN' => 'total',
             default => $context['dpk_scope'],
         };
 
@@ -874,13 +1054,33 @@ class PrognosaWeeklyController extends Controller
     /** @return array<int, string> */
     private function forecastMetricKeys(array $context, string $label): array
     {
+        $directMetric = match ($label) {
+            '3 TOTAL SML NON COMMERCIAL' => 'total_sml_pct_non_commercial',
+            'TOTAL SML ABS NON COMMERCIAL' => 'total_sml_abs_non_commercial',
+            '4 TOTAL NPL NON COMMERCIAL' => 'total_npl_pct_non_commercial',
+            'TOTAL NPL ABS NON COMMERCIAL' => 'total_npl_abs_non_commercial',
+            '5 CASA' => 'casa_pct',
+            'TOTAL CASA' => 'total_casa',
+            'CASA NON WHOLESALE' => 'casa_non_wholesale',
+            'CASA RITEL' => 'casa_ritel',
+            'CASA MIKRO' => 'casa_mikro',
+            'CASA WHOLESALE' => 'casa_wholesale',
+            '6 LDR NON COMMERCIAL' => 'ldr_non_commercial',
+            'LDR RITEL NON COMMERCIAL' => 'ldr_ritel_non_commercial',
+            'LDR MIKRO NON COMMERCIAL' => 'ldr_mikro_non_commercial',
+            default => null,
+        };
+        if ($directMetric !== null) {
+            return [$directMetric];
+        }
+
         if ($context['section'] === 'dpk') {
             return $this->dpkMetricKeys($context['dpk_scope'], $label);
         }
 
         if ($context['section'] === 'recovery') {
             return match ($label) {
-                'RECOVERY DH' => ['rec_dh_total'],
+                'RECOVERY DH', '7 REC DH PER SEGMEN' => ['rec_dh_total'],
                 'RITEL' => ['rec_dh_small'],
                 'MICRO' => ['rec_dh_micro'],
                 default => [],
@@ -888,7 +1088,7 @@ class PrognosaWeeklyController extends Controller
         }
 
         $family = $context['loan_family'];
-        if ($label === 'PINJAMAN') {
+        if (in_array($label, ['PINJAMAN', '2 OS TOTAL'], true)) {
             return ['total_os_non_commercial'];
         }
         if ($label === 'SML') {
@@ -902,7 +1102,7 @@ class PrognosaWeeklyController extends Controller
         }
 
         return match ($label) {
-            'MICRO' => ["micro_{$family}"],
+            'MICRO', 'C MIKRO', 'D MIKRO' => ["micro_{$family}"],
             'TOTAL KUPEDES KUR KPP BRIGUNA' => [
                 "briguna_mikro_{$family}",
                 "kupedes_{$family}",
@@ -916,9 +1116,10 @@ class PrognosaWeeklyController extends Controller
             'KREDIT MIKRO KPP' => ["kur_kpp_{$family}"],
             'KUR KECIL' => ["kur_kecil_{$family}"],
             'RITEL' => ["sme_{$family}", "consumer_{$family}"],
-            'KECIL KOMERSIAL' => ["kecil_{$family}"],
-            'CONSUMER' => ["consumer_{$family}"],
-            'BRIGUNA RITEL' => ["briguna_konsumer_{$family}"],
+            'A SME', 'B SME' => ["sme_{$family}"],
+            'KECIL', 'KECIL KOMERSIAL' => ["kecil_{$family}"],
+            'B KONSUMER', 'C KONSUMER', 'CONSUMER' => ["consumer_{$family}"],
+            'BRIGUNA', 'BRIGUNA RITEL' => ["briguna_konsumer_{$family}"],
             'KPR' => ["kpr_{$family}"],
             default => [],
         };
@@ -928,10 +1129,14 @@ class PrognosaWeeklyController extends Controller
     private function dpkMetricKeys(string $scope, string $label): array
     {
         $totals = [
+            '1 SIMPANAN' => ['total_simpanan'],
             'RITEL' => ['simpanan_ritel'],
+            'A RITEL' => ['simpanan_ritel'],
             'MICRO' => ['simpanan_mikro'],
+            'B MIKRO' => ['simpanan_mikro'],
             'TOTAL RITEL MICRO NON WHOLESALE' => ['simpanan_ritel', 'simpanan_mikro'],
             'WHOLESALE' => ['simpanan_wholesale'],
+            'C WHOLESALE' => ['simpanan_wholesale'],
             'TOTAL RITEL MICRO DAN WHOLESALE' => ['total_simpanan'],
         ];
         if (isset($totals[$label])) {
@@ -965,12 +1170,24 @@ class PrognosaWeeklyController extends Controller
 
         foreach ($metricKeys as $metricKey) {
             $value = data_get($dailyRowsByKey, $metricKey.'.values.'.$positionKey);
-            if (! is_numeric($value)) {
+            if (is_numeric($value)) {
+                $total += (float) $value;
+                $hasValue = true;
                 continue;
             }
 
-            $total += (float) $value;
-            $hasValue = true;
+            // Fallback for branches with sub-offices (office breakdown) where metric rows
+            // are split into "{$metricKey}__office_detail__{$unitKey}".
+            $prefix = $metricKey . '__office_detail__';
+            foreach ($dailyRowsByKey as $rowKey => $row) {
+                if (str_starts_with((string) $rowKey, $prefix)) {
+                    $detailVal = data_get($row, 'values.'.$positionKey);
+                    if (is_numeric($detailVal)) {
+                        $total += (float) $detailVal;
+                        $hasValue = true;
+                    }
+                }
+            }
         }
 
         return $hasValue ? $total : null;
@@ -982,8 +1199,7 @@ class PrognosaWeeklyController extends Controller
         ?float $numericValue = null,
         string $tone = '',
         bool $percent = false
-    ): array
-    {
+    ): array {
         return [
             'value' => $value,
             'negative' => $numericValue !== null && $numericValue < -0.000001,
@@ -1008,8 +1224,7 @@ class PrognosaWeeklyController extends Controller
         ?float $current,
         ?float $target,
         bool $lowerBetter
-    ): ?float
-    {
+    ): ?float {
         if ($current === null || $target === null || abs($target) < 0.000001) {
             return null;
         }
@@ -1059,10 +1274,25 @@ class PrognosaWeeklyController extends Controller
         return trim((string) preg_replace('/\s+/', ' ', $label));
     }
 
+    private function isPercentageIndicator(string $label): bool
+    {
+        return in_array($label, [
+            '3 TOTAL SML NON COMMERCIAL',
+            '4 TOTAL NPL NON COMMERCIAL',
+            '5 CASA',
+            '6 LDR NON COMMERCIAL',
+            'LDR RITEL NON COMMERCIAL',
+            'LDR MIKRO NON COMMERCIAL',
+        ], true);
+    }
+
     private function forecastRowType(string $number, string $label): string
     {
         return match (true) {
-            in_array($label, ['PINJAMAN', 'DANA PIHAK KE TIGA', 'RECOVERY DH'], true) => 'section',
+            in_array($label, [
+                'PINJAMAN', '2 OS TOTAL', 'DANA PIHAK KE TIGA', '1 SIMPANAN',
+                'RECOVERY DH', '7 REC DH PER SEGMEN',
+            ], true) => 'section',
             $number !== '' && $number !== '-' => 'category',
             str_starts_with($label, 'TOTAL ') => 'subtotal',
             in_array($label, ['SML', 'NPL'], true) => 'metric',

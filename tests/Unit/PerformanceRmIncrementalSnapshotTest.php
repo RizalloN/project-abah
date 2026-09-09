@@ -2,6 +2,8 @@
 
 namespace Tests\Unit;
 
+use App\Support\ConsumerRmRealizationCalculator;
+use App\Support\ConsumerRmPositionHistoryStore;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\ReportSnapshotBuilder;
 use Illuminate\Database\Schema\Blueprint;
@@ -105,6 +107,43 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $this->assertSame(300000000.0, (float) $kpr->realisasi_os);
     }
 
+    public function test_consumer_realisasi_applies_the_same_nett_formula_to_briguna_and_kpr(): void
+    {
+        $this->insertDailyLoanRow('OLD-BRIGUNA', 'BRIGUNAKONSUMER', 150000000, 80000000, 'CIF-BRIGUNA', '2026-04-30');
+        $this->insertDailyLoanRow('OLD-KPR', 'KPR', 150000000, 80000000, 'CIF-KPR', '2026-04-30');
+        $this->insertDailyLoanRow('NEW-BRIGUNA', 'BRIGUNAKONSUMER', 300000000, 295000000, 'CIF-BRIGUNA', '2026-05-31');
+        $this->insertDailyLoanRow('NEW-KPR', 'KPR', 300000000, 295000000, 'CIF-KPR', '2026-05-31');
+
+        $metrics = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-05-31'))
+            ->keyBy('produk');
+
+        foreach (['BRIGUNA-KONSUMER', 'KPR'] as $product) {
+            $this->assertArrayHasKey($product, $metrics);
+            $this->assertSame(0, (int) $metrics[$product]['realisasi_baru_deb']);
+            $this->assertSame(0.0, (float) $metrics[$product]['realisasi_baru_os']);
+            $this->assertSame(1, (int) $metrics[$product]['suplesi_deb']);
+            $this->assertSame(220000000.0, (float) $metrics[$product]['suplesi_os']);
+            $this->assertSame(220000000.0, (float) $metrics[$product]['realisasi_os']);
+        }
+    }
+
+    public function test_consumer_realisasi_returns_empty_metrics_when_month_has_no_realizations(): void
+    {
+        $this->insertDailyLoanRow(
+            'PREVIOUS-DUMMY',
+            'BRIGUNAKONSUMER',
+            100000000,
+            80000000,
+            'CIF-PREVIOUS',
+            '2026-04-30'
+        );
+
+        $this->assertSame(
+            [],
+            app(ConsumerRmRealizationCalculator::class)->calculate('2026-05-31')
+        );
+    }
+
     public function test_consumer_realisasi_uses_full_plafon_when_cif_has_no_closed_previous_account(): void
     {
         $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
@@ -141,8 +180,8 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
     {
         $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
 
-        $this->insertDailyLoanRow('AAA-CLOSED-FIRST', 'KPR', 100000000, 75000000, '123', '2026-04-30', uniqueId: 'row-001');
-        $this->insertDailyLoanRow('ZZZ-CLOSED-LATER', 'KPR', 120000000, 90000000, '123', '2026-04-30', uniqueId: 'row-002');
+        $this->insertDailyLoanRow('AAA-CLOSED-HIGH', 'BRIGUNAKONSUMER', 120000000, 90000000, '123', '2026-04-30', uniqueId: 'row-001');
+        $this->insertDailyLoanRow('ZZZ-CLOSED-LOW', 'BRIGUNAKONSUMER', 100000000, 75000000, '123', '2026-04-30', uniqueId: 'row-002');
 
         $this->insertDailyLoanRow('NEW-BRIGUNA', 'BRIGUNAKONSUMER', 400000000, 390000000, '123', '2026-05-15');
 
@@ -156,7 +195,67 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
 
         $this->assertNotNull($briguna);
         $this->assertSame(1, (int) $briguna->realisasi_deb);
-        $this->assertSame(325000000.0, (float) $briguna->realisasi_os);
+        $this->assertSame(310000000.0, (float) $briguna->realisasi_os);
+    }
+
+    public function test_consumer_realisasi_uses_previous_month_end_before_supplement_account_appears(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        $this->insertDailyLoanRow('OLD-CLOSED', 'BRIGUNAKONSUMER', 120000000, 90000000, 'CIF-DAILY', '2026-04-30', tglRealisasi: '2025-01-10');
+        $this->insertDailyLoanRow('OLD-CLOSED', 'BRIGUNAKONSUMER', 120000000, 70000000, 'CIF-DAILY', '2026-05-09', tglRealisasi: '2025-01-10');
+        $this->insertDailyLoanRow('NEW-SUPPLEMENT', 'BRIGUNAKONSUMER', 300000000, 295000000, 'CIF-DAILY', '2026-05-10', tglRealisasi: '2026-05-10');
+        $this->insertDailyLoanRow('NEW-SUPPLEMENT', 'BRIGUNAKONSUMER', 300000000, 290000000, 'CIF-DAILY', '2026-05-31', tglRealisasi: '2026-05-10');
+
+        $builder->rebuildPerformanceRm('2026-05-31', true);
+
+        $snapshot = DB::table('performance_rm_snapshots')
+            ->where('periode', '2026-05-31')
+            ->where('segmen', 'CONSUMER')
+            ->where('produk', 'BRIGUNA-KONSUMER')
+            ->where('rm', 'RM A')
+            ->first();
+
+        $this->assertNotNull($snapshot);
+        $this->assertSame(1, (int) $snapshot->realisasi_deb);
+        $this->assertSame(210000000.0, (float) $snapshot->realisasi_os);
+    }
+
+    public function test_consumer_realisasi_ignores_another_products_residual_when_selecting_replaced_account(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        $this->insertDailyLoanRow('TINY-RESIDUAL', 'KPR', 10000000, 5000000, 'CIF-MULTI', '2026-04-30');
+        $this->insertDailyLoanRow('MATERIAL-CLOSED', 'BRIGUNAKONSUMER', 100000000, 80000000, 'CIF-MULTI', '2026-04-30');
+        $this->insertDailyLoanRow('NEW-SUPPLEMENT', 'BRIGUNAKONSUMER', 100000000, 99000000, 'CIF-MULTI', '2026-05-31');
+
+        $builder->rebuildPerformanceRm('2026-05-31', true);
+
+        $snapshot = DB::table('performance_rm_snapshots')
+            ->where('periode', '2026-05-31')
+            ->where('segmen', 'CONSUMER')
+            ->where('produk', 'BRIGUNA-KONSUMER')
+            ->where('rm', 'RM A')
+            ->first();
+
+        $this->assertNotNull($snapshot);
+        $this->assertSame(1, (int) $snapshot->realisasi_deb);
+        $this->assertSame(20000000.0, (float) $snapshot->realisasi_os);
+    }
+
+    public function test_consumer_realisasi_does_not_turn_briguna_into_supplement_from_a_previous_kpr_cif(): void
+    {
+        $this->insertDailyLoanRow('OLD-KPR', 'KPR', 100000000, 80000000, 'CIF-SHARED', '2026-04-30');
+        $this->insertDailyLoanRow('NEW-BRIGUNA', 'BRIGUNAKONSUMER', 150000000, 145000000, 'CIF-SHARED', '2026-05-31');
+
+        $metrics = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-05-31'))
+            ->firstWhere('produk', 'BRIGUNA-KONSUMER');
+
+        $this->assertNotNull($metrics);
+        $this->assertSame(1, (int) $metrics['realisasi_baru_deb']);
+        $this->assertSame(150000000.0, (float) $metrics['realisasi_baru_os']);
+        $this->assertSame(0, (int) $metrics['suplesi_deb']);
+        $this->assertSame(0.0, (float) $metrics['suplesi_os']);
     }
 
     public function test_consumer_snapshot_updater_subtracts_previous_closed_os_once_for_multiple_accounts_in_one_cif(): void
@@ -197,6 +296,204 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $this->assertNotNull($snapshot);
         $this->assertSame(2, (int) $snapshot->realisasi_deb);
         $this->assertSame(610000000.0, (float) $snapshot->realisasi_os);
+    }
+
+    public function test_consumer_realisasi_counts_all_realized_accounts_and_never_turns_negative(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        $this->insertDailyLoanRow('EXISTING-ACCOUNT', 'BRIGUNAKONSUMER', 20000000, 5000000, 'CIF-EXISTING', '2026-04-30');
+        $this->insertDailyLoanRow('EXISTING-ACCOUNT', 'BRIGUNAKONSUMER', 25000000, 24000000, 'CIF-EXISTING', '2026-05-31');
+        $this->insertDailyLoanRow('EXISTING-ACCOUNT', 'BRIGUNAKONSUMER', 25000000, 24000000, 'CIF-EXISTING', '2026-05-31', uniqueId: 'duplicate-current-row');
+
+        $this->insertDailyLoanRow('CLOSED-HIGH-OS', 'BRIGUNAKONSUMER', 120000000, 100000000, 'CIF-NEGATIVE', '2026-04-30');
+        $this->insertDailyLoanRow('NEW-LOW-PLAFOND', 'BRIGUNAKONSUMER', 50000000, 49000000, 'CIF-NEGATIVE', '2026-05-31');
+
+        $builder->rebuildPerformanceRm('2026-05-31', true);
+
+        $snapshot = DB::table('performance_rm_snapshots')
+            ->where('periode', '2026-05-31')
+            ->where('segmen', 'CONSUMER')
+            ->where('produk', 'BRIGUNA-KONSUMER')
+            ->first();
+
+        $this->assertNotNull($snapshot);
+        $this->assertSame(2, (int) $snapshot->realisasi_deb);
+        $this->assertSame(20000000.0, (float) $snapshot->realisasi_os);
+    }
+
+    public function test_consumer_realisasi_normalizes_leading_zero_account_after_lw321_source_switch(): void
+    {
+        $this->insertDailyLoanRow(
+            '4501075942104',
+            'BRIGUNAKONSUMER',
+            100000000,
+            80000000,
+            'CIF-LW-SWITCH',
+            '2026-08-31',
+            tglRealisasi: '2025-01-10'
+        );
+        $this->insertDailyLoanRow(
+            '4501075942104',
+            'BRIGUNAKONSUMER',
+            120000000,
+            120000000,
+            'CIF-LW-SWITCH',
+            '2026-09-01',
+            tglRealisasi: '2026-09-01'
+        );
+        $this->insertDailyLoanRow(
+            '004501075942104',
+            'BRIGUNAKONSUMER',
+            120000000,
+            120000000,
+            'CIF-LW-SWITCH',
+            '2026-09-07',
+            tglRealisasi: '2026-09-01'
+        );
+
+        $metric = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-09-07'))
+            ->firstWhere('produk', 'BRIGUNA-KONSUMER');
+
+        $this->assertNotNull($metric);
+        $this->assertSame(1, $metric['realisasi_deb']);
+        $this->assertSame(1, $metric['suplesi_deb']);
+        $this->assertSame(40000000.0, $metric['realisasi_os']);
+        $this->assertSame(40000000.0, $metric['suplesi_os']);
+    }
+
+    public function test_consumer_realisasi_freezes_first_monthly_assignment_for_a_repeated_account(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        $this->insertDailyLoanRow('PREVIOUS-DUMMY', 'BRIGUNAKONSUMER', 100000000, 90000000, 'CIF-OLD', '2026-04-30');
+        $this->insertDailyLoanRow('MOVED-ACCOUNT', 'BRIGUNAKONSUMER', 250000000, 250000000, 'CIF-NEW', '2026-05-10', tglRealisasi: '2026-05-10');
+        $this->insertDailyLoanRow('MOVED-ACCOUNT', 'BRIGUNAKONSUMER', 250000000, 250000000, 'CIF-NEW', '2026-05-31', tglRealisasi: '2026-05-10');
+        DB::table('daily_loan_dinamis')
+            ->where('nomor_rekening1', 'MOVED-ACCOUNT')
+            ->where('periode', '2026-05-10')
+            ->update(['rm_normalized' => 'RM LAMA', 'pn_pengelola1' => 'RM LAMA']);
+        DB::table('daily_loan_dinamis')
+            ->where('nomor_rekening1', 'MOVED-ACCOUNT')
+            ->where('periode', '2026-05-31')
+            ->update(['rm_normalized' => 'RM TERKINI', 'pn_pengelola1' => 'RM TERKINI']);
+
+        $builder->rebuildPerformanceRm('2026-05-31', true);
+
+        $originator = DB::table('performance_rm_snapshots')
+            ->where('periode', '2026-05-31')
+            ->where('segmen', 'CONSUMER')
+            ->where('produk', 'BRIGUNA-KONSUMER')
+            ->where('rm', 'RM LAMA')
+            ->first();
+
+        $this->assertNotNull($originator);
+        $this->assertSame(1, (int) $originator->realisasi_deb);
+        $this->assertSame(250000000.0, (float) $originator->realisasi_os);
+    }
+
+    public function test_consumer_realisasi_keeps_accounts_seen_earlier_in_selected_month(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        $this->insertDailyLoanRow('OLD-CLOSED', 'BRIGUNAKONSUMER', 120000000, 90000000, 'CIF-SUPP', '2026-04-30');
+        $this->insertDailyLoanRow('EARLY-REALIZATION', 'BRIGUNAKONSUMER', 300000000, 295000000, 'CIF-SUPP', '2026-05-10');
+        $this->insertDailyLoanRow('MONTH-END-REALIZATION', 'BRIGUNAKONSUMER', 100000000, 99000000, 'CIF-NEW', '2026-05-31');
+
+        $builder->rebuildPerformanceRm('2026-05-31', true);
+
+        $snapshot = DB::table('performance_rm_snapshots')
+            ->where('periode', '2026-05-31')
+            ->where('segmen', 'CONSUMER')
+            ->where('produk', 'BRIGUNA-KONSUMER')
+            ->where('rm', 'RM A')
+            ->first();
+
+        $this->assertNotNull($snapshot);
+        $this->assertSame(2, (int) $snapshot->realisasi_deb);
+        $this->assertSame(310000000.0, (float) $snapshot->realisasi_os);
+    }
+
+    public function test_consumer_realisasi_remains_identical_after_raw_daily_positions_are_pruned(): void
+    {
+        $this->insertDailyLoanRow('PREVIOUS-DUMMY', 'BRIGUNAKONSUMER', 100000000, 90000000, 'CIF-OLD', '2026-04-30');
+        $this->insertDailyLoanRow('EARLY-REALIZATION', 'BRIGUNAKONSUMER', 300000000, 295000000, 'CIF-EARLY', '2026-05-10');
+        $this->insertDailyLoanRow('MONTH-END-REALIZATION', 'BRIGUNAKONSUMER', 100000000, 99000000, 'CIF-END', '2026-05-31');
+
+        $beforePrune = app(ConsumerRmRealizationCalculator::class)->calculate('2026-05-31');
+
+        $migration = require database_path('migrations/2026_09_09_010000_create_consumer_rm_position_history_tables.php');
+        $migration->up();
+        $archive = app(ConsumerRmPositionHistoryStore::class);
+        foreach (['2026-04-30', '2026-05-10', '2026-05-31'] as $sourcePeriod) {
+            $capture = $archive->capturePeriod($sourcePeriod, true);
+            $this->assertTrue($capture['verified']);
+        }
+
+        DB::table('daily_loan_dinamis')->where('periode', '2026-05-10')->delete();
+
+        $afterPrune = app(ConsumerRmRealizationCalculator::class)->calculate('2026-05-31');
+
+        $this->assertSame($beforePrune, $afterPrune);
+        $this->assertSame(2, array_sum(array_column($afterPrune, 'realisasi_deb')));
+        $this->assertSame(400000000.0, array_sum(array_column($afterPrune, 'realisasi_os')));
+    }
+
+    public function test_consumer_realisasi_prefers_active_brihc_initiator_and_preserves_realization_only_row(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        DB::table('brihc_pemasar')->insert([
+            'pernr' => '00000002',
+            'completename' => 'RM ORIGINATOR',
+            'positiondesc' => 'RM BISNIS KONSUMER - BRIGUNA',
+        ]);
+        $this->insertDailyLoanRow('PREVIOUS-DUMMY', 'BRIGUNAKONSUMER', 100000000, 90000000, 'CIF-OLD', '2026-04-30');
+        $this->insertDailyLoanRow('NEW-BY-ORIGINATOR', 'BRIGUNAKONSUMER', 250000000, 245000000, 'CIF-NEW', '2026-05-31');
+        DB::table('daily_loan_dinamis')
+            ->where('nomor_rekening1', 'NEW-BY-ORIGINATOR')
+            ->update(['pn_pemrakarsa1' => '00000002 - RM ORIGINATOR']);
+
+        $builder->rebuildPerformanceRm('2026-05-31', true);
+
+        $originator = DB::table('performance_rm_snapshots')
+            ->where('periode', '2026-05-31')
+            ->where('segmen', 'CONSUMER')
+            ->where('produk', 'BRIGUNA-KONSUMER')
+            ->where('rm', '00000002 - RM ORIGINATOR')
+            ->first();
+
+        $this->assertNotNull($originator);
+        $this->assertSame(0, (int) $originator->total_deb);
+        $this->assertSame(1, (int) $originator->realisasi_deb);
+        $this->assertSame(250000000.0, (float) $originator->realisasi_os);
+    }
+
+    public function test_consumer_realisasi_merges_brihc_and_daily_loan_name_casing_before_snapshot_update(): void
+    {
+        DB::table('brihc_pemasar')->insert([
+            'pernr' => '00000002',
+            'completename' => 'RM Referensi',
+            'positiondesc' => 'RM BISNIS KONSUMER - BRIGUNA',
+        ]);
+        $this->insertDailyLoanRow('PREVIOUS-DUMMY', 'BRIGUNAKONSUMER', 100000000, 90000000, 'CIF-OLD', '2026-04-30');
+        $this->insertDailyLoanRow('NEW-MANAGER', 'BRIGUNAKONSUMER', 100000000, 100000000, 'CIF-NEW-1', '2026-05-31');
+        $this->insertDailyLoanRow('NEW-INITIATOR', 'BRIGUNAKONSUMER', 200000000, 200000000, 'CIF-NEW-2', '2026-05-31');
+        DB::table('daily_loan_dinamis')
+            ->whereIn('nomor_rekening1', ['NEW-MANAGER', 'NEW-INITIATOR'])
+            ->update(['rm_normalized' => '00000002 - RM REFERENSI', 'pn_pengelola1' => '00000002 - RM REFERENSI']);
+        DB::table('daily_loan_dinamis')
+            ->where('nomor_rekening1', 'NEW-INITIATOR')
+            ->update(['pn_pemrakarsa1' => '00000002 - RM Referensi']);
+
+        $metrics = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-05-31'))
+            ->filter(fn (array $row): bool => str_contains(strtoupper((string) $row['rm']), 'RM REFERENSI'))
+            ->values();
+
+        $this->assertCount(1, $metrics);
+        $this->assertSame('00000002 - RM Referensi', $metrics->first()['rm']);
+        $this->assertSame(2, (int) $metrics->first()['realisasi_deb']);
+        $this->assertSame(300000000.0, (float) $metrics->first()['realisasi_os']);
     }
 
     public function test_consumer_snapshot_updater_clears_realisasi_when_previous_month_end_is_missing(): void
@@ -371,9 +668,17 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
             $table->string('flag_restruk')->nullable();
             $table->string('nomor_rekening1')->nullable();
             $table->string('pn_pengelola1')->nullable();
+            $table->string('pn_pemrakarsa1')->nullable();
             $table->string('cifno')->nullable();
             $table->string('cifno_clean')->nullable();
             $table->date('tgl_realisasi')->nullable();
+        });
+
+        Schema::create('brihc_pemasar', function (Blueprint $table): void {
+            $table->id();
+            $table->string('pernr')->nullable();
+            $table->string('completename')->nullable();
+            $table->string('positiondesc')->nullable();
         });
 
         Schema::create('simpanan_multipn', function (Blueprint $table): void {
@@ -405,8 +710,8 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
             $table->integer('realisasi_deb')->default(0);
             $table->decimal('realisasi_os', 20, 2)->default(0);
             foreach (['w1', 'w2', 'w3', 'w4'] as $week) {
-                $table->integer($week . '_realisasi_deb')->default(0);
-                $table->decimal($week . '_realisasi_os', 20, 2)->default(0);
+                $table->integer($week.'_realisasi_deb')->default(0);
+                $table->decimal($week.'_realisasi_os', 20, 2)->default(0);
             }
             $table->integer('lt_250_realisasi_deb')->default(0);
             $table->decimal('lt_250_realisasi_os', 20, 2)->default(0);
@@ -453,10 +758,9 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         string $flagRestruk = '',
         ?string $tglRealisasi = null,
         ?string $uniqueId = null
-    ): void
-    {
+    ): void {
         DB::table('daily_loan_dinamis')->insert([
-            'uniqueid_namareport' => $uniqueId ?? 'row-' . $account . '-' . $period,
+            'uniqueid_namareport' => $uniqueId ?? 'row-'.$account.'-'.$period,
             'periode' => $period,
             'segmen_kinerja' => $segment,
             'produk_kinerja' => $product,

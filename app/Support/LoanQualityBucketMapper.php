@@ -150,8 +150,8 @@ final class LoanQualityBucketMapper
                 WHEN ({$kolekValueExpression}) = 2 AND ({$effectiveAge}) IS NOT NULL AND ({$effectiveAge}) < 91 THEN 'DPK 3'
                 WHEN ({$kolekValueExpression}) = 2 THEN 'DPK 3'
                 WHEN ({$kolekValueExpression}) = 3 THEN 'KL'
-                WHEN ({$kolekValueExpression}) = 4 AND ({$effectiveAge}) IS NOT NULL AND ({$effectiveAge}) < 150 THEN 'D1'
-                WHEN ({$kolekValueExpression}) = 4 AND ({$effectiveAge}) IS NOT NULL AND ({$effectiveAge}) < 180 THEN 'D2'
+                WHEN ({$kolekValueExpression}) = 4 AND ({$effectiveAge}) IS NOT NULL AND ({$effectiveAge}) <= 150 THEN 'D1'
+                WHEN ({$kolekValueExpression}) = 4 AND ({$effectiveAge}) IS NOT NULL AND ({$effectiveAge}) <= 180 THEN 'D2'
                 WHEN ({$kolekValueExpression}) = 4 THEN 'D2'
                 WHEN ({$kolekValueExpression}) = 5 THEN 'M'
                 ELSE NULL
@@ -200,8 +200,8 @@ final class LoanQualityBucketMapper
             },
             3 => 'KL',
             4 => match (true) {
-                $days !== null && $days < 150 => 'D1',
-                $days !== null && $days < 180 => 'D2',
+                $days !== null && $days <= 150 => 'D1',
+                $days !== null && $days <= 180 => 'D2',
                 default => 'D2',
             },
             5 => 'M',

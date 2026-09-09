@@ -134,4 +134,29 @@ class DashboardSimpananControllerSnapshotGateTest extends TestCase
         $this->assertSame('1', $card['stats'][0]['value']);
         $this->assertSame(100000.0, $card['series'][array_key_last($card['series'])]);
     }
+
+    public function test_trend_metric_status_arrow_is_derived_from_previous_month_comparison(): void
+    {
+        $controller = new DashboardSimpananController();
+        $method = new ReflectionMethod(DashboardSimpananController::class, 'buildArea6TrendMetric');
+        $method->setAccessible(true);
+
+        // Case 1: Agustus 98.33% vs Juli 98.31% -> Up (Green)
+        $osMetric = [10940682000000, 11126844000000, 98.33, -186162000000];
+        $trendUp = $method->invoke($controller, [100, 105, 102, 109], $osMetric, 5.0, 'os', 98.31);
+        $this->assertSame('up', $trendUp['status_arrow']);
+        $this->assertSame('green', $trendUp['status_bg']);
+
+        // Case 2: SML 66.76% vs 119.89% -> Down (Red)
+        $smlMetric = [1054920000000, 704307000000, 66.76, -350613000000];
+        $trendDown = $method->invoke($controller, [600, 900, 600, 1050], $smlMetric, -5.0, 'sml', 119.89);
+        $this->assertSame('down', $trendDown['status_arrow']);
+        $this->assertSame('red', $trendDown['status_bg']);
+
+        // Case 3: Flat achievement -> Minus (Amber)
+        $flatMetric = [1000000000, 1000000000, 95.0, 0];
+        $trendFlat = $method->invoke($controller, [10, 10, 10, 10], $flatMetric, 0.0, 'os', 95.0);
+        $this->assertSame('minus', $trendFlat['status_arrow']);
+        $this->assertSame('amber', $trendFlat['status_bg']);
+    }
 }

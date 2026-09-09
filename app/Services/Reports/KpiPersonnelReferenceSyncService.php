@@ -30,6 +30,9 @@ class KpiPersonnelReferenceSyncService
         if ($records === [] || !Schema::hasTable('brihc') || !Schema::hasTable('brihc_pemasar')) {
             return $this->summary($sheetKey, count($records), 0, 0, true);
         }
+        if ($sheetKey === 'mantri' && $this->hasAuthoritativeMantriReference()) {
+            return $this->summary($sheetKey, count($records), 0, 0, true);
+        }
 
         $now = now()->toDateTimeString();
         $existingBrihc = DB::table('brihc')
@@ -117,8 +120,8 @@ class KpiPersonnelReferenceSyncService
         $rows = array_values($payload['rows'] ?? []);
         $indexes = match ($sheetKey) {
             'rm-sme' => [
-                'person' => $this->headerIndex($headers, ['UKER', 'NAMA']),
-                'branch' => $this->headerIndex($headers, ['BO', 'KANCA']),
+                'person' => $this->headerIndex($headers, ['NAMA MANTRI', 'UKER', 'NAMA']),
+                'branch' => $this->headerIndex($headers, ['NAMA KANCA KONSOL', 'BO', 'KANCA']),
                 'jg' => $this->headerIndex($headers, ['JG']),
             ],
             'rm-mikro' => [
@@ -410,6 +413,13 @@ class KpiPersonnelReferenceSyncService
     private function sameRole(mixed $currentRole, string $expectedRole): bool
     {
         return $this->textKey($currentRole) === $this->textKey($expectedRole);
+    }
+
+    private function hasAuthoritativeMantriReference(): bool
+    {
+        return DB::table('brihc_pemasar')
+            ->where('uniqueid_namareport', 'like', 'reference_brihc_mantri%')
+            ->exists();
     }
 
     private function cell(array $row, ?int $index): string

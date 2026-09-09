@@ -609,7 +609,10 @@ const auditExpression = `(async () => {
             selector: selectorFor(element),
             clientWidth: Math.round(element.clientWidth),
             scrollWidth: Math.round(element.scrollWidth),
-            children: overflowingChildren.map(selectorFor),
+            children: overflowingChildren.map((child) => ({
+                selector: selectorFor(child),
+                text: (child.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+            })),
         }));
 
     const headingElements = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, .card-title, [data-ui="title"]'))
@@ -766,6 +769,11 @@ try {
             await navigate(client, new URL(route, baseUrl).toString());
             let landingScopeState = null;
             if (landingScope && new URL(route, baseUrl).pathname === '/dashboard') {
+                await waitForPage(
+                    client,
+                    `document.querySelector('[data-area6-scope="${landingScope}"]')`,
+                    waitSelectorTimeoutMs
+                );
                 const activation = await evaluate(client, `(() => {
                     const scope = ${JSON.stringify(landingScope)};
                     const button = document.querySelector('[data-area6-scope="' + scope + '"]');
@@ -779,7 +787,9 @@ try {
 
                 const readyPredicate = landingScope === 'micro'
                     ? "document.querySelector('.db-shell.micro-performance-active') && document.querySelector('[data-micro-performance-ready=\"1\"]')"
-                    : `document.querySelector('[data-area6-content-scope="${landingScope}"]:not(.d-none)')`;
+                    : (landingScope === 'consumer'
+                        ? "document.querySelector('.db-shell.consumer-active') && document.querySelector('[data-consumer-operations-ready=\"1\"]')"
+                        : `document.querySelector('[data-area6-content-scope="${landingScope}"]:not(.d-none)')`);
                 await waitForPage(client, readyPredicate, waitSelectorTimeoutMs);
                 landingScopeState = await evaluate(client, `(() => {
                     const scope = ${JSON.stringify(landingScope)};
@@ -798,18 +808,66 @@ try {
                         .filter(visible)
                         .map((row) => row.querySelector('.asc-seg-name')?.textContent?.trim() || '');
                     const desk = document.getElementById('micro-performance-dashboard');
+                    const consumerDesk = document.getElementById('consumer-operations-dashboard');
+                    const consumerIllustration = consumerDesk?.querySelector('[aria-labelledby="consumer-rm-illustration-title consumer-rm-illustration-desc"]');
+                    const consumerPipelineTabs = Array.from(consumerDesk?.querySelectorAll('[data-consumer-pipeline-tab]') || []).filter(visible);
+                    const consumerPipelineTables = Array.from(consumerDesk?.querySelectorAll('[data-consumer-pipeline-panel]:not([hidden]) .consumer-ops-table') || []).filter(visible);
+                    const consumerKprPipeline = consumerDesk?.querySelector('[aria-labelledby="consumer-kpr-pipeline-title"]');
+                    const consumerKprPipelineTables = Array.from(consumerKprPipeline?.querySelectorAll('.consumer-ops-table') || []).filter(visible);
+                    const consumerQuadrantProducts = Array.from(consumerDesk?.querySelectorAll('[data-consumer-quadrant-product].consumer-ops-product') || []).filter(visible);
+                    const consumerQuadrantTables = Array.from(consumerDesk?.querySelectorAll('[data-consumer-quadrant-panel]:not([hidden]) .consumer-ops-quadrant-table') || []).filter(visible);
+                    const consumerArea6Triggers = Array.from(consumerDesk?.querySelectorAll('[data-consumer-area6-trigger="1"]') || []).filter(visible);
+                    const consumerQuadrantDetails = Array.from(consumerDesk?.querySelectorAll('[data-consumer-quadrant-panel]:not([hidden]) [data-consumer-quadrant-detail]') || []).filter(visible);
+                    const consumerDeskText = consumerDesk?.textContent || '';
                     const hero = desk?.querySelector('.micro-ops-hero');
                     const mantriIllustration = desk?.querySelector('.micro-mantri-stage__visual svg');
-                    const realizationCards = Array.from(desk?.querySelectorAll('.micro-realization-stack .micro-realization-type-card') || []).filter(visible);
+                    const realizationCards = Array.from(desk?.querySelectorAll('.micro-realization-summary-grid .micro-realization-type-card') || []).filter(visible);
                     const pdwkStatuses = Array.from(desk?.querySelectorAll('[data-micro-pdwk-panel]:not([hidden]) .micro-pdwk-status') || []).filter(visible);
                     const pdwkRoleButtons = Array.from(desk?.querySelectorAll('[data-micro-pdwk-role]') || []).filter(visible);
                     const oneTimeInteractive = desk?.querySelector('[data-micro-one-time-detail], [data-micro-nominative-modal]');
                     const mantriSummaryTable = desk?.querySelector('.micro-mantri-table--summary');
                     const mantriTierTables = Array.from(desk?.querySelectorAll('.micro-mantri-table--tiers') || []).filter(visible);
+                    const rmKurProductivity = desk?.querySelector('[data-micro-rm-kur-productivity]');
+                    const rmKurTables = Array.from(rmKurProductivity?.querySelectorAll('.micro-rm-kur-table') || []).filter(visible);
                     const microDeskText = desk?.textContent || '';
-                    const horizontalComposition = content?.querySelector('.total-composition-card--micro .tcc-horizontal-chart');
-                    const horizontalCompositionRows = Array.from(horizontalComposition?.querySelectorAll('.tcc-horizontal-row') || []).filter(visible);
+                    const qualityComposition = content?.querySelector('.total-composition-card--micro .tcc-quality-matrix');
+                    const qualityCompositionRows = Array.from(qualityComposition?.querySelectorAll('.tcc-quality-row[role="row"]:not(.tcc-quality-row--head):not(.tcc-quality-row--total)') || []).filter(visible);
                     const musimanBreakdown = desk?.querySelector('.micro-pattern-card.pattern-musiman .micro-pattern-card__breakdown');
+                    let billingInteractionFunctional = scope !== 'micro';
+                    let billingInteractionDiagnostics = null;
+                    if (scope === 'micro') {
+                        const billingSection = desk?.querySelector('[data-micro-billing-section]');
+                        const m0Button = billingSection?.querySelector('[data-billing-view="m0"]');
+                        const m1Button = billingSection?.querySelector('[data-billing-view="m1"]');
+                        const osButton = billingSection?.querySelector('[data-billing-metric="os"]');
+                        const debButton = billingSection?.querySelector('[data-billing-metric="deb"]');
+
+                        m1Button?.click();
+                        debButton?.click();
+
+                        const m0Content = billingSection?.querySelector('.card-view-content.view-m0');
+                        const m1Content = billingSection?.querySelector('.card-view-content.view-m1');
+                        const m1DebDisplay = m1Content?.querySelector('[data-metric-display="deb"]');
+                        const m1OsDisplay = m1Content?.querySelector('[data-metric-display="os"]');
+                        const billingGrid = billingSection?.querySelector('.micro-billing-calendar-grid');
+
+                        billingInteractionDiagnostics = {
+                            sectionPresent: Boolean(billingSection),
+                            m1Active: Boolean(m1Button?.classList.contains('is-active')),
+                            m1Pressed: m1Button?.getAttribute('aria-pressed') === 'true',
+                            debActive: Boolean(debButton?.classList.contains('is-active')),
+                            debPressed: debButton?.getAttribute('aria-pressed') === 'true',
+                            m0Hidden: Boolean(m0Content) && !visible(m0Content),
+                            m1Visible: visible(m1Content),
+                            debVisible: visible(m1DebDisplay),
+                            osHidden: Boolean(m1OsDisplay) && !visible(m1OsDisplay),
+                            gridModeM1: Boolean(billingGrid?.classList.contains('view-mode-m1')),
+                        };
+                        billingInteractionFunctional = Object.values(billingInteractionDiagnostics).every(Boolean);
+
+                        m0Button?.click();
+                        osButton?.click();
+                    }
                     const contentRect = content?.getBoundingClientRect();
                     const gridRect = grid?.getBoundingClientRect();
                     const lastCardRect = cards.at(-1)?.getBoundingClientRect();
@@ -817,7 +875,9 @@ try {
                     return {
                         scope,
                         active: Boolean(document.querySelector('.area6-scope-btn.active[data-area6-scope="' + scope + '"]')),
-                        shellModeActive: scope !== 'micro' || shell?.classList.contains('micro-performance-active'),
+                        shellModeActive: scope === 'micro'
+                            ? shell?.classList.contains('micro-performance-active')
+                            : (scope === 'consumer' ? shell?.classList.contains('consumer-active') : true),
                         coreVisible: visible(content),
                         cardCount: cards.length,
                         recoveryVisible: cards.some((card) => card.dataset.metric === 'recovery'),
@@ -825,6 +885,18 @@ try {
                         microProductRows,
                         microProductRowCount: microProductRows.length,
                         microDeskVisible: scope !== 'micro' || visible(desk),
+                        consumerDeskVisible: scope !== 'consumer' || visible(consumerDesk),
+                        consumerIllustrationVisible: scope !== 'consumer' || visible(consumerIllustration),
+                        consumerPipelineTabCount: consumerPipelineTabs.length,
+                        consumerPipelineTableCount: consumerPipelineTables.length,
+                        consumerKprPipelineVisible: scope !== 'consumer' || visible(consumerKprPipeline),
+                        consumerKprPipelineTableCount: consumerKprPipelineTables.length,
+                        consumerQuadrantProductCount: consumerQuadrantProducts.length,
+                        consumerQuadrantTableCount: consumerQuadrantTables.length,
+                        consumerArea6TriggerCount: consumerArea6Triggers.length,
+                        consumerQuadrantDetailCount: consumerQuadrantDetails.length,
+                        hasSeparateConsumerQuadrants: scope !== 'consumer'
+                            || (consumerDeskText.includes('Kuadran RM Briguna') && consumerDeskText.includes('Kuadran RM KPR')),
                         heroRemoved: scope !== 'micro' || !hero,
                         illustrationVisible: scope !== 'micro' || visible(mantriIllustration),
                         mantriIllustrationVisible: scope !== 'micro' || visible(mantriIllustration),
@@ -834,12 +906,19 @@ try {
                         oneTimeInteractiveRemoved: scope !== 'micro' || !oneTimeInteractive,
                         mantriSummaryVisible: scope !== 'micro' || visible(mantriSummaryTable),
                         mantriTierTableCount: mantriTierTables.length,
+                        rmKurProductivityVisible: scope !== 'micro' || visible(rmKurProductivity),
+                        rmKurTableCount: rmKurTables.length,
+                        hasRmKurProductivityLabel: scope !== 'micro' || microDeskText.includes('Produktivitas RM KUR Kecil Mikro'),
                         hasPlafondMetric: scope !== 'micro' || microDeskText.includes('Plafon (Realisasi Baru)'),
                         hasNettMetric: scope !== 'micro' || microDeskText.includes('Nett Disbursement'),
+                        hasRunoffMetric: scope !== 'micro' || microDeskText.includes('Run Off Mikro'),
+                        hasPhMetric: scope !== 'micro' || microDeskText.includes('PH Mikro'),
                         hasCifLabel: scope === 'micro' && /\bCIF\b/.test(microDeskText),
-                        horizontalCompositionVisible: scope !== 'micro' || visible(horizontalComposition),
-                        horizontalCompositionRowCount: horizontalCompositionRows.length,
+                        qualityCompositionVisible: scope !== 'micro' || visible(qualityComposition),
+                        qualityCompositionRowCount: qualityCompositionRows.length,
                         musimanBreakdownVisible: scope !== 'micro' || visible(musimanBreakdown),
+                        billingInteractionFunctional,
+                        billingInteractionDiagnostics,
                         gridColumnCount: resolvedColumns && resolvedColumns !== 'none'
                             ? resolvedColumns.trim().split(/\\s+/).length
                             : 0,
@@ -894,6 +973,19 @@ try {
         const state = result.landingScopeState;
         if (!state) return false;
         if (!state.active || !state.shellModeActive || !state.coreVisible) return true;
+        if (state.scope === 'consumer') {
+            return !state.consumerDeskVisible
+                || !state.consumerIllustrationVisible
+                || state.consumerPipelineTabCount < 1
+                || state.consumerPipelineTableCount !== 1
+                || !state.consumerKprPipelineVisible
+                || state.consumerKprPipelineTableCount !== 1
+                || state.consumerQuadrantProductCount !== 2
+                || state.consumerQuadrantTableCount !== 2
+                || state.consumerArea6TriggerCount !== 2
+                || state.consumerQuadrantDetailCount < 1
+                || !state.hasSeparateConsumerQuadrants;
+        }
         if (state.scope !== 'micro') return false;
         const expectedColumns = result.viewport.width >= 1200 ? 3 : (result.viewport.width >= 768 ? 2 : 1);
 
@@ -905,17 +997,23 @@ try {
             || !state.microDeskVisible
             || !state.heroRemoved
             || !state.mantriIllustrationVisible
-            || state.realizationCardCount !== 2
+            || state.realizationCardCount !== 4
             || state.pdwkStatusCount !== 4
             || state.pdwkRoleButtonCount < 1
             || !state.oneTimeInteractiveRemoved
             || !state.mantriSummaryVisible
             || state.mantriTierTableCount !== 2
+            || !state.rmKurProductivityVisible
+            || state.rmKurTableCount !== 1
+            || !state.hasRmKurProductivityLabel
             || !state.hasPlafondMetric
             || !state.hasNettMetric
+            || !state.hasRunoffMetric
+             || !state.hasPhMetric
+             || !state.billingInteractionFunctional
             || state.hasCifLabel
-            || !state.horizontalCompositionVisible
-            || state.horizontalCompositionRowCount !== 4
+            || !state.qualityCompositionVisible
+            || state.qualityCompositionRowCount !== 7
             || !state.musimanBreakdownVisible
             || state.gridColumnCount !== expectedColumns
             || (state.centerDelta !== null && state.centerDelta > 4)

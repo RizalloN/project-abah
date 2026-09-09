@@ -10,6 +10,7 @@ class SidebarNavigationOrderTest extends TestCase
     {
         $source = file_get_contents(resource_path('views/layouts/sidebar.blade.php'));
         $expectedOrder = [
+            'sidebar-dashboard-landing' => '-7',
             'sidebar-dashboard-marketshare' => '-6',
             'sidebar-dashboard-almafacts' => '-5',
             'sidebar-dashboard-harian' => '-4',
@@ -32,5 +33,17 @@ class SidebarNavigationOrderTest extends TestCase
         $this->assertStringContainsString("route('report.dashboard-pinjaman.run-off')", $source);
         $this->assertStringContainsString('<p>Run OFF</p>', $source);
         $this->assertStringNotContainsString('1sFCcyfUadZq5ZVUrFtLeCDhpz_r_B8aj', $source);
+    }
+
+    public function test_sidebar_landing_page_is_dropdown_with_pinjaman_and_simpanan_links(): void
+    {
+        $source = file_get_contents(resource_path('views/layouts/sidebar.blade.php'));
+
+        $this->assertStringContainsString('sidebar-dashboard-landing', $source);
+        $this->assertStringContainsString("route('dashboard')", $source);
+        $this->assertStringContainsString('Landing Page Pinjaman', $source);
+        $this->assertStringContainsString("route('dashboard.simpanan')", $source);
+        $this->assertStringContainsString('Landing Page Simpanan', $source);
+        $this->assertStringContainsString('right fas fa-angle-left', $source);
     }
 }

@@ -57,4 +57,20 @@ class KinerjaNonPtpReportControllerTest extends TestCase
         $this->assertStringContainsString("THEN '1 X ANGSURAN'", $sql);
         $this->assertStringNotContainsString("freq_payment, 0) AS UNSIGNED) = 1 THEN 'BULANAN'", $sql);
     }
+
+    public function test_area_recap_reuses_grouped_summary_instead_of_querying_each_branch(): void
+    {
+        $source = file_get_contents(__DIR__ . '/../../app/Http/Controllers/Report/KinerjaNonPtpReportController.php');
+
+        $this->assertIsString($source);
+        $this->assertStringContainsString(
+            "return \$this->summaryRows(\$period, \$comparisonPeriod, \$previousComparisonPeriod, \$branch, \$segment)",
+            $source
+        );
+        $this->assertStringNotContainsString(
+            "flatMap(fn (string \$scopeBranch): Collection => \$this->monthlyRecapForPeriod(",
+            $source
+        );
+        $this->assertSame(2, substr_count($source, 'now()->addHours(self::AGGREGATE_CACHE_HOURS)'));
+    }
 }

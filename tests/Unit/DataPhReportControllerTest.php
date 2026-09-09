@@ -35,6 +35,8 @@ class DataPhReportControllerTest extends TestCase
             $table->string('nama_debitur')->nullable();
             $table->string('segmen_dashboard')->nullable();
             $table->string('produk_dashboard')->nullable();
+            $table->string('flag_klaim')->nullable();
+            $table->decimal('clmamt', 20, 2)->nullable();
             $table->decimal('pokok', 20, 2)->nullable();
         });
 
@@ -44,6 +46,8 @@ class DataPhReportControllerTest extends TestCase
             $table->string('unit_kerja')->nullable();
             $table->string('segmen_2')->nullable();
             $table->string('produk')->nullable();
+            $table->decimal('recovery_klaim', 20, 2)->nullable();
+            $table->decimal('recovery_non_klaim', 20, 2)->nullable();
             $table->decimal('total_recovery', 20, 2)->nullable();
         });
     }
@@ -265,6 +269,125 @@ class DataPhReportControllerTest extends TestCase
         $this->assertIsString($controller);
         $this->assertStringNotContainsString('whereDate(', $controller);
         $this->assertStringContainsString("->where('periode', \$period)", $controller);
+    }
+
+    public function test_branch_data_ph_recovery_calculates_breakdown_with_subrogation_and_new_claims(): void
+    {
+        DB::table('lw325_ph')->insert([
+            // Period 1 (Previous)
+            [
+                'periode' => '2026-06-30',
+                'acctno' => 'ACC1',
+                'kanwil' => 'KANWIL MALANG',
+                'kanca' => 'KC Madiun',
+                'unit' => 'UNIT A',
+                'segmen_dashboard' => 'Micro',
+                'produk_dashboard' => 'Kupedes',
+                'flag_klaim' => 'N',
+                'clmamt' => 0,
+                'pokok' => 1000000,
+            ],
+            [
+                'periode' => '2026-06-30',
+                'acctno' => 'ACC2',
+                'kanwil' => 'KANWIL MALANG',
+                'kanca' => 'KC Madiun',
+                'unit' => 'UNIT A',
+                'segmen_dashboard' => 'Micro',
+                'produk_dashboard' => 'Kupedes',
+                'flag_klaim' => 'N',
+                'clmamt' => 0,
+                'pokok' => 500000,
+            ],
+            [
+                'periode' => '2026-06-30',
+                'acctno' => 'ACC3',
+                'kanwil' => 'KANWIL MALANG',
+                'kanca' => 'KC Madiun',
+                'unit' => 'UNIT A',
+                'segmen_dashboard' => 'Micro',
+                'produk_dashboard' => 'Kupedes',
+                'flag_klaim' => 'Y',
+                'clmamt' => 0,
+                'pokok' => 1000000,
+            ],
+            [
+                'periode' => '2026-06-30',
+                'acctno' => 'ACC4',
+                'kanwil' => 'KANWIL MALANG',
+                'kanca' => 'KC Madiun',
+                'unit' => 'UNIT A',
+                'segmen_dashboard' => 'Micro',
+                'produk_dashboard' => 'Kupedes',
+                'flag_klaim' => 'Y',
+                'clmamt' => 0,
+                'pokok' => 1000000,
+            ],
+
+            // Period 2 (Current)
+            [
+                'periode' => '2026-07-31',
+                'acctno' => 'ACC1',
+                'kanwil' => 'KANWIL MALANG',
+                'kanca' => 'KC Madiun',
+                'unit' => 'UNIT A',
+                'segmen_dashboard' => 'Micro',
+                'produk_dashboard' => 'Kupedes',
+                'flag_klaim' => 'N',
+                'clmamt' => 0,
+                'pokok' => 600000, // tupok 400k
+            ],
+            // ACC2 missing in current -> lunas 500k
+            [
+                'periode' => '2026-07-31',
+                'acctno' => 'ACC3',
+                'kanwil' => 'KANWIL MALANG',
+                'kanca' => 'KC Madiun',
+                'unit' => 'UNIT A',
+                'segmen_dashboard' => 'Micro',
+                'produk_dashboard' => 'Kupedes',
+                'flag_klaim' => 'Y',
+                'clmamt' => 0,
+                'pokok' => 800000, // tupok 200k -> 30% subrogasi = 60k
+            ],
+            // ACC4 missing in current -> lunas 1000k -> 30% subrogasi = 300k
+            [
+                'periode' => '2026-07-31',
+                'acctno' => 'ACC5', // New account with claim
+                'kanwil' => 'KANWIL MALANG',
+                'kanca' => 'KC Madiun',
+                'unit' => 'UNIT A',
+                'segmen_dashboard' => 'Micro',
+                'produk_dashboard' => 'Kupedes',
+                'flag_klaim' => 'Y',
+                'clmamt' => 700000, // new claim payout = 700k
+                'pokok' => 1000000,
+            ],
+        ]);
+
+        $metrics = $this->invokePrivate('getBranchOfficeDataPhRecoveryMetrics', ['2026-07-31', ['KC Madiun']]);
+
+        $this->assertEqualsWithDelta(400000.0, $metrics['KC Madiun']['tupok']['micro'], 0.01);
+        $this->assertEqualsWithDelta(500000.0, $metrics['KC Madiun']['lunas']['micro'], 0.01);
+        $this->assertEqualsWithDelta(900000.0, $metrics['KC Madiun']['non_klaim']['micro'], 0.01);
+        $this->assertEqualsWithDelta(1060000.0, $metrics['KC Madiun']['klaim']['micro'], 0.01);
+        $this->assertEqualsWithDelta(1960000.0, $metrics['KC Madiun']['micro'], 0.01);
+        $this->assertEqualsWithDelta(1960000.0, $metrics['KC Madiun']['total'], 0.01);
+    }
+
+    public function test_data_ph_view_contains_rincian_recovery_columns(): void
+    {
+        $view = file_get_contents(resource_path('views/report/data-ph.blade.php'));
+
+        $this->assertStringContainsString('>NON KLAIM<', $view);
+        $this->assertStringContainsString('>TUPOK<', $view);
+        $this->assertStringContainsString('>LUNAS<', $view);
+        $this->assertStringContainsString('>TOTAL<', $view);
+        $this->assertStringContainsString('>KLAIM<', $view);
+        $this->assertStringContainsString('>TOTAL RECOVERY<', $view);
+        $this->assertStringContainsString('POSISI PERBANDINGAN', $view);
+        $this->assertStringContainsString('DELTA PERBANDINGAN', $view);
+        $this->assertStringContainsString('Akumulasi Recovery', $view);
     }
 
     private function invokePrivate(string $methodName, array $arguments = [])

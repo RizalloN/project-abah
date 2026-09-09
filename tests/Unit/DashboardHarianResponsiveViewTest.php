@@ -2,6 +2,8 @@
 
 namespace Tests\Unit;
 
+use App\Http\Controllers\DashboardHarianController;
+use App\Support\DashboardHarianSnapshotService;
 use Tests\TestCase;
 
 class DashboardHarianResponsiveViewTest extends TestCase
@@ -61,5 +63,27 @@ class DashboardHarianResponsiveViewTest extends TestCase
         $this->assertStringContainsString('class="sticky-label group-label" rowspan="3"', $source);
         $this->assertStringContainsString('top: var(--daily-header-column-top);', $source);
         $this->assertStringContainsString('top: var(--daily-header-rka-top);', $source);
+    }
+
+    public function test_kanca_filter_is_single_select_in_ui_and_server_normalization(): void
+    {
+        $source = file_get_contents(resource_path('views/report/dashboard-harian.blade.php'));
+
+        $this->assertStringContainsString(
+            '<select id="filter-kanca" name="kanca" class="form-control daily-filter-native"></select>',
+            $source
+        );
+        $this->assertStringContainsString('aria-multiselectable="false"', $source);
+        $this->assertStringContainsString('class="daily-dropdown-radio"', $source);
+        $this->assertStringContainsString("const nextValues = value === 'all' ? [] : [value];", $source);
+        $this->assertStringContainsString('return normalized.length > 1', $source);
+        $this->assertStringContainsString("closeDropdown('kanca');", $source);
+
+        $controller = new DashboardHarianController(new DashboardHarianSnapshotService());
+        $normalize = new \ReflectionMethod($controller, 'normalizeSingleKancaFilter');
+        $normalize->setAccessible(true);
+
+        $this->assertSame('KC Madiun', $normalize->invoke($controller, ['KC Madiun', 'KC Magetan']));
+        $this->assertNull($normalize->invoke($controller, ['KC Madiun', 'KC Magetan', 'KC Ponorogo', 'KC Ngawi']));
     }
 }

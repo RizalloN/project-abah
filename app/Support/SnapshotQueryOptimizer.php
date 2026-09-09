@@ -49,8 +49,7 @@ class SnapshotQueryOptimizer
             'simpanan_multipn',
             'c',
             [
-                'idx_smp_posisi_distinct_queries', // Primary: (posisi, no_rekening, CIFNO)
-                'idx_smp_period_covering_counts',  // Fallback: (posisi, kantor_cabang, unit_kerja, ...)
+                'idx_smp_posisi_cif_covering', // (posisi, CIFNO, jenis_simpanan, saldo_idr)
             ]
         );
 

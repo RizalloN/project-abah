@@ -152,6 +152,48 @@ class LandingPrognosaCardServiceTest extends TestCase
         $this->assertFalse((bool) data_get($decorated, 'scopes.area6.prognosa.weeks.W4.is_elapsed'));
     }
 
+    public function test_it_keeps_week_five_available_on_landing_cards(): void
+    {
+        $service = new LandingPrognosaCardService(
+            app(PresentationPrognosaWeeklyService::class)
+        );
+        $portfolio = [
+            'default_scope' => 'area6',
+            'scopes' => [
+                'area6' => [
+                    'cards' => [$this->card('os', 160_000_000)],
+                    'prognosa_actuals' => [
+                        'W5' => $this->actuals('2026-09-27', 160_000_000, 0.0, false),
+                    ],
+                ],
+            ],
+        ];
+        $payload = [
+            'meta' => [
+                'available' => true,
+                'week_number' => 5,
+                'week_label' => 'W5',
+                'available_weeks' => [1, 2, 3, 4, 5],
+            ],
+            'scopes' => [
+                'area6' => [
+                    'available' => true,
+                    'metrics' => ['os' => $this->metric(150_000_000)],
+                    'weeks' => [
+                        'W5' => ['available' => true, 'metrics' => ['os' => $this->metric(150_000_000)]],
+                    ],
+                ],
+            ],
+        ];
+
+        $decorated = $service->decoratePortfolio($portfolio, $payload);
+
+        $this->assertSame(['W1', 'W2', 'W3', 'W4', 'W5'], data_get($decorated, 'prognosa.available_weeks'));
+        $this->assertSame('W5', data_get($decorated, 'scopes.area6.prognosa.active_week'));
+        $this->assertSame('150', data_get($decorated, 'scopes.area6.cards.0.prognosa.weeks.W5.value'));
+        $this->assertSame('106,67%', data_get($decorated, 'scopes.area6.cards.0.prognosa.weeks.W5.achievement'));
+    }
+
     public function test_dashboard_decoration_resolves_the_logged_in_branch_scope(): void
     {
         $this->actingAs(new User(['pn' => '0045']));
@@ -178,6 +220,127 @@ class LandingPrognosaCardServiceTest extends TestCase
         $this->assertSame('125', data_get($dashboard, 'area6_portfolio.cards.0.prognosa.value'));
     }
 
+    public function test_latest_available_forecast_uses_the_running_position_after_its_cutoff(): void
+    {
+        $service = new LandingPrognosaCardService(
+            app(PresentationPrognosaWeeklyService::class)
+        );
+        $portfolio = [
+            'default_scope' => 'area6',
+            'scopes' => [
+                'area6' => [
+                    'cards' => [$this->card('os', 160_000_000)],
+                    'prognosa_actuals' => [
+                        'W4' => $this->actuals('2026-07-22', 140_000_000, 0.0),
+                        'latest' => $this->actuals('2026-07-31', 160_000_000, 0.0, false),
+                    ],
+                ],
+            ],
+        ];
+        $payload = [
+            'meta' => [
+                'available' => true,
+                'week_number' => 4,
+                'week_label' => 'W4',
+                'available_weeks' => [4],
+            ],
+            'scopes' => [
+                'area6' => [
+                    'metrics' => ['os' => $this->metric(150_000_000)],
+                    'weeks' => [
+                        'W4' => ['available' => true, 'metrics' => ['os' => $this->metric(150_000_000)]],
+                    ],
+                ],
+            ],
+        ];
+
+        $decorated = $service->decoratePortfolio($portfolio, $payload);
+
+        $this->assertSame('31 Jul 26', data_get($decorated, 'scopes.area6.prognosa.weeks.W4.position_label'));
+        $this->assertSame('31 Jul 26', data_get($decorated, 'scopes.area6.cards.0.prognosa.actual_label'));
+        $this->assertSame('160', data_get($decorated, 'scopes.area6.cards.0.prognosa.actual_value'));
+        $this->assertSame('106,67%', data_get($decorated, 'scopes.area6.cards.0.prognosa.achievement'));
+        $this->assertSame('22 Jul 26', data_get($decorated, 'scopes.area6.cards.0.prognosa.cutoff_label'));
+    }
+
+    public function test_it_does_not_round_up_achievement_to_100_when_target_is_not_reached(): void
+    {
+        $service = new LandingPrognosaCardService(
+            app(PresentationPrognosaWeeklyService::class)
+        );
+
+        $portfolio = [
+            'default_scope' => 'sme',
+            'scopes' => [
+                'sme' => [
+                    'cards' => [
+                        $this->card('os', 2_174_336_421_624.2),
+                        $this->card('sml', 173_372_000_000.0),
+                    ],
+                ],
+            ],
+        ];
+        $payload = [
+            'meta' => ['available' => true, 'week_number' => 1, 'week_label' => 'W1'],
+            'scopes' => [
+                'area6' => [
+                    'metrics' => [
+                        'sme_os' => $this->metric(2_174_390_709_166.6),
+                        'sme_sml' => $this->metric(173_371_000_000.0),
+                    ],
+                ],
+            ],
+        ];
+
+        $decorated = $service->decoratePortfolio($portfolio, $payload);
+
+        $osCard = data_get($decorated, 'scopes.sme.cards.0.prognosa');
+        $this->assertSame('2.174.336', $osCard['actual_value']);
+        $this->assertSame('2.174.391', $osCard['value']);
+        $this->assertSame('99,99%', $osCard['achievement']);
+        $this->assertSame('red', $osCard['achievement_color']);
+
+        $smlCard = data_get($decorated, 'scopes.sme.cards.1.prognosa');
+        $this->assertSame('173.372', $smlCard['actual_value']);
+        $this->assertSame('173.371', $smlCard['value']);
+        $this->assertSame('99,99%', $smlCard['achievement']);
+        $this->assertSame('red', $smlCard['achievement_color']);
+    }
+
+    public function test_it_displays_100_percent_when_displayed_millions_match(): void
+    {
+        $service = new LandingPrognosaCardService(
+            app(PresentationPrognosaWeeklyService::class)
+        );
+
+        $portfolio = [
+            'default_scope' => 'sme',
+            'scopes' => [
+                'sme' => [
+                    'cards' => [$this->card('os', 2_174_390_900_000.0)],
+                ],
+            ],
+        ];
+        $payload = [
+            'meta' => ['available' => true, 'week_number' => 1, 'week_label' => 'W1'],
+            'scopes' => [
+                'area6' => [
+                    'metrics' => [
+                        'sme_os' => $this->metric(2_174_391_100_000.0),
+                    ],
+                ],
+            ],
+        ];
+
+        $decorated = $service->decoratePortfolio($portfolio, $payload);
+
+        $osCard = data_get($decorated, 'scopes.sme.cards.0.prognosa');
+        $this->assertSame('2.174.391', $osCard['actual_value']);
+        $this->assertSame('2.174.391', $osCard['value']);
+        $this->assertSame('100,00%', $osCard['achievement']);
+        $this->assertSame('green', $osCard['achievement_color']);
+    }
+
     /** @return array<string, mixed> */
     private function card(string $key, float $realization): array
     {
@@ -198,6 +361,7 @@ class LandingPrognosaCardServiceTest extends TestCase
     private function actuals(string $date, float $os, float $sml, bool $elapsed = true): array
     {
         return [
+            'actual_period' => $date,
             'position_label' => \Carbon\Carbon::parse($date)->locale('id')->translatedFormat('d M y'),
             'cutoff_label' => \Carbon\Carbon::parse($date)->locale('id')->translatedFormat('d M y'),
             'state_label' => $elapsed ? 'Tutup' : 'Berjalan',

@@ -64,7 +64,7 @@
                         <th class="performance-month-head {{ $loop->last ? 'is-current' : '' }} {{ $isSmallPerformance && !($month['is_closed'] ?? false) && !empty($month['period']) ? 'is-open' : '' }}" title="Data posisi {{ $month['period_label'] }}">
                             {{ $month['short_label'] }}
                             <small>
-                                {{ $isSmallPerformance ? 'Rp / % LAR' : 'Deb / Rp Juta' }}
+                                {{ $isSmallPerformance ? 'Rp / % LAR' : 'Deb / Rp / Q' }}
                                 @if($isSmallPerformance && !($month['is_closed'] ?? false) && !empty($month['period']))
                                     - berjalan
                                 @endif
@@ -98,6 +98,7 @@
                             data-rm-name="{{ $row['rm'] }}"
                             data-segment="{{ $selectedSegmen }}"
                             data-period="{{ $selectedPeriod }}"
+                            data-product="{{ $selectedProduct ?? '' }}"
                             title="Klik dua kali untuk detail historis">
                             {{ $row['rm_display'] ?? $row['rm'] }}
                         </td>
@@ -113,6 +114,9 @@
                                         <span><b>D</b> {{ $formatPlainCount($metric['deb']) }}</span>
                                     @endif
                                     <span><b>Rp</b> {{ $formatPlainAmount($metric['rp']) }}</span>
+                                    @if(!$isSmallPerformance && !empty($metric['quadrant']))
+                                        <span class="performance-month-quadrant q{{ $metric['quadrant'] }}" title="Kuadran {{ $metric['quadrant'] }}">Q{{ $metric['quadrant'] }}</span>
+                                    @endif
                                     @if($isSmallPerformance)
                                         <span><b>LAR</b> {{ $formatPlainPercent($metric['lar_pct'] ?? null) }}</span>
                                     @endif
@@ -187,3 +191,36 @@
         </table>
     </div>
 </div>
+
+<style>
+.performance-month-quadrant {
+    display: inline-block;
+    padding: 1px 5px;
+    font-size: 0.65rem;
+    font-weight: 800;
+    border-radius: 3px;
+    margin-top: 2px;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+.performance-month-quadrant.q1 {
+    background-color: #e2fcdb !important;
+    color: #1b5e20 !important;
+    border: 1px solid #c8e6c9 !important;
+}
+.performance-month-quadrant.q2 {
+    background-color: #e8f5e9 !important;
+    color: #2e7d32 !important;
+    border: 1px solid #c8e6c9 !important;
+}
+.performance-month-quadrant.q3 {
+    background-color: #fff9c4 !important;
+    color: #f57f17 !important;
+    border: 1px solid #fff59d !important;
+}
+.performance-month-quadrant.q4 {
+    background-color: #ffebee !important;
+    color: #c62828 !important;
+    border: 1px solid #ffcdd2 !important;
+}
+</style>

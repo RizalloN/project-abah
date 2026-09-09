@@ -57,23 +57,22 @@ class LandingPageRedesignContractTest extends TestCase
         $this->assertStringContainsString('MAX(COALESCE(d.plafon, 0)) as amount', $controller);
     }
 
-    public function test_landing_navigation_is_grouped_under_dashboard_pinjaman(): void
+    public function test_landing_navigation_is_standalone_above_marketshare(): void
     {
         $sidebar = file_get_contents(resource_path('views/layouts/sidebar.blade.php'));
-        $simpananStart = strpos($sidebar, 'sidebar-dashboard-simpanan');
-        $pinjamanStart = strpos($sidebar, 'sidebar-dashboard-pinjaman');
-        $almafactsStart = strpos($sidebar, 'sidebar-dashboard-almafacts');
+        $landingStart = strpos($sidebar, 'sidebar-dashboard-landing');
+        $pinjamanStart = strpos($sidebar, '<li class="nav-item sidebar-dashboard-pinjaman');
+        $almafactsStart = strpos($sidebar, '<li class="nav-item sidebar-dashboard-almafacts');
 
-        $this->assertNotFalse($simpananStart);
+        $this->assertNotFalse($landingStart);
         $this->assertNotFalse($pinjamanStart);
         $this->assertNotFalse($almafactsStart);
 
-        $simpananBlock = substr($sidebar, $simpananStart, $pinjamanStart - $simpananStart);
         $pinjamanBlock = substr($sidebar, $pinjamanStart, $almafactsStart - $pinjamanStart);
 
-        $this->assertStringNotContainsString('<p>Landing Page</p>', $simpananBlock);
-        $this->assertStringContainsString('<p>Landing Page</p>', $pinjamanBlock);
-        $this->assertStringContainsString("request()->routeIs('dashboard', 'report.dashboard-pinjaman*", $pinjamanBlock);
+        $this->assertStringContainsString('sidebar-dashboard-landing', $sidebar);
+        $this->assertStringNotContainsString('<p>Landing Page</p>', $pinjamanBlock);
+        $this->assertStringContainsString("route('dashboard')", $sidebar);
     }
 
     public function test_sme_scope_preserves_core_landing_and_adds_lazy_operating_desk(): void
@@ -133,7 +132,10 @@ class LandingPageRedesignContractTest extends TestCase
         $view = file_get_contents(resource_path('views/dashboard.blade.php'));
         $partial = file_get_contents(resource_path('views/dashboard/partials/micro-performance.blade.php'));
         $service = file_get_contents(app_path('Support/LandingMicroPerformanceService.php'));
+        $controller = file_get_contents(app_path('Http/Controllers/DashboardSimpananController.php'));
         $route = app('router')->getRoutes()->getByName('dashboard.micro-performance');
+        $pipelineRoute = app('router')->getRoutes()->getByName('dashboard.micro-pipeline');
+        $pipelineService = file_get_contents(app_path('Support/LandingMicroPipelineService.php'));
 
         $this->assertStringContainsString('id="landing-branch-selector"', $view);
         $this->assertStringContainsString('Cabang dikunci sesuai wilayah user', $view);
@@ -155,6 +157,19 @@ class LandingPageRedesignContractTest extends TestCase
         $this->assertStringNotContainsString('<th>CIF</th>', $realizationSection);
         $this->assertStringNotContainsString('<th>CIF</th>', $partial);
         $this->assertStringContainsString('Realisasi per Produk', $partial);
+        $this->assertStringContainsString('Mantri Belum Realisasi Kupedes', $partial);
+        $this->assertStringContainsString("data_get(\$realization, 'kupedes_not_realized'", $partial);
+        $this->assertStringContainsString("data_get(\$realization, 'mantri_roster'", $partial);
+        $this->assertStringContainsString('micro-mantri-roster-strip', $partial);
+        $this->assertStringContainsString('Basis {{ $formatInteger', $partial);
+        $this->assertStringContainsString('$kupedesPendingByBranch', $partial);
+        $this->assertStringContainsString('micro-kupedes-pending__summary', $partial);
+        $this->assertStringContainsString('micro-kupedes-branch__metrics', $partial);
+        $this->assertStringContainsString('micro-kupedes-branch__people', $partial);
+        $this->assertTrue(
+            strpos($realizationSection, 'Realisasi per Produk') < strpos($realizationSection, 'Mantri Belum Realisasi Kupedes'),
+            'Daftar Mantri belum realisasi Kupedes harus tampil setelah Realisasi per Produk.'
+        );
         $this->assertStringContainsString('Pemutus PDWK', $partial);
         $this->assertStringContainsString('Pola Angsuran', $partial);
         $this->assertStringContainsString('data-micro-need-filter', $partial);
@@ -162,18 +177,58 @@ class LandingPageRedesignContractTest extends TestCase
         $this->assertStringNotContainsString('data-micro-nominative-modal', $partial);
         $this->assertStringNotContainsString('data-micro-one-time-nominatives-url', $view);
         $this->assertStringContainsString('micro-realization-layout', $partial);
-        $this->assertStringContainsString('micro-realization-stack', $partial);
+        $this->assertStringContainsString('micro-realization-summary-grid', $partial);
+        $this->assertStringContainsString('Run Off Mikro', $partial);
+        $this->assertStringContainsString('PH Mikro', $partial);
+        $this->assertStringContainsString('Mantri Sudah Real', $partial);
+        $this->assertStringContainsString('Mantri Belum Real', $partial);
         $this->assertStringContainsString('data-micro-pdwk-role', $partial);
         $this->assertStringContainsString('data-micro-pdwk-panel', $partial);
+        $this->assertStringContainsString('data-micro-pdwk-details', $partial);
+        $this->assertStringContainsString('data-micro-pdwk-open-detail', $partial);
+        $this->assertStringContainsString('openMicroPdwkPeople', $view);
+        $this->assertStringContainsString("addEventListener('dblclick'", $view);
         $this->assertStringContainsString('100% x PDWK', $service);
         $this->assertStringContainsString('75% x PDWK', $service);
         $this->assertStringContainsString('40% x PDWK', $service);
         $this->assertStringContainsString('Produktivitas Mantri', $partial);
+        $this->assertStringContainsString('Roster aktif BRIHC', $partial);
         $this->assertStringContainsString('micro-mantri-table--summary', $partial);
         $this->assertStringContainsString('Nett Disbursement Mantri PT Only', $partial);
         $this->assertStringContainsString('Nett Disbursement Mantri Kontrak', $partial);
+        $this->assertStringContainsString('data-micro-mantri-tier-row', $partial);
+        $this->assertStringContainsString('data-micro-mantri-tier-details', $partial);
+        $this->assertStringContainsString('data-micro-mantri-tier-count', $partial);
+        $this->assertStringContainsString('data-micro-mantri-bucket', $partial);
+        $this->assertStringNotContainsString('data-micro-mantri-tier-open', $partial);
+        $this->assertStringContainsString('openMicroMantriTierPeople', $view);
+        $this->assertStringContainsString("buckets.find(item => String(item?.key || '') === bucketKey)", $view);
+        $this->assertStringContainsString('Produktivitas RM KUR Kecil Mikro', $partial);
+        $this->assertStringContainsString('data-micro-rm-kur-productivity', $partial);
+        $this->assertStringContainsString("'rm_kur_productivity'", $controller);
+        $this->assertStringContainsString('buildLandingRmKurProductivity', $controller);
+        $mantriPosition = strpos($partial, 'id="micro-mantri-title"');
+        $rmKurPosition = strpos($partial, 'id="micro-rm-kur-title"');
+        $burdenPosition = strpos($partial, 'micro-ops-section--burden');
+        $this->assertNotFalse($mantriPosition);
+        $this->assertNotFalse($rmKurPosition);
+        $this->assertNotFalse($burdenPosition);
+        $this->assertTrue(
+            $mantriPosition < $rmKurPosition && $rmKurPosition < $burdenPosition,
+            'Produktivitas RM KUR Kecil Mikro harus tampil setelah Mantri dan sebelum Uker Pemberat.'
+        );
         $this->assertStringContainsString('Uker Pemberat', $partial);
         $this->assertStringNotContainsString('Branch Office Pemberat', $partial);
+        $this->assertStringContainsString('Mantri Tidak Produktif', $partial);
+        $this->assertStringContainsString('micro-ops-section--inactive', $partial);
+        $this->assertStringContainsString("data_get(\$unproductiveMantri, 'totals.'", $partial);
+        $this->assertStringContainsString("'month_1' => 'clock'", $partial);
+        $this->assertStringContainsString("'month_3' => 'calendar-alt'", $partial);
+        $this->assertStringContainsString("'month_6' => 'exclamation-triangle'", $partial);
+        $this->assertTrue(
+            strpos($partial, 'micro-ops-section--burden') < strpos($partial, 'micro-ops-section--inactive'),
+            'Monitoring Mantri tidak produktif harus menjadi bagian paling bawah setelah Uker Pemberat.'
+        );
         $overrideThPos = strpos($partial, "data_get(\$decision, 'override_label')");
         $primaryThPos = strpos($partial, "data_get(\$decision, 'primary_label')");
         $this->assertNotFalse($overrideThPos);
@@ -182,6 +237,21 @@ class LandingPageRedesignContractTest extends TestCase
         $this->assertNotNull($route);
         $this->assertContains('auth', $route->gatherMiddleware());
         $this->assertContains('user.branch.scope', $route->gatherMiddleware());
+        $this->assertStringContainsString('Pipeline Mikro', $partial);
+        $this->assertStringContainsString('Prewash &amp; SLIK Hijau', $partial);
+        $this->assertStringContainsString('data-micro-pipeline-open="slik_hijau"', $partial);
+        $this->assertStringContainsString('name="product"', $partial);
+        $this->assertStringContainsString('data-micro-pipeline-modal', $partial);
+        $this->assertStringContainsString('data-micro-pipeline-source-detail', $partial);
+        $this->assertStringContainsString('data-micro-pipeline-source-modal', $partial);
+        $this->assertStringContainsString('Progress Penyelesaian', $partial);
+        $this->assertStringContainsString('data-micro-pipeline-source-open-nominatives', $partial);
+        $this->assertStringContainsString('openMicroPipelineSourceModal', $view);
+        $this->assertStringContainsString('renderMicroPipelineSourceProgress', $view);
+        $this->assertStringContainsString("['status' => 'open', 'per_page' => 20]", $pipelineService);
+        $this->assertNotNull($pipelineRoute);
+        $this->assertContains('auth', $pipelineRoute->gatherMiddleware());
+        $this->assertContains('user.branch.scope', $pipelineRoute->gatherMiddleware());
     }
 
     public function test_micro_scope_keeps_core_portfolio_and_uses_the_modern_visual_language(): void
@@ -208,8 +278,15 @@ class LandingPageRedesignContractTest extends TestCase
         $this->assertStringContainsString('KINERJA PRODUK MIKRO', $coreLanding);
         $this->assertStringContainsString('KOMPOSISI TOTAL', $coreLanding);
         $this->assertStringContainsString('total-composition-card--micro', $coreLanding);
-        $this->assertStringContainsString('tcc-horizontal-chart', $coreLanding);
-        $this->assertStringContainsString('tcc-horizontal-bar', $coreLanding);
+        $this->assertStringContainsString('tcc-quality-matrix', $coreLanding);
+        $this->assertDoesNotMatchRegularExpression(
+            '/\.tcc-quality-matrix\s*\{\s*display:\s*grid;\s*\/\*/',
+            $view,
+            'Selector matriks kualitas harus menutup blok CSS sebelum komentar atau selector berikutnya.'
+        );
+        $this->assertStringContainsString('Posisi YTD', $coreLanding);
+        $this->assertStringContainsString('Posisi MTD', $coreLanding);
+        $this->assertStringContainsString("data_get(\$composition, 'micro_quality'", $coreLanding);
         $this->assertStringContainsString('TREND POSISI', $coreLanding);
         $this->assertStringContainsString('Performance Vs RKA', $coreLanding);
 
@@ -227,6 +304,199 @@ class LandingPageRedesignContractTest extends TestCase
         $this->assertStringContainsString('.micro-mantri-table thead tr:first-child th', $view);
         $this->assertStringContainsString('position: sticky;', $view);
         $this->assertStringNotContainsString('micro-ops-section--portfolio', $partial);
+    }
+
+    public function test_micro_rm_kur_productivity_renders_scoped_realisasi_and_summary(): void
+    {
+        $html = view('dashboard.partials.micro-performance', [
+            'microPerformance' => [
+                'meta' => [
+                    'available' => true,
+                    'period_label' => '24 Jul 2026',
+                    'scope_label' => 'KC Madiun',
+                ],
+                'rm_kur_productivity' => [
+                    'available' => true,
+                    'period_label' => '24 Jul 2026',
+                    'scope_label' => 'KC Madiun',
+                    'rows' => [
+                        [
+                            'pn' => '0001',
+                            'nama' => 'RM SATU',
+                            'branch_code' => '45',
+                            'cabang' => 'KC MADIUN',
+                            'unit' => 'FUNGSI BISNIS MIKRO',
+                            'realisasi_deb' => 2,
+                            'realisasi_os' => 500000000,
+                            'average_per_debtor' => 250000000,
+                        ],
+                        [
+                            'pn' => '0002',
+                            'nama' => 'RM DUA',
+                            'branch_code' => '45',
+                            'cabang' => 'KC MADIUN',
+                            'unit' => 'KC MADIUN',
+                            'realisasi_deb' => 1,
+                            'realisasi_os' => 250000000,
+                            'average_per_debtor' => 250000000,
+                        ],
+                    ],
+                    'total' => [
+                        'rm_count' => 2,
+                        'realisasi_deb' => 3,
+                        'realisasi_os' => 750000000,
+                        'average_per_rm' => 375000000,
+                        'average_per_debtor' => 250000000,
+                    ],
+                ],
+            ],
+        ])->render();
+
+        $this->assertStringContainsString('data-micro-rm-kur-productivity', $html);
+        $this->assertStringContainsString('Produktivitas RM KUR Kecil Mikro', $html);
+        $this->assertStringContainsString('RM SATU', $html);
+        $this->assertStringContainsString('RM DUA', $html);
+        $this->assertStringContainsString('PN 0001', $html);
+        $this->assertStringContainsString('KC MADIUN', $html);
+        $this->assertStringContainsString('FUNGSI BISNIS MIKRO', $html);
+        $this->assertStringContainsString('Rp 750 jt', $html);
+        $this->assertStringContainsString('Rp 375 jt', $html);
+    }
+
+    public function test_micro_billing_controls_survive_lazy_load_and_use_compact_nusantara_layout(): void
+    {
+        $view = file_get_contents(resource_path('views/dashboard.blade.php'));
+        $partial = file_get_contents(resource_path('views/dashboard/partials/micro-performance.blade.php'));
+
+        $this->assertStringContainsString('const setMicroBillingMetric = (section, metric)', $view);
+        $this->assertStringContainsString('const setMicroBillingView = (section, view)', $view);
+        $this->assertStringContainsString("event.target.closest('[data-billing-metric]')", $view);
+        $this->assertStringContainsString("event.target.closest('[data-billing-view]')", $view);
+        $this->assertStringContainsString("viewButton.dataset.billingControlBound = '1';", $view);
+        $this->assertStringContainsString('initializeMicroBilling(microPerformanceDashboard);', $view);
+        $this->assertStringNotContainsString('function initMicroBillingInteractivity()', $partial);
+
+        $this->assertStringContainsString('--billing-nusantara: var(--micro-nusantara, #0754bd);', $partial);
+        $this->assertStringContainsString('grid-template-columns: repeat(auto-fill, minmax(min(126px, 100%), 1fr));', $partial);
+        $this->assertStringContainsString('grid-template-columns: repeat(8, minmax(0, 1fr));', $partial);
+        $this->assertStringContainsString('min-height: 116px;', $partial);
+        $this->assertStringContainsString('<span>Billing</span>', $partial);
+        $this->assertStringContainsString('<span>Bayar</span>', $partial);
+        $this->assertStringNotContainsString('<span>Total Billing</span>', $partial);
+        $this->assertStringNotContainsString('<span>Billing Terbayar</span>', $partial);
+        $this->assertStringContainsString('comparison_date_label', $partial);
+        $this->assertStringContainsString('jika tanggal itu tidak tersedia, acuannya adalah hari terakhir M-1', $partial);
+        $this->assertStringContainsString('.micro-billing-btn:focus-visible', $partial);
+        $this->assertStringContainsString('@media (prefers-reduced-motion: reduce)', $partial);
+    }
+
+    public function test_micro_billing_daily_card_renders_labeled_totals_paid_values_and_adjusted_m1_date(): void
+    {
+        $html = view('dashboard.partials.micro-performance', [
+            'microPerformance' => [
+                'meta' => ['available' => true, 'period_label' => '31 Mei 2026'],
+                'billing' => [
+                    'available' => true,
+                    'period' => '2026-05-31',
+                    'current_day' => 31,
+                    'days_in_month' => 31,
+                    'm0' => [
+                        'month_label' => 'Mei 2026',
+                        'baseline_period' => '2026-04-30',
+                        'total_billing_debitur' => 54,
+                        'total_billing_os' => 155_830_000,
+                        'due_so_far_billing_debitur' => 54,
+                        'due_so_far_billing_os' => 155_830_000,
+                        'paid_debitur' => 24,
+                        'paid_os' => 80_198_000,
+                        'collection_rate_deb' => 44.4,
+                        'collection_rate_os' => 51.5,
+                    ],
+                    'm1' => [
+                        'month_label' => 'April 2026',
+                        'total_billing_debitur' => 52,
+                        'total_billing_os' => 150_000_000,
+                        'paid_debitur' => 26,
+                        'paid_os' => 75_000_000,
+                        'collection_rate_deb' => 50.0,
+                        'collection_rate_os' => 50.0,
+                        'same_day_collection_rate_deb' => 50.0,
+                        'same_day_collection_rate_os' => 50.0,
+                        'same_day_cutoff_label' => '30 Apr 2026',
+                    ],
+                    'cards' => [[
+                        'day' => 31,
+                        'day_name' => 'Min',
+                        'is_today' => true,
+                        'is_weekend' => true,
+                        'is_due' => true,
+                        'status' => 'today',
+                        'billing_debitur' => 54,
+                        'billing_os' => 155_830_000,
+                        'paid_debitur' => 24,
+                        'paid_os' => 80_198_000,
+                        'pct_debitur' => 44.4,
+                        'pct_os' => 51.5,
+                        'm1_billing_debitur' => 52,
+                        'm1_billing_os' => 150_000_000,
+                        'm1_paid_debitur' => 26,
+                        'm1_paid_os' => 75_000_000,
+                        'm1_pct_debitur' => 50.0,
+                        'm1_pct_os' => 50.0,
+                        'delta_pct_deb' => -5.6,
+                        'delta_pct_os' => 1.5,
+                        'comparison_date_label' => '30 Apr',
+                        'comparison_date_adjusted' => true,
+                    ]],
+                ],
+            ],
+        ])->render();
+
+        $this->assertStringContainsString('<span>Billing</span>', $html);
+        $this->assertStringContainsString('<span>Bayar</span>', $html);
+        $this->assertStringNotContainsString('<span>Total Billing</span>', $html);
+        $this->assertStringNotContainsString('<span>Billing Terbayar</span>', $html);
+        $this->assertStringContainsString('M0 / Tgl 31', $html);
+        $this->assertStringContainsString('M-1 / 30 Apr', $html);
+        $this->assertStringContainsString('Acuan 30 Apr (akhir bulan)', $html);
+        $this->assertStringContainsString('vs 30 Apr: 50,0%', $html);
+        $this->assertStringContainsString('Naik 1,5 pp', $html);
+        $this->assertStringContainsString('Turun 5,6 pp', $html);
+    }
+
+    public function test_kupedes_pending_summary_groups_mantri_by_branch_and_keeps_detail_available(): void
+    {
+        $html = view('dashboard.partials.micro-performance', [
+            'microPerformance' => [
+                'meta' => ['available' => true, 'period_label' => '31 Agu 2026'],
+                'realization' => [
+                    'mantri_roster' => [
+                        'total_active' => 11,
+                        'pt' => 8,
+                        'contract' => 2,
+                        'briguna' => 1,
+                        'kupedes_eligible' => 10,
+                        'kupedes_realized' => 7,
+                        'kupedes_not_realized' => 3,
+                    ],
+                    'kupedes_not_realized' => [
+                        ['pn' => '100001', 'name' => 'Mantri Satu', 'branch' => 'KC MADIUN', 'unit' => 'UNIT A'],
+                        ['pn' => '100002', 'name' => 'Mantri Dua', 'branch' => 'KC MADIUN', 'unit' => 'UNIT B'],
+                        ['pn' => '100003', 'name' => 'Mantri Tiga', 'branch' => 'KC NGAWI', 'unit' => 'UNIT C'],
+                    ],
+                ],
+            ],
+        ])->render();
+
+        $this->assertStringContainsString('3</b> Belum realisasi', $html);
+        $this->assertStringContainsString('Basis 10 Mantri', $html);
+        $this->assertStringContainsString('7 dari 10 Mantri eligible sudah realisasi', $html);
+        $this->assertStringContainsString('<small>Mantri Aktif</small><strong>11</strong>', $html);
+        $this->assertStringContainsString('KC MADIUN', $html);
+        $this->assertStringContainsString('KC NGAWI', $html);
+        $this->assertStringContainsString('2 orang', $html);
+        $this->assertStringContainsString('Mantri Satu', $html);
+        $this->assertStringContainsString('PN 100001', $html);
     }
 
     public function test_micro_segment_performance_breaks_down_each_micro_product_and_keeps_total_reconciled(): void

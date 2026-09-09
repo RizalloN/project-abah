@@ -13,7 +13,7 @@ use Throwable;
 
 final class LandingSmeOperationalService
 {
-    private const CACHE_KEY = 'landing:sme:external:v4';
+    private const CACHE_KEY = 'landing:sme:external:v5';
 
     private const ALLOWED_UNITS = [
         '45' => 'KC MADIUN',
@@ -28,29 +28,30 @@ final class LandingSmeOperationalService
 
     private const SOURCES = [
         'hot_prospects' => [
-            'spreadsheet_id' => '125eoTd_H49Rh-vNeNGkizESwhA_UnSA5fJDJOuH7cMw',
-            'sheet' => 'Rekap Progress',
+            'spreadsheet_id' => '1eczWPF2dXODVgj00jmrbwUVM8UC1i81n',
+            'sheet' => 'REKAP PROGRESS',
             'label' => 'Monitoring Hot Prospek',
+            'csv_mode' => 'gviz',
         ],
         'rtl_pipeline' => [
-            'spreadsheet_id' => '1wSLhDFlgx3eSgYLCRp_0cpPymmsnCxeRHV_saCuWYzw',
+            'spreadsheet_id' => '1g4txpl_JWx9jI8FdE1dYi6XFCOTakI13',
             'sheet' => 'REKAP',
             'label' => 'RTL Pipeline',
         ],
         'extension' => [
-            'spreadsheet_id' => '1jRQfImezje9Zzn6PuS4UKQVcphwsddiuPCzaFuywBcM',
+            'spreadsheet_id' => '1I59VzlVYAWVNNROz9jBfmO-5gZhudxB4',
             'sheet' => 'REKAP',
             'label' => 'Perpanjangan',
         ],
         'restructuring' => [
-            'spreadsheet_id' => '1y1nCOWaDmiwCHSEPHc6eQUfAnYsTVv4J1uU6jqlFEso',
+            'spreadsheet_id' => '1FVP37sNihdTCtlazZ94bODXErZ8Cf-1N',
             'sheet' => 'PENGERJAAN PAKET RESTRUK',
             'label' => 'Pipeline Restruk',
         ],
         'kanwil_decisions' => [
-            'spreadsheet_id' => '1mjragUhRtsBXwIQTMg7m2BSooPTqDl9OXqhvTR8IjCE',
+            'spreadsheet_id' => '1fwabFAKCYZ0b7pILnDcu8Jw1rzlihMEO',
             'sheet' => 'Sheet1',
-            'label' => 'Putusan Pipeline Restruk Kanwil',
+            'label' => 'Restrukturisasi Putusan RO Malang',
         ],
     ];
 
@@ -93,7 +94,7 @@ final class LandingSmeOperationalService
         ['key' => 'lunas_putus', 'label' => 'Lunas Putus', 'sheet' => 'LUNAS PUTUS', 'icon' => 'fas fa-check-circle', 'include' => true],
         ['key' => 'eksportir_dhe', 'label' => 'Eksportir DHE', 'sheet' => 'EKSPORTIR DHE', 'icon' => 'fas fa-globe-asia', 'include' => true],
         ['key' => 'potensi_kipk', 'label' => 'Potensi KIPK', 'sheet' => 'KIPK', 'icon' => 'fas fa-id-card', 'include' => true],
-        ['key' => 'downline_medium', 'label' => 'Downline Nasabah Medium', 'sheet' => 'DOWNLINE MEDIUM', 'icon' => 'fas fa-sitemap', 'include' => true],
+        ['key' => 'downline_medium', 'label' => 'Downline Nasabah Medium', 'sheet' => 'DOWNLINE NASABAH MEDIUM', 'icon' => 'fas fa-sitemap', 'include' => true],
         ['key' => 'downline_commercial', 'label' => 'Downline Nasabah Commercial', 'sheet' => 'DOWNLINE NASABAH COMERCIAL', 'icon' => 'fas fa-project-diagram', 'include' => true],
         ['key' => 'pupuk_indonesia', 'label' => 'Pupuk Indonesia', 'sheet' => 'PUPUK INDONESIA', 'icon' => 'fas fa-seedling', 'include' => true],
         ['key' => 'kios_pupuk_lengkap', 'label' => 'Kios Pupuk Lengkap', 'sheet' => 'KIOS PUPUK LENGKAP', 'icon' => 'fas fa-store', 'include' => false],
@@ -336,6 +337,30 @@ final class LandingSmeOperationalService
         ];
     }
 
+    /**
+     * Lima titik kunci prognosa bulanan. W1-W4 ditutup pada Sabtu dan W5
+     * mengunci posisi akhir bulan ketika target kelima tersedia di workbook.
+     *
+     * @return array<int, Carbon>
+     */
+    public function forecastWeekCutoffs(Carbon|string $value): array
+    {
+        $date = $value instanceof Carbon ? $value->copy() : Carbon::parse($value);
+        $monthStart = $date->startOfMonth();
+        $firstSaturday = $monthStart->isSaturday()
+            ? $monthStart->copy()
+            : $monthStart->copy()->next(Carbon::SATURDAY);
+
+        $cutoffs = collect(range(1, 4))
+            ->mapWithKeys(fn (int $week): array => [
+                $week => $firstSaturday->copy()->addWeeks($week - 1)->min($date->copy()->endOfMonth()),
+            ])
+            ->all();
+        $cutoffs[5] = $date->copy()->endOfMonth();
+
+        return $cutoffs;
+    }
+
     /** @return array<string, mixed> */
     private function externalPayload(bool $forceRefresh): array
     {
@@ -408,24 +433,38 @@ final class LandingSmeOperationalService
     public function parseHotProspectCsv(string $csv): array
     {
         $matrix = $this->csvMatrix($csv);
-        $headerIndex = $this->findHeaderRow($matrix, ['KODE KANCA', 'KODE UKER', 'NAMA RM']);
+        $headerIndex = $this->findHeaderRowUsingAnySet($matrix, [
+            ['KODE KANCA', 'KODE UKER', 'NAMA RM'],
+            ['KODE UKER', 'UNIT KERJA'],
+        ]);
         $header = $matrix[$headerIndex] ?? [];
+        $isSummaryLayout = $this->findColumn($header, ['NAMA RM']) < 0;
         $column = [
             'branch_code' => $this->findColumn($header, ['KODE KANCA']),
             'unit_code' => $this->findColumn($header, ['KODE UKER']),
-            'unit' => $this->findColumn($header, ['UKER']),
+            'unit' => $this->findColumn($header, ['UNIT KERJA', 'UKER']),
             'rm' => $this->findColumn($header, ['NAMA RM']),
         ];
 
-        $statusColumns = [
-            'belum_ots' => $this->columnsStartingWith($header, 'BELUM OTS PEMUTUS'),
-            'analisa_rm' => [$this->findColumn($header, ['ANALISA RM MAK'])],
-            'verifikasi_adk' => [$this->findColumn($header, ['VERIFIKASI ADK', 'REVIEW SBM'])],
-            'menunggu_putusan' => [$this->findColumn($header, ['MENUNGGU PUTUSAN'])],
-            'sudah_diputus' => [$this->findColumn($header, ['SUDAH DIPUTUS'])],
-            'realisasi' => [$this->findColumnStartingWith($header, 'REALISASI')],
-            'batal' => [$this->findColumn($header, ['BATAL'])],
-        ];
+        $statusColumns = $isSummaryLayout
+            ? [
+                'belum_ots' => [$this->findColumnStartingWith($header, 'BELUM OTS PEMUTUS')],
+                'analisa_rm' => [$this->findColumnStartingWith($header, 'ANALISA RM MAK')],
+                'verifikasi_adk' => [$this->findColumnStartingWith($header, 'VERIFIKASI ADK')],
+                'menunggu_putusan' => [$this->findColumnStartingWith($header, 'MENUNGGU PUTUSAN')],
+                'sudah_diputus' => [$this->findColumnStartingWith($header, 'SUDAH DIPUTUS')],
+                'realisasi' => [$this->findColumnStartingWith($header, 'REALISASI')],
+                'batal' => [$this->findColumnStartingWith($header, 'BATAL')],
+            ]
+            : [
+                'belum_ots' => $this->columnsStartingWith($header, 'BELUM OTS PEMUTUS'),
+                'analisa_rm' => [$this->findColumn($header, ['ANALISA RM MAK'])],
+                'verifikasi_adk' => [$this->findColumn($header, ['VERIFIKASI ADK', 'REVIEW SBM'])],
+                'menunggu_putusan' => [$this->findColumn($header, ['MENUNGGU PUTUSAN'])],
+                'sudah_diputus' => [$this->findColumn($header, ['SUDAH DIPUTUS'])],
+                'realisasi' => [$this->findColumnStartingWith($header, 'REALISASI')],
+                'batal' => [$this->findColumn($header, ['BATAL'])],
+            ];
 
         $records = [];
         foreach (array_slice($matrix, $headerIndex + 1) as $row) {
@@ -435,7 +474,7 @@ final class LandingSmeOperationalService
             }
 
             $rm = $this->clean($this->cell($row, $column['rm']));
-            if ($rm === '') {
+            if (! $isSummaryLayout && $rm === '') {
                 continue;
             }
 
@@ -1110,6 +1149,14 @@ final class LandingSmeOperationalService
     /** @param array<string, mixed> $source */
     private function csvUrl(array $source): string
     {
+        if (($source['csv_mode'] ?? 'export') === 'gviz') {
+            return sprintf(
+                'https://docs.google.com/spreadsheets/d/%s/gviz/tq?%s',
+                $source['spreadsheet_id'],
+                http_build_query(['tqx' => 'out:csv', 'sheet' => $source['sheet']])
+            );
+        }
+
         return sprintf(
             'https://docs.google.com/spreadsheets/d/%s/export?format=csv&sheet=%s',
             $source['spreadsheet_id'],
@@ -1153,6 +1200,19 @@ final class LandingSmeOperationalService
             $labels = array_map(fn ($value): string => $this->normaliseLabel((string) $value), $row);
             if (collect($required)->every(fn (string $label): bool => in_array($label, $labels, true))) {
                 return $index;
+            }
+        }
+
+        throw new \RuntimeException('Header yang dibutuhkan tidak ditemukan pada sumber spreadsheet.');
+    }
+
+    /** @param array<int, array<int, string>> $matrix @param array<int, array<int, string>> $requiredLabelSets */
+    private function findHeaderRowUsingAnySet(array $matrix, array $requiredLabelSets): int
+    {
+        foreach ($requiredLabelSets as $requiredLabels) {
+            try {
+                return $this->findHeaderRow($matrix, $requiredLabels);
+            } catch (\RuntimeException) {
             }
         }
 
@@ -1378,6 +1438,8 @@ final class LandingSmeOperationalService
         if (str_contains($value, ',') && str_contains($value, '.')) {
             $value = str_replace('.', '', $value);
             $value = str_replace(',', '.', $value);
+        } elseif (preg_match('/^-?\d{1,3}(,\d{3})+$/', $value) === 1) {
+            $value = str_replace(',', '', $value);
         } elseif (str_contains($value, ',')) {
             $value = str_replace(',', '.', $value);
         } elseif (preg_match('/^-?\d{1,3}(\.\d{3})+$/', $value) === 1) {

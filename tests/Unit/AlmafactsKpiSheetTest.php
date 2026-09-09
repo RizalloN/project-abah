@@ -124,36 +124,36 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertSame(1, $data['summary']['row_count']);
     }
 
-    public function test_kpi_page_can_open_rm_sme_sheet_with_weighted_two_row_header(): void
+    public function test_kpi_page_can_open_rm_sme_dashboard_from_three_source_sheets(): void
     {
-        Http::fake([
-            'docs.google.com/*' => Http::response(
-                "\"KEY PERFORMING INDICATOR RM SME BO\",\"UKER\",\"JG\",\"Avg Balance Small\",\"\",\"Posisi OS Small\",\"\",\"SCORE\"\n"
-                . "\"\",\"\",\"\",\"10%\",\"\",\"15%\",\"\",\"100%\"\n"
-                . "\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\"\n"
-                . "\"00045 -- KC Madiun\",\"00061445 - Unung\",\"JG07\",\"108.17%\",\"10.82\",\"100.46%\",\"15.07\",\"95.89%\"\n"
-                . "\"BO\",\"UKER\",\"JG\",\"\",\"\",\"\",\"\",\"\"\n"
-                . "\"\",\"\",\"\",\"10%\",\"\",\"15%\",\"\",\"100%\"\n"
-                . "\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\"",
-                200
-            ),
-        ]);
+        Http::fake(fn ($request) => $this->rmSmeResponse($request->url()));
 
         $view = $this->kpiView('rm-sme');
         $data = $view->getData();
 
         $this->assertSame('rm-sme', $data['selectedSheetKey']);
-        $this->assertSame('KPI RM SME', $data['selectedSheet']['sheet']);
-        $this->assertSame('1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu', $data['selectedSheet']['spreadsheet_id']);
-        $this->assertSame(['BO', 'Uker', 'JG', 'Pencapaian', 'Score', 'Pencapaian', 'Score', 'Score'], $data['header']);
+        $this->assertSame('report.almafacts.kpi-rm-sme', $view->name());
+        $this->assertSame('Sheet1', $data['selectedSheet']['sheet']);
+        $this->assertSame('13s9SkGMC0ShjlEZGog1uBtgLxFY1RqPN5ZvMjzIVRUg', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame(
-            ['BO', 'Uker', 'JG', 'AVG Balance Small (Bobot 10%)', 'Posisi OS Small (Bobot 15%)', 'Score'],
-            array_column($data['headerGroups'], 'label')
+            ['NAMA KANCA KONSOL', 'NAMA UKO', 'NAMA MANTRI', 'JG'],
+            $data['header'],
+            json_encode([
+                'error' => $data['error'],
+                'requests' => collect(Http::recorded())->map(fn (array $entry): string => $entry[0]->url())->all(),
+            ], JSON_PRETTY_PRINT)
         );
-        $this->assertSame([2, 2, 2, 1, 1, 2], array_column($data['headerGroups'], 'rowspan'));
-        $this->assertSame(2, $data['headerGroups'][3]['colspan']);
-        $this->assertSame(['00045 -- KC Madiun', '00061445 - Unung', 'JG07', '108.17%', '10.82', '100.46%', '15.07', '95.89%'], $data['rows'][0]);
         $this->assertSame(1, $data['summary']['row_count']);
+        $this->assertSame('2026-07-31', $data['rmSmeDashboard']['latest_period']);
+        $this->assertSame(1, $data['rmSmeDashboard']['stats']['rm_count']);
+        $this->assertCount(7, $data['rmSmeDashboard']['metrics']);
+
+        $this->actingAs(new User(['pn' => 'test-rm-sme', 'name' => 'RM SME Test', 'role' => 'admin']));
+        $html = $view->render();
+        $this->assertStringContainsString('Dashboard KPI RM SME', $html);
+        $this->assertStringContainsString('Dashboard Individu', $html);
+        $this->assertStringContainsString('Summary Kinerja', $html);
+        $this->assertStringContainsString('rmsme-growth-chart', $html);
     }
 
     public function test_kpi_page_can_open_mantri_sheet_with_two_row_header(): void
@@ -340,15 +340,15 @@ class AlmafactsKpiSheetTest extends TestCase
 
     public function test_kpi_page_keeps_june_and_july_sources_in_separate_periods(): void
     {
-        Http::fake([
-            'docs.google.com/*' => Http::response(
+        Http::fake(fn ($request) => str_contains($request->url(), '1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs')
+            ? Http::response(
                 "\"KEY PERFORMING INDICATOR RM SME BO\",\"UKER\",\"JG\",\"Posisi OS Small\",\"\"\n"
                 . "\"\",\"\",\"\",\"15%\",\"\"\n"
                 . "\"1\",\"2\",\"3\",\"4\",\"5\"\n"
                 . "\"00045 -- KC Madiun\",\"00061445 - Unung\",\"JG07\",\"100%\",\"15\"",
                 200
-            ),
-        ]);
+            )
+            : $this->rmSmeResponse($request->url()));
 
         $controller = new AlmafactsDashboardController();
         $controller->refreshKpiSourceCaches(['rm-sme'], '2026-06');
@@ -365,12 +365,19 @@ class AlmafactsKpiSheetTest extends TestCase
 
         $this->assertSame('1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs', $june['selectedSheet']['spreadsheet_id']);
         $this->assertSame('Juni 2026', $june['selectedPeriodLabel']);
-        $this->assertSame('1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu', $july['selectedSheet']['spreadsheet_id']);
+        $this->assertSame('13s9SkGMC0ShjlEZGog1uBtgLxFY1RqPN5ZvMjzIVRUg', $july['selectedSheet']['spreadsheet_id']);
         $this->assertSame('Juli 2026', $july['selectedPeriodLabel']);
-        $this->assertSame($june['rows'], $july['rows']);
+        $this->assertSame('report.almafacts.kpi', $controller->kpi(
+            Request::create('/report/dashboard-almafacts/kpi/rm-sme', 'GET', ['periode' => '2026-06']),
+            'rm-sme'
+        )->name());
+        $this->assertSame('report.almafacts.kpi-rm-sme', $controller->kpi(
+            Request::create('/report/dashboard-almafacts/kpi/rm-sme', 'GET', ['periode' => '2026-07']),
+            'rm-sme'
+        )->name());
 
         Http::assertSent(fn ($request): bool => str_contains($request->url(), '1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs'));
-        Http::assertSent(fn ($request): bool => str_contains($request->url(), '1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu'));
+        Http::assertSent(fn ($request): bool => str_contains($request->url(), '13s9SkGMC0ShjlEZGog1uBtgLxFY1RqPN5ZvMjzIVRUg'));
     }
 
     public function test_kpi_sheet_replaces_error_cells_and_renders_period_selector(): void
@@ -416,14 +423,100 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertStringNotContainsString('top: 28px; /* Height of row 1 th fallback */', $source);
     }
 
+    public function test_generic_kpi_pages_share_the_rm_sme_visual_and_interaction_contract(): void
+    {
+        $viewSource = file_get_contents(resource_path('views/report/almafacts/kpi.blade.php'));
+        $themeSource = file_get_contents(resource_path('views/report/almafacts/partials/kpi-unified-theme.blade.php'));
+
+        $this->assertIsString($viewSource);
+        $this->assertIsString($themeSource);
+        $this->assertStringContainsString("@include('report.almafacts.partials.kpi-unified-theme')", $viewSource);
+        $this->assertStringContainsString('id="kpi-dashboard"', $viewSource);
+        $this->assertStringContainsString('Ruang Analisis', $viewSource);
+        $this->assertStringContainsString('id="kpi-table-search"', $viewSource);
+        $this->assertStringContainsString("searchInput.addEventListener('input', filterTableRows)", $viewSource);
+        $this->assertStringContainsString("panel.querySelectorAll('tbody tr')", $viewSource);
+        $this->assertStringContainsString('aria-current="page"', $viewSource);
+        $this->assertStringContainsString("'ka-unit' => ['UNIT KERJA', 'UKER']", $viewSource);
+        $this->assertStringContainsString("'consumer' => ['PN PENGELOLA SINGLEPN', 'NAMA', 'UKER']", $viewSource);
+
+        $this->assertStringContainsString('min-height: 44px;', $themeSource);
+        $this->assertStringContainsString('@media (max-width: 1199.98px)', $themeSource);
+        $this->assertStringContainsString('@media (max-width: 991.98px)', $themeSource);
+        $this->assertStringContainsString('@media (max-width: 767.98px)', $themeSource);
+        $this->assertStringContainsString('@media (max-width: 420px)', $themeSource);
+        $this->assertStringContainsString('overflow: hidden;', $themeSource);
+        $this->assertStringContainsString(':focus-visible', $themeSource);
+    }
+
+    public function test_generic_kpi_summary_uses_the_final_available_score_without_mutating_rows(): void
+    {
+        Http::fake([
+            'docs.google.com/*' => Http::response(
+                "\"KEY PERFORMING INDICATOR\",\"MBM\",\"SCORE\"\n"
+                . "\"MADIUN\",\"NUR\",\"98%\"\n"
+                . "\"NGAWI\",\"RINA\",\"92%\"",
+                200
+            ),
+        ]);
+        $this->actingAs(new User(['pn' => 'test-kpi-unified', 'name' => 'KPI Unified', 'role' => 'admin']));
+
+        $html = $this->kpiView('mbm')->render();
+
+        $this->assertStringContainsString('Dashboard KPI MBM', $html);
+        $this->assertStringContainsString('95,00', $html);
+        $this->assertStringContainsString('98,00', $html);
+        $this->assertStringContainsString('NUR', $html);
+        $this->assertStringContainsString('98%', $html);
+        $this->assertStringContainsString('92%', $html);
+    }
+
+    public function test_rm_sme_dashboard_has_responsive_layout_contracts(): void
+    {
+        $source = file_get_contents(resource_path('views/report/almafacts/kpi-rm-sme.blade.php'));
+
+        $this->assertIsString($source);
+        $this->assertStringContainsString('@media (max-width: 1199.98px)', $source);
+        $this->assertStringContainsString('@media (max-width: 991.98px)', $source);
+        $this->assertStringContainsString('@media (max-width: 767.98px)', $source);
+        $this->assertStringContainsString('@media (max-width: 420px)', $source);
+        $this->assertStringContainsString('grid-template-columns: repeat(3, minmax(180px, 1fr));', $source);
+        $this->assertStringContainsString('overflow: auto;', $source);
+        $this->assertStringContainsString('min-height: 44px;', $source);
+        $this->assertStringContainsString('maintainAspectRatio:false', $source);
+        $this->assertStringContainsString("document.querySelectorAll('[data-rmsme-view]')", $source);
+    }
+
     private function kpiView(string $sheet): \Illuminate\View\View
     {
         $controller = new AlmafactsDashboardController();
-        $controller->refreshKpiSourceCaches([$sheet]);
+        $refresh = $controller->refreshKpiSourceCaches([$sheet]);
+        $this->assertTrue(
+            (bool) data_get($refresh, $sheet . '.success', false),
+            json_encode($refresh, JSON_PRETTY_PRINT)
+        );
 
         return $controller->kpi(
             Request::create('/report/dashboard-almafacts/kpi/' . $sheet, 'GET'),
             $sheet
         );
+    }
+
+    private function rmSmeResponse(string $url)
+    {
+        if (str_contains($url, 'sheet=Sheet3')) {
+            return Http::response(
+                "\"NAMA KANCA KONSOL\",\"NAMA UKO\",\"NAMA MANTRI\",\"JG\"\n"
+                . "\"00045 -- KC Madiun (Konsolidasi-MB)\",\"00045 -- KC Madiun\",\"00123456 - RM Test\",\"JG07\"",
+                200
+            );
+        }
+
+        $header = '"PERIODE","NAMA KANCA KONSOL","NAMA UKO","NAMA MANTRI","JG","Avg Balance Small","RKA Avg Balance Small","OS Small","RKA OS Small","Jumlah Debitur Small","RKA Jumlah Debitur Small","Downgrade to Kol 2 %","RKA Downgrade to Kol 2 %","Rasio DPK Debitur Kelolaan to Loan SME","RKA Rasio DPK Debitur Kelolaan to Loan SME","% Booking Value Chain Cash Loan","RKA % Booking Value Chain Cash Loan","Product Holding Nasabah Kelolaan","RKA Product Holding Nasabah Kelolaan","POSISI LANCAR","POSISI SML","POSISI NPL"';
+        $period = str_contains($url, 'sheet=Sheet2') ? '31 Dec 2026' : '31 Jul 2026';
+        $values = [$period, '00045 -- KC Madiun (Konsolidasi-MB)', '00045 -- KC Madiun', '00123456 - RM Test', 'JG07', '120', '100', '220', '200', '12', '10', '0,50%', '1,00%', '80,00%', '75,00%', '5,25', '5,00', '85,00%', '80,00%', '900', '80', '20'];
+        $csvRow = implode(',', array_map(static fn (string $value): string => '"' . str_replace('"', '""', $value) . '"', $values));
+
+        return Http::response($header . "\n" . $csvRow, 200);
     }
 }

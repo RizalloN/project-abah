@@ -129,12 +129,18 @@ Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttl
     });
     Route::get('/dashboard', [DashboardSimpananController::class, 'index'])
         ->name('dashboard');
+    Route::get('/dashboard/simpanan', [DashboardSimpananController::class, 'landingSimpanan'])
+        ->name('dashboard.simpanan');
     Route::get('/dashboard/sme-operations', [DashboardSimpananController::class, 'smeOperations'])
         ->name('dashboard.sme-operations');
     Route::get('/dashboard/sme-vendor-nominatives', [DashboardSimpananController::class, 'smeVendorNominatives'])
         ->name('dashboard.sme-vendor-nominatives');
+    Route::get('/dashboard/consumer-operations', [DashboardSimpananController::class, 'consumerOperations'])
+        ->name('dashboard.consumer-operations');
     Route::get('/dashboard/micro-performance', [DashboardSimpananController::class, 'microPerformance'])
         ->name('dashboard.micro-performance');
+    Route::get('/dashboard/micro-pipeline', [DashboardSimpananController::class, 'microPipeline'])
+        ->name('dashboard.micro-pipeline');
     Route::get('/dashboard/micro-one-time-nominatives', [DashboardSimpananController::class, 'microOneTimeNominatives'])
         ->name('dashboard.micro-one-time-nominatives');
     Route::get('/dashboard/loan-analytics', [DashboardSimpananController::class, 'loanAnalytics'])

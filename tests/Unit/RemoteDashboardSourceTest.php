@@ -63,7 +63,29 @@ class RemoteDashboardSourceTest extends TestCase
         $this->assertFalse($failed['success']);
         $this->assertSame($oldWorkbook, File::get($this->mappingPath));
 
-        $newWorkbook = "PK\x03\x04".str_repeat('b', 4096);
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('REKAP');
+        for ($col = 1; $col <= 40; $col++) {
+            $sheet->setCellValue([$col, 2], 'HEADER ' . $col);
+            $sheet->setCellValue([$col, 3], 'Data ' . $col);
+        }
+        $sheet->setCellValue([1, 2], 'NAMA KANCA');
+        $sheet->setCellValue([2, 2], 'NAMA UKER WILAYAH');
+        $sheet->setCellValue([7, 2], 'SEKTOR PERTANIAN');
+        $sheet->setCellValue([17, 2], 'TOTAL POTENSI');
+        $sheet->setCellValue([18, 2], 'SEKTOR PERTANIAN');
+        $sheet->setCellValue([28, 2], 'TOTAL DEB');
+        $sheet->setCellValue([29, 2], 'SEKTOR PERTANIAN');
+        $sheet->setCellValue([39, 2], 'SHARE TOTAL');
+        $sheet->setCellValue([1, 3], 'MADIUN');
+        $sheet->setCellValue([2, 3], 'UNIT A');
+        $tempFile = tempnam(sys_get_temp_dir(), 'test_xlsx');
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save($tempFile);
+        $newWorkbook = File::get($tempFile);
+        @unlink($tempFile);
+
         $successHttp = new Factory;
         $successHttp->fake(['docs.google.com/*' => Http::response($newWorkbook, 200)]);
         Http::swap($successHttp);

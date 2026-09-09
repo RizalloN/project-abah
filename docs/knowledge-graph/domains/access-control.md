@@ -8,7 +8,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | file | 33 |
 | function | 4 |
-| method | 70 |
+| method | 71 |
 | unresolved_symbol | 17 |
 | middleware | 8 |
 | route | 18 |
@@ -20,10 +20,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `current` | method | 45 | `app/Support/UserBranchScope.php:111` |
+| `current` | method | 46 | `app/Support/UserBranchScope.php:111` |
+| `forKey` | method | 28 | `app/Support/UserBranchScope.php:68` |
 | `update` | method | 22 | `app/Http/Controllers/Admin/UserManagementController.php:159` |
 | `LoginRequest` | class | 20 | `app/Http/Requests/Auth/LoginRequest.php:15` |
-| `forKey` | method | 18 | `app/Support/UserBranchScope.php:68` |
 | `store` | method | 14 | `app/Http/Controllers/Admin/UserManagementController.php:101` |
 | `SecurityHeadersMiddleware` | class | 13 | `app/Http/Middleware/SecurityHeadersMiddleware.php:9` |
 | `store` | method | 12 | `app/Http/Controllers/Auth/NewPasswordController.php:32` |
@@ -53,8 +53,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Route Nodes
 
-- `generated::6en0TUVDjBke4Zv1` - `confirm-password`
-- `generated::KcLliZl5SZAxLomB` - `login`
+- `confirm-password` - `confirm-password`
+- `login` - `login`
 - `login` - `login`
 - `logout` - `logout`
 - `password.confirm` - `confirm-password`
@@ -111,7 +111,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | import -> access-control (protected_by) | 776 |
 | dashboard-pinjaman -> access-control (protected_by) | 165 |
-| dashboard-simpanan -> access-control (protected_by) | 130 |
+| dashboard-simpanan -> access-control (protected_by) | 145 |
 | bank-pipeline -> access-control (protected_by) | 114 |
 | core -> access-control (protected_by) | 103 |
 | access-control -> core (calls) | 66 |
@@ -120,19 +120,19 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | access-control -> core (accepts) | 30 |
 | almafacts -> access-control (protected_by) | 25 |
 | core -> access-control (calls) | 18 |
+| dashboard-simpanan -> access-control (calls) | 17 |
 | access-control -> core (uses_component) | 17 |
-| dashboard-simpanan -> access-control (calls) | 15 |
+| tests -> access-control (calls) | 14 |
+| tests -> access-control (contains) | 12 |
 | database -> access-control (protected_by) | 11 |
 | access-control -> core (extends) | 11 |
-| tests -> access-control (contains) | 11 |
-| tests -> access-control (calls) | 10 |
+| dashboard-pinjaman -> access-control (calls) | 9 |
 | access-control -> tests (calls) | 9 |
 | bank-pipeline -> access-control (calls) | 8 |
 | marketshare -> access-control (protected_by) | 8 |
 | access-control -> core (defines_table) | 7 |
 | access-control -> dashboard-simpanan (references_route) | 7 |
 | access-control -> core (writes_table) | 6 |
-| dashboard-pinjaman -> access-control (calls) | 6 |
 | jobs-snapshots -> access-control (protected_by) | 6 |
 | prognosa -> access-control (protected_by) | 5 |
 | access-control -> core (checks_table) | 4 |

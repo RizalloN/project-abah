@@ -18,6 +18,7 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
+        \App\Http\Controllers\DashboardSimpananController::clearSchemaMemo();
         $this->installTestDatabaseGuard();
     }
 

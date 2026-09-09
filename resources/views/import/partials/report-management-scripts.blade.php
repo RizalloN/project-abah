@@ -142,13 +142,11 @@
             const status = String(payload?.status || '');
             const isIndeterminate = ['queued', 'grouping'].includes(stage) && !['completed', 'failed'].includes(status);
 
-            console.log("Current Progress:", percent, "Status:", status);
-
             managementLoadProgress.classList.remove('d-none');
             if (managementLoadTitle) {
                 managementLoadTitle.textContent = status === 'completed'
-                    ? 'Data report management siap dipakai'
-                    : 'Memuat data report management...';
+                    ? 'Data report siap ditampilkan'
+                    : 'Memproses data report...';
             }
             if (managementLoadStage) managementLoadStage.textContent = humanizeStage(stage);
             if (managementLoadProgressBar) {
@@ -158,17 +156,17 @@
             }
             if (managementLoadPercent) managementLoadPercent.textContent = `${percent}%`;
             if (managementLoadUnits) managementLoadUnits.textContent = `${formatNumber(completedUnits)} / ${formatNumber(totalUnits)} tahap`;
-            if (managementLoadText) managementLoadText.textContent = payload?.message || 'Memuat data report management...';
+            if (managementLoadText) managementLoadText.textContent = payload?.message || 'Memproses data report...';
             if (managementLoadMeta) {
                 if (status === 'completed') {
                     const result = payload?.result || {};
-                    managementLoadMeta.textContent = `${formatNumber(result.total_groups || 0)} grup, ${formatNumber(result.grand_total_rows || 0)} baris sumber, halaman ${formatNumber(result.pagination?.current_page || 1)} siap ditampilkan.`;
+                    managementLoadMeta.textContent = `${formatNumber(result.total_groups || 0)} grup, ${formatNumber(result.grand_total_rows || 0)} baris data, halaman ${formatNumber(result.pagination?.current_page || 1)} siap ditampilkan.`;
                 } else if (status === 'failed') {
-                    managementLoadMeta.textContent = payload?.error || 'Load data report management gagal.';
+                    managementLoadMeta.textContent = payload?.error || 'Gagal memuat data report.';
                 } else if (stage === 'grouping') {
-                    managementLoadMeta.textContent = 'Database sedang menjalankan query grouping. Tahap ini bisa memakan waktu lebih lama pada report besar.';
+                    managementLoadMeta.textContent = 'Database sedang menjalankan query agregasi data.';
                 } else if (stage === 'counting') {
-                    managementLoadMeta.textContent = 'Hasil grouping sudah didapat. Sistem sedang menghitung total baris dan pagination.';
+                    managementLoadMeta.textContent = 'Agregasi selesai. Sistem sedang menyusun pagination.';
                 } else {
                     managementLoadMeta.textContent = '';
                 }
@@ -219,25 +217,25 @@
                 let stage = 'validating';
                 let completedUnits = 1;
                 let percent = 12;
-                let message = `Memvalidasi report ${label}...`;
-                let meta = 'Mengecek konfigurasi report dan tabel sumber.';
+                let message = `Memvalidasi konfigurasi ${label}...`;
+                let meta = 'Mengecek tabel dan partisi database.';
 
                 if (elapsedMs >= 900) {
                     stage = 'scanning_columns';
                     completedUnits = 2;
                     percent = 28;
-                    message = 'Mendeteksi kolom periode dan kanca...';
-                    meta = 'Menentukan kolom yang dipakai untuk grouping.';
+                    message = 'Mendeteksi kolom partisi...';
+                    meta = 'Mengidentifikasi kolom periode dan unit kerja.';
                 }
 
                 if (elapsedMs >= 1800) {
                     stage = 'grouping';
                     completedUnits = 3;
                     percent = Math.min(88, 40 + Math.floor(elapsedSec * 2));
-                    message = 'Menjalankan query grouping data report...';
+                    message = 'Menjalankan query agregasi data...';
                     meta = elapsedSec >= 10
-                        ? `Query grouping masih berjalan selama ${formatNumber(elapsedSec)} detik. Report besar memang bisa lebih lama.`
-                        : 'Database sedang menghitung grouping data. Tahap ini paling berat.';
+                        ? `Proses agregasi sedang berlangsung (${formatNumber(elapsedSec)}s)...`
+                        : 'Memproses pengelompokan data pada tabel sumber.';
                 }
 
                 showLoadProgress({
@@ -919,7 +917,7 @@
             managementState.activeLoadId = null;
             managementState.selectedScopes.clear();
             stopDirectLoadTimer();
-            if (managementTableBody) managementTableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Pilih report lalu klik "Tampilkan Data".</td></tr>';
+            if (managementTableBody) managementTableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4"><i class="fas fa-inbox fa-2x mb-2 d-block text-muted opacity-50"></i>Pilih report untuk menampilkan data.</td></tr>';
             if (managementPagination) {
                 managementPagination.classList.add('d-none');
                 managementPagination.innerHTML = '';

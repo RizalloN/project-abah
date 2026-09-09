@@ -6,6 +6,7 @@ use App\Http\Controllers\PrognosaWeeklyController;
 use App\Models\User;
 use App\Services\Presentation\PresentationPrognosaWeeklyService;
 use App\Support\DashboardHarianSnapshotService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -23,13 +24,10 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         Cache::flush();
     }
 
-    public function test_weekly_prognosa_consolidates_exactly_four_branch_sheets(): void
+    public function test_weekly_prognosa_reads_the_official_area_sheet(): void
     {
         $fixtures = [
-            'MADIUN' => $this->weeklyPrognosaCsvFixture(100),
-            'MAGETAN' => $this->weeklyPrognosaCsvFixture(200),
-            'NGAWI' => $this->weeklyPrognosaCsvFixture(300),
-            'PONOROGO' => $this->weeklyPrognosaCsvFixture(400),
+            'Area 6' => $this->weeklyPrognosaCsvFixture(1_000),
         ];
         Http::fake(fn ($request) => Http::response(
             $fixtures[$this->requestedSheetName($request->url())] ?? '',
@@ -48,7 +46,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
 
         $this->assertSame('area', $data['selectedSheetKey']);
         $this->assertFalse($data['isLocked']);
-        $this->assertSame('Report AREA', $data['selectedSheet']['sheet']);
+        $this->assertSame('Area 6', $data['selectedSheet']['sheet']);
         $this->assertSame('Monitoring PTP - Konsolidasi Area 6', $data['title']);
         $this->assertSame('19 Agu 26', $data['latestDate']);
         $this->assertSame(3, $data['activeForecastWeek']);
@@ -58,7 +56,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
             array_column($data['headerGroups'], 'label')
         );
         $this->assertSame([2, 7, 1, 1, 3, 3, 2], array_column($data['headerGroups'], 'colspan'));
-        $this->assertSame(['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'], $data['sourceSheets']);
+        $this->assertSame(['Area 6'], $data['sourceSheets']);
         $this->assertSame('YOY', $data['headerColumns'][2]['label']);
         $this->assertSame('31 Agu 25', $data['headerColumns'][2]['detail']);
         $this->assertSame('19 Agu 26', $data['headerColumns'][8]['detail']);
@@ -101,10 +99,8 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         $this->assertStringContainsString('Posisi - target', $html);
         $this->assertStringNotContainsString('12.00 WIB', $html);
 
-        foreach (array_keys($fixtures) as $sheetName) {
-            Http::assertSent(fn ($request) => $this->requestedSheetName($request->url()) === $sheetName);
-        }
-        Http::assertNotSent(fn ($request) => $this->requestedSheetName($request->url()) === 'Report AREA');
+        Http::assertSent(fn ($request) => $this->requestedSheetName($request->url()) === 'Area 6');
+        Http::assertSentCount(1);
     }
 
     public function test_weekly_prognosa_locks_sheet_to_authenticated_branch(): void
@@ -136,7 +132,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         $this->assertSame(1, preg_match('/<select[^>]+id="prognosa-sheet"[^>]*>/', $html, $matches));
         $this->assertStringContainsString('disabled', $matches[0]);
         $this->assertStringNotContainsString('onchange=', $matches[0]);
-        Http::assertSent(fn ($request) => $this->requestedSheetName($request->url()) === 'MADIUN');
+        Http::assertSent(fn ($request) => $this->requestedSheetName($request->url()) === 'KC Madiun');
         Http::assertSentCount(1);
     }
 
@@ -166,6 +162,63 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         $this->assertStringContainsString('data-week-selector-surface', $html);
         $this->assertStringContainsString('id="prognosa-week-modal"', $html);
         $this->assertStringContainsString('aria-current="true"', $html);
+    }
+
+    public function test_weekly_prognosa_reads_week_five_from_the_new_shifted_layout(): void
+    {
+        Carbon::setTestNow('2026-09-27 12:00:00');
+        Http::fake([
+            'docs.google.com/*' => Http::response($this->weeklyPrognosaCsvFixture(125, false, true), 200),
+        ]);
+        $this->actingAs(new User(['pn' => 'test-prognosa-week-five', 'branch_scope' => 'madiun']));
+
+        try {
+            $view = $this->weeklyController(
+                '2026-08-31',
+                $this->weeklyDailyPayload('2026-08-31'),
+                'KC Madiun'
+            )->index(Request::create('/prognosa/weekly', 'GET'));
+            $data = $view->getData();
+            $html = $view->render();
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $this->assertSame([1, 2, 3, 4, 5], $data['availableForecastWeeks']);
+        $this->assertSame(5, $data['activeForecastWeek']);
+        $this->assertSame('Week 5', $data['latestForecastLabel']);
+        $this->assertSame('406', data_get($data, 'rows.0.cells.9.value'));
+        $this->assertStringContainsString('name="week" value="5"', $html);
+        $this->assertStringContainsString(
+            '1qta-IbVG5edMAy36Ku-GCvs_sesfmmXt',
+            $data['spreadsheetUrl']
+        );
+    }
+
+    public function test_weekly_prognosa_reads_dashboard_layout_with_indicator_in_column_a(): void
+    {
+        Carbon::setTestNow('2026-09-06 12:00:00');
+        Http::fake([
+            'docs.google.com/*' => Http::response($this->weeklyDashboardCsvFixture(), 200),
+        ]);
+        $this->actingAs(new User(['pn' => 'test-prognosa-dashboard-layout', 'branch_scope' => 'madiun']));
+
+        try {
+            $view = $this->weeklyController(
+                '2026-08-31',
+                $this->weeklyDailyPayload('2026-08-31'),
+                'KC Madiun'
+            )->index(Request::create('/prognosa/weekly', 'GET'));
+            $data = $view->getData();
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $this->assertSame([1, 2, 3, 4, 5], $data['availableForecastWeeks']);
+        $this->assertSame(2, $data['activeForecastWeek']);
+        $this->assertSame('1. Simpanan', data_get($data, 'rows.0.label'));
+        $this->assertSame('222', data_get($data, 'rows.0.cells.9.value'));
+        Http::assertSent(fn ($request) => $this->requestedSheetName($request->url()) === 'KC Madiun');
     }
 
     public function test_weekly_prognosa_ignores_an_invalid_week_override(): void
@@ -291,7 +344,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         $this->assertStringContainsString('aria-modal="true"', $source);
         $this->assertStringNotContainsString('class="prognosa-meta"', $source);
         $this->assertStringNotContainsString('Sumber Posisi', $source);
-        $this->assertStringNotContainsString("<p>{{ \$title }}</p>", $source);
+        $this->assertStringNotContainsString('<p>{{ $title }}</p>', $source);
         $this->assertStringNotContainsString('linear-gradient', $source);
     }
 
@@ -491,12 +544,56 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         );
     }
 
+    public function test_weekly_prognosa_aggregates_office_detail_rows_for_branch_with_sub_offices(): void
+    {
+        $controller = app(PrognosaWeeklyController::class);
+        $reflection = new \ReflectionClass($controller);
+        $method = $reflection->getMethod('aggregateDailyMetric');
+        $method->setAccessible(true);
+
+        $dailyRowsByKey = [
+            'kecil_os__office_detail__kc-madiun-detail' => [
+                'values' => ['current' => 400_000_000_000.0, 'rka' => 450_000_000_000.0],
+            ],
+            'kecil_os__office_detail__kcp-caruban' => [
+                'values' => ['current' => 150_000_000_000.0, 'rka' => 160_000_000_000.0],
+            ],
+            'kecil_os__office_detail__kcp-dolopo' => [
+                'values' => ['current' => 70_000_000_000.0, 'rka' => 75_000_000_000.0],
+            ],
+            'giro_ritel__office_detail__kc-madiun-detail' => [
+                'values' => ['current' => 100_000_000_000.0],
+            ],
+            'giro_ritel__office_detail__kcp-caruban' => [
+                'values' => ['current' => 50_000_000_000.0],
+            ],
+        ];
+
+        // Should aggregate the 3 kecil_os office detail rows when kecil_os top level key is absent
+        $kecilCurrent = $method->invoke($controller, $dailyRowsByKey, ['kecil_os'], 'current');
+        $this->assertEquals(620_000_000_000.0, $kecilCurrent);
+
+        $kecilRka = $method->invoke($controller, $dailyRowsByKey, ['kecil_os'], 'rka');
+        $this->assertEquals(685_000_000_000.0, $kecilRka);
+
+        // Should aggregate giro_ritel office detail rows
+        $giroCurrent = $method->invoke($controller, $dailyRowsByKey, ['giro_ritel'], 'current');
+        $this->assertEquals(150_000_000_000.0, $giroCurrent);
+
+        // If exact key exists, prefer exact key over detail rows
+        $dailyRowsByKeyWithExact = $dailyRowsByKey;
+        $dailyRowsByKeyWithExact['kecil_os'] = [
+            'values' => ['current' => 999.0],
+        ];
+        $exactCurrent = $method->invoke($controller, $dailyRowsByKeyWithExact, ['kecil_os'], 'current');
+        $this->assertEquals(999.0, $exactCurrent);
+    }
+
     private function weeklyController(
         string $period,
         array $dailyPayload,
         array|string $expectedScope
-    ): PrognosaWeeklyController
-    {
+    ): PrognosaWeeklyController {
         $service = Mockery::mock(DashboardHarianSnapshotService::class);
         $service->shouldReceive('resolveEffectivePeriod')
             ->once()
@@ -515,8 +612,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         float $currentMillions = 3_000,
         float $rkaMillions = 4_000,
         float $rkaDecemberMillions = 5_000
-    ): array
-    {
+    ): array {
         $metricKeys = [
             'total_os_non_commercial',
             'micro_os',
@@ -605,7 +701,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
     private function presentationPrognosaFixture(): string
     {
         $spreadsheet = new Spreadsheet;
-        $sheetNames = ['area', 'madiun', 'magetan', 'ngawi', 'ponorogo'];
+        $sheetNames = ['Area 6', 'KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
         $labels = [
             '1. Simpanan',
             'A. Ritel',
@@ -677,12 +773,12 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
             '5. %CASA',
         ];
         $scopeValues = [
-            'area' => [
+            'Area 6' => [
                 '1. Simpanan' => [14_162_913, 14_144_099],
                 'Total SML (ABS) Non Commercial' => [2_031_018, 2_034_941],
                 'Total NPL (ABS) Non Commercial' => [751_310, 741_761],
             ],
-            'madiun' => [
+            'KC Madiun' => [
                 '1. Simpanan' => [4_188_552, 4_188_553],
             ],
         ];
@@ -714,10 +810,16 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         return $path;
     }
 
-    private function weeklyPrognosaCsvFixture(int $base, bool $withRunOffProducts = false): string
-    {
-        $rows = [$this->weeklyPrognosaCsvHeader()];
+    private function weeklyPrognosaCsvFixture(
+        int $base,
+        bool $withRunOffProducts = false,
+        bool $newLayout = false
+    ): string {
+        $rows = [$this->weeklyPrognosaCsvHeader($newLayout)];
         foreach ($this->weeklyPrognosaReportRows($base, $withRunOffProducts) as $reportRow) {
+            if ($newLayout && is_numeric($reportRow[7] ?? null)) {
+                $reportRow[12] = (int) round(((float) $reportRow[7]) * 1.625);
+            }
             $sourceRow = array_fill(0, 35, '');
             foreach ($reportRow as $index => $value) {
                 $sourceRow[$index + 1] = $value;
@@ -736,11 +838,33 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         return (string) $csv;
     }
 
+    private function weeklyDashboardCsvFixture(): string
+    {
+        $rows = [
+            ['DASHBOARD KERAGAAN HARIAN'],
+            ['Kanca', 'KC Madiun', '', 'Unit Kerja', 'Semua Unit Kerja'],
+            ['Posisi Terakhir', '31 Aug 2026'],
+            ['KETERANGAN', 'POSISI', '', '', '', '', '', '', 'PROGNOSA'],
+            ['', '31 Aug 25 (YoY)', '31 Dec 25 (YtD)', '30 Jun 26 (M-2)', '31 Jul 26 (MtM)', '31 Jul 26 (MtD)', '30 Aug 26 (DtD)', '31 Aug 26 (Posisi)', 'WEEK 1 (5 Sept 26)', 'WEEK 2 (12 Sep 26)', 'WEEK 3 (19 Sep 26)', 'WEEK 4 (26 Sept 26)', 'WEEK 5 (30 Sep 26)'],
+            ['1. Simpanan', '100', '110', '120', '130', '140', '150', '160', '211', '222', '233', '244', '255'],
+        ];
+
+        $stream = fopen('php://temp', 'r+');
+        foreach ($rows as $row) {
+            fputcsv($stream, $row, ',', '"', '');
+        }
+        rewind($stream);
+        $csv = stream_get_contents($stream);
+        fclose($stream);
+
+        return (string) $csv;
+    }
+
     /** @return array<int, string> */
-    private function weeklyPrognosaCsvHeader(): array
+    private function weeklyPrognosaCsvHeader(bool $newLayout = false): array
     {
         $header = array_fill(0, 35, '');
-        foreach ($this->weeklyPrognosaHeaderValues() as $reportIndex => $value) {
+        foreach ($this->weeklyPrognosaHeaderValues($newLayout) as $reportIndex => $value) {
             $header[$reportIndex + 1] = $value;
         }
 
@@ -748,8 +872,47 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
     }
 
     /** @return array<int, string> */
-    private function weeklyPrognosaHeaderValues(): array
+    private function weeklyPrognosaHeaderValues(bool $newLayout = false): array
     {
+        if ($newLayout) {
+            return [
+                0 => 'MONITORING PTP TGL VS TGL NO',
+                1 => 'KETERANGAN',
+                2 => 'POSISI 31 AGUSTUS 2025',
+                3 => '31 DESEMBER 2025',
+                4 => '31 JULI 2026',
+                5 => '31 JULI 2026',
+                6 => '30 AGUSTUS 2026',
+                7 => '31 AGUSTUS 2026',
+                8 => 'PROGNOSA WEEK 1 (5 September 26)',
+                9 => 'WEEK 2 (12 September 26)',
+                10 => 'WEEK 3 (19 September 26)',
+                11 => 'WEEK 4 (26 September 26)',
+                12 => 'WEEK 5 (30 September 26)',
+                13 => 'DELTA YOY',
+                14 => 'YTD',
+                15 => '',
+                16 => 'MTD',
+                17 => '',
+                18 => 'RKA RKA Jan 2026',
+                19 => 'RKA Feb 2026',
+                20 => 'RKA Mar 2026',
+                21 => 'RKA Apr 2026',
+                22 => 'RKA Mei 2026',
+                23 => 'RKA Juni 2026',
+                24 => 'RKA Juli 2026',
+                25 => 'RKA Agus 2026',
+                26 => 'RKA Sep 2026',
+                27 => 'RKA Okt 2026',
+                28 => 'RKA Nov 2026',
+                29 => 'RKA Des 2026',
+                30 => 'GAP RKA Sep 2026',
+                31 => 'RKA DES 2026',
+                32 => 'PENCAPAIAN RKA RKA Sep 2026',
+                33 => 'RKA DES 2026',
+            ];
+        }
+
         return [
             0 => 'MONITORING PTP TGL VS TGL NO',
             1 => 'KETERANGAN',
@@ -861,10 +1024,11 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
     {
         $spreadsheet = new Spreadsheet;
         $branchBases = [
-            'MADIUN' => 100,
-            'MAGETAN' => 200,
-            'NGAWI' => 300,
-            'PONOROGO' => 400,
+            'Area 6' => 1_000,
+            'KC Madiun' => 100,
+            'KC Magetan' => 200,
+            'KC Ngawi' => 300,
+            'KC Ponorogo' => 400,
         ];
 
         foreach ($branchBases as $sheetIndex => $base) {

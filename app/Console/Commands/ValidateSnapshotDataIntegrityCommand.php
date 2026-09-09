@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\ConsumerRmRealizationCalculator;
 use App\Support\SnapshotIntegrityGuard;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -10,6 +11,9 @@ use Illuminate\Support\Facades\Schema;
 
 class ValidateSnapshotDataIntegrityCommand extends Command
 {
+    /** @var array<string, array<string, array<string, mixed>>> */
+    private array $consumerSurplusMetricsByPeriod = [];
+
     protected $signature = 'snapshot:validate-integrity {--period= : Validate specific period} {--segment= : Validate specific segment} {--report= : Validate specific report (all_snapshots|snapshot_guard|performance_rm|ssa_simpanan|dashboard_simpanan|dashboard_harian|dormant_account)} {--sample : Sample-based validation (faster)}';
 
     protected $description = 'Validate snapshot data integrity across all materialized snapshot tables';
@@ -310,28 +314,37 @@ class ValidateSnapshotDataIntegrityCommand extends Command
 
     private function getConsumerSurplusAggregate(string $period): object
     {
-        $query = $this->buildConsumerSurplusQuery($period);
+        $metrics = $this->consumerSurplusMetrics($period);
 
-        return $query === null
-            ? (object) ['total_deb' => 0, 'total_real' => 0]
-            : DB::query()
-                ->fromSub($query, 'surplus')
-                ->selectRaw('COALESCE(SUM(total_deb), 0) as total_deb')
-                ->selectRaw('COALESCE(SUM(total_real), 0) as total_real')
-                ->first();
+        return (object) [
+            'total_deb' => collect($metrics)->sum(fn (array $metric): int => (int) ($metric['realisasi_deb'] ?? 0)),
+            'total_real' => collect($metrics)->sum(fn (array $metric): float => (float) ($metric['realisasi_os'] ?? 0.0)),
+        ];
     }
 
     private function getConsumerSurplusForScope(string $period, string $cabang, string $unit, string $rm, string $produk): object
     {
-        $query = $this->buildConsumerSurplusQuery($period, $cabang, $unit, $rm, $produk);
+        $productToken = preg_replace('/[^A-Z0-9]/', '', strtoupper(trim($produk))) ?? '';
+        $product = $productToken === 'BRIGUNAKONSUMER' ? 'BRIGUNA-KONSUMER' : $productToken;
+        $metrics = collect($this->consumerSurplusMetrics($period))
+            ->filter(static fn (array $metric): bool =>
+                strtoupper(trim((string) ($metric['cabang'] ?? ''))) === strtoupper(trim($cabang))
+                && strtoupper(trim((string) ($metric['unit'] ?? ''))) === strtoupper(trim($unit))
+                && strtoupper(trim((string) ($metric['rm'] ?? ''))) === strtoupper(trim($rm))
+                && strtoupper(trim((string) ($metric['produk'] ?? ''))) === strtoupper(trim($product))
+            );
 
-        return $query === null
-            ? (object) ['total_deb' => 0, 'total_real' => 0]
-            : DB::query()
-                ->fromSub($query, 'surplus')
-                ->selectRaw('COALESCE(SUM(total_deb), 0) as total_deb')
-                ->selectRaw('COALESCE(SUM(total_real), 0) as total_real')
-                ->first();
+        return (object) [
+            'total_deb' => $metrics->sum(fn (array $metric): int => (int) ($metric['realisasi_deb'] ?? 0)),
+            'total_real' => $metrics->sum(fn (array $metric): float => (float) ($metric['realisasi_os'] ?? 0.0)),
+        ];
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function consumerSurplusMetrics(string $period): array
+    {
+        return $this->consumerSurplusMetricsByPeriod[$period]
+            ??= app(ConsumerRmRealizationCalculator::class)->calculate($period);
     }
 
     private function buildConsumerSurplusQuery(

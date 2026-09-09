@@ -7113,6 +7113,7 @@ class ImportExcelController extends Controller
         $guard = app(ImportDuplicateGuardService::class);
         foreach ($normalizedPeriods as $period) {
             $guard->assertSlotEmpty('daily_loan_dinamis', ['periode' => $period]);
+            $guard->assertSlotEmpty('lw321pn', ['periode' => $period]);
         }
     }
 
@@ -7126,7 +7127,63 @@ class ImportExcelController extends Controller
         $guard = app(ImportDuplicateGuardService::class);
         foreach ($normalizedPeriods as $period) {
             $guard->assertSlotEmpty('lw321pn', ['periode' => $period]);
+            $guard->assertSlotEmpty('daily_loan_dinamis', ['periode' => $period]);
         }
+    }
+
+    private function assertLw321AlternateSourcePeriodsEmptyOrFail(array $periods): void
+    {
+        $guard = app(ImportDuplicateGuardService::class);
+        foreach ($this->normalizeDailyLoanReplacePeriods($periods) as $period) {
+            $guard->assertSlotEmpty('lw321pn', ['periode' => $period]);
+        }
+    }
+
+    /**
+     * LW321PN selalu diimpor tanpa filter. Ambil periode dari satu kolom staging
+     * saja agar duplicate guard tidak perlu mengevaluasi semua ekspresi mapping
+     * sebelum INSERT SELECT utama.
+     */
+    private function collectLw321PnPeriodsFromFastPathStage(string $stagingTable, array $context): array
+    {
+        $periodRule = null;
+        $periodSourceIndex = null;
+
+        foreach ((array) ($context['header_rules'] ?? []) as $sourceIndex => $rule) {
+            $candidates = array_map('strtolower', (array) ($rule['db_candidates'] ?? []));
+            if (!in_array('periode', $candidates, true)) {
+                continue;
+            }
+
+            $periodRule = $rule;
+            $periodSourceIndex = (int) $sourceIndex;
+            break;
+        }
+
+        if ($periodRule === null || $periodSourceIndex === null) {
+            throw new \RuntimeException('Import LW321PN dibatalkan: kolom PERIODE tidak dapat dipetakan untuk validasi periode.');
+        }
+
+        $sourceColumn = $this->quoteSqlIdentifier('c' . $periodSourceIndex);
+        $periodExpression = $this->buildDirectLoadSqlExpression(
+            $periodRule,
+            $sourceColumn,
+            'periode',
+            $context
+        );
+        $sql = "SELECT DISTINCT src.`periode` AS `periode`\n"
+            . "FROM (SELECT {$periodExpression} AS `periode` FROM `{$stagingTable}`) AS src\n"
+            . 'WHERE src.`periode` IS NOT NULL';
+
+        $periods = [];
+        foreach (DB::select($sql) as $row) {
+            $period = trim((string) ($row->periode ?? ''));
+            if ($period !== '') {
+                $periods[] = $period;
+            }
+        }
+
+        return $this->normalizeDailyLoanReplacePeriods($periods);
     }
 
     private function collectDailyLoanPeriodsFromFastPathStage(string $stagingTable, string $innerSelectSql, string $whereClauses): array
@@ -7447,6 +7504,8 @@ class ImportExcelController extends Controller
                 $this->assertDailyLoanImportPeriodsEmptyOrFail(
                     array_merge((array) ($loadPlan['period_hints'] ?? []), $replacePeriods)
                 );
+            } else {
+                $this->assertLw321AlternateSourcePeriodsEmptyOrFail($replacePeriods);
             }
 
             $pdo->beginTransaction();
@@ -8304,8 +8363,13 @@ class ImportExcelController extends Controller
                 }
             }
 
-            $eligibleRows = null;
-            if ($whereClauses !== '') {
+            // LW321PN tidak memakai filter pengguna. Validasi kelengkapan
+            // dilakukan dari jumlah INSERT di dalam transaksi agar tidak perlu
+            // satu full scan dengan seluruh ekspresi 49 kolom sebelum insert.
+            // Bila satu baris tidak lolos periode/rekening/balance, transaksi
+            // tetap dibatalkan sehingga tidak ada import parsial.
+            $eligibleRows = $isLw321Pn ? $loadedRows : null;
+            if (!$isLw321Pn && $whereClauses !== '') {
                 $countSql = "SELECT COUNT(*) AS aggregate_count FROM (\n"
                     . "  SELECT \n{$innerSelectSql}\n"
                     . "  FROM `{$stagingTable}`\n"
@@ -8321,13 +8385,6 @@ class ImportExcelController extends Controller
                 $baseTotal = $eligibleRows;
             }
 
-            if ($isLw321Pn && $loadedRows !== $baseTotal) {
-                $invalidRows = max(0, $loadedRows - $baseTotal);
-                throw new \RuntimeException(
-                    "Import LW321PN dibatalkan: {$invalidRows} baris memiliki PERIODE, NOMOR_REKENING, atau BALANCE DALAM IDR yang tidak valid. Tidak ada data yang ditulis."
-                );
-            }
-
             if ($jobId > 0) {
                 $this->progressService()->updateJob($jobId, [
                     'total_files' => $baseTotal,
@@ -8340,7 +8397,7 @@ class ImportExcelController extends Controller
                     ? 'GI405_SINGLE_ROW_IMPORT_LOCK'
                     : ($isDlyKapResegmentasi
                         ? 'DLY_KAP_RESEGMENTASI_IMPORT_LOCK'
-                        : ($isLw321Pn ? 'LW321PN_IMPORT_LOCK' : self::DAILY_LOAN_IMPORT_LOCK_NAME)));
+                        : self::DAILY_LOAN_IMPORT_LOCK_NAME));
 
             if (!$this->acquireMysqlAdvisoryLockOnDb($lockName, 10)) {
                 throw new \RuntimeException("Import {$label} sedang berjalan di background. Silakan tunggu.");
@@ -8353,7 +8410,7 @@ class ImportExcelController extends Controller
                     );
                 } elseif ($isLw321Pn) {
                     $this->assertLw321PnImportPeriodsEmptyOrFail(
-                        $this->collectDailyLoanPeriodsFromFastPathStage($stagingTable, $innerSelectSql, $whereClauses)
+                        $this->collectLw321PnPeriodsFromFastPathStage($stagingTable, $context)
                     );
                 }
             } catch (\Throwable $e) {
@@ -8393,8 +8450,9 @@ class ImportExcelController extends Controller
                     $inserted = DB::affectingStatement($sql);
 
                     if ($isLw321Pn && $inserted !== $baseTotal) {
+                        $invalidRows = max(0, $baseTotal - $inserted);
                         throw new \RuntimeException(
-                            "Import LW321PN tidak lengkap: {$inserted} dari {$baseTotal} baris terpetakan. Transaksi dibatalkan."
+                            "Import LW321PN dibatalkan: {$invalidRows} baris memiliki PERIODE, NOMOR_REKENING, atau BALANCE DALAM IDR yang tidak valid. Tidak ada data yang ditulis."
                         );
                     }
 
@@ -13521,6 +13579,7 @@ class ImportExcelController extends Controller
             $cachedIsSimpananMultiPN = $this->streamingIsSimpananMultiPN;
             $cachedIsLw325Ph = $this->streamingIsLw325Ph;
             $cachedIsDailyLoan = $this->streamingIsDailyLoan;
+            $cachedIsLw321Pn = $this->isLw321PnTable($activeTableName);
 
             $batchFinalRows = []; // Added to store final associative rows for ID allocation
             $headerCount = $context['header_count'];
@@ -13576,7 +13635,7 @@ class ImportExcelController extends Controller
                     }
                 }
 
-                if ($cachedIsDailyLoan) {
+                if ($cachedIsDailyLoan || $cachedIsLw321Pn) {
                     $periodValue = trim((string) ($finalRow['periode'] ?? ''));
                     if ($periodValue !== '') {
                         $dailyLoanImportPeriods[$periodValue] = true;
@@ -13658,13 +13717,17 @@ class ImportExcelController extends Controller
 
             $dailyLoanLockAcquired = false;
             try {
-                if ($cachedIsDailyLoan) {
+                if ($cachedIsDailyLoan || $cachedIsLw321Pn) {
                     if (!$this->acquireMysqlAdvisoryLockOnDb(self::DAILY_LOAN_IMPORT_LOCK_NAME, 10)) {
-                        throw new \RuntimeException('Import Daily Loan sedang berjalan. Tunggu proses sebelumnya selesai terlebih dahulu.');
+                        throw new \RuntimeException('Import sumber nominatif pinjaman sedang berjalan. Tunggu proses sebelumnya selesai terlebih dahulu.');
                     }
 
                     $dailyLoanLockAcquired = true;
-                    $this->assertDailyLoanImportPeriodsEmptyOrFail(array_keys($dailyLoanImportPeriods));
+                    if ($cachedIsDailyLoan) {
+                        $this->assertDailyLoanImportPeriodsEmptyOrFail(array_keys($dailyLoanImportPeriods));
+                    } else {
+                        $this->assertLw321PnImportPeriodsEmptyOrFail(array_keys($dailyLoanImportPeriods));
+                    }
                 }
 
                 if ($forceDirectLoad) {

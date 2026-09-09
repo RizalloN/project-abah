@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Http\Controllers\DashboardHarianController;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\RkaLookupService;
 use Illuminate\Support\Facades\Cache;
@@ -287,6 +288,266 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         );
     }
 
+    public function test_selected_branch_all_unit_scope_rolls_kc_and_kcp_into_retail_metrics(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_simpanan')->insert([
+            [
+                'Month_Day_Year_of_Posisi' => '2026-08-29',
+                'nama_cabang' => '00070 -- KC Ponorogo (Konsolidasi-MB)',
+                'nama_uker' => '00070 -- KC Ponorogo',
+                'segmentasi' => 'Ritel',
+                'produk' => 'Giro',
+                'saldo' => 100,
+            ],
+            [
+                'Month_Day_Year_of_Posisi' => '2026-08-29',
+                'nama_cabang' => '00070 -- KC Ponorogo (Konsolidasi-MB)',
+                'nama_uker' => '02204 -- KCP Sudirman Ponorogo',
+                'segmentasi' => 'Ritel',
+                'produk' => 'Giro',
+                'saldo' => 40,
+            ],
+            [
+                'Month_Day_Year_of_Posisi' => '2026-08-29',
+                'nama_cabang' => '00070 -- KC Ponorogo (Konsolidasi-MB)',
+                'nama_uker' => '06502 -- UNIT Kota I Ponorogo',
+                'segmentasi' => 'Micro',
+                'produk' => 'Giro',
+                'saldo' => 900,
+            ],
+            [
+                'Month_Day_Year_of_Posisi' => '2026-08-29',
+                'nama_cabang' => '00049 -- KC Magetan (Konsolidasi-MB)',
+                'nama_uker' => '00049 -- KC Magetan',
+                'segmentasi' => 'Ritel',
+                'produk' => 'Giro',
+                'saldo' => 75,
+            ],
+        ]);
+
+        DB::table('ssa_pinjaman')->insert([
+            [
+                'month_day_year_of_periode' => '2026-08-29',
+                'nama_cabang' => '00070 -- KC Ponorogo (Konsolidasi-MB)',
+                'nama_uker' => '00070 -- KC Ponorogo',
+                'segmen_dashboard' => 'Small',
+                'produk_dashboard' => 'Commercial',
+                'produk' => null,
+                'segmen_2025' => 'Small',
+                'kolektabilitas_one_obligor' => '1',
+                'baki_debet' => 1_000,
+            ],
+            [
+                'month_day_year_of_periode' => '2026-08-29',
+                'nama_cabang' => '00070 -- KC Ponorogo (Konsolidasi-MB)',
+                'nama_uker' => '00070 -- KC Ponorogo',
+                'segmen_dashboard' => 'Small',
+                'produk_dashboard' => 'Commercial',
+                'produk' => null,
+                'segmen_2025' => 'Small',
+                'kolektabilitas_one_obligor' => '2',
+                'baki_debet' => 100,
+            ],
+            [
+                'month_day_year_of_periode' => '2026-08-29',
+                'nama_cabang' => '00070 -- KC Ponorogo (Konsolidasi-MB)',
+                'nama_uker' => '00070 -- KC Ponorogo',
+                'segmen_dashboard' => 'Small',
+                'produk_dashboard' => 'Commercial',
+                'produk' => null,
+                'segmen_2025' => 'Small',
+                'kolektabilitas_one_obligor' => '3',
+                'baki_debet' => 100,
+            ],
+            [
+                'month_day_year_of_periode' => '2026-08-29',
+                'nama_cabang' => '00070 -- KC Ponorogo (Konsolidasi-MB)',
+                'nama_uker' => '02204 -- KCP Sudirman Ponorogo',
+                'segmen_dashboard' => 'Small',
+                'produk_dashboard' => 'Commercial',
+                'produk' => null,
+                'segmen_2025' => 'Small',
+                'kolektabilitas_one_obligor' => '2',
+                'baki_debet' => 200,
+            ],
+            [
+                'month_day_year_of_periode' => '2026-08-29',
+                'nama_cabang' => '00070 -- KC Ponorogo (Konsolidasi-MB)',
+                'nama_uker' => '02204 -- KCP Sudirman Ponorogo',
+                'segmen_dashboard' => 'Small',
+                'produk_dashboard' => 'Commercial',
+                'produk' => null,
+                'segmen_2025' => 'Small',
+                'kolektabilitas_one_obligor' => '3',
+                'baki_debet' => 300,
+            ],
+            [
+                'month_day_year_of_periode' => '2026-08-29',
+                'nama_cabang' => '00070 -- KC Ponorogo (Konsolidasi-MB)',
+                'nama_uker' => '00070 -- KC Ponorogo',
+                'segmen_dashboard' => 'Consumer',
+                'produk_dashboard' => 'Briguna-Konsumer',
+                'produk' => 'Briguna Ritel',
+                'segmen_2025' => 'Consumer',
+                'kolektabilitas_one_obligor' => '1',
+                'baki_debet' => 400,
+            ],
+            [
+                'month_day_year_of_periode' => '2026-08-29',
+                'nama_cabang' => '00070 -- KC Ponorogo (Konsolidasi-MB)',
+                'nama_uker' => '06502 -- UNIT Kota I Ponorogo',
+                'segmen_dashboard' => 'Micro',
+                'produk_dashboard' => 'Cash Collateral',
+                'produk' => 'Kupedes',
+                'segmen_2025' => 'Micro',
+                'kolektabilitas_one_obligor' => '1',
+                'baki_debet' => 9_000,
+            ],
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $build = new \ReflectionMethod($service, 'buildAggregatedRowsForPeriod');
+        $build->setAccessible(true);
+        [$payload] = $build->invoke($service, '2026-08-29', ['KC Ponorogo'], null);
+
+        $rows = collect($payload)->keyBy('unit_key');
+        $summary = $rows->get('kc-ponorogo');
+        $kc = $rows->get('kc-ponorogo-detail');
+        $kcp = $rows->get('kcp-sudirman-ponorogo');
+
+        $this->assertNotNull($summary);
+        $this->assertNotNull($kc);
+        $this->assertNotNull($kcp);
+        $this->assertSame(140.0, $summary['simpanan_ritel']);
+        $this->assertSame(1_700.0, $summary['sme_os']);
+        $this->assertSame(300.0, $summary['sme_sml']);
+        $this->assertSame(400.0, $summary['sme_npl']);
+        $this->assertSame(
+            $kc['simpanan_ritel'] + $kcp['simpanan_ritel'],
+            $summary['simpanan_ritel']
+        );
+        $this->assertSame($kc['sme_os'] + $kcp['sme_os'], $summary['sme_os']);
+        $this->assertSame($kc['sme_sml'] + $kcp['sme_sml'], $summary['sme_sml']);
+        $this->assertSame($kc['sme_npl'] + $kcp['sme_npl'], $summary['sme_npl']);
+        $this->assertSame($kc['consumer_os'] + $kcp['consumer_os'], $summary['consumer_os']);
+        $this->assertSame($kc['consumer_sml'] + $kcp['consumer_sml'], $summary['consumer_sml']);
+        $this->assertSame($kc['consumer_npl'] + $kcp['consumer_npl'], $summary['consumer_npl']);
+        $this->assertSame(900.0, $summary['simpanan_mikro']);
+        $this->assertSame(9_000.0, $summary['micro_os']);
+
+        $metricColumns = (new \ReflectionClass(DashboardHarianSnapshotService::class))->getConstant('METRIC_COLUMNS');
+        Schema::table('dashboard_harian_snapshots', function (Blueprint $table) use ($metricColumns): void {
+            foreach ($metricColumns as $column) {
+                $table->decimal($column, 24, 6)->default(0);
+            }
+        });
+        [$kcOnlyPayload] = $build->invoke($service, '2026-08-29', ['KC Magetan'], null);
+        DB::table('dashboard_harian_snapshots')->insert(array_merge($payload, $kcOnlyPayload));
+        Schema::create('rka', function (Blueprint $table): void {
+            $table->string('uniqueid_namareport')->primary();
+            $table->string('kanca')->nullable();
+            $table->string('desc_uker')->nullable();
+            $table->string('mata_anggaran')->nullable();
+            foreach (['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'] as $month) {
+                $table->decimal($month, 20, 2)->nullable();
+            }
+            $table->timestamps();
+        });
+
+        $dashboard = (new DashboardHarianSnapshotService())->buildDashboardPayload(
+            '2026-08-29',
+            null,
+            ['KC Ponorogo'],
+            null
+        );
+        $dashboardRows = collect($dashboard['rows']);
+        $rowsByParent = $dashboardRows
+            ->filter(fn (array $row): bool => (bool) ($row['office_breakdown'] ?? false))
+            ->groupBy('parent_key');
+
+        $expectedOfficeLabels = [
+            'simpanan_ritel' => ['A.1 KC Ponorogo', 'A.2 KCP Sudirman Ponorogo'],
+            'sme_os' => ['B.1 KC Ponorogo', 'B.2 KCP Sudirman Ponorogo'],
+            'sme_sml' => ['B.1 KC Ponorogo', 'B.2 KCP Sudirman Ponorogo'],
+            'sme_npl' => ['B.1 KC Ponorogo', 'B.2 KCP Sudirman Ponorogo'],
+        ];
+
+        foreach ($expectedOfficeLabels as $metricKey => $expectedLabels) {
+            $officeRows = $rowsByParent->get($metricKey, collect());
+            $this->assertSame($expectedLabels, $officeRows->pluck('label')->all());
+
+            $parentCurrent = (float) $dashboardRows->firstWhere('key', $metricKey)['values']['current'];
+            $officeCurrent = (float) $officeRows->sum(fn (array $row): float => (float) $row['values']['current']);
+            $this->assertSame($parentCurrent, $officeCurrent);
+        }
+
+        $hierarchyLabels = $dashboardRows
+            ->filter(fn (array $row): bool => ($row['parent_key'] ?? null) === 'sme_os')
+            ->filter(fn (array $row): bool => (bool) ($row['office_breakdown'] ?? false) || (bool) ($row['office_breakdown_child'] ?? false))
+            ->pluck('label')
+            ->all();
+        $this->assertSame([
+            'B.1 KC Ponorogo',
+            'Kecil',
+            'Kecil Non Cashcoll',
+            'Cashcoll',
+            'B.2 KCP Sudirman Ponorogo',
+            'Kecil',
+            'Kecil Non Cashcoll',
+            'Cashcoll',
+        ], $hierarchyLabels);
+
+        $this->assertFalse($dashboardRows->contains(function (array $row): bool {
+            return in_array($row['key'], [
+                'giro_ritel',
+                'tabungan_ritel',
+                'deposito_ritel',
+                'kecil_os',
+                'kecil_non_cashcoll_os',
+                'cashcoll_os',
+                'medium_os',
+                'medium_sml',
+                'medium_npl',
+            ], true);
+        }));
+
+        foreach (['consumer_os', 'consumer_sml', 'consumer_npl'] as $metricKey) {
+            $this->assertTrue($rowsByParent->get($metricKey, collect())->isEmpty());
+        }
+        foreach (['briguna_konsumer_os', 'briguna_konsumer_sml', 'briguna_konsumer_npl'] as $metricKey) {
+            $this->assertNotNull($dashboardRows->firstWhere('key', $metricKey));
+        }
+
+        $kcOnlyDashboard = (new DashboardHarianSnapshotService())->buildDashboardPayload(
+            '2026-08-29',
+            null,
+            ['KC Magetan'],
+            null
+        );
+        $kcOnlyRows = collect($kcOnlyDashboard['rows']);
+        $this->assertFalse($kcOnlyRows->contains('office_breakdown', true));
+        $this->assertNotNull($kcOnlyRows->firstWhere('key', 'giro_ritel'));
+        $this->assertFalse($kcOnlyRows->contains('label', 'A.1 KC Magetan'));
+
+        $unitDashboard = (new DashboardHarianSnapshotService())->buildDashboardPayload(
+            '2026-08-29',
+            null,
+            ['KC Ponorogo'],
+            'kcp-sudirman-ponorogo'
+        );
+        $areaDashboard = (new DashboardHarianSnapshotService())->buildDashboardPayload(
+            '2026-08-29',
+            null,
+            ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'],
+            null
+        );
+
+        $this->assertFalse(collect($unitDashboard['rows'])->contains('office_breakdown', true));
+        $this->assertFalse(collect($areaDashboard['rows'])->contains('office_breakdown', true));
+    }
+
     public function test_slug_filter_conditions_match_all_scope_parts(): void
     {
         $service = new DashboardHarianSnapshotService();
@@ -354,6 +615,124 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertCount(1, $rows);
         $this->assertSame('00045', (string) $rows->first()->unit_code);
         $this->assertSame(1250.0, (float) $rows->first()->pinjaman);
+    }
+
+    public function test_keragaan_uker_konsol_rolls_kc_and_kcp_into_one_retail_row_without_changing_micro_units(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_simpanan')->insert([
+            'Month_Day_Year_of_Posisi' => '2026-08-17',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '00045 -- KC Madiun',
+            'saldo' => 1,
+        ]);
+        Schema::create('rka', function (Blueprint $table): void {
+            $table->string('uniqueid_namareport')->primary();
+            $table->string('kanca')->nullable();
+            $table->string('desc_uker')->nullable();
+            $table->string('mata_anggaran')->nullable();
+            $table->decimal('aug', 20, 2)->nullable();
+            $table->timestamps();
+        });
+        DB::table('rka')->insert([
+            [
+                'uniqueid_namareport' => 'konsol-kc-madiun',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '45-KC Madiun',
+                'mata_anggaran' => 'B. KREDIT TOTAL',
+                'aug' => 10_000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'uniqueid_namareport' => 'konsol-kcp-caruban',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '552-KCP Caruban',
+                'mata_anggaran' => 'B. KREDIT TOTAL',
+                'aug' => 4_000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('ssa_pinjaman')->insert([
+            [
+                'month_day_year_of_periode' => '2026-08-17',
+                'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+                'nama_uker' => '00045 -- KC Madiun',
+                'kolektabilitas_one_obligor' => '1',
+                'baki_debet' => 1_000,
+            ],
+            [
+                'month_day_year_of_periode' => '2026-08-17',
+                'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+                'nama_uker' => '00552 -- KCP Caruban',
+                'kolektabilitas_one_obligor' => '1',
+                'baki_debet' => 400,
+            ],
+            [
+                'month_day_year_of_periode' => '2026-08-17',
+                'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+                'nama_uker' => '06340 -- UNIT Dagangan Madiun',
+                'kolektabilitas_one_obligor' => '1',
+                'baki_debet' => 9_000,
+            ],
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $regular = $service->buildKeragaanUkerPayload('2026-08-17', '2026-08', 'KC Madiun', 'all', 'pinjaman');
+        $konsol = $service->buildKeragaanUkerPayload(
+            '2026-08-17',
+            '2026-08',
+            'KC Madiun',
+            DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE,
+            'pinjaman'
+        );
+
+        $regularRows = collect($regular['rows'])->keyBy('unit_name');
+        $konsolRows = collect($konsol['rows'])->keyBy('unit_name');
+
+        $this->assertCount(3, $regularRows);
+        $this->assertSame(1_000.0, (float) data_get($regularRows->get('KC Madiun'), 'metrics.0.values.current'));
+        $this->assertSame(400.0, (float) data_get($regularRows->get('KCP Caruban'), 'metrics.0.values.current'));
+        $this->assertSame(10_000.0, (float) data_get($regularRows->get('KC Madiun'), 'metrics.0.rka'));
+        $this->assertSame(4_000.0, (float) data_get($regularRows->get('KCP Caruban'), 'metrics.0.rka'));
+        $this->assertSame(DashboardHarianSnapshotService::ALL_UNIT_KONSOL_LABEL, data_get($konsol, 'summary.unit_label'));
+        $this->assertCount(2, $konsolRows);
+        $this->assertSame(1_400.0, (float) data_get($konsolRows->get('KC Madiun'), 'metrics.0.values.current'));
+        $this->assertSame(14_000.0, (float) data_get($konsolRows->get('KC Madiun'), 'metrics.0.rka'));
+        $this->assertSame(9_000.0, (float) data_get($konsolRows->get('UNIT Dagangan Madiun'), 'metrics.0.values.current'));
+        $this->assertArrayNotHasKey('KCP Caruban', $konsolRows->all());
+        $this->assertSame(
+            (float) data_get($regular, 'totals.metrics.0.values.current'),
+            (float) data_get($konsol, 'totals.metrics.0.values.current')
+        );
+    }
+
+    public function test_keragaan_uker_filter_options_offer_regular_and_konsol_all_unit_scopes(): void
+    {
+        $this->createSourceMetadataTables();
+        $service = new DashboardHarianSnapshotService();
+        $controller = new DashboardHarianController($service);
+        $filterOptions = new \ReflectionMethod($controller, 'keragaanUkerFilterOptions');
+        $filterOptions->setAccessible(true);
+
+        $filters = $filterOptions->invoke(
+            $controller,
+            null,
+            'KC Madiun',
+            DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE
+        );
+
+        $this->assertSame([
+            'all',
+            DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE,
+        ], array_slice(array_column($filters['unit_kerja'], 'value'), 0, 2));
+        $this->assertSame([
+            'Semua Unit Kerja',
+            DashboardHarianSnapshotService::ALL_UNIT_KONSOL_LABEL,
+        ], array_slice(array_column($filters['unit_kerja'], 'label'), 0, 2));
     }
 
     public function test_filter_options_treat_all_kancas_as_area6_and_hide_units_until_scoped(): void

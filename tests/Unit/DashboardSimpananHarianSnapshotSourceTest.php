@@ -409,6 +409,27 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $this->assertSame('33', $recoveryCard['realization_value']);
     }
 
+    public function test_area6_portfolio_uses_the_selected_period_instead_of_the_latest_snapshot(): void
+    {
+        DB::table('dashboard_harian_snapshots')->insert([
+            $this->summaryRow('2026-05-31', 'KC Madiun', 1_000_000_000, 2_000_000_000, 10, 20),
+            $this->summaryRow('2026-06-30', 'KC Madiun', 3_000_000_000, 4_000_000_000, 30, 40),
+        ]);
+
+        $controller = new DashboardSimpananController();
+        $mayPortfolio = $this->invokePrivate($controller, 'fetchArea6HarianPortfolio', ['2026-05-31']);
+        $betweenSnapshots = $this->invokePrivate($controller, 'fetchArea6HarianPortfolio', ['2026-06-15']);
+        $junePortfolio = $this->invokePrivate($controller, 'fetchArea6HarianPortfolio', ['2026-06-30']);
+
+        $this->assertSame('2026-05-31', $mayPortfolio['period']);
+        $this->assertSame('2026-05-31', $betweenSnapshots['period']);
+        $this->assertSame('2026-06-30', $junePortfolio['period']);
+        $this->assertEqualsWithDelta(1_000_000_000, $mayPortfolio['totals']['total_simpanan'], 0.01);
+        $this->assertEqualsWithDelta(3_000_000_000, $junePortfolio['totals']['total_simpanan'], 0.01);
+        $this->assertEqualsWithDelta(2_000_000_000, $mayPortfolio['totals']['total_os'], 0.01);
+        $this->assertEqualsWithDelta(4_000_000_000, $junePortfolio['totals']['total_os'], 0.01);
+    }
+
     public function test_area6_portfolio_segment_performance(): void
     {
         DB::table('dashboard_harian_snapshots')->insert([
@@ -675,6 +696,7 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
             'micro',
             'productivity',
             'digital_strategy',
+            'marketshare',
             'narrative',
         ], array_keys($payload));
         $this->assertSame('Area 6 - Region Malang', $payload['meta']['title']);

@@ -27,6 +27,10 @@ class ImportExcelControllerDailyLoanDuplicateGuardTest extends TestCase
             $table->id();
             $table->date('periode')->nullable();
         });
+        Schema::create('lw321pn', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->nullable();
+        });
     }
 
     public function test_daily_loan_duplicate_guard_rejects_existing_period(): void
@@ -50,6 +54,20 @@ class ImportExcelControllerDailyLoanDuplicateGuardTest extends TestCase
         ]);
 
         $this->assertTrue(true);
+    }
+
+    public function test_daily_loan_duplicate_guard_rejects_a_period_owned_by_lw321(): void
+    {
+        DB::table('lw321pn')->insert([
+            'periode' => '2026-05-25',
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('sudah ada di tabel lw321pn');
+
+        $this->invokeControllerMethod('assertDailyLoanImportPeriodsEmptyOrFail', [
+            ['2026-05-25'],
+        ]);
     }
 
     private function invokeControllerMethod(string $method, array $arguments): mixed

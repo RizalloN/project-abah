@@ -61,11 +61,9 @@ class LandingSmeAnalyticsContractTest extends TestCase
         preg_match('/data-loan-quality-config>\s*(\{.+\})\s*<\/script>/s', $qualityHtml, $qualityConfigMatch);
         $qualityConfig = json_decode((string) ($qualityConfigMatch[1] ?? ''), true, 512, JSON_THROW_ON_ERROR);
         $this->assertNotEmpty($qualityConfig['datasets']);
-        $this->assertSame(
-            [[], [], [], []],
-            array_column($qualityConfig['datasets'], 'borderDash'),
-            'Semua garis timeseries harus solid, bukan putus-putus.'
-        );
+        foreach (array_column($qualityConfig['datasets'], 'borderDash') as $borderDash) {
+            $this->assertSame([], $borderDash, 'Semua garis timeseries harus solid, bukan putus-putus.');
+        }
         $this->assertStringContainsString('data-loan-quality-toggle', $qualityHtml);
         $this->assertStringContainsString('tariff-series-chart-wrap', $tariffHtml);
         $this->assertStringContainsString('Kelonggaran Tarik', $tariffHtml);
@@ -101,6 +99,48 @@ class LandingSmeAnalyticsContractTest extends TestCase
         $this->assertNotNull($route);
         $this->assertContains('auth', $route->gatherMiddleware());
         $this->assertContains('user.branch.scope', $route->gatherMiddleware());
+    }
+
+    public function test_micro_quality_view_exposes_complete_quality_breakdown(): void
+    {
+        $qualityHtml = view('dashboard.partials.loan-quality-timeseries', [
+            'contentPortfolio' => [
+                'quality_timeseries' => [
+                    'available' => true,
+                    'year' => 2026,
+                    'labels' => ['Jan'],
+                    'period_labels' => ['31 Jan 2026'],
+                    'source' => 'SSA Pinjaman',
+                    'series' => [
+                        'lar' => [60.0], 'lr' => [10.0], 'sml' => [20.0],
+                        'sml1' => [5.0], 'sml2' => [7.0], 'sml3' => [8.0],
+                        'kl' => [10.0], 'd' => [8.0], 'm' => [12.0], 'npl' => [30.0],
+                    ],
+                    'points' => [[
+                        'period_label' => '31 Jan 2026',
+                        'lar' => 60.0,
+                        'lr' => 10.0,
+                        'sml' => 20.0,
+                        'sml1' => 5.0,
+                        'sml2' => 7.0,
+                        'sml3' => 8.0,
+                        'kl' => 10.0,
+                        'd' => 8.0,
+                        'm' => 12.0,
+                        'npl' => 30.0,
+                    ]],
+                ],
+            ],
+            'contentScopeKey' => 'micro',
+        ])->render();
+
+        $this->assertStringContainsString('data-loan-quality-metric="lar"', $qualityHtml);
+        $this->assertStringContainsString('data-loan-quality-metric="lr"', $qualityHtml);
+        $this->assertStringContainsString('data-loan-quality-metric="sml"', $qualityHtml);
+        $this->assertStringContainsString('data-loan-quality-metric="npl"', $qualityHtml);
+        foreach (['sml1', 'sml2', 'sml3', 'kl', 'd', 'm'] as $metric) {
+            $this->assertStringContainsString('data-loan-quality-metric="'.$metric.'"', $qualityHtml);
+        }
     }
 
     public function test_sme_operating_desk_exposes_tiers_vendor_drilldown_and_inactivity(): void

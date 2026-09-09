@@ -5,6 +5,21 @@
 @section('content')
 
 <div class="import-page">
+    <!-- Hero Header -->
+    <div class="import-hero mb-3">
+        <div class="import-hero__glow"></div>
+        <div class="d-flex align-items-center justify-content-between flex-wrap position-relative">
+            <div class="pr-3">
+                <span class="import-hero__eyebrow"><i class="fas fa-file-import mr-1"></i> Data Pipeline &amp; Ingestion</span>
+                <h2 class="import-hero__title h4 font-weight-bold text-white mb-0"><i class="fas fa-cloud-upload-alt mr-2"></i> Import Data Portal</h2>
+                <p class="import-hero__text mb-0">Unggah berkas laporan operasional, konfirmasi pemetaan data, dan sinkronisasi basis data secara terstruktur.</p>
+            </div>
+            <div class="import-hero__badge mt-3 mt-md-0">
+                <i class="fas fa-layer-group mr-2"></i> Ingestion Workspace
+            </div>
+        </div>
+    </div>
+
     <div class="card border-0 mb-3 shadow-sm import-template-card import-template-bar">
         <div class="card-body import-template-card__body">
             <div class="import-template-bar__intro">
@@ -3847,18 +3862,86 @@
         animation: selectDropdownReveal 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
 
-    /* Quiet upload workspace: compact, neutral, and centered on the next action. */
+    /* 1. Executive Hero Header */
+    .import-hero {
+        position: relative;
+        overflow: hidden;
+        border-radius: 16px;
+        padding: 1.5rem 2rem;
+        background: linear-gradient(135deg, #071d41 0%, #0857c3 55%, #0284c7 100%);
+        color: #ffffff;
+        box-shadow: 0 10px 25px -5px rgba(8, 87, 195, 0.25), 0 8px 10px -6px rgba(8, 87, 195, 0.2);
+        background-image: 
+            radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+            linear-gradient(135deg, #071d41 0%, #0857c3 55%, #0284c7 100%);
+        background-size: 20px 20px, 100% 100%;
+    }
+    .import-hero__glow {
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 380px;
+        height: 380px;
+        background: radial-gradient(circle, rgba(113, 197, 232, 0.2) 0%, rgba(8, 87, 195, 0) 70%);
+        pointer-events: none;
+    }
+    .import-hero__eyebrow {
+        display: inline-flex;
+        align-items: center;
+        margin-bottom: 0.5rem;
+        padding: 0.35rem 0.85rem;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #e0f2fe;
+        background: rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .import-hero__title {
+        color: #ffffff;
+        font-size: 1.6rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        margin-bottom: 0.3rem;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    }
+    .import-hero__text {
+        color: #e2e8f0;
+        font-size: 0.9rem;
+        max-width: 680px;
+        line-height: 1.5;
+    }
+    .import-hero__badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.5rem 1.1rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        color: #ffffff;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    /* 2. Upload Workspace & Template Card */
     .import-template-card,
     .import-upload-card {
-        border: 1px solid #dbe3ec !important;
-        border-radius: 8px;
+        border: 1px solid rgba(8, 87, 195, 0.1) !important;
+        border-radius: 16px !important;
         background: #ffffff;
-        box-shadow: 0 8px 22px -20px rgba(15, 23, 42, 0.42) !important;
+        box-shadow: 0 10px 30px rgba(8, 87, 195, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+        overflow: hidden;
     }
 
     .import-template-card__body,
     .import-upload-card__body {
-        padding: 1rem !important;
+        padding: 1.25rem 1.5rem !important;
     }
 
     .import-template-card__eyebrow,
@@ -3867,20 +3950,23 @@
         border: 0;
         border-radius: 0;
         background: transparent;
-        color: #64748b;
-        font-size: 0.68rem;
+        color: #0857c3;
+        font-size: 0.72rem;
+        font-weight: 800;
         letter-spacing: 0.08em;
+        text-transform: uppercase;
     }
 
     .import-template-card__title,
     .import-upload-card__title {
-        color: #172033 !important;
-        font-size: 1.05rem;
+        color: #0f172a !important;
+        font-size: 1.15rem;
+        font-weight: 800;
     }
 
     .import-template-card__title .text-primary,
     .import-upload-card__title .text-primary {
-        color: #0b5cab !important;
+        color: #0857c3 !important;
     }
 
     .import-template-card__text,
@@ -3894,31 +3980,32 @@
     .import-upload-card__body .form-control,
     .import-upload-card__body .select2-container--default .select2-selection--single,
     select.form-control:not(.select2-hidden-accessible) {
-        min-height: 40px !important;
-        height: 40px !important;
-        padding: 0 0.8rem !important;
+        min-height: 42px !important;
+        height: 42px !important;
+        padding: 0 0.85rem !important;
         border: 1px solid #cbd5e1 !important;
-        border-radius: 6px !important;
+        border-radius: 8px !important;
         background-color: #ffffff !important;
         box-shadow: none !important;
-        color: #334155 !important;
+        color: #1e293b !important;
         font-size: 0.88rem !important;
         font-weight: 600 !important;
     }
 
     .import-upload-card__header {
-        padding: 1rem !important;
+        padding: 1.25rem 1.5rem !important;
         background: #ffffff !important;
-        border-bottom: 1px solid #e5eaf0 !important;
+        border-bottom: 1px solid #e2e8f0 !important;
     }
 
     .import-upload-card__badge {
-        padding: 0.38rem 0.6rem;
+        padding: 0.4rem 0.75rem;
         border: 1px solid #cbd5e1;
-        border-radius: 5px;
+        border-radius: 8px;
         background: #f8fafc;
         color: #475569;
-        font-size: 0.7rem;
+        font-size: 0.72rem;
+        font-weight: 700;
         box-shadow: none;
     }
 
@@ -3929,114 +4016,137 @@
 
     .import-report-summary__item,
     .import-report-summary__item:nth-child(n) {
-        padding: 0.7rem 0.8rem;
+        padding: 0.75rem 0.95rem;
         border: 1px solid #e2e8f0;
         border-left: 3px solid #94a3b8;
-        border-radius: 6px;
+        border-radius: 10px;
         background: #f8fafc;
         box-shadow: none;
         transform: none;
     }
 
     .import-report-summary__item:nth-child(1) {
-        border-left-color: #0b5cab;
-    }
-
-    .import-report-summary__item:hover {
-        box-shadow: none;
-        transform: none;
+        border-left-color: #0857c3;
     }
 
     .import-report-summary__item .import-report-summary__label,
     .import-report-summary__item:nth-child(n) .import-report-summary__label {
         color: #64748b;
-        font-size: 0.64rem;
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
     }
 
     .import-report-summary__item strong {
-        color: #1e293b;
-        font-size: 0.88rem;
+        color: #0f172a;
+        font-size: 0.92rem;
+        font-weight: 800;
     }
 
     .import-upload-card__body .form-group label {
         margin-bottom: 0.4rem;
         color: #334155 !important;
-        font-size: 0.82rem;
+        font-size: 0.84rem;
+        font-weight: 700;
     }
 
     .import-dropzone {
-        min-height: 170px;
+        min-height: 180px;
         margin-top: 0;
-        padding: 1.1rem;
-        border: 1px dashed #94a3b8 !important;
-        border-radius: 8px !important;
+        padding: 1.25rem;
+        border: 2px dashed #cbd5e1 !important;
+        border-radius: 14px !important;
         background: #f8fafc;
         box-shadow: none;
+        transition: all 0.2s ease;
     }
 
     .import-dropzone:hover,
     .import-dropzone:focus,
     .import-dropzone.is-dragover {
         transform: none;
-        border-color: #0b5cab !important;
-        background: #f1f5f9;
-        box-shadow: 0 0 0 3px rgba(11, 92, 171, 0.1);
+        border-color: #0857c3 !important;
+        background: #eff6ff;
+        box-shadow: 0 0 0 4px rgba(8, 87, 195, 0.12);
     }
 
     .import-dropzone__icon,
     .import-dropzone.has-file .import-dropzone__icon {
-        width: 46px;
-        height: 46px;
-        border-radius: 6px;
-        background: #e2e8f0;
-        color: #0b5cab !important;
+        width: 50px;
+        height: 50px;
+        border-radius: 12px;
+        background: #e0f2fe;
+        color: #0857c3 !important;
+        font-size: 1.35rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
     .import-dropzone__title {
-        font-size: 0.98rem;
+        font-size: 1rem;
+        font-weight: 800;
+        color: #0f172a;
     }
 
     .import-dropzone__text {
-        font-size: 0.82rem;
+        font-size: 0.84rem;
+        color: #64748b;
     }
 
     .import-dropzone__hint {
-        margin-top: 0.6rem;
+        margin-top: 0.75rem;
+        display: flex;
+        gap: 0.4rem;
+        justify-content: center;
     }
 
     .import-dropzone__hint span {
-        min-height: 24px;
-        padding: 0.2rem 0.45rem;
-        border-radius: 4px;
+        min-height: 26px;
+        padding: 0.25rem 0.6rem;
+        border-radius: 6px;
         background: #ffffff;
-        font-size: 0.68rem;
-    }
-
-    .import-file-preview {
-        padding: 0.7rem 0.8rem;
-        border: 1px solid #cbd5e1;
-        border-radius: 6px !important;
-        background: #f8fafc;
-        box-shadow: none;
-    }
-
-    .import-file-preview__icon {
-        width: 38px;
-        height: 38px;
-        border-radius: 5px;
-        background: #e2e8f0;
-        color: #0b5cab;
-    }
-
-    .import-file-preview__clear {
-        padding: 0.45rem 0.55rem;
-        border-radius: 5px;
-        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        font-size: 0.72rem;
+        font-weight: 700;
         color: #475569;
     }
 
+    .import-file-preview {
+        padding: 0.85rem 1rem;
+        border: 1px solid #bfdbfe;
+        border-radius: 12px !important;
+        background: #eff6ff;
+        box-shadow: 0 2px 8px rgba(8, 87, 195, 0.08);
+    }
+
+    .import-file-preview__icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        background: #dbeafe;
+        color: #0857c3;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.15rem;
+    }
+
+    .import-file-preview__clear {
+        padding: 0.45rem 0.65rem;
+        border-radius: 8px;
+        border: 1px solid #fca5a5;
+        background: #ffffff;
+        color: #dc2626;
+        transition: all 0.2s ease;
+    }
+    .import-file-preview__clear:hover {
+        background: #fef2f2;
+    }
+
     .import-upload-card__footer {
-        padding: 0 1rem 1rem;
+        padding: 1rem 1.5rem 1.25rem;
         background: #ffffff;
     }
 
@@ -4045,23 +4155,25 @@
     .import-upload-card__submit.btn-primary,
     .import-upload-card__submit.btn-success,
     .import-upload-card__submit.btn-info {
-        min-height: 40px;
-        padding: 0.5rem 0.85rem;
-        border: 1px solid #0b5cab;
-        border-radius: 6px;
-        background: #0b5cab;
-        box-shadow: none;
-        font-size: 0.82rem;
+        min-height: 42px;
+        padding: 0.55rem 1.25rem;
+        border: 0;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #0857c3 0%, #0284c7 100%);
+        color: #ffffff;
+        font-weight: 700;
+        font-size: 0.88rem;
+        box-shadow: 0 4px 12px rgba(8, 87, 195, 0.25);
+        transition: all 0.2s ease;
     }
 
     .import-template-button:hover,
     .import-upload-card__submit.btn-primary:hover,
     .import-upload-card__submit.btn-success:hover,
     .import-upload-card__submit.btn-info:hover {
-        transform: none;
-        border-color: #084a88;
-        background: #084a88;
-        box-shadow: none;
+        transform: translateY(-1px);
+        color: #ffffff;
+        box-shadow: 0 6px 16px rgba(8, 87, 195, 0.35);
     }
 
     .swal-modern-popup {
@@ -4114,6 +4226,7 @@
         min-height: 68px;
     }
 
+    /* Quiet upload workspace: compact, neutral, and centered on the next action. */
     /* Workflow layout: one clear path from report selection to file preview. */
     .import-page {
         display: grid;

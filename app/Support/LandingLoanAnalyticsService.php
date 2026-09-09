@@ -19,7 +19,7 @@ final class LandingLoanAnalyticsService
 
     private const PERFORMANCE_SNAPSHOT_TABLE = 'performance_rm_cabang_snapshots';
 
-    private const CACHE_VERSION = 'v7-sme-ssa-monthly-os-realization';
+    private const CACHE_VERSION = 'v11-micro-quality-full-detail';
 
     private const RESTRUCTURING_FREQUENCY_CACHE_VERSION = 'v1';
 
@@ -44,7 +44,8 @@ final class LandingLoanAnalyticsService
     {
         $segmentScope = is_string($segmentScope) && isset(self::SEGMENTS[$segmentScope]) ? $segmentScope : null;
         $empty = $this->emptyPayload($requestedPeriod, $branchScope);
-        if (! $this->sourceIsReady()) {
+        $microSsaOnly = $segmentScope === 'micro' && $this->ssaTariffSourceIsReady();
+        if (! $this->sourceIsReady() && ! $microSsaOnly) {
             return $empty;
         }
 
@@ -79,6 +80,12 @@ final class LandingLoanAnalyticsService
                     ? [$segmentScope => self::SEGMENTS[$segmentScope]]
                     : self::SEGMENTS;
 
+                $dailySegments = array_diff_key($segments, ['micro' => true]);
+                $quality = $this->qualityPayload($year, $monthEnds, $branchScope, $dailySegments);
+                if (isset($segments['micro'])) {
+                    $quality['micro'] = $this->microSsaQualityPayload($year, $period, $branchScope);
+                }
+
                 return [
                     'meta' => [
                         'available' => $monthEnds->isNotEmpty(),
@@ -89,7 +96,7 @@ final class LandingLoanAnalyticsService
                         'source' => 'Daily Loan Dinamis',
                         'error' => '',
                     ],
-                    'quality' => $this->qualityPayload($year, $monthEnds, $branchScope, $segments),
+                    'quality' => $quality,
                     'tariff_relief' => $segmentScope === null || $segmentScope === 'sme'
                         ? $this->tariffPayload($period, $year, $branchScope)
                         : $this->emptyTariffPayload(),
@@ -249,12 +256,33 @@ final class LandingLoanAnalyticsService
                 ->whereIn('segmen_kinerja', array_values($segments));
             $this->applyBranchScope($query, $branchScope);
 
+            $hasDetail = Schema::hasColumn(self::SOURCE_TABLE, 'kolek_detail');
+            $hasAge = Schema::hasColumn(self::SOURCE_TABLE, 'umur_tunggakan');
+            $sml1Condition = implode(' OR ', array_filter([
+                $hasDetail ? "UPPER(TRIM(COALESCE(kolek_detail, ''))) IN ('DPK1', 'DPK 1', 'SML1', 'SML 1')" : null,
+                $hasAge ? "COALESCE(umur_tunggakan, 0) < 31" : null,
+            ])) ?: '1 = 0';
+            $sml2Condition = implode(' OR ', array_filter([
+                $hasDetail ? "UPPER(TRIM(COALESCE(kolek_detail, ''))) IN ('DPK2', 'DPK 2', 'SML2', 'SML 2')" : null,
+                $hasAge ? "COALESCE(umur_tunggakan, 0) BETWEEN 31 AND 60" : null,
+            ])) ?: '1 = 0';
+            $sml3Condition = implode(' OR ', array_filter([
+                $hasDetail ? "UPPER(TRIM(COALESCE(kolek_detail, ''))) IN ('DPK3', 'DPK 3', 'SML3', 'SML 3')" : null,
+                $hasAge ? "COALESCE(umur_tunggakan, 0) >= 61" : null,
+            ])) ?: '1 = 0';
+
             $rows = $query
                 ->selectRaw('periode')
                 ->selectRaw('segmen_kinerja AS segment_key')
                 ->selectRaw("SUM(CASE WHEN (COALESCE(kolek, 0) * 1) = 1 AND UPPER(TRIM(COALESCE(flag_restruk, ''))) = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS lr_amount")
-                ->selectRaw('SUM(CASE WHEN (COALESCE(kolek, 0) * 1) = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS sml_amount')
-                ->selectRaw('SUM(CASE WHEN (COALESCE(kolek, 0) * 1) > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS npl_amount')
+                ->selectRaw("SUM(CASE WHEN (COALESCE(kolek, 0) * 1) = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS sml_amount")
+                ->selectRaw("SUM(CASE WHEN (COALESCE(kolek, 0) * 1) = 2 AND ({$sml1Condition}) THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS sml1_amount")
+                ->selectRaw("SUM(CASE WHEN (COALESCE(kolek, 0) * 1) = 2 AND ({$sml2Condition}) THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS sml2_amount")
+                ->selectRaw("SUM(CASE WHEN (COALESCE(kolek, 0) * 1) = 2 AND ({$sml3Condition}) THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS sml3_amount")
+                ->selectRaw("SUM(CASE WHEN (COALESCE(kolek, 0) * 1) = 3 THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS kl_amount")
+                ->selectRaw("SUM(CASE WHEN (COALESCE(kolek, 0) * 1) = 4 THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS d_amount")
+                ->selectRaw("SUM(CASE WHEN (COALESCE(kolek, 0) * 1) = 5 THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS m_amount")
+                ->selectRaw("SUM(CASE WHEN (COALESCE(kolek, 0) * 1) > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS npl_amount")
                 ->groupBy('periode', 'segmen_kinerja')
                 ->get()
                 ->keyBy(static fn (object $row): string => strtoupper(trim((string) $row->segment_key)).'|'.substr((string) $row->periode, 0, 10));
@@ -272,26 +300,57 @@ final class LandingLoanAnalyticsService
 
         $payload = [];
         foreach ($segments as $scope => $segment) {
-            $series = ['lr' => [], 'sml' => [], 'npl' => [], 'lar' => []];
+            $series = [
+                'lar' => [],
+                'lr' => [],
+                'sml' => [],
+                'sml1' => [],
+                'sml2' => [],
+                'sml3' => [],
+                'kl' => [],
+                'd' => [],
+                'm' => [],
+                'npl' => [],
+            ];
             $points = [];
             for ($month = 1; $month <= 12; $month++) {
                 $period = $monthPeriods->get($month);
                 $row = $period ? $rows->get($segment.'|'.$period) : null;
-                $lr = $row ? ((float) $row->lr_amount / 1_000_000) : null;
-                $sml = $row ? ((float) $row->sml_amount / 1_000_000) : null;
-                $npl = $row ? ((float) $row->npl_amount / 1_000_000) : null;
-                $lar = $row ? ($lr + $sml + $npl) : null;
+                $lr = $row && isset($row->lr_amount) ? ((float) $row->lr_amount / 1_000_000) : null;
+                $sml = $row && isset($row->sml_amount) ? ((float) $row->sml_amount / 1_000_000) : null;
+                $sml1 = $row && isset($row->sml1_amount) ? ((float) $row->sml1_amount / 1_000_000) : null;
+                $sml2 = $row && isset($row->sml2_amount) ? ((float) $row->sml2_amount / 1_000_000) : null;
+                $sml3 = $row && isset($row->sml3_amount) ? ((float) $row->sml3_amount / 1_000_000) : null;
+                $kl = $row && isset($row->kl_amount) ? ((float) $row->kl_amount / 1_000_000) : null;
+                $d = $row && isset($row->d_amount) ? ((float) $row->d_amount / 1_000_000) : null;
+                $m = $row && isset($row->m_amount) ? ((float) $row->m_amount / 1_000_000) : null;
+                $npl = $row && isset($row->npl_amount) ? ((float) $row->npl_amount / 1_000_000) : null;
+                $lar = $row && ($lr !== null || $sml !== null || $npl !== null) ? (($lr ?? 0.0) + ($sml ?? 0.0) + ($npl ?? 0.0)) : null;
+
+                $series['lar'][] = $lar;
                 $series['lr'][] = $lr;
                 $series['sml'][] = $sml;
+                $series['sml1'][] = $sml1;
+                $series['sml2'][] = $sml2;
+                $series['sml3'][] = $sml3;
+                $series['kl'][] = $kl;
+                $series['d'][] = $d;
+                $series['m'][] = $m;
                 $series['npl'][] = $npl;
-                $series['lar'][] = $lar;
+
                 $points[] = [
                     'period' => $period,
                     'period_label' => $period ? Carbon::parse($period)->translatedFormat('d M Y') : '-',
+                    'lar' => $lar,
                     'lr' => $lr,
                     'sml' => $sml,
+                    'sml1' => $sml1,
+                    'sml2' => $sml2,
+                    'sml3' => $sml3,
+                    'kl' => $kl,
+                    'd' => $d,
+                    'm' => $m,
                     'npl' => $npl,
-                    'lar' => $lar,
                 ];
             }
 
@@ -351,6 +410,166 @@ final class LandingLoanAnalyticsService
     }
 
     /**
+     * Total kualitas Mikro mengacu pada SSA Pinjaman di posisi akhir bulan.
+     * SSA tidak menyimpan bucket SML 1-3, sehingga komposisinya diambil dari
+     * Daily Loan pada tanggal yang sama lalu dinormalisasi ke total SML SSA.
+     *
+     * @param  array<string, mixed>|null  $branchScope
+     * @return array<string, mixed>
+     */
+    private function microSsaQualityPayload(int $year, string $latestPeriod, ?array $branchScope): array
+    {
+        $labels = [];
+        $periodLabels = [];
+        $series = [
+            'lar' => [],
+            'lr' => [],
+            'sml' => [],
+            'sml1' => [],
+            'sml2' => [],
+            'sml3' => [],
+            'kl' => [],
+            'd' => [],
+            'm' => [],
+            'npl' => [],
+        ];
+        $points = [];
+
+        $rows = collect();
+        if ($this->ssaTariffSourceIsReady()) {
+            $query = DB::table(self::SSA_LOAN_TABLE)
+                ->whereBetween('month_day_year_of_periode', [sprintf('%d-01-01', $year), $latestPeriod])
+                ->whereRaw("UPPER(TRIM(COALESCE(segmen_dashboard, ''))) = 'MICRO'");
+            $this->applySsaBranchScope($query, $branchScope);
+
+            $lrCondition = Schema::hasColumn(self::SSA_LOAN_TABLE, 'flag_restruk')
+                ? "(COALESCE(kolektabilitas_one_obligor, 0) * 1) = 1 AND UPPER(TRIM(COALESCE(flag_restruk, ''))) = 'Y'"
+                : '1 = 0';
+
+            $rows = $query
+                ->selectRaw('month_day_year_of_periode AS periode')
+                ->selectRaw("SUM(CASE WHEN {$lrCondition} THEN COALESCE(baki_debet, 0) ELSE 0 END) AS lr_amount")
+                ->selectRaw("SUM(CASE WHEN (COALESCE(kolektabilitas_one_obligor, 0) * 1) = 2 THEN COALESCE(baki_debet, 0) ELSE 0 END) AS sml_amount")
+                ->selectRaw("SUM(CASE WHEN (COALESCE(kolektabilitas_one_obligor, 0) * 1) = 3 THEN COALESCE(baki_debet, 0) ELSE 0 END) AS kl_amount")
+                ->selectRaw("SUM(CASE WHEN (COALESCE(kolektabilitas_one_obligor, 0) * 1) = 4 THEN COALESCE(baki_debet, 0) ELSE 0 END) AS d_amount")
+                ->selectRaw("SUM(CASE WHEN (COALESCE(kolektabilitas_one_obligor, 0) * 1) = 5 THEN COALESCE(baki_debet, 0) ELSE 0 END) AS m_amount")
+                ->groupBy('month_day_year_of_periode')
+                ->get()
+                ->filter(static fn (object $row): bool => Carbon::parse($row->periode)->isLastOfMonth())
+                ->keyBy(static fn (object $row): string => substr((string) $row->periode, 0, 10));
+        }
+        $smlDetails = $this->microDailySmlBreakdown($rows->keys(), $branchScope);
+
+        for ($month = 1; $month <= 12; $month++) {
+            $monthDate = Carbon::create($year, $month, 1);
+            $period = $monthDate->copy()->endOfMonth()->toDateString();
+            $row = $rows->get($period);
+            $lr = $row ? (float) $row->lr_amount / 1_000_000 : null;
+            $sml = $row ? (float) $row->sml_amount / 1_000_000 : null;
+            $detail = $smlDetails->get($period);
+            $detailTotal = $detail
+                ? (float) $detail->sml1_amount + (float) $detail->sml2_amount + (float) $detail->sml3_amount
+                : 0.0;
+            $sml1 = $row && $detailTotal > 0.0 ? ((float) $detail->sml1_amount / $detailTotal) * $sml : null;
+            $sml2 = $row && $detailTotal > 0.0 ? ((float) $detail->sml2_amount / $detailTotal) * $sml : null;
+            $sml3 = $row && $detailTotal > 0.0 ? ((float) $detail->sml3_amount / $detailTotal) * $sml : null;
+            $kl = $row ? (float) $row->kl_amount / 1_000_000 : null;
+            $d = $row ? (float) $row->d_amount / 1_000_000 : null;
+            $m = $row ? (float) $row->m_amount / 1_000_000 : null;
+            $npl = $row ? $kl + $d + $m : null;
+            $lar = $row ? $lr + $sml + $npl : null;
+
+            $labels[] = $monthDate->translatedFormat('M');
+            $periodLabels[] = $row ? $monthDate->endOfMonth()->translatedFormat('d M Y') : '-';
+            $series['lar'][] = $lar;
+            $series['lr'][] = $lr;
+            $series['sml'][] = $sml;
+            $series['sml1'][] = $sml1;
+            $series['sml2'][] = $sml2;
+            $series['sml3'][] = $sml3;
+            $series['kl'][] = $kl;
+            $series['d'][] = $d;
+            $series['m'][] = $m;
+            $series['npl'][] = $npl;
+            $points[] = [
+                'period' => $row ? $period : null,
+                'period_label' => $row ? $monthDate->endOfMonth()->translatedFormat('d M Y') : '-',
+                'lar' => $lar,
+                'lr' => $lr,
+                'sml' => $sml,
+                'sml1' => $sml1,
+                'sml2' => $sml2,
+                'sml3' => $sml3,
+                'kl' => $kl,
+                'd' => $d,
+                'm' => $m,
+                'npl' => $npl,
+            ];
+        }
+
+        return [
+            'available' => collect($series['lar'])->contains(static fn ($value): bool => $value !== null),
+            'year' => $year,
+            'labels' => $labels,
+            'period_labels' => $periodLabels,
+            'series' => $series,
+            'points' => $points,
+            'unit' => 'Rp Juta',
+            'source' => 'SSA Pinjaman',
+            'detail_source' => 'Daily Loan Dinamis pada posisi akhir bulan yang sama',
+            'detail_method' => 'SML 1-3 dinormalisasi proporsional agar tepat merekonsiliasi total SML SSA',
+        ];
+    }
+
+    /**
+     * @param  Collection<int, string>  $periods
+     * @param  array<string, mixed>|null  $branchScope
+     * @return Collection<string, object>
+     */
+    private function microDailySmlBreakdown(Collection $periods, ?array $branchScope): Collection
+    {
+        $periods = $periods->filter()->unique()->values();
+        $hasDetail = Schema::hasColumn(self::SOURCE_TABLE, 'kolek_detail');
+        $hasAge = Schema::hasColumn(self::SOURCE_TABLE, 'umur_tunggakan');
+        if (! $this->sourceIsReady() || $periods->isEmpty() || (! $hasDetail && ! $hasAge)) {
+            return collect();
+        }
+
+        $detailExpression = $hasDetail
+            ? "UPPER(REPLACE(TRIM(COALESCE(kolek_detail, '')), ' ', ''))"
+            : "''";
+        $recognizedDetails = "'DPK1', 'SML1', 'DPK2', 'SML2', 'DPK3', 'SML3'";
+        $ageFallback = $hasDetail ? "{$detailExpression} NOT IN ({$recognizedDetails})" : '1 = 1';
+        $sml1Condition = implode(' OR ', array_filter([
+            $hasDetail ? "{$detailExpression} IN ('DPK1', 'SML1')" : null,
+            $hasAge ? "({$ageFallback}) AND umur_tunggakan IS NOT NULL AND COALESCE(umur_tunggakan, 0) < 31" : null,
+        ])) ?: '1 = 0';
+        $sml2Condition = implode(' OR ', array_filter([
+            $hasDetail ? "{$detailExpression} IN ('DPK2', 'SML2')" : null,
+            $hasAge ? "({$ageFallback}) AND COALESCE(umur_tunggakan, 0) BETWEEN 31 AND 60" : null,
+        ])) ?: '1 = 0';
+        $sml3Condition = implode(' OR ', array_filter([
+            $hasDetail ? "{$detailExpression} IN ('DPK3', 'SML3')" : null,
+            $hasAge ? "({$ageFallback}) AND COALESCE(umur_tunggakan, 0) >= 61" : null,
+        ])) ?: '1 = 0';
+
+        $query = DB::table(self::SOURCE_TABLE)
+            ->whereIn('periode', $periods->all())
+            ->where('segmen_kinerja', self::SEGMENTS['micro'])
+            ->whereRaw('(COALESCE(kolek, 0) * 1) = 2');
+        $this->applyBranchScope($query, $branchScope);
+
+        return $query
+            ->selectRaw('periode')
+            ->selectRaw("SUM(CASE WHEN {$sml1Condition} THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS sml1_amount")
+            ->selectRaw("SUM(CASE WHEN {$sml2Condition} THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS sml2_amount")
+            ->selectRaw("SUM(CASE WHEN {$sml3Condition} THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS sml3_amount")
+            ->groupBy('periode')
+            ->get()
+            ->keyBy(static fn (object $row): string => substr((string) $row->periode, 0, 10));
+    }
+
+    /**
      * @param  array<string, mixed>|null  $branchScope
      * @return array<string, mixed>
      */
@@ -393,7 +612,8 @@ final class LandingLoanAnalyticsService
             ->mapWithKeys(static fn (object $row): array => [
                 substr((string) $row->periode, 0, 10) => (float) $row->os_amount / 1_000_000,
             ]);
-        $realizationBalances = $this->tariffRealizationBalances($queryPeriods, $branchScope);
+        $closingPeriods = collect($pairs)->pluck('closing')->unique()->values();
+        $realizationBalances = $this->tariffRealizationBalances($closingPeriods, $branchScope);
 
         $points = [];
         foreach ($pairs as $monthKey => $pair) {
@@ -403,10 +623,9 @@ final class LandingLoanAnalyticsService
 
             $previousOs = (float) $balances->get($pair['previous']);
             $closingOs = (float) $balances->get($pair['closing']);
-            $realizationAvailable = $realizationBalances->has($pair['previous'])
-                && $realizationBalances->has($pair['closing']);
+            $realizationAvailable = $realizationBalances->has($pair['closing']);
             $dailyRealization = $realizationAvailable
-                ? max(0.0, (float) $realizationBalances->get($pair['closing']) - (float) $realizationBalances->get($pair['previous']))
+                ? max(0.0, (float) $realizationBalances->get($pair['closing']))
                 : 0.0;
             $rawDelta = $closingOs - $previousOs;
 
@@ -440,14 +659,14 @@ final class LandingLoanAnalyticsService
             'points' => $points,
             'latest' => $latest,
             'unit' => 'Rp Juta',
-            'source' => 'SSA Pinjaman',
+            'source' => 'SSA Pinjaman + Daily Loan Dinamis',
         ];
     }
 
     /**
-     * Realisasi pada hari closing dihitung dari selisih realisasi MTD snapshot
-     * closing terhadap H-1. Ini menjaga query tetap ringan dan tidak memindai
-     * tabel Daily Loan yang berukuran besar.
+     * Setiap bulan memakai snapshot Daily Loan pada akhir bulan tersebut.
+     * Hanya rekening SMALL dengan tanggal realisasi tepat pada hari closing
+     * yang dihitung, sehingga histori tidak bergantung pada snapshot terbaru.
      *
      * @param  Collection<int, string>  $periods
      * @param  array<string, mixed>|null  $branchScope
@@ -455,29 +674,38 @@ final class LandingLoanAnalyticsService
      */
     private function tariffRealizationBalances(Collection $periods, ?array $branchScope): Collection
     {
-        if (! Schema::hasTable(self::PERFORMANCE_SNAPSHOT_TABLE)) {
+        if (! $this->tariffRealizationSourceIsReady() || $periods->isEmpty()) {
             return collect();
         }
 
-        foreach (['periode', 'cabang', 'segmen', 'realisasi_os'] as $column) {
-            if (! Schema::hasColumn(self::PERFORMANCE_SNAPSHOT_TABLE, $column)) {
-                return collect();
-            }
-        }
-
-        $query = DB::table(self::PERFORMANCE_SNAPSHOT_TABLE)
+        $query = DB::table(self::SOURCE_TABLE)
             ->whereIn('periode', $periods->all())
-            ->whereRaw("UPPER(TRIM(COALESCE(segmen, ''))) = 'SMALL'");
-        $this->applySnapshotBranchScope($query, $branchScope);
+            ->where('segmen_kinerja', self::SEGMENTS['sme']);
+        $this->applyBranchScope($query, $branchScope);
 
         return $query
             ->selectRaw('periode')
-            ->selectRaw('SUM(COALESCE(realisasi_os, 0)) AS realization_amount')
+            ->selectRaw('SUM(CASE WHEN tgl_realisasi = periode THEN COALESCE(plafon, 0) ELSE 0 END) AS realization_amount')
             ->groupBy('periode')
             ->get()
             ->mapWithKeys(static fn (object $row): array => [
                 substr((string) $row->periode, 0, 10) => (float) $row->realization_amount / 1_000_000,
             ]);
+    }
+
+    private function tariffRealizationSourceIsReady(): bool
+    {
+        if (! Schema::hasTable(self::SOURCE_TABLE)) {
+            return false;
+        }
+
+        foreach (['periode', 'tgl_realisasi', 'plafon', 'segmen_kinerja', 'cabang_normalized'] as $column) {
+            if (! Schema::hasColumn(self::SOURCE_TABLE, $column)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** @param array<string, mixed>|null $branchScope */
@@ -515,6 +743,20 @@ final class LandingLoanAnalyticsService
     /** @param array<string, mixed>|null $branchScope */
     private function resolvePeriod(?string $requestedPeriod, ?array $branchScope, ?string $segmentScope): ?string
     {
+        if ($segmentScope === 'micro' && $this->ssaTariffSourceIsReady()) {
+            $ssaQuery = DB::table(self::SSA_LOAN_TABLE)
+                ->whereRaw("UPPER(TRIM(COALESCE(segmen_dashboard, ''))) = 'MICRO'");
+            $this->applySsaBranchScope($ssaQuery, $branchScope);
+            if ($requestedPeriod !== null && trim($requestedPeriod) !== '') {
+                $ssaQuery->where('month_day_year_of_periode', '<=', Carbon::parse($requestedPeriod)->toDateString());
+            }
+
+            $ssaPeriod = $ssaQuery->max('month_day_year_of_periode');
+            if ($ssaPeriod !== null) {
+                return substr((string) $ssaPeriod, 0, 10);
+            }
+        }
+
         if ($segmentScope === 'micro' && $this->microQualitySnapshotIsReady()) {
             $snapshotQuery = DB::table(self::PERFORMANCE_SNAPSHOT_TABLE)->where('segmen', 'MICRO');
             $this->applySnapshotBranchScope($snapshotQuery, $branchScope);
@@ -559,6 +801,21 @@ final class LandingLoanAnalyticsService
         ?string $segmentScope
     ): Collection
     {
+        if ($segmentScope === 'micro' && $this->ssaTariffSourceIsReady()) {
+            $ssaQuery = DB::table(self::SSA_LOAN_TABLE)
+                ->whereBetween('month_day_year_of_periode', [sprintf('%d-01-01', $year), $period])
+                ->whereRaw("UPPER(TRIM(COALESCE(segmen_dashboard, ''))) = 'MICRO'");
+            $this->applySsaBranchScope($ssaQuery, $branchScope);
+
+            return $ssaQuery
+                ->distinct()
+                ->orderBy('month_day_year_of_periode')
+                ->pluck('month_day_year_of_periode')
+                ->map(static fn ($value): string => substr((string) $value, 0, 10))
+                ->unique()
+                ->values();
+        }
+
         if ($segmentScope === 'micro' && $this->microQualitySnapshotIsReady()) {
             $snapshotQuery = DB::table(self::PERFORMANCE_SNAPSHOT_TABLE)
                 ->whereBetween('periode', [sprintf('%d-01-01', $year), $period])
@@ -719,7 +976,18 @@ final class LandingLoanAnalyticsService
                 'year' => $year,
                 'labels' => [],
                 'period_labels' => [],
-                'series' => ['lr' => [], 'sml' => [], 'npl' => [], 'lar' => []],
+                'series' => [
+                    'lar' => [],
+                    'lr' => [],
+                    'sml' => [],
+                    'sml1' => [],
+                    'sml2' => [],
+                    'sml3' => [],
+                    'kl' => [],
+                    'd' => [],
+                    'm' => [],
+                    'npl' => [],
+                ],
                 'points' => [],
                 'unit' => 'Rp Juta',
             ];
@@ -750,7 +1018,7 @@ final class LandingLoanAnalyticsService
             'points' => [],
             'latest' => null,
             'unit' => 'Rp Juta',
-            'source' => 'SSA Pinjaman',
+            'source' => 'SSA Pinjaman + Daily Loan Dinamis',
         ];
     }
 }

@@ -8,7 +8,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | file | 20 |
 | function | 14 |
-| method | 301 |
+| method | 304 |
 | unresolved_symbol | 23 |
 | route | 24 |
 | class | 17 |
@@ -107,14 +107,15 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | bank-pipeline -> core (calls) | 171 |
 | bank-pipeline -> access-control (protected_by) | 114 |
+| bank-pipeline -> core (instantiates) | 67 |
 | bank-pipeline -> core (accepts) | 66 |
-| bank-pipeline -> core (instantiates) | 65 |
 | core -> bank-pipeline (references_route) | 29 |
 | bank-pipeline -> access-control (calls) | 8 |
 | bank-pipeline -> core (extends) | 8 |
 | bank-pipeline -> core (renders) | 6 |
 | marketshare -> bank-pipeline (dispatches_to) | 4 |
 | tests -> bank-pipeline (instantiates) | 3 |
+| tests -> bank-pipeline (contains) | 3 |
 | bank-pipeline -> tests (extends) | 3 |
 | bank-pipeline -> core (defines_table) | 2 |
 | database -> bank-pipeline (defines_table) | 2 |
@@ -124,5 +125,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | bank-pipeline -> core (references_route) | 1 |
 | bank-pipeline -> core (dispatches) | 1 |
 | bank-pipeline -> tests (instantiates) | 1 |
+| bank-pipeline -> tests (calls) | 1 |
 | presentation -> bank-pipeline (instantiates) | 1 |
 | bank-pipeline -> core (uses_trait) | 1 |

@@ -836,92 +836,94 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.25rem;
-  margin: 0 1.5rem 1.15rem;
-  padding: 0.95rem 1.35rem;
+  gap: 1rem;
+  margin: 0 1.5rem 0.85rem;
+  padding: 0.45rem 1rem 0.45rem 1.15rem;
   border: 1.5px solid #bfdbfe;
-  border-left: 5px solid #0857c3;
-  border-radius: 16px;
+  border-left: 4.5px solid #0857c3;
+  border-radius: 14px;
   background: linear-gradient(135deg, #f8fbff 0%, #eff6ff 100%);
-  box-shadow: 0 4px 14px -2px rgba(8, 87, 195, 0.06);
+  box-shadow: 0 2px 8px -2px rgba(8, 87, 195, 0.08);
 }
 
 .ap-week-toolbar__copy {
-  display: grid;
-  gap: 0.2rem;
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
 .ap-week-toolbar__copy span {
   color: #0857c3;
   font-size: 0.78rem;
-  font-weight: 900;
+  font-weight: 850;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  display: flex;
+  letter-spacing: 0.04em;
+  display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-}
-
-.ap-week-toolbar__copy strong {
-  color: #334155;
-  font-size: 0.74rem;
-  font-weight: 650;
+  white-space: nowrap;
 }
 
 .ap-week-toggle {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(88px, 1fr));
-  gap: 0.55rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  flex-wrap: nowrap;
 }
 
 .ap-week-btn {
-  min-height: 48px;
-  padding: 0.45rem 0.85rem;
+  min-height: 38px;
+  min-width: 82px;
+  padding: 0.3rem 0.65rem;
   color: #334155;
   background: #ffffff;
   border: 1.5px solid #cbd5e1;
-  border-radius: 12px;
+  border-radius: 10px;
   text-align: center;
   cursor: pointer;
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
 }
 
 .ap-week-btn span {
-  font-size: 0.76rem;
-  font-weight: 900;
+  font-size: 0.74rem;
+  font-weight: 850;
   letter-spacing: -0.01em;
-  line-height: 1.15;
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 .ap-week-btn small {
-  font-size: 0.62rem;
-  font-weight: 750;
+  font-size: 0.58rem;
+  font-weight: 700;
   color: #64748b;
-  margin-top: 0.15rem;
+  margin-top: 0.1rem;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .ap-week-btn:hover:not(:disabled) {
   border-color: #0857c3;
   color: #0857c3;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 14px rgba(8, 87, 195, 0.14);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(8, 87, 195, 0.14);
 }
 
 .ap-week-btn.active {
   background: linear-gradient(135deg, #0857c3 0%, #1e40af 100%);
   border-color: #0857c3;
   color: #ffffff;
-  box-shadow: 0 8px 18px rgba(8, 87, 195, 0.32);
-  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(8, 87, 195, 0.3);
+  transform: translateY(-1px);
 }
 
 .ap-week-btn.active small {
-  color: #e0f2fe;
+  color: #dbeafe;
 }
 
 .ap-week-btn:disabled {
@@ -1061,9 +1063,10 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 /* ── KINERJA PER SEGMEN CARD ── */
 .area6-segment-container {
   display: grid;
-  grid-template-columns: 2.2fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.25rem;
   padding: 0 1.5rem 1.5rem;
+  align-items: stretch;
 }
 
 .area6-segment-card {
@@ -1072,6 +1075,9 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   box-shadow: var(--shadow-sm);
   border-radius: var(--r-xl);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .asc-header {
@@ -1335,6 +1341,47 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .bg-sml-blue { background: #0284c7; }
 .bg-npl-blue { background: #dc2626; }
 .bg-gray { background: #cbd5e1; }
+.bg-ytd { background: #64748b; }
+.bg-mtd { background: #0ea5e9; }
+.asc-table--micro-products { min-width: 1460px; }
+.asc-th-ref {
+  min-width: 92px;
+  color: #315776 !important;
+  background: #edf5fc !important;
+  border-left: 1px solid #d7e4f0;
+}
+.asc-td-ref {
+  position: relative;
+  min-width: 92px;
+  color: #31516d;
+  background: #f7fbff;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.75rem;
+}
+.asc-ref-num {
+  position: relative;
+  z-index: 2;
+  font-weight: 700;
+  color: #334155;
+  font-variant-numeric: tabular-nums;
+  display: block;
+}
+.asc-tr-total .asc-ref-num {
+  font-size: 0.80rem;
+  font-weight: 850;
+  color: #1e293b;
+}
+
+.bg-tone-green { background: #059669 !important; }
+.bg-tone-red { background: #dc2626 !important; }
+.bg-tone-neutral { background: #94a3b8 !important; }
+
+.text-tone-green { color: #059669 !important; font-weight: 800 !important; }
+.text-tone-red { color: #dc2626 !important; font-weight: 800 !important; }
+.text-tone-neutral { color: #64748b !important; font-weight: 700 !important; }
 
 /* ── TOTAL COMPOSITION CARD ── */
 .total-composition-card {
@@ -1448,34 +1495,50 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 }
 
 .tcc-total-badge {
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
-  padding: 0.85rem 1.1rem;
-  text-align: center;
+  background: linear-gradient(135deg, #f0f7ff 0%, #e2eeff 100%);
+  border: 1.2px solid #bcd8f7;
+  border-radius: 10px;
+  padding: 0.38rem 0.85rem;
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 1px 4px rgba(8, 87, 195, 0.04);
   margin-top: auto;
 }
 
 .tcc-total-label {
   font-size: 0.65rem;
   font-weight: 850;
-  color: #475569;
-  letter-spacing: 0.08em;
+  color: #334e68;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .tcc-total-val {
-  font-size: 1.25rem;
+  font-size: 1.05rem;
   font-weight: 900;
   color: #0857c3;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.tcc-total-unit {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #0857c3;
+  margin-left: 0.15rem;
 }
 
 /* ── HORIZONTAL COMPOSITION CHART (MICRO SCOPE) ── */
 .total-composition-card--micro .tcc-body {
-  justify-content: flex-start;
-  gap: 1.35rem;
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.45rem;
+  height: 100%;
 }
 
 .tcc-horizontal-chart {
@@ -1596,7 +1659,209 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   font-variant-numeric: tabular-nums;
 }
 
+/* ── COMPACT STRUCTURED MICRO QUALITY MATRIX ── */
+.tcc-quality-matrix {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #cce0f5;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+}
+.tcc-quality-row {
+  --quality-tone: #0754bd;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 88px 1fr 1fr;
+  align-items: center;
+  border-bottom: 1px solid #eaf0f7;
+  transition: background-color 0.12s ease;
+}
+.tcc-quality-row:hover:not(.tcc-quality-row--head):not(.tcc-quality-row--total) {
+  background-color: #f7faff;
+}
+.tcc-quality-row > span {
+  display: flex;
+  min-width: 0;
+  min-height: 25px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.16rem 0.48rem;
+  white-space: nowrap;
+}
+.tcc-quality-row > span + span {
+  border-left: 1px solid #eef3f9;
+}
+.tcc-quality-row--head {
+  color: #ffffff;
+  background: linear-gradient(135deg, #073f8b 0%, #0d5bbd 100%);
+  font-size: 0.64rem;
+  font-weight: 850;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-bottom: 0;
+}
+.tcc-quality-row--head > span {
+  min-height: 26px;
+  padding: 0.22rem 0.48rem;
+  align-items: flex-end;
+  text-align: right;
+  white-space: nowrap;
+}
+.tcc-quality-row--head > span:first-child {
+  align-items: flex-start;
+  text-align: left;
+}
+.tcc-quality-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.14rem 0.48rem;
+  color: #1e3a5f;
+  background: #edf5fd;
+  border-top: 1px solid #d8e6f7;
+  border-bottom: 1px solid #d8e6f7;
+  font-size: 0.58rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+.tcc-quality-group small {
+  color: #587593;
+  font-size: 0.52rem;
+  font-weight: 650;
+  text-transform: none;
+  letter-spacing: 0;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  border: 1px solid #d8e6f7;
+}
+.tcc-quality-name {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.38rem;
+  color: #1e293b;
+  font-size: 0.72rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+.tcc-quality-name i {
+  width: 4px;
+  height: 14px;
+  flex: 0 0 4px;
+  border-radius: 999px;
+  background: var(--quality-tone);
+}
+.tcc-cell-bar {
+  height: 3.5px;
+  border-radius: 999px;
+  margin-bottom: 2px;
+  margin-left: auto;
+  transition: width 0.3s ease;
+}
+.tcc-quality-value.is-up .tcc-cell-bar--mtd {
+  background: #dc2626;
+}
+.tcc-quality-value.is-down .tcc-cell-bar--mtd {
+  background: #059669;
+}
+.tcc-quality-value.is-flat .tcc-cell-bar--mtd {
+  background: #94a3b8;
+}
+.tcc-quality-row--total .tcc-quality-value.is-up .tcc-cell-bar--mtd {
+  background: #f87171;
+}
+.tcc-quality-row--total .tcc-quality-value.is-down .tcc-cell-bar--mtd {
+  background: #34d399;
+}
+.tcc-val-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  width: 100%;
+}
+.tcc-val-row b {
+  color: #0f172a;
+  font-size: 0.76rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+.tcc-val-row small {
+  color: #64748b;
+  font-size: 0.62rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+.tcc-quality-value {
+  align-items: flex-end;
+  text-align: right;
+}
+.tcc-quality-value b {
+  color: #0f172a;
+  font-size: 0.76rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+.tcc-quality-value small {
+  color: #64748b;
+  font-size: 0.56rem;
+  font-weight: 700;
+  margin-top: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.tcc-quality-value.is-up b {
+  color: #dc2626;
+}
+.tcc-quality-value.is-down b {
+  color: #059669;
+}
+.tcc-quality-row.tone-purple { --quality-tone: #7c3aed; }
+.tcc-quality-row.tone-blue { --quality-tone: #0857c3; }
+.tcc-quality-row.tone-cyan { --quality-tone: #0284c7; }
+.tcc-quality-row.tone-amber { --quality-tone: #d97706; }
+.tcc-quality-row.tone-orange { --quality-tone: #ea580c; }
+.tcc-quality-row.tone-red { --quality-tone: #dc3545; }
+.tcc-quality-row.tone-crimson { --quality-tone: #9f1239; }
+.tcc-quality-row--total {
+  color: #ffffff;
+  background: linear-gradient(135deg, #072d63 0%, #0c438c 100%);
+  border-bottom: 0;
+  font-weight: 850;
+}
+.tcc-quality-row--total > span {
+  min-height: 28px;
+  padding: 0.2rem 0.48rem;
+}
+.tcc-quality-row--total b {
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+.tcc-quality-row--total .tcc-quality-name {
+  color: #ffffff;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.tcc-quality-empty {
+  padding: 0.75rem;
+  color: #667b91;
+  text-align: center;
+  font-size: 0.68rem;
+}
+
 /* ── TREND POSISI & PERFORMANCE VS RKA ── */
+.area6-trend-perf-container {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
 .trend-position-card,
 .perf-rka-card {
   background: #ffffff;
@@ -1610,7 +1875,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 }
 
 .tpc-body {
-  padding: 1.6rem 0;
+  padding: 1.25rem 0.5rem;
   display: flex;
   height: 100%;
   align-items: stretch;
@@ -1618,7 +1883,8 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 
 .trend-col {
   flex: 1 1 0;
-  padding: 0 1.4rem;
+  min-width: 0;
+  padding: 0 0.85rem;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1638,9 +1904,10 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .trend-col-title {
   font-size: 0.74rem;
   font-weight: 850;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.15rem;
   text-align: center;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .text-os-blue { color: #0857c3; }
@@ -1659,7 +1926,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   width: 100%;
   max-width: 270px;
   margin: 0.85rem auto 0;
-  padding: 0 9%;
+  padding: 0 7%;
 }
 
 .trend-date-label {
@@ -1673,17 +1940,23 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 }
 
 .prc-body {
-  padding: 1.4rem;
+  padding: 1.15rem 1.25rem;
   height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
 
+.perf-table-wrapper {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .perf-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 690px;
+  min-width: 480px;
 }
 
 .perf-table th {
@@ -1691,19 +1964,21 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   font-weight: 800;
   color: #475569;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0.7rem 0.5rem;
+  letter-spacing: 0.02em;
+  padding: 0.6rem 0.35rem;
   border-bottom: 2px solid var(--c-border);
   text-align: center;
-  line-height: 1.3;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .perf-table td {
-  font-size: 0.78rem;
-  padding: 0.85rem 0.5rem;
+  font-size: 0.76rem;
+  padding: 0.75rem 0.35rem;
   border-bottom: 1px solid #f1f5f9;
   vertical-align: middle;
   text-align: center;
+  white-space: nowrap;
 }
 
 .perf-table tr:hover td {
@@ -1713,20 +1988,21 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .perf-indicator-cell {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
   font-weight: 850;
   color: #0f172a;
   text-align: left;
 }
 
 .perf-indicator-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  flex-shrink: 0;
 }
 
 .bg-icon-os { background: #eff6ff; color: #0857c3; }
@@ -1738,28 +2014,30 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   font-weight: 800;
   color: #334155;
   font-variant-numeric: tabular-nums;
+  font-size: 0.76rem;
 }
 
 .perf-pct-cell {
   font-weight: 900;
   font-variant-numeric: tabular-nums;
+  font-size: 0.76rem;
 }
 
 .perf-status-circle {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #ffffff;
-  font-size: 0.65rem;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  font-size: 0.62rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
 }
 
 .bg-status-red { background: #dc2626; }
 .bg-status-green { background: #15803d; }
-.bg-status-amber { background: #d97706; }
+.bg-status-amber, .bg-status-yellow { background: #d97706; }
 
 /* ── LEADERBOARD & RANKINGS ── */
 .cabang-performance-grid {
@@ -2599,7 +2877,8 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   .dp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .area6-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .landing-summary-grid { grid-template-columns: 1fr; }
-  .area6-segment-container { grid-template-columns: 1fr; }
+  .area6-segment-container,
+  .area6-trend-perf-container { grid-template-columns: 1fr !important; }
 }
 @media (max-width: 767.98px) {
   .db-header { align-items: flex-start; flex-direction: column; gap: 0.85rem; padding: 1.1rem; }
@@ -3326,7 +3605,8 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   .area6-card-grid,
   .area6-ranking-grid,
   .cabang-performance-grid,
-  .area6-segment-container {
+  .area6-segment-container,
+  .area6-trend-perf-container {
     padding-left: 1rem;
     padding-right: 1rem;
   }
@@ -3438,6 +3718,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   .area6-head,
   .area6-card-grid,
   .area6-segment-container,
+  .area6-trend-perf-container,
   .area6-ranking-grid,
   .cabang-performance-grid,
   .chart-panel,
@@ -3533,6 +3814,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   .area6-card-grid,
   .area6-ranking-grid,
   .area6-segment-container,
+  .area6-trend-perf-container,
   .cabang-performance-grid {
     padding: 0.75rem;
   }
@@ -3680,6 +3962,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   .area6-panel .area6-card-grid,
   .area6-card-grid,
   .area6-segment-container,
+  .area6-trend-perf-container,
   .area6-ranking-grid {
     padding: 1rem;
     gap: 0.9rem;
@@ -3784,6 +4067,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   .area6-panel .area6-card-grid,
   .area6-card-grid,
   .area6-segment-container,
+  .area6-trend-perf-container,
   .area6-ranking-grid,
   .main-grid,
   .dp-grid {
@@ -3913,7 +4197,8 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 .db-shell.landing-compact .ap-delta-arrow {
   font-size: 0.78rem !important;
 }
-.db-shell.landing-compact .area6-segment-container {
+.db-shell.landing-compact .area6-segment-container,
+.db-shell.landing-compact .area6-trend-perf-container {
   grid-template-columns: 1fr !important;
   padding: 0 0.95rem 0.95rem !important;
 }
@@ -4474,10 +4759,16 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
   }
 }
 
-/* SME operating desk: loaded only when the SME scope is selected. */
+/* Scope desk visibility: hide Area 6 ranking, executive summary, and main grid when specific scopes are selected. */
 .db-shell.sme-operations-active .area6-ranking-mode,
 .db-shell.sme-operations-active .landing-summary,
-.db-shell.sme-operations-active .main-grid {
+.db-shell.sme-operations-active .main-grid,
+.db-shell.micro-performance-active .area6-ranking-mode,
+.db-shell.micro-performance-active .landing-summary,
+.db-shell.micro-performance-active .main-grid,
+.db-shell.consumer-active .area6-ranking-mode,
+.db-shell.consumer-active .landing-summary,
+.db-shell.consumer-active .main-grid {
   display: none !important;
 }
 .db-shell.sme-operations-active .area6-panel {
@@ -6694,9 +6985,14 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
 
 .db-shell.micro-performance-active .area6-ranking-mode,
 .db-shell.micro-performance-active .landing-summary,
-.db-shell.micro-performance-active .main-grid { display: none !important; }
+.db-shell.micro-performance-active .main-grid,
+.db-shell.consumer-active .area6-ranking-mode,
+.db-shell.consumer-active .landing-summary,
+.db-shell.consumer-active .main-grid { display: none !important; }
 .micro-performance-dashboard { display: none; min-height: 360px; margin-top: 1rem; }
 .db-shell.micro-performance-active .micro-performance-dashboard:not(.d-none) { display: block; }
+.consumer-operations-dashboard { display: none; min-height: 360px; margin-top: 1rem; }
+.db-shell.consumer-active .consumer-operations-dashboard:not(.d-none) { display: block; }
 .micro-ops {
   --micro-nusantara: #0754bd;
   --micro-deep: #063476;
@@ -7693,6 +7989,7 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
   border-radius: 4px 10px 4px 10px;
 }
 .micro-tier-panel > header h4 { margin: 0; color: #fff; font-size: 0.88rem; }
+.micro-tier-panel__heading { min-width: 0; }
 .micro-mantri-table--tiers { min-width: 1050px; }
 .micro-mantri-table--tiers thead tr:first-child th:first-child,
 .micro-mantri-table--tiers tbody th,
@@ -7716,6 +8013,9 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
 .micro-mantri-table tbody .tone-low { color: #765000; background-color: #fff8df; }
 .micro-mantri-table tbody .tone-mid { color: #06668f; background-color: #eaf9ff; }
 .micro-mantri-table tbody .tone-high { color: #06469d; background-color: #e9f2ff; font-weight: 850; }
+.micro-mantri-table--tiers td[data-micro-mantri-tier-count] { cursor: pointer; touch-action: manipulation; }
+.micro-mantri-table--tiers td[data-micro-mantri-tier-count]:hover { box-shadow: inset 0 0 0 2px rgba(7, 84, 189, .32); }
+.micro-mantri-table--tiers td[data-micro-mantri-tier-count]:focus-visible { position: relative; z-index: 2; outline: 3px solid #65b8ff; outline-offset: -3px; }
 .micro-ops-empty--compact { min-height: 100px; border-radius: 0; }
 
 /* Micro operations v5: decision ranking, realization need, and daily productivity. */
@@ -7944,6 +8244,27 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
 .micro-frequency-item b { color: #8de4ff; font-size: 0.66rem; }
 .micro-frequency-item span { margin-top: 0.12rem; color: #e1f4ff; font-size: 0.6rem; }
 .micro-frequency-item strong { margin-top: 0.14rem; color: #fff; font-size: 0.68rem; white-space: normal; }
+
+/* Collapsible freq item */
+.micro-frequency-item.has-terms { padding: 0; overflow: hidden; }
+.micro-freq-header { display: flex; align-items: flex-start; gap: 0.4rem; justify-content: space-between;
+  width: 100%; padding: 0.52rem; background: none; border: none; cursor: pointer; text-align: left; }
+.micro-freq-header:hover { background: rgba(255,255,255,0.07); }
+.micro-freq-header:focus-visible { outline: 2px solid rgba(141,228,255,.6); outline-offset: -2px; }
+.micro-freq-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.micro-freq-chevron { font-size: 0.55rem; color: #8de4ff; margin-top: 0.32rem; flex-shrink: 0;
+  transition: transform 0.22s cubic-bezier(0.4,0,0.2,1); }
+.micro-frequency-item.is-open > .micro-freq-header .micro-freq-chevron { transform: rotate(180deg); }
+.micro-freq-term-drawer { margin: 0 0.46rem 0.46rem; border-top: 1px solid rgba(191,238,255,0.18);
+  padding-top: 0.4rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.micro-freq-term-item { display: grid; grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto; column-gap: 0.4rem; row-gap: 0.04rem;
+  padding: 0.3rem 0.42rem; background: rgba(255,255,255,0.07);
+  border-radius: 4px 8px 4px 8px; border: 1px solid rgba(191,238,255,0.13); }
+.micro-freq-term-item b { color: #a8daff; font-size: 0.6rem; grid-column: 1; grid-row: 1; }
+.micro-freq-term-item span { color: #d8edff; font-size: 0.56rem; grid-column: 1; grid-row: 2; }
+.micro-freq-term-item strong { color: #fff; font-size: 0.62rem; font-weight: 800;
+  grid-column: 2; grid-row: 1 / span 2; align-self: center; text-align: right; white-space: nowrap; }
 .micro-term-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.48rem; margin-top: 0.58rem; }
 .micro-term-item { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.55rem; padding: 0.62rem; border: 1px solid rgba(191, 238, 255, .28); background: rgba(255,255,255,.11); }
 .micro-term-item:focus-visible { outline: 3px solid rgba(141, 228, 255, .55); outline-offset: 2px; }
@@ -7974,14 +8295,346 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
 .micro-mantri-stage { min-width: 0; max-width: 100%; }
 .micro-performance-dashboard,
 .micro-ops { width: 100%; }
+.micro-ops-section--inactive { --micro-section-accent: #d97706; }
+.micro-inactive-head-meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.12rem;
+  text-align: right;
+}
+.micro-inactive-head-meta strong { color: #063476; font-size: 1rem; font-weight: 900; }
+.micro-inactive-head-meta span { color: #64748b; font-size: 0.69rem; font-weight: 750; }
+.micro-inactive-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding: 1rem;
+}
+.micro-inactive-metric {
+  --inactive-accent: #087fc8;
+  --inactive-soft: #e5f5ff;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-areas: 'icon copy value' 'icon copy share';
+  align-items: center;
+  gap: 0.2rem 0.7rem;
+  min-width: 0;
+  min-height: 94px;
+  padding: 0.82rem;
+  overflow: hidden;
+  background: linear-gradient(135deg, #fff, var(--inactive-soft));
+  border: 1px solid #bfd4e8;
+  border-left: 5px solid var(--inactive-accent);
+  border-radius: 5px 16px 5px 16px;
+}
+.micro-inactive-metric.tone-month_3 { --inactive-accent: #d97706; --inactive-soft: #fff5df; }
+.micro-inactive-metric.tone-month_6 { --inactive-accent: #c92f47; --inactive-soft: #fff0f2; }
+.micro-inactive-metric.is-disabled { filter: saturate(0.35); opacity: 0.72; }
+.micro-inactive-metric__icon {
+  grid-area: icon;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  color: #fff;
+  background: var(--inactive-accent);
+  border-radius: 4px 13px 4px 13px;
+}
+.micro-inactive-metric > div { grid-area: copy; min-width: 0; }
+.micro-inactive-metric > div span,
+.micro-inactive-metric > div strong { display: block; overflow-wrap: anywhere; }
+.micro-inactive-metric > div span { color: #64748b; font-size: 0.62rem; font-weight: 750; text-transform: uppercase; }
+.micro-inactive-metric > div strong { margin-top: 0.12rem; color: #16324f; font-size: 0.78rem; line-height: 1.28; }
+.micro-inactive-metric > b { grid-area: value; color: var(--inactive-accent); font-size: 1.5rem; font-weight: 950; line-height: 1; font-variant-numeric: tabular-nums; }
+.micro-inactive-metric > small { grid-area: share; color: #52677d; font-size: 0.65rem; font-weight: 800; text-align: right; }
+.micro-inactive-table-wrap { width: calc(100% - 2rem); margin: 0 1rem 1rem; overflow-x: auto; border: 1px solid #c9d8e7; }
+.micro-inactive-table { width: 100%; min-width: 680px; border-collapse: collapse; color: #29425c; font-size: 0.74rem; }
+.micro-inactive-table th,
+.micro-inactive-table td { padding: 0.72rem 0.78rem; border-right: 1px solid #dce6ef; border-bottom: 1px solid #dce6ef; text-align: center; }
+.micro-inactive-table th:last-child,
+.micro-inactive-table td:last-child { border-right: 0; }
+.micro-inactive-table thead th { color: #fff; background: #063476; font-size: 0.67rem; text-transform: uppercase; }
+.micro-inactive-table tbody th { color: #103a68; background: #edf5fd; text-align: left; }
+.micro-inactive-table tbody tr:last-child th,
+.micro-inactive-table tbody tr:last-child td { border-bottom: 0; }
+.micro-inactive-table td strong,
+.micro-inactive-table td small { display: block; }
+.micro-inactive-table td strong { color: #0a55a6; font-size: 0.84rem; }
+.micro-inactive-table td small { margin-top: 0.12rem; color: #6b7f92; font-size: 0.62rem; }
+.micro-inactive-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding: 0 1rem 1rem;
+}
+.micro-inactive-detail { --inactive-accent: #087fc8; min-width: 0; border: 1px solid #c7d8e8; border-top: 4px solid var(--inactive-accent); background: #fff; }
+.micro-inactive-detail.tone-month_3 { --inactive-accent: #d97706; }
+.micro-inactive-detail.tone-month_6 { --inactive-accent: #c92f47; }
+.micro-inactive-detail summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 52px;
+  padding: 0.68rem 0.75rem;
+  color: #183753;
+  background: #f7fbff;
+  cursor: pointer;
+  list-style: none;
+}
+.micro-inactive-detail summary::-webkit-details-marker { display: none; }
+.micro-inactive-detail summary:focus-visible { outline: 3px solid rgba(8, 127, 200, 0.3); outline-offset: -3px; }
+.micro-inactive-detail summary span { min-width: 0; overflow-wrap: anywhere; font-size: 0.7rem; font-weight: 850; }
+.micro-inactive-detail summary strong { color: var(--inactive-accent); font-size: 0.73rem; white-space: nowrap; }
+.micro-inactive-detail summary i { color: #6d8297; transition: transform .16s ease; }
+.micro-inactive-detail[open] summary i { transform: rotate(180deg); }
+.micro-inactive-detail ol { max-height: 330px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.micro-inactive-detail li {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.62rem 0.7rem;
+  border-top: 1px solid #e1e9f1;
+}
+.micro-inactive-avatar { display: grid; width: 34px; height: 34px; place-items: center; color: #0754bd; background: #e1effd; border-radius: 4px 10px 4px 10px; }
+.micro-inactive-detail li > div { min-width: 0; }
+.micro-inactive-detail li strong,
+.micro-inactive-detail li small { display: block; overflow-wrap: anywhere; }
+.micro-inactive-detail li strong { color: #173754; font-size: 0.7rem; line-height: 1.3; }
+.micro-inactive-detail li small { margin-top: 0.12rem; color: #708398; font-size: 0.6rem; line-height: 1.35; }
+.micro-inactive-category { padding: 0.24rem 0.38rem; color: #0754bd; background: #e8f2fd; font-size: 0.58rem; font-weight: 850; white-space: nowrap; }
+.micro-inactive-detail li.is-empty { display: block; color: #708398; font-size: 0.68rem; text-align: center; }
+
+/* Pipeline Mikro: executive summary plus an on-demand nominative browser. */
+.micro-ops-section--pipeline { --micro-section-accent: #008a72; }
+.micro-pipeline-head-actions { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .55rem; }
+.micro-pipeline-sync { display: inline-flex; align-items: center; gap: .38rem; color: #60758a; font-size: .75rem; font-weight: 750; }
+.micro-pipeline-open { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: .42rem; padding: .62rem .82rem; border: 1px solid #007b68; color: #fff; background: #007b68; font-size: .78rem; font-weight: 900; }
+.micro-pipeline-open:hover { background: #006353; }
+.micro-pipeline-open:focus-visible { outline: 3px solid rgba(0, 138, 114, .28); outline-offset: 2px; }
+.micro-pipeline-dataset-title { display: flex; align-items: baseline; gap: .55rem; padding: .8rem 1rem 0; color: #60758a; }
+.micro-pipeline-dataset-title span { padding: .22rem .42rem; color: #fff; background: #0754bd; font-size: .62rem; font-weight: 950; letter-spacing: .08em; }
+.micro-pipeline-dataset-title strong { color: #173f66; font-size: .78rem; font-weight: 850; }
+.micro-pipeline-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .7rem; padding: 1rem; }
+.micro-pipeline-kpis article { --pipeline-tone: #0754bd; min-width: 0; min-height: 102px; padding: .78rem .82rem; border: 1px solid #ccdae7; border-top: 4px solid var(--pipeline-tone); background: #fff; }
+.micro-pipeline-kpis .tone-done { --pipeline-tone: #008a72; }
+.micro-pipeline-kpis .tone-plan { --pipeline-tone: #d97706; }
+.micro-pipeline-kpis .tone-pending { --pipeline-tone: #c92f47; }
+.micro-pipeline-kpis .tone-real { --pipeline-tone: #00a5c8; }
+.micro-pipeline-kpis span,
+.micro-pipeline-kpis strong,
+.micro-pipeline-kpis small { display: block; min-width: 0; overflow-wrap: anywhere; }
+.micro-pipeline-kpis span { color: #65788d; font-size: .72rem; font-weight: 850; text-transform: uppercase; }
+.micro-pipeline-kpis strong { margin-top: .22rem; color: var(--pipeline-tone); font-size: clamp(1.15rem, 1.7vw, 1.5rem); font-weight: 950; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.micro-pipeline-kpis small { margin-top: .3rem; color: #51677d; font-size: .72rem; font-weight: 700; line-height: 1.4; }
+.micro-slik-card { position: relative; display: grid; grid-template-columns: minmax(150px, .65fr) minmax(260px, 1fr) minmax(260px, 1.35fr) auto; align-items: center; gap: .85rem; min-width: 0; margin: 0 1rem 1rem; padding: .82rem; overflow: hidden; color: #fff; background: linear-gradient(118deg, #063476 0%, #0754bd 52%, #008a72 100%); box-shadow: 0 10px 24px rgba(4, 52, 118, .14); }
+.micro-slik-card::after { position: absolute; width: 180px; height: 180px; right: -80px; top: -105px; border: 24px solid rgba(145, 221, 237, .16); border-radius: 50%; content: ''; pointer-events: none; }
+.micro-slik-card__identity { display: flex; align-items: center; gap: .65rem; min-width: 0; }
+.micro-slik-card__icon { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; color: #063476; background: #91dded; font-size: 1rem; }
+.micro-slik-card__identity span, .micro-slik-card__identity h4 { display: block; min-width: 0; }
+.micro-slik-card__identity div > span { color: #91dded; font-size: .62rem; font-weight: 950; letter-spacing: .09em; }
+.micro-slik-card__identity h4 { margin: .14rem 0 0; color: #fff; font-size: 1rem; font-weight: 950; }
+.micro-slik-card__metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); min-width: 0; border: 1px solid rgba(255,255,255,.18); background: rgba(1,35,80,.22); }
+.micro-slik-card__metrics > div { min-width: 0; padding: .5rem .58rem; border-right: 1px solid rgba(255,255,255,.16); }
+.micro-slik-card__metrics > div:last-child { border-right: 0; }
+.micro-slik-card__metrics span, .micro-slik-card__metrics strong { display: block; overflow-wrap: anywhere; }
+.micro-slik-card__metrics span { color: #bfeaf3; font-size: .58rem; font-weight: 850; text-transform: uppercase; }
+.micro-slik-card__metrics strong { margin-top: .12rem; color: #fff; font-size: .8rem; font-weight: 950; font-variant-numeric: tabular-nums; }
+.micro-slik-card__branches { display: grid; gap: .3rem; min-width: 0; }
+.micro-slik-branch { display: grid; grid-template-columns: minmax(78px, .75fr) minmax(80px, 1fr) 34px minmax(74px, auto); align-items: center; gap: .42rem; min-width: 0; font-size: .62rem; }
+.micro-slik-branch > span { overflow: hidden; color: #fff; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.micro-slik-branch > div { height: 5px; overflow: hidden; background: rgba(255,255,255,.2); border-radius: 99px; }
+.micro-slik-branch > div i { display: block; height: 100%; background: #91dded; border-radius: inherit; }
+.micro-slik-branch strong, .micro-slik-branch small { color: #fff; font-weight: 850; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.micro-slik-branch small { color: #cdeff5; }
+.micro-slik-card__open { position: relative; z-index: 1; min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: .35rem; padding: .55rem .7rem; border: 1px solid rgba(255,255,255,.5); color: #063476; background: #fff; font-size: .68rem; font-weight: 950; }
+.micro-slik-card__open:hover { background: #91dded; }
+.micro-pipeline-overview { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.25fr); gap: .85rem; padding: 0 1rem 1rem; }
+.micro-pipeline-panel { min-width: 0; border: 1px solid #c9d9e7; background: #fff; }
+.micro-pipeline-panel__head { min-height: 58px; display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .8rem; padding: .68rem .8rem; border-bottom: 1px solid #d8e3ed; background: #f5f9fd; }
+.micro-pipeline-panel__head > div { min-width: 0; }
+.micro-pipeline-panel__head span,
+.micro-pipeline-panel__head h4,
+.micro-pipeline-panel__head small { display: block; overflow-wrap: anywhere; }
+.micro-pipeline-panel__head span { color: #008a72; font-size: .7rem; font-weight: 900; }
+.micro-pipeline-panel__head h4 { margin: .12rem 0 0; color: #143b61; font-size: .95rem; font-weight: 900; }
+.micro-pipeline-panel__head > small { color: #687d91; font-size: .72rem; font-weight: 750; text-align: right; }
+.micro-pipeline-group-list { padding: .15rem .8rem .45rem; }
+.micro-pipeline-group-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(110px, 1fr) 95px; align-items: center; gap: .65rem; min-width: 0; padding: .58rem 0; border-bottom: 1px solid #e3ebf2; }
+.micro-pipeline-group-row:last-child { border-bottom: 0; }
+.micro-pipeline-group-row__identity,
+.micro-pipeline-group-row__status { min-width: 0; }
+.micro-pipeline-group-row__identity strong,
+.micro-pipeline-group-row__identity small,
+.micro-pipeline-group-row__status b,
+.micro-pipeline-group-row__status span { display: block; overflow-wrap: anywhere; }
+.micro-pipeline-group-row__identity strong { color: #183c5d; font-size: .78rem; font-weight: 850; }
+.micro-pipeline-group-row__identity small { margin-top: .1rem; color: #6a7e91; font-size: .68rem; font-weight: 650; }
+.micro-pipeline-group-row__status { text-align: right; }
+.micro-pipeline-group-row__status b { color: #008a72; font-size: .82rem; font-variant-numeric: tabular-nums; font-weight: 900; }
+.micro-pipeline-group-row__status span { color: #718397; font-size: .66rem; font-weight: 650; }
+
+.micro-pipeline-segmented-bar { height: 7px; overflow: hidden; background: #e6eef5; border-radius: 999px; display: flex; width: 100%; min-width: 0; }
+.micro-pipeline-segmented-bar .is-done { height: 100%; background: linear-gradient(90deg, #008a72, #00a5c8); transition: width 0.3s ease; }
+.micro-pipeline-segmented-bar .is-plan { height: 100%; background: #d97706; transition: width 0.3s ease; }
+
+/* Interactive Sumber Pipeline Accordion */
+.micro-pipeline-source-accordion { padding: .45rem .75rem .65rem; display: flex; flex-direction: column; gap: .42rem; }
+.micro-pipeline-source-card { border: 1px solid #d4e2ed; border-radius: 6px; background: #fbfdff; transition: all .2s ease; overflow: hidden; }
+.micro-pipeline-source-card:hover { border-color: #a8cae6; box-shadow: 0 3px 10px rgba(7, 84, 189, .06); }
+.micro-pipeline-source-card.is-open { border-color: #0754bd; background: #fff; box-shadow: 0 4px 14px rgba(7, 84, 189, .1); }
+.micro-pipeline-source-card__actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; min-width: 0; }
+.micro-pipeline-source-btn { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: .65rem; width: 100%; padding: .55rem .65rem; background: none; border: none; cursor: pointer; text-align: left; transition: background .15s ease; }
+.micro-pipeline-source-btn:hover { background: rgba(7, 84, 189, .03); }
+.micro-pipeline-source-btn:focus-visible { outline: 2px solid #0754bd; outline-offset: -2px; }
+.micro-pipeline-source-detail { display: inline-flex; min-width: 112px; align-items: center; justify-content: center; gap: .34rem; padding: .55rem .6rem; border: 0; border-left: 1px solid #d4e2ed; color: #0754bd; background: #edf6fd; cursor: pointer; font-size: .66rem; font-weight: 900; line-height: 1.2; text-align: center; transition: background .15s ease, color .15s ease; }
+.micro-pipeline-source-detail:hover { color: #fff; background: #0754bd; }
+.micro-pipeline-source-detail:focus-visible { outline: 3px solid rgba(7, 84, 189, .3); outline-offset: -3px; }
+
+.micro-pipeline-source-card__rank { display: grid; width: 28px; height: 28px; place-items: center; color: #fff; background: #0754bd; font-size: .68rem; font-weight: 900; border-radius: 4px; }
+.micro-pipeline-source-card.is-open .micro-pipeline-source-card__rank { background: #008a72; }
+
+.micro-pipeline-source-card__main { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.micro-pipeline-source-card__title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .4rem; }
+.micro-pipeline-source-card__title strong { color: #143b61; font-size: .78rem; font-weight: 900; }
+.micro-pipeline-source-card__title small { color: #62778c; font-size: .68rem; font-weight: 700; }
+.micro-pipeline-source-card__stats { color: #6c8094; font-size: .67rem; }
+.micro-pipeline-source-card__stats b { color: #008a72; font-weight: 850; }
+
+.micro-source-chevron { font-size: .65rem; color: #768d9f; transition: transform .22s cubic-bezier(.4, 0, .2, 1); }
+.micro-pipeline-source-card.is-open .micro-source-chevron { transform: rotate(180deg); color: #0754bd; }
+
+/* Executive Summary Drawer */
+.micro-pipeline-source-drawer { border-top: 1px solid #e1ebf4; padding: .65rem .75rem .75rem; background: #f8fbfe; display: flex; flex-direction: column; gap: .6rem; }
+.micro-source-drawer__kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .4rem; }
+.micro-source-drawer__kpi { padding: .45rem .5rem; border: 1px solid #d4e2ed; border-radius: 4px; background: #fff; }
+.micro-source-drawer__kpi.is-done { border-top: 3px solid #008a72; }
+.micro-source-drawer__kpi.is-plan { border-top: 3px solid #d97706; }
+.micro-source-drawer__kpi.is-pending { border-top: 3px solid #c92f47; }
+.micro-source-drawer__kpi.is-potensi { border-top: 3px solid #0754bd; }
+.micro-source-drawer__kpi span { display: block; color: #687e93; font-size: .58rem; font-weight: 850; text-transform: uppercase; }
+.micro-source-drawer__kpi strong { display: block; margin-top: .15rem; color: #143b61; font-size: .84rem; font-weight: 900; }
+.micro-source-drawer__kpi small { display: block; margin-top: .1rem; color: #73899d; font-size: .62rem; }
+
+.micro-source-drawer__section { display: flex; flex-direction: column; gap: .3rem; }
+.micro-source-drawer__section-head { display: flex; align-items: center; justify-content: space-between; color: #0754bd; font-size: .68rem; font-weight: 900; text-transform: uppercase; }
+.micro-source-subgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .35rem; }
+.micro-source-subitem { display: flex; flex-direction: column; gap: .22rem; padding: .4rem .52rem; border: 1px solid #dce7f0; border-radius: 4px; background: #fff; }
+.micro-source-subitem__title { display: flex; flex-direction: column; }
+.micro-source-subitem__title b { color: #193f65; font-size: .68rem; line-height: 1.25; }
+.micro-source-subitem__title span { color: #6b8094; font-size: .6rem; }
+.micro-source-subitem__progress { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .45rem; margin-top: .12rem; }
+.micro-source-subitem__progress strong { color: #008a72; font-size: .68rem; font-weight: 900; }
+.micro-pipeline-empty { display: flex; align-items: center; gap: .7rem; min-height: 112px; margin: 1rem; padding: 1rem; color: #526b82; background: #f2f7fb; border: 1px dashed #b7cce0; }
+.micro-pipeline-empty > i { color: #008a72; font-size: 1.5rem; }
+.micro-pipeline-empty strong,
+.micro-pipeline-empty span { display: block; }
+.micro-pipeline-empty strong { color: #183b5c; font-size: .8rem; }
+.micro-pipeline-empty span { margin-top: .18rem; font-size: .68rem; }
+body.micro-pipeline-modal-open { overflow: hidden; }
+.micro-pipeline-modal[hidden] { display: none !important; }
+.micro-pipeline-modal { position: fixed; z-index: 1095; inset: 0; display: grid; place-items: center; padding: 1rem; }
+.micro-pipeline-modal__backdrop { position: absolute; inset: 0; background: rgba(3, 26, 54, .76); backdrop-filter: blur(4px); }
+.micro-pipeline-modal__dialog { position: relative; display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; width: min(1500px, 96vw); height: min(880px, 94vh); overflow: hidden; color: #263d55; background: #fff; border: 1px solid #9fb9d1; box-shadow: 0 24px 70px rgba(0, 20, 47, .35); }
+.micro-pipeline-modal__dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 1rem; color: #fff; background: #063476; }
+.micro-pipeline-modal__dialog > header span,
+.micro-pipeline-modal__dialog > header h3 { display: block; }
+.micro-pipeline-modal__dialog > header span { color: #91dded; font-size: .61rem; font-weight: 900; }
+.micro-pipeline-modal__dialog > header h3 { margin: .12rem 0 0; color: #fff; font-size: 1.02rem; }
+.micro-pipeline-modal__dialog > header > div:last-child { display: flex; gap: .42rem; }
+.micro-pipeline-modal__dialog > header a,
+.micro-pipeline-modal__dialog > header button,
+.micro-pipeline-modal__dialog > footer button { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.35); color: #fff; background: rgba(255,255,255,.1); }
+.micro-pipeline-filters { display: grid; grid-template-columns: minmax(120px, .55fr) minmax(135px, .65fr) minmax(160px, .8fr) minmax(150px, .75fr) minmax(220px, 1.2fr) auto; align-items: end; gap: .7rem; padding: .72rem 1rem; border-bottom: 1px solid #d7e2ec; background: #f5f9fd; }
+.micro-pipeline-filters label { display: grid; min-width: 0; gap: .26rem; }
+.micro-pipeline-filters label > span { color: #526a80; font-size: .68rem; font-weight: 850; text-transform: uppercase; }
+.micro-pipeline-filters select,
+.micro-pipeline-filters input { width: 100%; min-width: 0; min-height: 44px; padding: .55rem .65rem; border: 1px solid #b9cde0; color: #193b5b; background: #fff; font-size: .78rem; font-weight: 700; }
+.micro-pipeline-filters > button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: .4rem; padding: .58rem .84rem; border: 1px solid #0754bd; color: #fff; background: #0754bd; font-size: .78rem; font-weight: 900; }
+.micro-pipeline-modal__meta { display: flex; align-items: center; justify-content: space-between; gap: .7rem; padding: .5rem 1rem; color: #5e7388; background: #fff; border-bottom: 1px solid #dce5ed; font-size: .72rem; font-weight: 800; }
+.micro-pipeline-modal__table-wrap { min-height: 0; overflow: auto; }
+.micro-pipeline-modal__table { width: 100%; min-width: 1180px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: .75rem; }
+.micro-pipeline-modal__table th,
+.micro-pipeline-modal__table td { min-width: 0; padding: .65rem .7rem; border-right: 1px solid #dce5ed; border-bottom: 1px solid #dce5ed; vertical-align: top; overflow-wrap: anywhere; line-height: 1.4; }
+.micro-pipeline-modal__table th { position: sticky; z-index: 2; top: 0; color: #fff; background: #0754bd; font-size: .7rem; text-align: left; text-transform: uppercase; }
+.micro-pipeline-modal__table th:nth-child(1) { width: 16%; }
+.micro-pipeline-modal__table th:nth-child(2) { width: 16%; }
+.micro-pipeline-modal__table th:nth-child(3) { width: 12%; }
+.micro-pipeline-modal__table th:nth-child(4) { width: 11%; }
+.micro-pipeline-modal__table th:nth-child(5) { width: 10%; }
+.micro-pipeline-modal__table th:nth-child(6) { width: 21%; }
+.micro-pipeline-modal__table th:nth-child(7) { width: 14%; }
+.micro-pipeline-modal__table tbody tr:nth-child(even) { background: #f6f9fc; }
+.micro-pipeline-modal__table td strong,
+.micro-pipeline-modal__table td small { display: block; overflow-wrap: anywhere; }
+.micro-pipeline-modal__table td strong { color: #153c61; }
+.micro-pipeline-modal__table td small { margin-top: .14rem; color: #6b7e91; font-size: .68rem; }
+.micro-pipeline-modal__table .is-loading,
+.micro-pipeline-modal__table .is-empty { padding: 2.2rem; color: #657b90; text-align: center; }
+.micro-pipeline-modal__dialog > footer { display: flex; align-items: center; justify-content: space-between; gap: .7rem; padding: .55rem 1rem; color: #536a80; background: #eef4f9; font-size: .72rem; font-weight: 800; }
+.micro-pipeline-modal__dialog > footer > div { display: flex; gap: .35rem; }
+.micro-pipeline-modal__dialog > footer button { color: #0754bd; border-color: #aec6dc; background: #fff; }
+.micro-pipeline-modal__dialog > footer button:disabled { color: #9baaba; background: #eef2f5; cursor: not-allowed; }
+body.micro-pipeline-source-modal-open { overflow: hidden; }
+.micro-pipeline-source-modal[hidden] { display: none !important; }
+.micro-pipeline-source-modal { position: fixed; z-index: 1100; inset: 0; display: grid; place-items: center; padding: 1rem; }
+.micro-pipeline-source-modal__backdrop { position: absolute; inset: 0; background: rgba(3, 26, 54, .76); backdrop-filter: blur(4px); }
+.micro-pipeline-source-modal__dialog { position: relative; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; width: min(1180px, 96vw); max-height: min(760px, 92dvh); overflow: hidden; color: #263d55; background: #fff; border: 1px solid #9fb9d1; box-shadow: 0 24px 70px rgba(0, 20, 47, .35); }
+.micro-pipeline-source-modal__dialog > header { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .8rem 1rem; color: #fff; background: #063476; }
+.micro-pipeline-source-modal__dialog > header span,
+.micro-pipeline-source-modal__dialog > header h3 { display: block; }
+.micro-pipeline-source-modal__dialog > header span { color: #91dded; font-size: .64rem; font-weight: 900; }
+.micro-pipeline-source-modal__dialog > header h3 { margin: .12rem 0 0; color: #fff; font-size: 1.04rem; font-weight: 900; overflow-wrap: anywhere; }
+.micro-pipeline-source-modal__dialog > header button { width: 42px; height: 42px; display: grid; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255,255,255,.35); color: #fff; background: rgba(255,255,255,.1); }
+.micro-pipeline-source-modal__summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .55rem; padding: .75rem 1rem; border-bottom: 1px solid #dce5ed; background: #f5f9fd; }
+.micro-pipeline-source-modal__summary > div { min-width: 0; padding: .5rem .58rem; border: 1px solid #d6e3ef; border-top: 3px solid #0754bd; background: #fff; }
+.micro-pipeline-source-modal__summary > div:nth-child(2) { border-top-color: #008a72; }
+.micro-pipeline-source-modal__summary > div:nth-child(3) { border-top-color: #d97706; }
+.micro-pipeline-source-modal__summary > div:nth-child(4) { border-top-color: #c92f47; }
+.micro-pipeline-source-modal__summary > div:nth-child(5) { border-top-color: #00a5c8; }
+.micro-pipeline-source-modal__summary span,
+.micro-pipeline-source-modal__summary strong { display: block; min-width: 0; overflow-wrap: anywhere; }
+.micro-pipeline-source-modal__summary span { color: #65798e; font-size: .62rem; font-weight: 850; text-transform: uppercase; }
+.micro-pipeline-source-modal__summary strong { margin-top: .18rem; color: #173d60; font-size: .93rem; font-weight: 950; font-variant-numeric: tabular-nums; }
+.micro-pipeline-source-modal__table-wrap { min-height: 0; overflow: auto; }
+.micro-pipeline-source-modal__table { width: 100%; min-width: 900px; border-collapse: separate; border-spacing: 0; font-size: .78rem; }
+.micro-pipeline-source-modal__table th,
+.micro-pipeline-source-modal__table td { padding: .68rem .72rem; border-right: 1px solid #dce5ed; border-bottom: 1px solid #dce5ed; vertical-align: middle; line-height: 1.35; }
+.micro-pipeline-source-modal__table th { position: sticky; z-index: 2; top: 0; color: #fff; background: #0754bd; font-size: .68rem; font-weight: 900; text-align: left; text-transform: uppercase; }
+.micro-pipeline-source-modal__table th:nth-child(1), .micro-pipeline-source-modal__table td:nth-child(1) { width: 52px; text-align: center; }
+.micro-pipeline-source-modal__table th:nth-child(2) { min-width: 190px; }
+.micro-pipeline-source-modal__table tbody tr:nth-child(even) { background: #f7fafc; }
+.micro-pipeline-source-modal__table td:nth-child(n+3):nth-child(-n+6) { color: #173d60; font-weight: 850; font-variant-numeric: tabular-nums; text-align: right; }
+.micro-pipeline-source-modal__table td:last-child { color: #173d60; font-weight: 850; font-variant-numeric: tabular-nums; text-align: right; }
+.micro-pipeline-source-progress { display: grid; grid-template-columns: minmax(80px, 1fr) auto; align-items: center; gap: .5rem; min-width: 130px; }
+.micro-pipeline-source-progress .micro-pipeline-segmented-bar { height: 8px; }
+.micro-pipeline-source-progress strong { color: #008a72; font-size: .78rem; font-variant-numeric: tabular-nums; }
+.micro-pipeline-source-modal__empty { padding: 2rem !important; color: #667d92; text-align: center; }
+.micro-pipeline-source-modal__dialog > footer { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .65rem 1rem; color: #536a80; background: #eef4f9; font-size: .74rem; font-weight: 800; }
+.micro-pipeline-source-modal__dialog > footer button { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: .4rem; padding: .55rem .75rem; border: 1px solid #007b68; color: #fff; background: #007b68; font-size: .72rem; font-weight: 900; }
+.micro-pipeline-source-modal__dialog > footer button:hover { background: #006353; }
 
 @media (max-width: 1100px) {
+  .micro-realization-layout { grid-template-columns: minmax(0, 1fr); }
   .micro-realization-type-card.type-nett { grid-template-columns: auto minmax(0, 1fr); }
   .micro-nett-type-list { grid-column: 1 / -1; }
   .micro-need-stage { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .micro-need-visual { display: none; }
   .micro-frequency-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .micro-term-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .micro-inactive-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .micro-inactive-metric:last-child { grid-column: 1 / -1; }
+  .micro-inactive-details { grid-template-columns: 1fr; }
+  .micro-pipeline-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .micro-slik-card { grid-template-columns: minmax(180px, .65fr) minmax(320px, 1.35fr) auto; }
+  .micro-slik-card__branches { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .micro-pipeline-overview { grid-template-columns: minmax(0, 1fr); }
+  .micro-pipeline-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .micro-pipeline-source-modal__summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 767.98px) {
   .micro-ops-section__head,
@@ -8020,6 +8673,11 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
   .micro-need-operator { text-align: center; line-height: 1; }
   .micro-frequency-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .micro-term-grid { grid-template-columns: 1fr; }
+  .micro-inactive-head-meta { width: 100%; align-items: flex-start; text-align: left; }
+  .micro-inactive-metrics { grid-template-columns: 1fr; padding: 0.75rem; }
+  .micro-inactive-metric:last-child { grid-column: auto; }
+  .micro-inactive-table-wrap { width: calc(100% - 1.5rem); margin: 0 0.75rem 0.75rem; }
+  .micro-inactive-details { padding: 0 0.75rem 0.75rem; }
   .micro-pattern-card { grid-template-columns: 44px minmax(0, 1fr); }
   .micro-pattern-card > b { grid-column: 2; grid-row: 2; justify-self: start; }
   .micro-burden-card__head { align-items: flex-start; flex-wrap: wrap; }
@@ -8027,6 +8685,34 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
   .micro-burden-list li { grid-template-columns: 24px minmax(0, 1fr); }
   .micro-burden-list .micro-delta { grid-column: 2; justify-self: start; overflow-wrap: anywhere; white-space: normal; }
   .micro-mantri-stage__chips span { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+  .micro-pipeline-head-actions { width: 100%; align-items: stretch; justify-content: flex-start; }
+  .micro-pipeline-open { width: 100%; }
+  .micro-pipeline-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: .75rem; }
+  .micro-pipeline-kpis article:last-child { grid-column: 1 / -1; }
+  .micro-pipeline-dataset-title { padding: .75rem .75rem 0; }
+  .micro-slik-card { grid-template-columns: 1fr; margin: 0 .75rem .75rem; padding: .75rem; }
+  .micro-slik-card__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .micro-slik-card__metrics > div:nth-child(2) { border-right: 0; }
+  .micro-slik-card__metrics > div:nth-child(-n+2) { border-bottom: 1px solid rgba(255,255,255,.16); }
+  .micro-slik-card__branches { grid-column: auto; grid-template-columns: 1fr; }
+  .micro-slik-card__open { width: 100%; }
+  .micro-pipeline-overview { padding: 0 .75rem .75rem; }
+  .micro-pipeline-group-row { grid-template-columns: minmax(0, 1fr) 62px; }
+  .micro-pipeline-progress { grid-column: 1 / -1; grid-row: 2; }
+  .micro-pipeline-group-row__status { grid-column: 2; grid-row: 1; }
+  .micro-pipeline-panel--actions { margin: 0 .75rem .75rem; }
+  .micro-pipeline-modal { padding: 0; }
+  .micro-pipeline-modal__dialog { width: 100vw; height: 100dvh; }
+  .micro-pipeline-source-card__actions { grid-template-columns: 1fr; }
+  .micro-pipeline-source-detail { min-height: 44px; border-top: 1px solid #d4e2ed; border-left: 0; }
+  .micro-pipeline-source-modal { padding: 0; }
+  .micro-pipeline-source-modal__dialog { width: 100vw; max-height: 100dvh; height: 100dvh; }
+  .micro-pipeline-source-modal__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: .65rem .75rem; }
+  .micro-pipeline-source-modal__summary > div:last-child { grid-column: 1 / -1; }
+  .micro-pipeline-source-modal__dialog > footer { align-items: stretch; flex-direction: column; }
+  .micro-pipeline-source-modal__dialog > footer button { width: 100%; }
+  .micro-pipeline-filters { grid-template-columns: minmax(0, 1fr); }
+  .micro-pipeline-filters > button { width: 100%; }
 }
 @media (max-width: 419.98px) {
   .micro-realization-type-card.type-nett { grid-template-columns: 1fr; }
@@ -8040,6 +8726,16 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
   .micro-need-stage__icon { width: 46px; height: 46px; }
   .micro-term-item { grid-template-columns: 1fr; }
   .micro-term-item button { width: 100%; }
+  .micro-inactive-metric { grid-template-columns: 40px minmax(0, 1fr) auto; padding: 0.7rem; }
+  .micro-inactive-metric__icon { width: 40px; height: 40px; }
+  .micro-inactive-metric > b { font-size: 1.25rem; }
+  .micro-inactive-detail li { grid-template-columns: 32px minmax(0, 1fr); }
+  .micro-inactive-category { grid-column: 2; justify-self: start; }
+  .micro-slik-branch { grid-template-columns: minmax(0, 1fr) auto; }
+  .micro-slik-branch > span { grid-column: 1; grid-row: 1; }
+  .micro-slik-branch > div { grid-column: 1; grid-row: 2; }
+  .micro-slik-branch > strong { grid-column: 2; grid-row: 1; }
+  .micro-slik-branch > small { grid-column: 2; grid-row: 2; }
 }
 @media (max-width: 319.98px) {
   .micro-ops { padding: 0.5rem; }
@@ -8051,6 +8747,10 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
   .micro-ops-hero__visual svg { width: 210px; }
   .micro-ranking-toggle { grid-template-columns: 1fr; }
   .micro-frequency-grid { grid-template-columns: 1fr; }
+  .micro-pipeline-kpis { grid-template-columns: minmax(0, 1fr); }
+  .micro-pipeline-kpis article:last-child { grid-column: auto; }
+  .micro-pipeline-panel__head { align-items: flex-start; flex-direction: column; }
+  .micro-pipeline-panel__head > small { text-align: left; }
 }
 @media (max-width: 359.98px) {
   .micro-pattern-card { grid-template-columns: 44px minmax(0, 1fr); }
@@ -8088,35 +8788,406 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
 }
 .micro-realization-layout {
   display: grid;
-  grid-template-columns: minmax(260px, 32%) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
   align-items: stretch;
   gap: 1rem;
   padding: 1rem;
 }
-.micro-realization-stack {
+.micro-realization-summary-grid {
   display: grid;
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: .75rem;
+  align-content: stretch;
 }
-.micro-realization-stack .micro-realization-type-card.type-plafond,
-.micro-realization-stack .micro-realization-type-card.type-nett {
-  min-height: 0;
-  grid-template-columns: 42px minmax(0, 1fr);
-  padding: .9rem;
+.micro-realization-summary-grid .micro-realization-type-card {
+  min-width: 0;
+  min-height: 126px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-content: start;
+  gap: .65rem;
+  padding: .85rem;
 }
-.micro-realization-stack .micro-realization-type-card.type-nett .micro-nett-type-list {
+.micro-realization-summary-grid .micro-realization-type-card.type-nett .micro-nett-type-list {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .35rem;
+  margin-top: .4rem;
+}
+.micro-realization-type-card.type-runoff {
+  background: linear-gradient(125deg, #073b75 0%, #0873ba 58%, #11a5d8 100%);
+}
+.micro-realization-type-card.type-ph {
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-content: start;
+  gap: .65rem;
+  background: linear-gradient(125deg, #082f64 0%, #0754bd 58%, #0a8fd1 100%);
+}
+.micro-realization-type-card.type-runoff .micro-realization-type-card__icon,
+.micro-realization-type-card.type-ph .micro-realization-type-card__icon {
+  color: #064079;
+  background: #c9f0ff;
+}
+.micro-ph-card__head { position: relative; z-index: 1; min-width: 0; }
+.micro-ph-card__head > span,
+.micro-ph-card__head > small { display: block; overflow-wrap: anywhere; }
+.micro-ph-card__metrics {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-width: 0;
   grid-column: 1 / -1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .35rem;
+  margin-top: .4rem;
 }
+.micro-ph-card__metrics > span {
+  min-width: 0;
+  padding: .42rem .52rem;
+  border: 1px solid rgba(205, 242, 255, .25);
+  background: rgba(3, 37, 83, .3);
+  border-radius: 4px 9px 4px 9px;
+}
+.micro-ph-card__metrics b,
+.micro-ph-card__metrics strong,
+.micro-ph-card__metrics small { display: block; overflow-wrap: anywhere; }
+.micro-ph-card__metrics b { color: #9fe8ff; font-size: .6rem; }
+.micro-ph-card__metrics strong { margin-top: .06rem; font-size: .8rem; }
+.micro-ph-card__metrics small { margin-top: .04rem; font-size: .56rem; }
 .micro-realization-products {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   border: 1px solid #c8daec;
+  border-radius: 4px 18px 4px 18px;
+  background: #fff;
+  box-shadow: 0 4px 16px -8px rgba(2, 44, 96, .12);
+}
+.micro-realization-products .micro-ops-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: .65rem .85rem;
+  border-top: 0;
+  border-bottom: 1px solid #dce8f4;
+  background: linear-gradient(115deg, #f4f8fe, #fff);
+}
+.micro-realization-products .micro-ops-subhead h4 {
+  margin: 0;
+  color: #062d67;
+  font-size: .88rem;
+  font-weight: 850;
+}
+.micro-mantri-roster-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border-bottom: 1px solid #dce8f4;
+  background: #dce8f4;
+}
+.micro-mantri-roster-strip > span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: .4rem;
+  padding: .5rem .58rem;
+  background: #f7fbff;
+}
+.micro-mantri-roster-strip small {
+  color: #58718c;
+  font-size: .58rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.micro-mantri-roster-strip strong {
+  flex: 0 0 auto;
+  color: #0754bd;
+  font-size: .78rem;
+  font-weight: 950;
+  font-variant-numeric: tabular-nums;
+}
+.micro-realization-products .micro-ops-table-wrap {
+  flex: 1 1 auto;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.micro-realization-products .micro-ops-table {
+  width: 100%;
+  min-width: 520px;
+  height: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.micro-realization-products .micro-ops-table th,
+.micro-realization-products .micro-ops-table td {
+  padding: .44rem .55rem;
+  font-size: .72rem;
+  border-bottom: 1px solid #e2ecf6;
+  vertical-align: middle;
+}
+.micro-realization-products .micro-ops-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: .5rem .55rem;
+  color: #fff;
+  background: #063476;
+  font-size: .62rem;
+  font-weight: 850;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+.micro-realization-products .micro-ops-table tbody th {
+  color: #123456;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.micro-realization-products .micro-ops-table tfoot th,
+.micro-realization-products .micro-ops-table tfoot td {
+  padding: .5rem .55rem;
+  font-weight: 900;
+  background: #eef6fd;
+  border-top: 2px solid #b8d4ee;
+  border-bottom: 0;
+}
+.micro-mantri-count {
+  display: inline-flex;
+  min-width: 32px;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: .2rem .42rem;
+  border: 1px solid transparent;
+  font-weight: 900;
+}
+.micro-mantri-count.is-realized { color: #006b51; border-color: #9de0cd; background: #e4f8f1; }
+.micro-mantri-count.is-pending { color: #a23a2b; border-color: #f2b9af; background: #fff0ed; }
+.micro-kupedes-pending {
+  margin: 0 1rem 1rem;
+  overflow: hidden;
+  border: 1px solid #bdd7f0;
+  border-radius: 8px;
+  background: #f8fbff;
+  box-shadow: 0 12px 28px -22px rgba(2, 44, 96, .45);
+}
+.micro-kupedes-pending__head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .85rem 1rem;
+  color: #fff;
+  background: linear-gradient(105deg, #063476 0%, #0754bd 62%, #0799d3 100%);
+}
+.micro-kupedes-pending__head > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: .55rem;
+}
+.micro-kupedes-pending__head h4 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: .94rem;
+  font-weight: 850;
+}
+.micro-kupedes-pending__head p {
+  margin: .18rem 0 0;
+  color: rgba(255, 255, 255, .8);
+  font-size: .7rem;
+  line-height: 1.4;
+}
+.micro-kupedes-pending__icon {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px 10px 4px 10px;
+  color: #063476;
+  background: #bcecff;
+}
+.micro-kupedes-pending__headline-stats {
+  display: grid;
+  grid-template-columns: auto auto;
+  flex: 0 0 auto;
+  gap: .5rem;
+  align-items: center;
+  padding: .36rem .48rem;
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: 6px;
+  background: rgba(0, 29, 78, .24);
+}
+.micro-kupedes-pending__headline-stats strong,
+.micro-kupedes-pending__headline-stats span {
+  display: block;
+  white-space: nowrap;
+  font-size: .67rem;
+  font-weight: 800;
+}
+.micro-kupedes-pending__headline-stats strong {
+  padding-right: .5rem;
+  border-right: 1px solid rgba(255, 255, 255, .26);
+}
+.micro-kupedes-pending__headline-stats strong b {
+  margin-right: .15rem;
+  font-size: .9rem;
+}
+.micro-kupedes-pending__headline-stats span { color: rgba(255, 255, 255, .8); }
+.micro-kupedes-pending__summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: .7rem;
+  padding: .8rem;
+}
+.micro-kupedes-branch {
+  min-width: 0;
+  border: 1px solid #cddff0;
+  border-top: 3px solid #0875d1;
+  border-radius: 7px;
   background: #fff;
 }
-.micro-realization-products .micro-ops-subhead { border-top: 0; }
-.micro-realization-products .micro-ops-table-wrap { height: calc(100% - 45px); }
-.micro-realization-products .micro-ops-table { height: 100%; }
+.micro-kupedes-branch__head {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: .55rem;
+  align-items: center;
+  padding: .68rem .72rem .6rem;
+  border-bottom: 1px solid #e3edf7;
+}
+.micro-kupedes-branch__icon {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: #0754bd;
+  background: #e6f3ff;
+}
+.micro-kupedes-branch__head div { min-width: 0; }
+.micro-kupedes-branch__head div > span,
+.micro-kupedes-branch__metrics span {
+  display: block;
+  color: #637a93;
+  font-size: .6rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.micro-kupedes-branch__head div > strong {
+  display: block;
+  overflow: hidden;
+  color: #0a2f61;
+  font-size: .78rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.micro-kupedes-branch__head > b {
+  display: inline-flex;
+  min-width: 32px;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #0754bd;
+  font-size: .84rem;
+}
+.micro-kupedes-branch__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: .55rem .35rem;
+}
+.micro-kupedes-branch__metrics > div {
+  min-width: 0;
+  padding: 0 .4rem;
+  border-right: 1px solid #e3edf7;
+}
+.micro-kupedes-branch__metrics > div:last-child { border-right: 0; }
+.micro-kupedes-branch__metrics strong {
+  display: block;
+  margin-top: .1rem;
+  color: #123b6d;
+  font-size: .82rem;
+  font-weight: 900;
+}
+.micro-kupedes-branch__details { border-top: 1px solid #e3edf7; }
+.micro-kupedes-branch__details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  min-height: 40px;
+  padding: .42rem .72rem;
+  cursor: pointer;
+  color: #174a82;
+  font-size: .7rem;
+  font-weight: 800;
+  list-style: none;
+  touch-action: manipulation;
+}
+.micro-kupedes-branch__details summary::-webkit-details-marker { display: none; }
+.micro-kupedes-branch__details summary > span:last-child { color: #5c7590; font-size: .65rem; }
+.micro-kupedes-branch__details[open] summary { background: #f2f8fe; }
+.micro-kupedes-branch__details[open] summary i { transform: rotate(180deg); }
+.micro-kupedes-branch__people {
+  display: grid;
+  gap: .36rem;
+  margin: 0;
+  padding: .48rem .72rem .7rem;
+  border-top: 1px solid #e8f0f8;
+  list-style: none;
+}
+.micro-kupedes-branch__people li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: .7rem;
+  padding-bottom: .34rem;
+  border-bottom: 1px dashed #d8e5f1;
+}
+.micro-kupedes-branch__people li:last-child { padding-bottom: 0; border-bottom: 0; }
+.micro-kupedes-branch__people li > div { min-width: 0; }
+.micro-kupedes-branch__people strong,
+.micro-kupedes-branch__people span { display: block; overflow-wrap: anywhere; }
+.micro-kupedes-branch__people strong { color: #143b6d; font-size: .72rem; }
+.micro-kupedes-branch__people span { margin-top: .08rem; color: #627991; font-size: .62rem; }
+.micro-kupedes-branch__people b { flex: 0 0 auto; color: #0754bd; font-size: .64rem; white-space: nowrap; }
+.micro-kupedes-pending__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  min-height: 90px;
+  padding: 1rem;
+  color: #08715a;
+  background: #f1fcf7;
+  font-size: .8rem;
+}
+.micro-kupedes-pending__empty i { font-size: 1.05rem; }
+@media (max-width: 575.98px) {
+  .micro-kupedes-pending { margin-right: .65rem; margin-left: .65rem; }
+  .micro-kupedes-pending__head { align-items: stretch; flex-direction: column; padding: .72rem; }
+  .micro-kupedes-pending__head > div { width: 100%; }
+  .micro-kupedes-pending__headline-stats { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .2rem; }
+  .micro-kupedes-pending__headline-stats strong,
+  .micro-kupedes-pending__headline-stats span { overflow-wrap: anywhere; white-space: normal; }
+  .micro-kupedes-pending__headline-stats strong { padding: 0; border-right: 0; }
+  .micro-kupedes-pending__summary { grid-template-columns: minmax(0, 1fr); padding: .65rem; }
+  .micro-kupedes-branch__metrics { gap: .15rem; }
+  .micro-kupedes-branch__metrics > div { padding: 0 .28rem; }
+  .micro-kupedes-branch__metrics span { font-size: .56rem; }
+}
 
 .micro-pdwk-limit {
   padding: 1rem 1rem 0;
@@ -8166,6 +9237,7 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
 .micro-pdwk-status {
   --pdwk-tone: #1fa21a;
   --pdwk-soft: #effbea;
+  position: relative;
   min-width: 0;
   overflow: hidden;
   border: 2px solid var(--pdwk-tone);
@@ -8175,11 +9247,28 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
 .micro-pdwk-status.tone-yellow { --pdwk-tone: #d9a900; --pdwk-soft: #fff8d7; }
 .micro-pdwk-status.tone-orange { --pdwk-tone: #ef7600; --pdwk-soft: #fff0df; }
 .micro-pdwk-status.tone-red { --pdwk-tone: #e63745; --pdwk-soft: #fff0f2; }
-.micro-pdwk-status > header { padding: .62rem .7rem; color: #fff; background: var(--pdwk-tone); text-align: center; }
+.micro-pdwk-status > header { position: relative; padding: .62rem 3.55rem .62rem .7rem; color: #fff; background: var(--pdwk-tone); text-align: center; }
 .micro-pdwk-status > header strong,
 .micro-pdwk-status > header small { display: block; overflow-wrap: anywhere; }
 .micro-pdwk-status > header strong { font-size: .82rem; }
 .micro-pdwk-status > header small { margin-top: .12rem; font-size: .56rem; line-height: 1.35; }
+.micro-pdwk-status__detail {
+  position: absolute;
+  top: 50%;
+  right: .55rem;
+  display: inline-grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  transform: translateY(-50%);
+  border: 1px solid rgba(255,255,255,.58);
+  border-radius: 6px;
+  background: rgba(4, 29, 70, .18);
+  color: #fff;
+  font-size: .74rem;
+}
+.micro-pdwk-status__detail:hover { background: rgba(4, 29, 70, .36); }
+.micro-pdwk-status__detail:focus-visible { outline: 3px solid rgba(255,255,255,.8); outline-offset: 2px; }
 .micro-pdwk-status__body { display: grid; grid-template-columns: 94px minmax(0, 1fr); align-items: center; gap: .65rem; padding: .7rem; background: linear-gradient(145deg, #fff, var(--pdwk-soft)); }
 .micro-pdwk-donut {
   display: grid;
@@ -8203,16 +9292,73 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
 .micro-pdwk-status__metrics span { color: #63758b; font-size: .55rem; font-weight: 850; text-transform: uppercase; }
 .micro-pdwk-status__metrics strong { margin-top: .08rem; color: #10243f; font-size: .76rem; }
 .micro-pdwk-status__metrics small { color: var(--pdwk-tone); font-size: .58rem; font-weight: 900; }
+.micro-pdwk-status__hint {
+  display: block;
+  padding: 0 .7rem .56rem;
+  background: linear-gradient(145deg, #fff, var(--pdwk-soft));
+  color: #61738b;
+  font-size: .56rem;
+  font-weight: 800;
+  text-align: center;
+}
+.micro-pdwk-status__hint i { margin-right: .2rem; color: var(--pdwk-tone); }
+.micro-pdwk-modal { max-width: min(680px, calc(100vw - 24px)); }
+.micro-pdwk-modal__lead { margin: 0 0 .8rem; color: #526b87; font-size: .84rem; line-height: 1.5; text-align: left; }
+.micro-pdwk-modal__summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: .8rem; border: 1px solid #d8e4f1; border-radius: 8px; overflow: hidden; }
+.micro-pdwk-modal__summary > div { min-width: 0; padding: .7rem .75rem; background: #f6f9fd; text-align: left; }
+.micro-pdwk-modal__summary > div + div { border-left: 1px solid #d8e4f1; }
+.micro-pdwk-modal__summary span,
+.micro-pdwk-modal__summary strong { display: block; overflow-wrap: anywhere; }
+.micro-pdwk-modal__summary span { color: #687d95; font-size: .64rem; font-weight: 850; text-transform: uppercase; }
+.micro-pdwk-modal__summary strong { margin-top: .14rem; color: #092f68; font-size: 1rem; }
+.micro-pdwk-modal__section { margin-top: .75rem; text-align: left; }
+.micro-pdwk-modal__section h4 { margin: 0 0 .4rem; color: #123a71; font-size: .78rem; font-weight: 900; }
+.micro-pdwk-modal__section p { margin: 0; color: #6a7d93; font-size: .74rem; }
+.micro-pdwk-modal__list { display: grid; max-height: min(360px, 42vh); overflow: auto; border: 1px solid #d8e4f1; border-radius: 8px; background: #fff; }
+.micro-pdwk-modal__row { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: .6rem; align-items: center; min-width: 0; padding: .55rem .65rem; border-bottom: 1px solid #e5edf5; }
+.micro-pdwk-modal__row:last-child { border-bottom: 0; }
+.micro-pdwk-modal__row:nth-child(even) { background: #f8fbfe; }
+.micro-pdwk-modal__pn { color: #0d5bb7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .69rem; font-weight: 900; }
+.micro-pdwk-modal__name,
+.micro-pdwk-modal__unit { display: block; overflow-wrap: anywhere; }
+.micro-pdwk-modal__name { color: #152d4f; font-size: .78rem; font-weight: 850; }
+.micro-pdwk-modal__unit { margin-top: .08rem; color: #6b7f96; font-size: .68rem; }
+.micro-mantri-tier-modal { max-width: min(820px, calc(100vw - 24px)); }
+.micro-mantri-tier-modal__lead { margin: 0 0 .8rem; color: #526b87; font-size: .82rem; line-height: 1.5; text-align: left; }
+.micro-mantri-tier-modal__grid { display: grid; gap: .65rem; text-align: left; }
+.micro-mantri-tier-modal__bucket { overflow: hidden; border: 1px solid #d8e4f1; border-radius: 8px; background: #fff; }
+.micro-mantri-tier-modal__bucket > header { display: flex; align-items: center; justify-content: space-between; gap: .65rem; padding: .5rem .65rem; color: #123a71; background: #f5f9fd; }
+.micro-mantri-tier-modal__bucket > header strong { font-size: .76rem; }
+.micro-mantri-tier-modal__bucket > header span { color: #526b87; font-size: .67rem; font-weight: 800; text-align: right; }
+.micro-mantri-tier-modal__bucket.tone-none > header { color: #861633; background: #fff0f3; }
+.micro-mantri-tier-modal__bucket.tone-extreme_low > header { color: #81320b; background: #fff2e8; }
+.micro-mantri-tier-modal__bucket.tone-low > header { color: #765000; background: #fff8df; }
+.micro-mantri-tier-modal__bucket.tone-mid > header { color: #06668f; background: #eaf9ff; }
+.micro-mantri-tier-modal__bucket.tone-high > header { color: #06469d; background: #e9f2ff; }
+.micro-mantri-tier-modal__list { max-height: min(290px, 36vh); overflow: auto; }
+.micro-mantri-tier-modal__row { display: grid; grid-template-columns: 60px minmax(0, 1fr) auto; gap: .6rem; align-items: center; padding: .56rem .65rem; border-top: 1px solid #e5edf5; }
+.micro-mantri-tier-modal__row:nth-child(even) { background: #f8fbfe; }
+.micro-mantri-tier-modal__pn { color: #0d5bb7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .68rem; font-weight: 900; }
+.micro-mantri-tier-modal__name,
+.micro-mantri-tier-modal__unit,
+.micro-mantri-tier-modal__amount { display: block; overflow-wrap: anywhere; }
+.micro-mantri-tier-modal__name { color: #152d4f; font-size: .76rem; font-weight: 850; }
+.micro-mantri-tier-modal__unit { margin-top: .08rem; color: #6b7f96; font-size: .67rem; }
+.micro-mantri-tier-modal__amount { color: #0754bd; font-size: .72rem; font-weight: 900; text-align: right; white-space: nowrap; }
+.micro-mantri-tier-modal__amount small { display: block; margin-top: .08rem; color: #6b7f96; font-size: .6rem; font-weight: 700; }
+.micro-mantri-tier-modal__empty { margin: 0; padding: .65rem; color: #6a7d93; font-size: .72rem; }
 .micro-term-item { grid-template-columns: 1fr; }
 
 @media (max-width: 1180px) {
-  .micro-realization-layout { grid-template-columns: minmax(240px, 36%) minmax(0, 1fr); }
+  .micro-realization-type-card.type-ph { grid-template-columns: 42px minmax(0, 1fr); }
+  .micro-ph-card__metrics { grid-column: 1 / -1; }
   .micro-pdwk-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 767.98px) {
   .micro-ops-context { width: 100%; justify-content: flex-start; }
-  .micro-realization-layout { grid-template-columns: 1fr; padding: .75rem; }
-  .micro-realization-stack { grid-template-rows: auto; }
+  .micro-realization-layout { padding: .75rem; }
+  .micro-realization-summary-grid { grid-template-columns: minmax(0, 1fr); }
+  .micro-mantri-roster-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .micro-pdwk-limit__toolbar { align-items: stretch; flex-direction: column; }
   .micro-pdwk-role-toggle { width: 100%; }
   .micro-pdwk-role-toggle button { min-width: 0; }
@@ -8221,9 +9367,18 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
   .micro-ops-context > span,
   .micro-ops-context .micro-ops-refresh { flex: 1 1 100%; justify-content: center; }
   .micro-pdwk-status-grid { grid-template-columns: 1fr; }
+  .micro-realization-summary-grid .micro-realization-type-card.type-nett,
+  .micro-realization-summary-grid .micro-realization-type-card.type-ph { grid-template-columns: minmax(0, 1fr); }
+  .micro-realization-summary-grid .micro-realization-type-card.type-nett .micro-realization-type-card__icon { grid-row: auto; }
+  .micro-realization-summary-grid .micro-realization-type-card.type-nett .micro-nett-type-list,
+  .micro-ph-card__metrics { grid-column: auto; grid-template-columns: minmax(0, 1fr); }
   .micro-pdwk-status__body { grid-template-columns: 82px minmax(0, 1fr); }
   .micro-pdwk-donut { width: 78px; height: 78px; }
   .micro-pdwk-donut::before { width: 55px; height: 55px; }
+  .micro-pdwk-modal__summary { grid-template-columns: 1fr; }
+  .micro-pdwk-modal__summary > div + div { border-top: 1px solid #d8e4f1; border-left: 0; }
+  .micro-mantri-tier-modal__row { grid-template-columns: 52px minmax(0, 1fr); }
+  .micro-mantri-tier-modal__amount { grid-column: 2; text-align: left; }
 }
 /* Landing analytics v1: EOM quality, SME pricing, and operational drill-down. */
 .loan-analytics-card {
@@ -8265,21 +9420,21 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
 }
 .loan-analytics-latest span, .tariff-delta span { font-size: .66rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .loan-analytics-latest strong { color: #073b82; font-size: .9rem; }
-.loan-quality-layout { display: grid; grid-template-columns: minmax(0, 1fr) 218px; gap: .8rem; padding: 0 1.3rem 1rem; }
-.loan-quality-chart-wrap { position: relative; min-width: 0; height: 300px; padding: .45rem .25rem .1rem; }
+.loan-quality-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 1rem; padding: 0 1.3rem 1rem; }
+.loan-quality-chart-wrap { position: relative; min-width: 0; height: 320px; padding: .45rem .25rem .1rem; }
 .loan-quality-legend {
-  align-self: stretch; display: grid; align-content: center; gap: .58rem; padding: .8rem;
-  border: 1px solid #d6e5f4; border-radius: 16px; background: rgba(255,255,255,.82);
+  align-self: stretch; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; padding: .75rem;
+  border: 1px solid #d6e5f4; border-radius: 16px; background: rgba(255,255,255,.9);
 }
-.loan-quality-legend__item { display: flex; align-items: center; gap: .58rem; width: 100%; padding: .5rem; border: 1px solid transparent; border-radius: 10px; background: #f6faff; text-align: left; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
-.loan-quality-legend__item:hover { border-color: #9dccf2; background: #eef7ff; }
-.loan-quality-legend__item.is-active { border-color: var(--legend-color, #0754bd); background: #fff; box-shadow: 0 8px 20px -17px #064d9f; transform: translateX(-3px); }
+.loan-quality-legend__item { display: flex; align-items: center; gap: .45rem; width: 100%; padding: .42rem .55rem; border: 1.5px solid transparent; border-radius: 10px; background: #f6faff; text-align: left; transition: all .18s ease; cursor: pointer; }
+.loan-quality-legend__item:hover { border-color: #9dccf2; background: #eef7ff; transform: translateY(-1px); }
+.loan-quality-legend__item.is-active { border-color: var(--legend-color, #0754bd); background: #ffffff; box-shadow: 0 4px 14px -4px rgba(7, 84, 189, 0.28); transform: translateY(-1px); }
 .loan-quality-legend__item:focus-visible { outline: 3px solid #13a7e2; outline-offset: 2px; }
-.loan-quality-legend__swatch { width: 22px; height: 5px; border-radius: 9px; background: var(--legend-color); box-shadow: 0 0 0 4px color-mix(in srgb, var(--legend-color) 12%, transparent); }
-.loan-quality-legend__item div { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: .5rem; width: 100%; }
-.loan-quality-legend__item span { color: #516982; font-size: .72rem; font-weight: 800; }
-.loan-quality-legend__item strong { color: #102a4c; font-size: .91rem; font-variant-numeric: tabular-nums; }
-.loan-quality-legend > small { color: #72869a; font-size: .68rem; font-weight: 700; text-align: right; }
+.loan-quality-legend__swatch { width: 14px; height: 5px; border-radius: 999px; background: var(--legend-color); flex-shrink: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--legend-color) 14%, transparent); }
+.loan-quality-legend__item div { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: .35rem; width: 100%; min-width: 0; }
+.loan-quality-legend__item span { color: #475569; font-size: .68rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.loan-quality-legend__item strong { color: #0f172a; font-size: .78rem; font-weight: 850; font-variant-numeric: tabular-nums; text-align: right; }
+.loan-quality-legend > small { grid-column: 1 / -1; color: #72869a; font-size: .68rem; font-weight: 700; text-align: right; }
 .loan-analytics-details { border-top: 1px solid #d9e7f4; background: rgba(255,255,255,.72); }
 .loan-analytics-details summary { cursor: pointer; padding: .72rem 1.3rem; color: #315576; font-size: .76rem; font-weight: 800; list-style: none; }
 .loan-analytics-details summary::-webkit-details-marker { display: none; }
@@ -8895,12 +10050,16 @@ body.sme-vendor-modal-open { overflow: hidden; }
 }
 
 .db-shell .ap-week-toolbar {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(360px, auto);
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
 }
 .db-shell .ap-week-toggle {
-  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  width: auto;
   min-width: 0;
 }
 .db-shell .trend-dates-row {
@@ -8918,27 +10077,38 @@ body.sme-vendor-modal-open { overflow: hidden; }
 
 .db-shell.landing-tablet .ap-week-toolbar,
 .db-shell.landing-narrow .ap-week-toolbar {
-  grid-template-columns: minmax(0, 1fr);
-  gap: .75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .55rem;
   margin-inline: .9rem;
-  padding: .85rem 1rem;
+  padding: .45rem .85rem;
 }
 .db-shell.landing-tablet .ap-week-toggle,
 .db-shell.landing-narrow .ap-week-toggle {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  width: auto;
 }
 .db-shell.landing-mobile .ap-week-toolbar {
   margin-inline: .65rem;
-  padding: .75rem;
+  padding: .45rem .75rem;
+  flex-direction: column;
+  align-items: flex-start;
 }
 .db-shell.landing-mobile .ap-week-toggle {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(65px, 1fr));
+  width: 100%;
+  gap: .35rem;
 }
 .db-shell.landing-tablet .ap-week-btn,
 .db-shell.landing-mobile .ap-week-btn {
   min-width: 0;
-  min-height: 48px;
-  padding-inline: .45rem;
+  min-height: 36px;
+  padding-inline: .35rem;
 }
 
 /* Scope and SME operations: reflow at the effective shell width. */
@@ -9278,7 +10448,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
 }
 </style>
 
-<div class="db-shell pt-2"
+<div class="db-shell pt-2 {{ $area6DefaultScope === 'sme' ? 'sme-operations-active' : '' }} {{ $area6DefaultScope === 'micro' ? 'micro-performance-active' : '' }} {{ $area6DefaultScope === 'consumer' ? 'consumer-active' : '' }}"
      data-loan-analytics-url="{{ route('dashboard.loan-analytics', ['periode' => $selectedPeriod, 'cabang' => $selectedLandingBranch ?? 'area6']) }}"
      data-sme-vendor-nominatives-url="{{ route('dashboard.sme-vendor-nominatives', ['cabang' => $selectedLandingBranch ?? 'area6']) }}">
   {{-- HEADER --}}
@@ -9467,7 +10637,6 @@ body.sme-vendor-modal-open { overflow: hidden; }
     <div class="ap-week-toolbar" data-prognosa-week-control="{{ $contentScopeKey }}">
       <div class="ap-week-toolbar__copy">
         <span><i class="fas fa-calendar-check"></i> Prognosa Mingguan</span>
-        <strong>Pilih week untuk melihat target dan pencapaian pada cutoff yang sesuai.</strong>
       </div>
       <div class="ap-week-toggle" role="tablist" aria-label="Pilih week prognosa {{ strtoupper($contentScopeKey) }}">
         @foreach($scopePrognosaWeeks as $weekOption)
@@ -9580,14 +10749,62 @@ body.sme-vendor-modal-open { overflow: hidden; }
               <!-- Row 3: Deltas -->
               <div class="ap-deltas">
                 @foreach(['dtd' => 'DtD', 'mtd' => 'MtD', 'mom' => 'MtM', 'ytd' => 'YtD'] as $dKey => $dLabel)
-                  @php $delta = data_get($deltas, $dKey, []); @endphp
+                  @php
+                    $delta = data_get($deltas, $dKey, []);
+                    $deltaVal = trim((string) data_get($delta, 'value', '-'));
+                    $deltaType = (string) data_get($delta, 'type', 'up');
+                    $deltaRaw = data_get($delta, 'raw');
+
+                    $cleanNum = preg_replace('/[^\d]/', '', $deltaVal);
+                    $isZero = ($cleanNum === '0' || $deltaVal === '-' || $deltaVal === '');
+
+                    $isNegative = !$isZero && (
+                        str_starts_with($deltaVal, '(')
+                        || $deltaType === 'down'
+                        || (is_numeric($deltaRaw) && (float) $deltaRaw < 0)
+                    );
+
+                    $isPositive = !$isZero && (
+                        str_starts_with($deltaVal, '+')
+                        || ($deltaType === 'up' && !str_starts_with($deltaVal, '('))
+                        || (is_numeric($deltaRaw) && (float) $deltaRaw > 0)
+                    );
+
+                    if (in_array($key, ['sml', 'npl'], true)) {
+                      // SML & NPL (Risiko Kredit):
+                      // Jika nilainya turun (*) adalah hijau dan jika naik adalah merah
+                      if ($isNegative) {
+                        $deltaColor = 'green';
+                        $deltaArrow = 'down';
+                      } elseif ($isPositive) {
+                        $deltaColor = 'red';
+                        $deltaArrow = 'up';
+                      } else {
+                        $deltaColor = 'green';
+                        $deltaArrow = $deltaType === 'down' ? 'down' : ($deltaType === 'up' ? 'up' : 'minus');
+                      }
+                    } else {
+                      // OS / Recovery / Portofolio Aset:
+                      // Jika nilainya turun (*) adalah merah dan jika naik adalah hijau
+                      if ($isNegative) {
+                        $deltaColor = 'red';
+                        $deltaArrow = 'down';
+                      } elseif ($isPositive) {
+                        $deltaColor = 'green';
+                        $deltaArrow = 'up';
+                      } else {
+                        $deltaColor = 'green';
+                        $deltaArrow = $deltaType === 'down' ? 'down' : ($deltaType === 'up' ? 'up' : 'minus');
+                      }
+                    }
+                  @endphp
                   <div class="ap-delta-item">
                     <div class="ap-delta-label">{{ $dLabel }}</div>
-                    <div class="ap-delta-val text-{{ data_get($delta, 'color', 'red') }}-flat">
-                      {{ data_get($delta, 'value', '-') }}
+                    <div class="ap-delta-val text-{{ $deltaColor }}-flat">
+                      {{ $deltaVal }}
                     </div>
-                    <div class="ap-delta-arrow text-{{ data_get($delta, 'color', 'red') }}-flat">
-                      <i class="fas fa-arrow-{{ data_get($delta, 'type', 'up') }}"></i>
+                    <div class="ap-delta-arrow text-{{ $deltaColor }}-flat">
+                      <i class="fas {{ $deltaArrow === 'minus' ? 'fa-minus' : 'fa-arrow-' . $deltaArrow }}"></i>
                     </div>
                   </div>
                 @endforeach
@@ -9641,6 +10858,10 @@ body.sme-vendor-modal-open { overflow: hidden; }
       $segmentPerformanceTitle = $contentScopeKey === 'micro'
         ? 'KINERJA PRODUK MIKRO (Rp Juta)'
         : 'KINERJA PER SEGMEN (Rp Juta)';
+      $metricColumnSpan = $contentScopeKey === 'micro' ? 5 : 3;
+      $referencePositions = (array) data_get($segmentPerf, 'reference_positions', []);
+      $ytdMonthYear = data_get($referencePositions, 'ytd.month_year', 'Des 25');
+      $mtdMonthYear = data_get($referencePositions, 'mtd.month_year', 'Jul 26');
     @endphp
 
     @if(!empty($segments))
@@ -9657,25 +10878,37 @@ body.sme-vendor-modal-open { overflow: hidden; }
         
         <!-- Card Body / Content with horizontal scrolling wrapper for responsiveness -->
         <div class="asc-body-wrapper">
-          <table class="asc-table">
+          <table class="asc-table {{ $contentScopeKey === 'micro' ? 'asc-table--micro-products' : '' }}">
             <thead>
               <tr>
                 <th rowspan="2" class="asc-th-seg">Segmen</th>
-                <th colspan="3" class="asc-th-metric asc-th-os">OUTSTANDING (OS)</th>
-                <th colspan="3" class="asc-th-metric asc-th-sml">SPECIAL MENTION LOAN (SML)</th>
-                <th colspan="3" class="asc-th-metric asc-th-npl">NON-PERFORMING LOAN (NPL)</th>
+                <th colspan="{{ $metricColumnSpan }}" class="asc-th-metric asc-th-os">OUTSTANDING (OS)</th>
+                <th colspan="{{ $metricColumnSpan }}" class="asc-th-metric asc-th-sml">SPECIAL MENTION LOAN (SML)</th>
+                <th colspan="{{ $metricColumnSpan }}" class="asc-th-metric asc-th-npl">NON-PERFORMING LOAN (NPL)</th>
               </tr>
               <tr class="asc-sub-tr">
                 <!-- OS Subheaders -->
                 <th class="asc-th-sub asc-th-penc"><span class="legend-box bg-os-blue"></span> Pencapaian</th>
+                @if($contentScopeKey === 'micro')
+                  <th class="asc-th-sub asc-th-ref" title="{{ data_get($referencePositions, 'ytd.label', 'Posisi YTD') }}"><span class="legend-box bg-ytd"></span> YTD {{ $ytdMonthYear }}</th>
+                  <th class="asc-th-sub asc-th-ref" title="{{ data_get($referencePositions, 'mtd.label', 'Posisi MTD') }}"><span class="legend-box bg-mtd"></span> MTD {{ $mtdMonthYear }}</th>
+                @endif
                 <th class="asc-th-sub asc-th-rka"><span class="legend-box bg-gray"></span> RKA {{ $rkaMonthYear }}</th>
                 <th class="asc-th-sub asc-th-pct">% Penc.</th>
                 <!-- SML Subheaders -->
                 <th class="asc-th-sub asc-th-penc"><span class="legend-box bg-sml-blue"></span> Pencapaian</th>
+                @if($contentScopeKey === 'micro')
+                  <th class="asc-th-sub asc-th-ref" title="{{ data_get($referencePositions, 'ytd.label', 'Posisi YTD') }}"><span class="legend-box bg-ytd"></span> YTD {{ $ytdMonthYear }}</th>
+                  <th class="asc-th-sub asc-th-ref" title="{{ data_get($referencePositions, 'mtd.label', 'Posisi MTD') }}"><span class="legend-box bg-mtd"></span> MTD {{ $mtdMonthYear }}</th>
+                @endif
                 <th class="asc-th-sub asc-th-rka"><span class="legend-box bg-gray"></span> RKA {{ $rkaMonthYear }}</th>
                 <th class="asc-th-sub asc-th-pct">% Penc.</th>
                 <!-- NPL Subheaders -->
                 <th class="asc-th-sub asc-th-penc"><span class="legend-box bg-npl-blue"></span> Pencapaian</th>
+                @if($contentScopeKey === 'micro')
+                  <th class="asc-th-sub asc-th-ref" title="{{ data_get($referencePositions, 'ytd.label', 'Posisi YTD') }}"><span class="legend-box bg-ytd"></span> YTD {{ $ytdMonthYear }}</th>
+                  <th class="asc-th-sub asc-th-ref" title="{{ data_get($referencePositions, 'mtd.label', 'Posisi MTD') }}"><span class="legend-box bg-mtd"></span> MTD {{ $mtdMonthYear }}</th>
+                @endif
                 <th class="asc-th-sub asc-th-rka"><span class="legend-box bg-gray"></span> RKA {{ $rkaMonthYear }}</th>
                 <th class="asc-th-sub asc-th-pct">% Penc.</th>
               </tr>
@@ -9703,6 +10936,16 @@ body.sme-vendor-modal-open { overflow: hidden; }
                   <div class="asc-bar bg-os-blue" style="width: {{ min(100, (float)data_get($os, 'penc_bar_width', 0)) }}%;"></div>
                   <span class="asc-val-num">{{ data_get($os, 'realization_fmt', '–') }}</span>
                 </td>
+                @if($contentScopeKey === 'micro')
+                  <td class="asc-td-ref">
+                    <div class="asc-bar bg-tone-{{ data_get($os, 'ytd_tone', 'neutral') }}" style="width: {{ min(100, (float)data_get($os, 'ytd_bar_width', 0)) }}%;"></div>
+                    <span class="asc-ref-num text-tone-{{ data_get($os, 'ytd_tone', 'neutral') }}">{{ data_get($os, 'ytd_position_fmt', '-') }}</span>
+                  </td>
+                  <td class="asc-td-ref">
+                    <div class="asc-bar bg-tone-{{ data_get($os, 'mtd_tone', 'neutral') }}" style="width: {{ min(100, (float)data_get($os, 'mtd_bar_width', 0)) }}%;"></div>
+                    <span class="asc-ref-num text-tone-{{ data_get($os, 'mtd_tone', 'neutral') }}">{{ data_get($os, 'mtd_position_fmt', '-') }}</span>
+                  </td>
+                @endif
                 <td class="asc-td-target">
                   <div class="asc-bar bg-gray" style="width: {{ min(100, (float)data_get($os, 'rka_bar_width', 0)) }}%;"></div>
                   <span class="asc-target-num">{{ data_get($os, 'target_fmt', '–') }}</span>
@@ -9716,6 +10959,16 @@ body.sme-vendor-modal-open { overflow: hidden; }
                   <div class="asc-bar bg-sml-blue" style="width: {{ min(100, (float)data_get($sml, 'penc_bar_width', 0)) }}%;"></div>
                   <span class="asc-val-num">{{ data_get($sml, 'realization_fmt', '–') }}</span>
                 </td>
+                @if($contentScopeKey === 'micro')
+                  <td class="asc-td-ref">
+                    <div class="asc-bar bg-tone-{{ data_get($sml, 'ytd_tone', 'neutral') }}" style="width: {{ min(100, (float)data_get($sml, 'ytd_bar_width', 0)) }}%;"></div>
+                    <span class="asc-ref-num text-tone-{{ data_get($sml, 'ytd_tone', 'neutral') }}">{{ data_get($sml, 'ytd_position_fmt', '-') }}</span>
+                  </td>
+                  <td class="asc-td-ref">
+                    <div class="asc-bar bg-tone-{{ data_get($sml, 'mtd_tone', 'neutral') }}" style="width: {{ min(100, (float)data_get($sml, 'mtd_bar_width', 0)) }}%;"></div>
+                    <span class="asc-ref-num text-tone-{{ data_get($sml, 'mtd_tone', 'neutral') }}">{{ data_get($sml, 'mtd_position_fmt', '-') }}</span>
+                  </td>
+                @endif
                 <td class="asc-td-target">
                   <div class="asc-bar bg-gray" style="width: {{ min(100, (float)data_get($sml, 'rka_bar_width', 0)) }}%;"></div>
                   <span class="asc-target-num">{{ data_get($sml, 'target_fmt', '–') }}</span>
@@ -9729,6 +10982,16 @@ body.sme-vendor-modal-open { overflow: hidden; }
                   <div class="asc-bar bg-npl-blue" style="width: {{ min(100, (float)data_get($npl, 'penc_bar_width', 0)) }}%;"></div>
                   <span class="asc-val-num">{{ data_get($npl, 'realization_fmt', '–') }}</span>
                 </td>
+                @if($contentScopeKey === 'micro')
+                  <td class="asc-td-ref">
+                    <div class="asc-bar bg-tone-{{ data_get($npl, 'ytd_tone', 'neutral') }}" style="width: {{ min(100, (float)data_get($npl, 'ytd_bar_width', 0)) }}%;"></div>
+                    <span class="asc-ref-num text-tone-{{ data_get($npl, 'ytd_tone', 'neutral') }}">{{ data_get($npl, 'ytd_position_fmt', '-') }}</span>
+                  </td>
+                  <td class="asc-td-ref">
+                    <div class="asc-bar bg-tone-{{ data_get($npl, 'mtd_tone', 'neutral') }}" style="width: {{ min(100, (float)data_get($npl, 'mtd_bar_width', 0)) }}%;"></div>
+                    <span class="asc-ref-num text-tone-{{ data_get($npl, 'mtd_tone', 'neutral') }}">{{ data_get($npl, 'mtd_position_fmt', '-') }}</span>
+                  </td>
+                @endif
                 <td class="asc-td-target">
                   <div class="asc-bar bg-gray" style="width: {{ min(100, (float)data_get($npl, 'rka_bar_width', 0)) }}%;"></div>
                   <span class="asc-target-num">{{ data_get($npl, 'target_fmt', '–') }}</span>
@@ -9756,6 +11019,16 @@ body.sme-vendor-modal-open { overflow: hidden; }
                   <div class="asc-bar bg-os-blue" style="width: {{ min(100, (float)data_get($totOs, 'penc_bar_width', 0)) }}%;"></div>
                   <span class="asc-val-num">{{ data_get($totOs, 'realization_fmt', '–') }}</span>
                 </td>
+                @if($contentScopeKey === 'micro')
+                  <td class="asc-td-ref font-weight-bold">
+                    <div class="asc-bar bg-tone-{{ data_get($totOs, 'ytd_tone', 'neutral') }}" style="width: {{ min(100, (float)data_get($totOs, 'ytd_bar_width', 0)) }}%;"></div>
+                    <span class="asc-ref-num font-weight-bold text-tone-{{ data_get($totOs, 'ytd_tone', 'neutral') }}">{{ data_get($totOs, 'ytd_position_fmt', '-') }}</span>
+                  </td>
+                  <td class="asc-td-ref font-weight-bold">
+                    <div class="asc-bar bg-tone-{{ data_get($totOs, 'mtd_tone', 'neutral') }}" style="width: {{ min(100, (float)data_get($totOs, 'mtd_bar_width', 0)) }}%;"></div>
+                    <span class="asc-ref-num font-weight-bold text-tone-{{ data_get($totOs, 'mtd_tone', 'neutral') }}">{{ data_get($totOs, 'mtd_position_fmt', '-') }}</span>
+                  </td>
+                @endif
                 <td class="asc-td-target font-weight-bold">
                   <div class="asc-bar bg-gray" style="width: {{ min(100, (float)data_get($totOs, 'rka_bar_width', 0)) }}%;"></div>
                   <span class="asc-target-num">{{ data_get($totOs, 'target_fmt', '–') }}</span>
@@ -9769,6 +11042,16 @@ body.sme-vendor-modal-open { overflow: hidden; }
                   <div class="asc-bar bg-sml-blue" style="width: {{ min(100, (float)data_get($totSml, 'penc_bar_width', 0)) }}%;"></div>
                   <span class="asc-val-num">{{ data_get($totSml, 'realization_fmt', '–') }}</span>
                 </td>
+                @if($contentScopeKey === 'micro')
+                  <td class="asc-td-ref font-weight-bold">
+                    <div class="asc-bar bg-tone-{{ data_get($totSml, 'ytd_tone', 'neutral') }}" style="width: {{ min(100, (float)data_get($totSml, 'ytd_bar_width', 0)) }}%;"></div>
+                    <span class="asc-ref-num font-weight-bold text-tone-{{ data_get($totSml, 'ytd_tone', 'neutral') }}">{{ data_get($totSml, 'ytd_position_fmt', '-') }}</span>
+                  </td>
+                  <td class="asc-td-ref font-weight-bold">
+                    <div class="asc-bar bg-tone-{{ data_get($totSml, 'mtd_tone', 'neutral') }}" style="width: {{ min(100, (float)data_get($totSml, 'mtd_bar_width', 0)) }}%;"></div>
+                    <span class="asc-ref-num font-weight-bold text-tone-{{ data_get($totSml, 'mtd_tone', 'neutral') }}">{{ data_get($totSml, 'mtd_position_fmt', '-') }}</span>
+                  </td>
+                @endif
                 <td class="asc-td-target font-weight-bold">
                   <div class="asc-bar bg-gray" style="width: {{ min(100, (float)data_get($totSml, 'rka_bar_width', 0)) }}%;"></div>
                   <span class="asc-target-num">{{ data_get($totSml, 'target_fmt', '–') }}</span>
@@ -9782,6 +11065,16 @@ body.sme-vendor-modal-open { overflow: hidden; }
                   <div class="asc-bar bg-npl-blue" style="width: {{ min(100, (float)data_get($totNpl, 'penc_bar_width', 0)) }}%;"></div>
                   <span class="asc-val-num">{{ data_get($totNpl, 'realization_fmt', '–') }}</span>
                 </td>
+                @if($contentScopeKey === 'micro')
+                  <td class="asc-td-ref font-weight-bold">
+                    <div class="asc-bar bg-tone-{{ data_get($totNpl, 'ytd_tone', 'neutral') }}" style="width: {{ min(100, (float)data_get($totNpl, 'ytd_bar_width', 0)) }}%;"></div>
+                    <span class="asc-ref-num font-weight-bold text-tone-{{ data_get($totNpl, 'ytd_tone', 'neutral') }}">{{ data_get($totNpl, 'ytd_position_fmt', '-') }}</span>
+                  </td>
+                  <td class="asc-td-ref font-weight-bold">
+                    <div class="asc-bar bg-tone-{{ data_get($totNpl, 'mtd_tone', 'neutral') }}" style="width: {{ min(100, (float)data_get($totNpl, 'mtd_bar_width', 0)) }}%;"></div>
+                    <span class="asc-ref-num font-weight-bold text-tone-{{ data_get($totNpl, 'mtd_tone', 'neutral') }}">{{ data_get($totNpl, 'mtd_position_fmt', '-') }}</span>
+                  </td>
+                @endif
                 <td class="asc-td-target font-weight-bold">
                   <div class="asc-bar bg-gray" style="width: {{ min(100, (float)data_get($totNpl, 'rka_bar_width', 0)) }}%;"></div>
                   <span class="asc-target-num">{{ data_get($totNpl, 'target_fmt', '–') }}</span>
@@ -9804,6 +11097,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
         $smlComp = data_get($composition, 'sml', []);
         $nplComp = data_get($composition, 'npl', []);
         $totalComp = data_get($composition, 'total', []);
+        $microQuality = (array) data_get($composition, 'micro_quality', []);
         
         $osRaw = (float) data_get($osComp, 'raw_pct', 0.0);
         $lrRaw = (float) data_get($lrComp, 'raw_pct', 0.0);
@@ -9833,18 +11127,53 @@ body.sme-vendor-modal-open { overflow: hidden; }
         <!-- Card Body -->
         <div class="tcc-body">
           @if($contentScopeKey === 'micro')
-            <div class="tcc-horizontal-chart" role="list" aria-label="Perbandingan kualitas portofolio Mikro">
-              @foreach($compositionBars as $bar)
-                @php
-                  $barRawPercent = max(0.0, (float) data_get($bar, 'metric.raw_pct', 0.0));
-                  $barWidth = min(100.0, ($barRawPercent / $compositionBarMax) * 100);
-                @endphp
-                <div class="tcc-horizontal-row" role="listitem" aria-label="{{ data_get($bar, 'label') }} {{ data_get($bar, 'metric.value', '-') }} Rp Juta atau {{ data_get($bar, 'metric.pct', '-') }}">
-                  <span class="tcc-horizontal-label"><span class="tcc-horizontal-marker {{ data_get($bar, 'key') }}" aria-hidden="true"></span>{{ data_get($bar, 'label') }}</span>
-                  <div class="tcc-horizontal-track" aria-hidden="true"><span class="tcc-horizontal-bar {{ data_get($bar, 'key') }}" style="width: {{ number_format($barWidth, 2, '.', '') }}%;"></span></div>
-                  <span class="tcc-horizontal-value"><span>{{ data_get($bar, 'metric.value', '–') }}</span><small>{{ data_get($bar, 'metric.pct', '–') }}</small></span>
+            <div class="tcc-quality-matrix" role="table" aria-label="Komposisi kualitas portofolio Mikro posisi dan MTD">
+              <div class="tcc-quality-row tcc-quality-row--head" role="row">
+                <span role="columnheader">Kualitas</span>
+                <span role="columnheader">{{ data_get($microQuality, 'position_label', 'Posisi') }}</span>
+                <span role="columnheader">{{ data_get($microQuality, 'previous_position_label', data_get($microQuality, 'mtd_label', '31 Jul 26')) }}</span>
+              </div>
+              @forelse((array) data_get($microQuality, 'items', []) as $qualityIndex => $quality)
+                @if($qualityIndex === 0 || data_get($microQuality, 'items.'.($qualityIndex - 1).'.group') !== data_get($quality, 'group'))
+                  <div class="tcc-quality-group">{{ data_get($quality, 'group') }} <small>{{ data_get($quality, 'group') === 'NPL' ? 'SSA Pinjaman' : 'Daily Loan Dinamis' }}</small></div>
+                @endif
+                <div class="tcc-quality-row tone-{{ data_get($quality, 'tone', 'blue') }}" role="row">
+                  <span class="tcc-quality-name" role="rowheader"><i aria-hidden="true"></i>{{ data_get($quality, 'label', '-') }}</span>
+                  <span class="tcc-quality-value" role="cell">
+                    <div class="tcc-cell-bar" style="width: {{ data_get($quality, 'bar_width', 0) }}%; background: var(--quality-tone);"></div>
+                    <div class="tcc-val-row">
+                      <b>{{ data_get($quality, 'position_fmt', '0') }}</b>
+                      <small>{{ data_get($quality, 'portfolio_pct_fmt', '0,00%') }}</small>
+                    </div>
+                  </span>
+                  <span class="tcc-quality-value" role="cell">
+                    <div class="tcc-cell-bar" style="width: {{ data_get($quality, 'previous_bar_width', 0) }}%; background: var(--quality-tone);"></div>
+                    <div class="tcc-val-row">
+                      <b>{{ data_get($quality, 'previous_position_fmt', '0') }}</b>
+                      <small>{{ data_get($quality, 'previous_portfolio_pct_fmt', '0,00%') }}</small>
+                    </div>
+                  </span>
                 </div>
-              @endforeach
+              @empty
+                <div class="tcc-quality-empty">Rincian kualitas Mikro belum tersedia.</div>
+              @endforelse
+              <div class="tcc-quality-row tcc-quality-row--total" role="row">
+                <span class="tcc-quality-name" role="rowheader"><i aria-hidden="true" style="background: #38bdf8;"></i>TOTAL LAR</span>
+                <span class="tcc-quality-value" role="cell">
+                  <div class="tcc-cell-bar" style="width: 100%; background: #38bdf8;"></div>
+                  <div class="tcc-val-row">
+                    <b>{{ data_get($microQuality, 'total.position_fmt', '0') }}</b>
+                    <small style="color: #bde4ff;">{{ data_get($microQuality, 'total.portfolio_pct_fmt', '0,00%') }}</small>
+                  </div>
+                </span>
+                <span class="tcc-quality-value" role="cell">
+                  <div class="tcc-cell-bar" style="width: 100%; background: #38bdf8;"></div>
+                  <div class="tcc-val-row">
+                    <b>{{ data_get($microQuality, 'total.previous_position_fmt', '0') }}</b>
+                    <small style="color: #bde4ff;">{{ data_get($microQuality, 'total.previous_portfolio_pct_fmt', '0,00%') }}</small>
+                  </div>
+                </span>
+              </div>
             </div>
           @else
           <div class="tcc-chart-row">
@@ -9934,7 +11263,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
     @endphp
 
     @if(!empty($overallTrends))
-    <div class="area6-segment-container mt-4">
+    <div class="area6-segment-container area6-trend-perf-container mt-4">
       {{-- TREND POSISI CARD --}}
       <div class="trend-position-card">
         <div class="asc-header">
@@ -10125,8 +11454,13 @@ body.sme-vendor-modal-open { overflow: hidden; }
                   <td class="perf-pct-cell text-{{ data_get($osTrend, 'pct_color', 'red') }}-flat">{{ data_get($osTrend, 'pct', '–') }}</td>
                   <td class="perf-mono-cell text-{{ data_get($osTrend, 'gap_color', 'red') }}-flat">{{ data_get($osTrend, 'gap', '–') }}</td>
                   <td>
-                    <div class="perf-status-circle bg-status-{{ data_get($osTrend, 'gap_color', 'red') }}">
-                      <i class="fas fa-arrow-{{ data_get($osTrend, 'status_arrow', 'down') }}"></i>
+                    <div class="perf-status-circle bg-status-{{ data_get($osTrend, 'status_bg', 'red') }}"
+                         title="Pencapaian: {{ data_get($osTrend, 'pct', '–') }} vs {{ data_get($segmentPerf, 'previous_rka_month_year', 'M-1') }}: {{ data_get($totalPerf, 'os.previous_pct_fmt', '–') }}">
+                      @if(data_get($osTrend, 'status_arrow') === 'minus' || data_get($osTrend, 'status_arrow') === 'flat')
+                        <i class="fas fa-minus"></i>
+                      @else
+                        <i class="fas fa-arrow-{{ data_get($osTrend, 'status_arrow', 'down') }}"></i>
+                      @endif
                     </div>
                   </td>
                 </tr>
@@ -10144,8 +11478,13 @@ body.sme-vendor-modal-open { overflow: hidden; }
                   <td class="perf-pct-cell text-{{ data_get($smlTrend, 'pct_color', 'red') }}-flat">{{ data_get($smlTrend, 'pct', '–') }}</td>
                   <td class="perf-mono-cell text-{{ data_get($smlTrend, 'gap_color', 'red') }}-flat">{{ data_get($smlTrend, 'gap', '–') }}</td>
                   <td>
-                    <div class="perf-status-circle bg-status-{{ data_get($smlTrend, 'gap_color', 'red') }}">
-                      <i class="fas fa-arrow-{{ data_get($smlTrend, 'status_arrow', 'down') }}"></i>
+                    <div class="perf-status-circle bg-status-{{ data_get($smlTrend, 'status_bg', 'red') }}"
+                         title="Pencapaian: {{ data_get($smlTrend, 'pct', '–') }} vs {{ data_get($segmentPerf, 'previous_rka_month_year', 'M-1') }}: {{ data_get($totalPerf, 'sml.previous_pct_fmt', '–') }}">
+                      @if(data_get($smlTrend, 'status_arrow') === 'minus' || data_get($smlTrend, 'status_arrow') === 'flat')
+                        <i class="fas fa-minus"></i>
+                      @else
+                        <i class="fas fa-arrow-{{ data_get($smlTrend, 'status_arrow', 'down') }}"></i>
+                      @endif
                     </div>
                   </td>
                 </tr>
@@ -10163,8 +11502,13 @@ body.sme-vendor-modal-open { overflow: hidden; }
                   <td class="perf-pct-cell text-{{ data_get($nplTrend, 'pct_color', 'red') }}-flat">{{ data_get($nplTrend, 'pct', '–') }}</td>
                   <td class="perf-mono-cell text-{{ data_get($nplTrend, 'gap_color', 'red') }}-flat">{{ data_get($nplTrend, 'gap', '–') }}</td>
                   <td>
-                    <div class="perf-status-circle bg-status-{{ data_get($nplTrend, 'gap_color', 'red') }}">
-                      <i class="fas fa-arrow-{{ data_get($nplTrend, 'status_arrow', 'down') }}"></i>
+                    <div class="perf-status-circle bg-status-{{ data_get($nplTrend, 'status_bg', 'red') }}"
+                         title="Pencapaian: {{ data_get($nplTrend, 'pct', '–') }} vs {{ data_get($segmentPerf, 'previous_rka_month_year', 'M-1') }}: {{ data_get($totalPerf, 'npl.previous_pct_fmt', '–') }}">
+                      @if(data_get($nplTrend, 'status_arrow') === 'minus' || data_get($nplTrend, 'status_arrow') === 'flat')
+                        <i class="fas fa-minus"></i>
+                      @else
+                        <i class="fas fa-arrow-{{ data_get($nplTrend, 'status_arrow', 'down') }}"></i>
+                      @endif
                     </div>
                   </td>
                 </tr>
@@ -10208,8 +11552,23 @@ body.sme-vendor-modal-open { overflow: hidden; }
       </div>
     </div>
 
+    <div id="consumer-operations-dashboard"
+         class="consumer-operations-dashboard d-none"
+         data-url="{{ route('dashboard.consumer-operations', ['periode' => $selectedPeriod, 'cabang' => $selectedLandingBranch ?? 'area6']) }}"
+         aria-live="polite"
+         aria-busy="true">
+      <div class="micro-ops-loader" data-consumer-operations-loader>
+        <div class="micro-ops-loader__hero"></div>
+        <div class="micro-ops-loader__block"></div>
+        <div class="micro-ops-loader__block"></div>
+      </div>
+    </div>
+
     @if(!empty($area6RankingModes))
       @foreach($area6RankingModes as $scopeKey => $scopePayload)
+        @if($scopeKey === 'consumer')
+          @continue
+        @endif
         @if(!empty(data_get($scopePayload, 'branches', [])))
           @php
             $branches = data_get($scopePayload, 'branches', []);
@@ -11218,12 +12577,14 @@ document.addEventListener('DOMContentLoaded', function() {
   const dashboardShell = document.querySelector('.db-shell');
   const smeOperationsDashboard = document.getElementById('sme-operations-dashboard');
   const microPerformanceDashboard = document.getElementById('micro-performance-dashboard');
+  const consumerOperationsDashboard = document.getElementById('consumer-operations-dashboard');
   const area6ScopeTitle = document.getElementById('area6-scope-title');
   const area6ScopeSubtitle = document.getElementById('area6-scope-subtitle');
   const defaultScopeTitle = area6ScopeTitle?.textContent || '';
   const defaultScopeSubtitle = area6ScopeSubtitle?.textContent || '';
   let smeOperationsRequest = null;
   let microPerformanceRequest = null;
+  let consumerOperationsRequest = null;
   const loanAnalyticsRequests = new Map();
   let lastSmeVendorTrigger = null;
   let smeVendorRequest = null;
@@ -11231,6 +12592,12 @@ document.addEventListener('DOMContentLoaded', function() {
   let activeSmeVendorRows = [];
   let lastSmeUnproductiveTrigger = null;
   let activeSmeUnproductiveRows = [];
+  let microPipelineRequest = null;
+  let microPipelinePayload = null;
+  let lastMicroPipelineTrigger = null;
+  let lastMicroPipelineSourceTrigger = null;
+  let lastConsumerQuadrantTrigger = null;
+  let activeMicroPipelineSource = null;
 
   document.addEventListener('click', event => {
     const toggle = event.target.closest('[data-loan-quality-toggle]');
@@ -11583,6 +12950,355 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   };
 
+  const setMicroBillingMetric = (section, metric) => {
+    if (!section || !['os', 'deb'].includes(metric)) return;
+
+    section.dataset.billingMetric = metric;
+    section.querySelectorAll('[data-billing-metric]').forEach(button => {
+      const active = button.getAttribute('data-billing-metric') === metric;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    section.querySelectorAll('[data-metric-display]').forEach(element => {
+      element.classList.toggle('d-none', element.getAttribute('data-metric-display') !== metric);
+    });
+  };
+
+  const setMicroBillingView = (section, view) => {
+    if (!section || !['m0', 'm1', 'compare'].includes(view)) return;
+
+    section.dataset.billingView = view;
+    section.querySelectorAll('[data-billing-view]').forEach(button => {
+      const active = button.getAttribute('data-billing-view') === view;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    section.querySelectorAll('.card-view-content').forEach(element => {
+      element.classList.toggle('d-none', !element.classList.contains(`view-${view}`));
+    });
+
+    const grid = section.querySelector('.micro-billing-calendar-grid');
+    if (grid) {
+      grid.classList.remove('view-mode-m0', 'view-mode-m1', 'view-mode-compare');
+      grid.classList.add(`view-mode-${view}`);
+    }
+  };
+
+  const initializeMicroBilling = container => {
+    const section = container?.querySelector('[data-micro-billing-section]');
+    if (!section) return;
+
+    section.querySelectorAll('[data-billing-metric]').forEach(metricButton => {
+      if (metricButton.dataset.billingControlBound !== '1') {
+        metricButton.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          setMicroBillingMetric(section, metricButton.getAttribute('data-billing-metric'));
+        });
+        metricButton.dataset.billingControlBound = '1';
+      }
+    });
+    section.querySelectorAll('[data-billing-view]').forEach(viewButton => {
+      if (viewButton.dataset.billingControlBound !== '1') {
+        viewButton.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          setMicroBillingView(section, viewButton.getAttribute('data-billing-view'));
+        });
+        viewButton.dataset.billingControlBound = '1';
+      }
+    });
+
+    const metric = section.querySelector('[data-billing-metric].is-active')?.getAttribute('data-billing-metric') || 'os';
+    const view = section.querySelector('[data-billing-view].is-active')?.getAttribute('data-billing-view') || 'm0';
+    setMicroBillingMetric(section, metric);
+    setMicroBillingView(section, view);
+  };
+
+  const consumerOperationsErrorHtml = message => `
+    <div class="micro-ops-load-error" role="alert">
+      <i class="fas fa-exclamation-circle" aria-hidden="true"></i>
+      <h3>Consumer Growth Command Center belum dapat dimuat</h3>
+      <p>${escapeHtml(message || 'Koneksi ke sumber pipeline atau snapshot RM belum berhasil.')}</p>
+      <button type="button" data-consumer-operations-retry><i class="fas fa-redo mr-1"></i>Coba lagi</button>
+    </div>`;
+
+  const setConsumerRefreshState = isLoading => {
+    consumerOperationsDashboard?.querySelectorAll('[data-consumer-operations-refresh]').forEach(button => {
+      button.disabled = isLoading;
+      button.classList.toggle('is-loading', isLoading);
+    });
+  };
+
+  const openConsumerQuadrantDetails = trigger => {
+    if (!trigger || trigger.disabled || !window.Swal) return;
+
+    let rmDetails = [];
+    try {
+      rmDetails = JSON.parse(trigger.dataset.consumerQuadrantRms || '[]');
+    } catch (error) {
+      rmDetails = [];
+    }
+
+    const quadrant = String(trigger.dataset.consumerQuadrant || '-');
+    const product = String(trigger.dataset.consumerQuadrantProductLabel || 'Kuadran RM');
+    const branch = String(trigger.dataset.consumerQuadrantBranchLabel || '-');
+    const period = String(trigger.dataset.consumerQuadrantPeriodLabel || '-');
+    const rows = Array.isArray(rmDetails) ? rmDetails : [];
+    const list = rows.length
+      ? `<div class="consumer-quadrant-modal__list">${rows.map((rm, index) => `
+          <div class="consumer-quadrant-modal__row">
+            <span class="consumer-quadrant-modal__number">${index + 1}</span>
+            <span>
+              <strong class="consumer-quadrant-modal__name">${escapeHtml(rm?.name || '-')}</strong>
+              <small class="consumer-quadrant-modal__branch">${escapeHtml(rm?.branch || branch)}</small>
+            </span>
+          </div>`).join('')}</div>`
+      : '<p class="consumer-quadrant-modal__lead">Tidak ada RM pada kuadran yang dipilih.</p>';
+
+    lastConsumerQuadrantTrigger = trigger;
+    window.Swal.fire({
+      title: `${escapeHtml(product)} - Kuadran ${escapeHtml(quadrant)}`,
+      html: `<p class="consumer-quadrant-modal__lead"><strong>${escapeHtml(branch)}</strong> &middot; ${escapeHtml(period)} &middot; ${rows.length.toLocaleString('id-ID')} RM</p>${list}`,
+      confirmButtonText: 'Tutup',
+      width: 680,
+      customClass: { popup: 'consumer-quadrant-modal' },
+      didClose: () => {
+        lastConsumerQuadrantTrigger?.focus?.();
+        lastConsumerQuadrantTrigger = null;
+      },
+    });
+  };
+
+  const formatMicroPipelineAmount = value => {
+    const amount = Number(value || 0);
+    const juta = Math.abs(amount) / 1000000;
+    const digits = juta >= 100 ? 0 : (juta >= 10 ? 1 : 2);
+    return `${amount < 0 ? '-' : ''}Rp ${juta.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: digits })} jt`;
+  };
+
+  const microPipelineStatusHtml = row => {
+    const status = ['done', 'scheduled', 'pending'].includes(row?.visit_status) ? row.visit_status : 'pending';
+    const icon = status === 'done' ? 'check-circle' : (status === 'scheduled' ? 'calendar-check' : 'clock');
+    const months = status === 'done' ? row?.visit_months : row?.planned_months;
+    const monthText = Array.isArray(months) && months.length ? months.join(', ') : '-';
+    const detail = status === 'done'
+      ? `DONE: ${escapeHtml(monthText)}`
+      : (status === 'scheduled' ? `PLAN: ${escapeHtml(monthText)}` : 'Belum ada DONE / PLAN');
+    return `<span class="micro-pipeline-status is-${status}"><i class="fas fa-${icon}" aria-hidden="true"></i>${escapeHtml(row?.visit_status_label || '-')}</span><small>${detail}</small>`;
+  };
+
+  const renderMicroPipelineRows = (modal, payload) => {
+    const body = modal?.querySelector('[data-micro-pipeline-body]');
+    if (!body) return;
+    const rows = Array.isArray(payload?.data) ? payload.data : [];
+    const meta = payload?.meta || {};
+    body.innerHTML = rows.length ? rows.map(row => `<tr>
+      <td><strong>${escapeHtml(row.debtor_name || '-')}</strong><small>CIF ${escapeHtml(row.cif || '-')}</small></td>
+      <td><strong>${escapeHtml(row.unit_name || '-')}</strong><small>${escapeHtml(row.branch_name || '-')} &middot; ${escapeHtml(row.mantri_name || '-')}</small></td>
+      <td>${escapeHtml(row.source_pipeline || '-')}</td>
+      <td><strong>${escapeHtml(row.recommended_product || '-')}</strong>${row.dataset === 'slik_hijau' ? '' : `<small>OS ${escapeHtml(formatMicroPipelineAmount(row.outstanding))}</small>`}</td>
+      <td><strong>${escapeHtml(formatMicroPipelineAmount(row.plafond))}</strong></td>
+      <td>${escapeHtml(row.description || '-')}</td>
+      <td>${microPipelineStatusHtml(row)}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="is-empty">Nominatif tidak ditemukan untuk filter ini.</td></tr>';
+
+    const count = modal.querySelector('[data-micro-pipeline-result-count]');
+    const pageInfo = modal.querySelector('[data-micro-pipeline-page-info]');
+    if (count) count.textContent = `${Number(meta.total || 0).toLocaleString('id-ID')} nominatif`;
+    if (pageInfo) pageInfo.textContent = `Baris ${Number(meta.from || 0).toLocaleString('id-ID')}-${Number(meta.to || 0).toLocaleString('id-ID')} dari ${Number(meta.total || 0).toLocaleString('id-ID')} | Halaman ${Number(meta.page || 1)} dari ${Number(meta.last_page || 1)}`;
+    modal.querySelectorAll('[data-micro-pipeline-page]').forEach(button => {
+      button.disabled = button.dataset.microPipelinePage === 'prev'
+        ? Number(meta.page || 1) <= 1
+        : Number(meta.page || 1) >= Number(meta.last_page || 1);
+    });
+    microPipelinePayload = payload;
+  };
+
+  const prepareMicroPipelineModal = () => {
+    const localModal = microPerformanceDashboard?.querySelector('[data-micro-pipeline-modal]');
+    if (!localModal) return null;
+    const existing = document.querySelector('body > [data-micro-pipeline-modal]');
+    if (existing && existing !== localModal) existing.remove();
+    const initialNode = microPerformanceDashboard.querySelector('[data-micro-pipeline-initial]');
+    try {
+      microPipelinePayload = JSON.parse(initialNode?.textContent || '{}');
+    } catch (error) {
+      microPipelinePayload = { data: [], meta: { page: 1, last_page: 1, total: 0, from: 0, to: 0 } };
+    }
+    document.body.appendChild(localModal);
+    renderMicroPipelineRows(localModal, microPipelinePayload);
+    return localModal;
+  };
+
+  const closeMicroPipelineModal = () => {
+    const modal = document.querySelector('body > [data-micro-pipeline-modal]');
+    if (!modal || modal.hidden) return;
+    modal.hidden = true;
+    document.body.classList.remove('micro-pipeline-modal-open');
+    microPipelineRequest?.abort?.();
+    microPipelineRequest = null;
+    lastMicroPipelineTrigger?.focus?.();
+    lastMicroPipelineTrigger = null;
+  };
+
+  const loadMicroPipelineRows = async (modal, page = 1) => {
+    if (!modal?.dataset.url) return;
+    const form = modal.querySelector('[data-micro-pipeline-filters]');
+    const body = modal.querySelector('[data-micro-pipeline-body]');
+    if (!form || !body) return;
+
+    microPipelineRequest?.abort?.();
+    const controller = new AbortController();
+    microPipelineRequest = controller;
+    const requestUrl = new URL(modal.dataset.url, window.location.origin);
+    const formData = new FormData(form);
+    for (const [key, value] of formData.entries()) {
+      if (String(value).trim() !== '') requestUrl.searchParams.set(key, String(value));
+    }
+    requestUrl.searchParams.set('page', String(Math.max(1, Number(page) || 1)));
+    requestUrl.searchParams.set('per_page', '20');
+    body.innerHTML = '<tr><td colspan="7" class="is-loading"><i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i> Memuat nominatif pipeline...</td></tr>';
+    modal.setAttribute('aria-busy', 'true');
+
+    try {
+      const response = await fetch(requestUrl.toString(), {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      const payload = await response.json();
+      if (!response.ok || !Array.isArray(payload?.data)) {
+        throw new Error(payload?.message || 'Respons nominatif pipeline tidak valid.');
+      }
+      renderMicroPipelineRows(modal, payload);
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+      body.innerHTML = `<tr><td colspan="7" class="is-empty"><i class="fas fa-exclamation-circle" aria-hidden="true"></i> ${escapeHtml(error?.message || 'Nominatif pipeline belum dapat dimuat.')}</td></tr>`;
+    } finally {
+      if (microPipelineRequest === controller) microPipelineRequest = null;
+      modal.setAttribute('aria-busy', 'false');
+    }
+  };
+
+  const openMicroPipelineModal = trigger => {
+    const modal = document.querySelector('body > [data-micro-pipeline-modal]') || prepareMicroPipelineModal();
+    if (!modal) return;
+    const dataset = trigger?.getAttribute('data-micro-pipeline-open') === 'slik_hijau' ? 'slik_hijau' : 'prewash';
+    const form = modal.querySelector('[data-micro-pipeline-filters]');
+    const datasetSelect = form?.querySelector('[name="dataset"]');
+    const statusSelect = form?.querySelector('[name="status"]');
+    const sourceSelect = form?.querySelector('[name="source"]');
+    const productSelect = form?.querySelector('[name="product"]');
+    if (datasetSelect) datasetSelect.value = dataset;
+    if (statusSelect) statusSelect.value = dataset === 'slik_hijau' ? 'all' : 'open';
+    if (sourceSelect) sourceSelect.value = '';
+    if (productSelect) productSelect.value = '';
+    const sheet = dataset === 'slik_hijau' ? modal.dataset.slikHijauSheet : modal.dataset.prewashSheet;
+    const sourceUrl = dataset === 'slik_hijau' ? modal.dataset.slikHijauUrl : modal.dataset.prewashUrl;
+    const sheetLabel = modal.querySelector('[data-micro-pipeline-sheet]');
+    const sourceLink = modal.querySelector('[data-micro-pipeline-source-link]');
+    if (sheetLabel) sheetLabel.textContent = `Sheet: ${sheet || '-'}`;
+    if (sourceLink && sourceUrl) sourceLink.href = sourceUrl;
+    lastMicroPipelineTrigger = trigger;
+    modal.hidden = false;
+    document.body.classList.add('micro-pipeline-modal-open');
+    if (dataset === 'prewash') renderMicroPipelineRows(modal, microPipelinePayload || {});
+    loadMicroPipelineRows(modal, 1);
+    window.requestAnimationFrame(() => modal.querySelector('[data-micro-pipeline-close]:not(.micro-pipeline-modal__backdrop)')?.focus());
+  };
+
+  const formatMicroPipelineRate = value => `${Number(value || 0).toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+
+  const prepareMicroPipelineSourceModal = () => {
+    const localModal = microPerformanceDashboard?.querySelector('[data-micro-pipeline-source-modal]');
+    if (!localModal) return null;
+    const existing = document.querySelector('body > [data-micro-pipeline-source-modal]');
+    if (existing && existing !== localModal) existing.remove();
+    document.body.appendChild(localModal);
+
+    return localModal;
+  };
+
+  const renderMicroPipelineSourceProgress = (modal, source) => {
+    const title = modal?.querySelector('[data-micro-pipeline-source-title]');
+    const heading = modal?.querySelector('[data-micro-pipeline-source-group-heading]');
+    const summary = modal?.querySelector('[data-micro-pipeline-source-summary]');
+    const body = modal?.querySelector('[data-micro-pipeline-source-body]');
+    const meta = modal?.querySelector('[data-micro-pipeline-source-meta]');
+    if (!modal || !summary || !body) return;
+
+    const groupLabel = String(source?.group_label || 'Cabang');
+    const total = Number(source?.total || 0);
+    const done = Number(source?.done || 0);
+    const scheduled = Number(source?.scheduled || 0);
+    const pending = Number(source?.pending || 0);
+    const groups = (Array.isArray(source?.groups) ? source.groups : [])
+      .slice()
+      .sort((left, right) => String(left?.label || '').localeCompare(String(right?.label || ''), 'id', { numeric: true }));
+
+    if (title) title.textContent = `${source?.label || 'Sumber Pipeline'} - Progress per ${groupLabel}`;
+    if (heading) heading.textContent = groupLabel;
+    if (meta) meta.textContent = `${groups.length.toLocaleString('id-ID')} ${groupLabel.toLowerCase()} pada sumber ${source?.label || '-'}`;
+    summary.innerHTML = [
+      ['Total Pipeline', total.toLocaleString('id-ID')],
+      ['Selesai Dikunjungi', done.toLocaleString('id-ID')],
+      ['Terjadwal', scheduled.toLocaleString('id-ID')],
+      ['Belum Dikunjungi', pending.toLocaleString('id-ID')],
+      ['Potensi Plafon', formatMicroPipelineAmount(source?.potential_plafond)],
+    ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+    body.innerHTML = groups.length
+      ? groups.map((group, index) => {
+          const groupTotal = Number(group?.total || 0);
+          const groupDone = Number(group?.done || 0);
+          const groupScheduled = Number(group?.scheduled || 0);
+          const groupPending = Number(group?.pending || 0);
+          const progress = Number(group?.visit_rate || 0);
+          return `<tr>
+            <td>${(index + 1).toLocaleString('id-ID')}</td>
+            <td><strong>${escapeHtml(group?.label || '-')}</strong></td>
+            <td>${groupTotal.toLocaleString('id-ID')}</td>
+            <td>${groupDone.toLocaleString('id-ID')}</td>
+            <td>${groupScheduled.toLocaleString('id-ID')}</td>
+            <td>${groupPending.toLocaleString('id-ID')}</td>
+            <td><div class="micro-pipeline-source-progress"><div class="micro-pipeline-segmented-bar" aria-label="Progress ${escapeHtml(group?.label || '-')}: ${formatMicroPipelineRate(progress)}"><span class="is-done" style="width: ${Math.max(0, Math.min(100, progress))}%"></span></div><strong>${formatMicroPipelineRate(progress)}</strong></div></td>
+            <td>${escapeHtml(formatMicroPipelineAmount(group?.potential_plafond))}</td>
+          </tr>`;
+        }).join('')
+      : `<tr><td colspan="8" class="micro-pipeline-source-modal__empty">Belum ada distribusi ${escapeHtml(groupLabel.toLowerCase())} untuk sumber ini.</td></tr>`;
+  };
+
+  const closeMicroPipelineSourceModal = () => {
+    const modal = document.querySelector('body > [data-micro-pipeline-source-modal]');
+    if (!modal || modal.hidden) return;
+    modal.hidden = true;
+    document.body.classList.remove('micro-pipeline-source-modal-open');
+    activeMicroPipelineSource = null;
+    lastMicroPipelineSourceTrigger?.focus?.();
+    lastMicroPipelineSourceTrigger = null;
+  };
+
+  const openMicroPipelineSourceModal = trigger => {
+    if (!trigger) return;
+    let source;
+    try {
+      source = JSON.parse(trigger.getAttribute('data-micro-pipeline-source-detail') || '{}');
+    } catch (error) {
+      return;
+    }
+    if (!source || typeof source !== 'object') return;
+
+    const modal = document.querySelector('body > [data-micro-pipeline-source-modal]') || prepareMicroPipelineSourceModal();
+    if (!modal) return;
+    lastMicroPipelineSourceTrigger = trigger;
+    activeMicroPipelineSource = source;
+    renderMicroPipelineSourceProgress(modal, source);
+    modal.hidden = false;
+    document.body.classList.add('micro-pipeline-source-modal-open');
+    window.requestAnimationFrame(() => modal.querySelector('[data-micro-pipeline-source-close]:not(.micro-pipeline-source-modal__backdrop)')?.focus());
+  };
+
   const loadSmeOperations = (forceRefresh = false) => {
     if (!smeOperationsDashboard || !smeOperationsDashboard.dataset.url) {
       return Promise.resolve();
@@ -11690,8 +13406,14 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!response.ok || !html.includes('data-micro-performance-ready="1"')) {
           throw new Error('Respons Mikro tidak lengkap atau sesi login telah berakhir.');
         }
+        closeMicroPipelineModal();
+        document.querySelector('body > [data-micro-pipeline-modal]')?.remove();
+        closeMicroPipelineSourceModal();
+        document.querySelector('body > [data-micro-pipeline-source-modal]')?.remove();
         microPerformanceDashboard.innerHTML = html;
         microPerformanceDashboard.dataset.loaded = '1';
+        initializeMicroBilling(microPerformanceDashboard);
+        prepareMicroPipelineModal();
       })
       .catch(error => {
         if (forceRefresh && microPerformanceDashboard.dataset.loaded === '1') {
@@ -11713,14 +13435,77 @@ document.addEventListener('DOMContentLoaded', function() {
     return microPerformanceRequest;
   };
 
+  const loadConsumerOperations = (forceRefresh = false) => {
+    if (!consumerOperationsDashboard || !consumerOperationsDashboard.dataset.url) {
+      return Promise.resolve();
+    }
+    if (!forceRefresh && consumerOperationsDashboard.dataset.loaded === '1') {
+      return Promise.resolve();
+    }
+    if (consumerOperationsRequest) {
+      return consumerOperationsRequest;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 35000);
+    const requestUrl = new URL(consumerOperationsDashboard.dataset.url, window.location.origin);
+    requestUrl.searchParams.set('_', String(Date.now()));
+    if (forceRefresh) {
+      requestUrl.searchParams.set('refresh', '1');
+    }
+
+    consumerOperationsDashboard.setAttribute('aria-busy', 'true');
+    setConsumerRefreshState(true);
+    consumerOperationsRequest = fetch(requestUrl.toString(), {
+      credentials: 'same-origin',
+      headers: {
+        'Accept': 'text/html',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      cache: 'no-store',
+      signal: controller.signal
+    })
+      .then(async response => {
+        const html = await response.text();
+        if (!response.ok || !html.includes('data-consumer-operations-ready="1"')) {
+          throw new Error('Respons Konsumer tidak lengkap atau sesi login telah berakhir.');
+        }
+        consumerOperationsDashboard.innerHTML = html;
+        consumerOperationsDashboard.dataset.loaded = '1';
+      })
+      .catch(error => {
+        if (forceRefresh && consumerOperationsDashboard.dataset.loaded === '1') {
+          const refreshButton = consumerOperationsDashboard.querySelector('[data-consumer-operations-refresh]');
+          if (refreshButton) refreshButton.title = 'Pembaruan gagal. Data terakhir tetap ditampilkan.';
+          return;
+        }
+        const message = error?.name === 'AbortError'
+          ? 'Sinkronisasi melewati batas waktu. Silakan coba lagi; cache terakhir tidak dihapus.'
+          : (error?.message || 'Dashboard Konsumer belum berhasil dimuat.');
+        consumerOperationsDashboard.innerHTML = consumerOperationsErrorHtml(message);
+        delete consumerOperationsDashboard.dataset.loaded;
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId);
+        consumerOperationsDashboard.setAttribute('aria-busy', 'false');
+        setConsumerRefreshState(false);
+        consumerOperationsRequest = null;
+      });
+
+    return consumerOperationsRequest;
+  };
+
   const syncLandingScopeMode = scope => {
     const isSme = scope === 'sme';
     const isMicro = scope === 'micro';
+    const isConsumer = scope === 'consumer';
     const activeScopeButton = document.querySelector(`.area6-scope-btn[data-area6-scope="${scope}"]`);
     dashboardShell?.classList.toggle('sme-operations-active', isSme);
     dashboardShell?.classList.toggle('micro-performance-active', isMicro);
+    dashboardShell?.classList.toggle('consumer-active', isConsumer);
     smeOperationsDashboard?.classList.toggle('d-none', !isSme);
     microPerformanceDashboard?.classList.toggle('d-none', !isMicro);
+    consumerOperationsDashboard?.classList.toggle('d-none', !isConsumer);
 
     document.querySelectorAll('.scope-illu').forEach(el => {
       el.classList.toggle('d-none', el.getAttribute('data-illu-scope') !== scope);
@@ -11739,13 +13524,16 @@ document.addEventListener('DOMContentLoaded', function() {
     if (isMicro) {
       loadMicroPerformance(false);
     }
+    if (isConsumer) {
+      loadConsumerOperations(false);
+    }
     if (['sme', 'consumer', 'micro'].includes(scope)) {
       loadLoanAnalytics(scope, false);
     }
   };
 
   const selectLandingPrognosaWeek = weekLabel => {
-    if (!/^W[1-4]$/.test(String(weekLabel || ''))) {
+    if (!/^W[1-5]$/.test(String(weekLabel || ''))) {
       return;
     }
 
@@ -11825,6 +13613,10 @@ document.addEventListener('DOMContentLoaded', function() {
   ['pointerenter', 'focus'].forEach(eventName => {
     microScopeButton?.addEventListener(eventName, () => loadMicroPerformance(false), { passive: true });
   });
+  const consumerScopeButton = document.querySelector('.area6-scope-btn[data-area6-scope="consumer"]');
+  ['pointerenter', 'focus'].forEach(eventName => {
+    consumerScopeButton?.addEventListener(eventName, () => loadConsumerOperations(false), { passive: true });
+  });
   document.querySelectorAll('.area6-scope-btn[data-area6-scope="sme"], .area6-scope-btn[data-area6-scope="consumer"], .area6-scope-btn[data-area6-scope="micro"]').forEach(button => {
     ['pointerenter', 'focus'].forEach(eventName => {
       button.addEventListener(eventName, () => loadLoanAnalytics(button.dataset.area6Scope, false), { passive: true });
@@ -11836,6 +13628,88 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!retry) return;
     event.preventDefault();
     loadLoanAnalytics(retry.dataset.loanAnalyticsRetry, true);
+  });
+
+  consumerOperationsDashboard?.addEventListener('click', event => {
+    const refreshButton = event.target.closest('[data-consumer-operations-refresh]');
+    const retryButton = event.target.closest('[data-consumer-operations-retry]');
+    const pipelineTab = event.target.closest('[data-consumer-pipeline-tab]');
+    const quadrantTab = event.target.closest('[data-consumer-quadrant-tab]');
+    const quadrantDetail = event.target.closest('[data-consumer-quadrant-detail]');
+
+    if (quadrantDetail) {
+      const isKeyboardActivation = event.detail === 0;
+      const isTouchDevice = window.matchMedia?.('(hover: none), (pointer: coarse)').matches;
+      if (isKeyboardActivation || isTouchDevice) {
+        event.preventDefault();
+        openConsumerQuadrantDetails(quadrantDetail);
+      }
+      return;
+    }
+
+    if (refreshButton) {
+      event.preventDefault();
+      loadConsumerOperations(true);
+      return;
+    }
+    if (retryButton) {
+      event.preventDefault();
+      loadConsumerOperations(false);
+      return;
+    }
+    if (pipelineTab) {
+      const key = pipelineTab.dataset.consumerPipelineTab || '';
+      const section = pipelineTab.closest('.consumer-ops-section');
+      section?.querySelectorAll('[data-consumer-pipeline-tab]').forEach(button => {
+        const active = button === pipelineTab;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+        button.tabIndex = active ? 0 : -1;
+      });
+      section?.querySelectorAll('[data-consumer-pipeline-panel]').forEach(panel => {
+        panel.hidden = panel.dataset.consumerPipelinePanel !== key;
+      });
+      return;
+    }
+    if (quadrantTab) {
+      const branch = quadrantTab.dataset.consumerQuadrantTab || '';
+      const product = quadrantTab.dataset.consumerQuadrantProduct || '';
+      const card = quadrantTab.closest('.consumer-ops-product');
+      card?.querySelectorAll('[data-consumer-quadrant-tab]').forEach(button => {
+        const active = button.dataset.consumerQuadrantTab === branch
+          && button.dataset.consumerQuadrantProduct === product;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+        button.tabIndex = active ? 0 : -1;
+      });
+      card?.querySelectorAll('[data-consumer-quadrant-panel]').forEach(panel => {
+        panel.hidden = panel.dataset.consumerQuadrantPanel !== branch
+          || panel.dataset.consumerQuadrantProduct !== product;
+      });
+    }
+  });
+
+  consumerOperationsDashboard?.addEventListener('dblclick', event => {
+    const quadrantDetail = event.target.closest('[data-consumer-quadrant-detail]');
+    if (!quadrantDetail) return;
+    event.preventDefault();
+    openConsumerQuadrantDetails(quadrantDetail);
+  });
+
+  consumerOperationsDashboard?.addEventListener('keydown', event => {
+    const tab = event.target.closest('[data-consumer-pipeline-tab], [data-consumer-quadrant-tab]');
+    if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const group = Array.from(tab.closest('[role="tablist"]')?.querySelectorAll('[role="tab"]') || []);
+    if (group.length === 0) return;
+    event.preventDefault();
+    const index = group.indexOf(tab);
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : (event.key === 'End'
+        ? group.length - 1
+        : (index + (event.key === 'ArrowRight' ? 1 : -1) + group.length) % group.length);
+    group[nextIndex]?.click();
+    group[nextIndex]?.focus();
   });
 
   smeOperationsDashboard?.addEventListener('click', event => {
@@ -11914,8 +13788,128 @@ document.addEventListener('DOMContentLoaded', function() {
     if (event.key === 'Escape') {
       closeSmeVendorModal();
       closeSmeUnproductiveModal();
+      closeMicroPipelineModal();
+      closeMicroPipelineSourceModal();
     }
   });
+
+  const pdwkPeopleRowsHtml = people => (Array.isArray(people) ? people : []).map(person => `
+    <div class="micro-pdwk-modal__row">
+      <span class="micro-pdwk-modal__pn">${escapeHtml(person?.pn || '-')}</span>
+      <span>
+        <strong class="micro-pdwk-modal__name">${escapeHtml(person?.name || '-')}</strong>
+        <small class="micro-pdwk-modal__unit">${escapeHtml(person?.unit || person?.branch || '-')}</small>
+      </span>
+    </div>
+  `).join('');
+
+  const openMicroPdwkPeople = card => {
+    if (!card || !window.Swal) return;
+
+    const wrapper = card.closest('[data-micro-pdwk-limit]');
+    const detailNode = wrapper?.querySelector('[data-micro-pdwk-details]');
+    let roles = [];
+    try {
+      roles = JSON.parse(detailNode?.textContent || '[]');
+    } catch (error) {
+      roles = [];
+    }
+
+    const role = roles.find(item => String(item?.key || '') === String(card.dataset.microPdwkRoleKey || ''));
+    const status = (role?.statuses || []).find(item => String(item?.key || '') === String(card.dataset.microPdwkStatusKey || ''));
+    if (!role || !status) return;
+
+    const activePeople = Array.isArray(status.people) ? status.people : [];
+    const referencePeople = Array.isArray(status.reference_people) ? status.reference_people : [];
+    const metricValues = card.querySelectorAll('.micro-pdwk-status__metrics strong');
+    const activeSection = activePeople.length
+      ? `<section class="micro-pdwk-modal__section">
+          <h4>Pemutus bertransaksi bulan berjalan (${activePeople.length})</h4>
+          <div class="micro-pdwk-modal__list">${pdwkPeopleRowsHtml(activePeople)}</div>
+        </section>`
+      : '<section class="micro-pdwk-modal__section"><h4>Pemutus bertransaksi bulan berjalan</h4><p>Belum ada realisasi Mikro pada status ini.</p></section>';
+    const referenceSection = referencePeople.length
+      ? `<section class="micro-pdwk-modal__section">
+          <h4>Daftar limit PDWK dari workbook (${referencePeople.length})</h4>
+          <div class="micro-pdwk-modal__list">${pdwkPeopleRowsHtml(referencePeople)}</div>
+        </section>`
+      : '<section class="micro-pdwk-modal__section"><h4>Daftar limit PDWK dari workbook</h4><p>Tidak ada pemutus pada status ini di workbook referensi.</p></section>';
+
+    window.Swal.fire({
+      title: `${escapeHtml(role.label || 'Pemutus')} - ${escapeHtml(status.label || 'Status PDWK')}`,
+      html: `<p class="micro-pdwk-modal__lead">Nama dan limit PDWK hanya menggunakan workbook per 31 Juli 2026. Putusan dan plafon tetap mengacu pada realisasi Mikro bulan berjalan.</p>
+        <div class="micro-pdwk-modal__summary">
+          <div><span>Pemutus aktif</span><strong>${Number(status.pemutus || 0).toLocaleString('id-ID')}</strong></div>
+          <div><span>Plafon realisasi</span><strong>${escapeHtml(metricValues[1]?.textContent?.trim() || '-')}</strong></div>
+        </div>
+        ${activeSection}${referenceSection}`,
+      confirmButtonText: 'Tutup',
+      width: 680,
+      customClass: { popup: 'micro-pdwk-modal' },
+    });
+  };
+
+  const formatMicroMantriTierAmount = value => {
+    const amount = Number(value || 0);
+    const juta = amount / 1000000;
+    const digits = Number.isInteger(juta) ? 0 : 1;
+
+    return `Rp ${juta.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: digits })} jt`;
+  };
+
+  const microMantriTierPeopleHtml = people => (Array.isArray(people) ? people : []).map(person => `
+    <div class="micro-mantri-tier-modal__row">
+      <span class="micro-mantri-tier-modal__pn">${escapeHtml(person?.pn || '-')}</span>
+      <span>
+        <strong class="micro-mantri-tier-modal__name">${escapeHtml(person?.name || '-')}</strong>
+        <small class="micro-mantri-tier-modal__unit">${escapeHtml(person?.unit || person?.branch || '-')}</small>
+      </span>
+      <strong class="micro-mantri-tier-modal__amount">${escapeHtml(formatMicroMantriTierAmount(person?.net_amount))}<small>${Number(person?.net_deb || 0).toLocaleString('id-ID')} rekening</small></strong>
+    </div>
+  `).join('');
+
+  const openMicroMantriTierPeople = cell => {
+    if (!cell || !window.Swal) return;
+
+    const row = cell.closest('[data-micro-mantri-tier-row]');
+    if (!row) return;
+    const tier = String(row.dataset.microMantriTier || '');
+    const branchCode = String(row.dataset.microMantriBranchCode || '');
+    const bucketKey = String(cell.dataset.microMantriBucket || '');
+    const mantriSection = row.closest('.micro-ops-section--mantri');
+    const detailsNode = mantriSection?.querySelector('[data-micro-mantri-tier-details]');
+    let rows = [];
+    try {
+      rows = JSON.parse(detailsNode?.textContent || '[]');
+    } catch (error) {
+      rows = [];
+    }
+
+    const detail = rows.find(item => String(item?.branch_code || '') === branchCode);
+    const buckets = Array.isArray(detail?.tiers?.[tier]?.buckets) ? detail.tiers[tier].buckets : [];
+    const bucket = buckets.find(item => String(item?.key || '') === bucketKey);
+    if (!detail || !bucket) return;
+
+    const tierLabel = tier === 'contract' ? 'Mantri Kontrak' : 'Mantri PT Only';
+    const key = String(bucket?.key || 'none').replace(/[^a-z_]/g, '');
+    const people = Array.isArray(bucket?.people) ? bucket.people : [];
+    const count = Number(bucket?.mantri || people.length || 0);
+    const share = Number(bucket?.share || 0).toLocaleString('id-ID', { maximumFractionDigits: 1 });
+    const bucketHtml = `<section class="micro-mantri-tier-modal__bucket tone-${key}">
+      <header><strong>${escapeHtml(bucket?.label || '-')}</strong><span>${count.toLocaleString('id-ID')} Mantri · ${share}%</span></header>
+      ${people.length
+        ? `<div class="micro-mantri-tier-modal__list">${microMantriTierPeopleHtml(people)}</div>`
+        : '<p class="micro-mantri-tier-modal__empty">Tidak ada Mantri pada kategori ini.</p>'}
+    </section>`;
+
+    window.Swal.fire({
+      title: 'Nominatif Nett Disbursement',
+      html: `<p class="micro-mantri-tier-modal__lead"><strong>${escapeHtml(tierLabel)}</strong> · ${escapeHtml(detail.branch || branchCode)}. Nominatif memakai nilai akumulatif nett disbursement pada periode yang sedang dipilih.</p><div class="micro-mantri-tier-modal__grid">${bucketHtml}</div>`,
+      confirmButtonText: 'Tutup',
+      width: 820,
+      customClass: { popup: 'micro-mantri-tier-modal' },
+    });
+  };
 
   microPerformanceDashboard?.addEventListener('click', event => {
     const refreshButton = event.target.closest('[data-micro-performance-refresh]');
@@ -11923,7 +13917,61 @@ document.addEventListener('DOMContentLoaded', function() {
     const rankingButton = event.target.closest('[data-micro-ranking-metric]');
     const needFilter = event.target.closest('[data-micro-need-filter]');
     const pdwkRoleButton = event.target.closest('[data-micro-pdwk-role]');
-    if (pdwkRoleButton) {
+    const pdwkDetailButton = event.target.closest('[data-micro-pdwk-open-detail]');
+    const pipelineButton = event.target.closest('[data-micro-pipeline-open]');
+    const pipelineSourceDetailButton = event.target.closest('[data-micro-pipeline-source-detail]');
+    const freqToggle = event.target.closest('[data-freq-toggle]');
+    const sourceToggle = event.target.closest('[data-source-toggle]');
+    const billingMetricButton = event.target.closest('[data-billing-metric]');
+    const billingViewButton = event.target.closest('[data-billing-view]');
+    if (billingMetricButton) {
+      event.preventDefault();
+      setMicroBillingMetric(
+        billingMetricButton.closest('[data-micro-billing-section]'),
+        billingMetricButton.getAttribute('data-billing-metric')
+      );
+    } else if (billingViewButton) {
+      event.preventDefault();
+      setMicroBillingView(
+        billingViewButton.closest('[data-micro-billing-section]'),
+        billingViewButton.getAttribute('data-billing-view')
+      );
+    } else if (pipelineSourceDetailButton) {
+      event.preventDefault();
+      openMicroPipelineSourceModal(pipelineSourceDetailButton);
+    } else if (freqToggle) {
+      event.preventDefault();
+      const item = freqToggle.closest('.micro-frequency-item');
+      if (!item) return;
+      const drawer = item.querySelector('.micro-freq-term-drawer');
+      if (!drawer) return;
+      const isOpen = item.classList.toggle('is-open');
+      freqToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      if (isOpen) {
+        drawer.removeAttribute('hidden');
+      } else {
+        drawer.setAttribute('hidden', '');
+      }
+    } else if (sourceToggle) {
+      event.preventDefault();
+      const card = sourceToggle.closest('.micro-pipeline-source-card');
+      if (!card) return;
+      const drawer = card.querySelector('.micro-pipeline-source-drawer');
+      if (!drawer) return;
+      const isOpen = card.classList.toggle('is-open');
+      sourceToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      if (isOpen) {
+        drawer.removeAttribute('hidden');
+      } else {
+        drawer.setAttribute('hidden', '');
+      }
+    } else if (pipelineButton) {
+      event.preventDefault();
+      openMicroPipelineModal(pipelineButton);
+    } else if (pdwkDetailButton) {
+      event.preventDefault();
+      openMicroPdwkPeople(pdwkDetailButton.closest('[data-micro-pdwk-status]'));
+    } else if (pdwkRoleButton) {
       event.preventDefault();
       const wrapper = pdwkRoleButton.closest('[data-micro-pdwk-limit]');
       const role = pdwkRoleButton.getAttribute('data-micro-pdwk-role');
@@ -11933,7 +13981,12 @@ document.addEventListener('DOMContentLoaded', function() {
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
       wrapper?.querySelectorAll('[data-micro-pdwk-panel]').forEach(panel => {
-        panel.hidden = panel.getAttribute('data-micro-pdwk-panel') !== role;
+        const isMatch = panel.getAttribute('data-micro-pdwk-panel') === role;
+        if (isMatch) {
+          panel.removeAttribute('hidden');
+        } else {
+          panel.setAttribute('hidden', '');
+        }
       });
     } else if (needFilter) {
       event.preventDefault();
@@ -11945,7 +13998,12 @@ document.addEventListener('DOMContentLoaded', function() {
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
       section?.querySelectorAll('[data-micro-need-panel]').forEach(panel => {
-        panel.hidden = panel.getAttribute('data-micro-need-panel') !== key;
+        const isMatch = panel.getAttribute('data-micro-need-panel') === key;
+        if (isMatch) {
+          panel.removeAttribute('hidden');
+        } else {
+          panel.setAttribute('hidden', '');
+        }
       });
     } else if (rankingButton) {
       event.preventDefault();
@@ -11957,7 +14015,12 @@ document.addEventListener('DOMContentLoaded', function() {
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
       ranking?.querySelectorAll('[data-micro-ranking-panel]').forEach(panel => {
-        panel.hidden = panel.getAttribute('data-micro-ranking-panel') !== metric;
+        const isMatch = panel.getAttribute('data-micro-ranking-panel') === metric;
+        if (isMatch) {
+          panel.removeAttribute('hidden');
+        } else {
+          panel.setAttribute('hidden', '');
+        }
       });
     } else if (refreshButton) {
       event.preventDefault();
@@ -11966,6 +14029,80 @@ document.addEventListener('DOMContentLoaded', function() {
       event.preventDefault();
       loadMicroPerformance(false);
     }
+  });
+
+  document.addEventListener('submit', event => {
+    const form = event.target.closest('[data-micro-pipeline-filters]');
+    if (!form) return;
+    event.preventDefault();
+    loadMicroPipelineRows(form.closest('[data-micro-pipeline-modal]'), 1);
+  });
+
+  document.addEventListener('change', event => {
+    const datasetSelect = event.target.closest('[data-micro-pipeline-filters] [name="dataset"]');
+    if (!datasetSelect) return;
+    const form = datasetSelect.closest('[data-micro-pipeline-filters]');
+    const isSlikHijau = datasetSelect.value === 'slik_hijau';
+    const status = form?.querySelector('[name="status"]');
+    const source = form?.querySelector('[name="source"]');
+    const product = form?.querySelector('[name="product"]');
+    if (status) status.value = isSlikHijau ? 'all' : 'open';
+    if (source) source.value = '';
+    if (product) product.value = '';
+  });
+
+  document.addEventListener('click', event => {
+    const sourceCloseButton = event.target.closest('[data-micro-pipeline-source-close]');
+    if (sourceCloseButton) {
+      event.preventDefault();
+      closeMicroPipelineSourceModal();
+      return;
+    }
+    const sourceNominativeButton = event.target.closest('[data-micro-pipeline-source-open-nominatives]');
+    if (sourceNominativeButton) {
+      event.preventDefault();
+      const source = String(activeMicroPipelineSource?.label || '');
+      const modal = document.querySelector('body > [data-micro-pipeline-modal]') || prepareMicroPipelineModal();
+      const sourceSelect = modal?.querySelector('[data-micro-pipeline-filters] [name="source"]');
+      if (!modal || !sourceSelect) return;
+      sourceSelect.value = source;
+      closeMicroPipelineSourceModal();
+      openMicroPipelineModal(sourceNominativeButton);
+      loadMicroPipelineRows(modal, 1);
+      return;
+    }
+    const closeButton = event.target.closest('[data-micro-pipeline-close]');
+    if (closeButton) {
+      event.preventDefault();
+      closeMicroPipelineModal();
+      return;
+    }
+    const pageButton = event.target.closest('[data-micro-pipeline-page]');
+    if (!pageButton || pageButton.disabled) return;
+    event.preventDefault();
+    const currentPage = Number(microPipelinePayload?.meta?.page || 1);
+    loadMicroPipelineRows(pageButton.closest('[data-micro-pipeline-modal]'), pageButton.dataset.microPipelinePage === 'prev' ? currentPage - 1 : currentPage + 1);
+  });
+
+  microPerformanceDashboard?.addEventListener('dblclick', event => {
+    if (event.target.closest('button, a, input, select, textarea')) return;
+
+    const pdwkCard = event.target.closest('[data-micro-pdwk-status]');
+    const mantriTierCount = event.target.closest('[data-micro-mantri-tier-count]');
+    if (mantriTierCount) {
+      event.preventDefault();
+      openMicroMantriTierPeople(mantriTierCount);
+    } else if (pdwkCard) {
+      openMicroPdwkPeople(pdwkCard);
+    }
+  });
+
+  microPerformanceDashboard?.addEventListener('keydown', event => {
+    const mantriTierCount = event.target.closest('[data-micro-mantri-tier-count]');
+    if (!mantriTierCount || !['Enter', ' '].includes(event.key)) return;
+
+    event.preventDefault();
+    openMicroMantriTierPeople(mantriTierCount);
   });
 
   document.querySelectorAll('.dashboard-detail-trigger').forEach(trigger => {

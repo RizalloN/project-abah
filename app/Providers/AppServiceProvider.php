@@ -17,6 +17,10 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\View;
 use Illuminate\Validation\Rules\Password;
 use App\Services\Import\ActiveImportJobCounter;
+use App\Support\CachedMySqlSchemaBuilder;
+use App\Support\LandingLoanRiskCacheService;
+use App\Support\SchemaMetadataCache;
+use Illuminate\Database\Schema\MySqlBuilder;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -26,6 +30,9 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->registerCustomQueueExtensions();
+        $this->registerSchemaMetadataCache();
+
+        $this->app->singleton(LandingLoanRiskCacheService::class);
 
         // Bind optimized services for Phase 2
         $this->app->bind(
@@ -37,6 +44,22 @@ class AppServiceProvider extends ServiceProvider
             \App\Support\RkaLookupService::class,
             \App\Support\OptimizedRkaLookupService::class
         );
+    }
+
+    private function registerSchemaMetadataCache(): void
+    {
+        $this->app->singleton(SchemaMetadataCache::class);
+
+        $this->app->extend('db.schema', function ($builder, $app) {
+            if (!$builder instanceof MySqlBuilder || $builder instanceof CachedMySqlSchemaBuilder) {
+                return $builder;
+            }
+
+            return new CachedMySqlSchemaBuilder(
+                $builder->getConnection(),
+                $app->make(SchemaMetadataCache::class)
+            );
+        });
     }
 
     /**

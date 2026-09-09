@@ -272,7 +272,7 @@ class DashboardHarianController extends Controller
     private function payload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit, ?string $selectedMtm = null): array
     {
         $cacheKey = 'dashboard_harian:payload:' . md5(json_encode([
-            'schema' => 'penc-pct-v21-rka-ldr-noncommercial-denominator-mtm-override',
+            'schema' => 'penc-pct-v25-conditional-kc-kcp-products',
             'version' => $this->reportCacheVersion(),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,
@@ -295,7 +295,7 @@ class DashboardHarianController extends Controller
     private function keragaanUkerPayload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit, string $dataType): array
     {
         $cacheKey = 'dashboard_harian:keragaan_uker:' . md5(json_encode([
-            'schema' => 'v4-exact-rka-uker-scope',
+            'schema' => 'v5-retail-konsol-uker-scope',
             'version' => $this->reportCacheVersion(),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,
@@ -335,13 +335,40 @@ class DashboardHarianController extends Controller
 
     private function keragaanUkerFilterOptions(?string $selectedPeriod, array|string|null $selectedKanca, array|string|null $selectedUnit): array
     {
-        $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
+        $filterUnit = $this->isKeragaanUkerKonsolUnit($selectedUnit) ? 'all' : $selectedUnit;
+        $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $filterUnit);
         $filters['kanca'] = collect($filters['kanca'] ?? [])
             ->reject(fn (array $option): bool => (string) ($option['value'] ?? '') === 'all')
             ->values()
             ->all();
+        $unitOptions = collect($filters['unit_kerja'] ?? [])
+            ->reject(fn (array $option): bool => (string) ($option['value'] ?? '') === DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE)
+            ->values();
+        $allUnits = $unitOptions
+            ->filter(fn (array $option): bool => (string) ($option['value'] ?? '') === 'all');
+        $detailUnits = $unitOptions
+            ->reject(fn (array $option): bool => (string) ($option['value'] ?? '') === 'all');
+
+        $filters['unit_kerja'] = $allUnits
+            ->concat([[
+                'value' => DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE,
+                'label' => DashboardHarianSnapshotService::ALL_UNIT_KONSOL_LABEL,
+            ]])
+            ->concat($detailUnits)
+            ->values()
+            ->all();
 
         return $filters;
+    }
+
+    private function isKeragaanUkerKonsolUnit(array|string|null $selectedUnit): bool
+    {
+        if (is_array($selectedUnit)) {
+            return count($selectedUnit) === 1
+                && trim((string) reset($selectedUnit)) === DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE;
+        }
+
+        return trim((string) $selectedUnit) === DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE;
     }
 
     private function keragaanUkerSelectedFilters(
@@ -549,7 +576,7 @@ class DashboardHarianController extends Controller
         $headers = $this->dashboardHarianExportHeaders($payload);
         $lastColumn = Coordinate::stringFromColumnIndex(count($headers));
 
-        $sheet->setCellValue('A1', 'DASHBOARD KERAGAAN HARIAN');
+        $sheet->setCellValue('A1', 'BRI | DASHBOARD KERAGAAN HARIAN');
         $sheet->mergeCells("A1:{$lastColumn}1");
         $sheet->setCellValue('A2', 'Kanca');
         $sheet->setCellValue('B2', $summary['kanca_label'] ?? 'Area 6');
@@ -594,6 +621,8 @@ class DashboardHarianController extends Controller
         $ldrRows = [];
         $blockRows = [];
         $segmentRows = [];
+        $mutedRows = [];
+        $rowDepths = [];
         foreach (($payload['rows'] ?? []) as $row) {
             $values = $row['values'] ?? [];
             $deltas = $row['deltas'] ?? [];
@@ -639,8 +668,11 @@ class DashboardHarianController extends Controller
             $qualityRows[$rowIndex] = $this->isDashboardHarianQualityTarget($rowKey)
                 || $this->isDashboardHarianLdrTarget($rowKey);
             $ldrRows[$rowIndex] = $this->isDashboardHarianLdrTarget($rowKey);
-            $blockRows[$rowIndex] = $this->isDashboardHarianExportBlockLabel($label);
-            $segmentRows[$rowIndex] = $this->isDashboardHarianExportSegmentLabel($label);
+            $accent = (string) ($row['accent'] ?? '');
+            $blockRows[$rowIndex] = $accent === 'strong' || $this->isDashboardHarianExportBlockLabel($label);
+            $segmentRows[$rowIndex] = $accent === 'section' || $this->isDashboardHarianExportSegmentLabel($label);
+            $mutedRows[$rowIndex] = $accent === 'muted';
+            $rowDepths[$rowIndex] = max(0, min(3, (int) ($row['depth'] ?? 0)));
             $rowIndex++;
         }
 
@@ -649,7 +681,7 @@ class DashboardHarianController extends Controller
         $sheet->getStyle("A1:{$lastColumn}1")->applyFromArray([
             'font' => ['bold' => true, 'size' => 16, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '003B70']],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
         ]);
         $sheet->getStyle("A2:{$lastColumn}4")->applyFromArray([
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F8FBFF']],
@@ -657,10 +689,12 @@ class DashboardHarianController extends Controller
             'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
         ]);
         $sheet->getStyle('A2:A4')->applyFromArray([
-            'font' => ['bold' => true, 'color' => ['rgb' => '00529C']],
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '00529C']],
         ]);
         $sheet->getStyle('D2:D4')->applyFromArray([
-            'font' => ['bold' => true, 'color' => ['rgb' => '00529C']],
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '0070C0']],
         ]);
         $sheet->getStyle("A{$headerGroupRow}:{$lastColumn}{$headerRow}")->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
@@ -682,7 +716,10 @@ class DashboardHarianController extends Controller
             'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D9E2EC']]],
         ]);
         $sheet->setAutoFilter("A{$headerRow}:{$lastColumn}{$lastRow}");
-        $sheet->getRowDimension(1)->setRowHeight(26);
+        $sheet->getRowDimension(1)->setRowHeight(30);
+        foreach ([2, 3, 4] as $metadataRow) {
+            $sheet->getRowDimension($metadataRow)->setRowHeight(20);
+        }
         $sheet->getRowDimension($headerGroupRow)->setRowHeight(28);
         $sheet->getRowDimension($headerRow)->setRowHeight(44);
         $sheet->getColumnDimension('A')->setWidth(34);
@@ -691,30 +728,49 @@ class DashboardHarianController extends Controller
             $sheet->getStyle("A{$dataStartRow}:A{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
             $sheet->getStyle("B{$dataStartRow}:{$lastColumn}{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
             $sheet->getStyle("A{$dataStartRow}:{$lastColumn}{$lastRow}")->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
-            $sheet->getStyle("A{$dataStartRow}:A{$lastRow}")->getFont()->setBold(true);
 
             for ($rowNumber = $dataStartRow; $rowNumber <= $lastRow; $rowNumber++) {
                 $fillColor = $rowNumber % 2 === 0 ? 'F8FBFF' : 'FFFFFF';
                 $sheet->getStyle("A{$rowNumber}:{$lastColumn}{$rowNumber}")->applyFromArray([
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $fillColor]],
                 ]);
+                $sheet->getStyle("A{$rowNumber}")->getAlignment()->setIndent($rowDepths[$rowNumber] ?? 0);
 
                 if ($blockRows[$rowNumber] ?? false) {
                     $sheet->getStyle("A{$rowNumber}:{$lastColumn}{$rowNumber}")->applyFromArray([
                         'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '0F4C97']],
+                        'borders' => [
+                            'top' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '003B70']],
+                            'bottom' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '003B70']],
+                        ],
                     ]);
                 } elseif ($segmentRows[$rowNumber] ?? false) {
                     $sheet->getStyle("A{$rowNumber}:{$lastColumn}{$rowNumber}")->applyFromArray([
                         'font' => ['bold' => true, 'color' => ['rgb' => '003B70']],
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'DDEBFF']],
+                        'borders' => ['top' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '9CC2E5']]],
+                    ]);
+                } elseif ($mutedRows[$rowNumber] ?? false) {
+                    $sheet->getStyle("A{$rowNumber}:{$lastColumn}{$rowNumber}")->applyFromArray([
+                        'font' => ['color' => ['rgb' => '64748B'], 'italic' => true],
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F1F5F9']],
                     ]);
                 }
             }
         }
 
         $sheet->getStyle("A{$headerGroupRow}:{$lastColumn}{$lastRow}")->getAlignment()->setWrapText(true);
-        $this->applyDashboardHarianExportConditionalFormatting($sheet, $lastRow, $hasH1, $qualityRows, $ldrRows, $dataStartRow);
+        $this->applyDashboardHarianExportConditionalFormatting(
+            $sheet,
+            $lastRow,
+            $hasH1,
+            $qualityRows,
+            $ldrRows,
+            $blockRows,
+            $segmentRows,
+            $dataStartRow
+        );
 
         foreach (range(1, count($headers)) as $columnIndex) {
             $column = Coordinate::stringFromColumnIndex($columnIndex);
@@ -726,7 +782,16 @@ class DashboardHarianController extends Controller
         }
     }
 
-    private function applyDashboardHarianExportConditionalFormatting(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $lastRow, bool $hasH1, array $qualityRows = [], array $ldrRows = [], int $dataStartRow = 7): void
+    private function applyDashboardHarianExportConditionalFormatting(
+        \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet,
+        int $lastRow,
+        bool $hasH1,
+        array $qualityRows = [],
+        array $ldrRows = [],
+        array $blockRows = [],
+        array $segmentRows = [],
+        int $dataStartRow = 7
+    ): void
     {
         if ($lastRow < $dataStartRow) {
             return;
@@ -746,16 +811,19 @@ class DashboardHarianController extends Controller
 
         for ($rowNumber = $dataStartRow; $rowNumber <= $lastRow; $rowNumber++) {
             $isQualityRow = (bool) ($qualityRows[$rowNumber] ?? false);
+            $isStaticHighlightRow = (bool) ($blockRows[$rowNumber] ?? false)
+                || (bool) ($segmentRows[$rowNumber] ?? false);
             $conditionalStyles = $isQualityRow
                 ? [
                     $qualityBadStyle(Conditional::OPERATOR_GREATERTHAN, '0'),
                     $flatStyle(Conditional::OPERATOR_EQUAL, '0'),
                     $qualityGoodStyle(Conditional::OPERATOR_LESSTHAN, '0'),
                 ]
-                : [
+                : array_values(array_filter([
                     $downStyle(Conditional::OPERATOR_LESSTHAN, '0'),
+                    $isStaticHighlightRow ? null : $flatStyle(Conditional::OPERATOR_EQUAL, '0'),
                     $upStyle(Conditional::OPERATOR_GREATERTHAN, '0'),
-                ];
+                ]));
 
             foreach ([
                 Coordinate::stringFromColumnIndex($deltaStart) . $rowNumber . ':' . Coordinate::stringFromColumnIndex($deltaEnd) . $rowNumber,
@@ -768,16 +836,19 @@ class DashboardHarianController extends Controller
 
         for ($rowNumber = $dataStartRow; $rowNumber <= $lastRow; $rowNumber++) {
             $isLdrRow = (bool) ($ldrRows[$rowNumber] ?? false);
+            $isStaticHighlightRow = (bool) ($blockRows[$rowNumber] ?? false)
+                || (bool) ($segmentRows[$rowNumber] ?? false);
             $achievementStyles = $isLdrRow
                 ? [
                     $downStyle(Conditional::OPERATOR_LESSTHAN, '100'),
                     $flatStyle(Conditional::OPERATOR_EQUAL, '100'),
                     $upStyle(Conditional::OPERATOR_GREATERTHAN, '100'),
                 ]
-                : [
+                : array_values(array_filter([
                     $downStyle(Conditional::OPERATOR_LESSTHAN, '100'),
+                    $isStaticHighlightRow ? null : $flatStyle(Conditional::OPERATOR_EQUAL, '100'),
                     $upStyle(Conditional::OPERATOR_GREATERTHANOREQUAL, '100'),
-                ];
+                ]));
 
             foreach ([$rkaAchievement, $rkaDecAchievement] as $achievementColumn) {
                 $cell = Coordinate::stringFromColumnIndex($achievementColumn) . $rowNumber;
@@ -1036,7 +1107,7 @@ class DashboardHarianController extends Controller
 
     private function resolveKeragaanFilters(Request $request): array
     {
-        $selectedKanca = $this->normalizeFilter($request->input('kanca'));
+        $selectedKanca = $this->normalizeSingleKancaFilter($request->input('kanca'));
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
 
         if ($selectedKanca === null) {
@@ -1050,6 +1121,20 @@ class DashboardHarianController extends Controller
         }
 
         return [$selectedKanca, $selectedUnit];
+    }
+
+    private function normalizeSingleKancaFilter($value): ?string
+    {
+        $normalized = $this->normalizeFilter($value);
+        if (!is_array($normalized)) {
+            return $normalized;
+        }
+
+        if ($this->isArea6KancaScope($normalized)) {
+            return null;
+        }
+
+        return $normalized[0] ?? null;
     }
 
     private function resolveKeragaanUkerFilters(Request $request): array

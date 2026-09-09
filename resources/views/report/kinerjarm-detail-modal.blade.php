@@ -30,7 +30,7 @@
 <div class="modal-header kinerja-rm-modal__header">
     <div>
         <p class="kinerja-rm-modal__eyebrow">
-            CONSUMER Delta OS{{ $historyRangeLabel ? ' - ' . $historyRangeLabel : '' }}
+            CONSUMER{{ !empty($selectedProduct) ? ' · ' . $selectedProduct : '' }} Delta OS{{ $historyRangeLabel ? ' - ' . $historyRangeLabel : '' }}
         </p>
         <h5 class="modal-title" id="rmDetailModalLabel">{{ $rm }}</h5>
     </div>

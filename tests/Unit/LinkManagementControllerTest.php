@@ -42,14 +42,15 @@ class LinkManagementControllerTest extends TestCase
         $links = $view->getData()['kpiLinks'];
         $sppgLink = $view->getData()['sppgLink'];
         $marketShareLinks = $view->getData()['marketShareLinks'];
+        $microPipelineLinks = $view->getData()['microPipelineLinks'];
 
         $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'rm-sme', 'mantri', 'consumer'], array_keys($links));
         $this->assertSame('KPI RM Mikro', $links['rm-mikro']['label']);
         $this->assertSame('KPI RM SME', $links['rm-sme']['label']);
-        $this->assertSame('KPI RM SME', $links['rm-sme']['sheet_name']);
-        $this->assertSame('1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu', $links['rm-sme']['spreadsheet_id']);
+        $this->assertSame('Sheet1', $links['rm-sme']['sheet_name']);
+        $this->assertSame('13s9SkGMC0ShjlEZGog1uBtgLxFY1RqPN5ZvMjzIVRUg', $links['rm-sme']['spreadsheet_id']);
         $this->assertSame(
-            'https://docs.google.com/spreadsheets/d/1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'https://docs.google.com/spreadsheets/d/13s9SkGMC0ShjlEZGog1uBtgLxFY1RqPN5ZvMjzIVRUg/edit?usp=sharing',
             $links['rm-sme']['link_url']
         );
         $this->assertSame('KPI Konsumer', $links['consumer']['label']);
@@ -73,6 +74,11 @@ class LinkManagementControllerTest extends TestCase
             'https://docs.google.com/spreadsheets/d/1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
             $marketShareLinks['mapping']['link_url']
         );
+        $this->assertSame(['prewash', 'slik_hijau'], array_keys($microPipelineLinks));
+        $this->assertSame('Nominatif', $microPipelineLinks['prewash']['sheet_name']);
+        $this->assertSame('1qW0pqTpDLm3q7fV3CqnbaSfKMS6CcmeK', $microPipelineLinks['prewash']['spreadsheet_id']);
+        $this->assertSame('Berminat 1', $microPipelineLinks['slik_hijau']['sheet_name']);
+        $this->assertSame('1E5ffcX9BhvR377uCB20aHlhIO3TOurxn', $microPipelineLinks['slik_hijau']['spreadsheet_id']);
     }
 
     public function test_default_kpi_links_do_not_overwrite_existing_custom_link(): void
@@ -104,6 +110,31 @@ class LinkManagementControllerTest extends TestCase
             'group_key' => 'almafacts_kpi',
             'link_key' => 'rm-mikro',
             'sheet_name' => 'KPI RM Mikro',
+        ]);
+    }
+
+    public function test_default_kpi_links_migrate_only_the_known_legacy_rm_sme_source(): void
+    {
+        DB::table('external_report_links')->insert([
+            'uniqueid_link' => 'almafacts_kpi_rm_sme',
+            'group_key' => 'almafacts_kpi',
+            'link_key' => 'rm-sme',
+            'label' => 'KPI RM SME',
+            'sheet_name' => 'KPI RM SME',
+            'spreadsheet_id' => '1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu/edit',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        (new LinkManagementController())->index();
+
+        $this->assertDatabaseHas('external_report_links', [
+            'group_key' => 'almafacts_kpi',
+            'link_key' => 'rm-sme',
+            'sheet_name' => 'Sheet1',
+            'spreadsheet_id' => '13s9SkGMC0ShjlEZGog1uBtgLxFY1RqPN5ZvMjzIVRUg',
         ]);
     }
 

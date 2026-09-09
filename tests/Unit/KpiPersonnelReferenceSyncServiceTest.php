@@ -244,4 +244,48 @@ class KpiPersonnelReferenceSyncServiceTest extends TestCase
         $this->assertSame(2, DB::table('brihc')->where('pn', '335871')->count());
         $this->assertSame(2, DB::table('brihc_pemasar')->where('pernr', '335871')->count());
     }
+
+    public function test_kpi_mantri_sync_cannot_override_authoritative_brihc_workbook_roster(): void
+    {
+        $now = now()->toDateTimeString();
+        DB::table('brihc')->insert([
+            'uniqueid_brihc' => 'reference_brihc_mantri_1_BRIHC',
+            'pn' => '1',
+            'nama' => 'Mantri Acuan',
+            'jabatan' => 'MANTRI',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('brihc_pemasar')->insert([
+            'uniqueid_namareport' => 'reference_brihc_mantri_1',
+            'completename' => 'Mantri Acuan',
+            'pernr' => '1',
+            'psadesc' => 'KC Madiun',
+            'orgdesc' => 'UNIT ACUAN',
+            'positiondesc' => 'MANTRI',
+            'bc' => '1',
+            'pn_mantri' => '1',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $result = app(KpiPersonnelReferenceSyncService::class)->sync('mantri', [
+            'header' => ['PN', 'NAMA', 'BO', 'UKER', 'BC'],
+            'rows' => [
+                ['1', 'Nama KPI Lama', 'KC Ngawi', 'UNIT KPI LAMA', '999'],
+                ['2', 'Mantri Collection Lama', 'KC Madiun', 'UNIT LAMA', '2'],
+            ],
+        ]);
+
+        $this->assertTrue($result['skipped']);
+        $this->assertSame(2, $result['source_records']);
+        $this->assertDatabaseHas('brihc_pemasar', [
+            'uniqueid_namareport' => 'reference_brihc_mantri_1',
+            'completename' => 'Mantri Acuan',
+            'psadesc' => 'KC Madiun',
+            'orgdesc' => 'UNIT ACUAN',
+        ]);
+        $this->assertDatabaseMissing('brihc_pemasar', ['pernr' => '2']);
+        $this->assertDatabaseMissing('brihc', ['pn' => '2']);
+    }
 }

@@ -73,6 +73,31 @@ class LandingSmeOperationalServiceTest extends TestCase
         );
     }
 
+    public function test_hot_progress_summary_layout_maps_area_6_units_without_rm_column(): void
+    {
+        $service = $this->service();
+        $header = [
+            'PROGRES HOT PROSPEK AGUSTUS NO', 'AREA HEAD', 'KODE UKER', 'UNIT KERJA', 'NAMA SHEETS',
+            'Total Hot Prospek NSB', 'OS', 'Belum OTS Pemutus NSB', 'OS',
+            'Analisa RM (MAK) NSB', 'OS', 'Verifikasi ADK NSB', 'OS',
+            'Menunggu Putusan NSB', 'OS', 'Sudah Diputus NSB', 'OS',
+            'Realisasi NSB', 'OS', 'Batal NSB', 'OS',
+        ];
+        $parsed = $service->parseHotProspectCsv($this->csv([
+            $header,
+            [1, 'AH 6 - MADIUN', '0045', 'KANCA MADIUN', 'MADIUN', 24, '22,300', 7, '6,700', 16, '14,600', 0, 0, 0, 0, 0, 0, 1, '1,000', 0, 0],
+            [2, 'AH 6 - MADIUN', '00552', 'KCP CARUBAN', 'MADIUN', 13, '10,050', 7, '5,600', 4, '3,200', 0, 0, 0, 0, 0, 0, 2, '1,250', 0, 0],
+            [3, 'AH 5 - KEDIRI', '0033', 'KANCA KEDIRI', 'KEDIRI', 99, '99,000', 99, '99,000', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ]));
+
+        $this->assertCount(2, $parsed['records']);
+        $this->assertSame(['KC MADIUN', 'KC MADIUN'], array_column($parsed['records'], 'branch'));
+        $this->assertSame('', $parsed['records'][0]['rm']);
+        $this->assertSame(['deb' => 7, 'amount_juta' => 6700.0], $parsed['records'][0]['statuses']['belum_ots']);
+        $this->assertSame(['deb' => 16, 'amount_juta' => 14600.0], $parsed['records'][0]['statuses']['analisa_rm']);
+        $this->assertSame(['deb' => 1, 'amount_juta' => 1000.0], $parsed['records'][0]['statuses']['realisasi']);
+    }
+
     public function test_extension_and_restructuring_parsers_preserve_status_pairs(): void
     {
         $service = $this->service();
@@ -86,7 +111,7 @@ class LandingSmeOperationalServiceTest extends TestCase
             'SUDAH DIPERPANJANG', '', 'LUNAS', '', 'BELUM TL', '', 'TIDAK DIPERPANJANG', '',
         ];
         $extensionData = [
-            'KCP Sudirman Ponorogo', '02204', 'KC Ponorogo', '', 10, 12500, 8, 2,
+            'KCP Sudirman Ponorogo', '02204', 'KC Ponorogo', '', 10, '12,500', 8, 2,
             1, 100, 2, 200, 3, 300, 4, 400, 5, 500, 6, 600, 7, 700,
         ];
         $extension = $service->parseExtensionCsv($this->csv([
@@ -118,6 +143,25 @@ class LandingSmeOperationalServiceTest extends TestCase
         );
         $this->assertSame('4501123', $restructuring['records'][0]['account']);
         $this->assertSame(250.0, $restructuring['records'][4]['source_amount_juta']);
+    }
+
+    public function test_landing_sme_sources_use_the_current_pipeline_workbooks(): void
+    {
+        $serviceSource = (string) file_get_contents(app_path('Support/LandingSmeOperationalService.php'));
+
+        foreach ([
+            '1I59VzlVYAWVNNROz9jBfmO-5gZhudxB4',
+            '1g4txpl_JWx9jI8FdE1dYi6XFCOTakI13',
+            '1fwabFAKCYZ0b7pILnDcu8Jw1rzlihMEO',
+            '1FVP37sNihdTCtlazZ94bODXErZ8Cf-1N',
+            '1eczWPF2dXODVgj00jmrbwUVM8UC1i81n',
+        ] as $spreadsheetId) {
+            $this->assertStringContainsString($spreadsheetId, $serviceSource);
+        }
+
+        $this->assertStringContainsString("'sheet' => 'REKAP PROGRESS'", $serviceSource);
+        $this->assertStringContainsString("'sheet' => 'DOWNLINE NASABAH MEDIUM'", $serviceSource);
+        $this->assertStringContainsString("'csv_mode' => 'gviz'", $serviceSource);
     }
 
     public function test_rtl_parser_flattens_merged_three_row_headers(): void
@@ -303,6 +347,17 @@ class LandingSmeOperationalServiceTest extends TestCase
         $this->assertSame('2026-10-10', $weekTwo['end']);
         $this->assertSame(5, $augustWeekFive['number']);
         $this->assertSame('2026-08-29', $augustWeekFive['end']);
+    }
+
+    public function test_forecast_week_cutoffs_lock_each_week_on_saturday(): void
+    {
+        $cutoffs = $this->service()->forecastWeekCutoffs('2026-10-01');
+
+        $this->assertSame('2026-10-03', $cutoffs[1]->toDateString());
+        $this->assertSame('2026-10-10', $cutoffs[2]->toDateString());
+        $this->assertSame('2026-10-17', $cutoffs[3]->toDateString());
+        $this->assertSame('2026-10-24', $cutoffs[4]->toDateString());
+        $this->assertSame('2026-10-31', $cutoffs[5]->toDateString());
     }
 
     public function test_branch_scope_recalculates_realization_tiers_and_unproductive_rm(): void

@@ -95,6 +95,19 @@ return [
         ),
     ],
 
+    'micro_pipeline' => [
+        'prewash_source_url' => env(
+            'MICRO_PIPELINE_PREWASH_SOURCE_URL',
+            env('MICRO_PIPELINE_SOURCE_URL', 'https://docs.google.com/spreadsheets/d/1qW0pqTpDLm3q7fV3CqnbaSfKMS6CcmeK/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true')
+        ),
+        'slik_hijau_source_url' => env(
+            'MICRO_PIPELINE_SLIK_HIJAU_SOURCE_URL',
+            'https://docs.google.com/spreadsheets/d/1E5ffcX9BhvR377uCB20aHlhIO3TOurxn/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true'
+        ),
+        'timeout_seconds' => max(30, (int) env('MICRO_PIPELINE_TIMEOUT_SECONDS', 240)),
+        'max_download_bytes' => max(10_485_760, (int) env('MICRO_PIPELINE_MAX_DOWNLOAD_BYTES', 104_857_600)),
+    ],
+
     'system_binaries' => [
         'mysql' => env('MYSQL_BINARY'),
         'mysqldump' => env('MYSQLDUMP_BINARY'),

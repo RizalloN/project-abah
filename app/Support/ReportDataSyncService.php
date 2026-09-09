@@ -58,6 +58,7 @@ class ReportDataSyncService
     private const ANALYZE_THROTTLE_SECONDS = 600;
     private const POST_DELETE_SNAPSHOT_REPORTS = [
         'daily_loan_dinamis',
+        'lw321pn',
         'simpanan_multipn',
         'ssa_simpanan',
         'hourly_dpk',
@@ -182,6 +183,7 @@ class ReportDataSyncService
         try {
             match ($normalizedTable) {
                 'daily_loan_dinamis' => $this->syncDailyLoan($periodHint, $jobId, $source, $deleteId),
+                'lw321pn' => $this->syncLw321Pn($periodHint, $jobId, $source, $deleteId),
                 'loan_type' => $this->syncLoanType($periodHint, $jobId, $source, $deleteId),
                 'simpanan_multipn' => $this->syncSimpanan($periodHint, $jobId, $source, $deleteId),
                 'ssa_simpanan' => $this->syncSsaSimpanan($periodHint, $jobId, $source, $deleteId),
@@ -208,6 +210,13 @@ class ReportDataSyncService
                 'table' => $normalizedTable,
                 'period_hint' => $periodHint,
             ]);
+
+            // Materialisasi LW321 adalah syarat data dapat dipakai sebagai
+            // Daily Loan. Jangan menandai job sinkronisasi selesai secara diam-
+            // diam bila tahap ini gagal; biarkan queue melakukan retry.
+            if ($normalizedTable === 'lw321pn') {
+                throw $e;
+            }
         }
     }
 
@@ -235,7 +244,7 @@ class ReportDataSyncService
     {
         $normalizedTable = strtolower(trim($tableName));
 
-        return !in_array($normalizedTable, ['daily_loan_dinamis', 'simpanan_multipn'], true)
+        return !in_array($normalizedTable, ['daily_loan_dinamis', 'lw321pn', 'simpanan_multipn'], true)
             && !$this->isLightweightImportTable($normalizedTable);
     }
 
@@ -280,6 +289,7 @@ class ReportDataSyncService
 
         try {
             $this->ensureDailyLoanShadowColumnsReady($periodForDispatch, $jobId, $source);
+            $this->captureConsumerRmPositionHistory($periodForDispatch, $jobId, $source);
 
             $batchId = ParallelSnapshotBatchCoordinator::dispatchDailyLoanParallelRebuild(
                 $periodForDispatch,
@@ -302,6 +312,74 @@ class ReportDataSyncService
             ]);
 
             throw $e;
+        }
+    }
+
+    private function captureConsumerRmPositionHistory(?string $period, ?int $jobId, ?string $source): void
+    {
+        if ($period === null || trim($period) === '') {
+            $this->writeAudit('daily_loan_dinamis', $period, $jobId, $source, 'consumer_rm_position_archive', 'skipped', [
+                'context' => ['reason' => 'period_hint_unavailable'],
+            ]);
+
+            return;
+        }
+
+        $startedAt = microtime(true);
+
+        try {
+            // An import may replace the same period with corrected source data,
+            // so refresh a previously verified capture before rebuilding snapshots.
+            $result = app(ConsumerRmPositionHistoryStore::class)->capturePeriod($period, true);
+            $verified = ($result['verified'] ?? false) === true;
+            $skipped = ($result['skipped'] ?? false) === true;
+            $status = $skipped ? 'skipped' : ($verified ? 'success' : 'failed');
+
+            $this->writeAudit('daily_loan_dinamis', $period, $jobId, $source, 'consumer_rm_position_archive', $status, [
+                'duration_ms' => $this->elapsedMs($startedAt),
+                'affected_rows' => isset($result['archived_rows']) ? (int) $result['archived_rows'] : null,
+                'message' => $verified && ! $skipped ? null : (string) ($result['reason'] ?? 'archive_not_verified'),
+                'context' => $result,
+            ]);
+
+            if (! $verified || $skipped) {
+                Log::warning('Arsip posisi RM Konsumer dilewati sebelum snapshot; sinkronisasi tetap dilanjutkan.', [
+                    'period' => $period,
+                    'result' => $result,
+                ]);
+            }
+        } catch (Throwable $e) {
+            // The archive migration may not have been applied yet. Keep imports
+            // and existing snapshot deployments operational until it is ready.
+            $this->writeAudit('daily_loan_dinamis', $period, $jobId, $source, 'consumer_rm_position_archive', 'failed', [
+                'duration_ms' => $this->elapsedMs($startedAt),
+                'message' => $e->getMessage(),
+            ]);
+
+            Log::warning('Gagal mengarsipkan posisi RM Konsumer sebelum snapshot; sinkronisasi tetap dilanjutkan.', [
+                'period' => $period,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function syncLw321Pn(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
+    {
+        $startedAt = microtime(true);
+        $result = app(Lw321DailyLoanSyncService::class)->synchronize($periodHint);
+
+        $this->writeAudit('lw321pn', $periodHint, $jobId, $source, 'materialize_daily_loan', 'success', [
+            'duration_ms' => $this->elapsedMs($startedAt),
+            'affected_rows' => $result['inserted_rows'],
+            'context' => $result,
+        ]);
+
+        foreach ($result['periods'] as $period) {
+            ManagedReportManagementService::invalidateTableCache('daily_loan_dinamis');
+            $this->markSnapshotDirtyAfterSourceMutation('daily_loan_dinamis', $period, $source);
+            $this->markDashboardHarianCompositeDirty('daily_loan_dinamis', $period, $source);
+            $this->syncDailyLoan($period, $jobId, $source, $deleteId);
         }
     }
 
@@ -1057,6 +1135,22 @@ class ReportDataSyncService
             $this->heartbeat($deleteId, 'Cleaning up derived snapshot artifacts...');
         }
 
+        if ($normalizedTable === 'lw321pn') {
+            $materialized = app(Lw321DailyLoanSyncService::class)->synchronize($periodHint);
+            $deleted = [
+                'daily_loan_materialized_rows' => $materialized['deleted_rows'],
+                'daily_loan_reinserted_rows' => $materialized['inserted_rows'],
+            ];
+
+            foreach ($materialized['periods'] as $period) {
+                foreach ($this->cleanupDerivedArtifactsAfterDelete('daily_loan_dinamis', $period, $source, $deleteId) as $table => $count) {
+                    $deleted[$period . ':' . $table] = $count;
+                }
+            }
+
+            return $deleted;
+        }
+
         $cleanupMap = match ($normalizedTable) {
             'daily_loan_dinamis' => [
                 self::DASHBOARD_SNAPSHOT_TABLE => 'periode',
@@ -1209,6 +1303,7 @@ class ReportDataSyncService
 
         match ($normalizedTable) {
             'daily_loan_dinamis' => $this->syncDailyLoan($normalizedPeriodHint, null, $source, $deleteId),
+            'lw321pn' => $this->syncDailyLoan($normalizedPeriodHint, null, $source, $deleteId),
             'loan_type' => $this->syncLoanType(null, null, $source, $deleteId),
             'simpanan_multipn' => $this->syncSimpanan($normalizedPeriodHint, null, $source, $deleteId),
             'ssa_simpanan' => $this->syncSsaSimpanan($normalizedPeriodHint, null, $source, $deleteId),
@@ -1372,7 +1467,7 @@ class ReportDataSyncService
     private function cacheScopeForTable(string $tableName): string
     {
         return match (strtolower(trim($tableName))) {
-            'daily_loan_dinamis', 'ssa_pinjaman', 'lw325_ph', 'gi405_recovery' => 'pinjaman',
+            'daily_loan_dinamis', 'lw321pn', 'ssa_pinjaman', 'lw325_ph', 'gi405_recovery' => 'pinjaman',
             'simpanan_multipn', 'ssa_simpanan', 'hourly_dpk' => 'simpanan',
             'dly_kap_resegmentasi', 'l1133' => 'harian',
             default => 'global',

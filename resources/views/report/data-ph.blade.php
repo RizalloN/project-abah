@@ -814,6 +814,9 @@
                 <span class="badge px-3 py-2 kejar-laba-date-badge">
                     <i class="fas fa-calendar-check mr-1"></i> Data per: {{ $selectedPeriodLabel }}
                 </span>
+                <span class="badge px-3 py-2" style="background: rgba(255, 255, 255, 0.16); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.28); font-weight: 700; font-size: 0.78rem;">
+                    <i class="fas fa-layer-group mr-1"></i> Akumulasi Recovery: 1 s.d. {{ $selectedPeriodLabel }}
+                </span>
             </div>
         </div>
 
@@ -1120,15 +1123,21 @@
                         <th rowspan="2" class="sticky-col ph-sticky-scope" style="z-index: 50 !important;">{{ $isArea6AllSelected ? 'Kantor Cabang' : 'Unit Kerja' }}</th>
                         <th rowspan="2" style="z-index: 30 !important;">Segmen</th>
                         <th rowspan="2" class="text-center">SISA PH<br>{{ strtoupper($selectedPeriodLabel) }}</th>
-                        <th colspan="4" class="text-center">POSISI RECOVERY</th>
+                        <th colspan="3" class="text-center">NON KLAIM</th>
+                        <th rowspan="2" class="text-center">KLAIM</th>
+                        <th rowspan="2" class="text-center">TOTAL RECOVERY</th>
+                        <th colspan="3" class="text-center">POSISI PERBANDINGAN</th>
                         <th colspan="3" class="text-center">DELTA PERBANDINGAN</th>
                     </tr>
                     <tr>
-                        <!-- POSISI RECOVERY -->
+                        <!-- NON KLAIM -->
+                        <th class="text-center">TUPOK</th>
+                        <th class="text-center">LUNAS</th>
+                        <th class="text-center">TOTAL</th>
+                        <!-- POSISI PERBANDINGAN -->
                         <th class="text-center">{{ strtoupper($yoyPeriodLabel) }}</th>
                         <th class="text-center">{{ strtoupper($ytdPeriodLabel) }}</th>
                         <th class="text-center">{{ strtoupper($m1PeriodLabel) }}</th>
-                        <th class="text-center">{{ strtoupper($selectedPeriodLabel) }}</th>
                         <!-- DELTA PERBANDINGAN -->
                         <th class="text-center">YoY</th>
                         <th class="text-center">YTD</th>
@@ -1158,6 +1167,31 @@
                             <td class="text-right" style="background-color: {{ $blockBg }};">
                                 {{ $row['sisa_ph']['micro'] != 0 ? number_format($row['sisa_ph']['micro'], 0, ',', '.') : '-' }}
                             </td>
+
+                            {{-- RINCIAN RECOVERY: TUPOK --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ ($row['tupok']['micro'] ?? 0) != 0 ? number_format($row['tupok']['micro'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: LUNAS --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ ($row['lunas']['micro'] ?? 0) != 0 ? number_format($row['lunas']['micro'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: JML NON KLAIM --}}
+                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: #334155;">
+                                {{ ($row['non_klaim']['micro'] ?? 0) != 0 ? number_format($row['non_klaim']['micro'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: KLAIM --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ ($row['klaim']['micro'] ?? 0) != 0 ? number_format($row['klaim']['micro'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: TOTAL RECOVERY --}}
+                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
+                                {{ $row['recovery_curr']['micro'] != 0 ? number_format($row['recovery_curr']['micro'], 0, ',', '.') : '-' }}
+                            </td>
                             
                             {{-- POSISI YoY --}}
                             <td class="text-right" style="background-color: {{ $blockBg }};">
@@ -1172,11 +1206,6 @@
                             {{-- POSISI M-1 --}}
                             <td class="text-right" style="background-color: {{ $blockBg }};">
                                 {{ $row['recovery_m1']['micro'] != 0 ? number_format($row['recovery_m1']['micro'], 0, ',', '.') : '-' }}
-                            </td>
-                            
-                            {{-- POSISI M Terakhir --}}
-                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
-                                {{ $row['recovery_curr']['micro'] != 0 ? number_format($row['recovery_curr']['micro'], 0, ',', '.') : '-' }}
                             </td>
                             
                             {{-- DELTA YoY --}}
@@ -1217,6 +1246,31 @@
                             <td class="text-right" style="background-color: {{ $blockBg }};">
                                 {{ $row['sisa_ph']['small'] != 0 ? number_format($row['sisa_ph']['small'], 0, ',', '.') : '-' }}
                             </td>
+
+                            {{-- RINCIAN RECOVERY: TUPOK --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ ($row['tupok']['small'] ?? 0) != 0 ? number_format($row['tupok']['small'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: LUNAS --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ ($row['lunas']['small'] ?? 0) != 0 ? number_format($row['lunas']['small'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: JML NON KLAIM --}}
+                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: #334155;">
+                                {{ ($row['non_klaim']['small'] ?? 0) != 0 ? number_format($row['non_klaim']['small'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: KLAIM --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ ($row['klaim']['small'] ?? 0) != 0 ? number_format($row['klaim']['small'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: TOTAL RECOVERY --}}
+                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
+                                {{ $row['recovery_curr']['small'] != 0 ? number_format($row['recovery_curr']['small'], 0, ',', '.') : '-' }}
+                            </td>
                             
                             {{-- POSISI YoY --}}
                             <td class="text-right" style="background-color: {{ $blockBg }};">
@@ -1231,11 +1285,6 @@
                             {{-- POSISI M-1 --}}
                             <td class="text-right" style="background-color: {{ $blockBg }};">
                                 {{ $row['recovery_m1']['small'] != 0 ? number_format($row['recovery_m1']['small'], 0, ',', '.') : '-' }}
-                            </td>
-                            
-                            {{-- POSISI M Terakhir --}}
-                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
-                                {{ $row['recovery_curr']['small'] != 0 ? number_format($row['recovery_curr']['small'], 0, ',', '.') : '-' }}
                             </td>
                             
                             {{-- DELTA YoY --}}
@@ -1276,6 +1325,31 @@
                             <td class="text-right" style="background-color: {{ $blockBg }};">
                                 {{ $row['sisa_ph']['consumer_briguna'] != 0 ? number_format($row['sisa_ph']['consumer_briguna'], 0, ',', '.') : '-' }}
                             </td>
+
+                            {{-- RINCIAN RECOVERY: TUPOK --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ ($row['tupok']['consumer_briguna'] ?? 0) != 0 ? number_format($row['tupok']['consumer_briguna'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: LUNAS --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ ($row['lunas']['consumer_briguna'] ?? 0) != 0 ? number_format($row['lunas']['consumer_briguna'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: JML NON KLAIM --}}
+                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: #334155;">
+                                {{ ($row['non_klaim']['consumer_briguna'] ?? 0) != 0 ? number_format($row['non_klaim']['consumer_briguna'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: KLAIM --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ ($row['klaim']['consumer_briguna'] ?? 0) != 0 ? number_format($row['klaim']['consumer_briguna'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: TOTAL RECOVERY --}}
+                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
+                                {{ $row['recovery_curr']['consumer_briguna'] != 0 ? number_format($row['recovery_curr']['consumer_briguna'], 0, ',', '.') : '-' }}
+                            </td>
                             
                             {{-- POSISI YoY --}}
                             <td class="text-right" style="background-color: {{ $blockBg }};">
@@ -1290,11 +1364,6 @@
                             {{-- POSISI M-1 --}}
                             <td class="text-right" style="background-color: {{ $blockBg }};">
                                 {{ $row['recovery_m1']['consumer_briguna'] != 0 ? number_format($row['recovery_m1']['consumer_briguna'], 0, ',', '.') : '-' }}
-                            </td>
-                            
-                            {{-- POSISI M Terakhir --}}
-                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
-                                {{ $row['recovery_curr']['consumer_briguna'] != 0 ? number_format($row['recovery_curr']['consumer_briguna'], 0, ',', '.') : '-' }}
                             </td>
                             
                             {{-- DELTA YoY --}}
@@ -1335,6 +1404,31 @@
                                 {{ $row['sisa_ph']['consumer_kpr'] != 0 ? number_format($row['sisa_ph']['consumer_kpr'], 0, ',', '.') : '-' }}
                             </td>
 
+                            {{-- RINCIAN RECOVERY: TUPOK --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ ($row['tupok']['consumer_kpr'] ?? 0) != 0 ? number_format($row['tupok']['consumer_kpr'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: LUNAS --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ ($row['lunas']['consumer_kpr'] ?? 0) != 0 ? number_format($row['lunas']['consumer_kpr'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: JML NON KLAIM --}}
+                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: #334155;">
+                                {{ ($row['non_klaim']['consumer_kpr'] ?? 0) != 0 ? number_format($row['non_klaim']['consumer_kpr'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: KLAIM --}}
+                            <td class="text-right" style="background-color: {{ $blockBg }};">
+                                {{ ($row['klaim']['consumer_kpr'] ?? 0) != 0 ? number_format($row['klaim']['consumer_kpr'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: TOTAL RECOVERY --}}
+                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
+                                {{ $row['recovery_curr']['consumer_kpr'] != 0 ? number_format($row['recovery_curr']['consumer_kpr'], 0, ',', '.') : '-' }}
+                            </td>
+
                             <td class="text-right" style="background-color: {{ $blockBg }};">
                                 {{ $row['recovery_yoy']['consumer_kpr'] != 0 ? number_format($row['recovery_yoy']['consumer_kpr'], 0, ',', '.') : '-' }}
                             </td>
@@ -1345,10 +1439,6 @@
 
                             <td class="text-right" style="background-color: {{ $blockBg }};">
                                 {{ $row['recovery_m1']['consumer_kpr'] != 0 ? number_format($row['recovery_m1']['consumer_kpr'], 0, ',', '.') : '-' }}
-                            </td>
-
-                            <td class="text-right font-weight-bold" style="background-color: {{ $blockBg }}; color: var(--primary-blue-dark);">
-                                {{ $row['recovery_curr']['consumer_kpr'] != 0 ? number_format($row['recovery_curr']['consumer_kpr'], 0, ',', '.') : '-' }}
                             </td>
 
                             <td class="text-right {{ $row['delta_yoy']['consumer_kpr'] < 0 ? 'negative-value' : ($row['delta_yoy']['consumer_kpr'] > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $blockBg }};">
@@ -1386,6 +1476,31 @@
                             <td class="text-right" style="background-color: #eff6ff; color: #1e3a8a;">
                                 {{ $row['sisa_ph']['total'] != 0 ? number_format($row['sisa_ph']['total'], 0, ',', '.') : '-' }}
                             </td>
+
+                            {{-- RINCIAN RECOVERY: TUPOK --}}
+                            <td class="text-right" style="background-color: #eff6ff; color: #1e3a8a;">
+                                {{ ($row['tupok']['total'] ?? 0) != 0 ? number_format($row['tupok']['total'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: LUNAS --}}
+                            <td class="text-right" style="background-color: #eff6ff; color: #1e3a8a;">
+                                {{ ($row['lunas']['total'] ?? 0) != 0 ? number_format($row['lunas']['total'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: JML NON KLAIM --}}
+                            <td class="text-right font-weight-bold" style="background-color: #eff6ff; color: #1e3a8a;">
+                                {{ ($row['non_klaim']['total'] ?? 0) != 0 ? number_format($row['non_klaim']['total'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: KLAIM --}}
+                            <td class="text-right" style="background-color: #eff6ff; color: #1e3a8a;">
+                                {{ ($row['klaim']['total'] ?? 0) != 0 ? number_format($row['klaim']['total'], 0, ',', '.') : '-' }}
+                            </td>
+
+                            {{-- RINCIAN RECOVERY: TOTAL RECOVERY --}}
+                            <td class="text-right font-weight-bold" style="background-color: #dbeafe; color: #1e3a8a;">
+                                {{ $row['recovery_curr']['total'] != 0 ? number_format($row['recovery_curr']['total'], 0, ',', '.') : '-' }}
+                            </td>
                             
                             {{-- POSISI YoY --}}
                             <td class="text-right" style="background-color: #eff6ff; color: #1e3a8a;">
@@ -1400,11 +1515,6 @@
                             {{-- POSISI M-1 --}}
                             <td class="text-right" style="background-color: #eff6ff; color: #1e3a8a;">
                                 {{ $row['recovery_m1']['total'] != 0 ? number_format($row['recovery_m1']['total'], 0, ',', '.') : '-' }}
-                            </td>
-                            
-                            {{-- POSISI M Terakhir --}}
-                            <td class="text-right font-weight-bold" style="background-color: #dbeafe; color: #1e3a8a;">
-                                {{ $row['recovery_curr']['total'] != 0 ? number_format($row['recovery_curr']['total'], 0, ',', '.') : '-' }}
                             </td>
                             
                             {{-- DELTA YoY --}}
@@ -1436,7 +1546,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="11" class="text-center py-5 text-muted">
+                            <td colspan="15" class="text-center py-5 text-muted">
                                 <i class="fas fa-info-circle mr-2"></i> Tidak ada data untuk periode yang dipilih.
                             </td>
                         </tr>
@@ -1451,10 +1561,14 @@
                                 $grandStickyBg = $isGrandTotalRow ? '#bfdbfe' : '#eaf2ff';
                                 $grandTextColor = '#0f3f86';
                                 $sisaValue = (float) data_get($grandTotals, "sisa_ph.$segmentKey", 0);
+                                $tupokValue = (float) data_get($grandTotals, "tupok.$segmentKey", 0);
+                                $lunasValue = (float) data_get($grandTotals, "lunas.$segmentKey", 0);
+                                $nonKlaimValue = (float) data_get($grandTotals, "non_klaim.$segmentKey", 0);
+                                $klaimValue = (float) data_get($grandTotals, "klaim.$segmentKey", 0);
+                                $recoveryCurr = (float) data_get($grandTotals, "recovery_curr.$segmentKey", 0);
                                 $recoveryYoy = (float) data_get($grandTotals, "recovery_yoy.$segmentKey", 0);
                                 $recoveryYtd = (float) data_get($grandTotals, "recovery_ytd.$segmentKey", 0);
                                 $recoveryM1 = (float) data_get($grandTotals, "recovery_m1.$segmentKey", 0);
-                                $recoveryCurr = (float) data_get($grandTotals, "recovery_curr.$segmentKey", 0);
                                 $deltaYoy = (float) data_get($grandTotals, "delta_yoy.$segmentKey", 0);
                                 $deltaYtd = (float) data_get($grandTotals, "delta_ytd.$segmentKey", 0);
                                 $deltaM1 = (float) data_get($grandTotals, "delta_m1.$segmentKey", 0);
@@ -1477,6 +1591,21 @@
                                     {{ $sisaValue != 0 ? number_format($sisaValue, 0, ',', '.') : '-' }}
                                 </td>
                                 <td class="text-right" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
+                                    {{ $tupokValue != 0 ? number_format($tupokValue, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="text-right" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
+                                    {{ $lunasValue != 0 ? number_format($lunasValue, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="text-right font-weight-bold" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
+                                    {{ $nonKlaimValue != 0 ? number_format($nonKlaimValue, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="text-right" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
+                                    {{ $klaimValue != 0 ? number_format($klaimValue, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="text-right font-weight-bold" style="background-color: {{ $isGrandTotalRow ? '#bfdbfe' : $grandBg }}; color: {{ $grandTextColor }};">
+                                    {{ $recoveryCurr != 0 ? number_format($recoveryCurr, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="text-right" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
                                     {{ $recoveryYoy != 0 ? number_format($recoveryYoy, 0, ',', '.') : '-' }}
                                 </td>
                                 <td class="text-right" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
@@ -1484,9 +1613,6 @@
                                 </td>
                                 <td class="text-right" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
                                     {{ $recoveryM1 != 0 ? number_format($recoveryM1, 0, ',', '.') : '-' }}
-                                </td>
-                                <td class="text-right font-weight-bold" style="background-color: {{ $isGrandTotalRow ? '#bfdbfe' : $grandBg }}; color: {{ $grandTextColor }};">
-                                    {{ $recoveryCurr != 0 ? number_format($recoveryCurr, 0, ',', '.') : '-' }}
                                 </td>
                                 <td class="text-right {{ $deltaYoy < 0 ? 'negative-value' : ($deltaYoy > 0 ? 'positive-value' : 'zero-value') }}" style="background-color: {{ $grandBg }};">
                                     @if($deltaYoy != 0)

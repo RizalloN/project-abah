@@ -19,7 +19,9 @@ final class LandingMicroPerformanceService
 
     private const HARIAN_SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
 
-    private const CACHE_VERSION = 'v14-pdwk-area6-roster';
+    private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
+
+    private const CACHE_VERSION = 'v28-micro-cache-coherent-brihc-productivity';
 
     private const PERIOD_LOOKUP_INDEXES = [
         'idx_snapshot_filter_optimized',
@@ -61,30 +63,125 @@ final class LandingMicroPerformanceService
     ];
 
     /**
-     * Pengecualian limit PDWK dari workbook "PDWK MBM dan Kaunit.xlsx".
-     * Pemutus aktif yang tidak tercantum tetap berada pada bucket 100%.
+     * Referensi limit Stop & Go PDWK dari workbook
+     * "PDWK MBM & KEPALA UNIT_2026 07 31.xlsx" tab Nominatif.
      *
-     * @var array<string, array{role:string, limit:int, name:string, unit:string}>
+     * @var array<string, array{role:string, limit:int, name:string, unit:string, branch:string}>
      */
-    private const PDWK_LIMIT_OVERRIDES = [
-        '24600' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Trimo Agung Yunianto', 'unit' => 'KC MADIUN'],
-        '22263' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Muko Hendrasworo', 'unit' => 'KC MAGETAN'],
-        '22271' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Dian Febriantari', 'unit' => 'KC NGAWI'],
-        '20496' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Indra Hananto', 'unit' => 'KC PONOROGO'],
-        '20458' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Nur Elfiana', 'unit' => 'KC MADIUN'],
-        '22008' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Rudhi Nur Subijanto', 'unit' => 'KC MAGETAN'],
-        '22461' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Tri Handayani', 'unit' => 'KC NGAWI'],
-        '21668' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Iwan Wahyudi', 'unit' => 'KC PONOROGO'],
-        '199564' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Hana Binti Muyasaroh', 'unit' => 'UNIT NGLAMES MADIUN'],
-        '64262' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Sunandar Eko Kriswiyanto', 'unit' => 'UNIT SARADAN MADIUN'],
-        '224262' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Satriyo Nugroho', 'unit' => 'UNIT ISWAHYUDI MAGETAN'],
-        '57952' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Bisri Efendi', 'unit' => 'UNIT KARANGMOJO MAGETAN'],
-        '20521' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Nanang Kiswantoro', 'unit' => 'UNIT BALONG PONOROGO'],
-        '119095' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Pratristo Teguh Yuniar', 'unit' => 'UNIT KAUMAN PONOROGO'],
-        '56277' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Muhammad Zaifar Rahman', 'unit' => 'UNIT NGRAYUN PONOROGO'],
-        '167228' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Risma Lestinasari', 'unit' => 'UNIT PASAR PON PONOROGO'],
-        '57094' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Aditya Wisnu Wardana', 'unit' => 'UNIT PULUNG PONOROGO'],
-        '154633' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Nanda Satria Bhakti', 'unit' => 'UNIT SOOKO PONOROGO'],
+    private const PDWK_LIMIT_REFERENCE = [
+        '20496' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Indra Hananto', 'unit' => 'KC Ponorogo', 'branch' => 'KC Ponorogo'],
+        '22263' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Muko Hendrasworo', 'unit' => 'KC Magetan', 'branch' => 'KC Magetan'],
+        '22271' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Dian Febriantari', 'unit' => 'KC Ngawi', 'branch' => 'KC Ngawi'],
+        '24600' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Trimo Agung Yunianto', 'unit' => 'KC Madiun', 'branch' => 'KC Madiun'],
+        '20458' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Nur Elfiana', 'unit' => 'KC Madiun', 'branch' => 'KC Madiun'],
+        '21668' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Iwan Wahyudi', 'unit' => 'KC Ponorogo', 'branch' => 'KC Ponorogo'],
+        '22008' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Rudhi Nur Subijanto', 'unit' => 'KC Magetan', 'branch' => 'KC Magetan'],
+        '22461' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Tri Handayani', 'unit' => 'KC Ngawi', 'branch' => 'KC Ngawi'],
+        '22666' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Soni Sanjaya', 'unit' => 'KC Ngawi', 'branch' => 'KC Ngawi'],
+        '64850' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Hendri Windianarko', 'unit' => 'KC Madiun', 'branch' => 'KC Madiun'],
+        '22781' => ['role' => 'mbm', 'limit' => 100, 'name' => 'Suprijono Edi Widodo', 'unit' => 'KC Magetan', 'branch' => 'KC Magetan'],
+        '23379' => ['role' => 'mbm', 'limit' => 100, 'name' => 'Kun Harianto', 'unit' => 'KC Ponorogo', 'branch' => 'KC Ponorogo'],
+        '55365' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Sutini', 'unit' => 'UNIT SUKOREJO PONOROGO', 'branch' => 'KC Ponorogo'],
+        '25142' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Hari Basuki', 'unit' => 'UNIT SLAHUNG PONOROGO', 'branch' => 'KC Ponorogo'],
+        '235757' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Kristian Eko Laksono', 'unit' => 'UNIT SAWOO PONOROGO', 'branch' => 'KC Ponorogo'],
+        '56279' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Siti Zuhrotus Sholikhah', 'unit' => 'UNIT SAMPUNG PONOROGO', 'branch' => 'KC Ponorogo'],
+        '159081' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Gesang Saifullah Rachman', 'unit' => 'UNIT PASAR NGUMPUL PONOROGO', 'branch' => 'KC Ponorogo'],
+        '206932' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Riyan Mey Abadi', 'unit' => 'UNIT PASAR CONDONG PONOROGO', 'branch' => 'KC Ponorogo'],
+        '23211' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Adin Darmawan', 'unit' => 'UNIT NAILAN PONOROGO', 'branch' => 'KC Ponorogo'],
+        '117642' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Ika Kumala Pramitasari', 'unit' => 'UNIT MLARAK PONOROGO', 'branch' => 'KC Ponorogo'],
+        '159891' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Anton Dwi Susilo', 'unit' => 'UNIT KOTA III PONOROGO', 'branch' => 'KC Ponorogo'],
+        '207710' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Shandy Firdausy', 'unit' => 'UNIT KOTA II PONOROGO', 'branch' => 'KC Ponorogo'],
+        '57092' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Catur Ribut Hendriawan', 'unit' => 'UNIT KOTA I PONOROGO', 'branch' => 'KC Ponorogo'],
+        '58001' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Fauzia Widya Nur Darmanto', 'unit' => 'UNIT KESUGIHAN PONOROGO', 'branch' => 'KC Ponorogo'],
+        '225105' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Wisnu Wardana', 'unit' => 'UNIT JETIS PONOROGO', 'branch' => 'KC Ponorogo'],
+        '117679' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Firdaus Amin Zulkarnain', 'unit' => 'UNIT JENANGAN PONOROGO', 'branch' => 'KC Ponorogo'],
+        '56274' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Farida Nur Laily', 'unit' => 'UNIT JAMBON PONOROGO', 'branch' => 'KC Ponorogo'],
+        '172498' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Aprilia Dwi Jayanti', 'unit' => 'UNIT DENGOK PONOROGO', 'branch' => 'KC Ponorogo'],
+        '51635' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Dian Arief Rachman', 'unit' => 'UNIT BUNGKAL PONOROGO', 'branch' => 'KC Ponorogo'],
+        '55613' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Fatih Muzaqqi', 'unit' => 'UNIT BRAHU PONOROGO', 'branch' => 'KC Ponorogo'],
+        '57089' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Arini Endah Wahyuningsih', 'unit' => 'UNIT BABADAN PONOROGO', 'branch' => 'KC Ponorogo'],
+        '61549' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Donny Bagus Trianto', 'unit' => 'UNIT WALIKUKUN NGAWI', 'branch' => 'KC Ngawi'],
+        '53167' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Raditya Prima S', 'unit' => 'UNIT TEGUHAN NGAWI', 'branch' => 'KC Ngawi'],
+        '117678' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Fajar Kharisma', 'unit' => 'UNIT TAMBAKROMO NGAWI', 'branch' => 'KC Ngawi'],
+        '53170' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Doni Setiawan', 'unit' => 'UNIT SOOKO NGAWI', 'branch' => 'KC Ngawi'],
+        '130004' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Evik Dwi Purnanto', 'unit' => 'UNIT SINE NGAWI', 'branch' => 'KC Ngawi'],
+        '157241' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Arifta Widyatama', 'unit' => 'UNIT SIDOLAJU NGAWI', 'branch' => 'KC Ngawi'],
+        '22962' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Esti Setiyawijayanti', 'unit' => 'UNIT SAMBIREJO NGAWI', 'branch' => 'KC Ngawi'],
+        '53191' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Ratna Kumalawati', 'unit' => 'UNIT RONGGOWARSITO NGAWI', 'branch' => 'KC Ngawi'],
+        '53160' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Nurcahyono Setia Budi', 'unit' => 'UNIT POJOK NGAWI', 'branch' => 'KC Ngawi'],
+        '229799' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Joko Sutrisno', 'unit' => 'UNIT PB SUDIRMAN NGAWI', 'branch' => 'KC Ngawi'],
+        '65512' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Nur Effendi', 'unit' => 'UNIT PASAR BESAR NGAWI', 'branch' => 'KC Ngawi'],
+        '22828' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Eko Putranto', 'unit' => 'UNIT PARON NGAWI', 'branch' => 'KC Ngawi'],
+        '56685' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Adiarto Priyo Wicaksono', 'unit' => 'UNIT PANGKUR NGAWI', 'branch' => 'KC Ngawi'],
+        '22843' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Sri Utami', 'unit' => 'UNIT PADAS NGAWI', 'branch' => 'KC Ngawi'],
+        '172501' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Roni Savrori', 'unit' => 'UNIT NGRAMBE NGAWI', 'branch' => 'KC Ngawi'],
+        '57415' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Luthfi Ardhani', 'unit' => 'UNIT MANTINGAN NGAWI', 'branch' => 'KC Ngawi'],
+        '22960' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Tri Wahyu Artati', 'unit' => 'UNIT KWADUNGAN NGAWI', 'branch' => 'KC Ngawi'],
+        '164999' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Metti Yuana', 'unit' => 'UNIT KERASWETAN NGAWI', 'branch' => 'KC Ngawi'],
+        '199575' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Bayu Sulistyo Pamungkas Sunoto', 'unit' => 'UNIT KENDAL NGAWI', 'branch' => 'KC Ngawi'],
+        '52433' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Albertus Novianto Sulistiawan', 'unit' => 'UNIT KEDUNGPRAHU NGAWI', 'branch' => 'KC Ngawi'],
+        '56308' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Harnaning Trimuji Hastuti', 'unit' => 'UNIT KEDUNGGALAR NGAWI', 'branch' => 'KC Ngawi'],
+        '149780' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Arisma Cahya Kurniawan', 'unit' => 'UNIT KARANG JATI NGAWI', 'branch' => 'KC Ngawi'],
+        '172523' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Rahendra Ragil Priyo Nugroho', 'unit' => 'UNIT JOGOROGO NGAWI', 'branch' => 'KC Ngawi'],
+        '55331' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Puput Indrasari', 'unit' => 'UNIT CEPOKO NGAWI', 'branch' => 'KC Ngawi'],
+        '22830' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Andik Tri Prasetyanto', 'unit' => 'UNIT AHMAD YANI NGAWI', 'branch' => 'KC Ngawi'],
+        '56498' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Anthon Purbaya', 'unit' => 'UNIT TAKERAN MAGETAN', 'branch' => 'KC Magetan'],
+        '22118' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Sugianto', 'unit' => 'UNIT SUKOMORO MAGETAN', 'branch' => 'KC Magetan'],
+        '130049' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Fitra Ardi Yunianto', 'unit' => 'UNIT SIDOREJO MAGETAN', 'branch' => 'KC Magetan'],
+        '160348' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Veri Dwi Septian', 'unit' => 'UNIT SELOSARI MAGETAN', 'branch' => 'KC Magetan'],
+        '64737' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Agung Margo Prayitno', 'unit' => 'UNIT REJOSARI MAGETAN', 'branch' => 'KC Magetan'],
+        '22227' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Yudi Handayatno', 'unit' => 'UNIT PONCOL MAGETAN', 'branch' => 'KC Magetan'],
+        '22124' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Teguh Purwanto', 'unit' => 'UNIT PLAOSAN MAGETAN', 'branch' => 'KC Magetan'],
+        '156829' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Elida Pujiadi', 'unit' => 'UNIT PARANG MAGETAN', 'branch' => 'KC Magetan'],
+        '52941' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Agus Pujianto', 'unit' => 'UNIT PANEKAN MAGETAN', 'branch' => 'KC Magetan'],
+        '61308' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Toni Efendi', 'unit' => 'UNIT NGARIBOYO MAGETAN', 'branch' => 'KC Magetan'],
+        '264773' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Alvian Eka Hardian', 'unit' => 'UNIT MT HARYONO MAGETAN', 'branch' => 'KC Magetan'],
+        '173908' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Pituk Puspito Nugroho', 'unit' => 'UNIT MAOSPATI MAGETAN', 'branch' => 'KC Magetan'],
+        '22201' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Joko Purwanto', 'unit' => 'UNIT LAMBEYAN MAGETAN', 'branch' => 'KC Magetan'],
+        '56282' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Mohamad Roesli Effendi', 'unit' => 'UNIT KENONGOMULYO MAGETAN', 'branch' => 'KC Magetan'],
+        '22185' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Sudarmi', 'unit' => 'UNIT KAWEDANAN MAGETAN', 'branch' => 'KC Magetan'],
+        '173898' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Dian Proboyektik Sholichin', 'unit' => 'UNIT KARTOHARJO MAGETAN', 'branch' => 'KC Magetan'],
+        '22108' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Agung Gianto', 'unit' => 'UNIT KARANGSONO MAGETAN', 'branch' => 'KC Magetan'],
+        '52952' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Ony Nur Mahendra', 'unit' => 'UNIT KARANGREJO MAGETAN', 'branch' => 'KC Magetan'],
+        '55833' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Teguh Susanto', 'unit' => 'UNIT JUNGKE MAGETAN', 'branch' => 'KC Magetan'],
+        '161468' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Syarifudin Bhaktiar', 'unit' => 'UNIT BENDO MAGETAN', 'branch' => 'KC Magetan'],
+        '52946' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Dewi Tritjahjani', 'unit' => 'UNIT A. YANI MAGETAN', 'branch' => 'KC Magetan'],
+        '21954' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Sumanto', 'unit' => 'UNIT WUNGU MADIUN', 'branch' => 'KC Madiun'],
+        '24797' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Wiwik Kuswantiningsih', 'unit' => 'UNIT WONOASRI MADIUN', 'branch' => 'KC Madiun'],
+        '57958' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Tri Andani Ayupi', 'unit' => 'UNIT UTERAN MADIUN', 'branch' => 'KC Madiun'],
+        '21949' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Tommy Kuswantoro', 'unit' => 'UNIT SLEKO MADIUN', 'branch' => 'KC Madiun'],
+        '22087' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Yuliawan', 'unit' => 'UNIT SAWAHAN MADIUN', 'branch' => 'KC Madiun'],
+        '22023' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Puji Suryanto', 'unit' => 'UNIT PURWOREJO MADIUN', 'branch' => 'KC Madiun'],
+        '51654' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Tri Wahyudi Budi Setiawan', 'unit' => 'UNIT PILANGKENCENG MADIUN', 'branch' => 'KC Madiun'],
+        '50612' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Agus Chandra Wahyudi', 'unit' => 'UNIT PERINTIS KEMERDEKAAN MADI', 'branch' => 'KC Madiun'],
+        '57431' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'I\'ing Menawati', 'unit' => 'UNIT MUNENG MADIUN', 'branch' => 'KC Madiun'],
+        '52520' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Erwin Hendratmoko', 'unit' => 'UNIT MLILIR MADIUN', 'branch' => 'KC Madiun'],
+        '21948' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Ruswida Amiranti', 'unit' => 'UNIT MEJAYAN MADIUN', 'branch' => 'KC Madiun'],
+        '55629' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Indra Gunawan Aryanto', 'unit' => 'UNIT KEBONSARI MADIUN', 'branch' => 'KC Madiun'],
+        '187098' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Yudha Rofika Adi Diyanto', 'unit' => 'UNIT KARE MADIUN', 'branch' => 'KC Madiun'],
+        '21955' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Dwi Karyawati', 'unit' => 'UNIT JIWAN MADIUN', 'branch' => 'KC Madiun'],
+        '197162' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Bayu Adi Kusuma', 'unit' => 'UNIT GEMARANG MADIUN', 'branch' => 'KC Madiun'],
+        '22081' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Hadi Kuncoro', 'unit' => 'UNIT GANTRUNG MADIUN', 'branch' => 'KC Madiun'],
+        '57216' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Catur Widyastutik', 'unit' => 'UNIT DUNGUS MADIUN', 'branch' => 'KC Madiun'],
+        '52501' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Danang Kurniawan', 'unit' => 'UNIT DOLOPO MADIUN', 'branch' => 'KC Madiun'],
+        '61624' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Ardiyanto Tri Nugroho', 'unit' => 'UNIT DIPONEGORO MADIUN', 'branch' => 'KC Madiun'],
+        '224883' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Wahyu Priyo Widyastomo', 'unit' => 'UNIT DAGANGAN MADIUN', 'branch' => 'KC Madiun'],
+        '52523' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Ary Legowo', 'unit' => 'UNIT CARUBAN MADIUN', 'branch' => 'KC Madiun'],
+        '22076' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Dwi Gatot Prasetyo', 'unit' => 'UNIT BALEREJO MADIUN', 'branch' => 'KC Madiun'],
+        '87357' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Puguh Dwi Prasetyo', 'unit' => 'UNIT BALE LINTANG MADIUN', 'branch' => 'KC Madiun'],
+        '61446' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Sigit Susanto', 'unit' => 'UNIT ALOON - ALOON MADIUN', 'branch' => 'KC Madiun'],
+        '52987' => ['role' => 'ka_unit', 'limit' => 40, 'name' => 'Widhodho Haribowo', 'unit' => 'UNIT SAMBIT PONOROGO', 'branch' => 'KC Ponorogo'],
+        '154634' => ['role' => 'ka_unit', 'limit' => 40, 'name' => 'Syaiful Abidin', 'unit' => 'UNIT BADEGAN PONOROGO', 'branch' => 'KC Ponorogo'],
+        '154633' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Nanda Satria Bhakti', 'unit' => 'UNIT SOOKO PONOROGO', 'branch' => 'KC Ponorogo'],
+        '57094' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Aditya Wisnu Wardana', 'unit' => 'UNIT PULUNG PONOROGO', 'branch' => 'KC Ponorogo'],
+        '167228' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Risma Lestinasari', 'unit' => 'UNIT PASAR PON PONOROGO', 'branch' => 'KC Ponorogo'],
+        '56277' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Muhammad Zaifar Rahman', 'unit' => 'UNIT NGRAYUN PONOROGO', 'branch' => 'KC Ponorogo'],
+        '119095' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Pratristo Teguh Yuniar', 'unit' => 'UNIT KAUMAN PONOROGO', 'branch' => 'KC Ponorogo'],
+        '209521' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Dimas Kristianto', 'unit' => 'UNIT BALONG PONOROGO', 'branch' => 'KC Ponorogo'],
+        '57952' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Bisri Efendi', 'unit' => 'UNIT KARANGMOJO MAGETAN', 'branch' => 'KC Magetan'],
+        '224262' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Satriyo Nugroho', 'unit' => 'UNIT ISWAHYUDI MAGETAN', 'branch' => 'KC Magetan'],
+        '64262' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Sunandar Eko Kriswiyanto', 'unit' => 'UNIT SARADAN MADIUN', 'branch' => 'KC Madiun'],
+        '199564' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Hana Binti Muyasaroh', 'unit' => 'UNIT NGLAMES MADIUN', 'branch' => 'KC Madiun'],
     ];
 
     private const PDWK_ROLE_OVERRIDES = [
@@ -161,11 +258,15 @@ final class LandingMicroPerformanceService
                 Carbon::parse($period)->startOfYear()->toDateString(),
                 $branchScope
             );
+            $dataVersion = implode('.', [
+                ReportCacheVersion::get('pinjaman'),
+                ReportCacheVersion::get('harian'),
+            ]);
             $cacheKey = implode(':', [
                 'landing',
                 'micro-performance',
                 self::CACHE_VERSION,
-                ReportCacheVersion::composite(['pinjaman', 'harian']),
+                $dataVersion,
                 $period,
                 $previousPeriod ?? 'none',
                 $ytdPeriod ?? 'none',
@@ -176,6 +277,7 @@ final class LandingMicroPerformanceService
                 'micro-performance',
                 self::CACHE_VERSION,
                 'stable',
+                $dataVersion,
                 $period,
                 $previousPeriod ?? 'none',
                 $ytdPeriod ?? 'none',
@@ -184,6 +286,7 @@ final class LandingMicroPerformanceService
 
             if ($forceRefresh) {
                 Cache::forget($cacheKey);
+                Cache::forget($stableCacheKey);
             }
 
             $cached = Cache::get($cacheKey);
@@ -379,15 +482,22 @@ final class LandingMicroPerformanceService
         $netRows = $previousPeriod === null
             ? []
             : $this->fetchNetRealizationRows($period, $previousPeriod, $branchScope, $plafondRows);
-        $realization = $this->aggregatePlafondRealization($plafondRows, $branchScope);
+        $roster = $this->mantriRoster($branchScope, $period);
+        $realization = $this->decorateRealizationWithMantri(
+            $this->aggregatePlafondRealization($plafondRows, $branchScope),
+            $plafondRows,
+            $roster
+        );
         $netDisbursement = $this->aggregateNetRealization($netRows, $branchScope);
         $burden = $this->buildBurdenPayload($period, $previousPeriod, $ytdPeriod, $branchScope);
         $mantriPerformance = $this->buildMantriPerformance(
             $period,
             $plafondRows,
             $netRows,
-            $branchScope
+            $branchScope,
+            $roster
         );
+        $unproductiveMantri = $this->buildUnproductiveMantri($period, $branchScope, $roster);
 
         return [
             'meta' => [
@@ -408,11 +518,14 @@ final class LandingMicroPerformanceService
             'products_position' => $this->productPositions($period, $branchScope),
             'realization' => $realization,
             'net_disbursement' => $netDisbursement,
-            'pdwk_limits' => $this->buildPdwkLimitSummary($plafondRows),
+            'pdwk_limits' => $this->buildPdwkLimitSummary($plafondRows, $branchScope),
             'decision_ranking' => $this->buildMbmDecisionRanking($plafondRows, $netRows),
             'realization_need' => $this->buildRealizationNeed($period, $branchScope, $mantriPerformance),
+            'ph' => $this->buildMicroPhSummary($period, $branchScope),
             'mantri_performance' => $mantriPerformance,
             'burden' => $burden,
+            'unproductive_mantri' => $unproductiveMantri,
+            'billing' => $this->billingSchedule($branchScope, $period, $previousPeriod),
         ];
     }
 
@@ -573,13 +686,29 @@ final class LandingMicroPerformanceService
                         'customers' => [],
                         'accounts' => [],
                         'os' => 0.0,
+                        'term_details' => [],
                     ];
                     $periodicFrequencies[$paymentFrequency]['customers'][$customerKey] = true;
                     if ($accountKey !== '') {
                         $periodicFrequencies[$paymentFrequency]['accounts'][$accountKey] = true;
                     }
                     $periodicFrequencies[$paymentFrequency]['os'] += max(0.0, (float) ($row['current_os'] ?? 0.0));
+
+                    // Accumulate per-term breakdown within this frequency
+                    $freqTerm = $this->normaliseLoanTerm($row['loan_term'] ?? null);
+                    $periodicFrequencies[$paymentFrequency]['term_details'][$freqTerm['key']] ??= [
+                        ...$freqTerm,
+                        'customers' => [],
+                        'accounts' => [],
+                        'os' => 0.0,
+                    ];
+                    $periodicFrequencies[$paymentFrequency]['term_details'][$freqTerm['key']]['customers'][$customerKey] = true;
+                    if ($accountKey !== '') {
+                        $periodicFrequencies[$paymentFrequency]['term_details'][$freqTerm['key']]['accounts'][$accountKey] = true;
+                    }
+                    $periodicFrequencies[$paymentFrequency]['term_details'][$freqTerm['key']]['os'] += max(0.0, (float) ($row['current_os'] ?? 0.0));
                 }
+
             }
 
             $roleKey = $this->decisionRoleKey((string) ($row['decision_role'] ?? ''));
@@ -656,12 +785,27 @@ final class LandingMicroPerformanceService
         ksort($periodicFrequencies, SORT_NUMERIC);
         $patterns['musiman']['details']['periodik']['frequency_details'] = collect($periodicFrequencies)
             ->map(static function (array $item): array {
+                $termDetails = collect($item['term_details'] ?? [])
+                    ->sortBy(static fn (array $t): string => str_pad((string) ($t['months'] ?? 9999), 5, '0', STR_PAD_LEFT))
+                    ->map(static fn (array $t): array => [
+                        'key'       => (string) $t['key'],
+                        'label'     => (string) $t['label'],
+                        'months'    => $t['months'],
+                        'customers' => count((array) $t['customers']),
+                        'deb'       => count((array) $t['accounts']),
+                        'os'        => (float) $t['os'],
+                    ])
+                    ->filter(static fn (array $t): bool => $t['customers'] > 0)
+                    ->values()
+                    ->all();
+
                 return [
-                    'frequency' => (int) $item['frequency'],
-                    'label' => (string) $item['label'],
-                    'customers' => count((array) $item['customers']),
-                    'deb' => count((array) $item['accounts']),
-                    'os' => (float) $item['os'],
+                    'frequency'    => (int) $item['frequency'],
+                    'label'        => (string) $item['label'],
+                    'customers'    => count((array) $item['customers']),
+                    'deb'          => count((array) $item['accounts']),
+                    'os'           => (float) $item['os'],
+                    'term_details' => $termDetails,
                 ];
             })
             ->filter(static fn (array $item): bool => $item['customers'] > 0)
@@ -695,6 +839,178 @@ final class LandingMicroPerformanceService
             'products' => collect($products)->map($decorateShare)->sortByDesc('amount')->values()->all(),
             'patterns' => array_values(array_map($decorateShare, $patterns)),
             'decisions' => array_values($decisions),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $realization
+     * @param  array<int, object|array<string, mixed>>  $rows
+     * @param  Collection<int, array<string, string>>  $roster
+     * @return array<string, mixed>
+     */
+    private function decorateRealizationWithMantri(array $realization, array $rows, Collection $roster): array
+    {
+        $realizedByProduct = collect($rows)
+            ->groupBy(fn (object|array $row): string => $this->normaliseToken($this->microProductLabel((string) data_get($row, 'product', ''))))
+            ->map(fn (Collection $productRows): array => $productRows
+                ->map(fn (object|array $row): string => $this->normalisePn((string) data_get($row, 'manager_pn', data_get($row, 'manager_raw', ''))))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all());
+
+        $realization['products'] = collect((array) ($realization['products'] ?? []))
+            ->map(function (array $product) use ($roster, $realizedByProduct): array {
+                $productKey = $this->normaliseToken((string) ($product['label'] ?? ''));
+                $eligible = $productKey === 'briguna-mikro'
+                    ? $roster->where('category', 'briguna')
+                    : $roster->whereIn('category', ['pt', 'contract']);
+                $eligiblePns = $eligible->pluck('pn')->filter()->unique();
+                $realizedPns = collect($realizedByProduct->get($productKey, []))->intersect($eligiblePns)->unique();
+                $product['mantri_eligible'] = $eligiblePns->count();
+                $product['mantri_realized'] = $realizedPns->count();
+                $product['mantri_not_realized'] = max(0, $eligiblePns->count() - $realizedPns->count());
+
+                return $product;
+            })
+            ->all();
+
+        $kupedesRoster = $roster->whereIn('category', ['pt', 'contract'])->values();
+        $kupedesEligiblePns = $kupedesRoster->pluck('pn')->filter()->unique();
+        $kupedesRealizedPns = collect($realizedByProduct->get('kupedes', []))
+            ->intersect($kupedesEligiblePns)
+            ->filter()
+            ->unique();
+        $realization['kupedes_not_realized'] = $kupedesRoster
+            ->reject(fn (array $person): bool => $kupedesRealizedPns->contains((string) ($person['pn'] ?? '')))
+            ->map(static fn (array $person): array => [
+                'pn' => (string) ($person['pn'] ?? ''),
+                'name' => trim((string) ($person['name'] ?? '')),
+                'branch' => (string) ($person['branch'] ?? ''),
+                'unit' => trim((string) ($person['unit'] ?? '')),
+                'category' => (string) ($person['category'] ?? ''),
+            ])
+            ->sortBy(static fn (array $person): string => strtoupper(
+                $person['branch'].'|'.$person['unit'].'|'.$person['name'].'|'.$person['pn']
+            ))
+            ->values()
+            ->all();
+        $realization['mantri_roster'] = [
+            'total_active' => $roster->count(),
+            'pt' => $roster->where('category', 'pt')->count(),
+            'contract' => $roster->where('category', 'contract')->count(),
+            'briguna' => $roster->where('category', 'briguna')->count(),
+            'kupedes_eligible' => $kupedesEligiblePns->count(),
+            'kupedes_realized' => $kupedesRealizedPns->count(),
+            'kupedes_not_realized' => max(0, $kupedesEligiblePns->count() - $kupedesRealizedPns->count()),
+            'daily_placement_matched' => $roster->where('roster_source', 'daily_loan_current_assignment')->count(),
+            'branches' => $roster
+                ->groupBy('branch')
+                ->map(static fn (Collection $people, string $branch): array => [
+                    'branch' => $branch,
+                    'total_active' => $people->count(),
+                    'pt' => $people->where('category', 'pt')->count(),
+                    'contract' => $people->where('category', 'contract')->count(),
+                    'briguna' => $people->where('category', 'briguna')->count(),
+                ])
+                ->sortBy('branch')
+                ->values()
+                ->all(),
+            'source' => 'BRIHC aktif dipadukan dengan penempatan dan realisasi Daily Loan Dinamis',
+        ];
+
+        $eligiblePns = $roster->pluck('pn')->filter()->unique();
+        $realizedPns = collect($rows)
+            ->map(fn (object|array $row): string => $this->normalisePn((string) data_get($row, 'manager_pn', data_get($row, 'manager_raw', ''))))
+            ->filter()
+            ->intersect($eligiblePns)
+            ->unique();
+        $realization['mantri'] = [
+            'eligible' => $eligiblePns->count(),
+            'realized' => $realizedPns->count(),
+            'not_realized' => max(0, $eligiblePns->count() - $realizedPns->count()),
+        ];
+
+        return $realization;
+    }
+
+    /** @param array<string, mixed>|null $branchScope */
+    private function buildMicroPhSummary(string $period, ?array $branchScope): array
+    {
+        $required = ['periode', 'acctno', 'kanca', 'unit', 'segmen_dashboard', 'pokok'];
+        if (! $this->hasTable('lw325_ph') || ! collect($required)->every(fn (string $column): bool => $this->hasColumn('lw325_ph', $column))) {
+            return $this->emptyPhSummary();
+        }
+
+        $currentPeriod = DB::table('lw325_ph')->where('periode', '<=', $period)->max('periode');
+        if (! $currentPeriod) {
+            return $this->emptyPhSummary();
+        }
+
+        $currentPeriod = Carbon::parse($currentPeriod)->toDateString();
+        $previousPeriod = Carbon::parse($currentPeriod)->startOfMonth()->subDay()->toDateString();
+        if (! DB::table('lw325_ph')->where('periode', $previousPeriod)->exists()) {
+            return $this->emptyPhSummary($currentPeriod, $previousPeriod);
+        }
+
+        $tupok = DB::table('lw325_ph as n')
+            ->join('lw325_ph as o', function ($join) use ($currentPeriod, $previousPeriod): void {
+                $join->on('n.acctno', '=', 'o.acctno')
+                    ->on('n.kanca', '=', 'o.kanca')
+                    ->on('n.unit', '=', 'o.unit')
+                    ->whereRaw('n.periode = ?', [$currentPeriod])
+                    ->whereRaw('o.periode = ?', [$previousPeriod]);
+            })
+            ->whereRaw("UPPER(TRIM(COALESCE(o.segmen_dashboard, ''))) = 'MICRO'")
+            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
+            ->whereNotNull('o.acctno')
+            ->where('o.acctno', '<>', '');
+        $this->applyBranchFilter($tupok, 'o.kanca', $branchScope);
+        $tupokMetric = $tupok
+            ->selectRaw('COUNT(DISTINCT o.acctno) as deb')
+            ->selectRaw('COALESCE(SUM(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)), 0) as amount')
+            ->first();
+
+        $lunas = DB::table('lw325_ph as o')
+            ->leftJoin('lw325_ph as n', function ($join) use ($currentPeriod): void {
+                $join->on('o.acctno', '=', 'n.acctno')
+                    ->on('o.kanca', '=', 'n.kanca')
+                    ->on('o.unit', '=', 'n.unit')
+                    ->whereRaw('n.periode = ?', [$currentPeriod]);
+            })
+            ->where('o.periode', $previousPeriod)
+            ->whereRaw("UPPER(TRIM(COALESCE(o.segmen_dashboard, ''))) = 'MICRO'")
+            ->whereNull('n.acctno')
+            ->whereNotNull('o.acctno')
+            ->where('o.acctno', '<>', '');
+        $this->applyBranchFilter($lunas, 'o.kanca', $branchScope);
+        $lunasMetric = $lunas
+            ->selectRaw('COUNT(DISTINCT o.acctno) as deb')
+            ->selectRaw('COALESCE(SUM(o.pokok), 0) as amount')
+            ->first();
+
+        return [
+            'available' => true,
+            'period' => $currentPeriod,
+            'period_label' => Carbon::parse($currentPeriod)->translatedFormat('d M Y'),
+            'comparison_period' => $previousPeriod,
+            'comparison_period_label' => Carbon::parse($previousPeriod)->translatedFormat('d M Y'),
+            'lunas' => ['deb' => (int) ($lunasMetric->deb ?? 0), 'amount' => (float) ($lunasMetric->amount ?? 0.0)],
+            'turun_pokok' => ['deb' => (int) ($tupokMetric->deb ?? 0), 'amount' => (float) ($tupokMetric->amount ?? 0.0)],
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function emptyPhSummary(?string $period = null, ?string $previousPeriod = null): array
+    {
+        return [
+            'available' => false,
+            'period' => $period,
+            'period_label' => $period ? Carbon::parse($period)->translatedFormat('d M Y') : '-',
+            'comparison_period' => $previousPeriod,
+            'comparison_period_label' => $previousPeriod ? Carbon::parse($previousPeriod)->translatedFormat('d M Y') : '-',
+            'lunas' => ['deb' => 0, 'amount' => 0.0],
+            'turun_pokok' => ['deb' => 0, 'amount' => 0.0],
         ];
     }
 
@@ -790,9 +1106,10 @@ final class LandingMicroPerformanceService
 
     /**
      * @param  array<int, object|array<string, mixed>>  $rows
+     * @param  array<string, mixed>|null  $branchScope
      * @return array<string, mixed>
      */
-    private function buildPdwkLimitSummary(array $rows): array
+    private function buildPdwkLimitSummary(array $rows, ?array $branchScope = null): array
     {
         $statusDefinitions = [
             'full' => ['key' => 'full', 'label' => '100% x PDWK', 'limit' => 100, 'tone' => 'green'],
@@ -809,12 +1126,36 @@ final class LandingMicroPerformanceService
             $role['statuses'] = collect($statusDefinitions)
                 ->map(fn (array $status): array => $status + [
                     'people' => [],
+                    'reference_people' => [],
                     'accounts' => [],
                     'amount' => 0.0,
                 ])
                 ->all();
         }
         unset($role);
+
+        $scopeBranch = $branchScope === null
+            ? ''
+            : $this->branchLabel((string) ($branchScope['upper_label'] ?? $branchScope['label'] ?? ''));
+
+        foreach (self::PDWK_LIMIT_REFERENCE as $pn => $reference) {
+            if ($scopeBranch !== '' && $this->branchLabel((string) $reference['branch']) !== $scopeBranch) {
+                continue;
+            }
+
+            $statusKey = match (true) {
+                $reference['limit'] <= 0 => 'stop',
+                $reference['limit'] <= 40 => 'limited',
+                $reference['limit'] <= 75 => 'three_quarter',
+                default => 'full',
+            };
+            $roleDefinitions[$reference['role']]['statuses'][$statusKey]['reference_people'][$pn] = [
+                'pn' => $pn,
+                'name' => $reference['name'],
+                'unit' => $reference['unit'],
+                'branch' => $reference['branch'],
+            ];
+        }
 
         foreach ($rows as $rowIndex => $sourceRow) {
             $row = (array) $sourceRow;
@@ -823,31 +1164,23 @@ final class LandingMicroPerformanceService
                 continue;
             }
 
-            $override = self::PDWK_LIMIT_OVERRIDES[$pn] ?? null;
-            $referenceRole = $this->canonicalDecisionRole((string) ($row['decision_reference_role'] ?? ''));
-            $effectiveRole = $this->canonicalDecisionRole((string) ($row['decision_role'] ?? ''));
-            $roleKey = (string) ($override['role'] ?? match ($referenceRole ?: $effectiveRole) {
-                'MBM' => 'mbm',
-                'KA UNIT' => 'ka_unit',
-                default => '',
-            });
-            if (! isset($roleDefinitions[$roleKey])) {
+            $reference = self::PDWK_LIMIT_REFERENCE[$pn] ?? null;
+            // Stop & Go PDWK is intentionally isolated from BRIHC. A Daily Loan
+            // decision is counted only when its PN exists in the supplied workbook.
+            if ($reference === null) {
                 continue;
             }
 
-            $limit = (int) ($override['limit'] ?? 100);
+            $roleKey = (string) $reference['role'];
+            $limit = (int) $reference['limit'];
             $statusKey = match (true) {
                 $limit <= 0 => 'stop',
                 $limit <= 40 => 'limited',
                 $limit <= 75 => 'three_quarter',
                 default => 'full',
             };
-            $officialMbm = self::AREA_MBM_REFERENCE[$pn] ?? null;
-            if ($roleKey === 'mbm' && $officialMbm === null) {
-                continue;
-            }
-            $name = (string) ($override['name'] ?? $officialMbm['name'] ?? $row['decision_name'] ?? ('PN '.$pn));
-            $unit = (string) ($override['unit'] ?? $officialMbm['branch'] ?? $row['unit'] ?? $row['branch'] ?? '-');
+            $name = (string) $reference['name'];
+            $unit = (string) $reference['unit'];
             $account = strtoupper(trim((string) ($row['account_key'] ?? '')));
             if ($account === '') {
                 $account = 'ROW:'.$rowIndex;
@@ -866,9 +1199,10 @@ final class LandingMicroPerformanceService
             $totalAmount = (float) collect($role['statuses'])->sum('amount');
 
             $role['statuses'] = collect($role['statuses'])->map(function (array $status) use ($totalPeople, $totalAccounts, $totalAmount): array {
-                $people = array_values($status['people']);
+                $people = collect($status['people'])->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)->values()->all();
+                $referencePeople = collect($status['reference_people'])->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)->values()->all();
                 $accounts = count($status['accounts']);
-                unset($status['accounts']);
+                unset($status['accounts'], $status['reference_people']);
 
                 return array_merge($status, [
                     'pemutus' => count($people),
@@ -877,6 +1211,7 @@ final class LandingMicroPerformanceService
                     'putus_share' => $totalAccounts > 0 ? ($accounts / $totalAccounts) * 100 : 0.0,
                     'amount_share' => $totalAmount > 0.0 ? ((float) $status['amount'] / $totalAmount) * 100 : 0.0,
                     'people' => $people,
+                    'reference_people' => $referencePeople,
                 ]);
             })->values()->all();
             $role['available'] = $totalPeople > 0;
@@ -895,7 +1230,7 @@ final class LandingMicroPerformanceService
             'available' => collect($roles)->contains(fn (array $role): bool => $role['available']),
             'default_role' => (string) ($defaultRole['key'] ?? 'mbm'),
             'roles' => $roles,
-            'source' => 'PDWK MBM dan Kaunit.xlsx',
+            'source' => 'PDWK MBM & KEPALA UNIT_2026 07 31.xlsx',
         ];
     }
 
@@ -1549,7 +1884,17 @@ final class LandingMicroPerformanceService
             return;
         }
 
-        $query->whereRaw("UPPER(TRIM(COALESCE({$prefix}segmen_dashboard, ''))) LIKE '%MICRO%'");
+        if ($this->hasColumn(self::SOURCE_TABLE, 'segmen_dashboard')) {
+            $query->whereRaw("UPPER(TRIM(COALESCE({$prefix}segmen_dashboard, ''))) LIKE '%MICRO%'");
+
+            return;
+        }
+
+        if ($this->hasColumn(self::SOURCE_TABLE, 'segmen')) {
+            $query->whereRaw("UPPER(TRIM(COALESCE({$prefix}segmen, ''))) LIKE '%MICRO%'");
+
+            return;
+        }
     }
 
     private function microProductLabel(string $product): string
@@ -1575,9 +1920,14 @@ final class LandingMicroPerformanceService
         $prefix = $alias === '' ? '' : rtrim($alias, '.').'.';
         if ($this->hasColumn(self::SOURCE_TABLE, 'cabang_normalized')) {
             $branches = $branchScope !== null
-                ? [strtoupper((string) ($branchScope['upper_label'] ?? '')), strtoupper((string) ($branchScope['plain_label'] ?? ''))]
+                ? array_filter([
+                    strtoupper(trim((string) ($branchScope['upper_label'] ?? ''))),
+                    strtoupper(trim((string) ($branchScope['label'] ?? ''))),
+                    strtoupper(trim((string) ($branchScope['plain_label'] ?? ''))),
+                    'KC '.strtoupper(trim((string) ($branchScope['plain_label'] ?? ''))),
+                ])
                 : collect(self::AREA_BRANCHES)->flatMap(fn (string $branch): array => ['KC '.$branch, $branch])->all();
-            $query->whereIn($prefix.'cabang_normalized', array_values(array_filter(array_unique($branches))));
+            $query->whereIn($prefix.'cabang_normalized', array_values(array_unique($branches)));
 
             return;
         }
@@ -1645,26 +1995,37 @@ final class LandingMicroPerformanceService
         string $period,
         array $realizationRows,
         array $netRows,
-        ?array $branchScope
+        ?array $branchScope,
+        ?Collection $roster = null
     ): array {
-        $roster = $this->mantriRoster($branchScope);
+        $roster ??= $this->mantriRoster($branchScope);
+        $eligiblePns = $roster->pluck('pn')
+            ->filter()
+            ->mapWithKeys(static fn (string $pn): array => [$pn => true]);
+        $belongsToActiveRoster = fn (object $row): bool => $eligiblePns->has(
+            $this->normalisePn((string) ($row->manager_pn ?? $row->manager_raw ?? ''))
+        );
+        $rosterRealizationRows = array_values(array_filter($realizationRows, $belongsToActiveRoster));
+        $rosterNetRows = array_values(array_filter($netRows, $belongsToActiveRoster));
+        $excludedRealizationRows = array_values(array_filter($realizationRows, fn (object $row): bool => ! $belongsToActiveRoster($row)));
+        $excludedNetRows = array_values(array_filter($netRows, fn (object $row): bool => ! $belongsToActiveRoster($row)));
         $dailyRealizationRows = array_values(array_filter(
-            $realizationRows,
+            $rosterRealizationRows,
             fn (object $row): bool => substr(trim((string) ($row->realization_date ?? '')), 0, 10) === $period
         ));
         $dailyNetRows = array_values(array_filter(
-            $netRows,
+            $rosterNetRows,
             fn (object $row): bool => substr(trim((string) ($row->realization_date ?? '')), 0, 10) === $period
         ));
         $workingDays = $this->workingDays(
             Carbon::parse($period)->startOfMonth()->toDateString(),
             $period
         );
-        $netByManager = $this->managerMetrics($netRows, 'net_amount');
+        $netByManager = $this->managerMetrics($rosterNetRows, 'net_amount');
         $dailyRealizationByBranch = $this->branchMetrics($dailyRealizationRows);
         $dailyNetByBranch = $this->branchMetrics($dailyNetRows, 'net_amount');
-        $realizationByBranch = $this->branchMetrics($realizationRows);
-        $netByBranch = $this->branchMetrics($netRows, 'net_amount');
+        $realizationByBranch = $this->branchMetrics($rosterRealizationRows);
+        $netByBranch = $this->branchMetrics($rosterNetRows, 'net_amount');
         $branchCodes = $this->branchCodeMap($period, $branchScope);
         $branchLabels = $branchScope !== null
             ? [$this->branchLabel((string) ($branchScope['upper_label'] ?? $branchScope['label'] ?? ''))]
@@ -1701,14 +2062,16 @@ final class LandingMicroPerformanceService
             $roster,
             $this->loanMetrics($dailyRealizationRows),
             $this->loanMetrics($dailyNetRows, 'net_amount'),
-            $this->loanMetrics($realizationRows),
-            $this->loanMetrics($netRows, 'net_amount'),
+            $this->loanMetrics($rosterRealizationRows),
+            $this->loanMetrics($rosterNetRows, 'net_amount'),
             $netByManager,
             $workingDays
         );
+        $excludedRealization = $this->loanMetrics($excludedRealizationRows);
+        $excludedNet = $this->loanMetrics($excludedNetRows, 'net_amount');
 
         return [
-            'available' => $roster->isNotEmpty() || $realizationRows !== [] || $netRows !== [],
+            'available' => $roster->isNotEmpty() || $rosterRealizationRows !== [] || $rosterNetRows !== [],
             'working_days' => $workingDays,
             'daily_period' => $period,
             'daily_period_label' => Carbon::parse($period)->translatedFormat('d M Y'),
@@ -1716,6 +2079,17 @@ final class LandingMicroPerformanceService
             'accumulation_label' => Carbon::parse($period)->startOfMonth()->translatedFormat('d M').' - '.Carbon::parse($period)->translatedFormat('d M Y'),
             'rows' => $rows->all(),
             'total' => $total,
+            'excluded_non_roster' => [
+                'realization' => [
+                    'deb' => count($excludedRealization['accounts']),
+                    'amount' => (float) $excludedRealization['amount'],
+                ],
+                'net_disbursement' => [
+                    'deb' => count($excludedNet['accounts']),
+                    'amount' => (float) $excludedNet['amount'],
+                ],
+            ],
+            'source' => 'Daily Loan Dinamis khusus pengelola yang terdaftar sebagai Mantri aktif BRIHC',
         ];
     }
 
@@ -1796,10 +2170,12 @@ final class LandingMicroPerformanceService
             'label' => $label,
             'mantri' => 0,
             'share' => 0.0,
+            'people' => [],
         ])->all();
 
         foreach ($people as $person) {
-            $amount = (float) data_get($netByManager, $person['pn'].'.amount', 0.0);
+            $managerMetric = $netByManager[(string) ($person['pn'] ?? '')] ?? ['amount' => 0.0, 'accounts' => []];
+            $amount = (float) ($managerMetric['amount'] ?? 0.0);
             $key = match (true) {
                 $amount <= 0.0 => 'none',
                 $category === 'contract' && $amount < 350_000_000 => 'extreme_low',
@@ -1812,11 +2188,26 @@ final class LandingMicroPerformanceService
                 default => 'high',
             };
             $buckets[$key]['mantri']++;
+            $buckets[$key]['people'][] = [
+                'pn' => (string) ($person['pn'] ?? ''),
+                'name' => (string) ($person['name'] ?? ''),
+                'branch' => (string) ($person['branch'] ?? ''),
+                'unit' => (string) ($person['unit'] ?? ''),
+                'net_amount' => $amount,
+                'net_deb' => count((array) ($managerMetric['accounts'] ?? [])),
+            ];
         }
 
         $total = $people->count();
         foreach ($buckets as &$bucket) {
             $bucket['share'] = $total > 0 ? ((int) $bucket['mantri'] / $total) * 100 : 0.0;
+            usort($bucket['people'], static function (array $left, array $right): int {
+                $byAmount = (float) $right['net_amount'] <=> (float) $left['net_amount'];
+
+                return $byAmount !== 0
+                    ? $byAmount
+                    : strcmp($left['name'].'|'.$left['pn'], $right['name'].'|'.$right['pn']);
+            });
         }
         unset($bucket);
 
@@ -1887,8 +2278,61 @@ final class LandingMicroPerformanceService
         return $metric;
     }
 
-    /** @param array<string, mixed>|null $branchScope */
-    private function mantriRoster(?array $branchScope): Collection
+    /**
+     * Daily Loan Dinamis menetapkan penempatan Mantri periode berjalan.
+     * BRIHC hanya melengkapi kategori, nama cadangan, dan tanggal mulai jabatan
+     * untuk kebutuhan pembacaan histori produktivitas.
+     *
+     * @param  array<string, mixed>|null  $branchScope
+     * @return Collection<int, array<string, string>>
+     */
+    private function mantriRoster(?array $branchScope, ?string $period = null): Collection
+    {
+        $references = $this->mantriReferenceRoster($branchScope);
+        $dailyAssignments = $period === null ? collect() : $this->dailyMantriAssignments($period, $branchScope);
+        if ($dailyAssignments->isEmpty()) {
+            return $references;
+        }
+
+        $referencesByIdentity = $references->groupBy(fn (array $person): string => $this->mantriRosterIdentityKey($person));
+        $dailyIdentities = $dailyAssignments
+            ->mapWithKeys(fn (array $person): array => [$this->mantriRosterIdentityKey($person) => true]);
+        $dailyRoster = $dailyAssignments
+            ->map(function (array $assignment) use ($referencesByIdentity): ?array {
+                $candidates = $referencesByIdentity->get($this->mantriRosterIdentityKey($assignment), collect());
+                $reference = $candidates->first(
+                    fn (array $person): bool => $this->mantriAssignmentKey($person) === $this->mantriAssignmentKey($assignment)
+                );
+                if (! is_array($reference) && $candidates->count() === 1) {
+                    $reference = $candidates->first();
+                }
+                if (! is_array($reference)) {
+                    return null;
+                }
+
+                $dailyName = trim((string) ($assignment['name'] ?? ''));
+
+                return array_merge($reference, [
+                    'name' => $dailyName !== '' ? $dailyName : (string) ($reference['name'] ?? ''),
+                    'branch' => (string) $assignment['branch'],
+                    'unit' => (string) $assignment['unit'],
+                    'roster_source' => 'daily_loan_current_assignment',
+                ]);
+            })
+            ->filter()
+            ->values();
+
+        // Mantri aktif yang belum memegang rekening pada snapshot Daily Loan
+        // tetap hadir sebagai roster BRIHC, tetapi histori mereka dijaga oleh TMT jabatan.
+        return $dailyRoster
+            ->concat($references->reject(fn (array $person): bool => $dailyIdentities->has($this->mantriRosterIdentityKey($person))))
+            ->sortBy(fn (array $row): string => $row['branch'].'|'.$row['pn'])
+            ->unique(fn (array $row): string => $this->mantriRosterIdentityKey($row))
+            ->values();
+    }
+
+    /** @param array<string, mixed>|null $branchScope @return Collection<int, array<string, string>> */
+    private function mantriReferenceRoster(?array $branchScope): Collection
     {
         if (! $this->hasTable('brihc_pemasar')) {
             return collect();
@@ -1903,6 +2347,8 @@ final class LandingMicroPerformanceService
             isset($available['positiondesc']) ? 'positiondesc' : null,
             isset($available['orgdesc']) ? 'orgdesc' : null,
             isset($available['psadesc']) ? 'psadesc' : null,
+            isset($available['tmt_jabatan']) ? 'tmt_jabatan' : null,
+            isset($available['tmt_masuk']) ? 'tmt_masuk' : null,
         ]));
         if (! in_array('positiondesc', $columns, true) || ! in_array('psadesc', $columns, true)) {
             return collect();
@@ -1939,7 +2385,13 @@ final class LandingMicroPerformanceService
                     'pn' => $pn,
                     'name' => trim((string) ($row->completename ?? '')),
                     'branch' => $branch,
+                    'unit' => trim((string) ($row->orgdesc ?? '')),
                     'category' => $category,
+                    'history_start' => $this->mantriHistoryStartDate(
+                        $row->tmt_jabatan ?? null,
+                        $row->tmt_masuk ?? null
+                    ),
+                    'roster_source' => 'brihc_active_reference',
                 ];
             })
             ->filter()
@@ -1951,6 +2403,350 @@ final class LandingMicroPerformanceService
             ->sortBy(fn (array $row): string => $row['branch'].'|'.$row['pn'])
             ->unique('pn')
             ->values();
+    }
+
+    /** @param array<string, mixed>|null $branchScope @return Collection<int, array<string, string>> */
+    private function dailyMantriAssignments(string $period, ?array $branchScope): Collection
+    {
+        if (! $this->hasColumn(self::SOURCE_TABLE, 'pn_pengelola1')) {
+            return collect();
+        }
+
+        $columns = ['pn_pengelola1', 'cabang1', 'unit1'];
+        if ($this->hasColumn(self::SOURCE_TABLE, 'cabang_normalized')) {
+            $columns[] = 'cabang_normalized';
+        }
+        if ($this->hasColumn(self::SOURCE_TABLE, 'pn_name1')) {
+            $columns[] = 'pn_name1';
+        }
+
+        $query = DB::table(self::SOURCE_TABLE)
+            ->where('periode', $period)
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '')
+            ->select($columns);
+        $this->applyDailyMicroFilter($query);
+        $this->applyDailyBranchFilter($query, '', $branchScope);
+
+        return $query->get()
+            ->map(function (object $row): ?array {
+                $pn = $this->normalisePn((string) ($row->pn_pengelola1 ?? ''));
+                $branch = $this->branchLabel((string) ($row->cabang_normalized ?? $row->cabang1 ?? ''));
+                $unit = trim((string) ($row->unit1 ?? ''));
+                if ($pn === '' || $branch === '' || $unit === '') {
+                    return null;
+                }
+
+                return [
+                    'pn' => $pn,
+                    'name' => $this->dailyMantriName((string) ($row->pn_name1 ?? ''), $pn),
+                    'branch' => $branch,
+                    'unit' => $unit,
+                ];
+            })
+            ->filter()
+            ->groupBy(fn (array $row): string => $row['branch'].'|'.$row['pn'])
+            ->map(function (Collection $rows): array {
+                return $rows
+                    ->sortBy(fn (array $row): string => $this->mantriAssignmentKey($row).'|'.strtoupper($row['name']))
+                    ->first();
+            })
+            ->values();
+    }
+
+    /** @param array<string, string> $person */
+    private function mantriAssignmentKey(array $person): string
+    {
+        $branch = $this->branchLabel((string) ($person['branch'] ?? ''));
+        $unit = preg_replace('/[^A-Z0-9]+/', '', strtoupper((string) ($person['unit'] ?? ''))) ?? '';
+
+        return $branch.'|'.$unit;
+    }
+
+    /** @param array<string, string> $person */
+    private function mantriRosterIdentityKey(array $person): string
+    {
+        return $this->branchLabel((string) ($person['branch'] ?? '')).'|'.(string) ($person['pn'] ?? '');
+    }
+
+    private function dailyMantriName(string $rawName, string $pn): string
+    {
+        $name = trim($rawName);
+        if (preg_match('/^\s*0*'.preg_quote($pn, '/').'\s*-+\s*(.+)$/u', $name, $matches) === 1) {
+            return trim($matches[1]);
+        }
+
+        return preg_match('/^\s*0*\d+\s*$/', $name) === 1 ? '' : $name;
+    }
+
+    private function mantriHistoryStartDate(mixed $tmtJabatan, mixed $tmtMasuk): string
+    {
+        foreach ([$tmtJabatan, $tmtMasuk] as $value) {
+            $date = trim((string) $value);
+            if ($date === '') {
+                continue;
+            }
+
+            try {
+                return Carbon::parse($date)->toDateString();
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Mengikuti definisi landing SME: hanya bulan closing yang dihitung dan
+     * ketidakproduktifan harus terjadi berturut-turut dari closing terbaru.
+     * Snapshot RM dipakai sebagai agregat ringan; sumbernya tetap Daily Loan
+     * Dinamis. BRIHC hanya membatasi histori sebelum TMT jabatan Mantri aktif.
+     *
+     * @param  array<string, mixed>|null  $branchScope
+     * @param  Collection<int, array<string, string>>  $roster
+     * @return array<string, mixed>
+     */
+    private function buildUnproductiveMantri(
+        string $period,
+        ?array $branchScope,
+        Collection $roster
+    ): array {
+        $closedPeriods = $this->closedMicroPeriods($period, $branchScope, 6);
+        $definitions = [
+            'month_1' => ['label' => '1 bulan', 'minimum' => 1],
+            'month_3' => ['label' => '3 bulan berturut-turut', 'minimum' => 3],
+            'month_6' => ['label' => '6 bulan berturut-turut', 'minimum' => 6],
+        ];
+        $emptyMetrics = collect($definitions)->mapWithKeys(
+            static fn (array $definition, string $key): array => [$key => [
+                'key' => $key,
+                'label' => $definition['label'],
+                'count' => 0,
+                'percentage' => 0.0,
+                'monitored' => 0,
+                'enabled' => false,
+                'mantri' => [],
+            ]]
+        )->all();
+
+        if (
+            $closedPeriods->isEmpty()
+            || $roster->isEmpty()
+            || ! $this->hasTable(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+            || ! collect(['periode', 'cabang', 'unit', 'rm', 'segmen', 'realisasi_os'])
+                ->every(fn (string $column): bool => $this->hasColumn(self::PERFORMANCE_RM_SNAPSHOT_TABLE, $column))
+        ) {
+            return [
+                'available' => false,
+                'period_label' => '-',
+                'total_mantri' => $roster->count(),
+                'closed_periods' => [],
+                'totals' => $emptyMetrics,
+                'branches' => [],
+                'source' => 'Performance RM Snapshot - Daily Loan Dinamis',
+            ];
+        }
+
+        $snapshotQuery = DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+            ->whereIn('periode', $closedPeriods->all())
+            ->whereRaw("UPPER(TRIM(COALESCE(segmen, ''))) = 'MICRO'");
+        $this->applyBranchFilter($snapshotQuery, 'cabang', $branchScope);
+
+        $snapshotRows = $snapshotQuery
+            ->select('periode', 'cabang', 'rm')
+            ->selectRaw('SUM(COALESCE(realisasi_os, 0)) as realization_amount')
+            ->groupBy('periode', 'cabang', 'rm')
+            ->get();
+        $coveredPeriods = $snapshotRows
+            ->pluck('periode')
+            ->map(static fn ($value): string => Carbon::parse((string) $value)->toDateString())
+            ->unique()
+            ->flip();
+        $consecutivePeriods = collect();
+        foreach ($closedPeriods as $closedPeriod) {
+            if (! $coveredPeriods->has($closedPeriod)) {
+                break;
+            }
+            $consecutivePeriods->push($closedPeriod);
+        }
+        $closedPeriods = $consecutivePeriods;
+        if ($closedPeriods->isEmpty()) {
+            return [
+                'available' => false,
+                'period_label' => '-',
+                'total_mantri' => $roster->count(),
+                'closed_periods' => [],
+                'totals' => $emptyMetrics,
+                'branches' => [],
+                'source' => 'Performance RM Snapshot - Daily Loan Dinamis',
+            ];
+        }
+
+        $coverage = $snapshotRows->reduce(function (array $carry, object $row): array {
+            $periodKey = Carbon::parse((string) ($row->periode ?? ''))->toDateString();
+            $branchKey = $this->branchLabel((string) ($row->cabang ?? ''));
+            $carry[$branchKey.'|'.$periodKey] = true;
+
+            return $carry;
+        }, []);
+        $activity = $snapshotRows->reduce(function (array $carry, object $row): array {
+            $pn = $this->normalisePn((string) ($row->rm ?? ''));
+            if ($pn === '') {
+                return $carry;
+            }
+
+            $key = implode('|', [
+                (string) ($row->periode ?? ''),
+                $this->branchLabel((string) ($row->cabang ?? '')),
+                $pn,
+            ]);
+            $carry[$key] = (float) ($carry[$key] ?? 0.0)
+                + (float) ($row->realization_amount ?? 0.0);
+
+            return $carry;
+        }, []);
+
+        $eligible = $roster
+            ->map(function (array $person) use ($closedPeriods, $activity, $coverage): array {
+                $eligiblePeriods = $closedPeriods->filter(
+                    fn (string $closedPeriod): bool => $this->isMantriEligibleAtClosing($person, $closedPeriod)
+                )->values();
+                $coveredMonths = 0;
+                foreach ($eligiblePeriods as $closedPeriod) {
+                    if (! isset($coverage[$person['branch'].'|'.$closedPeriod])) {
+                        break;
+                    }
+                    $coveredMonths++;
+                }
+
+                $inactiveMonths = 0;
+                foreach ($eligiblePeriods as $closedPeriod) {
+                    if ($inactiveMonths >= $coveredMonths) {
+                        break;
+                    }
+                    $activityKey = implode('|', [$closedPeriod, $person['branch'], $person['pn']]);
+                    if (abs((float) ($activity[$activityKey] ?? 0.0)) > 0.001) {
+                        break;
+                    }
+                    $inactiveMonths++;
+                }
+
+                return array_merge($person, [
+                    'covered_months' => $coveredMonths,
+                    'inactive_months' => $inactiveMonths,
+                    'eligible_closed_periods' => $eligiblePeriods->all(),
+                ]);
+            })
+            ->sortBy(fn (array $person): string => implode('|', [
+                $person['branch'],
+                strtoupper((string) ($person['unit'] ?? '')),
+                strtoupper((string) ($person['name'] ?? '')),
+                $person['pn'],
+            ]))
+            ->values();
+
+        $metricBuilder = static function (Collection $people) use ($definitions, $closedPeriods): array {
+            $metrics = [];
+            foreach ($definitions as $key => $definition) {
+                $minimum = (int) $definition['minimum'];
+                $monitoredPeople = $people
+                    ->filter(static fn (array $person): bool => (int) ($person['covered_months'] ?? 0) >= $minimum)
+                    ->values();
+                $enabled = $closedPeriods->count() >= $minimum && $monitoredPeople->isNotEmpty();
+                $matches = $enabled
+                    ? $monitoredPeople->filter(static fn (array $person): bool => (int) ($person['inactive_months'] ?? 0) >= $minimum)->values()
+                    : collect();
+                $metrics[$key] = [
+                    'key' => $key,
+                    'label' => $definition['label'],
+                    'count' => $matches->count(),
+                    'percentage' => $monitoredPeople->isNotEmpty() ? ($matches->count() / $monitoredPeople->count()) * 100 : 0.0,
+                    'monitored' => $monitoredPeople->count(),
+                    'enabled' => $enabled,
+                    'mantri' => $matches->all(),
+                ];
+            }
+
+            return $metrics;
+        };
+        $branchLabels = $branchScope !== null
+            ? [$this->branchLabel((string) ($branchScope['upper_label'] ?? $branchScope['label'] ?? ''))]
+            : array_map(fn (string $branch): string => 'KC '.$branch, self::AREA_BRANCHES);
+        $oldestPeriod = (string) $closedPeriods->last();
+        $latestPeriod = (string) $closedPeriods->first();
+
+        return [
+            'available' => true,
+            'period_label' => Carbon::parse($oldestPeriod)->translatedFormat('M y')
+                .' - '.Carbon::parse($latestPeriod)->translatedFormat('M y'),
+            'total_mantri' => $eligible->count(),
+            'closed_periods' => $closedPeriods
+                ->map(fn (string $closedPeriod): array => [
+                    'period' => $closedPeriod,
+                    'label' => Carbon::parse($closedPeriod)->translatedFormat('M y'),
+                ])
+                ->all(),
+            'totals' => $metricBuilder($eligible),
+            'branches' => collect($branchLabels)->map(function (string $branch) use ($eligible, $metricBuilder): array {
+                $people = $eligible->where('branch', $branch)->values();
+
+                return [
+                    'branch' => $branch,
+                    'total_mantri' => $people->count(),
+                    'metrics' => $metricBuilder($people),
+                ];
+            })->all(),
+            'source' => 'Performance RM Snapshot - Daily Loan Dinamis dengan guard TMT BRIHC',
+        ];
+    }
+
+    /** @param array<string, string> $person */
+    private function isMantriEligibleAtClosing(array $person, string $closedPeriod): bool
+    {
+        $historyStart = trim((string) ($person['history_start'] ?? ''));
+        if ($historyStart === '') {
+            return true;
+        }
+
+        try {
+            return Carbon::parse($closedPeriod)->endOfMonth()->greaterThanOrEqualTo(Carbon::parse($historyStart)->startOfDay());
+        } catch (\Throwable) {
+            return true;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $branchScope
+     * @return Collection<int, string> Closing terbaru ke terlama.
+     */
+    private function closedMicroPeriods(string $period, ?array $branchScope, int $limit): Collection
+    {
+        $selected = Carbon::parse($period)->startOfDay();
+        $cursor = $selected->copy()->startOfMonth();
+        if (! $selected->isLastOfMonth()) {
+            $cursor->subMonthNoOverflow();
+        }
+
+        $periods = collect();
+        for ($month = 0; $month < $limit; $month++) {
+            $monthStart = $cursor->copy()->startOfMonth();
+            $monthEnd = $cursor->copy()->endOfMonth();
+            $query = $this->periodLookupQuery()
+                ->whereBetween('periode', [$monthStart->toDateString(), $monthEnd->toDateString()]);
+            $this->applyDailyMicroFilter($query);
+            $this->applyDailyBranchFilter($query, '', $branchScope);
+            $candidate = $query->max('periode');
+
+            if ($candidate === null || ! Carbon::parse((string) $candidate)->isSameDay($monthEnd)) {
+                break;
+            }
+
+            $periods->push(Carbon::parse((string) $candidate)->toDateString());
+            $cursor->subMonthNoOverflow();
+        }
+
+        return $periods->values();
     }
 
     /** @param array<string, mixed>|null $branchScope */
@@ -2159,15 +2955,14 @@ final class LandingMicroPerformanceService
         $rka = is_finite($rka) ? max(0.0, $rka) : 0.0;
         $runOffAmount = is_finite($runOffAmount) ? max(0.0, $runOffAmount) : 0.0;
         $signedRkaGap = $rka > 0.0 ? $rka - $currentOs : 0.0;
-        $rkaGap = max(0.0, $signedRkaGap);
-        $totalNeed = $rkaGap + $runOffAmount;
+        $totalNeed = $signedRkaGap + $runOffAmount;
         $needPerMantri = $headcount > 0 ? $totalNeed / $headcount : 0.0;
 
         return [
             'current_os' => $currentOs,
             'rka' => $rka,
             'signed_rka_gap' => $signedRkaGap,
-            'rka_gap' => $rkaGap,
+            'rka_gap' => $signedRkaGap,
             'run_off' => $runOffAmount,
             'total_need' => $totalNeed,
             'total_mantri' => max(0, $headcount),
@@ -2493,6 +3288,20 @@ final class LandingMicroPerformanceService
             'realization' => [
                 'available' => false,
                 'total' => ['deb' => 0, 'amount' => 0.0],
+                'mantri' => ['eligible' => 0, 'realized' => 0, 'not_realized' => 0],
+                'mantri_roster' => [
+                    'total_active' => 0,
+                    'pt' => 0,
+                    'contract' => 0,
+                    'briguna' => 0,
+                    'kupedes_eligible' => 0,
+                    'kupedes_realized' => 0,
+                    'kupedes_not_realized' => 0,
+                    'daily_placement_matched' => 0,
+                    'branches' => [],
+                    'source' => 'BRIHC aktif dipadukan dengan penempatan dan realisasi Daily Loan Dinamis',
+                ],
+                'kupedes_not_realized' => [],
                 'types' => [],
                 'products' => [],
                 'patterns' => [],
@@ -2545,6 +3354,7 @@ final class LandingMicroPerformanceService
                     ->all(),
                 'error' => 'Sumber RKA dan Run Off belum tersedia.',
             ],
+            'ph' => $this->emptyPhSummary(),
             'mantri_performance' => [
                 'available' => false,
                 'working_days' => 0,
@@ -2561,6 +3371,342 @@ final class LandingMicroPerformanceService
                 'units' => ['os' => [], 'sml' => [], 'npl' => []],
                 'branches' => null,
             ],
+            'unproductive_mantri' => [
+                'available' => false,
+                'period_label' => '-',
+                'total_mantri' => 0,
+                'closed_periods' => [],
+                'totals' => collect([
+                    'month_1' => '1 bulan',
+                    'month_3' => '3 bulan berturut-turut',
+                    'month_6' => '6 bulan berturut-turut',
+                ])->mapWithKeys(static fn (string $label, string $key): array => [$key => [
+                    'key' => $key,
+                    'label' => $label,
+                    'count' => 0,
+                    'percentage' => 0.0,
+                    'monitored' => 0,
+                    'enabled' => false,
+                    'mantri' => [],
+                ]])->all(),
+                'branches' => [],
+                'source' => 'Performance RM Snapshot - Daily Loan Dinamis',
+            ],
+            'billing' => [
+                'available' => false,
+                'period' => null,
+                'current_day' => 0,
+                'days_in_month' => 0,
+                'm0' => [],
+                'm1' => [],
+                'cards' => [],
+            ],
+        ];
+    }
+
+    /**
+     * Jadwal & realisasi billing mikro harian berdasarkan Next Payment Date (NPD)
+     * beserta tolak ukur komparasi bulan sebelumnya (M-1).
+     *
+     * @param  array<string, mixed>|null  $branchScope
+     * @return array<string, mixed>
+     */
+    public function billingSchedule(?array $branchScope, ?string $period = null, ?string $previousPeriod = null): array
+    {
+        if (! $this->hasTable(self::SOURCE_TABLE) || ! $this->hasColumn(self::SOURCE_TABLE, 'next_pmt_date')) {
+            return [
+                'available' => false,
+                'period' => null,
+                'current_day' => 0,
+                'days_in_month' => 0,
+                'm0' => [],
+                'm1' => [],
+                'cards' => [],
+            ];
+        }
+
+        $period = $period ?? $this->resolvePeriod(null, $branchScope);
+        if ($period === null) {
+            return [
+                'available' => false,
+                'period' => null,
+                'current_day' => 0,
+                'days_in_month' => 0,
+                'm0' => [],
+                'm1' => [],
+                'cards' => [],
+            ];
+        }
+
+        $currentCarbon = Carbon::parse($period);
+        $m0Start = $currentCarbon->copy()->startOfMonth()->toDateString();
+        $m0End = $currentCarbon->copy()->endOfMonth()->toDateString();
+        $m0DaysCount = $currentCarbon->daysInMonth;
+        $m0CurrentDay = (int) $currentCarbon->format('d');
+        $m0MonthLabel = $currentCarbon->translatedFormat('F Y');
+
+        $m0Baseline = $previousPeriod ?? $this->resolvePeriodBefore($m0Start, $branchScope);
+        if ($m0Baseline === null) {
+            $hasRows = DB::table(self::SOURCE_TABLE)
+                ->where('periode', $period)
+                ->whereBetween('next_pmt_date', [$m0Start, $m0End])
+                ->exists();
+            if ($hasRows) {
+                $m0Baseline = $period;
+            } else {
+                return [
+                    'available' => false,
+                    'period' => $period,
+                    'current_day' => $m0CurrentDay,
+                    'days_in_month' => $m0DaysCount,
+                    'm0' => [],
+                    'm1' => [],
+                    'cards' => [],
+                ];
+            }
+        }
+
+        $driver = DB::connection()->getDriverName();
+        $dayFn = static fn (string $col): string => $driver === 'sqlite'
+            ? "CAST(strftime('%d', {$col}) AS INTEGER)"
+            : "DAY({$col})";
+
+        // 1. Query M0 Scheduled Billing from baseline
+        $m0BillingQuery = DB::table(self::SOURCE_TABLE)
+            ->where('periode', $m0Baseline)
+            ->whereBetween('next_pmt_date', [$m0Start, $m0End]);
+        $this->applyDailyMicroFilter($m0BillingQuery);
+        $this->applyDailyBranchFilter($m0BillingQuery, '', $branchScope);
+
+        $m0BillingRows = $m0BillingQuery
+            ->selectRaw("{$dayFn('next_pmt_date')} as day, COUNT(*) as debitur, SUM(baki_debet1) as os")
+            ->groupBy('day')
+            ->get()
+            ->keyBy('day');
+
+        // 2. Query M0 Paid debtors as of $period
+        $m0PaidQuery = DB::table(self::SOURCE_TABLE.' as a')
+            ->leftJoin(self::SOURCE_TABLE.' as b', function ($join) use ($period): void {
+                $join->on('a.nomor_rekening1', '=', 'b.nomor_rekening1')
+                    ->where('b.periode', '=', $period);
+            })
+            ->where('a.periode', $m0Baseline)
+            ->whereBetween('a.next_pmt_date', [$m0Start, $m0End])
+            ->where(function (Builder $q): void {
+                $q->whereNull('b.nomor_rekening1')
+                    ->orWhereColumn('b.next_pmt_date', '>', 'a.next_pmt_date');
+            });
+        $this->applyDailyMicroFilter($m0PaidQuery, 'a');
+        $this->applyDailyBranchFilter($m0PaidQuery, 'a', $branchScope);
+
+        $m0PaidRows = $m0PaidQuery
+            ->selectRaw("{$dayFn('a.next_pmt_date')} as day, COUNT(*) as debitur, SUM(a.baki_debet1) as os")
+            ->groupBy('day')
+            ->get()
+            ->keyBy('day');
+
+        // 3. Resolve M-1 baseline & completed period
+        // Anchor at the first day before subtracting a month so dates such as
+        // 31 May cannot overflow back into May when resolving April.
+        $m1Month = $currentCarbon->copy()->startOfMonth()->subMonth();
+        $m1Start = $m1Month->copy()->startOfMonth()->toDateString();
+        $m1End = $m1Month->copy()->endOfMonth()->toDateString();
+        $m1DaysCount = Carbon::parse($m1Start)->daysInMonth;
+        $m1MonthLabel = Carbon::parse($m1Start)->translatedFormat('F Y');
+        $m1SettledPeriod = $m0Baseline;
+        $m1Baseline = $this->resolvePeriodBefore($m1Start, $branchScope);
+
+        $m1BillingRows = collect();
+        $m1PaidRows = collect();
+
+        if ($m1Baseline !== null && $m1SettledPeriod !== null) {
+            $m1BillQ = DB::table(self::SOURCE_TABLE)
+                ->where('periode', $m1Baseline)
+                ->whereBetween('next_pmt_date', [$m1Start, $m1End]);
+            $this->applyDailyMicroFilter($m1BillQ);
+            $this->applyDailyBranchFilter($m1BillQ, '', $branchScope);
+
+            $m1BillingRows = $m1BillQ
+                ->selectRaw("{$dayFn('next_pmt_date')} as day, COUNT(*) as debitur, SUM(baki_debet1) as os")
+                ->groupBy('day')
+                ->get()
+                ->keyBy('day');
+
+            $m1PaidQ = DB::table(self::SOURCE_TABLE.' as a')
+                ->leftJoin(self::SOURCE_TABLE.' as b', function ($join) use ($m1SettledPeriod): void {
+                    $join->on('a.nomor_rekening1', '=', 'b.nomor_rekening1')
+                        ->where('b.periode', '=', $m1SettledPeriod);
+                })
+                ->where('a.periode', $m1Baseline)
+                ->whereBetween('a.next_pmt_date', [$m1Start, $m1End])
+                ->where(function (Builder $q): void {
+                    $q->whereNull('b.nomor_rekening1')
+                        ->orWhereColumn('b.next_pmt_date', '>', 'a.next_pmt_date');
+                });
+            $this->applyDailyMicroFilter($m1PaidQ, 'a');
+            $this->applyDailyBranchFilter($m1PaidQ, 'a', $branchScope);
+
+            $m1PaidRows = $m1PaidQ
+                ->selectRaw("{$dayFn('a.next_pmt_date')} as day, COUNT(*) as debitur, SUM(a.baki_debet1) as os")
+                ->groupBy('day')
+                ->get()
+                ->keyBy('day');
+        }
+
+        // 4. Build Days Array (1..$m0DaysCount)
+        $dailyCards = [];
+        $totalM0BillingDeb = 0;
+        $totalM0BillingOs = 0.0;
+        $totalM0PaidDeb = 0;
+        $totalM0PaidOs = 0.0;
+        $totalM0DueSoFarBillingDeb = 0;
+        $totalM0DueSoFarBillingOs = 0.0;
+
+        // Closing M-1 harus memakai seluruh hari di bulan M-1. Jangan menjumlahkannya
+        // di dalam kalender M0 karena jumlah hari antarbulan dapat berbeda
+        // (contoh: September 30 hari dibanding Agustus 31 hari).
+        $sumDebitur = static fn ($rows): int => (int) $rows->sum(
+            static fn ($row): int => (int) ($row->debitur ?? 0)
+        );
+        $sumOs = static fn ($rows): float => (float) $rows->sum(
+            static fn ($row): float => (float) ($row->os ?? 0.0)
+        );
+        $m1SameDayCutoff = min($m0CurrentDay, $m1DaysCount);
+        $m1BillingRowsDueSoFar = $m1BillingRows->filter(
+            static fn ($row, $day): bool => (int) $day <= $m1SameDayCutoff
+        );
+        $m1PaidRowsDueSoFar = $m1PaidRows->filter(
+            static fn ($row, $day): bool => (int) $day <= $m1SameDayCutoff
+        );
+
+        $totalM1BillingDeb = $sumDebitur($m1BillingRows);
+        $totalM1BillingOs = $sumOs($m1BillingRows);
+        $totalM1PaidDeb = $sumDebitur($m1PaidRows);
+        $totalM1PaidOs = $sumOs($m1PaidRows);
+        $totalM1DueSoFarBillingDeb = $sumDebitur($m1BillingRowsDueSoFar);
+        $totalM1DueSoFarBillingOs = $sumOs($m1BillingRowsDueSoFar);
+        $totalM1DueSoFarPaidDeb = $sumDebitur($m1PaidRowsDueSoFar);
+        $totalM1DueSoFarPaidOs = $sumOs($m1PaidRowsDueSoFar);
+
+        for ($d = 1; $d <= $m0DaysCount; $d++) {
+            $dateStr = sprintf('%s-%02d', substr($m0Start, 0, 7), $d);
+            $carbonDay = Carbon::parse($dateStr);
+            $dayOfWeek = (int) $carbonDay->format('N');
+            $isWeekend = ($dayOfWeek >= 6);
+
+            $m0Bill = $m0BillingRows->get($d);
+            $m0Paid = $m0PaidRows->get($d);
+
+            $bDeb = (int) ($m0Bill->debitur ?? 0);
+            $bOs = (float) ($m0Bill->os ?? 0.0);
+            $pDeb = (int) ($m0Paid->debitur ?? 0);
+            $pOs = (float) ($m0Paid->os ?? 0.0);
+
+            $totalM0BillingDeb += $bDeb;
+            $totalM0BillingOs += $bOs;
+
+            $isPast = ($d < $m0CurrentDay);
+            $isToday = ($d === $m0CurrentDay);
+            $isDue = ($d <= $m0CurrentDay);
+
+            if ($isDue) {
+                $totalM0PaidDeb += $pDeb;
+                $totalM0PaidOs += $pOs;
+                $totalM0DueSoFarBillingDeb += $bDeb;
+                $totalM0DueSoFarBillingOs += $bOs;
+            }
+
+            // Bandingkan dengan tanggal kalender yang sama di M-1. Jika tanggal
+            // M0 tidak tersedia di M-1 (mis. 31 vs bulan 30 hari), gunakan
+            // tanggal terakhir M-1 sebagai cutoff yang paling sebanding.
+            $comparisonDay = min($d, $m1DaysCount);
+            $comparisonDate = Carbon::parse($m1Start)->day($comparisonDay);
+            $m1Bill = $m1BillingRows->get($comparisonDay);
+            $m1Paid = $m1PaidRows->get($comparisonDay);
+
+            $m1bDeb = (int) ($m1Bill->debitur ?? 0);
+            $m1bOs = (float) ($m1Bill->os ?? 0.0);
+            $m1pDeb = (int) ($m1Paid->debitur ?? 0);
+            $m1pOs = (float) ($m1Paid->os ?? 0.0);
+
+            $pctDeb = $bDeb > 0 ? round(($pDeb / $bDeb) * 100, 1) : 0.0;
+            $pctOs = $bOs > 0 ? round(($pOs / $bOs) * 100, 1) : 0.0;
+
+            $m1PctDeb = $m1bDeb > 0 ? round(($m1pDeb / $m1bDeb) * 100, 1) : 0.0;
+            $m1PctOs = $m1bOs > 0 ? round(($m1pOs / $m1bOs) * 100, 1) : 0.0;
+
+            $status = $isToday ? 'today' : ($isPast ? 'past' : 'upcoming');
+
+            $dailyCards[] = [
+                'day' => $d,
+                'date' => $dateStr,
+                'day_name' => $carbonDay->translatedFormat('D'),
+                'is_weekend' => $isWeekend,
+                'status' => $status,
+                'is_past' => $isPast,
+                'is_today' => $isToday,
+                'is_due' => $isDue,
+                'comparison_day' => $comparisonDay,
+                'comparison_date' => $comparisonDate->toDateString(),
+                'comparison_date_label' => $comparisonDate->translatedFormat('d M'),
+                'comparison_date_adjusted' => $comparisonDay !== $d,
+                // M0
+                'billing_debitur' => $bDeb,
+                'billing_os' => $bOs,
+                'paid_debitur' => $pDeb,
+                'paid_os' => $pOs,
+                'pct_debitur' => $pctDeb,
+                'pct_os' => $pctOs,
+                // M-1
+                'm1_billing_debitur' => $m1bDeb,
+                'm1_billing_os' => $m1bOs,
+                'm1_paid_debitur' => $m1pDeb,
+                'm1_paid_os' => $m1pOs,
+                'm1_pct_debitur' => $m1PctDeb,
+                'm1_pct_os' => $m1PctOs,
+                // Delta vs M-1 for this day
+                'delta_pct_os' => round($pctOs - $m1PctOs, 1),
+                'delta_pct_deb' => round($pctDeb - $m1PctDeb, 1),
+            ];
+        }
+
+        return [
+            'available' => true,
+            'period' => $period,
+            'current_day' => $m0CurrentDay,
+            'days_in_month' => $m0DaysCount,
+            'm0' => [
+                'month_label' => $m0MonthLabel,
+                'baseline_period' => $m0Baseline,
+                'latest_period' => $period,
+                'total_billing_debitur' => $totalM0BillingDeb,
+                'total_billing_os' => $totalM0BillingOs,
+                'due_so_far_billing_debitur' => $totalM0DueSoFarBillingDeb,
+                'due_so_far_billing_os' => $totalM0DueSoFarBillingOs,
+                'paid_debitur' => $totalM0PaidDeb,
+                'paid_os' => $totalM0PaidOs,
+                'collection_rate_deb' => $totalM0DueSoFarBillingDeb > 0 ? round(($totalM0PaidDeb / $totalM0DueSoFarBillingDeb) * 100, 1) : 0.0,
+                'collection_rate_os' => $totalM0DueSoFarBillingOs > 0 ? round(($totalM0PaidOs / $totalM0DueSoFarBillingOs) * 100, 1) : 0.0,
+                'overall_progress_os' => $totalM0BillingOs > 0 ? round(($totalM0PaidOs / $totalM0BillingOs) * 100, 1) : 0.0,
+            ],
+            'm1' => [
+                'month_label' => $m1MonthLabel,
+                'baseline_period' => $m1Baseline,
+                'settled_period' => $m1SettledPeriod,
+                'total_billing_debitur' => $totalM1BillingDeb,
+                'total_billing_os' => $totalM1BillingOs,
+                'paid_debitur' => $totalM1PaidDeb,
+                'paid_os' => $totalM1PaidOs,
+                'due_so_far_paid_debitur' => $totalM1DueSoFarPaidDeb,
+                'due_so_far_paid_os' => $totalM1DueSoFarPaidOs,
+                'collection_rate_deb' => $totalM1BillingDeb > 0 ? round(($totalM1PaidDeb / $totalM1BillingDeb) * 100, 1) : 0.0,
+                'collection_rate_os' => $totalM1BillingOs > 0 ? round(($totalM1PaidOs / $totalM1BillingOs) * 100, 1) : 0.0,
+                'same_day_collection_rate_os' => $totalM1DueSoFarBillingOs > 0 ? round(($totalM1DueSoFarPaidOs / $totalM1DueSoFarBillingOs) * 100, 1) : 0.0,
+                'same_day_collection_rate_deb' => $totalM1DueSoFarBillingDeb > 0 ? round(($totalM1DueSoFarPaidDeb / $totalM1DueSoFarBillingDeb) * 100, 1) : 0.0,
+                'same_day_cutoff' => $m1SameDayCutoff,
+                'same_day_cutoff_label' => Carbon::parse($m1Start)->day($m1SameDayCutoff)->translatedFormat('d M Y'),
+            ],
+            'cards' => $dailyCards,
         ];
     }
 }

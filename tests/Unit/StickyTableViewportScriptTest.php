@@ -12,13 +12,8 @@ class StickyTableViewportScriptTest extends TestCase
             resource_path('views/report/partials/sticky-table-viewport-script.blade.php')
         );
 
-        $this->assertMatchesRegularExpression(
-            "/if \\(shouldUseCompactViewport\\(\\)\\) \\{\\s*"
-            ."wrapper\\.style\\.removeProperty\\('height'\\);\\s*"
-            ."wrapper\\.style\\.removeProperty\\('max-height'\\);\\s*"
-            .'return;\\s*}/',
-            $script
-        );
+        $this->assertStringContainsString("wrapper.style.height = 'auto';", $script);
+        $this->assertStringContainsString("wrapper.style.maxHeight = 'none';", $script);
     }
 
     public function test_observers_are_disconnected_during_internal_style_synchronization(): void

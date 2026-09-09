@@ -20,9 +20,11 @@ class ImportCleanupService
     private const DAILY_LOAN_SYNC_QUEUE = 'imports-high';
     private const DAILY_LOAN_TABLE = 'daily_loan_dinamis';
     private const DAILY_LOAN_REPORT_ID = 8;
+    private const LW321PN_REPORT_ID = 28;
     private const SSA_TABLES = ['ssa_simpanan', 'ssa_pinjaman'];
     private const IMMEDIATE_SYNC_TABLES = [
         self::DAILY_LOAN_TABLE,
+        'lw321pn',
         'ssa_simpanan',
         'hourly_dpk',
         'ssa_pinjaman',
@@ -37,6 +39,7 @@ class ImportCleanupService
     ];
     private const IMPORT_PERIOD_COLUMNS = [
         'daily_loan_dinamis' => 'periode',
+        'lw321pn' => 'periode',
         'simpanan_multipn' => 'posisi',
         'ssa_pinjaman' => 'month_day_year_of_periode',
         'ssa_simpanan' => 'Month_Day_Year_of_Posisi',
@@ -157,7 +160,11 @@ class ImportCleanupService
 
         try {
             $lock->block(2, function () use ($jobId, $normalizedTableName, $periodHint, $source, $pendingKey, $rerunKey, $resolvedQueue): void {
-                if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(self::SYNC_PENDING_TTL_MINUTES))) {
+                if (Cache::add(
+                    $pendingKey,
+                    $this->syncPendingMarker($normalizedTableName, $jobId),
+                    now()->addMinutes(self::SYNC_PENDING_TTL_MINUTES)
+                )) {
                     try {
                         SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $normalizedTableName, $periodHint, $source)
                             ->onQueue($resolvedQueue);
@@ -170,12 +177,26 @@ class ImportCleanupService
 
                 $pendingSince = Cache::get($pendingKey);
                 if ($this->isPendingMarkerStillFresh($pendingSince)) {
+                    // Import Excel melakukan dispatch ketika artefak selesai
+                    // dibersihkan dan ImportExecutionService memastikannya lagi
+                    // saat job terminal. Untuk LW321PN, keduanya merujuk job
+                    // dan periode yang sama sehingga materialisasi kedua hanya
+                    // menghapus lalu menulis ulang ratusan ribu baris identik.
+                    if ($normalizedTableName === 'lw321pn'
+                        && $this->isPendingMarkerForSameImportJob($pendingSince, $jobId)) {
+                        return;
+                    }
+
                     Cache::put($rerunKey, $resolvedQueue, now()->addMinutes(self::SYNC_PENDING_TTL_MINUTES));
                     return;
                 }
 
                 if (!$this->hasActiveQueuedSyncJob($normalizedTableName, $periodHint)) {
-                    Cache::put($pendingKey, now()->toIso8601String(), now()->addMinutes(self::SYNC_PENDING_TTL_MINUTES));
+                    Cache::put(
+                        $pendingKey,
+                        $this->syncPendingMarker($normalizedTableName, $jobId),
+                        now()->addMinutes(self::SYNC_PENDING_TTL_MINUTES)
+                    );
                     Cache::forget($rerunKey);
 
                     try {
@@ -263,7 +284,7 @@ class ImportCleanupService
         $normalized = trim((string) $queue);
         $normalizedTableName = $this->normalizeSyncScopeValue($tableName) ?? $this->resolveJobTableName($jobId);
 
-        if ($normalizedTableName === self::DAILY_LOAN_TABLE) {
+        if (in_array($normalizedTableName, [self::DAILY_LOAN_TABLE, 'lw321pn'], true)) {
             return self::DAILY_LOAN_SYNC_QUEUE;
         }
 
@@ -302,9 +323,11 @@ class ImportCleanupService
                 return $tableName;
             }
 
-            return (int) ($job->id_report ?? 0) === self::DAILY_LOAN_REPORT_ID
-                ? self::DAILY_LOAN_TABLE
-                : null;
+            return match ((int) ($job->id_report ?? 0)) {
+                self::DAILY_LOAN_REPORT_ID => self::DAILY_LOAN_TABLE,
+                self::LW321PN_REPORT_ID => 'lw321pn',
+                default => null,
+            };
         } catch (\Throwable $e) {
             Log::debug('Unable to resolve import job table for sync queue.', [
                 'job_id' => $jobId,
@@ -540,8 +563,33 @@ class ImportCleanupService
         }
     }
 
+    private function syncPendingMarker(string $tableName, int $jobId): string|array
+    {
+        $requestedAt = now()->toIso8601String();
+
+        if ($tableName !== 'lw321pn') {
+            return $requestedAt;
+        }
+
+        return [
+            'requested_at' => $requestedAt,
+            'import_job_id' => $jobId > 0 ? $jobId : null,
+        ];
+    }
+
+    private function isPendingMarkerForSameImportJob(mixed $pendingMarker, int $jobId): bool
+    {
+        return $jobId > 0
+            && is_array($pendingMarker)
+            && (int) ($pendingMarker['import_job_id'] ?? 0) === $jobId;
+    }
+
     private function isPendingMarkerStillFresh(mixed $pendingSince): bool
     {
+        if (is_array($pendingSince)) {
+            $pendingSince = $pendingSince['requested_at'] ?? null;
+        }
+
         if (!is_string($pendingSince) || trim($pendingSince) === '') {
             return true;
         }

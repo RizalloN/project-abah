@@ -7,11 +7,13 @@
     <div class="report-management-hero__glow"></div>
     <div class="d-flex align-items-center justify-content-between flex-wrap position-relative">
         <div class="pr-3">
-            <span class="report-management-hero__eyebrow">Kelola Report</span>
+            <span class="report-management-hero__eyebrow"><i class="fas fa-database mr-1"></i> Data Governance</span>
             <div class="report-management-hero__title"><i class="fas fa-layer-group mr-2"></i> Kelola Data Report</div>
-            <p class="report-management-hero__text mb-0">Pilih report, lalu hapus data per grup dengan mudah.</p>
+            <p class="report-management-hero__text mb-0">Pengelolaan partisi data, pembersihan periodik, dan sinkronisasi snapshot database.</p>
         </div>
-        <div class="report-management-hero__badge mt-3 mt-md-0 status-pulse"><i class="fas fa-shield-alt mr-2 text-primary"></i> Guard Aktif</div>
+        <div class="report-management-hero__badge mt-3 mt-md-0">
+            <i class="fas fa-shield-alt mr-2 text-info"></i> Proteksi Aktif
+        </div>
     </div>
 </div>
 
@@ -30,39 +32,50 @@
      data-delete-cancel-url-template="{{ route('import.report-management.delete.cancel', ['deleteId' => '__DELETE_ID__']) }}"
      data-force-sync-url="{{ route('import.report-management.force-sync') }}"
      data-force-sync-status-url-template="{{ route('import.report-management.force-sync.status', ['syncId' => '__SYNC_ID__']) }}">
-    <div class="card-header bg-transparent border-0 px-4 pt-4 pb-0">
-        <h5 class="font-weight-bold text-dark mb-0" style="font-size: 1.25rem;">
-            <i class="fas fa-database text-primary mr-2"></i> Data per Grup
+    
+    <div class="card-header bg-transparent border-0 px-4 pt-4 pb-0 d-flex align-items-center justify-content-between">
+        <h5 class="font-weight-bold text-dark mb-0 d-flex align-items-center" style="font-size: 1.15rem; letter-spacing: -0.01em;">
+            <span class="report-management-card-icon mr-2"><i class="fas fa-sliders-h text-primary"></i></span>
+            Parameter &amp; Kontrol Partisi
         </h5>
     </div>
+    
     <div class="card-body p-4">
         <!-- Control Panel (4 Columns) -->
-        <div class="row mb-4 align-items-end report-management-control-grid">
+        <div class="row mb-4 align-items-stretch report-management-control-grid">
             <!-- 1. Pilihan Report -->
             <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
-                <div class="form-group mb-0">
-                    <label class="font-weight-bold text-dark mb-2" for="management-report-select" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Report Utama</label>
-                    <select id="management-report-select" class="form-control select2" style="border-radius: 12px;">
-                        <option value="">-- Pilih Report --</option>
-                        @foreach($reports as $report)
-                            <option value="{{ $report->id_report }}" data-table-name="{{ $report->table_name }}">{{ $report->nama_report }}</option>
-                        @endforeach
-                    </select>
+                <div class="report-management-control-card h-100">
+                    <label class="report-management-control-label" for="management-report-select">
+                        <span>Report Utama</span>
+                        <i class="fas fa-file-invoice text-muted"></i>
+                    </label>
+                    <div class="report-management-select-wrapper">
+                        <select id="management-report-select" class="form-control select2">
+                            <option value="">-- Pilih Report --</option>
+                            @foreach($reports as $report)
+                                <option value="{{ $report->id_report }}" data-table-name="{{ $report->table_name }}">{{ $report->nama_report }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                 </div>
             </div>
 
             <!-- 2. Data Recovery -->
             <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
-                <div class="form-group mb-0">
-                    <label class="font-weight-bold text-dark mb-2" for="management-backup-select" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Recovery SQL</label>
+                <div class="report-management-control-card h-100">
+                    <label class="report-management-control-label" for="management-backup-select">
+                        <span>Recovery SQL</span>
+                        <i class="fas fa-database text-muted"></i>
+                    </label>
                     <div class="d-flex" style="gap: 8px;">
-                        <select id="management-backup-select" class="form-control flex-grow-1" style="border-radius: 12px; border: 1px solid #cbd5e1;">
+                        <select id="management-backup-select" class="form-control flex-grow-1 select2">
                             <option value="">-- File Backup --</option>
                             @foreach($backupFiles as $backup)
                                 <option value="{{ $backup['path'] }}">{{ $backup['name'] }}</option>
                             @endforeach
                         </select>
-                        <button type="button" id="btn-management-recover" class="btn btn-outline-success" style="border-radius: 12px; padding: 0.5rem 1rem;" title="Jalankan Recovery" disabled>
+                        <button type="button" id="btn-management-recover" class="btn report-management-icon-btn report-management-icon-btn--success" title="Jalankan Recovery" disabled>
                             <i class="fas fa-life-ring"></i>
                         </button>
                     </div>
@@ -71,11 +84,19 @@
 
             <!-- 3. Sinkronisasi Manual -->
             <div class="col-lg-3 col-md-6 mb-3 mb-md-0">
-                <div class="form-group mb-0">
-                    <label class="font-weight-bold text-dark mb-2" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Sync Spesifik</label>
+                <div class="report-management-control-card h-100">
+                    <label class="report-management-control-label" for="management-force-sync-period">
+                        <span>Sinkronisasi Periode</span>
+                        <i class="fas fa-calendar-alt text-muted"></i>
+                    </label>
                     <div class="d-flex" style="gap: 8px;">
-                        <input type="text" id="management-force-sync-period" class="form-control flex-grow-1" placeholder="YYYY-MM-DD" style="border-radius: 12px; border: 1px solid #cbd5e1;">
-                        <button type="button" id="btn-management-force-sync" class="btn btn-outline-warning" style="border-radius: 12px; padding: 0.5rem 1rem;" title="Sync Sekarang">
+                        <div class="input-group flex-grow-1">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text bg-white border-right-0 text-muted"><i class="far fa-calendar-alt"></i></span>
+                            </div>
+                            <input type="text" id="management-force-sync-period" class="form-control border-left-0 pl-0" placeholder="YYYY-MM-DD">
+                        </div>
+                        <button type="button" id="btn-management-force-sync" class="btn report-management-icon-btn report-management-icon-btn--warning" title="Sync Sekarang">
                             <i class="fas fa-bolt"></i>
                         </button>
                     </div>
@@ -84,14 +105,17 @@
 
             <!-- 4. Pembersihan / Rebuild -->
             <div class="col-lg-3 col-md-6">
-                <div class="form-group mb-0 d-flex flex-column h-100 justify-content-end">
-                    <label class="font-weight-bold text-dark mb-2" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Pembaruan Penuh</label>
-                    <div class="d-flex align-items-center" style="gap: 12px; min-height: 38px;">
-                        <div class="custom-control custom-switch m-0 flex-grow-1">
+                <div class="report-management-control-card h-100 d-flex flex-column justify-content-between">
+                    <label class="report-management-control-label" for="management-rebuild-force">
+                        <span>Rebuild Snapshot</span>
+                        <i class="fas fa-sync text-muted"></i>
+                    </label>
+                    <div class="d-flex align-items-center justify-content-between" style="min-height: 40px;">
+                        <div class="custom-control custom-switch m-0">
                             <input type="checkbox" class="custom-control-input" id="management-rebuild-force">
-                            <label class="custom-control-label text-dark font-weight-bold" for="management-rebuild-force" style="cursor: pointer; padding-top: 2px;">Mode Full</label>
+                            <label class="custom-control-label text-dark font-weight-bold" for="management-rebuild-force" style="cursor: pointer; font-size: 0.84rem;">Mode Penuh</label>
                         </div>
-                        <button type="button" id="btn-management-rebuild" class="btn btn-outline-primary" style="border-radius: 12px; padding: 0.5rem 1rem;" title="Pembaruan Snapshot">
+                        <button type="button" id="btn-management-rebuild" class="btn report-management-icon-btn report-management-icon-btn--primary" title="Pembaruan Snapshot">
                             <i class="fas fa-sync-alt"></i>
                         </button>
                     </div>
@@ -99,32 +123,32 @@
             </div>
         </div>
 
-        <!-- Summary & Actions Bar -->
-        <div class="d-flex flex-wrap align-items-center justify-content-between p-3 mb-4 report-management-summary-bar">
-            <!-- Stats -->
-            <div class="d-flex flex-wrap align-items-center" style="gap: 1.5rem;">
-                <div>
-                    <small class="text-muted font-weight-bold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Report</small>
-                    <div id="management-summary-report" class="font-weight-bold text-dark" style="font-size: 0.95rem;">-</div>
+        <!-- Summary Telemetry & Actions Bar -->
+        <div class="report-management-summary-bar mb-4">
+            <!-- Telemetry Stats -->
+            <div class="report-management-summary-stats">
+                <div class="report-management-stat-pill">
+                    <span class="report-management-stat-pill__label">Report Terpilih</span>
+                    <div id="management-summary-report" class="report-management-stat-pill__value">-</div>
                 </div>
-                <div class="border-left d-none d-md-block" style="height: 30px; border-color: #e2e8f0 !important;"></div>
-                <div>
-                    <small class="text-muted font-weight-bold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Grup</small>
-                    <div id="management-summary-groups" class="font-weight-bold text-info" style="font-size: 0.95rem;">0</div>
+                <div class="report-management-stat-divider d-none d-md-block"></div>
+                <div class="report-management-stat-pill">
+                    <span class="report-management-stat-pill__label">Grup Terdeteksi</span>
+                    <div id="management-summary-groups" class="report-management-stat-pill__value text-primary">0</div>
                 </div>
-                <div class="border-left d-none d-md-block" style="height: 30px; border-color: #e2e8f0 !important;"></div>
-                <div>
-                    <small class="text-muted font-weight-bold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Baris</small>
-                    <div id="management-summary-rows" class="font-weight-bold text-success" style="font-size: 0.95rem;">0</div>
+                <div class="report-management-stat-divider d-none d-md-block"></div>
+                <div class="report-management-stat-pill">
+                    <span class="report-management-stat-pill__label">Total Baris</span>
+                    <div id="management-summary-rows" class="report-management-stat-pill__value text-success">0</div>
                 </div>
             </div>
 
             <!-- Actions -->
-            <div class="d-flex align-items-center mt-3 mt-md-0 report-management-action-buttons">
-                <button type="button" id="btn-management-filter" class="btn btn-primary report-management-primary-btn">
-                    <i class="fas fa-filter mr-2"></i> Tampilkan
+            <div class="d-flex align-items-center report-management-action-buttons">
+                <button type="button" id="btn-management-filter" class="btn report-management-primary-btn">
+                    <i class="fas fa-filter mr-2"></i> Tampilkan Data
                 </button>
-                <button type="button" id="btn-management-deduplicate" class="btn btn-outline-danger report-management-outline-btn" disabled>
+                <button type="button" id="btn-management-deduplicate" class="btn report-management-outline-btn" disabled>
                     <i class="fas fa-clone mr-2"></i> Deduplikasi
                 </button>
             </div>
@@ -135,8 +159,8 @@
         <div id="management-load-progress" class="report-management-load-card d-none mb-4" aria-live="polite">
             <div class="report-management-load-card__header">
                 <div>
-                    <div class="report-management-load-card__eyebrow">Realtime Progress</div>
-                    <div id="management-load-title" class="report-management-load-card__title">Memuat data report management...</div>
+                    <div class="report-management-load-card__eyebrow">Status Proses</div>
+                    <div id="management-load-title" class="report-management-load-card__title">Memuat data report...</div>
                 </div>
                 <div id="management-load-stage" class="report-management-load-card__stage">Queued</div>
             </div>
@@ -147,15 +171,15 @@
                 <div id="management-load-percent" class="report-management-progress__value">0%</div>
                 <div id="management-load-units" class="report-management-load-card__units">0 / 4 tahap</div>
             </div>
-            <div id="management-load-text" class="report-management-progress__text mt-2">Menunggu worker memulai proses...</div>
+            <div id="management-load-text" class="report-management-progress__text mt-2">Menunggu proses...</div>
             <div id="management-load-meta" class="report-management-progress__meta mt-1"></div>
         </div>
 
         <div id="management-recovery-progress" class="report-management-load-card d-none mb-4" aria-live="polite">
             <div class="report-management-load-card__header">
                 <div>
-                    <div class="report-management-load-card__eyebrow">Recovery Progress</div>
-                    <div id="management-recovery-title" class="report-management-load-card__title">Recovery backup report sedang berjalan...</div>
+                    <div class="report-management-load-card__eyebrow">Status Recovery</div>
+                    <div id="management-recovery-title" class="report-management-load-card__title">Recovery backup sedang berjalan...</div>
                 </div>
                 <div id="management-recovery-stage" class="report-management-load-card__stage">Queued</div>
             </div>
@@ -176,22 +200,22 @@
                 <label class="form-check-label" for="management-select-all">Pilih Semua di Halaman</label>
             </div>
             <div class="report-management-bulkbar__hint">
-                Klik baris untuk centang cepat. Setiap header periode punya pilihan "Pilih semua periode ini".
+                Pilih baris atau seluruh grup periode untuk tindakan massal.
             </div>
         </div>
 
-        <div class="table-responsive report-management-table-wrap mt-4">
+        <div class="table-responsive report-management-table-wrap mt-3">
             <table class="table table-hover mb-0 report-management-table">
-                <thead style="background: #f8fafc;">
+                <thead>
                     <tr>
-                        <th class="text-center" style="width: 5%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;"><i class="far fa-check-square"></i></th>
-                        <th style="width: 45%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;">Kanca</th>
-                        <th class="text-right" style="width: 25%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;">Jumlah Baris</th>
-                        <th class="text-center" style="width: 25%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;">Aksi</th>
+                        <th class="text-center report-management-col-check"><i class="far fa-check-square"></i></th>
+                        <th style="width: 45%;">Kanca / Unit</th>
+                        <th class="text-right" style="width: 25%;">Jumlah Baris</th>
+                        <th class="text-center" style="width: 25%;">Aksi</th>
                     </tr>
                 </thead>
                 <tbody id="management-table-body">
-                    <tr><td colspan="4" class="text-center text-muted py-4">Pilih report lalu klik "Tampilkan Data".</td></tr>
+                    <tr><td colspan="4" class="text-center text-muted py-4"><i class="fas fa-inbox fa-2x mb-2 d-block text-muted opacity-50"></i>Pilih report untuk menampilkan data.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -203,14 +227,14 @@
                 <div class="report-management-selection-toast__body">
                     <div class="report-management-selection-toast__eyebrow">Seleksi Aktif</div>
                     <div id="management-selection-toast-text" class="report-management-selection-toast__text">0 grup dipilih</div>
-                    <div id="management-selection-toast-subtext" class="report-management-selection-toast__subtext">0 baris siap dihapus</div>
+                    <div id="management-selection-toast-subtext" class="report-management-selection-toast__subtext">0 baris siap diproses</div>
                 </div>
                 <div class="report-management-selection-toast__actions">
                     <button type="button" id="btn-management-clear-selected" class="btn btn-sm report-management-selection-toast__btn report-management-selection-toast__btn--ghost" disabled>
                         Reset
                     </button>
                     <button type="button" id="btn-management-delete-selected" class="btn btn-sm report-management-selection-toast__btn report-management-selection-toast__btn--danger" disabled>
-                        <i class="fas fa-trash-alt mr-1"></i> Hapus
+                        <i class="fas fa-trash-alt mr-1"></i> Hapus Terpilih
                     </button>
                 </div>
             </div>
@@ -1017,197 +1041,474 @@
         } else {
             console.error('[Recovery] Recovery button not found - cannot attach click handler!');
         }
+
+        // Custom Selector Enhancement via jQuery Select2
+        if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
+            const $ = window.jQuery;
+            
+            if ($('#management-report-select').length) {
+                $('#management-report-select').select2({
+                    theme: 'bootstrap4',
+                    width: '100%',
+                    placeholder: '-- Pilih Report --',
+                    allowClear: true,
+                    templateResult: function (data) {
+                        if (!data.id) return data.text;
+                        const tableName = data.element ? data.element.getAttribute('data-table-name') : '';
+                        return $(
+                            '<div class="select2-luxury-option">' +
+                                '<span class="select2-luxury-option__title">' + String(data.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>' +
+                                (tableName ? '<span class="select2-luxury-option__badge">' + String(tableName).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>' : '') +
+                            '</div>'
+                        );
+                    },
+                    templateSelection: function (data) {
+                        if (!data.id) return data.text;
+                        const tableName = data.element ? data.element.getAttribute('data-table-name') : '';
+                        return data.text + (tableName ? ' [' + tableName + ']' : '');
+                    }
+                }).on('select2:select select2:clear', function () {
+                    const evt = new Event('change', { bubbles: true });
+                    managementReportSelect.dispatchEvent(evt);
+                });
+            }
+
+            if ($('#management-backup-select').length) {
+                $('#management-backup-select').select2({
+                    theme: 'bootstrap4',
+                    width: '100%',
+                    placeholder: '-- File Backup --',
+                    allowClear: true
+                }).on('select2:select select2:clear', function () {
+                    const evt = new Event('change', { bubbles: true });
+                    managementBackupSelect.dispatchEvent(evt);
+                });
+            }
+        }
     });
 </script>
 @endsection
 
 @section('styles')
 <style>
-    /* Mature, Simple, Formal Corporate Design */
+    /* ==========================================================================
+       BRI Nusantara - Modern Luxury Theme for Report Management
+       ========================================================================== */
+
+    /* 1. Hero Header */
     .report-management-hero {
         position: relative;
         overflow: hidden;
-        border-radius: 12px;
-        padding: 1.25rem 1.75rem;
-        background: #0f1e36;
+        border-radius: 16px;
+        padding: 1.5rem 2rem;
+        background: linear-gradient(135deg, #071d41 0%, #0857c3 55%, #0284c7 100%);
         color: #ffffff;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+        box-shadow: 0 10px 25px -5px rgba(8, 87, 195, 0.25), 0 8px 10px -6px rgba(8, 87, 195, 0.2);
+        background-image: 
+            radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+            linear-gradient(135deg, #071d41 0%, #0857c3 55%, #0284c7 100%);
+        background-size: 20px 20px, 100% 100%;
     }
-    .report-management-hero__glow { display: none; }
+    .report-management-hero__glow {
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 380px;
+        height: 380px;
+        background: radial-gradient(circle, rgba(113, 197, 232, 0.2) 0%, rgba(8, 87, 195, 0) 70%);
+        pointer-events: none;
+    }
     .report-management-hero__eyebrow {
-        display: inline-block;
+        display: inline-flex;
+        align-items: center;
         margin-bottom: 0.5rem;
         padding: 0.35rem 0.85rem;
-        border-radius: 8px;
+        border-radius: 999px;
         font-size: 0.72rem;
         font-weight: 700;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #cbd5e1;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: #e0f2fe;
+        background: rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
     }
     .report-management-hero__title {
         color: #ffffff;
-        font-size: 1.5rem;
+        font-size: 1.6rem;
         font-weight: 800;
-        letter-spacing: -0.01em;
-        margin-bottom: 0.25rem;
+        letter-spacing: -0.02em;
+        margin-bottom: 0.3rem;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
     }
     .report-management-hero__text {
-        color: #cbd5e1;
-        font-size: 0.88rem;
-        max-width: 650px;
+        color: #e2e8f0;
+        font-size: 0.9rem;
+        max-width: 680px;
+        line-height: 1.5;
     }
     .report-management-hero__badge {
         display: inline-flex;
         align-items: center;
-        padding: 0.5rem 1rem;
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        color: #e2e8f0;
-        font-size: 0.8rem;
+        padding: 0.5rem 1.1rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        color: #ffffff;
+        font-size: 0.82rem;
         font-weight: 700;
-        box-shadow: none;
+        letter-spacing: 0.02em;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     }
 
+    /* 2. Main Executive Card */
     .import-upload-card.report-management-card {
-        border-radius: 12px !important;
-        box-shadow: 0 4px 20px rgba(15, 48, 86, 0.04) !important;
-        border: 1px solid #cbd5e1 !important;
+        border-radius: 16px !important;
+        box-shadow: 0 10px 30px rgba(8, 87, 195, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+        border: 1px solid rgba(8, 87, 195, 0.1) !important;
         background: #ffffff;
     }
-    
-    .report-management-control-grid .form-control {
-        min-height: 40px;
-        border-radius: 8px !important;
+    .report-management-card-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #0857c3;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.9rem;
+    }
+
+    /* 3. Control Panel Cards */
+    .report-management-control-grid {
+        margin-left: -0.5rem;
+        margin-right: -0.5rem;
+    }
+    .report-management-control-grid > [class*="col-"] {
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+    .report-management-control-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 1rem 1.15rem;
+        transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+    }
+    .report-management-control-card:hover {
+        background: #ffffff;
+        border-color: #93c5fd;
+        box-shadow: 0 6px 18px rgba(8, 87, 195, 0.06);
+        transform: translateY(-2px);
+    }
+    .report-management-control-card:focus-within {
+        background: #ffffff;
+        border-color: #0857c3;
+        box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.12);
+    }
+    .report-management-control-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: #475569;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 0.55rem;
+    }
+    .report-management-control-card .form-control {
+        min-height: 42px;
+        border-radius: 10px !important;
         border: 1px solid #cbd5e1 !important;
         background: #ffffff;
         color: #0f172a;
         font-size: 0.88rem;
         font-weight: 600;
         box-shadow: none;
+        transition: all 0.15s ease;
     }
-    .report-management-control-grid .form-control:focus {
-        border-color: #64748b !important;
-        box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.12) !important;
+    .report-management-control-card .form-control:focus {
+        border-color: #0857c3 !important;
+        box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.12) !important;
     }
-    .report-management-control-grid label {
-        color: #475569 !important;
-        font-size: 0.72rem !important;
-        font-weight: 700 !important;
-        letter-spacing: 0.05em !important;
-        text-transform: uppercase !important;
+    .report-management-control-card .input-group-text {
+        border-radius: 10px 0 0 10px !important;
+        border: 1px solid #cbd5e1 !important;
+        background: #ffffff;
+        font-size: 0.88rem;
     }
-    .report-management-control-grid .btn {
-        min-width: 44px;
-        min-height: 40px;
-        border-radius: 8px !important;
+
+    /* Icon Action Buttons */
+    .report-management-icon-btn {
+        min-width: 42px;
+        height: 42px;
+        border-radius: 10px !important;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         border: 1px solid #cbd5e1;
         background: #ffffff;
-        color: #475569;
-        transition: all 0.15s ease;
+        font-size: 0.95rem;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
-    .report-management-control-grid .btn:hover:not(:disabled) {
-        background: #f8fafc;
-        color: #0f172a;
-        border-color: #94a3b8;
-    }
-    .report-management-control-grid .btn:disabled {
-        opacity: 0.5;
+    .report-management-icon-btn:disabled {
+        opacity: 0.45;
         cursor: not-allowed;
+        background: #f1f5f9;
+        border-color: #e2e8f0;
+    }
+    .report-management-icon-btn--primary {
+        border-color: #bfdbfe;
+        color: #0857c3;
+        background: #eff6ff;
+    }
+    .report-management-icon-btn--primary:hover:not(:disabled) {
+        background: #0857c3;
+        color: #ffffff;
+        border-color: #0857c3;
+        box-shadow: 0 4px 12px rgba(8, 87, 195, 0.25);
+        transform: translateY(-1px);
+    }
+    .report-management-icon-btn--success {
+        border-color: #a7f3d0;
+        color: #059669;
+        background: #ecfdf5;
+    }
+    .report-management-icon-btn--success:hover:not(:disabled) {
+        background: #059669;
+        color: #ffffff;
+        border-color: #059669;
+        box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25);
+        transform: translateY(-1px);
+    }
+    .report-management-icon-btn--warning {
+        border-color: #fde68a;
+        color: #d97706;
+        background: #fffbeb;
+    }
+    .report-management-icon-btn--warning:hover:not(:disabled) {
+        background: #d97706;
+        color: #ffffff;
+        border-color: #d97706;
+        box-shadow: 0 4px 12px rgba(217, 119, 6, 0.25);
+        transform: translateY(-1px);
     }
 
-    /* Switches */
+    /* Switch Component */
     .custom-switch .custom-control-label::before {
-        height: 1.25rem;
-        width: 2.25rem;
+        height: 1.35rem;
+        width: 2.35rem;
         border-radius: 2rem;
         border-color: #cbd5e1;
         background-color: #e2e8f0;
+        transition: all 0.2s ease;
     }
     .custom-switch .custom-control-label::after {
-        width: calc(1.25rem - 4px);
-        height: calc(1.25rem - 4px);
+        width: calc(1.35rem - 4px);
+        height: calc(1.35rem - 4px);
         border-radius: 2rem;
         background-color: #ffffff;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+        transition: all 0.2s ease;
     }
     .custom-control-input:checked ~ .custom-control-label::before {
-        border-color: #0f172a;
-        background-color: #0f172a;
+        border-color: #0857c3;
+        background-color: #0857c3;
     }
 
-    /* Summary Bar */
+    /* Select2 Luxury Styling */
+    .select2-container--bootstrap4 .select2-selection--single {
+        height: 42px !important;
+        border-radius: 10px !important;
+        border: 1px solid #cbd5e1 !important;
+        padding: 0.45rem 0.85rem !important;
+        font-size: 0.88rem !important;
+        font-weight: 600 !important;
+        color: #0f172a !important;
+        background: #ffffff !important;
+        transition: all 0.15s ease;
+    }
+    .select2-container--bootstrap4.select2-container--focus .select2-selection--single {
+        border-color: #0857c3 !important;
+        box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.12) !important;
+    }
+    .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered {
+        color: #0f172a !important;
+        line-height: 28px !important;
+        padding-left: 0 !important;
+    }
+    .select2-container--bootstrap4 .select2-selection--single .select2-selection__arrow {
+        height: 40px !important;
+        right: 8px !important;
+    }
+    .select2-dropdown {
+        border-radius: 12px !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12) !important;
+        overflow: hidden;
+        z-index: 1060;
+    }
+    .select2-search--dropdown .select2-search__field {
+        border-radius: 8px !important;
+        border: 1px solid #cbd5e1 !important;
+        padding: 0.45rem 0.75rem !important;
+        font-size: 0.85rem !important;
+        margin: 6px 0 !important;
+    }
+    .select2-search--dropdown .select2-search__field:focus {
+        border-color: #0857c3 !important;
+        box-shadow: 0 0 0 2px rgba(8, 87, 195, 0.12) !important;
+        outline: none;
+    }
+    .select2-results__option {
+        padding: 0.6rem 0.9rem !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        color: #334155;
+    }
+    .select2-results__option--highlighted {
+        background: linear-gradient(135deg, #0857c3, #0284c7) !important;
+        color: #ffffff !important;
+    }
+    .select2-luxury-option {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        width: 100%;
+    }
+    .select2-luxury-option__title {
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .select2-luxury-option__badge {
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 0.15rem 0.45rem;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.06);
+        color: inherit;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        font-family: monospace;
+    }
+    .select2-results__option--highlighted .select2-luxury-option__badge {
+        background: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.3);
+        color: #ffffff;
+    }
+
+    /* 4. Telemetry & Summary Bar */
     .report-management-summary-bar {
-        background: #f8fafc;
-        border-radius: 10px;
-        border: 1px solid #cbd5e1;
-        box-shadow: none;
-        padding: 1rem 1.25rem !important;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        border-radius: 14px;
+        border: 1px solid #e2e8f0;
+        padding: 1.1rem 1.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1.25rem;
+    }
+    .report-management-summary-stats {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1.75rem;
+    }
+    .report-management-stat-pill__label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #64748b;
+        margin-bottom: 0.2rem;
+        display: block;
+    }
+    .report-management-stat-pill__value {
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+    }
+    .report-management-stat-divider {
+        height: 32px;
+        width: 1px;
+        background: #cbd5e1;
     }
     .report-management-action-buttons {
-        gap: 8px;
+        gap: 10px;
     }
     .report-management-primary-btn {
         border: 0;
-        border-radius: 8px !important;
-        font-weight: 600;
-        padding: 0.5rem 1.25rem;
-        background: #0f172a;
+        border-radius: 10px !important;
+        font-weight: 700;
+        font-size: 0.88rem;
+        padding: 0.6rem 1.4rem;
+        background: linear-gradient(135deg, #0857c3 0%, #0284c7 100%);
         color: #ffffff;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
-        transition: all 0.15s ease;
+        box-shadow: 0 4px 12px rgba(8, 87, 195, 0.25);
+        transition: all 0.2s ease;
     }
     .report-management-primary-btn:hover:not(:disabled) {
-        background: #1e293b;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(8, 87, 195, 0.35);
         color: #ffffff;
     }
+    .report-management-primary-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
     .report-management-outline-btn {
-        border-radius: 8px !important;
-        font-weight: 600;
-        padding: 0.5rem 1.25rem;
-        border: 1px solid #ef4444;
-        color: #ef4444;
+        border-radius: 10px !important;
+        font-weight: 700;
+        font-size: 0.88rem;
+        padding: 0.6rem 1.3rem;
+        border: 1px solid #fca5a5;
+        color: #dc2626;
         background: #ffffff;
-        transition: all 0.15s ease;
+        transition: all 0.2s ease;
     }
     .report-management-outline-btn:hover:not(:disabled) {
         background: #fef2f2;
-        color: #b91c1t;
-        border-color: #b91c1c;
+        color: #b91c1c;
+        border-color: #dc2626;
+        box-shadow: 0 4px 12px rgba(220, 38, 38, 0.15);
     }
     .report-management-outline-btn:disabled {
-        opacity: 0.5;
-        border-color: #fca5a5;
-        color: #fca5a5;
-        background: #ffffff;
+        opacity: 0.45;
+        border-color: #e2e8f0;
+        color: #94a3b8;
+        background: #f8fafc;
     }
 
+    /* Notice & Alert */
     .report-management-notice {
-        padding: 1rem 1.25rem;
-        border-radius: 8px;
+        padding: 1rem 1.35rem;
+        border-radius: 12px;
         background: #f0f9ff;
         border: 1px solid #bae6fd;
         color: #0369a1;
         font-size: 0.88rem;
         font-weight: 600;
         line-height: 1.5;
-        box-shadow: none;
     }
 
-    /* Progress Cards */
+    /* 5. Progress Cards */
     .report-management-load-card {
-        padding: 1.25rem 1.5rem;
-        border-radius: 10px;
+        padding: 1.35rem 1.6rem;
+        border-radius: 14px;
         background: #ffffff;
-        border: 1px solid #cbd5e1;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
-        overflow: hidden;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
         position: relative;
+        overflow: hidden;
     }
     .report-management-load-card::before {
         content: "";
@@ -1216,57 +1517,53 @@
         top: 0;
         bottom: 0;
         width: 4px;
-        background: #0f3976;
+        background: linear-gradient(180deg, #0857c3, #0284c7);
     }
     .report-management-load-card__header {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        margin-bottom: 1rem;
+        margin-bottom: 0.75rem;
     }
     .report-management-load-card__eyebrow {
         font-size: 0.7rem;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        font-weight: 800;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
         color: #64748b;
-        margin-bottom: 0.25rem;
+        margin-bottom: 0.2rem;
     }
     .report-management-load-card__title {
         font-size: 1.05rem;
         font-weight: 700;
         color: #0f172a;
-        line-height: 1.2;
     }
     .report-management-load-card__stage {
-        padding: 0.25rem 0.75rem;
-        border-radius: 6px;
-        background: #f1f5f9;
-        color: #334155;
-        font-size: 0.72rem;
+        padding: 0.3rem 0.8rem;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #0857c3;
+        font-size: 0.75rem;
         font-weight: 700;
-        letter-spacing: 0.02em;
-        border: 1px solid #cbd5e1;
+        border: 1px solid #bfdbfe;
     }
-    
     .report-management-progress {
         height: 8px;
         background: #f1f5f9;
         border-radius: 999px;
         overflow: hidden;
-        margin: 1rem 0 0.75rem;
+        margin: 0.85rem 0;
     }
     .report-management-progress__bar {
-        background: #0f3976;
+        background: linear-gradient(90deg, #0857c3, #0284c7);
         transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         border-radius: 999px;
     }
     .report-management-progress__bar--indeterminate {
-        background: linear-gradient(90deg, #0f3976 25%, #3b82f6 50%, #0f3976 75%);
+        background: linear-gradient(90deg, #0857c3 25%, #38bdf8 50%, #0857c3 75%);
         background-size: 200% 100%;
         animation: reportManagementProgressShift 1.5s infinite linear;
     }
-
     .report-management-load-card__meta-row {
         display: flex;
         justify-content: space-between;
@@ -1278,7 +1575,7 @@
         color: #0f172a;
     }
     .report-management-load-card__units {
-        font-size: 0.8rem;
+        font-size: 0.82rem;
         font-weight: 600;
         color: #64748b;
     }
@@ -1288,26 +1585,26 @@
         font-weight: 500;
     }
 
-    /* Bulk Bar */
+    /* 6. Bulk Bar */
     .report-management-bulkbar {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 1rem;
         flex-wrap: wrap;
-        padding: 0.85rem 1.25rem;
-        border-radius: 10px;
-        background: #ffffff;
-        border: 1px solid #cbd5e1;
-        box-shadow: none;
+        padding: 0.85rem 1.35rem;
+        border-radius: 12px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
     }
     .report-management-bulkbar .form-check-label {
         display: inline-flex;
         align-items: center;
         min-height: 38px;
-        font-weight: 600;
+        font-weight: 700;
         color: #1e293b;
         cursor: pointer;
+        font-size: 0.88rem;
     }
     .report-management-bulkbar__hint {
         font-size: 0.82rem;
@@ -1315,52 +1612,51 @@
         color: #64748b;
     }
 
-    /* Table Wrap & Grid */
+    /* 7. Table Wrap & Data Table */
     .report-management-table-wrap {
-        border: 1px solid #cbd5e1;
-        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
         overflow: hidden;
-        background: #fff;
-        box-shadow: none;
+        background: #ffffff;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.02);
     }
     .report-management-table thead th {
         background: #f8fafc;
-        border-bottom: 2px solid #cbd5e1;
+        border-bottom: 2px solid #e2e8f0;
         color: #475569;
-        font-size: 0.78rem;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
-        padding: 0.85rem 1.25rem;
+        padding: 0.95rem 1.35rem;
     }
     .report-management-table tbody td {
-        padding: 0.85rem 1.25rem;
-        border-top: 1px solid #cbd5e1;
+        padding: 0.85rem 1.35rem;
+        border-top: 1px solid #f1f5f9;
         vertical-align: middle;
         color: #334155;
         font-size: 0.9rem;
     }
-    .report-management-col-check { width: 60px; }
-    .report-management-primary { color: #0f172a; font-weight: 600; }
+    .report-management-col-check { width: 55px; }
     .report-management-count {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-width: 54px;
-        padding: 0.25rem 0.6rem;
+        min-width: 56px;
+        padding: 0.25rem 0.65rem;
         border-radius: 6px;
-        background: #f1f5f9;
-        color: #334155;
+        background: #eff6ff;
+        color: #0857c3;
         font-size: 0.82rem;
         font-weight: 700;
-        border: 1px solid #cbd5e1;
+        border: 1px solid #dbeafe;
     }
 
     .report-management-period-row td {
-        padding: 0.65rem 1.25rem !important;
+        padding: 0.75rem 1.35rem !important;
         background: #f8fafc !important;
-        border-top: 1px solid #cbd5e1 !important;
-        border-bottom: 1px solid #cbd5e1 !important;
+        border-top: 1px solid #e2e8f0 !important;
+        border-bottom: 1px solid #e2e8f0 !important;
     }
     .report-management-period-card {
         display: flex;
@@ -1370,7 +1666,7 @@
         flex-wrap: wrap;
     }
     .report-management-period-card__title {
-        font-size: 0.9rem;
+        font-size: 0.92rem;
         font-weight: 700;
         color: #0f172a;
     }
@@ -1384,28 +1680,28 @@
         align-items: center;
         gap: 0.4rem;
         margin: 0;
-        padding: 0.35rem 0.75rem;
-        border-radius: 6px;
+        padding: 0.35rem 0.8rem;
+        border-radius: 8px;
         background: #ffffff;
         border: 1px solid #cbd5e1;
         color: #475569;
-        font-size: 0.82rem;
+        font-size: 0.8rem;
         font-weight: 600;
         cursor: pointer;
         transition: all 0.15s ease;
     }
     .report-management-period-card__toggle:hover {
         background: #f1f5f9;
-        color: #0f172a;
-        border-color: #94a3b8;
+        color: #0857c3;
+        border-color: #93c5fd;
     }
 
     .management-data-row {
         cursor: pointer;
-        transition: background-color 0.1s ease;
+        transition: background-color 0.12s ease;
     }
     .management-data-row.is-selected {
-        background-color: #f1f5f9 !important;
+        background-color: #eff6ff !important;
     }
     .management-data-row:hover {
         background-color: #f8fafc;
@@ -1413,24 +1709,25 @@
 
     /* Actions buttons per row */
     .report-management-table tbody td .btn-sm {
-        border-radius: 6px;
+        border-radius: 8px;
         font-weight: 600;
         font-size: 0.82rem;
-        padding: 0.3rem 0.75rem;
+        padding: 0.35rem 0.8rem;
     }
 
+    /* 8. Pagination Controls */
     .report-management-pagination {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 1rem;
         flex-wrap: wrap;
-        margin-top: 1.25rem;
+        margin-top: 1.35rem;
         padding: 0 0.25rem;
     }
     .report-management-pagination__meta {
         font-size: 0.85rem;
-        font-weight: 500;
+        font-weight: 600;
         color: #64748b;
     }
     .report-management-pagination__actions {
@@ -1443,33 +1740,34 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-width: 32px;
-        height: 32px;
-        padding: 0 0.6rem;
-        border: 1px solid #cbd5e1;
-        border-radius: 6px;
+        min-width: 36px;
+        height: 36px;
+        padding: 0 0.75rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
         background: #ffffff;
         color: #475569;
-        font-weight: 600;
+        font-weight: 700;
         font-size: 0.85rem;
         transition: all 0.15s ease;
     }
     .report-management-page-btn:hover:not(:disabled) {
         background: #f8fafc;
-        border-color: #94a3b8;
-        color: #0f172a;
+        border-color: #93c5fd;
+        color: #0857c3;
     }
     .report-management-page-btn.is-active {
-        background: #0f172a;
-        border-color: #0f172a;
+        background: #0857c3;
+        border-color: #0857c3;
         color: #ffffff;
+        box-shadow: 0 2px 8px rgba(8, 87, 195, 0.25);
     }
     .report-management-page-btn:disabled {
-        opacity: 0.5;
+        opacity: 0.45;
         cursor: not-allowed;
     }
 
-    /* Selection Toast */
+    /* 9. Floating Selection Dock */
     .report-management-selection-toast-shell {
         position: fixed;
         right: 2rem;
@@ -1478,7 +1776,7 @@
         display: flex;
         justify-content: flex-end;
         align-items: flex-end;
-        width: min(380px, calc(100vw - 4rem));
+        width: min(400px, calc(100vw - 4rem));
         pointer-events: none;
     }
     .report-management-selection-toast {
@@ -1486,29 +1784,30 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 1rem;
+        gap: 1.25rem;
         width: 100%;
-        padding: 1rem 1.25rem;
-        border-radius: 10px;
-        background: #0f1e36;
+        padding: 1.1rem 1.4rem;
+        border-radius: 14px;
+        background: rgba(7, 29, 65, 0.95);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
         color: #ffffff;
-        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.12);
         pointer-events: auto;
     }
     .report-management-selection-toast__eyebrow {
-        font-size: 0.65rem;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #94a3b8;
-        margin-bottom: 0.15rem;
+        color: #71c5e8;
+        margin-bottom: 0.2rem;
     }
     .report-management-selection-toast__text {
-        font-size: 0.95rem;
-        font-weight: 700;
+        font-size: 0.98rem;
+        font-weight: 800;
         line-height: 1.3;
-        color: #f8fafc;
+        color: #ffffff;
     }
     .report-management-selection-toast__subtext {
         font-size: 0.8rem;
@@ -1518,48 +1817,48 @@
     .report-management-selection-toast__actions {
         display: flex;
         align-items: center;
-        gap: 0.4rem;
+        gap: 0.5rem;
     }
     .report-management-selection-toast__btn {
-        border-radius: 6px;
-        font-weight: 600;
-        padding: 0.45rem 0.85rem;
+        border-radius: 8px;
+        font-weight: 700;
+        padding: 0.5rem 0.95rem;
         font-size: 0.85rem;
         transition: all 0.15s ease;
     }
     .report-management-selection-toast__btn--ghost {
-        background: transparent;
+        background: rgba(255, 255, 255, 0.08);
         border: 1px solid rgba(255, 255, 255, 0.2);
         color: #f8fafc;
     }
     .report-management-selection-toast__btn--ghost:hover:not(:disabled) {
-        background: rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.15);
     }
     .report-management-selection-toast__btn--danger {
-        background: #ef4444;
-        border: 1px solid #ef4444;
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        border: 0;
         color: #ffffff;
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
     }
     .report-management-selection-toast__btn--danger:hover:not(:disabled) {
-        background: #dc2626;
+        background: linear-gradient(135deg, #dc2626, #b91c1c);
+        transform: translateY(-1px);
     }
 
     @keyframes reportManagementProgressShift { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
     @media (max-width: 991.98px) {
-        .report-management-top-grid > div { margin-bottom: 1rem; }
-        .report-management-top-grid > div:last-child { margin-bottom: 0; }
+        .report-management-control-grid > [class*="col-"] { margin-bottom: 0.75rem; }
     }
 
     @media (max-width: 767.98px) {
-        .report-management-hero, .import-upload-card__header { padding-left: 1.25rem; padding-right: 1.25rem; }
-        .import-upload-card__body { padding: 1.25rem 1.25rem 6rem; }
-        .report-management-stat { flex-direction: row; gap: 1rem; }
-        .report-management-stat__icon { width: 40px; height: 40px; font-size: 1rem; }
-        .report-management-summary-bar { align-items: stretch !important; }
-        .report-management-action-buttons { width: 100%; flex-direction: column; align-items: stretch !important; gap: 8px; }
-        .report-management-action-buttons .btn { width: 100%; min-width: 0; }
-        .report-management-selection-toast-shell { left: 1rem; right: 1rem; bottom: 1rem; width: calc(100vw - 2rem); max-width: calc(100vw - 2rem); }
+        .report-management-hero { padding: 1.25rem 1.5rem; }
+        .report-management-hero__title { font-size: 1.35rem; }
+        .report-management-summary-bar { flex-direction: column; align-items: stretch; gap: 1rem; }
+        .report-management-summary-stats { justify-content: space-between; gap: 1rem; }
+        .report-management-action-buttons { width: 100%; flex-direction: column; gap: 8px; }
+        .report-management-action-buttons .btn { width: 100%; }
+        .report-management-selection-toast-shell { left: 1rem; right: 1rem; bottom: 1rem; width: calc(100vw - 2rem); }
         .report-management-selection-toast { flex-direction: column; align-items: stretch; text-align: center; }
         .report-management-selection-toast__actions { justify-content: center; margin-top: 0.5rem; }
     }

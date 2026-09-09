@@ -19,21 +19,28 @@
         return number_format($bytes / (1024 ** $power), $power === 0 ? 0 : 1, ',', '.') . ' ' . $units[$power];
     };
 @endphp
-<div class="container-fluid pt-3 pb-4 file-management-page">
-    <div class="fm-page-head d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h2 class="h4 font-weight-bold text-dark mb-0"><i class="fas fa-folder-open text-primary mr-2"></i> File Management</h2>
-            <span class="text-muted small">Kelola artefak Excel/import dan backup database dalam ruang aksi terpisah.</span>
+<div class="container-fluid pt-2 pb-4 file-management-page">
+    <!-- Hero Header -->
+    <div class="fm-hero mb-4">
+        <div class="fm-hero__glow"></div>
+        <div class="fm-page-head d-flex align-items-center justify-content-between flex-wrap position-relative">
+            <div class="pr-3">
+                <span class="fm-hero__eyebrow"><i class="fas fa-database mr-1"></i> Storage &amp; Backup Repository</span>
+                <h2 class="fm-hero__title h4 font-weight-bold text-white mb-0"><i class="fas fa-folder-open mr-2"></i> Manajemen File &amp; Backup</h2>
+                <p class="fm-hero__text mb-0">Pengelolaan artefak data import, pembersihan berkala, dan manajemen cadangan database terisolasi.</p>
+            </div>
+            <div class="fm-hero__badge mt-3 mt-md-0">
+                <i class="fas fa-user-shield mr-2"></i> Akses Administrator
+            </div>
         </div>
-        <span class="fm-admin-badge badge badge-light border border-primary text-primary px-3 py-2"><i class="fas fa-user-shield mr-1"></i> Admin Only</span>
     </div>
 
     @if (session('success'))
-        <div class="alert alert-success border-0 shadow-sm mb-4" style="border-radius: 8px;"><i class="fas fa-check-circle mr-2"></i>{{ session('success') }}</div>
+        <div class="alert alert-success border-0 shadow-sm mb-4" style="border-radius: 10px;"><i class="fas fa-check-circle mr-2"></i>{{ session('success') }}</div>
     @endif
 
     @if ($errors->any())
-        <div class="alert alert-danger border-0 shadow-sm mb-4" style="border-radius: 8px;"><i class="fas fa-exclamation-triangle mr-2"></i>{{ $errors->first() }}</div>
+        <div class="alert alert-danger border-0 shadow-sm mb-4" style="border-radius: 10px;"><i class="fas fa-exclamation-triangle mr-2"></i>{{ $errors->first() }}</div>
     @endif
 
     <div class="card shadow-sm border-0 fm-main-card" id="file-management-card"
@@ -48,20 +55,20 @@
             <div class="row align-items-center">
                 <div class="col-xl-5 col-lg-12 fm-stats-grid pr-xl-4 border-xl-right">
                     <div class="text-center fm-stat">
-                        <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Total File</div>
+                        <div class="fm-stat-label">Total File</div>
                         <div class="h5 mb-0 text-primary font-weight-bold">{{ number_format($totals['files'], 0, ',', '.') }}</div>
                     </div>
                     <div class="text-center fm-stat">
-                        <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Ukuran</div>
+                        <div class="fm-stat-label">Ukuran</div>
                         <div class="h5 mb-0 text-warning font-weight-bold">{{ $totals['size_human'] }}</div>
                     </div>
                     <div class="text-center fm-stat">
-                        <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Excel / Import</div>
+                        <div class="fm-stat-label">Excel / Import</div>
                         <div class="h5 mb-0 text-success font-weight-bold">{{ number_format($importFiles->count(), 0, ',', '.') }}</div>
                         <div class="small text-muted">{{ $formatManagedBytes($importSize) }}</div>
                     </div>
                     <div class="text-center fm-stat">
-                        <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Backup DB</div>
+                        <div class="fm-stat-label">Backup DB</div>
                         <div class="h5 mb-0 text-info font-weight-bold">{{ number_format($databaseFiles->count(), 0, ',', '.') }}</div>
                         <div class="small text-muted">{{ $formatManagedBytes($databaseSize) }}</div>
                     </div>
@@ -80,10 +87,10 @@
                         </div>
 
                         <div class="input-group input-group-sm fm-search">
-                            <input type="text" id="file-management-search" class="form-control" placeholder="Cari file...">
-                            <div class="input-group-append">
-                                <span class="input-group-text bg-white"><i class="fas fa-search"></i></span>
+                            <div class="input-group-prepend">
+                                <span class="input-group-text bg-white border-right-0 text-muted"><i class="fas fa-search"></i></span>
                             </div>
+                            <input type="text" id="file-management-search" class="form-control border-left-0 pl-0" placeholder="Cari file...">
                         </div>
 
                         <div class="fm-aging d-flex align-items-center bg-light px-2 py-1">
@@ -91,9 +98,9 @@
                             <input type="number" min="1" max="168" id="file-management-hours" class="form-control form-control-sm text-center p-0" value="12">
                         </div>
 
-                        <button type="button" id="btn-file-management-cleanup" class="btn btn-sm btn-outline-primary fm-action-btn" data-scope-action="import_artifacts"><i class="fas fa-broom mr-1"></i> Cleanup Excel</button>
-                        <button type="button" id="btn-file-management-snapshot-check" class="btn btn-sm btn-outline-secondary fm-action-btn fm-snapshot-action-btn"><i class="fas fa-sync-alt mr-1"></i> Cek Snapshot Terbaru</button>
-                        <button type="button" id="btn-file-management-backup" class="btn btn-sm btn-success fm-action-btn d-none" data-scope-action="database_backups"><i class="fas fa-database mr-1"></i> Backup DB</button>
+                        <button type="button" id="btn-file-management-cleanup" class="btn btn-sm fm-btn-primary fm-action-btn" data-scope-action="import_artifacts"><i class="fas fa-broom mr-1"></i> Cleanup Excel</button>
+                        <button type="button" id="btn-file-management-snapshot-check" class="btn btn-sm btn-outline-secondary fm-action-btn fm-snapshot-action-btn"><i class="fas fa-sync-alt mr-1"></i> Cek Snapshot</button>
+                        <button type="button" id="btn-file-management-backup" class="btn btn-sm fm-btn-success fm-action-btn d-none" data-scope-action="database_backups"><i class="fas fa-database mr-1"></i> Backup DB</button>
                     </div>
                 </div>
             </div>
@@ -746,6 +753,10 @@
 
 @section('styles')
 <style>
+    /* ==========================================================================
+       BRI Nusantara - Modern Luxury Theme for File Management
+       ========================================================================== */
+
     .file-management-page {
         color: #0f172a;
     }
@@ -756,35 +767,111 @@
         box-sizing: border-box;
     }
 
-    .fm-admin-badge,
-    .fm-main-card,
-    .fm-table-card,
-    .fm-directory-card {
-        border-radius: 12px !important;
-    }
-
-    .fm-main-card,
-    .fm-table-card {
+    /* 1. Hero Header */
+    .fm-hero {
+        position: relative;
         overflow: hidden;
+        border-radius: 16px;
+        padding: 1.5rem 2rem;
+        background: linear-gradient(135deg, #071d41 0%, #0857c3 55%, #0284c7 100%);
+        color: #ffffff;
+        box-shadow: 0 10px 25px -5px rgba(8, 87, 195, 0.25), 0 8px 10px -6px rgba(8, 87, 195, 0.2);
+        background-image: 
+            radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+            linear-gradient(135deg, #071d41 0%, #0857c3 55%, #0284c7 100%);
+        background-size: 20px 20px, 100% 100%;
+    }
+    .fm-hero__glow {
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 380px;
+        height: 380px;
+        background: radial-gradient(circle, rgba(113, 197, 232, 0.2) 0%, rgba(8, 87, 195, 0) 70%);
+        pointer-events: none;
+    }
+    .fm-hero__eyebrow {
+        display: inline-flex;
+        align-items: center;
+        margin-bottom: 0.5rem;
+        padding: 0.35rem 0.85rem;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #e0f2fe;
+        background: rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .fm-hero__title {
+        color: #ffffff;
+        font-size: 1.6rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        margin-bottom: 0.3rem;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    }
+    .fm-hero__text {
+        color: #e2e8f0;
+        font-size: 0.9rem;
+        max-width: 680px;
+        line-height: 1.5;
+    }
+    .fm-hero__badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.5rem 1.1rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        color: #ffffff;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     }
 
+    /* 2. Main Executive Card */
+    .fm-main-card {
+        border-radius: 16px !important;
+        overflow: hidden;
+        border: 1px solid rgba(8, 87, 195, 0.1) !important;
+        box-shadow: 0 10px 30px rgba(8, 87, 195, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+        background: #ffffff;
+    }
+
+    /* 3. Toolbar & Telemetry */
+    .fm-toolbar {
+        background: #ffffff;
+        border-bottom: 1px solid #e2e8f0;
+    }
     .fm-stats-grid {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 0.75rem;
     }
-
     .fm-stat {
         min-width: 0;
-        padding: 0.35rem 0.45rem;
+        padding: 0.5rem 0.65rem;
         border-radius: 10px;
         background: #f8fafc;
         border: 1px solid #e2e8f0;
     }
-
-    .fm-stat .h5,
-    .fm-stat .small {
-        overflow-wrap: anywhere;
+    .fm-stat-label {
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #64748b;
+        margin-bottom: 0.2rem;
+    }
+    .fm-stat .h5 {
+        font-size: 1.15rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
     }
 
     .fm-tools {
@@ -807,113 +894,152 @@
     }
 
     .fm-scope-btn {
-        min-height: 32px;
+        min-height: 36px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 0.4rem;
+        gap: 0.45rem;
         border: 0;
         border-radius: 8px;
-        padding: 0.35rem 0.65rem;
+        padding: 0.35rem 0.85rem;
         background: transparent;
         color: #475569;
-        font-size: 0.78rem;
+        font-size: 0.82rem;
         font-weight: 800;
         white-space: nowrap;
+        transition: all 0.2s ease;
     }
 
     .fm-scope-btn.active {
         background: #ffffff;
         color: #0857c3;
-        box-shadow: 0 8px 20px -16px rgba(15, 23, 42, 0.35);
+        box-shadow: 0 4px 12px rgba(8, 87, 195, 0.15);
     }
 
     .fm-search {
-        width: min(230px, 100%);
+        width: min(220px, 100%);
+        height: 36px;
     }
-
-    .fm-search .form-control {
-        border-radius: 8px 0 0 8px;
-    }
-
     .fm-search .input-group-text {
+        border-radius: 8px 0 0 8px;
+        border-color: #cbd5e1;
+        height: 36px;
+    }
+    .fm-search .form-control {
         border-radius: 0 8px 8px 0;
+        border-color: #cbd5e1;
+        height: 36px;
+        font-size: 0.82rem;
     }
 
     .fm-aging {
         border-radius: 8px;
-        border: 1px solid #ced4da;
-        min-height: 32px;
+        border: 1px solid #cbd5e1;
+        min-height: 36px;
+        height: 36px;
+        background: #f8fafc;
     }
-
     .fm-aging input {
         width: 44px;
         border: none;
         background: transparent;
         font-weight: 800;
+        color: #0f172a;
     }
 
+    /* Buttons */
     .fm-action-btn,
     .fm-danger-btn {
         border-radius: 8px !important;
-        min-height: 32px;
-        font-weight: 800;
+        min-height: 36px;
+        height: 36px;
+        font-weight: 700;
+        font-size: 0.82rem;
+        padding: 0 0.85rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .fm-btn-primary {
+        background: linear-gradient(135deg, #0857c3 0%, #0284c7 100%);
+        color: #ffffff;
+        border: 0;
+        box-shadow: 0 2px 8px rgba(8, 87, 195, 0.25);
+        transition: all 0.2s ease;
+    }
+    .fm-btn-primary:hover {
+        color: #ffffff;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(8, 87, 195, 0.35);
+    }
+
+    .fm-btn-success {
+        background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+        color: #ffffff;
+        border: 0;
+        box-shadow: 0 2px 8px rgba(5, 150, 105, 0.25);
+        transition: all 0.2s ease;
+    }
+    .fm-btn-success:hover {
+        color: #ffffff;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(5, 150, 105, 0.35);
     }
 
     .fm-snapshot-action-btn {
         color: #334155;
         border-color: #cbd5e1;
         background: #ffffff;
+        transition: all 0.2s ease;
     }
-
     .fm-snapshot-action-btn:hover,
     .fm-snapshot-action-btn:focus {
-        color: #0f4c81;
+        color: #0857c3;
         border-color: #93c5fd;
         background: #eff6ff;
-        box-shadow: none;
     }
 
+    /* 4. Safety Banner */
     .fm-safety-note {
         display: flex;
         align-items: flex-start;
-        gap: 0.75rem;
-        padding: 0.8rem 0.95rem;
-        border-radius: 12px;
+        gap: 0.85rem;
+        padding: 0.95rem 1.25rem;
+        border-radius: 14px;
         border: 1px solid #bfdbfe;
         background: #eff6ff;
         color: #1e3a8a;
-        font-size: 0.86rem;
+        font-size: 0.88rem;
     }
-
     .fm-safety-note i {
         margin-top: 0.15rem;
+        font-size: 1.1rem;
+        color: #0857c3;
     }
-
     .fm-safety-note strong,
     .fm-safety-note span {
         display: block;
         line-height: 1.45;
     }
 
+    /* 5. Directory Storage Grid */
     .fm-directory-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 0.9rem;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 1rem;
         align-items: stretch;
     }
-
-    .fm-directory-item {
-        min-width: 0;
-    }
-
     .fm-directory-card {
-        transition: transform 0.18s ease, box-shadow 0.18s ease;
+        border-radius: 14px !important;
+        border: 1px solid #e2e8f0 !important;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        background: #ffffff;
     }
-
     .fm-directory-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 18px 34px -28px rgba(15, 23, 42, 0.42) !important;
+        border-color: #93c5fd !important;
+        box-shadow: 0 8px 24px rgba(8, 87, 195, 0.08) !important;
     }
 
     .fm-group-pill,
@@ -922,27 +1048,23 @@
         align-items: center;
         justify-content: center;
         border-radius: 999px;
-        font-size: 0.66rem;
-        font-weight: 900;
+        font-size: 0.72rem;
+        font-weight: 800;
         line-height: 1;
         white-space: nowrap;
     }
-
     .fm-group-pill {
-        padding: 0.28rem 0.45rem;
+        padding: 0.35rem 0.65rem;
     }
-
     .fm-type-badge {
-        padding: 0.4rem 0.55rem;
+        padding: 0.35rem 0.75rem;
     }
-
     .fm-group-pill--excel,
     .fm-type-badge--excel {
         background: #ecfdf5;
-        color: #047857;
-        border: 1px solid #bbf7d0;
+        color: #059669;
+        border: 1px solid #a7f3d0;
     }
-
     .fm-group-pill--db,
     .fm-type-badge--db {
         background: #eff6ff;
@@ -950,14 +1072,20 @@
         border: 1px solid #bfdbfe;
     }
 
+    /* 6. Table Card */
+    .fm-table-card {
+        border-radius: 14px !important;
+        overflow: hidden;
+        border: 1px solid #e2e8f0 !important;
+    }
     .fm-table-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 1rem;
         flex-wrap: wrap;
+        border-bottom: 1px solid #e2e8f0;
     }
-
     .fm-selection-actions {
         display: flex;
         align-items: center;
@@ -965,47 +1093,50 @@
         gap: 0.65rem;
         flex-wrap: wrap;
     }
-
     .fm-table-wrap {
         max-height: min(680px, calc(100dvh - 320px));
         overflow: auto;
         -webkit-overflow-scrolling: touch;
     }
-
     .fm-table {
         min-width: 980px;
-        font-size: 0.84rem;
+        font-size: 0.86rem;
     }
-
     .fm-table thead th {
         position: sticky;
         top: 0;
         z-index: 2;
         background: #f8fafc;
+        border-bottom: 2px solid #e2e8f0;
+        color: #475569;
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
         white-space: nowrap;
+        padding: 0.95rem 1.25rem;
     }
-
+    .fm-table tbody td {
+        padding: 0.85rem 1.25rem;
+        border-top: 1px solid #f1f5f9;
+        vertical-align: middle;
+    }
     .fm-table-row {
-        transition: background-color 0.18s ease;
+        transition: background-color 0.15s ease;
         cursor: pointer;
     }
-
     .fm-table-row:hover {
         background-color: #f8fafc;
     }
 
-    .fm-table-row td {
-        vertical-align: middle;
-    }
-
-    .swal-modern-popup { border: 1px solid rgba(226,232,240,0.95); border-radius: 28px; padding: 1.4rem 1.4rem 1.2rem; box-shadow: 0 30px 80px -35px rgba(15,23,42,0.35); }
-    .swal-modern-title { color: #0f172a; font-weight: 800; letter-spacing: 0; }
-    .swal-modern-html { color: #475569; font-size: 0.95rem; line-height: 1.65; }
-    .swal-modern-confirm, .swal-modern-cancel { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 16px; font-weight: 700; padding: 0.8rem 1.3rem; transition: transform 0.2s ease, box-shadow 0.2s ease; }
-    .swal-modern-confirm { background: linear-gradient(135deg, #0f766e, #115e59); color: #fff; box-shadow: 0 16px 34px -22px rgba(15,23,42,0.45); }
-    .swal-modern-confirm:hover { transform: translateY(-2px); box-shadow: 0 20px 38px -20px rgba(15,23,42,0.5); }
+    .swal-modern-popup { border: 1px solid rgba(226,232,240,0.95); border-radius: 24px; padding: 1.4rem; box-shadow: 0 30px 80px -35px rgba(15,23,42,0.35); }
+    .swal-modern-title { color: #0f172a; font-weight: 800; }
+    .swal-modern-html { color: #475569; font-size: 0.92rem; line-height: 1.6; }
+    .swal-modern-confirm, .swal-modern-cancel { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 12px; font-weight: 700; padding: 0.65rem 1.25rem; transition: all 0.2s ease; }
+    .swal-modern-confirm { background: linear-gradient(135deg, #0857c3, #0284c7); color: #fff; box-shadow: 0 4px 14px rgba(8,87,195,0.3); }
+    .swal-modern-confirm:hover { transform: translateY(-1px); }
     .swal-modern-cancel { background: #f1f5f9; color: #334155; margin-left: 0.5rem; border: 1px solid rgba(148,163,184,0.2); }
-    .swal-modern-cancel:hover { background: #e2e8f0; transform: translateY(-1px); }
+    .swal-modern-cancel:hover { background: #e2e8f0; }
 
     @media (min-width: 1200px) {
         .border-xl-right {
@@ -1017,7 +1148,6 @@
         .fm-tools {
             justify-content: flex-start;
         }
-
         .fm-search {
             flex: 1 1 220px;
         }
@@ -1029,20 +1159,13 @@
             flex-direction: column;
             gap: 0.75rem;
         }
-
-        .fm-admin-badge {
-            align-self: flex-start;
-        }
-
         .fm-stats-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
         }
-
         .fm-toolbar,
         .fm-main-card .card-body {
             padding: 1rem !important;
         }
-
         .fm-table-wrap {
             max-height: min(620px, calc(100dvh - 280px));
         }
@@ -1055,7 +1178,6 @@
             flex-direction: column;
             width: 100%;
         }
-
         .fm-scope-switch,
         .fm-search,
         .fm-aging,
@@ -1063,21 +1185,17 @@
         .fm-danger-btn {
             width: 100%;
         }
-
         .fm-scope-btn {
             white-space: normal;
             min-height: 40px;
         }
-
         .fm-aging {
             justify-content: space-between;
         }
-
         .fm-table-head {
             align-items: stretch;
             flex-direction: column;
         }
-
         .fm-table-wrap {
             max-height: min(560px, calc(100dvh - 250px));
         }
@@ -1088,26 +1206,21 @@
             padding-left: 0.35rem;
             padding-right: 0.35rem;
         }
-
         .fm-stats-grid {
             grid-template-columns: 1fr;
         }
-
         .fm-directory-grid {
             grid-template-columns: 1fr;
             gap: 0.65rem;
         }
-
         .fm-safety-note {
             padding: 0.7rem;
             font-size: 0.8rem;
         }
-
         .fm-table {
             min-width: 860px;
             font-size: 0.78rem;
         }
-
         .swal-modern-popup {
             border-radius: 18px;
             padding: 1rem;

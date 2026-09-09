@@ -57,7 +57,7 @@ class RebuildChartPeriodikPeriodJob implements ShouldQueue
                 'inserted_rows' => $result ?? 0,
             ]);
 
-            $this->updateProgress("Periode {$this->period} selesai (${duration}s)", 'success');
+            $this->updateProgress("Periode {$this->period} selesai ({$duration}s)", 'success');
 
         } catch (\Exception $e) {
             $duration = $startTime->diffInSeconds(now());

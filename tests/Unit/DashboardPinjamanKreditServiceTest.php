@@ -449,6 +449,37 @@ class DashboardPinjamanKreditServiceTest extends TestCase
         $this->assertEqualsWithDelta(100_000_000, $total['selected'], 0.01);
     }
 
+    public function test_area_6_view_preserves_branch_totals_when_sub_offices_exist_in_snapshots(): void
+    {
+        $summaryMadiun = $this->snapshotRow('2026-05-15', 'KC Madiun', 150_000_000, 10_000_000);
+        $detailKcMadiun = $this->snapshotRow('2026-05-15', 'KC Madiun', 100_000_000, 8_000_000, 'kc-madiun-detail', 'KC Madiun');
+        $detailKcpCaruban = $this->snapshotRow('2026-05-15', 'KC Madiun', 50_000_000, 2_000_000, 'kcp-caruban', 'KCP Caruban');
+
+        $summaryMagetan = $this->snapshotRow('2026-05-15', 'KC Magetan', 80_000_000, 5_000_000);
+
+        DB::table('dashboard_harian_snapshots')->insert([
+            $summaryMadiun,
+            $detailKcMadiun,
+            $detailKcpCaruban,
+            $summaryMagetan,
+        ]);
+
+        $payload = app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData('2026-05-15', 'SME', null);
+        $osRows = collect($payload['os']);
+
+        $madiunKecil = $osRows->first(fn (array $row): bool => ($row['branch'] ?? '') === 'KC Madiun' && ($row['category'] ?? '') === 'Kecil non Cashcoll');
+        $madiunCashcoll = $osRows->first(fn (array $row): bool => ($row['branch'] ?? '') === 'KC Madiun' && ($row['category'] ?? '') === 'Cashcoll');
+        $magetanKecil = $osRows->first(fn (array $row): bool => ($row['branch'] ?? '') === 'KC Magetan' && ($row['category'] ?? '') === 'Kecil non Cashcoll');
+        $grandTotal = $osRows->firstWhere('is_total', true);
+
+        $this->assertNotNull($madiunKecil);
+        $this->assertNotNull($madiunCashcoll);
+        $this->assertEqualsWithDelta(150_000_000, $madiunKecil['selected'], 0.01);
+        $this->assertEqualsWithDelta(10_000_000, $madiunCashcoll['selected'], 0.01);
+        $this->assertEqualsWithDelta(80_000_000, $magetanKecil['selected'], 0.01);
+        $this->assertEqualsWithDelta(245_000_000, $grandTotal['selected'], 0.01);
+    }
+
     private function snapshotRow(string $period, string $branch, int $os, int $cashcollOs = 0, ?string $unitKey = null, ?string $unitLabel = null): array
     {
         $kancaKey = strtolower(str_replace(' ', '-', $branch));

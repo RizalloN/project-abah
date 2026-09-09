@@ -8,11 +8,18 @@
     };
     $qualityChartId = 'loan-quality-chart-' . preg_replace('/[^a-z0-9_-]+/i', '-', (string) ($contentScopeKey ?? 'scope'));
     $qualitySeries = [
-        ['key' => 'lr', 'label' => 'LR', 'color' => '#7c3aed', 'dash' => []],
-        ['key' => 'sml', 'label' => 'SML', 'color' => '#f59e0b', 'dash' => []],
-        ['key' => 'npl', 'label' => 'NPL', 'color' => '#ef4444', 'dash' => []],
         ['key' => 'lar', 'label' => 'LAR', 'color' => '#0754bd', 'dash' => []],
+        ['key' => 'lr', 'label' => 'LR', 'color' => '#7c3aed', 'dash' => []],
+        ['key' => 'sml', 'label' => 'SML', 'color' => '#0284c7', 'dash' => []],
+        ['key' => 'sml1', 'label' => 'SML 1', 'color' => '#0857c3', 'dash' => []],
+        ['key' => 'sml2', 'label' => 'SML 2', 'color' => '#009ac8', 'dash' => []],
+        ['key' => 'sml3', 'label' => 'SML 3', 'color' => '#d88900', 'dash' => []],
+        ['key' => 'kl', 'label' => 'KL', 'color' => '#e66a00', 'dash' => []],
+        ['key' => 'd', 'label' => 'D', 'color' => '#dc3545', 'dash' => []],
+        ['key' => 'm', 'label' => 'M', 'color' => '#9f1239', 'dash' => []],
+        ['key' => 'npl', 'label' => 'NPL', 'color' => '#ef4444', 'dash' => []],
     ];
+    $qualityDetailMetrics = array_column($qualitySeries, 'key');
     $qualityLatestPoint = collect((array) data_get($quality, 'points', []))
         ->filter(fn (array $point): bool => data_get($point, 'lar') !== null)
         ->last();
@@ -58,7 +65,7 @@
             <canvas id="{{ $qualityChartId }}"
                     height="118"
                     role="img"
-                    aria-label="Grafik LR, SML, NPL, dan LAR {{ $qualityScopeLabel }} selama {{ data_get($quality, 'year') }}"></canvas>
+                    aria-label="Grafik indikator kualitas portofolio {{ $qualityScopeLabel }} selama {{ data_get($quality, 'year') }}"></canvas>
         </div>
         <aside class="loan-quality-legend" aria-label="Pilih indikator kualitas">
             @foreach($qualitySeries as $definition)
@@ -78,7 +85,7 @@
                     </div>
                 </button>
             @endforeach
-            <small>Rp Juta · pilih indikator</small>
+            <small>Rp Juta &middot; pilih indikator</small>
         </aside>
     </div>
 
@@ -89,10 +96,9 @@
                 <thead>
                     <tr>
                         <th>Posisi</th>
-                        <th>LR</th>
-                        <th>SML</th>
-                        <th>NPL</th>
-                        <th>LAR</th>
+                        @foreach($qualityDetailMetrics as $metric)
+                            <th>{{ strtoupper($metric) }}</th>
+                        @endforeach
                     </tr>
                 </thead>
                 <tbody>
@@ -100,8 +106,8 @@
                         @continue(data_get($point, 'lar') === null)
                         <tr>
                             <th scope="row">{{ data_get($point, 'period_label', '-') }}</th>
-                            @foreach(['lr', 'sml', 'npl', 'lar'] as $metric)
-                                <td>{{ number_format((float) data_get($point, $metric, 0), 0, ',', '.') }}</td>
+                            @foreach($qualityDetailMetrics as $metric)
+                                <td>{{ data_get($point, $metric) !== null ? number_format((float) data_get($point, $metric, 0), 0, ',', '.') : '-' }}</td>
                             @endforeach
                         </tr>
                     @endforeach

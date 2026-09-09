@@ -7,6 +7,7 @@ use App\Support\UserBranchScope;
 use App\Support\SargableDateFilter;
 use App\Jobs\RefreshRemoteDashboardSourcesJob;
 use App\Services\Reports\KpiPersonnelReferenceSyncService;
+use App\Services\Reports\KpiRmSmeDashboardService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -109,8 +110,9 @@ class AlmafactsDashboardController extends Controller
     private const KPI_MANTRI_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/14As5M-bVMRa9OSFEo1mcaH1M1Derm7ca/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
     private const KPI_CONSUMER_SPREADSHEET_ID = '1a-fr7OnoTIa_aJZ_b-yt_KkLJiJu92McQxv93ab58qQ';
     private const KPI_CONSUMER_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1a-fr7OnoTIa_aJZ_b-yt_KkLJiJu92McQxv93ab58qQ/edit?gid=942361434#gid=942361434';
-    private const KPI_RM_SME_SPREADSHEET_ID = '1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu';
-    private const KPI_RM_SME_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true';
+    private const KPI_RM_SME_SPREADSHEET_ID = '13s9SkGMC0ShjlEZGog1uBtgLxFY1RqPN5ZvMjzIVRUg';
+    private const KPI_RM_SME_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/13s9SkGMC0ShjlEZGog1uBtgLxFY1RqPN5ZvMjzIVRUg/edit?usp=sharing';
+    private const KPI_RM_SME_LEGACY_SPREADSHEET_IDS = ['1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu'];
     private const KPI_JUNE_SOURCES = [
         'mbm' => [
             'sheet' => 'KPI MBM',
@@ -131,6 +133,7 @@ class AlmafactsDashboardController extends Controller
             'sheet' => 'KPI RM SME',
             'spreadsheet_id' => '1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs',
             'spreadsheet_url' => 'https://docs.google.com/spreadsheets/d/1B5U9VxPSjOyLvygqwCKWZssoyf6xoEDs/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'dashboard_mode' => false,
         ],
         'mantri' => [
             'sheet' => 'KPI',
@@ -177,13 +180,17 @@ class AlmafactsDashboardController extends Controller
         'rm-sme' => [
             'label' => 'KPI RM SME',
             'title' => 'KPI RM SME',
-            'sheet' => 'KPI RM SME',
+            'sheet' => 'Sheet1',
             'spreadsheet_id' => self::KPI_RM_SME_SPREADSHEET_ID,
             'spreadsheet_url' => self::KPI_RM_SME_SPREADSHEET_URL,
-            'branch_filter_headers' => ['BO', 'KANCA'],
-            'expected_header_any' => ['AVG BALANCE SMALL', 'POSISI OS SMALL', 'PRODUKTIVITAS RM SME'],
-            'force_two_row_header' => true,
-            'weighted_metric_pairs' => true,
+            'branch_filter_headers' => ['NAMA KANCA KONSOL'],
+            'expected_header_any' => ['AVG BALANCE SMALL', 'OS SMALL', 'NAMA MANTRI'],
+            'dashboard_mode' => true,
+            'dashboard_sheets' => [
+                'main' => 'Sheet1',
+                'targets' => 'Sheet2',
+                'roster' => 'Sheet3',
+            ],
             'icon' => 'fas fa-briefcase',
         ],
         'mantri' => [
@@ -314,9 +321,16 @@ class AlmafactsDashboardController extends Controller
         if ($kpiBranchFilter['enabled']) {
             $summary['row_count'] = count($filteredPayload['rows']);
         }
+        $rmSmeDashboard = null;
+        if ($selectedSheetKey === 'rm-sme' && ! empty($selectedSheet['dashboard_mode'])) {
+            $rmSmeDashboard = app(KpiRmSmeDashboardService::class)->build(
+                $payload['rm_sme_sources'] ?? [],
+                $kpiBranchFilter
+            );
+        }
         unset($kpiBranchFilter['rows']);
 
-        return view('report.almafacts.kpi', [
+        return view($rmSmeDashboard !== null ? 'report.almafacts.kpi-rm-sme' : 'report.almafacts.kpi', [
             'sheetOptions' => self::KPI_SHEETS,
             'selectedSheetKey' => $selectedSheetKey,
             'selectedSheet' => $selectedSheet,
@@ -337,6 +351,7 @@ class AlmafactsDashboardController extends Controller
             'summary' => $summary,
             'error' => $payload['error'] ?? null,
             'fetchedAt' => $payload['fetched_at'] ?? null,
+            'rmSmeDashboard' => $rmSmeDashboard,
         ]);
     }
 
@@ -525,6 +540,10 @@ class AlmafactsDashboardController extends Controller
     private function fetchKpiSheetPayload(string $sheetKey, string $period): array
     {
         $sheet = $this->kpiSheetConfig($sheetKey, $period);
+        if ($sheetKey === 'rm-sme' && ! empty($sheet['dashboard_mode'])) {
+            return $this->fetchKpiRmSmeDashboardPayload($sheet, $period);
+        }
+
         $spreadsheetId = $sheet['spreadsheet_id'] ?? self::KPI_SPREADSHEET_ID;
         $sheetNames = array_values(array_unique(array_merge(
             [$sheet['sheet']],
@@ -576,6 +595,108 @@ class AlmafactsDashboardController extends Controller
         }
 
         return $this->emptyKpiSheetPayload($lastError ?: 'Sheet KPI tidak dapat dibaca.');
+    }
+
+    private function fetchKpiRmSmeDashboardPayload(array $sheet, string $period): array
+    {
+        $spreadsheetId = (string) ($sheet['spreadsheet_id'] ?? self::KPI_RM_SME_SPREADSHEET_ID);
+        $sheetNames = $sheet['dashboard_sheets'] ?? [
+            'main' => 'Sheet1',
+            'targets' => 'Sheet2',
+            'roster' => 'Sheet3',
+        ];
+        $requiredHeaders = [
+            'main' => ['PERIODE', 'NAMA KANCA KONSOL', 'NAMA UKO', 'NAMA MANTRI', 'JG', 'AVG BALANCE SMALL', 'OS SMALL'],
+            'targets' => ['PERIODE', 'NAMA KANCA KONSOL', 'NAMA UKO', 'NAMA MANTRI', 'JG', 'RKA AVG BALANCE SMALL', 'RKA OS SMALL'],
+            'roster' => ['NAMA KANCA KONSOL', 'NAMA UKO', 'NAMA MANTRI', 'JG'],
+        ];
+        $sources = [];
+
+        foreach ($sheetNames as $sourceKey => $sheetName) {
+            try {
+                $response = Http::timeout(25)
+                    ->retry(2, 300)
+                    ->get($this->kpiSheetCsvUrl((string) $sheetName, $spreadsheetId));
+            } catch (\Throwable $exception) {
+                return $this->emptyKpiSheetPayload('Gagal membaca ' . $sheetName . ': ' . $exception->getMessage());
+            }
+
+            if (! $response->successful()) {
+                return $this->emptyKpiSheetPayload('Google Sheet ' . $sheetName . ' mengembalikan status ' . $response->status() . '.');
+            }
+
+            $csv = trim($response->body());
+            if ($csv === '' || str_contains(strtolower(substr($csv, 0, 300)), '<html')) {
+                return $this->emptyKpiSheetPayload('Sheet ' . $sheetName . ' tidak dapat dibaca sebagai CSV.');
+            }
+
+            $matrix = $this->parseKpiCsvMatrix($csv);
+            if (! $this->kpiMatrixHasHeaders($matrix['header'], $requiredHeaders[$sourceKey] ?? [])) {
+                return $this->emptyKpiSheetPayload('Struktur ' . $sheetName . ' tidak sesuai kontrak KPI RM SME.');
+            }
+            $sources[$sourceKey] = $matrix;
+        }
+
+        $roster = $sources['roster'] ?? ['header' => [], 'rows' => []];
+
+        return [
+            'header' => $roster['header'],
+            'header_columns' => collect($roster['header'])->values()->map(static fn ($heading, $index): array => [
+                'label' => (string) $heading,
+                'group' => null,
+                'sortable' => true,
+                'index' => $index,
+            ])->all(),
+            'header_groups' => [],
+            'rows' => $roster['rows'],
+            'rm_sme_sources' => $sources,
+            'summary' => [
+                'row_count' => count($roster['rows']),
+                'column_count' => count($roster['header']),
+                'sheet_name' => implode(' + ', array_values($sheetNames)),
+                'sheet_title' => 'Dashboard KPI RM SME',
+                'period' => $period,
+            ],
+            'fetched_at' => now()->toDateTimeString(),
+            'error' => null,
+        ];
+    }
+
+    /** @return array{header: array<int, string>, rows: array<int, array<int, string>>} */
+    private function parseKpiCsvMatrix(string $csv): array
+    {
+        $lines = preg_split('/\r\n|\n|\r/', $csv) ?: [];
+        $rows = [];
+        foreach ($lines as $line) {
+            $cells = array_map(
+                fn ($value): string => $this->normalizeKpiSheetCell($value),
+                str_getcsv($line)
+            );
+            if (collect($cells)->every(fn (string $value): bool => $this->isKpiSheetBlankDataCell($value))) {
+                continue;
+            }
+            $rows[] = $cells;
+        }
+
+        $header = array_shift($rows) ?? [];
+        $columnCount = count($header);
+        $rows = array_values(array_map(
+            static fn (array $row): array => array_slice(array_pad($row, $columnCount, ''), 0, $columnCount),
+            $rows
+        ));
+
+        return ['header' => $header, 'rows' => $rows];
+    }
+
+    /** @param array<int, string> $header */
+    private function kpiMatrixHasHeaders(array $header, array $required): bool
+    {
+        $normalized = array_map(
+            static fn ($value): string => strtoupper(preg_replace('/\s+/', ' ', trim((string) $value)) ?? ''),
+            $header
+        );
+
+        return collect($required)->every(static fn (string $value): bool => in_array($value, $normalized, true));
     }
 
     private function emptyKpiSheetPayload(string $message): array
@@ -1268,6 +1389,10 @@ class AlmafactsDashboardController extends Controller
             ->first();
 
         if (!$row) {
+            return $base;
+        }
+
+        if ($sheetKey === 'rm-sme' && in_array((string) ($row->spreadsheet_id ?? ''), self::KPI_RM_SME_LEGACY_SPREADSHEET_IDS, true)) {
             return $base;
         }
 

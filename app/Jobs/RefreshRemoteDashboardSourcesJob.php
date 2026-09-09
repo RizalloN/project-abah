@@ -6,6 +6,7 @@ use App\Http\Controllers\DashboardSimpananController;
 use App\Http\Controllers\PublicWorkbookController;
 use App\Http\Controllers\Report\AlmafactsDashboardController;
 use App\Services\Reports\BusinessClusterReportService;
+use App\Services\Reports\MicroPipelineSyncService;
 use App\Services\Reports\SppgReportService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -51,7 +52,8 @@ class RefreshRemoteDashboardSourcesJob implements ShouldBeUnique, ShouldQueue
         PublicWorkbookController $publicWorkbook,
         AlmafactsDashboardController $almafacts,
         BusinessClusterReportService $businessCluster,
-        SppgReportService $sppg
+        SppgReportService $sppg,
+        MicroPipelineSyncService $microPipeline
     ): void {
         try {
             if (in_array('market-share', $this->sources, true)) {
@@ -77,6 +79,14 @@ class RefreshRemoteDashboardSourcesJob implements ShouldBeUnique, ShouldQueue
             if (in_array('sppg', $this->sources, true)) {
                 $this->refreshSource('sppg', fn () => $sppg->refreshSourceCache());
             }
+
+            if (in_array('micro-pipeline', $this->sources, true)) {
+                $this->refreshSource('micro-pipeline', fn () => [
+                    'success' => collect($microPipeline->syncAll(true))->every(
+                        fn (array $result): bool => array_key_exists('changed', $result)
+                    ),
+                ]);
+            }
         } finally {
             if (in_array('market-share', $this->sources, true)) {
                 Cache::forget('dashboard_sources:refresh:market-share:pending');
@@ -94,7 +104,7 @@ class RefreshRemoteDashboardSourcesJob implements ShouldBeUnique, ShouldQueue
                 Cache::forget('dashboard_sources:refresh:kpi:'.$this->kpiPeriod.':all:pending');
             }
 
-            foreach (['market-share-instansi', 'business-cluster', 'sppg'] as $source) {
+            foreach (['market-share-instansi', 'business-cluster', 'sppg', 'micro-pipeline'] as $source) {
                 if (in_array($source, $this->sources, true)) {
                     Cache::forget('dashboard_sources:refresh:'.$source.':pending');
                 }

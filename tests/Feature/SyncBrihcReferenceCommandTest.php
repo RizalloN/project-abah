@@ -46,6 +46,8 @@ class SyncBrihcReferenceCommandTest extends TestCase
             $table->string('pn_mantri')->nullable();
             $table->string('status')->nullable();
             $table->string('jg')->nullable();
+            $table->string('tmt_masuk')->nullable();
+            $table->string('tmt_jabatan')->nullable();
             $table->timestamps();
         });
 
@@ -114,6 +116,83 @@ class SyncBrihcReferenceCommandTest extends TestCase
 
         $this->assertDatabaseHas('brihc', ['pn' => '111', 'jabatan' => 'MANTRI']);
         $this->assertDatabaseMissing('brihc', ['pn' => '1234']);
+    }
+
+    public function test_it_syncs_latest_mantri_reference_workbook_without_removing_other_brihc_roles(): void
+    {
+        $timestamp = now();
+        $this->app['db']->table('brihc')->insert([
+            ['uniqueid_brihc' => 'keep-kaunit', 'pn' => '901', 'nama' => 'Ka Unit Tetap', 'jabatan' => 'KAUNIT', 'created_at' => $timestamp, 'updated_at' => $timestamp],
+        ]);
+        $this->app['db']->table('brihc_pemasar')->insert([
+            [
+                'uniqueid_namareport' => 'old-mantri-madiun',
+                'pernr' => '111',
+                'completename' => 'Mantri Lama Madiun',
+                'positiondesc' => 'MANTRI',
+                'psadesc' => 'KC Madiun',
+                'created_at' => $timestamp,
+                'updated_at' => $timestamp,
+            ],
+            [
+                'uniqueid_namareport' => 'old-mantri-collection-madiun',
+                'pernr' => '112',
+                'completename' => 'Mantri Collection Lama Madiun',
+                'positiondesc' => 'MANTRI COLLECTION',
+                'psadesc' => 'KC Madiun',
+                'created_at' => $timestamp,
+                'updated_at' => $timestamp,
+            ],
+            [
+                'uniqueid_namareport' => 'keep-rm-small',
+                'pernr' => '222',
+                'completename' => 'RM Small Tetap',
+                'positiondesc' => 'RM BISNIS KECIL',
+                'psadesc' => 'KC Madiun',
+                'created_at' => $timestamp,
+                'updated_at' => $timestamp,
+            ],
+            [
+                'uniqueid_namareport' => 'reference_brihc_mantri_999',
+                'pernr' => '999',
+                'completename' => 'Mantri Lama Situbondo',
+                'positiondesc' => 'MANTRI',
+                'psadesc' => 'KC Situbondo',
+                'created_at' => $timestamp,
+                'updated_at' => $timestamp,
+            ],
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'brihc_mantri_latest_').'.xlsx';
+        $spreadsheet = new Spreadsheet;
+        $spreadsheet->getActiveSheet()->fromArray([
+            ['Personal Number', 'Nama Pekerja', 'Kanca Induk', 'Kode Unit Kerja', 'Jabatan', 'Orgh Desk', 'Jenis Kelamin', 'ESGDESC', 'TMT Masuk', 'TMT_JABATAN', 'JG'],
+            ['000999', 'Angga Triawan', 'KC Madiun', '6347', 'Mantri', 'UNIT NGLAMES', 'Male', 'PT', '2026-08-10', '2026-08-10', 'JG06'],
+            ['000998', 'Mantri Briguna Baru', 'KC Ngawi', '6436', 'Mantri Briguna', 'UNIT SINE', 'Female', 'PT', '2020-01-01', '2024-01-01', 'JG05'],
+        ]);
+        (new Xlsx($spreadsheet))->save($path);
+
+        try {
+            $this->artisan('reference:sync-brihc', ['file' => $path])
+                ->expectsOutputToContain('"source_format": "mantri_reference"')
+                ->assertExitCode(0);
+        } finally {
+            @unlink($path);
+        }
+
+        $this->assertDatabaseHas('brihc', ['pn' => '901', 'jabatan' => 'KAUNIT']);
+        $this->assertDatabaseHas('brihc', ['pn' => '999', 'nama' => 'Angga Triawan', 'jabatan' => 'MANTRI']);
+        $this->assertDatabaseMissing('brihc_pemasar', ['uniqueid_namareport' => 'old-mantri-madiun']);
+        $this->assertDatabaseMissing('brihc_pemasar', ['uniqueid_namareport' => 'old-mantri-collection-madiun']);
+        $this->assertDatabaseHas('brihc_pemasar', [
+            'pernr' => '999',
+            'pn_mantri' => '999',
+            'completename' => 'Angga Triawan',
+            'psadesc' => 'KC Madiun',
+            'orgdesc' => 'UNIT NGLAMES',
+            'tmt_jabatan' => '2026-08-10',
+        ]);
+        $this->assertDatabaseHas('brihc_pemasar', ['uniqueid_namareport' => 'keep-rm-small']);
     }
 
     public function test_it_syncs_compact_pdwk_reference_without_changing_brihc_pemasar(): void

@@ -38,6 +38,10 @@
     }
 
     /* Keep the primary dashboard groups in the requested navigation order. */
+    .main-sidebar .nav-sidebar > .sidebar-dashboard-landing {
+        order: -7;
+    }
+
     .main-sidebar .nav-sidebar > .sidebar-dashboard-marketshare {
         order: -6;
     }
@@ -643,6 +647,31 @@
         <nav>
             <ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu" data-accordion="false">
                 
+                {{-- LANDING PAGE (DROPDOWN) --}}
+                <li class="nav-item sidebar-dashboard-landing {{ request()->routeIs('dashboard', 'dashboard.simpanan') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('dashboard', 'dashboard.simpanan') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-home"></i>
+                        <p>
+                            Landing Page
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
+                    </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('dashboard') }}" class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Landing Page Pinjaman</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('dashboard.simpanan') }}" class="nav-link {{ request()->routeIs('dashboard.simpanan') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Landing Page Simpanan</p>
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+
                 {{-- FIX DASHBOARD HARIAN DROPDOWN BUG --}}
                 <li class="nav-item sidebar-dashboard-harian {{ request()->is('dashboard-harian*') ? 'menu-open' : '' }}">
                     <a href="#" class="nav-link {{ request()->is('dashboard-harian*') ? 'active' : '' }}">
@@ -698,8 +727,8 @@
                     </ul>
                 </li>
 
-                <li class="nav-item sidebar-dashboard-pinjaman {{ request()->routeIs('dashboard', 'report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('dashboard', 'report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'active' : '' }}">
+                <li class="nav-item sidebar-dashboard-pinjaman {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-line"></i>
                         <p>
                             Dashboard Pinjaman
@@ -707,12 +736,6 @@
                         </p>
                     </a>
                     <ul class="nav nav-treeview">
-                        <li class="nav-item">
-                            <a href="{{ route('dashboard') }}" class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}">
-                                <i class="far fa-circle nav-icon"></i>
-                                <p>Landing Page</p>
-                            </a>
-                        </li>
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.kredit') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kredit') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>

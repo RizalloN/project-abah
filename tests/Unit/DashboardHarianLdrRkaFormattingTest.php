@@ -5,8 +5,10 @@ namespace Tests\Unit;
 use App\Http\Controllers\DashboardHarianController;
 use App\Support\DashboardHarianSnapshotService;
 use Illuminate\Http\Request;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Conditional;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -162,14 +164,42 @@ class DashboardHarianLdrRkaFormattingTest extends TestCase
             ],
             'rows' => [
                 array_merge($baseRow, ['label' => '1. Simpanan']),
-                array_merge($baseRow, ['label' => 'A. RITEL']),
+                array_merge($baseRow, ['label' => 'A. RITEL', 'accent' => 'section', 'depth' => 1]),
+                array_merge($baseRow, ['label' => 'Total OS Non Commercial', 'accent' => 'section', 'depth' => 1]),
+                array_merge($baseRow, ['label' => 'Kecil Non Cashcoll', 'accent' => 'muted', 'depth' => 3]),
+                array_merge($baseRow, ['label' => 'KPR', 'accent' => 'default', 'depth' => 2]),
             ],
         ]);
 
+        $this->assertSame('BRI | DASHBOARD KERAGAAN HARIAN', $sheet->getCell('A1')->getValue());
+        $this->assertSame('FF00529C', $sheet->getStyle('A2')->getFill()->getStartColor()->getARGB());
+        $this->assertSame('FF0070C0', $sheet->getStyle('D2')->getFill()->getStartColor()->getARGB());
         $this->assertSame('FF0F4C97', $sheet->getStyle('A8')->getFill()->getStartColor()->getARGB());
         $this->assertSame('FFDDEBFF', $sheet->getStyle('A9')->getFill()->getStartColor()->getARGB());
+        $this->assertSame('FFDDEBFF', $sheet->getStyle('A10')->getFill()->getStartColor()->getARGB());
+        $this->assertSame('FFF1F5F9', $sheet->getStyle('A11')->getFill()->getStartColor()->getARGB());
+        $this->assertSame(2, $sheet->getStyle('A12')->getAlignment()->getIndent());
         $this->assertTrue($sheet->getStyle('A8')->getFont()->getBold());
         $this->assertTrue($sheet->getStyle('A9')->getFont()->getBold());
+        $defaultDeltaRules = $sheet->getStyle('H12')->getConditionalStyles();
+        $this->assertCount(3, $defaultDeltaRules);
+        $this->assertConditionalRule($defaultDeltaRules[1], Conditional::OPERATOR_EQUAL, '0');
+
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'dashboard-harian-');
+        $this->assertNotFalse($temporaryPath);
+        try {
+            (new Xlsx($spreadsheet))->save($temporaryPath);
+            $reloaded = IOFactory::load($temporaryPath);
+            $reloadedSheet = $reloaded->getActiveSheet();
+
+            $this->assertSame('BRI | DASHBOARD KERAGAAN HARIAN', $reloadedSheet->getCell('A1')->getValue());
+            $this->assertSame('FFDDEBFF', $reloadedSheet->getStyle('A10')->getFill()->getStartColor()->getARGB());
+            $this->assertCount(3, $reloadedSheet->getStyle('H12')->getConditionalStyles());
+
+            $reloaded->disconnectWorksheets();
+        } finally {
+            @unlink($temporaryPath);
+        }
 
         $spreadsheet->disconnectWorksheets();
     }

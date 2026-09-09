@@ -19,8 +19,10 @@ class LinkManagementController extends Controller
     private const LINK_TABLE = 'external_report_links';
     private const BUSINESS_CLUSTER_TABLE = 'business_cluster';
     private const KPI_GROUP = 'almafacts_kpi';
+    private const KPI_RM_SME_LEGACY_SPREADSHEET_IDS = ['1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu'];
     private const KOLABORASI_GROUP = 'kolaborasi_report';
     private const MARKET_SHARE_GROUP = 'market_share';
+    private const MICRO_PIPELINE_GROUP = 'micro_pipeline';
     private const SPPG_LINK_KEY = 'sppg';
     private const BUSINESS_CLUSTER_BRANCHES = [
         'KC Madiun',
@@ -49,9 +51,9 @@ class LinkManagementController extends Controller
         ],
         'rm-sme' => [
             'label' => 'KPI RM SME',
-            'sheet_name' => 'KPI RM SME',
-            'spreadsheet_id' => '1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu',
-            'link_url' => 'https://docs.google.com/spreadsheets/d/1Qlc5Bb9n_h-k0nmdQRxdYhoHIij3tdHu/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+            'sheet_name' => 'Sheet1',
+            'spreadsheet_id' => '13s9SkGMC0ShjlEZGog1uBtgLxFY1RqPN5ZvMjzIVRUg',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/13s9SkGMC0ShjlEZGog1uBtgLxFY1RqPN5ZvMjzIVRUg/edit?usp=sharing',
         ],
         'mantri' => [
             'label' => 'KPI Mantri',
@@ -74,15 +76,31 @@ class LinkManagementController extends Controller
             'link_url' => 'https://docs.google.com/spreadsheets/d/1hbFZpQL4IbN8aDkCsXzei7YtOw8q_zBt/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
         ],
     ];
+    private const MICRO_PIPELINE_DEFAULTS = [
+        'prewash' => [
+            'label' => 'Pipeline Mikro - Prewash',
+            'sheet_name' => 'Nominatif',
+            'spreadsheet_id' => '1qW0pqTpDLm3q7fV3CqnbaSfKMS6CcmeK',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1qW0pqTpDLm3q7fV3CqnbaSfKMS6CcmeK/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+        ],
+        'slik_hijau' => [
+            'label' => 'Pipeline Mikro - SLIK Hijau',
+            'sheet_name' => 'Berminat 1',
+            'spreadsheet_id' => '1E5ffcX9BhvR377uCB20aHlhIO3TOurxn',
+            'link_url' => 'https://docs.google.com/spreadsheets/d/1E5ffcX9BhvR377uCB20aHlhIO3TOurxn/edit?usp=sharing&ouid=115821169844020540388&rtpof=true&sd=true',
+        ],
+    ];
     public function index(): View
     {
         $this->ensureKpiDefaults();
         $this->ensureMarketShareDefaults();
+        $this->ensureMicroPipelineDefaults();
 
         return view('admin.link-management', [
             'kpiLinks' => $this->kpiLinks(),
             'sppgLink' => $this->sppgLink(),
             'marketShareLinks' => $this->marketShareLinks(),
+            'microPipelineLinks' => $this->microPipelineLinks(),
             'businessClusterLinks' => $this->businessClusterLinks(),
             'linkTableReady' => Schema::hasTable(self::LINK_TABLE),
             'businessClusterTableReady' => Schema::hasTable(self::BUSINESS_CLUSTER_TABLE),
@@ -100,6 +118,9 @@ class LinkManagementController extends Controller
             'market_share' => ['array'],
             'market_share.*.link_url' => ['required', 'url', 'max:2048', new TrustedSpreadsheetUrl],
             'market_share.*.sheet_name' => ['required', 'string', 'max:160'],
+            'micro_pipeline' => ['array'],
+            'micro_pipeline.*.link_url' => ['required', 'url', 'max:2048', new TrustedSpreadsheetUrl],
+            'micro_pipeline.*.sheet_name' => ['required', 'string', 'max:160'],
             'business_cluster' => ['array'],
             'business_cluster.*.link_url' => ['nullable', 'url', 'max:2048', new TrustedSpreadsheetUrl],
         ], [
@@ -110,6 +131,9 @@ class LinkManagementController extends Controller
             'market_share.*.link_url.required' => 'Link Market Share wajib diisi.',
             'market_share.*.link_url.url' => 'Link Market Share harus berupa URL valid.',
             'market_share.*.sheet_name.required' => 'Nama sheet Market Share wajib diisi.',
+            'micro_pipeline.*.link_url.required' => 'Link Pipeline Mikro wajib diisi.',
+            'micro_pipeline.*.link_url.url' => 'Link Pipeline Mikro harus berupa URL valid.',
+            'micro_pipeline.*.sheet_name.required' => 'Nama sheet Pipeline Mikro wajib diisi.',
             'business_cluster.*.link_url.url' => 'Link Business Cluster harus berupa URL valid.',
         ]);
 
@@ -121,8 +145,9 @@ class LinkManagementController extends Controller
         }
 
         $marketShareMappingChanged = false;
+        $microPipelineChanged = false;
 
-        DB::transaction(function () use ($validated, &$marketShareMappingChanged): void {
+        DB::transaction(function () use ($validated, &$marketShareMappingChanged, &$microPipelineChanged): void {
             foreach (($validated['kpi'] ?? []) as $key => $payload) {
                 if (!array_key_exists($key, self::KPI_DEFAULTS)) {
                     continue;
@@ -215,6 +240,37 @@ class LinkManagementController extends Controller
                 );
             }
 
+            foreach (($validated['micro_pipeline'] ?? []) as $key => $payload) {
+                if (! array_key_exists($key, self::MICRO_PIPELINE_DEFAULTS)) {
+                    continue;
+                }
+
+                $linkUrl = trim((string) $payload['link_url']);
+                $sheetName = trim((string) $payload['sheet_name']);
+                $previous = DB::table(self::LINK_TABLE)
+                    ->where('group_key', self::MICRO_PIPELINE_GROUP)
+                    ->where('link_key', $key)
+                    ->first();
+                $microPipelineChanged = $microPipelineChanged
+                    || ! $previous
+                    || trim((string) ($previous->link_url ?? '')) !== $linkUrl
+                    || trim((string) ($previous->sheet_name ?? '')) !== $sheetName;
+
+                DB::table(self::LINK_TABLE)->updateOrInsert(
+                    ['group_key' => self::MICRO_PIPELINE_GROUP, 'link_key' => $key],
+                    [
+                        'uniqueid_link' => $this->linkId(self::MICRO_PIPELINE_GROUP, $key),
+                        'label' => self::MICRO_PIPELINE_DEFAULTS[$key]['label'],
+                        'sheet_name' => $sheetName,
+                        'spreadsheet_id' => $this->extractSpreadsheetId($linkUrl) ?: self::MICRO_PIPELINE_DEFAULTS[$key]['spreadsheet_id'],
+                        'link_url' => $linkUrl,
+                        'is_active' => true,
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
+            }
+
             if (Schema::hasTable(self::BUSINESS_CLUSTER_TABLE)) {
                 foreach (($validated['business_cluster'] ?? []) as $branch => $payload) {
                     if (!in_array($branch, self::BUSINESS_CLUSTER_BRANCHES, true)) {
@@ -249,6 +305,9 @@ class LinkManagementController extends Controller
         if ($marketShareMappingChanged) {
             $this->scheduleMarketShareMappingRefresh();
         }
+        if ($microPipelineChanged) {
+            $this->scheduleMicroPipelineRefresh();
+        }
 
         return redirect()
             ->route('link-management.index')
@@ -265,12 +324,25 @@ class LinkManagementController extends Controller
         }
 
         foreach (self::KPI_DEFAULTS as $key => $payload) {
-            $exists = DB::table(self::LINK_TABLE)
+            $row = DB::table(self::LINK_TABLE)
                 ->where('group_key', self::KPI_GROUP)
                 ->where('link_key', $key)
-                ->exists();
+                ->first();
 
-            if ($exists) {
+            if ($key === 'rm-sme' && $row && $this->isLegacyKpiRmSmeLink((string) ($row->spreadsheet_id ?? ''))) {
+                DB::table(self::LINK_TABLE)
+                    ->where('group_key', self::KPI_GROUP)
+                    ->where('link_key', $key)
+                    ->update([
+                        'sheet_name' => $payload['sheet_name'],
+                        'spreadsheet_id' => $payload['spreadsheet_id'],
+                        'link_url' => $payload['link_url'],
+                        'updated_at' => now(),
+                    ]);
+                continue;
+            }
+
+            if ($row) {
                 continue;
             }
 
@@ -322,6 +394,36 @@ class LinkManagementController extends Controller
             DB::table(self::LINK_TABLE)->insert([
                 'uniqueid_link' => $this->linkId(self::MARKET_SHARE_GROUP, $key),
                 'group_key' => self::MARKET_SHARE_GROUP,
+                'link_key' => $key,
+                'label' => $payload['label'],
+                'sheet_name' => $payload['sheet_name'],
+                'spreadsheet_id' => $payload['spreadsheet_id'],
+                'link_url' => $payload['link_url'],
+                'is_active' => true,
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]);
+        }
+    }
+
+    private function ensureMicroPipelineDefaults(): void
+    {
+        if (! Schema::hasTable(self::LINK_TABLE)) {
+            return;
+        }
+
+        foreach (self::MICRO_PIPELINE_DEFAULTS as $key => $payload) {
+            $exists = DB::table(self::LINK_TABLE)
+                ->where('group_key', self::MICRO_PIPELINE_GROUP)
+                ->where('link_key', $key)
+                ->exists();
+            if ($exists) {
+                continue;
+            }
+
+            DB::table(self::LINK_TABLE)->insert([
+                'uniqueid_link' => $this->linkId(self::MICRO_PIPELINE_GROUP, $key),
+                'group_key' => self::MICRO_PIPELINE_GROUP,
                 'link_key' => $key,
                 'label' => $payload['label'],
                 'sheet_name' => $payload['sheet_name'],
@@ -395,6 +497,28 @@ class LinkManagementController extends Controller
         })->all();
     }
 
+    private function microPipelineLinks(): array
+    {
+        $rows = Schema::hasTable(self::LINK_TABLE)
+            ? DB::table(self::LINK_TABLE)
+                ->where('group_key', self::MICRO_PIPELINE_GROUP)
+                ->get()
+                ->keyBy('link_key')
+            : collect();
+
+        return collect(self::MICRO_PIPELINE_DEFAULTS)->map(function (array $default, string $key) use ($rows): array {
+            $row = $rows->get($key);
+
+            return [
+                'key' => $key,
+                'label' => $default['label'],
+                'sheet_name' => $row->sheet_name ?? $default['sheet_name'],
+                'spreadsheet_id' => $row->spreadsheet_id ?? $default['spreadsheet_id'],
+                'link_url' => $row->link_url ?? $default['link_url'],
+            ];
+        })->all();
+    }
+
     private function businessClusterLinks(): array
     {
         $rows = Schema::hasTable(self::BUSINESS_CLUSTER_TABLE)
@@ -435,6 +559,11 @@ class LinkManagementController extends Controller
             || !str_contains($lowerUrl, 'docs.google.com/spreadsheets/d/');
     }
 
+    private function isLegacyKpiRmSmeLink(string $spreadsheetId): bool
+    {
+        return in_array(trim($spreadsheetId), self::KPI_RM_SME_LEGACY_SPREADSHEET_IDS, true);
+    }
+
     private function scheduleMarketShareMappingRefresh(): void
     {
         $this->markMarketShareMappingSourceChanged();
@@ -443,6 +572,17 @@ class LinkManagementController extends Controller
             RefreshRemoteDashboardSourcesJob::dispatch(['market-share-mapping']);
         } catch (\Throwable $exception) {
             Log::warning('Refresh Mapping Market Share gagal dijadwalkan setelah perubahan Link Management.', [
+                'message' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    private function scheduleMicroPipelineRefresh(): void
+    {
+        try {
+            RefreshRemoteDashboardSourcesJob::dispatch(['micro-pipeline']);
+        } catch (\Throwable $exception) {
+            Log::warning('Refresh Pipeline Mikro gagal dijadwalkan setelah perubahan Link Management.', [
                 'message' => $exception->getMessage(),
             ]);
         }

@@ -461,9 +461,7 @@ it('menolak callback bertanda tangan rusak dan URL asing tanpa menimpa file', fu
         'filetype' => 'xlsx',
     ];
     $signed = officeControllerTestSignedCallback($context['jwt'], $payload);
-    $token = $signed['token'];
-    $signed['token'] = substr($token, 0, -1)
-        .($token[strlen($token) - 1] === 'a' ? 'b' : 'a');
+    $signed['token'] = 'tampered.'.$signed['token'];
 
     $this->postJson(
         route('drive.office.callback', [

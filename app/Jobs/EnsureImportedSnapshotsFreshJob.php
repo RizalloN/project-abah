@@ -116,6 +116,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         if ($table === 'daily_loan_dinamis'
             && $periodScope !== ''
             && config('queue.default') !== 'sync') {
+            WarmLandingLoanRiskCacheJob::dispatch($periodScope);
             WarmDashboardSimpananCacheJob::dispatch('micro-readiness', [
                 'period' => $periodScope,
             ]);

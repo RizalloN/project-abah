@@ -2,31 +2,41 @@
 
 namespace App\Support;
 
-use App\Support\SargableDateFilter;
-
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
-require_once __DIR__ . '/SnapshotQueryOptimizer.php';
+require_once __DIR__.'/SnapshotQueryOptimizer.php';
 
 class ReportSnapshotBuilder
 {
     private const DASHBOARD_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
+
     private const CHART_PERIODIK_SNAPSHOT_TABLE = 'dashboard_pinjaman_chart_periodik_snapshots';
+
     private const DASHBOARD_SIMPANAN_SNAPSHOT_TABLE = 'dashboard_simpanan_snapshots';
+
     private const DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE = 'dashboard_simpanan_branch_snapshots';
+
     private const RASIO_SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
+
     private const RASIO_UKER_SNAPSHOT_TABLE = 'rasio_casa_debitur_uker_snapshots';
+
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
+
     private const DORMANT_SNAPSHOT_VERSION = 2;
+
     private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
+
     private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
+
     private const PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE = 'performance_rm_cabang_snapshots';
 
     private const PRIORITY_BRANCHES = ['MADIUN', 'MAGETAN', 'NGAWI', 'PONOROGO'];
+
     private const SEGMENTS = ['total', 'briguna', 'kpr', 'mikro', 'smc'];
+
     private const NEW_PAYROLL_BRANCHES = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
 
     private const AREA_BRANCHES = [
@@ -72,6 +82,7 @@ class ReportSnapshotBuilder
     private array $dormantBranchFilterExpressionCache = [];
 
     private ?string $rasioCasaTempTablePeriod = null;
+
     private ?bool $rasioCasaTempTableTypeFilter = null;
 
     private readonly SnapshotQueryOptimizer $queryOptimizer;
@@ -79,7 +90,7 @@ class ReportSnapshotBuilder
     public function __construct(
         private readonly DashboardHarianSnapshotService $dashboardHarianSnapshotService
     ) {
-        $this->queryOptimizer = new SnapshotQueryOptimizer();
+        $this->queryOptimizer = new SnapshotQueryOptimizer;
     }
 
     public function rebuild(string $report = 'all', ?string $period = null, bool $force = false): array
@@ -374,7 +385,7 @@ class ReportSnapshotBuilder
                 updated_at = VALUES(updated_at)
         ", [$period, $period, $period]));
 
-        if (!$force) {
+        if (! $force) {
             $this->statementWithConcurrencyRetry('dashboard period prune', fn (): bool => DB::statement("
                 DELETE snap
                 FROM {$snapshotTable} snap
@@ -399,7 +410,7 @@ class ReportSnapshotBuilder
 
     private function buildChartPeriodikPeriodSnapshot(string $period, bool $force): int
     {
-        if (!Schema::hasTable(self::CHART_PERIODIK_SNAPSHOT_TABLE) || !Schema::hasTable('daily_loan_dinamis') || !Schema::hasTable('loan_type')) {
+        if (! Schema::hasTable(self::CHART_PERIODIK_SNAPSHOT_TABLE) || ! Schema::hasTable('daily_loan_dinamis') || ! Schema::hasTable('loan_type')) {
             return 0;
         }
 
@@ -459,7 +470,7 @@ class ReportSnapshotBuilder
                 updated_at = VALUES(updated_at)
         ", [$period, $period, $period]));
 
-        if (!$force) {
+        if (! $force) {
             $this->statementWithConcurrencyRetry('chart periodik period snapshot prune', fn (): bool => DB::statement("
                 DELETE snap
                 FROM {$snapshotTable} snap
@@ -630,7 +641,7 @@ class ReportSnapshotBuilder
             }
         }
 
-        if (!empty($rows)) {
+        if (! empty($rows)) {
             foreach (array_chunk($rows, 500) as $chunk) {
                 DB::table(self::RASIO_SNAPSHOT_TABLE)->upsert(
                     $chunk,
@@ -647,7 +658,7 @@ class ReportSnapshotBuilder
 
     private function buildRasioUkerPeriodSnapshot(string $loanPeriod, bool $force): int
     {
-        if (!Schema::hasTable(self::RASIO_UKER_SNAPSHOT_TABLE)) {
+        if (! Schema::hasTable(self::RASIO_UKER_SNAPSHOT_TABLE)) {
             return 0;
         }
 
@@ -680,7 +691,7 @@ class ReportSnapshotBuilder
             ->where('loan_period', $loanPeriod)
             ->delete();
 
-        if (!empty($rows)) {
+        if (! empty($rows)) {
             foreach (array_chunk($rows, 500) as $chunk) {
                 DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->upsert(
                     $chunk,
@@ -712,15 +723,15 @@ class ReportSnapshotBuilder
         $mikroFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'mikro');
         $smcFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'smc');
 
-        $casaSelectSql = $casaDate ? "
+        $casaSelectSql = $casaDate ? '
             SUM(COALESCE(c.casa_balance, 0)) as total_casa,
             SUM(CASE WHEN base.has_briguna = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as briguna_casa,
             SUM(CASE WHEN base.has_kpr = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as kpr_casa,
             SUM(CASE WHEN base.has_mikro = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as mikro_casa,
             SUM(CASE WHEN base.has_smc = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as smc_casa
-        " : "
+        ' : '
             0 as total_casa, 0 as briguna_casa, 0 as kpr_casa, 0 as mikro_casa, 0 as smc_casa
-        ";
+        ';
 
         $casaJoinSql = '';
         $bindings = [$loanPeriod, $loanPeriod, $casaDate, $loanPeriod];
@@ -728,13 +739,13 @@ class ReportSnapshotBuilder
         if ($casaDate) {
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
             $this->ensureRasioCasaTempTable($casaDate, $casaKeyColumn, $applyCasaTypeFilter);
-            $casaJoinSql = "
+            $casaJoinSql = '
                 LEFT JOIN tmp_rasio_casa_balances c ON c.identity_key = base.identity_key
-            ";
+            ';
         }
 
-        $this->statementWithConcurrencyRetry('rasio snapshot upsert', fn (): bool => DB::statement("
-            INSERT INTO " . self::RASIO_SNAPSHOT_TABLE . " (
+        $this->statementWithConcurrencyRetry('rasio snapshot upsert', fn (): bool => DB::statement('
+            INSERT INTO '.self::RASIO_SNAPSHOT_TABLE." (
                 uniqueid_rcds, loan_period, casa_period, branch_key, 
                 branch_label, segment_key, os_amount, casa_amount, 
                 source_row_count, created_at, updated_at
@@ -833,15 +844,15 @@ class ReportSnapshotBuilder
         $mikroFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'mikro');
         $smcFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'smc');
 
-        $casaSelectSql = $casaDate ? "
+        $casaSelectSql = $casaDate ? '
             SUM(COALESCE(c.casa_balance, 0)) as total_casa,
             SUM(CASE WHEN base.has_briguna = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as briguna_casa,
             SUM(CASE WHEN base.has_kpr = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as kpr_casa,
             SUM(CASE WHEN base.has_mikro = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as mikro_casa,
             SUM(CASE WHEN base.has_smc = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as smc_casa
-        " : "
+        ' : '
             0 as total_casa, 0 as briguna_casa, 0 as kpr_casa, 0 as mikro_casa, 0 as smc_casa
-        ";
+        ';
 
         $casaJoinSql = '';
         $bindings = [$loanPeriod, $loanPeriod, $casaDate, $loanPeriod];
@@ -849,13 +860,13 @@ class ReportSnapshotBuilder
         if ($casaDate) {
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
             $this->ensureRasioCasaTempTable($casaDate, $casaKeyColumn, $applyCasaTypeFilter);
-            $casaJoinSql = "
+            $casaJoinSql = '
                 LEFT JOIN tmp_rasio_casa_balances c ON c.identity_key = base.identity_key
-            ";
+            ';
         }
 
-        $this->statementWithConcurrencyRetry('rasio uker snapshot upsert', fn (): bool => DB::statement("
-            INSERT INTO " . self::RASIO_UKER_SNAPSHOT_TABLE . " (
+        $this->statementWithConcurrencyRetry('rasio uker snapshot upsert', fn (): bool => DB::statement('
+            INSERT INTO '.self::RASIO_UKER_SNAPSHOT_TABLE." (
                 uniqueid_rcdus, loan_period, casa_period, source_branch_key, 
                 uker_key, uker_label, segment_key, os_amount, casa_amount, 
                 source_row_count, created_at, updated_at
@@ -941,7 +952,7 @@ class ReportSnapshotBuilder
 
     private function buildDashboardSimpananPeriodSnapshot(string $period, bool $force): int
     {
-        if (!Schema::hasTable(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE) || !Schema::hasTable('simpanan_multipn')) {
+        if (! Schema::hasTable(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE) || ! Schema::hasTable('simpanan_multipn')) {
             return 0;
         }
 
@@ -958,7 +969,7 @@ class ReportSnapshotBuilder
         }
 
         $existingSnapshot = null;
-        if (!$force) {
+        if (! $force) {
             $existingSnapshot = DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)
                 ->where('snapshot_period', $period)
                 ->first(['source_row_count', 'source_updated_at']);
@@ -967,7 +978,7 @@ class ReportSnapshotBuilder
         $baseQuery = DB::table('simpanan_multipn')->where('posisi', $period);
         $sourceMetadata = null;
 
-        if (!$force && $existingSnapshot !== null) {
+        if (! $force && $existingSnapshot !== null) {
             $sourceMetadata = (clone $baseQuery)
                 ->selectRaw('COUNT(*) as source_row_count')
                 ->selectRaw('MAX(updated_at) as source_updated_at')
@@ -1089,7 +1100,7 @@ class ReportSnapshotBuilder
             ];
         }
 
-        if (!empty($branchPayload)) {
+        if (! empty($branchPayload)) {
             DB::table(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE)->upsert(
                 $branchPayload,
                 ['snapshot_period', 'kantor_cabang'],
@@ -1097,9 +1108,9 @@ class ReportSnapshotBuilder
             );
         }
 
-        if (!$force) {
+        if (! $force) {
             $branchCleanup = DB::table(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE)->where('snapshot_period', $period);
-            if (!empty($branchKeys)) {
+            if (! empty($branchKeys)) {
                 $branchCleanup->whereNotIn('kantor_cabang', $branchKeys)->delete();
             } else {
                 $branchCleanup->delete();
@@ -1153,7 +1164,7 @@ class ReportSnapshotBuilder
 
     private function buildDormantPeriodSnapshot(string $period, bool $force): int
     {
-        if (!Schema::hasColumn(self::DORMANT_SNAPSHOT_TABLE, 'snapshot_version')) {
+        if (! Schema::hasColumn(self::DORMANT_SNAPSHOT_TABLE, 'snapshot_version')) {
             return 0;
         }
 
@@ -1167,13 +1178,13 @@ class ReportSnapshotBuilder
                 ->delete();
         }
 
-        $conflictSql = $force ? '' : "
+        $conflictSql = $force ? '' : '
             ON DUPLICATE KEY UPDATE
                 branch_label = VALUES(branch_label),
                 dormant_count = VALUES(dormant_count),
                 snapshot_version = VALUES(snapshot_version),
                 updated_at = VALUES(updated_at)
-        ";
+        ';
 
         $dormantBranchFilterExpression = $this->buildDormantBranchFilterSqlExpression('kantor_cabang');
 
@@ -1189,7 +1200,7 @@ class ReportSnapshotBuilder
                 TRIM(base.raw_branch) as raw_branch,
                 TRIM(base.unit_kerja) as unit_kerja,
                 base.dormant_count as dormant_count,
-                " . self::DORMANT_SNAPSHOT_VERSION . " as snapshot_version,
+                ".self::DORMANT_SNAPSHOT_VERSION." as snapshot_version,
                 NOW() as created_at,
                 NOW() as updated_at
             FROM (
@@ -1217,7 +1228,7 @@ class ReportSnapshotBuilder
             {$conflictSql}
         ", [$period, $period, $period]));
 
-        if (!$force) {
+        if (! $force) {
             $this->statementWithConcurrencyRetry('dormant snapshot prune', fn (): bool => DB::statement("
                 DELETE snap
                 FROM {$snapshotTable} snap
@@ -1262,7 +1273,7 @@ class ReportSnapshotBuilder
 
     private function buildNewPayrollPeriodSnapshot(string $snapshotPosisi, bool $force): int
     {
-        if (!Schema::hasTable(self::NEW_PAYROLL_SNAPSHOT_TABLE) || !Schema::hasTable('performance_pis_per_produk')) {
+        if (! Schema::hasTable(self::NEW_PAYROLL_SNAPSHOT_TABLE) || ! Schema::hasTable('performance_pis_per_produk')) {
             return 0;
         }
 
@@ -1293,7 +1304,7 @@ class ReportSnapshotBuilder
             DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)->where('snapshot_posisi', $snapshotPosisi)->delete();
         }
 
-        $conflictSql = $force ? '' : "
+        $conflictSql = $force ? '' : '
             ON DUPLICATE KEY UPDATE
                 rekening_curr = VALUES(rekening_curr),
                 rekening_prev = VALUES(rekening_prev),
@@ -1302,10 +1313,10 @@ class ReportSnapshotBuilder
                 saldo_prev = VALUES(saldo_prev),
                 saldo_yoy_prev = VALUES(saldo_yoy_prev),
                 updated_at = VALUES(updated_at)
-        ";
+        ';
 
         $this->statementWithConcurrencyRetry('new payroll snapshot upsert', fn (): bool => DB::statement(
-            "INSERT INTO " . self::NEW_PAYROLL_SNAPSHOT_TABLE . " (
+            'INSERT INTO '.self::NEW_PAYROLL_SNAPSHOT_TABLE." (
                 uniqueid_pnps, snapshot_posisi, branch, rekening_curr, rekening_prev, rekening_yoy_prev,
                 saldo_curr, saldo_prev, saldo_yoy_prev, created_at, updated_at
             )
@@ -1346,7 +1357,7 @@ class ReportSnapshotBuilder
             ]
         ));
 
-        if (!$force) {
+        if (! $force) {
             DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)
                 ->where('snapshot_posisi', $snapshotPosisi)
                 ->whereNotIn('branch', self::NEW_PAYROLL_BRANCHES)
@@ -1392,7 +1403,7 @@ class ReportSnapshotBuilder
 
         $loanRows = DB::query()
             ->fromSub($loanBase, 'loan_base')
-            ->selectRaw("
+            ->selectRaw('
                 branch_key,
                 identity_key,
                 SUM(loan_balance) as total_os,
@@ -1405,7 +1416,7 @@ class ReportSnapshotBuilder
                 MAX(has_kpr) as has_kpr,
                 MAX(has_mikro) as has_mikro,
                 MAX(has_smc) as has_smc
-            ")
+            ')
             ->groupBy('branch_key', 'identity_key')
             ->orderByRaw($this->buildBranchSortExpression('branch_key'))
             ->get();
@@ -1454,10 +1465,10 @@ class ReportSnapshotBuilder
             }
         }
 
-        if ($casaDate && !empty($identityVariants)) {
+        if ($casaDate && ! empty($identityVariants)) {
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
             $casaKeyColumn = $this->resolveExistingColumn('simpanan_multipn', ['nocif', 'cifno', 'CIFNO'], 'CIFNO');
-            
+
             foreach (array_chunk(array_keys($identityVariants), 10000) as $identityChunk) {
                 $casaBalances = DB::table('simpanan_multipn')
                     ->where('posisi', $casaDate)
@@ -1537,7 +1548,7 @@ class ReportSnapshotBuilder
 
         $loanPerCif = DB::query()
             ->fromSub($loanBase, 'loan_base')
-            ->selectRaw("
+            ->selectRaw('
                 source_branch_key,
                 uker_key,
                 identity_key,
@@ -1547,7 +1558,7 @@ class ReportSnapshotBuilder
                 MAX(has_kpr) as has_kpr,
                 MAX(has_mikro) as has_mikro,
                 MAX(has_smc) as has_smc
-            ")
+            ')
             ->groupBy('source_branch_key', 'uker_key', 'identity_key');
 
         $joined = DB::query()->fromSub($loanPerCif, 'loan_per_cif');
@@ -1559,8 +1570,7 @@ class ReportSnapshotBuilder
 
             // Apply FORCE INDEX for optimal MySQL Optimizer behavior on large simpanan_multipn tables
             $smTable = DB::raw($this->queryOptimizer->optimizeSnapshotQuery('simpanan_multipn', 'c', [
-                'idx_smp_posisi_distinct_queries',
-                'idx_smp_period_covering_counts',
+                'idx_smp_posisi_cif_covering',
             ]));
 
             $casaBase = DB::table($smTable)
@@ -1582,20 +1592,20 @@ class ReportSnapshotBuilder
         }
 
         $casaSelectSql = $includeCasa
-            ? "
+            ? '
                 SUM(COALESCE(casa_base.casa_balance, 0)) as total_casa,
                 SUM(CASE WHEN loan_per_cif.has_briguna = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as briguna_casa,
                 SUM(CASE WHEN loan_per_cif.has_kpr = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as kpr_casa,
                 SUM(CASE WHEN loan_per_cif.has_mikro = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as mikro_casa,
                 SUM(CASE WHEN loan_per_cif.has_smc = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as smc_casa,
-            "
-            : "
+            '
+            : '
                 0 as total_casa,
                 0 as briguna_casa,
                 0 as kpr_casa,
                 0 as mikro_casa,
                 0 as smc_casa,
-            ";
+            ';
 
         $summaryRows = $joined
             ->selectRaw("
@@ -1631,8 +1641,8 @@ class ReportSnapshotBuilder
                     'uker_key' => $ukerKey,
                     'uker_label' => $ukerKey,
                     'segment_key' => $segmentKey,
-                    'os_amount' => (float) ($row->{$segmentKey . '_os'} ?? 0),
-                    'casa_amount' => (float) ($row->{$segmentKey . '_casa'} ?? 0),
+                    'os_amount' => (float) ($row->{$segmentKey.'_os'} ?? 0),
+                    'casa_amount' => (float) ($row->{$segmentKey.'_casa'} ?? 0),
                     'source_row_count' => (int) ($row->source_row_count ?? 0),
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -1647,7 +1657,7 @@ class ReportSnapshotBuilder
     {
         $selected = $this->resolveAvailablePeriod('daily_loan_dinamis', 'periode', $period);
 
-        if (!$selected) {
+        if (! $selected) {
             return [];
         }
 
@@ -1672,7 +1682,7 @@ class ReportSnapshotBuilder
             return $normalized ? [$normalized] : [];
         }
 
-        if (!Schema::hasTable('daily_loan_dinamis')) {
+        if (! Schema::hasTable('daily_loan_dinamis')) {
             return [];
         }
 
@@ -1695,7 +1705,7 @@ class ReportSnapshotBuilder
     {
         $selected = $this->resolveAvailablePeriod('simpanan_multipn', 'posisi', $period);
 
-        if (!$selected) {
+        if (! $selected) {
             return [];
         }
 
@@ -1728,7 +1738,7 @@ class ReportSnapshotBuilder
     {
         $selected = $this->resolveAvailablePeriod('simpanan_multipn', 'posisi', $period);
 
-        if (!$selected) {
+        if (! $selected) {
             return [];
         }
 
@@ -1755,7 +1765,7 @@ class ReportSnapshotBuilder
     {
         $selected = $this->resolveAvailablePeriod('performance_pis_per_produk', 'posisi', $period);
 
-        if (!$selected) {
+        if (! $selected) {
             return [];
         }
 
@@ -1800,7 +1810,7 @@ class ReportSnapshotBuilder
     }
 
     /**
-     * @param array<int, string> $periods
+     * @param  array<int, string>  $periods
      * @return array<int, string>
      */
     private function latestPerformanceRmPeriodPerMonth(array $periods): array
@@ -1823,7 +1833,7 @@ class ReportSnapshotBuilder
     private function resolveAvailablePeriod(string $table, string $column, ?string $targetDate): ?string
     {
         $normalizedTargetDate = $this->normalizePeriodInput($targetDate);
-        $cacheKey = $table . '|' . $column . '|' . ($normalizedTargetDate ?? '__null__');
+        $cacheKey = $table.'|'.$column.'|'.($normalizedTargetDate ?? '__null__');
         if (array_key_exists($cacheKey, $this->availablePeriodCache)) {
             return $this->availablePeriodCache[$cacheKey];
         }
@@ -1838,6 +1848,7 @@ class ReportSnapshotBuilder
             return $this->availablePeriodCache[$cacheKey] = $query->max($column);
         } catch (Throwable) {
             $this->availablePeriodCache[$cacheKey] = null;
+
             return null;
         }
     }
@@ -1861,6 +1872,7 @@ class ReportSnapshotBuilder
             return $this->availableCasaPeriodCache[$normalizedTargetDate] = $exists ? $normalizedTargetDate : null;
         } catch (Throwable) {
             $this->availableCasaPeriodCache[$normalizedTargetDate] = null;
+
             return null;
         }
     }
@@ -1887,7 +1899,7 @@ class ReportSnapshotBuilder
     }
 
     /**
-     * @param array<int, string> $periods
+     * @param  array<int, string>  $periods
      */
     private function resolveClosestSourcePeriod(array $periods, string $targetPeriod): ?string
     {
@@ -1896,6 +1908,7 @@ class ReportSnapshotBuilder
         foreach ($periods as $period) {
             if ($period <= $targetPeriod) {
                 $closest = $period;
+
                 continue;
             }
 
@@ -1926,16 +1939,17 @@ class ReportSnapshotBuilder
 
     private function cleanupSimpananDashboardSnapshotOrphans(array $validPeriods): void
     {
-        if (!Schema::hasTable(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE) || !Schema::hasTable(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE)) {
+        if (! Schema::hasTable(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE) || ! Schema::hasTable(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE)) {
             return;
         }
 
         $summaryCleanup = DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE);
         $branchCleanup = DB::table(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE);
 
-        if (!empty($validPeriods)) {
+        if (! empty($validPeriods)) {
             $summaryCleanup->whereNotIn('snapshot_period', $validPeriods)->delete();
             $branchCleanup->whereNotIn('snapshot_period', $validPeriods)->delete();
+
             return;
         }
 
@@ -1959,6 +1973,7 @@ class ReportSnapshotBuilder
                 ->exists();
         } catch (Throwable) {
             $this->casaTypeFilterCache[$casaDate] = false;
+
             return false;
         }
     }
@@ -2082,12 +2097,12 @@ class ReportSnapshotBuilder
             return;
         }
 
-        $this->statementWithConcurrencyRetry('create rasio casa temp table', fn (): bool => DB::statement("
+        $this->statementWithConcurrencyRetry('create rasio casa temp table', fn (): bool => DB::statement('
             CREATE TEMPORARY TABLE IF NOT EXISTS tmp_rasio_casa_balances (
                 identity_key VARCHAR(64) COLLATE utf8mb4_unicode_ci NOT NULL PRIMARY KEY,
                 casa_balance DECIMAL(22, 2) NOT NULL DEFAULT 0
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        "));
+        '));
         $this->statementWithConcurrencyRetry('truncate rasio casa temp table', fn (): bool => DB::statement('TRUNCATE TABLE tmp_rasio_casa_balances'));
 
         $casaFilterSql = $applyCasaTypeFilter
@@ -2140,7 +2155,7 @@ class ReportSnapshotBuilder
      */
     private function cachedColumnListing(string $table): array
     {
-        if (!array_key_exists($table, $this->columnListingCache)) {
+        if (! array_key_exists($table, $this->columnListingCache)) {
             $this->columnListingCache[$table] = Schema::getColumnListing($table);
         }
 
@@ -2177,8 +2192,8 @@ class ReportSnapshotBuilder
     private function buildIdentityVariants(string $identityKey): array
     {
         $variants = [$identityKey];
-        if (!str_starts_with($identityKey, "'")) {
-            $variants[] = "'" . $identityKey;
+        if (! str_starts_with($identityKey, "'")) {
+            $variants[] = "'".$identityKey;
         }
 
         return array_values(array_unique($variants));
@@ -2186,7 +2201,7 @@ class ReportSnapshotBuilder
 
     private function formatPriorityBranchLabel(string $branchKey): string
     {
-        return 'KC ' . $this->normalizePriorityBranchKey($branchKey);
+        return 'KC '.$this->normalizePriorityBranchKey($branchKey);
     }
 
     private function mapDormantBranchLabel(string $rawBranch): ?string
@@ -2274,7 +2289,7 @@ class ReportSnapshotBuilder
 
     private function buildPerformanceRmPeriodSnapshot(string $period, bool $force): int
     {
-        if (!Schema::hasTable(self::PERFORMANCE_RM_SNAPSHOT_TABLE)) {
+        if (! Schema::hasTable(self::PERFORMANCE_RM_SNAPSHOT_TABLE)) {
             return 0;
         }
 
@@ -2282,7 +2297,7 @@ class ReportSnapshotBuilder
             || $this->purgeSnapshotPeriodIfAnomalous(self::PERFORMANCE_RM_SNAPSHOT_TABLE, $period)
             || $this->purgeSnapshotPeriodIfAnomalous(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE, $period);
 
-        if (!$force) {
+        if (! $force) {
             $rowCount = DB::getDriverName() === 'mysql'
                 ? $this->buildPerformanceRmPeriodSnapshotSqlFirstIncremental($period)
                 : $this->buildPerformanceRmPeriodSnapshotPortableIncremental($period);
@@ -2302,7 +2317,7 @@ class ReportSnapshotBuilder
         } else {
             $rows = $this->computePerformanceRmRows($period);
 
-            if (!empty($rows)) {
+            if (! empty($rows)) {
                 foreach (array_chunk($rows, 500) as $chunk) {
                     DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)->insert($chunk);
                 }
@@ -2320,15 +2335,15 @@ class ReportSnapshotBuilder
 
     private function buildPerformanceRmPeriodSnapshotSqlFirstIncremental(string $period): int
     {
-        $tempTable = 'tmp_performance_rm_snapshots_' . str_replace('.', '_', (string) microtime(true));
+        $tempTable = 'tmp_performance_rm_snapshots_'.str_replace('.', '_', (string) microtime(true));
 
-        DB::statement('CREATE TEMPORARY TABLE ' . $this->quoteIdentifier($tempTable) . ' LIKE ' . $this->quoteIdentifier(self::PERFORMANCE_RM_SNAPSHOT_TABLE));
+        DB::statement('CREATE TEMPORARY TABLE '.$this->quoteIdentifier($tempTable).' LIKE '.$this->quoteIdentifier(self::PERFORMANCE_RM_SNAPSHOT_TABLE));
 
         try {
             $this->buildPerformanceRmPeriodSnapshotSqlFirst($period, $tempTable);
             $this->syncPerformanceRmSnapshotRowsFromTemp($period, $tempTable);
         } finally {
-            DB::statement('DROP TEMPORARY TABLE IF EXISTS ' . $this->quoteIdentifier($tempTable));
+            DB::statement('DROP TEMPORARY TABLE IF EXISTS '.$this->quoteIdentifier($tempTable));
         }
 
         return (int) DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
@@ -2402,8 +2417,8 @@ class ReportSnapshotBuilder
     }
 
     /**
-     * @param array<int, array{segment: string, products: array<int, string>, descriptions: array<int, string>}> $normalizedRules
-     * @param array<string, int> $snapshotColumns
+     * @param  array<int, array{segment: string, products: array<int, string>, descriptions: array<int, string>}>  $normalizedRules
+     * @param  array<string, int>  $snapshotColumns
      */
     private function insertPerformanceRmSegmentSnapshotSqlFirst(
         string $period,
@@ -2417,8 +2432,8 @@ class ReportSnapshotBuilder
         $periodStart = $periodDate->copy()->startOfMonth()->toDateString();
         $kurRitelDescriptionSql = $this->buildKinerjaRmNormalizedSql('d.description');
         $kurRitelDescriptionToken = $this->normalizeKinerjaRmToken('Kredit Mikro - KUR Ritel 2015');
-        $rawRealisasiDateColumn = 'd.' . $this->resolvePerformanceRmRealisasiDateColumn();
-        $rawCurrentCifRealisasiDateColumn = 'd2.' . $this->resolvePerformanceRmRealisasiDateColumn();
+        $rawRealisasiDateColumn = 'd.'.$this->resolvePerformanceRmRealisasiDateColumn();
+        $rawCurrentCifRealisasiDateColumn = 'd2.'.$this->resolvePerformanceRmRealisasiDateColumn();
         $realisasiDateColumn = $this->performanceRmEffectiveRealisasiDateSql($rawRealisasiDateColumn, 'd.periode');
         $currentCifRealisasiDateColumn = $this->performanceRmEffectiveRealisasiDateSql($rawCurrentCifRealisasiDateColumn, 'd2.periode');
         $consumerPreviousPeriod = $segment === 'CONSUMER'
@@ -2650,7 +2665,7 @@ class ReportSnapshotBuilder
         ];
 
         foreach ($metricSelects as $column => $selectSql) {
-            if (!isset($snapshotColumns[$column])) {
+            if (! isset($snapshotColumns[$column])) {
                 continue;
             }
 
@@ -2672,8 +2687,8 @@ class ReportSnapshotBuilder
         $insertColumnsSql = implode(', ', $columns);
         $selectSql = implode(",\n                ", $selects);
 
-        $sql = "
-            INSERT INTO " . $this->quoteIdentifier($snapshotTable) . " ({$insertColumnsSql})
+        $sql = '
+            INSERT INTO '.$this->quoteIdentifier($snapshotTable)." ({$insertColumnsSql})
             SELECT
                 {$selectSql}
             FROM daily_loan_dinamis d
@@ -2759,11 +2774,11 @@ class ReportSnapshotBuilder
     }
 
     /**
-     * @param array<string, int> $snapshotColumns
+     * @param  array<string, int>  $snapshotColumns
      */
     private function updateConsumerPerformanceRmSurplusMetrics(string $period, string $snapshotTable, array $snapshotColumns): void
     {
-        if (!isset($snapshotColumns['realisasi_deb'], $snapshotColumns['realisasi_os'])) {
+        if (! isset($snapshotColumns['realisasi_deb'], $snapshotColumns['realisasi_os'])) {
             return;
         }
 
@@ -2776,160 +2791,12 @@ class ReportSnapshotBuilder
                 'updated_at' => now(),
             ]);
 
-        $previousPeriod = $this->resolvePreviousMonthPerformanceRmPeriod($period);
-        if ($previousPeriod === null) {
-            return;
-        }
-
-        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
-        $realisasiDateColumn = $this->performanceRmEffectiveRealisasiDateSql(
-            $this->resolvePerformanceRmRealisasiDateColumn(),
-            'periode'
-        );
-
-        $currentRows = DB::table('daily_loan_dinamis')
-            ->where('periode', $period)
-            ->where('segmen_kinerja', 'CONSUMER')
-            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->whereNotNull('pn_pengelola1')
-            ->where('pn_pengelola1', '<>', '')
-            ->whereNotNull('nomor_rekening1')
-            ->where('nomor_rekening1', '<>', '')
-            ->whereNotNull('cifno')
-            ->where('cifno', '<>', '')
-            ->whereRaw("{$realisasiDateColumn} BETWEEN ? AND ?", [$periodStart, $period])
-            ->selectRaw("COALESCE(cabang_normalized, '') as cabang")
-            ->selectRaw("COALESCE(unit_normalized, '') as unit")
-            ->selectRaw("COALESCE(branch_normalized, '') as branch_code")
-            ->selectRaw("COALESCE(rm_normalized, '') as rm")
-            ->selectRaw("CASE WHEN produk_kinerja = 'BRIGUNAKONSUMER' THEN 'BRIGUNA-KONSUMER' ELSE produk_kinerja END as produk")
-            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
-            ->selectRaw("UPPER(TRIM(cifno)) as clean_cif")
-            ->selectRaw('COALESCE(plafon, 0) as current_plafon')
-            ->get();
-
-        if ($currentRows->isEmpty()) {
-            return;
-        }
-
-        $currentCifs = $currentRows
-            ->pluck('clean_cif')
-            ->map(fn ($value): string => (string) $value)
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-
-        $currentAccountKeys = [];
-        foreach (array_chunk($currentCifs, 500) as $cifChunk) {
-            DB::table('daily_loan_dinamis')
-                ->where('periode', $period)
-                ->whereIn(DB::raw('UPPER(TRIM(cifno))'), $cifChunk)
-                ->whereNotNull('nomor_rekening1')
-                ->where('nomor_rekening1', '<>', '')
-                ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
-                ->distinct()
-                ->orderBy('account_key')
-                ->chunk(1000, function ($rows) use (&$currentAccountKeys): void {
-                    foreach ($rows as $row) {
-                        $accountKey = (string) ($row->account_key ?? '');
-                        if ($accountKey !== '') {
-                            $currentAccountKeys[$accountKey] = true;
-                        }
-                    }
-                });
-        }
-
-        $previousLookupOrderColumn = Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
-            ? 'uniqueid_namareport'
-            : 'nomor_rekening1';
-        $previousOsByCif = [];
-        foreach (array_chunk($currentCifs, 500) as $cifChunk) {
-            DB::table('daily_loan_dinamis')
-                ->where('periode', $previousPeriod)
-                ->whereIn(DB::raw('UPPER(TRIM(cifno))'), $cifChunk)
-                ->where('segmen_kinerja', 'CONSUMER')
-                ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-                ->whereNotNull('nomor_rekening1')
-                ->where('nomor_rekening1', '<>', '')
-                ->whereNotNull('cifno')
-                ->where('cifno', '<>', '')
-                ->selectRaw("UPPER(TRIM(cifno)) as clean_cif")
-                ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
-                ->selectRaw('COALESCE(baki_debet1, 0) as previous_os')
-                ->orderBy($previousLookupOrderColumn)
-                ->chunk(1000, function ($rows) use (&$previousOsByCif, $currentAccountKeys): void {
-                    foreach ($rows as $row) {
-                        $cleanCif = (string) ($row->clean_cif ?? '');
-                        $accountKey = (string) ($row->account_key ?? '');
-                        if ($cleanCif === '' || isset($currentAccountKeys[$accountKey]) || array_key_exists($cleanCif, $previousOsByCif)) {
-                            continue;
-                        }
-
-                        $previousOsByCif[$cleanCif] = (float) ($row->previous_os ?? 0);
-                    }
-                });
-        }
-
-        $currentMetricsByCif = [];
-        foreach ($currentRows as $row) {
-            $groupKey = implode('|', [
-                (string) ($row->cabang ?? ''),
-                (string) ($row->unit ?? ''),
-                (string) ($row->branch_code ?? ''),
-                (string) ($row->rm ?? ''),
-                (string) ($row->produk ?? ''),
-            ]);
-            $cleanCif = (string) ($row->clean_cif ?? '');
-            $metricKey = $groupKey . '|' . $cleanCif;
-
-            $currentMetricsByCif[$metricKey] ??= [
-                'group_key' => $groupKey,
-                'cabang' => (string) ($row->cabang ?? ''),
-                'unit' => (string) ($row->unit ?? ''),
-                'branch_code' => (string) ($row->branch_code ?? ''),
-                'rm' => (string) ($row->rm ?? ''),
-                'produk' => (string) ($row->produk ?? ''),
-                'clean_cif' => $cleanCif,
-                'accounts' => [],
-                'current_plafon' => 0.0,
-            ];
-
-            $accountKey = (string) ($row->account_key ?? '');
-            if ($accountKey !== '') {
-                $currentMetricsByCif[$metricKey]['accounts'][$accountKey] = true;
-            }
-
-            $currentMetricsByCif[$metricKey]['current_plafon'] += (float) ($row->current_plafon ?? 0);
-        }
-
-        $metricsByGroup = [];
-        foreach ($currentMetricsByCif as $metric) {
-            $groupKey = (string) $metric['group_key'];
-            $metricsByGroup[$groupKey] ??= [
-                'cabang' => $metric['cabang'],
-                'unit' => $metric['unit'],
-                'branch_code' => $metric['branch_code'],
-                'rm' => $metric['rm'],
-                'produk' => $metric['produk'],
-                'accounts' => [],
-                'realisasi_os' => 0.0,
-            ];
-
-            foreach ($metric['accounts'] as $accountKey => $_) {
-                $metricsByGroup[$groupKey]['accounts'][$accountKey] = true;
-            }
-
-            $previousOs = (float) ($previousOsByCif[(string) $metric['clean_cif']] ?? 0);
-            $metricsByGroup[$groupKey]['realisasi_os'] += (float) $metric['current_plafon'] - $previousOs;
-        }
-
-        foreach ($metricsByGroup as $metric) {
+        foreach (app(ConsumerRmRealizationCalculator::class)->calculate($period) as $metric) {
             $query = DB::table($snapshotTable)
                 ->where('periode', $period)
                 ->where('cabang', $metric['cabang'])
                 ->where('unit', $metric['unit'])
-                ->where('rm', $metric['rm'])
+                ->whereRaw('UPPER(TRIM(rm)) = ?', [strtoupper(trim((string) $metric['rm']))])
                 ->where('segmen', 'CONSUMER')
                 ->where('produk', $metric['produk']);
 
@@ -2937,16 +2804,40 @@ class ReportSnapshotBuilder
                 $query->where('branch_code', $metric['branch_code']);
             }
 
+            $exists = $query->exists();
             $query->update([
-                'realisasi_deb' => count($metric['accounts']),
-                'realisasi_os' => $metric['realisasi_os'],
+                'rm' => (string) $metric['rm'],
+                'realisasi_deb' => (int) ($metric['realisasi_deb'] ?? 0),
+                'realisasi_os' => (float) ($metric['realisasi_os'] ?? 0.0),
                 'updated_at' => now(),
             ]);
+
+            // A producer can have realization although no managed account is
+            // left at the selected position. Preserve that monthly activity in
+            // a realization-only snapshot row instead of silently dropping it.
+            if (! $exists) {
+                $insert = [
+                    'periode' => $period,
+                    'cabang' => $metric['cabang'],
+                    'unit' => $metric['unit'],
+                    'rm' => $metric['rm'],
+                    'segmen' => 'CONSUMER',
+                    'produk' => $metric['produk'],
+                    'realisasi_deb' => (int) ($metric['realisasi_deb'] ?? 0),
+                    'realisasi_os' => (float) ($metric['realisasi_os'] ?? 0.0),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+                if (isset($snapshotColumns['branch_code'])) {
+                    $insert['branch_code'] = $metric['branch_code'];
+                }
+                DB::table($snapshotTable)->insert($insert);
+            }
         }
     }
 
     /**
-     * @param array<int, array{segment: string, products: array<int, string>, descriptions: array<int, string>}> $normalizedRules
+     * @param  array<int, array{segment: string, products: array<int, string>, descriptions: array<int, string>}>  $normalizedRules
      * @return array{0:string, 1:array<int, mixed>}
      */
     private function buildKinerjaRmRuleSql(array $normalizedRules, string $alias = 'd'): array
@@ -2959,7 +2850,7 @@ class ReportSnapshotBuilder
             $part = "{$alias}.segmen_kinerja = ? AND {$alias}.produk_kinerja IN ({$productPlaceholders})";
             $partBindings = [$rule['segment'], ...$rule['products']];
 
-            if (!empty($rule['descriptions'])) {
+            if (! empty($rule['descriptions'])) {
                 $descriptionSql = $this->buildKinerjaRmNormalizedSql("{$alias}.description");
                 $descriptionPlaceholders = implode(', ', array_fill(0, count($rule['descriptions']), '?'));
                 $part .= " AND {$descriptionSql} IN ({$descriptionPlaceholders})";
@@ -2985,7 +2876,7 @@ class ReportSnapshotBuilder
 
     private function updateSmallPerformanceRmQuadrantsSqlFirst(string $period, ?string $snapshotTable = null): void
     {
-        if (!Schema::hasColumn(self::PERFORMANCE_RM_SNAPSHOT_TABLE, 'quadrant')) {
+        if (! Schema::hasColumn(self::PERFORMANCE_RM_SNAPSHOT_TABLE, 'quadrant')) {
             return;
         }
 
@@ -3100,7 +2991,7 @@ class ReportSnapshotBuilder
             ->values()
             ->all();
 
-        if ($selectedDate->isLastOfMonth() && !in_array($period, $periods, true)) {
+        if ($selectedDate->isLastOfMonth() && ! in_array($period, $periods, true)) {
             $periods[] = $period;
         }
 
@@ -3133,12 +3024,12 @@ class ReportSnapshotBuilder
         ));
         $updatableColumns = array_values(array_filter(
             $columns,
-            static fn (string $column): bool => !in_array($column, [...$identityColumns, 'created_at'], true)
+            static fn (string $column): bool => ! in_array($column, [...$identityColumns, 'created_at'], true)
         ));
 
         if ($updatableColumns !== []) {
             $assignments = implode(",\n                ", array_map(
-                fn (string $column): string => 'target.' . $this->quoteIdentifier($column) . ' = source.' . $this->quoteIdentifier($column),
+                fn (string $column): string => 'target.'.$this->quoteIdentifier($column).' = source.'.$this->quoteIdentifier($column),
                 $updatableColumns
             ));
 
@@ -3151,7 +3042,7 @@ class ReportSnapshotBuilder
         }
 
         $insertColumnsSql = implode(', ', array_map([$this, 'quoteIdentifier'], $columns));
-        $selectColumnsSql = implode(', ', array_map(fn (string $column): string => 'source.' . $this->quoteIdentifier($column), $columns));
+        $selectColumnsSql = implode(', ', array_map(fn (string $column): string => 'source.'.$this->quoteIdentifier($column), $columns));
 
         $this->statementWithConcurrencyRetry('performance rm snapshot insert from temp', fn (): bool => DB::statement("
             INSERT INTO {$target} ({$insertColumnsSql})
@@ -3185,7 +3076,7 @@ class ReportSnapshotBuilder
     }
 
     /**
-     * @param array<string, mixed> $row
+     * @param  array<string, mixed>  $row
      * @return array<string, mixed>
      */
     private function performanceRmSnapshotIdentity(array $row): array
@@ -3199,7 +3090,7 @@ class ReportSnapshotBuilder
     }
 
     /**
-     * @param array<string, mixed> $row
+     * @param  array<string, mixed>  $row
      */
     private function performanceRmSnapshotKey(array $row): string
     {
@@ -3210,28 +3101,28 @@ class ReportSnapshotBuilder
     }
 
     /**
-     * @param array<int, string> $identityColumns
+     * @param  array<int, string>  $identityColumns
      */
     private function performanceRmSnapshotJoinSql(string $targetAlias, string $sourceAlias, array $identityColumns): string
     {
         return implode(' AND ', array_map(
-            fn (string $column): string => "{$targetAlias}." . $this->quoteIdentifier($column) . " <=> {$sourceAlias}." . $this->quoteIdentifier($column),
+            fn (string $column): string => "{$targetAlias}.".$this->quoteIdentifier($column)." <=> {$sourceAlias}.".$this->quoteIdentifier($column),
             $identityColumns
         ));
     }
 
     private function quoteIdentifier(string $identifier): string
     {
-        return '`' . str_replace('`', '``', $identifier) . '`';
+        return '`'.str_replace('`', '``', $identifier).'`';
     }
 
     private function buildPerformanceRmCabangSnapshot(string $period, bool $force): int
     {
-        if (!Schema::hasTable(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)) {
+        if (! Schema::hasTable(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)) {
             return 0;
         }
 
-        if (!Schema::hasTable(self::PERFORMANCE_RM_SNAPSHOT_TABLE)) {
+        if (! Schema::hasTable(self::PERFORMANCE_RM_SNAPSHOT_TABLE)) {
             return 0;
         }
 
@@ -3247,7 +3138,7 @@ class ReportSnapshotBuilder
                 ->delete();
         }
 
-        $conflictSql = $force ? '' : "
+        $conflictSql = $force ? '' : '
             ON DUPLICATE KEY UPDATE
                 loan_os = VALUES(loan_os),
                 lancar_os = VALUES(lancar_os),
@@ -3263,7 +3154,7 @@ class ReportSnapshotBuilder
                 total_deposit = VALUES(total_deposit),
                 plafon = VALUES(plafon),
                 updated_at = VALUES(updated_at)
-        ";
+        ';
 
         $this->statementWithConcurrencyRetry('performance rm cabang snapshot upsert', fn (): bool => DB::statement(
             "
@@ -3303,8 +3194,8 @@ class ReportSnapshotBuilder
             [$period]
         ));
 
-        if (!$force) {
-            $this->statementWithConcurrencyRetry('performance rm cabang snapshot prune', fn (): bool => DB::statement("
+        if (! $force) {
+            $this->statementWithConcurrencyRetry('performance rm cabang snapshot prune', fn (): bool => DB::statement('
                 DELETE target
                 FROM performance_rm_cabang_snapshots target
                 LEFT JOIN (
@@ -3319,7 +3210,7 @@ class ReportSnapshotBuilder
                     AND source.produk <=> target.produk
                 WHERE target.periode = ?
                     AND source.periode IS NULL
-            ", [$period, $period]));
+            ', [$period, $period]));
         }
 
         $rowCount = (int) DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)
@@ -3440,29 +3331,31 @@ class ReportSnapshotBuilder
             }
 
             $uniqueCifs = array_reduce($segmentRows, function ($cifs, $row) {
-                if (!empty($row['cifno_list'])) {
-                    $parsed = array_filter(array_map('trim', explode(',', (string)$row['cifno_list'])));
+                if (! empty($row['cifno_list'])) {
+                    $parsed = array_filter(array_map('trim', explode(',', (string) $row['cifno_list'])));
+
                     return array_merge($cifs, $parsed);
                 }
+
                 return $cifs;
             }, []);
 
             $deposits = [];
-            if (!empty($uniqueCifs)) {
+            if (! empty($uniqueCifs)) {
                 $deposits = $this->fetchDepositsByNormalizedCifs(array_unique($uniqueCifs), $latestSmpnPosisi);
             }
 
             $rmTotals = [];
             foreach ($segmentRows as $row) {
                 $rm = (string) $row['rm'];
-                $cifList = array_filter(array_map('trim', explode(',', (string)($row['cifno_list'] ?? ''))));
+                $cifList = array_filter(array_map('trim', explode(',', (string) ($row['cifno_list'] ?? ''))));
                 $depSum = array_reduce($cifList, fn ($sum, $cif) => $sum + ((float) ($deposits[$cif] ?? 0)), 0.0);
 
-                if (!isset($rmTotals[$rm])) {
+                if (! isset($rmTotals[$rm])) {
                     $rmTotals[$rm] = [
-                    'loan' => 0, 'lancar' => 0, 'npl' => 0,
+                        'loan' => 0, 'lancar' => 0, 'npl' => 0,
                         'sml' => 0, 'restruk' => 0, 'deposit' => 0,
-                        'realisasi_os' => 0, 'total_deb' => 0, 'realisasi_deb' => 0
+                        'realisasi_os' => 0, 'total_deb' => 0, 'realisasi_deb' => 0,
                     ];
                 }
 
@@ -3483,7 +3376,7 @@ class ReportSnapshotBuilder
 
             foreach ($segmentRows as $row) {
                 $rm = (string) $row['rm'];
-                $cifList = array_filter(array_map('trim', explode(',', (string)($row['cifno_list'] ?? ''))));
+                $cifList = array_filter(array_map('trim', explode(',', (string) ($row['cifno_list'] ?? ''))));
                 $depSum = array_reduce($cifList, fn ($sum, $cif) => $sum + ((float) ($deposits[$cif] ?? 0)), 0.0);
                 $canonicalProduct = $this->canonicalizeKinerjaRmProduct($segment, (string) $row['produk']);
 
@@ -3583,7 +3476,7 @@ class ReportSnapshotBuilder
                         $ruleScope->where('segmen_kinerja', $rule['segment'])
                             ->whereIn('produk_kinerja', $rule['products']);
 
-                        if (!empty($rule['descriptions'])) {
+                        if (! empty($rule['descriptions'])) {
                             $descriptionSql = $this->buildKinerjaRmNormalizedSql('description');
                             $ruleScope->whereIn(DB::raw($descriptionSql), $rule['descriptions']);
                         }
@@ -3600,19 +3493,19 @@ class ReportSnapshotBuilder
                 'rm_normalized as rm',
                 'produk_kinerja as produk',
             ])
-            ->selectRaw("SUM(COALESCE(plafon, 0)) as plafon")
+            ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
             ->selectRaw(
                 "SUM(CASE WHEN segmen_kinerja = ? AND produk_kinerja IN (?, ?) AND {$kurRitelDescriptionSql} = ? THEN COALESCE(plafon, 0) ELSE COALESCE(baki_debet1, 0) END) as loan_os",
                 ['MICRO', 'KURMIKRO', 'KURKECIL', $kurRitelDescriptionToken]
             )
-            ->selectRaw("SUM(CASE WHEN kolek = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN kolek = 1 THEN nomor_rekening1 END) as lancar_deb")
-            ->selectRaw("SUM(CASE WHEN kolek = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN kolek = 2 THEN nomor_rekening1 END) as sml_deb")
-            ->selectRaw("SUM(CASE WHEN kolek > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN kolek > 2 THEN nomor_rekening1 END) as npl_deb")
+            ->selectRaw('SUM(CASE WHEN kolek = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN kolek = 1 THEN nomor_rekening1 END) as lancar_deb')
+            ->selectRaw('SUM(CASE WHEN kolek = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN kolek = 2 THEN nomor_rekening1 END) as sml_deb')
+            ->selectRaw('SUM(CASE WHEN kolek > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN kolek > 2 THEN nomor_rekening1 END) as npl_deb')
             ->selectRaw("SUM(CASE WHEN kolek = 1 AND COALESCE(flag_restruk, '') = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
-            ->selectRaw("COUNT(DISTINCT nomor_rekening1) as total_deb")
+            ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as realisasi_deb", [$periodStart, $period])
             ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN {$realisasiAmountSql} ELSE 0 END) as realisasi_os", [$periodStart, $period])
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as w1_realisasi_deb", $weekRanges['w1'])
@@ -3635,7 +3528,7 @@ class ReportSnapshotBuilder
             ->groupBy('cabang_normalized', 'unit_normalized', 'branch_normalized', 'rm_normalized', 'produk_kinerja')
             ->get();
 
-        $rows = $query->map(fn($row) => (array)$row)->toArray();
+        $rows = $query->map(fn ($row) => (array) $row)->toArray();
 
         return $segment === 'CONSUMER'
             ? $this->applyConsumerPlafonSurplusMetrics($period, $rows)
@@ -3643,7 +3536,7 @@ class ReportSnapshotBuilder
     }
 
     /**
-     * @param array<int, array<string, mixed>> $rows
+     * @param  array<int, array<string, mixed>>  $rows
      * @return array<int, array<string, mixed>>
      */
     private function applyConsumerPlafonSurplusMetrics(string $period, array $rows): array
@@ -3676,136 +3569,55 @@ class ReportSnapshotBuilder
             return $rows;
         }
 
-        $previousPeriod = $this->resolvePreviousMonthPerformanceRmPeriod($period);
-        if ($previousPeriod === null) {
-            return $rows;
-        }
-
-        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
-        $realisasiDateColumn = $this->performanceRmEffectiveRealisasiDateSql(
-            $this->resolvePerformanceRmRealisasiDateColumn(),
-            'periode'
-        );
-
-        $currentAccountKeys = DB::table('daily_loan_dinamis')
-            ->where('periode', $period)
-            ->whereNotNull('nomor_rekening1')
-            ->where('nomor_rekening1', '<>', '')
-            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
-            ->distinct()
-            ->pluck('account_key')
-            ->map(fn ($accountKey): string => (string) $accountKey)
-            ->filter()
-            ->flip();
-
-        $previousLookupOrderColumn = Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
-            ? 'uniqueid_namareport'
-            : 'nomor_rekening1';
-
-        $previousClosedOsByCif = [];
-        DB::table('daily_loan_dinamis')
-            ->where('periode', $previousPeriod)
-            ->where('segmen_kinerja', 'CONSUMER')
-            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->whereNotNull('nomor_rekening1')
-            ->where('nomor_rekening1', '<>', '')
-            ->whereNotNull('cifno')
-            ->where('cifno', '<>', '')
-            ->selectRaw('UPPER(TRIM(cifno)) as clean_cif')
-            ->selectRaw('UPPER(TRIM(nomor_rekening1)) as account_key')
-            ->selectRaw('COALESCE(baki_debet1, 0) as previous_os')
-            ->orderBy($previousLookupOrderColumn)
-            ->chunk(1000, function ($sourceRows) use (&$previousClosedOsByCif, $currentAccountKeys): void {
-                foreach ($sourceRows as $sourceRow) {
-                    $cleanCif = (string) ($sourceRow->clean_cif ?? '');
-                    $accountKey = (string) ($sourceRow->account_key ?? '');
-                    if ($cleanCif === '' || isset($currentAccountKeys[$accountKey]) || array_key_exists($cleanCif, $previousClosedOsByCif)) {
-                        continue;
-                    }
-
-                    $previousClosedOsByCif[$cleanCif] = (float) ($sourceRow->previous_os ?? 0);
-                }
-            });
-
-        $currentRealizationByCif = [];
-        DB::table('daily_loan_dinamis')
-            ->where('periode', $period)
-            ->where('segmen_kinerja', 'CONSUMER')
-            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->whereNotNull('pn_pengelola1')
-            ->where('pn_pengelola1', '<>', '')
-            ->whereNotNull('nomor_rekening1')
-            ->where('nomor_rekening1', '<>', '')
-            ->whereNotNull('cifno')
-            ->where('cifno', '<>', '')
-            ->whereRaw("{$realisasiDateColumn} BETWEEN ? AND ?", [$periodStart, $period])
-            ->select([
-                'cabang_normalized',
-                'unit_normalized',
-                'branch_normalized',
-                'rm_normalized',
-                'produk_kinerja',
-                'nomor_rekening1',
-                'plafon',
-                'cifno',
-            ])
-            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
-            ->orderBy('nomor_rekening1')
-            ->chunk(1000, function ($sourceRows) use (&$currentRealizationByCif): void {
-                foreach ($sourceRows as $sourceRow) {
-                    $groupKey = $this->consumerSurplusGroupKey([
-                        'cabang' => $sourceRow->cabang_normalized,
-                        'unit' => $sourceRow->unit_normalized,
-                        'branch_code' => $sourceRow->branch_normalized,
-                        'rm' => $sourceRow->rm_normalized,
-                        'produk' => $sourceRow->produk_kinerja,
-                    ]);
-                    $cleanCif = strtoupper(trim((string) ($sourceRow->cifno ?? '')));
-                    $accountKey = (string) ($sourceRow->account_key ?? '');
-                    $metricKey = $groupKey . '|' . $cleanCif;
-
-                    if (!isset($currentRealizationByCif[$metricKey])) {
-                        $currentRealizationByCif[$metricKey] = [
-                            'group_key' => $groupKey,
-                            'clean_cif' => $cleanCif,
-                            'accounts' => [],
-                            'current_plafon' => 0.0,
-                        ];
-                    }
-
-                    $currentRealizationByCif[$metricKey]['accounts'][$accountKey] = true;
-                    $currentRealizationByCif[$metricKey]['current_plafon'] += (float) ($sourceRow->plafon ?? 0);
-                }
-            });
-
-        $surplusByGroup = [];
-        foreach ($currentRealizationByCif as $metric) {
-            $groupKey = (string) ($metric['group_key'] ?? '');
-            $cleanCif = (string) ($metric['clean_cif'] ?? '');
-            $netDisbursement = (float) ($metric['current_plafon'] ?? 0)
-                - (float) ($previousClosedOsByCif[$cleanCif] ?? 0);
-
-            $surplusByGroup[$groupKey] ??= ['debitur' => 0, 'os' => 0.0];
-            $surplusByGroup[$groupKey]['debitur'] += count($metric['accounts'] ?? []);
-            $surplusByGroup[$groupKey]['os'] += $netDisbursement;
-        }
+        $surplusByGroup = app(ConsumerRmRealizationCalculator::class)->calculate($period);
+        $matchedGroups = [];
 
         foreach ($rows as &$row) {
-            $metric = $surplusByGroup[$this->consumerSurplusGroupKey($row)] ?? null;
+            $groupKey = $this->consumerSurplusGroupKey($row);
+            $metric = $surplusByGroup[$groupKey] ?? null;
             if ($metric === null) {
                 continue;
             }
 
-            $row['realisasi_deb'] = (int) ($metric['debitur'] ?? 0);
-            $row['realisasi_os'] = (float) ($metric['os'] ?? 0);
+            $matchedGroups[$groupKey] = true;
+            $row['realisasi_deb'] = (int) ($metric['realisasi_deb'] ?? 0);
+            $row['realisasi_os'] = (float) ($metric['realisasi_os'] ?? 0.0);
         }
         unset($row);
+
+        foreach ($surplusByGroup as $groupKey => $metric) {
+            if (isset($matchedGroups[$groupKey])) {
+                continue;
+            }
+
+            $rows[] = [
+                'cabang' => $metric['cabang'],
+                'unit' => $metric['unit'],
+                'branch_code' => $metric['branch_code'],
+                'rm' => $metric['rm'],
+                'produk' => $metric['produk'],
+                'plafon' => 0.0,
+                'loan_os' => 0.0,
+                'lancar_os' => 0.0,
+                'lancar_deb' => 0,
+                'sml_os' => 0.0,
+                'sml_deb' => 0,
+                'npl_os' => 0.0,
+                'npl_deb' => 0,
+                'restruk_os' => 0.0,
+                'total_deb' => 0,
+                'realisasi_deb' => (int) ($metric['realisasi_deb'] ?? 0),
+                'realisasi_os' => (float) ($metric['realisasi_os'] ?? 0.0),
+                'total_deposit' => 0.0,
+                'cifno_list' => '',
+            ];
+        }
 
         return $rows;
     }
 
     /**
-     * @param array<string, mixed> $row
+     * @param  array<string, mixed>  $row
      */
     private function consumerSurplusGroupKey(array $row): string
     {
@@ -3840,7 +3652,7 @@ class ReportSnapshotBuilder
         $deposits = DB::table('simpanan_multipn')
             ->where('posisi', $latestPosisi ?? DB::table('simpanan_multipn')->max('posisi'))
             ->selectRaw('CIFNO as clean_cif')
-            ->selectRaw("SUM(COALESCE(saldo_idr, 0)) as total_deposit");
+            ->selectRaw('SUM(COALESCE(saldo_idr, 0)) as total_deposit');
 
         $deposits->whereIn('CIFNO', array_unique($normalizedCifs));
 
@@ -3938,7 +3750,7 @@ class ReportSnapshotBuilder
     }
 
     /**
-     * @param array<int, array{source_segment?: string, products?: array<int, string>}> $rules
+     * @param  array<int, array{source_segment?: string, products?: array<int, string>}>  $rules
      * @return array<int, array{segment: string, products: array<int, string>}>
      */
     private function normalizeKinerjaRmRules(array $rules): array
@@ -4008,7 +3820,7 @@ class ReportSnapshotBuilder
     }
 
     /**
-     * @param callable(): bool $callback
+     * @param  callable(): bool  $callback
      */
     private function statementWithConcurrencyRetry(string $context, callable $callback): bool
     {
@@ -4021,7 +3833,7 @@ class ReportSnapshotBuilder
             try {
                 return $callback();
             } catch (Throwable $e) {
-                if ($attempts >= $maxAttempts || !$this->isRetryableConcurrencyError($e)) {
+                if ($attempts >= $maxAttempts || ! $this->isRetryableConcurrencyError($e)) {
                     throw $e;
                 }
 

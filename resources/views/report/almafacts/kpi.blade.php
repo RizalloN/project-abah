@@ -76,6 +76,77 @@
         'title' => $summary['sheet_title'] ?? $selectedSheet['sheet'] ?? '-',
         'rows' => $rows,
     ]];
+
+    $summaryRows = [];
+    foreach ($tableSections as $section) {
+        foreach (($section['rows'] ?? []) as $sectionRow) {
+            $summaryRows[] = $sectionRow;
+        }
+    }
+
+    $normalizeHeading = static fn ($value): string => strtoupper(trim(
+        preg_replace('/\s+/', ' ', (string) $value) ?? ''
+    ));
+    $scoreColumnIndex = null;
+    foreach ($displayColumns as $column) {
+        if ($normalizeHeading($column['label'] ?? '') === 'SCORE') {
+            $scoreColumnIndex = (int) ($column['index'] ?? 0);
+        }
+    }
+
+    $identityHeadingsBySheet = [
+        'mbm' => ['MBM'],
+        'ka-unit' => ['UNIT KERJA', 'UKER'],
+        'rm-mikro' => ['NAMA', 'NAMA RM'],
+        'rm-sme' => ['NAMA RM', 'NAMA', 'UKER'],
+        'mantri' => ['NAMA MANTRI', 'NAMA'],
+        'consumer' => ['PN PENGELOLA SINGLEPN', 'NAMA', 'UKER'],
+    ];
+    $identityColumnIndex = null;
+    foreach (($identityHeadingsBySheet[$selectedSheetKey] ?? ['NAMA', 'UNIT KERJA', 'UKER']) as $identityHeading) {
+        foreach ($displayColumns as $column) {
+            if ($normalizeHeading($column['label'] ?? '') === $identityHeading) {
+                $identityColumnIndex = (int) ($column['index'] ?? 0);
+                break 2;
+            }
+        }
+    }
+
+    $scoreValues = [];
+    $topScore = null;
+    $topScoreLabel = '-';
+    if ($scoreColumnIndex !== null) {
+        foreach ($summaryRows as $summaryRow) {
+            $scoreValue = $toNumber($summaryRow[$scoreColumnIndex] ?? null);
+            if ($scoreValue === null) {
+                continue;
+            }
+
+            $scoreValues[] = $scoreValue;
+            if ($topScore === null || $scoreValue > $topScore) {
+                $topScore = $scoreValue;
+                $candidateLabel = $identityColumnIndex !== null
+                    ? trim((string) ($summaryRow[$identityColumnIndex] ?? ''))
+                    : '';
+                $topScoreLabel = $candidateLabel !== '' ? $candidateLabel : 'Data terbaik';
+            }
+        }
+    }
+
+    $averageScore = $scoreValues !== [] ? array_sum($scoreValues) / count($scoreValues) : null;
+    $formatScore = static fn (?float $value): string => $value === null
+        ? '-'
+        : number_format($value, 2, ',', '.');
+    $activeBranchValue = (string) ($kpiBranchFilter['selected'] ?? 'all');
+    $activeBranchLabel = 'Area 6';
+    if ($activeBranchValue !== 'all') {
+        foreach (($kpiBranchFilter['options'] ?? []) as $branchOption) {
+            if ((string) ($branchOption['value'] ?? '') === $activeBranchValue) {
+                $activeBranchLabel = (string) ($branchOption['label'] ?? $activeBranchLabel);
+                break;
+            }
+        }
+    }
 @endphp
 
 @section('content')
@@ -798,89 +869,105 @@
         }
     }
 </style>
+@include('report.almafacts.partials.kpi-unified-theme')
 
-<div class="kpi-page">
-    <div class="kpi-hero">
-        <div>
-            <div class="kpi-eyebrow">Dashboard Almafacts</div>
-            <h1>{{ $selectedSheet['title'] ?? 'KPI' }}</h1>
-            <p>Posisi {{ $selectedPeriodLabel }} dari Google Spreadsheet, ditampilkan sebagai tabel internal yang konsisten dan mudah dibandingkan antarperiode.</p>
+<main class="kpi-page kpi-unified-page" id="kpi-dashboard">
+    <section class="kpi-hero" aria-labelledby="kpi-page-title">
+        <div class="kpi-hero-copy">
+            <div class="kpi-eyebrow"><i class="fas fa-chart-line"></i> Performance Management</div>
+            <h1 id="kpi-page-title">Dashboard {{ $selectedSheet['title'] ?? 'KPI' }}</h1>
+            <p>Monitoring kinerja {{ $selectedPeriodLabel }} berdasarkan data Google Spreadsheet dengan cakupan akses wilayah yang berlaku.</p>
         </div>
-        <div class="kpi-hero-card">
-            <span>Sheet Aktif</span>
-            <strong>{{ $summary['sheet_name'] ?? $selectedSheet['sheet'] ?? '-' }}</strong>
+        <div class="kpi-hero-facts">
+            <div class="kpi-hero-fact"><span>Wilayah</span><strong title="{{ $activeBranchLabel }}">{{ $activeBranchLabel }}</strong></div>
+            <div class="kpi-hero-fact"><span>Periode</span><strong>{{ $selectedPeriodLabel }}</strong></div>
+            <div class="kpi-hero-fact"><span>Data Aktif</span><strong>{{ number_format(count($summaryRows), 0, ',', '.') }}</strong></div>
+            <div class="kpi-hero-fact"><span>Rata-rata Skor</span><strong>{{ $formatScore($averageScore) }}</strong></div>
         </div>
-    </div>
+    </section>
 
-    <div class="kpi-toolbar">
+    <nav class="kpi-toolbar" aria-label="Navigasi KPI">
         <div class="kpi-tabs">
             @foreach($sheetOptions as $key => $sheet)
-                <a href="{{ route('report.dashboard-almafacts.kpi', array_filter(['sheet' => $key, 'periode' => $selectedPeriod, 'cabang' => $kpiBranchFilter['selected'] !== 'all' ? $kpiBranchFilter['selected'] : null])) }}" class="kpi-tab {{ $selectedSheetKey === $key ? 'active' : '' }}">
+                <a href="{{ route('report.dashboard-almafacts.kpi', array_filter(['sheet' => $key, 'periode' => $selectedPeriod, 'cabang' => $activeBranchValue !== 'all' ? $activeBranchValue : null])) }}" class="kpi-tab {{ $selectedSheetKey === $key ? 'active' : '' }}" @if($selectedSheetKey === $key) aria-current="page" @endif>
                     <i class="{{ $sheet['icon'] }}"></i>
-                    {{ $sheet['label'] }}
+                    <span>{{ $sheet['label'] }}</span>
                 </a>
             @endforeach
         </div>
-        <form method="GET" action="{{ route('report.dashboard-almafacts.kpi') }}" class="kpi-period-filter">
-            <input type="hidden" name="sheet" value="{{ $selectedSheetKey }}">
-            @if(($kpiBranchFilter['selected'] ?? 'all') !== 'all')
-                <input type="hidden" name="cabang" value="{{ $kpiBranchFilter['selected'] }}">
-            @endif
-            <label for="kpi-period-filter">Periode</label>
-            <select id="kpi-period-filter" name="periode" onchange="this.form.submit()">
-                @foreach($periodOptions as $periodValue => $periodLabel)
-                    <option value="{{ $periodValue }}" @selected($selectedPeriod === $periodValue)>{{ $periodLabel }}</option>
-                @endforeach
-            </select>
-        </form>
-        @if($kpiBranchFilter['enabled'])
-            <form method="GET" action="{{ route('report.dashboard-almafacts.kpi') }}" class="kpi-branch-filter">
-                <input type="hidden" name="sheet" value="{{ $selectedSheetKey }}">
-                <input type="hidden" name="periode" value="{{ $selectedPeriod }}">
-                <label for="kpi-branch-filter">Cabang</label>
-                <select id="kpi-branch-filter" name="cabang" @disabled($kpiBranchFilter['locked']) @if(!$kpiBranchFilter['locked']) onchange="this.form.submit()" @endif>
-                    @foreach($kpiBranchFilter['options'] as $option)
-                        <option value="{{ $option['value'] }}" @selected($kpiBranchFilter['selected'] === $option['value'])>{{ $option['label'] }}</option>
-                    @endforeach
-                </select>
-                @if($kpiBranchFilter['locked'])<input type="hidden" name="cabang" value="{{ $kpiBranchFilter['selected'] }}">@endif
-            </form>
-        @endif
         <div class="kpi-actions">
-            <a href="{{ route('report.dashboard-almafacts.kpi', array_filter(['sheet' => $selectedSheetKey, 'periode' => $selectedPeriod, 'cabang' => $kpiBranchFilter['selected'] !== 'all' ? $kpiBranchFilter['selected'] : null, 'refresh' => 1])) }}" class="kpi-action primary">
+            <a href="{{ route('report.dashboard-almafacts.kpi', array_filter(['sheet' => $selectedSheetKey, 'periode' => $selectedPeriod, 'cabang' => $activeBranchValue !== 'all' ? $activeBranchValue : null, 'refresh' => 1])) }}" class="kpi-action primary">
                 <i class="fas fa-sync-alt"></i>
-                Refresh
+                Perbarui
             </a>
             <a href="{{ $spreadsheetUrl }}" target="_blank" rel="noopener" class="kpi-action">
                 <i class="fas fa-external-link-alt"></i>
-                Buka Spreadsheet
+                Spreadsheet
             </a>
         </div>
-    </div>
+    </nav>
 
     @if($error)
-        <div class="kpi-alert">
+        <div class="kpi-alert" role="alert">
             <i class="fas fa-exclamation-triangle mr-2"></i>{{ $error }}
         </div>
     @endif
 
+    <section class="kpi-analysis-panel" aria-labelledby="kpi-analysis-title">
+        <header class="kpi-analysis-head">
+            <div class="kpi-analysis-title">
+                <span class="kpi-analysis-icon"><i class="fas fa-sliders-h"></i></span>
+                <div>
+                    <h2 id="kpi-analysis-title">Ruang Analisis</h2>
+                    <p>Atur periode dan wilayah, lalu cari profil atau unit tanpa memuat ulang data.</p>
+                </div>
+            </div>
+            <span class="kpi-result-summary" id="kpi-visible-summary" aria-live="polite">{{ number_format(count($summaryRows), 0, ',', '.') }} data ditampilkan</span>
+        </header>
+        <div class="kpi-analysis-body">
+            <div class="kpi-filter-grid">
+                <form method="GET" action="{{ route('report.dashboard-almafacts.kpi') }}" class="kpi-filter-field kpi-period-filter">
+                    <input type="hidden" name="sheet" value="{{ $selectedSheetKey }}">
+                    @if($activeBranchValue !== 'all')
+                        <input type="hidden" name="cabang" value="{{ $activeBranchValue }}">
+                    @endif
+                    <label for="kpi-period-filter">Periode</label>
+                    <select id="kpi-period-filter" name="periode" onchange="this.form.submit()">
+                        @foreach($periodOptions as $periodValue => $periodLabel)
+                            <option value="{{ $periodValue }}" @selected($selectedPeriod === $periodValue)>{{ $periodLabel }}</option>
+                        @endforeach
+                    </select>
+                </form>
+                @if($kpiBranchFilter['enabled'])
+                    <form method="GET" action="{{ route('report.dashboard-almafacts.kpi') }}" class="kpi-filter-field kpi-branch-filter">
+                        <input type="hidden" name="sheet" value="{{ $selectedSheetKey }}">
+                        <input type="hidden" name="periode" value="{{ $selectedPeriod }}">
+                        <label for="kpi-branch-filter">Kantor Cabang</label>
+                        <select id="kpi-branch-filter" name="cabang" @disabled($kpiBranchFilter['locked']) @if(!$kpiBranchFilter['locked']) onchange="this.form.submit()" @endif>
+                            @foreach($kpiBranchFilter['options'] as $option)
+                                <option value="{{ $option['value'] }}" @selected($kpiBranchFilter['selected'] === $option['value'])>{{ $option['label'] }}</option>
+                            @endforeach
+                        </select>
+                        @if($kpiBranchFilter['locked'])<input type="hidden" name="cabang" value="{{ $kpiBranchFilter['selected'] }}">@endif
+                    </form>
+                @endif
+                <div class="kpi-filter-field kpi-search-field">
+                    <label for="kpi-table-search">Cari Data</label>
+                    <div class="kpi-search-control">
+                        <i class="fas fa-search" aria-hidden="true"></i>
+                        <input id="kpi-table-search" type="search" autocomplete="off" placeholder="Nama, unit kerja, atau nilai" aria-describedby="kpi-visible-summary">
+                        <button type="button" id="kpi-search-clear" title="Hapus pencarian" aria-label="Hapus pencarian" disabled><i class="fas fa-times"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <div class="kpi-meta-grid">
-        <div class="kpi-meta">
-            <span>Periode</span>
-            <strong>{{ $selectedPeriodLabel }}</strong>
-        </div>
-        <div class="kpi-meta">
-            <span>Baris Data</span>
-            <strong>{{ number_format((int) ($summary['row_count'] ?? 0), 0, ',', '.') }}</strong>
-        </div>
-        <div class="kpi-meta">
-            <span>Kolom</span>
-            <strong>{{ number_format((int) ($summary['column_count'] ?? 0), 0, ',', '.') }}</strong>
-        </div>
-        <div class="kpi-meta">
-            <span>Update Cache</span>
-            <strong>{{ $fetchedAt ? \Carbon\Carbon::parse($fetchedAt)->format('d M Y H:i') : '-' }}</strong>
-        </div>
+        <article class="kpi-meta" style="--kpi-tone:#00529c"><span>Total Profil</span><strong>{{ number_format(count($summaryRows), 0, ',', '.') }}</strong><small>Data dalam cakupan aktif</small></article>
+        <article class="kpi-meta" style="--kpi-tone:#07966f"><span>Rata-rata Skor</span><strong>{{ $formatScore($averageScore) }}</strong><small>Kolom skor akhir yang tersedia</small></article>
+        <article class="kpi-meta" style="--kpi-tone:#f59e0b"><span>Skor Tertinggi</span><strong>{{ $formatScore($topScore) }}</strong><small title="{{ $topScoreLabel }}">{{ $topScoreLabel }}</small></article>
+        <article class="kpi-meta" style="--kpi-tone:#009fdb"><span>Sinkronisasi</span><strong>{{ $fetchedAt ? \Carbon\Carbon::parse($fetchedAt)->format('d M Y H:i') : '-' }}</strong><small>{{ number_format((int) ($summary['column_count'] ?? 0), 0, ',', '.') }} kolom sumber</small></article>
     </div>
 
     @foreach($tableSections as $section)
@@ -888,15 +975,18 @@
             $sectionRows = $section['rows'] ?? [];
             $sectionTitle = $section['title'] ?? ($summary['sheet_title'] ?? $selectedSheet['sheet'] ?? '-');
         @endphp
-    <div class="kpi-table-panel" data-kpi-section="{{ $section['key'] ?? 'all' }}">
+    <section class="kpi-table-panel" data-kpi-section="{{ $section['key'] ?? 'all' }}">
         <div class="kpi-table-title">
-            <div>
-                <strong>{{ $sectionTitle }}</strong>
-                <span>{{ count($sectionRows) }} baris dari spreadsheet sumber.</span>
+            <div class="kpi-table-heading">
+                <span class="kpi-table-icon"><i class="fas fa-table"></i></span>
+                <div>
+                    <strong>{{ $sectionTitle }}</strong>
+                    <span><b data-kpi-visible-count>{{ count($sectionRows) }}</b> dari {{ count($sectionRows) }} baris ditampilkan.</span>
+                </div>
             </div>
-            <span class="kpi-action">
-                <i class="fas fa-table"></i>
-                Google Sheet
+            <span class="kpi-source-badge">
+                <i class="fas fa-circle" aria-hidden="true"></i>
+                Google Sheets live
             </span>
         </div>
 
@@ -967,13 +1057,69 @@
                 </table>
             </div>
         @endif
-    </div>
+    </section>
     @endforeach
-</div>
+</main>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const tableWraps = Array.from(document.querySelectorAll('.kpi-excel-wrap'));
+    const searchInput = document.getElementById('kpi-table-search');
+    const searchClear = document.getElementById('kpi-search-clear');
+    const visibleSummary = document.getElementById('kpi-visible-summary');
     let resizeFrame = null;
+
+    const normalizeSearchText = function (value) {
+        return String(value || '')
+            .toLocaleLowerCase('id-ID')
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    };
+
+    const filterTableRows = function () {
+        const term = normalizeSearchText(searchInput ? searchInput.value : '');
+        let visibleTotal = 0;
+
+        document.querySelectorAll('.kpi-table-panel').forEach(function (panel) {
+            const rows = Array.from(panel.querySelectorAll('tbody tr'));
+            let visibleInSection = 0;
+
+            rows.forEach(function (row) {
+                const matches = term === '' || normalizeSearchText(row.textContent).includes(term);
+                row.hidden = !matches;
+                if (matches) {
+                    visibleInSection++;
+                    visibleTotal++;
+                }
+            });
+
+            const count = panel.querySelector('[data-kpi-visible-count]');
+            if (count) {
+                count.textContent = visibleInSection.toLocaleString('id-ID');
+            }
+
+            panel.classList.toggle('kpi-table-panel--no-match', term !== '' && rows.length > 0 && visibleInSection === 0);
+        });
+
+        if (visibleSummary) {
+            visibleSummary.textContent = visibleTotal.toLocaleString('id-ID') + ' data ditampilkan';
+        }
+        if (searchClear) {
+            searchClear.disabled = term === '';
+        }
+    };
+
+    if (searchInput) {
+        searchInput.addEventListener('input', filterTableRows);
+    }
+    if (searchClear && searchInput) {
+        searchClear.addEventListener('click', function () {
+            searchInput.value = '';
+            filterTableRows();
+            searchInput.focus();
+        });
+    }
 
     const syncTableHeights = function () {
         resizeFrame = null;

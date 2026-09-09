@@ -22,6 +22,7 @@ class DashboardCrossAlignmentGuard
         try {
             $harianService = app(DashboardHarianSnapshotService::class);
             $rows = $payload['rows'] ?? [];
+            $harianCache = [];
 
             foreach ($rows as &$row) {
                 if ($row['is_total'] ?? false) {
@@ -39,9 +40,16 @@ class DashboardCrossAlignmentGuard
                     continue;
                 }
 
-                // Fetch metrics from Daily Performance Dashboard
-                $harianPayload = $harianService->buildDashboardPayload($selectedPeriod, $rkaPeriod, $branchName);
-                $harianRows = $harianPayload['rows'] ?? [];
+                // Fetch metrics from Daily Performance Dashboard (memoized per branch)
+                if (!isset($harianCache[$branchName])) {
+                    $harianPayload = $harianService->buildDashboardPayload($selectedPeriod, $rkaPeriod, $branchName);
+                    $harianCache[$branchName] = $harianPayload['rows'] ?? [];
+                }
+                $harianRows = $harianCache[$branchName];
+
+                if (!self::hasHarianMetric($harianRows, $harianKey)) {
+                    continue;
+                }
 
                 $selectedVal = self::getHarianMetric($harianRows, $category, $harianKey, 'current');
                 $ytdVal = self::getHarianMetric($harianRows, $category, $harianKey, 'ytd');
@@ -101,8 +109,11 @@ class DashboardCrossAlignmentGuard
                     $rows[$totalRowIdx]['delta_mtd'] = $rows[$totalRowIdx]['selected'] - $rows[$totalRowIdx]['mtd'];
 
                     // Target RKA
-                    $harianPayload = $harianService->buildDashboardPayload($selectedPeriod, $rkaPeriod, $branch);
-                    $harianRows = $harianPayload['rows'] ?? [];
+                    if (!isset($harianCache[$branch])) {
+                        $harianPayload = $harianService->buildDashboardPayload($selectedPeriod, $rkaPeriod, $branch);
+                        $harianCache[$branch] = $harianPayload['rows'] ?? [];
+                    }
+                    $harianRows = $harianCache[$branch];
                     $totalHarianKey = self::getHarianKeyForDana($category, 'TOTAL CABANG');
                     $rkaVal = self::getHarianMetric($harianRows, $category, $totalHarianKey, 'rka');
 
@@ -150,6 +161,7 @@ class DashboardCrossAlignmentGuard
     {
         try {
             $harianService = app(DashboardHarianSnapshotService::class);
+            $harianCache = [];
 
             foreach (['os', 'sml', 'npl'] as $type) {
                 if (!isset($payload[$type])) {
@@ -178,9 +190,16 @@ class DashboardCrossAlignmentGuard
                         continue;
                     }
 
-                    // Fetch metric values from Daily Performance Dashboard
-                    $harianPayload = $harianService->buildDashboardPayload($selectedPeriod, null, $branchName);
-                    $harianRows = $harianPayload['rows'] ?? [];
+                    // Fetch metric values from Daily Performance Dashboard (memoized per branch)
+                    if (!isset($harianCache[$branchName])) {
+                        $harianPayload = $harianService->buildDashboardPayload($selectedPeriod, null, $branchName);
+                        $harianCache[$branchName] = $harianPayload['rows'] ?? [];
+                    }
+                    $harianRows = $harianCache[$branchName];
+
+                    if (!self::hasHarianMetric($harianRows, $harianKey)) {
+                        continue;
+                    }
 
                     $selectedVal = self::getHarianMetric($harianRows, null, $harianKey, 'current');
                     $ytdVal = self::getHarianMetric($harianRows, null, $harianKey, 'ytd');
@@ -385,17 +404,51 @@ class DashboardCrossAlignmentGuard
         }
 
         $row = collect($harianRows)->firstWhere('key', $key);
-        if (!$row) {
-            return 0.0;
+        if ($row) {
+            if ($type === 'rka') {
+                return (float) ($row['values']['rka'] ?? 0);
+            }
+            if ($type === 'rka_dec') {
+                return (float) ($row['values']['rka_dec'] ?? 0);
+            }
+            return (float) ($row['values'][$type] ?? 0);
         }
 
-        if ($type === 'rka') {
-            return (float) ($row['values']['rka'] ?? 0);
+        // When a branch has sub-offices (e.g. KCPs in KC Madiun or KC Ponorogo),
+        // DashboardHarianSnapshotService replaces child metric keys with office breakdown keys
+        // formatted as "{$key}__office_detail__{$unitKey}".
+        // We aggregate across all office details to obtain the branch-level total.
+        $officeRows = collect($harianRows)->filter(
+            fn (array $r): bool => str_starts_with((string) ($r['key'] ?? ''), "{$key}__office_detail__")
+        );
+
+        if ($officeRows->isNotEmpty()) {
+            if ($type === 'rka') {
+                return (float) $officeRows->sum(fn (array $r): float => (float) ($r['values']['rka'] ?? 0));
+            }
+            if ($type === 'rka_dec') {
+                return (float) $officeRows->sum(fn (array $r): float => (float) ($r['values']['rka_dec'] ?? 0));
+            }
+            return (float) $officeRows->sum(fn (array $r): float => (float) ($r['values'][$type] ?? 0));
         }
-        if ($type === 'rka_dec') {
-            return (float) ($row['values']['rka_dec'] ?? 0);
+
+        return 0.0;
+    }
+
+    private static function hasHarianMetric(array $harianRows, string $key): bool
+    {
+        if (str_ends_with($key, '_all') || $key === 'casa_all') {
+            return true;
         }
-        return (float) ($row['values'][$type] ?? 0);
+
+        foreach ($harianRows as $r) {
+            $rowKey = (string) ($r['key'] ?? '');
+            if ($rowKey === $key || str_starts_with($rowKey, "{$key}__office_detail__")) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static function calculateRkaPct(float $selected, float $rka, string $type): float

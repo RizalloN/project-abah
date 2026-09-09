@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\ConsumerRmRealizationCalculator;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -213,125 +214,37 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
      */
     private function applyConsumerSurplusForPeriod(string $period, array &$sourceRows): void
     {
-        $previousPeriod = $this->resolvePreviousMonthDailyLoanPeriod($period);
-        if ($previousPeriod === null) {
-            return;
-        }
-
-        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
-        $realisasiDateColumn = Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi1') ? 'tgl_realisasi1' : 'tgl_realisasi';
-
-        $currentAccountKeys = DB::table('daily_loan_dinamis')
-            ->where('periode', $period)
-            ->whereNotNull('nomor_rekening1')
-            ->where('nomor_rekening1', '<>', '')
-            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
-            ->distinct()
-            ->pluck('account_key')
-            ->map(fn ($accountKey): string => (string) $accountKey)
-            ->filter()
-            ->flip();
-
-        $previousLookupOrderColumn = Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
-            ? 'uniqueid_namareport'
-            : 'nomor_rekening1';
-
-        $previousClosedOsByCif = [];
-        DB::table('daily_loan_dinamis')
-            ->where('periode', $previousPeriod)
-            ->where('segmen_kinerja', 'CONSUMER')
-            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->whereNotNull('nomor_rekening1')
-            ->where('nomor_rekening1', '<>', '')
-            ->whereNotNull('cifno')
-            ->where('cifno', '<>', '')
-            ->selectRaw('UPPER(TRIM(cifno)) as clean_cif')
-            ->selectRaw('UPPER(TRIM(nomor_rekening1)) as account_key')
-            ->selectRaw('COALESCE(baki_debet1, 0) as previous_os')
-            ->orderBy($previousLookupOrderColumn)
-            ->chunk(1000, function ($rows) use (&$previousClosedOsByCif, $currentAccountKeys): void {
-                foreach ($rows as $row) {
-                    $cleanCif = (string) ($row->clean_cif ?? '');
-                    $accountKey = (string) ($row->account_key ?? '');
-                    if ($cleanCif === '' || isset($currentAccountKeys[$accountKey]) || array_key_exists($cleanCif, $previousClosedOsByCif)) {
-                        continue;
-                    }
-
-                    $previousClosedOsByCif[$cleanCif] = (float) ($row->previous_os ?? 0);
-                }
-            });
-
-        $currentRealizationByCif = [];
-        DB::table('daily_loan_dinamis')
-            ->where('periode', $period)
-            ->where('segmen_kinerja', 'CONSUMER')
-            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
-            ->whereNotNull('pn_pengelola1')
-            ->where('pn_pengelola1', '<>', '')
-            ->whereNotNull('nomor_rekening1')
-            ->where('nomor_rekening1', '<>', '')
-            ->whereNotNull('cifno')
-            ->where('cifno', '<>', '')
-            ->whereBetween($realisasiDateColumn, [$periodStart, $period])
-            ->select([
-                'cabang_normalized',
-                'unit_normalized',
-                'branch_normalized',
-                'rm_normalized',
-                'produk_kinerja',
-                'nomor_rekening1',
-                'plafon',
-                'cifno',
-            ])
-            ->selectRaw("UPPER(TRIM(nomor_rekening1)) as account_key")
-            ->orderBy('nomor_rekening1')
-            ->chunk(1000, function ($rows) use (&$currentRealizationByCif): void {
-                foreach ($rows as $row) {
-                    $groupKey = $this->sourceKey([
-                        'cabang' => (string) ($row->cabang_normalized ?? ''),
-                        'unit' => (string) ($row->unit_normalized ?? ''),
-                        'branch_code' => (string) ($row->branch_normalized ?? ''),
-                        'rm' => (string) ($row->rm_normalized ?? ''),
-                        'segmen' => 'CONSUMER',
-                        'produk' => $this->canonicalProduct('CONSUMER', (string) ($row->produk_kinerja ?? '')),
-                    ]);
-                    $cleanCif = strtoupper(trim((string) ($row->cifno ?? '')));
-                    $accountKey = (string) ($row->account_key ?? '');
-                    $metricKey = $groupKey . '|' . $cleanCif;
-
-                    if (!isset($currentRealizationByCif[$metricKey])) {
-                        $currentRealizationByCif[$metricKey] = [
-                            'group_key' => $groupKey,
-                            'clean_cif' => $cleanCif,
-                            'accounts' => [],
-                            'current_plafon' => 0.0,
-                        ];
-                    }
-
-                    $currentRealizationByCif[$metricKey]['accounts'][$accountKey] = true;
-                    $currentRealizationByCif[$metricKey]['current_plafon'] += (float) ($row->plafon ?? 0);
-                }
-            });
-
-        $surplusByGroup = [];
-        foreach ($currentRealizationByCif as $metric) {
-            $groupKey = (string) ($metric['group_key'] ?? '');
-            $cleanCif = (string) ($metric['clean_cif'] ?? '');
-            $netDisbursement = (float) ($metric['current_plafon'] ?? 0)
-                - (float) ($previousClosedOsByCif[$cleanCif] ?? 0);
-
-            $surplusByGroup[$groupKey] ??= ['debitur' => 0, 'os' => 0.0];
-            $surplusByGroup[$groupKey]['debitur'] += count($metric['accounts'] ?? []);
-            $surplusByGroup[$groupKey]['os'] += $netDisbursement;
-        }
-
-        foreach ($surplusByGroup as $groupKey => $metric) {
+        foreach (app(ConsumerRmRealizationCalculator::class)->calculate($period) as $metric) {
+            $groupKey = $this->sourceKey([
+                'cabang' => $metric['cabang'] ?? '',
+                'unit' => $metric['unit'] ?? '',
+                'branch_code' => $metric['branch_code'] ?? '',
+                'rm' => $metric['rm'] ?? '',
+                'segmen' => 'CONSUMER',
+                'produk' => $metric['produk'] ?? '',
+            ]);
             if (!isset($sourceRows[$groupKey])) {
-                continue;
+                $sourceRows[$groupKey] = (object) [
+                    'cabang' => (string) ($metric['cabang'] ?? ''),
+                    'unit' => (string) ($metric['unit'] ?? ''),
+                    'branch_code' => (string) ($metric['branch_code'] ?? ''),
+                    'rm' => (string) ($metric['rm'] ?? ''),
+                    'segmen' => 'CONSUMER',
+                    'produk' => (string) ($metric['produk'] ?? ''),
+                    'plafon' => 0.0,
+                    'loan_os' => 0.0,
+                    'lancar_os' => 0.0,
+                    'sml_os' => 0.0,
+                    'npl_os' => 0.0,
+                    'restruk_os' => 0.0,
+                    'total_deb' => 0,
+                    'realisasi_deb' => 0,
+                    'realisasi_os' => 0.0,
+                ];
             }
 
-            $sourceRows[$groupKey]->realisasi_deb = (int) ($metric['debitur'] ?? 0);
-            $sourceRows[$groupKey]->realisasi_os = (float) ($metric['os'] ?? 0);
+            $sourceRows[$groupKey]->realisasi_deb = (int) ($metric['realisasi_deb'] ?? 0);
+            $sourceRows[$groupKey]->realisasi_os = (float) ($metric['realisasi_os'] ?? 0.0);
         }
     }
 
@@ -353,10 +266,10 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
     private function sourceKey(array $row): string
     {
         return implode('|', [
-            (string) ($row['cabang'] ?? ''),
-            (string) ($row['unit'] ?? ''),
-            (string) ($row['branch_code'] ?? ''),
-            (string) ($row['rm'] ?? ''),
+            strtoupper(trim((string) ($row['cabang'] ?? ''))),
+            strtoupper(trim((string) ($row['unit'] ?? ''))),
+            strtoupper(trim((string) ($row['branch_code'] ?? ''))),
+            strtoupper(trim((string) ($row['rm'] ?? ''))),
             strtoupper(trim((string) ($row['segmen'] ?? ''))),
             strtoupper(trim((string) ($row['produk'] ?? ''))),
         ]);

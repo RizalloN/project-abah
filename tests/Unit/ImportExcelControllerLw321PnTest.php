@@ -15,6 +15,7 @@ class ImportExcelControllerLw321PnTest extends TestCase
     protected function tearDown(): void
     {
         Schema::dropIfExists('lw321pn');
+        Schema::dropIfExists('daily_loan_dinamis');
 
         parent::tearDown();
     }
@@ -107,6 +108,31 @@ class ImportExcelControllerLw321PnTest extends TestCase
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('sudah ada di tabel lw321pn');
+
+        $method->invoke(new ImportExcelController(), ['23/08/2026']);
+    }
+
+    public function test_lw321pn_rejects_a_period_owned_by_daily_loan(): void
+    {
+        Schema::create('lw321pn', function (Blueprint $table): void {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('periode')->nullable();
+        });
+        Schema::create('daily_loan_dinamis', function (Blueprint $table): void {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('periode')->nullable();
+        });
+
+        DB::table('daily_loan_dinamis')->insert([
+            'uniqueid_namareport' => 'daily-existing-row',
+            'periode' => '2026-08-23',
+        ]);
+
+        $method = new ReflectionMethod(ImportExcelController::class, 'assertLw321PnImportPeriodsEmptyOrFail');
+        $method->setAccessible(true);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('sudah ada di tabel daily_loan_dinamis');
 
         $method->invoke(new ImportExcelController(), ['23/08/2026']);
     }
