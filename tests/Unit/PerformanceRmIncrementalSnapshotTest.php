@@ -2,9 +2,10 @@
 
 namespace Tests\Unit;
 
-use App\Support\ConsumerRmRealizationCalculator;
 use App\Support\ConsumerRmPositionHistoryStore;
+use App\Support\ConsumerRmRealizationCalculator;
 use App\Support\DashboardHarianSnapshotService;
+use App\Support\LandingConsumerOperationalService;
 use App\Support\ReportSnapshotBuilder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Config;
@@ -107,7 +108,7 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $this->assertSame(300000000.0, (float) $kpr->realisasi_os);
     }
 
-    public function test_consumer_realisasi_applies_the_same_nett_formula_to_briguna_and_kpr(): void
+    public function test_kpr_uses_booked_plafond_while_briguna_retains_net_disbursement(): void
     {
         $this->insertDailyLoanRow('OLD-BRIGUNA', 'BRIGUNAKONSUMER', 150000000, 80000000, 'CIF-BRIGUNA', '2026-04-30');
         $this->insertDailyLoanRow('OLD-KPR', 'KPR', 150000000, 80000000, 'CIF-KPR', '2026-04-30');
@@ -117,14 +118,70 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $metrics = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-05-31'))
             ->keyBy('produk');
 
-        foreach (['BRIGUNA-KONSUMER', 'KPR'] as $product) {
+        foreach (['BRIGUNA-KONSUMER' => 220000000.0, 'KPR' => 300000000.0] as $product => $expected) {
             $this->assertArrayHasKey($product, $metrics);
             $this->assertSame(0, (int) $metrics[$product]['realisasi_baru_deb']);
             $this->assertSame(0.0, (float) $metrics[$product]['realisasi_baru_os']);
             $this->assertSame(1, (int) $metrics[$product]['suplesi_deb']);
-            $this->assertSame(220000000.0, (float) $metrics[$product]['suplesi_os']);
-            $this->assertSame(220000000.0, (float) $metrics[$product]['realisasi_os']);
+            $this->assertSame($expected, (float) $metrics[$product]['suplesi_os']);
+            $this->assertSame($expected, (float) $metrics[$product]['realisasi_os']);
         }
+    }
+
+    public function test_kpr_transfer_is_resolved_per_account_through_cutoff_without_moving_briguna(): void
+    {
+        $this->insertDailyLoanRow('BASE', 'KPR', 100, 80, 'BASE', '2026-04-30');
+        foreach (['A' => 300000000, 'B' => 200000000] as $account => $amount) {
+            $this->insertDailyLoanRow($account, 'KPR', $amount, $amount, 'CIF-'.$account, '2026-05-10');
+            $this->insertDailyLoanRow($account, 'KPR', $amount, $amount, 'CIF-'.$account, '2026-05-31', tglRealisasi: '2026-05-10');
+            $this->insertDailyLoanRow($account, 'KPR', $amount, $amount, 'CIF-'.$account, '2026-06-30', tglRealisasi: '2026-05-10');
+        }
+        DB::table('daily_loan_dinamis')->where('periode', '2026-05-31')->where('nomor_rekening1', 'A')->update(['rm_normalized' => 'RM B']);
+        DB::table('daily_loan_dinamis')->where('periode', '2026-06-30')->where('nomor_rekening1', 'A')->update(['rm_normalized' => 'RM C']);
+        $this->insertDailyLoanRow('BRIGUNA', 'BRIGUNAKONSUMER', 150000000, 150000000, 'BRIGUNA', '2026-05-10');
+        $this->insertDailyLoanRow('BRIGUNA', 'BRIGUNAKONSUMER', 150000000, 150000000, 'BRIGUNA', '2026-06-30', tglRealisasi: '2026-05-10');
+        DB::table('daily_loan_dinamis')->where('periode', '2026-06-30')->where('nomor_rekening1', 'BRIGUNA')->update(['rm_normalized' => 'RM C']);
+
+        $calculator = app(ConsumerRmRealizationCalculator::class);
+        $may = collect($calculator->calculate('2026-05-31'))->where('produk', 'KPR')->keyBy('rm');
+        $this->assertSame(300000000.0, $may['RM B']['realisasi_os']);
+        $this->assertSame(200000000.0, $may['RM A']['realisasi_os']);
+        $this->assertFalse($may->has('RM C'));
+        $june = collect($calculator->calculate('2026-05-31', '2026-06-30'));
+        $this->assertSame(300000000.0, $june->where('produk', 'KPR')->keyBy('rm')['RM C']['realisasi_os']);
+        $this->assertSame('RM A', $june->where('produk', 'BRIGUNA-KONSUMER')->first()['rm']);
+        $this->assertSame(650000000.0, $june->sum('realisasi_os'));
+        $this->assertSame(500000000.0, collect($calculator->calculate('2026-05-31', '2026-06-30', 'KPR'))->sum('realisasi_os'));
+    }
+
+    public function test_kpr_deduplicates_account_aliases_across_cifs_and_preserves_portfolio_on_projection(): void
+    {
+        $this->insertDailyLoanRow('BASE', 'KPR', 100, 80, 'BASE', '2026-04-30');
+        $this->insertDailyLoanRow('0000125', 'KPR', 150000000, 145000000, 'OLD-CIF', '2026-05-10');
+        $this->insertDailyLoanRow('125', 'KPR', 200000000, 190000000, 'NEW-CIF', '2026-05-31', tglRealisasi: '2026-05-10');
+        DB::table('daily_loan_dinamis')->where('periode', '2026-05-31')->update(['rm_normalized' => 'RM B']);
+        $metric = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-05-31'))->first();
+        $this->assertSame('RM B', $metric['rm']);
+        $this->assertSame(1, $metric['realisasi_deb']);
+        $this->assertSame(200000000.0, $metric['realisasi_os']);
+
+        $original = collect([(object) [
+            'periode' => '2026-05-31', 'cabang' => 'KC MADIUN', 'produk' => 'KPR',
+            'rm' => 'RM A', 'loan_os' => 190000000.0, 'npl_os' => 10000000.0,
+            'realisasi_os' => 120000000.0, 'realisasi_deb' => 1,
+        ], (object) [
+            'periode' => '2026-05-31', 'cabang' => 'KC MADIUN', 'produk' => 'BRIGUNA-KONSUMER',
+            'rm' => 'RM A', 'loan_os' => 180000000.0, 'realisasi_os' => 150000000.0,
+        ]]);
+        $projected = app(LandingConsumerOperationalService::class)
+            ->applyKprRealizationAssignments($original, '2026-05-31');
+        $this->assertSame(120000000.0, $original->first()->realisasi_os);
+        $this->assertSame(0.0, $projected->first()->realisasi_os);
+        $this->assertSame(190000000.0, $projected->first()->loan_os);
+        $this->assertSame(10000000.0, $projected->first()->npl_os);
+        $this->assertSame(200000000.0, $projected->where('rm', 'RM B')->sum('realisasi_os'));
+        $this->assertSame(150000000.0, $projected->where('produk', 'BRIGUNA-KONSUMER')->sum('realisasi_os'));
+        $this->assertEquals($original[1], $projected[1]);
     }
 
     public function test_consumer_realisasi_returns_empty_metrics_when_month_has_no_realizations(): void
@@ -219,6 +276,72 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $this->assertNotNull($snapshot);
         $this->assertSame(1, (int) $snapshot->realisasi_deb);
         $this->assertSame(210000000.0, (float) $snapshot->realisasi_os);
+    }
+
+    public function test_briguna_origination_day_matches_kanwil_july_cif_balances(): void
+    {
+        // Independent RO cached daily figures, 25 July 2026: Zulfa 278.217627m
+        // and Dimas 23.729448m. Synthetic identities preserve the source amounts.
+        $this->insertDailyLoanRow('Z-OLD', 'BRIGUNAKONSUMER', 300000000, 255851152, 'CIF-Z', '2026-06-30', tglRealisasi: '2024-02-24');
+        $this->insertDailyLoanRow('Z-OLD', 'BRIGUNAKONSUMER', 300000000, 254068779, 'CIF-Z', '2026-07-25', tglRealisasi: '2024-02-24');
+        $this->insertDailyLoanRow('Z-NEW', 'BRIGUNAKONSUMER', 280000000, 280000000, 'CIF-Z', '2026-07-25', tglRealisasi: '2026-07-25');
+        $this->insertDailyLoanRow('Z-NEW', 'BRIGUNAKONSUMER', 280000000, 280000000, 'CIF-Z', '2026-07-31', tglRealisasi: '2026-07-25');
+        $this->insertDailyLoanRow('D-OLD-1', 'BRIGUNAKONSUMER', 450000000, 390155278, 'CIF-D', '2026-06-30', tglRealisasi: '2023-07-07');
+        $this->insertDailyLoanRow('D-OLD-2', 'BRIGUNAKONSUMER', 100000000, 96115274, 'CIF-D', '2026-06-30', tglRealisasi: '2025-04-29');
+        $this->insertDailyLoanRow('D-NEW', 'BRIGUNAKONSUMER', 510000000, 510000000, 'CIF-D', '2026-07-25', tglRealisasi: '2026-07-25');
+        DB::table('daily_loan_dinamis')->where('cifno_clean', 'CIF-D')->update(['rm_normalized' => 'RM D']);
+
+        $metrics = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-07-31'))->keyBy('rm');
+        $this->assertSame(278217627.0, $metrics['RM A']['realisasi_os']);
+        $this->assertSame(23729448.0, $metrics['RM D']['realisasi_os']);
+        $this->assertSame(1, $metrics['RM A']['suplesi_deb']);
+        $this->assertSame(1, $metrics['RM D']['suplesi_deb']);
+
+        $migration = require database_path('migrations/2026_09_09_010000_create_consumer_rm_position_history_tables.php');
+        $migration->up();
+        foreach (['2026-06-30', '2026-07-25', '2026-07-31'] as $date) {
+            $capture = app(ConsumerRmPositionHistoryStore::class)->capturePeriod($date, true);
+            $this->assertTrue($capture['verified']);
+        }
+        DB::table('daily_loan_dinamis')->where('periode', '2026-07-25')->delete();
+        $archived = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-07-31'))->keyBy('rm');
+        $this->assertSame($metrics->all(), $archived->all());
+    }
+
+    public function test_briguna_cif_movement_includes_earlier_bookings_at_the_event_cutoff(): void
+    {
+        // Bagus, 31 July: current 227.595240m + 350m + 100m minus 228.203372m.
+        $this->insertDailyLoanRow('OLD', 'BRIGUNAKONSUMER', 230000000, 228203372, 'CIF-CUMULATIVE', '2026-06-30', tglRealisasi: '2026-03-26');
+        $this->insertDailyLoanRow('OLD', 'BRIGUNAKONSUMER', 230000000, 227595240, 'CIF-CUMULATIVE', '2026-07-31', tglRealisasi: '2026-03-26');
+        $this->insertDailyLoanRow('EARLIER', 'BRIGUNAKONSUMER', 350000000, 350000000, 'CIF-CUMULATIVE', '2026-07-02', tglRealisasi: '2026-07-02');
+        $this->insertDailyLoanRow('OLD', 'BRIGUNAKONSUMER', 230000000, 228203372, 'CIF-CUMULATIVE', '2026-07-02', tglRealisasi: '2026-03-26');
+        $this->insertDailyLoanRow('EARLIER', 'BRIGUNAKONSUMER', 350000000, 350000000, 'CIF-CUMULATIVE', '2026-07-31', tglRealisasi: '2026-07-02');
+        $this->insertDailyLoanRow('NEW', 'BRIGUNAKONSUMER', 100000000, 100000000, 'CIF-CUMULATIVE', '2026-07-31', tglRealisasi: '2026-07-31');
+
+        $metric = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-07-31'))->first();
+        $this->assertSame(2, $metric['realisasi_deb']);
+        $this->assertSame(350000000.0 + 449391868.0, $metric['realisasi_os']);
+    }
+
+    public function test_briguna_keeps_facility_estimate_when_origination_day_is_unavailable(): void
+    {
+        $this->insertDailyLoanRow('OLD', 'BRIGUNAKONSUMER', 300000000, 255851152, 'CIF-MISSING', '2026-06-30', tglRealisasi: '2024-02-24');
+        $this->insertDailyLoanRow('NEW', 'BRIGUNAKONSUMER', 280000000, 280000000, 'CIF-MISSING', '2026-07-31', tglRealisasi: '2026-07-25');
+
+        $metric = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-07-31'))->first();
+        $this->assertSame(24148848.0, $metric['realisasi_os']);
+        $this->assertSame(1, $metric['suplesi_deb']);
+    }
+
+    public function test_briguna_same_day_multiple_bookings_do_not_duplicate_the_cif_movement(): void
+    {
+        $this->insertDailyLoanRow('OLD', 'BRIGUNAKONSUMER', 120000000, 90000000, 'CIF-MULTI-EVENT', '2026-06-30', tglRealisasi: '2025-01-10');
+        $this->insertDailyLoanRow('NEW-1', 'BRIGUNAKONSUMER', 400000000, 400000000, 'CIF-MULTI-EVENT', '2026-07-25', tglRealisasi: '2026-07-25');
+        $this->insertDailyLoanRow('NEW-2', 'BRIGUNAKONSUMER', 300000000, 300000000, 'CIF-MULTI-EVENT', '2026-07-25', tglRealisasi: '2026-07-25');
+
+        $metric = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-07-25'))->first();
+        $this->assertSame(2, $metric['realisasi_deb']);
+        $this->assertSame(610000000.0, $metric['realisasi_os']);
     }
 
     public function test_consumer_realisasi_ignores_another_products_residual_when_selecting_replaced_account(): void

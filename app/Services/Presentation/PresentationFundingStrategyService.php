@@ -834,18 +834,27 @@ class PresentationFundingStrategyService
             return ['ytd' => null, 'mtd' => null, 'current' => null];
         }
 
+        $current = $this->latestDateAcrossTables($availableTables, $column, $target);
+        if ($current === null) {
+            return ['ytd' => null, 'mtd' => null, 'current' => null];
+        }
+
+        $currentDate = Carbon::parse($current)->startOfDay();
+        $mtdBoundary = $currentDate->copy()->startOfMonth()->subDay();
+        $ytdBoundary = $currentDate->copy()->subYearNoOverflow()->endOfYear();
+
         return [
             'ytd' => $this->latestDateAcrossTables(
                 $availableTables,
                 $column,
-                $target->copy()->subYearNoOverflow()->endOfYear()
+                $ytdBoundary
             ),
             'mtd' => $this->latestDateAcrossTables(
                 $availableTables,
                 $column,
-                $target->copy()->subMonthNoOverflow()->endOfMonth()
+                $mtdBoundary
             ),
-            'current' => $this->latestDateAcrossTables($availableTables, $column, $target),
+            'current' => $current,
         ];
     }
 
@@ -897,10 +906,24 @@ class PresentationFundingStrategyService
             ->pluck('value')
             ->first();
 
+        $currentVal = $resolve($target);
+        if ($currentVal === null) {
+            return ['ytd' => null, 'mtd' => null, 'current' => null];
+        }
+
+        try {
+            $currentDate = Carbon::createFromFormat('F Y', $currentVal)->startOfMonth();
+            $mtdBoundary = $currentDate->copy()->subMonthNoOverflow()->endOfMonth();
+            $ytdBoundary = $currentDate->copy()->subYearNoOverflow()->endOfYear();
+        } catch (Throwable) {
+            $mtdBoundary = $target->copy()->subMonthNoOverflow()->endOfMonth();
+            $ytdBoundary = $target->copy()->subYearNoOverflow()->endOfYear();
+        }
+
         return [
-            'ytd' => $resolve($target->copy()->subYearNoOverflow()->endOfYear()),
-            'mtd' => $resolve($target->copy()->subMonthNoOverflow()->endOfMonth()),
-            'current' => $resolve($target),
+            'ytd' => $resolve($ytdBoundary),
+            'mtd' => $resolve($mtdBoundary),
+            'current' => $currentVal,
         ];
     }
 
@@ -1007,7 +1030,7 @@ class PresentationFundingStrategyService
         string $format,
         bool $signed = false
     ): array {
-        $label = $period ? Carbon::parse((string) $period)->format('d M y') : '-';
+        $label = $period ? Carbon::parse((string) $period)->locale('id')->translatedFormat('d M y') : '-';
 
         return [
             'raw' => $value,

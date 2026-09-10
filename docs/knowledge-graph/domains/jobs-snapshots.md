@@ -9,7 +9,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | command | 17 |
 | file | 69 |
 | function | 6 |
-| method | 545 |
+| method | 553 |
 | unresolved_symbol | 38 |
 | queue | 5 |
 | route | 1 |
@@ -22,18 +22,18 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
 | `ReportSnapshotBuilder` | class | 142 | `app/Support/ReportSnapshotBuilder.php:12` |
-| `performance_rm_snapshots` | table | 80 | - |
+| `performance_rm_snapshots` | table | 82 | - |
 | `ManagedReportSnapshotRebuildCoordinator` | class | 38 | `app/Support/ManagedReportSnapshotRebuildCoordinator.php:15` |
+| `PerformanceRmIncrementalSnapshotTest` | class | 35 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:16` |
 | `SnapshotBatchAggregator` | class | 34 | `app/Support/SnapshotBatchAggregator.php:11` |
 | `snapshots-parallel` | queue | 32 | - |
-| `PerformanceRmIncrementalSnapshotTest` | class | 29 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:15` |
+| `insertDailyLoanRow` | method | 29 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:871` |
 | `ValidateSnapshotDataIntegrityCommand` | class | 26 | `app/Console/Commands/ValidateSnapshotDataIntegrityCommand.php:12` |
 | `capture` | method | 26 | `app/Support/SnapshotSourceSignatureService.php:61` |
 | `handle` | method | 26 | `app/Jobs/RunManagedReportSnapshotRebuildJob.php:52` |
 | `EnsureQueueWorkerRunning` | class | 24 | `app/Console/Commands/EnsureQueueWorkerRunning.php:11` |
 | `SnapshotDirtyPeriodService` | class | 24 | `app/Support/SnapshotDirtyPeriodService.php:11` |
 | `SnapshotJobRetryWindow` | trait | 23 | `app/Jobs/SnapshotJobRetryWindow.php:7` |
-| `insertDailyLoanRow` | method | 23 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:748` |
 | `BackfillShadowColumnsCommand` | class | 22 | `app/Console/Commands/BackfillShadowColumnsCommand.php:14` |
 | `SnapshotSourceSignatureService` | class | 22 | `app/Support/SnapshotSourceSignatureService.php:10` |
 | `registerSyncRequest` | method | 22 | `app/Support/SnapshotBatchAggregator.php:22` |
@@ -42,7 +42,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `SmartPartialSnapshotRebuildJob` | class | 20 | `app/Jobs/SmartPartialSnapshotRebuildJob.php:20` |
 | `RebuildSnapshotPerformanceRmBatch` | class | 19 | `app/Jobs/RebuildSnapshotPerformanceRmBatch.php:20` |
 | `SnapshotAuditService` | class | 19 | `app/Support/SnapshotAuditService.php:10` |
-| `ValidatePerformanceRmSnapshotsCommand` | class | 19 | `app/Console/Commands/ValidatePerformanceRmSnapshotsCommand.php:11` |
+| `ValidatePerformanceRmSnapshotsCommand` | class | 19 | `app/Console/Commands/ValidatePerformanceRmSnapshotsCommand.php:12` |
 | `DistributedShadowBackfillJob` | class | 18 | `app/Jobs/DistributedShadowBackfillJob.php:15` |
 | `RebuildSnapshotHarianBatch` | class | 18 | `app/Jobs/RebuildSnapshotHarianBatch.php:19` |
 | `RebuildSnapshotRasioBatch` | class | 18 | `app/Jobs/RebuildSnapshotRasioBatch.php:19` |
@@ -178,12 +178,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | jobs-snapshots -> core (calls) | 149 |
 | import -> jobs-snapshots (calls) | 73 |
 | core -> jobs-snapshots (uses_trait) | 41 |
-| jobs-snapshots -> core (instantiates) | 34 |
-| dashboard-pinjaman -> jobs-snapshots (writes_table) | 33 |
-| tests -> jobs-snapshots (contains) | 30 |
+| jobs-snapshots -> core (instantiates) | 37 |
+| dashboard-pinjaman -> jobs-snapshots (writes_table) | 34 |
+| tests -> jobs-snapshots (contains) | 32 |
 | jobs-snapshots -> dashboard-pinjaman (reads_table) | 27 |
 | jobs-snapshots -> core (uses_trait) | 27 |
-| jobs-snapshots -> dashboard-pinjaman (writes_table) | 19 |
+| jobs-snapshots -> dashboard-pinjaman (writes_table) | 22 |
 | jobs-snapshots -> core (writes_table) | 18 |
 | import -> jobs-snapshots (instantiates) | 18 |
 | jobs-snapshots -> core (accepts) | 17 |
@@ -195,12 +195,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | jobs-snapshots -> import (instantiates) | 14 |
 | core -> jobs-snapshots (uses_queue) | 14 |
 | dashboard-pinjaman -> jobs-snapshots (calls) | 13 |
+| jobs-snapshots -> tests (calls) | 13 |
 | database -> jobs-snapshots (checks_table) | 12 |
 | database -> jobs-snapshots (defines_table) | 12 |
 | jobs-snapshots -> dashboard-simpanan (reads_table) | 12 |
 | jobs-snapshots -> core (reads_table) | 12 |
 | import -> jobs-snapshots (accepts) | 11 |
-| jobs-snapshots -> tests (calls) | 11 |
 | tests -> jobs-snapshots (calls) | 10 |
 | dashboard-simpanan -> jobs-snapshots (uses_trait) | 10 |
 | jobs-snapshots -> import (contains) | 10 |

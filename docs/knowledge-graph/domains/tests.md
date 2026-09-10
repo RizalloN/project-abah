@@ -6,11 +6,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 69 |
+| file | 70 |
 | function | 1 |
-| method | 348 |
+| method | 351 |
 | unresolved_symbol | 19 |
-| class | 63 |
+| class | 64 |
 
 ## Main Hubs
 
@@ -53,6 +53,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `BulkDeleteTriggerOverheadTest` - `tests/Unit/BulkDeleteTriggerOverheadTest.php`
 - `CompressedDatabaseDumpRunnerTest` - `tests/Unit/CompressedDatabaseDumpRunnerTest.php`
 - `ConsumerKanwilReferenceTest` - `tests/Unit/ConsumerKanwilReferenceTest.php`
+- `ConsumerRmKanwilAuditTest` - `tests/Unit/ConsumerRmKanwilAuditTest.php`
 - `ConsumerRmPositionHistoryStoreTest` - `tests/Unit/ConsumerRmPositionHistoryStoreTest.php`
 - `DataPhReportControllerTest` - `tests/Unit/DataPhReportControllerTest.php`
 - `DirectLargeFileLoadServiceTest` - `tests/Unit/DirectLargeFileLoadServiceTest.php`
@@ -117,33 +118,33 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| tests -> core (instantiates) | 105 |
+| tests -> core (instantiates) | 107 |
 | tests -> core (calls) | 91 |
 | import -> tests (instantiates) | 61 |
 | import -> tests (extends) | 48 |
 | tests -> core (writes_table) | 46 |
 | tests -> dashboard-pinjaman (writes_table) | 45 |
 | tests -> core (defines_table) | 35 |
-| tests -> jobs-snapshots (contains) | 30 |
+| tests -> jobs-snapshots (contains) | 32 |
 | tests -> import (contains) | 24 |
 | tests -> dashboard-pinjaman (contains) | 24 |
 | tests -> dashboard-pinjaman (defines_table) | 19 |
 | jobs-snapshots -> tests (extends) | 16 |
 | tests -> access-control (calls) | 14 |
+| jobs-snapshots -> tests (calls) | 13 |
 | tests -> dashboard-pinjaman (reads_table) | 12 |
 | tests -> access-control (contains) | 12 |
 | dashboard-pinjaman -> tests (extends) | 12 |
 | tests -> import (instantiates) | 11 |
-| jobs-snapshots -> tests (calls) | 11 |
 | tests -> core (reads_table) | 10 |
 | dashboard-pinjaman -> tests (calls) | 10 |
 | tests -> jobs-snapshots (calls) | 10 |
 | dashboard-simpanan -> tests (extends) | 10 |
 | access-control -> tests (calls) | 9 |
 | dashboard-harian -> tests (instantiates) | 9 |
+| tests -> core (extends) | 9 |
 | tests -> import (defines_table) | 8 |
 | tests -> import (writes_table) | 8 |
 | tests -> core (renders) | 8 |
-| tests -> core (extends) | 8 |
 | tests -> marketshare (contains) | 8 |
 | tests -> dashboard-simpanan (contains) | 7 |

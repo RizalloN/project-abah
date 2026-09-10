@@ -6,7 +6,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 22 |
+| file | 23 |
 | method | 18 |
 | class | 4 |
 | unresolved_symbol | 1 |

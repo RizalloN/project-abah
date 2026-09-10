@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Report\KinerjaRmReportController;
+use App\Support\LandingConsumerOperationalService;
 use App\Support\ReportSnapshotBuilder;
 use App\Support\RkaLookupService;
 use Illuminate\Database\Schema\Blueprint;
@@ -1151,6 +1152,42 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(-3250000000.0, $aris['delta']['mtd']);
         $this->assertSame(-28550000000.0, $aris['delta']['ytd']);
         $this->assertSame(4, $aris['quadrant']);
+    }
+
+    public function test_active_consumer_rm_with_zero_realization_keeps_same_quadrant_on_kpi_and_landing(): void
+    {
+        DB::table('daily_loan_dinamis')->insert(['periode' => '2026-08-31']);
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-08-31', 200000000, 1, 150000000, ['produk' => 'KPR', 'rm' => '1 - AKTIF REALISASI']),
+            $this->snapshotRow('2026-08-31', 200000000, 0, 0, ['produk' => 'KPR', 'rm' => '2 - AKTIF NOL']),
+            $this->snapshotRow('2026-08-31', 200000000, 0, 0, ['produk' => 'KPR', 'rm' => '4 - PINDAH JABATAN']),
+        ]);
+        foreach ([1 => 'AKTIF REALISASI', 2 => 'AKTIF NOL', 3 => 'AKTIF TANPA SNAPSHOT', 4 => 'PINDAH JABATAN'] as $pn => $name) {
+            DB::table('brihc_pemasar')->insert([
+                'pernr' => (string) $pn, 'completename' => $name,
+                'positiondesc' => $pn === 4 ? 'RM BISNIS MIKRO' : 'RM BISNIS KONSUMER - KPR',
+                'psadesc' => 'KC Madiun',
+            ]);
+            DB::table('performance_targets')->insert([
+                'category' => 'KPR', 'rm_name' => $name, 'target_os' => 100000000,
+            ]);
+        }
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $kpi = $this->invokePrivateMethod($controller, 'fetchRetailRealizationPerformance', [
+            'CONSUMER', '2026-08-31', null, 'KPR',
+        ]);
+        $rows = collect($kpi['rows'])->keyBy('rm_display');
+        $this->assertCount(3, $rows);
+        $this->assertSame(4, $rows['AKTIF NOL']['months']['2026-08']['quadrant']);
+        $this->assertSame(4, $rows['AKTIF TANPA SNAPSHOT']['months']['2026-08']['quadrant']);
+        $this->assertSame(1, $rows['AKTIF REALISASI']['months']['2026-08']['quadrant']);
+        $this->assertFalse($rows->has('PINDAH JABATAN'));
+        $landing = $this->invokePrivateMethod(app(LandingConsumerOperationalService::class), 'quadrantPayload', ['2026-08-31', null]);
+        $area = collect($landing['branches'])->firstWhere('key', 'area6');
+        $month = collect($area['products']['kpr']['rows'])->last();
+        $this->assertSame(3, $month['total']);
+        $this->assertSame(2, $month['q4']);
+        $this->assertSame(1, $month['q1']);
     }
 
     public function test_consumer_retail_performance_merges_old_and_new_pn_through_brihc_roster(): void

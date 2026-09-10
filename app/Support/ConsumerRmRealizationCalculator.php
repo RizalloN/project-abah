@@ -12,11 +12,13 @@ class ConsumerRmRealizationCalculator
     /**
      * Calculate monthly Consumer realization from the current nominative and
      * the preceding month-end nominative. Each realized account is counted
-     * once, and a preceding account balance can offset only one realization.
+     * once. Briguna uses the product's CIF balance movement at origination
+     * when that daily position is available, with the existing facility
+     * estimate for incomplete history. KPR measures gross booked plafond.
      *
      * @return array<string, array<string, mixed>>
      */
-    public function calculate(string $period): array
+    public function calculate(string $period, ?string $kprAssignmentPeriod = null, ?string $onlyProduct = null): array
     {
         $source = $this->resolveNominativeSource($period);
         if ($source === null) {
@@ -27,6 +29,10 @@ class ConsumerRmRealizationCalculator
         $periodColumn = $source['period'];
         $productColumn = $source['product'];
         $productValues = $source['product_values'];
+        if ($onlyProduct !== null) {
+            $productValues = array_values(array_filter($productValues, fn (string $value): bool => $this->canonicalProduct($value) === $this->canonicalProduct($onlyProduct)
+            ));
+        }
         $accountColumn = $source['account'];
         $realisasiDateColumn = $source['realization_date'];
         $cifColumn = $source['cif'];
@@ -81,6 +87,7 @@ class ConsumerRmRealizationCalculator
             ->selectRaw("MAX(COALESCE({$plafonColumn}, 0)) as current_plafon")
             ->selectRaw("MIN({$periodColumn}) as first_seen_period")
             ->selectRaw("MAX({$periodColumn}) as last_seen_period")
+            ->selectRaw("MIN({$realisasiDateColumn}) as realization_date")
             ->selectRaw($hasInitiator ? "COALESCE({$initiatorColumn}, '') as initiator" : "'' as initiator")
             ->groupBy([
                 $source['cabang'],
@@ -102,14 +109,19 @@ class ConsumerRmRealizationCalculator
             return [];
         }
 
-        // An account may occur in several daily positions or move manager
-        // during the month. Freeze its first available attribution because the
-        // Kanwil event belongs to the RM that originated it.
+        $kprAssignments = $this->kprAccountAssignments(
+            $currentRows,
+            $periodStart,
+            $kprAssignmentPeriod ?? $period
+        );
+
+        // Deduplicate repeated daily positions. Briguna keeps its first event
+        // attribution; KPR ownership is resolved separately at the cutoff.
         $deduplicatedCurrentRows = [];
         foreach ($currentRows as $row) {
             $row->account_key = $this->canonicalAccountKey((string) ($row->account_key ?? ''));
             $candidateKey = (string) ($row->produk ?? '').'|'
-                .(string) ($row->clean_cif ?? '').'|'
+                .($row->produk === 'KPR' ? '' : (string) ($row->clean_cif ?? '')).'|'
                 .(string) ($row->account_key ?? '');
             if ($candidateKey === '||') {
                 continue;
@@ -137,6 +149,7 @@ class ConsumerRmRealizationCalculator
         }
 
         $currentMetricsByCif = [];
+        $bookingsByCifDate = [];
         foreach ($deduplicatedCurrentRows as $row) {
             $cleanCif = (string) ($row->clean_cif ?? '');
             $accountKey = (string) ($row->account_key ?? '');
@@ -145,13 +158,17 @@ class ConsumerRmRealizationCalculator
             }
 
             $product = (string) ($row->produk ?? '');
+            $bookingKey = $product.'|'.$cleanCif.'|'.(string) ($row->realization_date ?? '');
+            $bookingsByCifDate[$bookingKey] = ($bookingsByCifDate[$bookingKey] ?? 0) + 1;
             $group = [
                 'cabang' => (string) ($row->cabang ?? ''),
                 'unit' => (string) ($row->unit ?? ''),
                 'branch_code' => (string) ($row->branch_code ?? ''),
                 'rm' => $this->resolveConsumerRm(
-                    (string) ($row->initiator ?? ''),
-                    (string) ($row->rm ?? ''),
+                    $product === 'KPR' ? '' : (string) ($row->initiator ?? ''),
+                    $product === 'KPR'
+                        ? ($kprAssignments[$accountKey] ?? (string) ($row->rm ?? ''))
+                        : (string) ($row->rm ?? ''),
                     $product,
                     $brihcInitiators
                 ),
@@ -167,6 +184,7 @@ class ConsumerRmRealizationCalculator
                 'clean_cif' => $cleanCif,
                 'account_plafon' => [],
                 'account_first_period' => [],
+                'account_realization_date' => [],
             ];
 
             // The same nominative account can be duplicated by the extract.
@@ -177,6 +195,8 @@ class ConsumerRmRealizationCalculator
             );
             $currentMetricsByCif[$metricKey]['account_first_period'][$accountKey] ??=
                 (string) ($row->first_seen_period ?? $period);
+            $currentMetricsByCif[$metricKey]['account_realization_date'][$accountKey] ??=
+                (string) ($row->realization_date ?? '');
         }
 
         if ($currentMetricsByCif === []) {
@@ -301,9 +321,9 @@ class ConsumerRmRealizationCalculator
                         ];
                     }
                     if ($replacementCandidates !== []) {
-                        // Excel XLOOKUP/VLOOKUP resolves the first matching
-                        // source row. Preserve that deterministic import order
-                        // instead of guessing from the smallest outstanding.
+                        // Retain the deterministic facility estimate when the
+                        // origination-day position is missing. A later monthly
+                        // position cannot reconstruct the event's CIF balance.
                         uasort($replacementCandidates, static function (array $left, array $right): int {
                             return strcmp($left['lookup_order'], $right['lookup_order']);
                         });
@@ -316,7 +336,28 @@ class ConsumerRmRealizationCalculator
                     $usedPreviousAccounts[$product.'|'.$cleanCif.'|'.$selectedPreviousAccount] = true;
                 }
 
-                $accountNet = max(0.0, (float) $currentPlafon - $previousOs);
+                // KPR/KPRS in the Kanwil time series is gross origination.
+                // An existing CIF determines its classification, but does not
+                // reduce its booked plafond. Keep Briguna's net rule separate.
+                $accountNet = max(0.0, (float) $currentPlafon - ($product === 'KPR' ? 0.0 : $previousOs));
+                if ($product === 'BRIGUNA-KONSUMER'
+                    && $firstSeenPeriod === $metric['account_realization_date'][$accountKey]
+                    && ($bookingsByCifDate[$product.'|'.$cleanCif.'|'.$firstSeenPeriod] ?? 0) === 1
+                    && isset($realizationAccounts[$accountKey])
+                    && abs($realizationAccounts[$accountKey]['os'] - (float) $currentPlafon) < 0.01) {
+                    // Kanwil's daily series measures the full product/CIF
+                    // movement against the previous month-end on each booking
+                    // date. Include retained facilities and earlier bookings;
+                    // subtract every prior facility, not just one closed loan.
+                    // Only apply the reconciled single-booking case while its
+                    // balance still equals booked plafond. Same-day multiple
+                    // bookings and already-amortized facilities remain on the
+                    // estimate until their event allocation is established.
+                    $accountNet = max(0.0,
+                        array_sum(array_column($realizationAccounts, 'os'))
+                        - array_sum(array_column($baselineAccounts, 'os'))
+                    );
+                }
                 $realizedAccounts[$accountKey] = true;
                 $netDisbursement += $accountNet;
 
@@ -363,6 +404,53 @@ class ConsumerRmRealizationCalculator
         }
 
         return $metricsByGroup;
+    }
+
+    /**
+     * Resolve each KPR facility's last observed manager through the reporting
+     * cutoff. Transfers can split a portfolio: never alias an entire old PN to
+     * another PN, or read ownership from positions later than the cutoff.
+     *
+     * @param  iterable<object>  $currentRows
+     * @return array<string, string>
+     */
+    private function kprAccountAssignments(iterable $currentRows, string $start, string $cutoff): array
+    {
+        $accounts = [];
+        foreach ($currentRows as $row) {
+            if ($row->produk === 'KPR') {
+                $accounts[$this->canonicalAccountKey((string) $row->account_key)] = true;
+            }
+        }
+        if ($accounts === []) {
+            return [];
+        }
+        $source = $this->resolveNominativeSource($cutoff);
+        if ($source === null) {
+            return [];
+        }
+
+        $assignments = [];
+        $rows = DB::table($source['table'])
+            ->whereBetween($source['period'], [$start, $cutoff])
+            ->where($source['product'], 'KPR')
+            ->when($source['segment'] !== null, fn ($query) => $query->where($source['segment'], 'CONSUMER'))
+            ->whereNotNull($source['rm'])
+            ->where($source['rm'], '<>', '')
+            ->selectRaw("{$source['account']} as account_key, {$source['rm']} as rm, {$source['period']} as position")
+            ->orderByDesc($source['period'])
+            ->orderBy($source['rm'])
+            ->get();
+        foreach ($rows as $row) {
+            // Source switches may add/remove leading zeroes. Compare canonical
+            // keys after the bounded KPR/date query, not raw account strings.
+            $key = $this->canonicalAccountKey((string) $row->account_key);
+            if (isset($accounts[$key]) && ! isset($assignments[$key])) {
+                $assignments[$key] = (string) $row->rm;
+            }
+        }
+
+        return $assignments;
     }
 
     /** @param array<string, mixed> $row */
@@ -482,8 +570,7 @@ class ConsumerRmRealizationCalculator
         string $period,
         string $sourceTable,
         string $periodColumn
-    ): ?string
-    {
+    ): ?string {
         $previousEnd = Carbon::parse($period)
             ->subMonthNoOverflow()
             ->endOfMonth()

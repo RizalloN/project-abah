@@ -119,4 +119,17 @@ return [
         'allowed_backup_dirs' => env('MANAGED_REPORT_RECOVERY_ALLOWED_BACKUP_DIRS', ''),
     ],
 
+    'payroll_pipeline' => [
+        'sheet_url' => env('PAYROLL_PIPELINE_SHEET_URL', 'https://docs.google.com/spreadsheets/d/1xvNFVQpykLkIVqMuiHG_wCdsf3zJbbhGAxcWJ4-09_0/edit?usp=sharing'),
+        'export_url' => env('PAYROLL_PIPELINE_EXPORT_URL', 'https://docs.google.com/spreadsheets/d/1xvNFVQpykLkIVqMuiHG_wCdsf3zJbbhGAxcWJ4-09_0/export?format=csv'),
+        'cache_minutes' => (int) env('PAYROLL_PIPELINE_CACHE_MINUTES', 60),
+    ],
+
+    'perusahaan_anak' => [
+        'sheet_url' => env('PERUSAHAAN_ANAK_SHEET_URL', 'https://docs.google.com/spreadsheets/d/1qhPev4QD6gUaVrdqcGJALmJdHu6S1CaEXKz0hKiBZmQ/edit?usp=sharing'),
+        'export_url' => env('PERUSAHAAN_ANAK_EXPORT_URL', 'https://docs.google.com/spreadsheets/d/1qhPev4QD6gUaVrdqcGJALmJdHu6S1CaEXKz0hKiBZmQ/export?format=csv'),
+        'cache_minutes' => (int) env('PERUSAHAAN_ANAK_CACHE_MINUTES', 60),
+    ],
+
 ];
+

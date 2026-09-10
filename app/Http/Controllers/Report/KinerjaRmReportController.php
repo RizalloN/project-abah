@@ -1634,7 +1634,7 @@ class KinerjaRmReportController extends Controller
         ?string $selectedRmCategory = null,
         bool $includeInactive = false
     ): array {
-        $cacheKey = 'kinerja_rm_retail_performance_v13-consumer-product-split:'.$this->reportCacheVersion().':'.md5(json_encode([
+        $cacheKey = 'kinerja_rm_retail_performance_v15-active-consumer-roster:'.$this->reportCacheVersion().':'.md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'cabang' => $selectedCabang,
@@ -1721,7 +1721,10 @@ class KinerjaRmReportController extends Controller
                 $consumerAssignments = app(LandingConsumerOperationalService::class);
                 $snapshotRows = $consumerAssignments
                     ->applyLatestConsumerSnapshotAssignments(
-                        $consumerAssignments->applyBrihcPrimaryConsumerAssignments($snapshotRows, (string) $latestPeriod)
+                        $consumerAssignments->applyBrihcPrimaryConsumerAssignments(
+                            $consumerAssignments->applyKprRealizationAssignments($snapshotRows, (string) $latestPeriod),
+                            (string) $latestPeriod
+                        )
                     );
                 $snapshotRows = $snapshotRows
                     ->when($selectedCabang !== null, fn (Collection $rows): Collection => $rows
@@ -1774,6 +1777,11 @@ class KinerjaRmReportController extends Controller
                     'periods' => [],
                     'snapshot_quadrant' => null,
                 ];
+                $pivoted[$groupKey]['has_active_consumer_assignment'] =
+                    ($pivoted[$groupKey]['has_active_consumer_assignment'] ?? false)
+                    || ($segmen === 'CONSUMER' && in_array($snapshot->roster_source ?? '', [
+                        'brihc_primary', 'brihc_primary_roster_only',
+                    ], true));
                 $pivoted[$groupKey]['periods'][$period] ??= $emptyMetric(true);
                 $pivoted[$groupKey]['periods'][$period]['deb'] += (int) round((float) ($snapshot->realisasi_deb ?? 0));
                 $pivoted[$groupKey]['periods'][$period]['rp'] += (float) ($snapshot->realisasi_os ?? 0);
@@ -1852,7 +1860,12 @@ class KinerjaRmReportController extends Controller
 
                     return (int) $metric['deb'] !== 0 || abs((float) $metric['rp']) > 0.001;
                 });
-                if (! $includeInactive && $activeMonthKeys !== [] && ! $hasRecentRealization) {
+                // An active Consumer RM with zero recent bookings belongs in
+                // quadrant 4, just as on the landing's BRIHC-based roster.
+                if (
+                    ! $includeInactive && $activeMonthKeys !== [] && ! $hasRecentRealization
+                    && ! ($data['has_active_consumer_assignment'] ?? false)
+                ) {
                     $hiddenInactiveCount++;
 
                     continue;

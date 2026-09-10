@@ -9,7 +9,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | command | 1 |
 | file | 67 |
 | function | 3 |
-| method | 638 |
+| method | 639 |
 | route | 33 |
 | class | 22 |
 | table | 5 |
@@ -19,23 +19,23 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `daily_loan_dinamis` | table | 272 | - |
+| `daily_loan_dinamis` | table | 276 | - |
 | `DashboardPinjamanReportController` | class | 191 | `app/Http/Controllers/DashboardPinjamanReportController.php:28` |
-| `KinerjaRmReportController` | class | 133 | `app/Http/Controllers/Report/KinerjaRmReportController.php:22` |
+| `KinerjaRmReportController` | class | 134 | `app/Http/Controllers/Report/KinerjaRmReportController.php:22` |
 | `lw325_ph` | table | 121 | - |
 | `KinerjaRmMikroReportController` | class | 95 | `app/Http/Controllers/Report/KinerjaRmMikroReportController.php:18` |
 | `ssa_pinjaman` | table | 62 | - |
-| `KinerjaRmSnapshotPeriodResolutionTest` | class | 41 | `tests/Unit/KinerjaRmSnapshotPeriodResolutionTest.php:18` |
+| `KinerjaRmSnapshotPeriodResolutionTest` | class | 42 | `tests/Unit/KinerjaRmSnapshotPeriodResolutionTest.php:19` |
 | `DashboardPinjamanKreditService` | class | 40 | `app/Support/DashboardPinjamanKreditService.php:11` |
 | `DashboardPinjamanRecoveryMetricsTest` | class | 36 | `tests/Unit/DashboardPinjamanRecoveryMetricsTest.php:16` |
 | `DashboardPinjamanChartPeriodikService` | class | 33 | `app/Support/DashboardPinjamanChartPeriodikService.php:14` |
 | `index` | method | 33 | `app/Http/Controllers/Report/KinerjaRmReportController.php:732` |
 | `dashboard_pinjaman_snapshots` | table | 32 | - |
 | `KinerjaRmMikroPeriodResolutionTest` | class | 27 | `tests/Unit/KinerjaRmMikroPeriodResolutionTest.php:19` |
-| `invokePrivateMethod` | method | 26 | `tests/Unit/KinerjaRmSnapshotPeriodResolutionTest.php:1479` |
-| `snapshotRow` | method | 23 | `tests/Unit/KinerjaRmSnapshotPeriodResolutionTest.php:1384` |
+| `invokePrivateMethod` | method | 27 | `tests/Unit/KinerjaRmSnapshotPeriodResolutionTest.php:1516` |
+| `snapshotRow` | method | 24 | `tests/Unit/KinerjaRmSnapshotPeriodResolutionTest.php:1421` |
 | `DashboardPinjamanKreditServiceTest` | class | 22 | `tests/Unit/DashboardPinjamanKreditServiceTest.php:13` |
-| `fetchBranchRows` | method | 22 | `app/Http/Controllers/Report/KinerjaRmReportController.php:2053` |
+| `fetchBranchRows` | method | 22 | `app/Http/Controllers/Report/KinerjaRmReportController.php:2066` |
 | `reportCacheVersion` | method | 22 | `app/Http/Controllers/DashboardPinjamanReportController.php:4369` |
 | `fetchRetailRealizationPerformance` | method | 21 | `app/Http/Controllers/Report/KinerjaRmReportController.php:1629` |
 | `report.dashboard-pinjaman.kinerjarmmikro` | view | 20 | `resources/views/report/dashboard-pinjaman/kinerjarmmikro.blade.php:1` |
@@ -165,19 +165,19 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| dashboard-pinjaman -> core (calls) | 216 |
+| dashboard-pinjaman -> core (calls) | 217 |
 | dashboard-pinjaman -> access-control (protected_by) | 165 |
 | dashboard-pinjaman -> core (accepts) | 64 |
 | dashboard-pinjaman -> core (instantiates) | 64 |
 | tests -> dashboard-pinjaman (writes_table) | 45 |
-| dashboard-pinjaman -> jobs-snapshots (writes_table) | 33 |
+| dashboard-pinjaman -> jobs-snapshots (writes_table) | 34 |
 | dashboard-harian -> dashboard-pinjaman (writes_table) | 28 |
+| dashboard-pinjaman -> core (writes_table) | 27 |
 | jobs-snapshots -> dashboard-pinjaman (reads_table) | 27 |
 | import -> dashboard-pinjaman (writes_table) | 27 |
-| dashboard-pinjaman -> core (writes_table) | 25 |
 | core -> dashboard-pinjaman (reads_table) | 24 |
 | tests -> dashboard-pinjaman (contains) | 24 |
-| jobs-snapshots -> dashboard-pinjaman (writes_table) | 19 |
+| jobs-snapshots -> dashboard-pinjaman (writes_table) | 22 |
 | tests -> dashboard-pinjaman (defines_table) | 19 |
 | database -> dashboard-pinjaman (checks_table) | 16 |
 | dashboard-simpanan -> dashboard-pinjaman (reads_table) | 14 |

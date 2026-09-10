@@ -53,8 +53,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Route Nodes
 
-- `confirm-password` - `confirm-password`
-- `login` - `login`
+- `generated::En5dqAes9CPCurNw` - `login`
+- `generated::zordguGW9En5qNg3` - `confirm-password`
 - `login` - `login`
 - `logout` - `logout`
 - `password.confirm` - `confirm-password`

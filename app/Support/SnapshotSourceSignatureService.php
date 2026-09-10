@@ -16,7 +16,7 @@ class SnapshotSourceSignatureService
     private const BUCKET_SIGNATURE_VERSION = 'snapshot-source-v2-buckets';
 
     private const SNAPSHOT_FORMULA_VERSIONS = [
-        'performance_rm_snapshots' => 'performance-rm-v26-consumer-first-seen-attribution',
+        'performance_rm_snapshots' => 'performance-rm-v28-briguna-origination-cif-balance',
     ];
 
     private const NUMERIC_COLUMNS = [

@@ -218,8 +218,8 @@ class DashboardSimpananController extends Controller
         }
 
         $periodDate = Carbon::parse($period);
-        $periodFormat = $periodDate->locale('id')->translatedFormat('d F Y');
-        $rkaMonthYear = $periodDate->locale('id')->translatedFormat('F y');
+        $periodFormat = $periodDate->locale('id')->translatedFormat('d M y');
+        $rkaMonthYear = $periodDate->locale('id')->translatedFormat('M y');
         $scopeLabel = $this->dashboardScopeLabel();
         $branchNames = $this->dashboardBranchNames();
 
@@ -285,6 +285,163 @@ class DashboardSimpananController extends Controller
             $scopePayloads[$sKey]['prognosa_actuals'] = $weeklyActuals[$sKey] ?? [];
         }
 
+        $comparisonPeriods = $harianService->resolveComparisonPeriods($period);
+        $ytdDate = !empty($comparisonPeriods['ytd'])
+            ? Carbon::parse($comparisonPeriods['ytd'])
+            : $periodDate->copy()->subYear()->endOfYear();
+        $mtmDate = !empty($comparisonPeriods['mtm'])
+            ? Carbon::parse($comparisonPeriods['mtm'])
+            : $periodDate->copy()->subMonthNoOverflow();
+        $mtdDate = !empty($comparisonPeriods['mtd'])
+            ? Carbon::parse($comparisonPeriods['mtd'])
+            : $periodDate->copy()->subMonthNoOverflow()->endOfMonth();
+        $currentDate = $periodDate;
+
+        $trendLabels = [
+            $ytdDate->locale('id')->translatedFormat('d M y'),
+            $mtmDate->locale('id')->translatedFormat('d M y'),
+            $mtdDate->locale('id')->translatedFormat('d M y'),
+            $currentDate->locale('id')->translatedFormat('d M y'),
+        ];
+
+        $analyticsByScope = [];
+        foreach ($scopeKeyMap as $sKey => $sDef) {
+            $sumScopePoints = function (array $rowKeys) use ($rows): array {
+                $res = ['ytd' => 0.0, 'mtm' => 0.0, 'mtd' => 0.0, 'current' => 0.0];
+                foreach ($rowKeys as $rk) {
+                    $row = $rows->get($rk);
+                    if ($row) {
+                        foreach (['ytd', 'mtm', 'mtd', 'current'] as $f) {
+                            $res[$f] += (float) data_get($row, 'values.' . $f, 0.0);
+                        }
+                    }
+                }
+                return $res;
+            };
+
+            $tabPts = $sumScopePoints($sDef['tabungan']);
+            $depPts = $sumScopePoints($sDef['deposito']);
+            $giroPts = $sumScopePoints($sDef['giro']);
+
+            $totPts = [];
+            $casaPts = [];
+            foreach (['ytd', 'mtm', 'mtd', 'current'] as $f) {
+                $totPts[$f] = $tabPts[$f] + $depPts[$f] + $giroPts[$f];
+                $casaPts[$f] = $tabPts[$f] + $giroPts[$f];
+            }
+
+            $curTot = $totPts['current'];
+            $curCasa = $casaPts['current'];
+            $curTab = $tabPts['current'];
+            $curDep = $depPts['current'];
+            $curGiro = $giroPts['current'];
+
+            $casaRatio = $curTot > 0 ? ($curCasa / $curTot) * 100 : 0.0;
+            $tabShare = $curTot > 0 ? ($curTab / $curTot) * 100 : 0.0;
+            $depShare = $curTot > 0 ? ($curDep / $curTot) * 100 : 0.0;
+            $giroShare = $curTot > 0 ? ($curGiro / $curTot) * 100 : 0.0;
+
+            $tabVals = [
+                round($tabPts['ytd'] / 1_000_000),
+                round($tabPts['mtm'] / 1_000_000),
+                round($tabPts['mtd'] / 1_000_000),
+                round($tabPts['current'] / 1_000_000),
+            ];
+            $depVals = [
+                round($depPts['ytd'] / 1_000_000),
+                round($depPts['mtm'] / 1_000_000),
+                round($depPts['mtd'] / 1_000_000),
+                round($depPts['current'] / 1_000_000),
+            ];
+            $giroVals = [
+                round($giroPts['ytd'] / 1_000_000),
+                round($giroPts['mtm'] / 1_000_000),
+                round($giroPts['mtd'] / 1_000_000),
+                round($giroPts['current'] / 1_000_000),
+            ];
+
+            $tabPoints = $this->calculateSvgPoints($tabVals);
+            $tabPath = '';
+            foreach ($tabPoints as $idx => $pt) {
+                $tabPath .= ($idx === 0 ? 'M' : 'L') . $pt['x'] . ',' . $pt['y'] . ' ';
+            }
+
+            $depPoints = $this->calculateSvgPoints($depVals);
+            $depPath = '';
+            foreach ($depPoints as $idx => $pt) {
+                $depPath .= ($idx === 0 ? 'M' : 'L') . $pt['x'] . ',' . $pt['y'] . ' ';
+            }
+
+            $giroPoints = $this->calculateSvgPoints($giroVals);
+            $giroPath = '';
+            foreach ($giroPoints as $idx => $pt) {
+                $giroPath .= ($idx === 0 ? 'M' : 'L') . $pt['x'] . ',' . $pt['y'] . ' ';
+            }
+
+            $analyticsByScope[$sKey] = [
+                'scope_key' => $sKey,
+                'label' => $sDef['label'],
+                'caption' => $sDef['caption'],
+                'composition' => [
+                    'total_raw' => $curTot,
+                    'total_million' => round($curTot / 1_000_000),
+                    'total_fmt' => number_format(round($curTot / 1_000_000), 0, ',', '.'),
+
+                    'casa_raw' => $curCasa,
+                    'casa_million' => round($curCasa / 1_000_000),
+                    'casa_fmt' => number_format(round($curCasa / 1_000_000), 0, ',', '.'),
+                    'casa_ratio' => round($casaRatio, 2),
+                    'casa_ratio_fmt' => number_format($casaRatio, 2, ',', '.') . '%',
+
+                    'tabungan_raw' => $curTab,
+                    'tabungan_million' => round($curTab / 1_000_000),
+                    'tabungan_fmt' => number_format(round($curTab / 1_000_000), 0, ',', '.'),
+                    'tabungan_share' => round($tabShare, 2),
+                    'tabungan_share_fmt' => number_format($tabShare, 2, ',', '.') . '%',
+
+                    'deposito_raw' => $curDep,
+                    'deposito_million' => round($curDep / 1_000_000),
+                    'deposito_fmt' => number_format(round($curDep / 1_000_000), 0, ',', '.'),
+                    'deposito_share' => round($depShare, 2),
+                    'deposito_share_fmt' => number_format($depShare, 2, ',', '.') . '%',
+
+                    'giro_raw' => $curGiro,
+                    'giro_million' => round($curGiro / 1_000_000),
+                    'giro_fmt' => number_format(round($curGiro / 1_000_000), 0, ',', '.'),
+                    'giro_share' => round($giroShare, 2),
+                    'giro_share_fmt' => number_format($giroShare, 2, ',', '.') . '%',
+                ],
+                'trend' => [
+                    'labels' => $trendLabels,
+                    'milestones' => ['YtD', 'MtM', 'MtD', 'Posisi Terkini'],
+                    'total' => [
+                        round($totPts['ytd'] / 1_000_000),
+                        round($totPts['mtm'] / 1_000_000),
+                        round($totPts['mtd'] / 1_000_000),
+                        round($totPts['current'] / 1_000_000),
+                    ],
+                    'casa' => [
+                        round($casaPts['ytd'] / 1_000_000),
+                        round($casaPts['mtm'] / 1_000_000),
+                        round($casaPts['mtd'] / 1_000_000),
+                        round($casaPts['current'] / 1_000_000),
+                    ],
+                    'tabungan' => $tabVals,
+                    'deposito' => $depVals,
+                    'giro' => $giroVals,
+                    'svg' => [
+                        'tabungan' => ['points' => $tabPoints, 'path' => trim($tabPath)],
+                        'deposito' => ['points' => $depPoints, 'path' => trim($depPath)],
+                        'giro' => ['points' => $giroPoints, 'path' => trim($giroPath)],
+                        'dates' => $trendLabels,
+                    ],
+                ],
+            ];
+
+            $scopePayloads[$sKey]['composition'] = $analyticsByScope[$sKey]['composition'];
+            $scopePayloads[$sKey]['trend'] = $analyticsByScope[$sKey]['trend'];
+        }
+
         $branchesData = $this->buildSimpananBranchesBreakdown($period);
 
         $totRow = $rows->get('total_simpanan');
@@ -299,6 +456,15 @@ class DashboardSimpananController extends Controller
         $casaTotalCurrent = $tabTotalCurrent + $giroTotalCurrent;
         $casaRatio = $totCurrent > 0 ? ($casaTotalCurrent / $totCurrent) * 100 : 0;
 
+        $monthlyTimeseriesByScope = $this->buildSimpananMonthlyTimeseries($period);
+        $monthlyTimeseries = $monthlyTimeseriesByScope['area6'] ?? [];
+        $digitalChannelStrategy = $this->buildDigitalChannelStrategyPayload($period);
+        $casaDebiturStrategy = $this->buildCasaDebiturStrategyPayload($period);
+        $dormantStrategy = $this->buildDormantStrategyPayload($period);
+        $payrollQualityStrategy = $this->buildPayrollQualityStrategyPayload($period);
+        $perusahaanAnakStrategy = $this->buildPerusahaanAnakStrategyPayload($period);
+        $ecosystemValueChainStrategy = $this->buildEcosystemValueChainStrategyPayload($period);
+
         $area6Portfolio = [
             'title' => 'Kinerja Simpanan ' . $scopeLabel,
             'subtitle' => 'Ringkasan posisi dan kinerja Simpanan (Tabungan, Deposito, Giro) ' . $scopeLabel . '.',
@@ -307,6 +473,17 @@ class DashboardSimpananController extends Controller
             'default_scope' => 'area6',
             'cards' => $scopePayloads['area6']['cards'],
             'scopes' => $scopePayloads,
+            'composition' => $analyticsByScope['area6']['composition'] ?? [],
+            'trend' => $analyticsByScope['area6']['trend'] ?? [],
+            'analytics_by_scope' => $analyticsByScope,
+            'monthly_timeseries' => $monthlyTimeseries,
+            'monthly_timeseries_by_scope' => $monthlyTimeseriesByScope,
+            'digital_channel_strategy' => $digitalChannelStrategy,
+            'casa_debitur_strategy' => $casaDebiturStrategy,
+            'dormant_strategy' => $dormantStrategy,
+            'payroll_quality_strategy' => $payrollQualityStrategy,
+            'perusahaan_anak_strategy' => $perusahaanAnakStrategy,
+            'ecosystem_value_chain_strategy' => $ecosystemValueChainStrategy,
             'ranking_modes' => [
                 'area6' => [
                     'label' => 'Area 6',
@@ -340,6 +517,14 @@ class DashboardSimpananController extends Controller
             'period' => $period,
             'period_label' => $this->formatSourcePeriodLabel($period),
             'area6_portfolio' => $area6Portfolio,
+            'composition' => $analyticsByScope['area6']['composition'] ?? [],
+            'trend' => $analyticsByScope['area6']['trend'] ?? [],
+            'analytics_by_scope' => $analyticsByScope,
+            'monthly_timeseries' => $monthlyTimeseries,
+            'digital_channel_strategy' => $digitalChannelStrategy,
+            'payroll_quality_strategy' => $payrollQualityStrategy,
+            'perusahaan_anak_strategy' => $perusahaanAnakStrategy,
+            'ecosystem_value_chain_strategy' => $ecosystemValueChainStrategy,
             'kpi_summary' => [
                 'total_simpanan' => [
                     'value' => number_format(round($totCurrent / 1_000_000), 0, ',', '.'),
@@ -395,19 +580,27 @@ class DashboardSimpananController extends Controller
         $pct = $rka > 0 ? ($current / $rka) * 100 : 0.0;
         $gap = $current - $rka;
 
+        $posisiDateLabel = str_starts_with($periodFormat, 'Posisi ')
+            ? $periodFormat
+            : 'Posisi ' . $periodFormat;
+
+        $targetRkaLabel = str_starts_with($rkaMonthYear, 'Target RKA')
+            ? $rkaMonthYear
+            : (str_starts_with($rkaMonthYear, 'RKA') ? 'Target ' . $rkaMonthYear : 'Target RKA ' . $rkaMonthYear);
+
         return [
             'key' => $productKey,
             'realization_raw' => $current,
             'header_title' => strtoupper($productLabel),
             'realization_value' => number_format(round($current / 1_000_000), 0, ',', '.'),
-            'realization_label' => $productLabel . ' per ' . $periodFormat,
+            'realization_label' => $posisiDateLabel,
             'target_value' => number_format(round($rka / 1_000_000), 0, ',', '.'),
-            'target_label' => 'RKA ' . $rkaMonthYear,
+            'target_label' => $targetRkaLabel,
             'pct_value' => $this->formatArea6AchievementPercent($pct, $gap >= 0),
-            'pct_label' => '% Penc. RKA ' . $rkaMonthYear,
+            'pct_label' => '% Capaian RKA',
             'pct_color' => $this->getArea6AchievementColor($pct, 'os'),
             'gap_value' => $this->formatArea6CardGap($gap),
-            'gap_label' => 'Gap thd RKA ' . $rkaMonthYear,
+            'gap_label' => 'Gap thd RKA',
             'gap_color' => $gap >= 0 ? 'green' : 'red',
             'deltas' => [
                 'dtd' => $this->formatArea6CardDelta($dtd, 'os'),
@@ -511,6 +704,992 @@ class DashboardSimpananController extends Controller
         }
 
         return $scopedWeeks;
+    }
+
+    private function buildSimpananMonthlyTimeseries(?string $period): array
+    {
+        if (!$period || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return [];
+        }
+
+        $allPeriods = app(DashboardHarianSnapshotService::class)->fetchPeriods();
+        if ($allPeriods->isEmpty()) {
+            return [];
+        }
+
+        $byMonth = $allPeriods
+            ->filter(fn ($p) => $p <= $period)
+            ->groupBy(fn ($p) => substr($p, 0, 7));
+
+        $recentMonths = $byMonth->keys()->take(7)->reverse()->values();
+
+        $targetDates = [];
+        $monthMeta = [];
+
+        foreach ($recentMonths as $ym) {
+            $dates = $byMonth->get($ym)->sort()->values();
+            $h = $dates->last();
+            $hMinus1 = $dates->count() >= 2 ? $dates[$dates->count() - 2] : null;
+            if ($h && $hMinus1) {
+                $targetDates[] = $h;
+                $targetDates[] = $hMinus1;
+                $monthMeta[$ym] = [
+                    'ym' => $ym,
+                    'month_label' => Carbon::parse($h)->locale('id')->translatedFormat('M y'),
+                    'h_date' => $h,
+                    'h_date_fmt' => Carbon::parse($h)->locale('id')->translatedFormat('d M y'),
+                    'h1_date' => $hMinus1,
+                    'h1_date_fmt' => Carbon::parse($hMinus1)->locale('id')->translatedFormat('d M y'),
+                    'is_current_month' => $ym === substr($period, 0, 7),
+                ];
+            }
+        }
+
+        if (empty($targetDates)) {
+            return [];
+        }
+
+        $rawRows = $this->area6HarianSnapshotSummaryQuery()
+            ->whereIn('snapshot_period', $targetDates)
+            ->groupBy('snapshot_period')
+            ->selectRaw('
+                snapshot_period,
+                COALESCE(SUM(total_simpanan), 0) as area6_tot,
+                COALESCE(SUM(simpanan_ritel), 0) as ritel_tot,
+                COALESCE(SUM(simpanan_mikro), 0) as micro_tot,
+                COALESCE(SUM(simpanan_wholesale), 0) as wholesale_tot
+            ')
+            ->get()
+            ->keyBy('snapshot_period');
+
+        $scopes = ['area6', 'ritel', 'micro', 'wholesale'];
+        $monthlyByScope = [];
+
+        foreach ($scopes as $sKey) {
+            $scopeCol = $sKey . '_tot';
+            $items = [];
+            foreach ($monthMeta as $ym => $m) {
+                $hRow = $rawRows->get($m['h_date']);
+                $h1Row = $rawRows->get($m['h1_date']);
+                $hTot = (float) ($hRow->$scopeCol ?? 0);
+                $h1Tot = (float) ($h1Row->$scopeCol ?? 0);
+                $delta = $hTot - $h1Tot;
+                $deltaPct = $h1Tot > 0 ? ($delta / $h1Tot) * 100 : 0;
+
+                $items[] = [
+                    'ym' => $ym,
+                    'month' => $m['month_label'],
+                    'h1_date' => $m['h1_date_fmt'],
+                    'h_date' => $m['h_date_fmt'],
+                    'is_current_month' => $m['is_current_month'],
+                    'h1_million' => round($h1Tot / 1_000_000),
+                    'h_million' => round($hTot / 1_000_000),
+                    'h1_fmt' => number_format(round($h1Tot / 1_000_000), 0, ',', '.'),
+                    'h_fmt' => number_format(round($hTot / 1_000_000), 0, ',', '.'),
+                    'delta_million' => round($delta / 1_000_000),
+                    'delta_fmt' => ($delta >= 0 ? '+' : '') . number_format(round($delta / 1_000_000), 0, ',', '.'),
+                    'delta_pct' => round($deltaPct, 2),
+                    'delta_pct_fmt' => ($deltaPct >= 0 ? '+' : '') . number_format($deltaPct, 2, ',', '.') . '%',
+                    'delta_color' => $delta >= 0 ? 'green' : 'red',
+                ];
+            }
+            $monthlyByScope[$sKey] = [
+                'labels' => array_column($items, 'month'),
+                'h1_values' => array_column($items, 'h1_million'),
+                'h_values' => array_column($items, 'h_million'),
+                'deltas' => array_column($items, 'delta_million'),
+                'items' => $items,
+            ];
+        }
+
+        return $monthlyByScope;
+    }
+
+    private function buildDigitalChannelStrategyPayload(?string $period): array
+    {
+        try {
+            $service = app(PresentationFundingStrategyService::class);
+            $res = $service->build($period, []);
+
+            $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+            $channelKeys = ['edc', 'qris', 'casa_merchant', 'brimo', 'brilink', 'qlola'];
+            $channelPayload = [];
+
+            foreach ($channelKeys as $chKey) {
+                $areaRow = collect($res['scopes']['area6']['digital']['rows'] ?? [])->firstWhere('key', $chKey);
+                if (!$areaRow) continue;
+
+                $branchRows = [];
+                foreach ($branches as $idx => $b) {
+                    $bRow = collect($res['scopes'][$b]['digital']['rows'] ?? [])->firstWhere('key', $chKey);
+                    if ($bRow) {
+                        $branchRows[] = [
+                            'no' => $idx + 1,
+                            'branch' => ucwords(strtolower($b)),
+                            'ytd' => $bRow['positions']['ytd']['fmt'] ?? '-',
+                            'mtd' => $bRow['positions']['mtd']['fmt'] ?? '-',
+                            'current' => $bRow['positions']['current']['fmt'] ?? '-',
+                            'd_mtd' => $bRow['deltas']['mtd']['fmt'] ?? '-',
+                            'd_mtd_raw' => (float) ($bRow['deltas']['mtd']['raw'] ?? 0),
+                            'd_ytd' => $bRow['deltas']['ytd']['fmt'] ?? '-',
+                            'd_ytd_raw' => (float) ($bRow['deltas']['ytd']['raw'] ?? 0),
+                            'rka' => $bRow['rka']['fmt'] ?? '-',
+                        ];
+                    }
+                }
+
+                $channelPayload[$chKey] = [
+                    'key' => $chKey,
+                    'label' => $areaRow['label'] ?? strtoupper($chKey),
+                    'metric_label' => $areaRow['metric_label'] ?? '',
+                    'format' => $areaRow['format'] ?? 'integer',
+                    'dates' => [
+                        'ytd' => $areaRow['positions']['ytd']['label'] ?? '31 Des 25',
+                        'mtd' => $areaRow['positions']['mtd']['label'] ?? '31 Jul 26',
+                        'current' => $areaRow['positions']['current']['label'] ?? '31 Agt 26',
+                    ],
+                    'total' => [
+                        'branch' => 'Area 6 Konsolidasi',
+                        'ytd' => $areaRow['positions']['ytd']['fmt'] ?? '-',
+                        'mtd' => $areaRow['positions']['mtd']['fmt'] ?? '-',
+                        'current' => $areaRow['positions']['current']['fmt'] ?? '-',
+                        'd_mtd' => $areaRow['deltas']['mtd']['fmt'] ?? '-',
+                        'd_mtd_raw' => (float) ($areaRow['deltas']['mtd']['raw'] ?? 0),
+                        'd_ytd' => $areaRow['deltas']['ytd']['fmt'] ?? '-',
+                        'd_ytd_raw' => (float) ($areaRow['deltas']['ytd']['raw'] ?? 0),
+                        'rka' => $areaRow['rka']['fmt'] ?? '-',
+                    ],
+                    'branches' => $branchRows,
+                ];
+            }
+
+            return $channelPayload;
+        } catch (\Throwable $e) {
+            report($e);
+            return [];
+        }
+    }
+
+    private function buildCasaDebiturStrategyPayload(?string $period): array
+    {
+        try {
+            if (!Schema::hasTable('rasio_casa_debitur_snapshots')) {
+                return [];
+            }
+
+            $target = $period ? Carbon::parse($period) : now();
+            $branches = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+
+            $casaPeriod = DB::table('rasio_casa_debitur_snapshots')
+                ->where('loan_period', '<=', $target->toDateString())
+                ->max('loan_period');
+
+            if (!$casaPeriod) {
+                return [];
+            }
+
+            $rows = DB::table('rasio_casa_debitur_snapshots')
+                ->where('loan_period', $casaPeriod)
+                ->get();
+
+            $branchRows = [];
+            $totalOs = 0.0;
+            $totalCasa = 0.0;
+
+            foreach ($branches as $idx => $b) {
+                $row = $rows->first(function ($item) use ($b) {
+                    return strtoupper(trim((string) ($item->branch_key ?? ''))) === strtoupper(trim($b))
+                        && strtolower(trim((string) ($item->segment_key ?? ''))) === 'total';
+                });
+
+                $os = (float) ($row->os_amount ?? 0);
+                $casa = (float) ($row->casa_amount ?? 0);
+                $ratio = $os > 0 ? ($casa / $os) * 100 : 0.0;
+                $totalOs += $os;
+                $totalCasa += $casa;
+
+                $branchRows[] = [
+                    'no' => $idx + 1,
+                    'branch' => $b,
+                    'os' => $os,
+                    'os_fmt' => 'Rp ' . number_format($os / 1_000_000_000_000, 2, ',', '.') . ' T',
+                    'casa' => $casa,
+                    'casa_fmt' => 'Rp ' . number_format($casa / 1_000_000_000, 2, ',', '.') . ' M',
+                    'ratio' => round($ratio, 2),
+                    'ratio_fmt' => number_format($ratio, 2, ',', '.') . '%',
+                ];
+            }
+
+            $totalRatio = $totalOs > 0 ? ($totalCasa / $totalOs) * 100 : 0.0;
+
+            $segmentsDef = [
+                'mikro' => ['label' => 'Mikro', 'keys' => ['mikro']],
+                'sme' => ['label' => 'SME', 'keys' => ['smc']],
+                'konsumer' => ['label' => 'Konsumer', 'keys' => ['briguna', 'kpr']],
+            ];
+
+            $segmentRows = [];
+            $segIdx = 1;
+            foreach ($segmentsDef as $sKey => $sDef) {
+                $segOs = (float) $rows->whereIn('segment_key', $sDef['keys'])->sum('os_amount');
+                $segCasa = (float) $rows->whereIn('segment_key', $sDef['keys'])->sum('casa_amount');
+                $segRatio = $segOs > 0 ? ($segCasa / $segOs) * 100 : 0.0;
+
+                $segmentRows[] = [
+                    'no' => $segIdx++,
+                    'segment' => $sDef['label'],
+                    'os' => $segOs,
+                    'os_fmt' => 'Rp ' . number_format($segOs / 1_000_000_000_000, 2, ',', '.') . ' T',
+                    'casa' => $segCasa,
+                    'casa_fmt' => 'Rp ' . number_format($segCasa / 1_000_000_000, 2, ',', '.') . ' M',
+                    'ratio' => round($segRatio, 2),
+                    'ratio_fmt' => number_format($segRatio, 2, ',', '.') . '%',
+                ];
+            }
+
+            return [
+                'period' => $casaPeriod,
+                'period_label' => Carbon::parse($casaPeriod)->locale('id')->translatedFormat('d M y'),
+                'total' => [
+                    'os' => $totalOs,
+                    'os_fmt' => 'Rp ' . number_format($totalOs / 1_000_000_000_000, 2, ',', '.') . ' T',
+                    'casa' => $totalCasa,
+                    'casa_fmt' => 'Rp ' . number_format($totalCasa / 1_000_000_000, 2, ',', '.') . ' M',
+                    'ratio' => round($totalRatio, 2),
+                    'ratio_fmt' => number_format($totalRatio, 2, ',', '.') . '%',
+                ],
+                'branches' => $branchRows,
+                'segments' => $segmentRows,
+            ];
+        } catch (\Throwable $e) {
+            report($e);
+            return [];
+        }
+    }
+
+    private function buildDormantStrategyPayload(?string $period): array
+    {
+        try {
+            if (!Schema::hasTable('rekening_dormant_snapshots')) {
+                return [];
+            }
+
+            $target = $period ? Carbon::parse($period) : now();
+            $branches = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+
+            $curDate = DB::table('rekening_dormant_snapshots')
+                ->where('posisi', '<=', $target->toDateString())
+                ->max('posisi');
+
+            if (!$curDate) {
+                return [];
+            }
+
+            $curCarbon = Carbon::parse($curDate);
+            $mtdBoundary = $curCarbon->copy()->startOfMonth()->subDay()->toDateString();
+            $ytdBoundary = $curCarbon->copy()->subYearNoOverflow()->endOfYear()->toDateString();
+
+            $mtdDate = DB::table('rekening_dormant_snapshots')
+                ->where('posisi', '<=', $mtdBoundary)
+                ->max('posisi');
+
+            $ytdDate = DB::table('rekening_dormant_snapshots')
+                ->where('posisi', '<=', $ytdBoundary)
+                ->max('posisi');
+
+            $branchRows = [];
+            $totCur = 0;
+            $totMtd = 0;
+            $totYtd = 0;
+
+            foreach ($branches as $idx => $b) {
+                $curCount = (int) DB::table('rekening_dormant_snapshots')
+                    ->where('posisi', $curDate)
+                    ->where(DB::raw('UPPER(TRIM(branch_label))'), strtoupper(trim($b)))
+                    ->sum('dormant_count');
+
+                $mtdCount = $mtdDate ? (int) DB::table('rekening_dormant_snapshots')
+                    ->where('posisi', $mtdDate)
+                    ->where(DB::raw('UPPER(TRIM(branch_label))'), strtoupper(trim($b)))
+                    ->sum('dormant_count') : 0;
+
+                $ytdCount = $ytdDate ? (int) DB::table('rekening_dormant_snapshots')
+                    ->where('posisi', $ytdDate)
+                    ->where(DB::raw('UPPER(TRIM(branch_label))'), strtoupper(trim($b)))
+                    ->sum('dormant_count') : 0;
+
+                $totCur += $curCount;
+                $totMtd += $mtdCount;
+                $totYtd += $ytdCount;
+
+                $dMtd = $curCount - $mtdCount;
+                $dYtd = $curCount - $ytdCount;
+
+                $branchRows[] = [
+                    'no' => $idx + 1,
+                    'branch' => $b,
+                    'current' => $curCount,
+                    'current_fmt' => number_format($curCount, 0, ',', '.'),
+                    'mtd' => $mtdCount,
+                    'mtd_fmt' => number_format($mtdCount, 0, ',', '.'),
+                    'ytd' => $ytdCount,
+                    'ytd_fmt' => number_format($ytdCount, 0, ',', '.'),
+                    'd_mtd' => $dMtd,
+                    'd_mtd_fmt' => ($dMtd > 0 ? '+' : '') . number_format($dMtd, 0, ',', '.'),
+                    'd_ytd' => $dYtd,
+                    'd_ytd_fmt' => ($dYtd > 0 ? '+' : '') . number_format($dYtd, 0, ',', '.'),
+                ];
+            }
+
+            $totDMtd = $totCur - $totMtd;
+            $totDYtd = $totCur - $totYtd;
+
+            return [
+                'dates' => [
+                    'current' => Carbon::parse($curDate)->locale('id')->translatedFormat('d M y'),
+                    'mtd' => $mtdDate ? Carbon::parse($mtdDate)->locale('id')->translatedFormat('d M y') : '-',
+                    'ytd' => $ytdDate ? Carbon::parse($ytdDate)->locale('id')->translatedFormat('d M y') : '-',
+                ],
+                'total' => [
+                    'current' => $totCur,
+                    'current_fmt' => number_format($totCur, 0, ',', '.'),
+                    'mtd' => $totMtd,
+                    'mtd_fmt' => number_format($totMtd, 0, ',', '.'),
+                    'ytd' => $totYtd,
+                    'ytd_fmt' => number_format($totYtd, 0, ',', '.'),
+                    'd_mtd' => $totDMtd,
+                    'd_mtd_fmt' => ($totDMtd > 0 ? '+' : '') . number_format($totDMtd, 0, ',', '.'),
+                    'd_ytd' => $totDYtd,
+                    'd_ytd_fmt' => ($totDYtd > 0 ? '+' : '') . number_format($totDYtd, 0, ',', '.'),
+                ],
+                'branches' => $branchRows,
+            ];
+        } catch (\Throwable $e) {
+            report($e);
+            return [];
+        }
+    }
+
+    public function buildPayrollQualityStrategyPayload(?string $period = null): array
+    {
+        $cacheMinutes = (int) config('services.payroll_pipeline.cache_minutes', 60);
+        $cacheKey = 'dashboard_simpanan_payroll_quality_strategy';
+
+        return Cache::remember($cacheKey, now()->addMinutes(max(5, $cacheMinutes)), function () {
+            $sheetUrl = (string) config(
+                'services.payroll_pipeline.sheet_url',
+                'https://docs.google.com/spreadsheets/d/1xvNFVQpykLkIVqMuiHG_wCdsf3zJbbhGAxcWJ4-09_0/edit?usp=sharing'
+            );
+            $exportUrl = (string) config(
+                'services.payroll_pipeline.export_url',
+                'https://docs.google.com/spreadsheets/d/1xvNFVQpykLkIVqMuiHG_wCdsf3zJbbhGAxcWJ4-09_0/export?format=csv'
+            );
+            $baselinePath = storage_path('app/payroll_pipeline_baseline.json');
+
+            // 1. Attempt to fetch remote CSV if configured
+            $csvContent = null;
+            if ($exportUrl !== '') {
+                try {
+                    $response = Http::timeout(4)->get($exportUrl);
+                    if ($response->successful()) {
+                        $body = $response->body();
+                        if (strlen($body) > 1000 && str_contains($body, 'Nama_Perusahaan')) {
+                            $csvContent = $body;
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    // Fall back cleanly on network timeout/unavailability
+                }
+            }
+
+            // 2. Parse live CSV if available
+            if ($csvContent !== null) {
+                $parsed = $this->parsePayrollPipelineCsv($csvContent, $sheetUrl);
+                if (!empty($parsed['rows'])) {
+                    try {
+                        File::put($baselinePath, json_encode($parsed, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                    } catch (\Throwable $e) {
+                        // ignore file write permission errors
+                    }
+                    return $parsed;
+                }
+            }
+
+            // 3. Fallback to baseline JSON
+            if (File::exists($baselinePath)) {
+                try {
+                    $cachedData = json_decode(File::get($baselinePath), true);
+                    if (is_array($cachedData) && !empty($cachedData['rows'])) {
+                        $cachedData['sheet_url'] = $sheetUrl;
+                        usort($cachedData['rows'], function ($a, $b) {
+                            if (($b['potensi'] ?? 0) === ($a['potensi'] ?? 0)) {
+                                return ($b['pegawai'] ?? 0) <=> ($a['pegawai'] ?? 0);
+                            }
+                            return ($b['potensi'] ?? 0) <=> ($a['potensi'] ?? 0);
+                        });
+                        foreach ($cachedData['rows'] as $idx => &$r) {
+                            $r['no'] = $idx + 1;
+                        }
+                        unset($r);
+
+                        if (!empty($cachedData['summary']['branches'])) {
+                            foreach ($cachedData['summary']['branches'] as $bName => &$bData) {
+                                $p = $bData['perusahaan'] ?? 0;
+                                $k = $bData['kunjungan'] ?? 0;
+                                $pct = $p > 0 ? (int) round(($k / $p) * 100) : 0;
+                                $bData['branch'] = $bName;
+                                $bData['pegawai_fmt'] = number_format($bData['pegawai'] ?? 0, 0, ',', '.');
+                                $bData['potensi_fmt'] = number_format($bData['potensi'] ?? 0, 0, ',', '.');
+                                $bData['realisasi_fmt'] = number_format($bData['realisasi'] ?? 0, 0, ',', '.');
+                                $bData['persen_kunjungan'] = $pct;
+                                $bData['kunjungan_fmt'] = $k . ' / ' . $p . ' (' . $pct . '%)';
+                            }
+                            unset($bData);
+                        }
+
+                        return $cachedData;
+                    }
+                } catch (\Throwable $e) {
+                    // ignore JSON read errors
+                }
+            }
+
+            // 4. Default empty structure
+            return [
+                'sheet_url' => $sheetUrl,
+                'summary' => [
+                    'total_perusahaan' => 0,
+                    'total_pegawai' => 0,
+                    'total_pegawai_fmt' => '0',
+                    'total_potensi' => 0,
+                    'total_potensi_fmt' => '0',
+                    'total_existing' => 0,
+                    'total_existing_fmt' => '0',
+                    'total_realisasi' => 0,
+                    'total_realisasi_fmt' => '0',
+                    'total_kunjungan' => 0,
+                    'persen_kunjungan' => 0,
+                    'branches' => [],
+                ],
+                'rows' => [],
+            ];
+        });
+    }
+
+    public function buildPerusahaanAnakStrategyPayload(?string $period = null): array
+    {
+        $cacheMinutes = (int) config('services.perusahaan_anak.cache_minutes', 60);
+        $cacheKey = 'dashboard_simpanan_perusahaan_anak_strategy';
+
+        return Cache::remember($cacheKey, now()->addMinutes(max(5, $cacheMinutes)), function () {
+            $sheetUrl = (string) config(
+                'services.perusahaan_anak.sheet_url',
+                'https://docs.google.com/spreadsheets/d/1qhPev4QD6gUaVrdqcGJALmJdHu6S1CaEXKz0hKiBZmQ/edit?usp=sharing'
+            );
+            $exportUrl = (string) config(
+                'services.perusahaan_anak.export_url',
+                'https://docs.google.com/spreadsheets/d/1qhPev4QD6gUaVrdqcGJALmJdHu6S1CaEXKz0hKiBZmQ/export?format=csv'
+            );
+            $baselinePath = storage_path('app/perusahaan_anak_baseline.json');
+
+            // 1. Attempt to fetch remote CSV if configured
+            $csvContent = null;
+            if ($exportUrl !== '') {
+                try {
+                    $response = Http::timeout(4)->get($exportUrl);
+                    if ($response->successful()) {
+                        $body = $response->body();
+                        if (strlen($body) > 200 && (str_contains($body, 'Branch Office') || str_contains($body, 'Partner') || str_contains($body, 'Perusahaan Anak'))) {
+                            $csvContent = $body;
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    // Fall back cleanly on network timeout/unavailability
+                }
+            }
+
+            // 2. Parse live CSV if available
+            if ($csvContent !== null) {
+                $parsed = $this->parsePerusahaanAnakCsv($csvContent, $sheetUrl);
+                if (!empty($parsed['rows'])) {
+                    try {
+                        File::put($baselinePath, json_encode($parsed, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                    } catch (\Throwable $e) {
+                        // ignore file write permission errors
+                    }
+                    return $parsed;
+                }
+            }
+
+            // 3. Fallback to baseline JSON
+            if (File::exists($baselinePath)) {
+                try {
+                    $cachedData = json_decode(File::get($baselinePath), true);
+                    if (is_array($cachedData) && !empty($cachedData['rows'])) {
+                        $cachedData['sheet_url'] = $sheetUrl;
+                        usort($cachedData['rows'], function ($a, $b) {
+                            if (($b['is_terakuisisi'] ? 1 : 0) !== ($a['is_terakuisisi'] ? 1 : 0)) {
+                                return ($b['is_terakuisisi'] ? 1 : 0) <=> ($a['is_terakuisisi'] ? 1 : 0);
+                            }
+                            if (($b['saldo_september'] ?? 0) !== ($a['saldo_september'] ?? 0)) {
+                                return ($b['saldo_september'] ?? 0) <=> ($a['saldo_september'] ?? 0);
+                            }
+                            return strcmp($a['partner'] ?? '', $b['partner'] ?? '');
+                        });
+                        foreach ($cachedData['rows'] as $idx => &$r) {
+                            $r['no'] = $idx + 1;
+                            $r['id'] = $idx + 1;
+                        }
+                        unset($r);
+
+                        return $cachedData;
+                    }
+                } catch (\Throwable $e) {
+                    // ignore JSON read errors
+                }
+            }
+
+            // 4. Default empty structure
+            return [
+                'sheet_url' => $sheetUrl,
+                'summary' => [
+                    'card_number' => 5,
+                    'title' => '5. PERUSAHAAN ANAK',
+                    'subtitle' => 'Sinergi Akuisisi Partner & Bisnis Anak Perusahaan',
+                    'badge' => 'SINERGI PERUSAHAAN ANAK',
+                    'total_pipeline' => 0,
+                    'total_mitra' => 0,
+                    'total_sudah' => 0,
+                    'total_belum' => 0,
+                    'persen_akuisisi' => 0.0,
+                    'persen_akuisisi_fmt' => '0%',
+                    'total_saldo_juli' => 0.0,
+                    'total_saldo_juli_fmt' => 'Rp 0',
+                    'total_saldo_agustus' => 0.0,
+                    'total_saldo_agustus_fmt' => 'Rp 0',
+                    'total_saldo_september' => 0.0,
+                    'total_saldo_september_fmt' => 'Rp 0',
+                    'entities' => [],
+                    'branches' => [],
+                ],
+                'rows' => [],
+            ];
+        });
+    }
+
+    public function buildEcosystemValueChainStrategyPayload(?string $period = null): array
+    {
+        $cacheMinutes = (int) config('services.ecosystem_value_chain.cache_minutes', 60);
+        $cacheKey = 'dashboard_simpanan_ecosystem_value_chain_strategy';
+
+        return Cache::remember($cacheKey, now()->addMinutes(max(5, $cacheMinutes)), function () {
+            $sheetUrl = (string) config(
+                'services.ecosystem_value_chain.sheet_url',
+                'https://docs.google.com/spreadsheets/d/1fYGSHFTegTjkK5ZTWIFu2X4g1K_cBXbKFbUhk8nUizM/edit?usp=sharing'
+            );
+            $baselinePath = storage_path('app/ecosystem_value_chain_baseline.json');
+
+            if (File::exists($baselinePath)) {
+                try {
+                    $cachedData = json_decode(File::get($baselinePath), true);
+                    if (is_array($cachedData) && !empty($cachedData['records'])) {
+                        $cachedData['sheet_url'] = $sheetUrl;
+                        return $cachedData;
+                    }
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+
+            return [
+                'sheet_url' => $sheetUrl,
+                'summary' => [
+                    'totalAccounts' => 0,
+                    'total_accounts_fmt' => '0',
+                    'totalBalance' => 0,
+                    'total_balance_fmt' => 'Rp 0',
+                    'total_balance_full' => 'Rp 0',
+                    'avg_balance' => 0,
+                    'avg_balance_fmt' => 'Rp 0',
+                    'avg_balance_full' => 'Rp 0',
+                    'dominant_ecosystem' => '-',
+                    'dominant_ecosystem_saldo' => 'Rp 0',
+                    'dominant_ecosystem_share' => '0%',
+                    'ecosystems' => [],
+                    'branches' => [],
+                ],
+                'records' => [],
+            ];
+        });
+    }
+
+    private function parsePayrollPipelineCsv(string $csvContent, string $sheetUrl): array
+    {
+        $lines = preg_split("/\r\n|\n|\r/", trim($csvContent));
+        if (count($lines) < 6) {
+            return [];
+        }
+
+        $targetBranches = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo', 'Madiun', 'Magetan', 'Ngawi', 'Ponorogo'];
+        $cleanNum = function ($val): int {
+            if ($val === null || $val === '') {
+                return 0;
+            }
+            $clean = preg_replace('/[^\d]/', '', (string) $val);
+            return (int) $clean;
+        };
+
+        $rows = [];
+        $totPotensi = 0;
+        $totExisting = 0;
+        $totRealisasi = 0;
+        $totPegawai = 0;
+        $totKunjungan = 0;
+
+        $branchStats = [
+            'KC Madiun' => ['perusahaan' => 0, 'pegawai' => 0, 'potensi' => 0, 'realisasi' => 0, 'kunjungan' => 0],
+            'KC Magetan' => ['perusahaan' => 0, 'pegawai' => 0, 'potensi' => 0, 'realisasi' => 0, 'kunjungan' => 0],
+            'KC Ngawi' => ['perusahaan' => 0, 'pegawai' => 0, 'potensi' => 0, 'realisasi' => 0, 'kunjungan' => 0],
+            'KC Ponorogo' => ['perusahaan' => 0, 'pegawai' => 0, 'potensi' => 0, 'realisasi' => 0, 'kunjungan' => 0],
+        ];
+
+        for ($i = 5; $i < count($lines); $i++) {
+            $row = str_getcsv($lines[$i]);
+            if (count($row) < 10) {
+                continue;
+            }
+
+            $mainBranch = trim((string) ($row[8] ?? ''));
+            $branch = trim((string) ($row[9] ?? ''));
+            $nama = trim((string) ($row[1] ?? ''));
+
+            if ($nama === '') {
+                continue;
+            }
+
+            $haystack = strtolower($branch . ' ' . $mainBranch);
+            $isTarget = false;
+            foreach ($targetBranches as $tb) {
+                if (str_contains($haystack, strtolower($tb))) {
+                    $isTarget = true;
+                    break;
+                }
+            }
+
+            if (!$isTarget) {
+                continue;
+            }
+
+            if (str_contains($haystack, 'madiun')) {
+                $normKc = 'KC Madiun';
+            } elseif (str_contains($haystack, 'magetan')) {
+                $normKc = 'KC Magetan';
+            } elseif (str_contains($haystack, 'ngawi')) {
+                $normKc = 'KC Ngawi';
+            } elseif (str_contains($haystack, 'ponorogo')) {
+                $normKc = 'KC Ponorogo';
+            } else {
+                $normKc = $branch ?: $mainBranch;
+            }
+
+            $pegawai = $cleanNum($row[10] ?? 0);
+            $existing = $cleanNum($row[11] ?? 0);
+            $potensi = $cleanNum($row[12] ?? 0);
+            $realisasi = $cleanNum($row[45] ?? 0);
+            $isVisited = strtoupper(trim((string) ($row[13] ?? ''))) === 'TRUE';
+            $catatan = trim((string) ($row[14] ?? '')) ?: '-';
+            $status = trim((string) ($row[5] ?? '')) ?: 'Existing';
+            $segmen = trim((string) ($row[4] ?? '')) ?: 'Umum';
+            $cif = trim((string) ($row[2] ?? '')) ?: '-';
+
+            $totPegawai += $pegawai;
+            $totPotensi += $potensi;
+            $totExisting += $existing;
+            $totRealisasi += $realisasi;
+            if ($isVisited) {
+                $totKunjungan++;
+            }
+
+            if (isset($branchStats[$normKc])) {
+                $branchStats[$normKc]['perusahaan']++;
+                $branchStats[$normKc]['pegawai'] += $pegawai;
+                $branchStats[$normKc]['potensi'] += $potensi;
+                $branchStats[$normKc]['realisasi'] += $realisasi;
+                if ($isVisited) {
+                    $branchStats[$normKc]['kunjungan']++;
+                }
+            }
+
+            $rows[] = [
+                'no' => count($rows) + 1,
+                'nama' => $nama,
+                'cif' => $cif,
+                'segmen' => $segmen,
+                'status' => $status,
+                'kc' => $normKc,
+                'pegawai' => $pegawai,
+                'pegawai_fmt' => number_format($pegawai, 0, ',', '.'),
+                'existing' => $existing,
+                'existing_fmt' => number_format($existing, 0, ',', '.'),
+                'potensi' => $potensi,
+                'potensi_fmt' => number_format($potensi, 0, ',', '.'),
+                'realisasi' => $realisasi,
+                'realisasi_fmt' => number_format($realisasi, 0, ',', '.'),
+                'kunjungan' => $isVisited,
+                'catatan' => $catatan,
+            ];
+        }
+
+        usort($rows, function ($a, $b) {
+            if (($b['potensi'] ?? 0) === ($a['potensi'] ?? 0)) {
+                return ($b['pegawai'] ?? 0) <=> ($a['pegawai'] ?? 0);
+            }
+            return ($b['potensi'] ?? 0) <=> ($a['potensi'] ?? 0);
+        });
+
+        foreach ($rows as $idx => &$r) {
+            $r['no'] = $idx + 1;
+        }
+        unset($r);
+
+        foreach ($branchStats as $bName => &$bData) {
+            $p = $bData['perusahaan'] ?? 0;
+            $k = $bData['kunjungan'] ?? 0;
+            $pct = $p > 0 ? (int) round(($k / $p) * 100) : 0;
+            $bData['branch'] = $bName;
+            $bData['pegawai_fmt'] = number_format($bData['pegawai'] ?? 0, 0, ',', '.');
+            $bData['potensi_fmt'] = number_format($bData['potensi'] ?? 0, 0, ',', '.');
+            $bData['realisasi_fmt'] = number_format($bData['realisasi'] ?? 0, 0, ',', '.');
+            $bData['persen_kunjungan'] = $pct;
+            $bData['kunjungan_fmt'] = $k . ' / ' . $p . ' (' . $pct . '%)';
+        }
+        unset($bData);
+
+        $summary = [
+            'total_perusahaan' => count($rows),
+            'total_pegawai' => $totPegawai,
+            'total_pegawai_fmt' => number_format($totPegawai, 0, ',', '.'),
+            'total_potensi' => $totPotensi,
+            'total_potensi_fmt' => number_format($totPotensi, 0, ',', '.'),
+            'total_existing' => $totExisting,
+            'total_existing_fmt' => number_format($totExisting, 0, ',', '.'),
+            'total_realisasi' => $totRealisasi,
+            'total_realisasi_fmt' => number_format($totRealisasi, 0, ',', '.'),
+            'total_kunjungan' => $totKunjungan,
+            'persen_kunjungan' => count($rows) > 0 ? (int) round(($totKunjungan / count($rows)) * 100) : 0,
+            'branches' => $branchStats,
+        ];
+
+        return [
+            'sheet_url' => $sheetUrl,
+            'summary' => $summary,
+            'rows' => $rows,
+        ];
+    }
+
+    private function parsePerusahaanAnakCsv(string $csvContent, string $sheetUrl): array
+    {
+        $lines = preg_split("/\r\n|\n|\r/", trim($csvContent));
+        if (count($lines) < 2) {
+            return [];
+        }
+
+        $cleanNominal = function ($val): float {
+            if ($val === null || $val === '') {
+                return 0.0;
+            }
+            $str = trim((string) $val);
+            if ($str === '-' || $str === '' || $str === '0') {
+                return 0.0;
+            }
+            $clean = preg_replace('/[^\d.-]/', '', str_replace(',', '', $str));
+            return (float) ($clean ?: 0);
+        };
+
+        $rows = [];
+        $totJuli = 0.0;
+        $totAgt = 0.0;
+        $totSep = 0.0;
+        $totSudah = 0;
+        $totBelum = 0;
+        $entities = [];
+
+        $branchStats = [
+            'KC Madiun' => ['branch' => 'KC Madiun', 'total_pipeline' => 0, 'total_sudah' => 0, 'total_belum' => 0, 'persen_akuisisi' => 0.0, 'persen_akuisisi_fmt' => '0%', 'saldo_juli' => 0.0, 'saldo_juli_fmt' => 'Rp 0', 'saldo_agustus' => 0.0, 'saldo_agustus_fmt' => 'Rp 0', 'saldo_september' => 0.0, 'saldo_september_fmt' => 'Rp 0'],
+            'KC Magetan' => ['branch' => 'KC Magetan', 'total_pipeline' => 0, 'total_sudah' => 0, 'total_belum' => 0, 'persen_akuisisi' => 0.0, 'persen_akuisisi_fmt' => '0%', 'saldo_juli' => 0.0, 'saldo_juli_fmt' => 'Rp 0', 'saldo_agustus' => 0.0, 'saldo_agustus_fmt' => 'Rp 0', 'saldo_september' => 0.0, 'saldo_september_fmt' => 'Rp 0'],
+            'KC Ngawi' => ['branch' => 'KC Ngawi', 'total_pipeline' => 0, 'total_sudah' => 0, 'total_belum' => 0, 'persen_akuisisi' => 0.0, 'persen_akuisisi_fmt' => '0%', 'saldo_juli' => 0.0, 'saldo_juli_fmt' => 'Rp 0', 'saldo_agustus' => 0.0, 'saldo_agustus_fmt' => 'Rp 0', 'saldo_september' => 0.0, 'saldo_september_fmt' => 'Rp 0'],
+            'KC Ponorogo' => ['branch' => 'KC Ponorogo', 'total_pipeline' => 0, 'total_sudah' => 0, 'total_belum' => 0, 'persen_akuisisi' => 0.0, 'persen_akuisisi_fmt' => '0%', 'saldo_juli' => 0.0, 'saldo_juli_fmt' => 'Rp 0', 'saldo_agustus' => 0.0, 'saldo_agustus_fmt' => 'Rp 0', 'saldo_september' => 0.0, 'saldo_september_fmt' => 'Rp 0'],
+        ];
+
+        $handle = fopen('php://memory', 'r+');
+        fwrite($handle, $csvContent);
+        rewind($handle);
+
+        $headers = fgetcsv($handle);
+
+        while (($r = fgetcsv($handle)) !== false) {
+            if (count($r) < 7) {
+                continue;
+            }
+
+            $branch = trim((string) ($r[6] ?? ''));
+            $haystack = strtolower($branch);
+            $normKc = null;
+            if (str_contains($haystack, 'madiun')) {
+                $normKc = 'KC Madiun';
+            } elseif (str_contains($haystack, 'magetan')) {
+                $normKc = 'KC Magetan';
+            } elseif (str_contains($haystack, 'ngawi')) {
+                $normKc = 'KC Ngawi';
+            } elseif (str_contains($haystack, 'ponorogo')) {
+                $normKc = 'KC Ponorogo';
+            }
+
+            if (!$normKc) {
+                continue;
+            }
+
+            $rawStatus = trim((string) ($r[21] ?? $r[10] ?? ''));
+            $isSudah = stripos($rawStatus, 'sudah terakuisisi') !== false;
+            $status = $isSudah ? 'Sudah Terakuisisi' : 'Belum Terakuisisi';
+
+            $saldoJuli = $cleanNominal($r[23] ?? 0);
+            $saldoAgustus = $cleanNominal($r[24] ?? 0);
+            $saldoSeptember = $cleanNominal($r[25] ?? 0);
+
+            $partner = trim((string) ($r[1] ?? '')) ?: '-';
+            $bidangUsaha = trim((string) ($r[2] ?? '')) ?: '-';
+            $alamat = trim((string) ($r[3] ?? '')) ?: '-';
+            $perusahaanAnakNama = trim((string) ($r[4] ?? '')) ?: '-';
+            $perusahaanAnakSingkat = trim((string) ($r[5] ?? '')) ?: $perusahaanAnakNama;
+            $perusahaanAnak = $perusahaanAnakSingkat ?: $perusahaanAnakNama;
+            if ($perusahaanAnak !== '-' && !in_array($perusahaanAnak, $entities, true)) {
+                $entities[] = $perusahaanAnak;
+            }
+
+            $cif = trim((string) ($r[22] ?? $r[18] ?? '')) ?: '-';
+            $rekening = trim((string) ($r[17] ?? $r[20] ?? '')) ?: '-';
+            $picPa = trim((string) ($r[11] ?? '')) ?: '-';
+            $picBri = trim((string) ($r[14] ?? '')) ?: '-';
+            $catatan = trim((string) ($r[19] ?? '')) ?: '-';
+
+            if ($isSudah) {
+                $totSudah++;
+            } else {
+                $totBelum++;
+            }
+
+            $totJuli += $saldoJuli;
+            $totAgt += $saldoAgustus;
+            $totSep += $saldoSeptember;
+
+            if (isset($branchStats[$normKc])) {
+                $branchStats[$normKc]['total_pipeline']++;
+                if ($isSudah) {
+                    $branchStats[$normKc]['total_sudah']++;
+                } else {
+                    $branchStats[$normKc]['total_belum']++;
+                }
+                $branchStats[$normKc]['saldo_juli'] += $saldoJuli;
+                $branchStats[$normKc]['saldo_agustus'] += $saldoAgustus;
+                $branchStats[$normKc]['saldo_september'] += $saldoSeptember;
+            }
+
+            $rows[] = [
+                'no' => count($rows) + 1,
+                'id' => count($rows) + 1,
+                'partner' => $partner,
+                'namaPartner' => $partner,
+                'nama' => $partner,
+                'bidang_usaha' => $bidangUsaha,
+                'bidangUsaha' => $bidangUsaha,
+                'alamat' => $alamat,
+                'perusahaan_anak' => $perusahaanAnak,
+                'perusahaanAnak' => $perusahaanAnak,
+                'perusahaan_anak_nama' => $perusahaanAnakNama,
+                'perusahaan_anak_singkat' => $perusahaanAnakSingkat,
+                'kc' => $normKc,
+                'branchOffice' => $normKc,
+                'status' => $status,
+                'is_terakuisisi' => $isSudah,
+                'cif' => $cif,
+                'cifNo' => $cif,
+                'rekening' => $rekening,
+                'pic_perusahaan_anak' => $picPa,
+                'pic_bri' => $picBri,
+                'catatan' => $catatan,
+                'saldo_juli' => $saldoJuli,
+                'saldoJuli' => $saldoJuli,
+                'saldo_juli_fmt' => 'Rp ' . number_format($saldoJuli, 0, ',', '.'),
+                'saldo_agustus' => $saldoAgustus,
+                'saldoAgustus' => $saldoAgustus,
+                'saldo_agustus_fmt' => 'Rp ' . number_format($saldoAgustus, 0, ',', '.'),
+                'saldo_september' => $saldoSeptember,
+                'saldoSeptember' => $saldoSeptember,
+                'saldo_september_fmt' => 'Rp ' . number_format($saldoSeptember, 0, ',', '.'),
+            ];
+        }
+        fclose($handle);
+
+        usort($rows, function ($a, $b) {
+            if (($b['is_terakuisisi'] ? 1 : 0) !== ($a['is_terakuisisi'] ? 1 : 0)) {
+                return ($b['is_terakuisisi'] ? 1 : 0) <=> ($a['is_terakuisisi'] ? 1 : 0);
+            }
+            if (($b['saldo_september'] ?? 0) !== ($a['saldo_september'] ?? 0)) {
+                return ($b['saldo_september'] ?? 0) <=> ($a['saldo_september'] ?? 0);
+            }
+            return strcmp($a['partner'] ?? '', $b['partner'] ?? '');
+        });
+
+        foreach ($rows as $idx => &$r) {
+            $r['no'] = $idx + 1;
+            $r['id'] = $idx + 1;
+        }
+        unset($r);
+
+        sort($entities);
+
+        foreach ($branchStats as $bName => &$bData) {
+            $p = $bData['total_pipeline'];
+            $s = $bData['total_sudah'];
+            $pct = $p > 0 ? round(($s / $p) * 100, 1) : 0.0;
+            $bData['persen_akuisisi'] = $pct;
+            $bData['persen_akuisisi_fmt'] = number_format($pct, 1, ',', '.') . '%';
+            $bData['saldo_juli_fmt'] = 'Rp ' . number_format($bData['saldo_juli'], 0, ',', '.');
+            $bData['saldo_agustus_fmt'] = 'Rp ' . number_format($bData['saldo_agustus'], 0, ',', '.');
+            $bData['saldo_september_fmt'] = 'Rp ' . number_format($bData['saldo_september'], 0, ',', '.');
+        }
+        unset($bData);
+
+        $totalPipeline = count($rows);
+        $persenAkuisisi = $totalPipeline > 0 ? round(($totSudah / $totalPipeline) * 100, 1) : 0.0;
+
+        $summary = [
+            'card_number' => 5,
+            'title' => '5. PERUSAHAAN ANAK',
+            'subtitle' => 'Sinergi Akuisisi Partner & Bisnis Anak Perusahaan',
+            'badge' => 'SINERGI PERUSAHAAN ANAK',
+            'total_pipeline' => $totalPipeline,
+            'total_mitra' => $totalPipeline,
+            'total_sudah' => $totSudah,
+            'total_belum' => $totBelum,
+            'persen_akuisisi' => $persenAkuisisi,
+            'persen_akuisisi_fmt' => number_format($persenAkuisisi, 1, ',', '.') . '%',
+            'total_saldo_juli' => $totJuli,
+            'total_saldo_juli_fmt' => 'Rp ' . number_format($totJuli, 0, ',', '.'),
+            'total_saldo_agustus' => $totAgt,
+            'total_saldo_agustus_fmt' => 'Rp ' . number_format($totAgt, 0, ',', '.'),
+            'total_saldo_september' => $totSep,
+            'total_saldo_september_fmt' => 'Rp ' . number_format($totSep, 0, ',', '.'),
+            'entities' => $entities,
+            'branches' => $branchStats,
+        ];
+
+        return [
+            'sheet_url' => $sheetUrl,
+            'summary' => $summary,
+            'rows' => $rows,
+        ];
     }
 
     private function simpananScopeSnapshotMetrics(string $period, string $scopeKey = 'area6'): array

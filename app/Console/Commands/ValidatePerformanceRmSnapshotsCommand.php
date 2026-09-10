@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\ConsumerRmKanwilAudit;
 use App\Support\ConsumerRmRealizationCalculator;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -10,7 +11,10 @@ use Illuminate\Support\Facades\Schema;
 
 class ValidatePerformanceRmSnapshotsCommand extends Command
 {
-    protected $signature = 'snapshot:validate-rm {--period= : Validate specific period}';
+    protected $signature = 'snapshot:validate-rm {--period= : Validate specific period}
+        {--kanwil-reference= : Compare Consumer realization directly with the 2026 Kanwil workbook}
+        {--max-error-percent=1 : Maximum error per RM and realization component in reference mode}
+        {--json : Emit the reference audit as JSON}';
 
     protected $description = 'Validate Performance RM snapshots against source data';
 
@@ -18,6 +22,25 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
     {
         try {
             $period = trim((string) $this->option('period'));
+            $reference = trim((string) $this->option('kanwil-reference'));
+            if ($reference !== '') {
+                if ($period === '' || ! is_numeric($this->option('max-error-percent'))) {
+                    throw new \InvalidArgumentException('Mode acuan memerlukan --period dan batas error numerik.');
+                }
+                $audit = app(ConsumerRmKanwilAudit::class)->audit($reference, $period, (float) $this->option('max-error-percent'));
+                if ($this->option('json')) {
+                    $this->line(json_encode($audit, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+                } else {
+                    $this->table(['RM', 'Aplikasi (jt)', 'Kanwil (jt)', 'Selisih (jt)', 'Q aplikasi/acuan', 'Lulus'],
+                        array_map(fn ($row) => [$row['name'], round($row['amount'] / 1e6, 3),
+                            round($row['reference_amount'] / 1e6, 3), round($row['delta_amount'] / 1e6, 3),
+                            $row['quadrant'].'/'.$row['reference_quadrant'], $row['passed'] ? 'YA' : 'TIDAK'], $audit['rows']));
+                    $this->line("Kuadran cocok: {$audit['quadrant_matches']}/{$audit['rm_count']}; error absolut tertimbang: ".round($audit['weighted_absolute_error_percent'] ?? 100, 4).'%.');
+                    $this->warn('Workbook ini hanya memvalidasi Briguna; akurasi KPR terhadap Kanwil belum dinilai.');
+                }
+
+                return $audit['passed'] ? self::SUCCESS : self::FAILURE;
+            }
             $periods = $period !== ''
                 ? [$period]
                 : DB::table('performance_rm_snapshots')

@@ -514,7 +514,9 @@ final class LandingConsumerOperationalService
             ->select('periode', 'cabang', 'produk', 'rm', 'realisasi_os')
             ->get();
         $snapshotRows = $this->applyLatestConsumerSnapshotAssignments(
-            $this->applyBrihcPrimaryConsumerAssignments($snapshotRows, $end)
+            $this->applyBrihcPrimaryConsumerAssignments(
+                $this->applyKprRealizationAssignments($snapshotRows, $end), $end
+            )
         );
         $targetMaps = $this->productTargetMaps();
 
@@ -774,6 +776,55 @@ final class LandingConsumerOperationalService
 
             return $row;
         })->values();
+    }
+
+    /**
+     * Re-attribute only KPR realization, account by account, at the report's
+     * cutoff. Historical portfolio/quality metrics stay on their snapshot RM.
+     * Both the KPI matrix and landing quadrants use this same projection.
+     *
+     * @param  Collection<int, object>  $snapshotRows
+     * @return Collection<int, object>
+     */
+    public function applyKprRealizationAssignments(Collection $snapshotRows, string $period): Collection
+    {
+        $calculator = app(ConsumerRmRealizationCalculator::class);
+        $result = $snapshotRows->map(static fn (object $row): object => clone $row);
+        $kprRows = $result->filter(static fn (object $row): bool => ($row->produk ?? '') === 'KPR');
+        foreach ($kprRows->groupBy('periode') as $monthPeriod => $rows) {
+            $metrics = $calculator->calculate(substr((string) $monthPeriod, 0, 10), $period, 'KPR');
+            // Keep stored snapshots readable when nominatives are unavailable.
+            if ($metrics === []) {
+                continue;
+            }
+            $branches = $rows->pluck('cabang')->unique()->all();
+            foreach ($rows as $row) {
+                $row->realisasi_os = 0.0;
+                if (property_exists($row, 'realisasi_deb')) {
+                    $row->realisasi_deb = 0;
+                }
+            }
+            foreach ($metrics as $metric) {
+                if (! in_array($metric['cabang'], $branches, true)) {
+                    continue;
+                }
+                // A separate activity row prevents a transfer from moving OS,
+                // LAR or other portfolio measures along with realization.
+                $result->push((object) [
+                    'periode' => (string) $monthPeriod,
+                    'cabang' => $metric['cabang'],
+                    'unit' => $metric['unit'],
+                    'branch_code' => $metric['branch_code'],
+                    'segmen' => 'CONSUMER',
+                    'produk' => 'KPR',
+                    'rm' => $metric['rm'],
+                    'realisasi_os' => $metric['realisasi_os'],
+                    'realisasi_deb' => $metric['realisasi_deb'],
+                ]);
+            }
+        }
+
+        return $result->values();
     }
 
     /**
