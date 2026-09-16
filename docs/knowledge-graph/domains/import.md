@@ -24,7 +24,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | --- | ---: | --- |
 | `ImportExcelController` | class | 374 | `app/Http/Controllers/Import/ImportExcelController.php:71` |
 | `ImportIndexController` | class | 162 | `app/Http/Controllers/Import/ImportIndexController.php:31` |
-| `import_jobs` | table | 152 | - |
+| `import_jobs` | table | 154 | - |
 | `ImportFileController` | class | 144 | `app/Http/Controllers/Import/ImportFileController.php:30` |
 | `ImportProgressService` | class | 97 | `app/Services/Import/ImportProgressService.php:13` |
 | `ImportReportPhController` | class | 97 | `app/Http/Controllers/Import/ImportReportPhController.php:30` |
@@ -291,7 +291,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | import -> tests (extends) | 48 |
 | import -> core (writes_table) | 47 |
 | import -> core (defines_table) | 35 |
-| database -> import (checks_table) | 34 |
+| database -> import (checks_table) | 35 |
 | import -> dashboard-pinjaman (writes_table) | 27 |
 | import -> core (extends) | 25 |
 | tests -> import (contains) | 24 |

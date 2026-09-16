@@ -815,9 +815,9 @@ try {
                     const consumerKprPipeline = consumerDesk?.querySelector('[aria-labelledby="consumer-kpr-pipeline-title"]');
                     const consumerKprPipelineTables = Array.from(consumerKprPipeline?.querySelectorAll('.consumer-ops-table') || []).filter(visible);
                     const consumerQuadrantProducts = Array.from(consumerDesk?.querySelectorAll('[data-consumer-quadrant-product].consumer-ops-product') || []).filter(visible);
-                    const consumerQuadrantTables = Array.from(consumerDesk?.querySelectorAll('[data-consumer-quadrant-panel]:not([hidden]) .consumer-ops-quadrant-table') || []).filter(visible);
+                    const consumerQuadrantTables = Array.from(consumerDesk?.querySelectorAll('[data-consumer-quadrant-panel]:not([hidden]) .consumer-ops-rm-table') || []).filter(visible);
                     const consumerArea6Triggers = Array.from(consumerDesk?.querySelectorAll('[data-consumer-area6-trigger="1"]') || []).filter(visible);
-                    const consumerQuadrantDetails = Array.from(consumerDesk?.querySelectorAll('[data-consumer-quadrant-panel]:not([hidden]) [data-consumer-quadrant-detail]') || []).filter(visible);
+                    const consumerRmRows = Array.from(consumerDesk?.querySelectorAll('[data-consumer-quadrant-panel]:not([hidden]) .consumer-ops-rm-table tbody tr') || []).filter(visible);
                     const consumerDeskText = consumerDesk?.textContent || '';
                     const hero = desk?.querySelector('.micro-ops-hero');
                     const mantriIllustration = desk?.querySelector('.micro-mantri-stage__visual svg');
@@ -894,7 +894,7 @@ try {
                         consumerQuadrantProductCount: consumerQuadrantProducts.length,
                         consumerQuadrantTableCount: consumerQuadrantTables.length,
                         consumerArea6TriggerCount: consumerArea6Triggers.length,
-                        consumerQuadrantDetailCount: consumerQuadrantDetails.length,
+                        consumerRmRowCount: consumerRmRows.length,
                         hasSeparateConsumerQuadrants: scope !== 'consumer'
                             || (consumerDeskText.includes('Kuadran RM Briguna') && consumerDeskText.includes('Kuadran RM KPR')),
                         heroRemoved: scope !== 'micro' || !hero,
@@ -983,7 +983,7 @@ try {
                 || state.consumerQuadrantProductCount !== 2
                 || state.consumerQuadrantTableCount !== 2
                 || state.consumerArea6TriggerCount !== 2
-                || state.consumerQuadrantDetailCount < 1
+                || state.consumerRmRowCount < 1
                 || !state.hasSeparateConsumerQuadrants;
         }
         if (state.scope !== 'micro') return false;

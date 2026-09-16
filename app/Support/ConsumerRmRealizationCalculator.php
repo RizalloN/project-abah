@@ -9,12 +9,16 @@ use Throwable;
 
 class ConsumerRmRealizationCalculator
 {
+    public const FORMULA_VERSION = 'consumer-cif-event-v2';
+
+    public const UNASSIGNED_RM = 'PN BELUM TERISI';
+
     /**
      * Calculate monthly Consumer realization from the current nominative and
      * the preceding month-end nominative. Each realized account is counted
-     * once. Briguna uses the product's CIF balance movement at origination
-     * when that daily position is available, with the existing facility
-     * estimate for incomplete history. KPR measures gross booked plafond.
+     * once. Briguna uses the complete product/CIF balance movement at the
+     * first available position for each current-month realization event.
+     * KPR remains a separate gross booked-plafond calculation.
      *
      * @return array<string, array<string, mixed>>
      */
@@ -38,7 +42,6 @@ class ConsumerRmRealizationCalculator
         $cifColumn = $source['cif'];
         $plafonColumn = $source['plafon'];
         $outstandingColumn = $source['outstanding'];
-        $managerColumn = $source['manager'];
         $initiatorColumn = $source['initiator'];
         $lookupOrderColumn = $source['lookup_order'];
         $hasInitiator = $initiatorColumn !== null;
@@ -58,20 +61,6 @@ class ConsumerRmRealizationCalculator
             ->whereBetween($periodColumn, [$periodStart, $period])
             ->when($source['segment'] !== null, fn ($query) => $query->where($source['segment'], 'CONSUMER'))
             ->whereIn($productColumn, $productValues)
-            ->where(function ($query) use ($hasInitiator, $initiatorColumn, $managerColumn): void {
-                $query->where(function ($managerQuery) use ($managerColumn): void {
-                    $managerQuery
-                        ->whereNotNull($managerColumn)
-                        ->where($managerColumn, '<>', '');
-                });
-                if ($hasInitiator) {
-                    $query->orWhere(function ($initiatorQuery) use ($initiatorColumn): void {
-                        $initiatorQuery
-                            ->whereNotNull($initiatorColumn)
-                            ->where($initiatorColumn, '<>', '');
-                    });
-                }
-            })
             ->whereNotNull($accountColumn)
             ->where($accountColumn, '<>', '')
             ->whereNotNull($cifColumn)
@@ -115,8 +104,9 @@ class ConsumerRmRealizationCalculator
             $kprAssignmentPeriod ?? $period
         );
 
-        // Deduplicate repeated daily positions. Briguna keeps its first event
-        // attribution; KPR ownership is resolved separately at the cutoff.
+        // Deduplicate repeated daily positions. Prefer the first populated
+        // attribution when the booking initially arrives with an empty PN;
+        // KPR ownership is resolved separately at the cutoff.
         $deduplicatedCurrentRows = [];
         foreach ($currentRows as $row) {
             $row->account_key = $this->canonicalAccountKey((string) ($row->account_key ?? ''));
@@ -141,15 +131,30 @@ class ConsumerRmRealizationCalculator
                 (float) ($existing->current_plafon ?? 0.0),
                 (float) ($row->current_plafon ?? 0.0)
             );
-            if ((string) ($row->first_seen_period ?? $period) < (string) ($existing->first_seen_period ?? $period)) {
+            $firstRealizationDate = min(
+                (string) ($existing->realization_date ?? $period),
+                (string) ($row->realization_date ?? $period)
+            );
+            $lastSeen = max(
+                (string) ($existing->last_seen_period ?? $period),
+                (string) ($row->last_seen_period ?? $period)
+            );
+            $existingHasAttribution = trim((string) ($existing->initiator ?? '')) !== ''
+                || trim((string) ($existing->rm ?? '')) !== '';
+            $rowHasAttribution = trim((string) ($row->initiator ?? '')) !== ''
+                || trim((string) ($row->rm ?? '')) !== '';
+            if ((! $existingHasAttribution && $rowHasAttribution)
+                || ((string) ($row->first_seen_period ?? $period) < (string) ($existing->first_seen_period ?? $period)
+                    && $existingHasAttribution === $rowHasAttribution)) {
                 $deduplicatedCurrentRows[$candidateKey] = $row;
             }
             $deduplicatedCurrentRows[$candidateKey]->first_seen_period = $firstSeen;
+            $deduplicatedCurrentRows[$candidateKey]->last_seen_period = $lastSeen;
+            $deduplicatedCurrentRows[$candidateKey]->realization_date = $firstRealizationDate;
             $deduplicatedCurrentRows[$candidateKey]->current_plafon = $greatestPlafon;
         }
 
         $currentMetricsByCif = [];
-        $bookingsByCifDate = [];
         foreach ($deduplicatedCurrentRows as $row) {
             $cleanCif = (string) ($row->clean_cif ?? '');
             $accountKey = (string) ($row->account_key ?? '');
@@ -158,25 +163,21 @@ class ConsumerRmRealizationCalculator
             }
 
             $product = (string) ($row->produk ?? '');
-            $bookingKey = $product.'|'.$cleanCif.'|'.(string) ($row->realization_date ?? '');
-            $bookingsByCifDate[$bookingKey] = ($bookingsByCifDate[$bookingKey] ?? 0) + 1;
+            $resolvedRm = $this->resolveConsumerRm(
+                $product === 'KPR' ? '' : (string) ($row->initiator ?? ''),
+                $product === 'KPR'
+                    ? ($kprAssignments[$accountKey] ?? (string) ($row->rm ?? ''))
+                    : (string) ($row->rm ?? ''),
+                $product,
+                $brihcInitiators
+            );
             $group = [
                 'cabang' => (string) ($row->cabang ?? ''),
                 'unit' => (string) ($row->unit ?? ''),
                 'branch_code' => (string) ($row->branch_code ?? ''),
-                'rm' => $this->resolveConsumerRm(
-                    $product === 'KPR' ? '' : (string) ($row->initiator ?? ''),
-                    $product === 'KPR'
-                        ? ($kprAssignments[$accountKey] ?? (string) ($row->rm ?? ''))
-                        : (string) ($row->rm ?? ''),
-                    $product,
-                    $brihcInitiators
-                ),
+                'rm' => $resolvedRm !== '' ? $resolvedRm : self::UNASSIGNED_RM,
                 'produk' => $product,
             ];
-            if ($group['rm'] === '') {
-                continue;
-            }
             $groupKey = $this->groupKey($group);
             $metricKey = $groupKey.'|'.$cleanCif;
             $currentMetricsByCif[$metricKey] ??= $group + [
@@ -184,7 +185,6 @@ class ConsumerRmRealizationCalculator
                 'clean_cif' => $cleanCif,
                 'account_plafon' => [],
                 'account_first_period' => [],
-                'account_realization_date' => [],
             ];
 
             // The same nominative account can be duplicated by the extract.
@@ -195,8 +195,6 @@ class ConsumerRmRealizationCalculator
             );
             $currentMetricsByCif[$metricKey]['account_first_period'][$accountKey] ??=
                 (string) ($row->first_seen_period ?? $period);
-            $currentMetricsByCif[$metricKey]['account_realization_date'][$accountKey] ??=
-                (string) ($row->realization_date ?? '');
         }
 
         if ($currentMetricsByCif === []) {
@@ -274,8 +272,60 @@ class ConsumerRmRealizationCalculator
             }
         }
 
+        // Build one Briguna value per observed product/CIF event. The prior
+        // implementation paired a new account with only one old account; that
+        // drifts whenever a CIF owns several facilities. The business measure
+        // is the complete CIF exposure at the event position minus the complete
+        // product/CIF exposure at the preceding month-end.
+        $brigunaEvents = [];
+        foreach ($currentMetricsByCif as $metric) {
+            $product = $this->canonicalProduct((string) $metric['produk']);
+            if ($product !== 'BRIGUNA-KONSUMER') {
+                continue;
+            }
+
+            $cleanCif = (string) $metric['clean_cif'];
+            foreach ($metric['account_plafon'] as $accountKey => $currentPlafon) {
+                $eventPeriod = (string) ($metric['account_first_period'][$accountKey] ?? $period);
+                $eventKey = $product.'|'.$cleanCif.'|'.$eventPeriod;
+                $brigunaEvents[$eventKey] ??= [
+                    'product' => $product,
+                    'clean_cif' => $cleanCif,
+                    'event_period' => $eventPeriod,
+                    'accounts' => [],
+                ];
+                $brigunaEvents[$eventKey]['accounts'][$accountKey] = max(
+                    (float) ($brigunaEvents[$eventKey]['accounts'][$accountKey] ?? 0.0),
+                    (float) $currentPlafon
+                );
+            }
+        }
+
+        foreach ($brigunaEvents as &$event) {
+            $baselineAccounts = $historyByPeriod[$previousPeriod][$event['product']][$event['clean_cif']] ?? [];
+            $eventAccounts = $historyByPeriod[$event['event_period']][$event['product']][$event['clean_cif']] ?? [];
+            $eventExposure = array_sum(array_column($eventAccounts, 'os'));
+            if ($eventAccounts === []) {
+                // The selected source normally contains the first-seen position
+                // itself. Keep an explicit bounded fallback for incomplete old
+                // archives instead of reverting to single-account subtraction.
+                $eventExposure = array_sum($event['accounts']);
+            }
+            $event['baseline_accounts'] = $baselineAccounts;
+            $event['booking_plafon'] = array_sum($event['accounts']);
+            $event['booking_count'] = count($event['accounts']);
+            // Realisasi Baru is gross booked plafond. Nett Disbursement only
+            // applies to Suplesi, using aggregate product/CIF baki debet.
+            $event['net_disbursement'] = $baselineAccounts === []
+                ? $event['booking_plafon']
+                : max(
+                    0.0,
+                    $eventExposure - array_sum(array_column($baselineAccounts, 'os'))
+                );
+        }
+        unset($event);
+
         $metricsByGroup = [];
-        $usedPreviousAccounts = [];
         foreach ($currentMetricsByCif as $metric) {
             $cleanCif = (string) $metric['clean_cif'];
             $product = $this->canonicalProduct((string) $metric['produk']);
@@ -285,88 +335,59 @@ class ConsumerRmRealizationCalculator
             $newDisbursement = 0.0;
             $supplementAccounts = [];
             $supplementDisbursement = 0.0;
+            $brigunaAccountsByEvent = [];
 
             foreach ($metric['account_plafon'] as $accountKey => $currentPlafon) {
                 $firstSeenPeriod = (string) ($metric['account_first_period'][$accountKey] ?? $period);
                 $baselineAccounts = $historyByPeriod[$previousPeriod][$product][$cleanCif] ?? [];
-                $realizationAccounts = $historyByPeriod[$firstSeenPeriod][$product][$cleanCif] ?? [];
-                $previousOs = 0.0;
-                $selectedPreviousAccount = null;
                 // Classification follows the product-specific customer
                 // baseline at the preceding month-end. KPR history must not
                 // turn a first Briguna facility into a supplement (and vice
                 // versa).
                 $isSupplement = $baselineAccounts !== [];
-
-                if (isset($baselineAccounts[$accountKey])) {
-                    $previousOs = (float) ($baselineAccounts[$accountKey]['os'] ?? 0.0);
-                    $selectedPreviousAccount = $accountKey;
-                } else {
-                    $replacementCandidates = [];
-                    foreach ($baselineAccounts as $previousAccount => $baselineAccount) {
-                        $usageKey = $product.'|'.$cleanCif.'|'.$previousAccount;
-                        if (
-                            isset($realizationAccounts[$previousAccount])
-                            || isset($usedPreviousAccounts[$usageKey])
-                        ) {
-                            continue;
-                        }
-                        $outstanding = (float) ($baselineAccount['os'] ?? 0.0);
-                        if ($outstanding <= 0.0) {
-                            continue;
-                        }
-                        $replacementCandidates[$previousAccount] = [
-                            'os' => $outstanding,
-                            'lookup_order' => (string) ($baselineAccount['lookup_order'] ?? $previousAccount),
-                        ];
-                    }
-                    if ($replacementCandidates !== []) {
-                        // Retain the deterministic facility estimate when the
-                        // origination-day position is missing. A later monthly
-                        // position cannot reconstruct the event's CIF balance.
-                        uasort($replacementCandidates, static function (array $left, array $right): int {
-                            return strcmp($left['lookup_order'], $right['lookup_order']);
-                        });
-                        $selectedPreviousAccount = (string) array_key_first($replacementCandidates);
-                        $previousOs = (float) $replacementCandidates[$selectedPreviousAccount]['os'];
-                    }
-                }
-
-                if ($selectedPreviousAccount !== null) {
-                    $usedPreviousAccounts[$product.'|'.$cleanCif.'|'.$selectedPreviousAccount] = true;
-                }
-
-                // KPR/KPRS in the Kanwil time series is gross origination.
-                // An existing CIF determines its classification, but does not
-                // reduce its booked plafond. Keep Briguna's net rule separate.
-                $accountNet = max(0.0, (float) $currentPlafon - ($product === 'KPR' ? 0.0 : $previousOs));
-                if ($product === 'BRIGUNA-KONSUMER'
-                    && $firstSeenPeriod === $metric['account_realization_date'][$accountKey]
-                    && ($bookingsByCifDate[$product.'|'.$cleanCif.'|'.$firstSeenPeriod] ?? 0) === 1
-                    && isset($realizationAccounts[$accountKey])
-                    && abs($realizationAccounts[$accountKey]['os'] - (float) $currentPlafon) < 0.01) {
-                    // Kanwil's daily series measures the full product/CIF
-                    // movement against the previous month-end on each booking
-                    // date. Include retained facilities and earlier bookings;
-                    // subtract every prior facility, not just one closed loan.
-                    // Only apply the reconciled single-booking case while its
-                    // balance still equals booked plafond. Same-day multiple
-                    // bookings and already-amortized facilities remain on the
-                    // estimate until their event allocation is established.
-                    $accountNet = max(0.0,
-                        array_sum(array_column($realizationAccounts, 'os'))
-                        - array_sum(array_column($baselineAccounts, 'os'))
-                    );
-                }
                 $realizedAccounts[$accountKey] = true;
-                $netDisbursement += $accountNet;
 
                 if (! $isSupplement) {
                     $newAccounts[$accountKey] = true;
-                    $newDisbursement += $accountNet;
                 } else {
                     $supplementAccounts[$accountKey] = true;
-                    $supplementDisbursement += $accountNet;
+                }
+
+                if ($product === 'BRIGUNA-KONSUMER') {
+                    $eventKey = $product.'|'.$cleanCif.'|'.$firstSeenPeriod;
+                    $brigunaAccountsByEvent[$eventKey][$accountKey] = (float) $currentPlafon;
+
+                    continue;
+                }
+
+                // KPR/KPRS is gross origination. Its historical CIF determines
+                // only Baru/Suplesi classification, never the booked amount.
+                $accountGross = max(0.0, (float) $currentPlafon);
+                $netDisbursement += $accountGross;
+                if (! $isSupplement) {
+                    $newDisbursement += $accountGross;
+                } else {
+                    $supplementDisbursement += $accountGross;
+                }
+            }
+
+            foreach ($brigunaAccountsByEvent as $eventKey => $metricEventAccounts) {
+                $event = $brigunaEvents[$eventKey] ?? null;
+                if (! is_array($event)) {
+                    continue;
+                }
+                $eventPlafon = (float) ($event['booking_plafon'] ?? 0.0);
+                $eventCount = max(1, (int) ($event['booking_count'] ?? 0));
+                $metricPlafon = array_sum($metricEventAccounts);
+                $share = $eventPlafon > 0.0
+                    ? $metricPlafon / $eventPlafon
+                    : count($metricEventAccounts) / $eventCount;
+                $metricEventNet = max(0.0, (float) $event['net_disbursement']) * $share;
+                $netDisbursement += $metricEventNet;
+                if (($event['baseline_accounts'] ?? []) === []) {
+                    $newDisbursement += $metricEventNet;
+                } else {
+                    $supplementDisbursement += $metricEventNet;
                 }
             }
 
@@ -417,9 +438,18 @@ class ConsumerRmRealizationCalculator
     private function kprAccountAssignments(iterable $currentRows, string $start, string $cutoff): array
     {
         $accounts = [];
+        $candidateKeys = [];
         foreach ($currentRows as $row) {
-            if ($row->produk === 'KPR') {
-                $accounts[$this->canonicalAccountKey((string) $row->account_key)] = true;
+            if (($row->produk ?? '') === 'KPR') {
+                $raw = strtoupper(trim((string) ($row->account_key ?? '')));
+                $canonical = $this->canonicalAccountKey($raw);
+                if ($canonical === '') {
+                    continue;
+                }
+                $accounts[$canonical] = true;
+                $candidateKeys[$raw] = true;
+                $candidateKeys[$canonical] = true;
+                $candidateKeys[str_pad($canonical, 15, '0', STR_PAD_LEFT)] = true;
             }
         }
         if ($accounts === []) {
@@ -430,23 +460,61 @@ class ConsumerRmRealizationCalculator
             return [];
         }
 
-        $assignments = [];
-        $rows = DB::table($source['table'])
+        $periods = DB::table($source['table'])
             ->whereBetween($source['period'], [$start, $cutoff])
-            ->where($source['product'], 'KPR')
-            ->when($source['segment'] !== null, fn ($query) => $query->where($source['segment'], 'CONSUMER'))
-            ->whereNotNull($source['rm'])
-            ->where($source['rm'], '<>', '')
-            ->selectRaw("{$source['account']} as account_key, {$source['rm']} as rm, {$source['period']} as position")
+            ->distinct()
             ->orderByDesc($source['period'])
-            ->orderBy($source['rm'])
-            ->get();
-        foreach ($rows as $row) {
-            // Source switches may add/remove leading zeroes. Compare canonical
-            // keys after the bounded KPR/date query, not raw account strings.
-            $key = $this->canonicalAccountKey((string) $row->account_key);
-            if (isset($accounts[$key]) && ! isset($assignments[$key])) {
-                $assignments[$key] = (string) $row->rm;
+            ->pluck($source['period']);
+
+        $assignments = [];
+        $remainingKeys = $candidateKeys;
+
+        foreach ($periods as $periodValue) {
+            if (count($assignments) === count($accounts) || empty($remainingKeys)) {
+                break;
+            }
+
+            $rows = DB::table($source['table'])
+                ->where($source['period'], $periodValue)
+                ->whereIn($source['account'], array_keys($remainingKeys))
+                ->where($source['product'], 'KPR')
+                ->when($source['segment'] !== null, fn ($query) => $query->where($source['segment'], 'CONSUMER'))
+                ->whereNotNull($source['rm'])
+                ->where($source['rm'], '<>', '')
+                ->selectRaw("{$source['account']} as account_key, {$source['rm']} as rm, {$source['period']} as position")
+                ->orderByDesc($source['period'])
+                ->orderBy($source['rm'])
+                ->get();
+
+            foreach ($rows as $row) {
+                $key = $this->canonicalAccountKey((string) $row->account_key);
+                if (isset($accounts[$key]) && ! isset($assignments[$key])) {
+                    $assignments[$key] = (string) $row->rm;
+                    unset($remainingKeys[(string) $row->account_key]);
+                    unset($remainingKeys[$key]);
+                    unset($remainingKeys[str_pad($key, 15, '0', STR_PAD_LEFT)]);
+                }
+            }
+        }
+
+        if (count($assignments) < count($accounts) && ! empty($remainingKeys)) {
+            $rows = DB::table($source['table'])
+                ->whereBetween($source['period'], [$start, $cutoff])
+                ->whereIn($source['account'], array_keys($remainingKeys))
+                ->where($source['product'], 'KPR')
+                ->when($source['segment'] !== null, fn ($query) => $query->where($source['segment'], 'CONSUMER'))
+                ->whereNotNull($source['rm'])
+                ->where($source['rm'], '<>', '')
+                ->selectRaw("{$source['account']} as account_key, {$source['rm']} as rm, {$source['period']} as position")
+                ->orderByDesc($source['period'])
+                ->orderBy($source['rm'])
+                ->get();
+
+            foreach ($rows as $row) {
+                $key = $this->canonicalAccountKey((string) $row->account_key);
+                if (isset($accounts[$key]) && ! isset($assignments[$key])) {
+                    $assignments[$key] = (string) $row->rm;
+                }
             }
         }
 

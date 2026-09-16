@@ -204,6 +204,24 @@ function Get-ProcessCommandCount {
     return $count
 }
 
+function Start-DetachedProcess {
+    param(
+        [string]$CommandLine
+    )
+
+    try {
+        $res = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $CommandLine }
+        if ($null -ne $res -and $res.ReturnValue -eq 0) {
+            return $true
+        }
+    } catch {
+        # Fallback to Start-Process if WMI is unavailable
+    }
+
+    Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $CommandLine -WindowStyle Hidden | Out-Null
+    return $true
+}
+
 function Start-PersistentQueuePool {
     param(
         [string]$Name,
@@ -246,8 +264,8 @@ function Start-PersistentQueuePool {
 
         $slotWorkerName = "$WorkerKey-$slot"
         $scriptPath = Join-Path $projectRoot 'scripts\queue-persistent.ps1'
-        $command = "cd /d `"$projectRoot`" && powershell -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Queues `"$Queues`" -Tries $Tries -Timeout 0 -Sleep 1 -Memory $queueWorkerMemory -MaxJobs $queueWorkerMaxJobs -MaxTimeSeconds $queueWorkerMaxTime -RestartDelaySeconds 3 -WorkerName `"$slotWorkerName`" >> `"$slotLogPath`" 2>&1"
-        Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $command -WindowStyle Hidden | Out-Null
+        $command = "cmd.exe /c cd /d `"$projectRoot`" && powershell -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Queues `"$Queues`" -Tries $Tries -Timeout 0 -Sleep 1 -Memory $queueWorkerMemory -MaxJobs $queueWorkerMaxJobs -MaxTimeSeconds $queueWorkerMaxTime -RestartDelaySeconds 3 -WorkerName `"$slotWorkerName`" >> `"$slotLogPath`" 2>&1"
+        Start-DetachedProcess -CommandLine $command | Out-Null
         Write-Host "$Name persistent worker $slot/$DesiredCount dijalankan. Log: $slotLogPath"
     }
 }
@@ -265,8 +283,8 @@ function Start-PersistentScheduler {
     }
 
     $scriptPath = Join-Path $projectRoot 'scripts\schedule-persistent.ps1'
-    $command = "cd /d `"$projectRoot`" && powershell -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -RestartDelaySeconds 3 -WorkerName `"$workerKey`" >> `"$LogPath`" 2>&1"
-    Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $command -WindowStyle Hidden | Out-Null
+    $command = "cmd.exe /c cd /d `"$projectRoot`" && powershell -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -RestartDelaySeconds 3 -WorkerName `"$workerKey`" >> `"$LogPath`" 2>&1"
+    Start-DetachedProcess -CommandLine $command | Out-Null
     Write-Host "Laravel scheduler persistent dijalankan. Log: $LogPath"
 }
 

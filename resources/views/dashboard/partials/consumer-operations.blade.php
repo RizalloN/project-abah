@@ -21,6 +21,9 @@
 
         return 'Rp '.number_format($amount, 0, ',', '.');
     };
+    $formatPercent = static fn ($value): string => $value === null
+        ? '-'
+        : number_format((float) $value, 1, ',', '.').'%';
 @endphp
 
 <style>
@@ -86,6 +89,12 @@
 .consumer-ops-product__title { display:flex; align-items:center; gap:.62rem; }
 .consumer-ops-product__mark { display:grid; flex:0 0 36px; width:36px; height:36px; place-items:center; border-radius:11px; color:#075ac9; background:#e5f1ff; }
 .consumer-ops-product__title span { display:block; margin-top:.13rem; color:#6d8298; font-size:.64rem; }
+.consumer-ops-product__identity { display:flex; align-items:center; justify-content:flex-end; gap:.68rem; }
+.consumer-ops-product__period { display:grid; text-align:right; }
+.consumer-ops-product__period span { color:#7890a7; font-size:.58rem; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+.consumer-ops-product__period strong { margin-top:.12rem; color:#0b4b86; font-size:.72rem; }
+.consumer-ops-rm-visual { display:grid; width:82px; height:54px; place-items:end center; overflow:hidden; border:1px solid #cfe5f5; border-radius:12px; background:linear-gradient(145deg,#eaf7ff,#f9fdff); }
+.consumer-ops-rm-visual svg { display:block; width:76px; height:auto; }
 .consumer-ops-quadrant-table { min-width:650px; }
 .consumer-ops-quadrant-table thead th:nth-child(n+3),.consumer-ops-quadrant-table td:nth-child(n+3) { text-align:center; }
 .consumer-ops-q { display:inline-grid; min-width:44px; min-height:40px; padding:.35rem .55rem; place-items:center; border:1px solid transparent; border-radius:9px; font:inherit; font-weight:900; cursor:pointer; transition:filter .16s ease,box-shadow .16s ease; }
@@ -96,6 +105,33 @@
 .consumer-ops-q.q3 { color:#9a5e00; background:#fff1cf; }
 .consumer-ops-q.q4 { color:#a52b45; background:#ffe3e9; }
 .consumer-ops-total { color:#0b4077; font-weight:900; }
+.consumer-ops-rm-table { min-width:1220px; }
+.consumer-ops-rm-table th,.consumer-ops-rm-table td { border-right:1px solid #e6eef7; }
+.consumer-ops-rm-table th:last-child,.consumer-ops-rm-table td:last-child { border-right:0; }
+.consumer-ops-rm-table thead tr:first-child th { background:#082f63; text-align:center; }
+.consumer-ops-rm-table thead tr:first-child th:nth-child(-n+3) { text-align:left; }
+.consumer-ops-rm-table thead tr:nth-child(2) th { top:35px; color:#cfe9ff; background:#0b4d8d; text-align:center; }
+.consumer-ops-rm-table tbody td { background:#fff; }
+.consumer-ops-rm-table tbody tr:nth-child(even) td { background:#f8fbfe; }
+.consumer-ops-rm-table tbody tr:hover td { background:#eef7ff; }
+.consumer-ops-rm-table tfoot td { position:sticky; bottom:0; z-index:1; color:#fff; background:#082f63; font-weight:900; }
+.consumer-ops-rm-table .consumer-ops-rm-cell { min-width:220px; text-align:left; }
+.consumer-ops-rm-profile { display:flex; align-items:center; gap:.62rem; min-width:0; }
+.consumer-ops-rm-avatar { display:grid; flex:0 0 34px; width:34px; height:34px; place-items:center; border:1px solid #b9def6; border-radius:10px; color:#07569b; background:linear-gradient(145deg,#dff4ff,#eefbf8); font-size:.64rem; font-weight:950; letter-spacing:.03em; }
+.consumer-ops-rm-profile strong { display:block; overflow:hidden; color:#173b5f; font-size:.7rem; text-overflow:ellipsis; white-space:nowrap; }
+.consumer-ops-rm-profile span { display:block; margin-top:.12rem; color:#7890a7; font-size:.6rem; }
+.consumer-ops-jg { display:inline-flex; min-width:46px; justify-content:center; padding:.3rem .46rem; border:1px solid #cbe3f3; border-radius:999px; color:#075a92; background:#edf8fd; font-size:.64rem; font-weight:900; }
+.consumer-ops-achievement { display:grid; gap:.16rem; min-width:86px; }
+.consumer-ops-achievement strong { color:#0b477e; font-size:.7rem; }
+.consumer-ops-achievement span { color:#6b8299; font-size:.59rem; white-space:nowrap; }
+.consumer-ops-quadrant-badge { display:inline-grid; min-width:46px; min-height:38px; place-items:center; border-radius:10px; font-size:.72rem; font-weight:950; }
+.consumer-ops-quadrant-badge.q1 { color:#057451; background:#d9f7e8; }
+.consumer-ops-quadrant-badge.q2 { color:#08658e; background:#ddf3fb; }
+.consumer-ops-quadrant-badge.q3 { color:#946000; background:#fff0c9; }
+.consumer-ops-quadrant-badge.q4 { color:#a22d49; background:#ffe1e8; }
+.consumer-ops-quadrant-badge.q0 { color:#718399; background:#edf2f7; }
+.consumer-ops-rm-note { display:flex; flex-wrap:wrap; gap:.45rem 1rem; margin:.72rem 1rem; color:#55718d; font-size:.66rem; }
+.consumer-ops-rm-note span { display:inline-flex; align-items:center; gap:.32rem; }
 .consumer-ops-quadrant-hint { display:flex; align-items:center; gap:.4rem; margin:.7rem 1rem 0; color:#55718d; font-size:.68rem; font-weight:750; }
 .consumer-ops-coverage { display:flex; flex-wrap:wrap; gap:.5rem; padding:.62rem 1rem; border-top:1px solid #e4edf6; color:#637a91; background:#f8fbfe; font-size:.66rem; }
 .consumer-ops-coverage strong { color:#17466f; }
@@ -141,6 +177,8 @@
   .consumer-ops-source-link { justify-content:center; }
   .consumer-ops-products { padding:0 .75rem .75rem; }
   .consumer-ops-count { align-self:flex-start; }
+  .consumer-ops-product__identity { width:100%; justify-content:space-between; }
+  .consumer-ops-product__period { text-align:left; }
 }
 @media (max-width:379.98px) {
   .consumer-ops-hero__visual { min-height:125px; max-height:140px; }
@@ -409,7 +447,7 @@
                 <div>
                     <span class="consumer-ops-kicker">Produktivitas RM &middot; Posisi {{ data_get($quadrants, 'period_label', '-') }}</span>
                     <h3 id="consumer-quadrant-title">Tren Kuadran RM Konsumer</h3>
-                    <p>Briguna dan KPR dipisahkan agar jumlah RM tiap produk terbaca jelas. Trigger Area 6 menggabungkan Madiun, Magetan, Ngawi, dan Ponorogo.</p>
+                    <p>Target, realisasi baru, nett disbursement, capaian, dan posisi kuadran setiap RM dalam satu tampilan bulan berjalan.</p>
                 </div>
             </div>
         </div>
@@ -423,6 +461,27 @@
                             <div>
                                 <h4>{{ $productUi['title'] }}</h4>
                                 <span>Q1 &ge;105% &middot; Q2 100&ndash;&lt;105% &middot; Q3 50&ndash;&lt;100% &middot; Q4 &lt;50%</span>
+                            </div>
+                        </div>
+                        <div class="consumer-ops-product__identity">
+                            <div class="consumer-ops-product__period">
+                                <span>Posisi bulan berjalan</span>
+                                <strong>{{ data_get($quadrants, 'period_label', '-') }}</strong>
+                            </div>
+                            <div class="consumer-ops-rm-visual" aria-hidden="true">
+                                <svg viewBox="0 0 108 72" focusable="false">
+                                    <path d="M7 65h94" stroke="#9bcbea" stroke-width="2" stroke-linecap="round"/>
+                                    <rect x="56" y="17" width="44" height="39" rx="5" fill="#fff" stroke="#95c7e6"/>
+                                    <path d="M64 44l9-9 7 5 12-15" fill="none" stroke="#08a6a6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M86 25h6v6" fill="none" stroke="#08a6a6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <circle cx="32" cy="21" r="10" fill="#ffd5b5"/>
+                                    <path d="M22 19c1-9 18-11 20 1-5-1-9-4-12-7-1 4-4 6-8 6Z" fill="#123b67"/>
+                                    <path d="M18 58c0-17 5-26 14-26s15 9 15 26" fill="#0878bd"/>
+                                    <path d="M32 33l6 25H26l6-25Z" fill="#fff"/>
+                                    <path d="M31 36h3l2 12-4 6-4-6 3-12Z" fill="#0aa6c8"/>
+                                    <rect x="41" y="47" width="28" height="16" rx="3" fill="#dff3fb" stroke="#83bddf"/>
+                                    <circle cx="55" cy="55" r="2" fill="#0878bd"/>
+                                </svg>
                             </div>
                         </div>
                     </div>
@@ -453,7 +512,8 @@
                             @php
                                 $branchKey = (string) data_get($branch, 'key', '');
                                 $product = (array) data_get($branch, 'products.'.$productKey, []);
-                                $historyRows = array_values((array) data_get($product, 'rows', []));
+                                $currentRows = array_values((array) data_get($product, 'current_rows', []));
+                                $totals = (array) data_get($product, 'totals', []);
                             @endphp
                             <div id="consumer-{{ $productKey }}-panel-{{ $branchKey }}"
                                  class="consumer-ops-quadrant-panel"
@@ -462,54 +522,87 @@
                                  data-consumer-quadrant-panel="{{ $branchKey }}"
                                  data-consumer-quadrant-product="{{ $productKey }}"
                                  {{ $branchKey === $firstQuadrantBranch ? '' : 'hidden' }}>
-                                @if(!empty($product['available']))
-                                    <p class="consumer-ops-quadrant-hint"><i class="fas fa-hand-pointer" aria-hidden="true"></i> Klik dua kali angka kuadran untuk melihat nama RM. Tombol juga dapat dibuka dengan Enter atau Spasi.</p>
+                                @if(!empty($product['available']) && $currentRows !== [])
+                                    <div class="consumer-ops-rm-note">
+                                        <span><i class="fas fa-info-circle" aria-hidden="true"></i> Realisasi Baru merupakan bagian dari Nett Disbursement.</span>
+                                        <span><i class="fas fa-calculator" aria-hidden="true"></i> Total menampilkan capaian Nett terhadap Target, bukan penjumlahan dua realisasi.</span>
+                                    </div>
                                     <div class="consumer-ops-table-wrap" tabindex="0" aria-label="{{ $productUi['title'] }} {{ data_get($branch, 'label', '-') }}">
-                                        <table class="consumer-ops-table consumer-ops-quadrant-table">
+                                        <table class="consumer-ops-table consumer-ops-rm-table">
+                                            <caption class="sr-only">Produktivitas per RM {{ $productUi['title'] }} {{ data_get($branch, 'label', '-') }} posisi {{ data_get($quadrants, 'period_label', '-') }}</caption>
                                             <thead>
                                                 <tr>
-                                                    <th>No</th>
-                                                    <th>Bulan</th>
-                                                    <th>Kuadran 1</th>
-                                                    <th>Kuadran 2</th>
-                                                    <th>Kuadran 3</th>
-                                                    <th>Kuadran 4</th>
-                                                    <th>Total RM</th>
+                                                    <th rowspan="2" scope="col">No</th>
+                                                    <th rowspan="2" scope="col">RM</th>
+                                                    <th rowspan="2" scope="col">JG</th>
+                                                    <th colspan="2" scope="colgroup">Target</th>
+                                                    <th colspan="2" scope="colgroup">Realisasi Baru</th>
+                                                    <th colspan="2" scope="colgroup">Nett Disbursement</th>
+                                                    <th rowspan="2" scope="col">Total</th>
+                                                    <th rowspan="2" scope="col">Kuadran</th>
+                                                </tr>
+                                                <tr>
+                                                    <th scope="col">Deb</th>
+                                                    <th scope="col">Real</th>
+                                                    <th scope="col">Deb</th>
+                                                    <th scope="col">Real</th>
+                                                    <th scope="col">Deb</th>
+                                                    <th scope="col">Real</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                @foreach($historyRows as $history)
+                                                @foreach($currentRows as $rmRow)
+                                                    @php
+                                                        $rmName = (string) data_get($rmRow, 'name', '-');
+                                                        $rmInitials = collect(preg_split('/\s+/', trim($rmName)) ?: [])
+                                                            ->filter()
+                                                            ->take(2)
+                                                            ->map(static fn ($part): string => strtoupper(substr((string) $part, 0, 1)))
+                                                            ->implode('');
+                                                        $quadrant = (int) data_get($rmRow, 'quadrant', 0);
+                                                    @endphp
                                                     <tr>
                                                         <td>{{ $loop->iteration }}</td>
-                                                        <td><strong>{{ data_get($history, 'label', '-') }}</strong></td>
-                                                        @foreach([1, 2, 3, 4] as $quadrant)
-                                                            @php
-                                                                $quadrantCount = (int) data_get($history, 'q'.$quadrant, 0);
-                                                                $rmDetails = array_values((array) data_get($history, 'rm_details.q'.$quadrant, []));
-                                                                $detailLabel = 'Lihat '.$quadrantCount.' nama RM '.$productUi['title'].' Kuadran '.$quadrant.' '.data_get($branch, 'label', '-').' periode '.data_get($history, 'label', '-');
-                                                            @endphp
-                                                            <td>
-                                                                <button type="button"
-                                                                        class="consumer-ops-q q{{ $quadrant }}"
-                                                                        aria-label="{{ $detailLabel }}"
-                                                                        title="{{ $quadrantCount > 0 ? 'Klik dua kali untuk melihat nama RM' : 'Tidak ada RM pada kuadran ini' }}"
-                                                                        data-consumer-quadrant-detail
-                                                                        data-consumer-quadrant="{{ $quadrant }}"
-                                                                        data-consumer-quadrant-product-label="{{ $productUi['title'] }}"
-                                                                        data-consumer-quadrant-branch-label="{{ data_get($branch, 'label', '-') }}"
-                                                                        data-consumer-quadrant-period-label="{{ data_get($history, 'label', '-') }}"
-                                                                        data-consumer-quadrant-rms="{{ json_encode($rmDetails) }}"
-                                                                        {{ $quadrantCount === 0 ? 'disabled' : '' }}>{{ $formatInteger($quadrantCount) }}</button>
-                                                            </td>
-                                                        @endforeach
-                                                        <td class="consumer-ops-total">{{ $formatInteger(data_get($history, 'total', 0)) }}</td>
+                                                        <td class="consumer-ops-rm-cell">
+                                                            <div class="consumer-ops-rm-profile">
+                                                                <span class="consumer-ops-rm-avatar" aria-hidden="true">{{ $rmInitials ?: 'RM' }}</span>
+                                                                <span><strong>{{ $rmName }}</strong><span>{{ data_get($rmRow, 'branch', '-') }}</span></span>
+                                                            </div>
+                                                        </td>
+                                                        <td><span class="consumer-ops-jg">{{ data_get($rmRow, 'jg', '-') }}</span></td>
+                                                        <td class="is-number">{{ $formatInteger(data_get($rmRow, 'target_deb', 0)) }}</td>
+                                                        <td class="is-number">{{ $formatAmount(data_get($rmRow, 'target_os', 0)) }}</td>
+                                                        <td class="is-number">{{ $formatInteger(data_get($rmRow, 'new_deb', 0)) }}</td>
+                                                        <td class="is-number">{{ $formatAmount(data_get($rmRow, 'new_os', 0)) }}</td>
+                                                        <td class="is-number">{{ $formatInteger(data_get($rmRow, 'net_deb', 0)) }}</td>
+                                                        <td class="is-number">{{ $formatAmount(data_get($rmRow, 'net_os', 0)) }}</td>
+                                                        <td>
+                                                            <span class="consumer-ops-achievement">
+                                                                <strong>{{ $formatPercent(data_get($rmRow, 'achievement_os')) }}</strong>
+                                                                <span>Deb {{ $formatPercent(data_get($rmRow, 'achievement_deb')) }}</span>
+                                                            </span>
+                                                        </td>
+                                                        <td><span class="consumer-ops-quadrant-badge q{{ $quadrant }}">{{ $quadrant > 0 ? 'Q'.$quadrant : '-' }}</span></td>
                                                     </tr>
                                                 @endforeach
                                             </tbody>
+                                            <tfoot>
+                                                <tr>
+                                                    <td colspan="3">TOTAL {{ strtoupper((string) data_get($branch, 'label', '-')) }}</td>
+                                                    <td class="is-number">{{ $formatInteger(data_get($totals, 'target_deb', 0)) }}</td>
+                                                    <td class="is-number">{{ $formatAmount(data_get($totals, 'target_os', 0)) }}</td>
+                                                    <td class="is-number">{{ $formatInteger(data_get($totals, 'new_deb', 0)) }}</td>
+                                                    <td class="is-number">{{ $formatAmount(data_get($totals, 'new_os', 0)) }}</td>
+                                                    <td class="is-number">{{ $formatInteger(data_get($totals, 'net_deb', 0)) }}</td>
+                                                    <td class="is-number">{{ $formatAmount(data_get($totals, 'net_os', 0)) }}</td>
+                                                    <td><strong>{{ $formatPercent(data_get($totals, 'achievement_os')) }}</strong><br><small>Deb {{ $formatPercent(data_get($totals, 'achievement_deb')) }}</small></td>
+                                                    <td>-</td>
+                                                </tr>
+                                            </tfoot>
                                         </table>
                                     </div>
                                     <div class="consumer-ops-coverage">
-                                        <span><strong>{{ $formatInteger(data_get($product, 'coverage.classified', 0)) }}</strong> RM terklasifikasi pada posisi terakhir</span>
+                                        <span><strong>{{ $formatInteger(count($currentRows)) }}</strong> RM ditampilkan pada posisi bulan berjalan</span>
                                         @if((int) data_get($product, 'coverage.unclassified', 0) > 0)
                                             <span class="consumer-ops-coverage__warning"><i class="fas fa-info-circle" aria-hidden="true"></i> {{ $formatInteger(data_get($product, 'coverage.unclassified', 0)) }} RM belum memiliki target produk</span>
                                         @endif
@@ -526,4 +619,5 @@
             @endforeach
         </div>
     </section>
+    @include('dashboard.partials.pn-mismatch', ['pnMismatch' => data_get($consumerOperations, 'pn_mismatch', []), 'pnSegment' => 'consumer'])
 </div>

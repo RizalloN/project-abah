@@ -139,6 +139,8 @@ Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttl
         ->name('dashboard.consumer-operations');
     Route::get('/dashboard/micro-performance', [DashboardSimpananController::class, 'microPerformance'])
         ->name('dashboard.micro-performance');
+    Route::get('/dashboard/pn-mismatch-nominatives', [DashboardSimpananController::class, 'pnMismatchNominatives'])
+        ->name('dashboard.pn-mismatch-nominatives');
     Route::get('/dashboard/micro-pipeline', [DashboardSimpananController::class, 'microPipeline'])
         ->name('dashboard.micro-pipeline');
     Route::get('/dashboard/micro-one-time-nominatives', [DashboardSimpananController::class, 'microOneTimeNominatives'])

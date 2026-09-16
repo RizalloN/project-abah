@@ -99,7 +99,7 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
 
         $this->assertNotNull($briguna);
         $this->assertSame(1, (int) $briguna->realisasi_deb);
-        $this->assertSame(310000000.0, (float) $briguna->realisasi_os);
+        $this->assertSame(300000000.0, (float) $briguna->realisasi_os);
         $this->assertSame(0, (int) $briguna->w1_realisasi_deb);
         $this->assertSame(0.0, (float) $briguna->w1_realisasi_os);
 
@@ -118,7 +118,7 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $metrics = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-05-31'))
             ->keyBy('produk');
 
-        foreach (['BRIGUNA-KONSUMER' => 220000000.0, 'KPR' => 300000000.0] as $product => $expected) {
+        foreach (['BRIGUNA-KONSUMER' => 215000000.0, 'KPR' => 300000000.0] as $product => $expected) {
             $this->assertArrayHasKey($product, $metrics);
             $this->assertSame(0, (int) $metrics[$product]['realisasi_baru_deb']);
             $this->assertSame(0.0, (float) $metrics[$product]['realisasi_baru_os']);
@@ -233,7 +233,7 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $this->assertSame(125000000.0, (float) $kpr->realisasi_os);
     }
 
-    public function test_consumer_realisasi_uses_first_previous_cif_row_like_excel_xlookup(): void
+    public function test_consumer_realisasi_subtracts_every_previous_account_in_the_same_cif(): void
     {
         $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
 
@@ -252,7 +252,7 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
 
         $this->assertNotNull($briguna);
         $this->assertSame(1, (int) $briguna->realisasi_deb);
-        $this->assertSame(310000000.0, (float) $briguna->realisasi_os);
+        $this->assertSame(225000000.0, (float) $briguna->realisasi_os);
     }
 
     public function test_consumer_realisasi_uses_previous_month_end_before_supplement_account_appears(): void
@@ -275,7 +275,7 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
 
         $this->assertNotNull($snapshot);
         $this->assertSame(1, (int) $snapshot->realisasi_deb);
-        $this->assertSame(210000000.0, (float) $snapshot->realisasi_os);
+        $this->assertSame(205000000.0, (float) $snapshot->realisasi_os);
     }
 
     public function test_briguna_origination_day_matches_kanwil_july_cif_balances(): void
@@ -344,6 +344,90 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $this->assertSame(610000000.0, $metric['realisasi_os']);
     }
 
+    public function test_briguna_nett_disbursement_uses_complete_previous_and_event_cif_exposure(): void
+    {
+        foreach ([
+            'OLD-25' => 25000000,
+            'OLD-50' => 50000000,
+            'OLD-100' => 100000000,
+        ] as $account => $outstanding) {
+            $this->insertDailyLoanRow(
+                $account,
+                'BRIGUNAKONSUMER',
+                $outstanding,
+                $outstanding,
+                'CIF-THREE-FACILITIES',
+                '2026-08-31',
+                tglRealisasi: '2025-01-10'
+            );
+        }
+        foreach (['OLD-50' => 50000000, 'OLD-100' => 100000000] as $account => $outstanding) {
+            $this->insertDailyLoanRow(
+                $account,
+                'BRIGUNAKONSUMER',
+                $outstanding,
+                $outstanding,
+                'CIF-THREE-FACILITIES',
+                '2026-09-12',
+                tglRealisasi: '2025-01-10'
+            );
+        }
+        $this->insertDailyLoanRow(
+            'NEW-50',
+            'BRIGUNAKONSUMER',
+            50000000,
+            50000000,
+            'CIF-THREE-FACILITIES',
+            '2026-09-12',
+            tglRealisasi: '2026-09-12'
+        );
+
+        $metric = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-09-12'))->first();
+
+        $this->assertSame(1, $metric['realisasi_deb']);
+        $this->assertSame(25000000.0, $metric['realisasi_os']);
+        $this->assertSame(0, $metric['realisasi_baru_deb']);
+        $this->assertSame(1, $metric['suplesi_deb']);
+        $this->assertSame(25000000.0, $metric['suplesi_os']);
+    }
+
+    public function test_consumer_booking_with_blank_pn_is_retained_in_an_explicit_unassigned_bucket(): void
+    {
+        $this->insertDailyLoanRow(
+            'PREVIOUS-DUMMY',
+            'BRIGUNAKONSUMER',
+            10000000,
+            9000000,
+            'CIF-PREVIOUS',
+            '2026-08-31',
+            tglRealisasi: '2025-01-10'
+        );
+        $this->insertDailyLoanRow(
+            'BLANK-PN-BOOKING',
+            'BRIGUNAKONSUMER',
+            100000000,
+            95000000,
+            'CIF-BLANK-PN',
+            '2026-09-12',
+            tglRealisasi: '2026-09-12'
+        );
+        DB::table('daily_loan_dinamis')
+            ->where('nomor_rekening1', 'BLANK-PN-BOOKING')
+            ->update([
+                'rm_normalized' => '',
+                'pn_pengelola1' => '',
+                'pn_pemrakarsa1' => '',
+            ]);
+
+        $metric = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-09-12'))
+            ->firstWhere('rm', ConsumerRmRealizationCalculator::UNASSIGNED_RM);
+
+        $this->assertNotNull($metric);
+        $this->assertSame(1, $metric['realisasi_deb']);
+        $this->assertSame(100000000.0, $metric['realisasi_os']);
+        $this->assertSame(1, $metric['realisasi_baru_deb']);
+    }
+
     public function test_consumer_realisasi_ignores_another_products_residual_when_selecting_replaced_account(): void
     {
         $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
@@ -363,7 +447,7 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
 
         $this->assertNotNull($snapshot);
         $this->assertSame(1, (int) $snapshot->realisasi_deb);
-        $this->assertSame(20000000.0, (float) $snapshot->realisasi_os);
+        $this->assertSame(19000000.0, (float) $snapshot->realisasi_os);
     }
 
     public function test_consumer_realisasi_does_not_turn_briguna_into_supplement_from_a_previous_kpr_cif(): void
@@ -418,7 +502,7 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
 
         $this->assertNotNull($snapshot);
         $this->assertSame(2, (int) $snapshot->realisasi_deb);
-        $this->assertSame(610000000.0, (float) $snapshot->realisasi_os);
+        $this->assertSame(595000000.0, (float) $snapshot->realisasi_os);
     }
 
     public function test_consumer_realisasi_counts_all_realized_accounts_and_never_turns_negative(): void
@@ -442,7 +526,7 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
 
         $this->assertNotNull($snapshot);
         $this->assertSame(2, (int) $snapshot->realisasi_deb);
-        $this->assertSame(20000000.0, (float) $snapshot->realisasi_os);
+        $this->assertSame(19000000.0, (float) $snapshot->realisasi_os);
     }
 
     public function test_consumer_realisasi_normalizes_leading_zero_account_after_lw321_source_switch(): void
@@ -534,7 +618,7 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
 
         $this->assertNotNull($snapshot);
         $this->assertSame(2, (int) $snapshot->realisasi_deb);
-        $this->assertSame(310000000.0, (float) $snapshot->realisasi_os);
+        $this->assertSame(305000000.0, (float) $snapshot->realisasi_os);
     }
 
     public function test_consumer_realisasi_remains_identical_after_raw_daily_positions_are_pruned(): void

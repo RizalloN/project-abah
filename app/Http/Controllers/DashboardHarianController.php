@@ -35,7 +35,7 @@ class DashboardHarianController extends Controller
         $selectedMtm = null;
         $baseUrl = rtrim($request->getSchemeAndHttpHost() . $request->getBaseUrl(), '/');
         $dataUrl = $baseUrl . '/dashboard-harian/data';
-        $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
+        $filters = $this->keragaanFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
         $filters['mtm_period'] = $filters['posisi_terakhir'] ?? [];
         $initialData = null;
 
@@ -219,7 +219,7 @@ class DashboardHarianController extends Controller
         $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
         $selectedMtm = $this->resolveOptionalMtmPeriod($request->input('mtm_period'), $selectedPeriod);
-        $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
+        $filters = $this->keragaanFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
         $filters['mtm_period'] = $filters['posisi_terakhir'] ?? [];
 
         return response()->json(
@@ -233,11 +233,15 @@ class DashboardHarianController extends Controller
         @set_time_limit(0);
 
         [$selectedKanca, $selectedUnit] = $this->resolveKeragaanFilters($request);
-        $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
+        $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'))
+            ?? $this->dashboardHarianSnapshotService->resolveEffectivePeriod(null);
+
+        if (!$selectedPeriod) {
+            return redirect()->back()->with('error', 'Periode Dashboard Harian belum tersedia.');
+        }
+
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
         $selectedMtm = $this->resolveOptionalMtmPeriod($request->input('mtm_period'), $selectedPeriod);
-
-        abort_if(!$selectedPeriod, 422, 'Periode Dashboard Harian belum tersedia.');
 
         $payload = $this->dashboardHarianSnapshotService->buildDashboardPayload(
             $selectedPeriod,
@@ -272,7 +276,7 @@ class DashboardHarianController extends Controller
     private function payload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit, ?string $selectedMtm = null): array
     {
         $cacheKey = 'dashboard_harian:payload:' . md5(json_encode([
-            'schema' => 'penc-pct-v25-conditional-kc-kcp-products',
+            'schema' => 'penc-pct-v27-retail-konsol-unit-scope',
             'version' => $this->reportCacheVersion(),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,
@@ -295,7 +299,7 @@ class DashboardHarianController extends Controller
     private function keragaanUkerPayload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit, string $dataType): array
     {
         $cacheKey = 'dashboard_harian:keragaan_uker:' . md5(json_encode([
-            'schema' => 'v5-retail-konsol-uker-scope',
+            'schema' => 'v6-retail-konsol-uker-scope',
             'version' => $this->reportCacheVersion(),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,
@@ -335,7 +339,7 @@ class DashboardHarianController extends Controller
 
     private function keragaanUkerFilterOptions(?string $selectedPeriod, array|string|null $selectedKanca, array|string|null $selectedUnit): array
     {
-        $filterUnit = $this->isKeragaanUkerKonsolUnit($selectedUnit) ? 'all' : $selectedUnit;
+        $filterUnit = $this->isAllUnitKonsolFilter($selectedUnit) ? 'all' : $selectedUnit;
         $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $filterUnit);
         $filters['kanca'] = collect($filters['kanca'] ?? [])
             ->reject(fn (array $option): bool => (string) ($option['value'] ?? '') === 'all')
@@ -361,7 +365,37 @@ class DashboardHarianController extends Controller
         return $filters;
     }
 
-    private function isKeragaanUkerKonsolUnit(array|string|null $selectedUnit): bool
+    private function keragaanFilterOptions(?string $selectedPeriod, array|string|null $selectedKanca, array|string|null $selectedUnit): array
+    {
+        $filterUnit = $this->isAllUnitKonsolFilter($selectedUnit) ? 'all' : $selectedUnit;
+        $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $filterUnit);
+
+        if ($this->isArea6KancaScope($selectedKanca)) {
+            return $filters;
+        }
+
+        $detailUnits = collect($filters['unit_kerja'] ?? [])
+            ->reject(fn (array $option): bool => in_array((string) ($option['value'] ?? ''), [
+                'all',
+                DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE,
+            ], true))
+            ->values();
+
+        $filters['unit_kerja'] = collect([
+            [
+                'value' => 'all',
+                'label' => DashboardHarianSnapshotService::ALL_UNIT_RETAIL_SPLIT_LABEL,
+            ],
+            [
+                'value' => DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE,
+                'label' => DashboardHarianSnapshotService::ALL_UNIT_KONSOL_LABEL,
+            ],
+        ])->concat($detailUnits)->values()->all();
+
+        return $filters;
+    }
+
+    private function isAllUnitKonsolFilter(array|string|null $selectedUnit): bool
     {
         if (is_array($selectedUnit)) {
             return count($selectedUnit) === 1

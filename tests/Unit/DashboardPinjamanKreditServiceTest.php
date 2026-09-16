@@ -425,17 +425,25 @@ class DashboardPinjamanKreditServiceTest extends TestCase
         $this->assertEqualsWithDelta(100_000_000, $total['selected'], 0.01);
     }
 
-    public function test_selected_kanca_keeps_mikro_at_full_branch_summary_scope(): void
+    public function test_selected_kanca_breaks_mikro_into_units_without_counting_parent_twice(): void
     {
         $summary = $this->microSnapshotRow('2026-05-15', 'KC Madiun');
         $unit = $this->microSnapshotRow('2026-05-15', 'KC Madiun', 'unit-balerejo', 'UNIT Balerejo');
-        $unit['briguna_mikro_os'] = 1_000_000;
-        $unit['kupedes_os'] = 2_000_000;
-        $unit['kur_mikro_os'] = 3_000_000;
-        $unit['kur_kecil_os'] = 4_000_000;
-        $unit['kur_kpp_os'] = 5_000_000;
+        $unit['micro_os'] = 40_000_000;
+        $unit['briguna_mikro_os'] = 4_000_000;
+        $unit['kupedes_os'] = 8_000_000;
+        $unit['kur_mikro_os'] = 12_000_000;
+        $unit['kur_kecil_os'] = 10_000_000;
+        $unit['kur_kpp_os'] = 6_000_000;
+        $otherUnit = $this->microSnapshotRow('2026-05-15', 'KC Madiun', 'unit-bendo', 'UNIT Bendo');
+        $otherUnit['micro_os'] = 60_000_000;
+        $otherUnit['briguna_mikro_os'] = 6_000_000;
+        $otherUnit['kupedes_os'] = 12_000_000;
+        $otherUnit['kur_mikro_os'] = 18_000_000;
+        $otherUnit['kur_kecil_os'] = 15_000_000;
+        $otherUnit['kur_kpp_os'] = 9_000_000;
 
-        DB::table('dashboard_harian_snapshots')->insert([$summary, $unit]);
+        DB::table('dashboard_harian_snapshots')->insert([$summary, $unit, $otherUnit]);
 
         $payload = app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData('2026-05-15', 'Mikro', 'KC Madiun');
         $osRows = collect($payload['os']);
@@ -443,9 +451,9 @@ class DashboardPinjamanKreditServiceTest extends TestCase
         $micro = $osRows->first(fn (array $row): bool => ($row['category'] ?? '') === 'Micro');
         $total = $osRows->firstWhere('is_total', true);
 
-        $this->assertSame(['KC Madiun'], $branches);
-        $this->assertTrue($osRows->where('is_total', null)->every(fn (array $row): bool => ($row['scope_level'] ?? null) === 'kanca'));
-        $this->assertEqualsWithDelta(100_000_000, $micro['selected'], 0.01);
+        $this->assertSame(['UNIT Balerejo', 'UNIT Bendo'], $branches);
+        $this->assertTrue($osRows->where('is_total', null)->every(fn (array $row): bool => ($row['scope_level'] ?? null) === 'unit'));
+        $this->assertEqualsWithDelta(40_000_000, $micro['selected'], 0.01);
         $this->assertEqualsWithDelta(100_000_000, $total['selected'], 0.01);
     }
 

@@ -176,6 +176,45 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $this->assertSame(['Ritel', 'Mikro', 'Wholesale'], $service->fetchCategories());
     }
 
+    public function test_dashboard_dana_date_picker_resolves_to_previous_available_snapshot(): void
+    {
+        $service = app(DashboardDanaService::class);
+        $periods = collect(['2026-05-19', '2026-05-17']);
+        $source = file_get_contents(resource_path('views/report/dashboard-dana.blade.php'));
+
+        $this->assertStringContainsString('type="date" id="filterPeriode"', $source);
+        $this->assertStringNotContainsString('data-dana-dropdown="periode"', $source);
+        $this->actingAs(User::factory()->make(['name' => 'Audit UI', 'pn' => 'audit-ui', 'role' => 'admin']));
+        $html = view('report.dashboard-dana', [
+            'periods' => $periods,
+            'categories' => ['Ritel', 'Mikro', 'Wholesale'],
+            'branches' => ['area6' => 'AREA 6'],
+            'rkaPeriods' => collect(['2026-05']),
+            'selectedPeriod' => '2026-05-19',
+            'selectedCategory' => 'all',
+            'selectedBranch' => 'area6',
+            'selectedRka' => '2026-05',
+        ])->render();
+        $this->assertStringContainsString('type="date" id="filterPeriode"', $html);
+        $this->assertSame('2026-05-19', $service->resolveEffectivePeriod(null, $periods));
+        $this->assertSame('2026-05-17', $service->resolveEffectivePeriod('2026-05-18', $periods));
+        $this->assertNull($service->resolveEffectivePeriod('2026-05-01', $periods));
+        $this->assertNull($service->resolveEffectivePeriod('2026-02-31', $periods));
+    }
+
+    public function test_dashboard_dana_uses_a_square_accessible_data_grid_presentation(): void
+    {
+        $source = file_get_contents(resource_path('views/report/dashboard-dana.blade.php'));
+
+        $this->assertStringContainsString('dana-dashboard dana-dashboard--grid', $source);
+        $this->assertStringContainsString('.dana-dashboard--grid .dana-card,', $source);
+        $this->assertStringContainsString('border-radius: 0 !important;', $source);
+        $this->assertStringContainsString('dana-table-toolbar', $source);
+        $this->assertStringContainsString('font-variant-numeric: tabular-nums;', $source);
+        $this->assertStringContainsString(':focus-visible', $source);
+        $this->assertStringContainsString('aria-hidden="true"', $source);
+    }
+
     public function test_dashboard_dana_month_end_uses_previous_month_end_as_mtd_reference(): void
     {
         DB::table('dashboard_harian_snapshots')->insert([

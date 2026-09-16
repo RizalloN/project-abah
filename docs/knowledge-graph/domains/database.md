@@ -7,8 +7,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 2 |
-| file | 152 |
-| function | 369 |
+| file | 153 |
+| function | 374 |
 | method | 174 |
 | unresolved_symbol | 3 |
 | route | 2 |
@@ -26,7 +26,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `DatabaseBackupService` | class | 26 | `app/Services/DatabaseBackupService.php:11` |
 | `up` | function | 24 | `database/migrations/2026_04_01_000001_initial_core_tables.php:10` |
 | `ProgressiveBackupCommand` | class | 23 | `app/Console/Commands/ProgressiveBackupCommand.php:12` |
-| `information_schema.statistics` | table | 22 | - |
+| `information_schema.statistics` | table | 23 | - |
 | `DailyDatabaseBackupServiceTest` | class | 18 | `tests/Unit/DailyDatabaseBackupServiceTest.php:16` |
 | `up` | function | 18 | `database/migrations/2026_04_01_000005_dashboard_snapshots_and_triggers.php:10` |
 | `CachedMySqlSchemaBuilder` | class | 17 | `app/Support/CachedMySqlSchemaBuilder.php:9` |
@@ -90,10 +90,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | database -> core (checks_table) | 91 |
-| database -> core (instantiates) | 72 |
+| database -> core (instantiates) | 74 |
 | database -> core (writes_table) | 61 |
 | database -> core (calls) | 54 |
-| database -> import (checks_table) | 34 |
+| database -> import (checks_table) | 35 |
 | database -> core (defines_table) | 33 |
 | database -> core (alters_table) | 20 |
 | database -> import (defines_table) | 16 |

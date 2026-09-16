@@ -504,6 +504,16 @@ final class LandingConsumerOperationalService
             return $empty;
         }
 
+        $snapshotColumns = ['periode', 'cabang', 'produk', 'rm', 'realisasi_os'];
+        if (Schema::hasColumn('performance_rm_snapshots', 'realisasi_deb')) {
+            $snapshotColumns[] = 'realisasi_deb';
+        }
+        foreach (['unit', 'branch_code'] as $scopeColumn) {
+            if (Schema::hasColumn('performance_rm_snapshots', $scopeColumn)) {
+                $snapshotColumns[] = $scopeColumn;
+            }
+        }
+
         $snapshotRows = DB::table('performance_rm_snapshots')
             ->whereIn('periode', $availablePeriods->all())
             ->where('segmen', 'CONSUMER')
@@ -511,18 +521,33 @@ final class LandingConsumerOperationalService
             ->whereIn('produk', array_column(self::PRODUCTS, 'snapshot'))
             ->whereNotNull('rm')
             ->whereRaw("TRIM(rm) <> ''")
-            ->select('periode', 'cabang', 'produk', 'rm', 'realisasi_os')
+            ->select($snapshotColumns)
             ->get();
         $snapshotRows = $this->applyLatestConsumerSnapshotAssignments(
             $this->applyBrihcPrimaryConsumerAssignments(
                 $this->applyKprRealizationAssignments($snapshotRows, $end), $end
             )
         );
-        $targetMaps = $this->productTargetMaps();
+        $targetProfiles = $this->productTargetProfiles();
+        $targetMaps = collect($targetProfiles)
+            ->map(fn (array $profiles): array => collect($profiles)
+                ->mapWithKeys(fn (array $profile, string $key): array => [$key => (float) ($profile['target_os'] ?? 0.0)])
+                ->all())
+            ->all();
+        $rmJobGrades = $this->consumerRmJobGrades();
+        $currentRealizationRows = $this->currentConsumerRealizationRows($end);
 
-        $buildBranchPayload = function (string $branchKey, string $branchLabel, Collection $branchRows) use (
+        $buildBranchPayload = function (
+            string $branchKey,
+            string $branchLabel,
+            Collection $branchRows,
+            Collection $branchRealizationRows
+        ) use (
             $availablePeriods,
-            $targetMaps
+            $end,
+            $rmJobGrades,
+            $targetMaps,
+            $targetProfiles
         ): array {
             $products = [];
 
@@ -593,11 +618,102 @@ final class LandingConsumerOperationalService
                 })->values();
                 $latest = (array) ($monthlyRows->last() ?? []);
 
+                $currentSnapshotRows = $productRows->filter(
+                    fn ($row): bool => Carbon::parse($row->periode)->toDateString() === $end
+                );
+                $currentProductRealizations = $branchRealizationRows->filter(
+                    fn ($row): bool => strtoupper(trim((string) ($row->produk ?? ''))) === $definition['snapshot']
+                );
+                $hasCalculatedRealization = $currentProductRealizations->isNotEmpty();
+                $rmKeys = $productRows
+                    ->concat($currentProductRealizations)
+                    ->map(fn ($row): string => $this->currentRmRowKey($row))
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                $currentRows = $rmKeys->map(function (string $targetKey) use (
+                    $branchLabel,
+                    $currentProductRealizations,
+                    $currentSnapshotRows,
+                    $hasCalculatedRealization,
+                    $productKey,
+                    $productRows,
+                    $rmJobGrades,
+                    $targetProfiles
+                ): array {
+                    $rmSnapshots = $productRows->filter(
+                        fn ($row): bool => $this->currentRmRowKey($row) === $targetKey
+                    );
+                    $rmCurrentSnapshots = $currentSnapshotRows->filter(
+                        fn ($row): bool => $this->currentRmRowKey($row) === $targetKey
+                    );
+                    $rmRealizations = $currentProductRealizations->filter(
+                        fn ($row): bool => $this->currentRmRowKey($row) === $targetKey
+                    );
+                    $identityRow = $rmRealizations->first() ?? $rmSnapshots->sortBy('periode')->last();
+                    $identifier = (string) ($identityRow->rm ?? $targetKey);
+                    $reference = ConsumerKanwilReference::findRm($identifier);
+                    $profile = (array) ($targetProfiles[$productKey][$targetKey] ?? []);
+                    $targetDeb = (int) ($profile['target_deb'] ?? $reference['target_deb'] ?? 0);
+                    $targetOs = (float) ($profile['target_os'] ?? $reference['target_os'] ?? 0.0);
+                    $profileGrade = strtoupper(trim((string) ($profile['jg'] ?? '')));
+                    $jobGrade = $profileGrade !== '' && $profileGrade !== '-'
+                        ? $profileGrade
+                        : (string) ($reference['jg'] ?? $rmJobGrades[$targetKey] ?? '-');
+
+                    $netDeb = $hasCalculatedRealization
+                        ? (int) $rmRealizations->sum('realisasi_deb')
+                        : (int) $rmCurrentSnapshots->sum('realisasi_deb');
+                    $netOs = $hasCalculatedRealization
+                        ? (float) $rmRealizations->sum('realisasi_os')
+                        : (float) $rmCurrentSnapshots->sum('realisasi_os');
+                    $newDeb = (int) $rmRealizations->sum('realisasi_baru_deb');
+                    $newOs = (float) $rmRealizations->sum('realisasi_baru_os');
+                    $quadrant = ConsumerKanwilReference::calculateQuadrant($netOs, $targetOs);
+
+                    return [
+                        'name' => $this->rmDisplayName($identifier),
+                        'branch' => $this->branchDisplayName((string) ($identityRow->cabang ?? $branchLabel)),
+                        'jg' => $jobGrade,
+                        'target_deb' => $targetDeb,
+                        'target_os' => $targetOs,
+                        'new_deb' => $newDeb,
+                        'new_os' => $newOs,
+                        'net_deb' => $netDeb,
+                        'net_os' => $netOs,
+                        'achievement_deb' => $targetDeb > 0 ? ($netDeb / $targetDeb) * 100 : null,
+                        'achievement_os' => $targetOs > 0.0 ? ($netOs / $targetOs) * 100 : null,
+                        'quadrant' => $quadrant,
+                    ];
+                })->sortBy(fn (array $row): string => sprintf(
+                    '%02d|%s',
+                    (int) ($row['quadrant'] ?? 9),
+                    $row['name']
+                ))->values();
+
+                $totals = [
+                    'target_deb' => (int) $currentRows->sum('target_deb'),
+                    'target_os' => (float) $currentRows->sum('target_os'),
+                    'new_deb' => (int) $currentRows->sum('new_deb'),
+                    'new_os' => (float) $currentRows->sum('new_os'),
+                    'net_deb' => (int) $currentRows->sum('net_deb'),
+                    'net_os' => (float) $currentRows->sum('net_os'),
+                ];
+                $totals['achievement_deb'] = $totals['target_deb'] > 0
+                    ? ($totals['net_deb'] / $totals['target_deb']) * 100
+                    : null;
+                $totals['achievement_os'] = $totals['target_os'] > 0.0
+                    ? ($totals['net_os'] / $totals['target_os']) * 100
+                    : null;
+
                 $products[$productKey] = [
                     'key' => $productKey,
                     'label' => $definition['label'],
                     'available' => $monthlyRows->contains(fn (array $row): bool => $row['source_total'] > 0),
                     'rows' => $monthlyRows->all(),
+                    'current_rows' => $currentRows->all(),
+                    'totals' => $totals,
                     'coverage' => [
                         'classified' => (int) ($latest['total'] ?? 0),
                         'source_total' => (int) ($latest['source_total'] ?? 0),
@@ -616,6 +732,7 @@ final class LandingConsumerOperationalService
         };
 
         $branchPayloads = $branches->map(function (string $branchLabel, string $branchKey) use (
+            $currentRealizationRows,
             $snapshotRows,
             $buildBranchPayload
         ): array {
@@ -623,12 +740,16 @@ final class LandingConsumerOperationalService
                 fn ($row): bool => strtoupper(trim((string) $row->cabang)) === $branchLabel
             );
 
-            return $buildBranchPayload($branchKey, $branchLabel, $branchRows);
+            $branchRealizationRows = $currentRealizationRows->filter(
+                fn ($row): bool => strtoupper(trim((string) ($row->cabang ?? ''))) === $branchLabel
+            );
+
+            return $buildBranchPayload($branchKey, $branchLabel, $branchRows, $branchRealizationRows);
         })->values();
 
         if ($scopeKey === '') {
             $branchPayloads->prepend(
-                $buildBranchPayload(UserBranchScope::AREA_SCOPE, 'AREA 6', $snapshotRows)
+                $buildBranchPayload(UserBranchScope::AREA_SCOPE, 'AREA 6', $snapshotRows, $currentRealizationRows)
             );
         }
 
@@ -738,7 +859,8 @@ final class LandingConsumerOperationalService
     public function applyLatestConsumerSnapshotAssignments(Collection $snapshotRows): Collection
     {
         $assignmentByRm = $snapshotRows
-            ->filter(fn (object $row): bool => $this->rmTargetKey((string) ($row->rm ?? '')) !== '')
+            ->filter(fn (object $row): bool => $this->rmTargetKey((string) ($row->rm ?? '')) !== ''
+                && strtoupper(trim((string) ($row->rm ?? ''))) !== ConsumerRmRealizationCalculator::UNASSIGNED_RM)
             ->groupBy(fn (object $row): string => strtoupper(trim((string) ($row->produk ?? '')))
                 .'|'.$this->rmTargetKey((string) ($row->rm ?? '')))
             ->map(function (Collection $rows): object {
@@ -758,7 +880,8 @@ final class LandingConsumerOperationalService
 
         return $snapshotRows->map(function (object $row) use ($assignmentByRm): object {
             $identity = $this->rmTargetKey((string) ($row->rm ?? ''));
-            if ($identity === '') {
+            if ($identity === ''
+                || strtoupper(trim((string) ($row->rm ?? ''))) === ConsumerRmRealizationCalculator::UNASSIGNED_RM) {
                 return $row;
             }
 
@@ -791,8 +914,12 @@ final class LandingConsumerOperationalService
         $calculator = app(ConsumerRmRealizationCalculator::class);
         $result = $snapshotRows->map(static fn (object $row): object => clone $row);
         $kprRows = $result->filter(static fn (object $row): bool => ($row->produk ?? '') === 'KPR');
+        $cacheVersion = ReportCacheVersion::get('consumer');
+        $formulaVersion = ConsumerRmRealizationCalculator::FORMULA_VERSION;
         foreach ($kprRows->groupBy('periode') as $monthPeriod => $rows) {
-            $metrics = $calculator->calculate(substr((string) $monthPeriod, 0, 10), $period, 'KPR');
+            $monthKey = substr((string) $monthPeriod, 0, 10);
+            $cacheKey = "consumer:kpr_realization_assignments:{$cacheVersion}:{$formulaVersion}:{$monthKey}:{$period}";
+            $metrics = Cache::remember($cacheKey, 600, static fn (): array => $calculator->calculate($monthKey, $period, 'KPR'));
             // Keep stored snapshots readable when nominatives are unavailable.
             if ($metrics === []) {
                 continue;
@@ -940,40 +1067,55 @@ final class LandingConsumerOperationalService
         return array_values(array_unique($keys));
     }
 
-    /** @return array<string, array<string, float>> */
-    private function productTargetMaps(): array
+    /** @return array<string, array<string, array{target_deb:int,target_os:float,jg:string}>> */
+    private function productTargetProfiles(): array
     {
-        $maps = [
-            'briguna' => self::BRIGUNA_TARGET_FALLBACK,
+        $profiles = [
+            'briguna' => collect(self::BRIGUNA_TARGET_FALLBACK)
+                ->map(fn (float $target, string $key): array => [
+                    'target_deb' => (int) (ConsumerKanwilReference::findRm($key)['target_deb'] ?? 0),
+                    'target_os' => $target,
+                    'jg' => (string) (ConsumerKanwilReference::findRm($key)['jg'] ?? '-'),
+                ])->all(),
             'kpr' => [],
         ];
         if (! Schema::hasTable('performance_targets')) {
-            return $maps;
+            return $profiles;
         }
         foreach (['category', 'rm_name', 'target_os'] as $column) {
             if (! Schema::hasColumn('performance_targets', $column)) {
-                return $maps;
+                return $profiles;
             }
         }
 
         $categoryToProduct = collect(self::PRODUCTS)
             ->mapWithKeys(fn (array $definition, string $key): array => [$definition['target'] => $key]);
+        $targetColumns = ['category', 'rm_name', 'target_os'];
+        if (Schema::hasColumn('performance_targets', 'target_deb')) {
+            $targetColumns[] = 'target_deb';
+        }
         DB::table('performance_targets')
             ->whereIn('category', $categoryToProduct->keys()->all())
-            ->select('category', 'rm_name', 'target_os')
+            ->select($targetColumns)
             ->get()
             ->groupBy(fn ($row): string => strtoupper(trim((string) $row->category)))
-            ->each(function (Collection $categoryRows, string $category) use (&$maps, $categoryToProduct): void {
+            ->each(function (Collection $categoryRows, string $category) use (&$profiles, $categoryToProduct): void {
                 $productKey = $categoryToProduct->get($category);
                 if (! is_string($productKey)) {
                     return;
                 }
 
                 $categoryRows->groupBy(fn ($row): string => $this->rmTargetKey((string) $row->rm_name))
-                    ->each(function (Collection $rows, string $targetKey) use (&$maps, $productKey): void {
-                        $target = (float) $rows->sum('target_os');
-                        if ($targetKey !== '' && $target > 0.0) {
-                            $maps[$productKey][$targetKey] = $target;
+                    ->each(function (Collection $rows, string $targetKey) use (&$profiles, $productKey): void {
+                        $identity = (string) ($rows->first()->rm_name ?? $targetKey);
+                        $reference = ConsumerKanwilReference::findRm($identity);
+                        $targetOs = (float) $rows->sum('target_os');
+                        if ($targetKey !== '' && $targetOs > 0.0) {
+                            $profiles[$productKey][$targetKey] = [
+                                'target_deb' => (int) ($rows->sum('target_deb') ?: ($reference['target_deb'] ?? 0)),
+                                'target_os' => $targetOs,
+                                'jg' => (string) ($reference['jg'] ?? '-'),
+                            ];
                         }
                     });
             });
@@ -982,12 +1124,74 @@ final class LandingConsumerOperationalService
         // Briguna yang sudah diaudit, termasuk koreksi target Novan/NAVAN.
         $kanwilBrigunaTargets = [];
         foreach (ConsumerKanwilReference::ROSTER as $rm) {
-            $kanwilBrigunaTargets[$rm['name_key']] = (float) $rm['target_os'];
-            $kanwilBrigunaTargets['PN:'.ltrim($rm['pn'], '0')] = (float) $rm['target_os'];
+            $profile = [
+                'target_deb' => (int) $rm['target_deb'],
+                'target_os' => (float) $rm['target_os'],
+                'jg' => (string) $rm['jg'],
+            ];
+            $kanwilBrigunaTargets[$rm['name_key']] = $profile;
+            $kanwilBrigunaTargets['PN:'.ltrim($rm['pn'], '0')] = $profile;
         }
-        $maps['briguna'] = array_replace($maps['briguna'], self::BRIGUNA_TARGET_FALLBACK, $kanwilBrigunaTargets);
+        $profiles['briguna'] = array_replace($profiles['briguna'], $kanwilBrigunaTargets);
 
-        return $maps;
+        return $profiles;
+    }
+
+    /** @return Collection<int, object> */
+    private function currentConsumerRealizationRows(string $period): Collection
+    {
+        try {
+            $cacheVersion = ReportCacheVersion::get('consumer');
+            $formulaVersion = ConsumerRmRealizationCalculator::FORMULA_VERSION;
+            $cacheKey = "consumer:landing_current_realization:{$cacheVersion}:{$formulaVersion}:{$period}";
+            $metrics = Cache::remember($cacheKey, 600, static fn (): array => app(ConsumerRmRealizationCalculator::class)
+                ->calculate($period, $period));
+        } catch (Throwable) {
+            return collect();
+        }
+
+        if ($metrics === []) {
+            return collect();
+        }
+
+        $rows = collect(array_values($metrics))->map(static function (array $metric) use ($period): object {
+            return (object) [
+                ...$metric,
+                'periode' => $period,
+                'segmen' => 'CONSUMER',
+            ];
+        });
+
+        return $this->applyLatestConsumerSnapshotAssignments($rows);
+    }
+
+    /** @return array<string, string> */
+    private function consumerRmJobGrades(): array
+    {
+        if (! Schema::hasTable('brihc_pemasar') || ! Schema::hasColumn('brihc_pemasar', 'completename')) {
+            return [];
+        }
+
+        $gradeColumns = collect(['jg', 'jobgrade'])
+            ->filter(fn (string $column): bool => Schema::hasColumn('brihc_pemasar', $column))
+            ->values();
+        if ($gradeColumns->isEmpty()) {
+            return [];
+        }
+
+        return DB::table('brihc_pemasar')
+            ->whereNotNull('completename')
+            ->select(array_merge(['completename'], $gradeColumns->all()))
+            ->get()
+            ->mapWithKeys(function ($row) use ($gradeColumns): array {
+                $key = $this->rmTargetKey((string) $row->completename);
+                $grade = $gradeColumns
+                    ->map(fn (string $column): string => strtoupper(trim((string) ($row->{$column} ?? ''))))
+                    ->first(fn (string $value): bool => $value !== '');
+
+                return $key !== '' && is_string($grade) ? [$key => $grade] : [];
+            })
+            ->all();
     }
 
     /** @return array<int, array<int, string>> */
@@ -1132,6 +1336,22 @@ final class LandingConsumerOperationalService
         $name = trim(explode('-', $rm, 2)[1] ?? $rm);
 
         return preg_replace('/[^A-Z0-9]/', '', strtoupper($name)) ?? '';
+    }
+
+    private function currentRmRowKey(object $row): string
+    {
+        $rm = trim((string) ($row->rm ?? ''));
+        $identity = $this->rmTargetKey($rm);
+        if (strtoupper($rm) !== ConsumerRmRealizationCalculator::UNASSIGNED_RM) {
+            return $identity;
+        }
+
+        return implode('|', [
+            $identity,
+            strtoupper(trim((string) ($row->cabang ?? ''))),
+            strtoupper(trim((string) ($row->unit ?? ''))),
+            strtoupper(trim((string) ($row->branch_code ?? ''))),
+        ]);
     }
 
     private function rmDisplayName(string $rm): string

@@ -137,7 +137,7 @@ class DashboardPinjamanReportController extends Controller
     public function kreditIndex(Request $request)
     {
         $periods = $this->fetchKreditPeriods();
-        $selectedPeriod = $this->resolveKreditEffectivePeriod($request->input('periode'));
+        $selectedPeriod = $this->resolveKreditEffectivePeriod($request->input('periode'), $periods);
         $selectedCategory = $request->input('kategori', 'SME');
         $selectedKanca = $this->resolveKreditBranch($request->input('kanca'));
 
@@ -482,11 +482,15 @@ class DashboardPinjamanReportController extends Controller
         $this->releaseSessionLockIfNeeded();
 
         $availablePeriods = $this->fetchSixMonthArrearsPeriods();
-        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
+        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods)
+            ?? $availablePeriods->first();
+
+        if (!$selectedPeriod) {
+            return redirect()->back()->with('error', 'Periode realisasi 6 bulan belum tersedia.');
+        }
+
         $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
         $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
-
-        abort_if(!$selectedPeriod, 422, 'Periode wajib dipilih.');
 
         $months = (int) $request->input('range_months', 6);
         if (!in_array($months, [4, 6], true)) {
@@ -668,11 +672,15 @@ class DashboardPinjamanReportController extends Controller
         $this->releaseSessionLockIfNeeded();
 
         $availablePeriods = $this->fetchPeriods();
-        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
+        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods)
+            ?? $availablePeriods->first();
+
+        if (!$selectedPeriod) {
+            return redirect()->back()->with('error', 'Periode tunggakan kecil belum tersedia.');
+        }
+
         $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
         $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
-
-        abort_if(!$selectedPeriod, 422, 'Periode wajib dipilih.');
 
         $effectiveBranches = $branchSelection['effective_branches'];
         $effectiveUnits = $unitSelection['effective_units'];
@@ -746,14 +754,33 @@ class DashboardPinjamanReportController extends Controller
         return app(DashboardPinjamanChartPeriodikService::class);
     }
 
-    private function resolveKreditEffectivePeriod(?string $requestedPeriod): ?string
+    private function resolveKreditEffectivePeriod(?string $requestedPeriod, ?Collection $periods = null): ?string
     {
-        if ($requestedPeriod) {
-            return $requestedPeriod;
+        $availablePeriods = ($periods ?? $this->fetchKreditPeriods())
+            ->map(fn ($period): string => (string) $period)
+            ->filter()
+            ->unique()
+            ->sortDesc()
+            ->values();
+
+        if (!$requestedPeriod) {
+            return $availablePeriods->first() ?? null;
         }
 
-        $periods = $this->fetchKreditPeriods();
-        return $periods->first() ?? null;
+        $target = trim($requestedPeriod);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $target)) {
+            return null;
+        }
+
+        try {
+            if (Carbon::createFromFormat('Y-m-d', $target)->toDateString() !== $target) {
+                return null;
+            }
+        } catch (Throwable) {
+            return null;
+        }
+
+        return $availablePeriods->first(fn (string $period): bool => $period <= $target);
     }
 
     private function kreditCacheVersion(): int
@@ -1121,13 +1148,24 @@ class DashboardPinjamanReportController extends Controller
         DB::connection()->disableQueryLog();
         $this->releaseSessionLockIfNeeded();
 
-        $selectedPeriod = $this->resolveRecoveryReportPeriod($request->input('periode'));
+        $selectedPeriod = $this->resolveRecoveryReportPeriod($request->input('periode'))
+            ?? $this->fetchRecoveryReportPeriods()->first()
+            ?? $this->fetchPeriods()->first();
+
+        if (!$selectedPeriod) {
+            return redirect()->back()->with('error', 'Periode matrix pergeseran kolek belum tersedia.');
+        }
+
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
         $beforeBucket = trim((string) $request->input('before_bucket', ''));
         $afterBucket = trim((string) $request->input('after_bucket', ''));
 
-        abort_if(!$selectedPeriod || !in_array($beforeBucket, self::BEFORE_ROWS, true), 422, 'Periode dan bucket pivot wajib valid.');
-        abort_if($afterBucket !== '' && !in_array($afterBucket, self::QUALITY_BUCKETS, true), 422, 'Bucket tujuan pivot wajib valid.');
+        if (!in_array($beforeBucket, self::BEFORE_ROWS, true)) {
+            $beforeBucket = 'L';
+        }
+        if ($afterBucket !== '' && !in_array($afterBucket, self::QUALITY_BUCKETS, true)) {
+            $afterBucket = '';
+        }
 
         $filters = [
             'segmen' => $this->normalizeFilterValues($request->input('segmen_dashboard')),
@@ -1300,18 +1338,31 @@ class DashboardPinjamanReportController extends Controller
         DB::connection()->disableQueryLog();
         $this->releaseSessionLockIfNeeded();
 
-        $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
-        $selectedBranch = trim((string) (is_array($request->input('cabang1')) ? ($request->input('cabang1')[0] ?? '') : $request->input('cabang1', '')));
+        $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'))
+            ?? $this->fetchPeriods()->first();
+
+        if (!$selectedPeriod) {
+            return redirect()->back()->with('error', 'Periode data kolek tidak sesuai belum tersedia.');
+        }
+
+        $branchSelection = $this->resolveKolekMismatchBranchSelection($request->input('cabang1'));
+        $selectedBranches = $branchSelection['effective_branches'];
         $selectedUnit = trim((string) $request->input('unit1', ''));
 
-        abort_if(!$selectedPeriod || $selectedBranch === '', 422, 'Periode dan cabang wajib dipilih.');
+        if (empty($selectedBranches)) {
+            return redirect()->back()->with('error', 'Cabang belum dipilih atau tidak valid.');
+        }
 
-        $rows = $this->fetchKolekMismatchRows($selectedPeriod, $selectedBranch, $selectedUnit);
+        $branchToken = $branchSelection['is_area_all']
+            ? 'area-6-all'
+            : $this->sanitizeExportToken($branchSelection['label']);
+
+        $rows = $this->fetchKolekMismatchRows($selectedPeriod, $selectedBranches, $selectedUnit !== '' ? $selectedUnit : null);
         $exportColumns = $this->collectKolekExportColumns();
 
         Log::info('Dashboard pinjaman mismatch export generated.', [
             'selected_period' => $selectedPeriod,
-            'selected_branch' => $selectedBranch,
+            'selected_branch' => $branchSelection['label'],
             'selected_unit' => $selectedUnit !== '' ? $selectedUnit : 'ALL UKER',
             'mismatch_rows' => count($rows),
             'rule' => self::KOLEK_MISMATCH_RULE_LABEL,
@@ -1320,7 +1371,7 @@ class DashboardPinjamanReportController extends Controller
         $filename = sprintf(
             'kolek-tidak-sesuai_%s_%s_%s.xlsx',
             str_replace('-', '', $selectedPeriod),
-            $this->sanitizeExportToken($selectedBranch),
+            $branchToken,
             $selectedUnit !== '' ? $this->sanitizeExportToken($selectedUnit) : 'all-uker'
         );
 
@@ -4127,12 +4178,13 @@ class DashboardPinjamanReportController extends Controller
         ];
     }
 
-    private function fetchKolekMismatchRows(string $selectedPeriod, string $selectedBranch, ?string $selectedUnit = null): array
+    private function fetchKolekMismatchRows(string $selectedPeriod, array|string $selectedBranches, ?string $selectedUnit = null): array
     {
         $rows = [];
         $excluded = $this->dailyLoanOutputExcludedColumns(['created_at', 'updated_at']);
+        $branches = is_array($selectedBranches) ? $selectedBranches : [$selectedBranches];
 
-        foreach ($this->buildKolekMismatchBaseQuery($selectedPeriod, [$selectedBranch], $selectedUnit)->cursor() as $row) {
+        foreach ($this->buildKolekMismatchBaseQuery($selectedPeriod, $branches, $selectedUnit)->cursor() as $row) {
             $actualKolek = $this->normalizeKolekValue($row->kolek ?? null);
             $expectedKolek = $this->expectedKolekFromUmurTunggakan($row->umur_tunggakan ?? null);
 

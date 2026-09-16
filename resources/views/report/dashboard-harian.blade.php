@@ -512,6 +512,33 @@
         box-shadow: none;
     }
 
+    .daily-date-input {
+        width: 100%;
+        min-height: 40px;
+        border: 1px solid rgba(198, 214, 236, 0.95);
+        border-radius: 12px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        color: #334155;
+        font-size: 0.88rem;
+        font-weight: 600;
+        padding: 0.55rem 0.7rem 0.55rem 2.35rem;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94), 0 8px 18px -20px rgba(15, 23, 42, 0.18);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+        cursor: pointer;
+    }
+
+    .daily-date-input:hover {
+        border-color: rgba(0, 82, 156, 0.24);
+        background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+    }
+
+    .daily-date-input:focus {
+        outline: none;
+        border-color: var(--bri-blue-main);
+        box-shadow: 0 0 0 3px rgba(0, 82, 156, 0.14);
+        background: #ffffff;
+    }
+
     .daily-dropdown-toggle:disabled {
         cursor: not-allowed;
         color: #7b8da6;
@@ -904,6 +931,7 @@
     }
 
     .daily-dashboard .daily-dropdown-toggle,
+    .daily-dashboard .daily-date-input,
     .daily-dashboard .daily-apply-button {
         height: 30px !important;
         min-height: 30px !important;
@@ -1616,6 +1644,7 @@
         }
 
         .daily-filter-select,
+        .daily-date-input,
         .daily-dropdown-toggle,
         .daily-apply-button {
             min-height: 38px;
@@ -1812,6 +1841,7 @@
 
         .daily-filter-control,
         .daily-filter-select,
+        .daily-date-input,
         .daily-dropdown-toggle,
         .daily-apply-button {
             min-height: 34px;
@@ -2275,6 +2305,7 @@
 
         #daily-dashboard-root .daily-filter-control,
         #daily-dashboard-root .daily-filter-control-icon,
+        #daily-dashboard-root .daily-date-input,
         #daily-dashboard-root .daily-dropdown-toggle,
         #daily-dashboard-root .daily-apply-button {
             min-height: 32px !important;
@@ -2419,6 +2450,7 @@
 
         #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-control,
         #daily-dashboard-root .daily-filter-shell.is-open .daily-filter-action-button-wrap,
+        #daily-dashboard-root .daily-filter-shell.is-open .daily-date-input,
         #daily-dashboard-root .daily-filter-shell.is-open .daily-dropdown-toggle,
         #daily-dashboard-root .daily-filter-shell.is-open .daily-apply-button {
             height: 30px !important;
@@ -2521,14 +2553,7 @@
                             <label class="daily-filter-label" for="filter-posisi-terakhir">Posisi Terakhir</label>
                             <div class="daily-filter-control">
                                 <span class="daily-filter-control-icon"><i class="fas fa-calendar-day"></i></span>
-                                <div class="daily-dropdown" data-daily-dropdown="posisi">
-                                    <button type="button" class="daily-dropdown-toggle" data-daily-dropdown-toggle="posisi" aria-haspopup="listbox" aria-expanded="false">
-                                        <span class="daily-dropdown-toggle-text text-truncate">Belum ada data</span>
-                                        <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
-                                    </button>
-                                    <div class="daily-dropdown-menu" data-daily-dropdown-menu="posisi"></div>
-                                    <select id="filter-posisi-terakhir" class="form-control daily-filter-native"></select>
-                                </div>
+                                <input type="date" id="filter-posisi-terakhir" class="form-control daily-date-input" aria-label="Pilih tanggal posisi terakhir">
                             </div>
                         </div>
                     </div>
@@ -2796,11 +2821,6 @@
                 root: document.querySelector('[data-daily-dropdown="unit"]'),
                 toggle: document.querySelector('[data-daily-dropdown-toggle="unit"]'),
                 menu: document.querySelector('[data-daily-dropdown-menu="unit"]'),
-            },
-            posisi: {
-                root: document.querySelector('[data-daily-dropdown="posisi"]'),
-                toggle: document.querySelector('[data-daily-dropdown-toggle="posisi"]'),
-                menu: document.querySelector('[data-daily-dropdown-menu="posisi"]'),
             },
             rka: {
                 root: document.querySelector('[data-daily-dropdown="rka"]'),
@@ -3111,7 +3131,7 @@
         const updateFilterSummary = function () {
             const kancaText = document.querySelector('[data-daily-dropdown-toggle="kanca"] .daily-dropdown-toggle-text')?.innerText || 'Area 6';
             const unitText = document.querySelector('[data-daily-dropdown-toggle="unit"] .daily-dropdown-toggle-text')?.innerText || 'Semua Unit';
-            const posisiText = document.querySelector('[data-daily-dropdown-toggle="posisi"] .daily-dropdown-toggle-text')?.innerText || '';
+            const posisiText = selects.posisi_terakhir?.value ? formatDateShort(selects.posisi_terakhir.value) : '';
             const rkaText = document.querySelector('[data-daily-dropdown-toggle="rka"] .daily-dropdown-toggle-text')?.innerText || '';
 
             const summarySpan = document.getElementById('filter-summary-badge');
@@ -3234,9 +3254,13 @@
                 return allUnitOptions;
             }
 
-            return (filters.unit_kerja || []).filter(function (option) {
-                if ((option.value || 'all') === 'all') {
-                    return true;
+            const aggregateOptions = [
+                { value: 'all', label: 'Semua Unit Kerja (Ritel dipecah menjadi KC dan KCP)' },
+                { value: 'all-konsol', label: 'Semua Unit Kerja (Konsol)' },
+            ];
+            const detailOptions = (filters.unit_kerja || []).filter(function (option) {
+                if (['all', 'all-konsol'].includes(String(option.value || 'all'))) {
+                    return false;
                 }
 
                 if (!Array.isArray(kancaValue) || !kancaValue.length) {
@@ -3245,6 +3269,8 @@
 
                 return kancaValue.includes(String(option.kanca_value || ''));
             });
+
+            return aggregateOptions.concat(detailOptions);
         };
 
         const syncUnitSelect = function (filters, preferredUnit) {
@@ -3288,25 +3314,19 @@
         updateDropdownToggleText('unit', area6Scope ? 'Tidak tersedia untuk Area 6' : (selectedOption ? (selectedOption.label || selectedOption.value || 'Semua Unit Kerja') : 'Semua Unit Kerja'));
     };
 
-    const syncPosisiSelect = function (options, selectedValue) {
-        const dropdown = dropdowns.posisi;
-        if (!dropdown || !dropdown.menu || !selects.posisi_terakhir) return;
+    const syncPosisiDatePicker = function (options, selectedValue) {
+        if (!selects.posisi_terakhir) return;
 
-        const normalized = selectedValue || '';
-        setNativeSelectOptions(selects.posisi_terakhir, options, normalized, false);
+        const values = (options || []).map(function (option) {
+            return String(option.value || '').slice(0, 10);
+        }).filter(function (value) {
+            return /^\d{4}-\d{2}-\d{2}$/.test(value);
+        }).sort();
 
-        dropdown.menu.innerHTML = options.length
-            ? options.map(function (option) {
-                const value = String(option.value || '');
-                const active = value === String(normalized);
-                return '<button type="button" class="daily-dropdown-option ' + (active ? 'is-active' : '') + '" data-posisi-option="' + escapeHtml(value) + '">' +
-                    '<span class="daily-dropdown-label">' + escapeHtml(option.label || value) + '</span>' +
-                '</button>';
-            }).join('')
-            : '<div class="daily-dropdown-empty">Tidak ada data posisi.</div>';
-
-        const selectedOption = options.find(function (option) { return String(option.value || '') === String(normalized); });
-        updateDropdownToggleText('posisi', selectedOption ? (selectedOption.label || selectedOption.value) : 'Belum ada data');
+        selects.posisi_terakhir.min = values.length ? values[0] : '';
+        selects.posisi_terakhir.max = values.length ? values[values.length - 1] : '';
+        selects.posisi_terakhir.value = selectedValue || (values.length ? values[values.length - 1] : '');
+        updateFilterSummary();
     };
 
         const syncRkaSelect = function (options, selectedValue) {
@@ -3480,7 +3500,7 @@
         };
 
         const getUnitScopeMode = function () {
-            if (!selects.unit_kerja || !selects.unit_kerja.value || selects.unit_kerja.value === 'all') {
+            if (!selects.unit_kerja || !selects.unit_kerja.value || ['all', 'all-konsol'].includes(selects.unit_kerja.value)) {
                 return 'all';
             }
 
@@ -3588,7 +3608,7 @@
             let hiddenKeys = [];
 
             const ritelKeys = [
-                'simpanan_ritel', 'giro_ritel', 'deposito_ritel', 'tabungan_ritel',
+                'simpanan_ritel', 'giro_ritel', 'tabungan_ritel', 'deposito_ritel',
                 'sme_os', 'kecil_os', 'kecil_non_cashcoll_os', 'cashcoll_os', 'medium_os',
                 'consumer_os', 'briguna_konsumer_os', 'kpr_os', 'kkb_os',
                 'sme_sml', 'kecil_sml', 'kecil_non_cashcoll_sml', 'cashcoll_sml', 'medium_sml',
@@ -3599,7 +3619,7 @@
             ];
 
             let mikroKeys = [
-                'simpanan_mikro', 'giro_mikro', 'deposito_mikro', 'tabungan_mikro',
+                'simpanan_mikro', 'giro_mikro', 'tabungan_mikro', 'deposito_mikro',
                 'micro_os', 'briguna_mikro_os', 'kupedes_os', 'kur_mikro_os', 'kur_kecil_os', 'kur_kpp_os',
                 'micro_sml', 'briguna_mikro_sml', 'kupedes_sml', 'kur_mikro_sml', 'kur_kecil_sml', 'kur_kpp_sml',
                 'micro_npl', 'briguna_mikro_npl', 'kupedes_npl', 'kur_mikro_npl', 'kur_kecil_npl', 'kur_kpp_npl',
@@ -3618,7 +3638,7 @@
             ];
 
             const wholesaleKeys = [
-                'simpanan_wholesale', 'giro_wholesale', 'deposito_wholesale', 'tabungan_wholesale', 'casa_wholesale'
+                'simpanan_wholesale', 'giro_wholesale', 'tabungan_wholesale', 'deposito_wholesale', 'casa_wholesale'
             ];
 
             if (scopeMode === 'unit') {
@@ -3647,9 +3667,9 @@
                     }
 
                     const smpanMetricName = metricName;
-                    rowsByKey.simpanan_ritel[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_ritel', 'deposito_ritel', 'tabungan_ritel'], group, smpanMetricName);
-                    rowsByKey.simpanan_mikro[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_mikro', 'deposito_mikro', 'tabungan_mikro'], group, smpanMetricName);
-                    rowsByKey.simpanan_wholesale[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_wholesale', 'deposito_wholesale', 'tabungan_wholesale'], group, smpanMetricName);
+                    rowsByKey.simpanan_ritel[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_ritel', 'tabungan_ritel', 'deposito_ritel'], group, smpanMetricName);
+                    rowsByKey.simpanan_mikro[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_mikro', 'tabungan_mikro', 'deposito_mikro'], group, smpanMetricName);
+                    rowsByKey.simpanan_wholesale[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_wholesale', 'tabungan_wholesale', 'deposito_wholesale'], group, smpanMetricName);
                     if (smpanMetricName !== 'rka' && smpanMetricName !== 'rka_dec') {
                         rowsByKey.total_simpanan[group][smpanMetricName] = sumMetric(rowsByKey, ['simpanan_ritel', 'simpanan_mikro', 'simpanan_wholesale'], group, smpanMetricName);
                     }
@@ -3882,7 +3902,7 @@
 
             renderKancaDropdown(filters.kanca || [], current.kanca);
             syncUnitSelect(filters, current.unit_kerja);
-            syncPosisiSelect(filters.posisi_terakhir || [], payload.selected_period || current.posisi_terakhir);
+            syncPosisiDatePicker(filters.posisi_terakhir || [], payload.selected_period || current.posisi_terakhir);
             syncRkaSelect(filters.posisi_rka || [], payload.selected_rka_period ? payload.selected_rka_period.slice(0, 7) : current.posisi_rka);
             syncMtmSelect(filters.mtm_period || filters.posisi_terakhir || [], current.mtm_period, periods.mtm ? periods.mtm.period : null);
 
@@ -4397,7 +4417,7 @@ if (window.jQuery && captureModal) {
 
         renderKancaDropdown(initialFilters.kanca || [], initialSelected.kanca || []);
         syncUnitSelect(initialFilters, initialSelected.unit_kerja || 'all');
-        syncPosisiSelect(initialFilters.posisi_terakhir || [], initialSelected.posisi_terakhir || '');
+        syncPosisiDatePicker(initialFilters.posisi_terakhir || [], initialSelected.posisi_terakhir || '');
         syncRkaSelect(initialFilters.posisi_rka || [], initialSelected.posisi_rka || '');
         syncMtmSelect(initialFilters.mtm_period || initialFilters.posisi_terakhir || [], initialSelected.mtm_period || '', null);
 
@@ -4441,6 +4461,9 @@ if (window.jQuery && captureModal) {
                 setFilterPanelOpen(false);
                 fetchData();
             });
+        }
+        if (selects.posisi_terakhir) {
+            selects.posisi_terakhir.addEventListener('change', updateFilterSummary);
         }
         updateFilterSummary();
 
@@ -4496,16 +4519,6 @@ if (window.jQuery && captureModal) {
             });
         }
 
-        if (dropdowns.posisi && dropdowns.posisi.toggle) {
-            dropdowns.posisi.toggle.addEventListener('click', function () {
-                if (dropdowns.posisi.root.classList.contains('is-open')) {
-                    closeDropdown('posisi');
-                    return;
-                }
-                openDropdown('posisi');
-            });
-        }
-
         if (dropdowns.rka && dropdowns.rka.toggle) {
             dropdowns.rka.toggle.addEventListener('click', function () {
                 if (dropdowns.rka.root.classList.contains('is-open')) {
@@ -4547,18 +4560,6 @@ if (window.jQuery && captureModal) {
                 selects.unit_kerja.value = value;
                 syncUnitSelect(latestFilters, value);
                 closeDropdown('unit');
-            });
-        }
-
-        if (dropdowns.posisi && dropdowns.posisi.menu) {
-            dropdowns.posisi.menu.addEventListener('click', function (event) {
-                const option = event.target.closest('[data-posisi-option]');
-                if (!option || !selects.posisi_terakhir) return;
-
-                const value = String(option.getAttribute('data-posisi-option') || '');
-                selects.posisi_terakhir.value = value;
-                syncPosisiSelect(latestFilters.posisi_terakhir || [], value);
-                closeDropdown('posisi');
             });
         }
 

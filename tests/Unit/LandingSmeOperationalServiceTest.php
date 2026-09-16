@@ -115,12 +115,14 @@ class LandingSmeOperationalServiceTest extends TestCase
             1, 100, 2, 200, 3, 300, 4, 400, 5, 500, 6, 600, 7, 700,
         ];
         $extension = $service->parseExtensionCsv($this->csv([
+            ['', 'PROGRES PERPANJANGAN SEPTEMBER'],
             $extensionHeader,
             $extensionGroups,
             $extensionData,
         ]));
 
         $this->assertCount(1, $extension['records']);
+        $this->assertSame('September', $extension['period_label']);
         $this->assertSame('KC PONOROGO', $extension['records'][0]['branch']);
         $this->assertSame(['deb' => 10, 'amount_juta' => 12500.0], $extension['records'][0]['total']);
         $this->assertSame(['filled' => 8, 'missing' => 2], $extension['records'][0]['attendance']);
@@ -150,11 +152,11 @@ class LandingSmeOperationalServiceTest extends TestCase
         $serviceSource = (string) file_get_contents(app_path('Support/LandingSmeOperationalService.php'));
 
         foreach ([
-            '1I59VzlVYAWVNNROz9jBfmO-5gZhudxB4',
-            '1g4txpl_JWx9jI8FdE1dYi6XFCOTakI13',
-            '1fwabFAKCYZ0b7pILnDcu8Jw1rzlihMEO',
-            '1FVP37sNihdTCtlazZ94bODXErZ8Cf-1N',
-            '1eczWPF2dXODVgj00jmrbwUVM8UC1i81n',
+            '1Iidgzfevd8WSjP7An4zQSRe6qVevQYBF',
+            '1Rgs0kU6iZxu3WY6J1wiZpc9JCxNlb5gg',
+            '1ZVzkRkBaBFdgkrQQPXO4JHTnSHCU39pi',
+            '1c7UCMOO2aHnusgJ9jOlLKN7SebQKdRIi',
+            '1e0c4lnq-A_E1Dh4LTn2NTx24BRNOQhoZ',
         ] as $spreadsheetId) {
             $this->assertStringContainsString($spreadsheetId, $serviceSource);
         }
@@ -198,7 +200,7 @@ class LandingSmeOperationalServiceTest extends TestCase
         $parsed = $service->parseRtlVendorMatrix([
             ['VENDOR PETROKIMIA'],
             ['', '', '', 'ISI DI SINI'],
-            ['NO', 'KODE KANCA', 'KANCA KONSOL', 'UKER (KCP/KC)', 'NAMA DISTRIBUTOR', 'ALAMAT', 'CIF', 'GIRO', '', 'Nama RM PIC', 'SUDAH TARIK SLIK', 'KONDISI SLIK', 'Sudah OTS', 'Pembiayaan (Minat/Tidak Berminat)', 'Plafond (Juta)'],
+            ['NO', 'KODE KANCA', 'KANCA KONSOLIDASI', 'UKER (KCP/KC)', 'NAMA DISTRIBUTOR', 'ALAMAT', 'CIF', 'GIRO', '', 'Nama RM PIC', 'SUDAH TARIK SLIK', 'KONDISI SLIK', 'Sudah OTS', 'Pembiayaan (Minat/Tidak Berminat)', 'Plafond (Juta)'],
             ['', '', '', '', '', '', '', 'Norek Giro', 'Saldo', '', '', '', '', '', ''],
             [1, '0045', 'KC Madiun', 'KC', 'DISTRIBUTOR MADIUN', 'Jl. Madiun', 'CIF01', '123456', '500', 'RM A', 'Sudah', 'Slik Hijau', 'Sudah OTS', 'Berminat', '1200'],
             [2, '0049', 'KC Magetan', 'KCP', 'DISTRIBUTOR MAGETAN', 'Jl. Magetan', '', '', '', 'RM B', 'Belum', '', 'Belum OTS', 'Tidak Berminat', ''],

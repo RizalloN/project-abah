@@ -1577,8 +1577,10 @@ class AlmafactsDashboardController extends Controller
                 'rka' => [
                     'current' => $rkaCurrent,
                     'current_gap' => $rkaCurrent === null ? null : $current - (float) $rkaCurrent,
+                    'current_achieve' => $this->calculateAchievement($current, $rkaCurrent !== null ? (float) $rkaCurrent : null),
                     'dec' => $rkaDec,
                     'dec_gap' => $rkaDec === null ? null : $current - (float) $rkaDec,
+                    'dec_achieve' => $this->calculateAchievement($current, $rkaDec !== null ? (float) $rkaDec : null),
                 ],
             ];
         }
@@ -1782,14 +1784,18 @@ class AlmafactsDashboardController extends Controller
         $rkaCurrentGap = $sumRka('current_gap');
         $rkaDec = $sumRka('dec');
         $rkaDecGap = $sumRka('dec_gap');
+        $rkaCurrentAchieve = $this->calculateAchievement($current, $rkaCurrent);
+        $rkaDecAchieve = $this->calculateAchievement($current, $rkaDec);
 
         return [
             'row_count' => count($rows),
             'current' => $current,
             'rka_current' => $rkaCurrent,
             'rka_current_gap' => $rkaCurrentGap,
+            'rka_current_achieve' => $rkaCurrentAchieve,
             'rka_dec' => $rkaDec,
             'rka_dec_gap' => $rkaDecGap,
+            'rka_dec_achieve' => $rkaDecAchieve,
             'values' => [
                 'yoy' => $sumValues('yoy'),
                 'ytd' => $sumValues('ytd'),
@@ -1806,10 +1812,21 @@ class AlmafactsDashboardController extends Controller
             'rka' => [
                 'current' => $rkaCurrent,
                 'current_gap' => $rkaCurrentGap,
+                'current_achieve' => $rkaCurrentAchieve,
                 'dec' => $rkaDec,
                 'dec_gap' => $rkaDecGap,
+                'dec_achieve' => $rkaDecAchieve,
             ],
         ];
+    }
+
+    private function calculateAchievement(float $current, ?float $target): ?float
+    {
+        if ($target === null || abs($target) < 0.00001) {
+            return null;
+        }
+
+        return ($current / $target) * 100;
     }
 
     private function financialComparisonPeriods(?string $selectedPeriod): array

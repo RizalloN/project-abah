@@ -37,4 +37,16 @@ class CrasReportManagementTest extends TestCase
             'chunk_size' => 50000,
         ], $hints['cras']);
     }
+
+    public function test_daily_loan_delete_prefers_the_surviving_covering_scope_index(): void
+    {
+        $reflection = new ReflectionClass(ImportIndexController::class);
+        $hints = $reflection->getConstant('DELETE_INDEX_HINTS');
+
+        $this->assertSame('idx_daily_loan_report_filter_covering', $hints['daily_loan_dinamis']['index']);
+        $this->assertSame('idx_daily_loan_report_filter_covering', $hints['daily_loan_dinamis']['indexes'][0]);
+        $this->assertSame('periode', $hints['daily_loan_dinamis']['period']);
+        $this->assertSame('cabang1', $hints['daily_loan_dinamis']['kanca']);
+        $this->assertSame('uniqueid_namareport', $hints['daily_loan_dinamis']['identity']);
+    }
 }

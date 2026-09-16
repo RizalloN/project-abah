@@ -463,6 +463,10 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             null
         );
         $dashboardRows = collect($dashboard['rows']);
+        $this->assertSame(
+            DashboardHarianSnapshotService::ALL_UNIT_RETAIL_SPLIT_LABEL,
+            data_get($dashboard, 'summary.unit_label')
+        );
         $rowsByParent = $dashboardRows
             ->filter(fn (array $row): bool => (bool) ($row['office_breakdown'] ?? false))
             ->groupBy('parent_key');
@@ -546,6 +550,23 @@ class DashboardHarianSnapshotServiceTest extends TestCase
 
         $this->assertFalse(collect($unitDashboard['rows'])->contains('office_breakdown', true));
         $this->assertFalse(collect($areaDashboard['rows'])->contains('office_breakdown', true));
+        $this->assertSame('Semua Unit Kerja', data_get($areaDashboard, 'summary.unit_label'));
+
+        $konsolDashboard = (new DashboardHarianSnapshotService())->buildDashboardPayload(
+            '2026-08-29',
+            null,
+            ['KC Ponorogo'],
+            DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE
+        );
+        $konsolRows = collect($konsolDashboard['rows']);
+        $this->assertSame(DashboardHarianSnapshotService::ALL_UNIT_KONSOL_LABEL, data_get($konsolDashboard, 'summary.unit_label'));
+        $this->assertFalse($konsolRows->contains('office_breakdown', true));
+        $this->assertNotNull($konsolRows->firstWhere('key', 'simpanan_ritel'));
+        $this->assertNotNull($konsolRows->firstWhere('key', 'giro_ritel'));
+        $this->assertSame(
+            (float) data_get($dashboardRows->firstWhere('key', 'simpanan_ritel'), 'values.current'),
+            (float) data_get($konsolRows->firstWhere('key', 'simpanan_ritel'), 'values.current')
+        );
     }
 
     public function test_slug_filter_conditions_match_all_scope_parts(): void
@@ -733,6 +754,64 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             'Semua Unit Kerja',
             DashboardHarianSnapshotService::ALL_UNIT_KONSOL_LABEL,
         ], array_slice(array_column($filters['unit_kerja'], 'label'), 0, 2));
+    }
+
+    public function test_keragaan_filter_options_offer_retail_split_and_konsol_scopes_for_selected_branch(): void
+    {
+        $this->createSourceMetadataTables();
+        DB::table('dashboard_harian_snapshots')->insert([
+            [
+                'uniqueid_dhs' => 'madiun-summary-main-filter',
+                'snapshot_period' => '2026-09-01',
+                'kanca_key' => 'kc-madiun',
+                'kanca_label' => 'KC Madiun',
+                'unit_key' => 'kc-madiun',
+                'unit_label' => 'KC Madiun',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'uniqueid_dhs' => 'madiun-unit-main-filter',
+                'snapshot_period' => '2026-09-01',
+                'kanca_key' => 'kc-madiun',
+                'kanca_label' => 'KC Madiun',
+                'unit_key' => 'unit-a-madiun',
+                'unit_label' => 'UNIT A Madiun',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'uniqueid_dhs' => 'ngawi-summary-main-filter',
+                'snapshot_period' => '2026-09-01',
+                'kanca_key' => 'kc-ngawi',
+                'kanca_label' => 'KC Ngawi',
+                'unit_key' => 'kc-ngawi',
+                'unit_label' => 'KC Ngawi',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+        $service = new DashboardHarianSnapshotService();
+        $controller = new DashboardHarianController($service);
+        $filterOptions = new \ReflectionMethod($controller, 'keragaanFilterOptions');
+        $filterOptions->setAccessible(true);
+
+        $filters = $filterOptions->invoke(
+            $controller,
+            '2026-09-01',
+            'KC Madiun',
+            DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE
+        );
+
+        $this->assertSame([
+            'all',
+            DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE,
+        ], array_slice(array_column($filters['unit_kerja'], 'value'), 0, 2));
+        $this->assertSame([
+            DashboardHarianSnapshotService::ALL_UNIT_RETAIL_SPLIT_LABEL,
+            DashboardHarianSnapshotService::ALL_UNIT_KONSOL_LABEL,
+        ], array_slice(array_column($filters['unit_kerja'], 'label'), 0, 2));
+        $this->assertSame('unit-a-madiun', data_get($filters, 'unit_kerja.2.value'));
     }
 
     public function test_filter_options_treat_all_kancas_as_area6_and_hide_units_until_scoped(): void
@@ -1644,6 +1723,83 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertContains('2026-05-03', $reflection->invoke($service));
     }
 
+    public function test_shared_periods_are_resolved_with_constant_source_query_count(): void
+    {
+        $this->createSourceMetadataTables();
+
+        $savingsRows = [];
+        $loanRows = [];
+        $dlyKapRows = [];
+        for ($day = 1; $day <= 30; $day++) {
+            $period = sprintf('2026-05-%02d', $day);
+            $savingsRows[] = [
+                'Month_Day_Year_of_Posisi' => $period,
+                'saldo' => 500,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+
+            if ($day <= 10) {
+                $loanRows[] = [
+                    'month_day_year_of_periode' => $period,
+                    'baki_debet' => 1000,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            } elseif ($day <= 20) {
+                $dlyKapRows[] = [
+                    'periode' => $period,
+                    'tl_rp' => 1000,
+                    'dpk_rp' => 100,
+                    'npl_rp' => 10,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+        }
+
+        DB::table('ssa_simpanan')->insert($savingsRows);
+        DB::table('ssa_pinjaman')->insert($loanRows);
+        DB::table('dly_kap_resegmentasi')->insert($dlyKapRows);
+        DB::table('l1133')->insert([
+            'periode' => '2026-05-15',
+            'kode_kanca' => '00045',
+            'nama_kanca' => 'KC Madiun',
+            'kode_uker' => '00045',
+            'nama_uker' => 'KC Madiun',
+            'jenis' => 'KUPEDES KOMERSIAL',
+            'outstanding' => 5000,
+            'dpk' => 50,
+            'npl' => 5,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        try {
+            $service = new DashboardHarianSnapshotService();
+            $method = new \ReflectionMethod($service, 'computeSharedPeriods');
+            $method->setAccessible(true);
+            $periods = $method->invoke($service);
+        } finally {
+            $queryLog = DB::getQueryLog();
+            DB::disableQueryLog();
+        }
+
+        $expected = [];
+        foreach (array_merge(range(20, 15), range(10, 1)) as $day) {
+            $expected[] = sprintf('2026-05-%02d', $day);
+        }
+
+        $this->assertSame($expected, $periods);
+        $this->assertLessThanOrEqual(6, count($queryLog));
+        $this->assertCount(4, array_filter(
+            $queryLog,
+            fn (array $query): bool => str_contains(strtolower($query['query']), 'select distinct')
+        ));
+    }
+
     public function test_hourly_dpk_cannot_replace_ssa_simpanan_for_landing_source_options(): void
     {
         $this->createSourceMetadataTables();
@@ -2523,6 +2679,64 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $candidates = $method->invoke($service, ['2026-07-04', '2026-07-03', '2026-07-02']);
 
         $this->assertContains('2026-07-03', $candidates);
+    }
+
+    public function test_simpanan_micro_subsegment_order_is_giro_tabungan_deposito_and_summation_is_accurate(): void
+    {
+        $service = new DashboardHarianSnapshotService();
+        $definitionsMethod = new \ReflectionClass($service);
+        $rowDefs = $definitionsMethod->getConstant('ROW_DEFINITIONS');
+
+        $rowKeys = array_column($rowDefs, 'key');
+
+        // Check A. Ritel order
+        $giroRitelIndex = array_search('giro_ritel', $rowKeys, true);
+        $tabunganRitelIndex = array_search('tabungan_ritel', $rowKeys, true);
+        $depositoRitelIndex = array_search('deposito_ritel', $rowKeys, true);
+        $this->assertTrue($giroRitelIndex < $tabunganRitelIndex, 'giro_ritel must appear before tabungan_ritel');
+        $this->assertTrue($tabunganRitelIndex < $depositoRitelIndex, 'tabungan_ritel must appear before deposito_ritel');
+
+        // Check B. Mikro order
+        $giroMikroIndex = array_search('giro_mikro', $rowKeys, true);
+        $tabunganMikroIndex = array_search('tabungan_mikro', $rowKeys, true);
+        $depositoMikroIndex = array_search('deposito_mikro', $rowKeys, true);
+        $this->assertTrue($giroMikroIndex < $tabunganMikroIndex, 'giro_mikro must appear before tabungan_mikro');
+        $this->assertTrue($tabunganMikroIndex < $depositoMikroIndex, 'tabungan_mikro must appear before deposito_mikro');
+
+        // Check C. Wholesale order
+        $giroWholesaleIndex = array_search('giro_wholesale', $rowKeys, true);
+        $tabunganWholesaleIndex = array_search('tabungan_wholesale', $rowKeys, true);
+        $depositoWholesaleIndex = array_search('deposito_wholesale', $rowKeys, true);
+        $this->assertTrue($giroWholesaleIndex < $tabunganWholesaleIndex, 'giro_wholesale must appear before tabungan_wholesale');
+        $this->assertTrue($tabunganWholesaleIndex < $depositoWholesaleIndex, 'tabungan_wholesale must appear before deposito_wholesale');
+
+        // Check keragaan uker metric definitions
+        $keragaanMetricMethod = new \ReflectionMethod($service, 'keragaanUkerMetricDefinitions');
+        $keragaanMetricMethod->setAccessible(true);
+        $simpananMetrics = $keragaanMetricMethod->invoke($service, 'simpanan');
+        $metricKeys = array_column($simpananMetrics, 'key');
+        $this->assertSame(['simpanan', 'giro', 'tabungan', 'deposito', 'casa'], $metricKeys);
+
+        // Check finalizeMetrics summation accuracy
+        $finalizeMethod = new \ReflectionMethod($service, 'finalizeMetrics');
+        $finalizeMethod->setAccessible(true);
+        $finalized = $finalizeMethod->invoke($service, [
+            'giro_mikro' => 150.0,
+            'tabungan_mikro' => 500.0,
+            'deposito_mikro' => 350.0,
+            'giro_ritel' => 100.0,
+            'tabungan_ritel' => 200.0,
+            'deposito_ritel' => 300.0,
+            'giro_wholesale' => 50.0,
+            'tabungan_wholesale' => 10.0,
+            'deposito_wholesale' => 40.0,
+        ]);
+
+        $this->assertSame(1000.0, $finalized['simpanan_mikro']);
+        $this->assertSame(650.0, $finalized['casa_mikro']);
+        $this->assertSame(600.0, $finalized['simpanan_ritel']);
+        $this->assertSame(100.0, $finalized['simpanan_wholesale']);
+        $this->assertSame(1700.0, $finalized['total_simpanan']);
     }
 
     private function createSourceMetadataTables(): void

@@ -1776,23 +1776,444 @@
   border: 1px solid #e2e8f0;
 }
 
-@media (max-width: 992px) {
-  .simpanan-hero__content {
-    flex-direction: column;
-    align-items: flex-start;
+/* Final visual cohesion with the Pinjaman landing, while retaining Funding identity. */
+.db-shell {
+  container: simpanan-landing / inline-size;
+  min-height: auto;
+  padding: 0 0 2rem;
+  background: transparent;
+}
+
+.simpanan-hero {
+  isolation: isolate;
+  padding: 1.35rem 1.65rem;
+  border-color: rgba(147, 194, 250, 0.36);
+  background: linear-gradient(118deg, rgba(0, 59, 117, 0.98) 0%, rgba(0, 82, 156, 0.97) 56%, rgba(48, 127, 226, 0.94) 100%);
+  box-shadow: 0 14px 32px -20px rgba(0, 59, 117, 0.7), var(--shadow-sm);
+}
+
+.simpanan-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.2;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.13) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(90deg, transparent 8%, #000 72%, transparent 100%);
+}
+
+.simpanan-hero__eyebrow,
+.simpanan-hero__badge,
+.hero-control-pill,
+.hero-status-pill {
+  box-shadow: none;
+}
+
+.simpanan-hero__title {
+  text-wrap: balance;
+}
+
+.simpanan-hero__subtitle {
+  max-width: 62rem;
+  text-wrap: pretty;
+}
+
+.hero-control-pill,
+.hero-status-pill {
+  min-height: 42px;
+}
+
+.hero-control-pill {
+  background: rgba(255, 255, 255, 0.13);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.hero-control-select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+}
+
+.area6-panel,
+.trend-position-card,
+.simpanan-sekat-card--monthly,
+.simpanan-digital-card,
+.simpanan-debitur-dormant-section,
+.simpanan-payroll-card,
+.simpanan-ecosystem-card,
+.simpanan-perusahaan-anak-card {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-sm);
+}
+
+.area6-panel:hover,
+.trend-position-card:hover,
+.simpanan-sekat-card--monthly:hover,
+.simpanan-digital-card:hover,
+.simpanan-debitur-dormant-section:hover,
+.simpanan-payroll-card:hover,
+.simpanan-ecosystem-card:hover,
+.simpanan-perusahaan-anak-card:hover {
+  border-color: var(--c-border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.area6-head,
+.asc-header,
+.ssc-head {
+  min-height: 64px;
+  padding: 0.85rem 1.2rem;
+  background: linear-gradient(90deg, #ffffff 0%, #f8fbff 100%);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.area6-head {
+  align-items: center;
+}
+
+.area6-head-left {
+  min-width: 0;
+}
+
+.area6-title,
+.asc-header-title,
+.ssc-title {
+  color: #10213a;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.asc-header-icon,
+.ssc-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #004685 0%, #307fe2 100%);
+  box-shadow: 0 5px 12px -6px rgba(0, 70, 133, 0.75);
+}
+
+.simpanan-sekat-stack {
+  gap: 1.1rem;
+  margin-top: 1.1rem;
+}
+
+.area6-scope-toggle {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(92px, 1fr));
+  width: auto;
+  max-width: 100%;
+  padding: 0.25rem;
+  overflow: visible;
+}
+
+.area6-scope-btn {
+  min-height: 40px;
+  justify-content: center;
+  padding: 0.45rem 0.72rem;
+}
+
+.area6-scope-btn.active {
+  background: linear-gradient(135deg, #004685 0%, #0754bd 100%);
+}
+
+.area6-card-grid,
+.area6-card-grid--three {
+  gap: 0.9rem;
+  padding: 1rem;
+}
+
+.area6-card-premium {
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.area6-card-premium:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.ap-header {
+  border-radius: calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px) 0 0;
+}
+
+.ap-metric-val,
+.ap-metric-pct-val,
+.ap-metric-gap-val,
+.ap-delta-val,
+.sdd-stat-val,
+.payroll-kpi-value,
+.eco-pillar-chip__val,
+.dc-table td,
+.payroll-branch-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+.dc-trigger-btn,
+.sdd-toggle-btn,
+.btn-payroll-detail,
+.modal-tab-btn {
+  min-height: 36px;
+}
+
+.ap-week-btn {
+  min-height: 36px;
+}
+
+.dc-trigger-btn.active,
+.sdd-toggle-btn.active,
+.modal-tab-btn.active {
+  background: linear-gradient(135deg, #004685 0%, #0754bd 100%);
+}
+
+.dc-table-wrapper,
+.sdd-table-wrap,
+.payroll-branch-table-container {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+
+.dc-table,
+.payroll-branch-table {
+  min-width: 760px;
+}
+
+.modal-payroll-nominatif .modal-body {
+  overflow: auto !important;
+}
+
+.modal-payroll-nominatif .modal-body table {
+  min-width: 920px;
+}
+
+.db-shell :where(.hero-control-pill, .area6-scope-btn, .ap-week-btn, .dc-trigger-btn, .sdd-toggle-btn, .btn-payroll-detail, .btn-open-nominatif, .btn-open-ecosystem-nominatif, .btn-open-pa-nominatif):focus-visible,
+.modal-payroll-nominatif :where(button, input, select):focus-visible {
+  outline: 3px solid rgba(48, 127, 226, 0.38);
+  outline-offset: 2px;
+}
+
+.simpanan-hero :where(.hero-control-pill, .hero-control-select):focus-visible {
+  outline-color: rgba(255, 255, 255, 0.82);
+}
+
+@container simpanan-landing (max-width: 1100px) {
+  .area6-card-grid--three {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
+
+  .area6-card-grid--three > .area6-card-premium:last-child {
+    grid-column: 1 / -1;
+    width: min(100%, calc(50% - 0.45rem));
+    justify-self: center;
+  }
+
+  .tpc-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tpc-body > .trend-col:last-child {
+    grid-column: 1 / -1;
+  }
+
   .simpanan-hero__visual {
-    width: 100%;
-    justify-content: center;
-    margin-top: 0.5rem;
+    flex-basis: 180px;
   }
+
+  .simpanan-hero__svg {
+    width: 180px;
+  }
+}
+
+@container simpanan-landing (max-width: 780px) {
+  .simpanan-hero__content,
   .area6-head {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .simpanan-hero__visual {
+    display: none;
+  }
+
+  .area6-scope-toggle {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .ap-week-toolbar,
+  .asc-header,
+  .ssc-head,
+  .sdd-panel__head,
+  .payroll-toolbar {
+    align-items: stretch;
+  }
+
+  .digital-channel-triggers {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .dc-trigger-btn {
+    min-width: 0;
+    padding-inline: 0.45rem;
+    overflow-wrap: anywhere;
+  }
+
+  .tpc-body {
+    grid-template-columns: 1fr;
+  }
+
+  .tpc-body > .trend-col:last-child {
+    grid-column: auto;
+  }
+
+  .scc-monthly-canvas-wrap {
+    height: 260px;
+    padding: 1rem 0.85rem 1.15rem;
+  }
+
+  .dc-table-container,
+  .sdd-grid,
+  .payroll-card-body,
+  .ecosystem-card-body,
+  .perusahaan-anak-card-body {
+    padding: 0.85rem;
+  }
+}
+
+@container simpanan-landing (max-width: 620px) {
+  .simpanan-hero {
+    padding: 1.1rem;
+    border-radius: var(--r-lg);
+  }
+
+  .simpanan-hero__controls {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .hero-control-pill,
+  .hero-status-pill {
+    width: 100%;
+  }
+
+  .hero-control-pill {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 0.45rem;
+    min-height: 58px;
+    overflow: hidden;
+  }
+
+  .hero-control-pill > i {
+    grid-column: 1;
+    grid-row: 1 / 3;
+  }
+
+  .hero-control-label,
+  .hero-control-select {
+    grid-column: 2;
+  }
+
+  .hero-control-label {
+    align-self: end;
+    line-height: 1.2;
+  }
+
+  .hero-control-select {
+    flex: 1 1 auto;
+    align-self: start;
+    max-width: 100%;
+    min-height: 36px;
+  }
+
+  .area6-card-grid--three {
+    grid-template-columns: 1fr !important;
+    padding: 0.75rem;
+  }
+
+  .area6-card-grid--three > .area6-card-premium:last-child {
+    grid-column: auto;
+    width: 100%;
+  }
+
+  .area6-head,
+  .asc-header,
+  .ssc-head {
+    padding: 0.8rem;
+  }
+
+  .asc-header-left,
+  .ssc-head-left {
     align-items: flex-start;
   }
-  .area6-scope-toggle {
+
+  .asc-header-title,
+  .ssc-title,
+  .area6-title {
+    font-size: 0.94rem;
+  }
+
+  .ap-week-toggle,
+  .digital-channel-triggers {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
-    overflow-x: auto;
+  }
+
+  .ap-week-btn {
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .ap-deltas,
+  .sdd-stat-strip,
+  .payroll-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .scc-monthly-legend {
+    gap: 0.35rem;
+  }
+
+  .scc-leg-chip {
+    padding: 0.28rem 0.5rem;
+    white-space: normal;
+  }
+}
+
+@container simpanan-landing (max-width: 360px) {
+  .simpanan-hero__eyebrow {
+    width: 100%;
+    border-radius: 12px;
+    line-height: 1.4;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .db-shell {
+    padding-bottom: 1.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-shell *,
+  .db-shell *::before,
+  .db-shell *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 </style>
@@ -1936,6 +2357,7 @@
           <button type="button"
                   class="area6-scope-btn {{ $scopeKey === $area6DefaultScope ? 'active' : '' }}"
                   data-area6-scope="{{ $scopeKey }}"
+                  aria-pressed="{{ $scopeKey === $area6DefaultScope ? 'true' : 'false' }}"
                   data-scope-title="Portofolio Simpanan {{ data_get($scopePayload, 'label', strtoupper($scopeKey)) }}"
                   data-scope-subtitle="{{ data_get($scopePayload, 'description', '') }}">
             <span><i class="fas {{ $scopeKey === 'area6' ? 'fa-globe-asia' : ($scopeKey === 'ritel' ? 'fa-store-alt' : ($scopeKey === 'micro' ? 'fa-store' : 'fa-building')) }}"></i></span>
@@ -2296,12 +2718,12 @@
 
         {{-- 6 TRIGGER BUTTONS --}}
         <div class="digital-channel-triggers" id="digitalChannelTriggers">
-          <button type="button" class="dc-trigger-btn active" data-channel="edc">EDC</button>
-          <button type="button" class="dc-trigger-btn" data-channel="qris">QRIS</button>
-          <button type="button" class="dc-trigger-btn" data-channel="casa_merchant">CASA MERCHANT</button>
-          <button type="button" class="dc-trigger-btn" data-channel="brimo">BRIMO</button>
-          <button type="button" class="dc-trigger-btn" data-channel="brilink">BRILINK</button>
-          <button type="button" class="dc-trigger-btn" data-channel="qlola">QLOLA</button>
+          <button type="button" class="dc-trigger-btn active" data-channel="edc" aria-pressed="true">EDC</button>
+          <button type="button" class="dc-trigger-btn" data-channel="qris" aria-pressed="false">QRIS</button>
+          <button type="button" class="dc-trigger-btn" data-channel="casa_merchant" aria-pressed="false">CASA MERCHANT</button>
+          <button type="button" class="dc-trigger-btn" data-channel="brimo" aria-pressed="false">BRIMO</button>
+          <button type="button" class="dc-trigger-btn" data-channel="brilink" aria-pressed="false">BRILINK</button>
+          <button type="button" class="dc-trigger-btn" data-channel="qlola" aria-pressed="false">QLOLA</button>
         </div>
       </div>
 
@@ -2424,8 +2846,8 @@
               <i class="fas fa-percentage text-primary mr-1"></i> RASIO CASA DEBITUR
             </div>
             <div class="sdd-toggle" id="casaViewToggle">
-              <button type="button" class="sdd-toggle-btn active" data-target="casa-table-cabang">Cabang</button>
-              <button type="button" class="sdd-toggle-btn" data-target="casa-table-segmen">Segmen</button>
+              <button type="button" class="sdd-toggle-btn active" data-target="casa-table-cabang" aria-pressed="true">Cabang</button>
+              <button type="button" class="sdd-toggle-btn" data-target="casa-table-segmen" aria-pressed="false">Segmen</button>
             </div>
           </div>
 
@@ -3158,8 +3580,12 @@ document.addEventListener('DOMContentLoaded', function() {
   scopeButtons.forEach(btn => {
     btn.addEventListener('click', function() {
       const targetScope = this.getAttribute('data-area6-scope');
-      scopeButtons.forEach(b => b.classList.remove('active'));
+      scopeButtons.forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-pressed', 'false');
+      });
       this.classList.add('active');
+      this.setAttribute('aria-pressed', 'true');
 
       if (scopeTitle && this.getAttribute('data-scope-title')) {
         scopeTitle.textContent = this.getAttribute('data-scope-title');
@@ -3286,8 +3712,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
   document.querySelectorAll('.dc-trigger-btn').forEach(btn => {
     btn.addEventListener('click', function() {
-      document.querySelectorAll('.dc-trigger-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.dc-trigger-btn').forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-pressed', 'false');
+      });
       this.classList.add('active');
+      this.setAttribute('aria-pressed', 'true');
       const chKey = this.getAttribute('data-channel');
       renderDigitalChannel(chKey);
     });
@@ -3448,8 +3878,12 @@ document.addEventListener('DOMContentLoaded', function() {
   const casaButtons = document.querySelectorAll('#casaViewToggle .sdd-toggle-btn');
   casaButtons.forEach(btn => {
     btn.addEventListener('click', function() {
-      casaButtons.forEach(b => b.classList.remove('active'));
+      casaButtons.forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-pressed', 'false');
+      });
       this.classList.add('active');
+      this.setAttribute('aria-pressed', 'true');
       const targetId = this.getAttribute('data-target');
       const tableCabang = document.getElementById('casa-table-cabang');
       const tableSegmen = document.getElementById('casa-table-segmen');

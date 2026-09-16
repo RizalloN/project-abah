@@ -71,8 +71,12 @@ class ImportIndexController extends Controller
             'chunk_size' => 50000,
         ],
         'daily_loan_dinamis' => [
-            'index' => 'idx_loan_periode_cab_unit',
-            'indexes' => ['idx_loan_periode_cab_unit', 'idx_dld_periode_cabang_unit'],
+            'index' => 'idx_daily_loan_report_filter_covering',
+            'indexes' => [
+                'idx_daily_loan_report_filter_covering',
+                'idx_loan_periode_cab_unit',
+                'idx_dld_periode_cabang_unit',
+            ],
             'period' => 'periode',
             'kanca' => 'cabang1',
             'identity' => 'uniqueid_namareport',

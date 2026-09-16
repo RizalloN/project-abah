@@ -13,7 +13,7 @@ use Throwable;
 
 final class LandingSmeOperationalService
 {
-    private const CACHE_KEY = 'landing:sme:external:v5';
+    private const CACHE_KEY = 'landing:sme:external:v6';
 
     private const ALLOWED_UNITS = [
         '45' => 'KC MADIUN',
@@ -28,28 +28,28 @@ final class LandingSmeOperationalService
 
     private const SOURCES = [
         'hot_prospects' => [
-            'spreadsheet_id' => '1eczWPF2dXODVgj00jmrbwUVM8UC1i81n',
+            'spreadsheet_id' => '1e0c4lnq-A_E1Dh4LTn2NTx24BRNOQhoZ',
             'sheet' => 'REKAP PROGRESS',
             'label' => 'Monitoring Hot Prospek',
             'csv_mode' => 'gviz',
         ],
         'rtl_pipeline' => [
-            'spreadsheet_id' => '1g4txpl_JWx9jI8FdE1dYi6XFCOTakI13',
+            'spreadsheet_id' => '1Rgs0kU6iZxu3WY6J1wiZpc9JCxNlb5gg',
             'sheet' => 'REKAP',
             'label' => 'RTL Pipeline',
         ],
         'extension' => [
-            'spreadsheet_id' => '1I59VzlVYAWVNNROz9jBfmO-5gZhudxB4',
+            'spreadsheet_id' => '1Iidgzfevd8WSjP7An4zQSRe6qVevQYBF',
             'sheet' => 'REKAP',
             'label' => 'Perpanjangan',
         ],
         'restructuring' => [
-            'spreadsheet_id' => '1FVP37sNihdTCtlazZ94bODXErZ8Cf-1N',
+            'spreadsheet_id' => '1c7UCMOO2aHnusgJ9jOlLKN7SebQKdRIi',
             'sheet' => 'PENGERJAAN PAKET RESTRUK',
             'label' => 'Pipeline Restruk',
         ],
         'kanwil_decisions' => [
-            'spreadsheet_id' => '1fwabFAKCYZ0b7pILnDcu8Jw1rzlihMEO',
+            'spreadsheet_id' => '1ZVzkRkBaBFdgkrQQPXO4JHTnSHCU39pi',
             'sheet' => 'Sheet1',
             'label' => 'Restrukturisasi Putusan RO Malang',
         ],
@@ -201,7 +201,9 @@ final class LandingSmeOperationalService
         foreach ($matrix as $index => $row) {
             $labels = array_map(fn ($value): string => $this->normaliseLabel((string) $value), $row);
             $hasBranchCode = in_array('KODE KANCA', $labels, true) || in_array('NO KANCA', $labels, true);
-            $hasBranch = in_array('KANCA KONSOL', $labels, true) || in_array('KANCA', $labels, true);
+            $hasBranch = in_array('KANCA KONSOL', $labels, true)
+                || in_array('KANCA KONSOLIDASI', $labels, true)
+                || in_array('KANCA', $labels, true);
             if ($hasBranchCode && $hasBranch) {
                 $headerIndex = $index;
                 break;
@@ -214,7 +216,7 @@ final class LandingSmeOperationalService
         $header = $matrix[$headerIndex];
         $subHeader = $matrix[$headerIndex + 1] ?? [];
         $branchCodeColumn = $this->findColumn($header, ['KODE KANCA', 'NO KANCA']);
-        $branchColumn = $this->findColumn($header, ['KANCA KONSOL', 'KANCA']);
+        $branchColumn = $this->findColumn($header, ['KANCA KONSOL', 'KANCA KONSOLIDASI', 'KANCA']);
         $subHeaderIsData = isset($subHeader[$branchCodeColumn])
             && preg_match('/\d/', (string) $subHeader[$branchCodeColumn]) === 1;
         $dataStartIndex = $headerIndex + ($subHeaderIsData ? 1 : 2);
@@ -578,6 +580,15 @@ final class LandingSmeOperationalService
         $headerIndex = $this->findHeaderRow($matrix, ['UKER', 'KODE UKER', 'KANCA INDUK']);
         $header = $matrix[$headerIndex] ?? [];
         $groupHeader = $matrix[$headerIndex + 1] ?? [];
+        $periodLabel = '';
+        foreach (array_slice($matrix, 0, $headerIndex + 1) as $headingRow) {
+            foreach ($headingRow as $heading) {
+                if (preg_match('/(?:PROGRES|PROGRESS)\s+PERPANJANGAN\s+(.+)/i', $heading, $matches) === 1) {
+                    $periodLabel = ucwords(strtolower(trim($matches[1])));
+                    break 2;
+                }
+            }
+        }
         $unitCodeColumn = $this->findColumn($header, ['KODE UKER']);
         $unitColumn = $this->findColumn($header, ['UKER']);
         $totalColumn = $this->findColumnStartingWith($header, 'TOTAL NOMINATIF');
@@ -620,7 +631,7 @@ final class LandingSmeOperationalService
             ];
         }
 
-        return ['records' => $records];
+        return ['records' => $records, 'period_label' => $periodLabel];
     }
 
     /** @return array<string, mixed> */
@@ -763,7 +774,7 @@ final class LandingSmeOperationalService
                 ->values();
         }
 
-        $tierKeys = ['lt_500', '500_1000', '1000_1600', 'gte_1600'];
+        $tierKeys = ['zero', 'lt_500', '500_1000', '1000_1600', 'gte_1600'];
         $totals = [];
         $totalRm = (int) $branches->sum(fn (array $item): int => (int) ($item['total_rm'] ?? 0));
         foreach ($tierKeys as $tierKey) {
@@ -1002,6 +1013,7 @@ final class LandingSmeOperationalService
         }
 
         return array_merge($this->moduleMeta($source, $records->isNotEmpty()), [
+            'period_label' => (string) ($source['period_label'] ?? ''),
             'total' => [
                 'deb' => $totalDeb,
                 'amount_juta' => (float) $records->sum(fn (array $row): float => (float) data_get($row, 'total.amount_juta', 0)),

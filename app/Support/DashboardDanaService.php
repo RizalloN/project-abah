@@ -61,9 +61,17 @@ class DashboardDanaService
         $dataMatrix = [];
         $branches = [];
         foreach ($records as $record) {
-            $dataMatrix[$record->nama_cabang][$record->Month_Day_Year_of_Posisi][$record->produk] = (float) $record->total_saldo;
-            if (!in_array($record->nama_cabang, $branches)) {
-                $branches[] = $record->nama_cabang;
+            $branch = $this->resolveAreaBranchLabel((string) $record->nama_cabang);
+            if ($branch === null) {
+                continue;
+            }
+
+            $period = (string) $record->Month_Day_Year_of_Posisi;
+            $product = (string) $record->produk;
+            $dataMatrix[$branch][$period][$product] = ($dataMatrix[$branch][$period][$product] ?? 0)
+                + (float) $record->total_saldo;
+            if (!in_array($branch, $branches, true)) {
+                $branches[] = $branch;
             }
         }
         sort($branches);
@@ -292,13 +300,17 @@ class DashboardDanaService
         ])) {
             $records = DB::table(self::TABLE)
                 ->whereIn('Month_Day_Year_of_Posisi', $periodValues)
-                ->whereRaw('UPPER(TRIM(nama_cabang)) = ?', [strtoupper($branch)])
+                ->whereRaw('UPPER(nama_cabang) LIKE ?', ['%' . strtoupper($branch) . '%'])
                 ->whereRaw('LOWER(TRIM(segmentasi)) = ?', ['ritel'])
-                ->select('Month_Day_Year_of_Posisi', 'nama_uker', 'produk', DB::raw('SUM(saldo) as total_saldo'))
-                ->groupBy('Month_Day_Year_of_Posisi', 'nama_uker', 'produk')
+                ->select('Month_Day_Year_of_Posisi', 'nama_cabang', 'nama_uker', 'produk', DB::raw('SUM(saldo) as total_saldo'))
+                ->groupBy('Month_Day_Year_of_Posisi', 'nama_cabang', 'nama_uker', 'produk')
                 ->get();
 
             foreach ($records as $record) {
+                if ($this->resolveAreaBranchLabel((string) $record->nama_cabang) !== $branch) {
+                    continue;
+                }
+
                 $unitLabel = $this->normalizeBranchName((string) $record->nama_uker);
                 if (!$this->isRetailUnitLabel($unitLabel)) {
                     continue;
@@ -631,12 +643,16 @@ class DashboardDanaService
         if ($periodValues !== [] && Schema::hasTable(self::TABLE)) {
             $records = DB::table(self::TABLE)
                 ->whereIn('Month_Day_Year_of_Posisi', $periodValues)
-                ->whereRaw('UPPER(TRIM(nama_cabang)) = ?', [strtoupper($branch)])
-                ->select('Month_Day_Year_of_Posisi', 'segmentasi', 'produk', DB::raw('SUM(saldo) as total_saldo'))
-                ->groupBy('Month_Day_Year_of_Posisi', 'segmentasi', 'produk')
+                ->whereRaw('UPPER(nama_cabang) LIKE ?', ['%' . strtoupper($branch) . '%'])
+                ->select('Month_Day_Year_of_Posisi', 'nama_cabang', 'segmentasi', 'produk', DB::raw('SUM(saldo) as total_saldo'))
+                ->groupBy('Month_Day_Year_of_Posisi', 'nama_cabang', 'segmentasi', 'produk')
                 ->get();
 
             foreach ($records as $record) {
+                if ($this->resolveAreaBranchLabel((string) $record->nama_cabang) !== $branch) {
+                    continue;
+                }
+
                 $segmentLabel = $this->segmentLabel((string) $record->segmentasi);
                 if ($segmentLabel === null) {
                     continue;
@@ -1056,6 +1072,41 @@ class DashboardDanaService
             ->distinct()
             ->orderByDesc('Month_Day_Year_of_Posisi')
             ->pluck('Month_Day_Year_of_Posisi');
+    }
+
+    public function resolveEffectivePeriod(?string $requestedPeriod, ?Collection $periods = null): ?string
+    {
+        $availablePeriods = ($periods ?? $this->fetchPeriods())
+            ->map(function ($period): ?string {
+                try {
+                    return Carbon::parse($period)->toDateString();
+                } catch (Throwable) {
+                    return null;
+                }
+            })
+            ->filter()
+            ->unique()
+            ->sortDesc()
+            ->values();
+
+        if (!$requestedPeriod) {
+            return $availablePeriods->first() ?? null;
+        }
+
+        $target = trim($requestedPeriod);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $target)) {
+            return null;
+        }
+
+        try {
+            if (Carbon::createFromFormat('Y-m-d', $target)->toDateString() !== $target) {
+                return null;
+            }
+        } catch (Throwable) {
+            return null;
+        }
+
+        return $availablePeriods->first(fn (string $period): bool => $period <= $target);
     }
 
     public function fetchBranches(): array

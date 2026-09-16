@@ -25,9 +25,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 870 |
-| Graph nodes | 10,011 |
-| Graph edges | 38,982 |
+| Source files | 879 |
+| Graph nodes | 10,076 |
+| Graph edges | 39,227 |
 | Domains | 19 |
 
 ## Read The Right Artifact
@@ -46,25 +46,25 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 | Node | Kind | Domain | Degree |
 | --- | --- | --- | ---: |
 | `ImportExcelController` | class | import | 374 |
-| `DashboardSimpananController` | class | dashboard-simpanan | 356 |
-| `daily_loan_dinamis` | table | dashboard-pinjaman | 276 |
-| `DashboardHarianSnapshotService` | class | dashboard-harian | 250 |
-| `DashboardPinjamanReportController` | class | dashboard-pinjaman | 191 |
+| `DashboardSimpananController` | class | dashboard-simpanan | 357 |
+| `daily_loan_dinamis` | table | dashboard-pinjaman | 283 |
+| `DashboardHarianSnapshotService` | class | dashboard-harian | 254 |
+| `DashboardPinjamanReportController` | class | dashboard-pinjaman | 192 |
 | `nama_report` | table | core | 181 |
-| `TestCase` | class | tests | 174 |
+| `TestCase` | class | tests | 177 |
 | `ImportIndexController` | class | import | 162 |
-| `import_jobs` | table | import | 152 |
+| `import_jobs` | table | import | 154 |
 | `ImportFileController` | class | import | 144 |
 | `ReportSnapshotBuilder` | class | jobs-snapshots | 142 |
 | `KinerjaRmReportController` | class | dashboard-pinjaman | 134 |
 | `lw325_ph` | table | dashboard-pinjaman | 121 |
-| `AlmafactsDashboardController` | class | almafacts | 98 |
+| `AlmafactsDashboardController` | class | almafacts | 101 |
 | `ImportProgressService` | class | import | 97 |
 | `ImportReportPhController` | class | import | 97 |
 | `ImportPerformancePisPerProdukController` | class | import | 95 |
 | `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 95 |
 | `ImportSimpananMultiPnCsvController` | class | import | 93 |
-| `dashboard_harian_snapshots` | table | dashboard-harian | 86 |
+| `dashboard_harian_snapshots` | table | dashboard-harian | 87 |
 
 ## Edge Semantics
 

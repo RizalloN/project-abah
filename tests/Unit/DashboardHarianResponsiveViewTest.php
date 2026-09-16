@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\DashboardHarianController;
+use App\Models\User;
 use App\Support\DashboardHarianSnapshotService;
 use Tests\TestCase;
 
@@ -78,6 +79,9 @@ class DashboardHarianResponsiveViewTest extends TestCase
         $this->assertStringContainsString("const nextValues = value === 'all' ? [] : [value];", $source);
         $this->assertStringContainsString('return normalized.length > 1', $source);
         $this->assertStringContainsString("closeDropdown('kanca');", $source);
+        $this->assertStringContainsString("{ value: 'all', label: 'Semua Unit Kerja (Ritel dipecah menjadi KC dan KCP)' }", $source);
+        $this->assertStringContainsString("{ value: 'all-konsol', label: 'Semua Unit Kerja (Konsol)' }", $source);
+        $this->assertStringContainsString("['all', 'all-konsol'].includes(selects.unit_kerja.value)", $source);
 
         $controller = new DashboardHarianController(new DashboardHarianSnapshotService());
         $normalize = new \ReflectionMethod($controller, 'normalizeSingleKancaFilter');
@@ -85,5 +89,25 @@ class DashboardHarianResponsiveViewTest extends TestCase
 
         $this->assertSame('KC Madiun', $normalize->invoke($controller, ['KC Madiun', 'KC Magetan']));
         $this->assertNull($normalize->invoke($controller, ['KC Madiun', 'KC Magetan', 'KC Ponorogo', 'KC Ngawi']));
+    }
+
+    public function test_ssa_position_filters_use_native_date_pickers(): void
+    {
+        $dashboard = file_get_contents(resource_path('views/report/dashboard-harian.blade.php'));
+        $uker = file_get_contents(resource_path('views/report/dashboard-harian-keragaan-uker.blade.php'));
+
+        $this->assertStringContainsString('type="date" id="filter-posisi-terakhir"', $dashboard);
+        $this->assertStringContainsString('syncPosisiDatePicker', $dashboard);
+        $this->assertStringNotContainsString('data-daily-dropdown="posisi"', $dashboard);
+        $this->assertStringContainsString('type="date" id="periodFilter"', $uker);
+        $this->assertStringContainsString('syncPeriodDatePicker', $uker);
+        $this->assertStringContainsString('payload?.selected?.posisi_terakhir || els.period.value', $uker);
+        $this->assertStringNotContainsString('<select id="periodFilter"', $uker);
+
+        $this->actingAs(User::factory()->make(['name' => 'Audit UI', 'pn' => 'audit-ui', 'role' => 'admin']));
+        $dashboardHtml = view('report.dashboard-harian', ['dashboardPage' => []])->render();
+        $ukerHtml = view('report.dashboard-harian-keragaan-uker', ['dashboardPage' => []])->render();
+        $this->assertStringContainsString('type="date" id="filter-posisi-terakhir"', $dashboardHtml);
+        $this->assertStringContainsString('type="date" id="periodFilter"', $ukerHtml);
     }
 }

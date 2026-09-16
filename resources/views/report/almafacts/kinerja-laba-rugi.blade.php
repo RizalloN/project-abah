@@ -36,6 +36,32 @@
 
         return (float) $value > 0 ? 'positive' : 'negative';
     };
+    $formatPercent = static function ($value, int $decimals = 2): string {
+        if ($value === null) {
+            return '-';
+        }
+
+        return number_format((float) $value, $decimals, ',', '.') . '%';
+    };
+    $achieveTone = static function ($achieve, $gap = null): string {
+        if ($achieve === null) {
+            return 'empty';
+        }
+
+        if ($gap !== null) {
+            if (abs((float) $gap) < 0.01) {
+                return 'zero';
+            }
+
+            return (float) $gap > 0 ? 'positive' : 'negative';
+        }
+
+        if (abs((float) $achieve - 100.0) < 0.01) {
+            return 'zero';
+        }
+
+        return (float) $achieve >= 100.0 ? 'positive' : 'negative';
+    };
 @endphp
 
 @section('content')
@@ -136,7 +162,7 @@
                         @endif
                         <th colspan="5">Posisi</th>
                         <th colspan="4">Delta Posisi</th>
-                        <th colspan="4">RKA</th>
+                        <th colspan="6">RKA</th>
                     </tr>
                     <tr>
                         <th>{{ $comparisonLabels['yoy'] }}</th>
@@ -150,8 +176,10 @@
                         <th>{{ $comparisonLabels['m1'] }}</th>
                         <th>RKA {{ $selectedRkaLabel }}</th>
                         <th>Delta {{ $selectedRkaLabel }}</th>
+                        <th>% Penc {{ $selectedRkaLabel }}</th>
                         <th>RKA {{ $rkaDecLabel }}</th>
                         <th>Delta {{ $rkaDecLabel }}</th>
+                        <th>% Penc {{ $rkaDecLabel }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -176,12 +204,14 @@
                             <td class="num delta {{ $tone($row['deltas']['m1']) }}">{{ $formatDeltaRp($row['deltas']['m1']) }}</td>
                             <td class="num">{{ $formatRp($row['rka']['current']) }}</td>
                             <td class="num delta {{ $tone($row['rka']['current_gap']) }}">{{ $formatDeltaRp($row['rka']['current_gap']) }}</td>
+                            <td class="num delta {{ $achieveTone($row['rka']['current_achieve'] ?? null, $row['rka']['current_gap'] ?? null) }}">{{ $formatPercent($row['rka']['current_achieve'] ?? null) }}</td>
                             <td class="num">{{ $formatRp($row['rka']['dec']) }}</td>
                             <td class="num delta {{ $tone($row['rka']['dec_gap']) }}">{{ $formatDeltaRp($row['rka']['dec_gap']) }}</td>
+                            <td class="num delta {{ $achieveTone($row['rka']['dec_achieve'] ?? null, $row['rka']['dec_gap'] ?? null) }}">{{ $formatPercent($row['rka']['dec_achieve'] ?? null) }}</td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="{{ $showUnitColumn ? 16 : 15 }}" class="alma-empty">
+                            <td colspan="{{ $showUnitColumn ? 18 : 17 }}" class="alma-empty">
                                 Data laba setelah pajak belum tersedia untuk filter ini.
                             </td>
                         </tr>
@@ -205,8 +235,10 @@
                             <td class="num delta {{ $tone($summary['deltas']['m1']) }}">{{ $formatDeltaRp($summary['deltas']['m1']) }}</td>
                             <td class="num">{{ $formatRp($summary['rka']['current']) }}</td>
                             <td class="num delta {{ $tone($summary['rka']['current_gap']) }}">{{ $formatDeltaRp($summary['rka']['current_gap']) }}</td>
+                            <td class="num delta {{ $achieveTone($summary['rka']['current_achieve'] ?? null, $summary['rka']['current_gap'] ?? null) }}">{{ $formatPercent($summary['rka']['current_achieve'] ?? null) }}</td>
                             <td class="num">{{ $formatRp($summary['rka']['dec']) }}</td>
                             <td class="num delta {{ $tone($summary['rka']['dec_gap']) }}">{{ $formatDeltaRp($summary['rka']['dec_gap']) }}</td>
+                            <td class="num delta {{ $achieveTone($summary['rka']['dec_achieve'] ?? null, $summary['rka']['dec_gap'] ?? null) }}">{{ $formatPercent($summary['rka']['dec_achieve'] ?? null) }}</td>
                         </tr>
                     @endif
                 </tbody>
@@ -576,7 +608,7 @@
 
     .alma-table {
         width: 100%;
-        min-width: 1360px;
+        min-width: 1540px;
         border-collapse: separate !important;
         border-spacing: 0 !important;
         margin: 0;
@@ -883,7 +915,7 @@
         }
 
         .alma-table {
-            min-width: 1260px;
+            min-width: 1420px;
         }
 
         .alma-table .branch {
@@ -944,7 +976,7 @@
         }
 
         .alma-table {
-            min-width: 1120px;
+            min-width: 1280px;
         }
     }
 
@@ -998,7 +1030,7 @@
         }
 
         .alma-table {
-            min-width: 980px;
+            min-width: 1140px;
         }
 
         .alma-table th,

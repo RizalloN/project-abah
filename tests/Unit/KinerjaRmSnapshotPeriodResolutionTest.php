@@ -207,6 +207,9 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
                 'segmen' => 'SMALL',
                 'produk' => 'SMALL',
                 'quadrant' => 1,
+                'restruk_os' => 100000000,
+                'sml_os' => 50000000,
+                'npl_os' => 50000000,
             ]),
             $this->snapshotRow('2026-08-22', 1000000000, 1, 500000000, [
                 'cabang' => 'KC MADIUN',
@@ -236,6 +239,9 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(2, $summary['branches'][0]['total_rm']);
         $this->assertSame(1, $summary['branches'][0]['quadrants'][1]['count']);
         $this->assertSame(1, $summary['branches'][0]['quadrants'][4]['count']);
+        $this->assertSame(1, $summary['branches'][0]['rms'][0]['realization_deb']);
+        $this->assertSame(500000000.0, $summary['branches'][0]['rms'][0]['realization_rp']);
+        $this->assertSame(20.0, $summary['branches'][0]['rms'][0]['lar_pct']);
         $this->assertSame('00876543', $summary['branches'][0]['rms'][1]['rm']);
     }
 
@@ -277,13 +283,14 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             ->landingSmallQuadrantSummary('2026-08-22');
 
         $this->assertSame(4, data_get($summary, 'realization_tiers.total_rm'));
-        $this->assertSame(3, data_get($summary, 'realization_tiers.totals.lt_500.rm_count'));
+        $this->assertSame(3, data_get($summary, 'realization_tiers.totals.zero.rm_count'));
+        $this->assertSame(0, data_get($summary, 'realization_tiers.totals.lt_500.rm_count'));
         $this->assertSame(1, data_get($summary, 'realization_tiers.totals.500_1000.rm_count'));
         $this->assertSame(0, data_get($summary, 'realization_tiers.totals.1000_1600.rm_count'));
         $this->assertSame(3, data_get($summary, 'unproductive.totals.month_1.count'));
         $this->assertSame(2, data_get($summary, 'unproductive.totals.month_3.count'));
         $this->assertSame(2, data_get($summary, 'unproductive.totals.month_6.count'));
-        $this->assertNotEmpty(data_get($summary, 'realization_tiers.totals.lt_500.rms'));
+        $this->assertCount(3, data_get($summary, 'realization_tiers.totals.zero.rms'));
     }
 
     public function test_landing_small_summary_uses_brihc_as_assignment_authority(): void
@@ -386,7 +393,8 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertFalse($rows->contains(fn (array $row): bool => $row['rm'] === 'RM ALIH FUNGSI'));
         $this->assertSame(3, $rows->firstWhere('rm', 'RM Belum Realisasi')['quadrant']);
         $this->assertSame(0.0, $rows->firstWhere('rm', 'RM Belum Realisasi')['realization_rp']);
-        $this->assertSame(1, data_get($summary, 'realization_tiers.totals.lt_500.rm_count'));
+        $this->assertSame(1, data_get($summary, 'realization_tiers.totals.zero.rm_count'));
+        $this->assertSame('RM Belum Realisasi', data_get($summary, 'realization_tiers.totals.zero.rms.0.rm'));
     }
 
     public function test_landing_small_uses_daily_loan_only_when_the_rm_is_absent_from_brihc(): void

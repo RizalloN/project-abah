@@ -2203,4 +2203,5 @@
         </style>
     @endif
 
+    @include('dashboard.partials.pn-mismatch', ['pnMismatch' => data_get($microPerformance, 'pn_mismatch', []), 'pnSegment' => 'micro'])
 </div>

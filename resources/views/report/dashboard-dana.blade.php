@@ -149,6 +149,11 @@
         width: 100%;
     }
 
+    .dana-date-wrap {
+        position: relative;
+        width: 100%;
+    }
+
     .dana-filter-icon {
         position: absolute;
         left: 1.25rem;
@@ -182,6 +187,32 @@
         border-color: var(--bri-blue);
         box-shadow: 0 4px 12px rgba(0, 114, 187, 0.08);
         transform: translateY(-1px);
+    }
+
+    .dana-date-input {
+        width: 100%;
+        height: 52px;
+        background: #ffffff;
+        border: 2px solid #eef2f6;
+        border-radius: 16px;
+        padding: 0 1rem 0 3.5rem;
+        color: #1e293b;
+        font-size: 0.9rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    .dana-date-input:hover {
+        border-color: var(--bri-blue);
+        box-shadow: 0 4px 12px rgba(0, 114, 187, 0.08);
+    }
+
+    .dana-date-input:focus {
+        border-color: var(--bri-blue);
+        box-shadow: 0 0 0 4px rgba(0, 114, 187, 0.1);
+        outline: none;
     }
 
     .dana-dropdown.is-open .dana-dropdown-toggle {
@@ -531,7 +562,8 @@
         padding: 1.25rem !important;
     }
 
-    .dana-dashboard .dana-dropdown-toggle {
+    .dana-dashboard .dana-dropdown-toggle,
+    .dana-dashboard .dana-date-input {
         border-radius: 8px !important;
         border: 1.5px solid #e2e8f0 !important;
         height: 42px !important;
@@ -541,7 +573,8 @@
         transition: all 0.2s ease !important;
     }
 
-    .dana-dashboard .dana-dropdown-toggle:hover {
+    .dana-dashboard .dana-dropdown-toggle:hover,
+    .dana-dashboard .dana-date-input:hover {
         border-color: var(--dana-accent) !important;
         background: #fafbfc !important;
     }
@@ -821,14 +854,423 @@
         }
     }
 
+    /* Square-grid redesign: a compact, high-contrast reporting surface. */
+    .dana-dashboard--grid {
+        --dana-grid-ink: #132238;
+        --dana-grid-slate: #334155;
+        --dana-grid-blue: #0f5db8;
+        --dana-grid-cyan: #38bdf8;
+        --dana-grid-border: #b8c6d6;
+        --dana-grid-line: #dbe4ee;
+        background-color: #f4f7fb;
+        background-image: linear-gradient(rgba(184, 198, 214, 0.2) 1px, transparent 1px), linear-gradient(90deg, rgba(184, 198, 214, 0.2) 1px, transparent 1px);
+        background-size: 32px 32px;
+        color: var(--dana-grid-ink);
+    }
+
+    .dana-dashboard--grid .dana-hero {
+        min-height: 88px;
+        margin-bottom: 1.5rem;
+        padding: 1rem 2rem;
+        background: linear-gradient(105deg, #0b172a 0%, #132b4a 72%, #0f5db8 100%);
+        border-top: 5px solid var(--dana-grid-cyan);
+        border-bottom: 1px solid #07101e;
+        box-shadow: none;
+    }
+
+    .dana-dashboard--grid .dana-hero__identity {
+        min-width: 0;
+    }
+
+    .dana-dashboard--grid .dana-hero__eyebrow,
+    .dana-dashboard--grid .dana-table-toolbar__eyebrow {
+        display: block;
+        color: #7dd3fc;
+        font-size: 0.64rem;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        line-height: 1.2;
+        text-transform: uppercase;
+    }
+
+    .dana-dashboard--grid .dana-hero h1 {
+        margin-top: 0.28rem !important;
+        color: #ffffff;
+        font-size: clamp(1.15rem, 2vw, 1.48rem);
+        font-weight: 800;
+        letter-spacing: 0.075em;
+        line-height: 1.1;
+        text-transform: uppercase;
+    }
+
+    .dana-dashboard--grid .dana-hero__actions {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        margin-left: 1rem;
+    }
+
+    .dana-dashboard--grid .dana-hero__unit {
+        color: #cbd5e1;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.62rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        white-space: nowrap;
+    }
+
+    .dana-dashboard--grid .dana-card,
+    .dana-dashboard--grid .dana-filter-bar,
+    .dana-dashboard--grid .dana-filter-mobile-toggle,
+    .dana-dashboard--grid .dana-dropdown-toggle,
+    .dana-dashboard--grid .dana-date-input,
+    .dana-dashboard--grid .dana-dropdown-menu,
+    .dana-dashboard--grid .dana-dropdown-option,
+    .dana-dashboard--grid .btn-dana-refresh,
+    .dana-dashboard--grid .btn-capture-all,
+    .dana-dashboard--grid .perf-badge {
+        border-radius: 0 !important;
+        box-shadow: none !important;
+    }
+
+    .dana-dashboard--grid .dana-filter-shell {
+        margin-bottom: 1.5rem;
+    }
+
+    .dana-dashboard--grid .dana-filter-bar {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(175px, 1fr)) auto;
+        gap: 1rem;
+        align-items: end;
+        margin-bottom: 0;
+        padding: 1rem;
+        background: #ffffff;
+        border: 1px solid var(--dana-grid-border);
+        border-left: 4px solid var(--dana-grid-blue);
+    }
+
+    .dana-dashboard--grid .filter-item {
+        min-width: 0;
+    }
+
+    .dana-dashboard--grid .filter-label {
+        margin-bottom: 0.42rem;
+        color: #475569;
+        font-size: 0.64rem;
+        letter-spacing: 0.1em;
+    }
+
+    .dana-dashboard--grid .dana-filter-icon {
+        left: 0.85rem;
+        color: var(--dana-grid-blue);
+        font-size: 0.88rem;
+    }
+
+    .dana-dashboard--grid .dana-dropdown-toggle,
+    .dana-dashboard--grid .dana-date-input {
+        height: 44px !important;
+        padding-left: 2.45rem !important;
+        background: #fbfdff;
+        border: 1px solid #9fb1c4 !important;
+        color: #1e293b;
+        font-size: 0.82rem !important;
+        font-weight: 700;
+    }
+
+    .dana-dashboard--grid .dana-dropdown-toggle:hover,
+    .dana-dashboard--grid .dana-date-input:hover {
+        background: #f1f7ff !important;
+        border-color: var(--dana-grid-blue) !important;
+        transform: none !important;
+    }
+
+    .dana-dashboard--grid .dana-dropdown-toggle:focus-visible,
+    .dana-dashboard--grid .dana-date-input:focus-visible,
+    .dana-dashboard--grid .btn-dana-refresh:focus-visible,
+    .dana-dashboard--grid .btn-capture-all:focus-visible,
+    .dana-dashboard--grid .btn-filter-toggle:focus-visible,
+    .dana-dashboard--grid .dana-dropdown-option:focus-visible {
+        outline: 3px solid var(--dana-grid-cyan);
+        outline-offset: 2px;
+    }
+
+    .dana-dashboard--grid .dana-dropdown-menu {
+        top: calc(100% + 4px);
+        padding: 0.35rem;
+        background: #ffffff;
+        border: 1px solid #64748b !important;
+    }
+
+    .dana-dashboard--grid .dana-dropdown-option {
+        padding: 0.7rem 0.8rem;
+        color: #334155;
+        font-size: 0.8rem !important;
+    }
+
+    .dana-dashboard--grid .dana-dropdown-option:hover,
+    .dana-dashboard--grid .dana-dropdown-option.is-active {
+        background: #eaf3ff;
+        color: #0b4d9a;
+        transform: none;
+    }
+
+    .dana-dashboard--grid .btn-dana-refresh,
+    .dana-dashboard--grid .btn-capture-all {
+        height: 44px !important;
+        padding: 0 1rem !important;
+        background: var(--dana-grid-ink) !important;
+        border: 1px solid var(--dana-grid-ink) !important;
+        color: #ffffff;
+        font-size: 0.72rem;
+        font-weight: 800 !important;
+        letter-spacing: 0.075em;
+        text-transform: uppercase;
+    }
+
+    .dana-dashboard--grid .btn-dana-refresh:hover,
+    .dana-dashboard--grid .btn-capture-all:hover {
+        background: var(--dana-grid-blue) !important;
+        border-color: var(--dana-grid-blue) !important;
+        transform: none !important;
+    }
+
+    .dana-dashboard--grid .dana-card {
+        background: #ffffff !important;
+        border: 1px solid #94a3b8 !important;
+        overflow: visible !important;
+    }
+
+    .dana-dashboard--grid .loading-overlay {
+        background: rgba(255, 255, 255, 0.94);
+        backdrop-filter: none;
+    }
+
+    .dana-dashboard--grid .dana-table-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.8rem 1rem;
+        background: #f8fafc;
+        border-bottom: 1px solid var(--dana-grid-border);
+    }
+
+    .dana-dashboard--grid .dana-table-toolbar__eyebrow {
+        color: var(--dana-grid-blue);
+    }
+
+    .dana-dashboard--grid .dana-table-toolbar__title {
+        margin: 0.18rem 0 0;
+        color: var(--dana-grid-ink);
+        font-size: 0.96rem;
+        font-weight: 800;
+        letter-spacing: 0.015em;
+    }
+
+    .dana-dashboard--grid .dana-table-toolbar__unit {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.38rem;
+        color: #475569;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        white-space: nowrap;
+    }
+
+    .dana-dashboard--grid .table-responsive {
+        margin: 0;
+        overflow: auto;
+        overscroll-behavior-x: contain;
+    }
+
+    .dana-dashboard--grid .dana-table {
+        min-width: 1080px;
+        border: 0 !important;
+        border-collapse: separate !important;
+        border-spacing: 0 !important;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .dana-dashboard--grid .dana-table thead th {
+        background: var(--dana-grid-slate) !important;
+        border-right: 1px solid #1e293b !important;
+        border-bottom: 1px solid #1e293b !important;
+        color: #ffffff !important;
+        font-size: 0.67rem !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.055em !important;
+        line-height: 1.25;
+        padding: 0.62rem 0.5rem !important;
+        text-transform: uppercase;
+        vertical-align: middle;
+    }
+
+    .dana-dashboard--grid .dana-table thead tr.group-row th {
+        background: #24334a !important;
+        font-size: 0.7rem !important;
+        padding: 0.68rem 0.5rem !important;
+    }
+
+    .dana-dashboard--grid .dana-table thead .group-position { background: #1f4e80 !important; }
+    .dana-dashboard--grid .dana-table thead .group-delta { background: #2d405b !important; }
+    .dana-dashboard--grid .dana-table thead .group-rka { background: #0f5f63 !important; }
+
+    .dana-dashboard--grid .dana-table thead .sticky-col {
+        background: #24334a !important;
+        border-right: 2px solid #0f172a !important;
+        box-shadow: 3px 0 0 rgba(15, 23, 42, 0.18) !important;
+    }
+
+    .dana-dashboard--grid .dana-table tbody td {
+        background: #ffffff;
+        border-right: 1px solid var(--dana-grid-line) !important;
+        border-bottom: 1px solid var(--dana-grid-line) !important;
+        color: #243047 !important;
+        font-size: 0.75rem !important;
+        font-weight: 600 !important;
+        line-height: 1.2;
+        padding: 0.58rem 0.62rem !important;
+        transition: background-color 140ms ease, color 140ms ease;
+    }
+
+    .dana-dashboard--grid .dana-table tbody tr:not(.subtotal-row):not(.grandtotal-row):nth-child(even) td {
+        background: #fbfdff;
+    }
+
+    .dana-dashboard--grid .dana-table tbody tr:not(.subtotal-row):not(.grandtotal-row):hover td {
+        background: #edf6ff !important;
+        color: #0b4d9a !important;
+    }
+
+    .dana-dashboard--grid .dana-table .cat-cell {
+        color: #475569 !important;
+        font-size: 0.74rem !important;
+        text-align: left;
+    }
+
+    .dana-dashboard--grid .dana-table .val-cell,
+    .dana-dashboard--grid .dana-table .delta-cell {
+        font-family: 'JetBrains Mono', monospace;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .dana-dashboard--grid .dana-table .branch-cell {
+        background: #f1f5f9 !important;
+        border-left: 0 !important;
+        border-right: 2px solid #94a3b8 !important;
+        box-shadow: 3px 0 0 rgba(51, 65, 85, 0.07) !important;
+        color: #1e3a5f !important;
+        font-size: 0.72rem !important;
+        text-align: left !important;
+    }
+
+    .dana-dashboard--grid .dana-table .branch-name {
+        max-width: 120px;
+    }
+
+    .dana-dashboard--grid .subtotal-row td {
+        background: #e6eff8 !important;
+        border-top: 1px solid #8aa5c0 !important;
+        border-bottom: 1px solid #8aa5c0 !important;
+        color: #173a63 !important;
+        font-weight: 800 !important;
+    }
+
+    .dana-dashboard--grid .subtotal-row .branch-cell {
+        background: #dce8f4 !important;
+    }
+
+    .dana-dashboard--grid .grandtotal-row td {
+        background: #132238 !important;
+        border-top: 3px double #0b172a !important;
+        border-bottom: 0 !important;
+        border-right: 1px solid rgba(255, 255, 255, 0.18) !important;
+        color: #ffffff !important;
+        font-size: 0.78rem !important;
+        font-weight: 800 !important;
+        padding: 0.72rem 0.62rem !important;
+    }
+
+    .dana-dashboard--grid .dana-table tbody tr.subtotal-row td:nth-child(6),
+    .dana-dashboard--grid .dana-table tbody tr.subtotal-row td:nth-child(8),
+    .dana-dashboard--grid .dana-table tbody tr:not(.subtotal-row):not(.grandtotal-row) td:nth-child(5),
+    .dana-dashboard--grid .dana-table tbody tr:not(.subtotal-row):not(.grandtotal-row) td:nth-child(7),
+    .dana-dashboard--grid .dana-table tbody tr.grandtotal-row td:nth-child(5),
+    .dana-dashboard--grid .dana-table tbody tr.grandtotal-row td:nth-child(7) {
+        border-left: 2px solid #9fb1c4 !important;
+    }
+
+    .dana-dashboard--grid .grandtotal-row td.text-pos { color: #6ee7b7 !important; }
+    .dana-dashboard--grid .grandtotal-row td.text-neg { color: #fca5a5 !important; }
+
+    .dana-dashboard--grid .text-pos::before,
+    .dana-dashboard--grid .text-neg::before {
+        display: inline-block;
+        margin-right: 0.22rem;
+        font-family: Arial, sans-serif;
+        font-size: 0.68em;
+    }
+
+    .dana-dashboard--grid .text-pos::before { content: '+'; }
+    .dana-dashboard--grid .text-neg::before { content: '-'; }
+
+    @media (max-width: 1399.98px) {
+        .dana-dashboard--grid .dana-filter-mobile-toggle,
+        .dana-dashboard--grid .dana-filter-shell.is-open .dana-filter-mobile-toggle,
+        .dana-dashboard--grid .dana-filter-bar {
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
+
+        .dana-dashboard--grid .dana-filter-mobile-toggle {
+            border-color: var(--dana-grid-border);
+            border-left: 4px solid var(--dana-grid-blue);
+        }
+
+        .dana-dashboard--grid .dana-filter-shell.is-open .dana-filter-bar {
+            display: grid !important;
+            grid-template-columns: 1fr;
+            border-left: 1px solid var(--dana-grid-border) !important;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .dana-dashboard--grid .dana-hero {
+            align-items: flex-start !important;
+            flex-direction: column;
+            gap: 0.75rem;
+            padding: 0.85rem 1rem;
+        }
+
+        .dana-dashboard--grid .dana-hero__actions {
+            align-self: stretch;
+            justify-content: space-between;
+            margin-left: 0;
+        }
+
+        .dana-dashboard--grid .dana-hero__unit {
+            white-space: normal;
+        }
+
+        .dana-dashboard--grid .dana-table-toolbar {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+    }
+
 </style>
 
-<div class="dana-dashboard">
+<div class="dana-dashboard dana-dashboard--grid">
     <div class="dana-hero d-flex align-items-center justify-content-between">
-        <div class="d-flex align-items-center">
-            <h1 class="m-0" style="font-size: 1.5rem; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase;">DASHBOARD DANA</h1>
+        <div class="dana-hero__identity">
+            <span class="dana-hero__eyebrow">SIMPANAN · PERFORMANCE MONITOR</span>
+            <h1 class="m-0">DASHBOARD DANA</h1>
         </div>
-        <div class="d-flex align-items-center gap-3">
+        <div class="dana-hero__actions">
+            <span class="dana-hero__unit">SELURUH ANGKA DALAM RP JUTA</span>
             <button id="captureAllBtn" class="btn btn-sm btn-capture-all">
                 <i class="fas fa-file-image mr-1"></i> EXPORT A4
             </button>
@@ -862,19 +1304,14 @@
                     </div>
                 </div>
                 <div class="filter-item">
-                    <label class="filter-label">Periode Data</label>
-                    <div class="dana-dropdown" data-dana-dropdown="periode">
+                    <label class="filter-label" for="filterPeriode">Periode Data</label>
+                    <div class="dana-date-wrap">
                         <i class="fas fa-calendar-alt dana-filter-icon"></i>
-                        <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="periode">
-                            <span class="dana-dropdown-text">Pilih Periode</span>
-                            <i class="fas fa-chevron-down small opacity-50"></i>
-                        </button>
-                        <div class="dana-dropdown-menu" data-dana-dropdown-menu="periode"></div>
-                        <select id="filterPeriode" class="d-none">
-                            @foreach($periods as $p)
-                                <option value="{{ $p }}" {{ $selectedPeriod == $p ? 'selected' : '' }}>{{ $p }}</option>
-                            @endforeach
-                        </select>
+                        <input type="date" id="filterPeriode" class="dana-date-input"
+                            value="{{ $selectedPeriod }}"
+                            min="{{ $periods->last() }}"
+                            max="{{ $periods->first() }}"
+                            aria-label="Pilih tanggal posisi dana">
                     </div>
                 </div>
                 <div class="filter-item">
@@ -927,6 +1364,13 @@
             </div>
 
             <div class="dana-table-container">
+                <div class="dana-table-toolbar">
+                    <div>
+                        <span class="dana-table-toolbar__eyebrow">RINGKASAN PORTOFOLIO</span>
+                        <h2 class="dana-table-toolbar__title">Posisi Dana &amp; Pencapaian RKA</h2>
+                    </div>
+                    <span class="dana-table-toolbar__unit"><i class="fas fa-chart-line" aria-hidden="true"></i> RP JUTA</span>
+                </div>
                 <div class="table-responsive">
                     <table class="dana-table">
                         <thead>
@@ -976,11 +1420,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 toggle: document.querySelector('[data-dana-dropdown-toggle="cabang"]'),
                 menu: document.querySelector('[data-dana-dropdown-menu="cabang"]')
             },
-            periode: {
-                root: document.querySelector('[data-dana-dropdown="periode"]'),
-                toggle: document.querySelector('[data-dana-dropdown-toggle="periode"]'),
-                menu: document.querySelector('[data-dana-dropdown-menu="periode"]')
-            },
             rka: {
                 root: document.querySelector('[data-dana-dropdown="rka"]'),
                 toggle: document.querySelector('[data-dana-dropdown-toggle="rka"]'),
@@ -993,9 +1432,16 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         };
 
+        const formatPickerDate = function (value) {
+            if (!value) return '';
+            const parts = String(value).slice(0, 10).split('-');
+            if (parts.length !== 3) return value;
+            return `${parts[2]}-${parts[1]}-${parts[0]}`;
+        };
+
         const updateFilterSummary = function () {
             const cabangText = document.querySelector('[data-dana-dropdown-toggle="cabang"] .dana-dropdown-text')?.innerText || 'Pilih Cabang';
-            const periodeText = document.querySelector('[data-dana-dropdown-toggle="periode"] .dana-dropdown-text')?.innerText || 'Pilih Periode';
+            const periodeText = formatPickerDate(selects.periode?.value);
             const rkaText = document.querySelector('[data-dana-dropdown-toggle="rka"] .dana-dropdown-text')?.innerText || 'Pilih RKA';
             const kategoriText = document.querySelector('[data-dana-dropdown-toggle="kategori"] .dana-dropdown-text')?.innerText || 'Pilih Segmen';
             
@@ -1073,6 +1519,7 @@ document.addEventListener('DOMContentLoaded', function() {
         };
 
         initDanaDropdowns();
+        selects.periode?.addEventListener('change', updateFilterSummary);
 
         const toggleBtn = document.getElementById('btn-toggle-filters');
         const filterShell = document.querySelector('.dana-filter-shell');
@@ -1144,6 +1591,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
             $.get("{{ route('report.dashboard-dana.data') }}", params, function(res) {
                 $('#loader').fadeOut(200);
+                if (res.selected_period) {
+                    selects.periode.value = res.selected_period;
+                    updateFilterSummary();
+                }
                 $('#headerSelectedDate').text(res.header_dates.selected);
                 $('#headerYtd').text(res.header_dates.ytd);
                 $('#headerMtd').text(res.header_dates.mtd);

@@ -23,7 +23,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `syncMbmNames` | method | 12 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:252` |
 | `KpiPersonnelReferenceSyncServiceTest` | class | 9 | `tests/Unit/KpiPersonnelReferenceSyncServiceTest.php:13` |
 | `test_failed_kpi_refresh_keeps_last_good_payload` | method | 8 | `tests/Unit/RemoteDashboardSourceTest.php:98` |
-| `test_quadrant_period_uses_latest_snapshot_in_requested_month_like_kpi` | method | 8 | `tests/Unit/LandingConsumerOperationalServiceTest.php:350` |
+| `test_quadrant_period_uses_latest_snapshot_in_requested_month_like_kpi` | method | 8 | `tests/Unit/LandingConsumerOperationalServiceTest.php:371` |
 | `KpiRmSmeDashboardServiceTest` | class | 7 | `tests/Unit/KpiRmSmeDashboardServiceTest.php:8` |
 | `cell` | method | 7 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:425` |
 | `headerIndex` | method | 6 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:391` |

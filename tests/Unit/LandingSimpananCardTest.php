@@ -35,6 +35,11 @@ class LandingSimpananCardTest extends TestCase
         $this->assertStringContainsString('selectLandingPrognosaWeek', $view);
         $this->assertStringContainsString('data-area6-scope', $view);
         $this->assertStringContainsString('data-area6-content-scope', $view);
+        $this->assertStringContainsString('container: simpanan-landing / inline-size', $view);
+        $this->assertStringContainsString('@container simpanan-landing (max-width: 1100px)', $view);
+        $this->assertStringContainsString('@container simpanan-landing (max-width: 620px)', $view);
+        $this->assertStringContainsString('@media (prefers-reduced-motion: reduce)', $view);
+        $this->assertStringContainsString('aria-pressed="{{ $scopeKey === $area6DefaultScope', $view);
         $this->assertStringContainsString('DtD', $view);
         $this->assertStringContainsString('MtD', $view);
         $this->assertStringContainsString('MtM', $view);
@@ -483,4 +488,3 @@ class LandingSimpananCardTest extends TestCase
         $this->assertGreaterThanOrEqual($result['records'][2]['saldo'], $result['records'][1]['saldo']);
     }
 }
-

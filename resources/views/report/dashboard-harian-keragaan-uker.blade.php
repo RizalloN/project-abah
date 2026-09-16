@@ -143,6 +143,13 @@
         background-color: #f8fafc;
     }
 
+    .uker-date-input {
+        appearance: auto;
+        -webkit-appearance: auto;
+        background-image: none;
+        padding-right: 0.65rem;
+    }
+
     .uker-control:focus {
         border-color: #0b57d0;
         box-shadow: 0 0 0 3px rgba(11, 87, 208, 0.14);
@@ -697,7 +704,7 @@
                         <label for="periodFilter" class="uker-filter-label">Periode</label>
                         <div class="uker-select-wrap">
                             <i class="fas fa-calendar-alt uker-select-icon"></i>
-                            <select id="periodFilter" class="uker-control"></select>
+                            <input type="date" id="periodFilter" class="uker-control uker-date-input" aria-label="Pilih tanggal posisi">
                         </div>
                     </div>
                     <div class="uker-filter-item">
@@ -808,6 +815,16 @@
             return [...(options || []), { value, label: value }];
         }
 
+        function syncPeriodDatePicker(options, selectedValue) {
+            const values = (options || []).map(option => String(option.value || '').slice(0, 10))
+                .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
+                .sort();
+
+            els.period.min = values.length ? values[0] : '';
+            els.period.max = values.length ? values[values.length - 1] : '';
+            els.period.value = selectedValue || (values.length ? values[values.length - 1] : '');
+        }
+
         function buildSelects(payload, requestedSelection = {}) {
             const filters = (payload && payload.available_filters) || page.filters || {};
             const selected = payload?.selected || page.selected || {};
@@ -821,7 +838,10 @@
             els.unit.innerHTML = optionHtml(filters.unit_kerja || [], selectedUnit);
             els.unit.disabled = els.kanca.value === '';
             els.dataType.innerHTML = optionHtml(page.dataTypes || [], selectedDataType);
-            els.period.innerHTML = optionHtml(filters.posisi_terakhir || [], els.period.value || selected.posisi_terakhir);
+            syncPeriodDatePicker(
+                filters.posisi_terakhir || [],
+                payload?.selected?.posisi_terakhir || els.period.value || selected.posisi_terakhir
+            );
             els.rka.innerHTML = optionHtml(filters.posisi_rka || [], els.rka.value || selected.posisi_rka);
         }
 

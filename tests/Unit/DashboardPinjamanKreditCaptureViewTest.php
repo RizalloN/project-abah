@@ -2,6 +2,10 @@
 
 namespace Tests\Unit;
 
+use App\Http\Controllers\DashboardPinjamanReportController;
+use App\Models\User;
+use Illuminate\Support\Collection;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class DashboardPinjamanKreditCaptureViewTest extends TestCase
@@ -64,5 +68,34 @@ class DashboardPinjamanKreditCaptureViewTest extends TestCase
         $this->assertStringContainsString('getBoundingClientRect().width', $source);
         $this->assertStringContainsString('function scheduleSummaryTableSync()', $source);
         $this->assertStringContainsString("window.addEventListener('orientationchange', scheduleSummaryTableSync)", $source);
+    }
+
+    public function test_position_filter_is_a_date_picker_and_resolves_snapshot_gaps(): void
+    {
+        $source = file_get_contents(base_path('resources/views/report/dashboard-pinjaman/kredit.blade.php'));
+
+        $this->assertStringContainsString('type="date" id="periodeSelector"', $source);
+        $this->assertStringNotContainsString('data-loan-dropdown="periode"', $source);
+
+        $this->actingAs(User::factory()->make(['name' => 'Audit UI', 'pn' => 'audit-ui', 'role' => 'admin']));
+        $html = view('report.dashboard-pinjaman.kredit', [
+            'periods' => collect(['2026-05-19', '2026-05-17']),
+            'selectedPeriod' => '2026-05-19',
+            'selectedCategory' => 'SME',
+            'selectedKanca' => 'all',
+            'kancaOptions' => [['value' => 'all', 'label' => 'Area 6']],
+            'categories' => ['SME', 'Consumer', 'Mikro'],
+        ])->render();
+        $this->assertStringContainsString('type="date" id="periodeSelector"', $html);
+
+        $controller = new DashboardPinjamanReportController();
+        $resolver = new ReflectionMethod($controller, 'resolveKreditEffectivePeriod');
+        $resolver->setAccessible(true);
+        $periods = new Collection(['2026-05-19', '2026-05-17']);
+
+        $this->assertSame('2026-05-19', $resolver->invoke($controller, null, $periods));
+        $this->assertSame('2026-05-17', $resolver->invoke($controller, '2026-05-18', $periods));
+        $this->assertNull($resolver->invoke($controller, '2026-05-01', $periods));
+        $this->assertNull($resolver->invoke($controller, 'tanggal-salah', $periods));
     }
 }

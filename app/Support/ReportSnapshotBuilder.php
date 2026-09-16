@@ -81,9 +81,7 @@ class ReportSnapshotBuilder
     /** @var array<string, string> */
     private array $dormantBranchFilterExpressionCache = [];
 
-    private ?string $rasioCasaTempTablePeriod = null;
-
-    private ?bool $rasioCasaTempTableTypeFilter = null;
+    private ?string $rasioCasaTempTableCacheKey = null;
 
     private readonly SnapshotQueryOptimizer $queryOptimizer;
 
@@ -738,7 +736,13 @@ class ReportSnapshotBuilder
 
         if ($casaDate) {
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
-            $this->ensureRasioCasaTempTable($casaDate, $casaKeyColumn, $applyCasaTypeFilter);
+            $this->ensureRasioCasaTempTable(
+                $loanPeriod,
+                $casaDate,
+                $loanKeyColumn,
+                $casaKeyColumn,
+                $applyCasaTypeFilter
+            );
             $casaJoinSql = '
                 LEFT JOIN tmp_rasio_casa_balances c ON c.identity_key = base.identity_key
             ';
@@ -859,7 +863,13 @@ class ReportSnapshotBuilder
 
         if ($casaDate) {
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
-            $this->ensureRasioCasaTempTable($casaDate, $casaKeyColumn, $applyCasaTypeFilter);
+            $this->ensureRasioCasaTempTable(
+                $loanPeriod,
+                $casaDate,
+                $loanKeyColumn,
+                $casaKeyColumn,
+                $applyCasaTypeFilter
+            );
             $casaJoinSql = '
                 LEFT JOIN tmp_rasio_casa_balances c ON c.identity_key = base.identity_key
             ';
@@ -2088,14 +2098,53 @@ class ReportSnapshotBuilder
         return $fallbackExpression;
     }
 
-    private function ensureRasioCasaTempTable(string $casaDate, string $casaKeyColumn, bool $applyCasaTypeFilter): void
+    private function ensureRasioCasaTempTable(
+        string $loanPeriod,
+        string $casaDate,
+        string $loanKeyColumn,
+        string $casaKeyColumn,
+        bool $applyCasaTypeFilter
+    ): void
     {
-        if (
-            $this->rasioCasaTempTablePeriod === $casaDate
-            && $this->rasioCasaTempTableTypeFilter === $applyCasaTypeFilter
-        ) {
+        $cacheKey = implode('|', [
+            $loanPeriod,
+            $casaDate,
+            strtolower($loanKeyColumn),
+            strtolower($casaKeyColumn),
+            $applyCasaTypeFilter ? '1' : '0',
+        ]);
+        if ($this->rasioCasaTempTableCacheKey === $cacheKey) {
             return;
         }
+
+        $loanSource = $this->queryOptimizer->optimizeSnapshotQuery(
+            'daily_loan_dinamis',
+            'd',
+            ['idx_loan_periode_cif']
+        );
+        $casaSource = $this->queryOptimizer->optimizeSnapshotQuery(
+            'simpanan_multipn',
+            's',
+            ['idx_smp_posisi_cif_covering']
+        );
+        $loanIdentitySql = $this->buildRasioIdentityExpression("d.{$loanKeyColumn}");
+        $casaIdentitySql = $this->buildRasioIdentityExpression("s.{$casaKeyColumn}");
+
+        $this->statementWithConcurrencyRetry('create rasio loan identity temp table', fn (): bool => DB::statement('
+            CREATE TEMPORARY TABLE IF NOT EXISTS tmp_rasio_loan_identities (
+                identity_key VARCHAR(64) COLLATE utf8mb4_unicode_ci NOT NULL PRIMARY KEY
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        '));
+        $this->statementWithConcurrencyRetry('truncate rasio loan identity temp table', fn (): bool => DB::statement('TRUNCATE TABLE tmp_rasio_loan_identities'));
+        $this->statementWithConcurrencyRetry('populate rasio loan identity temp table', fn (): bool => DB::statement("
+            INSERT INTO tmp_rasio_loan_identities (identity_key)
+            SELECT {$loanIdentitySql} as identity_key
+            FROM {$loanSource}
+            WHERE d.periode = ?
+                AND d.{$loanKeyColumn} IS NOT NULL
+                AND d.{$loanKeyColumn} <> ''
+            GROUP BY identity_key
+        ", [$loanPeriod]));
 
         $this->statementWithConcurrencyRetry('create rasio casa temp table', fn (): bool => DB::statement('
             CREATE TEMPORARY TABLE IF NOT EXISTS tmp_rasio_casa_balances (
@@ -2112,18 +2161,19 @@ class ReportSnapshotBuilder
         $this->statementWithConcurrencyRetry('populate rasio casa temp table', fn (): bool => DB::statement("
             INSERT INTO tmp_rasio_casa_balances (identity_key, casa_balance)
             SELECT
-                {$this->buildRasioIdentityExpression("s.{$casaKeyColumn}")} as identity_key,
+                eligible.identity_key,
                 SUM(COALESCE(s.saldo_idr, 0)) as casa_balance
-            FROM simpanan_multipn s
+            FROM {$casaSource}
+            INNER JOIN tmp_rasio_loan_identities eligible
+                ON eligible.identity_key = {$casaIdentitySql}
             WHERE s.posisi = ?
                 AND s.{$casaKeyColumn} IS NOT NULL
                 AND s.{$casaKeyColumn} <> ''
                 {$casaFilterSql}
-            GROUP BY identity_key
+            GROUP BY eligible.identity_key
         ", [$casaDate]));
 
-        $this->rasioCasaTempTablePeriod = $casaDate;
-        $this->rasioCasaTempTableTypeFilter = $applyCasaTypeFilter;
+        $this->rasioCasaTempTableCacheKey = $cacheKey;
     }
 
     private function buildRasioIdentityExpression(string $column): string

@@ -6104,9 +6104,44 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .sme-ops .sme-ops-rm-row {
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(170px, 0.78fr) auto;
   min-height: 52px;
   border-left: 3px solid #13a7e2;
+}
+.sme-ops .sme-ops-rm-row__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.08rem 0.6rem;
+  border-right: 1px solid #d7e1ec;
+  border-left: 1px solid #d7e1ec;
+}
+.sme-ops .sme-ops-rm-row__metrics > div {
+  min-width: 0;
+  text-align: center;
+}
+.sme-ops .sme-ops-rm-row__metrics dt,
+.sme-ops .sme-ops-rm-row__metrics dd {
+  margin: 0;
+  white-space: nowrap;
+}
+.sme-ops .sme-ops-rm-row__metrics dt {
+  overflow: hidden;
+  color: #6b7b90;
+  font-size: 0.5rem;
+  font-weight: 750;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+}
+.sme-ops .sme-ops-rm-row__metrics dd {
+  margin-top: 0.14rem;
+  color: #17395f;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  line-height: 1.15;
 }
 .sme-ops .sme-ops-q-badge {
   min-width: 78px;
@@ -6771,6 +6806,21 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
   }
 }
 @media (max-width: 575.98px) {
+  .sme-ops .sme-ops-rm-row {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+  }
+  .sme-ops .sme-ops-rm-row__metrics {
+    grid-row: 2;
+    grid-column: 2 / -1;
+    padding: 0.4rem 0 0;
+    border-top: 1px solid #d7e1ec;
+    border-right: 0;
+    border-left: 0;
+  }
+  .sme-ops .sme-ops-q-badge {
+    grid-row: 1;
+    grid-column: 3;
+  }
   .sme-ops-intro {
     grid-template-columns: 42px minmax(0, 1fr);
     padding: 0.8rem;
@@ -9479,15 +9529,17 @@ body.micro-pipeline-source-modal-open { overflow: hidden; }
 .sme-ops-tier-table thead th:first-child, .sme-ops-inactive-table thead th:first-child { z-index: 3; background: #073d86; }
 .sme-ops-tier-table tbody th i { margin-right: .45rem; color: #0c7ac8; }
 .sme-ops-tier-table td { background: #fff; }
-.sme-ops-tier-table td strong { display: block; color: #082f68; font-size: .82rem; }
-.sme-ops-tier-table td span { color: #698099; font-size: .66rem; }
+.sme-ops-tier-table tbody td strong { display: block; color: #082f68; font-size: .82rem; }
+.sme-ops-tier-table tbody td span { color: #698099; font-size: .66rem; }
 .sme-ops-tier-cell { display: grid; width: 100%; min-height: 44px; place-content: center; gap: .12rem; padding: 0; border: 0; color: inherit; background: transparent; cursor: pointer; }
 .sme-ops-tier-cell:hover { background: #eef7ff; }
 .sme-ops-tier-cell:focus-visible { outline: 3px solid rgba(19, 167, 226, .28); outline-offset: -3px; }
 .sme-ops-tier-table tfoot th, .sme-ops-tier-table tfoot td { color: #fff; background: #0b5ba7; font-weight: 800; }
-.sme-ops-tier-table tfoot th:first-child { background: #083f83; }
+.sme-ops-tier-table tfoot td strong { display: block; color: #ffffff !important; font-size: .82rem; font-weight: 800; }
+.sme-ops-tier-table tfoot td span { display: block; color: #ffffff !important; font-size: .66rem; font-weight: 700; opacity: .95; }
+.sme-ops-tier-table tfoot th:first-child { background: #083f83; color: #ffffff; }
 .sme-ops-tier-table .is-total { color: #0754bd; background: #eaf5ff; font-size: .9rem; font-weight: 900; }
-.sme-ops-tier-table tfoot .is-total { color: #fff; background: #083f83; }
+.sme-ops-tier-table tfoot .is-total { color: #ffffff !important; background: #083f83; font-weight: 900; }
 .sme-ops-vendor-item { cursor: pointer; text-align: left; }
 .sme-ops-vendor-item:focus-visible { outline: 3px solid #13a7e2; outline-offset: 3px; }
 .sme-ops-inactive-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
@@ -12686,6 +12738,91 @@ document.addEventListener('DOMContentLoaded', function() {
   let lastMicroPipelineTrigger = null;
   let lastMicroPipelineSourceTrigger = null;
   let lastConsumerQuadrantTrigger = null;
+  let pnMismatchTrigger = null;
+  let pnMismatchState = null;
+
+  const loadPnMismatchPage = async page => {
+    const state = pnMismatchState;
+    if (!state) return;
+    const modal = state.modal;
+    const body = modal.querySelector('[data-pn-mismatch-rows]');
+    const params = new URLSearchParams({segment: state.segment, periode: state.period, branch: state.branch, page: String(page)});
+    const selected = document.querySelector(`.pn-mismatch[data-segment="${state.segment}"]`);
+    if (!selected || !body) return;
+    body.innerHTML = '<tr><td colspan="7">Memuat nominatif...</td></tr>';
+    modal.querySelectorAll('[data-pn-mismatch-page]').forEach(button => { button.disabled = true; });
+    try {
+      const response = await fetch(`${selected.dataset.url}?${params}`, {headers: {'Accept': 'application/json'}});
+      if (!response.ok) throw new Error('Nominatif gagal dimuat.');
+      const payload = await response.json();
+      if (pnMismatchState !== state) return;
+      body.innerHTML = payload.data?.length
+        ? payload.data.map(row => `<tr><td>${escapeHtml(row.rekening || '-')}</td><td>${escapeHtml(row.debitur || '-')}</td><td>${escapeHtml(row.unit || '-')}</td><td>${escapeHtml(row.produk || '-')}</td><td>${escapeHtml(row.pn || '-')}</td><td>${escapeHtml(row.nama_sumber || '-')}</td><td>${escapeHtml(row.nama_brihc || '-')}</td></tr>`).join('')
+        : '<tr><td colspan="7">Nominatif tidak ditemukan.</td></tr>';
+      state.page = Number(payload.page || 1);
+      modal.querySelector('[data-pn-mismatch-count]').textContent = `${Number(payload.total || 0).toLocaleString('id-ID')} rekening · Halaman ${state.page} dari ${Number(payload.last_page || 1)}`;
+      modal.querySelector('[data-pn-mismatch-page="prev"]').disabled = state.page <= 1;
+      modal.querySelector('[data-pn-mismatch-page="next"]').disabled = state.page >= Number(payload.last_page || 1);
+    } catch (error) {
+      body.innerHTML = `<tr><td colspan="7">${escapeHtml(error.message || 'Nominatif gagal dimuat.')}</td></tr>`;
+      modal.querySelector('[data-pn-mismatch-count]').textContent = 'Silakan tutup dan buka kembali untuk mencoba ulang.';
+    }
+  };
+
+  const closePnMismatch = () => {
+    if (!pnMismatchState) return;
+    pnMismatchState.modal.hidden = true;
+    pnMismatchState = null;
+    pnMismatchTrigger?.focus?.();
+    pnMismatchTrigger = null;
+  };
+
+  const openPnMismatch = trigger => {
+    const section = trigger.closest('[data-pn-mismatch-section]');
+    const segment = section?.dataset.segment;
+    const branch = trigger.dataset.branch;
+    if (!section || !branch) return;
+    const owner = section.parentElement;
+    const modal = owner?.querySelector('[data-pn-mismatch-modal]')
+      || document.querySelector(`body > [data-pn-modal-segment="${segment}"]`);
+    if (!modal) return;
+    document.querySelectorAll('body > [data-pn-mismatch-modal]').forEach(existing => {
+      if (existing !== modal) existing.remove();
+    });
+    document.body.appendChild(modal);
+    pnMismatchTrigger = trigger;
+    pnMismatchState = {segment, period: section.dataset.period, branch, modal, page: 1};
+    modal.querySelector('[data-pn-mismatch-title]').textContent = `Nominatif PN Tidak Sesuai · ${branch}`;
+    modal.hidden = false;
+    modal.querySelector('[data-pn-mismatch-close]').focus();
+    loadPnMismatchPage(1);
+  };
+
+  document.addEventListener('dblclick', event => {
+    const trigger = event.target.closest('[data-pn-mismatch-open]');
+    if (trigger) { event.preventDefault(); openPnMismatch(trigger); }
+  });
+  document.addEventListener('keydown', event => {
+    if (pnMismatchState && event.key === 'Escape') { closePnMismatch(); return; }
+    if (pnMismatchState && event.key === 'Tab') {
+      const controls = [...pnMismatchState.modal.querySelectorAll('button:not(:disabled), [tabindex="0"]')];
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+    const trigger = event.target.closest('[data-pn-mismatch-open]');
+    if (trigger && ['Enter', ' '].includes(event.key)) { event.preventDefault(); openPnMismatch(trigger); }
+  });
+  document.addEventListener('click', event => {
+    if (event.target.closest('[data-pn-mismatch-close]')) { closePnMismatch(); return; }
+    const trigger = event.target.closest('[data-pn-mismatch-open]');
+    if (trigger) { openPnMismatch(trigger); return; }
+    const pageButton = event.target.closest('[data-pn-mismatch-page]');
+    if (pageButton && pnMismatchState && !pageButton.disabled) {
+      loadPnMismatchPage(pnMismatchState.page + (pageButton.dataset.pnMismatchPage === 'next' ? 1 : -1));
+    }
+  });
   let activeMicroPipelineSource = null;
 
   document.addEventListener('click', event => {

@@ -9,7 +9,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | command | 17 |
 | file | 69 |
 | function | 6 |
-| method | 553 |
+| method | 555 |
 | unresolved_symbol | 38 |
 | queue | 5 |
 | route | 1 |
@@ -22,12 +22,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
 | `ReportSnapshotBuilder` | class | 142 | `app/Support/ReportSnapshotBuilder.php:12` |
-| `performance_rm_snapshots` | table | 82 | - |
+| `performance_rm_snapshots` | table | 83 | - |
 | `ManagedReportSnapshotRebuildCoordinator` | class | 38 | `app/Support/ManagedReportSnapshotRebuildCoordinator.php:15` |
-| `PerformanceRmIncrementalSnapshotTest` | class | 35 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:16` |
+| `PerformanceRmIncrementalSnapshotTest` | class | 37 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:16` |
 | `SnapshotBatchAggregator` | class | 34 | `app/Support/SnapshotBatchAggregator.php:11` |
 | `snapshots-parallel` | queue | 32 | - |
-| `insertDailyLoanRow` | method | 29 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:871` |
+| `insertDailyLoanRow` | method | 31 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:955` |
 | `ValidateSnapshotDataIntegrityCommand` | class | 26 | `app/Console/Commands/ValidateSnapshotDataIntegrityCommand.php:12` |
 | `capture` | method | 26 | `app/Support/SnapshotSourceSignatureService.php:61` |
 | `handle` | method | 26 | `app/Jobs/RunManagedReportSnapshotRebuildJob.php:52` |
@@ -183,7 +183,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | tests -> jobs-snapshots (contains) | 32 |
 | jobs-snapshots -> dashboard-pinjaman (reads_table) | 27 |
 | jobs-snapshots -> core (uses_trait) | 27 |
-| jobs-snapshots -> dashboard-pinjaman (writes_table) | 22 |
+| jobs-snapshots -> dashboard-pinjaman (writes_table) | 23 |
 | jobs-snapshots -> core (writes_table) | 18 |
 | import -> jobs-snapshots (instantiates) | 18 |
 | jobs-snapshots -> core (accepts) | 17 |

@@ -2573,16 +2573,19 @@
             }
 
             mismatchBody.innerHTML = rows.map((row, index) => {
+                const effectiveBranch = row.branch || branch;
                 const exportParams = new URLSearchParams({
                     periode: period,
-                    cabang1: branch,
-                    unit1: row.unit,
+                    cabang1: effectiveBranch,
                 });
+                if (row.unit) {
+                    exportParams.set('unit1', row.unit);
+                }
 
                 return `
                     <tr>
                         <td>${index + 1}</td>
-                        <td>${row.unit}</td>
+                        <td>${row.label || row.unit || row.branch || '-'}</td>
                         <td><strong>${formatNumber(row.mismatch_count)}</strong></td>
                         <td>
                             <a class="btn btn-sm btn-outline-success" href="${mismatchExportUrl}?${exportParams.toString()}">

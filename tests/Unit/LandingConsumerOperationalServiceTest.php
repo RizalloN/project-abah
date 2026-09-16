@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Support\ConsumerRmRealizationCalculator;
 use App\Support\LandingConsumerOperationalService;
 use App\Support\UserBranchScope;
 use Illuminate\Database\Schema\Blueprint;
@@ -30,15 +31,19 @@ class LandingConsumerOperationalServiceTest extends TestCase
             $table->id();
             $table->date('periode');
             $table->string('cabang');
+            $table->string('unit')->nullable();
+            $table->string('branch_code')->nullable();
             $table->string('segmen');
             $table->string('produk');
             $table->string('rm');
+            $table->integer('realisasi_deb')->default(0);
             $table->decimal('realisasi_os', 20, 2)->default(0);
         });
         Schema::create('performance_targets', function (Blueprint $table): void {
             $table->id();
             $table->string('category');
             $table->string('rm_name');
+            $table->integer('target_deb')->default(0);
             $table->decimal('target_os', 20, 2)->default(0);
         });
         Schema::create('brihc_pemasar', function (Blueprint $table): void {
@@ -47,6 +52,8 @@ class LandingConsumerOperationalServiceTest extends TestCase
             $table->string('completename')->nullable();
             $table->string('positiondesc')->nullable();
             $table->string('psadesc')->nullable();
+            $table->string('jobgrade')->nullable();
+            $table->string('jg')->nullable();
         });
     }
 
@@ -124,16 +131,23 @@ CSV;
         });
 
         DB::table('performance_targets')->insert([
-            ['category' => 'BRIGUNA-KONSUMER', 'rm_name' => 'RM A', 'target_os' => 100],
-            ['category' => 'KPR', 'rm_name' => 'RM K', 'target_os' => 100],
+            ['category' => 'BRIGUNA-KONSUMER', 'rm_name' => 'RM A', 'target_deb' => 10, 'target_os' => 100],
+            ['category' => 'KPR', 'rm_name' => 'RM K', 'target_deb' => 8, 'target_os' => 100],
         ]);
         DB::table('performance_rm_snapshots')->insert([
             $this->snapshot('2026-01-31', 'BRIGUNA-KONSUMER', '001 - RM A', 105),
-            $this->snapshot('2026-02-28', 'BRIGUNA-KONSUMER', '001 - RM A', 95),
+            $this->snapshot('2026-02-28', 'BRIGUNA-KONSUMER', '001 - RM A', 95, 4),
             $this->snapshot('2026-01-31', 'BRIGUNA-KONSUMER', '999 - TANPA TARGET', 500),
             $this->snapshot('2026-02-28', 'BRIGUNA-KONSUMER', '999 - TANPA TARGET', 500),
             $this->snapshot('2026-01-31', 'KPR', '002 - RM K', 50),
             $this->snapshot('2026-02-28', 'KPR', '002 - RM K', 0),
+        ]);
+        DB::table('brihc_pemasar')->insert([
+            'pernr' => '00000002',
+            'completename' => 'RM K',
+            'positiondesc' => 'RM BISNIS KONSUMER - KPR',
+            'psadesc' => 'KC Madiun',
+            'jg' => 'JG05',
         ]);
 
         $payload = app(LandingConsumerOperationalService::class)->payload(
@@ -163,6 +177,13 @@ CSV;
         $this->assertSame(1, $briguna['coverage']['unclassified']);
         $this->assertSame(1, $kpr['rows'][0]['q3']);
         $this->assertSame(1, $kpr['rows'][1]['q4']);
+        $this->assertSame('RM A', data_get($briguna, 'current_rows.0.name'));
+        $this->assertSame(10, data_get($briguna, 'current_rows.0.target_deb'));
+        $this->assertSame(4, data_get($briguna, 'current_rows.0.net_deb'));
+        $this->assertSame(95.0, data_get($briguna, 'current_rows.0.net_os'));
+        $this->assertSame(3, data_get($briguna, 'current_rows.0.quadrant'));
+        $this->assertSame(40.0, data_get($briguna, 'current_rows.0.achievement_deb'));
+        $this->assertSame('JG05', data_get($kpr, 'current_rows.0.jg'));
 
         $magetanPayload = app(LandingConsumerOperationalService::class)->payload(
             '2026-02-28',
@@ -213,7 +234,7 @@ CSV;
             'consumerOperations' => $payload,
         ])->render();
         $this->assertSame(2, substr_count($html, 'data-consumer-area6-trigger="1"'));
-        $this->assertStringContainsString('data-consumer-quadrant-detail', $html);
+        $this->assertStringContainsString('consumer-ops-rm-table', $html);
         $this->assertStringContainsString('RM NGAWI', html_entity_decode($html, ENT_QUOTES | ENT_HTML5));
     }
 
@@ -428,6 +449,90 @@ CSV;
         $this->assertSame(1, data_get($latest, 'total'));
     }
 
+    public function test_blank_pn_activity_keeps_its_own_branch_during_latest_assignment_projection(): void
+    {
+        $rows = collect([
+            (object) [
+                'periode' => '2026-09-12',
+                'produk' => 'BRIGUNA-KONSUMER',
+                'rm' => ConsumerRmRealizationCalculator::UNASSIGNED_RM,
+                'cabang' => 'KC MAGETAN',
+                'unit' => 'KC MAGETAN',
+                'branch_code' => '49',
+                'realisasi_os' => 200000000.0,
+            ],
+            (object) [
+                'periode' => '2026-09-12',
+                'produk' => 'BRIGUNA-KONSUMER',
+                'rm' => ConsumerRmRealizationCalculator::UNASSIGNED_RM,
+                'cabang' => 'KC PONOROGO',
+                'unit' => 'KC PONOROGO',
+                'branch_code' => '70',
+                'realisasi_os' => 608519594.0,
+            ],
+        ]);
+
+        $projected = app(LandingConsumerOperationalService::class)
+            ->applyLatestConsumerSnapshotAssignments($rows);
+
+        $this->assertSame(['KC MAGETAN', 'KC PONOROGO'], $projected->pluck('cabang')->all());
+        $this->assertSame(['49', '70'], $projected->pluck('branch_code')->all());
+    }
+
+    public function test_area_current_rows_do_not_merge_blank_pn_between_branches(): void
+    {
+        Http::fake(fn () => Http::response("Nama Instansi,Potensi Briguna,RM PIC 1\nInstansi A,100,RM A", 200));
+        DB::table('performance_rm_snapshots')->insert([
+            [...$this->snapshot(
+                '2026-09-12',
+                'BRIGUNA-KONSUMER',
+                ConsumerRmRealizationCalculator::UNASSIGNED_RM,
+                200000000,
+                1
+            ), 'cabang' => 'KC MAGETAN', 'unit' => 'KC MAGETAN', 'branch_code' => '49'],
+            [...$this->snapshot(
+                '2026-09-12',
+                'BRIGUNA-KONSUMER',
+                ConsumerRmRealizationCalculator::UNASSIGNED_RM,
+                608519594,
+                5
+            ), 'cabang' => 'KC PONOROGO', 'unit' => 'KC PONOROGO', 'branch_code' => '70'],
+        ]);
+        app()->instance(ConsumerRmRealizationCalculator::class, new class extends ConsumerRmRealizationCalculator
+        {
+            public function calculate(string $period, ?string $kprAssignmentPeriod = null, ?string $onlyProduct = null): array
+            {
+                return [
+                    'magetan' => [
+                        'cabang' => 'KC MAGETAN', 'unit' => 'KC MAGETAN', 'branch_code' => '49',
+                        'rm' => self::UNASSIGNED_RM, 'produk' => 'BRIGUNA-KONSUMER',
+                        'realisasi_deb' => 1, 'realisasi_os' => 200000000.0,
+                        'realisasi_baru_deb' => 1, 'realisasi_baru_os' => 200000000.0,
+                        'suplesi_deb' => 0, 'suplesi_os' => 0.0,
+                    ],
+                    'ponorogo' => [
+                        'cabang' => 'KC PONOROGO', 'unit' => 'KC PONOROGO', 'branch_code' => '70',
+                        'rm' => self::UNASSIGNED_RM, 'produk' => 'BRIGUNA-KONSUMER',
+                        'realisasi_deb' => 5, 'realisasi_os' => 608519594.0,
+                        'realisasi_baru_deb' => 2, 'realisasi_baru_os' => 350000000.0,
+                        'suplesi_deb' => 3, 'suplesi_os' => 258519594.0,
+                    ],
+                ];
+            }
+        });
+
+        $payload = app(LandingConsumerOperationalService::class)->payload('2026-09-12', null, true);
+        $rows = collect(data_get($payload, 'quadrants.branches.0.products.briguna.current_rows'))
+            ->where('name', ConsumerRmRealizationCalculator::UNASSIGNED_RM)
+            ->sortBy('branch')
+            ->values();
+
+        $this->assertCount(2, $rows);
+        $this->assertSame(['KC Magetan', 'KC Ponorogo'], $rows->pluck('branch')->all());
+        $this->assertSame([1, 5], $rows->pluck('net_deb')->all());
+        $this->assertSame([200000000.0, 608519594.0], $rows->pluck('net_os')->all());
+    }
+
     public function test_consumer_dashboard_contract_has_separate_product_tables_and_protected_route(): void
     {
         $view = file_get_contents(resource_path('views/dashboard.blade.php'));
@@ -446,18 +551,20 @@ CSV;
         $this->assertStringContainsString('data_get($consumerOperations, \'kpr_pipeline\'', $partial);
         $this->assertStringContainsString('Kuadran RM Briguna', $partial);
         $this->assertStringContainsString('Kuadran RM KPR', $partial);
-        $this->assertStringContainsString('<th>Kuadran 1</th>', $partial);
-        $this->assertStringContainsString('<th>Total RM</th>', $partial);
+        $this->assertStringContainsString('scope="colgroup">Target</th>', $partial);
+        $this->assertStringContainsString('scope="colgroup">Realisasi Baru</th>', $partial);
+        $this->assertStringContainsString('scope="colgroup">Nett Disbursement</th>', $partial);
+        $this->assertStringContainsString('scope="col">Kuadran</th>', $partial);
         $this->assertStringContainsString('consumer-rm-illustration-title', $partial);
         $this->assertStringContainsString('data-consumer-area6-trigger="1"', $partial);
-        $this->assertStringContainsString('data-consumer-quadrant-detail', $partial);
-        $this->assertStringContainsString('data-consumer-quadrant-rms', $partial);
+        $this->assertStringContainsString('consumer-ops-rm-visual', $partial);
+        $this->assertStringContainsString('consumer-ops-rm-avatar', $partial);
         $this->assertStringContainsString('openConsumerQuadrantDetails', $view);
         $this->assertStringContainsString("addEventListener('dblclick'", $view);
     }
 
     /** @return array<string, mixed> */
-    private function snapshot(string $period, string $product, string $rm, float $realisation): array
+    private function snapshot(string $period, string $product, string $rm, float $realisation, int $debtors = 0): array
     {
         return [
             'periode' => $period,
@@ -465,6 +572,7 @@ CSV;
             'segmen' => 'CONSUMER',
             'produk' => $product,
             'rm' => $rm,
+            'realisasi_deb' => $debtors,
             'realisasi_os' => $realisation,
         ];
     }

@@ -56,6 +56,11 @@
         width: 100%;
     }
 
+    .loan-date-wrap {
+        position: relative;
+        width: 100%;
+    }
+
     .loan-dropdown-icon {
         position: absolute;
         left: 1.25rem;
@@ -90,6 +95,31 @@
         border-color: var(--loan-blue);
         box-shadow: 0 10px 25px rgba(8, 87, 195, 0.12);
         transform: translateY(-2px);
+    }
+
+    .loan-date-input {
+        width: 100%;
+        height: 60px;
+        background: #ffffff;
+        border: 2px solid #e2e8f0;
+        border-radius: 18px;
+        padding: 0 1rem 0 3.5rem;
+        color: #1e293b;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    .loan-date-input:hover {
+        border-color: var(--loan-blue);
+        box-shadow: 0 10px 25px rgba(8, 87, 195, 0.12);
+    }
+
+    .loan-date-input:focus {
+        outline: none;
+        border-color: var(--loan-blue);
+        box-shadow: 0 0 0 5px rgba(8, 87, 195, 0.1);
     }
 
     .loan-dropdown.is-open { z-index: 3100 !important; }
@@ -302,13 +332,15 @@
         }
 
         .loan-dropdown-toggle,
+        .loan-date-input,
         .btn-loan-modern-submit {
             height: 44px;
             border-radius: 10px;
             font-size: .78rem;
         }
 
-        .loan-dropdown-toggle {
+        .loan-dropdown-toggle,
+        .loan-date-input {
             padding-left: 2.45rem;
             padding-right: .85rem;
         }
@@ -354,7 +386,8 @@
             padding-right: 0.5rem !important;
         }
 
-        .loan-dropdown-toggle {
+        .loan-dropdown-toggle,
+        .loan-date-input {
             height: 52px;
             padding-right: 1rem;
             font-size: 0.85rem;
@@ -627,7 +660,8 @@
         margin-bottom: 2rem !important;
     }
 
-    .loan-dropdown-toggle {
+    .loan-dropdown-toggle,
+    .loan-date-input {
         height: 48px !important;
         border: 2px solid #cbd5e1 !important;
         padding: 0 1.25rem 0 2.5rem !important;
@@ -636,7 +670,8 @@
         color: #1e293b !important;
     }
 
-    .loan-dropdown-toggle:hover {
+    .loan-dropdown-toggle:hover,
+    .loan-date-input:hover {
         border-color: #475569 !important;
         transform: none !important;
     }
@@ -803,6 +838,7 @@
         }
 
         .loan-dropdown-toggle,
+        .loan-date-input,
         .btn-loan-modern-submit {
             height: 38px !important;
             min-height: 38px !important;
@@ -906,6 +942,7 @@
     }
 
     #loanDashboardCaptureArea .loan-dropdown-toggle,
+    #loanDashboardCaptureArea .loan-date-input,
     #loanDashboardCaptureArea .btn-loan-modern-submit {
         height: 42px !important;
         min-height: 42px !important;
@@ -915,13 +952,16 @@
     }
 
     #loanDashboardCaptureArea .loan-dropdown,
+    #loanDashboardCaptureArea .loan-date-wrap,
+    #loanDashboardCaptureArea .loan-date-input,
     #loanDashboardCaptureArea .loan-dropdown-toggle {
         width: 100%;
         max-width: 100%;
         min-width: 0;
     }
 
-    #loanDashboardCaptureArea .loan-dropdown-toggle {
+    #loanDashboardCaptureArea .loan-dropdown-toggle,
+    #loanDashboardCaptureArea .loan-date-input {
         padding: 0 0.75rem 0 2.45rem !important;
         overflow: hidden;
     }
@@ -1095,26 +1135,14 @@
                 </div>
 
                 <div class="loan-filter-item">
-                    <label class="loan-filter-label">Periode Terakhir</label>
-                    <div class="loan-dropdown" data-loan-dropdown="periode">
+                    <label class="loan-filter-label" for="periodeSelector">Periode Terakhir</label>
+                    <div class="loan-date-wrap">
                         <i class="fas fa-calendar-day loan-dropdown-icon"></i>
-                        <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="periode">
-                            <span class="loan-dropdown-text">Pilih Periode</span>
-                            <i class="fas fa-chevron-down small opacity-50"></i>
-                        </button>
-                        <div class="loan-dropdown-menu" data-loan-dropdown-menu="periode">
-                            @foreach($periods as $periode)
-                                <div class="loan-dropdown-option {{ $periode === $selectedPeriod ? 'is-active' : '' }}" data-value="{{ $periode }}">
-                                    <div class="loan-dropdown-check"><i class="fas fa-check"></i></div>
-                                    <span>{{ \Carbon\Carbon::parse($periode)->format('d M Y') }}</span>
-                                </div>
-                            @endforeach
-                        </div>
-                        <select id="periodeSelector" class="d-none">
-                            @foreach($periods as $periode)
-                                <option value="{{ $periode }}" @selected($periode === $selectedPeriod)>{{ $periode }}</option>
-                            @endforeach
-                        </select>
+                        <input type="date" id="periodeSelector" class="loan-date-input"
+                            value="{{ $selectedPeriod }}"
+                            min="{{ $periods->last() }}"
+                            max="{{ $periods->first() }}"
+                            aria-label="Pilih tanggal posisi kredit">
                     </div>
                 </div>
 
@@ -1645,7 +1673,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     { id: 'nplSection', code: 'NPL', label: 'Non-Performing' }
                 );
                 
-                const dateStr = $periodeSel.find('option:selected').text().trim().replace(/ /g, '-');
+                const dateStr = String($periodeSel.val() || 'tanpa-periode').replace(/-/g, '');
                 const kategoriStr = $kategoriSel.val().trim().toUpperCase();
 
                 for (const [index, sec] of sections.entries()) {
@@ -1676,7 +1704,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     ctx.fillStyle = '#64748b';
                     ctx.font = `600 ${28 * scaleFactor}px "Inter", sans-serif`;
-                    const headerInfo = `Periode: ${$periodeSel.find('option:selected').text()} | Kategori: ${$kategoriSel.val()} | ${sec.label}`;
+                    const headerInfo = `Periode: ${formatDate($periodeSel.val())} | Kategori: ${$kategoriSel.val()} | ${sec.label}`;
                     ctx.fillText(headerInfo, 40 * scaleFactor, 130 * scaleFactor);
 
                     ctx.strokeStyle = '#e2e8f0';
@@ -1714,7 +1742,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const el = document.getElementById(sectionId);
         if (!el) return;
 
-        const dateStr = $periodeSel.find('option:selected').text().trim().replace(/ /g, '-');
+        const dateStr = String($periodeSel.val() || 'tanpa-periode').replace(/-/g, '');
         const kategoriStr = $kategoriSel.val().trim().toUpperCase();
         const sectionCode = sectionId.replace('Section', '').toUpperCase();
 
@@ -2114,8 +2142,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 return response.json();
             })
             .then(data => {
+                const effectivePeriod = data.selected_period || periode;
+                if (data.selected_period) {
+                    $periodeSel.val(data.selected_period);
+                }
                 const payloadKancaLabel = data.kanca_label || kancaLabel;
-                dashboardMeta.textContent = `Menampilkan dashboard kredit ${kategori} - ${payloadKancaLabel} per ${formatDate(periode)}.`;
+                dashboardMeta.textContent = `Menampilkan dashboard kredit ${kategori} - ${payloadKancaLabel} per ${formatDate(effectivePeriod)}.`;
                 
                 consolidationSection.classList.add('d-none');
                 consolidationTableContainer.innerHTML = '';

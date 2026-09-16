@@ -135,6 +135,20 @@
                                     <strong>{{ data_get($rm, 'rm', '-') }}</strong>
                                     <span>{{ data_get($rm, 'unit_code', '-') }} &middot; {{ data_get($rm, 'unit', '-') }}</span>
                                 </div>
+                                <dl class="sme-ops-rm-row__metrics" aria-label="Kinerja bulan berjalan">
+                                    <div>
+                                        <dt>Deb</dt>
+                                        <dd>{{ $formatInteger(data_get($rm, 'realization_deb', 0)) }}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Real (Rp Jt)</dt>
+                                        <dd>{{ $formatAmount(((float) data_get($rm, 'realization_rp', 0)) / 1_000_000) }}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>% LAR</dt>
+                                        <dd>{{ $formatPercent(data_get($rm, 'lar_pct', 0)) }}</dd>
+                                    </div>
+                                </dl>
                                 <span class="sme-ops-q-badge q{{ data_get($rm, 'quadrant', 4) }}">Kuadran {{ data_get($rm, 'quadrant', '-') }}</span>
                             </div>
                         @endforeach
@@ -191,7 +205,7 @@
                     <thead>
                         <tr>
                             <th>Branch Office</th>
-                            @foreach(['lt_500', '500_1000', '1000_1600', 'gte_1600'] as $tierKey)
+                            @foreach(['zero', 'lt_500', '500_1000', '1000_1600', 'gte_1600'] as $tierKey)
                                 <th>{{ data_get($realizationTiers, 'totals.' . $tierKey . '.label', '-') }}</th>
                             @endforeach
                             <th>Total RM</th>
@@ -201,7 +215,7 @@
                         @foreach((array) data_get($realizationTiers, 'branches', []) as $branch)
                             <tr>
                                 <th scope="row"><i class="fas fa-building"></i>{{ data_get($branch, 'branch', '-') }}</th>
-                                @foreach(['lt_500', '500_1000', '1000_1600', 'gte_1600'] as $tierKey)
+                                @foreach(['zero', 'lt_500', '500_1000', '1000_1600', 'gte_1600'] as $tierKey)
                                     @php
                                         $tierMetric = (array) data_get($branch, 'tiers.' . $tierKey, []);
                                         $tierDetail = [
@@ -231,13 +245,13 @@
                     <tfoot>
                         <tr>
                             <th>Total</th>
-                            @foreach(['lt_500', '500_1000', '1000_1600', 'gte_1600'] as $tierKey)
+                            @foreach(['zero', 'lt_500', '500_1000', '1000_1600', 'gte_1600'] as $tierKey)
                                 <td>
-                                    <strong>{{ $formatInteger(data_get($realizationTiers, 'totals.' . $tierKey . '.rm_count', 0)) }} RM</strong>
-                                    <span>{{ $formatPercent(data_get($realizationTiers, 'totals.' . $tierKey . '.percentage', 0)) }}</span>
+                                    <strong class="text-white">{{ $formatInteger(data_get($realizationTiers, 'totals.' . $tierKey . '.rm_count', 0)) }} RM</strong>
+                                    <span class="text-white">{{ $formatPercent(data_get($realizationTiers, 'totals.' . $tierKey . '.percentage', 0)) }}</span>
                                 </td>
                             @endforeach
-                            <td class="is-total">{{ $formatInteger(data_get($realizationTiers, 'total_rm', 0)) }}</td>
+                            <td class="is-total text-white">{{ $formatInteger(data_get($realizationTiers, 'total_rm', 0)) }}</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -343,7 +357,7 @@
                     <span class="sme-ops-section-number">05</span>
                     <span class="sme-ops-feature-icon"><i class="fas fa-file-signature"></i></span>
                     <div>
-                        <span class="sme-ops-kicker">Monitoring Agustus</span>
+                        <span class="sme-ops-kicker">Monitoring {{ data_get($extension, 'period_label', 'periode terbaru') }}</span>
                         <h3 id="sme-extension-title">Perpanjangan</h3>
                         <p>Kedisiplinan pengisian dan progres penyelesaian nominatif.</p>
                     </div>
@@ -370,7 +384,7 @@
                         <small>{{ $formatInteger(data_get($extension, 'attendance.missing', 0)) }} belum mengisi</small>
                     </div>
                 </div>
-                <div class="sme-ops-process-list" aria-label="Progress Perpanjangan Agustus">
+                <div class="sme-ops-process-list" aria-label="Progress Perpanjangan {{ data_get($extension, 'period_label', 'periode terbaru') }}">
                     @foreach((array) data_get($extension, 'statuses', []) as $status)
                         <div class="sme-ops-process-row">
                             <span class="sme-ops-process-row__icon"><i class="{{ data_get($extensionIcons, data_get($status, 'key'), 'fas fa-circle') }}"></i></span>

@@ -6,13 +6,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 33 |
+| file | 34 |
 | function | 4 |
-| method | 71 |
+| method | 76 |
 | unresolved_symbol | 17 |
 | middleware | 8 |
 | route | 18 |
-| class | 15 |
+| class | 16 |
 | table | 1 |
 | view | 8 |
 
@@ -49,12 +49,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `throwRateLimitedValidationException` | method | 9 | `app/Http/Requests/Auth/LoginRequest.php:106` |
 | `user-management.destroy` | route | 9 | - |
 | `user-management.index` | route | 9 | - |
-| `startFreshAuthenticatedSession` | method | 8 | `app/Http/Controllers/Auth/AuthenticatedSessionController.php:51` |
+| `BranchScopeReconciliationTest` | class | 8 | `tests/Unit/BranchScopeReconciliationTest.php:17` |
 
 ## Route Nodes
 
-- `generated::En5dqAes9CPCurNw` - `login`
-- `generated::zordguGW9En5qNg3` - `confirm-password`
+- `generated::1IlUES9fcl4xE0ov` - `confirm-password`
+- `generated::iKwVRwHFv9iay8nm` - `login`
 - `login` - `login`
 - `logout` - `logout`
 - `password.confirm` - `confirm-password`
@@ -75,6 +75,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 ## Class Nodes
 
 - `AuthenticatedSessionController` - `app/Http/Controllers/Auth/AuthenticatedSessionController.php`
+- `BranchScopeReconciliationTest` - `tests/Unit/BranchScopeReconciliationTest.php`
 - `ConfirmablePasswordController` - `app/Http/Controllers/Auth/ConfirmablePasswordController.php`
 - `EmailVerificationNotificationController` - `app/Http/Controllers/Auth/EmailVerificationNotificationController.php`
 - `EmailVerificationPromptController` - `app/Http/Controllers/Auth/EmailVerificationPromptController.php`
@@ -111,10 +112,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | import -> access-control (protected_by) | 776 |
 | dashboard-pinjaman -> access-control (protected_by) | 165 |
-| dashboard-simpanan -> access-control (protected_by) | 145 |
+| dashboard-simpanan -> access-control (protected_by) | 150 |
 | bank-pipeline -> access-control (protected_by) | 114 |
 | core -> access-control (protected_by) | 103 |
-| access-control -> core (calls) | 66 |
+| access-control -> core (calls) | 68 |
 | dashboard-harian -> access-control (protected_by) | 45 |
 | input-management -> access-control (protected_by) | 35 |
 | access-control -> core (accepts) | 30 |
@@ -133,9 +134,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | access-control -> core (defines_table) | 7 |
 | access-control -> dashboard-simpanan (references_route) | 7 |
 | access-control -> core (writes_table) | 6 |
+| access-control -> core (instantiates) | 6 |
 | jobs-snapshots -> access-control (protected_by) | 6 |
 | prognosa -> access-control (protected_by) | 5 |
 | access-control -> core (checks_table) | 4 |
 | access-control -> marketshare (references_route) | 4 |
-| access-control -> core (instantiates) | 4 |
 | core -> access-control (references_route) | 4 |

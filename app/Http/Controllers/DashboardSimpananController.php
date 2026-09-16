@@ -31,6 +31,7 @@ use App\Support\LandingLoanAnalyticsService;
 use App\Support\LandingLoanRiskCacheService;
 use App\Support\LandingPrognosaCardService;
 use App\Support\LandingSmeOperationalService;
+use App\Support\LandingPnMismatchService;
 use App\Support\LoanQualityBucketMapper;
 use App\Support\MarketShareArea6Report;
 use App\Support\MarketShareSektoralReport;
@@ -1830,7 +1831,6 @@ class DashboardSimpananController extends Controller
             $branchScope,
             $request->boolean('refresh')
         );
-
         return view('dashboard.partials.sme-operations', compact('smeOperations'));
     }
 
@@ -1860,6 +1860,9 @@ class DashboardSimpananController extends Controller
             $this->effectiveDashboardBranchScope(),
             $request->boolean('refresh')
         );
+        $consumerOperations['pn_mismatch'] = app(LandingPnMismatchService::class)->summary(
+            'consumer', data_get($consumerOperations, 'quadrants.period'), $this->effectiveDashboardBranchScope()
+        );
 
         return view('dashboard.partials.consumer-operations', compact('consumerOperations'));
     }
@@ -1877,11 +1880,30 @@ class DashboardSimpananController extends Controller
             data_get($microPerformance, 'meta.period'),
             $branchScope
         );
+        $microPerformance['pn_mismatch'] = app(LandingPnMismatchService::class)->summary(
+            'micro', data_get($microPerformance, 'meta.period'), $branchScope
+        );
         $microPerformance['pipeline'] = app(LandingMicroPipelineService::class)->payload(
             $branchScope
         );
 
         return view('dashboard.partials.micro-performance', compact('microPerformance'));
+    }
+
+    public function pnMismatchNominatives(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $params = $request->validate([
+            'segment' => 'required|in:sme,consumer,micro',
+            'periode' => 'required|date_format:Y-m-d',
+            'branch' => 'required|string|max:150',
+            'page' => 'sometimes|integer|min:1',
+        ]);
+        $this->configureLandingBranchScope($request);
+
+        return response()->json(app(LandingPnMismatchService::class)->nominatives(
+            $params['segment'], $params['periode'], $this->effectiveDashboardBranchScope(),
+            $params['branch'], (int) ($params['page'] ?? 1)
+        ));
     }
 
     public function microPipeline(Request $request): \Illuminate\Http\JsonResponse
@@ -1963,7 +1985,7 @@ class DashboardSimpananController extends Controller
         $branches = $service->fetchBranches();
         $rkaPeriods = $service->fetchRkaPeriods();
 
-        $selectedPeriod = $request->input('periode') ?? $periods->first();
+        $selectedPeriod = $service->resolveEffectivePeriod($request->input('periode'), $periods);
         $selectedCategory = $request->input('kategori') ?? 'all';
         $selectedBranch = $request->input('cabang') ?? 'area6';
         $selectedRka = $request->input('rka_periode') ?? $rkaPeriods->first();
@@ -1983,14 +2005,16 @@ class DashboardSimpananController extends Controller
     public function dashboardDanaData(Request $request)
     {
         $service = app(DashboardDanaService::class);
-        $period = $request->input('periode');
+        $period = $service->resolveEffectivePeriod($request->input('periode'));
         $category = $request->input('kategori');
         $branch = $request->input('cabang');
         $rkaPeriod = $request->input('rka_periode');
 
         $data = $service->getDashboardData($period, $category, $rkaPeriod, $branch);
 
-        return response()->json($data);
+        return response()->json(array_merge([
+            'selected_period' => $period,
+        ], $data));
     }
 
     public function hourlyDpkIndex(Request $request): View
@@ -5951,6 +5975,7 @@ class DashboardSimpananController extends Controller
             'cacheKey' => $this->presentationPayloadCacheKey($period),
             'stableCacheKey' => $this->presentationStablePayloadCacheKey($period),
             'period' => $period,
+            'landingBranchKey' => $this->landingBranchCacheKey(),
         ]);
     }
 

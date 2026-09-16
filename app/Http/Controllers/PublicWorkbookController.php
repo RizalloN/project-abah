@@ -59,21 +59,26 @@ class PublicWorkbookController extends Controller
             }
 
             if (!$this->isUsableWorkbook($path)) {
-                $sourceUrl = (string) config("services.{$configKey}.source_url", '');
-                if ($sourceUrl !== '') {
-                    return redirect()->away($sourceUrl);
+                $fallbackCachePath = trim((string) config("services.{$configKey}.fallback_cache_path", ''), '/\\');
+                if ($fallbackCachePath !== '' && $this->isUsableWorkbook(storage_path($fallbackCachePath))) {
+                    $path = storage_path($fallbackCachePath);
+                } else {
+                    try {
+                        $this->refreshWorkbook($path, $configKey, $label);
+                    } catch (Throwable $exception) {
+                        Log::warning("Synchronous refresh of {$label} workbook failed: " . $exception->getMessage());
+                    }
+
+                    if (!$this->isUsableWorkbook($path)) {
+                        abort(503, 'Workbook ' . $label . ' sedang diproses atau belum siap diunduh.');
+                    }
                 }
-                $fallbackUrl = (string) config("services.{$configKey}.workbook_url", '');
-                if ($fallbackUrl !== '') {
-                    return redirect()->away($fallbackUrl);
-                }
-                abort(502, 'Workbook ' . $label . ' belum tersedia pada cache lokal.');
             }
         }
 
         return response()->file($path, [
             'Content-Type' => $contentType,
-            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
             'Cache-Control' => 'public, max-age=300',
             'Access-Control-Allow-Origin' => '*',
         ]);

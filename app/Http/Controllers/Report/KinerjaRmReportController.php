@@ -121,6 +121,9 @@ class KinerjaRmReportController extends Controller
                         : null,
                     'realization_deb' => (int) data_get($row, 'months.'.$latestPerformanceMonth.'.deb', 0),
                     'realization_rp' => (float) data_get($row, 'months.'.$latestPerformanceMonth.'.rp', 0),
+                    'lar_pct' => is_numeric(data_get($row, 'months.'.$latestPerformanceMonth.'.lar_pct'))
+                        ? (float) data_get($row, 'months.'.$latestPerformanceMonth.'.lar_pct')
+                        : 0.0,
                     'has_recent_realization' => $recentPerformanceMonths->contains(function (string $month) use ($row): bool {
                         return (int) data_get($row, 'months.'.$month.'.deb', 0) > 0
                             || abs((float) data_get($row, 'months.'.$month.'.rp', 0)) > 0.001;
@@ -203,6 +206,7 @@ class KinerjaRmReportController extends Controller
     private function landingSmallRealizationTiers(Collection $rows, string $periodLabel): array
     {
         $definitions = [
+            'zero' => ['label' => 'Belum Real (Rp 0)'],
             'lt_500' => ['label' => '< Rp 500 jt'],
             '500_1000' => ['label' => 'Rp 500 - <1.000 jt'],
             '1000_1600' => ['label' => 'Rp 1.000 - 1.600 jt'],
@@ -214,6 +218,7 @@ class KinerjaRmReportController extends Controller
             ->map(function (array $row): array {
                 $value = (float) $row['realization_rp'];
                 $row['tier'] = match (true) {
+                    $value == 0.0 => 'zero',
                     $value < 500_000_000 => 'lt_500',
                     $value < 1_000_000_000 => '500_1000',
                     $value <= 1_600_000_000 => '1000_1600',
@@ -345,6 +350,7 @@ class KinerjaRmReportController extends Controller
                     'ratas_rp' => 0.0,
                     'realization_deb' => 0,
                     'realization_rp' => 0.0,
+                    'lar_pct' => 0.0,
                     'has_recent_realization' => false,
                     'latest_loan_os' => 0.0,
                     'latest_has_data' => false,
@@ -731,6 +737,8 @@ class KinerjaRmReportController extends Controller
 
     public function index(Request $request): View
     {
+        $this->releaseSessionLockIfNeeded();
+
         $availablePeriods = $this->fetchAvailablePeriods();
         $selectedSegmen = $this->resolveSelectedSegmen($request->input('segmen'));
         $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $request->input('periode'))

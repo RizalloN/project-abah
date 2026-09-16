@@ -39,4 +39,22 @@ class SimpananMultipnIndexCompactionMigrationTest extends TestCase
             $optimizer
         );
     }
+
+    public function test_casa_snapshot_limits_balance_aggregation_to_current_loan_identities(): void
+    {
+        $builder = file_get_contents(dirname(__DIR__, 2).'/app/Support/ReportSnapshotBuilder.php');
+
+        $this->assertIsString($builder);
+        $this->assertStringContainsString('tmp_rasio_loan_identities', $builder);
+        $this->assertStringContainsString('INNER JOIN tmp_rasio_loan_identities eligible', $builder);
+        $this->assertStringContainsString("['idx_loan_periode_cif']", $builder);
+        $this->assertStringContainsString("['idx_smp_posisi_cif_covering']", $builder);
+        $this->assertStringContainsString('$this->rasioCasaTempTableCacheKey === $cacheKey', $builder);
+        $this->assertStringContainsString('$loanPeriod,', $builder);
+        $this->assertStringContainsString('$casaDate,', $builder);
+        $this->assertStringContainsString('strtolower($loanKeyColumn)', $builder);
+        $this->assertStringContainsString('strtolower($casaKeyColumn)', $builder);
+        $this->assertStringContainsString("\$applyCasaTypeFilter ? '1' : '0'", $builder);
+        $this->assertStringContainsString('GROUP BY eligible.identity_key', $builder);
+    }
 }

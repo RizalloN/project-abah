@@ -174,7 +174,7 @@ class DashboardPinjamanKreditService
         $branchScope = $this->resolveBranchScope($selectedBranches);
         $singleBranchSelected = $this->hasExplicitSingleBranchSelection($selectedBranches) && count($branchScope) === 1;
 
-        if ($singleBranchSelected && $segment !== 'Mikro') {
+        if ($singleBranchSelected) {
             $detailScopes = $this->getDetailScopesForBranch($periods, $branchScope[0], $segment);
             if ($detailScopes !== []) {
                 return $detailScopes;

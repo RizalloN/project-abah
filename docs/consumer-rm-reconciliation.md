@@ -8,6 +8,30 @@ ke arsip database (34.070 rekening/posisi). Setelah rebuild, error Juli 5,2472%
 dengan 9/12 kuadran cocok; total Januari-Agustus 83/96 kuadran cocok. Target 1%
 belum tercapai. Angka pada bagian v26/v28 di bawah merekam kondisi sebelumnya.
 
+**Pembaruan 14 September 2026 (`consumer-cif-event-v2`):** kalkulator Briguna
+sekarang membentuk satu event per produk/CIF/posisi pertama setelah tanggal
+realisasi. Realisasi baru memakai plafon bruto ketika CIF produk tersebut tidak
+memiliki saldo akhir bulan sebelumnya. Suplesi memakai
+`MAX(0, total OS CIF pada posisi event - total OS CIF akhir bulan sebelumnya)`;
+seluruh rekening lama dalam CIF ikut baseline. KPR tetap dihitung terpisah
+sebagai plafon bruto maksimum per rekening unik.
+
+Booking dengan PN pengelola dan pemrakarsa kosong tidak lagi dibuang. Jika PN
+terisi pada posisi berikutnya sampai cutoff, booking memakai atribusi tersebut;
+jika tetap kosong, nilainya masuk `PN BELUM TERISI` per cabang/unit. Pada posisi
+12 September, total 169 rekening sama dengan tabel agregat pengguna: 162 sudah
+teratribusi dan 7 belum (Madiun 1/Rp30 juta, Magetan 1/Rp200 juta, Ponorogo
+5/Rp608.519.594). Snapshot hasil rebuild cocok 35/35 kelompok Consumer.
+
+Nominal Area 6 aplikasi Rp16.512.174.886 masih lebih tinggi Rp582.174.886 dari
+acuan agregat Rp15.930 juta. Selisih ini tidak di-hardcode. Sumber tidak memuat
+pasangan rekening pelunasan/jenis transaksi Kanwil; `jenis_restruk1` pada
+booking September hanya `N` atau kosong. Contoh Novan 11 September: plafon baru
+Rp25 juta, sedangkan perubahan seluruh saldo CIF dari akhir Agustus ke posisi
+event Rp18.337.898 karena beberapa fasilitas lama turun/hilang; acuan harian
+tetap Rp25 juta. Nominatif transaksi Kanwil diperlukan untuk membedakan
+pelunasan pasangan, pelunasan lain, dan gagal lunas secara deterministik.
+
 ## Menjalankan ulang
 
 ```powershell
@@ -299,3 +323,97 @@ tahap pemulihan ini; build frontend tidak diulang untuk perubahan data saja.
 Audit KPR `storage/app/consumer-kpr-verified-20260910-073210/` tetap cocok
 48/48 angka sumber/kalkulator dan 24/24 total pada masing-masing KPI/landing.
 Target kuadran KPR Taufik masih belum terverifikasi terhadap acuan independen.
+
+### Audit lanjutan 14 September 2026: sumber selisih Briguna
+
+Audit read-only posisi 12 September membandingkan kalkulator, snapshot KPI,
+dan baris realisasi landing. Keduanya menghasilkan Briguna **169 rekening /
+Rp16.512.174.886**, sedangkan tabel Kanwil 12 RM yang diberikan pengguna
+berjumlah **169 rekening / Rp15.930.000.000** (selisih total
+Rp582.174.886). KPR pada posisi yang sama **12 rekening / Rp2.512.700.000**
+di kalkulator dan KPI. Tujuh rekening Briguna senilai **Rp838.519.594**
+berada pada bucket `PN BELUM TERISI`: KC Magetan satu / Rp200 juta,
+KC Ponorogo lima / Rp608.519.594, dan KC Madiun KCP Caruban satu /
+Rp30 juta. PN pengelola maupun pemrakarsa kosong pada nominatif dan raw
+Daily Loan tanggal tersebut; jangan memindahkannya ke RM berdasarkan CIF
+lama atau menebak dari selisih agregat Kanwil.
+
+Pada Juli/Agustus, snapshot KPI yang sebelumnya dibangun dengan versi
+kalkulator lama berbeda dari kalkulasi ulang versi `consumer-cif-event-v2`:
+Juli Rp41.572.098.365 versus Rp39.892.808.867, Agustus
+Rp41.703.643.110 versus Rp41.044.158.804 (jumlah rekening masing-masing
+tetap 386 dan 369). Pada 11 RM dengan referensi Kanwil Juli/Agustus,
+jumlah selisih absolut snapshot masing-masing Rp2.161.888.738 dan
+Rp968.016.078; kalkulasi ulang v2 masing-masing Rp3.012.252.855 dan
+Rp1.548.990.903. Jadi membangun ulang seluruh bulan historis dengan v2
+atau memaksa landing dan KPI memakai v2 tanpa audit nominatif justru
+memperbesar selisih terukur. Percobaan menjumlahkan *kenaikan inkremental*
+untuk beberapa tanggal pencairan CIF juga diuji dan dibatalkan karena
+memperbesar selisih RM terhadap referensi Kanwil.
+
+Pengujian ulang independen KPR Januari–Agustus pada
+`storage/app/consumer-kpr-verified-20260914-164651/` lulus 48/48 sel
+plafon bruto sumber/kalkulator serta 24/24 total bulanan masing-masing
+di KPI dan proyeksi landing. Tidak ada dasar untuk mengubah rumus KPR.
+Untuk merekonsiliasi angka RM Briguna hingga nominal tepat diperlukan
+nominatif Kanwil per rekening/CIF beserta tanggal pencairan dan PN yang
+diatribusikan (khususnya tujuh rekening PN kosong), serta riwayat posisi
+Daily Loan untuk semua tanggal tersebut. Angka ringkasan RM tidak cukup
+untuk membedakan kesalahan atribusi PN dari perbedaan aturan suplesi.
+
+Validasi yang tidak mengubah angka produksi: 74 pengujian terkait
+(424 assertions) lulus, Vite build lulus, dan render server KPI Briguna,
+KPR serta partial landing lulus. Audit kuadran historis 128/128 cocok
+(`storage/app/consumer-pages-verified-20260914-164742/`); kecocokan
+kuadran **bukan** bukti nominal historis cocok karena perbedaan snapshot
+dan kalkulator v2 di atas masih ada. Tidak dilakukan rebuild historis
+atau atribusi otomatis PN tanpa nominatif pembanding.
+
+### Audit Ridho dan uji sensitivitas tanpa nominatif Kanwil
+
+Pada 12 September, sumber asli dan arsip sama-sama memuat **12 booking
+Briguna di KCP Caruban**. Sebelas rekening ber-PN Ridho menghasilkan
+**Rp1.255.908.067** menurut perubahan CIF pada posisi pertama yang tersedia:
+
+| CIF | Akhir Agustus | OS CIF saat event | Kontribusi | Klasifikasi |
+| --- | ---: | ---: | ---: | --- |
+| HK24258 | Rp176.801.265 | Rp426.801.265 | Rp250.000.000 | Suplesi |
+| TK33040 | Rp6.438.746 | Rp81.438.746 | Rp75.000.000 | Suplesi |
+| E187433 | Rp0 | Rp130.000.000 | Rp130.000.000 | Baru |
+| UA53133 | Rp88.598.459 | Rp102.598.459 | Rp14.000.000 | Suplesi |
+| KJ90714 | Rp0 | Rp60.000.000 | Rp60.000.000 | Baru |
+| SHR7864 | Rp46.274.801 | Rp61.000.000 | Rp14.725.199 | Suplesi |
+| AOM1677 | Rp0 | Rp35.000.000 | Rp35.000.000 | Baru |
+| THJ1062 | Rp100.201.704 | Rp138.000.000 | Rp37.798.296 | Suplesi |
+| SAOLY72 | Rp0 | Rp325.000.000 | Rp325.000.000 | Baru |
+| WF31857 | Rp0 | Rp300.000.000 | Rp300.000.000 | Baru |
+| KGY8641 | Rp87.134.726 | Rp101.519.298 | Rp14.384.572 | Suplesi |
+
+Rekening kedua belas, `55201008431107`/CIF `SVB6026`, bernilai Rp30 juta,
+tetapi PN pengelola dan pemrakarsa kosong di raw Daily Loan maupun arsip.
+Mengaitkannya ke Ridho hanya berdasarkan unit mengubah hasil menjadi
+12 rekening/Rp1.285.908.067, *lebih jauh* dari angka PPT 12/Rp1.110 juta.
+Kolom harian PPT 11 September (2 rekening/Rp315 juta) cocok dengan **plafon
+bruto** dua booking bertanggal realisasi 11 September, Rp300 juta + Rp15 juta;
+ini bukan bukti bahwa angka kumulatif memakai rumus bruto yang sama.
+
+Pada CIF `HK24258`, rekening lama Rp176.801.265 masih ada pada posisi event
+1 September dan hilang mulai 2 September. Mengganti posisi event dengan
+posisi akhir 12 September menurunkan kontribusi CIF itu dari Rp250 juta ke
+Rp73.198.735. Namun aturan cutoff untuk semua CIF bukan koreksi yang aman:
+Zulfa memiliki dua pencairan dalam CIF `RP47870` (2 dan 9 September), dan
+simulasi cutoff penuh menurunkan nilai Zulfa sekitar Rp335 juta padahal
+hasil event saat ini hanya selisih Rp182.433 dari PPT. Jumlah selisih absolut
+12 RM naik dari **Rp1.361.225.064** menjadi **Rp1.608.245.478** jika seluruh
+CIF dipaksa memakai cutoff. Aturan cutoff hanya untuk CIF satu booking
+menurunkan selisih absolut menjadi Rp1.273.245.478, tetapi memperburuk
+7 RM dan memperbesar kekurangan agregat RM terhadap PPT. Kedua variasi
+ditolak; definisi dan implementasi produksi tidak diubah dari hasil audit ini.
+
+Tanggal posisi 3 dan 10 September tidak tersedia pada sumber; dua booking
+Ridho bertanggal tersebut pertama terlihat masing-masing 4 dan 11 September.
+Keduanya CIF baru, sehingga tetap dihitung dari plafon bruto dan pergeseran
+posisi tidak menjelaskan selisih Ridho. Tidak ditemukan duplikasi booking
+atau selisih saldo CIF antara arsip dan raw untuk 12 rekening Caruban pada
+baseline/event yang diperiksa. Dengan PPT agregat saja, nilai pasti tiap
+suplesi dan pemilik PN kosong tidak dapat diidentifikasi secara unik.

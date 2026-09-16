@@ -62,7 +62,7 @@ class ResponsiveUiAuditScriptTest extends TestCase
         $this->assertStringContainsString('consumerKprPipelineTableCount', $script);
         $this->assertStringContainsString('consumerQuadrantProductCount', $script);
         $this->assertStringContainsString('consumerArea6TriggerCount', $script);
-        $this->assertStringContainsString('consumerQuadrantDetailCount', $script);
+        $this->assertStringContainsString('consumerRmRowCount', $script);
         $this->assertStringContainsString('hasSeparateConsumerQuadrants', $script);
         $this->assertStringContainsString('segmentContainersVisible', $script);
         $this->assertStringContainsString('microProductRows', $script);
@@ -90,7 +90,7 @@ class ResponsiveUiAuditScriptTest extends TestCase
         $this->assertStringContainsString('musimanBreakdownVisible', $script);
         $this->assertStringContainsString('billingInteractionFunctional', $script);
         $this->assertStringContainsString('billingInteractionDiagnostics', $script);
-        $this->assertStringContainsString("[data-billing-view=\"m1\"]", $script);
+        $this->assertStringContainsString('[data-billing-view="m1"]', $script);
         $this->assertStringContainsString("billingGrid?.classList.contains('view-mode-m1')", $script);
         $this->assertStringContainsString('gridColumnCount', $script);
         $this->assertStringContainsString('centerDelta', $script);

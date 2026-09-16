@@ -205,4 +205,63 @@ class LandingSmeAnalyticsContractTest extends TestCase
         $this->assertStringNotContainsString('@php', $html);
         $this->assertStringNotContainsString('{{', $html);
     }
+
+    public function test_sme_branch_rm_rows_render_current_month_metrics_between_identity_and_quadrant(): void
+    {
+        $branchHtml = view('dashboard.partials.sme-operations', [
+            'smeOperations' => [
+                'meta' => ['scope_label' => 'KC Madiun', 'scope' => 'branch'],
+                'quadrants' => [
+                    'available' => true,
+                    'mode' => 'branch',
+                    'period_label' => '12 Sep 2026',
+                    'total_rm' => 1,
+                    'totals' => [1 => ['count' => 1, 'percentage' => 100]],
+                    'rms' => [[
+                        'rm' => 'RM Satu',
+                        'unit_code' => '45',
+                        'unit' => 'KC MADIUN',
+                        'realization_deb' => 3,
+                        'realization_rp' => 525000000,
+                        'lar_pct' => 2.5,
+                        'quadrant' => 1,
+                    ]],
+                ],
+            ],
+        ])->render();
+
+        $identityPosition = strpos($branchHtml, 'sme-ops-rm-row__identity');
+        $metricsPosition = strpos($branchHtml, 'sme-ops-rm-row__metrics');
+        $quadrantPosition = strpos($branchHtml, 'sme-ops-q-badge');
+
+        $this->assertNotFalse($identityPosition);
+        $this->assertNotFalse($metricsPosition);
+        $this->assertNotFalse($quadrantPosition);
+        $this->assertLessThan($metricsPosition, $identityPosition);
+        $this->assertLessThan($quadrantPosition, $metricsPosition);
+        $this->assertStringContainsString('Kinerja bulan berjalan', $branchHtml);
+        $this->assertStringContainsString('Real (Rp Jt)', $branchHtml);
+        $this->assertStringContainsString('525', $branchHtml);
+        $this->assertStringContainsString('2,50%', $branchHtml);
+
+        $dashboard = file_get_contents(resource_path('views/dashboard.blade.php'));
+        $this->assertStringContainsString('.sme-ops .sme-ops-rm-row__metrics', $dashboard);
+        $this->assertStringContainsString('grid-column: 2 / -1;', $dashboard);
+
+        $areaHtml = view('dashboard.partials.sme-operations', [
+            'smeOperations' => [
+                'meta' => ['scope_label' => 'Area 6', 'scope' => 'area6'],
+                'quadrants' => [
+                    'available' => true,
+                    'mode' => 'area6',
+                    'period_label' => '12 Sep 2026',
+                    'total_rm' => 1,
+                    'totals' => [1 => ['count' => 1, 'percentage' => 100]],
+                    'branches' => [],
+                ],
+            ],
+        ])->render();
+
+        $this->assertStringNotContainsString('sme-ops-rm-row__metrics', $areaHtml);
+    }
 }

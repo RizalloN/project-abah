@@ -20,10 +20,12 @@ class DashboardHarianSnapshotService
     private const L1133_TABLE = 'l1133';
     private const SAVINGS_TABLE = 'ssa_simpanan';
     private const HOURLY_DPK_TABLE = 'hourly_dpk';
+    private const LW325_RECENT_PERIOD_INDEX = 'idx_lw325ph_updated_period';
     private const SOURCE_SIGNATURE_VERSION = 'landing-option-gi405-v1';
     private const AUTO_SYNC_RECENT_SOURCE_HOURS = 6;
     private const AREA_6_LABEL = 'Area 6';
     private const ALL_UNIT_LABEL = 'Semua Unit Kerja';
+    public const ALL_UNIT_RETAIL_SPLIT_LABEL = 'Semua Unit Kerja (Ritel dipecah menjadi KC dan KCP)';
     public const ALL_UNIT_KONSOL_VALUE = 'all-konsol';
     public const ALL_UNIT_KONSOL_LABEL = 'Semua Unit Kerja (Konsol)';
     private const METRIC_COLUMNS = [
@@ -36,16 +38,16 @@ class DashboardHarianSnapshotService
         'total_simpanan',
         'simpanan_ritel',
         'giro_ritel',
-        'deposito_ritel',
         'tabungan_ritel',
+        'deposito_ritel',
         'simpanan_mikro',
         'giro_mikro',
-        'deposito_mikro',
         'tabungan_mikro',
+        'deposito_mikro',
         'simpanan_wholesale',
         'giro_wholesale',
-        'deposito_wholesale',
         'tabungan_wholesale',
+        'deposito_wholesale',
         'total_casa',
         'casa_ritel',
         'casa_mikro',
@@ -124,16 +126,16 @@ class DashboardHarianSnapshotService
         ['key' => 'total_simpanan', 'label' => '1. Simpanan', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'simpanan_ritel', 'label' => 'A. Ritel', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
         ['key' => 'giro_ritel', 'label' => 'Giro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
-        ['key' => 'deposito_ritel', 'label' => 'Deposito', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'tabungan_ritel', 'label' => 'Tabungan', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'deposito_ritel', 'label' => 'Deposito', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'simpanan_mikro', 'label' => 'B. Mikro', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
         ['key' => 'giro_mikro', 'label' => 'Giro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
-        ['key' => 'deposito_mikro', 'label' => 'Deposito', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'tabungan_mikro', 'label' => 'Tabungan', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'deposito_mikro', 'label' => 'Deposito', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'simpanan_wholesale', 'label' => 'C. Wholesale', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
         ['key' => 'giro_wholesale', 'label' => 'Giro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
-        ['key' => 'deposito_wholesale', 'label' => 'Deposito', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'tabungan_wholesale', 'label' => 'Tabungan', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'deposito_wholesale', 'label' => 'Deposito', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'total_os', 'label' => '2. OS Total', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'total_os_non_commercial', 'label' => 'Total OS Non Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
         ['key' => 'commercial_os', 'label' => 'A. Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
@@ -949,8 +951,8 @@ class DashboardHarianSnapshotService
             'simpanan' => [
                 ['key' => 'simpanan', 'label' => 'Total Simpanan', 'source_key' => 'simpanan', 'rka_key' => 'total_simpanan', 'lower_better' => false],
                 ['key' => 'giro', 'label' => 'Giro', 'source_key' => 'giro', 'rka_keys' => ['giro_ritel', 'giro_mikro', 'giro_wholesale'], 'lower_better' => false],
-                ['key' => 'deposito', 'label' => 'Deposito', 'source_key' => 'deposito', 'rka_keys' => ['deposito_ritel', 'deposito_mikro', 'deposito_wholesale'], 'lower_better' => false],
                 ['key' => 'tabungan', 'label' => 'Tabungan', 'source_key' => 'tabungan', 'rka_keys' => ['tabungan_ritel', 'tabungan_mikro', 'tabungan_wholesale'], 'lower_better' => false],
+                ['key' => 'deposito', 'label' => 'Deposito', 'source_key' => 'deposito', 'rka_keys' => ['deposito_ritel', 'deposito_mikro', 'deposito_wholesale'], 'lower_better' => false],
                 ['key' => 'casa', 'label' => 'CASA', 'source_key' => 'casa', 'rka_key' => 'total_casa', 'lower_better' => false],
             ],
             'recovery' => [
@@ -1568,6 +1570,8 @@ class DashboardHarianSnapshotService
             ];
         }
 
+        $isRetailConsolidated = $this->isKeragaanUkerKonsolScope($unitKey);
+        $metricUnitKey = $isRetailConsolidated ? null : $unitKey;
         $comparisonPeriods = $this->resolveComparisonPeriods($selectedPeriod, $rkaPeriod, $mtmPeriod);
         $neededPeriods = array_values(array_unique(array_filter([
             $selectedPeriod,
@@ -1579,7 +1583,7 @@ class DashboardHarianSnapshotService
             $comparisonPeriods['h1'],
         ])));
 
-        $metricsByPeriod = $this->loadMetricsForPeriods($neededPeriods, $kancaKey, $unitKey);
+        $metricsByPeriod = $this->loadMetricsForPeriods($neededPeriods, $kancaKey, $metricUnitKey);
 
         $currentMetrics = $metricsByPeriod[$selectedPeriod] ?? $this->finalizeMetrics($this->emptyMetrics());
         $yoyMetrics = $comparisonPeriods['yoy'] ? ($metricsByPeriod[$comparisonPeriods['yoy']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
@@ -1588,8 +1592,8 @@ class DashboardHarianSnapshotService
         $mtmMetrics = $comparisonPeriods['mtm'] ? ($metricsByPeriod[$comparisonPeriods['mtm']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $mtdMetrics = $comparisonPeriods['mtd'] ? ($metricsByPeriod[$comparisonPeriods['mtd']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $h1Metrics = $comparisonPeriods['h1'] ? ($metricsByPeriod[$comparisonPeriods['h1']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
-        $rkaMetrics = $this->buildRkaMetrics($comparisonPeriods['rka'], $selectedPeriod, $kancaKey, $unitKey, false);
-        $rkaDecMetrics = $this->buildRkaMetrics($comparisonPeriods['rka'], $selectedPeriod, $kancaKey, $unitKey, true);
+        $rkaMetrics = $this->buildRkaMetrics($comparisonPeriods['rka'], $selectedPeriod, $kancaKey, $metricUnitKey, false);
+        $rkaDecMetrics = $this->buildRkaMetrics($comparisonPeriods['rka'], $selectedPeriod, $kancaKey, $metricUnitKey, true);
 
         $rows = collect(self::ROW_DEFINITIONS)->map(function (array $definition) use (
             $currentMetrics,
@@ -1692,7 +1696,11 @@ class DashboardHarianSnapshotService
             'summary' => [
                 'source' => $source,
                 'kanca_label' => $this->displayFilterLabel($kancaKey, self::AREA_6_LABEL, $selectedPeriod, 'kanca', $kancaKey, $unitKey),
-                'unit_label' => $this->displayFilterLabel($unitKey, self::ALL_UNIT_LABEL, $selectedPeriod, 'unit_kerja', $kancaKey, $unitKey),
+                'unit_label' => $isRetailConsolidated
+                    ? self::ALL_UNIT_KONSOL_LABEL
+                    : (count($this->normalizeFilterValues($kancaKey)) === 1 && $this->normalizeFilterValues($unitKey) === []
+                        ? self::ALL_UNIT_RETAIL_SPLIT_LABEL
+                        : $this->displayFilterLabel($unitKey, self::ALL_UNIT_LABEL, $selectedPeriod, 'unit_kerja', $kancaKey, $unitKey)),
                 'row_count' => count($rows),
                 'current_total_simpanan' => (float) ($currentMetrics['total_simpanan'] ?? 0),
                 'current_total_os' => (float) ($currentMetrics['total_os'] ?? 0),
@@ -2483,9 +2491,9 @@ class DashboardHarianSnapshotService
                     $values[$column] = (float) ($row->{$column} ?? 0);
                 }
 
-                $values['simpanan_ritel'] = $values['giro_ritel'] + $values['deposito_ritel'] + $values['tabungan_ritel'];
-                $values['simpanan_mikro'] = $values['giro_mikro'] + $values['deposito_mikro'] + $values['tabungan_mikro'];
-                $values['simpanan_wholesale'] = $values['giro_wholesale'] + $values['deposito_wholesale'] + $values['tabungan_wholesale'];
+                $values['simpanan_ritel'] = $values['giro_ritel'] + $values['tabungan_ritel'] + $values['deposito_ritel'];
+                $values['simpanan_mikro'] = $values['giro_mikro'] + $values['tabungan_mikro'] + $values['deposito_mikro'];
+                $values['simpanan_wholesale'] = $values['giro_wholesale'] + $values['tabungan_wholesale'] + $values['deposito_wholesale'];
 
                 return [$label => $values];
             })
@@ -2570,16 +2578,16 @@ class DashboardHarianSnapshotService
     {
         return [
             'giro_ritel',
-            'deposito_ritel',
             'tabungan_ritel',
+            'deposito_ritel',
             'simpanan_ritel',
             'giro_mikro',
-            'deposito_mikro',
             'tabungan_mikro',
+            'deposito_mikro',
             'simpanan_mikro',
             'giro_wholesale',
-            'deposito_wholesale',
             'tabungan_wholesale',
+            'deposito_wholesale',
             'simpanan_wholesale',
             'total_simpanan',
         ];
@@ -3659,9 +3667,9 @@ class DashboardHarianSnapshotService
             $final[$column] = (float) ($metrics[$column] ?? 0);
         }
 
-        $final['simpanan_ritel'] = $final['giro_ritel'] + $final['deposito_ritel'] + $final['tabungan_ritel'];
-        $final['simpanan_mikro'] = $final['giro_mikro'] + $final['deposito_mikro'] + $final['tabungan_mikro'];
-        $final['simpanan_wholesale'] = $final['giro_wholesale'] + $final['deposito_wholesale'] + $final['tabungan_wholesale'];
+        $final['simpanan_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'] + $final['deposito_ritel'];
+        $final['simpanan_mikro'] = $final['giro_mikro'] + $final['tabungan_mikro'] + $final['deposito_mikro'];
+        $final['simpanan_wholesale'] = $final['giro_wholesale'] + $final['tabungan_wholesale'] + $final['deposito_wholesale'];
         $calcTotalSimpanan = $final['simpanan_ritel'] + $final['simpanan_mikro'] + $final['simpanan_wholesale'];
         if ($final['total_simpanan'] < $calcTotalSimpanan) {
             $final['total_simpanan'] = $calcTotalSimpanan;
@@ -3905,9 +3913,9 @@ class DashboardHarianSnapshotService
         $final['total_npl_abs_non_commercial'] = $final['sme_npl'] + $final['consumer_npl'] + $final['micro_npl'];
         $final['total_sml_pct_non_commercial'] = $this->safePercent($final['total_sml_abs_non_commercial'], $final['total_os_non_commercial']);
         $final['total_npl_pct_non_commercial'] = $this->safePercent($final['total_npl_abs_non_commercial'], $final['total_os_non_commercial']);
-        $final['simpanan_ritel'] = $final['giro_ritel'] + $final['deposito_ritel'] + $final['tabungan_ritel'];
-        $final['simpanan_mikro'] = $final['giro_mikro'] + $final['deposito_mikro'] + $final['tabungan_mikro'];
-        $final['simpanan_wholesale'] = $final['giro_wholesale'] + $final['deposito_wholesale'] + $final['tabungan_wholesale'];
+        $final['simpanan_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'] + $final['deposito_ritel'];
+        $final['simpanan_mikro'] = $final['giro_mikro'] + $final['tabungan_mikro'] + $final['deposito_mikro'];
+        $final['simpanan_wholesale'] = $final['giro_wholesale'] + $final['tabungan_wholesale'] + $final['deposito_wholesale'];
         $computedTotalSimpanan = $final['simpanan_ritel'] + $final['simpanan_mikro'] + $final['simpanan_wholesale'];
         if ($computedTotalSimpanan > (float) ($final['total_simpanan'] ?? 0)) {
             $final['total_simpanan'] = $computedTotalSimpanan;
@@ -4276,73 +4284,52 @@ class DashboardHarianSnapshotService
 
     private function computeSharedPeriods(): array
     {
-        $loanPeriods = DB::table(self::LOAN_TABLE)
-            ->select('month_day_year_of_periode')
-            ->distinct()
-            ->pluck('month_day_year_of_periode')
-            ->map(fn ($value) => $this->normalizeDate((string) $value))
-            ->filter()
-            ->values()
-            ->all();
+        $loanPeriods = $this->distinctNormalizedSourcePeriods(self::LOAN_TABLE);
+        $savingsPeriods = $this->distinctNormalizedSourcePeriods(self::SAVINGS_TABLE);
+        $dlyKapPeriods = Schema::hasTable(self::DLY_KAP_TABLE)
+            ? $this->distinctNormalizedSourcePeriods(self::DLY_KAP_TABLE)
+            : [];
+        $l1133Periods = Schema::hasTable(self::L1133_TABLE)
+            ? $this->distinctNormalizedSourcePeriods(self::L1133_TABLE)
+            : [];
 
-        if (Schema::hasTable(self::DLY_KAP_TABLE)) {
-            $loanPeriods = array_values(array_unique(array_merge(
-                $loanPeriods,
-                DB::table(self::DLY_KAP_TABLE)
-                    ->select('periode')
-                    ->distinct()
-                    ->pluck('periode')
-                    ->map(fn ($value) => $this->normalizeDate((string) $value))
-                    ->filter()
-                    ->values()
-                    ->all()
-            )));
+        $loanLookup = array_fill_keys($loanPeriods, true);
+        $dlyKapLookup = array_fill_keys($dlyKapPeriods, true);
+        sort($l1133Periods);
+        $earliestL1133Period = $l1133Periods[0] ?? null;
+
+        $shared = [];
+        foreach ($savingsPeriods as $period) {
+            $hasPrimarySources = isset($loanLookup[$period]);
+            $hasFallbackSources = isset($dlyKapLookup[$period])
+                && $earliestL1133Period !== null
+                && $earliestL1133Period <= $period;
+
+            if ($hasPrimarySources || $hasFallbackSources) {
+                $shared[$period] = $period;
+            }
         }
 
-        if (Schema::hasTable(self::L1133_TABLE)) {
-            $loanPeriods = array_values(array_unique(array_merge(
-                $loanPeriods,
-                DB::table(self::L1133_TABLE)
-                    ->select('periode')
-                    ->distinct()
-                    ->pluck('periode')
-                    ->map(fn ($value) => $this->normalizeDate((string) $value))
-                    ->filter()
-                    ->values()
-                    ->all()
-            )));
-        }
-
-        $savingsPeriods = DB::table(self::SAVINGS_TABLE)
-            ->select('Month_Day_Year_of_Posisi')
-            ->distinct()
-            ->pluck('Month_Day_Year_of_Posisi')
-            ->map(fn ($value) => $this->normalizeDate((string) $value))
-            ->filter()
-            ->values()
-            ->all();
-
-        if ($this->hourlyDpkEnabled() && Schema::hasTable(self::HOURLY_DPK_TABLE)) {
-            $savingsPeriods = array_values(array_unique(array_merge(
-                $savingsPeriods,
-                DB::table(self::HOURLY_DPK_TABLE)
-                    ->select($this->sourcePeriodColumn(self::HOURLY_DPK_TABLE))
-                    ->distinct()
-                    ->pluck($this->sourcePeriodColumn(self::HOURLY_DPK_TABLE))
-                    ->map(fn ($value) => $this->normalizeDate((string) $value))
-                    ->filter()
-                    ->values()
-                    ->all()
-            )));
-        }
-
-        $shared = array_values(array_filter(
-            array_intersect($loanPeriods, $savingsPeriods),
-            fn (string $period): bool => $this->dashboardHarianSourceCombinationAvailable($period)
-        ));
+        $shared = array_values($shared);
         rsort($shared);
 
         return $shared;
+    }
+
+    /** @return array<int, string> */
+    private function distinctNormalizedSourcePeriods(string $table): array
+    {
+        $periodColumn = $this->sourcePeriodColumn($table);
+
+        return DB::table($table)
+            ->select($periodColumn)
+            ->distinct()
+            ->pluck($periodColumn)
+            ->map(fn ($value) => $this->normalizeDate((string) $value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**
@@ -4489,7 +4476,18 @@ class DashboardHarianSnapshotService
             return [];
         }
 
-        $query = DB::table($table)
+        $queryTable = $table;
+        if ($table === 'lw325_ph') {
+            $queryTable = DB::raw(
+                app(ReportIndexHintResolver::class)->qualify(
+                    $table,
+                    null,
+                    [self::LW325_RECENT_PERIOD_INDEX]
+                )
+            );
+        }
+
+        $query = DB::table($queryTable)
             ->select($periodColumn)
             ->distinct()
             ->orderByDesc($periodColumn)

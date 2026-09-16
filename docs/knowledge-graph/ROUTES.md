@@ -2,8 +2,8 @@
 
 | Methods | URI | Name | Domain | Handler |
 | --- | --- | --- | --- | --- |
-| POST | `login` | `generated::En5dqAes9CPCurNw` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
-| POST | `confirm-password` | `generated::zordguGW9En5qNg3` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
+| POST | `confirm-password` | `generated::1IlUES9fcl4xE0ov` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
+| POST | `login` | `generated::iKwVRwHFv9iay8nm` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
 | GET | `login` | `login` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::create` |
 | POST | `logout` | `logout` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::destroy` |
 | GET | `confirm-password` | `password.confirm` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::show` |
@@ -52,7 +52,7 @@
 | POST | `file-management/delete` | `file-management.destroy` | core | `App\Http\Controllers\Admin\FileManagementController::destroy` |
 | GET | `file-management/download` | `file-management.download` | core | `App\Http\Controllers\Admin\FileManagementDownloadController::__invoke` |
 | GET | `file-management` | `file-management.index` | core | `App\Http\Controllers\Admin\FileManagementController::index` |
-| GET | `up` | `generated::N4pE5NvQSkKCcdHQ` | core | Closure |
+| GET | `up` | `generated::5LjUxzLlRXQhDNdE` | core | Closure |
 | GET | `/` | `home` | core | Closure |
 | GET | `link-management` | `link-management.index` | core | `App\Http\Controllers\Admin\LinkManagementController::index` |
 | POST | `link-management` | `link-management.update` | core | `App\Http\Controllers\Admin\LinkManagementController::update` |
@@ -120,6 +120,7 @@
 | GET | `dashboard/micro-one-time-nominatives` | `dashboard.micro-one-time-nominatives` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::microOneTimeNominatives` |
 | GET | `dashboard/micro-performance` | `dashboard.micro-performance` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::microPerformance` |
 | GET | `dashboard/micro-pipeline` | `dashboard.micro-pipeline` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::microPipeline` |
+| GET | `dashboard/pn-mismatch-nominatives` | `dashboard.pn-mismatch-nominatives` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::pnMismatchNominatives` |
 | GET | `dashboard/presentation` | `dashboard.presentation` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::presentation` |
 | GET | `dashboard/presentation-data` | `dashboard.presentation-data` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::presentationData` |
 | GET | `dashboard/presentation-data/detail/{section}` | `dashboard.presentation-data.detail` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::presentationDetailData` |

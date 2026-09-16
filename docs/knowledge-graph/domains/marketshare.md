@@ -40,13 +40,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `aggregateUnitsWithSql` | method | 7 | `app/Support/CrasMappingService.php:324` |
 | `createUtf16Tsv` | method | 7 | `tests/Unit/CrasSourceServiceTest.php:164` |
 | `test_mapping_request_queues_refresh_without_calling_google` | method | 7 | `tests/Unit/RemoteDashboardSourceTest.php:43` |
+| `CrasReportManagementTest` | class | 6 | `tests/Unit/CrasReportManagementTest.php:10` |
 | `MarketShareSektoralReportTest` | class | 6 | `tests/Unit/MarketShareSektoralReportTest.php:8` |
 | `applyFilters` | method | 6 | `app/Support/CrasMappingService.php:431` |
 | `applyRegionFilter` | method | 6 | `app/Support/CrasMappingService.php:441` |
 | `insights` | method | 6 | `app/Support/MarketShareArea6Report.php:156` |
 | `percentage` | method | 6 | `app/Support/CrasLpgPortfolioService.php:415` |
 | `public-workbooks.market-share-mapping.token` | route | 6 | - |
-| `public-workbooks.market-share.token` | route | 6 | - |
 
 ## Route Nodes
 
@@ -101,3 +101,4 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | marketshare -> core (defines_table) | 1 |
 | marketshare -> core (reads_table) | 1 |
 | marketshare -> jobs-snapshots (calls) | 1 |
+| marketshare -> dashboard-pinjaman (contains) | 1 |
