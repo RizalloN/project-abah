@@ -32,7 +32,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `DashboardSimpananHarianSnapshotSourceTest` | class | 28 | `tests/Unit/DashboardSimpananHarianSnapshotSourceTest.php:16` |
 | `reportCacheVersion` | method | 28 | `app/Http/Controllers/DashboardSimpananController.php:14260` |
 | `buildArea6PortfolioLandingFresh` | method | 25 | `app/Http/Controllers/DashboardSimpananController.php:9745` |
-| `dashboard` | route | 23 | - |
+| `dashboard` | route | 22 | - |
 | `fetchData` | method | 22 | `app/Http/Controllers/RasioCasaDebiturController.php:63` |
 | `buildLandingSimpananPayloadFresh` | method | 21 | `app/Http/Controllers/DashboardSimpananController.php:204` |
 | `area6HarianSnapshotSummaryQuery` | method | 20 | `app/Http/Controllers/DashboardSimpananController.php:11844` |
@@ -169,9 +169,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | import -> dashboard-simpanan (writes_table) | 18 |
 | database -> dashboard-simpanan (checks_table) | 15 |
 | dashboard-simpanan -> tests (extends) | 14 |
-| platform -> dashboard-simpanan (references_route) | 13 |
 | jobs-snapshots -> dashboard-simpanan (reads_table) | 13 |
 | dashboard-simpanan -> tests (calls) | 13 |
+| platform -> dashboard-simpanan (references_route) | 12 |
 | dashboard-simpanan -> dashboard-pinjaman (checks_table) | 11 |
 | jobs-snapshots -> dashboard-simpanan (writes_table) | 10 |
 | dashboard-simpanan -> core (uses_trait) | 10 |

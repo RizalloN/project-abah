@@ -7,14 +7,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 23 |
-| file | 122 |
+| file | 116 |
 | function | 1 |
 | method | 659 |
 | unresolved_symbol | 381 |
 | route | 16 |
 | class | 61 |
 | table | 23 |
-| view | 54 |
+| view | 44 |
 
 ## Main Hubs
 
@@ -164,24 +164,16 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 - `admin.file-management` - `resources/views/admin/file-management.blade.php`
 - `admin.link-management` - `resources/views/admin/link-management.blade.php`
-- `components.application-logo` - `resources/views/components/application-logo.blade.php`
-- `components.danger-button` - `resources/views/components/danger-button.blade.php`
 - `components.dropdown` - `resources/views/components/dropdown.blade.php`
 - `components.dropdown-link` - `resources/views/components/dropdown-link.blade.php`
-- `components.dropdown.link`
 - `components.input-error` - `resources/views/components/input-error.blade.php`
 - `components.input-label` - `resources/views/components/input-label.blade.php`
 - `components.input.error`
 - `components.input.label`
-- `components.modal` - `resources/views/components/modal.blade.php`
 - `components.nav-link` - `resources/views/components/nav-link.blade.php`
-- `components.nav.link`
 - `components.primary-button` - `resources/views/components/primary-button.blade.php`
 - `components.primary.button`
 - `components.responsive-nav-link` - `resources/views/components/responsive-nav-link.blade.php`
-- `components.responsive.nav.link`
-- `components.secondary-button` - `resources/views/components/secondary-button.blade.php`
-- `components.slot`
 - `components.text-input` - `resources/views/components/text-input.blade.php`
 - `components.text.input`
 - `dashboard` - `resources/views/dashboard.blade.php`
@@ -207,7 +199,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `report.data-ph` - `resources/views/report/data-ph.blade.php`
 - `report.index`
 - `report.partials.floating-scrollbar` - `resources/views/report/partials/floating-scrollbar.blade.php`
-- `report.partials.kejar-laba-metrics` - `resources/views/report/partials/kejar-laba-metrics.blade.php`
 - `report.partials.sticky-table-viewport-script` - `resources/views/report/partials/sticky-table-viewport-script.blade.php`
 - `report.partials.sticky-table-viewport-style` - `resources/views/report/partials/sticky-table-viewport-style.blade.php`
 - `report.performance-edc` - `resources/views/report/performance-edc.blade.php`
@@ -215,7 +206,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `report.performance-qris` - `resources/views/report/performance-qris.blade.php`
 - `report.program-referral-partner-perusahaan-anak` - `resources/views/report/program-referral-partner-perusahaan-anak.blade.php`
 - `report.sppg` - `resources/views/report/sppg.blade.php`
-- `welcome` - `resources/views/welcome.blade.php`
 
 ## Table Nodes
 

@@ -201,7 +201,20 @@ final class KpiRmSmeDashboardService
         ]);
 
         $latestPeriod = array_key_last($periodCatalog);
-        [$summaryRows, $branchAnalysis] = $this->summary($profiles, $latestPeriod);
+        $summaryByPeriod = [];
+        foreach (array_keys($periodCatalog) as $periodKey) {
+            [$rows, $analysis] = $this->summary($profiles, $periodKey);
+            $summaryByPeriod[$periodKey] = [
+                'summary_rows' => $rows,
+                'branch_analysis' => $analysis,
+                'stats' => $this->stats($rows, $periodCatalog, $branchFilter, $periodKey),
+            ];
+        }
+        $latestSummary = $summaryByPeriod[$latestPeriod] ?? [
+            'summary_rows' => [],
+            'branch_analysis' => [],
+            'stats' => $this->stats([], $periodCatalog, $branchFilter, null),
+        ];
         $filters = $this->filters($profiles);
 
         return [
@@ -221,9 +234,10 @@ final class KpiRmSmeDashboardService
             'profiles' => $profiles,
             'filters' => $filters,
             'initial_profile' => array_key_first($profiles),
-            'summary_rows' => $summaryRows,
-            'branch_analysis' => $branchAnalysis,
-            'stats' => $this->stats($summaryRows, $periodCatalog, $branchFilter),
+            'summary_by_period' => $summaryByPeriod,
+            'summary_rows' => $latestSummary['summary_rows'],
+            'branch_analysis' => $latestSummary['branch_analysis'],
+            'stats' => $latestSummary['stats'],
             'branch_filter' => $branchFilter,
         ];
     }
@@ -511,7 +525,7 @@ final class KpiRmSmeDashboardService
      * @param array<int, array<string, mixed>> $summaryRows
      * @param array<string, array<string, string>> $periodCatalog
      */
-    private function stats(array $summaryRows, array $periodCatalog, array $branchFilter): array
+    private function stats(array $summaryRows, array $periodCatalog, array $branchFilter, ?string $periodKey): array
     {
         $average = $summaryRows === []
             ? 0.0
@@ -523,7 +537,7 @@ final class KpiRmSmeDashboardService
             'average_score' => $average,
             'top_rm' => $top['name'] ?? '-',
             'top_score' => $top['total_score'] ?? 0.0,
-            'latest_period_label' => data_get($periodCatalog, (string) array_key_last($periodCatalog) . '.label', '-'),
+            'latest_period_label' => data_get($periodCatalog, (string) $periodKey . '.label', '-'),
             'scope_label' => ($branchFilter['selected'] ?? 'all') === 'all'
                 ? 'Area 6'
                 : $this->cleanOrganization((string) ($branchFilter['selected'] ?? '')),

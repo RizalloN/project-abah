@@ -7,13 +7,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 3 |
-| file | 102 |
+| file | 99 |
 | function | 3 |
 | method | 953 |
 | route | 35 |
 | class | 53 |
 | table | 16 |
-| view | 39 |
+| view | 36 |
 
 ## Main Hubs
 
@@ -177,7 +177,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `report.dashboard-pinjaman.kinerjarmmikro` - `resources/views/report/dashboard-pinjaman/kinerjarmmikro.blade.php`
 - `report.dashboard-pinjaman.kredit` - `resources/views/report/dashboard-pinjaman/kredit.blade.php`
 - `report.dashboard-pinjaman.matrix` - `resources/views/report/dashboard-pinjaman/matrix.blade.php`
-- `report.dashboard-pinjaman.mismatch` - `resources/views/report/dashboard-pinjaman/mismatch.blade.php`
 - `report.dashboard-pinjaman.realisasi-6-bulan-menunggak` - `resources/views/report/dashboard-pinjaman/realisasi-6-bulan-menunggak.blade.php`
 - `report.dashboard-pinjaman.run-off` - `resources/views/report/dashboard-pinjaman/run-off.blade.php`
 - `report.dashboard-pinjaman.summary` - `resources/views/report/dashboard-pinjaman/summary.blade.php`
@@ -189,8 +188,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `report.kinerjarm-quality-series-section` - `resources/views/report/kinerjarm-quality-series-section.blade.php`
 - `report.kinerjarm-table` - `resources/views/report/kinerjarm-table.blade.php`
 - `report.kinerjarm-table-section` - `resources/views/report/kinerjarm-table-section.blade.php`
-- `report.rekening-new-payroll` - `resources/views/report/rekening-new-payroll.blade.php`
-- `report.saldo-new-payroll` - `resources/views/report/saldo-new-payroll.blade.php`
 
 ## Table Nodes
 
@@ -236,12 +233,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | tests -> dashboard-pinjaman (defines_table) | 18 |
 | core -> dashboard-pinjaman (checks_table) | 16 |
 | dashboard-pinjaman -> core (writes_table) | 16 |
-| dashboard-pinjaman -> platform (extends_view) | 16 |
 | database -> dashboard-pinjaman (alters_table) | 15 |
 | dashboard-pinjaman -> platform (calls) | 14 |
 | dashboard-pinjaman -> dashboard-harian (writes_table) | 13 |
 | import -> dashboard-pinjaman (defines_table) | 13 |
 | platform -> dashboard-pinjaman (references_route) | 13 |
+| dashboard-pinjaman -> platform (extends_view) | 13 |
 | tests -> dashboard-pinjaman (reads_table) | 12 |
 | database -> dashboard-pinjaman (defines_table) | 11 |
 | dashboard-simpanan -> dashboard-pinjaman (checks_table) | 11 |

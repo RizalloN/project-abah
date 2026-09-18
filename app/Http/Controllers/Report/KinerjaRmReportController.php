@@ -668,47 +668,106 @@ class KinerjaRmReportController extends Controller
      */
     private function landingSmallUnproductive(Collection $rows, array $months): array
     {
-        $closedMonths = collect($months)
-            ->filter(static fn (array $month): bool => (bool) ($month['is_closed'] ?? false))
-            ->take(-6)
+        // Produktivitas saat ini hanya menilai RM yang masih tercatat aktif di BRIHC.
+        // Daily Loan dapat menyimpan penugasan lama dan BRIHC dapat menyimpan PN lama
+        // untuk nama yang sama, sehingga pilih penempatan dengan pembaruan terbaru.
+        $references = $this->latestSmallRmReferences($rows)
+            ->values()
+            ->unique('primary_identity');
+        $latestByName = $references
+            ->filter(static fn (array $reference): bool => (string) ($reference['name_identity'] ?? '') !== '')
+            ->groupBy('name_identity')
+            ->map(static fn (Collection $references): string => (string) $references->max('reference_updated_at'));
+        $currentIdentities = $references
+            ->filter(static fn (array $reference): bool => (bool) ($reference['is_active_small'] ?? false))
+            ->filter(static function (array $reference) use ($latestByName): bool {
+                $nameIdentity = (string) ($reference['name_identity'] ?? '');
+
+                return $nameIdentity === ''
+                    || (string) ($reference['reference_updated_at'] ?? '') === (string) $latestByName->get($nameIdentity);
+            })
+            ->pluck('primary_identity')
+            ->flip();
+        $rows = $rows
+            ->filter(static fn (array $row): bool => $currentIdentities->has((string) ($row['rm_identity'] ?? '')))
             ->values();
+
+        $closedByKey = collect($months)
+            ->filter(static fn (array $month): bool => (bool) ($month['is_closed'] ?? false))
+            ->keyBy('key');
+        $latestClosedKey = $closedByKey->keys()->last();
+        $closedMonths = collect();
+        for ($offset = 0; $offset < 6 && $latestClosedKey !== null; $offset++) {
+            $monthKey = Carbon::parse($latestClosedKey.'-01')->subMonthsNoOverflow($offset)->format('Y-m');
+            if (! $closedByKey->has($monthKey)) {
+                break;
+            }
+            $closedMonths->prepend($closedByKey->get($monthKey));
+        }
         $monthKeys = $closedMonths->pluck('key')->reverse()->values();
         $definitions = [
             'month_1' => ['label' => '1 bulan', 'minimum' => 1],
             'month_3' => ['label' => '3 bulan berturut-turut', 'minimum' => 3],
             'month_6' => ['label' => '6 bulan berturut-turut', 'minimum' => 6],
         ];
-        $eligibleRows = $rows->map(function (array $row) use ($monthKeys): array {
+        $eligibleRows = $rows->map(function (array $row) use ($closedMonths, $monthKeys): array {
+            $row['productivity_months'] = $closedMonths->mapWithKeys(function (array $month) use ($row): array {
+                $monthKey = (string) $month['key'];
+                $position = (array) data_get($row, 'months.'.$monthKey, []);
+                $realization = (float) ($position['rp'] ?? 0);
+                $lar = is_numeric($position['lar_pct'] ?? null) ? (float) $position['lar_pct'] : null;
+
+                return [$monthKey => [
+                    'key' => $monthKey,
+                    'label' => (string) ($month['short_label'] ?? $monthKey),
+                    'realization_rp' => $realization,
+                    'lar_pct' => $lar,
+                    'has_data' => (bool) ($position['has_data'] ?? false),
+                    'productive' => $realization >= 1_600_000_000 && $lar !== null && $lar <= 15.0,
+                ]];
+            })->all();
             $consecutive = 0;
             foreach ($monthKeys as $monthKey) {
-                $amount = (float) data_get($row, 'months.'.$monthKey.'.rp', 0);
-                if (abs($amount) > 0.001) {
+                if ($row['productivity_months'][$monthKey]['productive']) {
                     break;
                 }
                 $consecutive++;
             }
-            $row['inactive_months'] = $consecutive;
+            $row['unproductive_months'] = $consecutive;
 
             return $row;
         })->values();
 
-        $metricBuilder = static function (Collection $scopeRows) use ($definitions, $monthKeys): array {
+        $metricBuilder = static function (Collection $scopeRows) use ($definitions, $monthKeys, $closedMonths): array {
             $metrics = [];
             foreach ($definitions as $key => $definition) {
                 $minimum = $definition['minimum'];
+                $windowKeys = $monthKeys->take($minimum)->reverse()->values();
+                $windowLabels = $windowKeys->map(static fn (string $monthKey): string => (string) data_get($closedMonths->firstWhere('key', $monthKey), 'short_label', $monthKey));
                 $matches = $monthKeys->count() >= $minimum
-                    ? $scopeRows->filter(static fn (array $row): bool => (int) ($row['inactive_months'] ?? 0) >= $minimum)->values()
+                    ? $scopeRows->filter(static fn (array $row): bool => (int) ($row['unproductive_months'] ?? 0) >= $minimum)->values()
                     : collect();
                 $metrics[$key] = [
                     'key' => $key,
                     'label' => $definition['label'],
+                    'period_label' => $monthKeys->count() >= $minimum
+                        ? $windowLabels->first().($minimum > 1 ? ' - '.$windowLabels->last() : '')
+                        : '-',
                     'count' => $matches->count(),
                     'percentage' => $scopeRows->isNotEmpty() ? ($matches->count() / $scopeRows->count()) * 100 : 0.0,
-                    'rms' => $matches->map(static fn (array $row): array => [
-                        'rm' => $row['rm'],
-                        'unit_code' => $row['unit_code'],
-                        'unit' => $row['unit'],
-                    ])->all(),
+                    'rms' => $matches->map(static function (array $row) use ($windowKeys): array {
+                        $positions = $windowKeys
+                            ->map(static fn (string $monthKey): array => $row['productivity_months'][$monthKey])
+                            ->all();
+
+                        return [
+                            'rm' => $row['rm'],
+                            'unit_code' => $row['unit_code'],
+                            'unit' => $row['unit'],
+                            'accumulated_realization_rp' => array_sum(array_column($positions, 'realization_rp')),
+                            'months' => $positions,
+                        ];
+                    })->all(),
                 ];
             }
 
@@ -719,6 +778,7 @@ class KinerjaRmReportController extends Controller
 
         return [
             'available' => $closedMonths->isNotEmpty() && $eligibleRows->isNotEmpty(),
+            'basis' => 'Produktif jika realisasi closing per bulan minimal Rp1.600 juta dan LAR maksimal 15%.',
             'period_label' => $closedMonths->isNotEmpty()
                 ? $closedMonths->first()['short_label'].' - '.$closedMonths->last()['short_label']
                 : '-',

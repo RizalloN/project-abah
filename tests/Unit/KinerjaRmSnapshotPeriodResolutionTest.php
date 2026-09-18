@@ -278,6 +278,12 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             'segmen' => 'SMALL', 'produk' => 'SMALL',
         ]);
         DB::table('performance_rm_snapshots')->insert($snapshots);
+        DB::table('brihc_pemasar')->insert([
+            ['pernr' => '1', 'completename' => 'RM AKTIF', 'positiondesc' => 'RM BISNIS KECIL', 'psadesc' => 'KC Madiun', 'bc' => '45'],
+            ['pernr' => '2', 'completename' => 'RM SATU BULAN', 'positiondesc' => 'RM BISNIS KECIL', 'psadesc' => 'KC Madiun', 'bc' => '45'],
+            ['pernr' => '3', 'completename' => 'RM ENAM BULAN', 'positiondesc' => 'RM BISNIS KECIL', 'psadesc' => 'KC Ngawi', 'bc' => '57'],
+            ['pernr' => '4', 'completename' => 'RM NIHIL', 'positiondesc' => 'RM BISNIS KECIL', 'psadesc' => 'KC Ngawi', 'bc' => '57'],
+        ]);
 
         $summary = (new KinerjaRmReportController(Mockery::mock(RkaLookupService::class)))
             ->landingSmallQuadrantSummary('2026-08-22');
@@ -287,10 +293,117 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(0, data_get($summary, 'realization_tiers.totals.lt_500.rm_count'));
         $this->assertSame(1, data_get($summary, 'realization_tiers.totals.500_1000.rm_count'));
         $this->assertSame(0, data_get($summary, 'realization_tiers.totals.1000_1600.rm_count'));
-        $this->assertSame(3, data_get($summary, 'unproductive.totals.month_1.count'));
+        $this->assertSame(4, data_get($summary, 'unproductive.totals.month_1.count'));
+        $this->assertSame(4, data_get($summary, 'unproductive.totals.month_3.count'));
+        $this->assertSame(4, data_get($summary, 'unproductive.totals.month_6.count'));
+        $this->assertCount(3, data_get($summary, 'realization_tiers.totals.zero.rms'));
+    }
+
+    public function test_landing_small_unproductive_requires_monthly_realization_and_lar_targets(): void
+    {
+        DB::table('brihc_pemasar')->insert(collect(range(1, 4))->map(static fn (int $pn): array => [
+            'pernr' => (string) $pn,
+            'completename' => 'RM '.$pn,
+            'positiondesc' => 'RM BISNIS KECIL',
+            'psadesc' => 'KC Madiun',
+            'bc' => '45',
+        ])->all());
+
+        $monthLabels = ['Mar 26', 'Apr 26', 'May 26', 'Jun 26', 'Jul 26', 'Aug 26'];
+        $months = collect(range(3, 8))->map(static fn (int $number): array => [
+            'key' => sprintf('2026-%02d', $number),
+            'short_label' => $monthLabels[$number - 3],
+            'is_closed' => true,
+        ])->all();
+        $productive = ['rp' => 1_600_000_000, 'lar_pct' => 15.0, 'has_data' => true];
+        $rows = collect(range(1, 4))->map(static fn (int $pn): array => [
+            'branch' => 'KC MADIUN',
+            'unit_code' => '45',
+            'unit' => 'KC MADIUN',
+            'rm' => 'RM '.$pn,
+            'rm_identity' => 'PN:'.$pn,
+            'months' => array_fill_keys(array_column($months, 'key'), $productive),
+        ])->all();
+        $rows[1]['months']['2026-08'] = ['rp' => 1_599_999_999, 'lar_pct' => 14.0, 'has_data' => true];
+        foreach (['2026-06', '2026-07', '2026-08'] as $monthKey) {
+            $rows[2]['months'][$monthKey] = ['rp' => 1_600_000_000, 'lar_pct' => 15.01, 'has_data' => true];
+        }
+        $rows[3]['months'] = array_fill_keys(array_column($months, 'key'), [
+            'rp' => 0, 'lar_pct' => null, 'has_data' => false,
+        ]);
+        $rows[3]['months']['2026-03'] = ['rp' => 1_600_000_000, 'lar_pct' => null, 'has_data' => true];
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $summary = $this->invokePrivateMethod($controller, 'landingSmallUnproductive', [collect($rows), $months]);
+
+        $this->assertSame('Mar 26 - Aug 26', $summary['period_label']);
+        $this->assertSame('Aug 26', $summary['totals']['month_1']['period_label']);
+        $this->assertSame('Jun 26 - Aug 26', $summary['totals']['month_3']['period_label']);
+        $this->assertSame('Mar 26 - Aug 26', $summary['totals']['month_6']['period_label']);
+        $this->assertSame([3, 2, 1], array_map(
+            static fn (string $key): int => $summary['totals'][$key]['count'],
+            ['month_1', 'month_3', 'month_6']
+        ));
+        $this->assertSame(['RM 2', 'RM 3', 'RM 4'], array_column($summary['totals']['month_1']['rms'], 'rm'));
+        $this->assertSame(['RM 3', 'RM 4'], array_column($summary['totals']['month_3']['rms'], 'rm'));
+        $this->assertSame(['RM 4'], array_column($summary['totals']['month_6']['rms'], 'rm'));
+        $this->assertSame(4_800_000_000.0, $summary['totals']['month_3']['rms'][0]['accumulated_realization_rp']);
+        $this->assertSame(['Jun 26', 'Jul 26', 'Aug 26'], array_column($summary['totals']['month_3']['rms'][0]['months'], 'label'));
+        $this->assertCount(6, $summary['totals']['month_6']['rms'][0]['months']);
+        $this->assertSame(1_600_000_000.0, $summary['totals']['month_6']['rms'][0]['accumulated_realization_rp']);
+        $this->assertFalse($summary['totals']['month_6']['rms'][0]['months'][0]['productive']);
+        $this->assertNull($summary['totals']['month_6']['rms'][0]['months'][5]['lar_pct']);
+        $this->assertFalse($summary['totals']['month_6']['rms'][0]['months'][5]['has_data']);
+
+        $monthsWithoutJuly = array_values(array_filter($months, static fn (array $month): bool => $month['key'] !== '2026-07'));
+        $gapSummary = $this->invokePrivateMethod($controller, 'landingSmallUnproductive', [collect($rows), $monthsWithoutJuly]);
+        $this->assertSame('Aug 26 - Aug 26', $gapSummary['period_label']);
+        $this->assertSame(0, $gapSummary['totals']['month_3']['count']);
+        $this->assertSame(0, $gapSummary['totals']['month_6']['count']);
+    }
+
+    public function test_landing_small_unproductive_uses_current_brihc_roster_only(): void
+    {
+        DB::table('daily_loan_dinamis')->insert(collect(['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31', '2026-06-30', '2026-07-31', '2026-08-22'])
+            ->map(fn (string $period): array => ['periode' => $period])->all());
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-08-22', 100_000_000, 0, 0, [
+                'cabang' => 'KC PONOROGO', 'branch_code' => '2204', 'rm' => '00359321 - RM PINDAH PN',
+                'segmen' => 'SMALL', 'produk' => 'SMALL',
+            ]),
+            $this->snapshotRow('2026-08-22', 100_000_000, 0, 0, [
+                'cabang' => 'KC MADIUN', 'branch_code' => '45', 'rm' => '00154635 - RM ALIH FUNGSI',
+                'segmen' => 'SMALL', 'produk' => 'SMALL',
+            ]),
+            $this->snapshotRow('2026-08-22', 100_000_000, 0, 0, [
+                'cabang' => 'KC MADIUN', 'branch_code' => '45', 'rm' => '00129952 - RM TANPA BRIHC',
+                'segmen' => 'SMALL', 'produk' => 'SMALL',
+            ]),
+            $this->snapshotRow('2026-08-22', 100_000_000, 0, 0, [
+                'cabang' => 'KC MADIUN', 'branch_code' => '45', 'rm' => '00555111 - RM PINDAH JABATAN',
+                'segmen' => 'SMALL', 'produk' => 'SMALL',
+            ]),
+        ]);
+        DB::table('brihc_pemasar')->insert([
+            ['pernr' => '359321', 'completename' => 'RM Pindah PN', 'positiondesc' => 'RM BISNIS KECIL', 'psadesc' => 'KC Ponorogo', 'bc' => '2204', 'updated_at' => '2026-08-30 18:21:16'],
+            ['pernr' => '393996', 'completename' => 'RM Pindah PN', 'positiondesc' => 'RM BISNIS KECIL', 'psadesc' => 'KC Ponorogo', 'bc' => '70', 'updated_at' => '2026-09-16 07:35:15'],
+            ['pernr' => '154635', 'completename' => 'RM Alih Fungsi', 'positiondesc' => 'RM SMALL RECOVERY', 'psadesc' => 'KC Madiun', 'bc' => '45', 'updated_at' => '2026-09-16 07:35:15'],
+            ['pernr' => '555111', 'completename' => 'RM Pindah Jabatan', 'positiondesc' => 'RM BISNIS KECIL', 'psadesc' => 'KC Madiun', 'bc' => '45', 'updated_at' => '2026-08-30 18:21:16'],
+            ['pernr' => '555222', 'completename' => 'RM Pindah Jabatan', 'positiondesc' => 'RM SMALL RECOVERY', 'psadesc' => 'KC Madiun', 'bc' => '45', 'updated_at' => '2026-09-16 07:35:15'],
+            ['pernr' => '151244', 'completename' => 'RM Aktif Tanpa Rekening', 'positiondesc' => 'RM BISNIS KECIL', 'psadesc' => 'KC Ngawi', 'bc' => '57', 'updated_at' => '2026-09-16 07:35:15'],
+        ]);
+
+        $summary = (new KinerjaRmReportController(Mockery::mock(RkaLookupService::class)))
+            ->landingSmallQuadrantSummary('2026-08-22');
+
+        $this->assertSame(2, data_get($summary, 'unproductive.totals.month_1.count'));
         $this->assertSame(2, data_get($summary, 'unproductive.totals.month_3.count'));
         $this->assertSame(2, data_get($summary, 'unproductive.totals.month_6.count'));
-        $this->assertCount(3, data_get($summary, 'realization_tiers.totals.zero.rms'));
+        $this->assertSame('RM Aktif Tanpa Rekening', data_get($summary, 'unproductive.totals.month_1.rms.0.rm'));
+        $this->assertSame(1, data_get($summary, 'unproductive.branches.2.total_rm'));
+        $this->assertSame(1, data_get($summary, 'unproductive.branches.3.total_rm'));
+        $this->assertSame('70', data_get($summary, 'unproductive.branches.3.metrics.month_1.rms.0.unit_code'));
+        $this->assertSame(0, data_get($summary, 'unproductive.branches.0.total_rm'));
     }
 
     public function test_landing_small_summary_uses_brihc_as_assignment_authority(): void

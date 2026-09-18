@@ -160,6 +160,10 @@ class LandingSmeAnalyticsContractTest extends TestCase
         $this->assertStringContainsString('data-sme-unproductive-detail', $partial);
         $this->assertStringContainsString('data-sme-unproductive-modal', $partial);
         $this->assertStringContainsString('data-sme-unproductive-search', $partial);
+        $this->assertStringContainsString('data-sme-rm-accumulated-head', $partial);
+        $this->assertStringContainsString('data-sme-rm-months-head', $partial);
+        $this->assertStringContainsString('data-sme-unproductive-modal-basis', $partial);
+        $this->assertStringContainsString('row.months.map(', $view);
         $this->assertStringContainsString('sme-ops-tier-cell', $partial);
         $this->assertStringContainsString('data-sme-rm-realization-head', $partial);
         $this->assertStringContainsString('Frekuensi Restrukturisasi Debitur', $partial);
@@ -174,6 +178,45 @@ class LandingSmeAnalyticsContractTest extends TestCase
         $this->assertNotNull($route);
         $this->assertContains('auth', $route->gatherMiddleware());
         $this->assertContains('user.branch.scope', $route->gatherMiddleware());
+    }
+
+    public function test_sme_unproductive_detail_renders_monthly_positions_for_drilldown(): void
+    {
+        $html = view('dashboard.partials.sme-operations', [
+            'smeOperations' => [
+                'meta' => ['scope' => 'area6', 'scope_label' => 'Area 6'],
+                'unproductive' => [
+                    'available' => true,
+                    'basis' => 'Produktif jika realisasi closing per bulan minimal Rp1.600 juta dan LAR maksimal 15%.',
+                    'period_label' => 'Mar 26 - Aug 26',
+                    'totals' => [
+                        'month_1' => [
+                            'label' => '1 bulan', 'period_label' => 'Aug 26', 'count' => 1, 'percentage' => 100,
+                            'rms' => [[
+                                'rm' => 'RM Contoh', 'unit_code' => '45', 'unit' => 'KC MADIUN',
+                                'accumulated_realization_rp' => 1_200_000_000,
+                                'months' => [[
+                                    'key' => '2026-08', 'label' => 'Aug 26',
+                                    'realization_rp' => 1_200_000_000, 'lar_pct' => 16.0,
+                                    'has_data' => true, 'productive' => false,
+                                ]],
+                            ]],
+                        ],
+                    ],
+                    'branches' => [],
+                ],
+            ],
+        ])->render();
+
+        $this->assertStringContainsString('data-sme-rm-months-head', $html);
+        $this->assertStringContainsString('Realisasi adalah akumulasi bulan pada posisi closing', $html);
+        preg_match('/data-sme-unproductive-detail="([^"]+)"/', $html, $matches);
+        $this->assertNotEmpty($matches[1] ?? null);
+        $detail = json_decode(html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('RM Contoh', $detail['rows'][0]['rm']);
+        $this->assertSame('Aug 26', $detail['period_label']);
+        $this->assertSame(1_200_000_000, $detail['rows'][0]['accumulated_realization_rp']);
+        $this->assertEquals(16.0, $detail['rows'][0]['months'][0]['lar_pct']);
     }
 
     public function test_sme_restructuring_frequency_card_renders_live_bucket_payload(): void

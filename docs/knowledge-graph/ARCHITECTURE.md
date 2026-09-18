@@ -14,13 +14,13 @@ flowchart LR
     d_59830ebc3a["tests"] -->|102| d_0d45f5fd46["core"]
     d_59830ebc3a["tests"] -->|93| d_c1933689a3["dashboard-pinjaman"]
     d_3549b0028b["database"] -->|88| d_d942f64886["import"]
-    d_c1933689a3["dashboard-pinjaman"] -->|81| d_0d45f5fd46["core"]
     d_7c16aa6a77["jobs-snapshots"] -->|80| d_c1933689a3["dashboard-pinjaman"]
+    d_c1933689a3["dashboard-pinjaman"] -->|79| d_0d45f5fd46["core"]
     d_d942f64886["import"] -->|75| d_59830ebc3a["tests"]
     d_c1933689a3["dashboard-pinjaman"] -->|70| d_7c16aa6a77["jobs-snapshots"]
     d_59830ebc3a["tests"] -->|69| d_d942f64886["import"]
-    d_0d45f5fd46["core"] -->|68| d_c393a69167["access-control"]
     d_d942f64886["import"] -->|68| d_c1933689a3["dashboard-pinjaman"]
+    d_0d45f5fd46["core"] -->|67| d_c393a69167["access-control"]
     d_7c16aa6a77["jobs-snapshots"] -->|58| d_0d45f5fd46["core"]
     d_3549b0028b["database"] -->|58| d_c1933689a3["dashboard-pinjaman"]
     d_c1933689a3["dashboard-pinjaman"] -->|55| d_59830ebc3a["tests"]
@@ -42,8 +42,8 @@ flowchart LR
     d_b89824cc5a["almafacts"] -->|34| d_c393a69167["access-control"]
     d_3549b0028b["database"] -->|33| d_90026ec21f["dashboard-simpanan"]
     d_0d45f5fd46["core"] -->|30| d_39bcb775e4["bank-pipeline"]
-    d_c1933689a3["dashboard-pinjaman"] -->|30| d_d294fcce0c["platform"]
     d_c393a69167["access-control"] -->|29| d_0d45f5fd46["core"]
+    d_90026ec21f["dashboard-simpanan"] -->|29| d_d942f64886["import"]
 ```
 
 ## Domain Index
@@ -51,8 +51,8 @@ flowchart LR
 | Domain | Nodes | Detail |
 | --- | ---: | --- |
 | import | 2722 | [open](domains/import.md) |
-| core | 1340 | [open](domains/core.md) |
-| dashboard-pinjaman | 1204 | [open](domains/dashboard-pinjaman.md) |
+| core | 1324 | [open](domains/core.md) |
+| dashboard-pinjaman | 1198 | [open](domains/dashboard-pinjaman.md) |
 | jobs-snapshots | 765 | [open](domains/jobs-snapshots.md) |
 | dashboard-simpanan | 753 | [open](domains/dashboard-simpanan.md) |
 | database | 736 | [open](domains/database.md) |
@@ -65,7 +65,7 @@ flowchart LR
 | almafacts | 139 | [open](domains/almafacts.md) |
 | marketshare | 130 | [open](domains/marketshare.md) |
 | knowledge-graph | 117 | [open](domains/knowledge-graph.md) |
-| platform | 105 | [open](domains/platform.md) |
+| platform | 98 | [open](domains/platform.md) |
 | kpi | 59 | [open](domains/kpi.md) |
 | input-management | 58 | [open](domains/input-management.md) |
 | routing | 3 | [open](domains/routing.md) |

@@ -147,6 +147,7 @@
     }
     .rmsme-filter select:focus { border-color: var(--rmsme-blue); box-shadow: 0 0 0 3px rgba(0,82,156,.12); }
     .rmsme-periods { margin-top: .7rem; padding-top: .7rem; border-top: 1px dashed #cfdae7; }
+    .rmsme-summary-period-filter { max-width: 320px; }
 
     .rmsme-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem; margin-bottom: .85rem; }
     .rmsme-stat { position: relative; min-width: 0; overflow: hidden; padding: .85rem .9rem .85rem 1rem; border-left: 4px solid var(--tone, var(--rmsme-blue)); }
@@ -237,9 +238,9 @@
         </div>
         <div class="rmsme-hero-facts">
             <div class="rmsme-hero-fact"><span>Wilayah</span><strong>{{ $stats['scope_label'] ?? 'Area 6' }}</strong></div>
-            <div class="rmsme-hero-fact"><span>Posisi Data</span><strong>{{ $stats['latest_period_label'] ?? '-' }}</strong></div>
-            <div class="rmsme-hero-fact"><span>RM Aktif</span><strong>{{ number_format((int) ($stats['rm_count'] ?? 0), 0, ',', '.') }}</strong></div>
-            <div class="rmsme-hero-fact"><span>Rata-rata Skor</span><strong>{{ number_format((float) ($stats['average_score'] ?? 0), 2, ',', '.') }}</strong></div>
+            <div class="rmsme-hero-fact"><span>Posisi Data</span><strong id="rmsme-hero-period">{{ $stats['latest_period_label'] ?? '-' }}</strong></div>
+            <div class="rmsme-hero-fact"><span>RM Aktif</span><strong id="rmsme-hero-rm-count">{{ number_format((int) ($stats['rm_count'] ?? 0), 0, ',', '.') }}</strong></div>
+            <div class="rmsme-hero-fact"><span>Rata-rata Skor</span><strong id="rmsme-hero-average-score">{{ number_format((float) ($stats['average_score'] ?? 0), 2, ',', '.') }}</strong></div>
         </div>
     </section>
 
@@ -287,6 +288,12 @@
                 <div class="rmsme-filter"><label for="rmsme-period-current">Periode Berjalan</label><select id="rmsme-period-current"></select></div>
             </div>
         </div>
+        <div class="rmsme-panel-body" id="rmsme-summary-filters" hidden>
+            <div class="rmsme-filter rmsme-summary-period-filter">
+                <label for="rmsme-summary-period">Periode Summary Kinerja</label>
+                <select id="rmsme-summary-period"></select>
+            </div>
+        </div>
     </section>
 
     <section class="rmsme-view" data-rmsme-view="individual">
@@ -324,7 +331,7 @@
         <div class="rmsme-branch-grid" id="rmsme-branch-grid"></div>
         <section class="rmsme-panel">
             <header class="rmsme-panel-head">
-                <div class="rmsme-panel-title"><span class="rmsme-panel-icon"><i class="fas fa-award"></i></span><div><h2>Ranking RM Aktif</h2><span>Skor posisi terakhir untuk setiap RM dalam cakupan akses.</span></div></div>
+                <div class="rmsme-panel-title"><span class="rmsme-panel-icon"><i class="fas fa-award"></i></span><div><h2>Ranking RM Aktif</h2><span id="rmsme-ranking-caption">Skor RM pada periode terpilih dalam cakupan akses.</span></div></div>
             </header>
             <div class="rmsme-table-shell">
                 <table class="rmsme-table rmsme-summary-table" style="min-width:1900px">
@@ -355,6 +362,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const periodBase = document.getElementById('rmsme-period-base');
     const periodPrevious = document.getElementById('rmsme-period-previous');
     const periodCurrent = document.getElementById('rmsme-period-current');
+    const periodSummary = document.getElementById('rmsme-summary-period');
     const charts = {};
 
     function escapeHtml(value) {
@@ -386,6 +394,18 @@ document.addEventListener('DOMContentLoaded', function () {
         setOptions(periodBase, options, defaults.base);
         setOptions(periodPrevious, options, defaults.previous);
         setOptions(periodCurrent, options, defaults.current);
+        setOptions(periodSummary, options, defaults.current);
+    }
+
+    function summaryForPeriod(periodKey) {
+        return (dashboard.summary_by_period || {})[periodKey] || {summary_rows:[], branch_analysis:[], stats:dashboard.stats || {}};
+    }
+
+    function updateHeroStats(periodKey) {
+        const stats = summaryForPeriod(periodKey).stats || {};
+        document.getElementById('rmsme-hero-period').textContent = stats.latest_period_label || '-';
+        document.getElementById('rmsme-hero-rm-count').textContent = Number(stats.rm_count || 0).toLocaleString('id-ID');
+        document.getElementById('rmsme-hero-average-score').textContent = Number(stats.average_score || 0).toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2});
     }
 
     function initialiseBranches() {
@@ -448,6 +468,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function renderIndividual() {
+        updateHeroStats(periodCurrent.value);
         const profile = profiles[personSelect.value];
         const body = document.getElementById('rmsme-kpi-body');
         if (!profile) {
@@ -560,15 +581,19 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function renderSummary() {
+        const summary = summaryForPeriod(periodSummary.value);
+        updateHeroStats(periodSummary.value);
+        const period = periods.find(function (item) { return item.key === periodSummary.value; });
+        document.getElementById('rmsme-ranking-caption').textContent = 'Skor posisi ' + (period ? period.label : '-') + ' untuk setiap RM dalam cakupan akses.';
         const branchGrid = document.getElementById('rmsme-branch-grid');
-        branchGrid.innerHTML = (dashboard.branch_analysis || []).map(function (branch) {
+        branchGrid.innerHTML = (summary.branch_analysis || []).map(function (branch) {
             return '<article class="rmsme-branch-card"><header class="rmsme-branch-head"><strong>' + escapeHtml(branch.branch) + '</strong></header>' +
                 '<div class="rmsme-branch-score"><div><strong>' + Number(branch.average_score).toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</strong><span>Rata-rata skor</span></div><div><span>Top RM</span><br><b>' + escapeHtml(branch.top_rm) + '</b></div></div>' +
                 '<div class="rmsme-status-strip"><div><strong>' + branch.excellent + '</strong><span>Sangat baik</span></div><div><strong>' + branch.good + '</strong><span>Baik</span></div><div><strong>' + branch.fair + '</strong><span>Cukup</span></div><div><strong>' + branch.attention + '</strong><span>Perhatian</span></div></div></article>';
-        }).join('') || '<div class="rmsme-empty"><i class="fas fa-chart-bar"></i>Belum ada ringkasan cabang.</div>';
+        }).join('') || '<div class="rmsme-empty"><i class="fas fa-chart-bar"></i>Belum ada ringkasan cabang pada periode ini.</div>';
 
         const body = document.getElementById('rmsme-summary-body');
-        body.innerHTML = (dashboard.summary_rows || []).map(function (row, index) {
+        body.innerHTML = (summary.summary_rows || []).map(function (row, index) {
             const scores = metrics.map(function (metric) {
                 const score = row.scores && row.scores[metric.key] ? row.scores[metric.key] : {};
                 const tone = score.achieved === null || score.achieved === undefined ? 'rmsme-value-neutral' : (score.achieved ? 'rmsme-value-good' : 'rmsme-value-bad');
@@ -576,7 +601,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     '<td class="' + tone + '">' + Number(score.score || 0).toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td>';
             }).join('');
             return '<tr><td>' + (index + 1) + '</td><td>' + escapeHtml(row.branch) + '</td><td>' + escapeHtml(row.unit) + '</td><td>' + escapeHtml(row.name) + '</td><td>' + escapeHtml(row.jg) + '</td>' + scores + '<td class="rmsme-value-good">' + Number(row.total_score).toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td></tr>';
-        }).join('') || '<tr><td colspan="20" class="rmsme-empty"><i class="fas fa-users-slash"></i>Belum ada data RM aktif.</td></tr>';
+        }).join('') || '<tr><td colspan="20" class="rmsme-empty"><i class="fas fa-users-slash"></i>Belum ada data RM aktif pada periode ini.</td></tr>';
     }
 
     document.querySelectorAll('[data-rmsme-mode]').forEach(function (button) {
@@ -585,6 +610,7 @@ document.addEventListener('DOMContentLoaded', function () {
             document.querySelectorAll('[data-rmsme-mode]').forEach(function (item) { item.classList.toggle('active', item === button); });
             document.querySelectorAll('[data-rmsme-view]').forEach(function (view) { view.hidden = view.dataset.rmsmeView !== mode; });
             document.getElementById('rmsme-individual-filters').hidden = mode !== 'individual';
+            document.getElementById('rmsme-summary-filters').hidden = mode !== 'summary';
             if (mode === 'summary') renderSummary(); else renderIndividual();
         });
     });
@@ -593,10 +619,10 @@ document.addEventListener('DOMContentLoaded', function () {
     unitSelect.addEventListener('change', refreshPeople);
     personSelect.addEventListener('change', renderIndividual);
     [periodBase, periodPrevious, periodCurrent].forEach(function (select) { select.addEventListener('change', renderIndividual); });
+    periodSummary.addEventListener('change', renderSummary);
 
     initialisePeriods();
     initialiseBranches();
-    renderSummary();
 });
 </script>
 @endsection

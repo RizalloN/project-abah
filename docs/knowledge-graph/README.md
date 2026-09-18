@@ -25,9 +25,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 881 |
-| Graph nodes | 10,044 |
-| Graph edges | 39,253 |
+| Source files | 869 |
+| Graph nodes | 10,015 |
+| Graph edges | 39,189 |
 | Domains | 19 |
 
 ## Read The Right Artifact

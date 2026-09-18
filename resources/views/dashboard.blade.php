@@ -9543,6 +9543,7 @@ body.micro-pipeline-source-modal-open { overflow: hidden; }
 .sme-ops-vendor-item { cursor: pointer; text-align: left; }
 .sme-ops-vendor-item:focus-visible { outline: 3px solid #13a7e2; outline-offset: 3px; }
 .sme-ops-inactive-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
+.sme-ops-inactive-note { margin: .25rem 0 .85rem; color: #536b84; font-size: .75rem; line-height: 1.55; }
 .sme-ops-inactive-card { position: relative; overflow: hidden; padding: 1rem; border: 1px solid #cfe1f2; border-radius: 15px; background: #fff; cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
 .sme-ops-inactive-card:hover { border-color: #7fbcea; box-shadow: 0 14px 30px -26px #073b82; transform: translateY(-1px); }
 .sme-ops-inactive-card:focus-visible { outline: 3px solid #13a7e2; outline-offset: 3px; }
@@ -9551,6 +9552,7 @@ body.micro-pipeline-source-modal-open { overflow: hidden; }
 .sme-ops-inactive-card.tone-3::before { background: #ef4444; }
 .sme-ops-inactive-card > span { color: #53708f; font-size: .72rem; font-weight: 850; }
 .sme-ops-inactive-card > span i { margin-right: .38rem; color: #0877ca; }
+.sme-ops-inactive-card > .sme-ops-inactive-period { display: block; margin-top: .2rem; color: #6c8094; font-size: .68rem; font-weight: 700; }
 .sme-ops-inactive-card > strong { display: block; margin: .45rem 0; color: #073b82; font-size: 1.55rem; }
 .sme-ops-inactive-card > strong small { font-size: .7rem; }
 .sme-ops-inactive-meter { height: 7px; overflow: hidden; border-radius: 99px; background: #e4edf6; }
@@ -9627,6 +9629,10 @@ body.sme-vendor-modal-open { overflow: hidden; }
 .sme-unproductive-modal .sme-vendor-modal__summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .sme-unproductive-modal table { min-width: 860px; }
 .sme-unproductive-modal th:first-child, .sme-unproductive-modal td:first-child { min-width: 58px; }
+.sme-unproductive-modal .sme-rm-month-list { display: grid; gap: .3rem; min-width: 260px; }
+.sme-unproductive-modal .sme-rm-month-line { display: grid; gap: .1rem; padding: .35rem .45rem; border-radius: 7px; background: #f1f7fd; }
+.sme-unproductive-modal .sme-rm-month-line strong { color: #173a60; }
+.sme-unproductive-modal .sme-rm-month-line span { color: #526b83; }
 .loan-analytics-lazy-slot.is-loading {
   position: relative; min-height: 180px; margin-top: 1rem; overflow: hidden;
   border: 1px solid #c9dff2; border-radius: 20px;
@@ -12972,17 +12978,30 @@ document.addEventListener('DOMContentLoaded', function() {
           .some(value => String(value || '').toLocaleLowerCase('id-ID').includes(keyword)));
 
     const hasRealization = activeSmeUnproductiveRows.some(row => Number.isFinite(row.realization_rp));
+    const hasProductivity = activeSmeUnproductiveRows.some(row => row.months.length > 0);
     modal.querySelector('[data-sme-rm-realization-head]')?.toggleAttribute('hidden', !hasRealization);
+    modal.querySelector('[data-sme-rm-accumulated-head]')?.toggleAttribute('hidden', !hasProductivity);
+    modal.querySelector('[data-sme-rm-months-head]')?.toggleAttribute('hidden', !hasProductivity);
     body.innerHTML = rows.length
-      ? rows.map((row, index) => `<tr>
+      ? rows.map((row, index) => {
+        const monthDetails = row.months.map(month => {
+          const realization = (Number(month.realization_rp || 0) / 1000000).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+          const lar = month.lar_pct === null || !Number.isFinite(month.lar_pct)
+            ? '—'
+            : `${month.lar_pct.toLocaleString('id-ID', { maximumFractionDigits: 2 })}%`;
+          return `<div class="sme-rm-month-line"><strong>${escapeHtml(month.label)}</strong><span>Rp ${realization} juta · LAR ${lar} · ${month.productive ? 'Produktif' : 'Tidak produktif (0)'}${month.has_data ? '' : ' · Tanpa posisi RM'}</span></div>`;
+        }).join('');
+        return `<tr>
           <td>${(index + 1).toLocaleString('id-ID')}</td>
           <td>${escapeHtml(row.branch || '-')}</td>
           <td>${escapeHtml(row.unit_code || '-')}</td>
           <td>${escapeHtml(row.unit || '-')}</td>
           <td><strong>${escapeHtml(row.rm || '-')}</strong></td>
           ${hasRealization ? `<td><strong>${(Number(row.realization_rp || 0) / 1000000).toLocaleString('id-ID', { maximumFractionDigits: 0 })}</strong> <small>Rp Juta</small></td>` : ''}
-        </tr>`).join('')
-      : `<tr><td colspan="${hasRealization ? 6 : 5}" class="sme-vendor-modal__empty">${keyword ? 'RM tidak ditemukan.' : 'Tidak ada RM pada kategori ini.'}</td></tr>`;
+          ${hasProductivity ? `<td><strong>${(Number(row.accumulated_realization_rp || 0) / 1000000).toLocaleString('id-ID', { maximumFractionDigits: 2 })}</strong> <small>Rp Juta</small></td><td><div class="sme-rm-month-list">${monthDetails}</div></td>` : ''}
+        </tr>`;
+      }).join('')
+      : `<tr><td colspan="${5 + (hasRealization ? 1 : 0) + (hasProductivity ? 2 : 0)}" class="sme-vendor-modal__empty">${keyword ? 'RM tidak ditemukan.' : 'Tidak ada RM pada kategori ini.'}</td></tr>`;
     if (count) count.textContent = `${rows.length.toLocaleString('id-ID')} RM`;
   };
 
@@ -13010,6 +13029,14 @@ document.addEventListener('DOMContentLoaded', function() {
         realization_rp: row?.realization_rp === null || row?.realization_rp === undefined
           ? Number.NaN
           : Number(row.realization_rp),
+        accumulated_realization_rp: Number(row?.accumulated_realization_rp || 0),
+        months: (Array.isArray(row?.months) ? row.months : []).map(month => ({
+          label: String(month?.label || month?.key || '-'),
+          realization_rp: Number(month?.realization_rp || 0),
+          lar_pct: month?.lar_pct === null || month?.lar_pct === undefined ? null : Number(month.lar_pct),
+          has_data: Boolean(month?.has_data),
+          productive: Boolean(month?.productive),
+        })),
       }))
       .sort((left, right) => `${left.branch}|${left.unit_code.padStart(10, '0')}|${left.rm}`
         .localeCompare(`${right.branch}|${right.unit_code.padStart(10, '0')}|${right.rm}`, 'id', { numeric: true }));
@@ -13025,6 +13052,10 @@ document.addEventListener('DOMContentLoaded', function() {
         ['Jumlah RM', activeSmeUnproductiveRows.length.toLocaleString('id-ID')],
       ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
     }
+    const basis = modal.querySelector('[data-sme-unproductive-modal-basis]');
+    if (basis) basis.textContent = detail.basis
+      ? `${detail.basis} Rentang: ${detail.period_label || '-'}. Akumulasi menjumlah realisasi posisi closing tiap bulan.`
+      : 'Daftar mengikuti periode closing dan wilayah yang sedang aktif.';
     if (search) search.value = '';
 
     lastSmeUnproductiveTrigger = source;
@@ -13942,10 +13973,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const refreshButton = event.target.closest('[data-sme-operations-refresh]');
     const retryButton = event.target.closest('[data-sme-operations-retry]');
     const unproductiveButton = event.target.closest('[data-sme-unproductive-open]');
-    if (unproductiveButton) {
+    const unproductiveCell = event.target.closest('.sme-ops-inactive-cell[data-sme-unproductive-detail]');
+    if (unproductiveButton || unproductiveCell) {
       event.preventDefault();
       event.stopPropagation();
-      openSmeUnproductiveModal(unproductiveButton);
+      openSmeUnproductiveModal(unproductiveButton || unproductiveCell);
     } else if (refreshButton) {
       event.preventDefault();
       loadSmeOperations(true);

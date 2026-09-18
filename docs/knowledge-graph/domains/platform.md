@@ -7,25 +7,24 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 4 |
-| file | 35 |
-| method | 42 |
+| file | 32 |
+| method | 41 |
 | unresolved_symbol | 5 |
-| class | 11 |
+| class | 10 |
 | table | 2 |
-| view | 6 |
+| view | 4 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `layouts.admin` | view | 67 | `resources/views/layouts/admin.blade.php:1` |
+| `layouts.admin` | view | 64 | `resources/views/layouts/admin.blade.php:1` |
 | `layouts.sidebar` | view | 53 | `resources/views/layouts/sidebar.blade.php:1` |
 | `get` | method | 22 | `app/Support/ReportCacheVersion.php:9` |
 | `bump` | method | 19 | `app/Support/ReportCacheVersion.php:31` |
 | `composite` | method | 19 | `app/Support/ReportCacheVersion.php:17` |
 | `AppServiceProvider` | class | 14 | `app/Providers/AppServiceProvider.php:25` |
 | `boot` | method | 10 | `app/Providers/AppServiceProvider.php:68` |
-| `layouts.navigation` | view | 10 | `resources/views/layouts/navigation.blade.php:1` |
 | `handle` | method | 9 | `app/Http/Middleware/MonitorRequestPerformance.php:15` |
 | `CacheMaintenanceService` | class | 8 | `app/Services/CacheMaintenanceService.php:9` |
 | `PartitionMaintenanceService` | class | 8 | `app/Support/PartitionMaintenanceService.php:8` |
@@ -48,10 +47,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `handle` | method | 5 | `app/Console/Commands/MaintainApplicationCacheCommand.php:14` |
 | `invalidateReportCaches` | method | 5 | `app/Support/ReportDataSyncService.php:1477` |
 | `key` | method | 5 | `app/Support/ReportCacheVersion.php:40` |
+| `maintain` | method | 5 | `app/Services/LogMaintenanceService.php:17` |
 
 ## Class Nodes
 
-- `AppLayout` - `app/View/Components/AppLayout.php`
 - `AppServiceProvider` - `app/Providers/AppServiceProvider.php`
 - `CacheMaintenanceService` - `app/Services/CacheMaintenanceService.php`
 - `GuestLayout` - `app/View/Components/GuestLayout.php`
@@ -74,9 +73,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 - `components.guest.layout`
 - `layouts.admin` - `resources/views/layouts/admin.blade.php`
-- `layouts.app` - `resources/views/layouts/app.blade.php`
 - `layouts.guest` - `resources/views/layouts/guest.blade.php`
-- `layouts.navigation` - `resources/views/layouts/navigation.blade.php`
 - `layouts.sidebar` - `resources/views/layouts/sidebar.blade.php`
 
 ## Table Nodes
@@ -90,11 +87,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | platform -> core (calls) | 26 |
 | core -> platform (calls) | 18 |
-| dashboard-pinjaman -> platform (extends_view) | 16 |
 | dashboard-pinjaman -> platform (calls) | 14 |
 | core -> platform (extends_view) | 14 |
-| platform -> dashboard-simpanan (references_route) | 13 |
 | platform -> dashboard-pinjaman (references_route) | 13 |
+| dashboard-pinjaman -> platform (extends_view) | 13 |
+| platform -> dashboard-simpanan (references_route) | 12 |
 | import -> platform (extends_view) | 10 |
 | dashboard-simpanan -> platform (calls) | 8 |
 | import -> platform (calls) | 8 |
@@ -106,15 +103,15 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | jobs-snapshots -> platform (calls) | 5 |
 | platform -> core (instantiates) | 5 |
 | core -> platform (contains) | 5 |
-| platform -> core (uses_component) | 5 |
 | almafacts -> platform (extends_view) | 5 |
-| platform -> access-control (references_route) | 4 |
-| platform -> core (extends) | 4 |
 | access-control -> platform (uses_component) | 4 |
 | platform -> dashboard-harian (references_route) | 4 |
 | platform -> almafacts (references_route) | 4 |
 | dashboard-harian -> platform (extends_view) | 4 |
+| platform -> access-control (references_route) | 3 |
 | platform -> jobs-snapshots (instantiates) | 3 |
 | kpi -> platform (calls) | 3 |
+| platform -> core (extends) | 3 |
 | platform -> input-management (references_route) | 3 |
 | database -> platform (uses_table) | 2 |
+| platform -> core (invokes_command) | 2 |

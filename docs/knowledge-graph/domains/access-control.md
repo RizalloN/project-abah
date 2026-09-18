@@ -34,7 +34,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `auth.forgot-password` | view | 10 | `resources/views/auth/forgot-password.blade.php:1` |
 | `auth.reset-password` | view | 10 | `resources/views/auth/reset-password.blade.php:1` |
 | `contentSecurityPolicy` | method | 10 | `app/Http/Middleware/SecurityHeadersMiddleware.php:80` |
-| `login` | route | 10 | - |
 | `store` | method | 10 | `app/Http/Controllers/Auth/AuthenticatedSessionController.php:29` |
 | `store` | method | 10 | `app/Http/Controllers/Auth/ConfirmablePasswordController.php:25` |
 | `user-management.store` | route | 10 | - |
@@ -47,6 +46,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `destroy` | method | 9 | `app/Http/Controllers/Admin/UserManagementController.php:253` |
 | `forUser` | method | 9 | `app/Support/UserBranchScope.php:24` |
 | `index` | method | 9 | `app/Http/Controllers/Admin/UserManagementController.php:56` |
+| `login` | route | 9 | - |
 | `sessions` | table | 9 | - |
 | `throttleKey` | method | 9 | `app/Http/Requests/Auth/LoginRequest.php:123` |
 | `throwRateLimitedValidationException` | method | 9 | `app/Http/Requests/Auth/LoginRequest.php:106` |
@@ -144,6 +144,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | jobs-snapshots -> access-control (protected_by) | 6 |
 | database -> access-control (defines_table) | 5 |
 | prognosa -> access-control (protected_by) | 5 |
-| platform -> access-control (references_route) | 4 |
 | access-control -> marketshare (references_route) | 4 |
 | database -> access-control (checks_table) | 4 |
+| access-control -> presentation (calls) | 4 |

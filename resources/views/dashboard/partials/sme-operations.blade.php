@@ -564,6 +564,10 @@
             </div>
         </div>
 
+        @if(!empty($unproductive['basis']))
+            <p class="sme-ops-inactive-note">{{ $unproductive['basis'] }} Realisasi adalah akumulasi bulan pada posisi closing; kategori 3/6 bulan berarti tidak produktif pada setiap bulan berturut-turut. Klik ganda kartu, atau klik angka/Detail RM untuk melihat rinciannya.</p>
+        @endif
+
         @if(!empty($unproductive['available']))
             <div class="sme-ops-inactive-grid">
                 @foreach(['month_1', 'month_3', 'month_6'] as $metricKey)
@@ -572,6 +576,8 @@
                         $inactiveDetail = [
                             'scope' => data_get($meta, 'scope_label', 'Area 6'),
                             'metric' => data_get($inactiveMetric, 'label', '-'),
+                            'period_label' => data_get($inactiveMetric, 'period_label', data_get($unproductive, 'period_label', '-')),
+                            'basis' => data_get($unproductive, 'basis', ''),
                             'rows' => array_values((array) data_get($inactiveMetric, 'rms', [])),
                         ];
                     @endphp
@@ -580,6 +586,7 @@
                              title="Klik dua kali untuk melihat daftar RM"
                              data-sme-unproductive-detail="{{ json_encode($inactiveDetail, JSON_UNESCAPED_UNICODE) }}">
                         <span><i class="fas fa-hourglass-half"></i>{{ data_get($inactiveMetric, 'label', '-') }}</span>
+                        <span class="sme-ops-inactive-period">Closing {{ data_get($inactiveMetric, 'period_label', '-') }}</span>
                         <strong>{{ $formatInteger(data_get($inactiveMetric, 'count', 0)) }} <small>RM</small></strong>
                         <div class="sme-ops-inactive-meter"><span style="width: {{ min(100, max(0, (float) data_get($inactiveMetric, 'percentage', 0))) }}%"></span></div>
                         <small>{{ $formatPercent(data_get($inactiveMetric, 'percentage', 0)) }} dari RM terpantau</small>
@@ -604,6 +611,8 @@
                                             $branchDetail = [
                                                 'scope' => data_get($branch, 'branch', '-'),
                                                 'metric' => data_get($branchMetric, 'label', '-'),
+                                                'period_label' => data_get($branchMetric, 'period_label', data_get($unproductive, 'period_label', '-')),
+                                                'basis' => data_get($unproductive, 'basis', ''),
                                                 'rows' => collect((array) data_get($branchMetric, 'rms', []))
                                                     ->map(fn (array $rm): array => array_merge($rm, ['branch' => data_get($branch, 'branch', '-')]))
                                                     ->values()
@@ -613,7 +622,8 @@
                                         <td>
                                             <button type="button"
                                                     class="sme-ops-inactive-cell"
-                                                    title="Klik dua kali untuk melihat daftar RM"
+                                                    title="Lihat detail RM"
+                                                    aria-label="Lihat detail {{ data_get($branchMetric, 'label', '-') }} {{ data_get($branch, 'branch', '-') }}"
                                                     data-sme-unproductive-detail="{{ json_encode($branchDetail, JSON_UNESCAPED_UNICODE) }}">
                                                 {{ $formatInteger(data_get($branchMetric, 'count', 0)) }}
                                             </button>
@@ -684,12 +694,12 @@
             </div>
             <div class="sme-vendor-modal__table-wrap">
                 <table aria-label="Daftar RM SME">
-                    <thead><tr><th>No</th><th>Cabang</th><th>Kode Uker</th><th>Unit Kerja</th><th>Nama RM</th><th data-sme-rm-realization-head hidden>Realisasi (Rp Juta)</th></tr></thead>
+                    <thead><tr><th>No</th><th>Cabang</th><th>Kode Uker</th><th>Unit Kerja</th><th>Nama RM</th><th data-sme-rm-realization-head hidden>Realisasi (Rp Juta)</th><th data-sme-rm-accumulated-head hidden>Akumulasi Realisasi (Rp Juta)</th><th data-sme-rm-months-head hidden>Posisi Closing per Bulan</th></tr></thead>
                     <tbody data-sme-unproductive-modal-body></tbody>
                 </table>
             </div>
             <footer>
-                <span>Daftar mengikuti periode closing dan wilayah yang sedang aktif.</span>
+                <span data-sme-unproductive-modal-basis>Daftar mengikuti periode closing dan wilayah yang sedang aktif.</span>
             </footer>
         </section>
     </div>

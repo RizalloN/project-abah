@@ -153,6 +153,9 @@ class AlmafactsKpiSheetTest extends TestCase
         $this->assertStringContainsString('Dashboard KPI RM SME', $html);
         $this->assertStringContainsString('Dashboard Individu', $html);
         $this->assertStringContainsString('Summary Kinerja', $html);
+        $this->assertStringContainsString('id="rmsme-summary-period"', $html);
+        $this->assertStringContainsString('id="rmsme-ranking-caption"', $html);
+        $this->assertStringContainsString('"summary_by_period"', $html);
         $this->assertStringContainsString('rmsme-growth-chart', $html);
     }
 

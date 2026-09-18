@@ -859,6 +859,7 @@ final class LandingSmeOperationalService
             $totals[$metricKey] = [
                 'key' => $metricKey,
                 'label' => (string) ($sourceMetric['label'] ?? $metricKey),
+                'period_label' => (string) ($sourceMetric['period_label'] ?? '-'),
                 'count' => $count,
                 'percentage' => $totalRm > 0 ? ($count / $totalRm) * 100 : 0.0,
                 'rms' => $rms,
@@ -867,6 +868,7 @@ final class LandingSmeOperationalService
 
         return [
             'available' => (bool) ($source['available'] ?? false) && $branches->isNotEmpty(),
+            'basis' => (string) ($source['basis'] ?? ''),
             'period_label' => (string) ($source['period_label'] ?? '-'),
             'total_rm' => $totalRm,
             'totals' => $totals,

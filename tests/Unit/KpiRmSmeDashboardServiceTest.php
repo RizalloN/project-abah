@@ -21,6 +21,15 @@ class KpiRmSmeDashboardServiceTest extends TestCase
         $this->assertSame(2, $dashboard['stats']['rm_count']);
         $this->assertSame('Area 6', $dashboard['stats']['scope_label']);
         $this->assertCount(2, $dashboard['summary_rows']);
+        $this->assertSame(['2025-12-31', '2026-06-30', '2026-07-31'], array_keys($dashboard['summary_by_period']));
+        $this->assertSame($dashboard['summary_rows'], $dashboard['summary_by_period']['2026-07-31']['summary_rows']);
+        $this->assertSame($dashboard['branch_analysis'], $dashboard['summary_by_period']['2026-07-31']['branch_analysis']);
+        $this->assertSame($dashboard['stats'], $dashboard['summary_by_period']['2026-07-31']['stats']);
+        $this->assertSame('30 Jun 2026', $dashboard['summary_by_period']['2026-06-30']['stats']['latest_period_label']);
+        $this->assertNotSame(
+            $dashboard['summary_by_period']['2026-06-30']['summary_rows'],
+            $dashboard['summary_by_period']['2026-07-31']['summary_rows']
+        );
 
         $madiun = $dashboard['profiles']['00045:00123456'];
         $this->assertSame('RM Nama Sama', $madiun['name']);
@@ -49,6 +58,26 @@ class KpiRmSmeDashboardServiceTest extends TestCase
         $this->assertSame('KC Madiun', $dashboard['stats']['scope_label']);
         $this->assertSame(1, $dashboard['stats']['rm_count']);
         $this->assertSame(['KC Madiun'], array_column($dashboard['branch_analysis'], 'branch'));
+    }
+
+    public function test_summary_only_counts_rm_with_data_in_selected_period(): void
+    {
+        $sources = $this->sources();
+        $sources['main']['rows'] = array_values(array_filter(
+            $sources['main']['rows'],
+            static fn (array $row): bool => $row[0] !== '31 Jul 2026' || ! str_contains($row[1], 'Magetan')
+        ));
+
+        $dashboard = (new KpiRmSmeDashboardService())->build(
+            $sources,
+            ['selected' => 'all', 'locked' => false, 'options' => []]
+        );
+
+        $this->assertSame(2, $dashboard['summary_by_period']['2026-06-30']['stats']['rm_count']);
+        $this->assertSame(1, $dashboard['summary_by_period']['2026-07-31']['stats']['rm_count']);
+        $this->assertEqualsCanonicalizing(['KC Madiun', 'KC Magetan'], array_column($dashboard['summary_by_period']['2026-06-30']['branch_analysis'], 'branch'));
+        $this->assertSame(['KC Madiun'], array_column($dashboard['summary_by_period']['2026-07-31']['branch_analysis'], 'branch'));
+        $this->assertSame(['00045:00123456'], array_column($dashboard['summary_by_period']['2026-07-31']['summary_rows'], 'id'));
     }
 
     /** @return array<string, array{header: array<int, string>, rows: array<int, array<int, string>>}> */

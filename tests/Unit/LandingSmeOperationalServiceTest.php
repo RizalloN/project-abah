@@ -402,10 +402,11 @@ class LandingSmeOperationalServiceTest extends TestCase
             ],
             'unproductive' => [
                 'available' => true,
+                'basis' => 'Produktif jika realisasi closing per bulan minimal Rp1.600 juta dan LAR maksimal 15%.',
                 'period_label' => 'Mar 26 - Agu 26',
                 'totals' => [
                     'month_1' => ['label' => '1 bulan'],
-                    'month_3' => ['label' => '3 bulan berturut-turut'],
+                    'month_3' => ['label' => '3 bulan berturut-turut', 'period_label' => 'Jun 26 - Agu 26'],
                     'month_6' => ['label' => '6 bulan berturut-turut'],
                 ],
                 'branches' => [
@@ -414,7 +415,11 @@ class LandingSmeOperationalServiceTest extends TestCase
                         'total_rm' => 2,
                         'metrics' => [
                             'month_1' => ['count' => 2, 'rms' => [['rm' => 'RM A'], ['rm' => 'RM B']]],
-                            'month_3' => ['count' => 1, 'rms' => [['rm' => 'RM B']]],
+                            'month_3' => ['count' => 1, 'rms' => [[
+                                'rm' => 'RM B',
+                                'accumulated_realization_rp' => 1_200_000_000,
+                                'months' => [['label' => 'Agu 26', 'realization_rp' => 0, 'lar_pct' => null, 'has_data' => false, 'productive' => false]],
+                            ]]],
                             'month_6' => ['count' => 0, 'rms' => []],
                         ],
                     ],
@@ -454,6 +459,10 @@ class LandingSmeOperationalServiceTest extends TestCase
         $this->assertSame(1, data_get($payload, 'unproductive.totals.month_3.count'));
         $this->assertSame('RM B', data_get($payload, 'unproductive.totals.month_3.rms.0.rm'));
         $this->assertSame('KC MADIUN', data_get($payload, 'unproductive.totals.month_3.rms.0.branch'));
+        $this->assertSame(1_200_000_000, data_get($payload, 'unproductive.totals.month_3.rms.0.accumulated_realization_rp'));
+        $this->assertSame('Agu 26', data_get($payload, 'unproductive.totals.month_3.rms.0.months.0.label'));
+        $this->assertSame('Jun 26 - Agu 26', data_get($payload, 'unproductive.totals.month_3.period_label'));
+        $this->assertSame('Produktif jika realisasi closing per bulan minimal Rp1.600 juta dan LAR maksimal 15%.', data_get($payload, 'unproductive.basis'));
     }
 
     public function test_restructuring_uses_only_sheet_amounts_without_legacy_unit_breakdown(): void
