@@ -6,7 +6,6 @@ use App\Http\Controllers\Import\ImportExcelController;
 use App\Http\Controllers\Import\ImportReportPhController;
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Jobs\RunImportJob;
-use App\Jobs\SyncImportedReportJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -147,6 +146,7 @@ class ImportExecutionService
     {
         $status = (string) ($job->status ?? '');
         $hasImportedRows = (int) ($job->total_success ?? 0) > 0;
+        $tableName = strtolower(trim((string) ($params['table_name'] ?? '')));
 
         if ($status !== 'completed' && !($status === 'failed_partial' && $hasImportedRows)) {
             return;
@@ -155,7 +155,7 @@ class ImportExecutionService
         try {
             app(ImportCleanupService::class)->dispatchImportedJobSync(
                 $jobId,
-                null,
+                $tableName !== '' ? $tableName : null,
                 null,
                 static::class,
                 $this->resolvePostImportSyncQueue($jobId, $params)
@@ -572,21 +572,29 @@ class ImportExecutionService
                         'percent' => 100,
                     ],
                 );
-                try {
-                    SyncImportedReportJob::dispatch($jobId, null, null, static::class)
-                        ->onQueue($this->resolvePostImportSyncQueue($jobId, $params));
-                } catch (\Throwable $syncError) {
-                    Log::warning('Import successful but failed to dispatch post-import sync: ' . $syncError->getMessage(), [
-                        'job_id' => $jobId,
-                    ]);
-                }
+                $this->dispatchPostImportSyncForTerminalJob(
+                    $jobId,
+                    (object) [
+                        'status' => 'completed',
+                        'total_success' => $success,
+                        'total_failed' => $failed,
+                    ],
+                    $params
+                );
                 $this->releaseDispatchMarker($jobId);
                 return;
             }
 
             if ($status === 'failed_partial' && $success > 0) {
-                SyncImportedReportJob::dispatch($jobId, null, null, static::class)
-                    ->onQueue($this->resolvePostImportSyncQueue($jobId, $params));
+                $this->dispatchPostImportSyncForTerminalJob(
+                    $jobId,
+                    (object) [
+                        'status' => 'failed_partial',
+                        'total_success' => $success,
+                        'total_failed' => $failed,
+                    ],
+                    $params
+                );
             }
 
             $this->progressService->markFailed(

@@ -18,6 +18,22 @@ final class PhpSourceAnalyzer
         'DB', 'Schema', 'Route', 'View', 'Cache', 'Log', 'Storage', 'Config',
     ];
 
+    /** @var array<int, string> */
+    private const ELOQUENT_MAGIC_METHODS = [
+        'all', 'booted', 'booting', 'count', 'create', 'created', 'creating', 'delete', 'deleted', 'deleting',
+        'exists', 'factory', 'find', 'findOrFail', 'first', 'firstOrCreate', 'firstOrFail', 'forceDelete',
+        'forceFill', 'fresh', 'getAttribute', 'getConnection', 'getKey', 'insert', 'insertGetId', 'latest',
+        'lockForUpdate', 'newQuery', 'oldest', 'onlyTrashed', 'orderBy', 'orderByDesc', 'paginate', 'pluck',
+        'query', 'restore', 'save', 'saved', 'saving', 'select', 'setAttribute', 'setRememberToken', 'trashed',
+        'truncate', 'update', 'updated', 'updating', 'updateOrCreate', 'upsert', 'where', 'whereBetween',
+        'whereDate', 'whereIn', 'whereNotNull', 'whereNull', 'with',
+    ];
+
+    /** @var array<int, string> */
+    private const REQUEST_MAGIC_METHODS = [
+        'all', 'boolean', 'file', 'filled', 'has', 'input', 'only', 'session', 'validated',
+    ];
+
     /** @param Closure(string): string $domainResolver */
     public function __construct(private readonly Closure $domainResolver) {}
 
@@ -86,19 +102,21 @@ final class PhpSourceAnalyzer
         }
         unset($function);
 
+        $cleanSource = $this->maskComments($source, $tokens);
+
         foreach ($classes as $class) {
-            $this->analyzeClassDependencies($class, $functions, $tokens, $source, $namespace, $imports, $relativePath, $graph);
+            $this->analyzeClassDependencies($class, $functions, $tokens, $cleanSource, $namespace, $imports, $relativePath, $graph);
             $this->analyzeTraits($class, $tokens, $namespace, $imports, $relativePath, $graph);
         }
 
         foreach ($functions as $function) {
-            $this->analyzeFunctionBody($function, $classes, $source, $namespace, $imports, $relativePath, $graph);
+            $this->analyzeFunctionBody($function, $classes, $cleanSource, $tokens, $namespace, $imports, $relativePath, $graph);
         }
 
         $this->analyzeTables($source, $tokens, $functions, $classes, $relativePath, $graph);
-        $this->analyzeViewsAndRoutes($source, $functions, $classes, $relativePath, $graph);
-        $this->analyzeCommand($source, $classes, $methodLookup, $relativePath, $graph);
-        $this->analyzeQueues($source, $functions, $classes, $relativePath, $graph);
+        $this->analyzeViewsAndRoutes($cleanSource, $functions, $classes, $relativePath, $graph);
+        $this->analyzeCommand($cleanSource, $classes, $methodLookup, $relativePath, $graph);
+        $this->analyzeQueues($cleanSource, $functions, $classes, $relativePath, $graph);
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -291,7 +309,12 @@ final class PhpSourceAnalyzer
             if ($nameIndex !== null && $tokens[$nameIndex]['text'] === '&') {
                 $nameIndex = $this->nextMeaningfulIndex($tokens, $nameIndex + 1);
             }
-            if ($nameIndex === null || $tokens[$nameIndex]['id'] !== T_STRING) {
+            if ($nameIndex === null || ! preg_match('/^[A-Za-z_\x80-\xff][A-Za-z0-9_\x80-\xff]*$/', $tokens[$nameIndex]['text'])) {
+                continue;
+            }
+
+            $parenIndex = $this->nextMeaningfulIndex($tokens, $nameIndex + 1);
+            if ($parenIndex === null || $tokens[$parenIndex]['text'] !== '(') {
                 continue;
             }
 
@@ -448,12 +471,14 @@ final class PhpSourceAnalyzer
     /**
      * @param  array<string, mixed>  $function
      * @param  array<int, array<string, mixed>>  $classes
+     * @param  array<int, array<string, mixed>>  $tokens
      * @param  array<string, string>  $imports
      */
     private function analyzeFunctionBody(
         array $function,
         array $classes,
         string $source,
+        array $tokens,
         string $namespace,
         array $imports,
         string $relativePath,
@@ -509,16 +534,60 @@ final class PhpSourceAnalyzer
                 if (in_array($short, self::STATIC_CALLS_WITH_DEDICATED_EDGES, true)) {
                     continue;
                 }
-                $targetClass = $this->resolveName($className, $namespace, $imports, $owner);
-                $relation = $match['method'][0] === 'dispatch' ? 'dispatches' : 'calls';
-                $this->addMethodCall($graph, $function['id'], $targetClass, $match['method'][0], $relativePath, $this->lineAt($source, $function['body_offset'] + $match[0][1]), $relation);
+                $targetClass = $this->resolveName($className, $namespace, $imports, $ownerClass ?: $owner);
+                if ($targetClass === '') {
+                    continue;
+                }
+                $methodName = $match['method'][0];
+                if ($methodName === 'dispatch') {
+                    $graph->addNode('symbol:'.$targetClass, 'unresolved_symbol', $this->shortName($targetClass), [
+                        'fqn' => $targetClass,
+                        'domain' => ($this->domainResolver)($targetClass),
+                        'status' => str_starts_with($targetClass, 'App\\') ? 'unresolved' : 'external',
+                    ]);
+                    $graph->addEdge($function['id'], 'dispatches', 'symbol:'.$targetClass, [
+                        'path' => $relativePath,
+                        'line' => $this->lineAt($source, $function['body_offset'] + $match[0][1]),
+                    ]);
+                    continue;
+                }
+                $this->addMethodCall($graph, $function['id'], $targetClass, $methodName, $relativePath, $this->lineAt($source, $function['body_offset'] + $match[0][1]), 'calls');
             }
         }
 
-        if (preg_match_all('/\bnew\s+(?<class>\\\\?[A-Za-z_][\\\\A-Za-z0-9_]*)/', $body, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
-            foreach ($matches as $match) {
-                $target = $this->resolveName($match['class'][0], $namespace, $imports, $owner);
-                $this->addClassReference($graph, $target, $relativePath, $function['id'], 'instantiates', $this->lineAt($source, $function['body_offset'] + $match[0][1]));
+        if ($function['body_start_token'] !== null && $function['end_token'] !== null) {
+            for ($i = $function['body_start_token'] + 1; $i < $function['end_token']; $i++) {
+                if ($tokens[$i]['id'] !== T_NEW) {
+                    continue;
+                }
+                $next = $this->nextMeaningfulIndex($tokens, $i + 1);
+                if ($next === null || $tokens[$next]['id'] === T_CLASS) {
+                    continue;
+                }
+                $className = '';
+                for ($j = $next; $j < $function['end_token']; $j++) {
+                    $tid = $tokens[$j]['id'];
+                    $ttext = $tokens[$j]['text'];
+                    if (in_array($tid, [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_NAME_RELATIVE], true)
+                        || ($tid !== null && defined('T_NS_SEPARATOR') && $tid === constant('T_NS_SEPARATOR'))
+                        || $ttext === '\\') {
+                        $className .= $ttext;
+                    } else {
+                        break;
+                    }
+                }
+                $className = trim($className);
+                if ($className === '' || ! preg_match('/^[\\\\A-Za-z_][\\\\A-Za-z0-9_]*$/', $className)) {
+                    continue;
+                }
+                if (in_array(strtolower($className), ['self', 'static', 'parent'], true) && ! $owner) {
+                    continue;
+                }
+                $target = $this->resolveName($className, $namespace, $imports, $ownerClass ?: $owner);
+                if ($target === '' || in_array(strtolower($target), ['class', 'self', 'static', 'parent'], true)) {
+                    continue;
+                }
+                $this->addClassReference($graph, $target, $relativePath, $function['id'], 'instantiates', $tokens[$i]['line']);
             }
         }
     }
@@ -862,6 +931,16 @@ final class PhpSourceAnalyzer
 
         $classId = 'symbol:'.$classFqn;
         $methodId = 'method:'.$classFqn.'::'.$method;
+        $status = str_starts_with($classFqn, 'App\\') ? 'unresolved' : 'external';
+        if ($status === 'unresolved') {
+            $role = $this->symbolRole($classFqn, '');
+            if ($role === 'model' && in_array($method, self::ELOQUENT_MAGIC_METHODS, true)) {
+                $status = 'inherited';
+            } elseif ($role === 'request' && in_array($method, self::REQUEST_MAGIC_METHODS, true)) {
+                $status = 'inherited';
+            }
+        }
+
         $graph->addNode($classId, 'unresolved_symbol', $this->shortName($classFqn), [
             'fqn' => $classFqn,
             'domain' => ($this->domainResolver)($classFqn),
@@ -870,7 +949,7 @@ final class PhpSourceAnalyzer
         $graph->addNode($methodId, 'unresolved_symbol', $method, [
             'fqn' => $classFqn.'::'.$method,
             'domain' => ($this->domainResolver)($classFqn),
-            'status' => str_starts_with($classFqn, 'App\\') ? 'unresolved' : 'external',
+            'status' => $status,
         ]);
         $graph->addEdge($classId, 'contains', $methodId);
         $graph->addEdge($sourceId, $relation, $methodId, ['path' => $path, 'line' => $line]);
@@ -907,7 +986,7 @@ final class PhpSourceAnalyzer
         return 'file:'.$relativePath;
     }
 
-    private function resolveName(string $name, string $namespace, array $imports, ?string $owner = null): string
+    private function resolveName(string $name, string $namespace, array $imports, mixed $owner = null): string
     {
         $name = preg_replace('/\s+/', '', trim($name)) ?? trim($name);
         $fullyQualified = str_starts_with($name, '\\');
@@ -918,11 +997,18 @@ final class PhpSourceAnalyzer
         if ($fullyQualified) {
             return $name;
         }
-        if (in_array(strtolower($name), ['self', 'static'], true) && $owner) {
-            return $owner;
+
+        $ownerFqn = is_array($owner) ? ($owner['fqn'] ?? '') : (is_string($owner) ? $owner : '');
+
+        if (in_array(strtolower($name), ['self', 'static'], true)) {
+            return $ownerFqn;
         }
-        if (strtolower($name) === 'parent' && $owner) {
-            return $owner;
+        if (strtolower($name) === 'parent') {
+            if (is_array($owner) && ! empty($owner['extends'])) {
+                return $this->resolveName($owner['extends'][0], $namespace, $imports);
+            }
+
+            return '';
         }
 
         $parts = explode('\\', $name);
@@ -1023,9 +1109,12 @@ final class PhpSourceAnalyzer
     {
         $depth = 0;
         for ($index = $start, $count = count($tokens); $index < $count; $index++) {
-            if ($tokens[$index]['text'] === '{') {
+            $token = $tokens[$index];
+            $text = $token['text'];
+            $id = $token['id'];
+            if ($text === '{' || $text === '${' || in_array($id, [T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true)) {
                 $depth++;
-            } elseif ($tokens[$index]['text'] === '}') {
+            } elseif ($text === '}') {
                 $depth--;
                 if ($depth === 0) {
                     return $index;
@@ -1034,6 +1123,20 @@ final class PhpSourceAnalyzer
         }
 
         return count($tokens) - 1;
+    }
+
+    /** @param array<int, array<string, mixed>> $tokens */
+    private function maskComments(string $source, array $tokens): string
+    {
+        $clean = $source;
+        foreach ($tokens as $token) {
+            if (in_array($token['id'], [T_COMMENT, T_DOC_COMMENT], true)) {
+                $replacement = preg_replace('/[^\r\n]/', ' ', (string) $token['text']) ?? '';
+                $clean = substr_replace($clean, $replacement, (int) $token['offset'], strlen((string) $token['text']));
+            }
+        }
+
+        return $clean;
     }
 
     private function nextTokenWithId(array $tokens, int $start, int $tokenId): ?int

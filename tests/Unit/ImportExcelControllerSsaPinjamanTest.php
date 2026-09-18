@@ -51,7 +51,7 @@ class ImportExcelControllerSsaPinjamanTest extends TestCase
         };
 
         $headers = [
-            'Month, Day, Year of Periode',
+            'Day, Month, Year of Periode',
             'Nama Cabang',
             'Nama Uker',
             'Produk',

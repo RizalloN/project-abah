@@ -63,7 +63,7 @@ class SsaPinjamanImportStrategy implements ImportStrategyInterface
             $normalized = trim($normalized, '_');
 
             return match ($normalized) {
-                'month_day_year_of_period', 'tanggal_periode', 'tgl_periode' => 'month_day_year_of_periode',
+                'month_day_year_of_period', 'day_month_year_of_periode', 'tanggal_periode', 'tgl_periode' => 'month_day_year_of_periode',
                 'nama_kantor_cabang', 'kantor_cabang', 'kanca' => 'nama_cabang',
                 'nama_unit_kerja', 'unit_kerja', 'uker' => 'nama_uker',
                 'kolektabilitas', 'kolektibilitas_one_obligor' => 'kolektabilitas_one_obligor',

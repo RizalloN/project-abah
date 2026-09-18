@@ -584,7 +584,10 @@ class ImportExecutionServiceTest extends TestCase
         $service = new ImportExecutionService($progressService);
         $service->run($jobId);
 
-        Bus::assertDispatched(SyncImportedReportJob::class);
+        Bus::assertDispatched(SyncImportedReportJob::class, function (SyncImportedReportJob $job) use ($jobId): bool {
+            return $job->jobId === $jobId
+                && $job->tableName === 'daily_loan_dinamis';
+        });
     }
 
     public function test_stream_status_aborts_stale_queued_job_even_when_payload_does_not_change(): void

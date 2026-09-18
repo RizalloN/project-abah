@@ -25,9 +25,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 879 |
-| Graph nodes | 10,076 |
-| Graph edges | 39,227 |
+| Source files | 881 |
+| Graph nodes | 10,044 |
+| Graph edges | 39,253 |
 | Domains | 19 |
 
 ## Read The Right Artifact
@@ -51,7 +51,7 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 | `DashboardHarianSnapshotService` | class | dashboard-harian | 254 |
 | `DashboardPinjamanReportController` | class | dashboard-pinjaman | 192 |
 | `nama_report` | table | core | 181 |
-| `TestCase` | class | tests | 177 |
+| `TestCase` | class | tests | 179 |
 | `ImportIndexController` | class | import | 162 |
 | `import_jobs` | table | import | 154 |
 | `ImportFileController` | class | import | 144 |
@@ -60,11 +60,11 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 | `lw325_ph` | table | dashboard-pinjaman | 121 |
 | `AlmafactsDashboardController` | class | almafacts | 101 |
 | `ImportProgressService` | class | import | 97 |
-| `ImportReportPhController` | class | import | 97 |
 | `ImportPerformancePisPerProdukController` | class | import | 95 |
+| `ImportReportPhController` | class | import | 95 |
 | `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 95 |
-| `ImportSimpananMultiPnCsvController` | class | import | 93 |
-| `dashboard_harian_snapshots` | table | dashboard-harian | 87 |
+| `ImportSimpananMultiPnCsvController` | class | import | 92 |
+| `setUp` | method | tests | 89 |
 
 ## Edge Semantics
 

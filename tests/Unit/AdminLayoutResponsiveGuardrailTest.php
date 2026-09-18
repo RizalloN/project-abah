@@ -28,6 +28,26 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
         $this->assertStringNotContainsString('.content-wrapper form { position: sticky;', $layout);
     }
 
+    public function test_table_headers_follow_page_scroll_except_on_the_landing_pages(): void
+    {
+        $layout = file_get_contents(resource_path('views/layouts/admin.blade.php'));
+
+        $this->assertStringContainsString("request()->routeIs('dashboard', 'dashboard.simpanan') ? 'off' : 'on'", $layout);
+        $this->assertStringContainsString('body[data-abah-table-freeze="on"] .content-wrapper .abah-table-managed thead th', $layout);
+        $this->assertMatchesRegularExpression('/\.main-header\.modern-navbar\s*\{[^}]*position:\s*sticky;/s', $layout);
+        $this->assertStringContainsString('.abah-floating-table-header[hidden]', $layout);
+        $this->assertStringContainsString('const freezeTableHeaders = document.body.dataset.abahTableFreeze === \'on\';', $layout);
+        $this->assertStringContainsString('getFloatingCandidate', $layout);
+        $this->assertStringContainsString("table.querySelector(':scope > colgroup')", $layout);
+        $this->assertStringContainsString("cloneColumn.style.setProperty('width', columnWidth + 'px', 'important');", $layout);
+        $this->assertStringContainsString('floatingHeader.inert = true;', $layout);
+        $this->assertStringContainsString("document.addEventListener('scroll', function () { scheduleFloatingHeader(false); }", $layout);
+        $this->assertStringContainsString('syncScrollableWrapper(table, wrapper)', $layout);
+        $this->assertStringContainsString("wrapper.dataset.abahManagedRole = '1';", $layout);
+        $this->assertStringContainsString("wrapper.dataset.abahManagedLabel = '1';", $layout);
+        $this->assertStringContainsString('href="#main-content"', $layout);
+    }
+
     public function test_admin_layout_covers_remaining_report_page_patterns(): void
     {
         $layout = file_get_contents(resource_path('views/layouts/admin.blade.php'));

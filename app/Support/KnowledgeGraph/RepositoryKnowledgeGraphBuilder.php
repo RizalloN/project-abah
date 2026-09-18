@@ -31,23 +31,23 @@ final class RepositoryKnowledgeGraphBuilder
     /** @var array<string, array<int, string>> */
     private const DOMAIN_RULES = [
         'knowledge-graph' => ['knowledgegraph', 'knowledge-graph', 'project_map'],
-        'import' => ['import', 'brimo', 'brilink', 'merchant', 'delimiter', 'csv', 'rar'],
+        'import' => ['import', 'brimo', 'brilink', 'merchant', 'delimiter', 'csv', 'rar', 'cognos', 'gi405', 'ibbiz', 'ibbisniz'],
         'dashboard-harian' => ['dashboardharian', 'dashboard-harian', 'keragaan', 'hourlydpk', 'hourly-dpk'],
-        'dashboard-simpanan' => ['dashboardsimpanan', 'dashboard-simpanan', 'dashboarddana', 'dashboard-dana', 'simpanan'],
-        'dashboard-pinjaman' => ['dashboardpinjaman', 'dashboard-pinjaman', 'ssa-pinjaman', 'dailyloan', 'daily-loan', 'lw325', 'kinerjarm', 'matrix'],
+        'dashboard-simpanan' => ['dashboardsimpanan', 'dashboard-simpanan', 'dashboarddana', 'dashboard-dana', 'simpanan', 'rasiocasa', 'rasio-casa', 'casa', 'dormant', 'rekeningdormant'],
+        'dashboard-pinjaman' => ['dashboardpinjaman', 'dashboard-pinjaman', 'ssa-pinjaman', 'dailyloan', 'daily-loan', 'lw325', 'kinerjarm', 'matrix', 'loan', 'pinjaman', 'consumerrm', 'smallrm', 'micropipeline', 'payroll', 'mantri', 'kurkecil', 'runoff', 'brihc'],
         'marketshare' => ['marketshare', 'market-share', 'cras', 'sektoral', 'mapping'],
         'almafacts' => ['almafacts', 'financial-highlight', 'kinerja-laba-rugi'],
         'kpi' => ['kpi', 'scorecard', 'personnelreference'],
         'prognosa' => ['prognosa', 'weekly'],
         'bank-pipeline' => ['driveasix', 'drive-asix', 'bankpipeline', 'bank-pipeline', 'onlyoffice', 'workbook'],
-        'jobs-snapshots' => ['snapshot', 'queue', 'jobmanagement', 'job-management', 'worker', 'backfill'],
-        'access-control' => ['auth', 'login', 'user-management', 'usermanagement', 'role', 'branchscope', 'branch-scope', 'security'],
+        'jobs-snapshots' => ['snapshot', 'queue', 'jobmanagement', 'job-management', 'worker', 'backfill', 'app/jobs', 'jobs/', 'job_batches', 'failed_jobs'],
+        'access-control' => ['auth', 'login', 'user-management', 'usermanagement', 'role', 'branchscope', 'branch-scope', 'security', 'user', 'password_reset', 'session'],
         'presentation' => ['presentation', 'ppt', 'powerpoint'],
-        'input-management' => ['bod-boc', 'businesscluster', 'business-cluster', 'app/http/controllers/input'],
+        'input-management' => ['bod-boc', 'businesscluster', 'business-cluster', 'app/http/controllers/input', 'bodboc', 'rekanan', 'inputrekanan'],
         'database' => ['database/migrations', 'database/seeders', 'schema', 'backup'],
         'tests' => ['tests/', 'test.php'],
         'routing' => ['routes/', 'route:'],
-        'platform' => ['bootstrap/', 'config/', 'provider', 'middleware'],
+        'platform' => ['bootstrap/', 'config/', 'provider', 'middleware', 'cache', 'maintenance', 'layout'],
     ];
 
     public function __construct(
@@ -370,6 +370,25 @@ final class RepositoryKnowledgeGraphBuilder
     /** @param array<int, array<string, mixed>> $routes */
     private function analyzeRuntimeRoutes(array $routes, KnowledgeGraph $graph): void
     {
+        $nodesById = array_column($graph->nodes(), null, 'id');
+        $definedMethodsBySymbol = [];
+        $extendsBySymbol = [];
+        $traitsBySymbol = [];
+
+        foreach ($graph->edges() as $edge) {
+            if ($edge['relation'] === 'contains' && str_starts_with($edge['to'], 'method:')) {
+                $targetNode = $nodesById[$edge['to']] ?? null;
+                if ($targetNode && ($targetNode['kind'] ?? '') === 'method') {
+                    $methodName = preg_replace('/^.*::/', '', $edge['to']);
+                    $definedMethodsBySymbol[$edge['from']][$methodName] = $edge['to'];
+                }
+            } elseif ($edge['relation'] === 'extends') {
+                $extendsBySymbol[$edge['from']][] = $edge['to'];
+            } elseif ($edge['relation'] === 'uses_trait') {
+                $traitsBySymbol[$edge['from']][] = $edge['to'];
+            }
+        }
+
         foreach ($routes as $route) {
             $name = trim((string) ($route['name'] ?? ''));
             $uri = trim((string) ($route['uri'] ?? ''));
@@ -395,13 +414,20 @@ final class RepositoryKnowledgeGraphBuilder
                     'domain' => $this->domainFor($class),
                     'status' => str_starts_with($class, 'App\\') ? 'unresolved' : 'external',
                 ]);
-                $graph->addNode($methodId, 'unresolved_symbol', $method, [
-                    'fqn' => $class.'::'.$method,
-                    'domain' => $this->domainFor($class),
-                    'status' => 'unresolved',
-                ]);
-                $graph->addEdge('symbol:'.$class, 'contains', $methodId);
-                $graph->addEdge($routeId, 'dispatches_to', $methodId);
+
+                $visited = [];
+                $resolvedMethodId = $this->resolveControllerMethod($class, $method, $definedMethodsBySymbol, $extendsBySymbol, $traitsBySymbol, $visited);
+                if ($resolvedMethodId !== null) {
+                    $graph->addEdge($routeId, 'dispatches_to', $resolvedMethodId);
+                } else {
+                    $graph->addNode($methodId, 'unresolved_symbol', $method, [
+                        'fqn' => $class.'::'.$method,
+                        'domain' => $this->domainFor($class),
+                        'status' => 'unresolved',
+                    ]);
+                    $graph->addEdge('symbol:'.$class, 'contains', $methodId);
+                    $graph->addEdge($routeId, 'dispatches_to', $methodId);
+                }
             }
 
             foreach ((array) ($route['middleware'] ?? []) as $middleware) {
@@ -416,6 +442,49 @@ final class RepositoryKnowledgeGraphBuilder
                 $graph->addEdge($routeId, 'protected_by', $middlewareId);
             }
         }
+    }
+
+    /**
+     * @param  array<string, array<string, string>>  $definedMethodsBySymbol
+     * @param  array<string, array<int, string>>  $extendsBySymbol
+     * @param  array<string, array<int, string>>  $traitsBySymbol
+     * @param  array<string, bool>  $visited
+     */
+    private function resolveControllerMethod(
+        string $class,
+        string $method,
+        array $definedMethodsBySymbol,
+        array $extendsBySymbol,
+        array $traitsBySymbol,
+        array &$visited = []
+    ): ?string {
+        $symbolId = 'symbol:'.$class;
+        if (isset($visited[$symbolId])) {
+            return null;
+        }
+        $visited[$symbolId] = true;
+
+        if (isset($definedMethodsBySymbol[$symbolId][$method])) {
+            return $definedMethodsBySymbol[$symbolId][$method];
+        }
+
+        foreach ($traitsBySymbol[$symbolId] ?? [] as $traitSymbol) {
+            $traitClass = preg_replace('/^symbol:/', '', $traitSymbol);
+            $found = $this->resolveControllerMethod((string) $traitClass, $method, $definedMethodsBySymbol, $extendsBySymbol, $traitsBySymbol, $visited);
+            if ($found !== null) {
+                return $found;
+            }
+        }
+
+        foreach ($extendsBySymbol[$symbolId] ?? [] as $parentSymbol) {
+            $parentClass = preg_replace('/^symbol:/', '', $parentSymbol);
+            $found = $this->resolveControllerMethod((string) $parentClass, $method, $definedMethodsBySymbol, $extendsBySymbol, $traitsBySymbol, $visited);
+            if ($found !== null) {
+                return $found;
+            }
+        }
+
+        return null;
     }
 
     private function attachDomains(KnowledgeGraph $graph): void
@@ -768,11 +837,11 @@ final class RepositoryKnowledgeGraphBuilder
             return 'database';
         }
 
-        $normalized = strtolower(str_replace(['\\', '_', ' '], ['/', '-', ''], $text));
+        $normalized = strtolower(str_replace(['\\', '/', '_', '-', ' '], '', $text));
         foreach (self::DOMAIN_RULES as $domain => $needles) {
             foreach ($needles as $needle) {
-                $needleNormalized = strtolower(str_replace(['\\', '_', ' '], ['/', '-', ''], $needle));
-                if (str_contains($normalized, $needleNormalized) || str_contains($pathLike, strtolower($needle))) {
+                $needleNormalized = strtolower(str_replace(['\\', '/', '_', '-', ' '], '', $needle));
+                if ($needleNormalized !== '' && (str_contains($normalized, $needleNormalized) || str_contains($pathLike, strtolower($needle)))) {
                     return $domain;
                 }
             }

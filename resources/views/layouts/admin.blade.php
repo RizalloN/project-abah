@@ -32,6 +32,14 @@
             --app-safe-left: env(safe-area-inset-left, 0px);
             --app-page-gutter: clamp(0.75rem, 1.6vw, 1.5rem);
             --app-control-height: 38px;
+            --app-navbar-height: 68px;
+            --app-focus-ring: rgba(48, 127, 226, 0.34);
+            --app-layer-table-header: 1033;
+            --app-layer-navbar: 1040;
+        }
+
+        html {
+            scroll-padding-top: calc(var(--app-navbar-height) + var(--app-safe-top) + 0.75rem);
         }
 
         body {
@@ -41,6 +49,9 @@
         }
 
         .main-header.modern-navbar {
+            position: sticky;
+            top: var(--app-safe-top);
+            z-index: var(--app-layer-navbar);
             min-height: 64px;
             background: #ffffff !important;
             backdrop-filter: blur(16px);
@@ -48,6 +59,34 @@
             border-bottom: 1px solid rgba(8, 87, 195, 0.08) !important;
             box-shadow: 0 10px 30px rgba(8, 87, 195, 0.04);
             padding: 0.58rem 1rem;
+            isolation: isolate;
+        }
+
+        .skip-to-content {
+            position: fixed;
+            top: max(0.5rem, var(--app-safe-top));
+            left: max(0.75rem, var(--app-safe-left));
+            z-index: calc(var(--app-layer-navbar) + 20);
+            padding: 0.7rem 1rem;
+            border: 2px solid #ffffff;
+            border-radius: 0.75rem;
+            color: #ffffff;
+            background: var(--bri-ink);
+            box-shadow: 0 12px 28px rgba(4, 42, 95, 0.26);
+            font-size: 0.82rem;
+            font-weight: 800;
+            transform: translateY(calc(-100% - 1rem));
+            transition: transform 160ms ease;
+        }
+
+        .skip-to-content:focus {
+            color: #ffffff;
+            transform: translateY(0);
+        }
+
+        :where(a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+            outline: 3px solid var(--app-focus-ring);
+            outline-offset: 2px;
         }
 
         .modern-navbar .nav-link {
@@ -1021,7 +1060,7 @@
             margin-bottom: 0;
         }
 
-        .content-wrapper .abah-table-managed thead th {
+        body[data-abah-table-freeze="on"] .content-wrapper .abah-table-managed thead th {
             position: sticky;
             top: var(--abah-table-head-top, 0px);
             z-index: 30;
@@ -1029,6 +1068,71 @@
             box-shadow:
                 inset 0 -1px 0 rgba(148, 163, 184, 0.28),
                 0 8px 18px -18px rgba(15, 23, 42, 0.55);
+        }
+
+        .abah-floating-table-header {
+            position: fixed;
+            z-index: var(--app-layer-table-header);
+            display: block;
+            overflow: hidden;
+            pointer-events: none;
+            background: #ffffff;
+            border: 1px solid rgba(8, 87, 195, 0.18);
+            border-top: 0;
+            box-shadow: 0 16px 28px -22px rgba(4, 42, 95, 0.72);
+            isolation: isolate;
+            contain: layout paint;
+        }
+
+        .abah-floating-table-header[hidden] {
+            display: none !important;
+        }
+
+        .abah-floating-table-header.is-modal {
+            z-index: 1060;
+        }
+
+        .abah-floating-table-header__track {
+            position: relative;
+            top: 0;
+            left: 0;
+            height: 100%;
+        }
+
+        .abah-floating-table-header__table {
+            margin: 0 !important;
+            max-width: none !important;
+        }
+
+        .abah-floating-table-header__table thead,
+        .abah-floating-table-header__table thead tr,
+        .abah-floating-table-header__table thead th,
+        .abah-floating-table-header__table thead td {
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+
+        .abah-floating-table-header__table thead th,
+        .abah-floating-table-header__table thead td {
+            position: static !important;
+            top: auto !important;
+            bottom: auto !important;
+            right: auto !important;
+            left: auto !important;
+            transform: none !important;
+            background-clip: padding-box;
+        }
+
+        .abah-floating-table-header__table thead :is(th, td).abah-floating-sticky-x {
+            position: sticky !important;
+            right: var(--abah-floating-sticky-right, auto) !important;
+            left: var(--abah-floating-sticky-left, auto) !important;
+        }
+
+        @media print {
+            .abah-floating-table-header {
+                display: none !important;
+            }
         }
 
         .content-wrapper .abah-table-managed thead th.abah-sticky-surface {
@@ -1050,6 +1154,23 @@
         .content-wrapper .abah-table-managed td:not(.text-wrap):not(.text-break) {
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        .content-wrapper .abah-table-managed tbody tr {
+            transition: background-color 140ms ease;
+        }
+
+        .content-wrapper :where(h1, h2, h3, h4, h5, h6, [id]) {
+            scroll-margin-top: calc(var(--app-navbar-height) + var(--app-safe-top) + 0.75rem);
+        }
+
+        .content-wrapper .abah-table-scroll:focus-visible,
+        .content-wrapper .table-responsive:focus-visible,
+        .content-wrapper .table-container:focus-visible,
+        .content-wrapper [class*="table-wrap"]:focus-visible,
+        .content-wrapper [class*="table-scroll"]:focus-visible {
+            outline: 3px solid var(--app-focus-ring);
+            outline-offset: 2px;
         }
 
         .content-wrapper .btn,
@@ -1393,6 +1514,12 @@
             }
         }
 
+        @media (max-width: 767.98px) {
+            :root {
+                --app-navbar-height: 62px;
+            }
+        }
+
         @media (max-width: 575.98px) {
             .content-wrapper {
                 background: linear-gradient(180deg, #f7fbff 0%, #eef5ff 100%);
@@ -1551,7 +1678,11 @@
     </style>
 </head>
 
-<body class="hold-transition sidebar-mini layout-fixed">
+<body
+    class="hold-transition sidebar-mini layout-fixed"
+    data-abah-table-freeze="{{ request()->routeIs('dashboard', 'dashboard.simpanan') ? 'off' : 'on' }}"
+>
+<a href="#main-content" class="skip-to-content">Lewati ke konten utama</a>
 <div class="wrapper">
     <div class="page-transition-bar" aria-hidden="true"></div>
     <div class="route-loading-overlay" id="route-loading-overlay" role="status" aria-live="polite" aria-label="Memuat halaman">
@@ -1616,7 +1747,7 @@
 
     @include('layouts.sidebar')
 
-    <div class="content-wrapper">
+    <div class="content-wrapper" id="main-content" tabindex="-1">
 
 
         <section class="content">
@@ -1664,7 +1795,15 @@
             '.fc-scrollgrid'
         ].join(',');
         let syncFrame = null;
+        let floatingFrame = null;
+        let floatingGeometryDirty = true;
+        let activeFloatingTable = null;
+        let activeFloatingClone = null;
         const pendingEnhancementRoots = new Set();
+        const freezeTableHeaders = document.body.dataset.abahTableFreeze === 'on';
+        const mainHeader = document.querySelector('.main-header');
+        let floatingHeader = null;
+        let floatingTrack = null;
 
         const shouldSkipTable = function (table) {
             return table.closest(skipSelector)
@@ -1675,8 +1814,9 @@
         };
 
         const ensureWrapper = function (table) {
-            if (table.closest(wrapperSelector)) {
-                return;
+            const existingWrapper = table.closest(wrapperSelector);
+            if (existingWrapper) {
+                return existingWrapper;
             }
 
             const wrapper = document.createElement('div');
@@ -1684,6 +1824,51 @@
             wrapper.dataset.abahAutoTableScroll = '1';
             table.parentNode.insertBefore(wrapper, table);
             wrapper.appendChild(table);
+
+            return wrapper;
+        };
+
+        const syncScrollableWrapper = function (table, wrapper) {
+            if (!wrapper) {
+                return;
+            }
+
+            const isHorizontallyScrollable = table.scrollWidth > wrapper.clientWidth + 2;
+            wrapper.classList.toggle('abah-table-scrollable-x', isHorizontallyScrollable);
+
+            if (!isHorizontallyScrollable) {
+                if (wrapper.dataset.abahManagedTabindex === '1') {
+                    wrapper.removeAttribute('tabindex');
+                    delete wrapper.dataset.abahManagedTabindex;
+                }
+                if (wrapper.dataset.abahManagedRole === '1') {
+                    wrapper.removeAttribute('role');
+                    delete wrapper.dataset.abahManagedRole;
+                }
+                if (wrapper.dataset.abahManagedLabel === '1') {
+                    wrapper.removeAttribute('aria-label');
+                    delete wrapper.dataset.abahManagedLabel;
+                }
+                return;
+            }
+
+            if (!wrapper.hasAttribute('tabindex')) {
+                wrapper.setAttribute('tabindex', '0');
+                wrapper.dataset.abahManagedTabindex = '1';
+            }
+
+            if (!wrapper.hasAttribute('role')) {
+                wrapper.setAttribute('role', 'region');
+                wrapper.dataset.abahManagedRole = '1';
+            }
+
+            if (!wrapper.hasAttribute('aria-label')) {
+                const caption = table.caption?.textContent?.replace(/\s+/g, ' ').trim();
+                const cardTitle = table.closest('.card')?.querySelector('.card-title')?.textContent?.replace(/\s+/g, ' ').trim();
+                const label = caption || cardTitle || 'data';
+                wrapper.setAttribute('aria-label', `Tabel ${label}. Geser horizontal untuk melihat kolom lainnya.`);
+                wrapper.dataset.abahManagedLabel = '1';
+            }
         };
 
         const syncHeaderOffsets = function (table) {
@@ -1758,16 +1943,295 @@
             });
         };
 
+        const ensureFloatingHeader = function () {
+            if (!freezeTableHeaders || floatingHeader) {
+                return;
+            }
+
+            floatingHeader = document.createElement('div');
+            floatingHeader.className = 'abah-floating-table-header';
+            floatingHeader.hidden = true;
+            floatingHeader.inert = true;
+            floatingHeader.dataset.abahFloatingHeader = '1';
+            floatingHeader.setAttribute('aria-hidden', 'true');
+
+            floatingTrack = document.createElement('div');
+            floatingTrack.className = 'abah-floating-table-header__track';
+            floatingHeader.appendChild(floatingTrack);
+            document.body.appendChild(floatingHeader);
+        };
+
+        const isVisible = function (element) {
+            if (!element || !element.isConnected) {
+                return false;
+            }
+
+            const style = window.getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return !element.hidden
+                && style.display !== 'none'
+                && style.visibility !== 'hidden'
+                && Number(style.opacity || 1) > 0
+                && rect.width > 1
+                && rect.height > 1;
+        };
+
+        const getNavbarBottom = function () {
+            if (!mainHeader || !isVisible(mainHeader)) {
+                return 0;
+            }
+
+            const rect = mainHeader.getBoundingClientRect();
+            return Math.max(0, Math.min(window.innerHeight, rect.bottom));
+        };
+
+        const hasOwnVerticalScroll = function (wrapper) {
+            if (!wrapper) {
+                return false;
+            }
+
+            const style = window.getComputedStyle(wrapper);
+            return ['auto', 'scroll'].includes(style.overflowY)
+                && wrapper.scrollHeight > wrapper.clientHeight + 2;
+        };
+
+        const getHorizontalClip = function (wrapper) {
+            const wrapperRect = wrapper.getBoundingClientRect();
+            let left = Math.max(0, wrapperRect.left + wrapper.clientLeft);
+            let right = Math.min(window.innerWidth, wrapperRect.right);
+            let parent = wrapper.parentElement;
+
+            while (parent && parent !== document.body && parent !== document.documentElement) {
+                const style = window.getComputedStyle(parent);
+                if (['auto', 'scroll', 'hidden', 'clip'].includes(style.overflowX)) {
+                    const rect = parent.getBoundingClientRect();
+                    left = Math.max(left, rect.left + parent.clientLeft);
+                    right = Math.min(right, rect.left + parent.clientLeft + parent.clientWidth);
+                }
+                parent = parent.parentElement;
+            }
+
+            return { left, right, width: Math.max(0, right - left) };
+        };
+
+        const getFloatingCandidate = function () {
+            const navbarBottom = getNavbarBottom();
+            let candidate = null;
+
+            root.querySelectorAll('table.abah-table-managed').forEach(function (table) {
+                if (!table.tHead
+                    || !table.tHead.rows.length
+                    || table.closest('[data-abah-no-table-freeze]')
+                    || shouldSkipTable(table)
+                    || !isVisible(table)) {
+                    return;
+                }
+
+                const wrapper = table.closest(wrapperSelector);
+                if (!wrapper || !isVisible(wrapper) || hasOwnVerticalScroll(wrapper)) {
+                    return;
+                }
+
+                const tableRect = table.getBoundingClientRect();
+                const headRect = table.tHead.getBoundingClientRect();
+                const modalBody = table.closest('.modal.show .modal-body');
+                const modalBodyRect = modalBody?.getBoundingClientRect();
+                const top = Math.max(navbarBottom, modalBodyRect?.top || 0);
+                const bottom = Math.min(window.innerHeight, modalBodyRect?.bottom || window.innerHeight);
+                const clip = getHorizontalClip(wrapper);
+
+                if (clip.width <= 2
+                    || headRect.height <= 1
+                    || headRect.top >= top - 1
+                    || tableRect.bottom <= top + headRect.height + 1
+                    || tableRect.top >= bottom
+                    || tableRect.bottom <= top) {
+                    return;
+                }
+
+                const current = { table, wrapper, tableRect, headRect, clip, top, bottom, modal: Boolean(modalBody) };
+                if (!candidate || current.tableRect.top > candidate.tableRect.top) {
+                    candidate = current;
+                }
+            });
+
+            return candidate;
+        };
+
+        const sanitizeFloatingClone = function (clone) {
+            clone.removeAttribute('id');
+            clone.removeAttribute('tabindex');
+            clone.dataset.abahFloatingClone = '1';
+            clone.querySelectorAll('[id]').forEach(function (element) {
+                element.removeAttribute('id');
+            });
+            clone.querySelectorAll('[for], [aria-controls], [aria-describedby], [aria-labelledby]').forEach(function (element) {
+                element.removeAttribute('for');
+                element.removeAttribute('aria-controls');
+                element.removeAttribute('aria-describedby');
+                element.removeAttribute('aria-labelledby');
+            });
+            clone.querySelectorAll('a, button, input, select, textarea, [tabindex]').forEach(function (element) {
+                element.setAttribute('tabindex', '-1');
+            });
+        };
+
+        const syncFloatingCloneGeometry = function (table, clone) {
+            const copiedProperties = [
+                'background-color', 'background-image', 'background-position', 'background-size',
+                'border-top-color', 'border-top-style', 'border-top-width',
+                'border-right-color', 'border-right-style', 'border-right-width',
+                'border-bottom-color', 'border-bottom-style', 'border-bottom-width',
+                'border-left-color', 'border-left-style', 'border-left-width',
+                'box-shadow', 'color', 'font-family', 'font-size', 'font-style', 'font-weight',
+                'letter-spacing', 'line-height', 'padding-top', 'padding-right', 'padding-bottom',
+                'padding-left', 'text-align', 'text-transform', 'vertical-align', 'white-space'
+            ];
+            const tableRect = table.getBoundingClientRect();
+            clone.style.setProperty('width', tableRect.width + 'px', 'important');
+            clone.style.setProperty('min-width', tableRect.width + 'px', 'important');
+            clone.style.setProperty('max-width', tableRect.width + 'px', 'important');
+            clone.style.tableLayout = window.getComputedStyle(table).tableLayout;
+
+            const sourceColumns = Array.from(table.querySelector(':scope > colgroup')?.children || []);
+            const cloneColumns = Array.from(clone.querySelector(':scope > colgroup')?.children || []);
+            sourceColumns.forEach(function (column, columnIndex) {
+                const cloneColumn = cloneColumns[columnIndex];
+                const columnWidth = column.getBoundingClientRect().width;
+                if (cloneColumn && columnWidth > 0) {
+                    cloneColumn.style.setProperty('width', columnWidth + 'px', 'important');
+                    cloneColumn.style.setProperty('min-width', columnWidth + 'px', 'important');
+                    cloneColumn.style.setProperty('max-width', columnWidth + 'px', 'important');
+                }
+            });
+
+            const sourceRows = Array.from(table.tHead?.rows || []);
+            const cloneRows = Array.from(clone.tHead?.rows || []);
+            sourceRows.forEach(function (row, rowIndex) {
+                const rowRect = row.getBoundingClientRect();
+                const cloneRow = cloneRows[rowIndex];
+                if (!cloneRow) {
+                    return;
+                }
+
+                cloneRow.style.height = rowRect.height + 'px';
+                Array.from(row.cells).forEach(function (cell, cellIndex) {
+                    const cloneCell = cloneRow.cells[cellIndex];
+                    if (!cloneCell) {
+                        return;
+                    }
+
+                    const width = cell.getBoundingClientRect().width;
+                    const sourceStyle = window.getComputedStyle(cell);
+                    cloneCell.style.setProperty('width', width + 'px', 'important');
+                    cloneCell.style.setProperty('min-width', width + 'px', 'important');
+                    cloneCell.style.setProperty('max-width', width + 'px', 'important');
+                    copiedProperties.forEach(function (property) {
+                        cloneCell.style.setProperty(property, sourceStyle.getPropertyValue(property), 'important');
+                    });
+
+                    const left = Number.parseFloat(sourceStyle.left);
+                    const right = Number.parseFloat(sourceStyle.right);
+                    const isStickyX = sourceStyle.position === 'sticky'
+                        && (Number.isFinite(left) || Number.isFinite(right));
+                    cloneCell.classList.toggle('abah-floating-sticky-x', isStickyX);
+                    if (isStickyX) {
+                        cloneCell.style.setProperty('--abah-floating-sticky-left', Number.isFinite(left) ? sourceStyle.left : 'auto');
+                        cloneCell.style.setProperty('--abah-floating-sticky-right', Number.isFinite(right) ? sourceStyle.right : 'auto');
+                        cloneCell.style.setProperty('z-index', sourceStyle.zIndex === 'auto' ? '2' : sourceStyle.zIndex, 'important');
+                    }
+                });
+            });
+        };
+
+        const buildFloatingClone = function (table) {
+            const clone = table.cloneNode(false);
+            clone.classList.add('abah-floating-table-header__table');
+            clone.setAttribute('aria-hidden', 'true');
+
+            Array.from(table.children).forEach(function (child) {
+                if (child.tagName === 'COLGROUP') {
+                    clone.appendChild(child.cloneNode(true));
+                }
+            });
+            clone.appendChild(table.tHead.cloneNode(true));
+            sanitizeFloatingClone(clone);
+            floatingTrack.replaceChildren(clone);
+            syncFloatingCloneGeometry(table, clone);
+
+            return clone;
+        };
+
+        const hideFloatingHeader = function () {
+            if (floatingHeader) {
+                floatingHeader.hidden = true;
+                floatingHeader.classList.remove('is-modal');
+            }
+        };
+
+        const renderFloatingHeader = function () {
+            floatingFrame = null;
+            if (!freezeTableHeaders) {
+                return;
+            }
+
+            ensureFloatingHeader();
+            const candidate = getFloatingCandidate();
+            if (!candidate) {
+                hideFloatingHeader();
+                return;
+            }
+
+            if (activeFloatingTable !== candidate.table || !activeFloatingClone || floatingGeometryDirty) {
+                activeFloatingTable = candidate.table;
+                activeFloatingClone = buildFloatingClone(candidate.table);
+            }
+
+            if (floatingGeometryDirty) {
+                syncFloatingCloneGeometry(candidate.table, activeFloatingClone);
+            }
+            floatingGeometryDirty = false;
+
+            const currentTableRect = candidate.table.getBoundingClientRect();
+            const currentHeadRect = candidate.table.tHead.getBoundingClientRect();
+            const currentClip = getHorizontalClip(candidate.wrapper);
+            const visibleHeight = Math.min(currentHeadRect.height, Math.max(0, candidate.bottom - candidate.top));
+
+            if (currentClip.width <= 2 || visibleHeight <= 1 || currentTableRect.bottom <= candidate.top + visibleHeight) {
+                hideFloatingHeader();
+                return;
+            }
+
+            floatingHeader.classList.toggle('is-modal', candidate.modal);
+            floatingHeader.style.left = currentClip.left + 'px';
+            floatingHeader.style.top = candidate.top + 'px';
+            floatingHeader.style.width = currentClip.width + 'px';
+            floatingHeader.style.height = visibleHeight + 'px';
+            floatingTrack.style.width = currentTableRect.width + 'px';
+            floatingHeader.scrollLeft = Math.max(0, currentClip.left - currentTableRect.left);
+            floatingHeader.hidden = false;
+        };
+
+        const scheduleFloatingHeader = function (geometryDirty = false) {
+            floatingGeometryDirty = floatingGeometryDirty || geometryDirty;
+            if (!freezeTableHeaders || floatingFrame !== null) {
+                return;
+            }
+
+            floatingFrame = window.requestAnimationFrame(renderFloatingHeader);
+        };
+
         const enhanceTable = function (table) {
             if (!(table instanceof HTMLTableElement) || shouldSkipTable(table)) {
                 return;
             }
 
-            ensureWrapper(table);
+            const wrapper = ensureWrapper(table);
             table.classList.add('abah-table-managed');
             syncHeaderOffsets(table);
             syncStickyHeaderSurfaces(table);
             syncReadableCellTitles(table);
+            syncScrollableWrapper(table, wrapper);
         };
 
         const enhanceTables = function () {
@@ -1797,6 +2261,8 @@
                 });
                 tables.forEach(enhanceTable);
             });
+
+            scheduleFloatingHeader(true);
         };
 
         const scheduleEnhance = function (target = root) {
@@ -1823,17 +2289,34 @@
         });
 
         window.addEventListener('resize', function () { scheduleEnhance(root); });
+        window.addEventListener('orientationchange', function () { scheduleEnhance(root); });
         window.addEventListener('load', function () { scheduleEnhance(root); });
         document.addEventListener('shown.bs.tab', function () { scheduleEnhance(root); });
         document.addEventListener('shown.bs.collapse', function () { scheduleEnhance(root); });
         document.addEventListener('shown.bs.modal', function () { scheduleEnhance(root); });
+        document.addEventListener('hidden.bs.modal', function () { scheduleFloatingHeader(true); });
+        document.addEventListener('scroll', function () { scheduleFloatingHeader(false); }, { capture: true, passive: true });
+
+        if (window.jQuery) {
+            window.jQuery(document).on('collapsed.lte.pushmenu shown.lte.pushmenu', function () {
+                scheduleFloatingHeader(true);
+            });
+        }
 
         if ('ResizeObserver' in window) {
-            const resizeObserver = new ResizeObserver(function () { scheduleEnhance(root); });
+            const resizeObserver = new ResizeObserver(function () {
+                scheduleEnhance(root);
+                scheduleFloatingHeader(true);
+            });
             resizeObserver.observe(root);
         }
 
         scheduleEnhance();
+        scheduleFloatingHeader(true);
+        document.fonts?.ready?.then(function () {
+            scheduleEnhance(root);
+            scheduleFloatingHeader(true);
+        });
     });
 </script>
 

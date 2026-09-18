@@ -175,7 +175,8 @@ const auditExpression = `(async () => {
         '[class*="table-container"]', '[class*="table-shell"]',
         '.nav-tabs', '.dropdown-menu', '.select2-dropdown', '.leaflet-container',
         '.micro-need-filter',
-        '.main-sidebar', '.control-sidebar', '.route-loading-overlay'
+        '.main-sidebar', '.control-sidebar', '.route-loading-overlay',
+        '.abah-floating-table-header'
     ].join(',');
     const isVisible = (element, style, rect) => {
         if (style.display === 'none'
@@ -269,7 +270,8 @@ const auditExpression = `(async () => {
         }
     });
 
-    const tableMetrics = Array.from(document.querySelectorAll('table')).slice(0, 12).map((table) => {
+    const sourceTables = Array.from(document.querySelectorAll('table:not([data-abah-floating-clone])'));
+    const tableMetrics = sourceTables.slice(0, 12).map((table) => {
         const wrapper = table.closest('.abah-table-scroll, .table-responsive, .table-container, [class*="table-wrap"], [class*="table-scroll"]');
         const rows = Array.from(table.tBodies || []).flatMap((body) => Array.from(body.rows));
         const rowHeights = rows.slice(0, 10).map((row) => row.getBoundingClientRect().height).filter((height) => height > 0);
@@ -362,11 +364,20 @@ const auditExpression = `(async () => {
                 frozen: true,
                 diagnostics: [],
             },
+            pageHeader: {
+                eligible: false,
+                tested: false,
+                scrollDistance: 0,
+                frozen: true,
+                navbarVisible: true,
+                mirrorVisible: false,
+                alignedBelowNavbar: true,
+                widthsAligned: true,
+                noOverlap: true,
+                horizontalSynced: true,
+                diagnostics: {},
+            },
         };
-
-        if (!verticalWrapperRect && !horizontalWrapperRect) {
-            return result;
-        }
 
         const initialScrollTop = verticalWrapper?.scrollTop || 0;
         const verticalRange = verticalWrapper
@@ -511,11 +522,143 @@ const auditExpression = `(async () => {
             await nextFrame();
         }
 
+        const freezeMode = document.body.dataset.abahTableFreeze;
+        const tableRect = table.getBoundingClientRect();
+        const headRect = table.tHead?.getBoundingClientRect();
+        const navbar = document.querySelector('.main-header');
+        const navbarRect = navbar?.getBoundingClientRect();
+        const originalPageX = window.scrollX;
+        const originalPageY = window.scrollY;
+        const maxPageScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        const absoluteHeadTop = originalPageY + (headRect?.top || 0);
+        const absoluteTableBottom = originalPageY + tableRect.bottom;
+        const navbarBottom = Math.max(0, navbarRect?.bottom || 0);
+        const headHeight = headRect?.height || 0;
+        const targetPageY = Math.min(
+            maxPageScroll,
+            Math.max(0, Math.round(absoluteHeadTop - navbarBottom + Math.max(12, headHeight * 0.35)))
+        );
+        const keepsTableBodyVisible = absoluteTableBottom - targetPageY > navbarBottom + headHeight + 2;
+        const canScrollHeaderBehindNavbar = targetPageY > absoluteHeadTop - navbarBottom + 2;
+        const hasOwnVerticalRange = Boolean(verticalWrapper && verticalRange > 2);
+        result.pageHeader.eligible = freezeMode === 'on'
+            && table.classList.contains('abah-table-managed')
+            && Boolean(table.tHead)
+            && !table.closest('.modal')
+            && !hasOwnVerticalRange
+            && headHeight > 1
+            && targetPageY > 1
+            && canScrollHeaderBehindNavbar
+            && keepsTableBodyVisible;
+
+        if (result.pageHeader.eligible) {
+            result.pageHeader.tested = true;
+            result.pageHeader.scrollDistance = Math.abs(targetPageY - originalPageY);
+            try {
+                window.scrollTo({ left: originalPageX, top: targetPageY, behavior: 'auto' });
+                await nextFrame();
+
+                const currentNavbarRect = navbar?.getBoundingClientRect();
+                const mirror = document.querySelector('.abah-floating-table-header:not([hidden])');
+                const clone = mirror?.querySelector('table[data-abah-floating-clone]');
+                const mirrorRect = mirror?.getBoundingClientRect();
+                const cloneRows = Array.from(clone?.tHead?.rows || []);
+                const rowBands = cloneRows.map((row) => row.getBoundingClientRect());
+                const sourceCells = Array.from(table.tHead?.querySelectorAll('th, td') || []);
+                const cloneCells = Array.from(clone?.tHead?.querySelectorAll('th, td') || []);
+                const normalizeText = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+
+                result.pageHeader.navbarVisible = Boolean(currentNavbarRect
+                    && currentNavbarRect.top >= -2
+                    && currentNavbarRect.bottom > 2
+                    && currentNavbarRect.bottom <= window.innerHeight + 2);
+                result.pageHeader.mirrorVisible = Boolean(mirrorRect
+                    && mirrorRect.width > 2
+                    && mirrorRect.height > 2);
+                result.pageHeader.alignedBelowNavbar = Boolean(mirrorRect && currentNavbarRect
+                    && Math.abs(mirrorRect.top - currentNavbarRect.bottom) <= 3);
+                result.pageHeader.widthsAligned = sourceCells.length > 0
+                    && sourceCells.length === cloneCells.length
+                    && sourceCells.every((cell, cellIndex) => (
+                        Math.abs(cell.getBoundingClientRect().width - cloneCells[cellIndex].getBoundingClientRect().width) <= 2
+                    ));
+                result.pageHeader.noOverlap = rowBands.every((band, rowIndex) => (
+                    rowIndex === 0 || band.top >= rowBands[rowIndex - 1].bottom - 1
+                ));
+
+                if (mirror && clone && horizontalWrapper && horizontalRange > 2) {
+                    const syncDistance = Math.min(
+                        horizontalRange,
+                        Math.max(120, Math.round(horizontalWrapper.clientWidth * 0.35))
+                    );
+                    horizontalWrapper.scrollLeft = Math.min(horizontalRange, initialScrollLeft + syncDistance);
+                    await nextFrame();
+                    const syncedSourceCells = Array.from(table.tHead?.querySelectorAll('th, td') || []).slice(0, 8);
+                    const syncedCloneCells = Array.from(clone.tHead?.querySelectorAll('th, td') || []).slice(0, 8);
+                    result.pageHeader.horizontalSynced = syncedSourceCells.length > 0
+                        && syncedSourceCells.length === syncedCloneCells.length
+                        && syncedSourceCells.every((cell, cellIndex) => {
+                            const sourceRect = cell.getBoundingClientRect();
+                            const cloneRect = syncedCloneCells[cellIndex].getBoundingClientRect();
+                            return Math.abs(sourceRect.left - cloneRect.left) <= 3
+                                && Math.abs(sourceRect.width - cloneRect.width) <= 2;
+                        });
+                    result.pageHeader.diagnostics.horizontalMismatches = syncedSourceCells.map((cell, cellIndex) => ({
+                        index: cellIndex,
+                        sourceLeft: rounded(cell.getBoundingClientRect().left),
+                        cloneLeft: rounded(syncedCloneCells[cellIndex]?.getBoundingClientRect().left),
+                    })).filter(({ sourceLeft, cloneLeft }) => (
+                        cloneLeft === null || Math.abs(sourceLeft - cloneLeft) > 3
+                    )).slice(0, 8);
+                }
+
+                const headerTextMatches = Boolean(clone)
+                    && normalizeText(table.tHead?.textContent) === normalizeText(clone.tHead?.textContent);
+                result.pageHeader.frozen = result.pageHeader.navbarVisible
+                    && result.pageHeader.mirrorVisible
+                    && result.pageHeader.alignedBelowNavbar
+                    && result.pageHeader.widthsAligned
+                    && result.pageHeader.noOverlap
+                    && result.pageHeader.horizontalSynced
+                    && headerTextMatches;
+                result.pageHeader.diagnostics = Object.assign(result.pageHeader.diagnostics, {
+                    targetPageY,
+                    navbarBottom: rounded(currentNavbarRect?.bottom),
+                    mirrorTop: rounded(mirrorRect?.top),
+                    mirrorHeight: rounded(mirrorRect?.height),
+                    sourceTableTop: rounded(table.getBoundingClientRect().top),
+                    sourceTableBottom: rounded(table.getBoundingClientRect().bottom),
+                    sourceHeadTop: rounded(table.tHead?.getBoundingClientRect().top),
+                    sourceHeadHeight: rounded(table.tHead?.getBoundingClientRect().height),
+                    managed: table.classList.contains('abah-table-managed'),
+                    verticalWrapperRange: verticalRange,
+                    sourceCellCount: sourceCells.length,
+                    cloneCellCount: cloneCells.length,
+                    widthMismatches: sourceCells.map((cell, cellIndex) => ({
+                        index: cellIndex,
+                        source: rounded(cell.getBoundingClientRect().width),
+                        clone: rounded(cloneCells[cellIndex]?.getBoundingClientRect().width),
+                    })).filter(({ source, clone: cloneWidth }) => (
+                        cloneWidth === null || Math.abs(source - cloneWidth) > 2
+                    )).slice(0, 8),
+                    horizontalScrollLeft: horizontalWrapper ? rounded(horizontalWrapper.scrollLeft) : null,
+                    mirrorScrollLeft: mirror ? rounded(mirror.scrollLeft) : null,
+                    headerTextMatches,
+                });
+            } finally {
+                if (horizontalWrapper) {
+                    horizontalWrapper.scrollLeft = initialScrollLeft;
+                }
+                window.scrollTo({ left: originalPageX, top: originalPageY, behavior: 'auto' });
+                await nextFrame();
+            }
+        }
+
         return result;
     };
     const stickyAudits = [];
     if (auditStickyScroll) {
-        const tables = Array.from(document.querySelectorAll('table'))
+        const tables = sourceTables
             .filter((table) => table.querySelector('thead th, thead td'));
         for (let index = 0; index < tables.length; index += 1) {
             stickyAudits.push(await inspectStickyTable(tables[index], index));
@@ -524,7 +667,7 @@ const auditExpression = `(async () => {
 
     const nestedVerticalTableScrolls = [];
     const inspectedVerticalHosts = new Set();
-    Array.from(document.querySelectorAll('table')).forEach((table) => {
+    sourceTables.forEach((table) => {
         const tableRect = table.getBoundingClientRect();
         const tableStyle = getComputedStyle(table);
         if (!isVisible(table, tableStyle, tableRect)) {
@@ -611,7 +754,7 @@ const auditExpression = `(async () => {
             scrollWidth: Math.round(element.scrollWidth),
             children: overflowingChildren.map((child) => ({
                 selector: selectorFor(child),
-                text: (child.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+                text: (child.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120),
             })),
         }));
 
@@ -624,7 +767,7 @@ const auditExpression = `(async () => {
     const narrowHeadings = headingElements
         .map(({ element, rect, style }) => {
             const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.25 || 16;
-            const text = (element.textContent || '').replace(/\s+/g, ' ').trim();
+            const text = (element.textContent || '').replace(/\\s+/g, ' ').trim();
             return { element, rect, lineHeight, text };
         })
         .filter(({ rect, lineHeight, text }) => text.length >= 10 && rect.width < 72 && rect.height > lineHeight * 3.25)
@@ -654,9 +797,9 @@ const auditExpression = `(async () => {
             if (overlapWidth > 2 && overlapHeight > 2) {
                 interactiveOverlaps.push({
                     heading: selectorFor(heading),
-                    headingText: (heading.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+                    headingText: (heading.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120),
                     control: selectorFor(control),
-                    controlText: (control.textContent || control.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+                    controlText: (control.textContent || control.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().slice(0, 120),
                     overlapWidth: Math.round(overlapWidth),
                     overlapHeight: Math.round(overlapHeight),
                     headingRect: {
@@ -676,6 +819,18 @@ const auditExpression = `(async () => {
         });
     });
 
+    const editorShell = document.querySelector('.asix-sheet-app, .asix-office-shell');
+    const editorCanvas = document.querySelector('.asix-sheet-body-viewport, .asix-office-canvas');
+    const editorViewport = editorShell ? {
+        shell: selectorFor(editorShell),
+        top: rounded(editorShell.getBoundingClientRect().top),
+        bottom: rounded(editorShell.getBoundingClientRect().bottom),
+        canvasHeight: rounded(editorCanvas?.getBoundingClientRect().height),
+        clipped: editorShell.getBoundingClientRect().bottom > viewportHeight + 2
+            || editorShell.getBoundingClientRect().top < -2
+            || (editorCanvas && editorCanvas.getBoundingClientRect().height < 2),
+    } : null;
+
     return {
         url: location.href,
         title: document.title,
@@ -690,9 +845,15 @@ const auditExpression = `(async () => {
         narrowHeadings,
         undersizedControls,
         interactiveOverlaps: interactiveOverlaps.slice(0, 12),
+        editorViewport,
         tableMetrics,
         nestedVerticalTableScrolls,
         stickyAudits,
+        tableFreeze: {
+            mode: document.body.dataset.abahTableFreeze || null,
+            floatingHeaderPresent: Boolean(document.querySelector('.abah-floating-table-header')),
+            floatingHeaderVisible: Boolean(document.querySelector('.abah-floating-table-header:not([hidden])')),
+        },
         // Alias dipertahankan agar pemroses report versi lama tidak langsung rusak.
         stickyFrozenColumns: stickyAudits,
         contentHeight: Math.round(document.querySelector('.content-wrapper')?.getBoundingClientRect().height || 0),
@@ -967,8 +1128,19 @@ try {
     const stickyAuditFailed = (table) => (
         (table.verticalHeader.tested && (!table.verticalHeader.frozen || !table.verticalHeader.noOverlap))
         || (table.horizontalColumns.tested && !table.horizontalColumns.frozen)
+        || (table.pageHeader.eligible && (!table.pageHeader.tested || !table.pageHeader.frozen))
         || table.transparentStickyCells.length > 0
     );
+    const tableFreezeAuditFailed = (result) => {
+        const routePath = String(result.route || '').split('?')[0];
+        const isLanding = routePath === '/dashboard' || routePath === '/dashboard/simpanan';
+        if (isLanding) {
+            return result.tableFreeze.mode !== 'off' || result.tableFreeze.floatingHeaderPresent;
+        }
+
+        return result.tableMetrics.length > 0
+            && (result.tableFreeze.mode !== 'on' || !result.tableFreeze.floatingHeaderPresent);
+    };
     const landingScopeAuditFailed = (result) => {
         const state = result.landingScopeState;
         if (!state) return false;
@@ -1031,9 +1203,11 @@ try {
             || result.clippedCards.length > 0
             || result.narrowHeadings.length > 0
             || result.interactiveOverlaps.length > 0
+            || result.editorViewport?.clipped
             || result.nestedVerticalTableScrolls.length > 0
             || result.runtimeErrors.length > 0
             || result.stickyAudits.some(stickyAuditFailed)
+            || tableFreezeAuditFailed(result)
             || landingScopeAuditFailed(result)
         )),
         applicationErrors: results.filter((result) => result.applicationError),
@@ -1049,10 +1223,12 @@ try {
         clippedCards: result.clippedCards.length,
         narrowHeadings: result.narrowHeadings.length,
         overlaps: result.interactiveOverlaps.length,
+        editorClipped: Boolean(result.editorViewport?.clipped),
         smallControls: result.undersizedControls.length,
         tables: result.tableMetrics.length,
         nestedTableScrolls: result.nestedVerticalTableScrolls.length,
         stickyFailures: result.stickyAudits.filter(stickyAuditFailed).length,
+        tableFreezeFailed: tableFreezeAuditFailed(result),
         landingScopeFailed: landingScopeAuditFailed(result),
         landingScopeState: result.landingScopeState,
         jsErrors: result.runtimeErrors.length,
@@ -1060,7 +1236,7 @@ try {
     }));
     process.stdout.write(`${JSON.stringify(compact, null, 2)}\n`);
     process.stdout.write(`Laporan lengkap: ${path.join(outputDir, 'report.json')}\n`);
-    if (summary.failures.length > 0) {
+    if (summary.failures.length > 0 || summary.applicationErrors.length > 0) {
         process.exitCode = 2;
     }
 } finally {

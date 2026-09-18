@@ -6,10 +6,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 15 |
-| method | 256 |
+| file | 14 |
+| method | 251 |
 | unresolved_symbol | 1 |
-| class | 11 |
+| class | 9 |
+| trait | 1 |
 | view | 2 |
 
 ## Main Hubs
@@ -49,8 +50,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Class Nodes
 
-- `FinancialHighlightPresentationTest` - `tests/Unit/FinancialHighlightPresentationTest.php`
-- `GeneratePresentationPowerPointJob` - `app/Jobs/GeneratePresentationPowerPointJob.php`
 - `NativeOpenXmlPowerPointRenderer` - `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php`
 - `NativeOpenXmlPowerPointRendererTest` - `tests/Unit/NativeOpenXmlPowerPointRendererTest.php`
 - `PowerPointExportService` - `app/Services/Presentation/PowerPointExportService.php`
@@ -61,6 +60,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `PresentationPowerPointExportTest` - `tests/Unit/PresentationPowerPointExportTest.php`
 - `PresentationScopeDataService` - `app/Services/Presentation/PresentationScopeDataService.php`
 
+## Trait Nodes
+
+- `IdReusable` - `app/Traits/IdReusable.php`
+
 ## View Nodes
 
 - `presentation` - `resources/views/presentation.blade.php`
@@ -70,33 +73,33 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| presentation -> core (calls) | 61 |
-| presentation -> core (instantiates) | 27 |
-| presentation -> core (accepts) | 25 |
+| presentation -> core (calls) | 60 |
+| presentation -> core (accepts) | 24 |
+| presentation -> core (instantiates) | 24 |
+| jobs-snapshots -> presentation (calls) | 10 |
 | presentation -> dashboard-simpanan (references_route) | 8 |
-| jobs-snapshots -> presentation (calls) | 6 |
 | dashboard-simpanan -> presentation (accepts) | 4 |
-| dashboard-simpanan -> presentation (calls) | 3 |
-| presentation -> import (reads_table) | 3 |
+| access-control -> presentation (calls) | 4 |
+| presentation -> import (reads_table) | 4 |
 | presentation -> core (checks_table) | 3 |
-| presentation -> almafacts (instantiates) | 3 |
-| presentation -> jobs-snapshots (uses_trait) | 3 |
-| presentation -> tests (extends) | 3 |
+| jobs-snapshots -> presentation (uses_trait) | 3 |
 | presentation -> marketshare (contains) | 3 |
-| presentation -> core (injects) | 2 |
-| presentation -> jobs-snapshots (reads_table) | 2 |
-| presentation -> core (reads_table) | 2 |
+| jobs-snapshots -> presentation (accepts) | 2 |
+| presentation -> dashboard-simpanan (reads_table) | 2 |
 | marketshare -> presentation (instantiates) | 2 |
+| input-management -> presentation (uses_trait) | 2 |
+| presentation -> access-control (contains) | 2 |
 | presentation -> jobs-snapshots (contains) | 2 |
-| presentation -> almafacts (contains) | 2 |
 | presentation -> prognosa (contains) | 2 |
+| presentation -> tests (extends) | 2 |
+| dashboard-simpanan -> presentation (calls) | 1 |
 | dashboard-simpanan -> presentation (renders) | 1 |
-| presentation -> jobs-snapshots (uses_queue) | 1 |
-| jobs-snapshots -> presentation (dispatches) | 1 |
 | presentation -> input-management (injects) | 1 |
+| presentation -> dashboard-pinjaman (injects) | 1 |
+| presentation -> core (injects) | 1 |
 | presentation -> input-management (calls) | 1 |
-| presentation -> jobs-snapshots (checks_table) | 1 |
-| presentation -> almafacts (reads_table) | 1 |
+| presentation -> dashboard-simpanan (checks_table) | 1 |
+| presentation -> dashboard-pinjaman (calls) | 1 |
+| presentation -> core (reads_table) | 1 |
 | prognosa -> presentation (calls) | 1 |
 | presentation -> tests (calls) | 1 |
-| presentation -> bank-pipeline (instantiates) | 1 |

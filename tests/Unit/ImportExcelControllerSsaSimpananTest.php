@@ -41,7 +41,7 @@ class ImportExcelControllerSsaSimpananTest extends TestCase
         };
 
         $headers = [
-            'Month, Day, Year of Posisi',
+            'Day, Month, Year of Posisi',
             'Nama Cabang',
             'Nama Uker',
             'Produk',

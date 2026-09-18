@@ -120,6 +120,39 @@ class ResponsiveOperationalViewsTest extends TestCase
         $this->assertStringContainsString('min-height: 38px;', $source);
     }
 
+    public function test_non_ptp_header_and_report_management_controls_reflow_on_narrow_screens(): void
+    {
+        $nonPtp = file_get_contents(resource_path('views/report/dashboard-pinjaman/kinerja-non-ptp.blade.php'));
+        $management = file_get_contents(resource_path('views/import/report-management.blade.php'));
+
+        $this->assertMatchesRegularExpression('/@media \(max-width: 576px\).*?\.nonptp-header\s*\{[^}]*flex-direction:\s*column;/s', $nonPtp);
+        $this->assertMatchesRegularExpression('/@media \(max-width: 576px\).*?\.nonptp-badge\s*\{[^}]*white-space:\s*normal;/s', $nonPtp);
+        $this->assertSame(4, substr_count($management, 'class="col-xl-3 col-md-6'));
+    }
+
+    public function test_data_ph_context_badges_wrap_and_remain_readable_on_fold_viewports(): void
+    {
+        $source = file_get_contents(resource_path('views/report/data-ph.blade.php'));
+
+        $this->assertStringContainsString('class="kejar-laba-context-badges"', $source);
+        $this->assertMatchesRegularExpression('/\.kejar-laba-context-badges\s*\{[^}]*flex-wrap:\s*wrap;/s', $source);
+        $this->assertMatchesRegularExpression('/\.kejar-laba-context-badges \.badge\s*\{[^}]*max-width:\s*100%;[^}]*white-space:\s*normal;/s', $source);
+        $this->assertStringContainsString('class="badge px-3 py-2 kejar-laba-recovery-badge"', $source);
+    }
+
+    public function test_drive_editors_fit_short_viewports_without_cutting_off_the_canvas(): void
+    {
+        $spreadsheet = file_get_contents(resource_path('views/drive/spreadsheet-editor.blade.php'));
+        $office = file_get_contents(resource_path('views/drive/office-editor.blade.php'));
+
+        $this->assertStringContainsString('height: calc(100dvh - var(--app-navbar-height) - .5rem);', $spreadsheet);
+        $this->assertMatchesRegularExpression('/@media \(max-height: 540px\)\s*\{\s*\.asix-sheet-app\s*\{\s*min-height:\s*0;/s', $spreadsheet);
+        $this->assertStringContainsString('height: calc(100dvh - var(--app-navbar-height) - .5rem);', $office);
+        $this->assertMatchesRegularExpression('/@media \(max-height: 640px\).*?#asixOfficeEditor,\s*\.asix-office-fallback\s*\{\s*min-height:\s*0;/s', $office);
+        $this->assertMatchesRegularExpression('/\.asix-office-fallback\s*\{[^}]*overflow:\s*auto;/s', $office);
+        $this->assertMatchesRegularExpression('/@media \(max-height: 540px\) and \(orientation: landscape\).*?\.asix-office-fallback-card\s*\{[^}]*padding:\s*12px 16px;/s', $office);
+    }
+
     public function test_primary_dashboard_detail_controls_are_not_tiny_text_targets(): void
     {
         $source = file_get_contents(resource_path('views/dashboard.blade.php'));
@@ -167,6 +200,10 @@ class ResponsiveOperationalViewsTest extends TestCase
         );
         $this->assertStringContainsString('.loan-matrix thead tr:first-child th.matrix-before', $source);
         $this->assertStringNotContainsString('top: 38px;', $source);
+        $this->assertMatchesRegularExpression(
+            '/@media \(orientation: landscape\) and \(max-height: 640px\).*?\.loan-matrix-wrap,\s*\.loan-summary-table-wrap\s*\{\s*max-height:\s*none;\s*overflow-x:\s*auto;\s*overflow-y:\s*visible;/s',
+            $source
+        );
     }
 
     public function test_six_month_arrears_actions_wrap_before_the_sidebar_reduces_content_width(): void

@@ -6,11 +6,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 7 |
-| method | 28 |
+| file | 9 |
+| method | 27 |
+| unresolved_symbol | 4 |
 | route | 7 |
-| class | 5 |
-| table | 1 |
+| class | 7 |
+| table | 2 |
 | view | 2 |
 
 ## Main Hubs
@@ -24,15 +25,17 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `store` | method | 10 | `app/Http/Controllers/Input/BodBocController.php:121` |
 | `store` | method | 10 | `app/Http/Controllers/Input/InputRekananController.php:123` |
 | `input.store` | route | 9 | - |
+| `input_rekanan` | table | 9 | - |
 | `report.kolaborasi.bodboc` | route | 9 | - |
 | `report.kolaborasi.business-cluster` | route | 9 | - |
+| `BodBoc` | class | 8 | `app/Models/BodBoc.php:10` |
+| `InputRekanan` | class | 8 | `app/Models/InputRekanan.php:10` |
 | `bod-boc.store` | route | 8 | - |
 | `buildReport` | method | 8 | `app/Services/Reports/BusinessClusterReportService.php:27` |
 | `business-cluster.store` | route | 8 | - |
-| `importTemplate` | method | 8 | `app/Http/Controllers/Input/BodBocController.php:15` |
-| `importTemplate` | method | 8 | `app/Http/Controllers/Input/InputRekananController.php:20` |
 | `report.kolaborasi.sppg` | route | 8 | - |
 | `InputRekananController` | class | 7 | `app/Http/Controllers/Input/InputRekananController.php:13` |
+| `businessCluster` | method | 7 | `app/Http/Controllers/Report/KolaborasiReportController.php:45` |
 | `fetchSpreadsheet` | method | 7 | `app/Services/Reports/BusinessClusterReportService.php:215` |
 | `input.index` | route | 7 | - |
 | `BodBocController` | class | 6 | `app/Http/Controllers/Input/BodBocController.php:13` |
@@ -41,12 +44,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `report.business-cluster` | view | 6 | `resources/views/report/business-cluster.blade.php:1` |
 | `toCsvUrl` | method | 6 | `app/Services/Reports/BusinessClusterReportService.php:248` |
 | `BusinessClusterController` | class | 5 | `app/Http/Controllers/Input/BusinessClusterController.php:14` |
+| `nasabahPrioritasBodBoc` | method | 5 | `app/Http/Controllers/Report/KolaborasiReportController.php:34` |
 | `normalizeHeader` | method | 5 | `app/Services/Reports/BusinessClusterReportService.php:437` |
-| `previewImport` | method | 5 | `app/Http/Controllers/Input/BodBocController.php:102` |
-| `previewImport` | method | 5 | `app/Http/Controllers/Input/InputRekananController.php:104` |
 | `readSpreadsheet` | method | 5 | `app/Services/Reports/BusinessClusterReportService.php:151` |
 | `refreshSourceCaches` | method | 5 | `app/Services/Reports/BusinessClusterReportService.php:176` |
-| `report.nasabah-prioritas-bod-boc` | view | 5 | `resources/views/report/nasabah-prioritas-bod-boc.blade.php:1` |
 
 ## Route Nodes
 
@@ -60,10 +61,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Class Nodes
 
+- `BodBoc` - `app/Models/BodBoc.php`
 - `BodBocController` - `app/Http/Controllers/Input/BodBocController.php`
 - `BusinessClusterController` - `app/Http/Controllers/Input/BusinessClusterController.php`
 - `BusinessClusterReportService` - `app/Services/Reports/BusinessClusterReportService.php`
 - `BusinessClusterReportServiceTest` - `tests/Unit/BusinessClusterReportServiceTest.php`
+- `InputRekanan` - `app/Models/InputRekanan.php`
 - `InputRekananController` - `app/Http/Controllers/Input/InputRekananController.php`
 
 ## View Nodes
@@ -74,37 +77,39 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 ## Table Nodes
 
 - `bod_boc`
+- `input_rekanan`
 
 ## Cross-Domain Links
 
 | Direction | Count |
 | --- | ---: |
 | input-management -> access-control (protected_by) | 35 |
-| input-management -> core (calls) | 30 |
-| input-management -> import (references_route) | 10 |
+| input-management -> core (calls) | 25 |
+| input-management -> core (extends) | 6 |
 | input-management -> core (accepts) | 5 |
-| import -> input-management (dispatches_to) | 4 |
-| input-management -> core (extends) | 4 |
-| core -> input-management (references_route) | 4 |
-| core -> input-management (calls) | 3 |
+| input-management -> import (references_route) | 4 |
+| input-management -> import (contains) | 4 |
 | input-management -> core (instantiates) | 3 |
-| input-management -> core (dispatches_to) | 3 |
 | import -> input-management (references_route) | 3 |
-| core -> input-management (accepts) | 2 |
-| input-management -> import (renders) | 2 |
-| input-management -> core (extends_view) | 2 |
+| platform -> input-management (references_route) | 3 |
+| database -> input-management (uses_table) | 2 |
+| database -> input-management (checks_table) | 2 |
+| database -> input-management (defines_table) | 2 |
+| tests -> input-management (defines_table) | 2 |
+| core -> input-management (contains) | 2 |
+| input-management -> dashboard-simpanan (contains) | 2 |
+| input-management -> presentation (uses_trait) | 2 |
+| tests -> input-management (contains) | 2 |
+| input-management -> platform (extends_view) | 2 |
 | input-management -> core (includes_view) | 2 |
-| database -> input-management (uses_table) | 1 |
-| database -> input-management (checks_table) | 1 |
-| database -> input-management (defines_table) | 1 |
-| input-management -> core (checks_table) | 1 |
-| input-management -> core (reads_table) | 1 |
+| core -> input-management (accepts) | 1 |
+| core -> input-management (calls) | 1 |
 | core -> input-management (injects) | 1 |
-| core -> input-management (renders) | 1 |
+| jobs-snapshots -> input-management (accepts) | 1 |
+| jobs-snapshots -> input-management (calls) | 1 |
 | presentation -> input-management (injects) | 1 |
 | presentation -> input-management (calls) | 1 |
 | input-management -> access-control (calls) | 1 |
-| input-management -> core (dispatches) | 1 |
-| tests -> input-management (defines_table) | 1 |
-| core -> input-management (maps_table) | 1 |
-| tests -> input-management (contains) | 1 |
+| input-management -> jobs-snapshots (dispatches) | 1 |
+| input-management -> core (dispatches_to) | 1 |
+| core -> input-management (references_route) | 1 |

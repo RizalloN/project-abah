@@ -137,7 +137,7 @@ class ImportStrategiesTest extends TestCase
             'segmen_kategorisasi_bisnis',
             'saldo',
         ], $ssaSimpanan->transformHeaders([
-            'Month, Day, Year of Posisi',
+            'Day, Month, Year of Posisi',
             'Nama Cabang',
             'Nama Uker',
             'Produk',
@@ -145,6 +145,9 @@ class ImportStrategiesTest extends TestCase
             'Segmen Kategorisasi Bisnis',
             'Saldo',
         ]));
+        $this->assertSame('month_day_year_of_posisi', $ssaSimpanan->transformHeaders([
+            'Month, Day, Year of Posisi',
+        ])[0]);
         $this->assertTrue($ssaSimpanan->validateSchema([
             'month_day_year_of_posisi', 'nama_cabang', 'nama_uker', 'produk',
             'segmentasi', 'segmen_kategorisasi_bisnis', 'saldo',
@@ -166,12 +169,15 @@ class ImportStrategiesTest extends TestCase
             'jumlah_debitur_aktif',
             'jumlah_rekening_aktif',
         ], $ssaPinjaman->transformHeaders([
-            'Month, Day, Year of Periode',
+            'Day, Month, Year of Periode',
             'Nama Cabang', 'Nama Uker', 'Produk', 'Produk_Dashboard', 'Segmen',
             'Segmen Lama', 'SEGMEN_2025', 'Segmen_Dashboard',
             'Kolektabilitas One Obligor', 'Flag Restruk', 'Baki Debet',
             'Jumlah Debitur Aktif', 'Jumlah Rekening Aktif',
         ]));
+        $this->assertSame('month_day_year_of_periode', $ssaPinjaman->transformHeaders([
+            'Month, Day, Year of Periode',
+        ])[0]);
         $this->assertTrue($ssaPinjaman->validateSchema([
             'month_day_year_of_periode', 'nama_cabang', 'nama_uker', 'produk',
             'produk_dashboard', 'segmen', 'segmen_lama', 'segmen_2025',

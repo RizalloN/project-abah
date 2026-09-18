@@ -56,7 +56,7 @@ class SsaSimpananImportStrategy implements ImportStrategyInterface
             $normalized = trim($normalized, '_');
 
             return match ($normalized) {
-                'month_day_year_of_position', 'tanggal_posisi', 'tgl_posisi' => 'month_day_year_of_posisi',
+                'month_day_year_of_position', 'day_month_year_of_posisi', 'tanggal_posisi', 'tgl_posisi' => 'month_day_year_of_posisi',
                 'nama_kantor_cabang', 'kantor_cabang', 'kanca' => 'nama_cabang',
                 'nama_unit_kerja', 'unit_kerja', 'uker' => 'nama_uker',
                 'segmen_bisnis', 'segmentasi_bisnis', 'segmen_kategorisasi' => 'segmen_kategorisasi_bisnis',

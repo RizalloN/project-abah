@@ -6,10 +6,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 8 |
-| method | 109 |
+| file | 10 |
+| method | 113 |
 | route | 5 |
-| class | 2 |
+| class | 4 |
 | table | 1 |
 | view | 6 |
 
@@ -35,6 +35,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `report.dashboard-almafacts.financial-highlight` | route | 9 | - |
 | `report.dashboard-almafacts.kinerja-laba-rugi` | route | 9 | - |
 | `rkaRows` | method | 9 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1636` |
+| `FinancialHighlightPresentationTest` | class | 8 | `tests/Unit/FinancialHighlightPresentationTest.php:10` |
 | `fetchFinancialAlmafactsMetrics` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2032` |
 | `fetchKpiRmSmeDashboardPayload` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:600` |
 | `financialAssetQualityNominals` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2070` |
@@ -46,7 +47,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `test_kpi_page_keeps_june_and_july_sources_in_separate_periods` | method | 8 | `tests/Unit/AlmafactsKpiSheetTest.php:341` |
 | `test_kpi_page_reads_warmed_cache_without_remote_http_call` | method | 8 | `tests/Unit/AlmafactsKpiSheetTest.php:325` |
 | `buildRows` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1536` |
-| `financialUnitOptions` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1848` |
 
 ## Route Nodes
 
@@ -60,6 +60,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 - `AlmafactsDashboardController` - `app/Http/Controllers/Report/AlmafactsDashboardController.php`
 - `AlmafactsKpiSheetTest` - `tests/Unit/AlmafactsKpiSheetTest.php`
+- `FinancialHighlightPresentationTest` - `tests/Unit/FinancialHighlightPresentationTest.php`
+- `KinerjaLabaRugiAchievementTest` - `tests/Unit/KinerjaLabaRugiAchievementTest.php`
 
 ## View Nodes
 
@@ -78,29 +80,30 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| almafacts -> core (calls) | 71 |
+| almafacts -> core (calls) | 69 |
 | almafacts -> access-control (protected_by) | 25 |
-| almafacts -> core (instantiates) | 9 |
+| almafacts -> access-control (instantiates) | 7 |
+| almafacts -> core (instantiates) | 7 |
 | almafacts -> core (accepts) | 6 |
-| almafacts -> core (extends_view) | 5 |
-| core -> almafacts (references_route) | 4 |
+| almafacts -> platform (extends_view) | 5 |
+| platform -> almafacts (references_route) | 4 |
 | almafacts -> core (includes_view) | 4 |
 | almafacts -> core (checks_table) | 3 |
 | almafacts -> core (reads_table) | 3 |
-| presentation -> almafacts (instantiates) | 3 |
-| tests -> almafacts (contains) | 3 |
+| almafacts -> tests (extends) | 3 |
 | database -> almafacts (checks_table) | 2 |
-| core -> almafacts (accepts) | 2 |
-| core -> almafacts (calls) | 2 |
 | dashboard-simpanan -> almafacts (reads_table) | 2 |
 | almafacts -> access-control (calls) | 2 |
 | almafacts -> jobs-snapshots (calls) | 2 |
-| tests -> almafacts (instantiates) | 2 |
-| presentation -> almafacts (contains) | 2 |
-| almafacts -> core (dispatches) | 1 |
-| almafacts -> tests (instantiates) | 1 |
-| presentation -> almafacts (reads_table) | 1 |
+| tests -> almafacts (contains) | 2 |
+| core -> almafacts (accepts) | 1 |
+| core -> almafacts (calls) | 1 |
+| almafacts -> jobs-snapshots (dispatches) | 1 |
+| jobs-snapshots -> almafacts (accepts) | 1 |
+| jobs-snapshots -> almafacts (calls) | 1 |
+| almafacts -> tests (calls) | 1 |
+| dashboard-pinjaman -> almafacts (calls) | 1 |
 | almafacts -> core (writes_table) | 1 |
 | kpi -> almafacts (instantiates) | 1 |
 | almafacts -> core (extends) | 1 |
-| almafacts -> tests (extends) | 1 |
+| almafacts -> dashboard-pinjaman (contains) | 1 |

@@ -9,8 +9,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | command | 2 |
 | file | 153 |
 | function | 374 |
-| method | 174 |
-| unresolved_symbol | 3 |
+| method | 176 |
+| unresolved_symbol | 10 |
 | route | 2 |
 | class | 16 |
 | table | 3 |
@@ -89,33 +89,33 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| database -> core (checks_table) | 91 |
-| database -> core (instantiates) | 74 |
-| database -> core (writes_table) | 61 |
-| database -> core (calls) | 54 |
-| database -> import (checks_table) | 35 |
-| database -> core (defines_table) | 33 |
-| database -> core (alters_table) | 20 |
-| database -> import (defines_table) | 16 |
-| database -> dashboard-pinjaman (checks_table) | 16 |
+| database -> core (instantiates) | 72 |
+| database -> core (checks_table) | 61 |
+| database -> core (writes_table) | 58 |
+| database -> core (calls) | 56 |
+| database -> import (checks_table) | 42 |
+| database -> dashboard-pinjaman (checks_table) | 26 |
+| database -> import (defines_table) | 23 |
+| database -> dashboard-simpanan (checks_table) | 15 |
 | database -> core (reads_table) | 15 |
-| database -> core (uses_table) | 14 |
+| database -> dashboard-pinjaman (alters_table) | 15 |
+| database -> jobs-snapshots (checks_table) | 14 |
 | database -> core (accepts) | 13 |
-| database -> jobs-snapshots (checks_table) | 12 |
 | database -> jobs-snapshots (defines_table) | 12 |
 | database -> import (uses_table) | 11 |
-| database -> dashboard-pinjaman (alters_table) | 11 |
+| database -> dashboard-pinjaman (defines_table) | 11 |
 | database -> access-control (protected_by) | 11 |
-| database -> dashboard-simpanan (checks_table) | 10 |
-| database -> jobs-snapshots (alters_table) | 8 |
+| database -> core (alters_table) | 10 |
+| database -> core (defines_table) | 9 |
+| database -> tests (calls) | 9 |
+| database -> dashboard-simpanan (alters_table) | 8 |
+| database -> dashboard-simpanan (defines_table) | 7 |
 | database -> dashboard-harian (checks_table) | 7 |
-| database -> dashboard-simpanan (alters_table) | 6 |
-| core -> database (calls) | 6 |
+| database -> import (alters_table) | 7 |
+| database -> jobs-snapshots (alters_table) | 6 |
+| database -> core (uses_table) | 5 |
+| database -> dashboard-pinjaman (uses_table) | 5 |
+| database -> access-control (defines_table) | 5 |
 | database -> dashboard-harian (alters_table) | 5 |
 | import -> database (calls) | 5 |
 | database -> tests (extends) | 5 |
-| database -> dashboard-pinjaman (uses_table) | 4 |
-| database -> dashboard-pinjaman (defines_table) | 4 |
-| database -> dashboard-simpanan (defines_table) | 4 |
-| database -> core (extends) | 4 |
-| database -> jobs-snapshots (uses_table) | 3 |

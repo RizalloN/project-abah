@@ -166,6 +166,76 @@ SQL);
         $this->assertFalse($builder->graphIsFresh());
     }
 
+    public function test_builder_handles_string_interpolation_comments_and_parent_resolution(): void
+    {
+        $this->writeFixture('app/Jobs/SampleJob.php', <<<'PHP'
+<?php
+
+namespace App\Jobs;
+
+class SampleJob
+{
+    public function handle(): void
+    {
+        $duration = 10;
+        $msg = "Finished (${duration}s)";
+        $log = 'Started new snapshot batch and new payroll cycle';
+        // Clear old before setting new one
+        $anon = new class {};
+    }
+
+    public function updateProgress(): void
+    {
+    }
+}
+PHP);
+
+        $this->writeFixture('app/Services/BaseService.php', <<<'PHP'
+<?php
+
+namespace App\Services;
+
+class BaseService
+{
+    public static function clearMemoization(): void
+    {
+    }
+}
+PHP);
+
+        $this->writeFixture('app/Services/ChildService.php', <<<'PHP'
+<?php
+
+namespace App\Services;
+
+class ChildService extends BaseService
+{
+    public function reset(): void
+    {
+        parent::clearMemoization();
+    }
+}
+PHP);
+
+        $result = $this->builder()->build();
+        $nodes = array_column($result['nodes'], null, 'id');
+
+        $this->assertArrayHasKey('method:App\\Jobs\\SampleJob::updateProgress', $nodes);
+        $this->assertSame('method', $nodes['method:App\\Jobs\\SampleJob::updateProgress']['kind']);
+
+        $this->assertArrayNotHasKey('symbol:App\\Jobs\\one', $nodes);
+        $this->assertArrayNotHasKey('symbol:App\\Jobs\\class', $nodes);
+        $this->assertArrayNotHasKey('symbol:App\\Jobs\\snapshot', $nodes);
+        $this->assertArrayNotHasKey('symbol:App\\Jobs\\payroll', $nodes);
+
+        $this->assertGraphHasEdge(
+            $result['edges'],
+            'method:App\\Services\\ChildService::reset',
+            'calls',
+            'method:App\\Services\\BaseService::clearMemoization'
+        );
+    }
+
     /** @return array<int, array<string, mixed>> */
     private function routes(): array
     {

@@ -6,7 +6,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 2 |
+| file | 3 |
 
 ## Main Hubs
 

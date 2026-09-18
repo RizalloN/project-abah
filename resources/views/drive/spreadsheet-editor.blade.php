@@ -58,6 +58,7 @@
 
     body.drive-spreadsheet-active .content-wrapper {
         overflow: hidden !important;
+        padding-top: 0 !important;
     }
 
     body.drive-spreadsheet-active .content-wrapper > .content {
@@ -75,7 +76,7 @@
     }
 
     .asix-sheet-app {
-        height: calc(100dvh - 64px);
+        height: calc(100dvh - var(--app-navbar-height) - .5rem);
         min-height: 420px;
         display: flex;
         flex-direction: column;
@@ -1132,10 +1133,6 @@
     }
 
     @media (max-width: 767.98px) {
-        .asix-sheet-app {
-            height: calc(100dvh - 64px);
-        }
-
         .asix-sheet-topbar {
             gap: .5rem;
             padding-inline: .55rem;
@@ -1176,6 +1173,12 @@
         }
     }
 
+    @media (max-height: 540px) {
+        .asix-sheet-app {
+            min-height: 0;
+        }
+    }
+
     @media (max-height: 540px) and (orientation: landscape) {
         .asix-sheet-topbar {
             min-height: 46px;
@@ -1190,10 +1193,6 @@
             height: 34px;
             min-height: 34px;
             flex-basis: 34px;
-        }
-
-        .asix-sheet-app {
-            height: calc(100dvh - 48px);
         }
 
         .asix-sheet-menubar {

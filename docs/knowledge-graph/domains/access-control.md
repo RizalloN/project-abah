@@ -6,21 +6,23 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 34 |
+| file | 38 |
 | function | 4 |
-| method | 76 |
-| unresolved_symbol | 17 |
+| method | 84 |
+| unresolved_symbol | 26 |
 | middleware | 8 |
 | route | 18 |
-| class | 16 |
-| table | 1 |
+| class | 19 |
+| table | 5 |
 | view | 8 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
+| `User` | class | 46 | `app/Models/User.php:10` |
 | `current` | method | 46 | `app/Support/UserBranchScope.php:111` |
+| `users` | table | 29 | - |
 | `forKey` | method | 28 | `app/Support/UserBranchScope.php:68` |
 | `update` | method | 22 | `app/Http/Controllers/Admin/UserManagementController.php:159` |
 | `LoginRequest` | class | 20 | `app/Http/Requests/Auth/LoginRequest.php:15` |
@@ -45,11 +47,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `destroy` | method | 9 | `app/Http/Controllers/Admin/UserManagementController.php:253` |
 | `forUser` | method | 9 | `app/Support/UserBranchScope.php:24` |
 | `index` | method | 9 | `app/Http/Controllers/Admin/UserManagementController.php:56` |
+| `sessions` | table | 9 | - |
 | `throttleKey` | method | 9 | `app/Http/Requests/Auth/LoginRequest.php:123` |
 | `throwRateLimitedValidationException` | method | 9 | `app/Http/Requests/Auth/LoginRequest.php:106` |
-| `user-management.destroy` | route | 9 | - |
-| `user-management.index` | route | 9 | - |
-| `BranchScopeReconciliationTest` | class | 8 | `tests/Unit/BranchScopeReconciliationTest.php:17` |
 
 ## Route Nodes
 
@@ -85,9 +85,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `NewPasswordController` - `app/Http/Controllers/Auth/NewPasswordController.php`
 - `PasswordController` - `app/Http/Controllers/Auth/PasswordController.php`
 - `PasswordResetLinkController` - `app/Http/Controllers/Auth/PasswordResetLinkController.php`
+- `ReleaseSessionLockMiddleware` - `app/Http/Middleware/ReleaseSessionLockMiddleware.php`
 - `RoleMiddleware` - `app/Http/Middleware/RoleMiddleware.php`
 - `SecurityHeadersMiddleware` - `app/Http/Middleware/SecurityHeadersMiddleware.php`
+- `User` - `app/Models/User.php`
 - `UserBranchScope` - `app/Support/UserBranchScope.php`
+- `UserIdReuseTest` - `tests/Unit/UserIdReuseTest.php`
 - `UserManagementController` - `app/Http/Controllers/Admin/UserManagementController.php`
 - `VerifyEmailController` - `app/Http/Controllers/Auth/VerifyEmailController.php`
 
@@ -105,38 +108,42 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 ## Table Nodes
 
 - `login_histories`
+- `password_reset_tokens`
+- `sessions`
+- `user_audit_log`
+- `users`
 
 ## Cross-Domain Links
 
 | Direction | Count |
 | --- | ---: |
 | import -> access-control (protected_by) | 776 |
-| dashboard-pinjaman -> access-control (protected_by) | 165 |
-| dashboard-simpanan -> access-control (protected_by) | 150 |
+| dashboard-simpanan -> access-control (protected_by) | 185 |
+| dashboard-pinjaman -> access-control (protected_by) | 175 |
 | bank-pipeline -> access-control (protected_by) | 114 |
-| core -> access-control (protected_by) | 103 |
-| access-control -> core (calls) | 68 |
+| access-control -> core (calls) | 60 |
+| core -> access-control (protected_by) | 58 |
 | dashboard-harian -> access-control (protected_by) | 45 |
 | input-management -> access-control (protected_by) | 35 |
-| access-control -> core (accepts) | 30 |
+| dashboard-simpanan -> access-control (calls) | 28 |
+| access-control -> core (accepts) | 27 |
 | almafacts -> access-control (protected_by) | 25 |
-| core -> access-control (calls) | 18 |
-| dashboard-simpanan -> access-control (calls) | 17 |
-| access-control -> core (uses_component) | 17 |
-| tests -> access-control (calls) | 14 |
-| tests -> access-control (contains) | 12 |
+| dashboard-pinjaman -> access-control (calls) | 21 |
+| access-control -> core (uses_component) | 13 |
+| bank-pipeline -> access-control (calls) | 11 |
 | database -> access-control (protected_by) | 11 |
 | access-control -> core (extends) | 11 |
-| dashboard-pinjaman -> access-control (calls) | 9 |
-| access-control -> tests (calls) | 9 |
-| bank-pipeline -> access-control (calls) | 8 |
+| access-control -> tests (calls) | 10 |
+| prognosa -> access-control (instantiates) | 10 |
+| tests -> access-control (contains) | 9 |
+| tests -> access-control (calls) | 8 |
 | marketshare -> access-control (protected_by) | 8 |
-| access-control -> core (defines_table) | 7 |
 | access-control -> dashboard-simpanan (references_route) | 7 |
-| access-control -> core (writes_table) | 6 |
-| access-control -> core (instantiates) | 6 |
+| core -> access-control (calls) | 7 |
+| almafacts -> access-control (instantiates) | 7 |
 | jobs-snapshots -> access-control (protected_by) | 6 |
+| database -> access-control (defines_table) | 5 |
 | prognosa -> access-control (protected_by) | 5 |
-| access-control -> core (checks_table) | 4 |
+| platform -> access-control (references_route) | 4 |
 | access-control -> marketshare (references_route) | 4 |
-| core -> access-control (references_route) | 4 |
+| database -> access-control (checks_table) | 4 |

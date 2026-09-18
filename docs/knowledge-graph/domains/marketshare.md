@@ -8,7 +8,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | command | 1 |
 | file | 12 |
-| method | 100 |
+| method | 102 |
 | route | 4 |
 | class | 10 |
 | table | 1 |
@@ -45,8 +45,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `applyFilters` | method | 6 | `app/Support/CrasMappingService.php:431` |
 | `applyRegionFilter` | method | 6 | `app/Support/CrasMappingService.php:441` |
 | `insights` | method | 6 | `app/Support/MarketShareArea6Report.php:156` |
-| `percentage` | method | 6 | `app/Support/CrasLpgPortfolioService.php:415` |
-| `public-workbooks.market-share-mapping.token` | route | 6 | - |
+| `marketShare` | method | 6 | `app/Http/Controllers/PublicWorkbookController.php:16` |
+| `marketShareMapping` | method | 6 | `app/Http/Controllers/PublicWorkbookController.php:27` |
 
 ## Route Nodes
 
@@ -80,25 +80,26 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| marketshare -> core (calls) | 22 |
+| marketshare -> core (calls) | 23 |
 | marketshare -> core (instantiates) | 13 |
-| marketshare -> core (accepts) | 8 |
+| marketshare -> core (accepts) | 10 |
 | marketshare -> access-control (protected_by) | 8 |
 | tests -> marketshare (contains) | 8 |
 | dashboard-simpanan -> marketshare (calls) | 6 |
 | marketshare -> import (instantiates) | 6 |
 | access-control -> marketshare (references_route) | 4 |
-| marketshare -> bank-pipeline (dispatches_to) | 4 |
 | marketshare -> dashboard-simpanan (references_route) | 3 |
 | marketshare -> core (writes_table) | 3 |
 | marketshare -> tests (extends) | 3 |
 | presentation -> marketshare (contains) | 3 |
 | dashboard-simpanan -> marketshare (references_route) | 2 |
+| marketshare -> bank-pipeline (calls) | 2 |
 | marketshare -> access-control (calls) | 2 |
 | marketshare -> presentation (instantiates) | 2 |
 | marketshare -> dashboard-simpanan (instantiates) | 2 |
 | marketshare -> core (extends) | 2 |
-| marketshare -> core (defines_table) | 1 |
+| bank-pipeline -> marketshare (contains) | 2 |
+| marketshare -> access-control (defines_table) | 1 |
 | marketshare -> core (reads_table) | 1 |
 | marketshare -> jobs-snapshots (calls) | 1 |
 | marketshare -> dashboard-pinjaman (contains) | 1 |

@@ -22,50 +22,10 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Artisan::command('network:update-duckdns', function () {
-    if (!config('services.public_access_health.enabled', false)) {
-        $this->line('DuckDNS update dinonaktifkan karena akses publik memakai Cloudflare Tunnel.');
+    $this->line('DuckDNS update dinonaktifkan karena akses publik memakai Cloudflare Tunnel.');
 
-        return 0;
-    }
-
-    $lock = Cache::lock('network:duckdns-update', 120);
-    if (!$lock->get()) {
-        $this->warn('DuckDNS update sedang berjalan di proses lain.');
-
-        return 0;
-    }
-
-    try {
-        $scriptPath = base_path('ddns-update.bat');
-        if (!is_file($scriptPath)) {
-            $this->error('ddns-update.bat tidak ditemukan.');
-
-            return 1;
-        }
-
-        $process = new Process(['cmd.exe', '/c', $scriptPath], base_path());
-        $process->setTimeout(90);
-        $process->run();
-
-        $output = trim($process->getOutput() . "\n" . $process->getErrorOutput());
-        $output = preg_replace('/token=[^&"\s]+/i', 'token=***', $output) ?? $output;
-        $output = preg_replace('/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i', '***', $output) ?? $output;
-
-        if ($output !== '') {
-            $this->line($output);
-        }
-
-        if (!$process->isSuccessful()) {
-            $this->error('DuckDNS update gagal.');
-
-            return $process->getExitCode() ?: 1;
-        }
-
-        return 0;
-    } finally {
-        $lock->release();
-    }
-})->purpose('Update DuckDNS public IP for asixdashboard.duckdns.org');
+    return 0;
+})->purpose('Update DuckDNS public IP for asixdashboard.duckdns.org (deprecated: migrated to Cloudflare Tunnel)');
 
 Artisan::command('network:public-health {--fix} {--force} {--json}', function () {
     if (!config('services.public_access_health.enabled', false)) {

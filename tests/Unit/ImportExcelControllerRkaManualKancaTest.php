@@ -170,10 +170,10 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
             ]],
         ], ['desc_kanwil', 'desc_uker']);
 
-        $this->assertSame(['desc_kanwil', 'tahun', 'kanca', 'desc_uker'], array_map('strtolower', $payload['headers']));
+        $this->assertSame(['desc_kanwil', 'desc_uker', 'kanca', 'tahun'], array_map('strtolower', $payload['headers']));
         $this->assertSame('KC Ponorogo', $payload['preview'][0]['kanca']);
         $this->assertSame(2026, $payload['preview'][0]['tahun']);
-        $this->assertSame(['desc_kanwil', 'tahun', 'kanca', 'desc_uker'], array_map('strtolower', $payload['sourceHeaders']));
+        $this->assertSame(['desc_kanwil', 'desc_uker', 'kanca', 'tahun'], array_map('strtolower', $payload['sourceHeaders']));
     }
 
     public function test_rka_manual_kanca_can_be_applied_after_load_using_batch_prefix(): void

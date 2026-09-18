@@ -9781,66 +9781,21 @@ class ImportExcelController extends Controller
 
     protected function reorderPreviewPayload(array $headers, array $formattedUniqueValues, array $preview, array $dbColumns): array
     {
-        $preview = $this->rebuildPreviewRowsForHeaders($headers, $preview);
-
-        if ($this->isDailyLoanActive()) {
-            return [
-                'headers' => $headers,
-                'formattedUniqueValues' => $formattedUniqueValues,
-                'preview' => $preview,
-            ];
+        // The database schema controls import mapping, not the visual order of
+        // the preview. Keep every displayed column in the same order as the
+        // uploaded workbook/CSV so headers, filters, and row values stay aligned.
+        $sourceHeaders = array_values($headers);
+        $sourceUniqueValues = [];
+        foreach ($sourceHeaders as $index => $header) {
+            $sourceUniqueValues[$index] = $formattedUniqueValues[$index]
+                ?? $formattedUniqueValues[$header]
+                ?? [];
         }
-
-        $matchedHeaders = [];
-        $matchedUniqueValues = [];
-        $usedHeaders = [];
-
-        foreach ($dbColumns as $dbCol) {
-            foreach ($headers as $index => $header) {
-                if (isset($usedHeaders[$header])) {
-                    continue;
-                }
-
-                if ($this->normalizeHeaderForDatabase($header) === $this->normalizeHeaderForDatabase($dbCol)) {
-                    $matchedHeaders[] = $header;
-                    $matchedUniqueValues[] = $formattedUniqueValues[$index] ?? [];
-                    $usedHeaders[$header] = true;
-                    break;
-                }
-            }
-        }
-
-        $remainingHeaders = [];
-        $remainingUniqueValues = [];
-        foreach ($headers as $index => $header) {
-            if (isset($usedHeaders[$header])) {
-                continue;
-            }
-            $remainingHeaders[] = $header;
-            $remainingUniqueValues[] = $formattedUniqueValues[$index] ?? [];
-        }
-
-        $finalHeaders = array_merge($matchedHeaders, $remainingHeaders);
-        $finalUniqueValues = array_merge($matchedUniqueValues, $remainingUniqueValues);
-
-        if (empty($finalHeaders)) {
-            $finalHeaders = $headers;
-            $finalUniqueValues = $formattedUniqueValues;
-        }
-
-        foreach ($preview as &$row) {
-            $newRow = [];
-            foreach ($finalHeaders as $header) {
-                $newRow[$header] = $row[$header] ?? null;
-            }
-            $row = $newRow;
-        }
-        unset($row);
 
         return [
-            'headers' => $finalHeaders,
-            'formattedUniqueValues' => $finalUniqueValues,
-            'preview' => $this->rebuildPreviewRowsForHeaders($finalHeaders, $preview),
+            'headers' => $sourceHeaders,
+            'formattedUniqueValues' => $sourceUniqueValues,
+            'preview' => $this->rebuildPreviewRowsForHeaders($sourceHeaders, $preview),
         ];
     }
 

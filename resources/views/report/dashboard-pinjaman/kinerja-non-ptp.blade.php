@@ -76,9 +76,15 @@
         display: flex;
         align-items: center;
         gap: 0.85rem;
+        min-width: 0;
+    }
+
+    .nonptp-brand > div:last-child {
+        min-width: 0;
     }
 
     .nonptp-logo {
+        flex: 0 0 auto;
         width: 42px;
         height: 42px;
         border-radius: 10px;
@@ -105,6 +111,7 @@
     }
 
     .nonptp-badge {
+        flex: 0 0 auto;
         display: inline-flex;
         align-items: center;
         gap: 0.4rem;
@@ -115,6 +122,7 @@
         background: #eef6ff;
         font-size: 0.74rem;
         font-weight: 850;
+        white-space: nowrap;
     }
 
     .nonptp-panel {
@@ -377,6 +385,24 @@
     @media (max-width: 576px) {
         .nonptp-page {
             padding: 1rem 0.75rem;
+        }
+
+        .nonptp-header {
+            align-items: stretch;
+            flex-direction: column;
+            padding: 0.95rem;
+        }
+
+        .nonptp-subtitle {
+            overflow-wrap: anywhere;
+        }
+
+        .nonptp-badge {
+            width: 100%;
+            justify-content: flex-start;
+            border-radius: 8px;
+            white-space: normal;
+            overflow-wrap: anywhere;
         }
 
         .nonptp-kpis {

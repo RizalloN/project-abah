@@ -27,10 +27,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `KpiRmSmeDashboardServiceTest` | class | 7 | `tests/Unit/KpiRmSmeDashboardServiceTest.php:8` |
 | `cell` | method | 7 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:425` |
 | `headerIndex` | method | 6 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:391` |
+| `setUp` | method | 6 | `tests/Unit/KpiPersonnelReferenceSyncServiceTest.php:15` |
 | `branchInfo` | method | 5 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:452` |
 | `personFromRow` | method | 5 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:202` |
 | `personMeta` | method | 5 | `app/Services/Reports/KpiRmSmeDashboardService.php:285` |
-| `setUp` | method | 5 | `tests/Unit/KpiPersonnelReferenceSyncServiceTest.php:15` |
 | `sources` | method | 5 | `tests/Unit/KpiRmSmeDashboardServiceTest.php:55` |
 | `summary` | method | 5 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:489` |
 | `test_default_kpi_links_do_not_overwrite_existing_custom_link` | method | 5 | `tests/Unit/LinkManagementControllerTest.php:84` |
@@ -56,15 +56,23 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| kpi -> core (writes_table) | 13 |
-| kpi -> core (reads_table) | 10 |
-| kpi -> core (calls) | 10 |
+| kpi -> dashboard-pinjaman (reads_table) | 7 |
+| kpi -> core (calls) | 7 |
+| kpi -> dashboard-pinjaman (writes_table) | 6 |
+| kpi -> core (writes_table) | 5 |
 | tests -> kpi (contains) | 5 |
-| kpi -> core (checks_table) | 4 |
 | kpi -> core (instantiates) | 4 |
-| kpi -> core (defines_table) | 3 |
+| kpi -> platform (calls) | 3 |
+| kpi -> dashboard-pinjaman (checks_table) | 3 |
+| kpi -> core (reads_table) | 3 |
+| kpi -> tests (calls) | 3 |
+| kpi -> dashboard-pinjaman (defines_table) | 2 |
 | kpi -> tests (extends) | 2 |
+| kpi -> core (checks_table) | 1 |
+| kpi -> bank-pipeline (references_route) | 1 |
+| kpi -> core (defines_table) | 1 |
 | kpi -> access-control (calls) | 1 |
-| kpi -> tests (calls) | 1 |
 | kpi -> jobs-snapshots (writes_table) | 1 |
 | kpi -> almafacts (instantiates) | 1 |
+| bank-pipeline -> kpi (contains) | 1 |
+| kpi -> dashboard-pinjaman (contains) | 1 |

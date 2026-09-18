@@ -946,7 +946,9 @@
 
         .loan-matrix-wrap,
         .loan-summary-table-wrap {
-            max-height: calc(100vh - 150px);
+            max-height: none;
+            overflow-x: auto;
+            overflow-y: visible;
         }
     }
 

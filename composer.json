@@ -73,8 +73,6 @@
             "Composer\\Config::disableProcessTimeout",
             "powershell -ExecutionPolicy Bypass -File .\\scripts\\queue-persistent.ps1"
         ],
-        "ddns:update": "D:\\XAMPP\\htdocs\\project-ABAH\\ddns-update.bat",
-
         "queue:all": [
             "Composer\\Config::disableProcessTimeout",
             "npx concurrently -c \"#c4b5fd,#fb7185\" \"php artisan queue:work --queue=imports-high --tries=1 --timeout=0 --sleep=1\" \"php artisan queue:work --queue=default,reports-low --tries=1 --timeout=0 --sleep=1\" --names=import-queue,report-queue --kill-others"

@@ -97,9 +97,6 @@
     }
 
     .kejar-laba-date-badge {
-        position: absolute;
-        right: 1.75rem;
-        top: 1.75rem;
         border-radius: 0px !important;
         font-weight: 700;
         font-size: 0.8rem;
@@ -109,11 +106,36 @@
         padding: 0.5rem 1rem !important;
     }
 
+    .kejar-laba-context-badges {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .kejar-laba-context-badges .badge {
+        display: inline-flex;
+        align-items: center;
+        max-width: 100%;
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        text-align: left;
+    }
+
+    .kejar-laba-recovery-badge {
+        border: 1px solid rgba(8, 87, 195, 0.2);
+        color: var(--primary-blue);
+        background: var(--loan-blue-soft);
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
     @media (max-width: 767.98px) {
-        .kejar-laba-date-badge {
-            position: static;
-            margin-top: 1rem;
-            display: inline-block;
+        .kejar-laba-hero {
+            padding: 1rem;
         }
     }
 
@@ -810,11 +832,11 @@
                 <h1 class="kejar-laba-title">DATA PH</h1>
                 <div class="kejar-laba-subtitle">Monitoring pencapaian Data PH secara ringkas dan komprehensif.</div>
             </div>
-            <div class="d-flex align-items-center gap-2">
+            <div class="kejar-laba-context-badges">
                 <span class="badge px-3 py-2 kejar-laba-date-badge">
                     <i class="fas fa-calendar-check mr-1"></i> Data per: {{ $selectedPeriodLabel }}
                 </span>
-                <span class="badge px-3 py-2" style="background: rgba(255, 255, 255, 0.16); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.28); font-weight: 700; font-size: 0.78rem;">
+                <span class="badge px-3 py-2 kejar-laba-recovery-badge">
                     <i class="fas fa-layer-group mr-1"></i> Akumulasi Recovery: 1 s.d. {{ $selectedPeriodLabel }}
                 </span>
             </div>

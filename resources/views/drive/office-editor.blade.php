@@ -10,6 +10,7 @@
 
     body.drive-office-active .content-wrapper {
         overflow: hidden !important;
+        padding-top: 0 !important;
     }
 
     body.drive-office-active .content-wrapper > .content {
@@ -28,7 +29,7 @@
         --office-line: #d8e4ef;
         display: flex;
         min-height: 560px;
-        height: calc(100dvh - 68px);
+        height: calc(100dvh - var(--app-navbar-height) - .5rem);
         flex-direction: column;
         overflow: hidden;
         background: #edf4fa;
@@ -135,6 +136,7 @@
         display: grid;
         height: 100%;
         min-height: 500px;
+        overflow: auto;
         place-items: center;
         padding: 24px;
         background:
@@ -219,10 +221,6 @@
     }
 
     @media (max-width: 640px) {
-        .asix-office-shell {
-            height: calc(100dvh - 58px);
-        }
-
         .asix-office-toolbar {
             min-height: 56px;
             padding: 7px 9px;
@@ -234,6 +232,57 @@
 
         .asix-office-file h1 {
             font-size: 13px;
+        }
+    }
+
+    @media (max-height: 640px) {
+        .asix-office-shell,
+        #asixOfficeEditor,
+        .asix-office-fallback {
+            min-height: 0;
+        }
+
+        .asix-office-fallback {
+            padding: 12px;
+        }
+    }
+
+    @media (max-height: 540px) and (orientation: landscape) {
+        .asix-office-fallback {
+            padding: 8px;
+        }
+
+        .asix-office-fallback-card {
+            padding: 12px 16px;
+            border-radius: 14px;
+        }
+
+        .asix-office-fallback-icon {
+            width: 40px;
+            height: 40px;
+            margin-bottom: 8px;
+            font-size: 18px;
+        }
+
+        .asix-office-fallback-card h2 {
+            margin-bottom: 4px;
+            font-size: 18px;
+        }
+
+        .asix-office-fallback-card p {
+            font-size: 12px;
+            line-height: 1.35;
+        }
+
+        .asix-office-fallback-actions {
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .asix-office-fallback-button {
+            min-height: 36px;
+            padding: 0 10px;
+            font-size: 12px;
         }
     }
 </style>

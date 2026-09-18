@@ -7,7 +7,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | file | 6 |
-| method | 172 |
+| method | 171 |
 | route | 1 |
 | class | 5 |
 | view | 1 |
@@ -67,16 +67,20 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| prognosa -> core (calls) | 108 |
-| prognosa -> core (instantiates) | 43 |
+| prognosa -> core (calls) | 105 |
+| prognosa -> core (instantiates) | 32 |
 | prognosa -> core (accepts) | 28 |
+| prognosa -> access-control (instantiates) | 10 |
 | prognosa -> access-control (protected_by) | 5 |
+| dashboard-pinjaman -> prognosa (calls) | 3 |
 | prognosa -> access-control (calls) | 2 |
 | prognosa -> tests (extends) | 2 |
 | presentation -> prognosa (contains) | 2 |
 | prognosa -> dashboard-harian (injects) | 1 |
 | prognosa -> presentation (calls) | 1 |
+| prognosa -> tests (calls) | 1 |
 | prognosa -> core (extends) | 1 |
 | tests -> prognosa (contains) | 1 |
-| core -> prognosa (references_route) | 1 |
-| prognosa -> core (extends_view) | 1 |
+| prognosa -> dashboard-pinjaman (contains) | 1 |
+| platform -> prognosa (references_route) | 1 |
+| prognosa -> platform (extends_view) | 1 |

@@ -26,10 +26,17 @@ class ResponsiveUiAuditScriptTest extends TestCase
 
         $this->assertStringContainsString('findScrollHost', $script);
         $this->assertStringContainsString('inspectStickyTable', $script);
-        $this->assertStringContainsString("document.querySelectorAll('table')", $script);
+        $this->assertStringContainsString("document.querySelectorAll('table:not([data-abah-floating-clone])')", $script);
         $this->assertStringContainsString('verticalHeader', $script);
         $this->assertStringContainsString('noOverlap', $script);
         $this->assertStringContainsString('horizontalColumns', $script);
+        $this->assertStringContainsString('pageHeader', $script);
+        $this->assertStringContainsString('window.scrollTo({ left: originalPageX, top: targetPageY', $script);
+        $this->assertStringContainsString('.abah-floating-table-header:not([hidden])', $script);
+        $this->assertStringContainsString('table.pageHeader.eligible && (!table.pageHeader.tested || !table.pageHeader.frozen)', $script);
+        $this->assertStringContainsString('tableFreezeAuditFailed(result)', $script);
+        $this->assertStringContainsString('editorViewport?.clipped', $script);
+        $this->assertStringContainsString('summary.applicationErrors.length > 0', $script);
         $this->assertStringContainsString('transparentStickyCells', $script);
         $this->assertStringContainsString('nestedVerticalTableScrolls', $script);
         $this->assertStringContainsString('host.scrollHeight > host.clientHeight + 1', $script);

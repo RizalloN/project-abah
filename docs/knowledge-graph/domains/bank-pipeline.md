@@ -8,8 +8,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | file | 20 |
 | function | 14 |
-| method | 305 |
-| unresolved_symbol | 23 |
+| method | 300 |
+| unresolved_symbol | 22 |
 | route | 24 |
 | class | 17 |
 | table | 2 |
@@ -105,26 +105,32 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| bank-pipeline -> core (calls) | 171 |
+| bank-pipeline -> core (calls) | 169 |
 | bank-pipeline -> access-control (protected_by) | 114 |
-| bank-pipeline -> core (instantiates) | 71 |
-| bank-pipeline -> core (accepts) | 66 |
-| core -> bank-pipeline (references_route) | 29 |
-| bank-pipeline -> access-control (calls) | 8 |
+| bank-pipeline -> core (instantiates) | 64 |
+| bank-pipeline -> core (accepts) | 64 |
+| core -> bank-pipeline (references_route) | 28 |
+| bank-pipeline -> access-control (calls) | 11 |
 | bank-pipeline -> core (extends) | 8 |
 | bank-pipeline -> core (renders) | 6 |
-| marketshare -> bank-pipeline (dispatches_to) | 4 |
-| tests -> bank-pipeline (contains) | 4 |
+| bank-pipeline -> tests (calls) | 4 |
 | tests -> bank-pipeline (instantiates) | 3 |
 | bank-pipeline -> tests (extends) | 3 |
-| bank-pipeline -> core (defines_table) | 2 |
+| bank-pipeline -> access-control (defines_table) | 2 |
 | database -> bank-pipeline (defines_table) | 2 |
 | database -> bank-pipeline (alters_table) | 2 |
-| core -> bank-pipeline (accepts) | 2 |
-| core -> bank-pipeline (calls) | 2 |
+| marketshare -> bank-pipeline (calls) | 2 |
+| bank-pipeline -> marketshare (contains) | 2 |
+| tests -> bank-pipeline (contains) | 2 |
+| core -> bank-pipeline (accepts) | 1 |
+| core -> bank-pipeline (calls) | 1 |
 | bank-pipeline -> core (references_route) | 1 |
-| bank-pipeline -> core (dispatches) | 1 |
-| bank-pipeline -> tests (instantiates) | 1 |
-| bank-pipeline -> tests (calls) | 1 |
+| bank-pipeline -> jobs-snapshots (dispatches) | 1 |
+| jobs-snapshots -> bank-pipeline (accepts) | 1 |
+| jobs-snapshots -> bank-pipeline (calls) | 1 |
+| bank-pipeline -> access-control (instantiates) | 1 |
+| kpi -> bank-pipeline (references_route) | 1 |
 | presentation -> bank-pipeline (instantiates) | 1 |
 | bank-pipeline -> core (uses_trait) | 1 |
+| bank-pipeline -> kpi (contains) | 1 |
+| platform -> bank-pipeline (references_route) | 1 |

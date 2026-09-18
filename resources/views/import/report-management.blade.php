@@ -44,7 +44,7 @@
         <!-- Control Panel (4 Columns) -->
         <div class="row mb-4 align-items-stretch report-management-control-grid">
             <!-- 1. Pilihan Report -->
-            <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
+            <div class="col-xl-3 col-md-6 mb-3 mb-xl-0">
                 <div class="report-management-control-card h-100">
                     <label class="report-management-control-label" for="management-report-select">
                         <span>Report Utama</span>
@@ -62,7 +62,7 @@
             </div>
 
             <!-- 2. Data Recovery -->
-            <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
+            <div class="col-xl-3 col-md-6 mb-3 mb-xl-0">
                 <div class="report-management-control-card h-100">
                     <label class="report-management-control-label" for="management-backup-select">
                         <span>Recovery SQL</span>
@@ -83,7 +83,7 @@
             </div>
 
             <!-- 3. Sinkronisasi Manual -->
-            <div class="col-lg-3 col-md-6 mb-3 mb-md-0">
+            <div class="col-xl-3 col-md-6 mb-3 mb-md-0">
                 <div class="report-management-control-card h-100">
                     <label class="report-management-control-label" for="management-force-sync-period">
                         <span>Sinkronisasi Periode</span>
@@ -104,7 +104,7 @@
             </div>
 
             <!-- 4. Pembersihan / Rebuild -->
-            <div class="col-lg-3 col-md-6">
+            <div class="col-xl-3 col-md-6">
                 <div class="report-management-control-card h-100 d-flex flex-column justify-content-between">
                     <label class="report-management-control-label" for="management-rebuild-force">
                         <span>Rebuild Snapshot</span>
