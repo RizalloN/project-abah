@@ -564,10 +564,6 @@
             </div>
         </div>
 
-        @if(!empty($unproductive['basis']))
-            <p class="sme-ops-inactive-note">{{ $unproductive['basis'] }} Realisasi adalah akumulasi bulan pada posisi closing; kategori 3/6 bulan berarti tidak produktif pada setiap bulan berturut-turut. Klik ganda kartu, atau klik angka/Detail RM untuk melihat rinciannya.</p>
-        @endif
-
         @if(!empty($unproductive['available']))
             <div class="sme-ops-inactive-grid">
                 @foreach(['month_1', 'month_3', 'month_6'] as $metricKey)

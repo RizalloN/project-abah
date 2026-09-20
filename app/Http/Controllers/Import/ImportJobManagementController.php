@@ -958,8 +958,8 @@ class ImportJobManagementController extends Controller
         // Indication of worker health
         if (($oldestAgeSeconds ?? 0) >= 300) {
             if (!$isProcessing) {
-                $message .= ' Indikasinya worker report tidak sedang mengonsumsi queue. Semua job ini dapat dipantau di bagian "Queue Jobs" di bawah.';
-                $message .= ' Jalankan `composer start:power` atau `composer queue` untuk memastikan worker aktif.';
+                $message .= ' Indikasinya worker untuk queue terkait belum sedang mengonsumsi job ini. Semua job ini dapat dipantau di bagian "Queue Jobs" di bawah.';
+                $message .= ' Jalankan `php artisan queue:ensure-running --timeout=0 --memory=512 --max-jobs=25 --max-time=3600 --check-interval=30` dan biarkan terminal tetap terbuka.';
                 $status = 'warning';
             } else {
                 $message .= ' Worker sedang memproses job berat, antrean bergerak lambat.';

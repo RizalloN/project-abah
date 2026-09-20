@@ -12987,9 +12987,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const monthDetails = row.months.map(month => {
           const realization = (Number(month.realization_rp || 0) / 1000000).toLocaleString('id-ID', { maximumFractionDigits: 2 });
           const lar = month.lar_pct === null || !Number.isFinite(month.lar_pct)
-            ? '—'
-            : `${month.lar_pct.toLocaleString('id-ID', { maximumFractionDigits: 2 })}%`;
-          return `<div class="sme-rm-month-line"><strong>${escapeHtml(month.label)}</strong><span>Rp ${realization} juta · LAR ${lar} · ${month.productive ? 'Produktif' : 'Tidak produktif (0)'}${month.has_data ? '' : ' · Tanpa posisi RM'}</span></div>`;
+            ? `LAR tidak tersedia (${month.has_data ? 'saldo pinjaman 0' : 'tanpa posisi RM'})`
+            : `LAR ${month.lar_pct.toLocaleString('id-ID', { maximumFractionDigits: 2 })}%`;
+          const larBasis = month.lar_pct !== null && month.lar_pct >= 99.995 && month.lar_loan_os > 0
+            ? ` (saldo berisiko Rp ${(month.lar_value / 1000000).toLocaleString('id-ID', { maximumFractionDigits: 2 })} juta / saldo pinjaman Rp ${(month.lar_loan_os / 1000000).toLocaleString('id-ID', { maximumFractionDigits: 2 })} juta)`
+            : '';
+          const quadrant = month.quadrant === null ? 'Kuadran belum tersedia' : `Kuadran ${month.quadrant}`;
+          return `<div class="sme-rm-month-line"><strong>${escapeHtml(month.label)}</strong><span>Rp ${realization} juta · ${lar}${larBasis} · ${quadrant} · ${month.productive ? 'Produktif' : 'Tidak produktif (0)'}</span></div>`;
         }).join('');
         return `<tr>
           <td>${(index + 1).toLocaleString('id-ID')}</td>
@@ -13034,8 +13038,12 @@ document.addEventListener('DOMContentLoaded', function() {
           label: String(month?.label || month?.key || '-'),
           realization_rp: Number(month?.realization_rp || 0),
           lar_pct: month?.lar_pct === null || month?.lar_pct === undefined ? null : Number(month.lar_pct),
+          lar_loan_os: Number(month?.lar_loan_os || 0),
+          lar_value: Number(month?.lar_value || 0),
           has_data: Boolean(month?.has_data),
           productive: Boolean(month?.productive),
+          quadrant: Number.isInteger(Number(month?.quadrant)) && Number(month?.quadrant) >= 1 && Number(month?.quadrant) <= 4
+            ? Number(month.quadrant) : null,
         })),
       }))
       .sort((left, right) => `${left.branch}|${left.unit_code.padStart(10, '0')}|${left.rm}`

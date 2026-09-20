@@ -1003,21 +1003,29 @@ class DashboardSimpananController extends Controller
             $totMtd = 0;
             $totYtd = 0;
 
+            $periods = array_values(array_unique(array_filter([$curDate, $mtdDate, $ytdDate])));
+            $countsByPeriodAndBranch = DB::table('rekening_dormant_snapshots')
+                ->whereIn('posisi', $periods)
+                ->whereIn(
+                    DB::raw('UPPER(TRIM(branch_label))'),
+                    array_map(static fn (string $branch): string => strtoupper(trim($branch)), $branches)
+                )
+                ->selectRaw('posisi')
+                ->selectRaw('UPPER(TRIM(branch_label)) as branch_key')
+                ->selectRaw('COALESCE(SUM(COALESCE(dormant_count, 0)), 0) as dormant_count')
+                ->groupBy('posisi', 'branch_key')
+                ->get()
+                ->keyBy(fn ($row): string => Carbon::parse($row->posisi)->toDateString().'|'.(string) $row->branch_key);
+
             foreach ($branches as $idx => $b) {
-                $curCount = (int) DB::table('rekening_dormant_snapshots')
-                    ->where('posisi', $curDate)
-                    ->where(DB::raw('UPPER(TRIM(branch_label))'), strtoupper(trim($b)))
-                    ->sum('dormant_count');
-
-                $mtdCount = $mtdDate ? (int) DB::table('rekening_dormant_snapshots')
-                    ->where('posisi', $mtdDate)
-                    ->where(DB::raw('UPPER(TRIM(branch_label))'), strtoupper(trim($b)))
-                    ->sum('dormant_count') : 0;
-
-                $ytdCount = $ytdDate ? (int) DB::table('rekening_dormant_snapshots')
-                    ->where('posisi', $ytdDate)
-                    ->where(DB::raw('UPPER(TRIM(branch_label))'), strtoupper(trim($b)))
-                    ->sum('dormant_count') : 0;
+                $branchKey = strtoupper(trim($b));
+                $curCount = (int) ($countsByPeriodAndBranch->get(Carbon::parse($curDate)->toDateString().'|'.$branchKey)->dormant_count ?? 0);
+                $mtdCount = $mtdDate
+                    ? (int) ($countsByPeriodAndBranch->get(Carbon::parse($mtdDate)->toDateString().'|'.$branchKey)->dormant_count ?? 0)
+                    : 0;
+                $ytdCount = $ytdDate
+                    ? (int) ($countsByPeriodAndBranch->get(Carbon::parse($ytdDate)->toDateString().'|'.$branchKey)->dormant_count ?? 0)
+                    : 0;
 
                 $totCur += $curCount;
                 $totMtd += $mtdCount;
@@ -12920,22 +12928,27 @@ class DashboardSimpananController extends Controller
                 return null;
             }
 
-            $latestPeriod = DB::table('jumlah_merchant_detail')->max(DB::raw('DATE(POSISI)'));
-            if (!$latestPeriod) {
+            $latestPeriodValue = DB::table('jumlah_merchant_detail')->max('POSISI');
+            if (!$latestPeriodValue) {
                 return null;
             }
+            $latestPeriod = Carbon::parse($latestPeriodValue)->toDateString();
 
             $periods = $this->buildTrendDatePeriods($latestPeriod);
             $branches = $this->dashboardBranchNames();
             $timeline = [];
 
-            foreach ($periods as $period) {
-                $row = SargableDateFilter::apply(DB::table('jumlah_merchant_detail'), 'POSISI', '=', $period)
+            $periodRows = $this->datePeriodAggregateRows(
+                $periods,
+                fn (string $period) => SargableDateFilter::apply(DB::table('jumlah_merchant_detail'), 'POSISI', '=', $period)
                     ->whereIn(DB::raw('UPPER(NAMA_KANCA)'), $branches)
                     ->selectRaw('COUNT(DISTINCT MID) as merchant_count')
                     ->selectRaw('COUNT(DISTINCT CASE WHEN COALESCE(SALES_VOLUME, 0) >= 15000000 THEN MID END) as productive_count')
                     ->selectRaw('COALESCE(SUM(COALESCE(SALES_VOLUME, 0)), 0) as volume')
-                    ->first();
+            );
+
+            foreach ($periods as $period) {
+                $row = $periodRows->get($period);
 
                 $timeline[] = [
                     'label' => Carbon::parse($period)->translatedFormat('d M'),
@@ -12997,23 +13010,30 @@ class DashboardSimpananController extends Controller
                 return null;
             }
 
-            $latestPeriod = DB::table('jumlah_merchant_qris_detail')->max(DB::raw('DATE(POSISI)'));
-            if (!$latestPeriod) {
+            $latestPeriodValue = DB::table('jumlah_merchant_qris_detail')->max('POSISI');
+            if (!$latestPeriodValue) {
                 return null;
             }
+            $latestPeriod = Carbon::parse($latestPeriodValue)->toDateString();
 
             $periods = $this->buildTrendDatePeriods($latestPeriod);
             $branches = $this->dashboardBranchNames();
             $timeline = [];
 
+            $salesVolumeExpression = 'COALESCE(CAST(AKUMULASI_SV_TOTAL AS DECIMAL(20,2)), 0)';
+            $periodRows = DB::table('jumlah_merchant_qris_detail')
+                ->whereIn('POSISI', $periods)
+                ->whereIn(DB::raw('UPPER(TRIM(MBDESC))'), $branches)
+                ->selectRaw('POSISI as period_key')
+                ->selectRaw('COUNT(DISTINCT STOREID) as merchant_count')
+                ->selectRaw("COUNT(DISTINCT CASE WHEN {$salesVolumeExpression} >= 50000 THEN STOREID END) as productive_count")
+                ->selectRaw("COALESCE(SUM({$salesVolumeExpression}), 0) as volume")
+                ->groupBy('POSISI')
+                ->get()
+                ->keyBy(fn ($row): string => Carbon::parse($row->period_key)->toDateString());
+
             foreach ($periods as $period) {
-                $salesVolumeExpression = "COALESCE(CAST(NULLIF(REPLACE(AKUMULASI_SV_TOTAL, ',', ''), '') AS DECIMAL(20,2)), 0)";
-                $row = SargableDateFilter::apply(DB::table('jumlah_merchant_qris_detail'), 'POSISI', '=', $period)
-                    ->whereIn(DB::raw('UPPER(TRIM(MBDESC))'), $branches)
-                    ->selectRaw('COUNT(DISTINCT STOREID) as merchant_count')
-                    ->selectRaw("COUNT(DISTINCT CASE WHEN {$salesVolumeExpression} >= 50000 THEN STOREID END) as productive_count")
-                    ->selectRaw("COALESCE(SUM({$salesVolumeExpression}), 0) as volume")
-                    ->first();
+                $row = $periodRows->get($period);
 
                 $timeline[] = [
                     'label' => Carbon::parse($period)->translatedFormat('d M'),
@@ -13087,18 +13107,24 @@ class DashboardSimpananController extends Controller
             $branches = $this->dashboardBranchNames();
             $timeline = [];
 
-            foreach ($periods as $period) {
-                $rekRow = SargableDateFilter::apply(DB::table('user_brimo_rpt_v2'), 'posisi', '=', $period)
+            $rekeningRows = $this->datePeriodAggregateRows(
+                $periods,
+                fn (string $period) => SargableDateFilter::apply(DB::table('user_brimo_rpt_v2'), 'posisi', '=', $period)
                     ->whereIn(DB::raw('UPPER(COALESCE(mbdesc, branch))'), $branches)
                     ->selectRaw('COALESCE(SUM(COALESCE(jumlah, 0)), 0) as total')
                     ->selectRaw('COUNT(*) as row_count')
-                    ->first();
+            );
+            $financialRows = $this->datePeriodAggregateRows(
+                $periods,
+                fn (string $period) => SargableDateFilter::apply(DB::table('user_brimo_fin'), 'posisi', '=', $period)
+                    ->whereIn(DB::raw('UPPER(COALESCE(mbdesc, branch))'), $branches)
+                    ->selectRaw('COALESCE(SUM(COALESCE(jumlah, 0)), 0) as total')
+                    ->selectRaw('COUNT(*) as row_count')
+            );
 
-                $finRow = SargableDateFilter::apply(DB::table('user_brimo_fin'), 'posisi', '=', $period)
-                    ->whereIn(DB::raw('UPPER(COALESCE(mbdesc, branch))'), $branches)
-                    ->selectRaw('COALESCE(SUM(COALESCE(jumlah, 0)), 0) as total')
-                    ->selectRaw('COUNT(*) as row_count')
-                    ->first();
+            foreach ($periods as $period) {
+                $rekRow = $rekeningRows->get($period);
+                $finRow = $financialRows->get($period);
 
                 $timeline[] = [
                     'label' => Carbon::parse($period)->translatedFormat('d M'),
@@ -13175,16 +13201,21 @@ class DashboardSimpananController extends Controller
             $branches = $this->dashboardBranchNames();
             $timeline = [];
 
+            $periodRows = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
+                ->whereIn('periode', $periods)
+                ->whereIn(DB::raw('UPPER(TRIM(cabang))'), $branches)
+                ->selectRaw('periode as period_key')
+                ->selectRaw('COUNT(*) as agen')
+                ->selectRaw('SUM(CASE WHEN COALESCE(total_fee, 0) >= 750000 THEN 1 ELSE 0 END) as juragan')
+                ->selectRaw('SUM(CASE WHEN COALESCE(total_fee, 0) >= 150000 THEN 1 ELSE 0 END) as bep')
+                ->selectRaw('COALESCE(SUM(COALESCE(total_transaksi, 0)), 0) as trx')
+                ->selectRaw('COALESCE(SUM(COALESCE(total_nominal, 0)), 0) as volume')
+                ->groupBy('periode')
+                ->get()
+                ->keyBy(fn ($row): string => trim((string) $row->period_key));
+
             foreach ($periods as $period) {
-                $row = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
-                    ->where('periode', $period)
-                    ->whereIn(DB::raw('UPPER(TRIM(cabang))'), $branches)
-                    ->selectRaw('COUNT(*) as agen')
-                    ->selectRaw('SUM(CASE WHEN COALESCE(total_fee, 0) >= 750000 THEN 1 ELSE 0 END) as juragan')
-                    ->selectRaw('SUM(CASE WHEN COALESCE(total_fee, 0) >= 150000 THEN 1 ELSE 0 END) as bep')
-                    ->selectRaw('COALESCE(SUM(COALESCE(total_transaksi, 0)), 0) as trx')
-                    ->selectRaw('COALESCE(SUM(COALESCE(total_nominal, 0)), 0) as volume')
-                    ->first();
+                $row = $periodRows->get($period);
 
                 $timeline[] = [
                     'label' => Carbon::parse($period)->translatedFormat('M Y'),
@@ -13262,16 +13293,20 @@ class DashboardSimpananController extends Controller
             $branches = $this->dashboardBranchNames();
             $timeline = [];
 
-            foreach ($periods as $period) {
-                $monthStart = Carbon::parse($period)->startOfMonth()->toDateString();
-                $monthEnd = Carbon::parse($period)->endOfMonth()->toDateString();
-
-                $row = SargableDateFilter::apply(DB::table('performance_pis_per_produk'), 'posisi', '=', $period)
+            $periodRows = $this->datePeriodAggregateRows(
+                $periods,
+                fn (string $period) => SargableDateFilter::apply(DB::table('performance_pis_per_produk'), 'posisi', '=', $period)
                     ->whereIn(DB::raw('UPPER(TRIM(kanca))'), $branches)
+                    ->whereBetween('tanggal_pembuatan_rekening', [
+                        Carbon::parse($period)->startOfMonth()->toDateString(),
+                        Carbon::parse($period)->endOfMonth()->toDateString(),
+                    ])
                     ->selectRaw('COUNT(*) as rekening_count')
                     ->selectRaw('COALESCE(SUM(COALESCE(saldo_britama_kerjasama, 0)), 0) as saldo')
-                    ->whereBetween('tanggal_pembuatan_rekening', [$monthStart, $monthEnd])
-                    ->first();
+            );
+
+            foreach ($periods as $period) {
+                $row = $periodRows->get($period);
 
                 $timeline[] = [
                     'label' => Carbon::parse($period)->translatedFormat('d M'),
@@ -13431,21 +13466,30 @@ class DashboardSimpananController extends Controller
             $usakBranchExpression = "UPPER(TRIM(CASE WHEN LOCATE(' - ', kanca) > 0 THEN SUBSTRING(kanca, LOCATE(' - ', kanca) + 3) ELSE kanca END))";
             $corpBranchExpression = "UPPER(TRIM(CASE WHEN LOCATE(' - ', cabang) > 0 THEN SUBSTRING(cabang, LOCATE(' - ', cabang) + 3) ELSE cabang END))";
 
-            foreach ($periods as $period) {
-                $userCount = 0;
-                if ($this->hasTable('usak_ibbiz_uker')) {
-                    $userCount = SargableDateFilter::apply(DB::table('usak_ibbiz_uker'), 'periode', '=', $period)
+            $userRows = collect();
+            if ($this->hasTable('usak_ibbiz_uker')) {
+                $userRows = $this->datePeriodAggregateRows(
+                    $periods,
+                    fn (string $period) => SargableDateFilter::apply(DB::table('usak_ibbiz_uker'), 'periode', '=', $period)
                         ->whereIn(DB::raw($usakBranchExpression), $branches)
                         ->whereIn(DB::raw('UPPER(TRIM(deskripsi))'), ['ACTIVE', 'ACTIVATED'])
-                        ->count();
-                }
+                        ->selectRaw('COUNT(*) as user_count')
+                );
+            }
 
-                $volume = 0.0;
-                if ($this->hasTable('ibbisniz_corp')) {
-                    $volume = (float) SargableDateFilter::apply(DB::table('ibbisniz_corp'), 'periode', '=', $period)
+            $volumeRows = collect();
+            if ($this->hasTable('ibbisniz_corp')) {
+                $volumeRows = $this->datePeriodAggregateRows(
+                    $periods,
+                    fn (string $period) => SargableDateFilter::apply(DB::table('ibbisniz_corp'), 'periode', '=', $period)
                         ->whereIn(DB::raw($corpBranchExpression), $branches)
-                        ->sum('nominal');
-                }
+                        ->selectRaw('COALESCE(SUM(COALESCE(nominal, 0)), 0) as volume')
+                );
+            }
+
+            foreach ($periods as $period) {
+                $userCount = (int) ($userRows->get($period)->user_count ?? 0);
+                $volume = (float) ($volumeRows->get($period)->volume ?? 0);
 
                 $timeline[] = [
                     'label' => Carbon::parse($period)->translatedFormat('d M'),
@@ -13727,12 +13771,16 @@ class DashboardSimpananController extends Controller
                 : (Schema::hasColumn($tableName, 'saldo') ? 'saldo' : '0');
             $timeline = [];
 
-            foreach ($periods as $period) {
-                $row = SargableDateFilter::apply(DB::table($tableName), $periodCol, '=', $period)
+            $periodRows = $this->datePeriodAggregateRows(
+                $periods,
+                fn (string $period) => SargableDateFilter::apply(DB::table($tableName), $periodCol, '=', $period)
                     ->whereIn(DB::raw('UPPER(TRIM(' . $branchCol . '))'), $branches)
                     ->selectRaw('COUNT(*) as dormant_count')
                     ->selectRaw('COALESCE(SUM(COALESCE(' . $saldoCol . ', 0)), 0) as saldo')
-                    ->first();
+            );
+
+            foreach ($periods as $period) {
+                $row = $periodRows->get($period);
 
                 $timeline[] = [
                     'label' => Carbon::parse($period)->translatedFormat('d M'),
@@ -13791,11 +13839,15 @@ class DashboardSimpananController extends Controller
         $periods = $this->buildTrendDatePeriods($latestPeriod);
         $timeline = [];
 
-        foreach ($periods as $period) {
-            $row = SargableDateFilter::apply(DB::table('rekening_dormant_snapshots'), 'posisi', '=', $period)
+        $periodRows = $this->datePeriodAggregateRows(
+            $periods,
+            fn (string $period) => SargableDateFilter::apply(DB::table('rekening_dormant_snapshots'), 'posisi', '=', $period)
                 ->whereIn(DB::raw('UPPER(TRIM(branch_label))'), $this->dashboardBranchNames())
                 ->selectRaw('COALESCE(SUM(COALESCE(dormant_count, 0)), 0) as dormant_count')
-                ->first();
+        );
+
+        foreach ($periods as $period) {
+            $row = $periodRows->get($period);
 
             $timeline[] = [
                 'label' => Carbon::parse($period)->translatedFormat('d M'),
@@ -13974,6 +14026,37 @@ class DashboardSimpananController extends Controller
             'dormant' => 'rekening_dormant / rekening_dormant_detail / dormant_summary',
             default => 'Sumber belum dipetakan',
         };
+    }
+
+    /**
+     * Execute the same indexed point-range aggregate for several dates in one
+     * database round-trip. UNION ALL intentionally preserves each range scan;
+     * grouping on DATE(column) made MariaDB scan a much wider range.
+     *
+     * @param array<int, string> $periods
+     */
+    private function datePeriodAggregateRows(array $periods, callable $queryFactory): Collection
+    {
+        $combined = null;
+
+        foreach (array_values(array_unique($periods)) as $period) {
+            $period = Carbon::parse($period)->toDateString();
+            $periodQuery = $queryFactory($period)
+                ->selectRaw('? as period_key', [$period]);
+
+            if ($combined === null) {
+                $combined = $periodQuery;
+            } else {
+                $combined->unionAll($periodQuery);
+            }
+        }
+
+        if ($combined === null) {
+            return collect();
+        }
+
+        return $combined->get()
+            ->keyBy(fn ($row): string => Carbon::parse($row->period_key)->toDateString());
     }
 
     private function buildTrendDatePeriods(string $latestPeriod, int $points = 4): array

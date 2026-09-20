@@ -135,9 +135,33 @@ class SsaSimpananSnapshotBuilder
         }
 
         $keys = [];
+        $batchRows = [];
+        $fallbackRows = [];
+        $snapshotAt = now();
+        $supportsBatchUpsert = $this->supportsBatchUpsert();
+
         foreach ($data as $row) {
             $keys[] = $this->snapshotRowKey($row);
+            $row['snapshot_at'] = $snapshotAt;
 
+            if (! $supportsBatchUpsert || $row['produk'] === null || $row['segmentasi'] === null) {
+                $fallbackRows[] = $row;
+            } else {
+                $batchRows[] = $row;
+            }
+        }
+
+        foreach (array_chunk($batchRows, self::BATCH_SIZE) as $batch) {
+            DB::table(self::SNAPSHOT_TABLE)->upsert(
+                $batch,
+                ['periode', 'Month_Day_Year_of_Posisi', 'nama_cabang', 'produk', 'segmentasi'],
+                ['total_saldo', 'record_count', 'snapshot_version', 'snapshot_at']
+            );
+        }
+
+        // MySQL unique indexes treat NULL values as distinct. Preserve the old
+        // update-or-insert behavior for these uncommon nullable key rows.
+        foreach ($fallbackRows as $row) {
             DB::table(self::SNAPSHOT_TABLE)->updateOrInsert(
                 [
                     'periode' => $row['periode'],
@@ -150,7 +174,7 @@ class SsaSimpananSnapshotBuilder
                     'total_saldo' => $row['total_saldo'],
                     'record_count' => $row['record_count'],
                     'snapshot_version' => $row['snapshot_version'],
-                    'snapshot_at' => now(),
+                    'snapshot_at' => $row['snapshot_at'],
                 ]
             );
         }
@@ -158,6 +182,38 @@ class SsaSimpananSnapshotBuilder
         $this->deleteStaleSnapshotRows($period, $keys);
 
         return count($data);
+    }
+
+    private function supportsBatchUpsert(): bool
+    {
+        $expected = [
+            'periode',
+            'month_day_year_of_posisi',
+            'nama_cabang',
+            'produk',
+            'segmentasi',
+        ];
+
+        try {
+            foreach (DB::connection()->getSchemaBuilder()->getIndexes(self::SNAPSHOT_TABLE) as $index) {
+                if (! (bool) ($index['unique'] ?? false)) {
+                    continue;
+                }
+
+                $columns = array_map(
+                    static fn (string $column): string => strtolower($column),
+                    (array) ($index['columns'] ?? [])
+                );
+
+                if ($columns === $expected) {
+                    return true;
+                }
+            }
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return false;
     }
 
     /**

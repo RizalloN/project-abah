@@ -41,7 +41,7 @@ class SmallRmRealizationCalculatorTest extends TestCase
 
     public function test_new_and_additive_accounts_keep_their_full_plafon(): void
     {
-        $this->insertRow('2026-07-09', 'CIF-ADD', 'OLD-STAYS', 300, 300, '2025-01-01');
+        $this->insertRow('2026-06-30', 'CIF-ADD', 'OLD-STAYS', 300, 300, '2025-01-01');
         $this->insertRow('2026-07-31', 'CIF-ADD', 'OLD-STAYS', 300, 290, '2025-01-01');
         $this->insertRow('2026-07-31', 'CIF-ADD', 'NEW-ADD', 400, 400, '2026-07-10');
         $this->insertRow('2026-07-31', 'CIF-NEW', 'NEW-CIF', 500, 500, '2026-07-10');
@@ -53,14 +53,16 @@ class SmallRmRealizationCalculatorTest extends TestCase
         $this->assertNotNull($row);
         $this->assertSame(2, $row['deb']);
         $this->assertSame(900.0, $row['rp']);
+        $this->assertSame(400.0, $result['diagnostics']['supplement_rp']);
+        $this->assertSame(500.0, $result['diagnostics']['new_rp']);
     }
 
-    public function test_prior_exposure_does_not_mutate_stored_realization_plafon(): void
+    public function test_supplements_use_positive_cif_plafond_growth_for_same_or_replacement_account(): void
     {
-        $this->insertRow('2026-07-09', 'CIF-REPLACE', 'OLD-CLOSED', 600, 400, '2025-01-01');
-        $this->insertRow('2026-07-31', 'CIF-REPLACE', 'NEW-REPLACEMENT', 600, 600, '2026-07-10');
+        $this->insertRow('2026-06-30', 'CIF-REPLACE', 'OLD-CLOSED', 600, 400, '2025-01-01');
+        $this->insertRow('2026-07-31', 'CIF-REPLACE', 'NEW-REPLACEMENT', 800, 800, '2026-07-10');
 
-        $this->insertRow('2026-07-09', 'CIF-SAME', 'SAME-ACCOUNT', 300, 200, '2025-01-01');
+        $this->insertRow('2026-06-30', 'CIF-SAME', 'SAME-ACCOUNT', 300, 200, '2025-01-01');
         $this->insertRow('2026-07-31', 'CIF-SAME', 'SAME-ACCOUNT', 350, 350, '2026-07-10');
 
         $result = (new SmallRmRealizationCalculator)->calculate(['2026-07-31']);
@@ -68,7 +70,48 @@ class SmallRmRealizationCalculatorTest extends TestCase
 
         $this->assertNotNull($row);
         $this->assertSame(2, $row['deb']);
-        $this->assertSame(950.0, $row['rp']);
+        $this->assertSame(250.0, $row['rp']);
+        $this->assertSame(2, $result['diagnostics']['supplement_accounts']);
+        $this->assertSame(250.0, $result['diagnostics']['supplement_rp']);
+    }
+
+    public function test_non_positive_cif_plafond_growth_is_not_counted_as_realization(): void
+    {
+        $this->insertRow('2026-06-30', 'CIF-DOWN', 'OLD', 600, 500, '2025-01-01');
+        $this->insertRow('2026-07-31', 'CIF-DOWN', 'NEW', 550, 550, '2026-07-10');
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-07-31']);
+        $row = collect($result['rows'])->firstWhere('rm_identity', 'PN:63020');
+
+        $this->assertNotNull($row);
+        $this->assertSame(0, $row['deb']);
+        $this->assertSame(0.0, $row['rp']);
+        $this->assertSame(0, $result['diagnostics']['supplement_accounts']);
+        $this->assertSame(0.0, $result['diagnostics']['supplement_rp']);
+    }
+
+    public function test_previous_cif_plafond_is_not_lost_when_assignment_changed(): void
+    {
+        $this->insertRow('2026-06-30', 'CIF-MOVED', 'OLD', 700, 600, '2025-01-01', '00024959 - RM LAMA', [
+            'cabang_normalized' => 'KC MADIUN',
+            'unit_normalized' => 'KC MADIUN',
+            'branch_normalized' => '45',
+        ]);
+        $this->insertRow('2026-07-31', 'CIF-MOVED', 'NEW', 900, 900, '2026-07-10');
+
+        $result = (new SmallRmRealizationCalculator)->calculate(
+            ['2026-07-31'],
+            [],
+            'KC PONOROGO',
+            null,
+            ['00063020 - ANTON PURWANTO']
+        );
+        $row = collect($result['rows'])->firstWhere('rm_identity', 'PN:63020');
+
+        $this->assertNotNull($row);
+        $this->assertSame(1, $row['deb']);
+        $this->assertSame(200.0, $row['rp']);
+        $this->assertSame(200.0, $result['diagnostics']['supplement_rp']);
     }
 
     public function test_realization_uses_initiator_deduplicates_accounts_and_ignores_blank_initiator(): void

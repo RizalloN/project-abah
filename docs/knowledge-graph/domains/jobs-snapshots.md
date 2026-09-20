@@ -9,7 +9,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | command | 17 |
 | file | 74 |
 | function | 2 |
-| method | 567 |
+| method | 571 |
 | unresolved_symbol | 17 |
 | queue | 5 |
 | route | 1 |
@@ -21,25 +21,25 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `ReportSnapshotBuilder` | class | 142 | `app/Support/ReportSnapshotBuilder.php:12` |
-| `performance_rm_snapshots` | table | 83 | - |
+| `ReportSnapshotBuilder` | class | 144 | `app/Support/ReportSnapshotBuilder.php:12` |
+| `performance_rm_snapshots` | table | 85 | - |
 | `jobs` | table | 71 | - |
 | `ManagedReportSnapshotRebuildCoordinator` | class | 38 | `app/Support/ManagedReportSnapshotRebuildCoordinator.php:15` |
-| `PerformanceRmIncrementalSnapshotTest` | class | 37 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:16` |
+| `PerformanceRmIncrementalSnapshotTest` | class | 38 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:16` |
 | `SnapshotBatchAggregator` | class | 34 | `app/Support/SnapshotBatchAggregator.php:11` |
+| `insertDailyLoanRow` | method | 32 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:985` |
 | `snapshots-parallel` | queue | 32 | - |
-| `insertDailyLoanRow` | method | 31 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:955` |
+| `capture` | method | 29 | `app/Support/SnapshotSourceSignatureService.php:61` |
 | `ValidateSnapshotDataIntegrityCommand` | class | 26 | `app/Console/Commands/ValidateSnapshotDataIntegrityCommand.php:12` |
-| `capture` | method | 26 | `app/Support/SnapshotSourceSignatureService.php:61` |
 | `handle` | method | 26 | `app/Jobs/RunManagedReportSnapshotRebuildJob.php:52` |
-| `EnsureQueueWorkerRunning` | class | 24 | `app/Console/Commands/EnsureQueueWorkerRunning.php:11` |
+| `EnsureQueueWorkerRunning` | class | 25 | `app/Console/Commands/EnsureQueueWorkerRunning.php:12` |
 | `SnapshotDirtyPeriodService` | class | 24 | `app/Support/SnapshotDirtyPeriodService.php:11` |
 | `RefreshRemoteDashboardSourcesJob` | class | 23 | `app/Jobs/RefreshRemoteDashboardSourcesJob.php:21` |
 | `SnapshotJobRetryWindow` | trait | 23 | `app/Jobs/SnapshotJobRetryWindow.php:7` |
+| `SnapshotSourceSignatureService` | class | 23 | `app/Support/SnapshotSourceSignatureService.php:10` |
 | `BackfillShadowColumnsCommand` | class | 22 | `app/Console/Commands/BackfillShadowColumnsCommand.php:14` |
 | `RunManagedReportSnapshotRebuildJob` | class | 22 | `app/Jobs/RunManagedReportSnapshotRebuildJob.php:23` |
-| `SnapshotSourceSignatureService` | class | 22 | `app/Support/SnapshotSourceSignatureService.php:10` |
-| `isFresh` | method | 21 | `app/Support/SnapshotSourceSignatureService.php:241` |
+| `isFresh` | method | 21 | `app/Support/SnapshotSourceSignatureService.php:359` |
 | `registerSyncRequest` | method | 21 | `app/Support/SnapshotBatchAggregator.php:22` |
 | `SmartPartialSnapshotRebuildJob` | class | 20 | `app/Jobs/SmartPartialSnapshotRebuildJob.php:20` |
 | `RebuildSnapshotHarianBatch` | class | 19 | `app/Jobs/RebuildSnapshotHarianBatch.php:19` |
@@ -180,8 +180,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | jobs-snapshots -> core (calls) | 140 |
-| import -> jobs-snapshots (calls) | 74 |
-| dashboard-pinjaman -> jobs-snapshots (writes_table) | 34 |
+| import -> jobs-snapshots (calls) | 76 |
+| dashboard-pinjaman -> jobs-snapshots (writes_table) | 35 |
 | jobs-snapshots -> core (uses_trait) | 31 |
 | jobs-snapshots -> dashboard-pinjaman (reads_table) | 27 |
 | tests -> jobs-snapshots (contains) | 27 |

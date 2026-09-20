@@ -155,14 +155,14 @@ class LandingSimpananCardTest extends TestCase
         $this->assertArrayHasKey('branches', $summary);
 
         $this->assertEquals(29, $summary['total_perusahaan']);
-        $this->assertEquals(11663, $summary['total_potensi']);
-        $this->assertEquals(1610, $summary['total_realisasi']);
+        $this->assertEquals(12379, $summary['total_potensi']);
+        $this->assertEquals(1508, $summary['total_realisasi']);
         $this->assertEquals(19, $summary['total_kunjungan']);
         $this->assertCount(29, $result['rows']);
         $this->assertEquals('Yayasan Siti Walidah', $result['rows'][0]['nama']);
-        $this->assertEquals(1578, $result['rows'][0]['potensi']);
+        $this->assertEquals(1564, $result['rows'][0]['potensi']);
         $this->assertEquals('ROYAL REGENT M', $result['rows'][1]['nama']);
-        $this->assertEquals(1427, $result['rows'][1]['potensi']);
+        $this->assertEquals(1517, $result['rows'][1]['potensi']);
         $this->assertGreaterThanOrEqual($result['rows'][1]['potensi'], $result['rows'][0]['potensi']);
         $this->assertGreaterThanOrEqual($result['rows'][2]['potensi'], $result['rows'][1]['potensi']);
     }
@@ -192,7 +192,7 @@ class LandingSimpananCardTest extends TestCase
         $this->assertEquals(1, $summary['total_sudah']);
         $this->assertEquals(5, $summary['total_belum']);
         $this->assertEquals(16.7, $summary['persen_akuisisi']);
-        $this->assertEquals(628507.0, (float) $summary['total_saldo_september']);
+        $this->assertEquals(793507.0, (float) $summary['total_saldo_september']);
         $this->assertCount(6, $result['rows']);
 
         // Branches structure
@@ -211,8 +211,8 @@ class LandingSimpananCardTest extends TestCase
         $this->assertTrue($firstRow['is_terakuisisi']);
         $this->assertEquals('KC Madiun', $firstRow['kc']);
         $this->assertEquals('MMP3270', $firstRow['cif']);
-        $this->assertEquals(628507.0, (float) $firstRow['saldo_september']);
-        $this->assertSame('Rp 628.507', $firstRow['saldo_september_fmt']);
+        $this->assertEquals(793507.0, (float) $firstRow['saldo_september']);
+        $this->assertSame('Rp 793.507', $firstRow['saldo_september_fmt']);
     }
 
     public function test_build_perusahaan_anak_strategy_fallback_to_baseline(): void
@@ -395,8 +395,8 @@ class LandingSimpananCardTest extends TestCase
         $this->assertStringContainsString('Hakim Plastik', $html);
         $this->assertStringContainsString('PT GROW FOREVER GARMENT', $html);
         $this->assertStringContainsString('SPPG KAB PONOROGO', $html);
-        $this->assertStringContainsString('1.610', $html);
-        $this->assertStringContainsString('11.663', $html);
+        $this->assertStringContainsString('1.508', $html);
+        $this->assertStringContainsString('12.379', $html);
         $this->assertStringContainsString('4. ECOSYSTEM & VALUE CHAIN', $html);
         $this->assertStringContainsString('sekat-ecosystem-value-chain', $html);
         $this->assertStringContainsString('2.069', $html);

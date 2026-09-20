@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Import\ImportExecutionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -32,6 +33,8 @@ class EnsureQueueWorkerRunning extends Command
         $pools = $this->resolveWorkerPools();
 
         if ((bool) $this->option('once')) {
+            $this->recoverOrphanedImports();
+
             foreach ($pools as $poolName => $pool) {
                 $this->checkAndEnsureWorker(
                     $poolName,
@@ -55,6 +58,8 @@ class EnsureQueueWorkerRunning extends Command
         $this->newLine();
 
         while (true) {
+            $this->recoverOrphanedImports();
+
             foreach ($pools as $poolName => $pool) {
                 $this->checkAndEnsureWorker(
                     $poolName,
@@ -70,6 +75,22 @@ class EnsureQueueWorkerRunning extends Command
         }
 
         return 0;
+    }
+
+    private function recoverOrphanedImports(): void
+    {
+        try {
+            $recoveredJobIds = app(ImportExecutionService::class)->recoverOrphanedZeroProgressJobs();
+            if ($recoveredJobIds !== []) {
+                $this->warn('Recovered orphaned import job(s): ' . implode(', ', $recoveredJobIds));
+            }
+        } catch (\Throwable $e) {
+            $this->error('Error recovering orphaned imports: ' . $e->getMessage());
+            Log::error('Queue worker monitor could not recover orphaned imports.', [
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function checkAndEnsureWorker(

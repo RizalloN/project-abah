@@ -716,14 +716,24 @@ class KinerjaRmReportController extends Controller
                 $position = (array) data_get($row, 'months.'.$monthKey, []);
                 $realization = (float) ($position['rp'] ?? 0);
                 $lar = is_numeric($position['lar_pct'] ?? null) ? (float) $position['lar_pct'] : null;
+                $realizationMet = $realization >= 1_600_000_000;
+                $larMet = $lar !== null && $lar <= 15.0;
 
                 return [$monthKey => [
                     'key' => $monthKey,
                     'label' => (string) ($month['short_label'] ?? $monthKey),
                     'realization_rp' => $realization,
                     'lar_pct' => $lar,
+                    'lar_loan_os' => (float) ($position['lar_loan_os'] ?? 0),
+                    'lar_value' => (float) ($position['lar_value'] ?? 0),
                     'has_data' => (bool) ($position['has_data'] ?? false),
-                    'productive' => $realization >= 1_600_000_000 && $lar !== null && $lar <= 15.0,
+                    'productive' => $realizationMet,
+                    'quadrant' => $lar === null ? null : match (true) {
+                        $realizationMet && $larMet => 1,
+                        $realizationMet => 2,
+                        $larMet => 3,
+                        default => 4,
+                    },
                 ]];
             })->all();
             $consecutive = 0;
@@ -778,7 +788,7 @@ class KinerjaRmReportController extends Controller
 
         return [
             'available' => $closedMonths->isNotEmpty() && $eligibleRows->isNotEmpty(),
-            'basis' => 'Produktif jika realisasi closing per bulan minimal Rp1.600 juta dan LAR maksimal 15%.',
+            'basis' => 'Produktif jika realisasi closing per bulan minimal Rp1.600 juta (kuadran 1: LAR <=15%; kuadran 2: LAR >15%). Jika LAR tidak tersedia, produktivitas mengikuti realisasi tetapi kuadran belum dapat ditentukan.',
             'period_label' => $closedMonths->isNotEmpty()
                 ? $closedMonths->first()['short_label'].' - '.$closedMonths->last()['short_label']
                 : '-',
@@ -1702,7 +1712,7 @@ class KinerjaRmReportController extends Controller
         ?string $selectedRmCategory = null,
         bool $includeInactive = false
     ): array {
-        $cacheKey = 'kinerja_rm_retail_performance_v15-active-consumer-roster:'.$this->reportCacheVersion().':'.md5(json_encode([
+        $cacheKey = 'kinerja_rm_retail_performance_v16-small-supplement-plafond:'.$this->reportCacheVersion().':'.md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'cabang' => $selectedCabang,

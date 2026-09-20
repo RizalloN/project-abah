@@ -2352,6 +2352,15 @@ class ReportSnapshotBuilder
                 ? $this->buildPerformanceRmPeriodSnapshotSqlFirstIncremental($period)
                 : $this->buildPerformanceRmPeriodSnapshotPortableIncremental($period);
 
+            if (DB::getDriverName() !== 'mysql') {
+                $snapshotColumns = array_flip(Schema::getColumnListing(self::PERFORMANCE_RM_SNAPSHOT_TABLE));
+                $this->updateSmallPerformanceRmRealizationMetrics($period, self::PERFORMANCE_RM_SNAPSHOT_TABLE, $snapshotColumns);
+                $this->updateSmallPerformanceRmQuadrantsSqlFirst($period);
+                $rowCount = (int) DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+                    ->where('periode', $period)
+                    ->count();
+            }
+
             $this->buildPerformanceRmCabangSnapshot($period, false);
             $this->logSnapshotPeriodIfAnomalous(self::PERFORMANCE_RM_SNAPSHOT_TABLE, $period);
 
@@ -2374,6 +2383,12 @@ class ReportSnapshotBuilder
             }
 
             $rowCount = count($rows);
+            $snapshotColumns = array_flip(Schema::getColumnListing(self::PERFORMANCE_RM_SNAPSHOT_TABLE));
+            $this->updateSmallPerformanceRmRealizationMetrics($period, self::PERFORMANCE_RM_SNAPSHOT_TABLE, $snapshotColumns);
+            $this->updateSmallPerformanceRmQuadrantsSqlFirst($period);
+            $rowCount = (int) DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+                ->where('periode', $period)
+                ->count();
         }
 
         // Build cabang-level summary snapshots after RM data is loaded
@@ -2459,6 +2474,7 @@ class ReportSnapshotBuilder
         }
 
         $this->updateConsumerPerformanceRmSurplusMetrics($period, $snapshotTable, $snapshotColumns);
+        $this->updateSmallPerformanceRmRealizationMetrics($period, $snapshotTable, $snapshotColumns);
         $this->updateSmallPerformanceRmQuadrantsSqlFirst($period, $snapshotTable);
 
         return (int) DB::table($snapshotTable)
@@ -2880,6 +2896,77 @@ class ReportSnapshotBuilder
                 ];
                 if (isset($snapshotColumns['branch_code'])) {
                     $insert['branch_code'] = $metric['branch_code'];
+                }
+                DB::table($snapshotTable)->insert($insert);
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, int>  $snapshotColumns
+     */
+    private function updateSmallPerformanceRmRealizationMetrics(string $period, string $snapshotTable, array $snapshotColumns): void
+    {
+        if (! isset($snapshotColumns['realisasi_deb'], $snapshotColumns['realisasi_os'])) {
+            return;
+        }
+
+        DB::table($snapshotTable)
+            ->where('periode', $period)
+            ->where('segmen', 'SMALL')
+            ->update([
+                'realisasi_deb' => 0,
+                'realisasi_os' => 0,
+                'updated_at' => now(),
+            ]);
+
+        $calculation = app(SmallRmRealizationCalculator::class)->calculate([$period]);
+        if (! isset($calculation['covered_periods'][$period])) {
+            return;
+        }
+
+        foreach ((array) ($calculation['rows'] ?? []) as $metric) {
+            $realisasiDeb = (int) ($metric['deb'] ?? 0);
+            $realisasiOs = (float) ($metric['rp'] ?? 0.0);
+            if ($realisasiDeb === 0 && abs($realisasiOs) <= 0.0001) {
+                continue;
+            }
+
+            $query = DB::table($snapshotTable)
+                ->where('periode', $period)
+                ->where('cabang', (string) ($metric['cabang'] ?? ''))
+                ->where('unit', (string) ($metric['unit'] ?? ''))
+                ->whereRaw('UPPER(TRIM(rm)) = ?', [strtoupper(trim((string) ($metric['rm'] ?? '')))])
+                ->where('segmen', 'SMALL')
+                ->where('produk', 'SMALL');
+
+            if (isset($snapshotColumns['branch_code'])) {
+                $query->where('branch_code', (string) ($metric['branch_code'] ?? ''));
+            }
+
+            $exists = $query->exists();
+            $query->update([
+                'rm' => (string) ($metric['rm'] ?? ''),
+                'realisasi_deb' => $realisasiDeb,
+                'realisasi_os' => $realisasiOs,
+                'updated_at' => now(),
+            ]);
+
+            if (! $exists) {
+                $insert = [
+                    'periode' => $period,
+                    'cabang' => (string) ($metric['cabang'] ?? ''),
+                    'unit' => (string) ($metric['unit'] ?? ''),
+                    'rm' => (string) ($metric['rm'] ?? ''),
+                    'segmen' => 'SMALL',
+                    'produk' => 'SMALL',
+                    'realisasi_deb' => $realisasiDeb,
+                    'realisasi_os' => $realisasiOs,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+                if (isset($snapshotColumns['branch_code'])) {
+                    $insert['branch_code'] = (string) ($metric['branch_code'] ?? '');
                 }
                 DB::table($snapshotTable)->insert($insert);
             }

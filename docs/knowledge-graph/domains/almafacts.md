@@ -23,7 +23,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `financialHighlight` | method | 18 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:270` |
 | `labaRugi` | method | 18 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:233` |
 | `kpi` | method | 15 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:305` |
-| `kpiView` | method | 14 | `tests/Unit/AlmafactsKpiSheetTest.php:490` |
+| `kpiView` | method | 14 | `tests/Unit/AlmafactsKpiSheetTest.php:493` |
 | `timeseries` | method | 12 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2490` |
 | `parseKpiSheetCsv` | method | 11 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:719` |
 | `cachedKpiSheetPayload` | method | 10 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:428` |
@@ -44,8 +44,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `report.almafacts.kinerja-laba-rugi` | view | 8 | `resources/views/report/almafacts/kinerja-laba-rugi.blade.php:1` |
 | `report.dashboard-almafacts.timeseries` | route | 8 | - |
 | `report.dashboard-almafacts.timeseries.data` | route | 8 | - |
-| `test_kpi_page_keeps_june_and_july_sources_in_separate_periods` | method | 8 | `tests/Unit/AlmafactsKpiSheetTest.php:341` |
-| `test_kpi_page_reads_warmed_cache_without_remote_http_call` | method | 8 | `tests/Unit/AlmafactsKpiSheetTest.php:325` |
+| `test_kpi_page_keeps_june_and_july_sources_in_separate_periods` | method | 8 | `tests/Unit/AlmafactsKpiSheetTest.php:344` |
+| `test_kpi_page_reads_warmed_cache_without_remote_http_call` | method | 8 | `tests/Unit/AlmafactsKpiSheetTest.php:328` |
 | `buildRows` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1536` |
 
 ## Route Nodes

@@ -29,7 +29,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `LandingSmeOperationalService` | class | 53 | `app/Support/LandingSmeOperationalService.php:14` |
 | `Controller` | class | 52 | `app/Http/Controllers/Controller.php:7` |
 | `RkaLookupService` | class | 46 | `app/Support/RkaLookupService.php:11` |
-| `apply` | method | 43 | `app/Support/SargableDateFilter.php:9` |
+| `apply` | method | 42 | `app/Support/SargableDateFilter.php:9` |
 | `DataPhReportController` | class | 40 | `app/Http/Controllers/Report/DataPhReportController.php:15` |
 | `KinerjaNonPtpReportController` | class | 39 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:17` |
 | `FileManagementController` | class | 33 | `app/Http/Controllers/Admin/FileManagementController.php:24` |
@@ -41,10 +41,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `analyzeTable` | method | 24 | `app/Support/ReportDataSyncService.php:21` |
 | `performance_targets` | table | 24 | - |
 | `drive.index` | view | 23 | `resources/views/drive/index.blade.php:1` |
+| `performance_pis_per_produk` | table | 23 | - |
 | `ShadowColumnRuleEngine` | class | 22 | `app/Services/Shadow/ShadowColumnRuleEngine.php:8` |
 | `SppgReportService` | class | 21 | `app/Services/Reports/SppgReportService.php:15` |
 | `index` | method | 21 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:52` |
-| `performance_pis_per_produk` | table | 21 | - |
 | `buildPayload` | method | 20 | `app/Support/LandingMicroPerformanceService.php:479` |
 | `PruneReportDailyHistoryCommand` | class | 19 | `app/Console/Commands/PruneReportDailyHistoryCommand.php:19` |
 | `fetchPlafondRealizationRows` | method | 19 | `app/Support/LandingMicroPerformanceService.php:1254` |
@@ -239,7 +239,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | import -> core (calls) | 779 |
 | import -> core (instantiates) | 360 |
-| dashboard-pinjaman -> core (calls) | 303 |
+| dashboard-pinjaman -> core (calls) | 307 |
 | dashboard-simpanan -> core (calls) | 220 |
 | import -> core (accepts) | 182 |
 | bank-pipeline -> core (calls) | 169 |
@@ -262,7 +262,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | database -> core (writes_table) | 58 |
 | core -> access-control (protected_by) | 58 |
 | database -> core (calls) | 56 |
-| dashboard-simpanan -> core (instantiates) | 53 |
+| dashboard-simpanan -> core (instantiates) | 55 |
 | prognosa -> core (instantiates) | 32 |
 | tests -> core (writes_table) | 32 |
 | jobs-snapshots -> core (uses_trait) | 31 |

@@ -299,7 +299,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertCount(3, data_get($summary, 'realization_tiers.totals.zero.rms'));
     }
 
-    public function test_landing_small_unproductive_requires_monthly_realization_and_lar_targets(): void
+    public function test_landing_small_unproductive_treats_quadrants_one_and_two_as_productive(): void
     {
         DB::table('brihc_pemasar')->insert(collect(range(1, 4))->map(static fn (int $pn): array => [
             'pernr' => (string) $pn,
@@ -326,7 +326,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         ])->all();
         $rows[1]['months']['2026-08'] = ['rp' => 1_599_999_999, 'lar_pct' => 14.0, 'has_data' => true];
         foreach (['2026-06', '2026-07', '2026-08'] as $monthKey) {
-            $rows[2]['months'][$monthKey] = ['rp' => 1_600_000_000, 'lar_pct' => 15.01, 'has_data' => true];
+            $rows[2]['months'][$monthKey] = ['rp' => 1_600_000_000, 'lar_pct' => 100.0, 'lar_loan_os' => 100_000_000, 'lar_value' => 100_000_000, 'has_data' => true];
         }
         $rows[3]['months'] = array_fill_keys(array_column($months, 'key'), [
             'rp' => 0, 'lar_pct' => null, 'has_data' => false,
@@ -340,20 +340,20 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame('Aug 26', $summary['totals']['month_1']['period_label']);
         $this->assertSame('Jun 26 - Aug 26', $summary['totals']['month_3']['period_label']);
         $this->assertSame('Mar 26 - Aug 26', $summary['totals']['month_6']['period_label']);
-        $this->assertSame([3, 2, 1], array_map(
+        $this->assertSame([2, 1, 0], array_map(
             static fn (string $key): int => $summary['totals'][$key]['count'],
             ['month_1', 'month_3', 'month_6']
         ));
-        $this->assertSame(['RM 2', 'RM 3', 'RM 4'], array_column($summary['totals']['month_1']['rms'], 'rm'));
-        $this->assertSame(['RM 3', 'RM 4'], array_column($summary['totals']['month_3']['rms'], 'rm'));
-        $this->assertSame(['RM 4'], array_column($summary['totals']['month_6']['rms'], 'rm'));
-        $this->assertSame(4_800_000_000.0, $summary['totals']['month_3']['rms'][0]['accumulated_realization_rp']);
+        $this->assertSame(['RM 2', 'RM 4'], array_column($summary['totals']['month_1']['rms'], 'rm'));
+        $this->assertSame(['RM 4'], array_column($summary['totals']['month_3']['rms'], 'rm'));
+        $this->assertSame([], $summary['totals']['month_6']['rms']);
+        $this->assertSame(0.0, $summary['totals']['month_3']['rms'][0]['accumulated_realization_rp']);
         $this->assertSame(['Jun 26', 'Jul 26', 'Aug 26'], array_column($summary['totals']['month_3']['rms'][0]['months'], 'label'));
-        $this->assertCount(6, $summary['totals']['month_6']['rms'][0]['months']);
-        $this->assertSame(1_600_000_000.0, $summary['totals']['month_6']['rms'][0]['accumulated_realization_rp']);
-        $this->assertFalse($summary['totals']['month_6']['rms'][0]['months'][0]['productive']);
-        $this->assertNull($summary['totals']['month_6']['rms'][0]['months'][5]['lar_pct']);
-        $this->assertFalse($summary['totals']['month_6']['rms'][0]['months'][5]['has_data']);
+        $this->assertSame(3, $summary['totals']['month_1']['rms'][0]['months'][0]['quadrant']);
+        $this->assertNull($summary['totals']['month_1']['rms'][1]['months'][0]['lar_pct']);
+        $this->assertNull($summary['totals']['month_1']['rms'][1]['months'][0]['quadrant']);
+        $this->assertFalse($summary['totals']['month_1']['rms'][1]['months'][0]['has_data']);
+        $this->assertStringContainsString('kuadran 2', $summary['basis']);
 
         $monthsWithoutJuly = array_values(array_filter($months, static fn (array $month): bool => $month['key'] !== '2026-07'));
         $gapSummary = $this->invokePrivateMethod($controller, 'landingSmallUnproductive', [collect($rows), $monthsWithoutJuly]);
@@ -1488,12 +1488,12 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(1, $row['quadrant']);
     }
 
-    public function test_small_retail_performance_replaces_manager_snapshot_with_gross_initiator_realization(): void
+    public function test_small_retail_performance_includes_net_supplement_for_initiator(): void
     {
         $this->addSmallRealizationSourceColumns();
 
         DB::table('daily_loan_dinamis')->insert([
-            $this->dailyLoanSmallRow('2026-07-09', 'CIF-A', 'OLD-A', 400_000_000, 400_000_000, '2025-01-01'),
+            $this->dailyLoanSmallRow('2026-06-30', 'CIF-A', 'OLD-A', 400_000_000, 400_000_000, '2025-01-01'),
             $this->dailyLoanSmallRow('2026-07-31', 'CIF-A', 'NEW-A', 600_000_000, 600_000_000, '2026-07-10'),
             $this->dailyLoanSmallRow(
                 '2026-07-31',
@@ -1525,7 +1525,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             fn (array $row): string => $this->rmIdentity((string) $row['rm'])
         );
 
-        $this->assertSame(600_000_000.0, $rows['PN:63020']['months']['2026-07']['rp']);
+        $this->assertSame(200_000_000.0, $rows['PN:63020']['months']['2026-07']['rp']);
         $this->assertSame(700_000_000.0, $rows['PN:24959']['months']['2026-07']['rp']);
     }
 

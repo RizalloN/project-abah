@@ -241,7 +241,7 @@ class PresentationFundingStrategyService
         $maps = $this->emptyMetricMaps($branches);
 
         if ($periods['current'] !== null) {
-            $volume = "COALESCE(CAST(NULLIF(REPLACE(AKUMULASI_SV_TOTAL, ',', ''), '') AS DECIMAL(20,2)), 0)";
+            $volume = 'COALESCE(CAST(AKUMULASI_SV_TOTAL AS DECIMAL(20,2)), 0)';
             $query = DB::table('jumlah_merchant_qris_detail')
                 ->selectRaw('UPPER(TRIM(MBDESC)) as branch');
 

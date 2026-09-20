@@ -8,7 +8,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | file | 56 |
 | function | 1 |
-| method | 266 |
+| method | 267 |
 | unresolved_symbol | 10 |
 | class | 50 |
 
@@ -29,7 +29,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `LandingPageRedesignContractTest` | class | 17 | `tests/Unit/LandingPageRedesignContractTest.php:9` |
 | `RkaLookupServiceTest` | class | 17 | `tests/Unit/RkaLookupServiceTest.php:14` |
 | `setUp` | method | 17 | `tests/Feature/PruneReportDailyHistoryCommandTest.php:16` |
-| `service` | method | 16 | `tests/Unit/LandingSmeOperationalServiceTest.php:525` |
+| `service` | method | 16 | `tests/Unit/LandingSmeOperationalServiceTest.php:534` |
 | `DataPhReportControllerTest` | class | 15 | `tests/Unit/DataPhReportControllerTest.php:14` |
 | `ManagedReportRebuildTest` | class | 14 | `tests/Unit/ManagedReportRebuildTest.php:26` |
 | `DirectLargeFileLoadServiceTest` | class | 13 | `tests/Unit/DirectLargeFileLoadServiceTest.php:10` |
@@ -40,12 +40,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `MySqlBulkLoadServiceTest` | class | 11 | `tests/Unit/MySqlBulkLoadServiceTest.php:12` |
 | `setUp` | method | 11 | `tests/Unit/LandingMicroPerformanceServiceTest.php:17` |
 | `ConsumerKanwilReferenceTest` | class | 10 | `tests/Unit/ConsumerKanwilReferenceTest.php:8` |
+| `LandingSmeAnalyticsContractTest` | class | 10 | `tests/Unit/LandingSmeAnalyticsContractTest.php:7` |
 | `ManagedReportManagementServiceTest` | class | 10 | `tests/Unit/ManagedReportManagementServiceTest.php:9` |
 | `PolarsArchitectureTest` | class | 10 | `tests/Unit/PolarsArchitectureTest.php:21` |
 | `RemoteDashboardSourceTest` | class | 10 | `tests/Unit/RemoteDashboardSourceTest.php:19` |
 | `StrictDateParserTest` | class | 10 | `tests/Unit/StrictDateParserTest.php:9` |
 | `invokePrivate` | method | 10 | `tests/Unit/DataPhReportControllerTest.php:393` |
-| `snapshot` | method | 10 | `tests/Unit/LandingConsumerOperationalServiceTest.php:567` |
 
 ## Class Nodes
 
@@ -128,8 +128,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | tests -> jobs-snapshots (calls) | 10 |
 | database -> tests (calls) | 9 |
 | tests -> import (writes_table) | 9 |
+| tests -> core (renders) | 9 |
 | tests -> access-control (contains) | 9 |
-| tests -> core (renders) | 8 |
 | tests -> access-control (calls) | 8 |
 | tests -> core (extends) | 8 |
 | tests -> marketshare (contains) | 8 |

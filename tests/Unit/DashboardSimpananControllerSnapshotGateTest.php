@@ -135,6 +135,75 @@ class DashboardSimpananControllerSnapshotGateTest extends TestCase
         $this->assertSame(100000.0, $card['series'][array_key_last($card['series'])]);
     }
 
+    public function test_payroll_raw_fallback_fetches_four_periods_in_two_data_queries(): void
+    {
+        Schema::create('performance_pis_per_produk', function (Blueprint $table): void {
+            $table->date('posisi')->index();
+            $table->string('kanca')->nullable();
+            $table->date('tanggal_pembuatan_rekening')->nullable();
+            $table->decimal('saldo_britama_kerjasama', 20, 2)->nullable();
+        });
+
+        DB::table('performance_pis_per_produk')->insert([
+            ['posisi' => '2026-01-31', 'kanca' => 'KC MADIUN', 'tanggal_pembuatan_rekening' => '2026-01-15', 'saldo_britama_kerjasama' => 100],
+            ['posisi' => '2026-02-28', 'kanca' => 'KC MAGETAN', 'tanggal_pembuatan_rekening' => '2026-02-15', 'saldo_britama_kerjasama' => 200],
+            ['posisi' => '2026-03-31', 'kanca' => 'KC NGAWI', 'tanggal_pembuatan_rekening' => '2026-03-15', 'saldo_britama_kerjasama' => 300],
+            ['posisi' => '2026-04-30', 'kanca' => 'KC PONOROGO', 'tanggal_pembuatan_rekening' => '2026-04-15', 'saldo_britama_kerjasama' => 400],
+            ['posisi' => '2026-04-30', 'kanca' => 'KC PONOROGO', 'tanggal_pembuatan_rekening' => '2026-03-31', 'saldo_britama_kerjasama' => 999],
+        ]);
+
+        DB::connection()->enableQueryLog();
+        $controller = new DashboardSimpananController();
+        $method = new ReflectionMethod(DashboardSimpananController::class, 'buildPayrollPerformanceCard');
+        $method->setAccessible(true);
+        $card = $method->invoke($controller);
+        $queries = collect(DB::connection()->getQueryLog())
+            ->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "performance_pis_per_produk"'))
+            ->values();
+        DB::connection()->disableQueryLog();
+
+        $this->assertSame('payroll', $card['key']);
+        $this->assertSame('1', $card['current_value']);
+        $this->assertSame('Rp400', $card['secondary_value']);
+        $this->assertSame([1.0, 1.0, 1.0, 1.0], $card['series']);
+        $this->assertCount(2, $queries);
+        $this->assertStringContainsString('union all', strtolower($queries[1]['query']));
+    }
+
+    public function test_dormant_raw_fallback_fetches_four_periods_in_two_data_queries(): void
+    {
+        Schema::create('rekening_dormant', function (Blueprint $table): void {
+            $table->date('posisi')->index();
+            $table->string('kanca')->nullable();
+            $table->decimal('saldo_idr', 20, 2)->nullable();
+        });
+
+        DB::table('rekening_dormant')->insert([
+            ['posisi' => '2026-01-31', 'kanca' => 'KC MADIUN', 'saldo_idr' => 100],
+            ['posisi' => '2026-02-28', 'kanca' => 'KC MAGETAN', 'saldo_idr' => 200],
+            ['posisi' => '2026-03-31', 'kanca' => 'KC NGAWI', 'saldo_idr' => 300],
+            ['posisi' => '2026-04-30', 'kanca' => 'KC PONOROGO', 'saldo_idr' => 400],
+            ['posisi' => '2026-04-30', 'kanca' => 'KC LUAR AREA', 'saldo_idr' => 999],
+        ]);
+
+        DB::connection()->enableQueryLog();
+        $controller = new DashboardSimpananController();
+        $method = new ReflectionMethod(DashboardSimpananController::class, 'buildRekeningDormantKpiCard');
+        $method->setAccessible(true);
+        $card = $method->invoke($controller);
+        $queries = collect(DB::connection()->getQueryLog())
+            ->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "rekening_dormant"'))
+            ->values();
+        DB::connection()->disableQueryLog();
+
+        $this->assertSame('dormant', $card['key']);
+        $this->assertSame('1', $card['current_value']);
+        $this->assertSame('Rp400', $card['secondary_value']);
+        $this->assertSame([1.0, 1.0, 1.0, 1.0], $card['series']);
+        $this->assertCount(2, $queries);
+        $this->assertStringContainsString('union all', strtolower($queries[1]['query']));
+    }
+
     public function test_trend_metric_status_arrow_is_derived_from_previous_month_comparison(): void
     {
         $controller = new DashboardSimpananController();

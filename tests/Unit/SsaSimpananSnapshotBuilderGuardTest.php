@@ -75,4 +75,45 @@ class SsaSimpananSnapshotBuilderGuardTest extends TestCase
         $this->assertSame(1, DB::table('ssa_simpanan_snapshots')->where('periode', '2026-05-20')->count());
         $this->assertSame('7000', (string) DB::table('ssa_simpanan_snapshots')->value('total_saldo'));
     }
+
+    public function test_rebuild_batches_non_nullable_rows_when_unique_key_is_available(): void
+    {
+        Schema::table('ssa_simpanan_snapshots', function (Blueprint $table): void {
+            $table->unique([
+                'periode',
+                'Month_Day_Year_of_Posisi',
+                'nama_cabang',
+                'produk',
+                'segmentasi',
+            ], 'uq_ssa_snap_combination');
+        });
+
+        $rows = [];
+        for ($index = 1; $index <= 30; $index++) {
+            $rows[] = [
+                'Month_Day_Year_of_Posisi' => '2026-05-20',
+                'nama_cabang' => 'KC '.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+                'produk' => 'TABUNGAN',
+                'segmentasi' => 'CASA',
+                'saldo' => $index * 1000,
+            ];
+        }
+        DB::table('ssa_simpanan')->insert($rows);
+
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $result = app(SsaSimpananSnapshotBuilder::class)->rebuild('2026-05-20', false);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(30, $result['records_inserted']);
+        $this->assertSame(30, DB::table('ssa_simpanan_snapshots')->where('periode', '2026-05-20')->count());
+        $snapshotWrites = collect($queries)->filter(
+            fn (string $sql): bool => str_contains(strtolower($sql), 'insert into "ssa_simpanan_snapshots"')
+        )->values();
+        $this->assertCount(1, $snapshotWrites);
+        $this->assertStringContainsString('on conflict', strtolower((string) $snapshotWrites->first()));
+    }
 }

@@ -74,6 +74,17 @@ class QrisReportServiceTest extends TestCase
 
         $freshPayload = $service->handle($request)->getData(true);
         $this->assertSame(2, (int) data_get($freshPayload, 'total.jml.curr'));
+        $this->assertSame(2, (int) data_get($freshPayload, 'total.prod.curr'));
+        $this->assertSame(0.3, (float) data_get($freshPayload, 'total.vol.curr'));
+
+        $momRequest = Request::create('/report/data', 'POST', [
+            'tab' => 'qris_mom',
+            'posisi' => '2026-05-15',
+        ]);
+        $momPayload = $service->handle($momRequest)->getData(true);
+
+        $this->assertSame(2, (int) data_get($momPayload, 'total.prod.curr'));
+        $this->assertSame(0.3, (float) data_get($momPayload, 'total.vol.curr'));
     }
 
     private function mockRkaLookup(): RkaLookupService

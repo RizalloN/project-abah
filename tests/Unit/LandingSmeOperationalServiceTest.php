@@ -402,7 +402,7 @@ class LandingSmeOperationalServiceTest extends TestCase
             ],
             'unproductive' => [
                 'available' => true,
-                'basis' => 'Produktif jika realisasi closing per bulan minimal Rp1.600 juta dan LAR maksimal 15%.',
+                'basis' => 'Produktif jika realisasi closing per bulan minimal Rp1.600 juta (kuadran 1: LAR <=15%; kuadran 2: LAR >15%). Jika LAR tidak tersedia, produktivitas mengikuti realisasi tetapi kuadran belum dapat ditentukan.',
                 'period_label' => 'Mar 26 - Agu 26',
                 'totals' => [
                     'month_1' => ['label' => '1 bulan'],
@@ -462,7 +462,7 @@ class LandingSmeOperationalServiceTest extends TestCase
         $this->assertSame(1_200_000_000, data_get($payload, 'unproductive.totals.month_3.rms.0.accumulated_realization_rp'));
         $this->assertSame('Agu 26', data_get($payload, 'unproductive.totals.month_3.rms.0.months.0.label'));
         $this->assertSame('Jun 26 - Agu 26', data_get($payload, 'unproductive.totals.month_3.period_label'));
-        $this->assertSame('Produktif jika realisasi closing per bulan minimal Rp1.600 juta dan LAR maksimal 15%.', data_get($payload, 'unproductive.basis'));
+        $this->assertSame('Produktif jika realisasi closing per bulan minimal Rp1.600 juta (kuadran 1: LAR <=15%; kuadran 2: LAR >15%). Jika LAR tidak tersedia, produktivitas mengikuti realisasi tetapi kuadran belum dapat ditentukan.', data_get($payload, 'unproductive.basis'));
     }
 
     public function test_restructuring_uses_only_sheet_amounts_without_legacy_unit_breakdown(): void

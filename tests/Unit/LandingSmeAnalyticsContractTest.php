@@ -209,7 +209,7 @@ class LandingSmeAnalyticsContractTest extends TestCase
         ])->render();
 
         $this->assertStringContainsString('data-sme-rm-months-head', $html);
-        $this->assertStringContainsString('Realisasi adalah akumulasi bulan pada posisi closing', $html);
+        $this->assertStringNotContainsString('Realisasi adalah akumulasi bulan pada posisi closing', $html);
         preg_match('/data-sme-unproductive-detail="([^"]+)"/', $html, $matches);
         $this->assertNotEmpty($matches[1] ?? null);
         $detail = json_decode(html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'), true, 512, JSON_THROW_ON_ERROR);

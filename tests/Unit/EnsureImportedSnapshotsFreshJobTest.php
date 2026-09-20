@@ -404,6 +404,59 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         ));
     }
 
+    public function test_simpanan_signature_uses_two_index_ordered_queries_without_changing_payload(): void
+    {
+        $this->insertReadySimpananRows('2026-05-06', 1000);
+        $legacyPayload = $this->legacySimpananSignaturePayload('2026-05-06');
+
+        $metadata = $this->sourceSignatures->capture('simpanan_multipn', 'posisi', '2026-05-06');
+
+        $this->assertNotNull($metadata);
+        $this->assertSame($legacyPayload, $metadata['payload']);
+        $this->assertSame(
+            hash('sha256', json_encode($legacyPayload, JSON_UNESCAPED_UNICODE)),
+            $metadata['source_signature']
+        );
+
+        DB::connection()->flushQueryLog();
+        DB::connection()->enableQueryLog();
+        $this->sourceSignatures->capture('simpanan_multipn', 'posisi', '2026-05-06');
+        $queries = collect(DB::connection()->getQueryLog())
+            ->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "simpanan_multipn"'))
+            ->values();
+        DB::connection()->disableQueryLog();
+
+        $this->assertCount(2, $queries);
+        $this->assertStringContainsString('group by "kantor_cabang"', strtolower($queries[0]['query']));
+    }
+
+    public function test_simpanan_signature_falls_back_when_raw_branches_share_one_normalized_key(): void
+    {
+        DB::table('simpanan_multipn')->insert([
+            [
+                'posisi' => '2026-05-06',
+                'kantor_cabang' => 'KC Madiun',
+                'saldo_idr' => 1000,
+                'created_at' => '2026-05-08 10:00:00',
+                'updated_at' => '2026-05-08 10:00:00',
+            ],
+            [
+                'posisi' => '2026-05-06',
+                'kantor_cabang' => ' KC Madiun',
+                'saldo_idr' => 2000,
+                'created_at' => '2026-05-08 11:00:00',
+                'updated_at' => '2026-05-08 11:00:00',
+            ],
+        ]);
+
+        $legacyPayload = $this->legacySimpananSignaturePayload('2026-05-06');
+        $metadata = $this->sourceSignatures->capture('simpanan_multipn', 'posisi', '2026-05-06');
+
+        $this->assertNotNull($metadata);
+        $this->assertSame($legacyPayload, $metadata['payload']);
+        $this->assertCount(1, $metadata['payload']['bucket_signatures']);
+    }
+
     public function test_ssa_pinjaman_existing_dashboard_harian_snapshot_rebuilds_when_signature_changes(): void
     {
         DB::table('ssa_simpanan')->insert($this->ssaSimpananRow('2026-05-06', 1000));
@@ -824,6 +877,55 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
                 'updated_at' => '2026-05-08 10:00:00',
             ]);
         }
+    }
+
+    /**
+     * Reproduce the v1/v2 signature contract that existed before the
+     * index-ordered single-scan optimization.
+     *
+     * @return array<string, mixed>
+     */
+    private function legacySimpananSignaturePayload(string $period): array
+    {
+        $summary = (array) DB::table('simpanan_multipn')
+            ->where('posisi', $period)
+            ->selectRaw('COUNT(*) as source_row_count')
+            ->selectRaw('COALESCE(SUM(COALESCE("saldo_idr", 0)), 0) as sum_saldo_idr')
+            ->first();
+
+        $bucketSignatures = DB::table('simpanan_multipn')
+            ->where('posisi', $period)
+            ->selectRaw('UPPER(TRIM(COALESCE("kantor_cabang", \'\'))) as bucket_key')
+            ->selectRaw('COUNT(*) as source_row_count')
+            ->selectRaw('COALESCE(SUM(COALESCE("saldo_idr", 0)), 0) as sum_saldo_idr')
+            ->groupBy('bucket_key')
+            ->orderBy('bucket_key')
+            ->limit(200)
+            ->get()
+            ->mapWithKeys(static function ($row): array {
+                $payload = (array) $row;
+                $bucket = (string) $payload['bucket_key'];
+                unset($payload['bucket_key']);
+                ksort($payload);
+
+                return [$bucket !== '' ? $bucket : '*' => hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE))];
+            })
+            ->all();
+
+        $payload = [
+            'version' => 'snapshot-source-v1',
+            'source_table' => 'simpanan_multipn',
+            'period_column' => 'posisi',
+            'period' => $period,
+            'source_row_count' => (int) $summary['source_row_count'],
+            'sum_saldo_idr' => (string) $summary['sum_saldo_idr'],
+            'max_updated_at' => (string) DB::table('simpanan_multipn')->where('posisi', $period)->max('updated_at'),
+            'bucket_signature_version' => 'snapshot-source-v2-buckets',
+            'bucket_signatures' => $bucketSignatures,
+        ];
+        ksort($payload);
+
+        return $payload;
     }
 
     private function ssaSimpananRow(string $period, int $saldo): array

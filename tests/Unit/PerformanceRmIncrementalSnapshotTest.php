@@ -855,6 +855,36 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $this->assertSame(1000000000.0, (float) $snapshot->w2_realisasi_os);
     }
 
+    public function test_small_snapshot_realisasi_uses_cif_plafond_growth_from_previous_month(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        $this->insertDailyLoanRow('OLD-SAME', 'COMMERCIAL', 300000000, 250000000, 'CIF-SAME', '2026-06-30', 'SMALL', tglRealisasi: '2025-01-01');
+        $this->insertDailyLoanRow('OLD-REPLACED', 'COMMERCIAL', 600000000, 500000000, 'CIF-NEW-ACCOUNT', '2026-06-30', 'SMALL', tglRealisasi: '2025-01-01');
+        $this->insertDailyLoanRow('OLD-SAME', 'COMMERCIAL', 350000000, 350000000, 'CIF-SAME', '2026-07-31', 'SMALL', tglRealisasi: '2026-07-10');
+        $this->insertDailyLoanRow('NEW-ACCOUNT', 'COMMERCIAL', 800000000, 800000000, 'CIF-NEW-ACCOUNT', '2026-07-31', 'SMALL', tglRealisasi: '2026-07-10');
+        $this->insertDailyLoanRow('BRAND-NEW', 'COMMERCIAL', 500000000, 500000000, 'CIF-NEW', '2026-07-31', 'SMALL', tglRealisasi: '2026-07-11');
+
+        $builder->rebuildPerformanceRm('2026-07-31', true);
+
+        $snapshot = DB::table('performance_rm_snapshots')
+            ->where('periode', '2026-07-31')
+            ->where('segmen', 'SMALL')
+            ->where('produk', 'SMALL')
+            ->first();
+
+        $this->assertNotNull($snapshot);
+        $this->assertSame(3, (int) $snapshot->realisasi_deb);
+        $this->assertSame(750000000.0, (float) $snapshot->realisasi_os);
+        $this->assertDatabaseHas('performance_rm_cabang_snapshots', [
+            'periode' => '2026-07-31',
+            'segmen' => 'SMALL',
+            'produk' => 'SMALL',
+            'realisasi_deb' => 3,
+            'realisasi_os' => 750000000,
+        ]);
+    }
+
     private function createTables(): void
     {
         Schema::create('daily_loan_dinamis', function (Blueprint $table): void {
@@ -983,6 +1013,7 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
             'flag_restruk' => $flagRestruk,
             'nomor_rekening1' => $account,
             'pn_pengelola1' => 'RM A',
+            'pn_pemrakarsa1' => $segment === 'SMALL' ? 'RM A' : null,
             'cifno' => $cif,
             'cifno_clean' => $cif,
             'tgl_realisasi' => $tglRealisasi ?? $period,
