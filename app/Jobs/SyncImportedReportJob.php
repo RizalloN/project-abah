@@ -38,6 +38,8 @@ class SyncImportedReportJob implements ShouldQueue, ShouldBeUniqueUntilProcessin
         ?string $source = null,
         ?string $rebuildId = null
     ) {
+        $this->afterCommit();
+
         if (is_string($jobId) && !is_numeric($jobId)) {
             $this->jobId = null;
             $this->tableName = $jobId;
@@ -66,7 +68,7 @@ class SyncImportedReportJob implements ShouldQueue, ShouldBeUniqueUntilProcessin
     public function middleware(): array
     {
         $middleware = [
-            new DeferSnapshotJobsDuringImport(),
+            new DeferSnapshotJobsDuringImport(sourceTable: $this->tableName),
         ];
 
         if ($this->tableName === null || trim($this->tableName) === '') {
@@ -78,7 +80,13 @@ class SyncImportedReportJob implements ShouldQueue, ShouldBeUniqueUntilProcessin
 
         $middleware[] = (new WithoutOverlapping('snapshot:sync:job:' . $scope))
             ->releaseAfter(5)
-            ->expireAfter(600);
+            ->expireAfter(600)
+            ->shared();
+
+        $middleware[] = (new WithoutOverlapping('snapshot:source-period:' . $scope))
+            ->releaseAfter(60)
+            ->expireAfter(7200)
+            ->shared();
 
         return $middleware;
     }

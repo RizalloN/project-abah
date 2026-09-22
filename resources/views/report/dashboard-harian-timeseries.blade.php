@@ -861,21 +861,21 @@
 
             <!-- Row 2: Branch, Unit, Period, and Update -->
             <div class="row align-items-end">
-                <div class="col-lg-4 col-md-6 mb-3 mb-lg-0">
-                    <label class="filter-label">Kantor Cabang</label>
-                    <div class="branch-filter-dropdown" id="kancaDropdownShell">
-                        <div class="branch-dropdown-toggle" id="kancaDropdown">
-                            <span class="branch-dropdown-label" id="kancaLabel">Memuat Cabang...</span>
-                            <i class="fas fa-chevron-down text-muted small"></i>
-                        </div>
-                        <div class="branch-dropdown-menu" id="kancaMenu">
-                            <div class="options-container" id="kancaOptionsList">
-                                {{-- Will be populated by JS --}}
-                            </div>
-                        </div>
-                    </div>
-                </div>
                 <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
+                    <label class="filter-label" for="kancaInput">Kantor Cabang</label>
+                    @php
+                        $selectedKancaFilter = $dashboardPage['selected']['kanca'] ?? [];
+                        $selectedKancaValue = is_string($selectedKancaFilter) ? $selectedKancaFilter : 'all';
+                    @endphp
+                    <select id="kancaInput" class="timeseries-dimension-select"
+                            data-user-branch-locked="{{ ($dashboardPage['selected']['branch_locked'] ?? false) ? '1' : '0' }}"
+                            @disabled($dashboardPage['selected']['branch_locked'] ?? false)>
+                        @foreach(($dashboardPage['filters']['kanca'] ?? []) as $item)
+                            <option value="{{ $item['value'] }}" @selected($selectedKancaValue === $item['value'])>{{ $item['label'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="col-lg-2 col-md-6 mb-3 mb-lg-0" id="unitFilterColumn" @if(!is_string($selectedKancaFilter)) hidden @endif>
                     <label class="filter-label">Unit Kerja</label>
                     <div class="branch-filter-dropdown" id="unitDropdownShell">
                         <div class="branch-dropdown-toggle" id="unitDropdown">
@@ -889,6 +889,14 @@
                             </div>
                         </div>
                     </div>
+                </div>
+                <div class="col-lg-2 col-md-6 mb-3 mb-lg-0 {{ !in_array($dashboardPage['selected']['category'] ?? '', ['simpanan', 'simpanan_casa'], true) ? 'd-none' : '' }}" id="retailMicroFilterColumn">
+                    <label class="filter-label" for="retailMicroFilter">Segmen Ritel / Micro</label>
+                    <select id="retailMicroFilter" class="timeseries-dimension-select">
+                        <option value="">Pilih Ritel / Micro</option>
+                        <option value="ritel">Ritel</option>
+                        <option value="micro">Micro</option>
+                    </select>
                 </div>
                 <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
                     <label class="filter-label">Periode Akhir</label>
@@ -1034,11 +1042,11 @@
             const selectedKancasInitial = @json($dashboardPage['selected']['kanca']);
             const selectedUnitInitial = @json($dashboardPage['selected']['unit_kerja']);
 
-            // --- Custom Dropdown Shell Definitions ---
-            const kancaToggle = document.getElementById('kancaDropdown');
-            const kancaMenu = document.getElementById('kancaMenu');
-            const kancaOptionsContainer = document.getElementById('kancaOptionsList');
-            const kancaLabel = document.getElementById('kancaLabel');
+            // --- Filter Definitions ---
+            const kancaInput = document.getElementById('kancaInput');
+            const unitFilterColumn = document.getElementById('unitFilterColumn');
+            const retailMicroFilterColumn = document.getElementById('retailMicroFilterColumn');
+            const retailMicroFilter = document.getElementById('retailMicroFilter');
             
             const unitToggle = document.getElementById('unitDropdown');
             const unitMenu = document.getElementById('unitMenu');
@@ -1050,6 +1058,10 @@
             const recoverySegmentSelect = document.getElementById('recoverySegmentFilter');
             const recoveryProductSelect = document.getElementById('recoveryProductFilter');
             const applyBtn = document.getElementById('applyFilters');
+
+            function selectedKancaLabel() {
+                return kancaInput?.options[kancaInput.selectedIndex]?.text?.trim() || 'Area 6';
+            }
 
             // --- Export JPG Logic ---
             window.downloadTimeseriesChart = function(chartKey, fileName) {
@@ -1312,10 +1324,10 @@
             function drawExportHeader(ctx) {
                 const { width, marginX, marginY } = A4_EXPORT;
                 const categoryBtn = document.querySelector('#categorySelector .category-btn.active');
-                const segmentBtn = document.querySelector('#segmentSelector .segment-btn.active');
                 let category = categoryBtn ? categoryBtn.textContent.trim() : '-';
-                if (segmentBtn && segmentBtn.getAttribute('data-value') !== 'total') {
-                    category += ' - ' + segmentBtn.textContent.trim();
+                const segmentLabel = currentSegmentLabel();
+                if (segmentLabel) {
+                    category += ' - ' + segmentLabel;
                 }
                 if (currentCategory === 'recovery') {
                     if (currentRecoverySegment && recoverySegmentSelect) {
@@ -1328,7 +1340,7 @@
                 const periodSelect = document.getElementById('periodMonthFilter');
                 const period = periodSelect?.options[periodSelect.selectedIndex]?.text || '-';
                 const unit = unitLabel?.textContent?.trim() || 'Semua Unit';
-                const kanca = kancaLabel?.textContent?.trim() || 'Semua Kanca';
+                const kanca = selectedKancaLabel();
 
                 ctx.fillStyle = '#0857c3';
                 ctx.fillRect(0, 0, width, 24);
@@ -1464,10 +1476,10 @@
                         const branchCardWidth = Math.floor((cardWidth - A4_EXPORT.branchGap) / 2);
                         const branchCardHeight = Math.floor((branchGridHeight - A4_EXPORT.branchGap) / 2);
                         const categoryBtn = document.querySelector('#categorySelector .category-btn.active');
-                        const segmentBtn = document.querySelector('#segmentSelector .segment-btn.active');
                         let categoryText = categoryBtn ? categoryBtn.textContent : 'Timeseries';
-                        if (segmentBtn && segmentBtn.getAttribute('data-value') !== 'total') {
-                            categoryText += '-' + segmentBtn.textContent;
+                        const segmentLabel = currentSegmentLabel();
+                        if (segmentLabel) {
+                            categoryText += '-' + segmentLabel;
                         }
                         if (currentCategory === 'recovery') {
                             if (currentRecoverySegment) categoryText += '-' + currentRecoverySegment;
@@ -1518,7 +1530,10 @@
             }
 
             // Set initial selected state in memory
-            let activeKancas = new Set(selectedKancasInitial || []);
+            const normalizedInitialKancas = Array.isArray(selectedKancasInitial)
+                ? selectedKancasInitial
+                : (selectedKancasInitial ? [selectedKancasInitial] : []);
+            let activeKancas = new Set(normalizedInitialKancas);
 
             function hasTimeseriesData(data) {
                 return Boolean(data && Array.isArray(data.months) && data.months.length > 0);
@@ -1551,22 +1566,18 @@
 
             // --- Dropdown Management ---
             function closeAllDropdowns() {
-                if (kancaMenu) kancaMenu.classList.remove('show');
                 if (unitMenu) unitMenu.classList.remove('show');
                 if (typeof periodMenu !== 'undefined' && periodMenu) periodMenu.classList.remove('show');
                 
                 // Reset z-indices
-                const kancaShell = document.getElementById('kancaDropdownShell');
                 const unitShell = document.getElementById('unitDropdownShell');
                 const periodShell = document.getElementById('periodDropdownShell');
-                if (kancaShell) kancaShell.style.zIndex = '';
                 if (unitShell) unitShell.style.zIndex = '';
                 if (periodShell) periodShell.style.zIndex = '';
             }
 
             document.addEventListener('click', closeAllDropdowns);
             
-            if (kancaMenu) kancaMenu.addEventListener('click', (e) => e.stopPropagation());
             if (unitMenu) unitMenu.addEventListener('click', (e) => e.stopPropagation());
             
             const periodMenu = document.getElementById('periodMenu');
@@ -1576,20 +1587,6 @@
             const periodInput = document.getElementById('periodMonthFilter');
 
             if (periodMenu) periodMenu.addEventListener('click', (e) => e.stopPropagation());
-
-            if (kancaToggle) {
-                kancaToggle.addEventListener('click', (e) => {
-                    console.log('Kanca Toggle Clicked');
-                    e.stopPropagation();
-                    const wasOpen = kancaMenu.classList.contains('show');
-                    closeAllDropdowns();
-                    if (!wasOpen) {
-                        kancaMenu.classList.add('show');
-                        const shell = document.getElementById('kancaDropdownShell');
-                        if (shell) shell.style.zIndex = '1001';
-                    }
-                });
-            }
 
             if (unitToggle) {
                 unitToggle.addEventListener('click', (e) => {
@@ -1641,14 +1638,14 @@
             function updateTimeseriesFilterSummary() {
                 const catBtn = document.querySelector('#categorySelector .category-btn.active');
                 const categoryText = catBtn ? catBtn.textContent.trim() : 'Simpanan';
-                const kancaText = kancaLabel ? kancaLabel.textContent.trim() : 'Semua Cabang';
+                const kancaText = selectedKancaLabel();
                 const unitText = unitLabel ? unitLabel.textContent.trim() : 'Semua Unit';
                 const periodText = periodLabel ? periodLabel.textContent.trim() : '';
 
                 const summarySpan = document.getElementById('filter-summary-badge');
                 if (summarySpan) {
                     let summaryParts = [categoryText];
-                    if (kancaText && kancaText !== 'Semua Kantor Cabang' && kancaText !== 'Semua Cabang Dipilih') {
+                    if (kancaText && kancaText !== 'Area 6') {
                         summaryParts.push(kancaText);
                     }
                     if (unitText && unitText !== 'Semua Unit Kerja') {
@@ -1663,60 +1660,42 @@
 
             // --- Kantor Cabang Logic ---
             function rebuildKancaOptions() {
-                if (!kancaOptionsContainer) return;
-                kancaOptionsContainer.innerHTML = '';
-                
-                allKancasData.forEach(k => {
-                    if (k.value === 'all') return;
-                    const opt = document.createElement('div');
-                    opt.className = `branch-option ${activeKancas.has(k.value) ? 'selected' : ''}`;
-                    opt.setAttribute('data-value', k.value);
-                    opt.innerHTML = `
-                        <div class="branch-checkbox-ui"><i class="fas fa-check"></i></div>
-                        <span class="branch-option-label">${escapeHtml(k.label)}</span>
-                    `;
-                    opt.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        if (activeKancas.has(k.value)) {
-                            activeKancas.delete(k.value);
-                        } else {
-                            activeKancas.add(k.value);
-                        }
-                        opt.classList.toggle('selected');
-                        updateKancaLabel();
-                    });
-                    kancaOptionsContainer.appendChild(opt);
-                });
-                updateKancaLabel();
-            }
-
-            function updateKancaLabel() {
-                const count = activeKancas.size;
-                const total = allKancasData.filter(k => k.value !== 'all').length;
-                
-                if (count === 0) {
-                    kancaLabel.textContent = 'Semua Kantor Cabang';
-                } else if (count === total) {
-                    kancaLabel.textContent = 'Semua Cabang Dipilih';
-                } else if (count === 1) {
-                    const firstVal = Array.from(activeKancas)[0];
-                    const k = allKancasData.find(x => x.value === firstVal);
-                    kancaLabel.textContent = k ? k.label : '1 Cabang Dipilih';
-                } else {
-                    kancaLabel.textContent = `${count} Cabang Dipilih`;
-                }
-
+                if (!kancaInput) return;
+                const initialValue = activeKancas.size === 1 ? Array.from(activeKancas)[0] : 'all';
+                kancaInput.value = Array.from(kancaInput.options).some(option => option.value === initialValue)
+                    ? initialValue
+                    : 'all';
                 rebuildUnitOptions();
                 updateTimeseriesFilterSummary();
+            }
+
+            if (kancaInput) {
+                kancaInput.addEventListener('change', () => {
+                    activeKancas.clear();
+                    if (kancaInput.value === 'all') {
+                        allKancasData
+                            .filter(kanca => kanca.value !== 'all')
+                            .forEach(kanca => activeKancas.add(kanca.value));
+                    } else {
+                        activeKancas.add(kancaInput.value);
+                    }
+                    rebuildUnitOptions();
+                    updateTimeseriesFilterSummary();
+                });
             }
 
             // --- Unit Dropdown Logic ---
             function rebuildUnitOptions() {
                 if (!unitOptionsContainer) return;
-                
+
+                const hasSingleBranch = activeKancas.size === 1;
                 const currentUnit = unitInput ? unitInput.value : 'all';
                 let foundCurrentUnit = currentUnit === 'all';
                 let currentUnitLabel = 'Semua Unit Kerja';
+
+                if (unitFilterColumn) {
+                    unitFilterColumn.hidden = !hasSingleBranch;
+                }
 
                 unitOptionsContainer.innerHTML = `
                     <div class="branch-option ${currentUnit === 'all' ? 'selected' : ''}" data-value="all">
@@ -1727,8 +1706,7 @@
 
                 allUnitsData.forEach(unit => {
                     if (unit.value === 'all') return;
-                    // Show if no kanca selected or unit belongs to selected kanca
-                    if (activeKancas.size === 0 || activeKancas.has(unit.kanca_value)) {
+                    if (hasSingleBranch && activeKancas.has(unit.kanca_value)) {
                         const opt = document.createElement('div');
                         opt.className = `branch-option ${unit.value === currentUnit ? 'selected' : ''}`;
                         opt.setAttribute('data-value', unit.value);
@@ -2069,10 +2047,10 @@
                     const titleEl = document.getElementById('summaryChartTitle');
                     if (titleEl) {
                         const categoryBtn = document.querySelector('#categorySelector .category-btn.active');
-                        const segmentBtn = document.querySelector('.segment-btn.active');
                         let label = 'Area 6 - ' + (categoryBtn ? categoryBtn.textContent.trim() : 'Konsolidasi');
-                        if (segmentBtn && segmentBtn.getAttribute('data-value') !== 'total') {
-                            label += ' (' + segmentBtn.textContent.trim() + ')';
+                        const segmentLabel = currentSegmentLabel();
+                        if (segmentLabel) {
+                            label += ' (' + segmentLabel + ')';
                         }
                         if (currentCategory === 'recovery') {
                             const dimensions = [currentRecoverySegment, currentRecoveryProduct].filter(Boolean);
@@ -2095,10 +2073,10 @@
                     const unitSuffix = (unitInput && unitInput.value !== 'all') ? unitLabel.textContent : 'Konsolidasi';
 
                     // Resolve selected segment label
-                    const segmentBtn = document.querySelector('.segment-btn.active');
                     let segLabel = '';
-                    if (segmentBtn && segmentBtn.getAttribute('data-value') !== 'total') {
-                        segLabel = ' (' + segmentBtn.textContent.trim() + ')';
+                    const segmentLabel = currentSegmentLabel();
+                    if (segmentLabel) {
+                        segLabel = ' (' + segmentLabel + ')';
                     }
                     if (currentCategory === 'recovery') {
                         const dimensions = [currentRecoverySegment, currentRecoveryProduct].filter(Boolean);
@@ -2151,15 +2129,13 @@
             const segmentsConfig = {
                 simpanan: [
                     { value: 'total', label: 'Simpanan Total' },
-                    { value: 'ritel', label: 'Ritel' },
-                    { value: 'micro', label: 'Micro' },
                     { value: 'giro', label: 'Giro' },
+                    { value: 'tabungan', label: 'Tabungan' },
+                    { value: 'deposito', label: 'Deposito' },
                     { value: 'non_wholesale', label: 'Non Wholesale' }
                 ],
                 simpanan_casa: [
                     { value: 'total', label: 'CASA Total' },
-                    { value: 'ritel', label: 'Ritel' },
-                    { value: 'micro', label: 'Micro' },
                     { value: 'giro', label: 'Giro' },
                     { value: 'non_wholesale', label: 'Non Wholesale' }
                 ],
@@ -2186,6 +2162,34 @@
                     { value: 'micro', label: 'Mikro' }
                 ]
             };
+
+            function usesRetailMicroDropdown() {
+                return ['simpanan', 'simpanan_casa'].includes(currentCategory);
+            }
+
+            function syncRetailMicroFilter() {
+                const isApplicable = usesRetailMicroDropdown();
+                if (retailMicroFilterColumn) {
+                    retailMicroFilterColumn.classList.toggle('d-none', !isApplicable);
+                }
+                if (retailMicroFilter) {
+                    retailMicroFilter.value = isApplicable && ['ritel', 'micro'].includes(currentSegment)
+                        ? currentSegment
+                        : '';
+                }
+            }
+
+            function currentSegmentLabel() {
+                if (['total', ''].includes(currentSegment)) {
+                    return '';
+                }
+
+                if (usesRetailMicroDropdown() && ['ritel', 'micro'].includes(currentSegment)) {
+                    return retailMicroFilter?.options[retailMicroFilter.selectedIndex]?.text?.trim() || currentSegment;
+                }
+
+                return (segmentsConfig[currentCategory] || []).find(option => option.value === currentSegment)?.label || currentSegment;
+            }
 
             function rebuildRecoveryProductOptions() {
                 if (!recoveryProductSelect) return;
@@ -2220,12 +2224,14 @@
                 const options = segmentsConfig[currentCategory] || [];
                 
                 // Reset segment to 'total' if currentSegment is invalid for this category
-                const isValid = options.some(opt => opt.value === currentSegment);
+                const isValid = options.some(opt => opt.value === currentSegment)
+                    || (usesRetailMicroDropdown() && ['ritel', 'micro'].includes(currentSegment));
                 if (!isValid) {
                     currentSegment = options[0]?.value || 'total';
                 }
 
                 syncRecoveryDimensionVisibility();
+                syncRetailMicroFilter();
 
                 container.innerHTML = options.map(opt => {
                     const isActive = opt.value === currentSegment ? 'active' : '';
@@ -2238,6 +2244,7 @@
                         container.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
                         this.classList.add('active');
                         currentSegment = this.getAttribute('data-value');
+                        syncRetailMicroFilter();
                         fetchData();
                         updateTimeseriesFilterSummary();
                     });
@@ -2256,6 +2263,15 @@
                     updateTimeseriesFilterSummary();
                 });
             });
+
+            if (retailMicroFilter) {
+                retailMicroFilter.addEventListener('change', function() {
+                    currentSegment = this.value || 'total';
+                    renderSegmentSelector();
+                    fetchData();
+                    updateTimeseriesFilterSummary();
+                });
+            }
 
             if (recoverySegmentSelect) {
                 recoverySegmentSelect.addEventListener('change', function() {

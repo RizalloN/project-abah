@@ -44,7 +44,7 @@ class ImportCleanupServiceTest extends TestCase
 
         Bus::assertDispatchedTimes(SyncImportedReportJob::class, 1);
         $this->assertSame(
-            'imports-high',
+            'snapshots-priority',
             Cache::get('snapshot:sync:rerun:daily_loan_dinamis:2026-04-04')
         );
     }
@@ -102,7 +102,7 @@ class ImportCleanupServiceTest extends TestCase
         Bus::assertDispatched(SyncImportedReportJob::class, function (SyncImportedReportJob $job): bool {
             return $job->tableName === 'lw321pn'
                 && $job->periodHint === '2026-09-08'
-                && $job->queue === 'imports-high';
+                && $job->queue === 'snapshots-priority';
         });
 
         $this->assertNull(Cache::get('snapshot:batch:lw321pn:2026-09-08'));
@@ -117,6 +117,17 @@ class ImportCleanupServiceTest extends TestCase
 
         Bus::assertDispatchedTimes(SyncImportedReportJob::class, 1);
         $this->assertNull(Cache::get('snapshot:sync:rerun:lw321pn:2026-09-08'));
+    }
+
+    public function test_dispatch_imported_job_sync_does_not_rerun_daily_loan_for_the_same_import_job(): void
+    {
+        $service = new ImportCleanupService();
+
+        $service->dispatchImportedJobSync(140, 'daily_loan_dinamis', '2026-09-19', 'unit-test');
+        $service->dispatchImportedJobSync(140, 'daily_loan_dinamis', '2026-09-19', 'unit-test');
+
+        Bus::assertDispatchedTimes(SyncImportedReportJob::class, 1);
+        $this->assertNull(Cache::get('snapshot:sync:rerun:daily_loan_dinamis:2026-09-19'));
     }
 
     public function test_dispatch_imported_job_sync_resolves_gi405_periods_and_dispatches_immediately(): void

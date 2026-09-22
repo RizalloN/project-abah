@@ -173,18 +173,19 @@ def is_daily_loan_header_row(row: list[str]) -> bool:
     if not normalized_cells:
         return False
     
-    # RELAXED: PERIODE/POSISI can be anywhere in the row
-    if "PERIODE" not in normalized_cells and "POSISI" not in normalized_cells:
+    # RELAXED: PERIODE/POSISI/TANGGAL/DATE can be anywhere in the row
+    date_candidates = {"PERIODE", "POSISI", "TANGGAL", "DATE", "TGL_POSISI", "AS_OF_DATE", "TGL_LAPORAN"}
+    if not any(d in normalized_cells for d in date_candidates):
         return False
 
     header_groups = [
-        {"KODE_KANWIL1", "KODE_KANWIL"},
-        {"CIFNO"},
-        {"NOMOR_REKENING1", "NOMOR_REKENING"},
-        {"BAKI_DEBET1", "BAKI_DEBET"},
+        {"KODE_KANWIL1", "KODE_KANWIL", "KANWIL", "KANWIL1", "KD_KANWIL"},
+        {"CIFNO", "CIF", "NO_CIF", "NOMOR_CIF"},
+        {"NOMOR_REKENING1", "NOMOR_REKENING", "NO_REKENING", "NOREK", "ACCTNO", "ACCOUNT_NO"},
+        {"BAKI_DEBET1", "BAKI_DEBET", "OUTSTANDING", "OS_IDR", "SALDO"},
     ]
     matched_headers = sum(1 for variants in header_groups if any(header in normalized_cells for header in variants))
-    return matched_headers >= 3
+    return matched_headers >= 2
 
 
 def parse_logical_row(row: list[str], delimiter: str, expected_columns: int | None) -> tuple[list[str] | None, bool]:
@@ -504,7 +505,7 @@ def classify_daily_loan_columns(headers: list[str]) -> dict:
     memaksimalkan kecepatan Polars.
     """
     decimal_columns = {
-        'RATE', 'PLAFON', 'BAKI_DEBET1', 'CKPN', 'NILAI_TERCATAT1',
+        'RATE', 'PLAFON', 'BAKI_DEBET1', 'BAKI_DEBET', 'OUTSTANDING', 'OS', 'SALDO', 'CKPN', 'NILAI_TERCATAT1',
         'KOLEKTABILITAS_LANCAR', 'KOLEKTABILITAS_DPK', 'KOLEKTABILITAS_KURANGLANCAR',
         'KOLEKTABILITAS_DIRAGUKAN', 'KOLEKTABILITAS_MACET', 'TOTAL_KEWAJIBAN',
         'TUNGGAKAN_POKOK', 'TUNGGAKAN_BUNGA', 'TUNGGAKAN_PENALTI',
@@ -518,7 +519,8 @@ def classify_daily_loan_columns(headers: list[str]) -> dict:
     }
 
     date_columns = {
-        'PERIODE', 'TGL_REALISASI', 'TGL_JATUH_TEMPO', 'TANGGAL_MENUNGGAK',
+        'PERIODE', 'POSISI', 'TGL_POSISI', 'TANGGAL', 'DATE', 'AS_OF_DATE',
+        'TGL_REALISASI', 'TGL_JATUH_TEMPO', 'TANGGAL_MENUNGGAK',
         'TGL_BAYAR_TERAKHIR', 'TGL_TERMINATE', 'LAST_DATE_MAINTENANCE_BILLING',
         'NEXT_PMT_DATE', 'NEXT_PMT_INT_DATE', 'TGL_AKAD_RESTRUK'
     }
@@ -768,6 +770,32 @@ def stage_daily_loan(config: dict) -> None:
 
         if df.height == 0:
             raise RuntimeError("Polars tidak menemukan baris data yang valid.")
+
+        # Map any renamed alias columns to canonical Daily Loan headers if canonical is missing
+        rename_candidates = {
+            "TANGGAL": "PERIODE",
+            "POSISI": "PERIODE",
+            "TGL_POSISI": "PERIODE",
+            "DATE": "PERIODE",
+            "AS_OF_DATE": "PERIODE",
+            "NOREK": "NOMOR_REKENING1",
+            "NO_REKENING": "NOMOR_REKENING1",
+            "NOMOR_REKENING": "NOMOR_REKENING1",
+            "ACCTNO": "NOMOR_REKENING1",
+            "OUTSTANDING": "BAKI_DEBET1",
+            "OS": "BAKI_DEBET1",
+            "BAKI_DEBET": "BAKI_DEBET1",
+        }
+        rename_map = {}
+        for col in df.columns:
+            norm = normalize_header_name(col)
+            if norm in rename_candidates:
+                target = rename_candidates[norm]
+                if target not in df.columns and target not in rename_map.values():
+                    rename_map[col] = target
+        if rename_map:
+            df = df.rename(rename_map)
+            headers = df.columns
 
         # OPTIMIZATION: Enhanced vectorized normalization per column type (Phase 1)
         # Benefit: 10-20% faster Polars stage, 15-20% less MySQL casting work

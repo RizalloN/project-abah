@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Support\ConsumerRmKanwilAudit;
 use App\Support\ConsumerRmRealizationCalculator;
+use App\Support\SmallRmRealizationCalculator;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +12,9 @@ use Illuminate\Support\Facades\Schema;
 
 class ValidatePerformanceRmSnapshotsCommand extends Command
 {
+    /** @var array<string, array<string, mixed>> */
+    private array $smallRealizationByPeriod = [];
+
     protected $signature = 'snapshot:validate-rm {--period= : Validate specific period}
         {--kanwil-reference= : Compare Consumer realization directly with the 2026 Kanwil workbook}
         {--max-error-percent=1 : Maximum error per RM and realization component in reference mode}
@@ -228,6 +232,7 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
         }
 
         $this->applyConsumerSurplusForPeriod($period, $sourceRows);
+        $this->applySmallRealizationForPeriod($period, $sourceRows);
 
         return $sourceRows;
     }
@@ -268,6 +273,56 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
 
             $sourceRows[$groupKey]->realisasi_deb = (int) ($metric['realisasi_deb'] ?? 0);
             $sourceRows[$groupKey]->realisasi_os = (float) ($metric['realisasi_os'] ?? 0.0);
+        }
+    }
+
+    /**
+     * SME realization is CIF-based: it cannot be validated by summing this
+     * month's raw plafond. Reuse the same calculator used by the snapshot
+     * builder, including the prior available CIF exposure baseline.
+     *
+     * @param  array<string, object>  $sourceRows
+     */
+    private function applySmallRealizationForPeriod(string $period, array &$sourceRows): void
+    {
+        foreach ($sourceRows as $row) {
+            if (strtoupper(trim((string) ($row->segmen ?? ''))) === 'SMALL') {
+                $row->realisasi_deb = 0;
+                $row->realisasi_os = 0.0;
+            }
+        }
+
+        $calculation = $this->smallRealizationByPeriod[$period]
+            ??= app(SmallRmRealizationCalculator::class)->calculate([$period]);
+        if (! isset($calculation['covered_periods'][$period])) {
+            return;
+        }
+
+        foreach ((array) ($calculation['rows'] ?? []) as $metric) {
+            $row = (object) [
+                'cabang' => (string) ($metric['cabang'] ?? ''),
+                'unit' => (string) ($metric['unit'] ?? ''),
+                'branch_code' => (string) ($metric['branch_code'] ?? ''),
+                'rm' => (string) ($metric['rm'] ?? ''),
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+            ];
+            $key = $this->sourceKey((array) $row);
+            if (! isset($sourceRows[$key])) {
+                $sourceRows[$key] = (object) [
+                    ...((array) $row),
+                    'plafon' => 0.0,
+                    'loan_os' => 0.0,
+                    'lancar_os' => 0.0,
+                    'sml_os' => 0.0,
+                    'npl_os' => 0.0,
+                    'restruk_os' => 0.0,
+                    'total_deb' => 0,
+                ];
+            }
+
+            $sourceRows[$key]->realisasi_deb = (int) ($metric['deb'] ?? 0);
+            $sourceRows[$key]->realisasi_os = (float) ($metric['rp'] ?? 0.0);
         }
     }
 

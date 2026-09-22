@@ -444,6 +444,9 @@ Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.l
 
     Route::prefix('import-excel')->group(function () {
         Route::post('/upload', [ImportExcelController::class, 'uploadExcel'])->name('import.excel.upload');
+        Route::post('/upload-chunk/init', [ImportExcelController::class, 'initExcelChunkUpload'])->name('import.excel.upload-chunk.init');
+        Route::post('/upload-chunk', [ImportExcelController::class, 'uploadExcelChunk'])->name('import.excel.upload-chunk');
+        Route::post('/upload-chunk/finalize', [ImportExcelController::class, 'finalizeExcelChunkUpload'])->name('import.excel.upload-chunk.finalize');
         Route::get('/preview', [ImportExcelController::class, 'previewExcel'])->name('import.excel.preview');
         Route::get('/prepare-preview', [ImportExcelController::class, 'preparePreviewStream'])->name('import.excel.prepare-preview');
     });

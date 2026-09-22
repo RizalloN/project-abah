@@ -143,11 +143,20 @@ CSV;
             $this->snapshot('2026-02-28', 'KPR', '002 - RM K', 0),
         ]);
         DB::table('brihc_pemasar')->insert([
-            'pernr' => '00000002',
-            'completename' => 'RM K',
-            'positiondesc' => 'RM BISNIS KONSUMER - KPR',
-            'psadesc' => 'KC Madiun',
-            'jg' => 'JG05',
+            [
+                'pernr' => '00000001',
+                'completename' => 'RM A',
+                'positiondesc' => 'RM BISNIS KONSUMER - BRIGUNA',
+                'psadesc' => 'KC Madiun',
+                'jg' => 'JG05',
+            ],
+            [
+                'pernr' => '00000002',
+                'completename' => 'RM K',
+                'positiondesc' => 'RM BISNIS KONSUMER - KPR',
+                'psadesc' => 'KC Madiun',
+                'jg' => 'JG05',
+            ],
         ]);
 
         $payload = app(LandingConsumerOperationalService::class)->payload(
@@ -174,7 +183,7 @@ CSV;
         );
         $this->assertSame(1, $briguna['rows'][1]['q3']);
         $this->assertSame(1, $briguna['coverage']['classified']);
-        $this->assertSame(1, $briguna['coverage']['unclassified']);
+        $this->assertSame(0, $briguna['coverage']['unclassified']);
         $this->assertSame(1, $kpr['rows'][0]['q3']);
         $this->assertSame(1, $kpr['rows'][1]['q4']);
         $this->assertSame('RM A', data_get($briguna, 'current_rows.0.name'));
@@ -238,7 +247,7 @@ CSV;
         $this->assertStringContainsString('RM NGAWI', html_entity_decode($html, ENT_QUOTES | ENT_HTML5));
     }
 
-    public function test_consumer_quadrants_use_brihc_roster_before_daily_loan_snapshot_and_keep_daily_fallback(): void
+    public function test_consumer_quadrants_use_active_brihc_roster_and_exclude_daily_loan_fallback(): void
     {
         Http::fake(fn () => Http::response("Nama Instansi,Potensi Briguna,RM PIC 1\nInstansi A,100,RM A", 200));
         DB::table('performance_targets')->insert([
@@ -279,12 +288,12 @@ CSV;
         );
         $latest = data_get($payload, 'quadrants.branches.0.products.briguna.rows.0');
         $this->assertSame(1, data_get($latest, 'q1'));
-        $this->assertSame(1, data_get($latest, 'q2'));
+        $this->assertSame(0, data_get($latest, 'q2'));
         $this->assertSame(1, data_get($latest, 'q4'));
-        $this->assertSame(3, data_get($latest, 'total'));
-        $this->assertSame(3, data_get($payload, 'quadrants.branches.0.products.briguna.coverage.classified'));
-        $this->assertSame(4, data_get($payload, 'quadrants.branches.0.products.briguna.coverage.source_total'));
-        $this->assertSame(1, data_get($payload, 'quadrants.branches.0.products.briguna.coverage.unclassified'));
+        $this->assertSame(2, data_get($latest, 'total'));
+        $this->assertSame(2, data_get($payload, 'quadrants.branches.0.products.briguna.coverage.classified'));
+        $this->assertSame(2, data_get($payload, 'quadrants.branches.0.products.briguna.coverage.source_total'));
+        $this->assertSame(0, data_get($payload, 'quadrants.branches.0.products.briguna.coverage.unclassified'));
     }
 
     public function test_consumer_history_uses_latest_snapshot_branch_at_requested_cutoff_not_current_brihc_branch(): void
@@ -334,6 +343,27 @@ CSV;
         $this->assertSame(['49'], $mapped->pluck('branch_code')->unique()->values()->all());
         $this->assertSame(['00000001 - RM REFERENSI'], $mapped->pluck('rm')->unique()->values()->all());
         $this->assertSame(['BRIGUNA-KONSUMER'], $mapped->pluck('produk')->unique()->values()->all());
+    }
+
+    public function test_consumer_quadrant_excludes_realization_without_active_brihc_owner(): void
+    {
+        DB::table('brihc_pemasar')->insert([
+            'pernr' => '00000001',
+            'completename' => 'RM AKTIF',
+            'positiondesc' => 'RM BISNIS KONSUMER - BRIGUNA',
+            'psadesc' => 'KC Madiun',
+        ]);
+        $rows = collect([
+            (object) $this->snapshot('2026-09-18', 'BRIGUNA-KONSUMER', '00000001 - RM AKTIF', 100),
+            (object) $this->snapshot('2026-09-18', 'BRIGUNA-KONSUMER', 'PN BELUM TERISI', 838_519_594),
+        ]);
+
+        $mapped = app(LandingConsumerOperationalService::class)
+            ->applyBrihcPrimaryConsumerAssignments($rows, '2026-09-18');
+
+        $this->assertCount(1, $mapped);
+        $this->assertSame('00000001 - RM AKTIF', $mapped->first()->rm);
+        $this->assertSame('brihc_primary', $mapped->first()->roster_source);
     }
 
     public function test_direct_branch_payload_filters_after_latest_area6_assignment(): void

@@ -20,8 +20,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
+| `current` | method | 50 | `app/Support/UserBranchScope.php:111` |
 | `User` | class | 46 | `app/Models/User.php:10` |
-| `current` | method | 46 | `app/Support/UserBranchScope.php:111` |
 | `users` | table | 29 | - |
 | `forKey` | method | 28 | `app/Support/UserBranchScope.php:68` |
 | `update` | method | 22 | `app/Http/Controllers/Admin/UserManagementController.php:159` |
@@ -34,6 +34,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `auth.forgot-password` | view | 10 | `resources/views/auth/forgot-password.blade.php:1` |
 | `auth.reset-password` | view | 10 | `resources/views/auth/reset-password.blade.php:1` |
 | `contentSecurityPolicy` | method | 10 | `app/Http/Middleware/SecurityHeadersMiddleware.php:80` |
+| `forUser` | method | 10 | `app/Support/UserBranchScope.php:24` |
 | `store` | method | 10 | `app/Http/Controllers/Auth/AuthenticatedSessionController.php:29` |
 | `store` | method | 10 | `app/Http/Controllers/Auth/ConfirmablePasswordController.php:25` |
 | `user-management.store` | route | 10 | - |
@@ -44,7 +45,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `auth.confirm-password` | view | 9 | `resources/views/auth/confirm-password.blade.php:1` |
 | `authenticate` | method | 9 | `app/Http/Requests/Auth/LoginRequest.php:48` |
 | `destroy` | method | 9 | `app/Http/Controllers/Admin/UserManagementController.php:253` |
-| `forUser` | method | 9 | `app/Support/UserBranchScope.php:24` |
 | `index` | method | 9 | `app/Http/Controllers/Admin/UserManagementController.php:56` |
 | `login` | route | 9 | - |
 | `sessions` | table | 9 | - |
@@ -127,8 +127,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | input-management -> access-control (protected_by) | 35 |
 | dashboard-simpanan -> access-control (calls) | 28 |
 | access-control -> core (accepts) | 27 |
+| dashboard-pinjaman -> access-control (calls) | 25 |
 | almafacts -> access-control (protected_by) | 25 |
-| dashboard-pinjaman -> access-control (calls) | 21 |
 | access-control -> core (uses_component) | 13 |
 | bank-pipeline -> access-control (calls) | 11 |
 | database -> access-control (protected_by) | 11 |

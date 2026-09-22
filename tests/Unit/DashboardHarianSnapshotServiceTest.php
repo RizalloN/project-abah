@@ -74,6 +74,9 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(['A.2.b. Deposito Korporasi'], $definitions['deposito_wholesale']['mata_anggaran']);
         $this->assertSame(['KC', 'KCP'], $definitions['kecil_non_cashcoll_os']['uker_contains_any']);
         $this->assertTrue($definitions['kecil_non_cashcoll_os']['include_kanca_summary']);
+        $this->assertSame(['Average daily Small'], $definitions['average_daily_small']['mata_anggaran']);
+        $this->assertSame(['KC', 'KCP'], $definitions['average_daily_small']['uker_contains_any']);
+        $this->assertTrue($definitions['average_daily_small']['include_kanca_summary']);
         $this->assertSame(['KC', 'KCP'], $definitions['briguna_konsumer_os']['uker_contains_any']);
         $this->assertTrue($definitions['briguna_konsumer_os']['include_kanca_summary']);
         $this->assertSame(['KC', 'KCP'], $definitions['kpr_os']['uker_contains_any']);
@@ -494,10 +497,12 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             ->all();
         $this->assertSame([
             'B.1 KC Ponorogo',
+            'Daily Average Small',
             'Kecil',
             'Kecil Non Cashcoll',
             'Cashcoll',
             'B.2 KCP Sudirman Ponorogo',
+            'Daily Average Small',
             'Kecil',
             'Kecil Non Cashcoll',
             'Cashcoll',
@@ -566,6 +571,115 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(
             (float) data_get($dashboardRows->firstWhere('key', 'simpanan_ritel'), 'values.current'),
             (float) data_get($konsolRows->firstWhere('key', 'simpanan_ritel'), 'values.current')
+        );
+    }
+
+    public function test_daily_average_small_uses_calendar_day_denominator_and_splits_kc_kcp_with_rka(): void
+    {
+        $this->createSourceMetadataTables();
+
+        $metricColumns = (new \ReflectionClass(DashboardHarianSnapshotService::class))->getConstant('METRIC_COLUMNS');
+        Schema::table('dashboard_harian_snapshots', function (Blueprint $table) use ($metricColumns): void {
+            foreach ($metricColumns as $column) {
+                $table->decimal($column, 24, 6)->default(0);
+            }
+        });
+
+        $emptyMetrics = array_fill_keys($metricColumns, 0);
+        $snapshots = [];
+        foreach ([
+            '2026-09-01' => ['kc' => 60, 'kcp' => 40],
+            '2026-09-02' => ['kc' => 120, 'kcp' => 80],
+            '2026-09-20' => ['kc' => 240, 'kcp' => 160],
+        ] as $period => $values) {
+            $total = $values['kc'] + $values['kcp'];
+            foreach ([
+                ['suffix' => 'summary', 'unit_key' => 'kc-ponorogo', 'unit_label' => 'KC Ponorogo', 'value' => $total],
+                ['suffix' => 'kc', 'unit_key' => 'kc-ponorogo-detail', 'unit_label' => 'KC Ponorogo', 'value' => $values['kc']],
+                ['suffix' => 'kcp', 'unit_key' => 'kcp-sudirman-ponorogo', 'unit_label' => 'KCP Sudirman Ponorogo', 'value' => $values['kcp']],
+            ] as $office) {
+                $snapshots[] = array_merge($emptyMetrics, [
+                    'uniqueid_dhs' => $period . '-' . $office['suffix'],
+                    'snapshot_period' => $period,
+                    'kanca_key' => 'kc-ponorogo',
+                    'kanca_label' => 'KC Ponorogo',
+                    'unit_key' => $office['unit_key'],
+                    'unit_label' => $office['unit_label'],
+                    'source_row_count' => 1,
+                    'sme_os' => $office['value'],
+                    'kecil_os' => $office['value'],
+                    'kecil_non_cashcoll_os' => $office['value'],
+                ]);
+            }
+        }
+        DB::table('dashboard_harian_snapshots')->insert($snapshots);
+
+        Schema::create('rka', function (Blueprint $table): void {
+            $table->string('uniqueid_namareport')->primary();
+            $table->unsignedSmallInteger('tahun');
+            $table->string('kanca')->nullable();
+            $table->string('desc_uker')->nullable();
+            $table->string('mata_anggaran')->nullable();
+            foreach (['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'] as $month) {
+                $table->decimal($month, 20, 2)->nullable();
+            }
+            $table->timestamps();
+        });
+        DB::table('rka')->insert([
+            [
+                'uniqueid_namareport' => 'avg-small-kc-ponorogo',
+                'tahun' => 2026,
+                'kanca' => 'KC Ponorogo',
+                'desc_uker' => '70-KC Ponorogo',
+                'mata_anggaran' => 'Average daily Small',
+                'sep' => 500,
+            ],
+            [
+                'uniqueid_namareport' => 'avg-small-kcp-sudirman',
+                'tahun' => 2026,
+                'kanca' => 'KC Ponorogo',
+                'desc_uker' => '2204-KCP Sudirman Ponorogo',
+                'mata_anggaran' => 'Average daily Small',
+                'sep' => 100,
+            ],
+        ]);
+
+        $payload = (new DashboardHarianSnapshotService())->buildDashboardPayload(
+            '2026-09-20',
+            '2026-09-01',
+            ['KC Ponorogo'],
+            null
+        );
+        $rows = collect($payload['rows']);
+        $totalAverage = $rows->firstWhere('key', 'average_daily_small');
+        $officeAverages = $rows
+            ->filter(fn (array $row): bool => ($row['parent_key'] ?? null) === 'sme_os')
+            ->filter(fn (array $row): bool => ($row['source_metric_key'] ?? null) === 'average_daily_small')
+            ->values();
+
+        $this->assertNotNull($totalAverage);
+        $this->assertSame('Daily Average Small', $totalAverage['label']);
+        $this->assertSame(35.0, (float) data_get($totalAverage, 'values.current'));
+        $this->assertSame(600.0, (float) data_get($totalAverage, 'values.rka'));
+        $this->assertSame(
+            ['KC Ponorogo' => 21.0, 'KCP Sudirman Ponorogo' => 14.0],
+            $officeAverages->mapWithKeys(function (array $row): array {
+                $unitLabel = ($row['office_type'] ?? null) === 'kc' ? 'KC Ponorogo' : 'KCP Sudirman Ponorogo';
+
+                return [$unitLabel => (float) data_get($row, 'values.current')];
+            })->all()
+        );
+        $this->assertSame(
+            [500.0, 100.0],
+            $officeAverages->pluck('values.rka')->map(fn ($value): float => (float) $value)->all()
+        );
+        $this->assertTrue(
+            $rows->search(fn (array $row): bool => $row['key'] === 'sme_os')
+                < $rows->search(fn (array $row): bool => $row['key'] === 'average_daily_small')
+        );
+        $this->assertTrue(
+            $rows->search(fn (array $row): bool => $row['key'] === 'average_daily_small')
+                < $rows->search(fn (array $row): bool => (bool) ($row['office_breakdown'] ?? false) && ($row['parent_key'] ?? null) === 'sme_os')
         );
     }
 
@@ -952,6 +1066,53 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(5.125, $payload['area_total']['2026-05'][0]);
         $this->assertSame(7.25, $payload['series']['KC Madiun']['2026-05'][0]);
         $this->assertSame(3.0, $payload['series']['KC Ngawi']['2026-05'][0]);
+    }
+
+    public function test_timeseries_simpanan_supports_giro_tabungan_and_deposito_products(): void
+    {
+        $this->createSourceMetadataTables();
+
+        Schema::table('dashboard_harian_snapshots', function (Blueprint $table): void {
+            foreach (['giro', 'tabungan', 'deposito'] as $product) {
+                foreach (['ritel', 'mikro', 'wholesale'] as $segment) {
+                    $table->decimal("{$product}_{$segment}", 20, 2)->default(0);
+                }
+            }
+        });
+
+        DB::table('dashboard_harian_snapshots')->insert([
+            'uniqueid_dhs' => 'madiun-simpanan-products-2026-05-01',
+            'snapshot_period' => '2026-05-01',
+            'kanca_key' => 'kc-madiun',
+            'kanca_label' => 'KC Madiun',
+            'unit_key' => 'kc-madiun',
+            'unit_label' => 'KC Madiun',
+            'source_row_count' => 1,
+            'giro_ritel' => 1_000_000_000,
+            'giro_mikro' => 2_000_000_000,
+            'giro_wholesale' => 3_000_000_000,
+            'tabungan_ritel' => 4_000_000_000,
+            'tabungan_mikro' => 5_000_000_000,
+            'tabungan_wholesale' => 6_000_000_000,
+            'deposito_ritel' => 7_000_000_000,
+            'deposito_mikro' => 8_000_000_000,
+            'deposito_wholesale' => 9_000_000_000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $canUseSnapshotMetrics = new \ReflectionProperty($service, 'canUseSnapshotMetricsCache');
+        $canUseSnapshotMetrics->setAccessible(true);
+        $canUseSnapshotMetrics->setValue($service, true);
+
+        $giro = $service->fetchTimeseriesTrend(['2026-05'], 'simpanan', 'KC Madiun', null, 'giro');
+        $tabungan = $service->fetchTimeseriesTrend(['2026-05'], 'simpanan', 'KC Madiun', null, 'tabungan');
+        $deposito = $service->fetchTimeseriesTrend(['2026-05'], 'simpanan', 'KC Madiun', null, 'deposito');
+
+        $this->assertSame(6.0, $giro['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(15.0, $tabungan['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(24.0, $deposito['series']['KC Madiun']['2026-05'][0]);
     }
 
     public function test_recovery_timeseries_uses_gi405_daily_delta_for_ritel_and_mikro(): void

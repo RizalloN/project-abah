@@ -15,6 +15,7 @@ use App\Support\SsaSimpananSnapshotBuilder;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -26,7 +27,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
-class EnsureImportedSnapshotsFreshJob implements ShouldQueue
+class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUntilProcessing
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, SnapshotJobRetryWindow;
 
@@ -44,6 +45,14 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         $this->onQueue('snapshots-parallel');
     }
 
+    public function uniqueId(): string
+    {
+        $periodScope = $this->resolveLockPeriodScope();
+        $scope = strtolower(trim($this->tableName)) . ':' . ($periodScope !== '' ? $periodScope : 'latest');
+
+        return md5('snapshot:freshness:' . $scope);
+    }
+
     public function middleware(): array
     {
         $periodScope = $this->resolveLockPeriodScope();
@@ -53,10 +62,16 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             new DeferSnapshotJobsDuringImport(sourceTable: $this->tableName),
             (new WithoutOverlapping('snapshot:freshness:' . $scope))
                 ->releaseAfter(60)
-                ->expireAfter($this->timeout + 300),
+                ->expireAfter($this->timeout + 300)
+                ->shared(),
             (new WithoutOverlapping('snapshot:freshness:period:' . ($periodScope !== '' ? $periodScope : 'latest')))
                 ->releaseAfter(60)
-                ->expireAfter($this->timeout + 300),
+                ->expireAfter($this->timeout + 300)
+                ->shared(),
+            (new WithoutOverlapping('snapshot:source-period:' . $scope))
+                ->releaseAfter(60)
+                ->expireAfter($this->timeout + 300)
+                ->shared(),
         ];
     }
 
@@ -100,18 +115,23 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             return;
         }
 
-        match ($table) {
-            'daily_loan_dinamis' => $this->ensureDailyLoanSnapshots($builder, $dashboardHarian, $sourceSignatures),
-            'simpanan_multipn' => $this->ensureSimpananSnapshots($builder, $dashboardHarian, $sourceSignatures),
-            'ssa_simpanan' => $this->ensureSsaSnapshots($dashboardHarian, $sourceSignatures, true),
-            'ssa_pinjaman' => $this->ensureSsaSnapshots($dashboardHarian, $sourceSignatures, false),
-            'hourly_dpk' => $this->ensureHourlyDpkSnapshots($dashboardHarian, $sourceSignatures),
-            'lw325_ph' => $this->ensureReportPhSnapshots($dashboardHarian, $sourceSignatures),
-            'gi405_recovery' => $this->ensureGi405RecoverySnapshots($dashboardHarian, $sourceSignatures),
-            'dly_kap_resegmentasi' => $this->ensureFallbackLoanSnapshots($dashboardHarian, 'dly_kap_resegmentasi'),
-            'l1133' => $this->ensureFallbackLoanSnapshots($dashboardHarian, 'l1133'),
-            default => null,
-        };
+        if ($table === 'daily_loan_dinamis') {
+            if (!$this->ensureDailyLoanSnapshots($builder, $dashboardHarian, $sourceSignatures)) {
+                return;
+            }
+        } else {
+            match ($table) {
+                'simpanan_multipn' => $this->ensureSimpananSnapshots($builder, $dashboardHarian, $sourceSignatures),
+                'ssa_simpanan' => $this->ensureSsaSnapshots($dashboardHarian, $sourceSignatures, true),
+                'ssa_pinjaman' => $this->ensureSsaSnapshots($dashboardHarian, $sourceSignatures, false),
+                'hourly_dpk' => $this->ensureHourlyDpkSnapshots($dashboardHarian, $sourceSignatures),
+                'lw325_ph' => $this->ensureReportPhSnapshots($dashboardHarian, $sourceSignatures),
+                'gi405_recovery' => $this->ensureGi405RecoverySnapshots($dashboardHarian, $sourceSignatures),
+                'dly_kap_resegmentasi' => $this->ensureFallbackLoanSnapshots($dashboardHarian, 'dly_kap_resegmentasi'),
+                'l1133' => $this->ensureFallbackLoanSnapshots($dashboardHarian, 'l1133'),
+                default => null,
+            };
+        }
 
         if ($table === 'daily_loan_dinamis'
             && $periodScope !== ''
@@ -242,14 +262,16 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         ReportSnapshotBuilder $builder,
         DashboardHarianSnapshotService $dashboardHarian,
         SnapshotSourceSignatureService $sourceSignatures
-    ): void
+    ): bool
     {
         $period = $this->resolvePeriod('daily_loan_dinamis', 'periode');
         if ($period === null || !$this->sourceHasRows('daily_loan_dinamis', 'periode', $period)) {
-            return;
+            return true;
         }
 
-        $this->ensureDailyLoanShadowColumnsReady($period);
+        if (!$this->ensureDailyLoanShadowColumnsReady($period)) {
+            return false;
+        }
 
         $sourceMetadata = $sourceSignatures->capture('daily_loan_dinamis', 'periode', $period);
 
@@ -341,38 +363,64 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         if ($rebuiltAny) {
             $this->bumpReportCacheVersion('pinjaman');
         }
+
+        return true;
     }
 
-    private function ensureDailyLoanShadowColumnsReady(string $period): void
+    private function ensureDailyLoanShadowColumnsReady(string $period): bool
     {
         $missingBefore = $this->countDailyLoanRowsMissingShadowColumns($period);
         if ($missingBefore <= 0) {
-            return;
+            return true;
         }
 
-        $exitCode = Artisan::call('shadow:backfill', [
-            '--periods' => $period,
-            '--chunk-size' => 10000,
-            '--retry-count' => 5,
-            '--skip-snapshot' => true,
-            '--no-interaction' => true,
-        ]);
+        $lock = Cache::lock('shadow:backfill:auto:' . $period, 1800);
 
-        $missingAfter = $this->countDailyLoanRowsMissingShadowColumns($period);
-        if ($exitCode === 0 && $missingAfter <= 0) {
-            Log::info('Daily Loan shadow columns completed before freshness rebuild.', [
+        try {
+            $ready = false;
+            $lock->block(15, function () use ($period, $missingBefore, &$ready): void {
+                if ($this->countDailyLoanRowsMissingShadowColumns($period) <= 0) {
+                    $ready = true;
+                    return;
+                }
+
+                $exitCode = Artisan::call('shadow:backfill', [
+                    '--periods' => $period,
+                    '--chunk-size' => 10000,
+                    '--retry-count' => 5,
+                    '--skip-snapshot' => true,
+                    '--no-interaction' => true,
+                ]);
+
+                $missingAfter = $this->countDailyLoanRowsMissingShadowColumns($period);
+                if ($exitCode === 0 && $missingAfter <= 0) {
+                    Log::info('Daily Loan shadow columns completed before freshness rebuild.', [
+                        'period' => $period,
+                        'missing_before' => $missingBefore,
+                        'source' => $this->source,
+                    ]);
+
+                    $ready = true;
+                    return;
+                }
+
+                throw new \RuntimeException(sprintf(
+                    'Shadow column Daily Loan periode %s belum siap untuk snapshot Kinerja RM format baru.',
+                    $period
+                ));
+            });
+
+            return $ready;
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
+            Log::info('Daily Loan shadow columns backfill sedang dijalankan worker lain; menunda freshness check.', [
                 'period' => $period,
-                'missing_before' => $missingBefore,
                 'source' => $this->source,
             ]);
 
-            return;
-        }
+            $this->release(45);
 
-        throw new \RuntimeException(sprintf(
-            'Shadow column Daily Loan periode %s belum siap untuk snapshot Kinerja RM format baru.',
-            $period
-        ));
+            return false;
+        }
     }
 
     private function countDailyLoanRowsMissingShadowColumns(string $period): int

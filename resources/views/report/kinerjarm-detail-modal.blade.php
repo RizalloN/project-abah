@@ -283,7 +283,7 @@
                         ? (float) $smallSummary['pct_lar']
                         : ($totalLoanOs > 0 ? ($totalLarValue / $totalLoanOs) * 100 : 0);
                     $totalPencRealisasi = $smallSummary['penc_realisasi'] ?? (($totalRealisasiOs / 1000000) >= 1600 ? 'A' : 'B');
-                    $totalPencLar = $smallSummary['penc_lar'] ?? ($totalPctLar < 17.5 ? 'A' : 'B');
+                    $totalPencLar = $smallSummary['penc_lar'] ?? ($totalPctLar < (($segmen ?? '') === 'SMALL' ? 15.0 : 17.5) ? 'A' : 'B');
                     $realisasiLabel = $smallSummary !== null ? 'Ratas Realisasi OS' : 'Realisasi OS';
                     $larPeriodLabel = $smallSummary['closed_period_label'] ?? $year;
                     $footerLabel = $smallSummary !== null ? 'RATAS' : 'TOTAL';

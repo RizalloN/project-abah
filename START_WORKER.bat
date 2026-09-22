@@ -8,15 +8,12 @@ echo ====================================================
 echo Priority queues: imports-high, imports-daily-loan
 echo Background queues: default, reports-low, remote-sources, snapshots-priority, snapshots-parallel, shadow-backfill
 echo.
-echo Worker siap menerima job import kapan saja.
-echo Tekan Ctrl+C untuk menghentikan worker.
+echo ====================================================
+echo Menjalankan Queue Worker Manager (Self-Healing, Staleproof)...
+echo Syntax: php artisan queue:ensure-running --timeout=0 --memory=512 --max-jobs=25 --max-time=3600 --check-interval=30
 echo ====================================================
 echo.
 
-:loop
-echo [%date% %time%] Queue worker berjalan...
-"D:\xampp\php\php.exe" artisan queue:work --queue=imports-high,imports-daily-loan,default,reports-low,remote-sources,snapshots-priority,snapshots-parallel,shadow-backfill --tries=1 --timeout=0 --sleep=1 --memory=512
-echo.
-echo [%date% %time%] Worker berhenti/recycle. Me-restart dalam 3 detik...
-timeout /t 3 /nobreak >nul
-goto loop
+"D:\xampp\php\php.exe" artisan queue:ensure-running --timeout=0 --memory=512 --max-jobs=25 --max-time=3600 --check-interval=30
+
+pause

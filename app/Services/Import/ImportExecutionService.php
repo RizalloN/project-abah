@@ -134,7 +134,13 @@ class ImportExecutionService
         $job = $this->progressService->findJob($jobId);
 
         if ((int) ($job->id_report ?? 0) === self::DAILY_LOAN_REPORT_ID || $tableName === 'daily_loan_dinamis') {
-            return $this->dailyLoanImportQueue();
+            $priorityQueue = trim((string) data_get(
+                config('queue.worker_pools', []),
+                'snapshots-priority.queues',
+                'snapshots-priority'
+            ));
+
+            return $priorityQueue !== '' ? $priorityQueue : 'snapshots-priority';
         }
 
         $queue = trim((string) config('queue.report_queue', 'default'));
@@ -316,13 +322,15 @@ class ImportExecutionService
         }
 
         if (in_array(strtolower((string) ($job->status ?? '')), ['staging', 'processing'], true)) {
+            $progress = $this->progressService->getCachedProgress($jobId);
             $forceReservationRecovery = $executionSource === 'worker'
-                && !$this->isRecoverableZeroProgressProcessingJob($jobId, $job)
-                && $this->isQueueReservationHandoff($jobId, $job);
+                && !$this->isRecoverableZeroProgressProcessingJob($jobId, $job, $progress)
+                && $this->isQueueReservationHandoff($jobId, $job, $progress);
             $job = $this->recoverZeroProgressProcessingJob(
                 $jobId,
                 $job,
-                $forceReservationRecovery
+                $forceReservationRecovery,
+                $progress
             );
             if (!$job || in_array(strtolower((string) ($job->status ?? '')), ['staging', 'processing'], true)) {
                 return;
@@ -764,6 +772,10 @@ class ImportExecutionService
             return false;
         }
 
+        if ($status === 'queued') {
+            return true;
+        }
+
         if (in_array($status, ['staging', 'processing'], true) && $this->hasRecentProcessingPulse($jobId, $job)) {
             return true;
         }
@@ -903,13 +915,17 @@ class ImportExecutionService
         foreach ($candidates as $job) {
             $jobId = (int) ($job->id ?? 0);
             if ($jobId <= 0
-                || !$this->isRecoverableZeroProgressImportJob($jobId, $job)
                 || $this->hasActiveQueueRow($jobId)
                 || $this->hasActiveExecutionLock($jobId)) {
                 continue;
             }
 
-            $job = $this->recoverZeroProgressProcessingJob($jobId, $job, true);
+            $progress = $this->progressService->getCachedProgress($jobId);
+            if (!$this->isRecoverableZeroProgressProcessingJob($jobId, $job, $progress)) {
+                continue;
+            }
+
+            $job = $this->recoverZeroProgressProcessingJob($jobId, $job, false, $progress);
             if (!$job || strtolower((string) ($job->status ?? '')) !== 'queued') {
                 continue;
             }
@@ -923,9 +939,16 @@ class ImportExecutionService
         return $recovered;
     }
 
-    private function recoverZeroProgressProcessingJob(int $jobId, object $job, bool $force = false): ?object
+    private function recoverZeroProgressProcessingJob(
+        int $jobId,
+        object $job,
+        bool $force = false,
+        ?array $progress = null
+    ): ?object
     {
-        if (!$force && !$this->isRecoverableZeroProgressProcessingJob($jobId, $job)) {
+        $progress ??= $this->progressService->getCachedProgress($jobId);
+
+        if (!$force && !$this->isRecoverableZeroProgressProcessingJob($jobId, $job, $progress)) {
             return $job;
         }
 
@@ -933,7 +956,7 @@ class ImportExecutionService
             return $job;
         }
 
-        if (!$force && $this->hasRecentProcessingPulse($jobId, $job)) {
+        if (!$force && $this->hasRecentProcessingPulse($jobId, $job, $progress)) {
             return $job;
         }
 
@@ -966,7 +989,11 @@ class ImportExecutionService
         return $this->progressService->findJob($jobId);
     }
 
-    private function isRecoverableZeroProgressProcessingJob(int $jobId, object $job): bool
+    private function isRecoverableZeroProgressProcessingJob(
+        int $jobId,
+        object $job,
+        ?array $progress = null
+    ): bool
     {
         if (!$this->isZeroProgressProcessingJob($jobId, $job)) {
             return false;
@@ -978,7 +1005,21 @@ class ImportExecutionService
         }
 
         try {
-            return Carbon::parse($updatedAt)->lt(now()->subMinutes($this->zeroProgressRecoveryMinutes()));
+            $recoveryMinutes = $this->zeroProgressRecoveryMinutes();
+            $progress ??= $this->progressService->getCachedProgress($jobId);
+            $phase = strtolower(trim((string) ($progress['phase'] ?? '')));
+            $percent = (int) ($progress['percent'] ?? 0);
+
+            if ($percent > 0
+                && $percent < 100
+                && in_array($phase, ['initializing', 'polars', 'staging', 'validating', 'preparing_load_plan', 'loading'], true)) {
+                // CPU-heavy CSV normalization may legitimately emit no row progress
+                // for several minutes. Do not requeue it while still inside a known
+                // active phase merely because the row counters remain zero.
+                $recoveryMinutes = max($recoveryMinutes, 15);
+            }
+
+            return Carbon::parse($updatedAt)->lt(now()->subMinutes($recoveryMinutes));
         } catch (\Throwable) {
             return true;
         }
@@ -992,13 +1033,13 @@ class ImportExecutionService
             && (int) ($job->total_failed ?? 0) === 0;
     }
 
-    private function isQueueReservationHandoff(int $jobId, object $job): bool
+    private function isQueueReservationHandoff(int $jobId, object $job, ?array $progress = null): bool
     {
         if (!$this->isZeroProgressProcessingJob($jobId, $job)) {
             return false;
         }
 
-        $progress = $this->progressService->getCachedProgress($jobId);
+        $progress ??= $this->progressService->getCachedProgress($jobId);
 
         return trim((string) ($progress['message'] ?? ''))
             === 'Worker queue sudah mengambil job import dan sedang memulai proses.';
@@ -1105,9 +1146,9 @@ class ImportExecutionService
         return is_array($jobContext) ? $jobContext : [];
     }
 
-    private function hasRecentProcessingPulse(int $jobId, object $job): bool
+    private function hasRecentProcessingPulse(int $jobId, object $job, ?array $progress = null): bool
     {
-        $progress = $this->progressService->getCachedProgress($jobId);
+        $progress ??= $this->progressService->getCachedProgress($jobId);
         $updatedAt = $progress['updated_at'] ?? $job->updated_at ?? null;
         if ($updatedAt === null || $updatedAt === '') {
             return false;

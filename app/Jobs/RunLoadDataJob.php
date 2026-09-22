@@ -2,8 +2,9 @@
 
 namespace App\Jobs;
 
-use App\Jobs\SyncImportedReportJob;
 use App\Http\Controllers\Import\ImportFileController;
+use App\Jobs\Middleware\SerializeImportByTable;
+use App\Services\Import\ImportCleanupService;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\MySqlBulkLoadService;
 use Illuminate\Bus\Queueable;
@@ -23,7 +24,8 @@ class RunLoadDataJob implements ShouldQueue
     use SerializesModels;
 
     public int $timeout = 0;
-    public int $tries = 1;
+    public int $tries = 720;
+    public int $maxExceptions = 1;
 
     public function __construct(
         public readonly int $jobId,
@@ -32,6 +34,11 @@ class RunLoadDataJob implements ShouldQueue
         public readonly array $bulkColumns,
     ) {
         $this->queue = 'imports-high';
+    }
+
+    public function middleware(): array
+    {
+        return [new SerializeImportByTable(tableName: $this->tableName)];
     }
 
     public function handle(ImportProgressService $progressService, MySqlBulkLoadService $bulkLoader, ImportFileController $importController): void
@@ -104,12 +111,12 @@ class RunLoadDataJob implements ShouldQueue
             $syncPeriod = $jobParams['syncPeriod'] ?? $jobParams['sync_period'] ?? null;
             if ($totalSuccess > 0 && !empty($syncPeriod)) {
                 try {
-                    SyncImportedReportJob::dispatch(
+                    app(ImportCleanupService::class)->dispatchImportedJobSync(
                         $this->jobId,
                         $this->tableName,
                         $syncPeriod,
                         static::class
-                    )->onQueue('imports-high');
+                    );
                 } catch (\Throwable $e) {
                     Log::warning('Post-import sync dispatch skipped after successful load: ' . $e->getMessage(), [
                         'job_id' => $this->jobId,

@@ -6,7 +6,6 @@ use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Jobs\SyncImportedReportJob;
 use App\Services\Import\ImportProgressService;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\DB;
 use Mockery;
 use Tests\TestCase;
 
@@ -26,6 +25,7 @@ class DeferSnapshotJobsDuringImportTest extends TestCase
         $importProgressService->shouldReceive('hasActiveProcessingJobs')
             ->once()
             ->andReturnTrue();
+        $importProgressService->shouldNotReceive('purgeStaleProcessingJobs');
 
         $middleware = new DeferSnapshotJobsDuringImport($importProgressService);
 
@@ -65,43 +65,36 @@ class DeferSnapshotJobsDuringImportTest extends TestCase
         ));
     }
 
-    public function test_stale_import_is_reconciled_before_snapshot_job_continues(): void
+    public function test_middleware_never_mutates_active_import_state(): void
     {
-        $importProgressService = Mockery::mock(ImportProgressService::class);
-        $importProgressService->shouldReceive('hasActiveProcessingJobs')->once()->andReturnTrue();
-        $importProgressService->shouldReceive('getStatusPayload')
-            ->once()
-            ->with(44)
-            ->andReturn([
-                'status' => 'completed',
-                'total_rows' => 319332,
-                'total_success' => 319332,
-                'total_failed' => 0,
-            ]);
-        $importProgressService->shouldNotReceive('markFailed');
+        Config::set('import.snapshot.defer_seconds', 60);
 
-        $query = Mockery::mock();
-        $query->shouldReceive('whereIn')->once()->with('status', ['staging', 'processing'])->andReturnSelf();
-        $query->shouldReceive('where')->once()->with('updated_at', '<', Mockery::type(\DateTimeInterface::class))->andReturnSelf();
-        $query->shouldReceive('orderByDesc')->once()->with('updated_at')->andReturnSelf();
-        $query->shouldReceive('first')->once()->andReturn((object) [
-            'id' => 44,
-            'updated_at' => now()->subHours(5)->toDateTimeString(),
-            'total_success' => 319332,
-            'total_failed' => 0,
-        ]);
-        DB::shouldReceive('table')->once()->with('import_jobs')->andReturn($query);
+        $importProgressService = Mockery::mock(ImportProgressService::class);
+        $importProgressService->shouldReceive('hasActiveProcessingJobs')
+            ->once()
+            ->andReturnTrue();
+        $importProgressService->shouldNotReceive('purgeStaleProcessingJobs');
+        $importProgressService->shouldNotReceive('markFailed');
 
         $middleware = new DeferSnapshotJobsDuringImport($importProgressService);
         $nextCalled = false;
+        $job = new class {
+            public ?int $releasedAfter = null;
 
-        $result = $middleware->handle(new \stdClass(), function () use (&$nextCalled): string {
+            public function release(int $delay = 0): void
+            {
+                $this->releasedAfter = $delay;
+            }
+        };
+
+        $result = $middleware->handle($job, function () use (&$nextCalled): string {
             $nextCalled = true;
 
             return 'continued';
         });
 
-        $this->assertTrue($nextCalled);
-        $this->assertSame('continued', $result);
+        $this->assertNull($result);
+        $this->assertFalse($nextCalled);
+        $this->assertSame(60, $job->releasedAfter);
     }
 }

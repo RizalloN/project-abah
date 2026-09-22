@@ -21,7 +21,7 @@ final class LandingMicroPerformanceService
 
     private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
 
-    private const CACHE_VERSION = 'v28-micro-cache-coherent-brihc-productivity';
+    private const CACHE_VERSION = 'v29-micro-source-identity-fallback';
 
     private const PERIOD_LOOKUP_INDEXES = [
         'idx_snapshot_filter_optimized',
@@ -788,23 +788,23 @@ final class LandingMicroPerformanceService
                 $termDetails = collect($item['term_details'] ?? [])
                     ->sortBy(static fn (array $t): string => str_pad((string) ($t['months'] ?? 9999), 5, '0', STR_PAD_LEFT))
                     ->map(static fn (array $t): array => [
-                        'key'       => (string) $t['key'],
-                        'label'     => (string) $t['label'],
-                        'months'    => $t['months'],
+                        'key' => (string) $t['key'],
+                        'label' => (string) $t['label'],
+                        'months' => $t['months'],
                         'customers' => count((array) $t['customers']),
-                        'deb'       => count((array) $t['accounts']),
-                        'os'        => (float) $t['os'],
+                        'deb' => count((array) $t['accounts']),
+                        'os' => (float) $t['os'],
                     ])
                     ->filter(static fn (array $t): bool => $t['customers'] > 0)
                     ->values()
                     ->all();
 
                 return [
-                    'frequency'    => (int) $item['frequency'],
-                    'label'        => (string) $item['label'],
-                    'customers'    => count((array) $item['customers']),
-                    'deb'          => count((array) $item['accounts']),
-                    'os'           => (float) $item['os'],
+                    'frequency' => (int) $item['frequency'],
+                    'label' => (string) $item['label'],
+                    'customers' => count((array) $item['customers']),
+                    'deb' => count((array) $item['accounts']),
+                    'os' => (float) $item['os'],
                     'term_details' => $termDetails,
                 ];
             })
@@ -1559,6 +1559,27 @@ final class LandingMicroPerformanceService
             $this->applyDailyBranchFilter($query, '', $branchScope);
             $rows = $rows->concat($query->get());
         }
+        if ($cifColumn === 'cifno_clean' && $candidateCifs->isNotEmpty()) {
+            // Keep indexed CIF lookups above; scan missing normalized CIFs only
+            // once per period, using the same raw fallback as loanCifKey().
+            $candidateKeys = $candidateCifs->flip();
+            $fallbackQuery = DB::table(self::SOURCE_TABLE)
+                ->where('periode', $period)
+                ->where(function (Builder $query): void {
+                    $query->whereNull('cifno_clean')
+                        ->orWhere('cifno_clean', '')
+                        ->orWhere('cifno_clean', 'like', ' %');
+                })
+                ->whereRaw("TRIM(COALESCE(cifno_clean, '')) = ''")
+                ->select($columns);
+            $this->applyDailyMicroFilter($fallbackQuery);
+            $this->applyDailyBranchFilter($fallbackQuery, '', $branchScope);
+            foreach ($fallbackQuery->cursor() as $row) {
+                if ($candidateKeys->has($this->loanCifKey($row))) {
+                    $rows->push($row);
+                }
+            }
+        }
         foreach ($fallbackAccounts->chunk(800) as $chunk) {
             $query = DB::table(self::SOURCE_TABLE)
                 ->where('periode', $period)
@@ -1590,7 +1611,9 @@ final class LandingMicroPerformanceService
 
     private function loanAccountKey(object $row): string
     {
-        return strtoupper(trim((string) ($row->nomor_rekening1 ?? $row->uniqueid_namareport ?? '')));
+        $account = strtoupper(trim((string) ($row->nomor_rekening1 ?? '')));
+
+        return $account !== '' ? $account : strtoupper(trim((string) ($row->uniqueid_namareport ?? '')));
     }
 
     private function loanCifKey(object $row): string
@@ -1601,7 +1624,7 @@ final class LandingMicroPerformanceService
             return $cif;
         }
 
-        return 'REK:'.strtoupper(trim((string) ($row->nomor_rekening1 ?? $row->uniqueid_namareport ?? '')));
+        return 'REK:'.$this->loanAccountKey($row);
     }
 
     /** @return array<string, string> */
@@ -2489,7 +2512,7 @@ final class LandingMicroPerformanceService
 
             try {
                 return Carbon::parse($date)->toDateString();
-            } catch (\Throwable) {
+            } catch (Throwable) {
                 continue;
             }
         }
@@ -2711,7 +2734,7 @@ final class LandingMicroPerformanceService
 
         try {
             return Carbon::parse($closedPeriod)->endOfMonth()->greaterThanOrEqualTo(Carbon::parse($historyStart)->startOfDay());
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return true;
         }
     }

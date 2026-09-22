@@ -419,6 +419,7 @@ class LandingSimpananCardTest extends TestCase
             $this->assertArrayHasKey('micro', $result);
             $this->assertArrayHasKey('wholesale', $result);
             $this->assertArrayHasKey('labels', $result['area6']);
+            $this->assertArrayHasKey('h2_values', $result['area6']);
             $this->assertArrayHasKey('h1_values', $result['area6']);
             $this->assertArrayHasKey('h_values', $result['area6']);
             $this->assertArrayHasKey('deltas', $result['area6']);
@@ -427,6 +428,7 @@ class LandingSimpananCardTest extends TestCase
             if (!empty($result['area6']['items'])) {
                 $firstItem = $result['area6']['items'][0];
                 $this->assertArrayHasKey('month', $firstItem);
+                $this->assertArrayHasKey('h2_date', $firstItem);
                 $this->assertArrayHasKey('h1_date', $firstItem);
                 $this->assertArrayHasKey('h_date', $firstItem);
                 $this->assertArrayHasKey('h1_fmt', $firstItem);

@@ -163,6 +163,11 @@ def normalize_header_name(header_name: str) -> str:
 
     aliases = {
         "MONTH_DAY_YEAR_OF_POSISI": "month_day_year_of_posisi",
+        "MONTH_DAY_YEAR_OF_POSITION": "month_day_year_of_posisi",
+        "DAY_MONTH_YEAR_OF_POSISI": "month_day_year_of_posisi",
+        "DAY_MONTH_YEAR_OF_POSITION": "month_day_year_of_posisi",
+        "TANGGAL_POSISI": "month_day_year_of_posisi",
+        "TGL_POSISI": "month_day_year_of_posisi",
         "NAMA_CABANG": "nama_cabang",
         "NAMA_UKER": "nama_uker",
         "PRODUK": "produk",
@@ -297,16 +302,45 @@ def is_valid_ssa_row_values(values_by_header: dict[str, object]) -> bool:
     segmentasi = normalize_cell(values_by_header.get("segmentasi"))
     kategori_bisnis = normalize_cell(values_by_header.get("segmen_kategorisasi_bisnis"))
     if (
-        posisi == ""
+        normalize_date_value(posisi) is None
         or nama_cabang == ""
         or nama_uker == ""
         or produk == ""
         or segmentasi == ""
         or kategori_bisnis == ""
+        or normalize_decimal_value(values_by_header.get("saldo")) is None
     ):
         return False
 
     return True
+
+
+def resolve_source_headers(raw_headers: list[str], sample_row: list[object]) -> list[str]:
+    """Resolve SSA Simpanan columns from labels, or from the fixed source layout.
+
+    The internal report occasionally changes punctuation, language, or spacing in
+    its labels.  A positional fallback is deliberately limited to the exact
+    seven-column SSA layout and is accepted only when the first data row proves
+    the expected date, identity, and balance value types.
+    """
+    headers = [normalize_header_name(header) or f"col_{index}" for index, header in enumerate(raw_headers)]
+    if set(headers) >= REQUIRED_HEADERS:
+        return headers
+
+    values = [normalize_cell(value) for value in sample_row]
+    if len(headers) != len(SSA_SIMPANAN_COLUMNS) or len(values) != len(SSA_SIMPANAN_COLUMNS):
+        missing = sorted(REQUIRED_HEADERS.difference(set(headers)))
+        raise RuntimeError("Kolom wajib SSA Simpanan tidak lengkap: " + ", ".join(missing))
+
+    positional_values = dict(zip(SSA_SIMPANAN_COLUMNS, values))
+    if (
+        normalize_date_value(values[0]) is None
+        or normalize_decimal_value(values[6]) is None
+        or not is_valid_ssa_row_values(positional_values)
+    ):
+        raise RuntimeError("Header SSA Simpanan tidak dikenali dan isi kolom tidak cocok dengan format SSA.")
+
+    return list(SSA_SIMPANAN_COLUMNS)
 
 
 def sanitize_source(
@@ -324,6 +358,7 @@ def sanitize_source(
     rewrite_needed = False
     skipped_rows: list[int] = []
     headers: list[str] = []
+    raw_headers: list[str] = []
     valid_rows = 0
     start_time = time.perf_counter()
 
@@ -356,16 +391,18 @@ def sanitize_source(
                 )
 
             if not headers:
-                raw_headers = [normalize_cell(cell) for cell in row]
-                headers = [normalize_header_name(header) or f"col_{index}" for index, header in enumerate(raw_headers)]
-                missing = sorted(REQUIRED_HEADERS.difference(set(headers)))
-                if missing:
-                    raise RuntimeError("Kolom wajib SSA Simpanan tidak lengkap: " + ", ".join(missing))
-                rewrite_needed = True
+                if not raw_headers:
+                    raw_headers = [normalize_cell(cell) for cell in row]
+                    continue
+
+                headers = resolve_source_headers(raw_headers, row)
                 writer.writerow(headers)
+                rewrite_needed = True
+
+            if not raw_headers:
                 continue
 
-            if len(row) != len(headers):
+            if len(row) != len(raw_headers):
                 structural_skipped += 1
                 skipped_rows.append(row_number)
                 rewrite_needed = True
@@ -403,8 +440,11 @@ def sanitize_source(
                 # Stop early when preview size reached.
                 break
 
-    if not headers:
+    if not raw_headers:
         raise RuntimeError("Header CSV SSA Simpanan tidak ditemukan.")
+
+    if not headers:
+        raise RuntimeError("CSV SSA Simpanan tidak memiliki baris data untuk memvalidasi struktur sumber.")
 
     return temp_path, headers, total_records, structural_skipped, validation_skipped, rewrite_needed, skipped_rows, valid_rows
 

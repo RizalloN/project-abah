@@ -106,6 +106,9 @@ class DashboardHarianSnapshotService
         'total_sml_pct_non_commercial',
         'total_npl_pct_non_commercial',
     ];
+    private const DERIVED_METRIC_COLUMNS = [
+        'average_daily_small',
+    ];
     private const SOURCE_METADATA_COLUMNS = [
         'source_signature',
         'source_loan_row_count',
@@ -140,6 +143,7 @@ class DashboardHarianSnapshotService
         ['key' => 'total_os_non_commercial', 'label' => 'Total OS Non Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
         ['key' => 'commercial_os', 'label' => 'A. Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
         ['key' => 'sme_os', 'label' => 'B. SME', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'average_daily_small', 'label' => 'Daily Average Small', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'kecil_os', 'label' => 'Kecil', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'kecil_non_cashcoll_os', 'label' => 'Kecil Non Cashcoll', 'type' => 'currency', 'depth' => 3, 'accent' => 'muted'],
         ['key' => 'cashcoll_os', 'label' => 'Cashcoll', 'type' => 'currency', 'depth' => 3, 'accent' => 'muted'],
@@ -215,7 +219,9 @@ class DashboardHarianSnapshotService
         'sme_os' => [
             'prefix' => 'B',
             'hidden_children' => ['medium_os'],
+            'summary_children' => ['average_daily_small'],
             'children' => [
+                ['key' => 'average_daily_small', 'depth' => 3],
                 ['key' => 'kecil_os', 'depth' => 3],
                 ['key' => 'kecil_non_cashcoll_os', 'depth' => 4],
                 ['key' => 'cashcoll_os', 'depth' => 4],
@@ -1659,6 +1665,7 @@ class DashboardHarianSnapshotService
                 })
                 ->unique()
                 ->all();
+            $rowsByKey = collect($rows)->keyBy('key');
             $expandedRows = [];
             foreach ($rows as $row) {
                 if (in_array($row['key'], $officeChildKeys, true)) {
@@ -1666,6 +1673,12 @@ class DashboardHarianSnapshotService
                 }
 
                 $expandedRows[] = $row;
+                foreach ($activeStructures->get($row['key'], [])['summary_children'] ?? [] as $summaryChildKey) {
+                    $summaryChild = $rowsByKey->get($summaryChildKey);
+                    if ($summaryChild) {
+                        $expandedRows[] = $summaryChild;
+                    }
+                }
                 foreach ($officeBreakdown[$row['key']] ?? [] as $officeRow) {
                     $expandedRows[] = $officeRow;
                 }
@@ -2002,7 +2015,88 @@ class DashboardHarianSnapshotService
             }
         }
 
+        $averageDailySmallByPeriod = $this->averageDailySmallForPeriods(
+            $normalizedPeriods,
+            $normalizedKanca,
+            $normalizedUnit
+        );
+        foreach ($normalizedPeriods as $period) {
+            $metricsByPeriod[$period]['average_daily_small'] = (float) ($averageDailySmallByPeriod[$period] ?? 0);
+        }
+
         return $metricsByPeriod;
+    }
+
+    private function averageDailySmallForPeriods(
+        array $periods,
+        array|string|null $kancaKey,
+        array|string|null $unitKey
+    ): array {
+        $normalizedPeriods = collect($periods)
+            ->map(fn ($period) => $this->normalizeDate((string) $period))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if (
+            $normalizedPeriods->isEmpty()
+            || !Schema::hasTable(self::SNAPSHOT_TABLE)
+            || !Schema::hasColumn(self::SNAPSHOT_TABLE, 'sme_os')
+        ) {
+            return $normalizedPeriods->mapWithKeys(fn (string $period): array => [$period => 0.0])->all();
+        }
+
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+        $monthRanges = $normalizedPeriods
+            ->map(fn (string $period): Carbon => Carbon::parse($period))
+            ->groupBy(fn (Carbon $period): string => $period->format('Y-m'))
+            ->map(fn (Collection $monthPeriods): array => [
+                'start' => $monthPeriods->first()->copy()->startOfMonth()->toDateString(),
+                'end' => $monthPeriods->max(fn (Carbon $period): string => $period->toDateString()),
+            ])
+            ->values();
+
+        $query = DB::table(self::SNAPSHOT_TABLE)
+            ->where(function ($rangeQuery) use ($monthRanges): void {
+                foreach ($monthRanges as $range) {
+                    $rangeQuery->orWhereBetween('snapshot_period', [$range['start'], $range['end']]);
+                }
+            });
+
+        if ($normalizedKanca !== []) {
+            $query->whereIn('kanca_key', collect($normalizedKanca)
+                ->map(function (string $value): string {
+                    $normalized = $this->normalizeKancaLabel($value);
+
+                    return $this->slugKey($normalized !== '' ? $normalized : $value);
+                })
+                ->unique()
+                ->all());
+        }
+
+        if ($normalizedUnit !== []) {
+            $query->whereIn('unit_key', $this->normalizeUnitFilterKeys($normalizedUnit));
+        } else {
+            $query->whereColumn('kanca_key', 'unit_key');
+        }
+
+        $dailyValues = $query
+            ->groupBy('snapshot_period')
+            ->orderBy('snapshot_period')
+            ->selectRaw('snapshot_period, COALESCE(SUM(sme_os), 0) as daily_small')
+            ->get()
+            ->groupBy(fn ($row): string => Carbon::parse($row->snapshot_period)->format('Y-m'));
+
+        return $normalizedPeriods->mapWithKeys(function (string $period) use ($dailyValues): array {
+            $date = Carbon::parse($period);
+            $monthRows = $dailyValues->get($date->format('Y-m'), collect());
+            $total = $monthRows
+                ->filter(fn ($row): bool => (string) $row->snapshot_period <= $period)
+                ->sum(fn ($row): float => (float) ($row->daily_small ?? 0));
+
+            return [$period => $total / max(1, $date->day)];
+        })->all();
     }
 
     private function overlayRecoveryMetricsFromSource(array $metrics, string $period, array|string|null $kancaKey, array|string|null $unitKey): array
@@ -3824,6 +3918,11 @@ class DashboardHarianSnapshotService
             'deposito_wholesale' => ['mata_anggaran' => ['A.2.b. Deposito Korporasi']],
             'tabungan_wholesale' => ['mata_anggaran' => []],
             'total_os' => ['mata_anggaran' => ['B. KREDIT TOTAL']],
+            'average_daily_small' => [
+                'mata_anggaran' => ['Average daily Small'],
+                'uker_contains_any' => ['KC', 'KCP'],
+                'include_kanca_summary' => true,
+            ],
             'kecil_non_cashcoll_os' => ['mata_anggaran' => ['B.2.a. Kredit Kecil Non Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
             'cashcoll_os' => ['mata_anggaran' => ['B.2.b. Kredit Kecil Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
             'medium_os' => ['mata_anggaran' => ['B.3. MEDIUM']],
@@ -3972,6 +4071,9 @@ class DashboardHarianSnapshotService
         ];
 
         foreach (self::METRIC_COLUMNS as $column) {
+            $metrics[$column] = 0.0;
+        }
+        foreach (self::DERIVED_METRIC_COLUMNS as $column) {
             $metrics[$column] = 0.0;
         }
 
@@ -5430,6 +5532,10 @@ class DashboardHarianSnapshotService
                     $metric = 'simpanan_mikro';
                 } elseif ($segment === 'giro') {
                     $metric = '(COALESCE(giro_ritel, 0) + COALESCE(giro_mikro, 0) + COALESCE(giro_wholesale, 0))';
+                } elseif ($segment === 'tabungan') {
+                    $metric = '(COALESCE(tabungan_ritel, 0) + COALESCE(tabungan_mikro, 0) + COALESCE(tabungan_wholesale, 0))';
+                } elseif ($segment === 'deposito') {
+                    $metric = '(COALESCE(deposito_ritel, 0) + COALESCE(deposito_mikro, 0) + COALESCE(deposito_wholesale, 0))';
                 } elseif ($segment === 'non_wholesale') {
                     $metric = '(COALESCE(simpanan_ritel, 0) + COALESCE(simpanan_mikro, 0))';
                 } else {

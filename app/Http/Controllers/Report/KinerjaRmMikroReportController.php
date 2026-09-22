@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\SyncImportedReportJob;
+use App\Support\MicroNettDisbursementCalculator;
 use App\Support\ReportCacheVersion;
 use App\Support\UserBranchScope;
 use Carbon\Carbon;
@@ -18,9 +19,13 @@ use Illuminate\View\View;
 class KinerjaRmMikroReportController extends Controller
 {
     private const SOURCE_TABLE = 'daily_loan_dinamis';
+
     private const SNAPSHOT_TABLE = 'performance_rm_snapshots';
+
     private const TARGET_MONTHLY_JUTA = 4000.0;
+
     private const WEEKLY_TARGET_JUTA = 1000.0;
+
     private const KUR_RITEL_DESCRIPTION = 'Kredit Mikro - KUR Ritel 2015';
 
     private const REPORT_CATEGORIES = [
@@ -61,8 +66,11 @@ class KinerjaRmMikroReportController extends Controller
     ];
 
     private const AREA_BRANCH_ORDER = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+
     private const MANTRI_PRODUCTS = ['BRIGUNAMIKRO', 'CASHCOLLATERAL', 'KUPEDES', 'KPR', 'KURMIKRO'];
+
     private const MANTRI_HEADCOUNT_POSITIONS = ['ASSOCIATE MANTRI 1', 'ASSOCIATE MANTRI 2', 'JUNIOR ASSOCIATE MANTRI'];
+
     private const EXTREME_LOW_BUCKETS = [
         'el_0_100' => ['label' => '0 s.d 100 Jt', 'group' => 'extreme'],
         'el_100_200' => ['label' => '>100 s.d 200 Jt', 'group' => 'extreme'],
@@ -81,7 +89,7 @@ class KinerjaRmMikroReportController extends Controller
             : 'rm_mikro_kur';
         $availablePeriods = $this->fetchAvailablePeriods($selectedRmCategory === 'mantri');
         $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $request->input('periode'));
-        $this->queueDailyLoanSnapshotSyncIfNeeded($selectedPeriod, static::class . '::index');
+        $this->queueDailyLoanSnapshotSyncIfNeeded($selectedPeriod, static::class.'::index');
         $reportCategories = $selectedRmCategory === 'mantri' ? self::MANTRI_REPORT_CATEGORIES : self::REPORT_CATEGORIES;
         $selectedReportCategory = array_key_exists((string) $request->input('kategori_report'), $reportCategories)
             ? (string) $request->input('kategori_report')
@@ -156,7 +164,7 @@ class KinerjaRmMikroReportController extends Controller
 
         $refreshPending = $this->queueDailyLoanSnapshotSyncIfNeeded(
             $requestedPeriod,
-            static::class . '::buildEmbeddedPayload'
+            static::class.'::buildEmbeddedPayload'
         );
         $dataPeriod = $this->resolveEmbeddedReadyPeriod($requestedPeriod, $mantri);
         $payload = $dataPeriod === null
@@ -181,7 +189,7 @@ class KinerjaRmMikroReportController extends Controller
         }
 
         return match ($category) {
-            'per_rm' => $this->perRmPayload($period, $preferBrihcRoster),
+            'per_rm' => $this->perRmPayload($period, true),
             'series_bulanan' => $this->seriesBulananPayload($period),
             'series_harian' => $this->seriesHarianPayload($period),
             'rekap' => $this->rekapPayload($period),
@@ -194,15 +202,15 @@ class KinerjaRmMikroReportController extends Controller
     {
         $rows = $this->snapshotAggregates($period, ['unit'])->values()
             ->map(function (array $row) {
-            $cabang = (string) ($row['cabang'] ?? '');
+                $cabang = (string) ($row['cabang'] ?? '');
 
-            return array_merge($this->blankPositionMetrics(), [
-                'bc' => (string) ($row['branch_code'] ?? '-'),
-                'unit' => (string) ($row['unit'] ?? '-'),
-                'cabang' => $cabang !== '' ? $cabang : '-',
-                'pic_mbm' => self::PIC_MBM[$this->normalizeKey($cabang)] ?? '-',
-            ], $row);
-        })->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['unit'])->values();
+                return array_merge($this->blankPositionMetrics(), [
+                    'bc' => (string) ($row['branch_code'] ?? '-'),
+                    'unit' => (string) ($row['unit'] ?? '-'),
+                    'cabang' => $cabang !== '' ? $cabang : '-',
+                    'pic_mbm' => self::PIC_MBM[$this->normalizeKey($cabang)] ?? '-',
+                ], $row);
+            })->sortBy(fn ($row) => $this->branchSortKey($row['cabang']).'|'.$row['unit'])->values();
 
         return [
             'rows' => $rows->all(),
@@ -214,23 +222,23 @@ class KinerjaRmMikroReportController extends Controller
     {
         $rows = $this->snapshotAggregates($period, ['rm'])->values()
             ->map(function (array $row) {
-            [$pn, $name] = $this->splitRm((string) ($row['rm'] ?? ''));
+                [$pn, $name] = $this->splitRm((string) ($row['rm'] ?? ''));
 
-            return array_merge($this->blankPositionMetrics(), [
-                'cabang' => (string) ($row['cabang'] ?? '-'),
-                'pn' => $pn,
-                'nama' => $name,
-                'branch_code' => (string) ($row['branch_code'] ?? '-'),
-                'unit' => (string) ($row['unit'] ?? '-'),
-            ], $row);
-        });
+                return array_merge($this->blankPositionMetrics(), [
+                    'cabang' => (string) ($row['cabang'] ?? '-'),
+                    'pn' => $pn,
+                    'nama' => $name,
+                    'branch_code' => (string) ($row['branch_code'] ?? '-'),
+                    'unit' => (string) ($row['unit'] ?? '-'),
+                ], $row);
+            });
         if ($preferBrihcRoster) {
             $rows = $this->applyBrihcPrimaryKurRmAssignments($rows);
         }
 
         $rows = $rows
             ->filter(fn (array $row): bool => (float) ($row['realisasi_os'] ?? 0) > 0)
-            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['nama'])
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']).'|'.$row['nama'])
             ->values();
 
         return [
@@ -242,9 +250,9 @@ class KinerjaRmMikroReportController extends Controller
     /**
      * BRIHC menentukan personel, cabang, dan unit RM KUR Mikro pada Landing.
      * Nilai posisi serta realisasi dari snapshot Daily Loan hanya melengkapi PN
-     * yang sama; baris Daily Loan tanpa personel BRIHC tetap menjadi fallback.
+     * yang sama; nilai tanpa personel BRIHC aktif ditampung sebagai RM lain.
      *
-     * @param Collection<int, array<string, mixed>> $rows
+     * @param  Collection<int, array<string, mixed>>  $rows
      * @return Collection<int, array<string, mixed>>
      */
     private function applyBrihcPrimaryKurRmAssignments(Collection $rows): Collection
@@ -254,8 +262,12 @@ class KinerjaRmMikroReportController extends Controller
             return $rows;
         }
 
-        return $rows
+        $assigned = $rows
             ->map(function (array $row) use ($references): ?array {
+                if ($this->normalizeKey((string) ($row['nama'] ?? '')) === 'RM LAIN') {
+                    return $this->asUnassignedKurRmRow($row, 'unassigned_source_pn');
+                }
+
                 $candidates = collect($this->kurRmIdentityKeys(
                     (string) ($row['pn'] ?? ''),
                     (string) ($row['nama'] ?? '')
@@ -264,15 +276,12 @@ class KinerjaRmMikroReportController extends Controller
                     ->unique(fn (array $reference): string => $reference['identity'])
                     ->values();
                 if ($candidates->isEmpty()) {
-                    $row['roster_source'] = 'daily_loan_backup';
-
-                    return $row;
+                    return $this->asUnassignedKurRmRow($row, 'brihc_not_found');
                 }
 
                 $reference = $candidates->first(static fn (array $candidate): bool => $candidate['active']);
                 if (! is_array($reference)) {
-                    // BRIHC mengenali PN, namun perannya bukan lagi RM Mikro aktif.
-                    return null;
+                    return $this->asUnassignedKurRmRow($row, 'brihc_inactive');
                 }
 
                 $row['pn'] = $reference['pn'];
@@ -288,10 +297,47 @@ class KinerjaRmMikroReportController extends Controller
             })
             ->filter()
             ->values();
+
+        return $assigned
+            ->groupBy(fn (array $row): string => implode('|', [
+                $this->normalizeKey((string) ($row['cabang'] ?? '')),
+                $this->normalizeKey((string) ($row['unit'] ?? '')),
+                $this->normalizeKey((string) ($row['branch_code'] ?? '')),
+                $this->normalizeKey((string) ($row['pn'] ?? '')),
+            ]))
+            ->map(function (Collection $items): array {
+                $result = $items->first();
+                if (($result['pn'] ?? '') !== '-') {
+                    return $result;
+                }
+
+                foreach ([
+                    'lancar_deb', 'lancar_os', 'sml_deb', 'sml_os', 'npl_deb', 'npl_os',
+                    'total_deb', 'total_os', 'realisasi_deb', 'realisasi_os',
+                    'w1_realisasi_deb', 'w1_realisasi_os', 'w2_realisasi_deb', 'w2_realisasi_os',
+                    'w3_realisasi_deb', 'w3_realisasi_os', 'w4_realisasi_deb', 'w4_realisasi_os',
+                    'lt_250_realisasi_deb', 'lt_250_realisasi_os',
+                    'gt_250_realisasi_deb', 'gt_250_realisasi_os',
+                ] as $column) {
+                    $result[$column] = $items->sum($column);
+                }
+
+                return $result;
+            })
+            ->values();
+    }
+
+    private function asUnassignedKurRmRow(array $row, string $source): array
+    {
+        $row['pn'] = '-';
+        $row['nama'] = 'RM lain';
+        $row['roster_source'] = $source;
+
+        return $row;
     }
 
     /**
-     * @param Collection<int, array<string, mixed>> $rows
+     * @param  Collection<int, array<string, mixed>>  $rows
      * @return Collection<string, Collection<int, array<string, mixed>>>
      */
     private function brihcKurRmReferences(Collection $rows): Collection
@@ -444,7 +490,7 @@ class KinerjaRmMikroReportController extends Controller
             ];
         })
             ->filter(fn (array $row): bool => (float) ($row['total_os'] ?? 0) > 0)
-            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['nama'])
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']).'|'.$row['nama'])
             ->values();
 
         return [
@@ -460,13 +506,13 @@ class KinerjaRmMikroReportController extends Controller
     {
         $rows = $this->snapshotAggregates($period, ['rm'])->values()->map(function (array $row) {
             [$pn, $name] = $this->splitRm((string) $row['rm']);
-            $totalOs = array_sum(array_map(fn ($week) => (float) ($row[$week . '_realisasi_os'] ?? 0), ['w1', 'w2', 'w3', 'w4']));
-            $totalDeb = array_sum(array_map(fn ($week) => (int) ($row[$week . '_realisasi_deb'] ?? 0), ['w1', 'w2', 'w3', 'w4']));
+            $totalOs = array_sum(array_map(fn ($week) => (float) ($row[$week.'_realisasi_os'] ?? 0), ['w1', 'w2', 'w3', 'w4']));
+            $totalDeb = array_sum(array_map(fn ($week) => (int) ($row[$week.'_realisasi_deb'] ?? 0), ['w1', 'w2', 'w3', 'w4']));
             $weeklyAliases = [];
 
             foreach (['w1', 'w2', 'w3', 'w4'] as $week) {
-                $weeklyAliases[$week . '_deb'] = (int) ($row[$week . '_realisasi_deb'] ?? 0);
-                $weeklyAliases[$week . '_os'] = (float) ($row[$week . '_realisasi_os'] ?? 0);
+                $weeklyAliases[$week.'_deb'] = (int) ($row[$week.'_realisasi_deb'] ?? 0);
+                $weeklyAliases[$week.'_os'] = (float) ($row[$week.'_realisasi_os'] ?? 0);
             }
 
             return array_merge($row, $weeklyAliases, [
@@ -479,7 +525,7 @@ class KinerjaRmMikroReportController extends Controller
             ]);
         })
             ->filter(fn (array $row): bool => (float) ($row['total_os'] ?? 0) > 0)
-            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['nama'])
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']).'|'.$row['nama'])
             ->values();
 
         return ['rows' => $rows->all()];
@@ -487,7 +533,7 @@ class KinerjaRmMikroReportController extends Controller
 
     private function rekapPayload(string $period): array
     {
-        $perRm = collect($this->perRmPayload($period)['rows'] ?? []);
+        $perRm = collect($this->perRmPayload($period, true)['rows'] ?? []);
         $rows = $perRm->groupBy(fn ($row) => $this->normalizeKey($row['cabang']))
             ->map(function (Collection $items) {
                 $first = $items->first();
@@ -540,7 +586,7 @@ class KinerjaRmMikroReportController extends Controller
             ]);
         })
             ->filter(fn (array $row): bool => (float) ($row['total_os'] ?? 0) > 0)
-            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['nama'])
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']).'|'.$row['nama'])
             ->values();
 
         return ['rows' => $rows->all()];
@@ -548,14 +594,14 @@ class KinerjaRmMikroReportController extends Controller
 
     private function snapshotAggregates(string $period, array $group): Collection
     {
-        return Cache::remember($this->cacheKey('snapshot', $period, $group), 300, function () use ($period, $group) {
+        return Cache::remember($this->cacheKey('snapshot_nett_v2-account-dedup', $period, $group), 300, function () use ($period, $group) {
             $query = DB::table(self::SNAPSHOT_TABLE)
                 ->where('periode', $period)
                 ->where('segmen', 'MICRO')
                 ->where('produk', 'KUR-MIKRO')
                 ->selectRaw('cabang')
                 ->selectRaw('unit')
-                ->selectRaw($this->snapshotSelectColumn('branch_code', "''") . ' as branch_code');
+                ->selectRaw($this->snapshotSelectColumn('branch_code', "''").' as branch_code');
             $this->scopeQueryToCurrentBranch($query, 'cabang');
 
             if (in_array('rm', $group, true)) {
@@ -589,17 +635,76 @@ class KinerjaRmMikroReportController extends Controller
                 ->get()
                 ->mapWithKeys(fn ($row) => [$this->rowKey((array) $row, $group) => (array) $row]);
 
-            if ($snapshotRows->isNotEmpty()) {
-                return $snapshotRows;
+            $positionRows = $snapshotRows->isNotEmpty()
+                ? $snapshotRows
+                : $this->sourceKurMikroAggregates($period, $group);
+
+            return $this->applyKurNettRealization($positionRows, $period, $group);
+        });
+    }
+
+    private function applyKurNettRealization(Collection $positionRows, string $period, array $group): Collection
+    {
+        $realizationColumns = [
+            'realisasi_deb', 'realisasi_os',
+            'w1_realisasi_deb', 'w1_realisasi_os',
+            'w2_realisasi_deb', 'w2_realisasi_os',
+            'w3_realisasi_deb', 'w3_realisasi_os',
+            'w4_realisasi_deb', 'w4_realisasi_os',
+            'lt_250_realisasi_deb', 'lt_250_realisasi_os',
+            'gt_250_realisasi_deb', 'gt_250_realisasi_os',
+        ];
+
+        $scope = UserBranchScope::current();
+        $nettRows = collect(app(MicroNettDisbursementCalculator::class)->kurRm($period))
+            ->filter(fn (array $row): bool => $scope === null
+                || $this->normalizeKey((string) ($row['cabang'] ?? '')) === $this->normalizeKey($scope['upper_label']))
+            ->groupBy(fn (array $row): string => $this->rowKey($row, $group))
+            ->map(function (Collection $items) use ($group, $realizationColumns): array {
+                $first = $items->first();
+                $aggregated = [
+                    'cabang' => (string) ($first['cabang'] ?? ''),
+                    'unit' => (string) ($first['unit'] ?? ''),
+                    'branch_code' => (string) ($first['branch_code'] ?? ''),
+                ];
+                if (in_array('rm', $group, true)) {
+                    $aggregated['rm'] = (string) ($first['rm'] ?? '');
+                }
+                foreach ($realizationColumns as $column) {
+                    $aggregated[$column] = $items->sum($column);
+                }
+
+                return $aggregated;
+            });
+
+        if ($nettRows->isEmpty()) {
+            return $positionRows;
+        }
+
+        $rows = $positionRows->map(function (array $row) use ($realizationColumns): array {
+            foreach ($realizationColumns as $column) {
+                $row[$column] = str_ends_with($column, '_deb') ? 0 : 0.0;
             }
 
-            return $this->sourceKurMikroAggregates($period, $group);
+            return $row;
         });
+
+        foreach ($nettRows as $key => $nettRow) {
+            $base = $rows->get($key, array_merge($this->blankPositionMetrics(), [
+                'cabang' => $nettRow['cabang'],
+                'unit' => $nettRow['unit'],
+                'branch_code' => $nettRow['branch_code'],
+                'rm' => $nettRow['rm'] ?? '',
+            ]));
+            $rows->put($key, array_merge($base, $nettRow));
+        }
+
+        return $rows;
     }
 
     private function sourceKurMikroAggregates(string $period, array $group): Collection
     {
-        if (!Schema::hasTable(self::SOURCE_TABLE)) {
+        if (! Schema::hasTable(self::SOURCE_TABLE)) {
             return collect();
         }
 
@@ -623,7 +728,7 @@ class KinerjaRmMikroReportController extends Controller
         ];
 
         foreach ($requiredColumns as $column) {
-            if (!Schema::hasColumn(self::SOURCE_TABLE, $column)) {
+            if (! Schema::hasColumn(self::SOURCE_TABLE, $column)) {
                 return collect();
             }
         }
@@ -635,7 +740,7 @@ class KinerjaRmMikroReportController extends Controller
         $loanOsExpr = $this->sourceKurMikroLoanOsExpression();
 
         $expressions = $this->sourceGroupExpressions($group);
-        $baseQuery = DB::table(self::SOURCE_TABLE . ' as d')
+        $baseQuery = DB::table(self::SOURCE_TABLE.' as d')
             ->where('d.periode', $period)
             ->where('d.segmen_kinerja', 'MICRO')
             ->whereIn('d.produk_kinerja', ['KURMIKRO', 'KURKECIL'])
@@ -750,12 +855,12 @@ class KinerjaRmMikroReportController extends Controller
 
     private function fetchAvailablePeriods(bool $includeMantriSourcePeriods = false): Collection
     {
-        $cacheKey = 'kinerja_rm_mikro_periods_v3:' . $this->reportCacheVersion() . ':' . ($includeMantriSourcePeriods ? 'mantri' : 'rm');
+        $cacheKey = 'kinerja_rm_mikro_periods_v3:'.$this->reportCacheVersion().':'.($includeMantriSourcePeriods ? 'mantri' : 'rm');
 
         return Cache::remember($cacheKey, 600, function () use ($includeMantriSourcePeriods) {
             $periods = $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode', function ($query): void {
-                    $query->where('segmen', 'MICRO')->where('produk', 'KUR-MIKRO');
-                })
+                $query->where('segmen', 'MICRO')->where('produk', 'KUR-MIKRO');
+            })
                 ->unique()
                 ->values();
 
@@ -778,7 +883,7 @@ class KinerjaRmMikroReportController extends Controller
 
     private function fetchPeriodList(string $table, string $column, ?callable $scope = null): Collection
     {
-        if (!Schema::hasTable($table) || !Schema::hasColumn($table, $column)) {
+        if (! Schema::hasTable($table) || ! Schema::hasColumn($table, $column)) {
             return collect();
         }
 
@@ -926,10 +1031,10 @@ class KinerjaRmMikroReportController extends Controller
         }
 
         $cacheFingerprint = $category === 'extreme_low_mantri'
-            ? ':' . $this->dailyLoanPeriodCacheFingerprint($period)
+            ? ':'.$this->dailyLoanPeriodCacheFingerprint($period)
             : '';
 
-        return Cache::remember('kinerja_rm_mikro_mantri_v12_active_brihc:' . $this->reportCacheVersion() . ':' . $period . ':' . $category . ':' . $extremeLowView . $cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
+        return Cache::remember('kinerja_rm_mikro_mantri_v15_nett_account_dedup:'.$this->reportCacheVersion().':'.$period.':'.$category.':'.$extremeLowView.$cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
             return match ($category) {
                 'kuadran' => $this->mantriKuadranPayload($period),
                 'produktivitas_mantri' => $this->mantriProductivityPayload($period),
@@ -970,7 +1075,7 @@ class KinerjaRmMikroReportController extends Controller
 
                 return $row;
             })
-            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['unit'])
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']).'|'.$row['unit'])
             ->values();
 
         return [
@@ -1008,7 +1113,7 @@ class KinerjaRmMikroReportController extends Controller
                     'kuadran_4' => (int) ($quadrants['KUADRAN 4'] ?? 0),
                 ];
             })
-            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['unit'])
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']).'|'.$row['unit'])
             ->values();
 
         return [
@@ -1030,35 +1135,56 @@ class KinerjaRmMikroReportController extends Controller
         $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
         $workingDays = $this->networkDays($periodStart, $period);
         $roster = $this->activeMantriRosterState();
-        $query = DB::query()
-            ->fromSub($this->mantriSourceQuery($period), 'x')
-            ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN rekening END) as realisasi_deb", [$periodStart, $period])
-            ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os", [$periodStart, $period])
-            ->where('pn_pengelola', '<>', '');
+        $nettRows = collect(app(MicroNettDisbursementCalculator::class)->mantri($period))
+            ->filter(function (array $row): bool {
+                $scope = UserBranchScope::current();
 
-        if ($roster['available']) {
-            $query
-                ->selectRaw('owner_pn')
-                ->selectRaw('MAX(pn_pengelola) as pn_pengelola')
-                ->groupBy('owner_pn');
-        } else {
-            $query
-                ->selectRaw('bc, unit, cabang, pn_pengelola')
-                ->groupBy('bc', 'unit', 'cabang', 'pn_pengelola');
-        }
-
-        $rows = $query
-            ->get()
-            ->map(function ($row) use ($roster, $workingDays): array {
-                $data = (array) $row;
-                $pnKey = $this->mantriPnKey((string) ($data['owner_pn'] ?? $data['pn_pengelola'] ?? ''));
+                return $scope === null
+                    || $this->normalizeKey((string) ($row['cabang'] ?? '')) === $this->normalizeKey($scope['upper_label']);
+            })
+            ->map(function (array $row) use ($roster): ?array {
+                $pnKey = $this->mantriPnKey((string) ($row['owner'] ?? ''));
                 $reference = $roster['people'][$pnKey] ?? null;
                 if (is_array($reference)) {
-                    $data['bc'] = $reference['bc'];
-                    $data['unit'] = $reference['unit'];
-                    $data['cabang'] = $reference['branch'];
-                    $data['pn_pengelola'] = str_pad($pnKey, 8, '0', STR_PAD_LEFT).' - '.$reference['name'];
+                    return [
+                        'bc' => $reference['bc'],
+                        'unit' => $reference['unit'],
+                        'cabang' => $reference['branch'],
+                        'pn_pengelola' => str_pad($pnKey, 8, '0', STR_PAD_LEFT).' - '.$reference['name'],
+                        'realisasi_deb' => (int) $row['realisasi_deb'],
+                        'realisasi_os' => (float) $row['realisasi_os'],
+                    ];
                 }
+
+                return [
+                    'bc' => $roster['available'] ? '-' : (string) ($row['branch_code'] ?? '-'),
+                    'unit' => $roster['available'] ? 'RM LAIN' : (string) ($row['unit'] ?? '-'),
+                    'cabang' => (string) ($row['cabang'] ?? '-'),
+                    'pn_pengelola' => $roster['available']
+                        ? 'RM LAIN'
+                        : (string) ($row['owner'] ?? 'RM LAIN'),
+                    'realisasi_deb' => (int) $row['realisasi_deb'],
+                    'realisasi_os' => (float) $row['realisasi_os'],
+                ];
+            })
+            ->filter()
+            ->groupBy(fn (array $row): string => implode('|', [
+                $this->normalizeKey($row['cabang']),
+                $this->normalizeKey($row['unit']),
+                $this->normalizeKey($row['bc']),
+                $this->normalizeKey($row['pn_pengelola']),
+            ]))
+            ->map(function (Collection $items): array {
+                $first = $items->first();
+
+                return array_merge($first, [
+                    'realisasi_deb' => $items->sum('realisasi_deb'),
+                    'realisasi_os' => $items->sum('realisasi_os'),
+                ]);
+            });
+
+        $rows = $nettRows
+            ->map(function (array $data) use ($workingDays): array {
 
                 $data = $this->decorateMantriUnitRow($data);
                 $realisasiJuta = ((float) $data['realisasi_os']) / 1000000;
@@ -1073,7 +1199,7 @@ class KinerjaRmMikroReportController extends Controller
 
                 return $data;
             })
-            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['unit'] . '|' . $row['nama_mantri'])
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']).'|'.$row['unit'].'|'.$row['nama_mantri'])
             ->values();
 
         return [
@@ -1094,7 +1220,7 @@ class KinerjaRmMikroReportController extends Controller
         $rows = $this->mantriPdwkAggregateQuery($period, ['bc', 'unit', 'cabang'], $periodStart)
             ->get()
             ->map(fn ($row) => $this->decorateMantriUnitRow((array) $row))
-            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['unit'])
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']).'|'.$row['unit'])
             ->values();
 
         return [
@@ -1110,7 +1236,7 @@ class KinerjaRmMikroReportController extends Controller
         $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
         $workingDays = $this->networkDays($periodStart, $period);
         $rows = $this->mantriPdwkAggregateQuery($period, ['cabang'], $periodStart)
-            ->selectRaw("COUNT(DISTINCT bc) as jumlah_unit")
+            ->selectRaw('COUNT(DISTINCT bc) as jumlah_unit')
             ->selectRaw("COUNT(DISTINCT CASE WHEN pn_pengelola <> '' THEN pn_pengelola END) as jumlah_mantri")
             ->get()
             ->map(function ($row) use ($workingDays): array {
@@ -1119,7 +1245,7 @@ class KinerjaRmMikroReportController extends Controller
                 $totalDeb = (int) ($data['total_realisasi_deb'] ?? 0);
 
                 foreach (['kaunit_pdwk', 'mbm_total', 'pinca_total', 'rmbh_override'] as $prefix) {
-                    $data[$prefix . '_ratio'] = $totalOs > 0 ? ((float) ($data[$prefix . '_os'] ?? 0) / $totalOs) * 100 : 0;
+                    $data[$prefix.'_ratio'] = $totalOs > 0 ? ((float) ($data[$prefix.'_os'] ?? 0) / $totalOs) * 100 : 0;
                 }
 
                 $data['bc'] = '-';
@@ -1150,7 +1276,7 @@ class KinerjaRmMikroReportController extends Controller
             'buckets' => $this->blankExtremeLowBuckets(),
         ]);
 
-        if (!Schema::hasTable('brihc_pemasar')) {
+        if (! Schema::hasTable('brihc_pemasar')) {
             return [
                 'rows' => [],
                 'total' => $emptyTotal,
@@ -1177,8 +1303,8 @@ class KinerjaRmMikroReportController extends Controller
 
             $branch = (string) $detail['branch_office'];
             $unit = (string) $detail['nama_uker'];
-            $groupKey = $view === 'per_cabang' ? $branch : $branch . '|' . $unit;
-            if (!isset($groups[$groupKey])) {
+            $groupKey = $view === 'per_cabang' ? $branch : $branch.'|'.$unit;
+            if (! isset($groups[$groupKey])) {
                 $groups[$groupKey] = [
                     'branch_office' => $branch,
                     'nama_uker' => $view === 'per_cabang' ? null : $unit,
@@ -1193,7 +1319,7 @@ class KinerjaRmMikroReportController extends Controller
 
         $rows = collect($groups)
             ->map(fn (array $row): array => $this->finalizeExtremeLowMantriRow($row))
-            ->sortBy(fn (array $row): string => $this->branchSortKey($row['branch_office']) . '|' . ($row['nama_uker'] ?? ''))
+            ->sortBy(fn (array $row): string => $this->branchSortKey($row['branch_office']).'|'.($row['nama_uker'] ?? ''))
             ->values();
 
         $rows = $rows->map(function (array $row, int $index): array {
@@ -1214,7 +1340,7 @@ class KinerjaRmMikroReportController extends Controller
 
     private function extremeLowMantriRosterRows(string $period): Collection
     {
-        if (!Schema::hasTable('brihc_pemasar')) {
+        if (! Schema::hasTable('brihc_pemasar')) {
             return collect();
         }
 
@@ -1243,7 +1369,7 @@ class KinerjaRmMikroReportController extends Controller
     private function cachedExtremeLowMantriRosterRows(string $period): Collection
     {
         return Cache::remember(
-            'kinerja_rm_mikro_extreme_low_roster_v5:' . $this->reportCacheVersion() . ':' . $period . ':' . $this->dailyLoanPeriodCacheFingerprint($period),
+            'kinerja_rm_mikro_extreme_low_roster_v5:'.$this->reportCacheVersion().':'.$period.':'.$this->dailyLoanPeriodCacheFingerprint($period),
             600,
             fn (): Collection => $this->extremeLowMantriRosterRows($period)
         );
@@ -1271,11 +1397,11 @@ class KinerjaRmMikroReportController extends Controller
                 $mantriKey = $this->mantriPnKey((string) ($row->pn_pengelola1 ?? ''));
                 $branch = $this->normalizeKey((string) ($row->cabang1 ?? ''));
                 $unit = $this->normalizeKey((string) ($row->unit1 ?? ''));
-                if ($mantriKey === '' || $unit === '' || !in_array($branch, self::AREA_BRANCH_ORDER, true)) {
+                if ($mantriKey === '' || $unit === '' || ! in_array($branch, self::AREA_BRANCH_ORDER, true)) {
                     return;
                 }
 
-                $assignmentKey = $branch . '|' . $unit;
+                $assignmentKey = $branch.'|'.$unit;
                 $grouped[$mantriKey]['names'][(string) $row->pn_pengelola1] =
                     ($grouped[$mantriKey]['names'][(string) $row->pn_pengelola1] ?? 0) + (int) ($row->rekening_count ?? 0);
                 $currentAssignment = $grouped[$mantriKey]['assignments'][$assignmentKey] ?? [
@@ -1330,9 +1456,9 @@ class KinerjaRmMikroReportController extends Controller
             'pn_mantri',
         ], Schema::getColumnListing('brihc_pemasar')));
         if ($columns === []
-            || !in_array('esgdesc', $columns, true)
-            || !in_array('positiondesc', $columns, true)
-            || !in_array('orgdesc', $columns, true)) {
+            || ! in_array('esgdesc', $columns, true)
+            || ! in_array('positiondesc', $columns, true)
+            || ! in_array('orgdesc', $columns, true)) {
             return [];
         }
 
@@ -1345,19 +1471,19 @@ class KinerjaRmMikroReportController extends Controller
         $query
             ->get()
             ->each(function ($row) use (&$ptUnitKeys): void {
-                if (!$this->isActiveMantriReference($row)) {
+                if (! $this->isActiveMantriReference($row)) {
                     return;
                 }
 
-                if (!str_contains($this->normalizeKey($this->brihcPemasarValue($row, 'esgdesc')), 'PT')) {
+                if (! str_contains($this->normalizeKey($this->brihcPemasarValue($row, 'esgdesc')), 'PT')) {
                     return;
                 }
 
-                if (!str_starts_with($this->normalizeKey($this->brihcPemasarValue($row, 'orgdesc')), 'UNIT')) {
+                if (! str_starts_with($this->normalizeKey($this->brihcPemasarValue($row, 'orgdesc')), 'UNIT')) {
                     return;
                 }
 
-                if (!in_array($this->normalizeKey($this->brihcPemasarValue($row, 'psadesc')), self::AREA_BRANCH_ORDER, true)) {
+                if (! in_array($this->normalizeKey($this->brihcPemasarValue($row, 'psadesc')), self::AREA_BRANCH_ORDER, true)) {
                     return;
                 }
 
@@ -1372,28 +1498,18 @@ class KinerjaRmMikroReportController extends Controller
 
     private function mantriMonthlyRealizationsByPn(string $period, string $periodStart): array
     {
-        $query = DB::table('daily_loan_dinamis as d')
-            ->where('d.periode', $period)
-            ->where('d.segmen_kinerja', 'MICRO')
-            ->whereIn('d.produk_kinerja', self::MANTRI_PRODUCTS)
-            ->whereBetween('d.tgl_realisasi', [$periodStart, $period])
-            ->whereRaw(
-                "NOT (d.produk_kinerja = ? AND {$this->normalizedSql('d.description')} = ?)",
-                ['KURMIKRO', $this->normalizeToken(self::KUR_RITEL_DESCRIPTION)]
-            )
-            ->select('d.pn_pengelola1', 'd.rm_normalized')
-            ->selectRaw('SUM(COALESCE(d.plafon, 0)) as realisasi_os')
-            ->groupBy('d.pn_pengelola1', 'd.rm_normalized');
-        $this->scopeQueryToCurrentBranch($query, 'd.cabang1');
+        return collect(app(MicroNettDisbursementCalculator::class)->mantri($period))
+            ->filter(function (array $row): bool {
+                $scope = UserBranchScope::current();
 
-        return $query
-            ->get()
-            ->reduce(function (array $carry, $row): array {
-                $key = $this->mantriPnKey((string) ($row->pn_pengelola1 ?? ''))
-                    ?: $this->mantriPnKey((string) ($row->rm_normalized ?? ''));
+                return $scope === null
+                    || $this->normalizeKey((string) ($row['cabang'] ?? '')) === $this->normalizeKey($scope['upper_label']);
+            })
+            ->reduce(function (array $carry, array $row): array {
+                $key = $this->mantriPnKey((string) ($row['owner'] ?? ''));
 
                 if ($key !== '') {
-                    $carry[$key] = ($carry[$key] ?? 0) + (float) ($row->realisasi_os ?? 0);
+                    $carry[$key] = ($carry[$key] ?? 0) + (float) ($row['realisasi_os'] ?? 0);
                 }
 
                 return $carry;
@@ -1561,8 +1677,8 @@ class KinerjaRmMikroReportController extends Controller
         $query
             ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? AND actual_level = 'RMBH' THEN rekening END) as rmbh_override_deb", [$periodStart, $period])
             ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? AND actual_level = 'RMBH' THEN COALESCE(plafon, 0) ELSE 0 END) as rmbh_override_os", [$periodStart, $period])
-            ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN rekening END) as total_realisasi_deb", [$periodStart, $period])
-            ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as total_realisasi_os", [$periodStart, $period])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN rekening END) as total_realisasi_deb', [$periodStart, $period])
+            ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as total_realisasi_os', [$periodStart, $period])
             ->groupBy(...$groupColumns);
 
         return $query;
@@ -1578,7 +1694,7 @@ class KinerjaRmMikroReportController extends Controller
         $actualSql = "CASE WHEN {$jabatanSql} LIKE '%RMBH%' THEN 'RMBH' WHEN {$jabatanSql} LIKE '%PINCA%' OR {$jabatanSql} LIKE '%PIMPINAN CABANG%' THEN 'PINCA' WHEN {$jabatanSql} LIKE '%MBM%' THEN 'MBM' WHEN {$jabatanSql} LIKE '%KAUNIT%' OR {$jabatanSql} LIKE '%KEPALA UNIT%' THEN 'KAUNIT' ELSE {$expectedSql} END";
 
         // Fallback for pnPemutus if normalized column doesn't exist
-        if (!Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')) {
+        if (! Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')) {
             $pnPemutusSql = "NULLIF(TRIM(LEADING '0' FROM TRIM(SUBSTRING_INDEX(COALESCE(d.pn_pemutus1, ''), '-', 1))), '')";
         }
 
@@ -1621,7 +1737,7 @@ class KinerjaRmMikroReportController extends Controller
     /** @return array{available: bool, keys: array<int, string>, people: array<string, array{pn:string,name:string,branch:string,unit:string,bc:string}>} */
     private function activeMantriRosterState(): array
     {
-        if (!Schema::hasTable('brihc_pemasar')) {
+        if (! Schema::hasTable('brihc_pemasar')) {
             return ['available' => false, 'keys' => [], 'people' => []];
         }
 
@@ -1636,9 +1752,9 @@ class KinerjaRmMikroReportController extends Controller
             'bc',
             'pn_mantri',
         ], Schema::getColumnListing('brihc_pemasar')));
-        if (!in_array('positiondesc', $columns, true)
-            || !in_array('psadesc', $columns, true)
-            || (!in_array('pernr', $columns, true) && !in_array('pn_mantri', $columns, true))) {
+        if (! in_array('positiondesc', $columns, true)
+            || ! in_array('psadesc', $columns, true)
+            || (! in_array('pernr', $columns, true) && ! in_array('pn_mantri', $columns, true))) {
             return ['available' => false, 'keys' => [], 'people' => []];
         }
 
@@ -1709,8 +1825,8 @@ class KinerjaRmMikroReportController extends Controller
 
     private function wilayahMbmMap(): Collection
     {
-        return Cache::remember('kinerja_rm_mikro_wilayah_mbm_v1:' . $this->reportCacheVersion(), 600, function () {
-            if (!Schema::hasTable('wilayah_mbm')) {
+        return Cache::remember('kinerja_rm_mikro_wilayah_mbm_v1:'.$this->reportCacheVersion(), 600, function () {
+            if (! Schema::hasTable('wilayah_mbm')) {
                 return collect();
             }
 
@@ -1759,7 +1875,7 @@ class KinerjaRmMikroReportController extends Controller
         $days = 0;
 
         while ($start->lte($end)) {
-            if ($start->isWeekday() && !in_array($start->toDateString(), $holidays, true)) {
+            if ($start->isWeekday() && ! in_array($start->toDateString(), $holidays, true)) {
                 $days++;
             }
 
@@ -1810,7 +1926,7 @@ class KinerjaRmMikroReportController extends Controller
         $key = $this->normalizeKey($branch);
         $pos = array_search($key, self::AREA_BRANCH_ORDER, true);
 
-        return str_pad((string) ($pos === false ? 99 : $pos), 2, '0', STR_PAD_LEFT) . '|' . $key;
+        return str_pad((string) ($pos === false ? 99 : $pos), 2, '0', STR_PAD_LEFT).'|'.$key;
     }
 
     private function achievementClass(float $value, float $target): string
@@ -1837,7 +1953,7 @@ class KinerjaRmMikroReportController extends Controller
         }
 
         $pct = max(0, min(100, (($value - $min) / ($max - $min)) * 100));
-        if (!$higherIsBetter) {
+        if (! $higherIsBetter) {
             $pct = 100 - $pct;
         }
 
@@ -1862,24 +1978,24 @@ class KinerjaRmMikroReportController extends Controller
 
     private function formatPercent(mixed $value, int $decimals = 1): string
     {
-        return is_numeric($value) ? number_format((float) $value, $decimals, ',', '.') . '%' : '-';
+        return is_numeric($value) ? number_format((float) $value, $decimals, ',', '.').'%' : '-';
     }
 
     private function cacheKey(string $prefix, string $period, array $group): string
     {
-        return 'kinerja_rm_mikro_' . $prefix . '_v1:' . $this->reportCacheVersion() . ':' . $period . ':' . implode(',', $group);
+        return 'kinerja_rm_mikro_'.$prefix.'_v1:'.$this->reportCacheVersion().':'.$period.':'.implode(',', $group);
     }
 
     private function queueDailyLoanSnapshotSyncIfNeeded(?string $period, string $source): bool
     {
         if ($period === null
-            || !Schema::hasTable(self::SOURCE_TABLE)
-            || !DB::table(self::SOURCE_TABLE)->where('periode', $period)->exists()) {
+            || ! Schema::hasTable(self::SOURCE_TABLE)
+            || ! DB::table(self::SOURCE_TABLE)->where('periode', $period)->exists()) {
             return false;
         }
 
         $freshnessKey = 'snapshot:daily_loan:auto-sync:check:kinerja_rm_mikro:'
-            . $period . ':v' . $this->reportCacheVersion();
+            .$period.':v'.$this->reportCacheVersion();
 
         return (bool) Cache::remember($freshnessKey, now()->addSeconds(30), function () use ($period, $source): bool {
             $snapshot = Schema::hasTable(self::SNAPSHOT_TABLE)
@@ -1895,12 +2011,12 @@ class KinerjaRmMikroReportController extends Controller
             $needsSync = $snapshotCount <= 0
                 || ($lastUpdated !== null && $this->dailyLoanSourceUpdatedAfter($period, $lastUpdated));
 
-            if (!$needsSync) {
+            if (! $needsSync) {
                 return false;
             }
 
-            $pendingKey = 'snapshot:daily_loan:auto-sync:view:kinerja_rm_mikro:' . $period;
-            if (!Cache::add($pendingKey, true, now()->addMinutes(2))) {
+            $pendingKey = 'snapshot:daily_loan:auto-sync:view:kinerja_rm_mikro:'.$period;
+            if (! Cache::add($pendingKey, true, now()->addMinutes(2))) {
                 return true;
             }
 
@@ -1927,15 +2043,15 @@ class KinerjaRmMikroReportController extends Controller
     private function resolveEmbeddedReadyPeriod(string $requestedPeriod, bool $mantri): ?string
     {
         $cacheKey = 'kinerja_rm_mikro:embedded_ready_period:'
-            . ($mantri ? 'mantri' : 'rm') . ':'
-            . $requestedPeriod . ':v' . $this->reportCacheVersion();
+            .($mantri ? 'mantri' : 'rm').':'
+            .$requestedPeriod.':v'.$this->reportCacheVersion();
 
         return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($requestedPeriod, $mantri): ?string {
             if (Schema::hasTable(self::SNAPSHOT_TABLE)) {
                 $snapshotQuery = DB::table(self::SNAPSHOT_TABLE)
                     ->where('periode', '<=', $requestedPeriod);
 
-                if (!$mantri) {
+                if (! $mantri) {
                     $snapshotQuery
                         ->where('segmen', 'MICRO')
                         ->where('produk', 'KUR-MIKRO');
@@ -1951,9 +2067,9 @@ class KinerjaRmMikroReportController extends Controller
                 }
             }
 
-            if (!Schema::hasTable(self::SOURCE_TABLE)
-                || !Schema::hasColumn(self::SOURCE_TABLE, 'segmen_kinerja')
-                || !Schema::hasColumn(self::SOURCE_TABLE, 'produk_kinerja')) {
+            if (! Schema::hasTable(self::SOURCE_TABLE)
+                || ! Schema::hasColumn(self::SOURCE_TABLE, 'segmen_kinerja')
+                || ! Schema::hasColumn(self::SOURCE_TABLE, 'produk_kinerja')) {
                 return null;
             }
 
@@ -1967,7 +2083,7 @@ class KinerjaRmMikroReportController extends Controller
                 $sourceQuery
                     ->where('produk_kinerja', 'KURMIKRO')
                     ->whereRaw(
-                        $this->normalizedSql('description') . ' = ?',
+                        $this->normalizedSql('description').' = ?',
                         [$this->normalizeToken(self::KUR_RITEL_DESCRIPTION)]
                     );
             }
@@ -1996,7 +2112,7 @@ class KinerjaRmMikroReportController extends Controller
         $hasUpdatedAt = Schema::hasColumn(self::SOURCE_TABLE, 'updated_at');
         $hasCreatedAt = Schema::hasColumn(self::SOURCE_TABLE, 'created_at');
 
-        if (!$hasUpdatedAt && !$hasCreatedAt) {
+        if (! $hasUpdatedAt && ! $hasCreatedAt) {
             return false;
         }
 
@@ -2016,7 +2132,7 @@ class KinerjaRmMikroReportController extends Controller
 
     private function dailyLoanPeriodCacheFingerprint(string $period): string
     {
-        if (!Schema::hasTable(self::SOURCE_TABLE)) {
+        if (! Schema::hasTable(self::SOURCE_TABLE)) {
             return 'missing';
         }
 
@@ -2043,12 +2159,12 @@ class KinerjaRmMikroReportController extends Controller
             return;
         }
 
-        $query->whereRaw("UPPER(TRIM(COALESCE({$column}, ''))) LIKE ?", ['%' . $scope['upper_label'] . '%']);
+        $query->whereRaw("UPPER(TRIM(COALESCE({$column}, ''))) LIKE ?", ['%'.$scope['upper_label'].'%']);
     }
 
     private function reportCacheVersion(): string
     {
         return ReportCacheVersion::composite(['pinjaman', 'simpanan'])
-            . ':scope:' . UserBranchScope::cacheKey();
+            .':scope:'.UserBranchScope::cacheKey();
     }
 }

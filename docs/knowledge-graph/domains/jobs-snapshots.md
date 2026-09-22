@@ -6,14 +6,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| command | 17 |
-| file | 74 |
+| command | 18 |
+| file | 80 |
 | function | 2 |
-| method | 571 |
+| method | 613 |
 | unresolved_symbol | 17 |
 | queue | 5 |
 | route | 1 |
-| class | 70 |
+| class | 76 |
 | trait | 1 |
 | table | 11 |
 
@@ -23,34 +23,34 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | --- | ---: | --- |
 | `ReportSnapshotBuilder` | class | 144 | `app/Support/ReportSnapshotBuilder.php:12` |
 | `performance_rm_snapshots` | table | 85 | - |
-| `jobs` | table | 71 | - |
+| `jobs` | table | 84 | - |
 | `ManagedReportSnapshotRebuildCoordinator` | class | 38 | `app/Support/ManagedReportSnapshotRebuildCoordinator.php:15` |
 | `PerformanceRmIncrementalSnapshotTest` | class | 38 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:16` |
 | `SnapshotBatchAggregator` | class | 34 | `app/Support/SnapshotBatchAggregator.php:11` |
-| `insertDailyLoanRow` | method | 32 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:985` |
-| `snapshots-parallel` | queue | 32 | - |
-| `capture` | method | 29 | `app/Support/SnapshotSourceSignatureService.php:61` |
-| `ValidateSnapshotDataIntegrityCommand` | class | 26 | `app/Console/Commands/ValidateSnapshotDataIntegrityCommand.php:12` |
+| `snapshots-parallel` | queue | 34 | - |
+| `insertDailyLoanRow` | method | 32 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:987` |
+| `EnsureQueueWorkerRunning` | class | 31 | `app/Console/Commands/EnsureQueueWorkerRunning.php:15` |
+| `capture` | method | 31 | `app/Support/SnapshotSourceSignatureService.php:61` |
+| `ValidateSnapshotDataIntegrityCommand` | class | 27 | `app/Console/Commands/ValidateSnapshotDataIntegrityCommand.php:13` |
+| `SnapshotDirtyPeriodService` | class | 26 | `app/Support/SnapshotDirtyPeriodService.php:11` |
 | `handle` | method | 26 | `app/Jobs/RunManagedReportSnapshotRebuildJob.php:52` |
-| `EnsureQueueWorkerRunning` | class | 25 | `app/Console/Commands/EnsureQueueWorkerRunning.php:12` |
-| `SnapshotDirtyPeriodService` | class | 24 | `app/Support/SnapshotDirtyPeriodService.php:11` |
+| `SnapshotSourceSignatureService` | class | 24 | `app/Support/SnapshotSourceSignatureService.php:10` |
 | `RefreshRemoteDashboardSourcesJob` | class | 23 | `app/Jobs/RefreshRemoteDashboardSourcesJob.php:21` |
 | `SnapshotJobRetryWindow` | trait | 23 | `app/Jobs/SnapshotJobRetryWindow.php:7` |
-| `SnapshotSourceSignatureService` | class | 23 | `app/Support/SnapshotSourceSignatureService.php:10` |
 | `BackfillShadowColumnsCommand` | class | 22 | `app/Console/Commands/BackfillShadowColumnsCommand.php:14` |
 | `RunManagedReportSnapshotRebuildJob` | class | 22 | `app/Jobs/RunManagedReportSnapshotRebuildJob.php:23` |
-| `isFresh` | method | 21 | `app/Support/SnapshotSourceSignatureService.php:359` |
+| `isFresh` | method | 21 | `app/Support/SnapshotSourceSignatureService.php:474` |
 | `registerSyncRequest` | method | 21 | `app/Support/SnapshotBatchAggregator.php:22` |
+| `ProcessShadowBackfillJob` | class | 20 | `app/Jobs/ProcessShadowBackfillJob.php:19` |
 | `SmartPartialSnapshotRebuildJob` | class | 20 | `app/Jobs/SmartPartialSnapshotRebuildJob.php:20` |
+| `SnapshotAuditService` | class | 20 | `app/Support/SnapshotAuditService.php:10` |
+| `ValidatePerformanceRmSnapshotsCommand` | class | 20 | `app/Console/Commands/ValidatePerformanceRmSnapshotsCommand.php:13` |
 | `RebuildSnapshotHarianBatch` | class | 19 | `app/Jobs/RebuildSnapshotHarianBatch.php:19` |
 | `RebuildSnapshotPerformanceRmBatch` | class | 19 | `app/Jobs/RebuildSnapshotPerformanceRmBatch.php:20` |
 | `RebuildSnapshotRasioBatch` | class | 19 | `app/Jobs/RebuildSnapshotRasioBatch.php:19` |
-| `SnapshotAuditService` | class | 19 | `app/Support/SnapshotAuditService.php:10` |
-| `ValidatePerformanceRmSnapshotsCommand` | class | 19 | `app/Console/Commands/ValidatePerformanceRmSnapshotsCommand.php:12` |
 | `DistributedShadowBackfillJob` | class | 18 | `app/Jobs/DistributedShadowBackfillJob.php:15` |
 | `queue` | method | 18 | `app/Support/ManagedReportSnapshotRebuildCoordinator.php:28` |
-| `ExecuteBatchedSnapshotJob` | class | 16 | `app/Jobs/ExecuteBatchedSnapshotJob.php:15` |
-| `ProcessShadowBackfillJob` | class | 16 | `app/Jobs/ProcessShadowBackfillJob.php:16` |
+| `job_batches` | table | 17 | - |
 
 ## Route Nodes
 
@@ -58,6 +58,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Class Nodes
 
+- `AuditAndHealSnapshotsJob` - `app/Jobs/AuditAndHealSnapshotsJob.php`
+- `AuditSnapshotsCommand` - `app/Console/Commands/AuditSnapshotsCommand.php`
 - `BackfillShadowColumnsCommand` - `app/Console/Commands/BackfillShadowColumnsCommand.php`
 - `BackfillShadowColumnsCommandTest` - `tests/Unit/BackfillShadowColumnsCommandTest.php`
 - `CustomBatchRepository` - `app/Queue/CustomBatchRepository.php`
@@ -84,6 +86,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ProcessShadowBackfillJobTest` - `tests/Unit/ProcessShadowBackfillJobTest.php`
 - `ProcessSnapshotDirtyPeriodJob` - `app/Jobs/ProcessSnapshotDirtyPeriodJob.php`
 - `QueueWorkerPoolTest` - `tests/Unit/QueueWorkerPoolTest.php`
+- `QueueWorkerSelfHealingTest` - `tests/Unit/QueueWorkerSelfHealingTest.php`
 - `RebuildChartPeriodikPeriodJob` - `app/Jobs/RebuildChartPeriodikPeriodJob.php`
 - `RebuildDashboardPeriodJob` - `app/Jobs/RebuildDashboardPeriodJob.php`
 - `RebuildHarianPeriodJob` - `app/Jobs/RebuildHarianPeriodJob.php`
@@ -108,6 +111,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ShadowBackfillTableCommand` - `app/Console/Commands/ShadowBackfillTableCommand.php`
 - `SmartPartialSnapshotRebuildJob` - `app/Jobs/SmartPartialSnapshotRebuildJob.php`
 - `SmartPartialSnapshotRebuildJobTest` - `tests/Unit/SmartPartialSnapshotRebuildJobTest.php`
+- `SnapshotAuditAndHealService` - `app/Services/Snapshot/SnapshotAuditAndHealService.php`
+- `SnapshotAuditAndHealTest` - `tests/Unit/SnapshotAuditAndHealTest.php`
 - `SnapshotAuditCoordinator` - `app/Support/SnapshotAuditCoordinator.php`
 - `SnapshotAuditService` - `app/Support/SnapshotAuditService.php`
 - `SnapshotAuditServiceTest` - `tests/Unit/SnapshotAuditServiceTest.php`
@@ -128,6 +133,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ValidatePerformanceRmSnapshotsCommand` - `app/Console/Commands/ValidatePerformanceRmSnapshotsCommand.php`
 - `ValidateSnapshotDataIntegrityCommand` - `app/Console/Commands/ValidateSnapshotDataIntegrityCommand.php`
 - `WarmReportCacheJob` - `app/Jobs/WarmReportCacheJob.php`
+- `WorkerOrchestrationTest` - `tests/Unit/WorkerOrchestrationTest.php`
 
 ## Trait Nodes
 
@@ -143,6 +149,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `shadow:backfill` - `app/Console/Commands/BackfillShadowColumnsCommand.php`
 - `shadow:backfill-status` - `app/Console/Commands/ShadowBackfillStatusCommand.php`
 - `shadow:backfill-table` - `app/Console/Commands/ShadowBackfillTableCommand.php`
+- `snapshot:audit-heal` - `app/Console/Commands/AuditSnapshotsCommand.php`
 - `snapshot:flush-due-batches` - `app/Console/Commands/FlushDueSnapshotBatches.php`
 - `snapshot:force-sync` - `app/Console/Commands/SnapshotForceSyncCommand.php`
 - `snapshot:manage-batches` - `app/Console/Commands/ManageSnapshotBatches.php`
@@ -179,25 +186,26 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| jobs-snapshots -> core (calls) | 140 |
-| import -> jobs-snapshots (calls) | 76 |
+| jobs-snapshots -> core (calls) | 146 |
+| import -> jobs-snapshots (calls) | 81 |
 | dashboard-pinjaman -> jobs-snapshots (writes_table) | 35 |
-| jobs-snapshots -> core (uses_trait) | 31 |
+| jobs-snapshots -> core (uses_trait) | 32 |
+| jobs-snapshots -> core (instantiates) | 30 |
+| tests -> jobs-snapshots (contains) | 29 |
 | jobs-snapshots -> dashboard-pinjaman (reads_table) | 27 |
-| tests -> jobs-snapshots (contains) | 27 |
-| jobs-snapshots -> core (instantiates) | 24 |
+| jobs-snapshots -> tests (calls) | 24 |
 | dashboard-simpanan -> jobs-snapshots (uses_trait) | 24 |
 | jobs-snapshots -> core (accepts) | 21 |
 | jobs-snapshots -> dashboard-pinjaman (writes_table) | 21 |
-| import -> jobs-snapshots (reads_table) | 20 |
-| jobs-snapshots -> tests (calls) | 19 |
+| import -> jobs-snapshots (reads_table) | 21 |
+| import -> jobs-snapshots (instantiates) | 21 |
+| jobs-snapshots -> import (instantiates) | 20 |
 | dashboard-pinjaman -> jobs-snapshots (calls) | 18 |
-| import -> jobs-snapshots (instantiates) | 17 |
+| jobs-snapshots -> tests (extends) | 18 |
+| jobs-snapshots -> core (extends) | 17 |
 | import -> jobs-snapshots (uses_trait) | 17 |
-| jobs-snapshots -> core (extends) | 16 |
-| import -> jobs-snapshots (writes_table) | 15 |
-| jobs-snapshots -> import (instantiates) | 15 |
-| jobs-snapshots -> tests (extends) | 15 |
+| jobs-snapshots -> import (contains) | 17 |
+| import -> jobs-snapshots (writes_table) | 16 |
 | database -> jobs-snapshots (checks_table) | 14 |
 | jobs-snapshots -> dashboard-simpanan (reads_table) | 13 |
 | database -> jobs-snapshots (defines_table) | 12 |
@@ -208,4 +216,3 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | jobs-snapshots -> presentation (calls) | 10 |
 | jobs-snapshots -> dashboard-simpanan (writes_table) | 10 |
 | tests -> jobs-snapshots (calls) | 10 |
-| jobs-snapshots -> import (contains) | 10 |

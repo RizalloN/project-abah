@@ -53,11 +53,10 @@ class SmallRmRealizationCalculatorTest extends TestCase
         $this->assertNotNull($row);
         $this->assertSame(2, $row['deb']);
         $this->assertSame(900.0, $row['rp']);
-        $this->assertSame(400.0, $result['diagnostics']['supplement_rp']);
-        $this->assertSame(500.0, $result['diagnostics']['new_rp']);
+        $this->assertSame(900.0, $result['diagnostics']['credited_rp']);
     }
 
-    public function test_supplements_use_positive_cif_plafond_growth_for_same_or_replacement_account(): void
+    public function test_existing_cif_accounts_keep_their_full_gross_plafond(): void
     {
         $this->insertRow('2026-06-30', 'CIF-REPLACE', 'OLD-CLOSED', 600, 400, '2025-01-01');
         $this->insertRow('2026-07-31', 'CIF-REPLACE', 'NEW-REPLACEMENT', 800, 800, '2026-07-10');
@@ -70,12 +69,11 @@ class SmallRmRealizationCalculatorTest extends TestCase
 
         $this->assertNotNull($row);
         $this->assertSame(2, $row['deb']);
-        $this->assertSame(250.0, $row['rp']);
-        $this->assertSame(2, $result['diagnostics']['supplement_accounts']);
-        $this->assertSame(250.0, $result['diagnostics']['supplement_rp']);
+        $this->assertSame(1150.0, $row['rp']);
+        $this->assertSame(1150.0, $result['diagnostics']['credited_rp']);
     }
 
-    public function test_non_positive_cif_plafond_growth_is_not_counted_as_realization(): void
+    public function test_replacement_account_is_not_reduced_by_prior_cif_plafond(): void
     {
         $this->insertRow('2026-06-30', 'CIF-DOWN', 'OLD', 600, 500, '2025-01-01');
         $this->insertRow('2026-07-31', 'CIF-DOWN', 'NEW', 550, 550, '2026-07-10');
@@ -84,13 +82,12 @@ class SmallRmRealizationCalculatorTest extends TestCase
         $row = collect($result['rows'])->firstWhere('rm_identity', 'PN:63020');
 
         $this->assertNotNull($row);
-        $this->assertSame(0, $row['deb']);
-        $this->assertSame(0.0, $row['rp']);
-        $this->assertSame(0, $result['diagnostics']['supplement_accounts']);
-        $this->assertSame(0.0, $result['diagnostics']['supplement_rp']);
+        $this->assertSame(1, $row['deb']);
+        $this->assertSame(550.0, $row['rp']);
+        $this->assertSame(550.0, $result['diagnostics']['credited_rp']);
     }
 
-    public function test_previous_cif_plafond_is_not_lost_when_assignment_changed(): void
+    public function test_prior_assignment_does_not_reduce_current_gross_plafond(): void
     {
         $this->insertRow('2026-06-30', 'CIF-MOVED', 'OLD', 700, 600, '2025-01-01', '00024959 - RM LAMA', [
             'cabang_normalized' => 'KC MADIUN',
@@ -110,8 +107,8 @@ class SmallRmRealizationCalculatorTest extends TestCase
 
         $this->assertNotNull($row);
         $this->assertSame(1, $row['deb']);
-        $this->assertSame(200.0, $row['rp']);
-        $this->assertSame(200.0, $result['diagnostics']['supplement_rp']);
+        $this->assertSame(900.0, $row['rp']);
+        $this->assertSame(900.0, $result['diagnostics']['credited_rp']);
     }
 
     public function test_realization_uses_initiator_deduplicates_accounts_and_ignores_blank_initiator(): void
@@ -151,6 +148,79 @@ class SmallRmRealizationCalculatorTest extends TestCase
         $this->assertNotNull($row);
         $this->assertSame(1, $row['deb']);
         $this->assertSame(850.0, $row['rp']);
+    }
+
+    public function test_gross_formula_applies_to_future_periods_without_year_specific_rules(): void
+    {
+        $this->insertRow('2026-12-31', 'CIF-FUTURE', 'OLD-FACILITY', 700, 650, '2025-01-01');
+        $this->insertRow('2027-01-31', 'CIF-FUTURE', 'NEW-FACILITY', 900, 900, '2027-01-12');
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2027-01-31']);
+        $row = collect($result['rows'])->firstWhere('rm_identity', 'PN:63020');
+
+        $this->assertNotNull($row);
+        $this->assertSame(1, $row['deb']);
+        $this->assertSame(900.0, $row['rp']);
+    }
+
+    public function test_duplicate_account_with_missing_cif_is_credited_once_at_maximum_plafond(): void
+    {
+        $this->insertRow('2026-07-31', '', 'SAME-ACCOUNT', 400, 400, '2026-07-15');
+        $this->insertRow('2026-07-31', 'CIF-KNOWN', 'SAME-ACCOUNT', 850, 850, '2026-07-15');
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-07-31']);
+        $row = collect($result['rows'])->firstWhere('rm_identity', 'PN:63020');
+
+        $this->assertNotNull($row);
+        $this->assertSame(1, $row['deb']);
+        $this->assertSame(850.0, $row['rp']);
+        $this->assertSame(1, $result['diagnostics']['candidate_accounts']);
+        $this->assertSame(850.0, $result['diagnostics']['credited_rp']);
+    }
+
+    public function test_booking_after_position_date_is_not_credited_as_a_plafond_increase(): void
+    {
+        foreach (['2026-07-20', '2026-08-01'] as $index => $bookingDate) {
+            $this->insertRow('2026-06-30', 'CIF-FUTURE-'.$index, 'FUTURE-ACCOUNT-'.$index, 500, 450, '2025-01-01');
+            $this->insertRow('2026-07-15', 'CIF-FUTURE-'.$index, 'FUTURE-ACCOUNT-'.$index, 800, 700, $bookingDate);
+        }
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-07-15']);
+
+        $this->assertTrue($result['covered_periods']['2026-07-15']);
+        $this->assertCount(0, $result['rows']);
+        $this->assertSame(0, $result['diagnostics']['plafond_increase_accounts']);
+        $this->assertSame(0.0, $result['diagnostics']['credited_rp']);
+    }
+
+    public function test_same_account_plafond_increase_is_credited_without_a_new_booking_date(): void
+    {
+        $this->insertRow('2026-06-30', 'CIF-INCREASE', 'SAME-ACCOUNT', 500, 450, '2025-01-01');
+        $this->insertRow('2026-07-31', 'CIF-INCREASE', 'SAME-ACCOUNT', 800, 700, '2025-01-01');
+        $this->insertRow('2026-07-31', 'CIF-BOOKING', 'NEW-ACCOUNT', 400, 400, '2026-07-12');
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-07-31']);
+        $row = collect($result['rows'])->firstWhere('rm_identity', 'PN:63020');
+
+        $this->assertNotNull($row);
+        $this->assertSame(2, $row['deb']);
+        $this->assertSame(700.0, $row['rp']);
+        $this->assertSame(1, $result['diagnostics']['booking_accounts']);
+        $this->assertSame(400.0, $result['diagnostics']['booking_rp']);
+        $this->assertSame(1, $result['diagnostics']['plafond_increase_accounts']);
+        $this->assertSame(300.0, $result['diagnostics']['plafond_increase_rp']);
+    }
+
+    public function test_old_account_missing_from_previous_position_is_not_treated_as_increase_from_zero(): void
+    {
+        $this->insertRow('2026-06-30', 'OTHER-CIF', 'OTHER-ACCOUNT', 500, 450, '2025-01-01');
+        $this->insertRow('2026-07-31', 'CIF-OLD', 'OLD-ACCOUNT', 800, 700, '2025-01-01');
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-07-31']);
+
+        $this->assertCount(0, $result['rows']);
+        $this->assertSame(0, $result['diagnostics']['plafond_increase_accounts']);
+        $this->assertSame(0.0, $result['diagnostics']['credited_rp']);
     }
 
     private function insertRow(

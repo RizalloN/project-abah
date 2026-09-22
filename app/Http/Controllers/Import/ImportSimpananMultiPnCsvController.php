@@ -1564,8 +1564,15 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             'NOMORREKENING' => 'no_rekening',
             'NOMOR_REKENING' => 'no_rekening',
             'NO_REKENING' => 'no_rekening',
+            'ACCTNO' => 'no_rekening',
+            'ACCOUNT_NO' => 'no_rekening',
+            'ACCOUNT_NUMBER' => 'no_rekening',
+            'NOREK' => 'no_rekening',
             'CIF_NO' => 'cifno',
             'CIF_NUMBER' => 'cifno',
+            'NOMOR_CIF' => 'cifno',
+            'NO_CIF' => 'cifno',
+            'CIF' => 'cifno',
             'STATUS_REKENING' => 'status',
             'STATUSREKENING' => 'status',
             'STATUS_REK' => 'status',
@@ -1574,6 +1581,18 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             'STATUSSIMPANAN' => 'status',
             'STATUS_DORMANT' => 'status',
             'STATUSDORMANT' => 'status',
+            'SALDO' => 'saldo_idr',
+            'SALDO_AKHIR' => 'saldo_idr',
+            'OUTSTANDING' => 'saldo_idr',
+            'BALANCE' => 'saldo_idr',
+            'TGL_POSISI' => 'posisi',
+            'TANGGAL_POSISI' => 'posisi',
+            'TANGGAL' => 'posisi',
+            'PERIODE' => 'posisi',
+            'DATE' => 'posisi',
+            'CABANG' => 'nama_cabang',
+            'KDCAB' => 'kode_cabang',
+            'KD_CABANG' => 'kode_cabang',
         ];
 
         if (isset($aliases[$normalized])) {
@@ -1827,6 +1846,12 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             }
 
             $dbColumn = $tableColumnsByLower[$normalized] ?? null;
+            if ($dbColumn === null) {
+                $alias = $this->smartGuardService()->resolveAliasCandidate($header, array_keys($tableColumnsByLower));
+                if ($alias !== null && isset($tableColumnsByLower[$alias])) {
+                    $dbColumn = $tableColumnsByLower[$alias];
+                }
+            }
             if (
                 $dbColumn === null
                 || in_array($dbColumn, ['id', 'created_at', 'updated_at'], true)

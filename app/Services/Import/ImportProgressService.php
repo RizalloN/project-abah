@@ -480,7 +480,28 @@ class ImportProgressService
             $query->where('ij.id', '!=', $exceptJobId);
         }
 
-        return $query->exists();
+        $activeCandidates = $query->select(['ij.id', 'ij.updated_at'])->get();
+        if ($activeCandidates->isEmpty()) {
+            return false;
+        }
+
+        foreach ($activeCandidates as $candidate) {
+            $candidateId = (int) ($candidate->id ?? 0);
+            if ($candidateId <= 0) {
+                continue;
+            }
+
+            if ($this->hasLiveProcessingLease($candidateId)) {
+                return true;
+            }
+
+            $updatedAt = $candidate->updated_at ?? null;
+            if ($updatedAt !== null && Carbon::parse($updatedAt)->gt(now()->subSeconds(120))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function normalizeImportTableName(string $tableName): string
@@ -545,6 +566,10 @@ class ImportProgressService
                 continue;
             }
 
+            if ($this->hasLiveProcessingLease($jobId)) {
+                continue;
+            }
+
             $success = (int) ($job->total_success ?? 0);
             $failed = (int) ($job->total_failed ?? 0);
             $this->markFailed(
@@ -558,6 +583,71 @@ class ImportProgressService
         }
 
         return $purged;
+    }
+
+    private function hasLiveProcessingLease(int $jobId): bool
+    {
+        $heartbeat = $this->importCache()->get($this->heartbeatKey($jobId));
+        if (is_numeric($heartbeat) && (time() - (int) $heartbeat) <= 30) {
+            return true;
+        }
+
+        $queueRow = $this->findActiveQueueRowForJob($jobId);
+        if ($queueRow !== null) {
+            $reservedAt = $queueRow->reserved_at ?? null;
+            if ($reservedAt === null) {
+                return true;
+            }
+
+            // If recently reserved (within 90s grace), it may still be initializing
+            if ((time() - (int) $reservedAt) <= 90) {
+                return true;
+            }
+
+            // Reserved longer than 90s ago: verify if runtime execution lock is held
+            foreach ([
+                'import_excel_execute_job_',
+                'import_file_stream_job_',
+                'import_excel_stream_job_',
+            ] as $prefix) {
+                if ($this->runtimeLockIsHeld($prefix . $jobId)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        foreach ([
+            'import_excel_execute_job_',
+            'import_file_stream_job_',
+            'import_excel_stream_job_',
+        ] as $prefix) {
+            if ($this->runtimeLockIsHeld($prefix . $jobId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function runtimeLockIsHeld(string $key): bool
+    {
+        $lock = $this->importCache()->lock($key, 1);
+        $acquired = false;
+
+        try {
+            $acquired = $lock->get();
+
+            return !$acquired;
+        } catch (\Throwable) {
+            // An unavailable lock backend is not sufficient evidence to kill a job.
+            return true;
+        } finally {
+            if ($acquired) {
+                $lock->release();
+            }
+        }
     }
 
     public function purgeQueuedImportJobs(int $olderThanMinutes = 0): int
@@ -1127,7 +1217,8 @@ class ImportProgressService
             return $this->findJob($jobId);
         }
 
-        if ($queuedAt->lt(now()->subHours(self::STALE_PROCESSING_HOURS))) {
+        if ($queuedAt->lt(now()->subHours(self::STALE_PROCESSING_HOURS))
+            && !$this->hasLiveProcessingLease($jobId)) {
             $this->markFailed(
                 $jobId,
                 'Job import terlalu lama berada di status processing tanpa progress. Sistem menandainya gagal agar tidak menggantung.',

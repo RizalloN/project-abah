@@ -66,6 +66,49 @@ class SsaPolarsSourceContractTest extends TestCase
         $this->assertSame('2500000.00', $result['csv'][1][11]);
     }
 
+    public function test_ssa_pinjaman_processor_rejects_export_without_segmen_lama(): void
+    {
+        $headers = [
+            'Month, Day, Year of Periode', 'Nama Cabang', 'Nama Uker', 'Produk',
+            'Produk_Dashboard', 'Segmen', 'SEGMEN_2025', 'Segmen_Dashboard',
+            'Kolektabilitas One Obligor', 'Flag Restruk', 'Baki Debet',
+            'Jumlah Debitur Aktif', 'Jumlah Rekening Aktif',
+        ];
+        $row = [
+            '20 September 2026', '00045 -- KC Madiun (Konsolidasi-MB)',
+            '00045 -- KC Madiun', 'Briguna Ritel', 'Briguna-Konsumer',
+            'Konsumer', 'Consumer', 'Consumer', '1', 'N', '660561893737', '4523', '4814',
+        ];
+
+        $result = $this->runProcessor('ssa_pinjaman_polars_processor.py', $headers, $row);
+
+        $this->assertNotSame(0, $result['exit_code']);
+        $this->assertStringContainsString('segmen_lama', implode(PHP_EOL, $result['events']));
+    }
+
+    public function test_ssa_processors_accept_renamed_headers_only_when_the_row_proves_the_known_layout(): void
+    {
+        $result = $this->runProcessor('ssa_simpanan_polars_processor.py', [
+            'Periode A', 'Cabang A', 'Uker A', 'Produk A', 'Segment A', 'Bisnis A', 'Nilai A',
+        ], [
+            '20 September 2026', '00045 -- KC Madiun (Konsolidasi-MB)', '00045 -- KC Madiun',
+            'Giro', 'Ritel', 'Consumer', '583457310.4',
+        ]);
+
+        $this->assertSame(0, $result['exit_code'], implode(PHP_EOL, $result['events']));
+        $this->assertSame('month_day_year_of_posisi', $result['csv'][0][0]);
+        $this->assertSame('2026-09-20', $result['csv'][1][0]);
+
+        $invalid = $this->runProcessor('ssa_simpanan_polars_processor.py', [
+            'Periode A', 'Cabang A', 'Uker A', 'Produk A', 'Segment A', 'Bisnis A', 'Nilai A',
+        ], [
+            'bukan tanggal', 'KC Madiun', 'KC Madiun', 'Giro', 'Ritel', 'Consumer', 'bukan angka',
+        ]);
+
+        $this->assertNotSame(0, $invalid['exit_code']);
+        $this->assertStringContainsString('isi kolom tidak cocok', implode(PHP_EOL, $invalid['events']));
+    }
+
     /**
      * @return array{exit_code: int, events: array<int, string>, csv: array<int, array<int, string|null>>}
      */

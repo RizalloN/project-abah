@@ -6,31 +6,32 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 56 |
+| file | 59 |
 | function | 1 |
-| method | 267 |
+| method | 290 |
 | unresolved_symbol | 10 |
-| class | 50 |
+| class | 53 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `TestCase` | class | 179 | `tests/TestCase.php:13` |
-| `setUp` | method | 89 | `tests/TestCase.php:17` |
-| `ManagedReportDeleteTest` | class | 54 | `tests/Unit/ManagedReportDeleteTest.php:19` |
-| `LandingMicroPerformanceServiceTest` | class | 44 | `tests/Unit/LandingMicroPerformanceServiceTest.php:15` |
-| `invokePrivate` | method | 26 | `tests/Unit/LandingMicroPerformanceServiceTest.php:1810` |
-| `dailyLoanRow` | method | 23 | `tests/Unit/LandingMicroPerformanceServiceTest.php:1495` |
+| `TestCase` | class | 186 | `tests/TestCase.php:13` |
+| `setUp` | method | 93 | `tests/TestCase.php:17` |
+| `ManagedReportDeleteTest` | class | 56 | `tests/Unit/ManagedReportDeleteTest.php:20` |
+| `LandingMicroPerformanceServiceTest` | class | 46 | `tests/Unit/LandingMicroPerformanceServiceTest.php:16` |
+| `invokePrivate` | method | 28 | `tests/Unit/LandingMicroPerformanceServiceTest.php:1851` |
+| `dailyLoanRow` | method | 25 | `tests/Unit/LandingMicroPerformanceServiceTest.php:1536` |
 | `ResponsiveOperationalViewsTest` | class | 21 | `tests/Unit/ResponsiveOperationalViewsTest.php:7` |
+| `LandingConsumerOperationalServiceTest` | class | 20 | `tests/Unit/LandingConsumerOperationalServiceTest.php:16` |
 | `ReportDataSyncServiceTest` | class | 20 | `tests/Unit/ReportDataSyncServiceTest.php:26` |
-| `LandingConsumerOperationalServiceTest` | class | 19 | `tests/Unit/LandingConsumerOperationalServiceTest.php:16` |
 | `LandingSmeOperationalServiceTest` | class | 18 | `tests/Unit/LandingSmeOperationalServiceTest.php:11` |
 | `LandingPageRedesignContractTest` | class | 17 | `tests/Unit/LandingPageRedesignContractTest.php:9` |
 | `RkaLookupServiceTest` | class | 17 | `tests/Unit/RkaLookupServiceTest.php:14` |
 | `setUp` | method | 17 | `tests/Feature/PruneReportDailyHistoryCommandTest.php:16` |
 | `service` | method | 16 | `tests/Unit/LandingSmeOperationalServiceTest.php:534` |
 | `DataPhReportControllerTest` | class | 15 | `tests/Unit/DataPhReportControllerTest.php:14` |
+| `SmartContentHeaderGuardServiceTest` | class | 15 | `tests/Unit/SmartContentHeaderGuardServiceTest.php:9` |
 | `ManagedReportRebuildTest` | class | 14 | `tests/Unit/ManagedReportRebuildTest.php:26` |
 | `DirectLargeFileLoadServiceTest` | class | 13 | `tests/Unit/DirectLargeFileLoadServiceTest.php:10` |
 | `StatusSyncManualTestScript` | class | 13 | `tests/Manual/StatusSyncManualTestScript.php:23` |
@@ -38,14 +39,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `guardDatabaseConnection` | method | 12 | `tests/TestCase.php:40` |
 | `LinkManagementControllerTest` | class | 11 | `tests/Unit/LinkManagementControllerTest.php:11` |
 | `MySqlBulkLoadServiceTest` | class | 11 | `tests/Unit/MySqlBulkLoadServiceTest.php:12` |
-| `setUp` | method | 11 | `tests/Unit/LandingMicroPerformanceServiceTest.php:17` |
+| `setUp` | method | 11 | `tests/Unit/LandingMicroPerformanceServiceTest.php:18` |
+| `snapshot` | method | 11 | `tests/Unit/LandingConsumerOperationalServiceTest.php:597` |
 | `ConsumerKanwilReferenceTest` | class | 10 | `tests/Unit/ConsumerKanwilReferenceTest.php:8` |
 | `LandingSmeAnalyticsContractTest` | class | 10 | `tests/Unit/LandingSmeAnalyticsContractTest.php:7` |
 | `ManagedReportManagementServiceTest` | class | 10 | `tests/Unit/ManagedReportManagementServiceTest.php:9` |
+| `MicroNettDisbursementCalculatorTest` | class | 10 | `tests/Unit/MicroNettDisbursementCalculatorTest.php:12` |
 | `PolarsArchitectureTest` | class | 10 | `tests/Unit/PolarsArchitectureTest.php:21` |
-| `RemoteDashboardSourceTest` | class | 10 | `tests/Unit/RemoteDashboardSourceTest.php:19` |
-| `StrictDateParserTest` | class | 10 | `tests/Unit/StrictDateParserTest.php:9` |
-| `invokePrivate` | method | 10 | `tests/Unit/DataPhReportControllerTest.php:393` |
 
 ## Class Nodes
 
@@ -55,6 +55,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ConsumerKanwilReferenceTest` - `tests/Unit/ConsumerKanwilReferenceTest.php`
 - `DataPhReportControllerTest` - `tests/Unit/DataPhReportControllerTest.php`
 - `DirectLargeFileLoadServiceTest` - `tests/Unit/DirectLargeFileLoadServiceTest.php`
+- `DocumentMarkdownServiceTest` - `tests/Unit/DocumentMarkdownServiceTest.php`
 - `ExcelStagingServiceLegacyXlsTest` - `tests/Unit/ExcelStagingServiceLegacyXlsTest.php`
 - `GeneratedColumnConsistencyTest` - `tests/Unit/GeneratedColumnConsistencyTest.php`
 - `JobHealthServiceTest` - `tests/Unit/JobHealthServiceTest.php`
@@ -71,6 +72,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ManagedReportDeleteTest` - `tests/Unit/ManagedReportDeleteTest.php`
 - `ManagedReportManagementServiceTest` - `tests/Unit/ManagedReportManagementServiceTest.php`
 - `ManagedReportRebuildTest` - `tests/Unit/ManagedReportRebuildTest.php`
+- `MicroNettDisbursementCalculatorTest` - `tests/Unit/MicroNettDisbursementCalculatorTest.php`
 - `MySqlBulkLoadServiceTest` - `tests/Unit/MySqlBulkLoadServiceTest.php`
 - `OfficeDocumentPreviewServiceTest` - `tests/Unit/OfficeDocumentPreviewServiceTest.php`
 - `PartitionMaintenanceServiceTest` - `tests/Unit/PartitionMaintenanceServiceTest.php`
@@ -88,6 +90,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ScheduledRebuildPerformanceRmCommandTest` - `tests/Unit/ScheduledRebuildPerformanceRmCommandTest.php`
 - `SchedulerCentralizationTest` - `tests/Unit/SchedulerCentralizationTest.php`
 - `SidebarNavigationOrderTest` - `tests/Unit/SidebarNavigationOrderTest.php`
+- `SmartContentHeaderGuardServiceTest` - `tests/Unit/SmartContentHeaderGuardServiceTest.php`
 - `SpreadsheetFileFormatDetectorTest` - `tests/Unit/SpreadsheetFileFormatDetectorTest.php`
 - `SsaPolarsSourceContractTest` - `tests/Unit/SsaPolarsSourceContractTest.php`
 - `StatusSyncManualTestScript` - `tests/Manual/StatusSyncManualTestScript.php`
@@ -104,26 +107,27 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| tests -> core (calls) | 79 |
-| tests -> core (instantiates) | 74 |
-| import -> tests (extends) | 49 |
+| tests -> core (calls) | 81 |
+| tests -> core (instantiates) | 76 |
+| import -> tests (extends) | 50 |
 | import -> tests (calls) | 43 |
-| dashboard-pinjaman -> tests (calls) | 39 |
+| dashboard-pinjaman -> tests (calls) | 42 |
+| tests -> dashboard-pinjaman (writes_table) | 35 |
+| tests -> dashboard-pinjaman (contains) | 34 |
 | tests -> core (writes_table) | 32 |
-| tests -> dashboard-pinjaman (contains) | 31 |
-| tests -> dashboard-pinjaman (writes_table) | 29 |
-| tests -> import (contains) | 27 |
-| tests -> jobs-snapshots (contains) | 27 |
+| tests -> jobs-snapshots (contains) | 29 |
+| tests -> import (contains) | 28 |
+| jobs-snapshots -> tests (calls) | 24 |
 | dashboard-pinjaman -> tests (extends) | 22 |
-| jobs-snapshots -> tests (calls) | 19 |
-| tests -> dashboard-pinjaman (defines_table) | 18 |
+| tests -> dashboard-pinjaman (defines_table) | 19 |
+| jobs-snapshots -> tests (extends) | 18 |
 | tests -> core (defines_table) | 17 |
-| jobs-snapshots -> tests (extends) | 15 |
+| tests -> import (instantiates) | 14 |
 | dashboard-simpanan -> tests (extends) | 14 |
+| tests -> import (calls) | 13 |
 | dashboard-simpanan -> tests (calls) | 13 |
 | tests -> dashboard-pinjaman (reads_table) | 12 |
 | tests -> import (defines_table) | 11 |
-| tests -> import (instantiates) | 11 |
 | access-control -> tests (calls) | 10 |
 | tests -> jobs-snapshots (calls) | 10 |
 | database -> tests (calls) | 9 |
@@ -133,4 +137,3 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | tests -> access-control (calls) | 8 |
 | tests -> core (extends) | 8 |
 | tests -> marketshare (contains) | 8 |
-| tests -> jobs-snapshots (defines_table) | 7 |

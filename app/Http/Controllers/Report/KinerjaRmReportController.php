@@ -281,8 +281,8 @@ class KinerjaRmReportController extends Controller
 
     /**
      * BRIHC adalah roster utama untuk identitas, unit, cabang, dan jabatan RM.
-     * Metrik nominatif Daily Loan tetap dipertahankan untuk RM yang sama, lalu
-     * dipakai sebagai fallback hanya bila RM tersebut tidak ditemukan di BRIHC.
+     * Metrik nominatif Daily Loan hanya dipertahankan untuk RM yang masih aktif;
+     * nominatif tanpa pasangan roster tetap tersedia di sumber untuk audit.
      *
      * @param  Collection<int, array<string, mixed>>  $rows
      * @return Collection<int, array<string, mixed>>
@@ -300,8 +300,8 @@ class KinerjaRmReportController extends Controller
                     if (! $hasReference) {
                         $row['roster_only'] = false;
                         $row['roster_assignment_match'] = false;
-                        $row['is_active_rm'] = true;
-                        $row['activity_source'] = 'daily_loan_backup';
+                        $row['is_active_rm'] = false;
+                        $row['activity_source'] = 'brihc_not_found';
 
                         return $row;
                     }
@@ -446,7 +446,7 @@ class KinerjaRmReportController extends Controller
 
     /**
      * Mengambil roster BRIHC aktif sekaligus kecocokan personel Daily Loan untuk
-     * menentukan kapan nominatif harus dipakai sebagai fallback.
+     * memisahkan nominatif aktif dari penugasan lama.
      *
      * @param  Collection<int, array<string, mixed>>  $dailyLoanRows
      * @return Collection<string, array{primary_identity:string,name:string,branch:string,unit:string,unit_code:string,is_active_small:bool}>
@@ -476,7 +476,7 @@ class KinerjaRmReportController extends Controller
             ->all();
         $candidateNames = $dailyLoanRows
             ->pluck('rm')
-            ->map(static fn (string $name): string => trim($name))
+            ->map(static fn (string $name): string => trim(explode('-', $name, 2)[1] ?? $name))
             ->filter()
             ->unique()
             ->values()
@@ -541,13 +541,22 @@ class KinerjaRmReportController extends Controller
             ->filter(static fn (array $record): bool => $record['pn_identity'] !== '')
             ->groupBy('pn_identity')
             ->map(fn (Collection $pnRecords): array => $this->selectLatestRmReference($pnRecords));
+        $latestByNameAssignment = $records
+            ->filter(static fn (array $record): bool => $record['name_identity'] !== '')
+            ->groupBy(fn (array $record): string => $this->smallRmNameAssignmentReferenceKey(
+                (string) $record['name_identity'],
+                $record
+            ))
+            ->map(fn (Collection $assignmentRecords): array => $this->selectLatestRmReference($assignmentRecords));
         $latestByName = $records
             ->filter(static fn (array $record): bool => $record['name_identity'] !== '')
             ->groupBy('name_identity')
             ->filter(static fn (Collection $nameRecords): bool => $nameRecords->pluck('pn_identity')->unique()->count() === 1)
             ->map(fn (Collection $nameRecords): array => $this->selectLatestRmReference($nameRecords));
 
-        return $latestByPn->union($latestByName);
+        return $latestByPn
+            ->union($latestByNameAssignment)
+            ->union($latestByName);
     }
 
     /**
@@ -561,9 +570,29 @@ class KinerjaRmReportController extends Controller
      */
     private function latestSmallRmReferenceForRow(array $row, Collection $references): array
     {
+        $rawName = (string) ($row['rm'] ?? '');
+        $displayName = trim(explode('-', $rawName, 2)[1] ?? $rawName);
+        $nameIdentity = $this->landingSmallRmIdentity('', $displayName);
+        $nameAssignmentReference = (array) $references->get(
+            $this->smallRmNameAssignmentReferenceKey($nameIdentity, $row),
+            []
+        );
+        if ((bool) ($nameAssignmentReference['is_active_small'] ?? false)) {
+            return $nameAssignmentReference;
+        }
+
         $directReference = (array) $references->get((string) ($row['rm_identity'] ?? ''), []);
-        if ($directReference !== [] || ! $this->isUnresolvedDailyLoanRmName((string) ($row['rm'] ?? ''))) {
+        if ($directReference !== []) {
             return $directReference;
+        }
+
+        $nameReference = (array) $references->get($nameIdentity, []);
+        if ($nameReference !== []) {
+            return $nameReference;
+        }
+
+        if (! $this->isUnresolvedDailyLoanRmName($rawName)) {
+            return [];
         }
 
         $candidates = $references
@@ -644,6 +673,12 @@ class KinerjaRmReportController extends Controller
         $unit = preg_replace('/[^A-Z0-9]+/', '', strtoupper((string) ($assignment['unit'] ?? '')));
 
         return $branch.'|'.($unitCode !== '' ? 'BC:'.$unitCode : 'UNIT:'.$unit);
+    }
+
+    /** @param array<string, mixed> $assignment */
+    private function smallRmNameAssignmentReferenceKey(string $nameIdentity, array $assignment): string
+    {
+        return 'NAME_ASSIGNMENT:'.$nameIdentity.'|'.$this->rmAssignmentKey($assignment);
     }
 
     /** @param Collection<int, array<string, mixed>> $records */
@@ -975,7 +1010,7 @@ class KinerjaRmReportController extends Controller
             return Carbon::parse($row->periode)->format('Y-m').'|'.$row->cabang;
         });
 
-        $details = $groups->map(function ($group) {
+        $details = $groups->map(function ($group) use ($segmen) {
             // Pick the latest date in this month-branch group
             $latestDate = $group->first()->periode;
             $latestDateRows = $group->where('periode', $latestDate);
@@ -991,7 +1026,7 @@ class KinerjaRmReportController extends Controller
 
             // Re-calculate A/B (Target 1600M)
             $isRealizA = ($realisasiOs / 1000000) >= 1600;
-            $isLarA = $pctLar < 17.5;
+            $isLarA = $pctLar < ($segmen === 'SMALL' ? 15.0 : 17.5);
 
             return [
                 'periode' => Carbon::parse($latestDate)->translatedFormat('M Y'),
@@ -1218,8 +1253,7 @@ class KinerjaRmReportController extends Controller
         string $rm,
         string $selectedPeriod,
         ?string $selectedProduct = null
-    ): Collection
-    {
+    ): Collection {
         if (! Schema::hasTable(self::SOURCE_TABLE) || ! Schema::hasTable(self::SNAPSHOT_TABLE)) {
             return collect();
         }
@@ -1594,7 +1628,7 @@ class KinerjaRmReportController extends Controller
                 'KPR' => 'KPR',
                 default => null,
             }
-            : $this->normalizeProductLabel($requestedProduct, $segmen);
+        : $this->normalizeProductLabel($requestedProduct, $segmen);
         $productOptions = self::SEGMENT_PRODUCT_MAP[$segmen] ?? [];
 
         if ($normalized !== null && in_array($normalized, $productOptions, true)) {
@@ -1712,7 +1746,7 @@ class KinerjaRmReportController extends Controller
         ?string $selectedRmCategory = null,
         bool $includeInactive = false
     ): array {
-        $cacheKey = 'kinerja_rm_retail_performance_v16-small-supplement-plafond:'.$this->reportCacheVersion().':'.md5(json_encode([
+        $cacheKey = 'kinerja_rm_retail_performance_v20-small-brihc-name-unit:'.$this->reportCacheVersion().':'.md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'cabang' => $selectedCabang,
@@ -1886,6 +1920,7 @@ class KinerjaRmReportController extends Controller
                     $selectedRmCategory
                 );
                 $pivoted = $this->applySmallRealizationMetrics($pivoted, $smallRealization, $emptyMetric);
+                $pivoted = $this->filterActiveSmallRmPivotedAssignments($pivoted);
             }
 
             $monthsWithReports = collect($months)->filter(fn (array $month): bool => $month['period'] !== null)->values();
@@ -2159,7 +2194,7 @@ class KinerjaRmReportController extends Controller
         $comparisonKeys = array_keys($comparisonPeriodValues);
         $emptyComparisonValues = array_fill_keys($comparisonKeys, 0.0);
 
-        $cacheKey = 'kinerja_rm_rows_v26-consumer-product-split:'.$this->reportCacheVersion().':'.md5(json_encode([
+        $cacheKey = 'kinerja_rm_rows_v31-small-lar15:'.$this->reportCacheVersion().':'.md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'comparisons' => $comparisonPeriodValues,
@@ -2313,6 +2348,7 @@ class KinerjaRmReportController extends Controller
                     'realisasi_deb' => 0, 'realisasi_os' => 0.0,
                     'realisasi_deb_sum' => 0.0, 'realisasi_os_sum' => 0.0,
                     'realisasi_period_count' => 0,
+                    'realisasi_periods' => [],
                     'quadrant_realisasi_os_sum' => 0.0,
                     'lar_loan_os' => 0.0, 'lar_value' => 0.0, 'lar_pct' => 0.0,
                     'lar_has_data' => false,
@@ -2339,7 +2375,8 @@ class KinerjaRmReportController extends Controller
                 if ($useForRealisasiAverage && $hasRealisasiValue) {
                     $pivoted[$key]['realisasi_deb_sum'] += $realisasiDeb;
                     $pivoted[$key]['realisasi_os_sum'] += $realisasiOs;
-                    $pivoted[$key]['realisasi_period_count']++;
+                    $pivoted[$key]['realisasi_periods'][(string) $row->periode] = true;
+                    $pivoted[$key]['realisasi_period_count'] = count($pivoted[$key]['realisasi_periods']);
                 }
 
                 if ($segmen === 'SMALL' && in_array($row->periode, $averagePeriods, true)) {
@@ -2370,6 +2407,10 @@ class KinerjaRmReportController extends Controller
                         $pivoted[$key]['comparison_values'][$periodKey] += $val;
                     }
                 }
+            }
+
+            if ($segmen === 'SMALL') {
+                $pivoted = $this->filterActiveSmallRmPivotedAssignments($pivoted);
             }
 
             $smallQuadrantsByRm = $segmen === 'SMALL'
@@ -3774,6 +3815,176 @@ class KinerjaRmReportController extends Controller
         return $this->landingSmallRmIdentity($rm, $displayName);
     }
 
+    /**
+     * Keep nominative SMALL metrics only for the current active BRIHC roster.
+     * Raw Daily Loan and snapshot rows remain untouched for audit purposes.
+     *
+     * @param  array<string, array<string, mixed>>  $pivoted
+     * @return array<string, array<string, mixed>>
+     */
+    private function filterActiveSmallRmPivotedAssignments(array $pivoted): array
+    {
+        if ($pivoted === []) {
+            return $pivoted;
+        }
+
+        $rows = collect($pivoted)->map(function (array $data, string $key): array {
+            $rm = (string) ($data['rm'] ?? '');
+
+            return [
+                'pivot_key' => $key,
+                'branch' => (string) ($data['cabang'] ?? ''),
+                'unit' => (string) ($data['unit'] ?? $data['rm_unit'] ?? ''),
+                'unit_code' => (string) ($data['unit_code'] ?? $data['rm_unit_code'] ?? ''),
+                'rm' => $rm,
+                'rm_identity' => $this->smallPerformanceRmIdentity($rm),
+            ];
+        })->values();
+        $references = $this->latestSmallRmReferences($rows);
+        $hasActiveRoster = $references->contains(
+            static fn (array $reference): bool => (bool) ($reference['is_active_small'] ?? false)
+        );
+        if (! $hasActiveRoster) {
+            return $pivoted;
+        }
+
+        $reconciled = [];
+        $reconciledKeys = [];
+        foreach ($rows as $row) {
+            $reference = $this->latestSmallRmReferenceForRow($row, $references);
+            if (! (bool) ($reference['is_active_small'] ?? false)) {
+                continue;
+            }
+
+            $pivotKey = (string) $row['pivot_key'];
+            $data = (array) ($pivoted[$pivotKey] ?? []);
+            $data = $this->applySmallRmRosterReference($data, $reference);
+            $product = isset($data['produk'])
+                ? ($this->normalizeProductLabel((string) $data['produk'], 'SMALL') ?? strtoupper(trim((string) $data['produk'])))
+                : 'ALL';
+            $reconciledIdentity = implode('|', [
+                (string) ($reference['primary_identity'] ?? ''),
+                $this->rmAssignmentKey($reference),
+                $product,
+            ]);
+            $targetKey = $reconciledKeys[$reconciledIdentity] ?? $pivotKey;
+            $reconciledKeys[$reconciledIdentity] = $targetKey;
+
+            $reconciled[$targetKey] = isset($reconciled[$targetKey])
+                ? $this->mergeSmallRmPivotedAssignments($reconciled[$targetKey], $data)
+                : $data;
+        }
+
+        return $reconciled;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $reference
+     * @return array<string, mixed>
+     */
+    private function applySmallRmRosterReference(array $data, array $reference): array
+    {
+        $branch = (string) ($reference['branch'] ?? $data['cabang'] ?? '');
+        $unit = (string) ($reference['unit'] ?? $data['unit'] ?? $data['rm_unit'] ?? '');
+        $unitCode = (string) ($reference['unit_code'] ?? $data['unit_code'] ?? $data['rm_unit_code'] ?? '');
+        $pn = str_starts_with((string) ($reference['primary_identity'] ?? ''), 'PN:')
+            ? substr((string) $reference['primary_identity'], 3)
+            : '';
+        $name = trim((string) ($reference['name'] ?? ''));
+
+        $data['cabang'] = $branch;
+        $data['rm'] = $pn !== ''
+            ? str_pad($pn, 8, '0', STR_PAD_LEFT).' - '.$name
+            : $name;
+        $data['rm_identity'] = (string) ($reference['primary_identity'] ?? '');
+        if (array_key_exists('unit', $data)) {
+            $data['unit'] = $unit;
+        }
+        if (array_key_exists('unit_code', $data)) {
+            $data['unit_code'] = $unitCode;
+        }
+        if (array_key_exists('rm_unit', $data)) {
+            $data['rm_unit'] = $unit;
+        }
+        if (array_key_exists('rm_unit_code', $data)) {
+            $data['rm_unit_code'] = $unitCode;
+        }
+        if (array_key_exists('rm_category', $data)) {
+            $data['rm_category'] = $this->resolveSmallRmCategory($unit);
+        }
+
+        return $data;
+    }
+
+    /**
+     * Merge metrics from historical/new PN rows that resolve to one active BRIHC RM.
+     *
+     * @param  array<string, mixed>  $current
+     * @param  array<string, mixed>  $incoming
+     * @return array<string, mixed>
+     */
+    private function mergeSmallRmPivotedAssignments(array $current, array $incoming): array
+    {
+        foreach ((array) ($incoming['periods'] ?? []) as $period => $metric) {
+            if (! isset($current['periods'][$period])) {
+                $current['periods'][$period] = $metric;
+
+                continue;
+            }
+
+            foreach (['deb', 'rp', 'lar_loan_os', 'lar_value'] as $field) {
+                $current['periods'][$period][$field] = (float) ($current['periods'][$period][$field] ?? 0)
+                    + (float) ($metric[$field] ?? 0);
+            }
+            $current['periods'][$period]['has_data'] = (bool) ($current['periods'][$period]['has_data'] ?? false)
+                || (bool) ($metric['has_data'] ?? false);
+            $current['periods'][$period]['lar_pct'] = null;
+        }
+
+        foreach ((array) ($incoming['comparison_values'] ?? []) as $period => $value) {
+            $current['comparison_values'][$period] = (float) ($current['comparison_values'][$period] ?? 0)
+                + (float) $value;
+        }
+
+        foreach ([
+            'curr', 'curr_deb', 'yoy', 'mtd', 'ytd', 'loan_os_reference',
+            'realisasi_deb_sum', 'realisasi_os_sum', 'quadrant_realisasi_os_sum',
+            'lar_loan_os', 'lar_value',
+        ] as $field) {
+            if (array_key_exists($field, $current) || array_key_exists($field, $incoming)) {
+                $current[$field] = (float) ($current[$field] ?? 0) + (float) ($incoming[$field] ?? 0);
+            }
+        }
+
+        if (array_key_exists('realisasi_periods', $current) || array_key_exists('realisasi_periods', $incoming)) {
+            $current['realisasi_periods'] = array_replace(
+                (array) ($current['realisasi_periods'] ?? []),
+                (array) ($incoming['realisasi_periods'] ?? [])
+            );
+            $current['realisasi_period_count'] = count($current['realisasi_periods']);
+        } elseif (array_key_exists('realisasi_period_count', $current) || array_key_exists('realisasi_period_count', $incoming)) {
+            $current['realisasi_period_count'] = (int) ($current['realisasi_period_count'] ?? 0)
+                + (int) ($incoming['realisasi_period_count'] ?? 0);
+        }
+
+        foreach (['lar_has_data', 'has_active_consumer_assignment'] as $field) {
+            if (array_key_exists($field, $current) || array_key_exists($field, $incoming)) {
+                $current[$field] = (bool) ($current[$field] ?? false) || (bool) ($incoming[$field] ?? false);
+            }
+        }
+        foreach (['quadrant', 'snapshot_quadrant'] as $field) {
+            $current[$field] ??= $incoming[$field] ?? null;
+        }
+        if (array_key_exists('lar_pct', $current) || array_key_exists('lar_pct', $incoming)) {
+            $current['lar_pct'] = (float) ($current['lar_loan_os'] ?? 0) > 0
+                ? ((float) ($current['lar_value'] ?? 0) / (float) $current['lar_loan_os']) * 100
+                : 0.0;
+        }
+
+        return $current;
+    }
+
     private function normalizeSmallPerformanceBranchCode(string $value): string
     {
         if (preg_match('/\d+/', $value, $matches) === 1) {
@@ -3834,7 +4045,7 @@ class KinerjaRmReportController extends Controller
     private function calculateSmallQuadrant(float $ratasOs, float $larPct): int
     {
         $isRatasA = ($ratasOs / 1000000) >= 1600;
-        $isLarA = $larPct < 17.5;
+        $isLarA = $larPct < 15.0;
 
         return match (true) {
             $isRatasA && $isLarA => 1,

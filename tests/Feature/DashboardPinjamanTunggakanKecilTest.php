@@ -38,6 +38,12 @@ beforeEach(function () {
         $table->decimal('tunggakan_pokok', 20, 2)->nullable();
         $table->decimal('tunggakan_bunga', 20, 2)->nullable();
         $table->decimal('tunggakan_penalti', 20, 2)->nullable();
+        $table->string('kol_adk1')->nullable();
+        $table->string('kolek_detail')->nullable();
+        $table->date('tanggal_menunggak')->nullable();
+        $table->date('tgl_akad_restruk')->nullable();
+        $table->string('npl_method')->nullable();
+        $table->string('flag_restruk')->nullable();
         $table->timestamps();
         foreach (dailyLoanHelperOutputColumns() as $column) {
             $table->string($column)->nullable();
@@ -582,3 +588,254 @@ it('streams small arrears export as excel workbook for selected unit', function 
     expect(collect($rows)->skip(1)->pluck('C')->all())->not->toContain('Unit B');
     expect(collect($rows)->skip(1)->pluck('B')->all())->not->toContain('KC Ngawi');
 });
+
+it('renders kolek tidak sesuai index view successfully', function () {
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->get('/report/dashboard-pinjaman/kolek-tidak-sesuai');
+
+    $response->assertOk();
+    $response->assertViewIs('report.dashboard-pinjaman.mismatch');
+    $response->assertSee('Kolek Tidak Sesuai');
+});
+
+it('correctly handles leading zero kolek values and falls back to kol_adk1', function () {
+    DB::table('daily_loan_dinamis')->insert([
+        [
+            'uniqueid_namareport' => 'kts-leading-zero-kolek',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Madiun',
+            'unit1' => 'Unit A',
+            'nomor_rekening1' => 'KTS-LZ-01',
+            'status_rekening1' => '1',
+            'baki_debet1' => 15000000,
+            'kolek' => '02',
+            'kol_adk1' => '02',
+            'umur_tunggakan' => 0,
+            'tunggakan_pokok' => 0,
+            'tunggakan_bunga' => 0,
+        ],
+        [
+            'uniqueid_namareport' => 'kts-fallback-koladk',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Madiun',
+            'unit1' => 'Unit A',
+            'nomor_rekening1' => 'KTS-FB-02',
+            'status_rekening1' => '1',
+            'baki_debet1' => 20000000,
+            'kolek' => null,
+            'kol_adk1' => '3',
+            'umur_tunggakan' => 0,
+            'tunggakan_pokok' => 0,
+            'tunggakan_bunga' => 0,
+        ],
+    ]);
+
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/data?' . http_build_query([
+            'periode' => '2026-04-22',
+            'cabang1' => ['KC Madiun'],
+            'refresh' => true,
+        ]));
+
+    $response->assertOk();
+    $response->assertJsonPath('audit.mismatch_rows', 2);
+    $response->assertJsonPath('summary_rows.0.mismatch_count', 2);
+    $response->assertJsonPath('summary_rows.0.kolek_membaik_count', 2);
+});
+
+it('guards against non-criteria records such as empty account, closed account, or non-positive baki debet', function () {
+    DB::table('daily_loan_dinamis')->insert([
+        [
+            'uniqueid_namareport' => 'kts-valid-row',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Ngawi',
+            'unit1' => 'Unit C',
+            'nomor_rekening1' => 'KTS-VALID-1',
+            'status_rekening1' => '1',
+            'baki_debet1' => 10000000,
+            'kolek' => '1',
+            'umur_tunggakan' => 25,
+            'tunggakan_pokok' => 500000,
+            'tunggakan_bunga' => 100000,
+        ],
+        [
+            'uniqueid_namareport' => 'kts-empty-norek',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Ngawi',
+            'unit1' => 'Unit C',
+            'nomor_rekening1' => '   ',
+            'status_rekening1' => '1',
+            'baki_debet1' => 10000000,
+            'kolek' => '1',
+            'umur_tunggakan' => 25,
+            'tunggakan_pokok' => 500000,
+            'tunggakan_bunga' => 100000,
+        ],
+        [
+            'uniqueid_namareport' => 'kts-total-dummy-norek',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Ngawi',
+            'unit1' => 'Unit C',
+            'nomor_rekening1' => 'TOTAL UNIT C',
+            'status_rekening1' => '1',
+            'baki_debet1' => 10000000,
+            'kolek' => '1',
+            'umur_tunggakan' => 25,
+            'tunggakan_pokok' => 500000,
+            'tunggakan_bunga' => 100000,
+        ],
+        [
+            'uniqueid_namareport' => 'kts-status-closed-2',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Ngawi',
+            'unit1' => 'Unit C',
+            'nomor_rekening1' => 'KTS-CLOSED-2',
+            'status_rekening1' => '2',
+            'baki_debet1' => 5000000,
+            'kolek' => '2',
+            'umur_tunggakan' => 0,
+            'tunggakan_pokok' => 0,
+            'tunggakan_bunga' => 0,
+        ],
+        [
+            'uniqueid_namareport' => 'kts-zero-baki',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Ngawi',
+            'unit1' => 'Unit C',
+            'nomor_rekening1' => 'KTS-ZERO-BAKI',
+            'status_rekening1' => '1',
+            'baki_debet1' => 0,
+            'kolek' => '2',
+            'umur_tunggakan' => 0,
+            'tunggakan_pokok' => 0,
+            'tunggakan_bunga' => 0,
+        ],
+    ]);
+
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/data?' . http_build_query([
+            'periode' => '2026-04-22',
+            'cabang1' => ['KC Ngawi'],
+            'refresh' => true,
+        ]));
+
+    $response->assertOk();
+    $response->assertJsonPath('audit.mismatch_rows', 1);
+    $response->assertJsonPath('summary_rows.0.mismatch_count', 1);
+    $response->assertJsonPath('summary_rows.0.memburuk_count', 1);
+    $response->assertJsonPath('summary_rows.0.outstanding_balance', 10000000);
+});
+
+it('detects positive arrears as mismatch even when umur tunggakan is zero, and categorizes restrukturisasi properly', function () {
+    DB::table('daily_loan_dinamis')->insert([
+        [
+            'uniqueid_namareport' => 'kts-arrears-zero-umur',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Magetan',
+            'unit1' => 'Unit M',
+            'nomor_rekening1' => 'KTS-ARR-0',
+            'status_rekening1' => '1',
+            'baki_debet1' => 50000000,
+            'kolek' => '1',
+            'umur_tunggakan' => 0,
+            'tunggakan_pokok' => 1500000,
+            'tunggakan_bunga' => 500000,
+            'tgl_akad_restruk' => null,
+            'npl_method' => null,
+            'flag_restruk' => null,
+        ],
+        [
+            'uniqueid_namareport' => 'kts-restruk-under-90d',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Magetan',
+            'unit1' => 'Unit M',
+            'nomor_rekening1' => 'KTS-RESTRUK-30D',
+            'status_rekening1' => '3',
+            'baki_debet1' => 30000000,
+            'kolek' => '2',
+            'umur_tunggakan' => 0,
+            'tunggakan_pokok' => 0,
+            'tunggakan_bunga' => 0,
+            'tgl_akad_restruk' => '2026-03-22', // 31 days ago (<= 90 days)
+            'npl_method' => 'N',
+            'flag_restruk' => 'Y',
+        ],
+        [
+            'uniqueid_namareport' => 'kts-restruk-over-90d',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Magetan',
+            'unit1' => 'Unit M',
+            'nomor_rekening1' => 'KTS-RESTRUK-120D',
+            'status_rekening1' => '3',
+            'baki_debet1' => 20000000,
+            'kolek' => '2',
+            'umur_tunggakan' => 0,
+            'tunggakan_pokok' => 0,
+            'tunggakan_bunga' => 0,
+            'tgl_akad_restruk' => '2025-12-01', // > 90 days ago
+            'npl_method' => 'N',
+            'flag_restruk' => 'Y',
+        ],
+    ]);
+
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/data?' . http_build_query([
+            'periode' => '2026-04-22',
+            'cabang1' => ['KC Magetan'],
+            'refresh' => true,
+        ]));
+
+    $response->assertOk();
+    $response->assertJsonPath('audit.mismatch_rows', 3);
+    $response->assertJsonPath('summary_rows.0.mismatch_count', 3);
+    $response->assertJsonPath('summary_rows.0.memburuk_count', 1);
+    $response->assertJsonPath('summary_rows.0.belum_waktunya_penyesuaian_count', 1);
+    $response->assertJsonPath('summary_rows.0.kolek_membaik_count', 1);
+
+    // Test exact 1:1 match between summary and export
+    $exportResponse = $this
+        ->actingAs($user)
+        ->get('/report/dashboard-pinjaman/kolek-tidak-sesuai/export?' . http_build_query([
+            'periode' => '2026-04-22',
+            'cabang1' => ['KC Magetan'],
+            'unit1' => 'Unit M',
+        ]));
+
+    $exportResponse->assertOk();
+
+    $path = tempnam(sys_get_temp_dir(), 'kts_parity_export_') . '.xlsx';
+    file_put_contents($path, $exportResponse->streamedContent());
+
+    try {
+        $sheet = IOFactory::load($path)->getActiveSheet();
+        $excelRows = $sheet->toArray(null, true, true, true);
+    } finally {
+        @unlink($path);
+    }
+
+    // Data rows exclude header row
+    $dataRowCount = count($excelRows) - 1;
+    expect($dataRowCount)->toBe(3);
+
+    $headerRow = $excelRows[1];
+    $norekCol = array_search('nomor_rekening1', $headerRow, true);
+    expect($norekCol)->not->toBeFalse();
+
+    $accounts = collect($excelRows)->skip(1)->pluck($norekCol)->all();
+    expect($accounts)->toContain('KTS-ARR-0');
+    expect($accounts)->toContain('KTS-RESTRUK-30D');
+    expect($accounts)->toContain('KTS-RESTRUK-120D');
+});
+

@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportIndexController;
+use App\Jobs\RunManagedReportDeleteJob;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ManagedReportDeleteRecoveryService;
 use App\Support\ReportDataSyncService;
@@ -1997,6 +1998,63 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame('processing', $job['status']);
         $this->assertSame('Processing', $job['status_label']);
         $this->assertSame('info', $job['status_tone']);
+    }
+
+    public function test_resolve_managed_delete_reads_real_laravel_json_queue_payload(): void
+    {
+        $deleteId = (string) \Illuminate\Support\Str::uuid();
+
+        DB::table('jobs')->insert([
+            'queue' => 'imports-high',
+            'reserved_at' => null,
+            'available_at' => now()->subMinute()->timestamp,
+            'created_at' => now()->subMinute()->timestamp,
+            'payload' => json_encode([
+                'displayName' => RunManagedReportDeleteJob::class,
+                'data' => ['command' => serialize(new RunManagedReportDeleteJob($deleteId))],
+            ], JSON_THROW_ON_ERROR),
+        ]);
+
+        $jobs = app(ImportIndexController::class)->resolveManagedReportDeleteJobs();
+        $job = collect($jobs)->firstWhere('id', $deleteId);
+
+        $this->assertIsArray($job);
+        $this->assertSame('queued', $job['status']);
+        $this->assertSame('imports-high', $job['queue_name']);
+    }
+
+    public function test_completed_managed_delete_releases_its_unreserved_queue_row(): void
+    {
+        $deleteId = (string) \Illuminate\Support\Str::uuid();
+        $controller = app(ImportIndexController::class);
+        $putState = new \ReflectionMethod($controller, 'putDeleteState');
+        $putState->setAccessible(true);
+        $putState->invoke($controller, $deleteId, [
+            'delete_id' => $deleteId,
+            'status' => 'completed',
+            'stage' => 'completed',
+            'table_name' => 'ssa_pinjaman',
+            'deleted_rows' => 10,
+            'total_rows' => 10,
+            'message' => 'Delete selesai.',
+            'created_at' => now()->subMinute()->toIso8601String(),
+            'updated_at' => now()->toIso8601String(),
+        ]);
+
+        DB::table('jobs')->insert([
+            'queue' => 'imports-high',
+            'reserved_at' => null,
+            'available_at' => now()->subMinute()->timestamp,
+            'created_at' => now()->subMinute()->timestamp,
+            'payload' => json_encode([
+                'displayName' => RunManagedReportDeleteJob::class,
+                'data' => ['command' => serialize(new RunManagedReportDeleteJob($deleteId))],
+            ], JSON_THROW_ON_ERROR),
+        ]);
+
+        $controller->resolveManagedReportDeleteJobs();
+
+        $this->assertSame(0, DB::table('jobs')->count());
     }
 
     public function test_force_stop_managed_delete_terminates_queue_only_job_when_progress_cache_is_missing(): void

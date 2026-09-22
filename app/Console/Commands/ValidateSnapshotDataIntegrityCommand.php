@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Support\ConsumerRmRealizationCalculator;
+use App\Support\SmallRmRealizationCalculator;
 use App\Support\SnapshotIntegrityGuard;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -13,6 +14,9 @@ class ValidateSnapshotDataIntegrityCommand extends Command
 {
     /** @var array<string, array<string, array<string, mixed>>> */
     private array $consumerSurplusMetricsByPeriod = [];
+
+    /** @var array<string, array<string, mixed>> */
+    private array $smallRealizationByPeriod = [];
 
     protected $signature = 'snapshot:validate-integrity {--period= : Validate specific period} {--segment= : Validate specific segment} {--report= : Validate specific report (all_snapshots|snapshot_guard|performance_rm|ssa_simpanan|dashboard_simpanan|dashboard_harian|dormant_account)} {--sample : Sample-based validation (faster)}';
 
@@ -229,12 +233,18 @@ class ValidateSnapshotDataIntegrityCommand extends Command
     {
         $sourceSegments = $this->getSourceSegments($segment);
         $sourceSegmentTokens = $this->getSourceSegmentTokens($segment);
+        $normalizedDescriptionSql = "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(description, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))";
         $consumerSurplus = strtoupper(trim($segment)) === 'CONSUMER'
             ? $this->getConsumerSurplusAggregate($period)
             : null;
+        $smallRealization = strtoupper(trim($segment)) === 'SMALL'
+            ? $this->getSmallRealizationAggregate($period)
+            : null;
 
         $query = DB::table('daily_loan_dinamis')
-            ->where('periode', $period);
+            ->where('periode', $period)
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '');
 
         if (Schema::hasColumn('daily_loan_dinamis', 'segmen_kinerja')) {
             $query->whereIn('segmen_kinerja', $sourceSegmentTokens);
@@ -243,15 +253,40 @@ class ValidateSnapshotDataIntegrityCommand extends Command
         }
 
         return $query
-            ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as total_loan')
+            ->when(Schema::hasColumn('daily_loan_dinamis', 'segmen_kinerja'), function ($query) use ($normalizedDescriptionSql): void {
+                $query->where(function ($scope) use ($normalizedDescriptionSql): void {
+                    $scope
+                        ->where(function ($rule): void {
+                            $rule->where('segmen_kinerja', 'CONSUMER')
+                                ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR']);
+                        })
+                        ->orWhere(function ($rule): void {
+                            $rule->where('segmen_kinerja', 'SMALL')
+                                ->whereIn('produk_kinerja', ['COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL']);
+                        })
+                        ->orWhere(function ($rule): void {
+                            $rule->where('segmen_kinerja', 'MICRO')
+                                ->whereIn('produk_kinerja', ['BRIGUNAMIKRO', 'KUPEDES', 'CASHCOLLATERAL', 'KPR']);
+                        })
+                        ->orWhere(function ($rule) use ($normalizedDescriptionSql): void {
+                            $rule->where('segmen_kinerja', 'MICRO')
+                                ->whereIn('produk_kinerja', ['KURMIKRO', 'KURKECIL'])
+                                ->whereRaw("{$normalizedDescriptionSql} = ?", ['KREDITMIKROKURRITEL2015']);
+                        });
+                });
+            })
+            ->selectRaw(
+                "SUM(CASE WHEN segmen_kinerja = 'MICRO' AND produk_kinerja IN ('KURMIKRO', 'KURKECIL') AND {$normalizedDescriptionSql} = ? THEN COALESCE(plafon, 0) ELSE COALESCE(baki_debet1, 0) END) as total_loan",
+                ['KREDITMIKROKURRITEL2015']
+            )
             ->selectRaw('SUM(CASE WHEN kolek = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as total_lancar')
-            ->when($consumerSurplus === null, function ($query) use ($period): void {
+            ->when($consumerSurplus === null && $smallRealization === null, function ($query) use ($period): void {
                 $query->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as total_real', [
                     Carbon::parse($period)->startOfMonth()->toDateString(),
                     $period,
                 ]);
-            }, function ($query) use ($consumerSurplus): void {
-                $query->selectRaw('? as total_real', [(float) ($consumerSurplus->total_real ?? 0)]);
+            }, function ($query) use ($consumerSurplus, $smallRealization): void {
+                $query->selectRaw('? as total_real', [(float) ($consumerSurplus->total_real ?? $smallRealization->total_real ?? 0)]);
             })
             ->first() ?? (object) [
             'total_loan' => 0,
@@ -319,6 +354,20 @@ class ValidateSnapshotDataIntegrityCommand extends Command
         return (object) [
             'total_deb' => collect($metrics)->sum(fn (array $metric): int => (int) ($metric['realisasi_deb'] ?? 0)),
             'total_real' => collect($metrics)->sum(fn (array $metric): float => (float) ($metric['realisasi_os'] ?? 0.0)),
+        ];
+    }
+
+    private function getSmallRealizationAggregate(string $period): object
+    {
+        $calculation = $this->smallRealizationByPeriod[$period]
+            ??= app(SmallRmRealizationCalculator::class)->calculate([$period]);
+
+        return (object) [
+            'total_real' => isset($calculation['covered_periods'][$period])
+                ? collect($calculation['rows'] ?? [])->sum(
+                    fn (array $metric): float => (float) ($metric['rp'] ?? 0.0)
+                )
+                : 0.0,
         ];
     }
 

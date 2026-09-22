@@ -17,7 +17,7 @@ class ImportCleanupService
     private const SYNC_STALE_PENDING_SECONDS = 60;
     private const SYNC_COORDINATOR_LOCK_SECONDS = 5;
     private const DEFAULT_SYNC_QUEUE = 'default';
-    private const DAILY_LOAN_SYNC_QUEUE = 'imports-high';
+    private const DAILY_LOAN_SYNC_QUEUE = 'snapshots-priority';
     private const DAILY_LOAN_TABLE = 'daily_loan_dinamis';
     private const DAILY_LOAN_REPORT_ID = 8;
     private const LW321PN_REPORT_ID = 28;
@@ -177,13 +177,10 @@ class ImportCleanupService
 
                 $pendingSince = Cache::get($pendingKey);
                 if ($this->isPendingMarkerStillFresh($pendingSince)) {
-                    // Import Excel melakukan dispatch ketika artefak selesai
-                    // dibersihkan dan ImportExecutionService memastikannya lagi
-                    // saat job terminal. Untuk LW321PN, keduanya merujuk job
-                    // dan periode yang sama sehingga materialisasi kedua hanya
-                    // menghapus lalu menulis ulang ratusan ribu baris identik.
-                    if ($normalizedTableName === 'lw321pn'
-                        && $this->isPendingMarkerForSameImportJob($pendingSince, $jobId)) {
+                    // Cleanup controller dan ImportExecutionService dapat meminta
+                    // sinkronisasi untuk job import yang sama. Coalesce permintaan
+                    // identik agar snapshot tidak dibangun dua kali.
+                    if ($this->isPendingMarkerForSameImportJob($pendingSince, $jobId)) {
                         return;
                     }
 
@@ -285,7 +282,13 @@ class ImportCleanupService
         $normalizedTableName = $this->normalizeSyncScopeValue($tableName) ?? $this->resolveJobTableName($jobId);
 
         if (in_array($normalizedTableName, [self::DAILY_LOAN_TABLE, 'lw321pn'], true)) {
-            return self::DAILY_LOAN_SYNC_QUEUE;
+            $priorityQueue = trim((string) data_get(
+                config('queue.worker_pools', []),
+                'snapshots-priority.queues',
+                self::DAILY_LOAN_SYNC_QUEUE
+            ));
+
+            return $priorityQueue !== '' ? $priorityQueue : self::DAILY_LOAN_SYNC_QUEUE;
         }
 
         return $normalized !== '' ? $normalized : (string) config('queue.report_queue', self::DEFAULT_SYNC_QUEUE);
@@ -563,17 +566,12 @@ class ImportCleanupService
         }
     }
 
-    private function syncPendingMarker(string $tableName, int $jobId): string|array
+    private function syncPendingMarker(string $tableName, int $jobId): array
     {
-        $requestedAt = now()->toIso8601String();
-
-        if ($tableName !== 'lw321pn') {
-            return $requestedAt;
-        }
-
         return [
-            'requested_at' => $requestedAt,
+            'requested_at' => now()->toIso8601String(),
             'import_job_id' => $jobId > 0 ? $jobId : null,
+            'table_name' => $tableName,
         ];
     }
 

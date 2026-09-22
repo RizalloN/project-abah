@@ -2104,8 +2104,7 @@ class ReportSnapshotBuilder
         string $loanKeyColumn,
         string $casaKeyColumn,
         bool $applyCasaTypeFilter
-    ): void
-    {
+    ): void {
         $cacheKey = implode('|', [
             $loanPeriod,
             $casaDate,
@@ -3018,12 +3017,16 @@ class ReportSnapshotBuilder
         }
 
         $targetTable = $snapshotTable ?? self::PERFORMANCE_RM_SNAPSHOT_TABLE;
+        // SQL groups and PHP lookup keys must agree across historical RM label variants.
+        $rmKeySql = "UPPER(TRIM(COALESCE(rm, '')))";
         $rmKeys = DB::table($targetTable)
             ->where('periode', $period)
             ->where('segmen', 'SMALL')
             ->distinct()
             ->pluck('rm')
-            ->map(fn ($rm): string => (string) $rm)
+            ->map(fn ($rm): string => strtoupper(trim((string) $rm)))
+            ->unique()
+            ->values()
             ->all();
 
         if ($rmKeys === []) {
@@ -3045,12 +3048,12 @@ class ReportSnapshotBuilder
 
         if ($historicalPeriods !== []) {
             DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
-                ->whereIn('rm', $rmKeys)
+                ->whereIn(DB::raw($rmKeySql), $rmKeys)
                 ->where('segmen', 'SMALL')
                 ->whereIn('produk', ['SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL'])
                 ->whereIn('periode', $historicalPeriods)
-                ->selectRaw('rm, SUM(COALESCE(realisasi_os, 0)) as total_realisasi_os')
-                ->groupBy('rm')
+                ->selectRaw($rmKeySql.' as rm, SUM(COALESCE(realisasi_os, 0)) as total_realisasi_os')
+                ->groupByRaw($rmKeySql)
                 ->get()
                 ->each(function ($row) use (&$realisasiByRm): void {
                     $realisasiByRm[(string) $row->rm] = (float) $row->total_realisasi_os;
@@ -3059,11 +3062,11 @@ class ReportSnapshotBuilder
 
         if (in_array($period, $closedPeriods, true)) {
             DB::table($targetTable)
-                ->whereIn('rm', $rmKeys)
+                ->whereIn(DB::raw($rmKeySql), $rmKeys)
                 ->where('periode', $period)
                 ->where('segmen', 'SMALL')
-                ->selectRaw('rm, SUM(COALESCE(realisasi_os, 0)) as total_realisasi_os')
-                ->groupBy('rm')
+                ->selectRaw($rmKeySql.' as rm, SUM(COALESCE(realisasi_os, 0)) as total_realisasi_os')
+                ->groupByRaw($rmKeySql)
                 ->get()
                 ->each(function ($row) use (&$realisasiByRm): void {
                     $rm = (string) $row->rm;
@@ -3074,12 +3077,12 @@ class ReportSnapshotBuilder
         $lastClosedPeriod = $closedPeriods[array_key_last($closedPeriods)];
         $larTable = $lastClosedPeriod === $period ? $targetTable : self::PERFORMANCE_RM_SNAPSHOT_TABLE;
         $larByRm = DB::table($larTable)
-            ->whereIn('rm', $rmKeys)
+            ->whereIn(DB::raw($rmKeySql), $rmKeys)
             ->where('periode', $lastClosedPeriod)
             ->where('segmen', 'SMALL')
-            ->selectRaw('rm, SUM(COALESCE(loan_os, 0)) as loan_os')
+            ->selectRaw($rmKeySql.' as rm, SUM(COALESCE(loan_os, 0)) as loan_os')
             ->selectRaw('SUM(COALESCE(restruk_os, 0) + COALESCE(sml_os, 0) + COALESCE(npl_os, 0)) as lar_value')
-            ->groupBy('rm')
+            ->groupByRaw($rmKeySql)
             ->get()
             ->keyBy(fn ($row): string => (string) $row->rm);
         $periodCount = count($closedPeriods);
@@ -3098,7 +3101,7 @@ class ReportSnapshotBuilder
             DB::table($targetTable)
                 ->where('periode', $period)
                 ->where('segmen', 'SMALL')
-                ->where('rm', $rm)
+                ->whereRaw($rmKeySql.' = ?', [$rm])
                 ->update(['quadrant' => $quadrant]);
         }
     }
@@ -3138,7 +3141,7 @@ class ReportSnapshotBuilder
     private function calculateSmallPerformanceRmQuadrant(float $ratasOs, float $larPct): int
     {
         $isRatasA = ($ratasOs / 1000000) >= 1600;
-        $isLarA = $larPct < 17.5;
+        $isLarA = $larPct < 15.0;
 
         return match (true) {
             $isRatasA && $isLarA => 1,

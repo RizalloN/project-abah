@@ -79,6 +79,13 @@ class SnapshotSourceSignatureService
             }
         }
 
+        if ($sourceTable === 'daily_loan_dinamis') {
+            $optimized = $this->captureDailyLoanDinamis($periodColumn, $period);
+            if ($optimized !== false) {
+                return $optimized;
+            }
+        }
+
         $query = DB::table($sourceTable)
             ->where($periodColumn, $period)
             ->selectRaw('COUNT(*) as source_row_count');
@@ -154,6 +161,114 @@ class SnapshotSourceSignatureService
             'source_signature' => hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE)),
             'source_row_count' => $rowCount,
             'source_max_updated_at' => $this->normalizeTimestamp($row['max_updated_at'] ?? $row['max_created_at'] ?? null),
+            'payload' => $payload,
+        ];
+    }
+
+    /**
+     * Read the overall and per-branch signatures in one grouped scan. The
+     * window aggregates preserve the existing payload contract while avoiding
+     * a second full scan of the same daily-loan period.
+     *
+     * @return array{source_signature: string, source_row_count: int, source_max_updated_at: mixed, payload: array<string, mixed>}|null|false
+     */
+    private function captureDailyLoanDinamis(string $periodColumn, string $period): array|null|false
+    {
+        $sourceTable = 'daily_loan_dinamis';
+        $bucketColumn = $this->resolveBucketColumn($sourceTable);
+        if ($bucketColumn === null) {
+            return false;
+        }
+
+        try {
+            $grammar = DB::connection()->getQueryGrammar();
+            $bucketExpression = 'UPPER(TRIM(COALESCE('.$grammar->wrap($bucketColumn).", '')))";
+            $query = DB::table($sourceTable)
+                ->where($periodColumn, $period)
+                ->selectRaw($bucketExpression.' as bucket_key')
+                ->selectRaw('COUNT(*) as source_row_count')
+                ->selectRaw('SUM(COUNT(*)) OVER () as signature_source_row_count');
+
+            $aggregateAliases = [];
+            foreach (['updated_at', 'created_at', 'id', 'uniqueid_namareport'] as $column) {
+                if (! $this->tableHasColumn($sourceTable, $column)) {
+                    continue;
+                }
+
+                $alias = 'max_'.$column;
+                $query->selectRaw('MAX(MAX('.$grammar->wrap($column).')) OVER () as signature_'.$alias);
+                $aggregateAliases[] = $alias;
+            }
+
+            foreach (self::NUMERIC_COLUMNS[$sourceTable] ?? [] as $column) {
+                if (! $this->tableHasColumn($sourceTable, $column)) {
+                    continue;
+                }
+
+                $alias = 'sum_'.preg_replace('/[^A-Za-z0-9_]/', '_', $column);
+                $columnExpression = 'COALESCE('.$grammar->wrap($column).', 0)';
+                $query->selectRaw('COALESCE(SUM('.$columnExpression.'), 0) as '.$alias);
+                $query->selectRaw('SUM(SUM('.$columnExpression.')) OVER () as signature_'.$alias);
+                $aggregateAliases[] = $alias;
+            }
+
+            $rows = $query
+                ->groupBy('bucket_key')
+                ->orderBy('bucket_key')
+                ->limit(200)
+                ->get();
+        } catch (Throwable) {
+            return false;
+        }
+
+        if ($rows->isEmpty()) {
+            return null;
+        }
+
+        $first = (array) $rows->first();
+        $rowCount = (int) ($first['signature_source_row_count'] ?? 0);
+        if ($rowCount <= 0) {
+            return null;
+        }
+
+        $bucketSignatures = [];
+        foreach ($rows as $row) {
+            $bucketPayload = (array) $row;
+            $bucket = (string) ($bucketPayload['bucket_key'] ?? '');
+            unset($bucketPayload['bucket_key'], $bucketPayload['signature_source_row_count']);
+            foreach ($aggregateAliases as $alias) {
+                unset($bucketPayload['signature_'.$alias]);
+            }
+
+            ksort($bucketPayload);
+            $bucketSignatures[$bucket !== '' ? $bucket : '*'] = hash(
+                'sha256',
+                json_encode($bucketPayload, JSON_UNESCAPED_UNICODE)
+            );
+        }
+
+        $payload = [
+            'version' => self::SIGNATURE_VERSION,
+            'source_table' => $sourceTable,
+            'period_column' => $periodColumn,
+            'period' => $period,
+            'source_row_count' => $rowCount,
+        ];
+
+        foreach ($aggregateAliases as $alias) {
+            $payload[$alias] = $this->normalizeAggregateValue($first['signature_'.$alias] ?? null);
+        }
+
+        $payload['bucket_signature_version'] = self::BUCKET_SIGNATURE_VERSION;
+        $payload['bucket_signatures'] = $bucketSignatures;
+        ksort($payload);
+
+        return [
+            'source_signature' => hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE)),
+            'source_row_count' => $rowCount,
+            'source_max_updated_at' => $this->normalizeTimestamp(
+                $first['signature_max_updated_at'] ?? $first['signature_max_created_at'] ?? null
+            ),
             'payload' => $payload,
         ];
     }

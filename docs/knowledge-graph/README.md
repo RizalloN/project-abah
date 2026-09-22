@@ -25,9 +25,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 869 |
-| Graph nodes | 10,035 |
-| Graph edges | 39,288 |
+| Source files | 886 |
+| Graph nodes | 10,223 |
+| Graph edges | 40,023 |
 | Domains | 19 |
 
 ## Read The Right Artifact
@@ -45,26 +45,26 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Node | Kind | Domain | Degree |
 | --- | --- | --- | ---: |
-| `ImportExcelController` | class | import | 374 |
+| `ImportExcelController` | class | import | 376 |
 | `DashboardSimpananController` | class | dashboard-simpanan | 360 |
-| `daily_loan_dinamis` | table | dashboard-pinjaman | 284 |
-| `DashboardHarianSnapshotService` | class | dashboard-harian | 254 |
-| `DashboardPinjamanReportController` | class | dashboard-pinjaman | 192 |
-| `nama_report` | table | core | 181 |
-| `TestCase` | class | tests | 179 |
+| `daily_loan_dinamis` | table | dashboard-pinjaman | 298 |
+| `DashboardHarianSnapshotService` | class | dashboard-harian | 258 |
+| `DashboardPinjamanReportController` | class | dashboard-pinjaman | 194 |
+| `TestCase` | class | tests | 186 |
+| `nama_report` | table | core | 184 |
 | `ImportIndexController` | class | import | 162 |
-| `import_jobs` | table | import | 154 |
-| `ImportFileController` | class | import | 144 |
+| `import_jobs` | table | import | 160 |
+| `ImportFileController` | class | import | 145 |
 | `ReportSnapshotBuilder` | class | jobs-snapshots | 144 |
-| `KinerjaRmReportController` | class | dashboard-pinjaman | 136 |
+| `KinerjaRmReportController` | class | dashboard-pinjaman | 142 |
 | `lw325_ph` | table | dashboard-pinjaman | 121 |
+| `ImportProgressService` | class | import | 102 |
 | `AlmafactsDashboardController` | class | almafacts | 101 |
-| `ImportProgressService` | class | import | 97 |
+| `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 97 |
 | `ImportPerformancePisPerProdukController` | class | import | 95 |
 | `ImportReportPhController` | class | import | 95 |
-| `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 95 |
+| `setUp` | method | tests | 93 |
 | `ImportSimpananMultiPnCsvController` | class | import | 92 |
-| `setUp` | method | tests | 89 |
 
 ## Edge Semantics
 

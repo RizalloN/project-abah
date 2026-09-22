@@ -2,23 +2,27 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Support\DailyLoanManualSegmentRule;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class ProcessShadowBackfillJob implements ShouldQueue
+class ProcessShadowBackfillJob implements ShouldQueue, ShouldBeUniqueUntilProcessing
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $timeout = 0;
-    public $tries = 5;
+    public $tries = 40;
+    public $maxExceptions = 5;
     public $backoff = [60, 120, 300, 600, 1200];
 
     public function __construct(
@@ -32,11 +36,45 @@ class ProcessShadowBackfillJob implements ShouldQueue
         $this->onQueue($queueName ?: (string) config('queue.shadow_backfill_queue', 'shadow-backfill'));
     }
 
+    public function uniqueId(): string
+    {
+        $periods = array_values(array_unique(array_filter(array_map(
+            static fn ($period): string => trim((string) $period),
+            $this->periods
+        ))));
+        sort($periods);
+
+        return 'shadow-backfill:' . md5(implode(',', $periods));
+    }
+
+    public function middleware(): array
+    {
+        $periods = array_values(array_unique(array_filter(array_map(
+            static fn ($period): string => trim((string) $period),
+            $this->periods
+        ))));
+        sort($periods);
+
+        $middleware = [
+            new DeferSnapshotJobsDuringImport(sourceTable: 'daily_loan_dinamis'),
+        ];
+
+        foreach ($periods as $period) {
+            $middleware[] = (new WithoutOverlapping('shadow:backfill:auto:' . $period))
+                ->withPrefix('')
+                ->shared()
+                ->releaseAfter(60)
+                ->expireAfter(1800);
+        }
+
+        return $middleware;
+    }
+
     public function handle(): void
     {
         $periodString = implode(',', $this->periods);
 
-        Log::info("ProcessShadowBackfillJob: Attempt " . $this->attempts() . "/5", [
+        Log::info("ProcessShadowBackfillJob: Attempt " . $this->attempts(), [
             'periods' => $periodString,
             'chunk_size' => $this->chunkSize,
         ]);
@@ -59,12 +97,12 @@ class ProcessShadowBackfillJob implements ShouldQueue
             }
 
             $completion = $this->checkCompletionStatus();
-            if ($completion['overall_percentage'] >= 95.0) {
+            if ($completion['overall_percentage'] >= 100.0) {
                 if (!$this->skipSnapshot) {
                     $this->rebuildPerformanceRmSnapshots();
                 }
 
-                Log::warning("ProcessShadowBackfillJob: Partial backfill accepted (>95%); job will not be requeued", [
+                Log::warning("ProcessShadowBackfillJob: Command failed after all required shadow rows were already completed.", [
                     'completion' => $completion,
                 ]);
                 return;
@@ -75,11 +113,7 @@ class ProcessShadowBackfillJob implements ShouldQueue
                 'completion' => $completion,
             ]);
 
-            if ($this->attempts() >= 5) {
-                throw new \RuntimeException('Backfill command failed after 5 attempts.');
-            }
-
-            $this->release(delay: $this->getBackoffDelay());
+            throw new \RuntimeException('Backfill command returned exit code ' . $exitCode . '.');
 
         } catch (Throwable $e) {
             Log::error("ProcessShadowBackfillJob: Exception during backfill", [
@@ -87,11 +121,7 @@ class ProcessShadowBackfillJob implements ShouldQueue
                 'attempt' => $this->attempts(),
             ]);
 
-            if ($this->attempts() >= 5) {
-                throw $e;
-            }
-
-            $this->release(delay: $this->getBackoffDelay());
+            throw $e;
         }
     }
 
@@ -155,11 +185,6 @@ class ProcessShadowBackfillJob implements ShouldQueue
             'by_period' => $stats,
             'overall_percentage' => round($overallPct, 2),
         ];
-    }
-
-    private function getBackoffDelay(): int
-    {
-        return $this->backoff[min($this->attempts() - 1, count($this->backoff) - 1)] ?? 1800;
     }
 
     private function rebuildPerformanceRmSnapshots(): void

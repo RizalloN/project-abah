@@ -855,15 +855,17 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $this->assertSame(1000000000.0, (float) $snapshot->w2_realisasi_os);
     }
 
-    public function test_small_snapshot_realisasi_uses_cif_plafond_growth_from_previous_month(): void
+    public function test_small_snapshot_realisasi_combines_bookings_and_same_account_plafond_increases(): void
     {
         $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
 
         $this->insertDailyLoanRow('OLD-SAME', 'COMMERCIAL', 300000000, 250000000, 'CIF-SAME', '2026-06-30', 'SMALL', tglRealisasi: '2025-01-01');
         $this->insertDailyLoanRow('OLD-REPLACED', 'COMMERCIAL', 600000000, 500000000, 'CIF-NEW-ACCOUNT', '2026-06-30', 'SMALL', tglRealisasi: '2025-01-01');
+        $this->insertDailyLoanRow('SUPPLEMENT', 'COMMERCIAL', 400000000, 350000000, 'CIF-SUPPLEMENT', '2026-06-30', 'SMALL', tglRealisasi: '2025-01-01');
         $this->insertDailyLoanRow('OLD-SAME', 'COMMERCIAL', 350000000, 350000000, 'CIF-SAME', '2026-07-31', 'SMALL', tglRealisasi: '2026-07-10');
         $this->insertDailyLoanRow('NEW-ACCOUNT', 'COMMERCIAL', 800000000, 800000000, 'CIF-NEW-ACCOUNT', '2026-07-31', 'SMALL', tglRealisasi: '2026-07-10');
         $this->insertDailyLoanRow('BRAND-NEW', 'COMMERCIAL', 500000000, 500000000, 'CIF-NEW', '2026-07-31', 'SMALL', tglRealisasi: '2026-07-11');
+        $this->insertDailyLoanRow('SUPPLEMENT', 'COMMERCIAL', 500000000, 450000000, 'CIF-SUPPLEMENT', '2026-07-31', 'SMALL', tglRealisasi: '2025-01-01');
 
         $builder->rebuildPerformanceRm('2026-07-31', true);
 
@@ -874,15 +876,68 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
             ->first();
 
         $this->assertNotNull($snapshot);
-        $this->assertSame(3, (int) $snapshot->realisasi_deb);
-        $this->assertSame(750000000.0, (float) $snapshot->realisasi_os);
+        $this->assertSame(4, (int) $snapshot->realisasi_deb);
+        $this->assertSame(1750000000.0, (float) $snapshot->realisasi_os);
         $this->assertDatabaseHas('performance_rm_cabang_snapshots', [
             'periode' => '2026-07-31',
             'segmen' => 'SMALL',
             'produk' => 'SMALL',
-            'realisasi_deb' => 3,
-            'realisasi_os' => 750000000,
+            'realisasi_deb' => 4,
+            'realisasi_os' => 1750000000,
         ]);
+    }
+
+    public function test_small_quadrants_match_closed_month_history_despite_rm_case_and_outer_spaces(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+        $history = [
+            ['2026-01-31', 'Rm A', 1600000000, 100000000, 0, 'UNIT A'],
+            ['2026-02-28', 'rm a', 1600000000, 100000000, 15000000, 'UNIT A'],
+            ['2026-01-31', ' RM B ', 1600000000, 100000000, 0, 'UNIT A'],
+            ['2026-02-28', ' rm b ', 1600000000, 100000000, 14999999, 'UNIT A'],
+            ['2026-01-31', 'Rm D', 0, 100000000, 0, 'UNIT A'],
+            ['2026-02-28', 'RM D', 1600000000, 50000000, 0, 'UNIT A'],
+            ['2026-02-28', ' rm d ', 1600000000, 50000000, 0, 'UNIT B'],
+        ];
+        foreach ($history as [$period, $rm, $realization, $loanOs, $larOs, $unit]) {
+            DB::table('performance_rm_snapshots')->insert([
+                'periode' => $period, 'cabang' => 'KC MADIUN', 'unit' => $unit,
+                'branch_code' => '123', 'rm' => $rm, 'segmen' => 'SMALL', 'produk' => 'SMALL',
+                'realisasi_os' => $realization, 'loan_os' => $loanOs, 'sml_os' => $larOs,
+            ]);
+        }
+        foreach (['A', 'B', 'C', 'D'] as $suffix) {
+            $this->insertDailyLoanRow('SMALL-'.$suffix, 'COMMERCIAL', 100000000, 90000000, 'CIF-'.$suffix, '2026-03-02', 'SMALL', tglRealisasi: '2025-01-01');
+            DB::table('daily_loan_dinamis')->where('nomor_rekening1', 'SMALL-'.$suffix)->update([
+                'rm_normalized' => 'RM '.$suffix,
+                'pn_pengelola1' => 'RM '.$suffix,
+                'pn_pemrakarsa1' => 'RM '.$suffix,
+            ]);
+        }
+        $historyBefore = DB::table('performance_rm_snapshots')->orderBy('id')->get()->all();
+
+        $builder->rebuildPerformanceRm('2026-03-02', true);
+
+        $rows = DB::table('performance_rm_snapshots')->where('periode', '2026-03-02')->get()->keyBy('rm');
+        $this->assertCount(4, $rows);
+        // Monthly average equals Rp1.6 billion; exactly 15% LAR stays in quadrant 2.
+        $this->assertSame(2, $rows['RM A']->quadrant);
+        $this->assertSame(1, $rows['RM B']->quadrant);
+        $this->assertNull($rows['RM C']->quadrant);
+        // Both prior assignments count once toward the same RM's history and LAR.
+        $this->assertSame(1, $rows['RM D']->quadrant);
+        $this->assertSame(0.0, (float) $rows->sum('realisasi_os'));
+        $this->assertSame(0, $rows->sum('realisasi_deb'));
+        $this->assertSame(360000000.0, (float) $rows->sum('loan_os'));
+        $this->assertEquals($historyBefore, DB::table('performance_rm_snapshots')->where('periode', '<', '2026-03-02')->orderBy('id')->get()->all());
+
+        $this->insertDailyLoanRow('SMALL-MARCH', 'COMMERCIAL', 1600000000, 1600000000, 'CIF-MARCH', '2026-03-31', 'SMALL');
+        $builder->rebuildPerformanceRm('2026-03-31', true);
+        $monthEnd = DB::table('performance_rm_snapshots')->where('periode', '2026-03-31')->where('rm', 'RM A')->first();
+        $this->assertNotNull($monthEnd);
+        $this->assertSame(1, $monthEnd->quadrant);
+        $this->assertSame(1600000000.0, (float) $monthEnd->realisasi_os);
+        $this->assertSame(1, $monthEnd->realisasi_deb);
     }
 
     private function createTables(): void

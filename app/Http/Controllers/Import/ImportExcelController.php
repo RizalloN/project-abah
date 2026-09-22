@@ -20,6 +20,7 @@ use App\Services\Import\DlyKapResegmentasiCsvImporter;
 use App\Services\Import\L1133CsvImporter;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaIntrospectionService;
+use App\Services\Import\SmartContentHeaderGuardService;
 use App\Support\StrictDateParser;
 use App\Support\SpreadsheetFileFormatDetector;
 use Illuminate\Http\Request;
@@ -561,7 +562,12 @@ class ImportExcelController extends Controller
             }
         }
 
-        return $bestScore >= 2 ? $bestIndex : null;
+        if ($bestScore >= 2) {
+            return $bestIndex;
+        }
+
+        // Fallback: Smart content-aware header detection when headers are renamed
+        return $this->smartGuardService()->detectHeaderRow($rows, $tableName);
     }
 
     private function detectRkaHeaderIndex(array $rows): ?int
@@ -589,7 +595,33 @@ class ImportExcelController extends Controller
 
     private function isDetectedHeaderValidForTable(array $headerValues, string $tableName): bool
     {
-        return $this->detectHeaderIndex([$headerValues], $tableName) === 0;
+        // SSA exports from the internal site occasionally rename all labels.
+        // Permit only their known widths here; the Polars processors then prove
+        // the date, identity, and numeric values before data can be imported.
+        if (in_array(strtolower(trim($tableName)), ['ssa_simpanan', 'ssa_pinjaman'], true)) {
+            return $this->isSsaSourceWidthCandidate($tableName, $headerValues);
+        }
+
+        if ($this->detectHeaderIndex([$headerValues], $tableName) === 0) {
+            return true;
+        }
+
+        // Content & semantic guard fallback for renamed internal reports
+        return $this->smartGuardService()->isHeaderOrContentValidForTable($headerValues, $tableName);
+    }
+
+    private function isSsaSourceWidthCandidate(string $tableName, array $headers): bool
+    {
+        $headers = array_values(array_filter(
+            $headers,
+            static fn ($header): bool => trim((string) $header) !== ''
+        ));
+
+        return match (strtolower(trim($tableName))) {
+            'ssa_simpanan' => count($headers) === 7,
+            'ssa_pinjaman' => count($headers) === 14,
+            default => false,
+        };
     }
 
     private function headerNotFoundMessage(?string $tableName = null): string
@@ -628,6 +660,11 @@ class ImportExcelController extends Controller
     protected function excelStagingService(): ExcelStagingService
     {
         return app(ExcelStagingService::class);
+    }
+
+    protected function smartGuardService(): SmartContentHeaderGuardService
+    {
+        return app(SmartContentHeaderGuardService::class);
     }
 
     protected function progressService(): ImportProgressService
@@ -709,7 +746,7 @@ class ImportExcelController extends Controller
 
         $maxLength = (int) ($columnMeta['max_length'] ?? 0);
         if (!empty($columnMeta['is_textual']) && $maxLength > 0) {
-            return "CASE WHEN ({$expression}) IS NULL THEN NULL ELSE LEFT(CAST(({$expression}) AS CHAR), {$maxLength}) END";
+            return "LEFT({$expression}, {$maxLength})";
         }
 
         return $expression;
@@ -2636,6 +2673,308 @@ class ImportExcelController extends Controller
         ]);
     }
 
+    public function initExcelChunkUpload(Request $request)
+    {
+        $request->validate([
+            'original_name' => ['required', 'string', 'max:255'],
+            'total_size' => ['required', 'integer', 'min:1', 'max:' . $this->dailyLoanChunkUploadMaxBytes()],
+            'total_chunks' => ['required', 'integer', 'min:1', 'max:' . $this->dailyLoanChunkUploadMaxChunks()],
+            'id_report' => ['nullable', 'integer', 'exists:nama_report,id_report'],
+        ]);
+
+        $originalName = trim((string) $request->input('original_name'));
+        $totalSize = (int) $request->input('total_size');
+        $totalChunks = (int) $request->input('total_chunks');
+        $idReport = (int) ($request->input('id_report') ?: session('active_id_report', 0));
+        $extension = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
+
+        if (!in_array($extension, ['xlsx', 'xls', 'csv', 'txt'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Format file harus XLSX, XLS, CSV, atau TXT.',
+            ], 422);
+        }
+
+        $expectedChunks = (int) ceil($totalSize / self::CHUNK_SIZE_BYTES);
+        if ($totalChunks !== $expectedChunks) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Metadata jumlah chunk tidak sesuai dengan ukuran file.',
+            ], 422);
+        }
+
+        $uploadId = 'excel_' . Str::uuid()->toString();
+        $directory = $this->ensureChunkUploadDirectory($uploadId);
+
+        $written = file_put_contents($directory . DIRECTORY_SEPARATOR . 'meta.json', json_encode([
+            'original_name' => $originalName,
+            'total_size' => $totalSize,
+            'total_chunks' => $totalChunks,
+            'id_report' => $idReport,
+            'created_at' => now()->toIso8601String(),
+            'user_id' => auth()->id(),
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX);
+
+        if ($written === false) {
+            $this->cleanupChunkUploadDirectory($directory);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal menyiapkan metadata upload chunk.',
+            ], 500);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'upload_id' => $uploadId,
+        ]);
+    }
+
+    public function uploadExcelChunk(Request $request)
+    {
+        $request->validate([
+            'upload_id' => ['required', 'string', 'regex:/^excel_[0-9a-f-]{36}$/'],
+            'chunk_index' => 'required|integer|min:0',
+            'total_chunks' => ['required', 'integer', 'min:1', 'max:' . $this->dailyLoanChunkUploadMaxChunks()],
+            'file' => ['required', 'file', 'max:' . (int) (self::CHUNK_SIZE_BYTES / 1024)],
+        ]);
+
+        $uploadId = trim((string) $request->input('upload_id'));
+        $directory = $this->chunkUploadDirectory($uploadId);
+
+        if (!is_dir($directory)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Sesi upload chunk tidak ditemukan. Silakan upload ulang.',
+            ], 404);
+        }
+
+        $meta = $this->readChunkUploadMeta($directory);
+        if (!$this->chunkUploadBelongsToCurrentUser($meta)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Sesi upload chunk tidak valid untuk pengguna ini.',
+            ], 403);
+        }
+
+        $chunkIndex = (int) $request->input('chunk_index');
+        $totalChunks = (int) $request->input('total_chunks');
+        if ($totalChunks !== (int) ($meta['total_chunks'] ?? 0) || $chunkIndex >= $totalChunks) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Urutan atau jumlah chunk tidak sesuai metadata upload.',
+            ], 422);
+        }
+
+        $chunkFile = $request->file('file');
+        if (!$chunkFile || !$chunkFile->isValid()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Chunk upload tidak valid.',
+            ], 422);
+        }
+
+        $chunkSize = (int) ($chunkFile->getSize() ?: 0);
+        if ($chunkSize < 1 || $chunkSize > self::CHUNK_SIZE_BYTES) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ukuran chunk tidak valid.',
+            ], 422);
+        }
+
+        $targetPath = $directory . DIRECTORY_SEPARATOR . sprintf('part_%06d.bin', $chunkIndex);
+        $chunkFile->move($directory, basename($targetPath));
+
+        return response()->json([
+            'status' => 'success',
+            'chunk_index' => $chunkIndex,
+        ]);
+    }
+
+    public function finalizeExcelChunkUpload(Request $request)
+    {
+        $request->validate([
+            'upload_id' => ['required', 'string', 'regex:/^excel_[0-9a-f-]{36}$/'],
+            'total_chunks' => ['required', 'integer', 'min:1', 'max:' . $this->dailyLoanChunkUploadMaxChunks()],
+            'original_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $uploadId = trim((string) $request->input('upload_id'));
+        $totalChunks = (int) $request->input('total_chunks');
+        $originalName = trim((string) $request->input('original_name'));
+        $directory = $this->chunkUploadDirectory($uploadId);
+
+        if (!is_dir($directory)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Folder upload chunk tidak ditemukan.',
+            ], 404);
+        }
+
+        $meta = $this->readChunkUploadMeta($directory);
+        if (!$this->chunkUploadBelongsToCurrentUser($meta)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Sesi upload chunk tidak valid untuk pengguna ini.',
+            ], 403);
+        }
+
+        if (
+            $totalChunks !== (int) ($meta['total_chunks'] ?? 0)
+            || !hash_equals((string) ($meta['original_name'] ?? ''), $originalName)
+        ) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Metadata finalisasi tidak sesuai dengan sesi upload.',
+            ], 422);
+        }
+
+        $idReport = (int) ($request->input('id_report') ?: ($meta['id_report'] ?? 0));
+        if ($idReport <= 0) {
+            $idReport = (int) session('active_id_report', 0);
+        }
+
+        $report = DB::table('nama_report')->where('id_report', $idReport)->first();
+        if (!$report) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Report tidak valid.',
+            ], 422);
+        }
+
+        $tableName = strtolower(trim((string) ($report->table_name ?? '')));
+        $extension = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
+
+        if (!in_array($extension, ['xlsx', 'xls', 'csv', 'txt'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Format file harus XLSX, XLS, CSV, atau TXT.',
+            ], 422);
+        }
+
+        if (!file_exists(Storage::path('excel_imports'))) {
+            Storage::makeDirectory('excel_imports');
+        }
+
+        $safeOriginalName = Str::slug(pathinfo($originalName, PATHINFO_FILENAME));
+        $relativePath = 'excel_imports/' . date('Ymd_His') . '_' . Str::random(6) . '_' . ($safeOriginalName ?: 'import') . '.' . $extension;
+        $absolutePath = Storage::path($relativePath);
+
+        $outputHandle = fopen($absolutePath, 'wb');
+        if ($outputHandle === false) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal menyiapkan file upload final.',
+            ], 500);
+        }
+
+        try {
+            for ($index = 0; $index < $totalChunks; $index++) {
+                $partPath = $directory . DIRECTORY_SEPARATOR . sprintf('part_%06d.bin', $index);
+                if (!file_exists($partPath)) {
+                    throw new \RuntimeException('Chunk ke-' . ($index + 1) . ' belum lengkap.');
+                }
+
+                $inputHandle = fopen($partPath, 'rb');
+                if ($inputHandle === false) {
+                    throw new \RuntimeException('Gagal membaca chunk ke-' . ($index + 1) . '.');
+                }
+
+                while (!feof($inputHandle)) {
+                    $buffer = fread($inputHandle, 1024 * 1024);
+                    if ($buffer === false) {
+                        fclose($inputHandle);
+                        throw new \RuntimeException('Gagal membaca isi chunk ke-' . ($index + 1) . '.');
+                    }
+                    fwrite($outputHandle, $buffer);
+                }
+
+                fclose($inputHandle);
+            }
+        } catch (\Throwable $e) {
+            fclose($outputHandle);
+            @unlink($absolutePath);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+
+        fclose($outputHandle);
+
+        $assembledSize = (int) (@filesize($absolutePath) ?: 0);
+        if ($assembledSize !== (int) ($meta['total_size'] ?? 0)) {
+            @unlink($absolutePath);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ukuran file final tidak sesuai dengan file sumber. Silakan upload ulang.',
+            ], 422);
+        }
+
+        $this->cleanupChunkUploadDirectory($directory);
+
+        if (in_array($extension, ['xlsx', 'xls'], true)
+            && SpreadsheetFileFormatDetector::detect($absolutePath) === null) {
+            @unlink($absolutePath);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'File Excel tidak lengkap atau bukan workbook XLS/XLSX yang valid. Ekspor ulang file dari perangkat sumber lalu pilih kembali.',
+            ], 422);
+        }
+
+        $relativePath = $this->normalizeStoredSpreadsheetExtension($relativePath);
+        $this->normalizeSsaAlmafactsCsvEncoding($tableName, $relativePath);
+
+        $cacheKey = 'excel_preview_' . md5($relativePath . '|' . (auth()->id() ?? 'guest') . '|' . microtime(true));
+
+        $manualKanca = trim((string) $request->input('kanca_manual', ''));
+        $manualPeriode = trim((string) $request->input('periode', ''));
+        $derivedRkaMetadata = ['kanca' => null, 'tahun' => null];
+
+        if ($tableName === 'rka') {
+            $derivedRkaMetadata = $this->deriveRkaImportMetadataFromFile(
+                Storage::path($relativePath),
+                $originalName
+            );
+            if ($manualKanca === '') {
+                $manualKanca = trim((string) ($derivedRkaMetadata['kanca'] ?? ''));
+            }
+            if ($manualPeriode === '' && !empty($derivedRkaMetadata['tahun'])) {
+                $manualPeriode = (string) $derivedRkaMetadata['tahun'];
+            }
+        }
+
+        session()->forget(['excel_preview_meta', 'excel_display_filter_map']);
+
+        session([
+            'excel_path' => $relativePath,
+            'active_id_report' => $idReport,
+            'excel_preview_key' => $cacheKey,
+            'excel_manual_kanca' => $tableName === 'rka' ? $manualKanca : null,
+            'excel_manual_periode' => $manualPeriode !== '' ? $manualPeriode : null,
+            'excel_derived_kanca' => $tableName === 'rka' ? ($derivedRkaMetadata['kanca'] ?? null) : null,
+            'excel_derived_tahun' => $tableName === 'rka' ? ($derivedRkaMetadata['tahun'] ?? null) : null,
+        ]);
+
+        if ($request->hasSession()) {
+            $request->session()->save();
+        } elseif (session()->isStarted()) {
+            session()->save();
+        }
+
+        $previewRedirect = route('import.excel.preview', ['ck' => $cacheKey]);
+        $prepareRedirect = route('import.excel.prepare-preview');
+
+        return response()->json([
+            'status' => 'success',
+            'cache_key' => $cacheKey,
+            'redirect' => $prepareRedirect,
+            'preview_redirect' => $previewRedirect,
+        ]);
+    }
+
     public function previewDailyLoanExcel(Request $request)
     {
         return $this->previewExcel($this->useDailyLoanReport($request));
@@ -2653,7 +2992,7 @@ class ImportExcelController extends Controller
 
     public function streamDailyLoanImport(Request $request)
     {
-        return $this->processDailyLoanImportStream($this->useDailyLoanReport($request));
+        return $this->processExcelStream($this->useDailyLoanReport($request));
     }
 
     public function chunkDailyLoanImport(Request $request)
@@ -3164,7 +3503,7 @@ class ImportExcelController extends Controller
 
     private function chunkUploadDirectory(string $uploadId): string
     {
-        if (preg_match('/^dailyloan_[0-9a-f-]{36}$/', $uploadId) !== 1) {
+        if (preg_match('/^(?:dailyloan|excel)_[0-9a-f-]{36}$/', $uploadId) !== 1) {
             throw new \InvalidArgumentException('ID upload chunk tidak valid.');
         }
 
@@ -3189,10 +3528,16 @@ class ImportExcelController extends Controller
             $root === false
             || $resolvedDirectory === false
             || !is_dir($resolvedDirectory)
-            || !str_starts_with(
-                strtolower(str_replace('\\', '/', $resolvedDirectory)),
-                rtrim(strtolower(str_replace('\\', '/', $root)), '/') . '/dailyloan_'
-            )
+        ) {
+            return;
+        }
+
+        $normalizedRoot = rtrim(strtolower(str_replace('\\', '/', $root)), '/') . '/';
+        $normalizedDir = strtolower(str_replace('\\', '/', $resolvedDirectory));
+
+        if (
+            !str_starts_with($normalizedDir, $normalizedRoot . 'dailyloan_')
+            && !str_starts_with($normalizedDir, $normalizedRoot . 'excel_')
         ) {
             return;
         }
@@ -6720,13 +7065,13 @@ class ImportExcelController extends Controller
             . "ELSE NULL END";
     }
 
-    protected function buildFastDirectLoadDecimalExpression(string $columnExpression): string
+    protected function buildFastDirectLoadDecimalExpression(string $columnExpression, int $scale = 2): string
     {
-        $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
+        $scale = max(0, min(12, $scale));
+        $precision = max(24, $scale + 18);
+        $clean = "NULLIF(NULLIF(TRIM({$columnExpression}), ''), '\\\\N')";
 
-        return "CASE "
-            . "WHEN {$textExpression} IS NULL THEN NULL "
-            . "ELSE CAST({$textExpression} AS DECIMAL(24,2)) END";
+        return "CASE WHEN {$clean} IS NULL THEN NULL ELSE CAST({$clean} AS DECIMAL({$precision},{$scale})) END";
     }
 
     private function buildDirectLoadIntegerExpression(string $columnExpression): string
@@ -6748,11 +7093,9 @@ class ImportExcelController extends Controller
 
     private function buildFastDirectLoadIntegerExpression(string $columnExpression): string
     {
-        $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
+        $clean = "NULLIF(NULLIF(TRIM({$columnExpression}), ''), '\\\\N')";
 
-        return "CASE "
-            . "WHEN {$textExpression} IS NULL THEN NULL "
-            . "ELSE CAST({$textExpression} AS SIGNED) END";
+        return "CASE WHEN {$clean} IS NULL THEN NULL ELSE CAST({$clean} AS SIGNED) END";
     }
 
     private function buildDirectLoadDateExpression(string $columnExpression): string
@@ -6834,11 +7177,9 @@ class ImportExcelController extends Controller
 
     private function buildFastDirectLoadDateExpression(string $columnExpression): string
     {
-        $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
+        $clean = "NULLIF(NULLIF(TRIM({$columnExpression}), ''), '\\\\N')";
 
-        return "CASE "
-            . "WHEN {$textExpression} IS NULL THEN NULL "
-            . "ELSE CAST({$textExpression} AS DATE) END";
+        return "CASE WHEN {$clean} IS NULL THEN NULL ELSE CAST({$clean} AS DATE) END";
     }
 
     private function buildDirectLoadSqlExpression(array $rule, string $columnExpression, ?string $dbColumn = null, array $context = []): string
@@ -6858,14 +7199,14 @@ class ImportExcelController extends Controller
         }
 
         if (!empty($rule['is_decimal'])) {
+            $scale = $this->resolveDirectLoadDecimalScale($dbColumn, $context);
             if (!empty($rule['comma_is_thousands'])) {
                 $columnExpression = "REPLACE({$columnExpression}, ',', '')";
             }
 
-            return $this->buildDirectLoadDecimalExpression(
-                $columnExpression,
-                $this->resolveDirectLoadDecimalScale($dbColumn, $context)
-            );
+            return $sourcePreNormalized
+                ? $this->buildFastDirectLoadDecimalExpression($columnExpression, $scale)
+                : $this->buildDirectLoadDecimalExpression($columnExpression, $scale);
         }
 
         if (!empty($rule['is_integer'])) {
@@ -6877,6 +7218,10 @@ class ImportExcelController extends Controller
         if (!empty($rule['preserve_source_text_exact'])) {
             return "CASE WHEN {$columnExpression} IS NULL OR {$columnExpression} = '\\\\N' "
                 . "THEN NULL ELSE {$columnExpression} END";
+        }
+
+        if ($sourcePreNormalized) {
+            return "NULLIF(NULLIF(TRIM({$columnExpression}), ''), '\\\\N')";
         }
 
         return $this->buildDirectLoadTextExpression($columnExpression, true);
@@ -7479,6 +7824,11 @@ class ImportExcelController extends Controller
         $pdo->exec('SET SESSION net_read_timeout = 3600');
         $pdo->exec('SET SESSION net_write_timeout = 3600');
         $pdo->exec('SET SESSION wait_timeout = 7200');
+        try {
+            $pdo->exec('SET SESSION bulk_insert_buffer_size = 268435456');
+        } catch (\Throwable) {
+            // abaikan jika session variable tidak diizinkan
+        }
 
         $normalizedPath = str_replace('\\', '/', realpath($absolutePath) ?: $absolutePath);
         $quotedPath = $pdo->quote($normalizedPath);
@@ -9774,6 +10124,11 @@ class ImportExcelController extends Controller
             if (isset($tableColumnsLookup[$lowerCandidate])) {
                 return [$tableColumnsByLower[$lowerCandidate] ?? $candidateColumn];
             }
+        }
+
+        $aliasCandidate = $this->smartGuardService()->resolveAliasCandidate($header, array_keys($tableColumnsLookup));
+        if ($aliasCandidate !== null && isset($tableColumnsLookup[$aliasCandidate])) {
+            return [$tableColumnsByLower[$aliasCandidate] ?? $aliasCandidate];
         }
 
         return [];
@@ -12315,6 +12670,13 @@ class ImportExcelController extends Controller
 
         $missing = array_values(array_filter($required, static fn (string $column): bool => !isset($available[$column])));
         if ($missing === []) {
+            return;
+        }
+
+        if ($this->isSsaSourceWidthCandidate($tableName, $headers)) {
+            // Header semantics are checked from the staged row values by the
+            // dedicated SSA processor. Do not reject a valid site export just
+            // because its display labels changed.
             return;
         }
 

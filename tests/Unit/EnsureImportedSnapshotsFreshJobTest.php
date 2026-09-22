@@ -364,6 +364,55 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         ));
     }
 
+    public function test_daily_loan_signature_uses_one_grouped_query_without_changing_payload(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            [
+                'periode' => '2026-05-06',
+                'uniqueid_namareport' => 'DLD-001',
+                'cabang_normalized' => 'KC MADIUN',
+                'baki_debet1' => 1250,
+                'plafon' => 2000,
+                'tunggakan_pokok' => 100,
+                'tunggakan_bunga' => 25,
+                'tunggakan_penalti' => 5,
+                'created_at' => '2026-05-08 09:00:00',
+                'updated_at' => '2026-05-08 10:00:00',
+            ],
+            [
+                'periode' => '2026-05-06',
+                'uniqueid_namareport' => 'DLD-002',
+                'cabang_normalized' => 'KC NGAWI',
+                'baki_debet1' => 2750,
+                'plafon' => 3000,
+                'tunggakan_pokok' => 200,
+                'tunggakan_bunga' => 50,
+                'tunggakan_penalti' => 10,
+                'created_at' => '2026-05-08 11:00:00',
+                'updated_at' => '2026-05-08 12:00:00',
+            ],
+        ]);
+
+        $legacyPayload = $this->legacyDailyLoanSignaturePayload('2026-05-06');
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $metadata = $this->sourceSignatures->capture('daily_loan_dinamis', 'periode', '2026-05-06');
+        $queries = collect(DB::getQueryLog())
+            ->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "daily_loan_dinamis"'))
+            ->values();
+        DB::disableQueryLog();
+
+        $this->assertNotNull($metadata);
+        $this->assertSame($legacyPayload, $metadata['payload']);
+        $this->assertSame(
+            hash('sha256', json_encode($legacyPayload, JSON_UNESCAPED_UNICODE)),
+            $metadata['source_signature']
+        );
+        $this->assertCount(1, $queries);
+        $this->assertStringContainsString('over ()', strtolower($queries->first()['query']));
+    }
+
     public function test_simpanan_existing_snapshots_rebuild_when_source_signature_changes(): void
     {
         $this->insertReadySimpananRows('2026-05-06', 1000);
@@ -761,6 +810,52 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         $this->assertSame(8, (int) Cache::get('report_cache_version:harian'));
     }
 
+    public function test_job_implements_unique_until_processing_with_deterministic_id(): void
+    {
+        $job1 = new EnsureImportedSnapshotsFreshJob('daily_loan_dinamis', '2026-05-06', 'test');
+        $job2 = new EnsureImportedSnapshotsFreshJob('daily_loan_dinamis', '2026-05-06', 'different-source');
+
+        $this->assertSame($job1->uniqueId(), $job2->uniqueId());
+        $this->assertSame(md5('snapshot:freshness:daily_loan_dinamis:2026-05-06'), $job1->uniqueId());
+    }
+
+    public function test_ensure_daily_loan_defers_gracefully_when_shadow_backfill_lock_held(): void
+    {
+        Schema::table('daily_loan_dinamis', function (Blueprint $table) {
+            $table->string('segmen_kinerja')->nullable();
+            $table->string('produk_kinerja')->nullable();
+            $table->string('unit_normalized')->nullable();
+            $table->string('branch_normalized')->nullable();
+            $table->string('rm_normalized')->nullable();
+            $table->string('cifno_clean')->nullable();
+        });
+
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-05-06',
+            'baki_debet1' => 1000,
+            'segmen_kinerja' => null,
+            'created_at' => '2026-05-08 10:00:00',
+            'updated_at' => '2026-05-08 10:00:00',
+        ]);
+
+        // Lock the period to simulate active backfill in another worker
+        $lock = Cache::lock('shadow:backfill:auto:2026-05-06', 60);
+        $this->assertTrue($lock->get());
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $builder->shouldNotReceive('rebuildDashboard');
+
+        $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
+        $dashboardHarian->shouldNotReceive('rebuild');
+
+        $job = new EnsureImportedSnapshotsFreshJob('daily_loan_dinamis', '2026-05-06', 'unit-test');
+        
+        // Handle should not throw LockTimeoutException; it defers cleanly
+        $job->handle($builder, $dashboardHarian, $this->sourceSignatures);
+
+        $lock->release();
+    }
+
     private function createTables(): void
     {
         Schema::create('snapshot_source_signatures', function (Blueprint $table) {
@@ -780,7 +875,13 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         Schema::create('daily_loan_dinamis', function (Blueprint $table) {
             $table->id();
             $table->date('periode');
+            $table->string('uniqueid_namareport')->nullable();
+            $table->string('cabang_normalized')->nullable();
             $table->decimal('baki_debet1', 20, 2)->nullable();
+            $table->decimal('plafon', 20, 2)->nullable();
+            $table->decimal('tunggakan_pokok', 20, 2)->nullable();
+            $table->decimal('tunggakan_bunga', 20, 2)->nullable();
+            $table->decimal('tunggakan_penalti', 20, 2)->nullable();
             $table->timestamps();
         });
 
@@ -920,6 +1021,73 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
             'source_row_count' => (int) $summary['source_row_count'],
             'sum_saldo_idr' => (string) $summary['sum_saldo_idr'],
             'max_updated_at' => (string) DB::table('simpanan_multipn')->where('posisi', $period)->max('updated_at'),
+            'bucket_signature_version' => 'snapshot-source-v2-buckets',
+            'bucket_signatures' => $bucketSignatures,
+        ];
+        ksort($payload);
+
+        return $payload;
+    }
+
+    /**
+     * Reproduce the existing two-query daily-loan signature contract.
+     *
+     * @return array<string, mixed>
+     */
+    private function legacyDailyLoanSignaturePayload(string $period): array
+    {
+        $summary = (array) DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->selectRaw('COUNT(*) as source_row_count')
+            ->selectRaw('MAX("updated_at") as max_updated_at')
+            ->selectRaw('MAX("created_at") as max_created_at')
+            ->selectRaw('MAX("id") as max_id')
+            ->selectRaw('MAX("uniqueid_namareport") as max_uniqueid_namareport')
+            ->selectRaw('COALESCE(SUM(COALESCE("baki_debet1", 0)), 0) as sum_baki_debet1')
+            ->selectRaw('COALESCE(SUM(COALESCE("plafon", 0)), 0) as sum_plafon')
+            ->selectRaw('COALESCE(SUM(COALESCE("tunggakan_pokok", 0)), 0) as sum_tunggakan_pokok')
+            ->selectRaw('COALESCE(SUM(COALESCE("tunggakan_bunga", 0)), 0) as sum_tunggakan_bunga')
+            ->selectRaw('COALESCE(SUM(COALESCE("tunggakan_penalti", 0)), 0) as sum_tunggakan_penalti')
+            ->first();
+
+        $bucketSignatures = DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->selectRaw('UPPER(TRIM(COALESCE("cabang_normalized", \'\'))) as bucket_key')
+            ->selectRaw('COUNT(*) as source_row_count')
+            ->selectRaw('COALESCE(SUM(COALESCE("baki_debet1", 0)), 0) as sum_baki_debet1')
+            ->selectRaw('COALESCE(SUM(COALESCE("plafon", 0)), 0) as sum_plafon')
+            ->selectRaw('COALESCE(SUM(COALESCE("tunggakan_pokok", 0)), 0) as sum_tunggakan_pokok')
+            ->selectRaw('COALESCE(SUM(COALESCE("tunggakan_bunga", 0)), 0) as sum_tunggakan_bunga')
+            ->selectRaw('COALESCE(SUM(COALESCE("tunggakan_penalti", 0)), 0) as sum_tunggakan_penalti')
+            ->groupBy('bucket_key')
+            ->orderBy('bucket_key')
+            ->limit(200)
+            ->get()
+            ->mapWithKeys(static function ($row): array {
+                $payload = (array) $row;
+                $bucket = (string) $payload['bucket_key'];
+                unset($payload['bucket_key']);
+                ksort($payload);
+
+                return [$bucket !== '' ? $bucket : '*' => hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE))];
+            })
+            ->all();
+
+        $payload = [
+            'version' => 'snapshot-source-v1',
+            'source_table' => 'daily_loan_dinamis',
+            'period_column' => 'periode',
+            'period' => $period,
+            'source_row_count' => (int) $summary['source_row_count'],
+            'max_updated_at' => (string) $summary['max_updated_at'],
+            'max_created_at' => (string) $summary['max_created_at'],
+            'max_id' => (string) $summary['max_id'],
+            'max_uniqueid_namareport' => (string) $summary['max_uniqueid_namareport'],
+            'sum_baki_debet1' => (string) $summary['sum_baki_debet1'],
+            'sum_plafon' => (string) $summary['sum_plafon'],
+            'sum_tunggakan_pokok' => (string) $summary['sum_tunggakan_pokok'],
+            'sum_tunggakan_bunga' => (string) $summary['sum_tunggakan_bunga'],
+            'sum_tunggakan_penalti' => (string) $summary['sum_tunggakan_penalti'],
             'bucket_signature_version' => 'snapshot-source-v2-buckets',
             'bucket_signatures' => $bucketSignatures,
         ];

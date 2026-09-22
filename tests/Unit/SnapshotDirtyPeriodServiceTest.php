@@ -156,6 +156,35 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
         $this->assertNotSame('lost-worker', $reclaimed[0]['claim_token']);
     }
 
+    public function test_claim_due_does_not_reclaim_stale_claim_while_queue_job_still_exists(): void
+    {
+        $service = new SnapshotDirtyPeriodService;
+        $service->mark('daily_loan_dinamis', '2026-09-19');
+        $claim = $service->claimDue(1)[0];
+
+        DB::table('snapshot_dirty_periods')
+            ->where('source_table', 'daily_loan_dinamis')
+            ->where('period_key', '2026-09-19')
+            ->update(['claimed_at' => now()->subMinutes(30)]);
+
+        $queueId = DB::table('jobs')->insertGetId([
+            'queue' => 'snapshots-parallel',
+            'payload' => json_encode(['claim_token' => $claim['claim_token']]),
+            'attempts' => 1,
+            'reserved_at' => time(),
+            'available_at' => time(),
+            'created_at' => time(),
+        ]);
+
+        try {
+            $this->assertSame([], $service->claimDue(1, 'daily_loan_dinamis', '2026-09-19'));
+        } finally {
+            DB::table('jobs')->where('id', $queueId)->delete();
+        }
+
+        $this->assertCount(1, $service->claimDue(1, 'daily_loan_dinamis', '2026-09-19'));
+    }
+
     public function test_mark_resets_attempts_and_clears_failed_marker_for_fresh_source_change(): void
     {
         $service = new SnapshotDirtyPeriodService;

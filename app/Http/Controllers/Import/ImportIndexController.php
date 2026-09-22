@@ -2960,11 +2960,19 @@ class ImportIndexController extends Controller
     {
         $candidate = '';
 
-        if (preg_match('/deleteId";s:\d+:"([0-9a-f\-]{36})"/i', $payload, $matches) === 1) {
-            $candidate = (string) ($matches[1] ?? '');
+        $decoded = json_decode($payload, true);
+        $serializedCommand = is_array($decoded)
+            ? trim((string) data_get($decoded, 'data.command', ''))
+            : '';
+
+        foreach (array_filter([$serializedCommand, $payload]) as $candidatePayload) {
+            if (preg_match('/deleteId";s:\d+:"([0-9a-f\-]{36})"/i', $candidatePayload, $matches) === 1) {
+                $candidate = (string) ($matches[1] ?? '');
+                break;
+            }
         }
 
-        if ($candidate === '' && preg_match('/"deleteId":"([0-9a-f\-]{36})"/i', $payload, $matches) === 1) {
+        if ($candidate === '' && preg_match('/"deleteId"\s*:\s*"([0-9a-f\-]{36})"/i', $payload, $matches) === 1) {
             $candidate = (string) ($matches[1] ?? '');
         }
 
@@ -3002,6 +3010,10 @@ class ImportIndexController extends Controller
         }
 
         if (in_array($status, ['completed', 'warning', 'failed', 'cancelled'], true)) {
+            if ($queueRow !== null && !(bool) ($queueRow['reserved'] ?? false)) {
+                $this->releaseManagedDeleteQueueRow($queueRow);
+            }
+
             return $state;
         }
 

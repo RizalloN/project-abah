@@ -4,7 +4,6 @@ namespace App\Support;
 
 use Carbon\Carbon;
 use Illuminate\Database\Query\Builder;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -23,11 +22,11 @@ final class SmallRmRealizationCalculator
     /**
      * Calculate SMALL realization from monthly position reports.
      *
-     * A new CIF is credited at the gross booked plafond. When the CIF already
-     * existed at the preceding month-end, realization is the positive increase
-     * between the complete current and preceding CIF plafond. Comparing the
-     * complete CIF keeps supplements correct when the facility retains its
-     * account number or is replaced by a newly opened account.
+     * A current-month booking is credited once at its stored plafond. An older
+     * account whose plafond rises is credited only for the positive increase
+     * against the latest available preceding month-end position. This captures
+     * same-account supplements without reducing unrelated new facilities for
+     * an existing CIF.
      *
      * @param  array<int, string>  $targetPeriods
      * @param  array<int, string>  $productValues
@@ -110,17 +109,7 @@ final class SmallRmRealizationCalculator
         $candidateQuery = DB::table(self::SOURCE_TABLE)
             ->where('segmen_kinerja', 'SMALL')
             ->whereIn('produk_kinerja', $products)
-            ->where(function (Builder $query) use ($periods, $dateColumn): void {
-                foreach ($periods as $index => $period) {
-                    $start = Carbon::parse($period)->startOfMonth()->toDateString();
-                    $method = $index === 0 ? 'where' : 'orWhere';
-                    $query->{$method}(function (Builder $periodQuery) use ($period, $start, $dateColumn): void {
-                        $periodQuery
-                            ->where('periode', $period)
-                            ->whereBetween($dateColumn, [$start, $period]);
-                    });
-                }
-            });
+            ->whereIn('periode', $periods);
 
         $this->applyAssignmentFilters(
             $candidateQuery,
@@ -158,7 +147,7 @@ final class SmallRmRealizationCalculator
             $period = $this->dateValue($row->periode ?? null);
             $realizationDate = $this->dateValue($row->realization_date ?? null);
             $account = $this->normalizeKey($row->account_number ?? null);
-            if ($period === null || $realizationDate === null || $account === '') {
+            if ($period === null || $account === '' || ($realizationDate !== null && $realizationDate > $period)) {
                 continue;
             }
 
@@ -174,7 +163,9 @@ final class SmallRmRealizationCalculator
                 $cif = 'ACCOUNT:'.$account;
             }
 
-            $dedupeKey = implode('|', [$period, $cif, $account]);
+            // A facility is credited once even when duplicate source rows have
+            // different or missing CIF labels for the same account.
+            $dedupeKey = implode('|', [$period, $account]);
             $currentPlafon = max(0.0, (float) ($row->plafon ?? 0));
             if (isset($deduplicated[$dedupeKey])) {
                 if ($currentPlafon > $deduplicated[$dedupeKey]['plafon']) {
@@ -205,126 +196,82 @@ final class SmallRmRealizationCalculator
         }
 
         $previousPeriods = $this->previousPeriodsByTarget($periods);
-        $exposurePeriods = collect($periods)
-            ->merge(array_values($previousPeriods))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-        $candidateCifs = collect($deduplicated)
-            ->pluck('cif')
-            ->reject(static fn (string $cif): bool => str_starts_with($cif, 'ACCOUNT:'))
-            ->unique()
-            ->values()
-            ->all();
-        $fallbackAccounts = collect($deduplicated)
-            ->filter(static fn (array $candidate): bool => str_starts_with($candidate['cif'], 'ACCOUNT:'))
+        $previousPlafondByPeriodAccount = [];
+        $previousPeriodValues = array_values(array_unique(array_values($previousPeriods)));
+        $candidateAccounts = collect($deduplicated)
             ->pluck('account')
             ->unique()
             ->values()
             ->all();
-        $plafondByPeriodCif = [];
-
-        if ($exposurePeriods !== [] && ($candidateCifs !== [] || $fallbackAccounts !== [])) {
-            $exposureRows = DB::table(self::SOURCE_TABLE)
-                ->whereIn('periode', $exposurePeriods)
+        if ($previousPeriodValues !== [] && $candidateAccounts !== []) {
+            $previousRows = DB::table(self::SOURCE_TABLE)
+                ->whereIn('periode', $previousPeriodValues)
                 ->where('segmen_kinerja', 'SMALL')
                 ->whereIn('produk_kinerja', $products)
-                ->where(function (Builder $query) use ($cifColumn, $candidateCifs, $fallbackAccounts): void {
-                    if ($candidateCifs !== []) {
-                        $query->whereIn($cifColumn, $candidateCifs);
-                    }
-                    if ($fallbackAccounts !== []) {
-                        $method = $candidateCifs === [] ? 'whereIn' : 'orWhereIn';
-                        $query->{$method}('nomor_rekening1', $fallbackAccounts);
-                    }
-                })
-                ->get(['periode', $cifColumn.' as cif_key', 'nomor_rekening1 as account_number', 'plafon']);
+                ->whereIn('nomor_rekening1', $candidateAccounts)
+                ->get(['periode', 'nomor_rekening1 as account_number', 'plafon']);
 
-            $exposureAccounts = [];
-            foreach ($exposureRows as $row) {
+            foreach ($previousRows as $row) {
                 $period = $this->dateValue($row->periode ?? null);
                 $account = $this->normalizeKey($row->account_number ?? null);
                 if ($period === null || $account === '') {
                     continue;
                 }
-                $cif = $this->normalizeKey($row->cif_key ?? null);
-                if ($cif === '') {
-                    $cif = 'ACCOUNT:'.$account;
-                }
-                $accountKey = implode('|', [$period, $cif, $account]);
-                $exposureAccounts[$accountKey] = max(
-                    (float) ($exposureAccounts[$accountKey] ?? 0.0),
+
+                $key = $period.'|'.$account;
+                $previousPlafondByPeriodAccount[$key] = max(
+                    (float) ($previousPlafondByPeriodAccount[$key] ?? 0.0),
                     max(0.0, (float) ($row->plafon ?? 0.0))
                 );
-            }
-
-            foreach ($exposureAccounts as $accountKey => $plafond) {
-                [$period, $cif] = explode('|', $accountKey, 3);
-                $periodCifKey = $period.'|'.$cif;
-                $plafondByPeriodCif[$periodCifKey] =
-                    (float) ($plafondByPeriodCif[$periodCifKey] ?? 0.0) + $plafond;
-            }
-        }
-
-        $candidatesByPeriodCif = collect($deduplicated)->groupBy(
-            static fn (array $candidate): string => $candidate['period'].'|'.$candidate['cif']
-        );
-        $creditedAmounts = [];
-        $supplementAccounts = 0;
-        $supplementAmount = 0.0;
-        $newAccounts = 0;
-        $newAmount = 0.0;
-
-        foreach ($candidatesByPeriodCif as $periodCifKey => $candidates) {
-            /** @var Collection<int, array<string, mixed>> $candidates */
-            $first = $candidates->first();
-            $period = (string) $first['period'];
-            $cif = (string) $first['cif'];
-            $previousPeriod = $previousPeriods[$period] ?? null;
-            $previousPlafond = $previousPeriod !== null
-                ? (float) ($plafondByPeriodCif[$previousPeriod.'|'.$cif] ?? 0.0)
-                : 0.0;
-            $isSupplement = $previousPeriod !== null && $previousPlafond > 0.0;
-            $grossBooked = (float) $candidates->sum('plafon');
-            $currentPlafond = (float) ($plafondByPeriodCif[$periodCifKey] ?? $grossBooked);
-            $realizationAmount = $isSupplement
-                ? max(0.0, $currentPlafond - $previousPlafond)
-                : $grossBooked;
-
-            foreach ($candidates as $candidate) {
-                $dedupeKey = implode('|', [$candidate['period'], $candidate['cif'], $candidate['account']]);
-                $share = $grossBooked > 0.0 ? (float) $candidate['plafon'] / $grossBooked : 0.0;
-                $creditedAmounts[$dedupeKey] = $realizationAmount * $share;
-            }
-
-            if ($isSupplement) {
-                $supplementAccounts += $realizationAmount > 0.0 ? $candidates->count() : 0;
-                $supplementAmount += $realizationAmount;
-            } else {
-                $newAccounts += $realizationAmount > 0.0 ? $candidates->count() : 0;
-                $newAmount += $realizationAmount;
             }
         }
 
         $events = [];
         $aggregatedRows = [];
         $creditedTotal = 0.0;
+        $creditedAccounts = 0;
+        $bookingAccounts = 0;
+        $bookingAmount = 0.0;
+        $increaseAccounts = 0;
+        $increaseAmount = 0.0;
         foreach ($deduplicated as $candidate) {
+            $period = (string) $candidate['period'];
+            $realizationDate = $candidate['realization_date'];
+            $isCurrentMonthBooking = $realizationDate !== null
+                && $realizationDate >= Carbon::parse($period)->startOfMonth()->toDateString()
+                && $realizationDate <= $period;
+            $previousPeriod = $previousPeriods[$period] ?? null;
+            $previousAccountKey = $previousPeriod !== null
+                ? $previousPeriod.'|'.$candidate['account']
+                : null;
+            $hasPreviousAccount = $previousAccountKey !== null
+                && array_key_exists($previousAccountKey, $previousPlafondByPeriodAccount);
+            $previousPlafond = $hasPreviousAccount
+                ? (float) $previousPlafondByPeriodAccount[$previousAccountKey]
+                : 0.0;
+            $amount = $isCurrentMonthBooking
+                ? (float) $candidate['plafon']
+                : ($hasPreviousAccount
+                    ? max(0.0, (float) $candidate['plafon'] - $previousPlafond)
+                    : 0.0);
+            if ($amount <= 0.0001) {
+                continue;
+            }
+
             $events[implode('|', [
-                $candidate['period'],
-                $candidate['realization_date'],
-                $candidate['cif'],
+                $period,
+                $isCurrentMonthBooking ? (string) $realizationDate : 'PLAFOND_INCREASE',
+                $candidate['account'],
             ])] = true;
             $participantKey = implode('|', [
-                $candidate['period'],
+                $period,
                 $this->normalizeKey($candidate['cabang']),
                 $this->normalizeKey($candidate['unit']),
                 $this->normalizeBranchCode($candidate['branch_code']),
                 $candidate['rm_identity'],
             ]);
             $aggregatedRows[$participantKey] ??= [
-                'period' => $candidate['period'],
+                'period' => $period,
                 'cabang' => $candidate['cabang'],
                 'unit' => $candidate['unit'],
                 'branch_code' => $candidate['branch_code'],
@@ -333,26 +280,30 @@ final class SmallRmRealizationCalculator
                 'deb' => 0,
                 'rp' => 0.0,
             ];
-            $dedupeKey = implode('|', [$candidate['period'], $candidate['cif'], $candidate['account']]);
-            $amount = (float) ($creditedAmounts[$dedupeKey] ?? 0.0);
-            if ($amount > 0.0001) {
-                $aggregatedRows[$participantKey]['deb']++;
-            }
+            $aggregatedRows[$participantKey]['deb']++;
             $aggregatedRows[$participantKey]['rp'] += $amount;
+            $creditedAccounts++;
             $creditedTotal += $amount;
+            if ($isCurrentMonthBooking) {
+                $bookingAccounts++;
+                $bookingAmount += $amount;
+            } else {
+                $increaseAccounts++;
+                $increaseAmount += $amount;
+            }
         }
 
         return [
             'covered_periods' => $coveredPeriods,
             'rows' => array_values($aggregatedRows),
             'diagnostics' => [
-                'candidate_accounts' => count($deduplicated),
+                'candidate_accounts' => $creditedAccounts,
                 'events' => count($events),
                 'excluded_blank_initiator' => $excludedBlankInitiator,
-                'new_accounts' => $newAccounts,
-                'new_rp' => $newAmount,
-                'supplement_accounts' => $supplementAccounts,
-                'supplement_rp' => $supplementAmount,
+                'booking_accounts' => $bookingAccounts,
+                'booking_rp' => $bookingAmount,
+                'plafond_increase_accounts' => $increaseAccounts,
+                'plafond_increase_rp' => $increaseAmount,
                 'credited_rp' => $creditedTotal,
             ],
         ];
@@ -405,10 +356,10 @@ final class SmallRmRealizationCalculator
                 'candidate_accounts' => 0,
                 'events' => 0,
                 'excluded_blank_initiator' => 0,
-                'new_accounts' => 0,
-                'new_rp' => 0.0,
-                'supplement_accounts' => 0,
-                'supplement_rp' => 0.0,
+                'booking_accounts' => 0,
+                'booking_rp' => 0.0,
+                'plafond_increase_accounts' => 0,
+                'plafond_increase_rp' => 0.0,
                 'credited_rp' => 0.0,
             ],
         ];

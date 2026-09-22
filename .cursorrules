@@ -1,0 +1,8 @@
+# Project ABAH - Cursor & VS Code AI Assistant Rules
+
+## Mandatory Token Optimization (MarkItDown)
+When analyzing spreadsheets, presentations, word files, or PDF documents in this repository:
+- **Extensions**: `.xlsx`, `.xls`, `.docx`, `.pptx`, `.pdf`, `.html`, `.csv`
+- **Rule**: NEVER parse raw binary/large XML structures into the conversation context.
+- **Action**: Always run `python scripts/markitdown_token_optimizer.py <file>` or `php artisan doc:markdown <file>` to convert the document into token-minified Markdown first.
+- Use `--clipboard` if the user wants the markdown copied to Windows clipboard.

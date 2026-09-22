@@ -38,14 +38,25 @@ class SmartPartialSnapshotRebuildJob implements ShouldQueue
 
     public function middleware(): array
     {
-        $scope = strtolower(trim($this->tableName)) . ':partial-rebuild';
+        $table = strtolower(trim($this->tableName));
+        $scope = $table . ':partial-rebuild';
 
-        return [
+        $middleware = [
             (new WithoutOverlapping('snapshot:' . $scope))
                 ->releaseAfter(5)
-                ->expireAfter(600),
-            new DeferSnapshotJobsDuringImport(),
+                ->expireAfter(600)
+                ->shared(),
+            new DeferSnapshotJobsDuringImport(sourceTable: $table),
         ];
+
+        foreach (array_values(array_unique(array_filter(array_map('trim', $this->affectedPeriods)))) as $period) {
+            $middleware[] = (new WithoutOverlapping('snapshot:source-period:' . $table . ':' . $period))
+                ->releaseAfter(60)
+                ->expireAfter(7200)
+                ->shared();
+        }
+
+        return $middleware;
     }
 
     public function handle(

@@ -32,6 +32,7 @@
   $ecosystemBranches = (array) data_get($ecosystemSummary, 'branches', []);
   $ecosystemPillars = (array) data_get($ecosystemSummary, 'ecosystems', []);
   $analyticsByScope = data_get($dashboard ?? [], 'analytics_by_scope', data_get($area6Portfolio, 'analytics_by_scope', []));
+  $isBranchLanding = ($selectedLandingBranch ?? 'area6') !== 'area6';
 
   // Pre-calculate SVG Trend per scope for client-side instant switching
   $trendScopesSvg = [];
@@ -1040,6 +1041,42 @@
   flex-wrap: wrap;
 }
 
+.scc-monthly-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.scc-segment-toggle {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(76px, 1fr));
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #f1f5f9;
+}
+
+.scc-segment-btn {
+  min-height: 40px;
+  padding: 0.35rem 0.75rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.scc-segment-btn.active {
+  background: #0857c3;
+  color: #ffffff;
+  box-shadow: 0 2px 5px rgba(8, 87, 195, 0.22);
+}
+
 .scc-leg-chip {
   display: inline-flex;
   align-items: center;
@@ -1066,6 +1103,31 @@
   width: 100%;
   position: relative;
   padding: 1.25rem 1.45rem 1.45rem;
+}
+
+.scc-monthly-dates {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(175px, 1fr);
+  gap: 0.55rem;
+  padding: 0 1.45rem 1.1rem;
+  overflow-x: auto;
+}
+
+.scc-monthly-date-card {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.scc-monthly-date-card strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.74rem;
 }
 
 /* ── SEKAT 3: 1. OPTIMALISASI DIGITAL CHANNEL (CLEAN EXECUTIVE UI) ── */
@@ -2682,10 +2744,25 @@
             <h3 class="ssc-title">Timeseries Simpanan per Bulan</h3>
           </div>
         </div>
-        <div class="scc-monthly-legend">
-          <span class="scc-leg-chip"><span class="scc-leg-dot" style="background:#94a3b8;"></span>H-1 Akhir Bulan</span>
-          <span class="scc-leg-chip"><span class="scc-leg-dot" style="background:#307fe2;"></span>H Akhir Bulan (Biru Cakrawala)</span>
-          <span class="scc-leg-chip"><span class="scc-leg-dot" style="background:#10b981;border-radius:50%;"></span>Delta Tutup</span>
+        <div class="scc-monthly-controls">
+          @if($isBranchLanding)
+            <div class="scc-segment-toggle" role="group" aria-label="Segmen timeseries simpanan">
+              <button type="button" class="scc-segment-btn active" data-monthly-segment="ritel" aria-pressed="true">Ritel</button>
+              <button type="button" class="scc-segment-btn" data-monthly-segment="micro" aria-pressed="false">Mikro</button>
+            </div>
+          @endif
+          <div class="scc-monthly-legend">
+            @if($isBranchLanding)
+              <span class="scc-leg-chip"><span class="scc-leg-dot" style="background:#cbd5e1;"></span>H-2</span>
+              <span class="scc-leg-chip"><span class="scc-leg-dot" style="background:#94a3b8;"></span>H-1</span>
+              <span class="scc-leg-chip"><span class="scc-leg-dot" style="background:#307fe2;"></span>Posisi akhir</span>
+              <span class="scc-leg-chip"><span class="scc-leg-dot" style="background:#10b981;border-radius:50%;"></span>Delta H vs H-1</span>
+            @else
+              <span class="scc-leg-chip"><span class="scc-leg-dot" style="background:#94a3b8;"></span>H-1 Akhir Bulan</span>
+              <span class="scc-leg-chip"><span class="scc-leg-dot" style="background:#307fe2;"></span>H Akhir Bulan (Biru Cakrawala)</span>
+              <span class="scc-leg-chip"><span class="scc-leg-dot" style="background:#10b981;border-radius:50%;"></span>Delta Tutup</span>
+            @endif
+          </div>
         </div>
       </header>
 
@@ -2693,6 +2770,9 @@
         <div class="scc-monthly-canvas-wrap">
           <canvas id="simpananMonthlyChart"></canvas>
         </div>
+        @if($isBranchLanding)
+          <div class="scc-monthly-dates" id="simpananMonthlyDates" aria-live="polite"></div>
+        @endif
       </div>
     </article>
 
@@ -3517,6 +3597,8 @@ document.addEventListener('DOMContentLoaded', function() {
   window.simpananDigitalChannelData = @json($digitalChannelStrategy ?? []);
   window.simpananTrendSvgByScope = @json($trendScopesSvg ?? []);
   window.simpananMonthlyDataByScope = @json($monthlyTimeseriesByScope ?? []);
+  window.simpananMonthlyBranchMode = @json($isBranchLanding);
+  window.simpananMonthlySelectedSegment = 'ritel';
 
   // 1. Prognosa Week Selection
   function selectLandingPrognosaWeek(weekLabel) {
@@ -3603,12 +3685,12 @@ document.addEventListener('DOMContentLoaded', function() {
       updateSimpananTrendSvg(targetScope);
 
       // Update Monthly Chart
-      if (window.simpananMonthlyChartInstance && window.simpananMonthlyDataByScope && window.simpananMonthlyDataByScope[targetScope]) {
+      if (!window.simpananMonthlyBranchMode && window.simpananMonthlyChartInstance && window.simpananMonthlyDataByScope && window.simpananMonthlyDataByScope[targetScope]) {
         const mData = window.simpananMonthlyDataByScope[targetScope];
         window.simpananMonthlyChartInstance.data.labels = mData.labels || [];
-        window.simpananMonthlyChartInstance.data.datasets[0].data = mData.h1_values || [];
-        window.simpananMonthlyChartInstance.data.datasets[1].data = mData.h_values || [];
-        window.simpananMonthlyChartInstance.data.datasets[2].data = mData.deltas || [];
+        window.simpananMonthlyChartInstance.data.datasets[1].data = mData.h1_values || [];
+        window.simpananMonthlyChartInstance.data.datasets[2].data = mData.h_values || [];
+        window.simpananMonthlyChartInstance.data.datasets[3].data = mData.deltas || [];
         window.simpananMonthlyChartInstance.update();
       }
     });
@@ -3733,7 +3815,8 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
-    const initMonthlyData = window.simpananMonthlyDataByScope ? (window.simpananMonthlyDataByScope['area6'] || {}) : {};
+    const initialMonthlyScope = window.simpananMonthlyBranchMode ? 'ritel' : 'area6';
+    const initMonthlyData = window.simpananMonthlyDataByScope ? (window.simpananMonthlyDataByScope[initialMonthlyScope] || {}) : {};
     const ctx = monthlyCanvas.getContext('2d');
 
     window.simpananMonthlyChartInstance = new Chart(ctx, {
@@ -3741,6 +3824,17 @@ document.addEventListener('DOMContentLoaded', function() {
       data: {
         labels: (initMonthlyData.labels && initMonthlyData.labels.length > 0) ? initMonthlyData.labels : ['Mar 26', 'Apr 26', 'Mei 26', 'Jun 26', 'Jul 26', 'Agt 26', 'Sep 26'],
         datasets: [
+          {
+            type: 'bar',
+            label: 'H-2',
+            data: window.simpananMonthlyBranchMode && initMonthlyData.h2_values ? initMonthlyData.h2_values : [],
+            backgroundColor: '#cbd5e1',
+            borderRadius: 6,
+            barPercentage: 0.65,
+            categoryPercentage: 0.55,
+            yAxisID: 'y',
+            hidden: !window.simpananMonthlyBranchMode
+          },
           {
             type: 'bar',
             label: 'H-1 Akhir Bulan',
@@ -3801,6 +3895,12 @@ document.addEventListener('DOMContentLoaded', function() {
               label: function(context) {
                 let label = context.dataset.label || '';
                 let val = context.parsed.y;
+                const scopeKey = window.simpananMonthlyBranchMode ? window.simpananMonthlySelectedSegment : 'area6';
+                const item = window.simpananMonthlyDataByScope?.[scopeKey]?.items?.[context.dataIndex] || {};
+                const dateKey = context.datasetIndex === 0 ? 'h2_date' : (context.datasetIndex === 1 ? 'h1_date' : (context.datasetIndex === 2 ? 'h_date' : null));
+                if (window.simpananMonthlyBranchMode && dateKey && item[dateKey]) {
+                  label += ' (' + item[dateKey] + ')';
+                }
                 if (val !== null) {
                   label += ': ' + Number(val).toLocaleString('id-ID') + ' Jt';
                 }
@@ -3850,8 +3950,51 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  function updateMonthlyChartForSegment(segment) {
+    const chart = window.simpananMonthlyChartInstance;
+    const data = window.simpananMonthlyDataByScope?.[segment];
+    if (!chart || !data) return;
+
+    window.simpananMonthlySelectedSegment = segment;
+    chart.data.labels = data.labels || [];
+    chart.data.datasets[0].data = data.h2_values || [];
+    chart.data.datasets[1].data = data.h1_values || [];
+    chart.data.datasets[2].data = data.h_values || [];
+    chart.data.datasets[3].data = data.deltas || [];
+    chart.update();
+    renderMonthlyPositionDates(data);
+  }
+
+  function renderMonthlyPositionDates(data) {
+    const container = document.getElementById('simpananMonthlyDates');
+    if (!container) return;
+
+    container.innerHTML = (data.items || []).map(item => `
+      <div class="scc-monthly-date-card">
+        <strong>${item.month || '-'}</strong>
+        H-2: ${item.h2_date || '-'}<br>
+        H-1: ${item.h1_date || '-'}<br>
+        Posisi akhir: ${item.h_date || '-'}
+      </div>
+    `).join('');
+  }
+
+  document.querySelectorAll('[data-monthly-segment]').forEach(button => {
+    button.addEventListener('click', function() {
+      document.querySelectorAll('[data-monthly-segment]').forEach(item => {
+        const active = item === this;
+        item.classList.toggle('active', active);
+        item.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+      updateMonthlyChartForSegment(this.getAttribute('data-monthly-segment'));
+    });
+  });
+
   // Start Chart initialization
   initSimpananMonthlyChart();
+  if (window.simpananMonthlyBranchMode) {
+    renderMonthlyPositionDates(window.simpananMonthlyDataByScope?.ritel || {});
+  }
 
   // 5. Selectors (Date & Branch)
   const dateSelector = document.getElementById('periode-selector');

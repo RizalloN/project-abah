@@ -784,4 +784,27 @@ class ImportExecutionServiceTest extends TestCase
 
         $this->assertFalse($recoverable);
     }
+
+    public function test_has_queued_execution_recognizes_queued_status_with_dispatch_marker(): void
+    {
+        Cache::flush();
+        $jobId = 205;
+
+        Cache::put('import_excel_dispatched_job_' . $jobId, true, now()->addHours(6));
+
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $progressService->shouldReceive('findJob')
+            ->once()
+            ->with($jobId)
+            ->andReturn((object) [
+                'id' => $jobId,
+                'status' => 'queued',
+            ]);
+
+        $service = new ImportExecutionService($progressService);
+
+        $this->assertTrue($service->hasQueuedExecution($jobId));
+        $this->assertTrue(Cache::has('import_excel_dispatched_job_' . $jobId));
+    }
 }
+

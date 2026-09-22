@@ -6,13 +6,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| command | 23 |
-| file | 116 |
+| command | 24 |
+| file | 120 |
 | function | 1 |
-| method | 659 |
-| unresolved_symbol | 381 |
+| method | 671 |
+| unresolved_symbol | 382 |
 | route | 16 |
-| class | 61 |
+| class | 64 |
 | table | 23 |
 | view | 44 |
 
@@ -20,10 +20,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `nama_report` | table | 181 | - |
+| `nama_report` | table | 184 | - |
 | `ReportDataSyncService` | class | 85 | `app/Support/ReportDataSyncService.php:19` |
 | `LandingMicroPerformanceService` | class | 79 | `app/Support/LandingMicroPerformanceService.php:16` |
-| `rka` | table | 71 | - |
+| `rka` | table | 73 | - |
 | `normalize` | method | 70 | `app/Support/StrictDateParser.php:29` |
 | `ManagedReportManagementService` | class | 66 | `app/Support/ManagedReportManagementService.php:11` |
 | `LandingSmeOperationalService` | class | 53 | `app/Support/LandingSmeOperationalService.php:14` |
@@ -49,7 +49,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `PruneReportDailyHistoryCommand` | class | 19 | `app/Console/Commands/PruneReportDailyHistoryCommand.php:19` |
 | `fetchPlafondRealizationRows` | method | 19 | `app/Support/LandingMicroPerformanceService.php:1254` |
 | `quadrantPayload` | method | 18 | `app/Support/LandingConsumerOperationalService.php:436` |
-| `buildMantriPerformance` | method | 17 | `app/Support/LandingMicroPerformanceService.php:1994` |
+| `buildMantriPerformance` | method | 17 | `app/Support/LandingMicroPerformanceService.php:2017` |
 
 ## Route Nodes
 
@@ -78,9 +78,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `BreakdownRkaSyncService` - `app/Services/Rka/BreakdownRkaSyncService.php`
 - `ConsumerKanwilReference` - `app/Support/ConsumerKanwilReference.php`
 - `Controller` - `app/Http/Controllers/Controller.php`
+- `ConvertDocumentToMarkdownCommand` - `app/Console/Commands/ConvertDocumentToMarkdownCommand.php`
 - `DashboardCrossAlignmentGuard` - `app/Support/DashboardCrossAlignmentGuard.php`
 - `DataPhReportController` - `app/Http/Controllers/Report/DataPhReportController.php`
 - `DigitalPerformanceController` - `app/Http/Controllers/Report/DigitalPerformanceController.php`
+- `DocumentMarkdownService` - `app/Services/DocumentMarkdownService.php`
 - `EdcReportService` - `app/Services/Reports/EdcReportService.php`
 - `FileManagementController` - `app/Http/Controllers/Admin/FileManagementController.php`
 - `FileManagementDownloadController` - `app/Http/Controllers/Admin/FileManagementDownloadController.php`
@@ -101,6 +103,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ManagedReportManagementService` - `app/Support/ManagedReportManagementService.php`
 - `ManagedReportRecoveryCoordinator` - `app/Support/ManagedReportRecoveryCoordinator.php`
 - `ManagedReportRecoveryStore` - `app/Support/ManagedReportRecoveryStore.php`
+- `MicroNettDisbursementCalculator` - `app/Support/MicroNettDisbursementCalculator.php`
 - `NamaReport` - `app/Models/NamaReport.php`
 - `OptimizationValidator` - `scripts/validate_optimization_impact.php`
 - `OptimizedBulkDeleteService` - `app/Support/OptimizedBulkDeleteService.php`
@@ -142,6 +145,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `dashboard-sources:refresh` - `app/Console/Commands/RefreshRemoteDashboardSourcesCommand.php`
 - `database:performance-tune` - `app/Console/Commands/TuneDatabasePerformanceCommand.php`
 - `db:recover-safe-dump` - `app/Console/Commands/RecoverSafeDumpCommand.php`
+- `doc:markdown` - `app/Console/Commands/ConvertDocumentToMarkdownCommand.php`
 - `key:generate`
 - `migrate`
 - `migrate:`
@@ -237,24 +241,24 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| import -> core (calls) | 779 |
-| import -> core (instantiates) | 360 |
-| dashboard-pinjaman -> core (calls) | 307 |
+| import -> core (calls) | 786 |
+| import -> core (instantiates) | 363 |
+| dashboard-pinjaman -> core (calls) | 315 |
 | dashboard-simpanan -> core (calls) | 220 |
-| import -> core (accepts) | 182 |
+| import -> core (accepts) | 183 |
 | bank-pipeline -> core (calls) | 169 |
-| jobs-snapshots -> core (calls) | 140 |
+| jobs-snapshots -> core (calls) | 146 |
 | dashboard-pinjaman -> core (instantiates) | 106 |
 | prognosa -> core (calls) | 105 |
-| dashboard-pinjaman -> core (accepts) | 88 |
-| tests -> core (calls) | 79 |
-| dashboard-harian -> core (calls) | 75 |
-| tests -> core (instantiates) | 74 |
+| dashboard-pinjaman -> core (accepts) | 89 |
+| tests -> core (calls) | 81 |
+| dashboard-harian -> core (calls) | 79 |
+| tests -> core (instantiates) | 76 |
 | database -> core (instantiates) | 72 |
 | almafacts -> core (calls) | 69 |
+| dashboard-harian -> core (instantiates) | 65 |
 | bank-pipeline -> core (instantiates) | 64 |
 | bank-pipeline -> core (accepts) | 64 |
-| dashboard-harian -> core (instantiates) | 62 |
 | database -> core (checks_table) | 61 |
 | access-control -> core (calls) | 60 |
 | presentation -> core (calls) | 60 |
@@ -265,5 +269,5 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | dashboard-simpanan -> core (instantiates) | 55 |
 | prognosa -> core (instantiates) | 32 |
 | tests -> core (writes_table) | 32 |
-| jobs-snapshots -> core (uses_trait) | 31 |
-| prognosa -> core (accepts) | 28 |
+| jobs-snapshots -> core (uses_trait) | 32 |
+| jobs-snapshots -> core (instantiates) | 30 |

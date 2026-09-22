@@ -57,7 +57,7 @@ class DashboardSimpananController extends Controller
     private const EXTERNAL_REPORT_LINK_TABLE = 'external_report_links';
     private const MARKET_SHARE_LINK_GROUP = 'market_share';
     private const MARKET_SHARE_MAPPING_LINK_KEY = 'mapping';
-    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v26_period_scoped_portfolio';
+    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v27_branch_monthly_h2';
     private const CACHE_LOCK_SECONDS = 20;
     private const SNAPSHOT_SUMMARY_TABLE = 'dashboard_simpanan_snapshots';
     private const SNAPSHOT_BRANCH_TABLE = 'dashboard_simpanan_branch_snapshots';
@@ -165,7 +165,7 @@ class DashboardSimpananController extends Controller
         if ($request->filled('_refresh') || $request->filled('_area6')) {
             $cacheVersion = $this->reportCacheVersion();
             $branchKey = $this->landingBranchCacheKey();
-            Cache::forget("landing_simpanan:payload:{$selectedPeriod}:{$branchKey}:v{$cacheVersion}");
+            Cache::forget("landing_simpanan:payload:" . self::LANDING_SOURCE_CACHE_VERSION . ":{$selectedPeriod}:{$branchKey}:v{$cacheVersion}");
         }
 
         $dashboard = $this->buildLandingSimpananPayload($selectedPeriod);
@@ -194,7 +194,7 @@ class DashboardSimpananController extends Controller
         $cacheVersion = $this->reportCacheVersion();
         $branchKey = $this->landingBranchCacheKey();
         $periodKey = $selectedPeriod ?: 'latest';
-        $cacheKey = "landing_simpanan:payload:{$periodKey}:{$branchKey}:v{$cacheVersion}";
+        $cacheKey = "landing_simpanan:payload:" . self::LANDING_SOURCE_CACHE_VERSION . ":{$periodKey}:{$branchKey}:v{$cacheVersion}";
 
         return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($selectedPeriod) {
             return $this->buildLandingSimpananPayloadFresh($selectedPeriod);
@@ -731,9 +731,13 @@ class DashboardSimpananController extends Controller
             $dates = $byMonth->get($ym)->sort()->values();
             $h = $dates->last();
             $hMinus1 = $dates->count() >= 2 ? $dates[$dates->count() - 2] : null;
+            $hMinus2 = $dates->count() >= 3 ? $dates[$dates->count() - 3] : null;
             if ($h && $hMinus1) {
                 $targetDates[] = $h;
                 $targetDates[] = $hMinus1;
+                if ($hMinus2) {
+                    $targetDates[] = $hMinus2;
+                }
                 $monthMeta[$ym] = [
                     'ym' => $ym,
                     'month_label' => Carbon::parse($h)->locale('id')->translatedFormat('M y'),
@@ -741,6 +745,10 @@ class DashboardSimpananController extends Controller
                     'h_date_fmt' => Carbon::parse($h)->locale('id')->translatedFormat('d M y'),
                     'h1_date' => $hMinus1,
                     'h1_date_fmt' => Carbon::parse($hMinus1)->locale('id')->translatedFormat('d M y'),
+                    'h2_date' => $hMinus2,
+                    'h2_date_fmt' => $hMinus2
+                        ? Carbon::parse($hMinus2)->locale('id')->translatedFormat('d M y')
+                        : null,
                     'is_current_month' => $ym === substr($period, 0, 7),
                 ];
             }
@@ -772,8 +780,10 @@ class DashboardSimpananController extends Controller
             foreach ($monthMeta as $ym => $m) {
                 $hRow = $rawRows->get($m['h_date']);
                 $h1Row = $rawRows->get($m['h1_date']);
+                $h2Row = $m['h2_date'] ? $rawRows->get($m['h2_date']) : null;
                 $hTot = (float) ($hRow->$scopeCol ?? 0);
                 $h1Tot = (float) ($h1Row->$scopeCol ?? 0);
+                $h2Tot = $h2Row ? (float) ($h2Row->$scopeCol ?? 0) : null;
                 $delta = $hTot - $h1Tot;
                 $deltaPct = $h1Tot > 0 ? ($delta / $h1Tot) * 100 : 0;
 
@@ -781,11 +791,14 @@ class DashboardSimpananController extends Controller
                     'ym' => $ym,
                     'month' => $m['month_label'],
                     'h1_date' => $m['h1_date_fmt'],
+                    'h2_date' => $m['h2_date_fmt'],
                     'h_date' => $m['h_date_fmt'],
                     'is_current_month' => $m['is_current_month'],
                     'h1_million' => round($h1Tot / 1_000_000),
+                    'h2_million' => $h2Tot === null ? null : round($h2Tot / 1_000_000),
                     'h_million' => round($hTot / 1_000_000),
                     'h1_fmt' => number_format(round($h1Tot / 1_000_000), 0, ',', '.'),
+                    'h2_fmt' => $h2Tot === null ? '-' : number_format(round($h2Tot / 1_000_000), 0, ',', '.'),
                     'h_fmt' => number_format(round($hTot / 1_000_000), 0, ',', '.'),
                     'delta_million' => round($delta / 1_000_000),
                     'delta_fmt' => ($delta >= 0 ? '+' : '') . number_format(round($delta / 1_000_000), 0, ',', '.'),
@@ -796,6 +809,7 @@ class DashboardSimpananController extends Controller
             }
             $monthlyByScope[$sKey] = [
                 'labels' => array_column($items, 'month'),
+                'h2_values' => array_column($items, 'h2_million'),
                 'h1_values' => array_column($items, 'h1_million'),
                 'h_values' => array_column($items, 'h_million'),
                 'deltas' => array_column($items, 'delta_million'),

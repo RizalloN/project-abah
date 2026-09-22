@@ -8,6 +8,7 @@ use App\Jobs\EnsureDashboardSnapshotJob;
 use App\Jobs\EnsureImportedSnapshotsFreshJob;
 use App\Jobs\EnsureRasioCasaSnapshotJob;
 use App\Jobs\EnsureRekeningDormantSnapshotJob;
+use App\Jobs\RefreshRemoteDashboardSourcesJob;
 use App\Jobs\RunManagedReportDeleteJob;
 use App\Jobs\RunManagedReportLoadJob;
 use App\Jobs\RunManagedReportSnapshotRebuildJob;
@@ -223,7 +224,7 @@ class JobHealthService
                 self::MANAGED_QUEUE_STALE_SECONDS
             ),
             'reports_low' => $this->deletePendingQueueRows(
-                ['reports-low'],
+                ['reports-low', 'remote-sources'],
                 [
                     SyncImportedReportJob::class,
                     WarmReportCacheJob::class,
@@ -232,6 +233,7 @@ class JobHealthService
                     EnsureRasioCasaSnapshotJob::class,
                     EnsureRekeningDormantSnapshotJob::class,
                     RunManagedReportSnapshotRebuildJob::class,
+                    RefreshRemoteDashboardSourcesJob::class,
                 ],
                 self::REPORT_QUEUE_STALE_SECONDS
             ),
@@ -249,7 +251,7 @@ class JobHealthService
                 self::REPORT_QUEUE_STALE_SECONDS
             ),
             'reserved_reports' => $this->deleteReservedQueueRows(
-                [$reportQueue, 'reports-low'],
+                [$reportQueue, 'reports-low', 'remote-sources'],
                 [
                     SyncImportedReportJob::class,
                     WarmReportCacheJob::class,
@@ -257,6 +259,7 @@ class JobHealthService
                     EnsureDashboardSimpananSnapshotJob::class,
                     EnsureRasioCasaSnapshotJob::class,
                     EnsureRekeningDormantSnapshotJob::class,
+                    RefreshRemoteDashboardSourcesJob::class,
                 ],
                 self::REPORT_QUEUE_STALE_SECONDS
             ),

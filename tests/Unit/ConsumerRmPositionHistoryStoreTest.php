@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Support\ConsumerRmPositionHistoryStore;
+use App\Support\ConsumerRmRealizationCalculator;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -120,6 +121,67 @@ class ConsumerRmPositionHistoryStoreTest extends TestCase
             ->first();
         $this->assertSame('CIF-KPR', $kpr->cifno_clean);
         $this->assertSame('900', $kpr->account_key);
+    }
+
+    public function test_duplicate_account_with_populated_owner_keeps_realization_identical_after_capture(): void
+    {
+        DB::table('daily_loan_dinamis')->insert($this->sourceRow([
+            'uniqueid_namareport' => 'BASELINE',
+            'periode' => '2026-08-31',
+            'cifno_clean' => 'BASELINE-CIF',
+            'nomor_rekening1' => 'BASELINE',
+            'tgl_realisasi' => '2026-08-01',
+        ]));
+        foreach (['BRIGUNAKONSUMER', 'KPR'] as $index => $product) {
+            DB::table('daily_loan_dinamis')->insert([
+                $this->sourceRow([
+                    'uniqueid_namareport' => $product.'-BLANK',
+                    'produk_kinerja' => $product,
+                    'cifno_clean' => $product.'-CIF',
+                    'nomor_rekening1' => '00045'.$index,
+                    'rm_normalized' => '',
+                    'pn_pengelola1' => '',
+                    'pn_pemrakarsa1' => '',
+                    'cabang_normalized' => 'CABANG BELUM TERISI',
+                    'tgl_realisasi' => '2026-09-04',
+                    'plafon' => 120,
+                    'baki_debet1' => 100,
+                    'flag_restruk' => 'Y',
+                ]),
+                $this->sourceRow([
+                    'uniqueid_namareport' => $product.'-OWNER',
+                    'produk_kinerja' => $product,
+                    'cifno_clean' => $product.'-CIF',
+                    'nomor_rekening1' => '45'.$index,
+                    'plafon' => 100,
+                    'baki_debet1' => 80,
+                ]),
+            ]);
+        }
+
+        $calculator = app(ConsumerRmRealizationCalculator::class);
+        $rawMetrics = $calculator->calculate('2026-09-08');
+        $this->assertCount(2, $rawMetrics);
+        foreach ($rawMetrics as $metric) {
+            $this->assertSame('00112233 - RM UJI', $metric['rm']);
+            $this->assertSame(1, $metric['realisasi_deb']);
+            $this->assertSame(120.0, $metric['realisasi_os']);
+        }
+
+        $store = app(ConsumerRmPositionHistoryStore::class);
+        $this->assertTrue($store->capturePeriod('2026-08-31')['verified']);
+        $this->assertTrue($store->capturePeriod('2026-09-08')['verified']);
+        $this->assertSame($rawMetrics, $calculator->calculate('2026-09-08'));
+
+        DB::table('daily_loan_dinamis')->delete();
+        $this->assertSame($rawMetrics, $calculator->calculate('2026-09-08'));
+        foreach (DB::table(ConsumerRmPositionHistoryStore::HISTORY_TABLE)
+            ->where('periode', '2026-09-08')->get() as $row) {
+            $this->assertSame('Y', $row->flag_restruk);
+            $this->assertSame('2026-09-04', $row->tgl_realisasi);
+            $this->assertSame(120.0, (float) $row->plafon);
+            $this->assertSame(100.0, (float) $row->baki_debet);
+        }
     }
 
     public function test_verified_capture_survives_partial_prune_and_explicit_replacement_refreshes_reimport(): void

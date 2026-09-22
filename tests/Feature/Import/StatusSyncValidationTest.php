@@ -281,7 +281,7 @@ class StatusSyncValidationTest extends TestCase
                 'table_name' => 'ssa_simpanan',
                 'state' => $state,
             ]),
-            'updated_at' => now()->subMinutes(2),
+            'updated_at' => now()->subMinutes(6),
         ]);
 
         $recovered = $this->executionService->recoverOrphanedZeroProgressJobs(60);
@@ -292,6 +292,61 @@ class StatusSyncValidationTest extends TestCase
             DB::table('import_jobs')->where('id', $jobId)->value('status')
         );
         Bus::assertDispatched(\App\Jobs\RunImportJob::class, fn ($job): bool => $job->jobId === $jobId);
+    }
+
+    public function test_active_zero_progress_phase_is_not_requeued_prematurely(): void
+    {
+        Bus::fake();
+        $jobId = 9;
+        $this->createTestJob($jobId, 'processing', [
+            'total_files' => 319139,
+            'file_name' => 'daily-loan.csv',
+            'folder_path' => 'imports',
+            'id_report' => 8,
+            'updated_at' => now()->subMinutes(6),
+        ]);
+        $this->progressService->cacheProgress($jobId, [
+            'status' => 'processing',
+            'phase' => 'preparing_load_plan',
+            'percent' => 32,
+            'message' => 'Load plan Daily Loan siap dijalankan.',
+            'processed_rows' => 0,
+            'total_rows' => 319139,
+        ]);
+        DB::table('import_jobs')->where('id', $jobId)->update([
+            'updated_at' => now()->subMinutes(6),
+        ]);
+
+        $recovered = $this->executionService->recoverOrphanedZeroProgressJobs(60);
+
+        $this->assertSame([], $recovered);
+        $this->assertSame('processing', DB::table('import_jobs')->where('id', $jobId)->value('status'));
+        Bus::assertNotDispatched(\App\Jobs\RunImportJob::class);
+    }
+
+    public function test_stale_processing_job_with_runtime_lock_is_not_failed(): void
+    {
+        $jobId = 12;
+        $this->createTestJob($jobId, 'processing', [
+            'total_files' => 100,
+            'file_name' => 'locked.csv',
+            'folder_path' => 'imports',
+            'id_report' => 8,
+            'updated_at' => now()->subHours(3),
+        ]);
+
+        $store = trim((string) Config::get('import.cache_store', 'file'));
+        $repository = $store !== '' ? Cache::store($store) : Cache::store();
+        $lock = $repository->lock('import_excel_execute_job_' . $jobId, 60);
+        $this->assertTrue($lock->get());
+
+        try {
+            $this->assertSame(0, $this->progressService->purgeStaleProcessingJobs());
+        } finally {
+            $lock->release();
+        }
+
+        $this->assertSame('processing', DB::table('import_jobs')->where('id', $jobId)->value('status'));
     }
 
     public function test_daily_loan_never_uses_inline_fallback_while_queue_worker_is_running(): void

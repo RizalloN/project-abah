@@ -510,7 +510,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame('RM Belum Realisasi', data_get($summary, 'realization_tiers.totals.zero.rms.0.rm'));
     }
 
-    public function test_landing_small_uses_daily_loan_only_when_the_rm_is_absent_from_brihc(): void
+    public function test_landing_small_excludes_daily_loan_rm_absent_from_active_brihc_roster(): void
     {
         DB::table('daily_loan_dinamis')->insert(['periode' => '2026-08-22']);
         DB::table('performance_rm_snapshots')->insert($this->snapshotRow('2026-08-22', 1_000_000_000, 1, 700_000_000, [
@@ -535,11 +535,162 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             ->landingSmallQuadrantSummary('2026-08-22');
         $rows = collect($summary['branches'])->flatMap(fn (array $branch): array => $branch['rms'])->values();
 
-        $dailyBackup = $rows->firstWhere('rm', 'DAILY LOAN BACKUP');
-        $this->assertSame('KC MADIUN', data_get($dailyBackup, 'branch'));
-        $this->assertSame('daily_loan_backup', data_get($dailyBackup, 'activity_source'));
+        $this->assertFalse($rows->contains(fn (array $row): bool => $row['rm'] === 'DAILY LOAN BACKUP'));
         $this->assertSame('KC NGAWI', data_get($rows->firstWhere('rm', 'RM BRIHC Saja'), 'branch'));
         $this->assertSame(0.0, data_get($rows->firstWhere('rm', 'RM BRIHC Saja'), 'realization_rp'));
+    }
+
+    public function test_kinerja_small_quadrant_filters_snapshot_rm_absent_from_active_brihc_roster(): void
+    {
+        DB::table('brihc_pemasar')->insert([
+            'pernr' => '100',
+            'completename' => 'RM Aktif',
+            'positiondesc' => 'RM BISNIS KECIL',
+            'psadesc' => 'KC Madiun',
+            'orgdesc' => 'KC MADIUN',
+            'bc' => '45',
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $filtered = $this->invokePrivateMethod($controller, 'filterActiveSmallRmPivotedAssignments', [[
+            'active' => [
+                'cabang' => 'KC MADIUN',
+                'unit' => 'KC MADIUN',
+                'unit_code' => '45',
+                'rm' => '00000100 - RM AKTIF',
+                'periods' => [],
+            ],
+            'inactive' => [
+                'cabang' => 'KC MADIUN',
+                'unit' => 'KC MADIUN',
+                'unit_code' => '45',
+                'rm' => '00071662 - TUTUT SUSILO',
+                'periods' => [],
+            ],
+        ]]);
+
+        $this->assertSame(['active'], array_keys($filtered));
+    }
+
+    public function test_small_roster_merges_different_pn_only_for_the_same_name_and_unit_code(): void
+    {
+        DB::table('brihc_pemasar')->insert([
+            [
+                'pernr' => '359321',
+                'completename' => 'Asya Sabilia',
+                'positiondesc' => 'RM BISNIS KECIL',
+                'psadesc' => 'KC Ponorogo',
+                'orgdesc' => 'KCP SUDIRMAN PONOROGO',
+                'bc' => '2204',
+                'updated_at' => '2026-08-30 18:21:16',
+            ],
+            [
+                'pernr' => '393996',
+                'completename' => 'Asya Sabilia',
+                'positiondesc' => 'RM BISNIS KECIL',
+                'psadesc' => 'KC Ponorogo',
+                'orgdesc' => 'KC PONOROGO',
+                'bc' => '70',
+                'updated_at' => '2026-09-20 10:42:13',
+            ],
+        ]);
+
+        $metric = static fn (float $rp, float $loanOs): array => [
+            'deb' => 1,
+            'rp' => $rp,
+            'lar_loan_os' => $loanOs,
+            'lar_value' => $loanOs * 0.1,
+            'lar_pct' => 10.0,
+            'has_data' => true,
+        ];
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $filtered = $this->invokePrivateMethod($controller, 'filterActiveSmallRmPivotedAssignments', [[
+            'old-pn-sudirman' => [
+                'cabang' => 'KC PONOROGO',
+                'unit' => 'KCP SUDIRMAN PONOROGO',
+                'unit_code' => '2204',
+                'rm' => '00393996 - ASYA SABILIA',
+                'periods' => ['2026-07-31' => $metric(350_000_000, 2_000_000_000)],
+                'snapshot_quadrant' => 3,
+            ],
+            'new-pn-sudirman' => [
+                'cabang' => 'KC PONOROGO',
+                'unit' => 'KCP SUDIRMAN PONOROGO',
+                'unit_code' => '2204',
+                'rm' => '00359321 - ASYA SABILIA',
+                'periods' => ['2026-08-31' => $metric(450_000_000, 3_000_000_000)],
+                'snapshot_quadrant' => 2,
+            ],
+            'same-name-other-unit' => [
+                'cabang' => 'KC PONOROGO',
+                'unit' => 'KC PONOROGO',
+                'unit_code' => '70',
+                'rm' => '00393996 - ASYA SABILIA',
+                'periods' => ['2026-08-31' => $metric(700_000_000, 4_000_000_000)],
+                'snapshot_quadrant' => 1,
+            ],
+        ]]);
+
+        $this->assertCount(2, $filtered);
+        $sudirman = collect($filtered)->firstWhere('unit_code', '2204');
+        $ponorogo = collect($filtered)->firstWhere('unit_code', '70');
+
+        $this->assertSame('00359321 - Asya Sabilia', $sudirman['rm']);
+        $this->assertSame(350_000_000.0, data_get($sudirman, 'periods.2026-07-31.rp'));
+        $this->assertSame(450_000_000.0, data_get($sudirman, 'periods.2026-08-31.rp'));
+        $this->assertSame('00393996 - Asya Sabilia', $ponorogo['rm']);
+        $this->assertSame(700_000_000.0, data_get($ponorogo, 'periods.2026-08-31.rp'));
+
+        $branchRows = $this->invokePrivateMethod($controller, 'filterActiveSmallRmPivotedAssignments', [[
+            'old-pn' => [
+                'cabang' => 'KC PONOROGO',
+                'rm' => '00393996 - ASYA SABILIA',
+                'rm_category' => 'KCP',
+                'rm_unit' => 'KCP SUDIRMAN PONOROGO',
+                'rm_unit_code' => '2204',
+                'produk' => 'SMALL',
+                'curr' => 2_000_000_000.0,
+                'curr_deb' => 2,
+                'comparison_values' => ['m1' => 1_500_000_000.0],
+                'realisasi_deb_sum' => 1.0,
+                'realisasi_os_sum' => 350_000_000.0,
+                'realisasi_period_count' => 1,
+                'realisasi_periods' => ['2026-07-31' => true],
+                'lar_loan_os' => 2_000_000_000.0,
+                'lar_value' => 200_000_000.0,
+                'lar_pct' => 10.0,
+                'lar_has_data' => true,
+            ],
+            'new-pn' => [
+                'cabang' => 'KC PONOROGO',
+                'rm' => '00359321 - ASYA SABILIA',
+                'rm_category' => 'KCP',
+                'rm_unit' => 'KCP SUDIRMAN PONOROGO',
+                'rm_unit_code' => '2204',
+                'produk' => 'SMALL',
+                'curr' => 3_000_000_000.0,
+                'curr_deb' => 3,
+                'comparison_values' => ['m1' => 2_500_000_000.0],
+                'realisasi_deb_sum' => 1.0,
+                'realisasi_os_sum' => 450_000_000.0,
+                'realisasi_period_count' => 1,
+                'realisasi_periods' => ['2026-08-31' => true],
+                'lar_loan_os' => 3_000_000_000.0,
+                'lar_value' => 600_000_000.0,
+                'lar_pct' => 20.0,
+                'lar_has_data' => true,
+            ],
+        ]]);
+        $branchRow = collect($branchRows)->first();
+
+        $this->assertCount(1, $branchRows);
+        $this->assertSame('00359321 - Asya Sabilia', $branchRow['rm']);
+        $this->assertSame(5_000_000_000.0, $branchRow['curr']);
+        $this->assertSame(5.0, $branchRow['curr_deb']);
+        $this->assertSame(4_000_000_000.0, data_get($branchRow, 'comparison_values.m1'));
+        $this->assertSame(800_000_000.0, $branchRow['realisasi_os_sum']);
+        $this->assertSame(2, $branchRow['realisasi_period_count']);
+        $this->assertSame(16.0, $branchRow['lar_pct']);
     }
 
     public function test_landing_small_activity_uses_brihc_identity_and_excludes_inactive_brihc_roles(): void
@@ -1488,13 +1639,15 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(1, $row['quadrant']);
     }
 
-    public function test_small_retail_performance_includes_net_supplement_for_initiator(): void
+    public function test_small_kpi_and_landing_share_booking_and_plafond_increase_formula(): void
     {
         $this->addSmallRealizationSourceColumns();
 
         DB::table('daily_loan_dinamis')->insert([
             $this->dailyLoanSmallRow('2026-06-30', 'CIF-A', 'OLD-A', 400_000_000, 400_000_000, '2025-01-01'),
+            $this->dailyLoanSmallRow('2026-06-30', 'CIF-SUP', 'SUP-A', 500_000_000, 450_000_000, '2025-01-01'),
             $this->dailyLoanSmallRow('2026-07-31', 'CIF-A', 'NEW-A', 600_000_000, 600_000_000, '2026-07-10'),
+            $this->dailyLoanSmallRow('2026-07-31', 'CIF-SUP', 'SUP-A', 800_000_000, 750_000_000, '2025-01-01'),
             $this->dailyLoanSmallRow(
                 '2026-07-31',
                 'CIF-B',
@@ -1516,8 +1669,9 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             ])
         );
 
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
         $performance = $this->invokePrivateMethod(
-            new KinerjaRmReportController(Mockery::mock(RkaLookupService::class)),
+            $controller,
             'fetchRetailRealizationPerformance',
             ['SMALL', '2026-07-31', null, null, null, true]
         );
@@ -1525,8 +1679,15 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             fn (array $row): string => $this->rmIdentity((string) $row['rm'])
         );
 
-        $this->assertSame(200_000_000.0, $rows['PN:63020']['months']['2026-07']['rp']);
+        $this->assertSame(900_000_000.0, $rows['PN:63020']['months']['2026-07']['rp']);
         $this->assertSame(700_000_000.0, $rows['PN:24959']['months']['2026-07']['rp']);
+
+        $landing = $controller->landingSmallQuadrantSummary('2026-07-31');
+        $landingRows = collect(data_get($landing, 'realization_tiers.totals.500_1000.rms'))
+            ->keyBy('rm');
+
+        $this->assertSame(900_000_000.0, $landingRows['ANTON PURWANTO']['realization_rp']);
+        $this->assertSame(700_000_000.0, $landingRows['RM LAIN']['realization_rp']);
     }
 
     public function test_retail_performance_plain_numbers_have_no_grouping_delimiter(): void

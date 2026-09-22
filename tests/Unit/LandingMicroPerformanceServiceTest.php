@@ -7,6 +7,7 @@ use App\Support\LandingMicroPerformanceService;
 use App\Support\ReportCacheVersion;
 use App\Support\UserBranchScope;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use ReflectionMethod;
@@ -18,7 +19,7 @@ class LandingMicroPerformanceServiceTest extends TestCase
     {
         parent::setUp();
 
-        \Illuminate\Support\Facades\Cache::flush();
+        Cache::flush();
 
         Schema::dropIfExists('dashboard_harian_snapshots');
         Schema::create('dashboard_harian_snapshots', function (Blueprint $table): void {
@@ -677,6 +678,46 @@ class LandingMicroPerformanceServiceTest extends TestCase
         $this->assertSame('brihc', data_get($byAccount, 'SINGLE-KCP-LOW.decision_role_source'));
         $this->assertSame('MBM', data_get($byAccount, 'FALLBACK-100.decision_role'));
         $this->assertSame('nominal_fallback', data_get($byAccount, 'FALLBACK-100.decision_role_source'));
+    }
+
+    public function test_nett_disbursement_matches_raw_cif_when_normalized_cif_is_empty(): void
+    {
+        foreach ([null, '', '   '] as $index => $emptyCif) {
+            DB::table('daily_loan_dinamis')->insert([
+                $this->dailyLoanRow('prev-fallback-'.$index, '2026-07-31', ' cif-fallback-'.$index.' ', 'OLD-'.$index, 20_000_000, 'MICRO', 'Kupedes', null, [
+                    'cifno_clean' => $emptyCif,
+                ]),
+                $this->dailyLoanRow('curr-fallback-'.$index, '2026-08-25', 'CIF-FALLBACK-'.$index, 'NEW-'.$index, 70_000_000, 'MICRO', 'Kupedes', '2026-08-05', [
+                    'cifno_clean' => $emptyCif,
+                ]),
+            ]);
+        }
+
+        $service = app(LandingMicroPerformanceService::class);
+        $rows = $this->invokePrivate($service, 'fetchNetRealizationRows', ['2026-08-25', '2026-07-31', null]);
+
+        $this->assertCount(3, $rows);
+        $this->assertSame(150_000_000.0, (float) collect($rows)->sum('net_amount'));
+        foreach ($rows as $row) {
+            $this->assertSame(20_000_000.0, $row->previous_os);
+            $this->assertSame('suplesi', $row->realization_type);
+        }
+    }
+
+    public function test_realization_keeps_distinct_source_rows_when_account_and_cif_are_blank(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            $this->dailyLoanRow('source-a', '2026-08-25', '', '', 10_000_000, 'MICRO', 'Kupedes', '2026-08-05'),
+            $this->dailyLoanRow('source-b', '2026-08-25', '', '   ', 20_000_000, 'MICRO', 'Kupedes', '2026-08-05'),
+        ]);
+
+        $service = app(LandingMicroPerformanceService::class);
+        $rows = $this->invokePrivate($service, 'fetchPlafondRealizationRows', ['2026-08-25', null]);
+
+        $this->assertCount(2, $rows);
+        $this->assertSame(['SOURCE-A', 'SOURCE-B'], collect($rows)->pluck('account_key')->all());
+        $this->assertSame(['REK:SOURCE-A', 'REK:SOURCE-B'], collect($rows)->pluck('cif_key')->all());
+        $this->assertSame(30_000_000.0, (float) collect($rows)->sum('amount'));
     }
 
     public function test_nett_disbursement_handles_same_and_replacement_accounts_without_double_reducing_cif(): void

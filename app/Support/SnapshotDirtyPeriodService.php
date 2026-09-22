@@ -354,13 +354,51 @@ class SnapshotDirtyPeriodService
             $query->where('period_key', trim($period));
         }
 
-        $query->update([
-            'claimed_at' => null,
-            'claim_token' => null,
-            'dirty_since_at_claim' => null,
-            'last_error' => 'Released stale snapshot dirty claim for retry.',
-            'updated_at' => now(),
+        $rows = $query->get([
+            'source_table',
+            'period_key',
+            'shard_type',
+            'shard_key',
+            'claim_token',
         ]);
+
+        foreach ($rows as $row) {
+            $claimToken = trim((string) ($row->claim_token ?? ''));
+            if ($claimToken !== '' && $this->hasActiveQueueJobForClaim($claimToken)) {
+                continue;
+            }
+
+            DB::table(self::TABLE)
+                ->where('source_table', $row->source_table)
+                ->where('period_key', $row->period_key)
+                ->where('shard_type', $row->shard_type)
+                ->where('shard_key', $row->shard_key)
+                ->where('claim_token', $claimToken)
+                ->where('claimed_at', '<=', $cutoff)
+                ->update([
+                    'claimed_at' => null,
+                    'claim_token' => null,
+                    'dirty_since_at_claim' => null,
+                    'last_error' => 'Released stale snapshot dirty claim for retry.',
+                    'updated_at' => now(),
+                ]);
+        }
+    }
+
+    private function hasActiveQueueJobForClaim(string $claimToken): bool
+    {
+        if ($claimToken === '' || !Schema::hasTable('jobs')) {
+            return false;
+        }
+
+        try {
+            return DB::table('jobs')
+                ->where('payload', 'like', '%' . $claimToken . '%')
+                ->exists();
+        } catch (Throwable) {
+            // If queue liveness cannot be verified, retain the claim to avoid overlap.
+            return true;
+        }
     }
 
     /**

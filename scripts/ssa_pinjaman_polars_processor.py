@@ -166,6 +166,11 @@ def normalize_header_name(header_name: str) -> str:
 
     aliases = {
         "MONTH_DAY_YEAR_OF_PERIODE": "month_day_year_of_periode",
+        "MONTH_DAY_YEAR_OF_PERIOD": "month_day_year_of_periode",
+        "DAY_MONTH_YEAR_OF_PERIODE": "month_day_year_of_periode",
+        "DAY_MONTH_YEAR_OF_PERIOD": "month_day_year_of_periode",
+        "TANGGAL_PERIODE": "month_day_year_of_periode",
+        "TGL_PERIODE": "month_day_year_of_periode",
         "NAMA_CABANG": "nama_cabang",
         "NAMA_UKER": "nama_uker",
         "PRODUK": "produk",
@@ -307,10 +312,59 @@ def is_valid_ssa_pinjaman_row_values(values_by_header: dict[str, object]) -> boo
     nama_uker = normalize_cell(values_by_header.get("nama_uker"))
     produk = normalize_cell(values_by_header.get("produk"))
 
-    if periode == "" or nama_cabang == "" or nama_uker == "" or produk == "":
+    if (
+        normalize_date_value(periode) is None
+        or nama_cabang == ""
+        or nama_uker == ""
+        or produk == ""
+        or normalize_decimal_value(values_by_header.get("baki_debet")) is None
+        or normalize_integer_value(values_by_header.get("kolektabilitas_one_obligor")) is None
+        or normalize_integer_value(values_by_header.get("jumlah_debitur_aktif")) is None
+        or normalize_integer_value(values_by_header.get("jumlah_rekening_aktif")) is None
+    ):
         return False
 
     return True
+
+
+def source_row_matches_layout(values: list[str], layout: list[str]) -> bool:
+    if len(values) != len(layout):
+        return False
+
+    mapped = dict(zip(layout, values))
+    required_text = [
+        "nama_cabang", "nama_uker", "produk", "produk_dashboard", "segmen",
+        "segmen_2025", "segmen_dashboard", "flag_restruk",
+    ]
+    return (
+        normalize_date_value(mapped.get("month_day_year_of_periode", "")) is not None
+        and all(normalize_cell(mapped.get(column, "")) != "" for column in required_text)
+        and normalize_integer_value(mapped.get("kolektabilitas_one_obligor", "")) is not None
+        and normalize_decimal_value(mapped.get("baki_debet", "")) is not None
+        and normalize_integer_value(mapped.get("jumlah_debitur_aktif", "")) is not None
+        and normalize_integer_value(mapped.get("jumlah_rekening_aktif", "")) is not None
+    )
+
+
+def resolve_source_headers(raw_headers: list[str], sample_row: list[object]) -> list[str]:
+    """Use the source labels when possible, otherwise prove the fixed SSA layout.
+
+    This is intentionally not a count-only bypass: unknown labels are accepted
+    only after their first data row validates as the required 14-column export.
+    """
+    headers = [normalize_header_name(header) or f"col_{index}" for index, header in enumerate(raw_headers)]
+    missing = sorted(REQUIRED_HEADERS.difference(set(headers)))
+    if missing == ["segmen_lama"]:
+        raise RuntimeError("Kolom wajib SSA Pinjaman tidak lengkap: segmen_lama")
+
+    if set(headers) >= REQUIRED_HEADERS and len(headers) == len(SSA_PINJAMAN_COLUMNS):
+        return headers
+
+    values = [normalize_cell(value) for value in sample_row]
+    if source_row_matches_layout(values, SSA_PINJAMAN_COLUMNS):
+        return list(SSA_PINJAMAN_COLUMNS)
+
+    raise RuntimeError("Header SSA Pinjaman tidak dikenali dan isi kolom tidak cocok dengan format SSA.")
 
 
 def read_normalized_headers(source_path: str, delimiter: str) -> list[str]:
@@ -328,7 +382,7 @@ def trusted_stage_is_eligible(source_path: str, headers: list[str], delimiter: s
     if not headers:
         return False
 
-    if sorted(REQUIRED_HEADERS.difference(set(headers))):
+    if sorted(REQUIRED_HEADERS.difference(set(headers))) or len(headers) != len(SSA_PINJAMAN_COLUMNS):
         return False
 
     with open(source_path, "r", encoding="utf-8-sig", errors="replace", newline="") as raw_handle:
@@ -376,13 +430,13 @@ def sanitize_source_optimized(source_path: str, delimiter: str, max_rows: int | 
         )
 
         all_cols = df_lazy.select(pl.all()).collect_schema().names()
-        total_records = len(all_cols)
+        sample_rows = df_lazy.head(1).collect().rows()
+        if not sample_rows:
+            raise RuntimeError("CSV SSA Pinjaman tidak memiliki baris data untuk memvalidasi struktur sumber.")
 
-        normalized_headers = [normalize_header_name(h) for h in all_cols]
-
-        missing = sorted(REQUIRED_HEADERS.difference(set(normalized_headers)))
-        if missing:
-            raise RuntimeError("Kolom wajib SSA Pinjaman tidak lengkap: " + ", ".join(missing))
+        normalized_headers = resolve_source_headers(all_cols, list(sample_rows[0]))
+        total_records = 0
+        df_lazy = df_lazy.rename(dict(zip(all_cols, normalized_headers)))
 
         send_progress(
             25,
@@ -419,18 +473,26 @@ def sanitize_source_optimized(source_path: str, delimiter: str, max_rows: int | 
         transformations = []
         for col in normalized_headers:
             if col == "baki_debet":
-                expr = pl.col(col).str.strip_chars().alias(col)
+                expr = pl.col(col).map_elements(normalize_decimal_value, return_dtype=pl.Utf8).alias(col)
             elif col == "month_day_year_of_periode":
                 expr = pl.col(col).map_elements(normalize_date_value, return_dtype=pl.Utf8).alias(col)
             elif col in {"tgl", "tahun", "jumlah_debitur_aktif", "jumlah_rekening_aktif"}:
-                expr = pl.col(col).str.strip_chars().alias(col)
+                expr = pl.col(col).map_elements(normalize_integer_value, return_dtype=pl.Utf8).alias(col)
             else:
                 expr = pl.col(col).str.strip_chars().alias(col)
             transformations.append(expr)
 
-        df_normalized = filtered_lazy.select(transformations)
+        df_normalized = filtered_lazy.select(transformations).filter(
+            pl.col("month_day_year_of_periode").is_not_null()
+            & (pl.col("month_day_year_of_periode") != "")
+            & pl.col("baki_debet").is_not_null()
+            & pl.col("kolektabilitas_one_obligor").is_not_null()
+            & pl.col("jumlah_debitur_aktif").is_not_null()
+            & pl.col("jumlah_rekening_aktif").is_not_null()
+        )
 
-        df_collected = df_normalized.collect()
+        df_collected = df_normalized.collect().select(SSA_PINJAMAN_COLUMNS)
+        total_records = int(df_collected.height) + 1
 
         send_progress(
             45,
@@ -457,7 +519,7 @@ def sanitize_source_optimized(source_path: str, delimiter: str, max_rows: int | 
         validation_skipped = 0
         valid_rows = int(df_collected.height)
 
-        return temp_path, normalized_headers, total_records, structural_skipped, validation_skipped, True, [], valid_rows
+        return temp_path, list(SSA_PINJAMAN_COLUMNS), total_records, structural_skipped, validation_skipped, True, [], valid_rows
 
     except Exception as e:
         try:
@@ -484,6 +546,7 @@ def sanitize_source(source_path: str, delimiter: str, max_rows: int | None = Non
         rewrite_needed = False
         skipped_rows: list[int] = []
         headers: list[str] = []
+        raw_headers: list[str] = []
         valid_rows = 0
         start_time = time.perf_counter()
 
@@ -516,16 +579,15 @@ def sanitize_source(source_path: str, delimiter: str, max_rows: int | None = Non
                     )
 
                 if not headers:
-                    raw_headers = [normalize_cell(cell) for cell in row]
-                    headers = [normalize_header_name(header) or f"col_{index}" for index, header in enumerate(raw_headers)]
-                    missing = sorted(REQUIRED_HEADERS.difference(set(headers)))
-                    if missing:
-                        raise RuntimeError("Kolom wajib SSA Pinjaman tidak lengkap: " + ", ".join(missing))
-                    rewrite_needed = True
-                    writer.writerow(headers)
-                    continue
+                    if not raw_headers:
+                        raw_headers = [normalize_cell(cell) for cell in row]
+                        continue
 
-                if len(row) != len(headers):
+                    headers = resolve_source_headers(raw_headers, row)
+                    writer.writerow(headers)
+                    rewrite_needed = True
+
+                if len(row) != len(raw_headers):
                     structural_skipped += 1
                     skipped_rows.append(row_number)
                     rewrite_needed = True
@@ -562,8 +624,11 @@ def sanitize_source(source_path: str, delimiter: str, max_rows: int | None = Non
                 if max_rows is not None and valid_rows >= max_rows:
                     break
 
-        if not headers:
+        if not raw_headers:
             raise RuntimeError("Header CSV SSA Pinjaman tidak ditemukan.")
+
+        if not headers:
+            raise RuntimeError("CSV SSA Pinjaman tidak memiliki baris data untuk memvalidasi struktur sumber.")
 
         return temp_path, headers, total_records, structural_skipped, validation_skipped, rewrite_needed, skipped_rows, valid_rows
 

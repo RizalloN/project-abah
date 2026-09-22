@@ -678,6 +678,18 @@
             initForm.append('original_name', file.name);
             initForm.append('total_size', String(file.size));
             initForm.append('total_chunks', String(totalChunks));
+            const selectedReportId = reportSelect?.value || formImport.querySelector('[name="id_report"]')?.value || '';
+            if (selectedReportId) {
+                initForm.append('id_report', selectedReportId);
+            }
+            const selectedPeriode = periodeInput?.value || formImport.querySelector('[name="periode"]')?.value || '';
+            if (selectedPeriode) {
+                initForm.append('periode', selectedPeriode);
+            }
+            const selectedKanca = kancaInput?.value || formImport.querySelector('[name="kanca_manual"]')?.value || '';
+            if (selectedKanca) {
+                initForm.append('kanca_manual', selectedKanca);
+            }
 
             const initResponse = await fetch(initUrl, {
                 method: 'POST',
@@ -758,6 +770,15 @@
             finalizeForm.append('upload_id', initPayload.upload_id);
             finalizeForm.append('total_chunks', String(totalChunks));
             finalizeForm.append('original_name', file.name);
+            if (selectedReportId) {
+                finalizeForm.append('id_report', selectedReportId);
+            }
+            if (selectedPeriode) {
+                finalizeForm.append('periode', selectedPeriode);
+            }
+            if (selectedKanca) {
+                finalizeForm.append('kanca_manual', selectedKanca);
+            }
 
             const finalizeResponse = await fetch(finalizeUrl, {
                 method: 'POST',
@@ -2044,6 +2065,10 @@
                 inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
                 formImport.action = "{{ route('import.excel.upload') }}";
                 formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+                formImport.dataset.chunkedUpload = '1';
+                formImport.dataset.chunkInitUrl = "{{ route('import.excel.upload-chunk.init') }}";
+                formImport.dataset.chunkUploadUrl = "{{ route('import.excel.upload-chunk') }}";
+                formImport.dataset.chunkFinalizeUrl = "{{ route('import.excel.upload-chunk.finalize') }}";
 
                 csvLabel.innerHTML = `<i class="fas fa-file-upload mr-1"></i> Upload File ${label} (.csv, .txt, .xlsx, .xls)`;
                 csvHelp.textContent = isLw321Pn
@@ -2066,6 +2091,10 @@
                 inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
                 formImport.action = "{{ route('import.excel.upload') }}";
                 formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+                formImport.dataset.chunkedUpload = '1';
+                formImport.dataset.chunkInitUrl = "{{ route('import.excel.upload-chunk.init') }}";
+                formImport.dataset.chunkUploadUrl = "{{ route('import.excel.upload-chunk') }}";
+                formImport.dataset.chunkFinalizeUrl = "{{ route('import.excel.upload-chunk.finalize') }}";
                 
                 csvLabel.innerHTML = `<i class="fas fa-file-upload mr-1"></i> Upload File ${label} (.csv, .txt, .xlsx, .xls)`;
                 csvHelp.textContent = `File CSV dan Excel didukung untuk ${label}.`;
@@ -2089,6 +2118,10 @@
                 
                 formImport.action = "{{ route('import.excel.upload') }}";
                 formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+                formImport.dataset.chunkedUpload = '1';
+                formImport.dataset.chunkInitUrl = "{{ route('import.excel.upload-chunk.init') }}";
+                formImport.dataset.chunkUploadUrl = "{{ route('import.excel.upload-chunk') }}";
+                formImport.dataset.chunkFinalizeUrl = "{{ route('import.excel.upload-chunk.finalize') }}";
 
                 if (excelLabel) {
                     const labelText = isRka 

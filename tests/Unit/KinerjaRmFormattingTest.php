@@ -116,6 +116,22 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertNull($this->invokePrivateMethod($controller, 'calculateConsumerQuadrant', [1000000, 0.0]));
     }
 
+    public function test_small_quadrant_uses_strict_fifteen_percent_lar_boundary(): void
+    {
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        foreach ([
+            [1600000000.0, 14.999999, 1],
+            [1600000000.0, 15.0, 2],
+            [1600000000.0, 16.0, 2],
+            [1599999999.0, 14.999999, 3],
+            [1599999999.0, 15.0, 4],
+            [1599999999.0, 16.0, 4],
+        ] as [$realization, $lar, $quadrant]) {
+            $this->assertSame($quadrant, $this->invokePrivateMethod($controller, 'calculateSmallQuadrant', [$realization, $lar]));
+        }
+    }
+
     public function test_kinerjarm_table_section_renders_amounts_in_juta_and_quadrant_badge(): void
     {
         $html = view('report.kinerjarm-table-section', [
@@ -332,6 +348,24 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringContainsString('Realisasi OS (Rp Juta)', $html);
         $this->assertStringContainsString('1.600', $html);
         $this->assertStringContainsString('12,35%', $html);
+    }
+
+    public function test_history_modal_fallback_applies_fifteen_percent_lar_only_to_small(): void
+    {
+        foreach (['SMALL' => 'B', 'CONSUMER' => 'A', 'MICRO' => 'A'] as $segment => $grade) {
+            $html = view('report.kinerjarm-detail-modal', [
+                'rm' => 'RM TEST',
+                'segmen' => $segment,
+                'details' => [[
+                    'periode' => 'Agu 2026', 'periode_raw' => '2026-08-31', 'year' => 2026,
+                    'cabang' => 'KC TEST', 'loan_os' => 100000000, 'lar_value' => 15000000,
+                    'realisasi_os' => 1600000000, 'penc_realisasi' => 'A', 'pct_lar' => 15.0,
+                    'penc_lar' => $grade,
+                ]],
+            ])->render();
+
+            $this->assertMatchesRegularExpression('/Penc\. LAR 2026<\/span>\s*<strong[^>]*>'.$grade.'<\/strong>/', $html);
+        }
     }
 
     public function test_kinerjarm_small_history_modal_uses_closed_month_summary(): void

@@ -91,6 +91,61 @@ class DashboardHarianResponsiveViewTest extends TestCase
         $this->assertNull($normalize->invoke($controller, ['KC Madiun', 'KC Magetan', 'KC Ponorogo', 'KC Ngawi']));
     }
 
+    public function test_timeseries_uses_single_branch_select_and_reveals_units_for_one_branch(): void
+    {
+        $source = file_get_contents(resource_path('views/report/dashboard-harian-timeseries.blade.php'));
+
+        $this->assertStringContainsString('<select id="kancaInput" class="timeseries-dimension-select"', $source);
+        $this->assertStringContainsString('data-user-branch-locked=', $source);
+        $this->assertStringContainsString('id="unitFilterColumn"', $source);
+        $this->assertStringContainsString('unitFilterColumn.hidden = !hasSingleBranch;', $source);
+        $this->assertStringContainsString("kancaInput.value === 'all'", $source);
+        $this->assertStringNotContainsString('id="kancaOptionsList"', $source);
+        $this->assertStringContainsString("{ value: 'giro', label: 'Giro' }", $source);
+        $this->assertStringContainsString("{ value: 'tabungan', label: 'Tabungan' }", $source);
+        $this->assertStringContainsString("{ value: 'deposito', label: 'Deposito' }", $source);
+        $this->assertStringContainsString('id="retailMicroFilterColumn"', $source);
+        $this->assertStringContainsString('id="retailMicroFilter" class="timeseries-dimension-select"', $source);
+        $this->assertStringContainsString("function usesRetailMicroDropdown()", $source);
+        $this->assertStringContainsString("['ritel', 'micro'].includes(currentSegment)", $source);
+        $this->assertStringContainsString('function currentSegmentLabel()', $source);
+        $this->assertStringContainsString('<option value="">Pilih Ritel / Micro</option>', $source);
+    }
+
+    public function test_timeseries_branch_resolution_is_single_and_defaults_to_area_6(): void
+    {
+        $controller = new DashboardHarianController(new DashboardHarianSnapshotService());
+        $resolve = new \ReflectionMethod($controller, 'resolveTimeseriesFilters');
+        $resolve->setAccessible(true);
+
+        $areaUser = User::factory()->make(['pn' => '9999', 'branch_scope' => 'area6']);
+        $singleRequest = \Illuminate\Http\Request::create('/dashboard-harian/timeseries', 'GET', ['kanca' => 'KC Ngawi']);
+        $singleRequest->setUserResolver(fn () => $areaUser);
+        $invalidRequest = \Illuminate\Http\Request::create('/dashboard-harian/timeseries', 'GET', ['kanca' => ['KC Madiun', 'KC Ngawi']]);
+        $invalidRequest->setUserResolver(fn () => $areaUser);
+        $lockedUser = User::factory()->make(['pn' => '0045']);
+        $lockedRequest = \Illuminate\Http\Request::create('/dashboard-harian/timeseries', 'GET', ['kanca' => 'KC Ngawi']);
+        $lockedRequest->setUserResolver(fn () => $lockedUser);
+        $areaWithUnitRequest = \Illuminate\Http\Request::create('/dashboard-harian/timeseries', 'GET', [
+            'kanca' => 'all',
+            'unit_kerja' => 'unit-dari-cabang-lama',
+        ]);
+        $areaWithUnitRequest->setUserResolver(fn () => $areaUser);
+
+        $this->assertSame(['KC Ngawi', null, false], $resolve->invoke($controller, $singleRequest));
+        $this->assertSame([
+            ['KC Madiun', 'KC Magetan', 'KC Ponorogo', 'KC Ngawi'],
+            null,
+            false,
+        ], $resolve->invoke($controller, $invalidRequest));
+        $this->assertSame(['KC Madiun', null, true], $resolve->invoke($controller, $lockedRequest));
+        $this->assertSame([
+            ['KC Madiun', 'KC Magetan', 'KC Ponorogo', 'KC Ngawi'],
+            null,
+            false,
+        ], $resolve->invoke($controller, $areaWithUnitRequest));
+    }
+
     public function test_ssa_position_filters_use_native_date_pickers(): void
     {
         $dashboard = file_get_contents(resource_path('views/report/dashboard-harian.blade.php'));

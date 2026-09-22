@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\SerializeImportByTable;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use Illuminate\Bus\Queueable;
@@ -21,11 +22,20 @@ class RunImportJob implements ShouldQueue
     // No timeout: import may process millions of rows; stale detection is handled by JobHealthService
     public int $timeout = 0;
 
-    // Single attempt only — retrying a partial import would corrupt row counts and snapshot state
-    public int $tries = 1;
+    // A busy table lock may defer this queue row repeatedly.
+    public int $tries = 720;
+
+    // Lock deferrals do not count as execution failures. A real exception still
+    // fails immediately so a partially committed import is never replayed.
+    public int $maxExceptions = 1;
 
     public function __construct(public readonly int $jobId)
     {
+    }
+
+    public function middleware(): array
+    {
+        return [new SerializeImportByTable()];
     }
 
     public function handle(ImportExecutionService $executionService): void

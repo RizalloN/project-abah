@@ -332,6 +332,18 @@ final class ConsumerRmPositionHistoryStore
                 // Canonical account aliases (for example 00450 and 450) are
                 // one facility. Preserve the same max/min rules used by the
                 // Consumer realization calculator for duplicated extracts.
+                // The calculator prefers the first populated attribution;
+                // retaining an empty alias here would lose that owner when
+                // recalculation switches from the raw source to the archive.
+                $existingHasAttribution = $archiveRows[$key]['rm'] !== ''
+                    || $archiveRows[$key]['pn_pemrakarsa'] !== '';
+                $candidateHasAttribution = $candidate['rm'] !== ''
+                    || $candidate['pn_pemrakarsa'] !== '';
+                if (! $existingHasAttribution && $candidateHasAttribution) {
+                    foreach (['cabang', 'unit', 'branch_code', 'rm', 'pn_pengelola', 'pn_pemrakarsa'] as $column) {
+                        $archiveRows[$key][$column] = $candidate[$column];
+                    }
+                }
                 $archiveRows[$key]['plafon'] = $this->maxDecimal(
                     (string) $archiveRows[$key]['plafon'],
                     (string) $candidate['plafon']

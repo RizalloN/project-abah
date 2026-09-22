@@ -3259,6 +3259,16 @@ class DashboardPinjamanReportController extends Controller
     {
         $normalized = $this->normalizeFilterValues($value);
 
+        $scope = UserBranchScope::current();
+        if ($scope !== null) {
+            return [
+                'selected_values' => [$scope['label']],
+                'effective_branches' => [$scope['label']],
+                'is_area_all' => false,
+                'label' => $scope['label'],
+            ];
+        }
+
         if ($normalized === [] || in_array(self::KOLEK_MISMATCH_AREA_ALL, $normalized, true)) {
             return [
                 'selected_values' => [self::KOLEK_MISMATCH_AREA_ALL],
@@ -4047,25 +4057,31 @@ class DashboardPinjamanReportController extends Controller
         foreach ($this->buildKolekMismatchBaseQuery($selectedPeriod, $selectedBranches)->cursor() as $row) {
             $scannedRows++;
 
-            $actualKolek = $this->normalizeKolekValue($row->kolek ?? null);
-            $expectedKolek = $this->expectedKolekFromUmurTunggakan($row->umur_tunggakan ?? null);
+            $resolved = $this->resolveKolekMismatchRowData($row, $selectedPeriod);
 
-            if ($actualKolek === null || $expectedKolek === null) {
-                continue;
-            }
+            if ($resolved === null) {
+                $actualKolek = $this->normalizeKolekValue($row->kolek ?? null)
+                    ?? $this->normalizeKolekValue($row->kol_adk1 ?? null);
+                $umurTunggakan = $this->resolveUmurTunggakanValue($row, $selectedPeriod);
+                $tp = $this->normalizeAmountValue($row->tunggakan_pokok ?? 0);
+                $tb = $this->normalizeAmountValue($row->tunggakan_bunga ?? 0);
+                $expectedKolek = $umurTunggakan !== null
+                    ? $this->expectedKolekFromUmurTunggakan($umurTunggakan, $tp, $tb)
+                    : null;
 
-            if ($actualKolek === $expectedKolek) {
-                $matchedRows++;
+                if ($actualKolek !== null && $expectedKolek !== null && $actualKolek === $expectedKolek) {
+                    $matchedRows++;
+                }
+
                 continue;
             }
 
             $mismatchRows++;
-            $branch = trim((string) ($row->cabang1 ?? 'Tanpa Cabang'));
-            $branch = $branch !== '' ? $branch : 'Tanpa Cabang';
-            $unit = trim((string) ($row->unit1 ?? 'Tanpa Unit'));
-            $unit = $unit !== '' ? $unit : 'Tanpa Unit';
+            $branch = $resolved['branch'];
+            $unit = $resolved['unit'];
             $summaryKey = $groupByBranch ? $branch : $branch . "\n" . $unit;
-            $keterangan = $this->determineKeterangan($row);
+            $keterangan = $resolved['keterangan'];
+            $outstandingBalance = $resolved['outstanding_balance'];
 
             if (!isset($unitSummaries[$summaryKey])) {
                 $unitSummaries[$summaryKey] = [
@@ -4084,7 +4100,6 @@ class DashboardPinjamanReportController extends Controller
                 ];
             }
 
-            $outstandingBalance = $this->normalizeAmountValue($row->baki_debet1 ?? 0);
             $unitSummaries[$summaryKey]['mismatch_count']++;
             $unitSummaries[$summaryKey]['outstanding_balance'] += $outstandingBalance;
             $totalOutstandingBalance += $outstandingBalance;
@@ -4181,21 +4196,20 @@ class DashboardPinjamanReportController extends Controller
     private function fetchKolekMismatchRows(string $selectedPeriod, array|string $selectedBranches, ?string $selectedUnit = null): array
     {
         $rows = [];
-        $excluded = $this->dailyLoanOutputExcludedColumns(['created_at', 'updated_at']);
+        $excluded = $this->dailyLoanOutputExcludedColumns(['created_at', 'updated_at', 'uniqueid_namareport']);
         $branches = is_array($selectedBranches) ? $selectedBranches : [$selectedBranches];
 
         foreach ($this->buildKolekMismatchBaseQuery($selectedPeriod, $branches, $selectedUnit)->cursor() as $row) {
-            $actualKolek = $this->normalizeKolekValue($row->kolek ?? null);
-            $expectedKolek = $this->expectedKolekFromUmurTunggakan($row->umur_tunggakan ?? null);
+            $resolved = $this->resolveKolekMismatchRowData($row, $selectedPeriod);
 
-            if ($actualKolek === null || $expectedKolek === null || $actualKolek === $expectedKolek) {
+            if ($resolved === null) {
                 continue;
             }
 
             // Use array_diff_key to avoid creating a Collection per row (P4)
             $rowData = array_diff_key((array) $row, array_flip($excluded));
-            $rowData['kolek_seharusnya'] = $expectedKolek;
-            $rowData['keterangan'] = $this->determineKeterangan($row);
+            $rowData['kolek_seharusnya'] = $resolved['expected_kolek'];
+            $rowData['keterangan'] = $resolved['keterangan'];
 
             $rows[] = $rowData;
         }
@@ -4203,26 +4217,93 @@ class DashboardPinjamanReportController extends Controller
         return $rows;
     }
 
+    private function resolveKolekMismatchRowData($row, ?string $selectedPeriod = null): ?array
+    {
+        // Guard 1: valid account number (filter out blank or dummy total rows)
+        $accountNumber = trim((string) ($row->nomor_rekening1 ?? ''));
+        if ($accountNumber === '' || str_starts_with(strtoupper($accountNumber), 'TOTAL')) {
+            return null;
+        }
+
+        // Guard 2: active or restructured loan only (status 1 or 3)
+        $statusRek = trim((string) ($row->status_rekening1 ?? ''));
+        if (!in_array($statusRek, ['1', '3'], true)) {
+            return null;
+        }
+
+        // Guard 3: positive outstanding balance only
+        $outstandingBalance = $this->normalizeAmountValue($row->baki_debet1 ?? 0);
+        if ($outstandingBalance <= 0) {
+            return null;
+        }
+
+        // Guard 4: actual kolek extraction with fallback from kolek to kol_adk1
+        $actualKolek = $this->normalizeKolekValue($row->kolek ?? null)
+            ?? $this->normalizeKolekValue($row->kol_adk1 ?? null);
+        if ($actualKolek === null) {
+            return null;
+        }
+
+        // Guard 5: umur tunggakan and expected kolek calculation
+        $umurTunggakan = $this->resolveUmurTunggakanValue($row, $selectedPeriod);
+        if ($umurTunggakan === null) {
+            return null;
+        }
+
+        $tp = $this->normalizeAmountValue($row->tunggakan_pokok ?? 0);
+        $tb = $this->normalizeAmountValue($row->tunggakan_bunga ?? 0);
+        $expectedKolek = $this->expectedKolekFromUmurTunggakan($umurTunggakan, $tp, $tb);
+        if ($expectedKolek === null) {
+            return null;
+        }
+
+        // Guard 6: mismatch criterion
+        if ($actualKolek === $expectedKolek) {
+            return null;
+        }
+
+        $branch = trim((string) ($row->cabang1 ?? 'Tanpa Cabang'));
+        $branch = $branch !== '' ? $branch : 'Tanpa Cabang';
+        $unit = trim((string) ($row->unit1 ?? 'Tanpa Unit'));
+        $unit = $unit !== '' ? $unit : 'Tanpa Unit';
+
+        $keterangan = $this->determineKeterangan($row, $actualKolek, $expectedKolek, $selectedPeriod);
+
+        return [
+            'actual_kolek' => $actualKolek,
+            'expected_kolek' => $expectedKolek,
+            'keterangan' => $keterangan,
+            'outstanding_balance' => $outstandingBalance,
+            'branch' => $branch,
+            'unit' => $unit,
+            'account_number' => $accountNumber,
+        ];
+    }
+
     private function buildKolekMismatchBaseQuery(string $selectedPeriod, array $selectedBranches, ?string $selectedUnit = null): Builder
     {
         // Cache schema check per request lifecycle to avoid repeated inspections (B4, B5, P1)
         static $orderingColumn = null;
         if ($orderingColumn === null) {
-            $orderingColumn = Schema::hasColumn('daily_loan_dinamis', 'norek')
-                ? 'norek'
-                : $this->resolveIdentityColumn('daily_loan_dinamis');
+            $orderingColumn = Schema::hasColumn('daily_loan_dinamis', 'nomor_rekening1')
+                ? 'nomor_rekening1'
+                : (Schema::hasColumn('daily_loan_dinamis', 'norek')
+                    ? 'norek'
+                    : $this->resolveIdentityColumn('daily_loan_dinamis'));
         }
 
         $query = DB::table('daily_loan_dinamis')
             ->where('periode', $selectedPeriod)
-            ->whereIn('cabang1', $selectedBranches)
+            ->whereIn(DB::raw('TRIM(cabang1)'), $selectedBranches)
             ->whereIn(DB::raw('TRIM(status_rekening1)'), ['1', '3'])
+            ->whereNotNull('nomor_rekening1')
+            ->where(DB::raw("TRIM(nomor_rekening1)"), '<>', '')
             ->where('baki_debet1', '>', 0)
             ->orderBy('unit1')
             ->orderBy($orderingColumn);
 
         if ($selectedUnit !== null && $selectedUnit !== '') {
-            $query->where('unit1', $selectedUnit);
+            $query->where(DB::raw('TRIM(unit1)'), $selectedUnit);
         }
 
         return $query;
@@ -4254,21 +4335,60 @@ class DashboardPinjamanReportController extends Controller
             return null;
         }
 
-        // Match only a standalone single digit 1–5 to avoid false positives (B6)
-        // Examples: "1", "KOL 3", "Kolek-2" should work; "15" or "51" should not
-        if (preg_match('/^\D*([1-5])\D*$/', $normalized, $matches)) {
+        // Match single digit 1–5, supporting leading zeros and optional text (e.g., "01", "02", "1", "KOL 3", "Kolek-2")
+        if (preg_match('/^[\D0]*([1-5])\D*$/', $normalized, $matches)) {
             return (int) $matches[1];
         }
 
         return null;
     }
 
-    private function expectedKolekFromUmurTunggakan($value): ?int
+    private function resolveUmurTunggakanValue($row, ?string $selectedPeriod = null): ?int
     {
-        $umurTunggakan = $this->normalizeUmurTunggakanValue($value);
+        $rawUmur = $row->umur_tunggakan ?? null;
+        $normalizedUmur = $this->normalizeUmurTunggakanValue($rawUmur);
+
+        if ($normalizedUmur !== null) {
+            return $normalizedUmur;
+        }
+
+        // Fallback when umur_tunggakan is null or blank:
+        $tp = $this->normalizeAmountValue($row->tunggakan_pokok ?? 0);
+        $tb = $this->normalizeAmountValue($row->tunggakan_bunga ?? 0);
+        $tpen = $this->normalizeAmountValue($row->tunggakan_penalti ?? 0);
+
+        if ($tp <= 0 && $tb <= 0 && $tpen <= 0) {
+            return 0; // Pure current / lancar
+        }
+
+        // If there are positive arrears but umur_tunggakan is null/blank, calculate days from tanggal_menunggak:
+        $tglMenunggak = $row->tanggal_menunggak ?? null;
+        $periode = $selectedPeriod ?: ($row->periode ?? null);
+
+        if ($tglMenunggak && $periode) {
+            try {
+                $days = Carbon::parse($tglMenunggak)->startOfDay()
+                    ->diffInDays(Carbon::parse($periode)->startOfDay(), false);
+
+                return max(1, (int) $days);
+            } catch (\Throwable) {
+            }
+        }
+
+        return 1; // At least 1 day overdue when positive arrears exist
+    }
+
+    private function expectedKolekFromUmurTunggakan($value, float $tunggakanPokok = 0.0, float $tunggakanBunga = 0.0): ?int
+    {
+        $umurTunggakan = is_int($value) ? $value : $this->normalizeUmurTunggakanValue($value);
 
         if ($umurTunggakan === null) {
             return null;
+        }
+
+        // Guard: positive principal or interest arrears cannot be Kolek 1 (Lancar)
+        if (($tunggakanPokok > 0 || $tunggakanBunga > 0) && $umurTunggakan <= 0) {
+            $umurTunggakan = 1;
         }
 
         return match (true) {
@@ -4280,16 +4400,27 @@ class DashboardPinjamanReportController extends Controller
         };
     }
 
-    private function determineKeterangan($row): string
+    private function determineKeterangan($row, ?int $actualKolek = null, ?int $expectedKolek = null, ?string $selectedPeriod = null): string
     {
-        $actualKolek = $this->normalizeKolekValue($row->kolek ?? null);
-        $expectedKolek = $this->expectedKolekFromUmurTunggakan($row->umur_tunggakan ?? null);
+        $actualKolek ??= ($this->normalizeKolekValue($row->kolek ?? null) ?? $this->normalizeKolekValue($row->kol_adk1 ?? null));
+        $tp = $this->normalizeAmountValue($row->tunggakan_pokok ?? 0);
+        $tb = $this->normalizeAmountValue($row->tunggakan_bunga ?? 0);
+
+        if ($expectedKolek === null) {
+            $umur = $this->resolveUmurTunggakanValue($row, $selectedPeriod);
+            $expectedKolek = $umur !== null ? $this->expectedKolekFromUmurTunggakan($umur, $tp, $tb) : null;
+        }
 
         if ($actualKolek !== null && $expectedKolek !== null && $actualKolek === $expectedKolek) {
             return 'tetap';
         }
 
-        $periode = $row->periode ?? null;
+        // When actual kolek is worse than expected (e.g. system recorded Kolek 1, but arrears indicate Kolek 2) -> definitively memburuk
+        if ($actualKolek !== null && $expectedKolek !== null && $actualKolek < $expectedKolek) {
+            return 'memburuk';
+        }
+
+        $periode = $selectedPeriod ?: ($row->periode ?? null);
         $tglAkad = $row->tgl_akad_restruk ?? null;
 
         $hasNoTunggakan = $this->isValueEmptyOrZero($row->tunggakan_pokok ?? null)
@@ -4297,18 +4428,26 @@ class DashboardPinjamanReportController extends Controller
             && $this->isValueEmptyOrZero($row->tunggakan_penalti ?? null);
 
         $isNplMethodN = strtoupper(trim((string) ($row->npl_method ?? ''))) === 'N';
+        $flagRestruk = strtoupper(trim((string) ($row->flag_restruk ?? '')));
+        $statusRek = trim((string) ($row->status_rekening1 ?? ''));
+        $isRestruk = $isNplMethodN || $flagRestruk === 'Y' || $statusRek === '3' || !empty($tglAkad);
 
-        if ($hasNoTunggakan && $isNplMethodN && $periode && $tglAkad) {
+        if ($hasNoTunggakan && $isRestruk && $periode && $tglAkad) {
             try {
-                // Hitung selisih hari: periode - tgl_akad_restruk (B1 fix: correct direction)
-                // Positif artinya periode lebih akhir dari tgl_akad (normal case)
+                // Selisih hari: periode - tgl_akad_restruk
+                // Positif artinya periode lebih akhir dari tgl_akad
                 $periodeDate = Carbon::parse($periode)->startOfDay();
                 $akadDate   = Carbon::parse($tglAkad)->startOfDay();
                 $days = $akadDate->diffInDays($periodeDate, false);
 
-                return $days > 90 ? 'kolek membaik' : 'belum waktunya penyesuaian';
+                if ($days >= 0 && $days <= 90) {
+                    return 'belum waktunya penyesuaian';
+                }
+                if ($days > 90) {
+                    return 'kolek membaik';
+                }
             } catch (\Throwable) {
-                // Fallback to memburuk on parse error
+                // Fallback on parse error
             }
         }
 

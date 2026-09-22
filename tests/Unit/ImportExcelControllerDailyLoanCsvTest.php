@@ -808,6 +808,22 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         $this->assertSame(24, $this->invokeMethod('normalizeExcelValue', ['JANGKA_WAKTU1', '24M']));
     }
 
+    public function test_stream_daily_loan_import_delegates_to_process_excel_stream(): void
+    {
+        $mock = Mockery::mock(ImportExcelController::class)->makePartial()->shouldAllowMockingProtectedMethods();
+        $request = new \Illuminate\Http\Request();
+
+        $mock->shouldReceive('processExcelStream')
+            ->once()
+            ->with(Mockery::on(function (\Illuminate\Http\Request $req) {
+                return (int) $req->input('id_report') === 8;
+            }))
+            ->andReturn(response()->stream(fn () => null));
+
+        $response = $mock->streamDailyLoanImport($request);
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $response);
+    }
+
     private function dailyLoanHeaders(): array
     {
         $reflection = new ReflectionClass(ImportExcelController::class);

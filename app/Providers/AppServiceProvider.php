@@ -192,46 +192,89 @@ class AppServiceProvider extends ServiceProvider
                 return;
             }
 
-            $workerPool = $this->queueWorkerPoolFor((string) $event->queue);
-            if ($workerPool === null) {
+            $coveredPools = $this->queueWorkerPoolsCoveredBy((string) $event->queue);
+            if ($coveredPools === []) {
                 return;
             }
 
             static $lastHeartbeatAt = [];
 
             $now = time();
-            $processKey = $workerPool['name'] . ':' . getmypid();
+            $pid = getmypid();
+            $processKey = md5((string) $event->queue) . ':' . $pid;
             if (($lastHeartbeatAt[$processKey] ?? 0) >= ($now - 5)) {
                 return;
             }
             $lastHeartbeatAt[$processKey] = $now;
 
-            $key = 'queue:worker-pool:heartbeats:' . sha1($workerPool['name']);
-            $lock = Cache::lock($key . ':lock', 3);
-            if (!$lock->get()) {
-                return;
-            }
+            foreach ($coveredPools as $workerPool) {
+                $key = 'queue:worker-pool:heartbeats:' . sha1($workerPool['name']);
+                $lock = Cache::lock($key . ':lock', 3);
+                if (!$lock->get()) {
+                    continue;
+                }
 
-            try {
-                $heartbeats = Cache::get($key, []);
-                $heartbeats = is_array($heartbeats) ? $heartbeats : [];
-                $heartbeats = array_filter(
-                    $heartbeats,
-                    static fn ($timestamp): bool => is_numeric($timestamp) && ($now - (int) $timestamp) <= 30
-                );
-                $heartbeats[(string) getmypid()] = $now;
+                try {
+                    $heartbeats = Cache::get($key, []);
+                    $heartbeats = is_array($heartbeats) ? $heartbeats : [];
+                    $heartbeats = array_filter(
+                        $heartbeats,
+                        static fn ($timestamp): bool => is_numeric($timestamp) && ($now - (int) $timestamp) <= 30
+                    );
+                    $heartbeats[(string) $pid] = $now;
 
-                Cache::put($key, $heartbeats, now()->addMinutes(2));
+                    Cache::put($key, $heartbeats, now()->addMinutes(2));
 
-                $pidKey = 'queue:worker-pool:pids:' . sha1($workerPool['name']);
-                $pids = Cache::get($pidKey, []);
-                $pids = is_array($pids) ? $pids : [];
-                $pids[(string) getmypid()] = $now;
-                Cache::put($pidKey, $pids, now()->addHours(8));
-            } finally {
-                $lock->release();
+                    $pidKey = 'queue:worker-pool:pids:' . sha1($workerPool['name']);
+                    $pids = Cache::get($pidKey, []);
+                    $pids = is_array($pids) ? $pids : [];
+                    $pids[(string) $pid] = $now;
+                    Cache::put($pidKey, $pids, now()->addHours(8));
+                } finally {
+                    $lock->release();
+                }
             }
         });
+    }
+
+    /** @return array<int, array{name: string, queues: string, workers: int}> */
+    private function queueWorkerPoolsCoveredBy(string $queue): array
+    {
+        $directPool = $this->queueWorkerPoolFor($queue);
+        if ($directPool !== null) {
+            return [$directPool];
+        }
+
+        $requestedQueues = $this->normalizeQueueNames($queue);
+        if ($requestedQueues === []) {
+            return [];
+        }
+
+        $covered = [];
+        foreach ((array) config('queue.worker_pools', []) as $poolName => $pool) {
+            $poolQueues = $this->normalizeQueueNames((string) ($pool['queues'] ?? ''));
+            if ($poolQueues === []) {
+                continue;
+            }
+
+            $isCovered = true;
+            foreach ($poolQueues as $pq) {
+                if (!in_array($pq, $requestedQueues, true)) {
+                    $isCovered = false;
+                    break;
+                }
+            }
+
+            if ($isCovered) {
+                $covered[] = [
+                    'name' => (string) $poolName,
+                    'queues' => implode(',', $poolQueues),
+                    'workers' => max(1, (int) ($pool['workers'] ?? 1)),
+                ];
+            }
+        }
+
+        return $covered;
     }
 
     /** @return array{name: string, queues: string, workers: int}|null */

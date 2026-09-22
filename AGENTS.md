@@ -65,3 +65,10 @@ Selalu jawab dengan:
 - Jangan gunakan tebakan, jalankan `code_execution` jika ragu.
 - Tulis output dalam bahasa Indonesia yang teknis dan padat
 
+# Token Optimization Rule (MarkItDown) - Wajib untuk Antigravity, VS Code, Claude, Codex, Gemini
+- **DILARANG** membaca file dokumen mentah (`.xlsx`, `.xls`, `.docx`, `.pptx`, `.pdf`, `.html`, `.csv`) secara binary atau dump teks penuh ke dalam context window AI karena sangat memboroskan token.
+- **WAJIB** konversi terlebih dahulu menjadi Markdown ringkas sebelum dianalisis:
+  - Jalankan: `python scripts/markitdown_token_optimizer.py <path_file>` atau `php artisan doc:markdown <path_file>`
+  - Untuk langsung salin ke clipboard Windows pengguna: tambahkan flag `-c` atau `--clipboard`
+  - Gunakan teks Markdown bersih hasil konversi sebagai satu-satunya bahan pembacaan konteks dokumen oleh AI.
+

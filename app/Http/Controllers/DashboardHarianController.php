@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\ReportCacheVersion;
+use App\Support\UserBranchScope;
 use Illuminate\Contracts\View\View;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\JsonResponse;
@@ -65,8 +66,7 @@ class DashboardHarianController extends Controller
 
     public function timeseries(Request $request): View
     {
-        $selectedKanca = $this->normalizeFilter($request->input('kanca'));
-        $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
+        [$selectedKanca, $selectedUnit, $branchLocked] = $this->resolveTimeseriesFilters($request);
         $selectedCategory = $request->input('category', 'simpanan'); // Default to simpanan
         $selectedSegment = $request->input('segment', 'total'); // Default to total
         if ($selectedCategory === 'recovery' && !in_array($selectedSegment, ['ritel', 'micro'], true)) {
@@ -77,12 +77,7 @@ class DashboardHarianController extends Controller
         $monthOptions = $this->timeseriesMonthOptions();
         $selectedMonth = $this->resolveTimeseriesMonth($request->input('period_month'), $monthOptions);
 
-        // Default to Area 6 (Madiun, Ngawi, Magetan, Ponorogo) if no kanca selected
-        if (!$selectedKanca && !$selectedUnit) {
-            $selectedKanca = ['KC Madiun', 'KC Ngawi', 'KC Magetan', 'KC Ponorogo'];
-        }
-
-        $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions(null, $selectedKanca, $selectedUnit);
+        $filters = $this->timeseriesFilterOptions($selectedKanca, $selectedUnit, $branchLocked);
         $filters['period_month'] = $monthOptions;
         $filters['recovery_dimensions'] = $this->dashboardHarianSnapshotService->fetchRecoveryDimensionOptions();
 
@@ -99,6 +94,7 @@ class DashboardHarianController extends Controller
                 'recovery_segment' => $selectedRecoverySegment,
                 'recovery_product' => $selectedRecoveryProduct,
                 'period_month' => $selectedMonth,
+                'branch_locked' => $branchLocked,
             ],
             'initialData' => $this->timeseriesPayload(
                 $selectedCategory,
@@ -116,8 +112,7 @@ class DashboardHarianController extends Controller
 
     public function timeseriesData(Request $request): JsonResponse
     {
-        $selectedKanca = $this->normalizeFilter($request->input('kanca'));
-        $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
+        [$selectedKanca, $selectedUnit] = $this->resolveTimeseriesFilters($request);
         $category = $request->input('category', 'simpanan');
         $segment = $request->input('segment', 'total');
         if ($category === 'recovery' && !in_array($segment, ['ritel', 'micro'], true)) {
@@ -127,11 +122,6 @@ class DashboardHarianController extends Controller
         $recoveryProduct = trim((string) $request->input('recovery_product', ''));
         $monthOptions = $this->timeseriesMonthOptions();
         $selectedMonth = $this->resolveTimeseriesMonth($request->input('period_month'), $monthOptions);
-
-        // Default to Area 6 if nothing selected
-        if (!$selectedKanca && !$selectedUnit) {
-            $selectedKanca = ['KC Madiun', 'KC Ngawi', 'KC Magetan', 'KC Ponorogo'];
-        }
 
         return response()->json($this->timeseriesPayload(
             $category,
@@ -1128,6 +1118,72 @@ class DashboardHarianController extends Controller
         }
 
         return $normalized;
+    }
+
+    private function resolveTimeseriesFilters(Request $request): array
+    {
+        $scope = $request->attributes->get('user_branch_scope');
+        if (!is_array($scope)) {
+            $scope = UserBranchScope::forUser($request->user());
+        }
+
+        $branchLocked = $scope !== null;
+        if ($branchLocked) {
+            $selectedKanca = $scope['label'];
+        } else {
+            $normalized = $this->normalizeFilter($request->input('kanca'));
+            $values = is_array($normalized) ? $normalized : ($normalized !== null ? [$normalized] : []);
+            $selectedKanca = count($values) === 1 && in_array($values[0], self::AREA_6_KANCA, true)
+                ? $values[0]
+                : self::AREA_6_KANCA;
+        }
+
+        $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
+        if (is_array($selectedKanca) || is_array($selectedUnit)) {
+            $selectedUnit = null;
+        } elseif (is_string($selectedUnit)) {
+            $validUnit = collect($this->dashboardHarianSnapshotService
+                ->fetchFilterOptions(null, $selectedKanca, $selectedUnit)['unit_kerja'] ?? [])
+                ->contains(fn (array $option): bool => ($option['value'] ?? null) === $selectedUnit);
+            if (!$validUnit) {
+                $selectedUnit = null;
+            }
+        }
+
+        return [$selectedKanca, $selectedUnit, $branchLocked];
+    }
+
+    private function timeseriesFilterOptions(array|string $selectedKanca, array|string|null $selectedUnit, bool $branchLocked): array
+    {
+        $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions(null, $selectedKanca, $selectedUnit);
+        $branches = $branchLocked && is_string($selectedKanca)
+            ? [$selectedKanca]
+            : self::AREA_6_KANCA;
+
+        if ($branchLocked) {
+            $filters['kanca'] = collect($filters['kanca'] ?? [])
+                ->filter(fn (array $option): bool => ($option['value'] ?? null) === $selectedKanca)
+                ->values()
+                ->all();
+            if ($filters['kanca'] === []) {
+                $filters['kanca'] = [['value' => $selectedKanca, 'label' => $selectedKanca]];
+            }
+        }
+
+        $units = collect([['value' => 'all', 'label' => 'Semua Unit Kerja']]);
+        foreach ($branches as $branch) {
+            $branchUnits = $this->dashboardHarianSnapshotService->fetchFilterOptions(null, $branch, 'all')['unit_kerja'] ?? [];
+            $units = $units->concat(collect($branchUnits)->reject(
+                fn (array $option): bool => ($option['value'] ?? null) === 'all'
+            ));
+        }
+
+        $filters['unit_kerja'] = $units
+            ->unique(fn (array $option): string => ($option['kanca_value'] ?? '') . '|' . ($option['value'] ?? ''))
+            ->values()
+            ->all();
+
+        return $filters;
     }
 
     private function defaultArea6KancaWhenAll(array|string|null $selectedKanca, array|string|null $selectedUnit): array|string|null

@@ -12,6 +12,7 @@ use App\Services\Import\ImportProgressService;
 use App\Services\Import\ImportDuplicateGuardService;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaIntrospectionService;
+use App\Services\Import\SmartContentHeaderGuardService;
 use App\Support\ReportDataSyncService;
 use App\Support\SargableDateFilter;
 use App\Support\StrictDateParser;
@@ -51,6 +52,11 @@ class ImportFileController extends Controller
     private function bulkLoadService(): MySqlBulkLoadService
     {
         return app(MySqlBulkLoadService::class);
+    }
+
+    private function smartGuardService(): SmartContentHeaderGuardService
+    {
+        return app(SmartContentHeaderGuardService::class);
     }
 
     private const SAFE_MEMORY_LIMIT = '512M';
@@ -511,7 +517,13 @@ class ImportFileController extends Controller
             };
         }
 
-        return $this->normalizeDailyLoanHeader($header);
+        $mapped = $this->normalizeDailyLoanHeader($header);
+        $aliasCandidate = $this->smartGuardService()->resolveAliasCandidate($header, $this->getDailyLoanPreviewOrder());
+        if ($aliasCandidate !== null) {
+            return $aliasCandidate;
+        }
+
+        return $mapped;
     }
 
     private function sortFilterValues(array &$values): void
@@ -809,7 +821,7 @@ class ImportFileController extends Controller
         return trim((string) $normalized, '_');
     }
 
-    private function detectImportDateHeaderIndexes(array $headers): array
+    private function detectImportDateHeaderIndexes(array $headers, array $sampleRows = []): array
     {
         $posisiIndex = -1;
         $tahunIndex = -1;
@@ -823,6 +835,23 @@ class ImportFileController extends Controller
 
             if ($tahunIndex === -1 && $normalized === 'TAHUN') {
                 $tahunIndex = (int) $index;
+            }
+        }
+
+        if ($posisiIndex === -1) {
+            foreach ($headers as $index => $header) {
+                $normalized = $this->normalizeImportHeaderName((string) $header);
+                if (in_array($normalized, ['TANGGAL', 'DATE', 'AS_OF_DATE', 'TGL_DATA', 'TGL_LAPORAN', 'TGL_PERIODE', 'PERIODE'], true)) {
+                    $posisiIndex = (int) $index;
+                    break;
+                }
+            }
+        }
+
+        if ($posisiIndex === -1 && !empty($sampleRows)) {
+            $detected = $this->smartGuardService()->detectDateColumnIndex($headers, $sampleRows);
+            if ($detected !== null) {
+                $posisiIndex = $detected;
             }
         }
 

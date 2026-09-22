@@ -793,12 +793,7 @@ final class LandingConsumerOperationalService
                     ->unique(fn (array $reference): string => $reference['identity'].'|'.$reference['product'])
                     ->values();
                 if ($candidates->isEmpty()) {
-                    if (abs((float) ($row->realisasi_os ?? 0.0)) <= 0.0001) {
-                        return null;
-                    }
-                    $row->roster_source = 'daily_loan_backup';
-
-                    return $row;
+                    return null;
                 }
 
                 $reference = $candidates->first(
@@ -806,14 +801,7 @@ final class LandingConsumerOperationalService
                         && $candidate['product'] === (string) ($row->produk ?? '')
                 );
                 if (! is_array($reference)) {
-                    // Perubahan jabatan/produk saat ini tidak boleh menghapus
-                    // realisasi historis yang valid pada snapshot Daily Loan.
-                    if (abs((float) ($row->realisasi_os ?? 0.0)) <= 0.0001) {
-                        return null;
-                    }
-                    $row->roster_source = 'daily_loan_historical';
-
-                    return $row;
+                    return null;
                 }
 
                 $matchedRoster->put($reference['product'].'|'.$reference['rm'], true);

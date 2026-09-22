@@ -12,6 +12,8 @@ param(
     [int]$MaxTime = 0
 )
 
+$ProgressPreference = 'SilentlyContinue'
+
 $workerArguments = @(
     $ArtisanPath,
     'queue:work',
@@ -36,7 +38,13 @@ $worker = Start-Process `
     -WindowStyle Hidden `
     -RedirectStandardOutput $OutputLog `
     -RedirectStandardError $ErrorLog `
-    -PassThru `
-    -Wait
+    -PassThru
+
+if ($null -ne $worker -and $worker.Id -gt 0) {
+    Write-Output $worker.Id
+}
+
+$worker.WaitForExit()
 
 exit $worker.ExitCode
+

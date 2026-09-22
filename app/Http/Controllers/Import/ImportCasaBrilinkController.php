@@ -860,34 +860,39 @@ class ImportCasaBrilinkController extends Controller
         $headers = str_getcsv($headerLine, $delimiter);
         $normalizedHeaders = array_map(fn ($header) => $this->normalizeHeader($header), $headers);
 
-        // ✅ IMPROVED: Validate headers with better error messages and flexibility
+        // ✅ IMPROVED: Validate headers with better error messages and smart alias/content reconciliation
         if ($normalizedHeaders !== self::HEADER_MAP) {
-            // Try to provide helpful debugging info
-            $expectedHeaders = implode(', ', self::HEADER_MAP);
-            $receivedHeaders = implode(', ', $normalizedHeaders);
-            $mismatchCount = count(array_diff_assoc($normalizedHeaders, self::HEADER_MAP));
+            $reconciled = $this->reconcileCasaBrilinkHeaders($path, $delimiter, $normalizedHeaders);
+            if ($reconciled !== null) {
+                $normalizedHeaders = $reconciled;
+            } else {
+                // Try to provide helpful debugging info
+                $expectedHeaders = implode(', ', self::HEADER_MAP);
+                $receivedHeaders = implode(', ', $normalizedHeaders);
+                $mismatchCount = count(array_diff_assoc($normalizedHeaders, self::HEADER_MAP));
 
-            Log::warning('CASA BRILINK header mismatch', [
-                'expected' => $expectedHeaders,
-                'received' => $receivedHeaders,
-                'expected_count' => count(self::HEADER_MAP),
-                'received_count' => count($normalizedHeaders),
-                'mismatch_count' => $mismatchCount,
-                'delimiter_detected' => $delimiter,
-                'raw_header_line' => substr($headerLine, 0, 200),
-            ]);
+                Log::warning('CASA BRILINK header mismatch', [
+                    'expected' => $expectedHeaders,
+                    'received' => $receivedHeaders,
+                    'expected_count' => count(self::HEADER_MAP),
+                    'received_count' => count($normalizedHeaders),
+                    'mismatch_count' => $mismatchCount,
+                    'delimiter_detected' => $delimiter,
+                    'raw_header_line' => substr($headerLine, 0, 200),
+                ]);
 
-            // Provide detailed error message
-            $errorMsg = 'Header CSV tidak sesuai format CASA BRILINK. ';
-            if (count($normalizedHeaders) !== count(self::HEADER_MAP)) {
-                $errorMsg .= 'Jumlah kolom: diterima ' . count($normalizedHeaders) . ', diharapkan ' . count(self::HEADER_MAP) . '. ';
+                // Provide detailed error message
+                $errorMsg = 'Header CSV tidak sesuai format CASA BRILINK. ';
+                if (count($normalizedHeaders) !== count(self::HEADER_MAP)) {
+                    $errorMsg .= 'Jumlah kolom: diterima ' . count($normalizedHeaders) . ', diharapkan ' . count(self::HEADER_MAP) . '. ';
+                }
+                if ($mismatchCount > 0) {
+                    $errorMsg .= 'Ada ' . $mismatchCount . ' kolom yang tidak cocok. ';
+                }
+                $errorMsg .= 'Silakan pastikan file CSV memiliki kolom: ' . $expectedHeaders;
+
+                throw new \RuntimeException($errorMsg);
             }
-            if ($mismatchCount > 0) {
-                $errorMsg .= 'Ada ' . $mismatchCount . ' kolom yang tidak cocok. ';
-            }
-            $errorMsg .= 'Silakan pastikan file CSV memiliki kolom: ' . $expectedHeaders;
-
-            throw new \RuntimeException($errorMsg);
         }
 
         return [
@@ -951,6 +956,106 @@ class ImportCasaBrilinkController extends Controller
         }
 
         return $row;
+    }
+
+    private function reconcileCasaBrilinkHeaders(string $path, string $delimiter, array $normalizedHeaders): ?array
+    {
+        if (count($normalizedHeaders) === count(self::HEADER_MAP)) {
+            $aliases = [
+                'row_num' => ['no', 'nomor', 'rownum', 'row_number', 'urutan', 'row_num'],
+                'region' => ['region', 'wilayah', 'kode_kanwil', 'kd_kanwil', 'rg'],
+                'rgdesc' => ['rgdesc', 'nama_wilayah', 'nama_kanwil', 'kanwil', 'rg_desc', 'deskripsi_region'],
+                'mainbr' => ['mainbr', 'kode_kanca', 'kanca', 'main_branch', 'main_br', 'kdcab'],
+                'mbdesc' => ['mbdesc', 'nama_kanca', 'nama_cabang', 'mb_desc'],
+                'branch' => ['branch', 'kode_unit', 'kode_cabang', 'unit', 'kode_uker', 'kd_unit'],
+                'brdesc' => ['brdesc', 'nama_unit', 'nama_uker', 'unit_kerja', 'br_desc'],
+                'kode_agen' => ['kode_agen', 'agen', 'id_agen', 'agent_code', 'kd_agen'],
+                'mid_code' => ['mid_code', 'mid', 'merchant_id'],
+                'account' => ['account', 'no_rekening', 'nomor_rekening', 'norek', 'rekening', 'acc_no', 'acctno'],
+                'keterangan' => ['keterangan', 'nama_agen', 'nama_rekening', 'nama_nasabah', 'ket'],
+                'sumber' => ['sumber', 'source', 'tipe_agen', 'jenis_agen'],
+                'jml_nominal_casa' => ['jml_nominal_casa', 'nominal', 'saldo', 'nominal_casa', 'saldo_casa', 'total_casa', 'jml_casa'],
+                'textbox9' => ['textbox9', 'saldo_ratas', 'ratas', 'textbox_9'],
+                'cifno' => ['cifno', 'cif', 'no_cif', 'nomor_cif', 'cif_no'],
+            ];
+
+            $mapped = [];
+            $allMatched = true;
+            foreach ($normalizedHeaders as $idx => $header) {
+                $target = self::HEADER_MAP[$idx];
+                $allowed = $aliases[$target] ?? [$target];
+                if (in_array($header, $allowed, true)) {
+                    $mapped[] = $target;
+                } else {
+                    $allMatched = false;
+                    break;
+                }
+            }
+
+            if ($allMatched) {
+                return $mapped;
+            }
+
+            $sampleRows = $this->readCsvSampleRows($path, $delimiter, 10);
+            if (!empty($sampleRows)) {
+                $smartGuard = app(\App\Services\Import\SmartContentHeaderGuardService::class);
+                if ($smartGuard->isHeaderOrContentValidForTable($normalizedHeaders, 'casa_brilink_web', $sampleRows)) {
+                    $resolved = [];
+                    foreach ($normalizedHeaders as $idx => $header) {
+                        $matchedTarget = null;
+                        foreach ($aliases as $target => $possibleAliases) {
+                            if (in_array($header, $possibleAliases, true) && !in_array($target, $resolved, true)) {
+                                $matchedTarget = $target;
+                                break;
+                            }
+                        }
+                        if ($matchedTarget !== null) {
+                            $resolved[$idx] = $matchedTarget;
+                        }
+                    }
+
+                    if (in_array('account', $resolved, true) && in_array('jml_nominal_casa', $resolved, true)) {
+                        $finalMapped = [];
+                        foreach (range(0, count(self::HEADER_MAP) - 1) as $i) {
+                            $finalMapped[$i] = $resolved[$i] ?? self::HEADER_MAP[$i];
+                        }
+                        return $finalMapped;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function readCsvSampleRows(string $path, string $delimiter, int $limit = 10): array
+    {
+        $handle = @fopen($path, 'r');
+        if ($handle === false) {
+            return [];
+        }
+
+        $rows = [];
+        try {
+            $isFirst = true;
+            while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+                if ($isFirst) {
+                    $isFirst = false;
+                    continue;
+                }
+                if ($this->isEmptyCsvRow($row)) {
+                    continue;
+                }
+                $rows[] = $row;
+                if (count($rows) >= $limit) {
+                    break;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return $rows;
     }
 
     private function isEmptyCsvRow(array $row): bool
