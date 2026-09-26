@@ -25,9 +25,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 886 |
-| Graph nodes | 10,223 |
-| Graph edges | 40,023 |
+| Source files | 892 |
+| Graph nodes | 10,425 |
+| Graph edges | 40,926 |
 | Domains | 19 |
 
 ## Read The Right Artifact
@@ -45,26 +45,26 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Node | Kind | Domain | Degree |
 | --- | --- | --- | ---: |
-| `ImportExcelController` | class | import | 376 |
+| `ImportExcelController` | class | import | 385 |
 | `DashboardSimpananController` | class | dashboard-simpanan | 360 |
-| `daily_loan_dinamis` | table | dashboard-pinjaman | 298 |
-| `DashboardHarianSnapshotService` | class | dashboard-harian | 258 |
-| `DashboardPinjamanReportController` | class | dashboard-pinjaman | 194 |
-| `TestCase` | class | tests | 186 |
-| `nama_report` | table | core | 184 |
+| `daily_loan_dinamis` | table | dashboard-pinjaman | 329 |
+| `DashboardHarianSnapshotService` | class | dashboard-harian | 260 |
+| `DashboardPinjamanReportController` | class | dashboard-pinjaman | 196 |
+| `TestCase` | class | tests | 190 |
+| `nama_report` | table | core | 189 |
+| `import_jobs` | table | import | 169 |
 | `ImportIndexController` | class | import | 162 |
-| `import_jobs` | table | import | 160 |
-| `ImportFileController` | class | import | 145 |
-| `ReportSnapshotBuilder` | class | jobs-snapshots | 144 |
-| `KinerjaRmReportController` | class | dashboard-pinjaman | 142 |
+| `ImportFileController` | class | import | 150 |
+| `ReportSnapshotBuilder` | class | jobs-snapshots | 145 |
+| `KinerjaRmReportController` | class | dashboard-pinjaman | 143 |
 | `lw325_ph` | table | dashboard-pinjaman | 121 |
 | `ImportProgressService` | class | import | 102 |
 | `AlmafactsDashboardController` | class | almafacts | 101 |
 | `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 97 |
+| `setUp` | method | tests | 97 |
 | `ImportPerformancePisPerProdukController` | class | import | 95 |
 | `ImportReportPhController` | class | import | 95 |
-| `setUp` | method | tests | 93 |
-| `ImportSimpananMultiPnCsvController` | class | import | 92 |
+| `dashboard_harian_snapshots` | table | dashboard-harian | 93 |
 
 ## Edge Semantics
 

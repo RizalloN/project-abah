@@ -14,73 +14,165 @@
         border: 1px solid #dbe4ef;
         border-radius: 12px;
         box-shadow: 0 12px 28px -24px rgba(15, 23, 42, 0.25);
-        overflow: hidden;
+        overflow: visible !important;
+        position: relative;
     }
 
     .uker-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 1rem;
-        padding: 1rem 1.25rem;
-        background: linear-gradient(135deg, #0b2247 0%, #1e40af 100%);
+        gap: 1.25rem;
+        padding: 1.1rem 1.5rem;
+        background: linear-gradient(135deg, #071936 0%, #0d2b5c 50%, #1e40af 100%);
         color: #ffffff;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        border-top-left-radius: 11px;
+        border-top-right-radius: 11px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 4px 16px rgba(11, 34, 71, 0.15);
+    }
+
+    .uker-header-main {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        min-width: 0;
+    }
+
+    .uker-title-row {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        min-width: 0;
+    }
+
+    .uker-title-icon-box {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #38bdf8;
+        font-size: 1.15rem;
+        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 4px 12px rgba(0, 0, 0, 0.2);
+        flex-shrink: 0;
+    }
+
+    .uker-title-content {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
     }
 
     .uker-title {
         margin: 0;
-        font-size: 1.15rem;
+        font-size: 1.2rem;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: -0.015em;
+        line-height: 1.25;
+    }
+
+    /* Redesigned Context Bar: Sleek and structured, no more messy overlapping pills! */
+    .uker-context-bar {
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.35rem;
+        background: rgba(7, 23, 49, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        padding: 0.22rem 0.65rem;
+        border-radius: 6px;
+        backdrop-filter: blur(8px);
+    }
+
+    .context-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.74rem;
+        line-height: 1;
+    }
+
+    .context-icon {
+        color: #38bdf8;
+        font-size: 0.72rem;
+    }
+
+    .context-title {
+        color: #94a3b8;
+        font-weight: 700;
+        font-size: 0.65rem;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+    }
+
+    .context-value {
+        color: #ffffff;
+        font-weight: 800;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .context-separator {
+        color: rgba(255, 255, 255, 0.25);
+        font-size: 0.75rem;
+        user-select: none;
+    }
+
+    /* Redesigned Period Card on Header Right */
+    .uker-period-card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        padding: 0.4rem 0.85rem;
+        border-radius: 8px;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+        min-width: 140px;
+        flex-shrink: 0;
+    }
+
+    .period-card-sub {
+        font-size: 0.6rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #93c5fd;
+    }
+
+    .period-card-date {
+        font-size: 0.95rem;
         font-weight: 800;
         color: #ffffff;
         letter-spacing: -0.01em;
+        margin-top: 0.1rem;
     }
 
-    .uker-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.45rem;
-        margin-top: 0.35rem;
-    }
-
-    .uker-pill {
-        display: inline-flex;
-        align-items: center;
-        min-height: 24px;
-        padding: 0.22rem 0.65rem;
-        border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.25);
-        background: rgba(255, 255, 255, 0.12);
-        color: #ffffff;
-        font-size: 0.72rem;
-        font-weight: 700;
-        backdrop-filter: blur(4px);
-    }
-
-    .uker-pill-period {
-        background: #ffffff !important;
-        color: #0f2942 !important;
-        border: 1px solid #ffffff !important;
-        font-weight: 800 !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    }
-
-    /* Single-Row Filter Shell & Collapsible Toggle */
+    /* Filter Shell & Grid */
     .uker-filter-shell {
         position: relative;
         z-index: 100;
-        margin: 1rem 1.25rem 0.5rem;
+        margin: 1rem 1.25rem 0.65rem;
         border-radius: 12px;
         background: #ffffff;
         border: 1px solid #e2e8f0;
         box-shadow: 0 4px 18px rgba(15, 23, 42, 0.03);
-        padding: 0.75rem 1rem;
+        padding: 0.85rem 1.15rem;
     }
 
     .uker-filters-bar {
         display: grid;
-        grid-template-columns: repeat(5, minmax(130px, 1fr));
-        gap: 0.65rem;
+        grid-template-columns: repeat(5, minmax(140px, 1fr));
+        gap: 0.85rem;
         align-items: flex-end;
     }
 
@@ -88,35 +180,57 @@
         display: flex;
         flex-direction: column;
         min-width: 0;
+        position: relative;
+        z-index: 1;
+    }
+
+    .uker-filter-item.has-open-dropdown {
+        z-index: 1100 !important;
     }
 
     .uker-filter-label {
-        display: block;
-        margin-bottom: 0.3rem;
-        color: #475569;
-        font-size: 0.66rem;
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        margin-bottom: 0.35rem;
+        color: #334155;
+        font-size: 0.68rem;
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         white-space: nowrap;
     }
 
-    .uker-select-wrap {
+    .uker-filter-label i {
+        color: #0b57d0;
+        font-size: 0.72rem;
+    }
+
+    /* Custom Dropdown Styling */
+    .custom-select-wrap {
         position: relative;
-        display: flex;
-        align-items: center;
+        width: 100%;
     }
 
-    .uker-select-icon {
-        position: absolute;
-        left: 0.65rem;
-        color: #64748b;
-        font-size: 0.78rem;
-        pointer-events: none;
-        z-index: 2;
+    .custom-select-wrap.is-open {
+        z-index: 1100 !important;
     }
 
-    .uker-control {
+    .custom-select-native-hidden {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        padding: 0 !important;
+        margin: -1px !important;
+        overflow: hidden !important;
+        clip: rect(0, 0, 0, 0) !important;
+        white-space: nowrap !important;
+        border: 0 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+
+    .custom-select-trigger {
         width: 100%;
         height: 38px;
         border-radius: 8px;
@@ -125,40 +239,219 @@
         color: #1e293b;
         font-size: 0.82rem;
         font-weight: 700;
-        padding-left: 2rem;
-        padding-right: 1.6rem;
-        outline: none;
-        transition: all 0.2s ease;
-        appearance: none;
-        -webkit-appearance: none;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 0.5rem center;
-        background-size: 1rem;
+        padding: 0 0.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.45rem;
         cursor: pointer;
+        outline: none;
+        transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+        text-align: left;
     }
 
-    .uker-control:hover {
+    .custom-select-trigger:hover:not(:disabled) {
         border-color: #0b57d0;
         background-color: #f8fafc;
     }
 
-    .uker-date-input {
-        appearance: auto;
-        -webkit-appearance: auto;
-        background-image: none;
-        padding-right: 0.65rem;
-    }
-
-    .uker-control:focus {
+    .custom-select-wrap.is-open .custom-select-trigger {
         border-color: #0b57d0;
         box-shadow: 0 0 0 3px rgba(11, 87, 208, 0.14);
+        background: #ffffff;
     }
 
-    .uker-control:disabled {
+    .custom-select-trigger:disabled {
         background: #f1f5f9;
         color: #94a3b8;
+        border-color: #e2e8f0;
         cursor: not-allowed;
+    }
+
+    .custom-select-label {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #1e293b;
+    }
+
+    .custom-select-trigger:disabled .custom-select-label {
+        color: #94a3b8;
+    }
+
+    .custom-select-arrow {
+        color: #64748b;
+        font-size: 0.72rem;
+        transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        display: inline-flex;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .custom-select-wrap.is-open .custom-select-arrow {
+        transform: rotate(180deg);
+        color: #0b57d0;
+    }
+
+    .custom-select-panel {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        right: 0;
+        min-width: max(100%, 250px);
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        box-shadow: 0 20px 35px -8px rgba(15, 23, 42, 0.22), 0 10px 18px -4px rgba(15, 23, 42, 0.12);
+        z-index: 1150 !important;
+        display: none;
+        flex-direction: column;
+        overflow: hidden;
+        animation: customSelectFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes customSelectFadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(-4px) scale(0.99);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+
+    .custom-select-wrap.is-open .custom-select-panel {
+        display: flex;
+    }
+
+    .custom-select-search-box {
+        position: relative;
+        padding: 0.45rem;
+        border-bottom: 1px solid #e2e8f0;
+        background: #f8fafc;
+    }
+
+    .custom-select-search-box .search-icon {
+        position: absolute;
+        left: 0.85rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #94a3b8;
+        font-size: 0.74rem;
+    }
+
+    .custom-select-search-input {
+        width: 100%;
+        height: 30px;
+        border-radius: 6px;
+        border: 1px solid #cbd5e1;
+        padding-left: 1.8rem;
+        padding-right: 0.5rem;
+        font-size: 0.78rem;
+        outline: none;
+        transition: border-color 0.15s ease;
+    }
+
+    .custom-select-search-input:focus {
+        border-color: #0b57d0;
+        box-shadow: 0 0 0 2px rgba(11, 87, 208, 0.1);
+    }
+
+    .custom-select-options {
+        max-height: 220px;
+        overflow-y: auto;
+        padding: 0.3rem 0;
+        margin: 0;
+        list-style: none;
+        scrollbar-width: thin;
+        scrollbar-color: #cbd5e1 transparent;
+    }
+
+    .custom-select-options::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .custom-select-options::-webkit-scrollbar-thumb {
+        background-color: #cbd5e1;
+        border-radius: 999px;
+    }
+
+    .custom-select-option {
+        padding: 0.48rem 0.75rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #334155;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        transition: all 0.12s ease;
+    }
+
+    .custom-select-option:hover {
+        background-color: #f1f5f9;
+        color: #0b57d0;
+    }
+
+    .custom-select-option.is-selected {
+        background-color: #eff6ff;
+        color: #0b57d0;
+        font-weight: 800;
+    }
+
+    .custom-select-option.is-selected .opt-check {
+        display: inline-block;
+        color: #0b57d0;
+        font-size: 0.74rem;
+    }
+
+    .custom-select-option .opt-check {
+        display: none;
+    }
+
+    .custom-select-empty {
+        padding: 0.85rem;
+        font-size: 0.76rem;
+        text-align: center;
+        color: #94a3b8;
+        font-weight: 600;
+    }
+
+    /* Date Picker Input Custom Styling */
+    .custom-date-wrap {
+        position: relative;
+        width: 100%;
+        display: flex;
+        align-items: center;
+    }
+
+    .custom-date-control {
+        width: 100%;
+        height: 38px;
+        border-radius: 8px;
+        border: 1.5px solid #cbd5e1;
+        background: #ffffff;
+        color: #1e293b;
+        font-size: 0.82rem;
+        font-weight: 700;
+        padding-left: 0.75rem;
+        padding-right: 0.65rem;
+        outline: none;
+        transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+    }
+
+    .custom-date-control:hover {
+        border-color: #0b57d0;
+        background-color: #f8fafc;
+    }
+
+    .custom-date-control:focus {
+        border-color: #0b57d0;
+        box-shadow: 0 0 0 3px rgba(11, 87, 208, 0.14);
     }
 
     .uker-filter-mobile-toggle {
@@ -441,51 +734,15 @@
     .uker-empty,
     .uker-loading {
         display: none;
-        padding: 2rem 1rem;
+        padding: 4rem 1.5rem;
         text-align: center;
         color: #64748b;
         font-weight: 800;
     }
 
-    .uker-shell.is-loading .uker-loading {
-        display: block;
-    }
-
-    .uker-shell.is-loading .uker-tables,
-    .uker-shell.is-empty .uker-tables {
-        display: none;
-    }
-
-    .uker-shell.is-empty .uker-empty {
-        display: block;
-    }
-
-        border-radius: 5px;
-        font-weight: 900;
-    }
-
-    .tone-good {
-        background: #dcfce7;
-        color: #166534;
-    }
-
-    .tone-flat {
-        background: #fef3c7;
-        color: #92400e;
-    }
-
-    .tone-bad {
-        background: #fee2e2;
-        color: #991b1b;
-    }
-
-    .uker-empty,
-    .uker-loading {
-        display: none;
-        padding: 2rem 1rem;
-        text-align: center;
-        color: #64748b;
-        font-weight: 800;
+    .uker-shell.is-loading,
+    .uker-shell.is-empty {
+        min-height: 480px;
     }
 
     .uker-shell.is-loading .uker-loading {
@@ -605,8 +862,8 @@
     }
 
     @media (max-width: 1200px) {
-        .uker-filters {
-            grid-template-columns: repeat(3, minmax(150px, 1fr));
+        .uker-filters-bar {
+            grid-template-columns: repeat(3, minmax(140px, 1fr));
         }
     }
 
@@ -619,13 +876,34 @@
         .uker-header {
             align-items: flex-start;
             flex-direction: column;
-            padding: 0.8rem;
+            gap: 0.85rem;
+            padding: 0.9rem;
         }
 
-        .uker-filters {
+        .uker-title-row {
+            align-items: flex-start;
+        }
+
+        .uker-period-card {
+            align-items: flex-start;
+            width: 100%;
+        }
+
+        .uker-filter-mobile-toggle {
+            display: block;
+        }
+
+        .uker-filters-bar {
+            display: none;
             grid-template-columns: 1fr;
-            gap: 0.6rem;
-            padding: 0.8rem;
+            gap: 0.65rem;
+            margin-top: 0.65rem;
+            padding-top: 0.65rem;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .uker-filter-shell.is-open .uker-filters-bar {
+            display: grid;
         }
 
         .uker-table-wrap {
@@ -644,6 +922,89 @@
             padding: 0.46rem 0.5rem;
         }
     }
+
+    /* Sorting Header & Badge Styles */
+    .uker-th-sortable {
+        cursor: pointer !important;
+        user-select: none !important;
+        transition: background-color 0.15s ease, color 0.15s ease !important;
+    }
+
+    .uker-th-sortable:hover {
+        background-color: #163d75 !important;
+        color: #e0f2fe !important;
+    }
+
+    .uker-th-sortable.is-sorted {
+        background-color: #133668 !important;
+        color: #38bdf8 !important;
+        box-shadow: inset 0 -2px 0 0 #38bdf8 !important;
+    }
+
+    .th-sort-inner {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        width: 100%;
+        pointer-events: none;
+    }
+
+    .th-sort-label {
+        white-space: nowrap;
+    }
+
+    .th-sort-icon {
+        font-size: 0.72rem;
+        opacity: 0.45;
+        transition: opacity 0.15s ease, color 0.15s ease;
+        display: inline-block;
+        width: 10px;
+        text-align: center;
+    }
+
+    .uker-th-sortable:hover .th-sort-icon {
+        opacity: 0.9;
+    }
+
+    .uker-th-sortable.is-sorted .th-sort-icon {
+        opacity: 1;
+        color: #38bdf8;
+    }
+
+    .uker-sort-reset-btn {
+        background: #f1f5f9;
+        color: #334155;
+        border: 1px solid #cbd5e1;
+        border-radius: 5px;
+        padding: 0.2rem 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        transition: all 0.15s ease;
+    }
+
+    .uker-sort-reset-btn:hover {
+        background: #e2e8f0;
+        color: #0f172a;
+        border-color: #94a3b8;
+    }
+
+    .uker-sort-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        background: #e0f2fe;
+        color: #0369a1;
+        font-size: 0.68rem;
+        font-weight: 700;
+        padding: 0.15rem 0.45rem;
+        border-radius: 4px;
+        border: 1px solid #bae6fd;
+    }
 </style>
 @endsection
 
@@ -654,15 +1015,39 @@
     <div class="container-fluid">
         <div class="uker-shell" id="ukerShell">
             <div class="uker-header">
-                <div>
-                    <h2 class="uker-title" id="ukerTitle">Keragaan per Uker</h2>
-                    <div class="uker-meta">
-                        <span class="uker-pill" id="scopeLabel">Area 6</span>
-                        <span class="uker-pill" id="unitLabel">Semua Unit Kerja</span>
-                        <span class="uker-pill" id="sourceLabel">Pinjaman</span>
+                <div class="uker-header-main">
+                    <div class="uker-title-row">
+                        <div class="uker-title-icon-box">
+                            <i class="fas fa-layer-group"></i>
+                        </div>
+                        <div class="uker-title-content">
+                            <h2 class="uker-title" id="ukerTitle">Keragaan per Unit Kerja</h2>
+                            <div class="uker-context-bar">
+                                <div class="context-item">
+                                    <i class="fas fa-building context-icon"></i>
+                                    <span class="context-title">Cabang:</span>
+                                    <span class="context-value" id="scopeLabel">Area 6</span>
+                                </div>
+                                <span class="context-separator">•</span>
+                                <div class="context-item">
+                                    <i class="fas fa-sitemap context-icon"></i>
+                                    <span class="context-title">Unit:</span>
+                                    <span class="context-value" id="unitLabel">Semua Unit Kerja</span>
+                                </div>
+                                <span class="context-separator">•</span>
+                                <div class="context-item">
+                                    <i class="fas fa-database context-icon"></i>
+                                    <span class="context-title">Data:</span>
+                                    <span class="context-value" id="sourceLabel">Pinjaman</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div class="uker-pill" id="periodLabel">-</div>
+                <div class="uker-period-card">
+                    <span class="period-card-sub">POSISI LAPORAN</span>
+                    <span class="period-card-date" id="periodLabel">-</span>
+                </div>
             </div>
 
             <!-- Single-Row Filter Bar (Collapsible for Mobile/Tablet) -->
@@ -670,7 +1055,7 @@
                 <div class="uker-filter-mobile-toggle">
                     <button type="button" class="btn-filter-toggle" id="btnFilterToggle" aria-expanded="false">
                         <div class="d-flex align-items-center gap-2">
-                            <i class="fas fa-filter"></i>
+                            <i class="fas fa-sliders-h"></i>
                             <span>Filter Data</span>
                         </div>
                         <span class="active-filters-badge" id="activeFiltersBadge">5 Filter Aktif</span>
@@ -679,39 +1064,98 @@
                 </div>
 
                 <div class="uker-filters-bar" id="ukerFiltersBar">
+                    <!-- Cabang -->
                     <div class="uker-filter-item">
-                        <label for="kancaFilter" class="uker-filter-label">Cabang</label>
-                        <div class="uker-select-wrap">
-                            <i class="fas fa-building uker-select-icon"></i>
-                            <select id="kancaFilter" name="kanca" class="uker-control"></select>
+                        <label for="kancaFilter" class="uker-filter-label">
+                            <i class="fas fa-building"></i>
+                            <span>Cabang</span>
+                        </label>
+                        <div class="custom-select-wrap" id="wrap_kancaFilter">
+                            <button type="button" class="custom-select-trigger" id="trigger_kancaFilter" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="custom-select-label" id="label_kancaFilter">Pilih cabang</span>
+                                <span class="custom-select-arrow"><i class="fas fa-chevron-down"></i></span>
+                            </button>
+                            <div class="custom-select-panel" id="panel_kancaFilter">
+                                <div class="custom-select-search-box">
+                                    <i class="fas fa-search search-icon"></i>
+                                    <input type="text" class="custom-select-search-input" placeholder="Cari cabang..." autocomplete="off">
+                                </div>
+                                <ul class="custom-select-options" role="listbox"></ul>
+                                <div class="custom-select-empty" style="display:none;">Tidak ada pilihan ditemukan</div>
+                            </div>
+                            <select id="kancaFilter" name="kanca" class="custom-select-native-hidden" tabindex="-1" aria-hidden="true"></select>
                         </div>
                     </div>
+
+                    <!-- Unit Kerja -->
                     <div class="uker-filter-item">
-                        <label for="unitFilter" class="uker-filter-label">Unit Kerja</label>
-                        <div class="uker-select-wrap">
-                            <i class="fas fa-sitemap uker-select-icon"></i>
-                            <select id="unitFilter" class="uker-control"></select>
+                        <label for="unitFilter" class="uker-filter-label">
+                            <i class="fas fa-sitemap"></i>
+                            <span>Unit Kerja</span>
+                        </label>
+                        <div class="custom-select-wrap" id="wrap_unitFilter">
+                            <button type="button" class="custom-select-trigger" id="trigger_unitFilter" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="custom-select-label" id="label_unitFilter">Semua Unit Kerja</span>
+                                <span class="custom-select-arrow"><i class="fas fa-chevron-down"></i></span>
+                            </button>
+                            <div class="custom-select-panel" id="panel_unitFilter">
+                                <div class="custom-select-search-box">
+                                    <i class="fas fa-search search-icon"></i>
+                                    <input type="text" class="custom-select-search-input" placeholder="Cari unit kerja..." autocomplete="off">
+                                </div>
+                                <ul class="custom-select-options" role="listbox"></ul>
+                                <div class="custom-select-empty" style="display:none;">Tidak ada pilihan ditemukan</div>
+                            </div>
+                            <select id="unitFilter" class="custom-select-native-hidden" tabindex="-1" aria-hidden="true"></select>
                         </div>
                     </div>
+
+                    <!-- Jenis Data -->
                     <div class="uker-filter-item">
-                        <label for="dataTypeFilter" class="uker-filter-label">Data</label>
-                        <div class="uker-select-wrap">
-                            <i class="fas fa-database uker-select-icon"></i>
-                            <select id="dataTypeFilter" class="uker-control"></select>
+                        <label for="dataTypeFilter" class="uker-filter-label">
+                            <i class="fas fa-database"></i>
+                            <span>Jenis Data</span>
+                        </label>
+                        <div class="custom-select-wrap" id="wrap_dataTypeFilter">
+                            <button type="button" class="custom-select-trigger" id="trigger_dataTypeFilter" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="custom-select-label" id="label_dataTypeFilter">Pilih data</span>
+                                <span class="custom-select-arrow"><i class="fas fa-chevron-down"></i></span>
+                            </button>
+                            <div class="custom-select-panel" id="panel_dataTypeFilter">
+                                <ul class="custom-select-options" role="listbox"></ul>
+                                <div class="custom-select-empty" style="display:none;">Tidak ada pilihan ditemukan</div>
+                            </div>
+                            <select id="dataTypeFilter" class="custom-select-native-hidden" tabindex="-1" aria-hidden="true"></select>
                         </div>
                     </div>
+
+                    <!-- Periode Tanggal -->
                     <div class="uker-filter-item">
-                        <label for="periodFilter" class="uker-filter-label">Periode</label>
-                        <div class="uker-select-wrap">
-                            <i class="fas fa-calendar-alt uker-select-icon"></i>
-                            <input type="date" id="periodFilter" class="uker-control uker-date-input" aria-label="Pilih tanggal posisi">
+                        <label for="periodFilter" class="uker-filter-label">
+                            <i class="fas fa-calendar-alt"></i>
+                            <span>Periode Posisi</span>
+                        </label>
+                        <div class="custom-date-wrap">
+                            <input type="date" id="periodFilter" class="custom-date-control" aria-label="Pilih tanggal posisi">
                         </div>
                     </div>
+
+                    <!-- Target RKA -->
                     <div class="uker-filter-item">
-                        <label for="rkaFilter" class="uker-filter-label">RKA</label>
-                        <div class="uker-select-wrap">
-                            <i class="fas fa-bullseye uker-select-icon"></i>
-                            <select id="rkaFilter" class="uker-control"></select>
+                        <label for="rkaFilter" class="uker-filter-label">
+                            <i class="fas fa-bullseye"></i>
+                            <span>Posisi RKA</span>
+                        </label>
+                        <div class="custom-select-wrap" id="wrap_rkaFilter">
+                            <button type="button" class="custom-select-trigger" id="trigger_rkaFilter" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="custom-select-label" id="label_rkaFilter">Pilih RKA</span>
+                                <span class="custom-select-arrow"><i class="fas fa-chevron-down"></i></span>
+                            </button>
+                            <div class="custom-select-panel" id="panel_rkaFilter">
+                                <ul class="custom-select-options" role="listbox"></ul>
+                                <div class="custom-select-empty" style="display:none;">Tidak ada pilihan ditemukan</div>
+                            </div>
+                            <select id="rkaFilter" class="custom-select-native-hidden" tabindex="-1" aria-hidden="true"></select>
                         </div>
                     </div>
                 </div>
@@ -756,6 +1200,7 @@
         let currentPayload = page.initialData || null;
         let selectedKancaValue = selectedScalar(page.selected?.kanca, '');
         let latestRequestId = 0;
+        const tableSortState = {};
 
         function selectedScalar(value, fallback = '') {
             if (Array.isArray(value)) {
@@ -825,6 +1270,154 @@
             els.period.value = selectedValue || (values.length ? values[values.length - 1] : '');
         }
 
+        const customDropdowns = {};
+
+        function setupCustomSelect(selectId, placeholder, hasSearch = true) {
+            const nativeSelect = document.getElementById(selectId);
+            if (!nativeSelect) return;
+
+            const wrap = document.getElementById('wrap_' + selectId);
+            if (!wrap) return;
+
+            const trigger = document.getElementById('trigger_' + selectId);
+            const label = document.getElementById('label_' + selectId);
+            const panel = document.getElementById('panel_' + selectId);
+            const searchInput = panel ? panel.querySelector('.custom-select-search-input') : null;
+            const optionsContainer = panel ? panel.querySelector('.custom-select-options') : null;
+            const emptyNotice = panel ? panel.querySelector('.custom-select-empty') : null;
+
+            function renderOptions(filterText = '') {
+                if (!optionsContainer) return;
+                const options = Array.from(nativeSelect.options);
+                const selectedVal = nativeSelect.value;
+                const query = filterText.toLowerCase().trim();
+
+                let visibleCount = 0;
+                let html = '';
+
+                options.forEach((opt) => {
+                    const val = opt.value;
+                    const text = opt.text;
+                    if (query && !text.toLowerCase().includes(query)) {
+                        return;
+                    }
+
+                    visibleCount++;
+                    const isSelected = String(val) === String(selectedVal);
+                    html += `
+                        <li class="custom-select-option ${isSelected ? 'is-selected' : ''}" 
+                            data-value="${escapeHtml(val)}" 
+                            role="option" 
+                            aria-selected="${isSelected ? 'true' : 'false'}">
+                            <span class="opt-text">${escapeHtml(text)}</span>
+                            <i class="fas fa-check opt-check"></i>
+                        </li>
+                    `;
+                });
+
+                optionsContainer.innerHTML = html;
+                if (emptyNotice) {
+                    emptyNotice.style.display = visibleCount === 0 ? 'block' : 'none';
+                }
+            }
+
+            function syncState() {
+                const selectedOpt = nativeSelect.options[nativeSelect.selectedIndex];
+                if (selectedOpt && selectedOpt.value !== '') {
+                    label.textContent = selectedOpt.text;
+                    label.title = selectedOpt.text;
+                } else if (selectedOpt && selectedOpt.value === '') {
+                    label.textContent = selectedOpt.text || placeholder;
+                    label.title = '';
+                } else {
+                    label.textContent = placeholder;
+                    label.title = '';
+                }
+
+                trigger.disabled = Boolean(nativeSelect.disabled);
+                if (nativeSelect.disabled) {
+                    wrap.classList.remove('is-open');
+                    wrap.closest('.uker-filter-item')?.classList.remove('has-open-dropdown');
+                }
+                renderOptions(searchInput ? searchInput.value : '');
+            }
+
+            function open() {
+                if (nativeSelect.disabled) return;
+                document.querySelectorAll('.custom-select-wrap.is-open').forEach(el => {
+                    if (el !== wrap) {
+                        el.classList.remove('is-open');
+                        el.closest('.uker-filter-item')?.classList.remove('has-open-dropdown');
+                    }
+                });
+                wrap.classList.add('is-open');
+                wrap.closest('.uker-filter-item')?.classList.add('has-open-dropdown');
+                trigger.setAttribute('aria-expanded', 'true');
+                renderOptions('');
+                if (searchInput) {
+                    searchInput.value = '';
+                    setTimeout(() => searchInput.focus(), 60);
+                }
+            }
+
+            function close() {
+                wrap.classList.remove('is-open');
+                wrap.closest('.uker-filter-item')?.classList.remove('has-open-dropdown');
+                trigger.setAttribute('aria-expanded', 'false');
+            }
+
+            function toggle() {
+                if (wrap.classList.contains('is-open')) {
+                    close();
+                } else {
+                    open();
+                }
+            }
+
+            trigger.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggle();
+            });
+
+            if (searchInput) {
+                searchInput.addEventListener('input', () => {
+                    renderOptions(searchInput.value);
+                });
+                searchInput.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                });
+                searchInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        close();
+                        trigger.focus();
+                    }
+                });
+            }
+
+            if (optionsContainer) {
+                optionsContainer.addEventListener('click', (e) => {
+                    const optEl = e.target.closest('.custom-select-option');
+                    if (!optEl) return;
+                    const val = optEl.getAttribute('data-value');
+                    if (nativeSelect.value !== val) {
+                        nativeSelect.value = val;
+                        syncState();
+                        nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    close();
+                    trigger.focus();
+                });
+            }
+
+            customDropdowns[selectId] = { syncState, close, open };
+            syncState();
+        }
+
+        function syncAllCustomSelects() {
+            Object.values(customDropdowns).forEach(dropdown => dropdown.syncState());
+        }
+
         function buildSelects(payload, requestedSelection = {}) {
             const filters = (payload && payload.available_filters) || page.filters || {};
             const selected = payload?.selected || page.selected || {};
@@ -843,6 +1436,8 @@
                 payload?.selected?.posisi_terakhir || els.period.value || selected.posisi_terakhir
             );
             els.rka.innerHTML = optionHtml(filters.posisi_rka || [], els.rka.value || selected.posisi_rka);
+
+            syncAllCustomSelects();
         }
 
         function formatHeaderDate(periodStr, fallback) {
@@ -871,12 +1466,52 @@
             return deltaLabelMap[keyLower] || col?.label || col?.key?.toUpperCase() || '-';
         }
 
-        function renderHeader(payload) {
+        function renderHeader(payload, metricKey) {
             const positions = payload?.columns?.positions || [];
             const deltas = payload?.columns?.deltas || [];
+            const currentSort = metricKey ? tableSortState[metricKey] : null;
 
-            const posColsHtml = positions.map(col => `<th>${escapeHtml(formatHeaderDate(col.period, col.label))}</th>`).join('');
-            const deltaColsHtml = deltas.map(col => `<th>${escapeHtml(formatDeltaLabel(col))}</th>`).join('');
+            function renderSortableTh(sortType, sortKey, labelHtml, extraClass = '') {
+                const isSorted = Boolean(currentSort && currentSort.type === sortType && currentSort.key === sortKey);
+                const direction = isSorted ? currentSort.direction : null;
+
+                let iconClass = 'fa-sort';
+                if (direction === 'desc') {
+                    iconClass = 'fa-sort-down';
+                } else if (direction === 'asc') {
+                    iconClass = 'fa-sort-up';
+                }
+
+                const titleText = isSorted
+                    ? (direction === 'desc' ? 'Klik untuk urutkan terendah (Ascending)' : 'Klik untuk kembalikan urutan semula')
+                    : 'Klik untuk urutkan tertinggi (Descending)';
+
+                return `
+                    <th class="uker-th-sortable ${isSorted ? 'is-sorted' : ''} ${extraClass}"
+                        data-sort-metric="${escapeHtml(metricKey)}"
+                        data-sort-type="${escapeHtml(sortType)}"
+                        data-sort-key="${escapeHtml(sortKey)}"
+                        title="${titleText}">
+                        <div class="th-sort-inner">
+                            <span class="th-sort-label">${labelHtml}</span>
+                            <span class="th-sort-icon"><i class="fas ${iconClass}"></i></span>
+                        </div>
+                    </th>
+                `;
+            }
+
+            const posColsHtml = positions.map(col => {
+                const label = escapeHtml(formatHeaderDate(col.period, col.label));
+                return renderSortableTh('position', col.key, label);
+            }).join('');
+
+            const deltaColsHtml = deltas.map(col => {
+                const label = escapeHtml(formatDeltaLabel(col));
+                return renderSortableTh('delta', col.key, label);
+            }).join('');
+
+            const rkaTh = renderSortableTh('rka', 'rka', 'RKA');
+            const achTh = renderSortableTh('achievement', 'achievement', 'Penc. RKA');
 
             return `
                 <tr class="uker-table-header-row-group">
@@ -890,10 +1525,75 @@
                     <th class="uker-name">Nama</th>
                     ${posColsHtml}
                     ${deltaColsHtml}
-                    <th>RKA</th>
-                    <th>Penc. RKA</th>
+                    ${rkaTh}
+                    ${achTh}
                 </tr>
             `;
+        }
+
+        function getRowSortValue(row, metricKey, sortType, sortKey) {
+            const metric = metricForRow(row, metricKey);
+            if (!metric) return null;
+
+            if (sortType === 'position') {
+                const val = metric.values?.[sortKey];
+                return (val !== null && val !== undefined && val !== '') ? Number(val) : null;
+            }
+
+            if (sortType === 'delta') {
+                const val = metric.deltas?.[sortKey]?.value;
+                return (val !== null && val !== undefined && val !== '') ? Number(val) : null;
+            }
+
+            if (sortType === 'rka') {
+                const val = metric.rka;
+                return (val !== null && val !== undefined && val !== '') ? Number(val) : null;
+            }
+
+            if (sortType === 'achievement') {
+                const val = metric.achievement;
+                return (val !== null && val !== undefined && val !== '') ? Number(val) : null;
+            }
+
+            return null;
+        }
+
+        function compareRows(rowA, rowB, metricKey, sortState) {
+            const valA = getRowSortValue(rowA, metricKey, sortState.type, sortState.key);
+            const valB = getRowSortValue(rowB, metricKey, sortState.type, sortState.key);
+
+            const isAValid = typeof valA === 'number' && !isNaN(valA);
+            const isBValid = typeof valB === 'number' && !isNaN(valB);
+
+            if (!isAValid && !isBValid) return 0;
+            if (!isAValid) return 1;
+            if (!isBValid) return -1;
+
+            if (sortState.direction === 'asc') {
+                return valA - valB;
+            } else {
+                return valB - valA;
+            }
+        }
+
+        function getSortSummaryLabel(payload, sortState) {
+            if (!sortState || !sortState.direction) return '';
+            const dirText = sortState.direction === 'desc' ? 'Tertinggi' : 'Terendah';
+            let colName = '';
+
+            if (sortState.type === 'position') {
+                const col = (payload?.columns?.positions || []).find(c => c.key === sortState.key);
+                colName = `Posisi ${formatHeaderDate(col?.period, col?.label || sortState.key)}`;
+            } else if (sortState.type === 'delta') {
+                const col = (payload?.columns?.deltas || []).find(c => c.key === sortState.key);
+                colName = `Delta ${formatDeltaLabel(col) || sortState.key.toUpperCase()}`;
+            } else if (sortState.type === 'rka') {
+                colName = 'Target RKA';
+            } else if (sortState.type === 'achievement') {
+                colName = 'Penc. RKA';
+            }
+
+            return `${colName} (${dirText})`;
         }
 
         function metricCells(metric, positions, deltas) {
@@ -960,19 +1660,38 @@
         function tableHtml(payload, metric) {
             const positions = payload?.columns?.positions || [];
             const deltas = payload?.columns?.deltas || [];
-            const bodyRows = (payload?.rows || []).map(row => rowHtml(row, metric.key, positions, deltas)).join('');
+            const sortState = tableSortState[metric.key];
+
+            let rows = [...(payload?.rows || [])];
+            if (sortState && sortState.direction) {
+                rows.sort((a, b) => compareRows(a, b, metric.key, sortState));
+            }
+
+            const bodyRows = rows.map(row => rowHtml(row, metric.key, positions, deltas)).join('');
             const totalRow = payload?.totals ? rowHtml(payload.totals, metric.key, positions, deltas, true) : '';
 
+            const sortBadge = (sortState && sortState.direction)
+                ? `<span class="uker-sort-badge"><i class="fas ${sortState.direction === 'desc' ? 'fa-arrow-down' : 'fa-arrow-up'}"></i> ${escapeHtml(getSortSummaryLabel(payload, sortState))}</span>`
+                : '';
+
+            const resetBtn = (sortState && sortState.direction)
+                ? `<button type="button" class="uker-sort-reset-btn" data-reset-metric="${escapeHtml(metric.key)}" title="Kembalikan ke urutan default"><i class="fas fa-undo"></i> Reset Urutan</button>`
+                : '';
+
             return `
-                <section class="uker-table-card">
+                <section class="uker-table-card" data-metric-card="${escapeHtml(metric.key)}">
                     <div class="uker-table-title">
-                        <span>${escapeHtml(metric.label || '')}</span>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <span>${escapeHtml(metric.label || '')}</span>
+                            ${sortBadge}
+                            ${resetBtn}
+                        </div>
                         <span>Rp Juta</span>
                     </div>
                     <div class="uker-table-wrap">
                         <table class="uker-table">
                             ${renderColgroup(positions, deltas)}
-                            <thead>${renderHeader(payload)}</thead>
+                            <thead>${renderHeader(payload, metric.key)}</thead>
                             <tbody>${bodyRows}${totalRow}</tbody>
                         </table>
                     </div>
@@ -1064,13 +1783,120 @@
             }
         }
 
+        function renderCurrentWithScrollPreserved() {
+            if (!currentPayload) return;
+
+            const scrollMap = new Map();
+            const cards = els.tables.querySelectorAll('.uker-table-card');
+            cards.forEach(card => {
+                const key = card.getAttribute('data-metric-card');
+                const wrap = card.querySelector('.uker-table-wrap');
+                if (key && wrap) {
+                    scrollMap.set(key, { left: wrap.scrollLeft, top: wrap.scrollTop });
+                }
+            });
+
+            render(currentPayload);
+
+            const newCards = els.tables.querySelectorAll('.uker-table-card');
+            newCards.forEach(card => {
+                const key = card.getAttribute('data-metric-card');
+                const wrap = card.querySelector('.uker-table-wrap');
+                if (key && wrap && scrollMap.has(key)) {
+                    const pos = scrollMap.get(key);
+                    wrap.scrollLeft = pos.left;
+                    wrap.scrollTop = pos.top;
+                }
+            });
+        }
+
+        function handleSortClick(metricKey, sortType, sortKey) {
+            const current = tableSortState[metricKey];
+
+            if (current && current.type === sortType && current.key === sortKey) {
+                if (current.direction === 'desc') {
+                    tableSortState[metricKey] = { type: sortType, key: sortKey, direction: 'asc' };
+                } else if (current.direction === 'asc') {
+                    delete tableSortState[metricKey];
+                }
+            } else {
+                tableSortState[metricKey] = { type: sortType, key: sortKey, direction: 'desc' };
+            }
+
+            renderCurrentWithScrollPreserved();
+        }
+
+        function handleResetSort(metricKey) {
+            if (tableSortState[metricKey]) {
+                delete tableSortState[metricKey];
+                renderCurrentWithScrollPreserved();
+            }
+        }
+
+        function clearAllSorts() {
+            for (const k in tableSortState) {
+                delete tableSortState[k];
+            }
+        }
+
         function bindEvents() {
-            els.kanca.addEventListener('change', () => fetchData(true));
+            els.kanca.addEventListener('change', () => {
+                clearAllSorts();
+                fetchData(true);
+            });
             els.unit.addEventListener('change', () => fetchData(false));
-            els.dataType.addEventListener('change', () => fetchData(false));
+            els.dataType.addEventListener('change', () => {
+                clearAllSorts();
+                fetchData(false);
+            });
             els.period.addEventListener('change', () => fetchData(false));
             els.rka.addEventListener('change', () => fetchData(false));
+
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.custom-select-wrap')) {
+                    document.querySelectorAll('.custom-select-wrap.is-open').forEach(el => {
+                        el.classList.remove('is-open');
+                        el.closest('.uker-filter-item')?.classList.remove('has-open-dropdown');
+                    });
+                }
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    document.querySelectorAll('.custom-select-wrap.is-open').forEach(el => {
+                        el.classList.remove('is-open');
+                        el.closest('.uker-filter-item')?.classList.remove('has-open-dropdown');
+                    });
+                }
+            });
+
+            els.tables.addEventListener('click', function (e) {
+                const sortTh = e.target.closest('.uker-th-sortable');
+                if (sortTh) {
+                    const metricKey = sortTh.getAttribute('data-sort-metric');
+                    const sortType = sortTh.getAttribute('data-sort-type');
+                    const sortKey = sortTh.getAttribute('data-sort-key');
+                    if (metricKey && sortType && sortKey) {
+                        handleSortClick(metricKey, sortType, sortKey);
+                    }
+                    return;
+                }
+
+                const resetBtn = e.target.closest('.uker-sort-reset-btn');
+                if (resetBtn) {
+                    const metricKey = resetBtn.getAttribute('data-reset-metric');
+                    if (metricKey) {
+                        handleResetSort(metricKey);
+                    }
+                    return;
+                }
+            });
         }
+
+        setupCustomSelect('kancaFilter', 'Pilih cabang', true);
+        setupCustomSelect('unitFilter', 'Semua Unit Kerja', true);
+        setupCustomSelect('dataTypeFilter', 'Pilih data', false);
+        setupCustomSelect('rkaFilter', 'Pilih RKA', false);
 
         buildSelects(currentPayload);
         bindEvents();

@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportExcelController;
+use App\Services\Import\Strategies\Lw321PnImportStrategy;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -84,11 +85,27 @@ class ImportExcelControllerLw321PnTest extends TestCase
 
         $whereMethod = new ReflectionMethod(ImportExcelController::class, 'buildFastPathBulkWhereClauses');
         $whereMethod->setAccessible(true);
-        $where = $whereMethod->invoke($controller, $context, []);
+        $mappedColumns = array_fill_keys(Lw321PnImportStrategy::requiredColumns(), true);
+        unset($mappedColumns['uniqueid_namareport']);
+        $where = $whereMethod->invoke($controller, $context, $mappedColumns);
 
         $this->assertStringContainsString('src.`periode` IS NOT NULL', $where);
         $this->assertStringContainsString('src.`no_rekening` IS NOT NULL', $where);
         $this->assertStringContainsString('src.`balance_dalam_idr` IS NOT NULL', $where);
+    }
+
+    public function test_lw321pn_fast_path_fails_closed_when_a_required_header_is_not_mapped(): void
+    {
+        $mappedColumns = array_fill_keys(Lw321PnImportStrategy::requiredColumns(), true);
+        unset($mappedColumns['uniqueid_namareport'], $mappedColumns['balance_dalam_idr']);
+
+        $method = new ReflectionMethod(ImportExcelController::class, 'buildFastPathBulkWhereClauses');
+        $method->setAccessible(true);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('balance_dalam_idr');
+
+        $method->invoke(new ImportExcelController(), ['table_name' => 'lw321pn'], $mappedColumns);
     }
 
     public function test_lw321pn_rejects_an_existing_period_before_import(): void
@@ -112,7 +129,7 @@ class ImportExcelControllerLw321PnTest extends TestCase
         $method->invoke(new ImportExcelController(), ['23/08/2026']);
     }
 
-    public function test_lw321pn_rejects_a_period_owned_by_daily_loan(): void
+    public function test_lw321pn_allows_a_period_owned_by_daily_loan(): void
     {
         Schema::create('lw321pn', function (Blueprint $table): void {
             $table->string('uniqueid_namareport')->primary();
@@ -131,9 +148,49 @@ class ImportExcelControllerLw321PnTest extends TestCase
         $method = new ReflectionMethod(ImportExcelController::class, 'assertLw321PnImportPeriodsEmptyOrFail');
         $method->setAccessible(true);
 
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('sudah ada di tabel daily_loan_dinamis');
-
         $method->invoke(new ImportExcelController(), ['23/08/2026']);
+
+        $this->assertSame(1, DB::table('daily_loan_dinamis')->where('periode', '2026-08-23')->count());
+    }
+
+    public function test_lw321pn_maps_cbal_and_orgamt_base_and_kolek_aliases(): void
+    {
+        $controller = new class extends ImportExcelController {
+            protected function schemaColumnsForBulkImport(string $tableName): array
+            {
+                return [
+                    'uniqueid_namareport',
+                    'periode',
+                    'no_rekening',
+                    'plafon_dalam_idr',
+                    'balance_dalam_idr',
+                    'kolektibilitas_lancar',
+                    'pn_referral',
+                ];
+            }
+        };
+
+        $headers = [
+            'PERIODE',
+            'NO_REKENING',
+            'ORGAMT_Base',
+            'CBAL_Base',
+            'KOLEK_LANCAR',
+            'PN_REFERAL',
+        ];
+
+        $contextMethod = new ReflectionMethod(ImportExcelController::class, 'buildImportContext');
+        $contextMethod->setAccessible(true);
+        $context = $contextMethod->invoke($controller, 'lw321pn', $headers);
+
+        $rulesByHeader = [];
+        foreach ($context['header_rules'] as $rule) {
+            $rulesByHeader[$rule['header_name']] = $rule['db_candidates'] ?? [];
+        }
+
+        $this->assertContains('balance_dalam_idr', $rulesByHeader['balance_dalam_idr'] ?? $rulesByHeader['CBAL_Base'] ?? []);
+        $this->assertContains('plafon_dalam_idr', $rulesByHeader['plafon_dalam_idr'] ?? $rulesByHeader['ORGAMT_Base'] ?? []);
+        $this->assertContains('kolektibilitas_lancar', $rulesByHeader['kolektibilitas_lancar'] ?? $rulesByHeader['KOLEK_LANCAR'] ?? []);
+        $this->assertContains('pn_referral', $rulesByHeader['pn_referral'] ?? $rulesByHeader['PN_REFERAL'] ?? []);
     }
 }

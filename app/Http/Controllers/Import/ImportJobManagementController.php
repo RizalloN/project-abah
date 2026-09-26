@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\ActiveImportJobCounter;
+use App\Services\Import\QueueWorkerControlService;
 use App\Support\ManagedReportSnapshotRebuildCoordinator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -38,6 +39,7 @@ class ImportJobManagementController extends Controller
 
     public function data(Request $request, ImportProgressService $progressService)
     {
+        $workerControl = app(QueueWorkerControlService::class);
         if (!Schema::hasTable('import_jobs')) {
             return response()->json([
                 'status' => 'error',
@@ -170,6 +172,7 @@ class ImportJobManagementController extends Controller
                 'active_only' => $activeOnly,
             ],
             'queue_health' => $this->resolveQueueHealth(),
+            'worker_status' => $workerControl->status(),
             'snapshot_jobs' => $snapshotJobs,
             'managed_delete_jobs' => $managedDeleteJobs,
             'managed_delete_summary' => [
@@ -193,6 +196,37 @@ class ImportJobManagementController extends Controller
                 'from' => $jobs->firstItem(),
                 'to' => $jobs->lastItem(),
             ],
+        ]);
+    }
+
+    public function startWorker(QueueWorkerControlService $workerControl)
+    {
+        $status = $workerControl->enable();
+        if (!($status['started'] ?? false)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Worker monitor gagal dijalankan. Periksa izin proses server dan log queue-worker-monitor-error.log.',
+                'worker_status' => $status,
+            ], 500);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => ($status['already_active'] ?? false)
+                ? 'Worker monitor sudah aktif.'
+                : 'Worker monitor sedang diaktifkan dari server.',
+            'worker_status' => $status,
+        ]);
+    }
+
+    public function stopWorker(QueueWorkerControlService $workerControl)
+    {
+        $status = $workerControl->disable();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Perintah berhenti dikirim. Worker menyelesaikan job aktif lalu berhenti dengan aman.',
+            'worker_status' => $status,
         ]);
     }
 

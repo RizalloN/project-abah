@@ -69,6 +69,7 @@ class DashboardHarianController extends Controller
         [$selectedKanca, $selectedUnit, $branchLocked] = $this->resolveTimeseriesFilters($request);
         $selectedCategory = $request->input('category', 'simpanan'); // Default to simpanan
         $selectedSegment = $request->input('segment', 'total'); // Default to total
+        $selectedProduct = $request->input('product', 'total');
         if ($selectedCategory === 'recovery' && !in_array($selectedSegment, ['ritel', 'micro'], true)) {
             $selectedSegment = 'ritel';
         }
@@ -91,6 +92,7 @@ class DashboardHarianController extends Controller
                 'unit_kerja' => $selectedUnit ?? 'all',
                 'category' => $selectedCategory,
                 'segment' => $selectedSegment,
+                'product' => $selectedProduct,
                 'recovery_segment' => $selectedRecoverySegment,
                 'recovery_product' => $selectedRecoveryProduct,
                 'period_month' => $selectedMonth,
@@ -102,6 +104,7 @@ class DashboardHarianController extends Controller
                 $selectedUnit,
                 $selectedMonth,
                 $selectedSegment,
+                $selectedProduct,
                 $selectedRecoverySegment,
                 $selectedRecoveryProduct
             ),
@@ -115,6 +118,7 @@ class DashboardHarianController extends Controller
         [$selectedKanca, $selectedUnit] = $this->resolveTimeseriesFilters($request);
         $category = $request->input('category', 'simpanan');
         $segment = $request->input('segment', 'total');
+        $product = $request->input('product', 'total');
         if ($category === 'recovery' && !in_array($segment, ['ritel', 'micro'], true)) {
             $segment = 'ritel';
         }
@@ -129,6 +133,7 @@ class DashboardHarianController extends Controller
             $selectedUnit,
             $selectedMonth,
             $segment,
+            $product,
             $recoverySegment,
             $recoveryProduct
         ));
@@ -418,6 +423,7 @@ class DashboardHarianController extends Controller
         array|string|null $selectedUnit,
         ?string $selectedMonth = null,
         string $segment = 'total',
+        string $product = 'total',
         ?string $recoverySegment = null,
         ?string $recoveryProduct = null
     ): array
@@ -426,30 +432,32 @@ class DashboardHarianController extends Controller
         $resolvedMonth = $this->resolveTimeseriesMonth($selectedMonth, $monthOptions);
 
         $cacheKey = 'dashboard_harian:timeseries:' . md5(json_encode([
-            'schema' => 'v7-gi405-daily-recovery-rp-million',
+            'schema' => 'v8-guided-segment-product-ldr',
             'version' => $this->reportCacheVersion(),
             'category' => $category,
             'kanca' => $selectedKanca,
             'unit' => $selectedUnit,
             'period_month' => $resolvedMonth,
             'segment' => $segment,
+            'product' => $product,
             'recovery_segment' => $recoverySegment,
             'recovery_product' => $recoveryProduct,
         ]));
 
-        return $this->rememberDashboardPayload($cacheKey, function () use ($category, $selectedKanca, $selectedUnit, $monthOptions, $resolvedMonth, $segment, $recoverySegment, $recoveryProduct) {
+        return $this->rememberDashboardPayload($cacheKey, function () use ($category, $selectedKanca, $selectedUnit, $monthOptions, $resolvedMonth, $segment, $product, $recoverySegment, $recoveryProduct) {
             $emptyPayload = [
                 'months' => [],
                 'series' => [],
                 'labels' => range(1, 31),
                 'area_total' => [],
-                'value_type' => $category === 'sml'
+                'value_type' => in_array($category, ['sml', 'ldr'], true)
                     ? 'percent'
                     : ($category === 'recovery' ? 'currency_million' : 'currency'),
                 'source' => $category === 'recovery' ? 'gi405_recovery' : DashboardHarianSnapshotService::SNAPSHOT_TABLE,
                 'selected_month' => $resolvedMonth,
                 'available_months' => $monthOptions,
                 'segment' => $segment,
+                'product' => $product,
                 'recovery_segment' => $recoverySegment,
                 'recovery_product' => $recoveryProduct,
             ];
@@ -465,6 +473,7 @@ class DashboardHarianController extends Controller
                 $selectedKanca,
                 $selectedUnit,
                 $segment,
+                $product,
                 $recoverySegment,
                 $recoveryProduct
             );
@@ -474,13 +483,14 @@ class DashboardHarianController extends Controller
                 'series' => $data['series'],
                 'labels' => range(1, 31),
                 'area_total' => $data['area_total'],
-                'value_type' => $data['value_type'] ?? ($category === 'sml'
+                'value_type' => $data['value_type'] ?? (in_array($category, ['sml', 'ldr'], true)
                     ? 'percent'
                     : ($category === 'recovery' ? 'currency_million' : 'currency')),
                 'source' => $category === 'recovery' ? 'gi405_recovery' : DashboardHarianSnapshotService::SNAPSHOT_TABLE,
                 'selected_month' => $resolvedMonth,
                 'available_months' => $monthOptions,
                 'segment' => $segment,
+                'product' => $product,
                 'recovery_segment' => $recoverySegment,
                 'recovery_product' => $recoveryProduct,
             ];

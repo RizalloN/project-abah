@@ -221,7 +221,7 @@
     .mss-table { border-collapse:separate; border-spacing:0; font-size:.75rem; min-width:1180px; width:100%; }
     .mss-table th,.mss-table td { border-bottom:1px solid #dfe6ee; border-right:1px solid #e2e8ef; padding:.55rem .6rem; text-align:right; white-space:nowrap; }
     .mss-table thead th { background:#244b73; color:#fff; font-weight:900; height:40px; position:sticky; text-align:center; top:0; z-index:5; }
-    .mss-table thead tr:nth-child(2) th { background:#315d88; top:40px; z-index:6; }
+    .mss-table thead tr:nth-child(2) th { background:#315d88; top:var(--abah-table-head-top,40px); z-index:6; }
     .mss-table thead .opportunity-head { background:#0b62aa; }
     .mss-table .sector-head,.mss-table .sector-cell { left:0; max-width:320px; min-width:280px; position:sticky; text-align:left; white-space:normal; }
     .mss-table .sector-head { background:#183b5e; z-index:8; }

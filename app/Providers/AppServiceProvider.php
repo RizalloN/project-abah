@@ -17,6 +17,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\View;
 use Illuminate\Validation\Rules\Password;
 use App\Services\Import\ActiveImportJobCounter;
+use App\Services\Import\QueueWorkerControlService;
 use App\Support\CachedMySqlSchemaBuilder;
 use App\Support\LandingLoanRiskCacheService;
 use App\Support\SchemaMetadataCache;
@@ -156,6 +157,10 @@ class AppServiceProvider extends ServiceProvider
 
         Event::listen(JobQueued::class, function (JobQueued $event): void {
             if ((string) $event->connectionName !== 'database') {
+                return;
+            }
+
+            if (!app(QueueWorkerControlService::class)->isEnabled()) {
                 return;
             }
 

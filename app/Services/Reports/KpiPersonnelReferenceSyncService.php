@@ -27,10 +27,10 @@ class KpiPersonnelReferenceSyncService
         }
 
         $records = $this->personnelRecords($sheetKey, $payload);
-        if ($records === [] || !Schema::hasTable('brihc') || !Schema::hasTable('brihc_pemasar')) {
+        if ($records === [] || ! Schema::hasTable('brihc') || ! Schema::hasTable('brihc_pemasar')) {
             return $this->summary($sheetKey, count($records), 0, 0, true);
         }
-        if ($sheetKey === 'mantri' && $this->hasAuthoritativeMantriReference()) {
+        if ($this->hasAuthoritativePersonnelReference($sheetKey)) {
             return $this->summary($sheetKey, count($records), 0, 0, true);
         }
 
@@ -61,7 +61,7 @@ class KpiPersonnelReferenceSyncService
 
             if ($brihcMatches->isEmpty()) {
                 $brihcMatches = collect([(object) [
-                    'uniqueid_brihc' => 'kpi_reference_' . $sheetKey . '_' . $pn . '_BRIHC',
+                    'uniqueid_brihc' => 'kpi_reference_'.$sheetKey.'_'.$pn.'_BRIHC',
                     'created_at' => $now,
                 ]]);
             }
@@ -78,7 +78,7 @@ class KpiPersonnelReferenceSyncService
 
             if ($pemasarMatches->isEmpty()) {
                 $pemasarMatches = collect([(object) [
-                    'uniqueid_namareport' => 'kpi_reference_' . $sheetKey . '_' . $pn,
+                    'uniqueid_namareport' => 'kpi_reference_'.$sheetKey.'_'.$pn,
                     'created_at' => $now,
                 ]]);
             }
@@ -251,7 +251,7 @@ class KpiPersonnelReferenceSyncService
     /** @return array<string, int|bool|string> */
     private function syncMbmNames(array $payload): array
     {
-        if (!Schema::hasTable('brihc')) {
+        if (! Schema::hasTable('brihc')) {
             return $this->summary('mbm', 0, 0, 0, true);
         }
 
@@ -286,7 +286,7 @@ class KpiPersonnelReferenceSyncService
             if ($matches->isEmpty()) {
                 $inserted++;
                 $matches = collect([(object) [
-                    'uniqueid_brihc' => 'kpi_reference_mbm_' . sha1($key) . '_BRIHC',
+                    'uniqueid_brihc' => 'kpi_reference_mbm_'.sha1($key).'_BRIHC',
                     'pn' => null,
                     'created_at' => $now,
                 ]]);
@@ -315,7 +315,7 @@ class KpiPersonnelReferenceSyncService
     /** @return array<string, int|bool|string> */
     private function syncMbmAssignments(array $payload): array
     {
-        if (!Schema::hasTable('wilayah_mbm')) {
+        if (! Schema::hasTable('wilayah_mbm')) {
             return $this->summary('ka-unit', 0, 0, 0, true);
         }
 
@@ -363,7 +363,7 @@ class KpiPersonnelReferenceSyncService
             if ($matches->isEmpty()) {
                 $inserted++;
                 $matches = collect([(object) [
-                    'uniqueid_mbm' => 'kpi_reference_wilayah_mbm_' . $bc,
+                    'uniqueid_mbm' => 'kpi_reference_wilayah_mbm_'.$bc,
                     'created_at' => $now,
                 ]]);
             } else {
@@ -415,8 +415,31 @@ class KpiPersonnelReferenceSyncService
         return $this->textKey($currentRole) === $this->textKey($expectedRole);
     }
 
-    private function hasAuthoritativeMantriReference(): bool
+    private function hasAuthoritativePersonnelReference(string $sheetKey): bool
     {
+        $roles = match ($sheetKey) {
+            'rm-sme' => ['RM BISNIS KECIL'],
+            'rm-mikro' => ['RM MIKRO'],
+            'consumer' => ['RM BISNIS KONSUMER - BRIGUNA', 'RM BISNIS KONSUMER - KPR'],
+            'mantri' => ['MANTRI', 'MANTRI BRIGUNA'],
+            default => [],
+        };
+        if ($roles === []) {
+            return false;
+        }
+
+        $hasHcReference = DB::table('brihc_pemasar')
+            ->where('uniqueid_namareport', 'like', 'reference_brihc_hc_%')
+            ->whereIn(DB::raw("UPPER(TRIM(COALESCE(positiondesc, '')))"), $roles)
+            ->exists();
+        if ($hasHcReference) {
+            return true;
+        }
+
+        if ($sheetKey !== 'mantri') {
+            return false;
+        }
+
         return DB::table('brihc_pemasar')
             ->where('uniqueid_namareport', 'like', 'reference_brihc_mantri%')
             ->exists();

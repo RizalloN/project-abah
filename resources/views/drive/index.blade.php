@@ -3,13 +3,13 @@
 @section('content')
 <style>
 :root{
-  --d-blue:#0b5d7a;--d-blue-dk:#073b53;--d-blue-lt:#e7f5f8;
-  --d-surface:#ffffff;--d-bg:#f8fafc;--d-border:#e2e8f0;
-  --d-text:#1e293b;--d-muted:#64748b;--d-hover:#f1f5f9;
-  --d-radius:12px;
-  --d-shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
-  --d-shadow-md:0 4px 20px rgba(0,0,0,.10);
-  --d-shadow-lg:0 16px 48px rgba(0,0,0,.14);
+  --d-blue:var(--bri-nusantara,#0857c3);--d-blue-dk:var(--bri-ink,#053b82);--d-blue-lt:#edf5ff;
+  --d-surface:var(--app-surface,#ffffff);--d-bg:var(--app-surface-soft,#f7faff);--d-border:var(--app-line,#d8e5f7);
+  --d-text:var(--app-ink,#0b1f3a);--d-muted:var(--app-muted,#526987);--d-hover:#f0f6ff;
+  --d-radius:14px;
+  --d-shadow:0 14px 30px -26px rgba(4,42,95,.34);
+  --d-shadow-md:0 18px 40px -28px rgba(4,42,95,.42);
+  --d-shadow-lg:0 28px 64px -32px rgba(4,42,95,.5);
 }
 *,*::before,*::after{box-sizing:border-box;}
 .dv-wrap{background:var(--d-bg);min-height:calc(100vh - 60px);display:flex;flex-direction:column;}
@@ -24,7 +24,7 @@
 .dv-brand{display:flex;align-items:center;gap:.75rem;}
 .dv-brand-logo{
   width:38px;height:38px;border-radius:10px;flex-shrink:0;
-  background:linear-gradient(135deg,#0b5d7a,#0891b2);
+  background:linear-gradient(135deg,#053b82,#307fe2);
   display:flex;align-items:center;justify-content:center;
   color:#fff;font-size:1.1rem;box-shadow:0 3px 10px rgba(26,115,232,.3);
 }
@@ -35,10 +35,10 @@
 /* ── BUTTONS ── */
 .btn-dv{
   display:inline-flex;align-items:center;gap:.4rem;
-  padding:.46rem .95rem;border-radius:20px;border:none;
-  min-height:34px;
+  padding:.5rem .9rem;border-radius:10px;border:none;
+  min-height:38px;
   font-size:.8rem;font-weight:700;cursor:pointer;
-  transition:all .15s;white-space:nowrap;text-decoration:none;line-height:1.2;
+  transition:color .15s,background-color .15s,border-color .15s,box-shadow .18s,transform .18s;white-space:nowrap;text-decoration:none;line-height:1.2;
 }
 .btn-dv-primary{background:var(--d-blue);color:#fff;box-shadow:0 2px 8px rgba(26,115,232,.25);}
 .btn-dv-primary:hover{background:var(--d-blue-dk);box-shadow:0 4px 14px rgba(26,115,232,.35);color:#fff;}
@@ -58,7 +58,7 @@
   padding:.6rem 1.25rem;background:var(--d-surface);
   border-bottom:1px solid var(--d-border);font-size:.8rem;flex-wrap:wrap;
 }
-.dv-breadcrumb a{color:var(--d-muted);text-decoration:none;font-weight:600;padding:.2rem .42rem;border-radius:6px;transition:all .12s;white-space:nowrap;min-width:0;max-width:min(24rem,70vw);overflow:hidden;text-overflow:ellipsis;}
+.dv-breadcrumb a{color:var(--d-muted);text-decoration:none;font-weight:600;padding:.2rem .42rem;border-radius:6px;transition:color .12s,background-color .12s;white-space:nowrap;min-width:0;max-width:min(24rem,70vw);overflow:hidden;text-overflow:ellipsis;}
 .dv-breadcrumb a:hover{background:var(--d-hover);color:var(--d-text);}
 .dv-breadcrumb .sep{color:#cbd5e1;display:flex;align-items:center;}
 .dv-breadcrumb .current{color:var(--d-text);font-weight:700;padding:.2rem .42rem;white-space:nowrap;min-width:0;max-width:min(24rem,70vw);overflow:hidden;text-overflow:ellipsis;}
@@ -79,7 +79,7 @@
   margin:.85rem 1.25rem 0;border:2px dashed var(--d-blue);
   border-radius:var(--d-radius);background:var(--d-blue-lt);
   padding:1.75rem;text-align:center;cursor:pointer;
-  transition:all .15s;display:none;
+  transition:background-color .15s,border-color .15s,opacity .15s;display:none;
 }
 .dv-dropzone.is-open{display:block;}
 .dv-dropzone.drag-over{background:#d2e3fc;border-color:var(--d-blue-dk);}
@@ -112,6 +112,11 @@
 .dv-summary-updated{display:flex;align-items:center;gap:.45rem;color:var(--d-muted);font-size:.7rem;font-weight:700;white-space:nowrap;}
 .dv-summary-refresh{width:32px;height:32px;border:1px solid #cbd8e6;background:#fff;color:#0f5eb8;border-radius:6px;cursor:pointer;}
 .dv-summary-refresh:disabled{opacity:.55;cursor:wait;}
+
+@media (pointer:coarse){
+  .btn-dv-icon,.dv-summary-refresh{width:44px;height:44px;min-width:44px;min-height:44px;}
+  .btn-dv{min-height:44px;}
+}
 .dv-summary-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;margin-bottom:.8rem;}
 .dv-summary-metric{min-width:0;padding:.7rem .8rem;border:1px solid #dce5ee;border-top:3px solid #0f5eb8;background:#f8fbff;border-radius:6px;}
 .dv-summary-metric.is-good{border-top-color:#0f9f75;}.dv-summary-metric.is-progress{border-top-color:#16a0bd;}
@@ -149,7 +154,7 @@
 .dv-card:hover{box-shadow:var(--d-shadow-md);border-color:#c5cde4;}
 .dv-card.selected{border-color:var(--d-blue);background:var(--d-blue-lt);box-shadow:0 0 0 3px rgba(26,115,232,.12);}
 .dv-item-check{display:inline-flex;align-items:center;justify-content:center;margin:0;cursor:pointer;}
-.dv-item-check input{width:17px;height:17px;margin:0;accent-color:var(--d-blue);cursor:pointer;}
+.dv-item-check input{width:20px;height:20px;margin:0;accent-color:var(--d-blue);cursor:pointer;}
 .dv-card-check{position:absolute;top:.62rem;left:.62rem;z-index:2;}
 .dv-card-icon{font-size:2.5rem;line-height:1;}
 .dv-card-name{font-size:.76rem;font-weight:700;color:var(--d-text);word-break:break-word;line-height:1.3;max-width:100%;}
@@ -249,6 +254,26 @@
   .dv-list-head>:nth-child(n+4),.dv-list-row>:nth-child(n+4){display:none;}
   .dv-selection-actions{width:100%;margin-left:0;}
   .dv-selection-actions .btn-dv{flex:1;justify-content:center;}
+}
+
+.dv-wrap :where(button,a,input,select,[role="button"]):focus-visible{
+  outline:3px solid rgba(48,127,226,.42);outline-offset:2px;
+}
+
+@media(max-width:359.98px){
+  .dv-topbar,.dv-toolbar{padding-left:.7rem;padding-right:.7rem;}
+  .dv-topbar-right,.dv-selection-actions{width:100%;}
+  .dv-selection-actions .btn-dv{min-width:0;padding-left:.55rem;padding-right:.55rem;white-space:normal;overflow-wrap:anywhere;text-align:center;}
+  .dv-toolbar-div{display:none;}
+}
+
+@media(pointer:coarse){
+  .dv-wrap :where(.btn-dv,.dv-summary-refresh,.dv-item-check,.dv-ctx-item,.dv-tree-item){min-height:44px;}
+  .dv-item-check{min-width:44px;}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .dv-wrap,.dv-wrap *{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important;}
 }
 </style>
 
@@ -577,7 +602,7 @@
   <div class="dv-modal dv-modal-sm">
     <div class="dv-modal-hdr">
       <h3 class="dv-modal-title"><i class="fas fa-folder-plus" style="color:#f6c341;"></i> Folder Baru</h3>
-      <button class="btn-dv btn-dv-ghost btn-dv-icon" onclick="closeModal('modalFolder')"><i class="fas fa-times"></i></button>
+      <button class="btn-dv btn-dv-ghost btn-dv-icon" onclick="closeModal('modalFolder')" aria-label="Tutup dialog folder baru"><i class="fas fa-times" aria-hidden="true"></i></button>
     </div>
     <form method="POST" action="{{ route('drive.folder.store') }}">
       @csrf
@@ -599,7 +624,7 @@
   <div class="dv-modal dv-modal-sm">
     <div class="dv-modal-hdr">
       <h3 class="dv-modal-title" id="renameMTitle"><i class="fas fa-pen" style="color:var(--d-blue);"></i> Rename</h3>
-      <button class="btn-dv btn-dv-ghost btn-dv-icon" onclick="closeModal('modalRename')"><i class="fas fa-times"></i></button>
+      <button class="btn-dv btn-dv-ghost btn-dv-icon" onclick="closeModal('modalRename')" aria-label="Tutup dialog ubah nama"><i class="fas fa-times" aria-hidden="true"></i></button>
     </div>
     <form id="renameForm" method="POST" action="">
       @csrf @method('PATCH')
@@ -620,7 +645,7 @@
   <div class="dv-modal dv-modal-md">
     <div class="dv-modal-hdr">
       <h3 class="dv-modal-title" id="mcTitle"><i class="fas fa-folder-open" style="color:#f6c341;"></i> Pindahkan ke</h3>
-      <button class="btn-dv btn-dv-ghost btn-dv-icon" onclick="closeModal('modalMoveCopy')"><i class="fas fa-times"></i></button>
+      <button class="btn-dv btn-dv-ghost btn-dv-icon" onclick="closeModal('modalMoveCopy')" aria-label="Tutup dialog pindah atau salin"><i class="fas fa-times" aria-hidden="true"></i></button>
     </div>
     <form id="mcForm" method="POST" action="">
       @csrf @method('PATCH')
@@ -655,7 +680,7 @@
       <h3 class="dv-modal-title" id="previewTitle" style="max-width:78%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.85rem;"></h3>
       <div style="display:flex;gap:.4rem;">
         <a class="btn-dv btn-dv-secondary" id="previewDlBtn" href="#" style="font-size:.76rem;padding:.38rem .7rem;"><i class="fas fa-download"></i> Download</a>
-        <button class="btn-dv btn-dv-ghost btn-dv-icon" onclick="closeModal('modalPreview')"><i class="fas fa-times"></i></button>
+        <button class="btn-dv btn-dv-ghost btn-dv-icon" onclick="closeModal('modalPreview')" aria-label="Tutup pratinjau"><i class="fas fa-times" aria-hidden="true"></i></button>
       </div>
     </div>
     <div class="dv-preview-body" id="previewBody"></div>
@@ -667,7 +692,7 @@
   <div class="dv-modal dv-modal-md">
     <div class="dv-modal-hdr">
       <h3 class="dv-modal-title"><i class="fas fa-trash-alt" style="color:#dc2626;"></i> Sampah</h3>
-      <button class="btn-dv btn-dv-ghost btn-dv-icon" onclick="closeModal('modalTrash')"><i class="fas fa-times"></i></button>
+      <button class="btn-dv btn-dv-ghost btn-dv-icon" onclick="closeModal('modalTrash')" aria-label="Tutup dialog sampah"><i class="fas fa-times" aria-hidden="true"></i></button>
     </div>
     <div class="dv-modal-body" style="padding:0;">
       @if($trashedFiles->isEmpty())

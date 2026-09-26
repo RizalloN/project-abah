@@ -219,7 +219,7 @@
     .capture-status-modal .modal-content {
         border-radius: 24px;
         border: none;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+        box-shadow: 0 25px 50px -12px rgba(4, 42, 95, 0.2);
         overflow: hidden;
     }
 

@@ -1163,6 +1163,14 @@ class ImportIndexController extends Controller
 
                 $cleanup = $maintenance['cleanup'];
                 $message = $maintenance['final_message'];
+                if (!empty($maintenance['sync_periods'])) {
+                    $this->dispatchManagedDeleteSnapshotRefreshes(
+                        $tableName,
+                        $maintenance['sync_periods'],
+                        $source
+                    );
+                    $cleanup['queued_periods'] = $maintenance['sync_periods'];
+                }
             }
 
             $this->writeManagedDeleteAudit($tableName, $periodHint, 'managed_delete_shortcut', 'success', [
@@ -2140,21 +2148,52 @@ class ImportIndexController extends Controller
         $skipSnapshotCleanup = (bool) ($context['skip_snapshot_cleanup'] ?? false);
 
         if ($fullTableScope) {
-            $deletedSnapshots = $syncService->cleanupDerivedArtifactsAfterDelete($tableName, null, $source, $deleteId);
-            $syncService->syncAfterDeleteLightweight($tableName, null, $source, $deleteId);
+            $deletedSnapshots = [];
+            $fallbackSnapshots = [];
+            $promotedPeriods = [];
+
+            try {
+                $deletedSnapshots = $syncService->cleanupDerivedArtifactsAfterDelete($tableName, null, $source, $deleteId);
+
+                if ($tableName === 'daily_loan_dinamis') {
+                    foreach ($explicitPeriods as $period) {
+                        $periodCleanup = $syncService->cleanupDerivedArtifactsAfterDelete(
+                            $tableName,
+                            $period,
+                            $source,
+                            $deleteId
+                        );
+                        $fallbackSnapshots[$period] = $periodCleanup;
+
+                        if ((int) ($periodCleanup['lw321_fallback_inserted_rows'] ?? 0) > 0) {
+                            $promotedPeriods[] = $period;
+                        }
+                    }
+                }
+            } finally {
+                $syncService->syncAfterDeleteLightweight($tableName, null, $source, $deleteId);
+            }
+
+            $promotedPeriods = array_values(array_unique($promotedPeriods));
+            $fallbackActive = $promotedPeriods !== [];
 
             return [
                 'cleanup' => [
                     'mode' => 'snapshot_cleanup',
                     'reason' => 'full_table_delete',
                     'snapshot_tables' => $deletedSnapshots,
-                    'snapshot_periods' => [],
-                    'queued_periods' => [],
+                    'fallback_periods' => $fallbackSnapshots,
+                    'snapshot_periods' => $promotedPeriods,
+                    'queued_periods' => $promotedPeriods,
                 ],
-                'sync_periods' => [],
-                'complete_without_sync' => true,
-                'final_message' => 'Delete selesai. Tabel sumber dan snapshot pembantu yang terkait sudah dibersihkan tanpa rebuild ulang karena scope mengosongkan seluruh tabel.',
-                'sync_message' => '',
+                'sync_periods' => $promotedPeriods,
+                'complete_without_sync' => !$fallbackActive,
+                'final_message' => $fallbackActive
+                    ? 'Delete Daily Loan selesai. Raw LW321 tersedia dan dipromosikan untuk '.count($promotedPeriods).' periode; refresh snapshot dijadwalkan.'
+                    : 'Delete selesai. Tabel sumber dan snapshot pembantu yang terkait sudah dibersihkan tanpa rebuild ulang karena scope mengosongkan seluruh tabel.',
+                'sync_message' => $fallbackActive
+                    ? 'Fallback LW321 aktif. Snapshot '.count($promotedPeriods).' periode sedang dijadwalkan di queue prioritas tinggi...'
+                    : '',
             ];
         }
 

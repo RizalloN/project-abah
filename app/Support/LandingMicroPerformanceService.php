@@ -21,7 +21,7 @@ final class LandingMicroPerformanceService
 
     private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
 
-    private const CACHE_VERSION = 'v29-micro-source-identity-fallback';
+    private const CACHE_VERSION = 'v31-stop-n-go-reference';
 
     private const PERIOD_LOOKUP_INDEXES = [
         'idx_snapshot_filter_optimized',
@@ -63,24 +63,23 @@ final class LandingMicroPerformanceService
     ];
 
     /**
-     * Referensi limit Stop & Go PDWK dari workbook
-     * "PDWK MBM & KEPALA UNIT_2026 07 31.xlsx" tab Nominatif.
+     * Referensi limit Stop & Go PDWK dari workbook "STOP N GO.xlsx".
      *
      * @var array<string, array{role:string, limit:int, name:string, unit:string, branch:string}>
      */
     private const PDWK_LIMIT_REFERENCE = [
         '20496' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Indra Hananto', 'unit' => 'KC Ponorogo', 'branch' => 'KC Ponorogo'],
         '22263' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Muko Hendrasworo', 'unit' => 'KC Magetan', 'branch' => 'KC Magetan'],
-        '22271' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Dian Febriantari', 'unit' => 'KC Ngawi', 'branch' => 'KC Ngawi'],
+        '22271' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Dian Febriantari', 'unit' => 'KC Ngawi', 'branch' => 'KC Ngawi'],
         '24600' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Trimo Agung Yunianto', 'unit' => 'KC Madiun', 'branch' => 'KC Madiun'],
-        '20458' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Nur Elfiana', 'unit' => 'KC Madiun', 'branch' => 'KC Madiun'],
-        '21668' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Iwan Wahyudi', 'unit' => 'KC Ponorogo', 'branch' => 'KC Ponorogo'],
+        '20458' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Nur Elfiana', 'unit' => 'KC Madiun', 'branch' => 'KC Madiun'],
+        '21668' => ['role' => 'mbm', 'limit' => 40, 'name' => 'Iwan Wahyudi', 'unit' => 'KC Ponorogo', 'branch' => 'KC Ponorogo'],
         '22008' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Rudhi Nur Subijanto', 'unit' => 'KC Magetan', 'branch' => 'KC Magetan'],
         '22461' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Tri Handayani', 'unit' => 'KC Ngawi', 'branch' => 'KC Ngawi'],
         '22666' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Soni Sanjaya', 'unit' => 'KC Ngawi', 'branch' => 'KC Ngawi'],
         '64850' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Hendri Windianarko', 'unit' => 'KC Madiun', 'branch' => 'KC Madiun'],
-        '22781' => ['role' => 'mbm', 'limit' => 100, 'name' => 'Suprijono Edi Widodo', 'unit' => 'KC Magetan', 'branch' => 'KC Magetan'],
-        '23379' => ['role' => 'mbm', 'limit' => 100, 'name' => 'Kun Harianto', 'unit' => 'KC Ponorogo', 'branch' => 'KC Ponorogo'],
+        '61165' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Rita Auliasari', 'unit' => 'KC Magetan', 'branch' => 'KC Magetan'],
+        '23379' => ['role' => 'mbm', 'limit' => 75, 'name' => 'Kun Harianto', 'unit' => 'KC Ponorogo', 'branch' => 'KC Ponorogo'],
         '55365' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Sutini', 'unit' => 'UNIT SUKOREJO PONOROGO', 'branch' => 'KC Ponorogo'],
         '25142' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Hari Basuki', 'unit' => 'UNIT SLAHUNG PONOROGO', 'branch' => 'KC Ponorogo'],
         '235757' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Kristian Eko Laksono', 'unit' => 'UNIT SAWOO PONOROGO', 'branch' => 'KC Ponorogo'],
@@ -97,7 +96,6 @@ final class LandingMicroPerformanceService
         '117679' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Firdaus Amin Zulkarnain', 'unit' => 'UNIT JENANGAN PONOROGO', 'branch' => 'KC Ponorogo'],
         '56274' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Farida Nur Laily', 'unit' => 'UNIT JAMBON PONOROGO', 'branch' => 'KC Ponorogo'],
         '172498' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Aprilia Dwi Jayanti', 'unit' => 'UNIT DENGOK PONOROGO', 'branch' => 'KC Ponorogo'],
-        '51635' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Dian Arief Rachman', 'unit' => 'UNIT BUNGKAL PONOROGO', 'branch' => 'KC Ponorogo'],
         '55613' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Fatih Muzaqqi', 'unit' => 'UNIT BRAHU PONOROGO', 'branch' => 'KC Ponorogo'],
         '57089' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Arini Endah Wahyuningsih', 'unit' => 'UNIT BABADAN PONOROGO', 'branch' => 'KC Ponorogo'],
         '61549' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Donny Bagus Trianto', 'unit' => 'UNIT WALIKUKUN NGAWI', 'branch' => 'KC Ngawi'],
@@ -116,7 +114,6 @@ final class LandingMicroPerformanceService
         '22843' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Sri Utami', 'unit' => 'UNIT PADAS NGAWI', 'branch' => 'KC Ngawi'],
         '172501' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Roni Savrori', 'unit' => 'UNIT NGRAMBE NGAWI', 'branch' => 'KC Ngawi'],
         '57415' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Luthfi Ardhani', 'unit' => 'UNIT MANTINGAN NGAWI', 'branch' => 'KC Ngawi'],
-        '22960' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Tri Wahyu Artati', 'unit' => 'UNIT KWADUNGAN NGAWI', 'branch' => 'KC Ngawi'],
         '164999' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Metti Yuana', 'unit' => 'UNIT KERASWETAN NGAWI', 'branch' => 'KC Ngawi'],
         '199575' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Bayu Sulistyo Pamungkas Sunoto', 'unit' => 'UNIT KENDAL NGAWI', 'branch' => 'KC Ngawi'],
         '52433' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Albertus Novianto Sulistiawan', 'unit' => 'UNIT KEDUNGPRAHU NGAWI', 'branch' => 'KC Ngawi'],
@@ -131,7 +128,6 @@ final class LandingMicroPerformanceService
         '160348' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Veri Dwi Septian', 'unit' => 'UNIT SELOSARI MAGETAN', 'branch' => 'KC Magetan'],
         '64737' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Agung Margo Prayitno', 'unit' => 'UNIT REJOSARI MAGETAN', 'branch' => 'KC Magetan'],
         '22227' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Yudi Handayatno', 'unit' => 'UNIT PONCOL MAGETAN', 'branch' => 'KC Magetan'],
-        '22124' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Teguh Purwanto', 'unit' => 'UNIT PLAOSAN MAGETAN', 'branch' => 'KC Magetan'],
         '156829' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Elida Pujiadi', 'unit' => 'UNIT PARANG MAGETAN', 'branch' => 'KC Magetan'],
         '52941' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Agus Pujianto', 'unit' => 'UNIT PANEKAN MAGETAN', 'branch' => 'KC Magetan'],
         '61308' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Toni Efendi', 'unit' => 'UNIT NGARIBOYO MAGETAN', 'branch' => 'KC Magetan'],
@@ -179,7 +175,10 @@ final class LandingMicroPerformanceService
         '119095' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Pratristo Teguh Yuniar', 'unit' => 'UNIT KAUMAN PONOROGO', 'branch' => 'KC Ponorogo'],
         '209521' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Dimas Kristianto', 'unit' => 'UNIT BALONG PONOROGO', 'branch' => 'KC Ponorogo'],
         '57952' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Bisri Efendi', 'unit' => 'UNIT KARANGMOJO MAGETAN', 'branch' => 'KC Magetan'],
-        '224262' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Satriyo Nugroho', 'unit' => 'UNIT ISWAHYUDI MAGETAN', 'branch' => 'KC Magetan'],
+        '224262' => ['role' => 'ka_unit', 'limit' => 100, 'name' => 'Satriyo Nugroho', 'unit' => 'UNIT ISWAHYUDI MAGETAN', 'branch' => 'KC Magetan'],
+        '157001' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Wisnu Wicaksono', 'unit' => 'UNIT BUNGKAL PONOROGO', 'branch' => 'KC Ponorogo'],
+        '298122' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Prima Yudha Nugraha', 'unit' => 'UNIT PLAOSAN MAGETAN', 'branch' => 'KC Magetan'],
+        '22960' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Tri Wahyu Artati', 'unit' => 'UNIT KWADUNGAN NGAWI', 'branch' => 'KC Ngawi'],
         '64262' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Sunandar Eko Kriswiyanto', 'unit' => 'UNIT SARADAN MADIUN', 'branch' => 'KC Madiun'],
         '199564' => ['role' => 'ka_unit', 'limit' => 75, 'name' => 'Hana Binti Muyasaroh', 'unit' => 'UNIT NGLAMES MADIUN', 'branch' => 'KC Madiun'],
     ];
@@ -499,6 +498,8 @@ final class LandingMicroPerformanceService
         );
         $unproductiveMantri = $this->buildUnproductiveMantri($period, $branchScope, $roster);
 
+        $identityCoverage = $this->decisionIdentityCoverage($plafondRows);
+
         return [
             'meta' => [
                 'available' => true,
@@ -512,6 +513,7 @@ final class LandingMicroPerformanceService
                 'scope_label' => $branchScope['label'] ?? 'Area 6',
                 'is_area' => $branchScope === null,
                 'source' => 'Daily Loan Dinamis',
+                'identity_coverage' => $identityCoverage,
                 'generated_at' => now()->toDateTimeString(),
                 'error' => '',
             ],
@@ -1112,10 +1114,10 @@ final class LandingMicroPerformanceService
     private function buildPdwkLimitSummary(array $rows, ?array $branchScope = null): array
     {
         $statusDefinitions = [
-            'full' => ['key' => 'full', 'label' => '100% x PDWK', 'limit' => 100, 'tone' => 'green'],
-            'three_quarter' => ['key' => 'three_quarter', 'label' => '75% x PDWK', 'limit' => 75, 'tone' => 'yellow'],
-            'limited' => ['key' => 'limited', 'label' => '40% x PDWK', 'limit' => 40, 'tone' => 'orange'],
-            'stop' => ['key' => 'stop', 'label' => 'Stop', 'limit' => 0, 'tone' => 'red'],
+            'full' => ['key' => 'full', 'label' => 'Low', 'category' => 'Low', 'limit' => 100, 'limit_label' => '100% x PDWK', 'tone' => 'green'],
+            'three_quarter' => ['key' => 'three_quarter', 'label' => 'Moderate', 'category' => 'Moderate', 'limit' => 75, 'limit_label' => '75% x PDWK', 'tone' => 'yellow'],
+            'limited' => ['key' => 'limited', 'label' => 'Moderate to High', 'category' => 'Moderate to High', 'limit' => 40, 'limit_label' => '40% x PDWK', 'tone' => 'orange'],
+            'stop' => ['key' => 'stop', 'label' => 'Stop', 'category' => 'Stop', 'limit' => 0, 'limit_label' => '0% x PDWK', 'tone' => 'red'],
         ];
         $roleDefinitions = [
             'mbm' => ['key' => 'mbm', 'label' => 'MBM', 'statuses' => []],
@@ -1154,6 +1156,8 @@ final class LandingMicroPerformanceService
                 'name' => $reference['name'],
                 'unit' => $reference['unit'],
                 'branch' => $reference['branch'],
+                'category' => $roleDefinitions[$reference['role']]['statuses'][$statusKey]['category'],
+                'limit' => (int) $reference['limit'],
             ];
         }
 
@@ -1187,7 +1191,14 @@ final class LandingMicroPerformanceService
             }
 
             $status = &$roleDefinitions[$roleKey]['statuses'][$statusKey];
-            $status['people'][$pn] = ['pn' => $pn, 'name' => $name, 'unit' => $unit];
+            $status['people'][$pn] = [
+                'pn' => $pn,
+                'name' => $name,
+                'unit' => $unit,
+                'branch' => (string) $reference['branch'],
+                'category' => (string) $status['category'],
+                'limit' => $limit,
+            ];
             $status['accounts'][$account] = true;
             $status['amount'] += max(0.0, (float) ($row['amount'] ?? $row['plafon'] ?? 0.0));
             unset($status);
@@ -1230,7 +1241,7 @@ final class LandingMicroPerformanceService
             'available' => collect($roles)->contains(fn (array $role): bool => $role['available']),
             'default_role' => (string) ($defaultRole['key'] ?? 'mbm'),
             'roles' => $roles,
-            'source' => 'PDWK MBM & KEPALA UNIT_2026 07 31.xlsx',
+            'source' => 'STOP N GO.xlsx',
         ];
     }
 
@@ -1278,11 +1289,15 @@ final class LandingMicroPerformanceService
             ->mapWithKeys(fn (array $reference, string $pn): array => [$pn => (string) ($reference['role'] ?? '')])
             ->filter()
             ->all();
-        $loanRows = $this->deduplicateLoanAccounts($query->get());
+        $loanRows = $this->restoreDecisionIdentityFromSameMonth(
+            $this->deduplicateLoanAccounts($query->get()),
+            $period,
+            $periodStart
+        );
         $decisionProfiles = $this->inferDecisionProfiles($loanRows, $decisionRoles);
 
         return $loanRows
-            ->map(function ($row) use ($paymentPatterns, $decisionProfiles, $decisionReferences, $decisionRoles): object {
+            ->map(function ($row) use ($paymentPatterns, $decisionProfiles, $decisionReferences, $decisionRoles, $period): object {
                 $plafon = max(0.0, (float) ($row->plafon ?? 0.0));
                 $accountKey = $this->loanAccountKey($row);
                 $loanTypeKey = strtoupper(trim((string) ($row->ln_type ?? '')));
@@ -1291,6 +1306,7 @@ final class LandingMicroPerformanceService
                     $rawDecisionPn = trim((string) ($row->pn_pemutus1 ?? ''));
                 }
                 $decisionPn = $this->normalisePn($rawDecisionPn);
+                $hasDecisionIdentity = $decisionPn !== '';
                 $decision = $this->resolveDecisionRole(
                     $accountKey,
                     $decisionPn,
@@ -1327,6 +1343,9 @@ final class LandingMicroPerformanceService
                     'decision_expected_role' => $decision['expected_role'],
                     'decision_is_override' => $decision['is_override'],
                     'decision_override_note' => $decision['note'],
+                    'decision_identity_available' => $hasDecisionIdentity,
+                    'decision_identity_source' => (string) ($row->decision_identity_source ?? ($hasDecisionIdentity ? 'current_period' : 'unresolved')),
+                    'decision_identity_period' => $row->decision_identity_period ?? ($hasDecisionIdentity ? $period : null),
                     'manager_pn' => $this->normalisePn((string) ($row->pn_pengelola1 ?? '')),
                     'manager_raw' => trim((string) ($row->pn_pengelola1 ?? '')),
                 ];
@@ -1334,6 +1353,139 @@ final class LandingMicroPerformanceService
             ->filter(fn (object $row): bool => $row->account_key !== '' && $row->amount > 0.0)
             ->values()
             ->all();
+    }
+
+    /**
+     * Memulihkan identitas pemutus yang kosong hanya dari nomor rekening yang
+     * persis sama pada posisi Daily Loan sebelumnya di bulan berjalan.
+     * Seluruh nilai transaksi tetap berasal dari baris posisi berjalan.
+     *
+     * @param  Collection<int, object>  $currentRows
+     * @return Collection<int, object>
+     */
+    private function restoreDecisionIdentityFromSameMonth(
+        Collection $currentRows,
+        string $period,
+        string $periodStart
+    ): Collection {
+        $missingAccounts = $currentRows
+            ->filter(function (object $row): bool {
+                $rawPn = trim((string) ($row->pn_pemutus_normalized ?? ''));
+                if ($rawPn === '') {
+                    $rawPn = trim((string) ($row->pn_pemutus1 ?? ''));
+                }
+
+                return $this->normalisePn($rawPn) === ''
+                    && trim((string) ($row->nomor_rekening1 ?? '')) !== '';
+            })
+            ->pluck('nomor_rekening1')
+            ->map(static fn ($account): string => (string) $account)
+            ->uniqueStrict()
+            ->values();
+
+        $historyTableSql = $this->indexHintResolver->qualify(
+            self::SOURCE_TABLE,
+            null,
+            ['idx_loan_periode_rek']
+        );
+        $priorPeriods = $missingAccounts->isEmpty()
+            ? []
+            : DB::table(DB::raw($historyTableSql))
+                ->where('periode', '>=', $periodStart)
+                ->where('periode', '<', $period)
+                ->select('periode')
+                ->distinct()
+                ->orderByDesc('periode')
+                ->pluck('periode')
+                ->map(static fn ($value): string => (string) $value)
+                ->values()
+                ->all();
+
+        $historyByAccount = [];
+        foreach ($missingAccounts->chunk(800) as $accountChunk) {
+            $historyRows = DB::table(DB::raw($historyTableSql))
+                ->whereIn('periode', $priorPeriods)
+                ->whereIn('nomor_rekening1', $accountChunk->all())
+                ->select(array_values(array_filter([
+                    'periode', 'nomor_rekening1', 'pn_pemutus1',
+                    $this->hasColumn(self::SOURCE_TABLE, 'pn_pemutus_normalized') ? 'pn_pemutus_normalized' : null,
+                ])))
+                ->orderByDesc('periode');
+            $this->applyDailyMicroFilter($historyRows);
+
+            foreach ($historyRows->get() as $historyRow) {
+                $account = (string) ($historyRow->nomor_rekening1 ?? '');
+                if ($account === '' || isset($historyByAccount[$account])) {
+                    continue;
+                }
+
+                $rawPn = trim((string) ($historyRow->pn_pemutus_normalized ?? ''));
+                if ($rawPn === '') {
+                    $rawPn = trim((string) ($historyRow->pn_pemutus1 ?? ''));
+                }
+                if ($this->normalisePn($rawPn) === '') {
+                    continue;
+                }
+
+                $historyByAccount[$account] = $historyRow;
+            }
+        }
+
+        return $currentRows->map(function (object $row) use ($historyByAccount, $period): object {
+            $rawPn = trim((string) ($row->pn_pemutus_normalized ?? ''));
+            if ($rawPn === '') {
+                $rawPn = trim((string) ($row->pn_pemutus1 ?? ''));
+            }
+            if ($this->normalisePn($rawPn) !== '') {
+                $row->decision_identity_source = 'current_period';
+                $row->decision_identity_period = $period;
+
+                return $row;
+            }
+
+            $account = (string) ($row->nomor_rekening1 ?? '');
+            $historyRow = $account !== '' ? ($historyByAccount[$account] ?? null) : null;
+            if ($historyRow === null) {
+                $row->decision_identity_source = 'unresolved';
+                $row->decision_identity_period = null;
+
+                return $row;
+            }
+
+            $row->pn_pemutus1 = (string) ($historyRow->pn_pemutus1 ?? '');
+            if (property_exists($historyRow, 'pn_pemutus_normalized')) {
+                $row->pn_pemutus_normalized = (string) ($historyRow->pn_pemutus_normalized ?? '');
+            }
+            $row->decision_identity_source = 'same_month_exact_account';
+            $row->decision_identity_period = (string) ($historyRow->periode ?? '');
+
+            return $row;
+        });
+    }
+
+    /**
+     * @param  array<int, object|array<string, mixed>>  $rows
+     * @return array<string, int|float|bool|string>
+     */
+    private function decisionIdentityCoverage(array $rows): array
+    {
+        $collection = collect($rows);
+        $total = $collection->count();
+        $current = $collection->where('decision_identity_source', 'current_period')->count();
+        $recovered = $collection->where('decision_identity_source', 'same_month_exact_account')->count();
+        $covered = $current + $recovered;
+        $unresolved = max(0, $total - $covered);
+
+        return [
+            'total_accounts' => $total,
+            'covered_accounts' => $covered,
+            'current_period_accounts' => $current,
+            'recovered_accounts' => $recovered,
+            'unresolved_accounts' => $unresolved,
+            'coverage_percent' => $total > 0 ? ($covered / $total) * 100 : 0.0,
+            'complete' => $total > 0 && $unresolved === 0,
+            'fallback_source' => 'Daily Loan Dinamis - rekening sama, posisi sebelumnya dalam bulan yang sama',
+        ];
     }
 
     /**
@@ -3304,6 +3456,16 @@ final class LandingMicroPerformanceService
                 'scope_label' => $branchScope['label'] ?? 'Area 6',
                 'is_area' => $branchScope === null,
                 'source' => 'Daily Loan Dinamis',
+                'identity_coverage' => [
+                    'total_accounts' => 0,
+                    'covered_accounts' => 0,
+                    'current_period_accounts' => 0,
+                    'recovered_accounts' => 0,
+                    'unresolved_accounts' => 0,
+                    'coverage_percent' => 0.0,
+                    'complete' => false,
+                    'fallback_source' => 'Daily Loan Dinamis - rekening sama, posisi sebelumnya dalam bulan yang sama',
+                ],
                 'generated_at' => null,
                 'error' => 'Data Daily Loan Dinamis belum tersedia.',
             ],
@@ -3342,7 +3504,7 @@ final class LandingMicroPerformanceService
                 'available' => false,
                 'default_role' => 'mbm',
                 'roles' => [],
-                'source' => 'PDWK MBM dan Kaunit.xlsx',
+                'source' => 'STOP N GO.xlsx',
             ],
             'decision_ranking' => [
                 'available' => false,

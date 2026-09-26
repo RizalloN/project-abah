@@ -2,13 +2,35 @@
 
 - Before adding or changing MySQL indexes, inspect existing indexes for exact duplicates and left-prefix coverage. Do not add redundant indexes, especially on large `project_abah` tables such as `simpanan_multipn`, because the database has already been optimized and duplicate indexes significantly inflate storage and import cost.
 
-## Repository Knowledge Graph
+## Repository Knowledge Graph & Core Architecture Memory
 
-- Start repository-wide investigation at `PROJECT_MAP.md` and `docs/knowledge-graph/README.md` instead of loading broad source trees into context.
-- Before relying on generated relationships, run `php artisan knowledge:graph --check`. Rebuild stale output with `php artisan knowledge:graph --build`.
-- Query the smallest useful neighborhood with `php artisan knowledge:graph <symbol|path|route|view|table|command> --depth=1 --limit=60`. Increase depth only when the first neighborhood does not expose the required flow.
-- Use `--domain=<name>` to constrain ambiguous terms. Domain summaries live under `docs/knowledge-graph/domains/`.
-- The graph is navigation evidence. Validate business rules, SQL semantics, runtime data, and rendered UI against current source and tests before changing behavior.
+- **Navigasi Utama**: Mulai investigasi di `PROJECT_MAP.md` dan `docs/knowledge-graph/README.md`.
+  - Cek integritas graf: `php artisan knowledge:graph --check`. Rebuild jika stale: `php artisan knowledge:graph --build`.
+  - Query lingkungan terkecil: `php artisan knowledge:graph <symbol|path|route|view|table|command> --depth=1 --limit=60`.
+  - Gunakan `--domain=<name>` untuk membatasi ruang lingkup (19 domain terdaftar di `docs/knowledge-graph/domains/`).
+  - Graph adalah bukti navigasi; selalu validasi ke kode sumber, schema database, dan pengujian sebelum mengubah logika.
+- **Domain Invariants & Mental Model**:
+  1. **`import`** (`ImportExcelController`, `ImportFileController`, `MySqlBulkLoadService`, `ReportDataSyncService`):
+     - Pipeline: Upload -> Preview -> Direct SQL / Staged CSV Bulk Load -> Downstream Materialization -> Trigger Snapshots.
+     - Header Mapping: Wajib melewati `SmartContentHeaderGuardService` dan alias mapping pada strategi import (`Lw321PnImportStrategy`, dll.). Header core banking (`CBAL_Base`, `ORGAMT_Base`, `KOLEK_*`, `PN_REFERAL`) harus terpetakan ke skema database (`balance_dalam_idr`, `plafon_dalam_idr`, dsb.).
+  2. **`dashboard-pinjaman`** (`daily_loan_dinamis`, `DashboardPinjamanReportController`, `KinerjaRmReportController`, `lw325_ph`):
+     - `daily_loan_dinamis` adalah tabel transaksi harian pinjaman utama (~16M+ baris, grain: `periode` + `nomor_rekening1`).
+     - Matrix Pergeseran Kolek (`matrix-pergeseran-kolek`): Nilai sel pergeseran dihitung dari saldo periode pembanding (`prev.balance_cents` / `pivot_previous_balance`) untuk sel transisi, dan saldo berjalan (`curr.balance_cents` / `baki_debet1`) untuk New Account. Drilldown modal nominatif WAJIB menyediakan kedua saldo (`pivot_previous_balance` dan `baki_debet1`).
+     - Sub-fitur analitik: `kredit` (eksposur/kualitas), `chart-periodik` (tren snapshot), `analisa-ug-npl` (downgrade), `mismatch` (kolek vs umur tunggakan), `tunggakan-kecil`, `realisasi-6-bulan-menunggak`, `data-ph` (recovery).
+  3. **`dashboard-simpanan`** (`DashboardSimpananController`, `simpanan_multipn`, `ssa_simpanan`):
+     - `simpanan_multipn` adalah tabel raksasa teroptimasi. Indeks baru harus dicek left-prefix redundancy agar tidak membengkakkan storage.
+     - Mengelola CASA ratio, rekening dormant, dan adopsi digital (QRIS, EDC, BRIMo, BRILink, Qlola).
+  4. **`jobs-snapshots`** (`ReportSnapshotBuilder`, `performance_rm_snapshots`, `SnapshotDirtyPeriodService`):
+     - Pipeline snapshot asinkron via antrean `snapshots-parallel`.
+     - Rebuild menggunakan deteksi `snapshot_dirty_periods` dan `snapshot_source_signatures` untuk meminimalkan re-komputasi.
+  5. **`dashboard-harian`** (`DashboardHarianSnapshotService`, `dashboard_harian_snapshots`):
+     - Menggabungkan data pinjaman, simpanan, target RKA, dan recovery secara periodik harian.
+  6. **`core` & `access-control`**:
+     - Registry laporan terpusat di `nama_report`, anggaran di `rka`, unit kerja di `referensi_uker`.
+     - Scoping akses data bertingkat (Kanwil, Kanca, Unit) wajib dipatuhi di setiap query analitik.
+  7. **Performa SQL**:
+     - Selalu tulis query yang SARGable (`where periode = ?`), manfaatkan covering index, hindari N+1 query.
+     - Panggil `$this->releaseSessionLockIfNeeded()` di controller analitik berat agar sesi PHP tidak memblokir antrean request AJAX.
 
 ## Safety Rules & Rollback Prevention
 
@@ -59,6 +81,13 @@ Selalu jawab dengan:
 - Jangan menyentuh logic lain hanya karena terlihat bisa diperbaiki.
 - Jangan mengubah dependency, config, migration, atau struktur folder tanpa instruksi eksplisit.
 - Jangan membuat perubahan spekulatif.
+# Adaptive Multi-Agent Collaboration Protocol (Audit, Planning, Writing, Testing, Design)
+
+- **Delegasi Adaptif**: Lead AI menilai kompleksitas, risiko, independensi pekerjaan, dan relevansi role sebelum menentukan tingkat orkestrasi **L0-L5**. Lead boleh bekerja tanpa subagent (L0) atau melibatkan satu hingga seluruh lima role (L1-L5); level menunjukkan kebutuhan orkestrasi, bukan kewajiban menyalakan role yang tidak relevan.
+- Pilih hanya role yang relevan (`planning_agent`, `design_agent`, `writing_agent`, `testing_agent`, `audit_agent`). Subagent tidak wajib berjalan simultan dan dapat ditambah atau dikurangi ketika temuan baru mengubah risiko atau scope.
+- Validasi nyata tetap wajib dan dilakukan oleh Lead atau `testing_agent`. Instruksi eksplisit user dan skill yang berlaku memiliki prioritas dalam pemilihan/delegasi agent.
+- Aturan larangan destructive Git dan perlindungan perubahan lokal tetap berlaku untuk Lead maupun seluruh subagent.
+- Referensi lengkap konfigurasi dan alur: `.agents/rules/multi-agent-orchestration.md`.
 
 # Rules for Gemini 3.6
 - Selalu lakukan analisis kode multi-file sebelum menjawab.
@@ -71,4 +100,3 @@ Selalu jawab dengan:
   - Jalankan: `python scripts/markitdown_token_optimizer.py <path_file>` atau `php artisan doc:markdown <path_file>`
   - Untuk langsung salin ke clipboard Windows pengguna: tambahkan flag `-c` atau `--clipboard`
   - Gunakan teks Markdown bersih hasil konversi sebagai satu-satunya bahan pembacaan konteks dokumen oleh AI.
-

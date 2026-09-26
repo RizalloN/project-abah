@@ -20,16 +20,16 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | --- | ---: | --- |
 | `layouts.admin` | view | 65 | `resources/views/layouts/admin.blade.php:1` |
 | `layouts.sidebar` | view | 53 | `resources/views/layouts/sidebar.blade.php:1` |
-| `get` | method | 22 | `app/Support/ReportCacheVersion.php:9` |
+| `get` | method | 23 | `app/Support/ReportCacheVersion.php:9` |
 | `bump` | method | 19 | `app/Support/ReportCacheVersion.php:31` |
 | `composite` | method | 19 | `app/Support/ReportCacheVersion.php:17` |
-| `AppServiceProvider` | class | 16 | `app/Providers/AppServiceProvider.php:25` |
-| `boot` | method | 10 | `app/Providers/AppServiceProvider.php:68` |
+| `AppServiceProvider` | class | 16 | `app/Providers/AppServiceProvider.php:26` |
+| `boot` | method | 10 | `app/Providers/AppServiceProvider.php:69` |
 | `handle` | method | 9 | `app/Http/Middleware/MonitorRequestPerformance.php:15` |
 | `CacheMaintenanceService` | class | 8 | `app/Services/CacheMaintenanceService.php:9` |
 | `PartitionMaintenanceService` | class | 8 | `app/Support/PartitionMaintenanceService.php:8` |
 | `WarmDashboardCache` | class | 8 | `app/Console/Commands/WarmDashboardCache.php:14` |
-| `securityRateLimitKey` | method | 8 | `app/Providers/AppServiceProvider.php:142` |
+| `securityRateLimitKey` | method | 8 | `app/Providers/AppServiceProvider.php:143` |
 | `ReportCacheVersion` | class | 7 | `app/Support/ReportCacheVersion.php:7` |
 | `handle` | method | 7 | `app/Console/Commands/WarmDashboardCache.php:33` |
 | `maintain` | method | 7 | `app/Services/CacheMaintenanceService.php:16` |
@@ -39,13 +39,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `cache` | table | 6 | - |
 | `pruneOrphanedDbSessions` | method | 6 | `app/Services/CacheMaintenanceService.php:135` |
 | `refreshSourceCache` | method | 6 | `app/Services/Reports/SppgReportService.php:103` |
-| `registerCustomQueueExtensions` | method | 6 | `app/Providers/AppServiceProvider.php:313` |
-| `registerQueueWorkerAutoEnsure` | method | 6 | `app/Providers/AppServiceProvider.php:151` |
-| `registerSecurityRateLimiters` | method | 6 | `app/Providers/AppServiceProvider.php:129` |
+| `registerCustomQueueExtensions` | method | 6 | `app/Providers/AppServiceProvider.php:318` |
+| `registerQueueWorkerAutoEnsure` | method | 6 | `app/Providers/AppServiceProvider.php:152` |
+| `registerSecurityRateLimiters` | method | 6 | `app/Providers/AppServiceProvider.php:130` |
 | `supportsPartitionDdl` | method | 6 | `app/Support/PartitionMaintenanceService.php:10` |
 | `components.guest.layout` | view | 5 | - |
 | `handle` | method | 5 | `app/Console/Commands/MaintainApplicationCacheCommand.php:14` |
-| `invalidateReportCaches` | method | 5 | `app/Support/ReportDataSyncService.php:1477` |
+| `invalidateReportCaches` | method | 5 | `app/Support/ReportDataSyncService.php:1523` |
 | `key` | method | 5 | `app/Support/ReportCacheVersion.php:40` |
 | `maintain` | method | 5 | `app/Services/LogMaintenanceService.php:17` |
 
@@ -87,7 +87,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | platform -> core (calls) | 26 |
 | core -> platform (calls) | 18 |
-| dashboard-pinjaman -> platform (calls) | 14 |
+| dashboard-pinjaman -> platform (calls) | 15 |
 | core -> platform (extends_view) | 14 |
 | dashboard-pinjaman -> platform (extends_view) | 14 |
 | platform -> dashboard-pinjaman (references_route) | 13 |

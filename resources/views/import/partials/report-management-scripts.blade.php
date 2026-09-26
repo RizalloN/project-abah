@@ -520,8 +520,8 @@
             buttons.push(`
                 <div class="report-management-page-jump ml-3 d-inline-flex align-items-center">
                     <span class="mr-2 text-muted" style="font-size: 0.75rem; font-weight: 700;">Loncat ke:</span>
-                    <input type="number" min="1"${jumpMaxAttr} class="form-control form-control-sm text-center report-management-jump-input" style="width: 64px; height: 32px; border-radius: 6px; padding: 0.2rem;" value="${jumpInputValue}" title="${jumpHint}" aria-label="Nomor halaman (${jumpHint})">
-                    <button type="button" class="btn btn-sm btn-primary ml-1 report-management-jump-btn" style="height: 32px; border-radius: 6px; padding: 0 0.6rem;"><i class="fas fa-share"></i> Go</button>
+                    <input type="number" min="1"${jumpMaxAttr} class="form-control form-control-sm text-center report-management-jump-input" style="width: 64px; border-radius: 6px; padding: 0.2rem;" value="${jumpInputValue}" title="${jumpHint}" aria-label="Nomor halaman (${jumpHint})">
+                    <button type="button" class="btn btn-sm btn-primary ml-1 report-management-jump-btn" style="border-radius: 6px; padding: 0 0.6rem;"><i class="fas fa-share"></i> Go</button>
                 </div>
             `);
 

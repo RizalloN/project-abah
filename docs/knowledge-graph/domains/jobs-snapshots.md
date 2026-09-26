@@ -7,13 +7,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 18 |
-| file | 80 |
+| file | 81 |
 | function | 2 |
-| method | 613 |
+| method | 621 |
 | unresolved_symbol | 17 |
 | queue | 5 |
 | route | 1 |
-| class | 76 |
+| class | 77 |
 | trait | 1 |
 | table | 11 |
 
@@ -21,15 +21,15 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `ReportSnapshotBuilder` | class | 144 | `app/Support/ReportSnapshotBuilder.php:12` |
-| `performance_rm_snapshots` | table | 85 | - |
-| `jobs` | table | 84 | - |
+| `ReportSnapshotBuilder` | class | 145 | `app/Support/ReportSnapshotBuilder.php:12` |
+| `jobs` | table | 88 | - |
+| `performance_rm_snapshots` | table | 87 | - |
+| `PerformanceRmIncrementalSnapshotTest` | class | 39 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:16` |
 | `ManagedReportSnapshotRebuildCoordinator` | class | 38 | `app/Support/ManagedReportSnapshotRebuildCoordinator.php:15` |
-| `PerformanceRmIncrementalSnapshotTest` | class | 38 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:16` |
 | `SnapshotBatchAggregator` | class | 34 | `app/Support/SnapshotBatchAggregator.php:11` |
 | `snapshots-parallel` | queue | 34 | - |
-| `insertDailyLoanRow` | method | 32 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:987` |
-| `EnsureQueueWorkerRunning` | class | 31 | `app/Console/Commands/EnsureQueueWorkerRunning.php:15` |
+| `insertDailyLoanRow` | method | 33 | `tests/Unit/PerformanceRmIncrementalSnapshotTest.php:1040` |
+| `EnsureQueueWorkerRunning` | class | 31 | `app/Console/Commands/EnsureQueueWorkerRunning.php:16` |
 | `capture` | method | 31 | `app/Support/SnapshotSourceSignatureService.php:61` |
 | `ValidateSnapshotDataIntegrityCommand` | class | 27 | `app/Console/Commands/ValidateSnapshotDataIntegrityCommand.php:13` |
 | `SnapshotDirtyPeriodService` | class | 26 | `app/Support/SnapshotDirtyPeriodService.php:11` |
@@ -85,6 +85,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ProcessShadowBackfillJob` - `app/Jobs/ProcessShadowBackfillJob.php`
 - `ProcessShadowBackfillJobTest` - `tests/Unit/ProcessShadowBackfillJobTest.php`
 - `ProcessSnapshotDirtyPeriodJob` - `app/Jobs/ProcessSnapshotDirtyPeriodJob.php`
+- `QueueWorkerControlServiceTest` - `tests/Unit/QueueWorkerControlServiceTest.php`
 - `QueueWorkerPoolTest` - `tests/Unit/QueueWorkerPoolTest.php`
 - `QueueWorkerSelfHealingTest` - `tests/Unit/QueueWorkerSelfHealingTest.php`
 - `RebuildChartPeriodikPeriodJob` - `app/Jobs/RebuildChartPeriodikPeriodJob.php`
@@ -186,33 +187,33 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| jobs-snapshots -> core (calls) | 146 |
+| jobs-snapshots -> core (calls) | 154 |
 | import -> jobs-snapshots (calls) | 81 |
 | dashboard-pinjaman -> jobs-snapshots (writes_table) | 35 |
 | jobs-snapshots -> core (uses_trait) | 32 |
 | jobs-snapshots -> core (instantiates) | 30 |
 | tests -> jobs-snapshots (contains) | 29 |
 | jobs-snapshots -> dashboard-pinjaman (reads_table) | 27 |
-| jobs-snapshots -> tests (calls) | 24 |
+| jobs-snapshots -> tests (calls) | 26 |
 | dashboard-simpanan -> jobs-snapshots (uses_trait) | 24 |
+| import -> jobs-snapshots (reads_table) | 23 |
+| jobs-snapshots -> dashboard-pinjaman (writes_table) | 22 |
+| jobs-snapshots -> import (instantiates) | 22 |
 | jobs-snapshots -> core (accepts) | 21 |
-| jobs-snapshots -> dashboard-pinjaman (writes_table) | 21 |
-| import -> jobs-snapshots (reads_table) | 21 |
 | import -> jobs-snapshots (instantiates) | 21 |
-| jobs-snapshots -> import (instantiates) | 20 |
+| jobs-snapshots -> tests (extends) | 19 |
 | dashboard-pinjaman -> jobs-snapshots (calls) | 18 |
-| jobs-snapshots -> tests (extends) | 18 |
+| import -> jobs-snapshots (writes_table) | 18 |
 | jobs-snapshots -> core (extends) | 17 |
 | import -> jobs-snapshots (uses_trait) | 17 |
 | jobs-snapshots -> import (contains) | 17 |
-| import -> jobs-snapshots (writes_table) | 16 |
 | database -> jobs-snapshots (checks_table) | 14 |
 | jobs-snapshots -> dashboard-simpanan (reads_table) | 13 |
 | database -> jobs-snapshots (defines_table) | 12 |
 | import -> jobs-snapshots (checks_table) | 11 |
 | import -> jobs-snapshots (accepts) | 11 |
+| tests -> jobs-snapshots (calls) | 11 |
 | dashboard-pinjaman -> jobs-snapshots (uses_trait) | 11 |
 | core -> jobs-snapshots (calls) | 10 |
 | jobs-snapshots -> presentation (calls) | 10 |
 | jobs-snapshots -> dashboard-simpanan (writes_table) | 10 |
-| tests -> jobs-snapshots (calls) | 10 |

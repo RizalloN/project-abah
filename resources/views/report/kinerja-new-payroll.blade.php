@@ -230,7 +230,7 @@
         color: var(--table-header-text) !important; 
         border-bottom: 2px solid rgba(0,0,0,0.1) !important;
         position: sticky;
-        top: 41px;
+        top: var(--abah-table-head-top, 41px);
         z-index: 9;
     }
     

@@ -2,19 +2,19 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
     <meta http-equiv="refresh" content="30">
     <title>A-Six Dashboard Maintenance</title>
     <style>
         :root {
             color-scheme: light;
             --blue: #0f52ba;
-            --blue-dark: #083b88;
-            --cyan: #19b7e8;
-            --ink: #0f172a;
-            --muted: #64748b;
+            --blue-dark: #053b82;
+            --cyan: #71c5e8;
+            --ink: #082b59;
+            --muted: #52647d;
             --panel: #ffffff;
-            --line: #dbeafe;
+            --line: #d6e6fb;
         }
 
         * {
@@ -26,10 +26,15 @@
             min-height: 100vh;
             display: grid;
             place-items: center;
-            padding: 24px;
+            padding:
+                max(24px, env(safe-area-inset-top, 0px))
+                max(24px, env(safe-area-inset-right, 0px))
+                max(24px, env(safe-area-inset-bottom, 0px))
+                max(24px, env(safe-area-inset-left, 0px));
             background:
-                linear-gradient(135deg, rgba(15, 82, 186, 0.16), rgba(25, 183, 232, 0.08)),
-                #f3f8ff;
+                radial-gradient(circle at 8% 12%, rgba(48, 127, 226, 0.16), transparent 30%),
+                radial-gradient(circle at 92% 90%, rgba(113, 197, 232, 0.15), transparent 28%),
+                #f4f8ff;
             color: var(--ink);
             font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
         }
@@ -38,14 +43,14 @@
             width: min(100%, 720px);
             overflow: hidden;
             border: 1px solid var(--line);
-            border-radius: 22px;
+            border-radius: 16px;
             background: var(--panel);
-            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.14);
+            box-shadow: 0 28px 76px -38px rgba(5, 59, 130, 0.42);
         }
 
         .maintenance-header {
             padding: 28px 32px;
-            background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+            background: linear-gradient(135deg, var(--blue-dark), var(--blue) 68%, #307fe2);
             color: #fff;
         }
 
@@ -62,6 +67,8 @@
             margin: 0;
             font-size: clamp(2rem, 4vw, 3rem);
             line-height: 1.08;
+            letter-spacing: -0.035em;
+            overflow-wrap: anywhere;
         }
 
         .maintenance-body {
@@ -87,7 +94,7 @@
             border: 1px solid var(--line);
             border-radius: 16px;
             padding: 14px;
-            background: #f8fbff;
+            background: #f7faff;
         }
 
         .label {
@@ -136,6 +143,32 @@
 
             .status-row {
                 grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 320px) {
+            body {
+                padding: 10px;
+            }
+
+            .maintenance-card {
+                border-radius: 16px;
+            }
+
+            .maintenance-header,
+            .maintenance-body {
+                padding: 20px 16px;
+            }
+
+            h1 {
+                font-size: 1.8rem;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .progress span {
+                width: 100%;
+                animation: none;
             }
         }
     </style>

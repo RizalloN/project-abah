@@ -18,6 +18,7 @@ class ManagedReportManagementService
     private const LW325_BLANK_CREATED_AT_FALLBACK_MODE = 'lw325_blank_created_at';
 
     private const SCOPE_COLUMN_CACHE_TTL = 86400;
+    private const SCOPE_COLUMN_RESOLVER_VERSION = 'v3';
     private const AGGREGATE_CACHE_TTL = 120;
     private const ESTIMATE_ROWS_CACHE_TTL = 300;
 
@@ -172,6 +173,10 @@ class ManagedReportManagementService
             'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
         ],
         'brimo_fin' => [
+            'period_priority' => ['posisi', 'periode'],
+            'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
+        ],
+        'brimo_fin_all' => [
             'period_priority' => ['posisi', 'periode'],
             'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
         ],
@@ -371,7 +376,7 @@ class ManagedReportManagementService
     public function resolveManagementScopeColumns(string $tableName, array $tableColumns): array
     {
         $schemaSignature = md5(implode('|', $tableColumns));
-        $cacheKey = 'report_management:scope_cols:' . $tableName . ':' . $schemaSignature;
+        $cacheKey = 'report_management:scope_cols:' . self::SCOPE_COLUMN_RESOLVER_VERSION . ':' . $tableName . ':' . $schemaSignature;
 
         $resolved = $this->rememberCached($tableName, $cacheKey, self::SCOPE_COLUMN_CACHE_TTL, function () use ($tableName, $tableColumns) {
             return $this->computeManagementScopeColumns($tableName, $tableColumns);
@@ -390,7 +395,7 @@ class ManagedReportManagementService
         if (is_array($override)) {
             $priorityPeriod = $this->resolveCandidateColumns($tableColumns, (array) ($override['period_priority'] ?? []));
             if ($priorityPeriod !== []) {
-                $periodColumn = $this->resolveMostPopulatedColumn($tableName, $priorityPeriod);
+                $periodColumn = $priorityPeriod[0];
             }
 
             if (!$noKanca) {

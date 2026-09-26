@@ -288,4 +288,36 @@ class KpiPersonnelReferenceSyncServiceTest extends TestCase
         $this->assertDatabaseMissing('brihc_pemasar', ['pernr' => '2']);
         $this->assertDatabaseMissing('brihc', ['pn' => '2']);
     }
+
+    public function test_kpi_rm_syncs_cannot_override_authoritative_update_hc_roles(): void
+    {
+        $now = now()->toDateTimeString();
+        DB::table('brihc_pemasar')->insert([
+            ['uniqueid_namareport' => 'reference_brihc_hc_rm_bisnis_kecil_10', 'pernr' => '10', 'completename' => 'SME Acuan', 'positiondesc' => 'RM BISNIS KECIL', 'psadesc' => 'KC Madiun', 'created_at' => $now, 'updated_at' => $now],
+            ['uniqueid_namareport' => 'reference_brihc_hc_rm_mikro_20', 'pernr' => '20', 'completename' => 'Mikro Acuan', 'positiondesc' => 'RM MIKRO', 'psadesc' => 'KC Magetan', 'created_at' => $now, 'updated_at' => $now],
+            ['uniqueid_namareport' => 'reference_brihc_hc_rm_bisnis_konsumer_kpr_30', 'pernr' => '30', 'completename' => 'KPR Acuan', 'positiondesc' => 'RM BISNIS KONSUMER - KPR', 'psadesc' => 'KC Ngawi', 'created_at' => $now, 'updated_at' => $now],
+        ]);
+
+        $service = app(KpiPersonnelReferenceSyncService::class);
+        $sme = $service->sync('rm-sme', [
+            'header' => ['BO', 'Uker', 'JG'],
+            'rows' => [['KC Madiun', '00010 - Nama KPI SME', 'JG07']],
+        ]);
+        $micro = $service->sync('rm-mikro', [
+            'header' => ['Nama', 'BC Uker', 'Uker', 'JG'],
+            'rows' => [['00020 - Nama KPI Mikro', 'KC Magetan', 'KC Magetan', 'JG06']],
+        ]);
+        $consumer = $service->sync('consumer', [
+            'header' => ['PN PENGELOLA SINGLEPN', 'KANCA', 'SEGMEN'],
+            'rows' => [['00030 - Nama KPI KPR', 'KC Ngawi', 'KPR']],
+        ]);
+
+        $this->assertTrue($sme['skipped']);
+        $this->assertTrue($micro['skipped']);
+        $this->assertTrue($consumer['skipped']);
+        $this->assertDatabaseHas('brihc_pemasar', ['pernr' => '10', 'completename' => 'SME Acuan']);
+        $this->assertDatabaseHas('brihc_pemasar', ['pernr' => '20', 'completename' => 'Mikro Acuan']);
+        $this->assertDatabaseHas('brihc_pemasar', ['pernr' => '30', 'completename' => 'KPR Acuan']);
+        $this->assertSame(3, DB::table('brihc_pemasar')->count());
+    }
 }

@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Jobs\RunManagedReportDeleteJob;
+use App\Jobs\SyncImportedReportJob;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ManagedReportDeleteRecoveryService;
 use App\Support\ReportDataSyncService;
@@ -1109,6 +1110,73 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame(1, DB::table('lw325_ph')->count());
         $this->assertSame(1, DB::table('lw325_ph')->where('kanca', 'KC Ponorogo')->count());
         Queue::assertNothingPushed();
+    }
+
+    public function test_full_table_shortcut_reactivates_lw_fallback_for_the_selected_period(): void
+    {
+        DB::table('nama_report')->insert([
+            'id_report' => 9,
+            'nama_report' => 'Daily Loan Dinamis Full Guard',
+            'table_name' => 'daily_loan_dinamis',
+            'active' => 1,
+        ]);
+        DB::table('daily_loan_dinamis')->insert([
+            'uniqueid_namareport' => 'DAILY:CURRENT',
+            'periode' => '2026-04-30',
+            'cabang1' => 'KC Madiun',
+            'payload' => 'daily-row',
+        ]);
+
+        $syncService = \Mockery::mock(ReportDataSyncService::class);
+        $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')
+            ->once()
+            ->with('daily_loan_dinamis')
+            ->andReturn('snapshot');
+        $syncService->shouldReceive('cleanupDerivedArtifactsAfterDelete')
+            ->once()
+            ->with('daily_loan_dinamis', null, \Mockery::type('string'), null)
+            ->andReturn([]);
+        $syncService->shouldReceive('cleanupDerivedArtifactsAfterDelete')
+            ->once()
+            ->with('daily_loan_dinamis', '2026-04-30', \Mockery::type('string'), null)
+            ->andReturnUsing(function (): array {
+                DB::table('daily_loan_dinamis')->insert([
+                    'uniqueid_namareport' => 'LW321PN:MATERIALIZED',
+                    'periode' => '2026-04-30',
+                    'cabang1' => 'KC Madiun',
+                    'payload' => 'lw-row',
+                ]);
+
+                return ['lw321_fallback_inserted_rows' => 1];
+            });
+        $syncService->shouldReceive('syncAfterDeleteLightweight')
+            ->once()
+            ->with('daily_loan_dinamis', null, \Mockery::type('string'), null);
+        $this->app->instance(ReportDataSyncService::class, $syncService);
+
+        $response = app(ImportIndexController::class)->deleteManagedReportRows(Request::create(
+            '/import/report-management/delete',
+            'POST',
+            [
+                'id_report' => 9,
+                'scopes' => [['period' => '2026-04-30', 'kanca' => 'KC Madiun']],
+                'force' => true,
+                'hard_force' => true,
+            ]
+        ));
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->status());
+        $this->assertSame('completed', $payload['status']);
+        $this->assertStringContainsString('LW321', $payload['message']);
+        $this->assertDatabaseHas('daily_loan_dinamis', [
+            'uniqueid_namareport' => 'LW321PN:MATERIALIZED',
+            'periode' => '2026-04-30',
+        ]);
+        Queue::assertPushed(SyncImportedReportJob::class, function (SyncImportedReportJob $job): bool {
+            return $job->tableName === 'daily_loan_dinamis'
+                && $job->periodHint === '2026-04-30';
+        });
     }
 
     public function test_delete_management_removes_ssa_almafacts_by_period_and_branch(): void

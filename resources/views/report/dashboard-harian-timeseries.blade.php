@@ -179,42 +179,6 @@
         display: block;
     }
 
-    .category-selector {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-    }
-
-    .category-btn {
-        padding: 0.6rem 1.2rem;
-        border-radius: 1rem;
-        border: 1px solid #e2e8f0;
-        background: rgba(255, 255, 255, 0.82);
-        color: #475569;
-        font-weight: 600;
-        font-size: 0.85rem;
-        transition: all 0.2s ease;
-        cursor: pointer;
-    }
-
-    .category-btn:hover {
-        background: #ffffff;
-        border-color: rgba(8, 87, 195, 0.25);
-    }
-
-    .category-btn.active {
-        background: linear-gradient(135deg, #0857c3 0%, #307fe2 100%);
-        color: white;
-        border-color: #0857c3;
-        box-shadow: 0 8px 20px -8px rgba(8, 87, 195, 0.5);
-    }
-
-    .recovery-dimension-row {
-        margin-top: 0.85rem;
-        padding-top: 0.9rem;
-        border-top: 1px solid rgba(8, 87, 195, 0.12);
-    }
-
     .timeseries-dimension-select {
         width: 100%;
         min-height: 42px;
@@ -232,6 +196,174 @@
         border-color: #0857c3;
         box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.12);
         outline: none;
+    }
+
+    .filter-workflow-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .filter-workflow-heading h2 {
+        margin: 0;
+        color: #102a4c;
+        font-size: 1rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+    }
+
+    .filter-workflow-heading p {
+        margin: 0.25rem 0 0;
+        color: #526987;
+        font-size: 0.78rem;
+        line-height: 1.45;
+    }
+
+    .filter-ready-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        min-height: 30px;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        background: #e9f8ef;
+        color: #17653a;
+        font-size: 0.72rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .filter-ready-state i {
+        font-size: 0.46rem;
+    }
+
+    .filter-ready-state.is-pending {
+        background: #fff4e5;
+        color: #8a4b08;
+    }
+
+    .filter-workflow-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.7rem;
+    }
+
+    .filter-step {
+        min-width: 0;
+        padding: 0.78rem;
+        border: 1px solid #dbe6f2;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.86);
+    }
+
+    .filter-step:focus-within {
+        border-color: #307fe2;
+        box-shadow: 0 0 0 3px rgba(48, 127, 226, 0.1);
+    }
+
+    .filter-step-heading {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-bottom: 0.48rem;
+    }
+
+    .filter-step-heading label {
+        margin: 0;
+        color: #1e3657;
+        font-size: 0.76rem;
+        font-weight: 800;
+    }
+
+    .filter-step-index {
+        display: inline-grid;
+        width: 22px;
+        height: 22px;
+        place-items: center;
+        border-radius: 50%;
+        background: #e3efff;
+        color: #0857c3;
+        font-size: 0.68rem;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .filter-step small {
+        display: block;
+        min-height: 2.3em;
+        margin-top: 0.42rem;
+        color: #61738e;
+        font-size: 0.68rem;
+        line-height: 1.35;
+    }
+
+    .filter-step .timeseries-dimension-select,
+    .filter-action-row .period-month-select {
+        min-height: 46px;
+        padding-top: 0.55rem;
+        padding-bottom: 0.55rem;
+        background-color: #ffffff;
+        font-size: 0.82rem;
+    }
+
+    .timeseries-dimension-select:disabled {
+        cursor: not-allowed;
+        background: #edf2f7;
+        color: #738198;
+        opacity: 1;
+    }
+
+    .filter-action-row {
+        display: grid;
+        grid-template-columns: minmax(190px, 0.7fr) minmax(0, 1.7fr) minmax(180px, 0.6fr);
+        align-items: end;
+        gap: 0.8rem;
+        margin-top: 0.85rem;
+        padding-top: 0.85rem;
+        border-top: 1px solid #dbe6f2;
+    }
+
+    .filter-period-control {
+        position: relative;
+        min-width: 0;
+    }
+
+    .filter-selection-summary {
+        min-width: 0;
+        padding: 0 0.25rem 0.3rem;
+    }
+
+    .filter-summary-label {
+        display: block;
+        margin-bottom: 0.18rem;
+        color: #687b96;
+        font-size: 0.66rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    .filter-selection-summary strong {
+        display: block;
+        overflow: hidden;
+        color: #183556;
+        font-size: 0.82rem;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #applyFilters {
+        min-height: 46px;
+        white-space: nowrap;
+    }
+
+    #applyFilters:disabled {
+        cursor: wait;
+        opacity: 0.72;
+        transform: none;
     }
 
     /* Chart Card Styling */
@@ -401,7 +533,7 @@
     .capture-status-modal .modal-content {
         border-radius: 24px;
         border: none;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+        box-shadow: 0 25px 50px -12px rgba(4, 42, 95, 0.2);
         overflow: hidden;
     }
 
@@ -458,32 +590,6 @@
         opacity: 0.3;
     }
 
-    /* Custom Premium Dropdown (adapted from Performance EDC) */
-    .branch-filter-dropdown {
-        position: relative;
-        width: 100%;
-    }
-
-    .branch-dropdown-toggle {
-        width: 100%;
-        min-height: 42px;
-        padding: 0.6rem 1rem;
-        background: rgba(255, 255, 255, 0.86);
-        border: 1px solid #dbe5ef;
-        border-radius: 0.75rem;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-
-    .branch-dropdown-toggle:hover {
-        border-color: #0857c3;
-        background: #fff;
-        box-shadow: 0 10px 24px -22px rgba(8, 87, 195, 0.42);
-    }
-
     .period-month-select {
         width: 100%;
         min-height: 42px;
@@ -507,10 +613,6 @@
         background: #ffffff;
     }
 
-    .period-select-shell {
-        position: relative;
-    }
-
     #applyFilters {
         min-height: 42px;
         border: none;
@@ -524,134 +626,6 @@
     #applyFilters:hover {
         filter: saturate(1.08);
         transform: translateY(-1px);
-    }
-
-    .period-select-shell i {
-        position: absolute;
-        right: 1rem;
-        top: 50%;
-        transform: translateY(-50%);
-        pointer-events: none;
-        color: #64748b;
-        font-size: 0.75rem;
-    }
-
-    .branch-dropdown-label {
-        font-size: 0.88rem;
-        font-weight: 600;
-        color: #1e293b;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        padding-right: 1.25rem;
-    }
-
-    .branch-dropdown-menu {
-        position: absolute;
-        top: calc(100% + 4px);
-        left: 0;
-        right: 0;
-        background: #fff;
-        border: 1px solid #e2e8f0;
-        border-radius: 1rem;
-        box-shadow: 0 15px 35px -10px rgba(8, 87, 195, 0.2);
-        z-index: 9999 !important;
-        display: none;
-        overflow: hidden;
-        animation: slideDown 0.2s ease-out;
-    }
-
-    .branch-dropdown-menu.show {
-        display: block !important;
-    }
-
-    .options-container {
-        max-height: 280px;
-        overflow-y: auto;
-        padding: 0.5rem;
-    }
-
-    .options-container::-webkit-scrollbar {
-        width: 5px;
-    }
-
-    .options-container::-webkit-scrollbar-thumb {
-        background: #e2e8f0;
-        border-radius: 10px;
-    }
-
-    .branch-option {
-        display: flex;
-        align-items: center;
-        padding: 0.6rem 0.75rem;
-        border-radius: 0.5rem;
-        cursor: pointer;
-        transition: background 0.2s;
-        gap: 0.75rem;
-        user-select: none;
-    }
-
-    .branch-option:hover {
-        background: #f1f5f9;
-    }
-
-    .branch-option input {
-        display: none;
-    }
-
-    .branch-checkbox-ui {
-        width: 18px;
-        height: 18px;
-        border: 2px solid #cbd5e1;
-        border-radius: 4px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.2s;
-        flex-shrink: 0;
-    }
-
-    .branch-option.selected .branch-checkbox-ui {
-        background: #0857c3;
-        border-color: #0857c3;
-    }
-
-    .branch-checkbox-ui i {
-        color: white;
-        font-size: 10px;
-        display: none;
-    }
-
-    .branch-option.selected .branch-checkbox-ui i {
-        display: block;
-    }
-
-    .branch-option-label {
-        font-size: 0.88rem;
-        font-weight: 500;
-        color: #334155;
-    }
-
-    .branch-option.selected .branch-option-label {
-        font-weight: 700;
-        color: #0857c3;
-    }
-
-    .select-all-btn {
-        padding: 0.5rem 0.75rem;
-        font-size: 0.75rem;
-        font-weight: 700;
-        color: #0857c3;
-        text-transform: uppercase;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .select-all-btn:hover {
-        background: #eff6ff;
-        border-radius: 0.5rem;
     }
 
     .filter-mobile-toggle {
@@ -689,7 +663,13 @@
         transform: rotate(180deg);
     }
 
-    @media (max-width: 1399.98px) {
+    @media (max-width: 1199.98px) {
+        .filter-workflow-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 767.98px) {
         .filter-mobile-toggle {
             display: flex !important;
         }
@@ -703,23 +683,16 @@
             display: block !important;
         }
 
-        .category-btn {
-            padding: 0.45rem 0.85rem !important;
-            font-size: 0.78rem !important;
-            border-radius: 0.75rem !important;
-        }
-
         .filter-label {
             font-size: 0.68rem !important;
             margin-bottom: 0.25rem !important;
         }
 
-        .branch-dropdown-toggle,
+        .timeseries-dimension-select,
+        .period-month-select,
         #applyFilters {
-            height: 34px !important;
-            min-height: 34px !important;
-            font-size: 0.78rem !important;
-            padding: 0.25rem 0.62rem !important;
+            min-height: 46px !important;
+            font-size: 0.82rem !important;
         }
     }
 
@@ -752,14 +725,32 @@
             margin-left: 0;
         }
 
-        .category-selector {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+        .filter-workflow-heading {
+            align-items: stretch;
+            flex-direction: column;
         }
 
-        .category-btn {
-            width: 100%;
-            padding-inline: 0.75rem;
+        .filter-ready-state {
+            align-self: flex-start;
+        }
+
+        .filter-workflow-grid,
+        .filter-action-row {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .filter-step small {
+            min-height: 0;
+        }
+
+        .filter-selection-summary {
+            padding-inline: 0;
+        }
+
+        .filter-selection-summary strong {
+            overflow: visible;
+            text-overflow: clip;
+            white-space: normal;
         }
 
         .chart-body {
@@ -807,66 +798,34 @@
         </div>
     </div>
 
-    <!-- Filters -->
-    <div class="card filter-card">
+    <!-- Guided Filters -->
+    <div class="card filter-card is-open" aria-labelledby="timeseries-filter-title">
         <div class="filter-mobile-toggle">
-            <button type="button" class="btn btn-filter-toggle d-flex align-items-center justify-content-between w-100" id="btn-toggle-filters">
+            <button type="button" class="btn btn-filter-toggle d-flex align-items-center justify-content-between w-100" id="btn-toggle-filters"
+                    aria-expanded="true" aria-controls="timeseries-filter-content">
                 <span class="btn-toggle-text text-truncate font-weight-bold"><i class="fas fa-sliders-h mr-2"></i> FILTER DATA</span>
                 <span class="active-filters-badge text-truncate text-muted small" id="filter-summary-badge">Simpanan | Area 6</span>
                 <i class="fas fa-chevron-down toggle-arrow-icon ml-2"></i>
             </button>
         </div>
-        <div class="card-body p-4">
-            <!-- Row 1: Metrik & Segmen selectors -->
-            <div class="row mb-4">
-                <div class="col-lg-6 mb-3 mb-lg-0">
-                    <label class="filter-label" style="font-weight: 700; color: #475569; margin-bottom: 0.5rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Kategori Metrik</label>
-                    <div class="category-selector" id="categorySelector">
-                        <button class="category-btn {{ $dashboardPage['selected']['category'] === 'simpanan' ? 'active' : '' }}" data-value="simpanan">Simpanan</button>
-                        <button class="category-btn {{ $dashboardPage['selected']['category'] === 'simpanan_casa' ? 'active' : '' }}" data-value="simpanan_casa">Simpanan CASA</button>
-                        <button class="category-btn {{ $dashboardPage['selected']['category'] === 'pinjaman' ? 'active' : '' }}" data-value="pinjaman">Pinjaman</button>
-                        <button class="category-btn {{ $dashboardPage['selected']['category'] === 'sml' ? 'active' : '' }}" data-value="sml">SML</button>
-                        <button class="category-btn {{ $dashboardPage['selected']['category'] === 'npl' ? 'active' : '' }}" data-value="npl">NPL</button>
-                        <button class="category-btn {{ $dashboardPage['selected']['category'] === 'recovery' ? 'active' : '' }}" data-value="recovery">Recovery</button>
-                    </div>
+        <div class="card-body p-4" id="timeseries-filter-content">
+            @php
+                $selectedKancaFilter = $dashboardPage['selected']['kanca'] ?? [];
+                $selectedKancaValue = is_string($selectedKancaFilter) ? $selectedKancaFilter : 'all';
+            @endphp
+            <div class="filter-workflow-heading">
+                <div>
+                    <h2 id="timeseries-filter-title">Susun tampilan timeseries</h2>
+                    <p>Pilih dari kiri ke kanan. Opsi berikutnya menyesuaikan pilihan sebelumnya.</p>
                 </div>
-                <div class="col-lg-6">
-                    <label class="filter-label" style="font-weight: 700; color: #475569; margin-bottom: 0.5rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Segmen Metrik</label>
-                    <div class="category-selector" id="segmentSelector">
-                        {{-- Dynamically populated by JS --}}
-                    </div>
-                </div>
+                <span class="filter-ready-state" id="filterReadyState" role="status" aria-live="polite">
+                    <i class="fas fa-circle" aria-hidden="true"></i> Siap ditampilkan
+                </span>
             </div>
 
-            <div class="row recovery-dimension-row d-none" id="recoveryDimensionRow">
-                <div class="col-lg-6 mb-3 mb-lg-0">
-                    <label class="filter-label" for="recoverySegmentFilter">Segmen Dashboard</label>
-                    <select id="recoverySegmentFilter" class="timeseries-dimension-select">
-                        <option value="">Semua Segmen Dashboard</option>
-                        @foreach(($dashboardPage['filters']['recovery_dimensions']['segments'] ?? []) as $segment)
-                            <option value="{{ $segment }}" {{ ($dashboardPage['selected']['recovery_segment'] ?? '') === $segment ? 'selected' : '' }}>{{ $segment }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="col-lg-6">
-                    <label class="filter-label" for="recoveryProductFilter">Produk Dashboard</label>
-                    <select id="recoveryProductFilter" class="timeseries-dimension-select">
-                        <option value="">Semua Produk Dashboard</option>
-                        @foreach(($dashboardPage['filters']['recovery_dimensions']['products'] ?? []) as $product)
-                            <option value="{{ $product }}" {{ ($dashboardPage['selected']['recovery_product'] ?? '') === $product ? 'selected' : '' }}>{{ $product }}</option>
-                        @endforeach
-                    </select>
-                </div>
-            </div>
-
-            <!-- Row 2: Branch, Unit, Period, and Update -->
-            <div class="row align-items-end">
-                <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
-                    <label class="filter-label" for="kancaInput">Kantor Cabang</label>
-                    @php
-                        $selectedKancaFilter = $dashboardPage['selected']['kanca'] ?? [];
-                        $selectedKancaValue = is_string($selectedKancaFilter) ? $selectedKancaFilter : 'all';
-                    @endphp
+            <div class="filter-workflow-grid" id="timeseriesFilterWorkflow">
+                <div class="filter-step" data-step="1">
+                    <div class="filter-step-heading"><span class="filter-step-index">1</span><label for="kancaInput">Cabang</label></div>
                     <select id="kancaInput" class="timeseries-dimension-select"
                             data-user-branch-locked="{{ ($dashboardPage['selected']['branch_locked'] ?? false) ? '1' : '0' }}"
                             @disabled($dashboardPage['selected']['branch_locked'] ?? false)>
@@ -874,60 +833,60 @@
                             <option value="{{ $item['value'] }}" @selected($selectedKancaValue === $item['value'])>{{ $item['label'] }}</option>
                         @endforeach
                     </select>
+                    <small>Tentukan wilayah cabang.</small>
                 </div>
-                <div class="col-lg-2 col-md-6 mb-3 mb-lg-0" id="unitFilterColumn" @if(!is_string($selectedKancaFilter)) hidden @endif>
-                    <label class="filter-label">Unit Kerja</label>
-                    <div class="branch-filter-dropdown" id="unitDropdownShell">
-                        <div class="branch-dropdown-toggle" id="unitDropdown">
-                            <span class="branch-dropdown-label" id="unitLabel">Semua Unit Kerja</span>
-                            <i class="fas fa-chevron-down text-muted small"></i>
-                        </div>
-                        <div class="branch-dropdown-menu" id="unitMenu">
-                            <input type="hidden" id="unitInput" value="{{ $dashboardPage['selected']['unit_kerja'] }}">
-                            <div class="options-container" id="unitOptions">
-                                {{-- Will be populated by JS --}}
-                            </div>
-                        </div>
-                    </div>
+
+                <div class="filter-step" data-step="2" id="unitFilterColumn">
+                    <div class="filter-step-heading"><span class="filter-step-index">2</span><label for="unitInput">Unit Kerja</label></div>
+                    <select id="unitInput" class="timeseries-dimension-select">
+                        <option value="all">Semua Unit Kerja</option>
+                    </select>
+                    <small id="unitFilterHint">Pilih cabang untuk melihat unit.</small>
                 </div>
-                <div class="col-lg-2 col-md-6 mb-3 mb-lg-0 {{ !in_array($dashboardPage['selected']['category'] ?? '', ['simpanan', 'simpanan_casa'], true) ? 'd-none' : '' }}" id="retailMicroFilterColumn">
-                    <label class="filter-label" for="retailMicroFilter">Segmen Ritel / Micro</label>
-                    <select id="retailMicroFilter" class="timeseries-dimension-select">
-                        <option value="">Pilih Ritel / Micro</option>
-                        <option value="ritel">Ritel</option>
-                        <option value="micro">Micro</option>
+
+                <div class="filter-step" data-step="3">
+                    <div class="filter-step-heading"><span class="filter-step-index">3</span><label for="categoryInput">Sub Item</label></div>
+                    <select id="categoryInput" class="timeseries-dimension-select">
+                        <option value="pinjaman" @selected(($dashboardPage['selected']['category'] ?? '') === 'pinjaman')>Pinjaman</option>
+                        <option value="simpanan" @selected(($dashboardPage['selected']['category'] ?? '') === 'simpanan')>Simpanan</option>
+                        <option value="sml" @selected(($dashboardPage['selected']['category'] ?? '') === 'sml')>SML</option>
+                        <option value="npl" @selected(($dashboardPage['selected']['category'] ?? '') === 'npl')>NPL</option>
+                        <option value="simpanan_casa" @selected(($dashboardPage['selected']['category'] ?? '') === 'simpanan_casa')>CASA</option>
+                        <option value="ldr" @selected(($dashboardPage['selected']['category'] ?? '') === 'ldr')>LDR</option>
+                        <option value="recovery" @selected(($dashboardPage['selected']['category'] ?? '') === 'recovery')>REC DH</option>
+                    </select>
+                    <small>Pilih indikator yang dianalisis.</small>
+                </div>
+
+                <div class="filter-step" data-step="4">
+                    <div class="filter-step-heading"><span class="filter-step-index">4</span><label for="segmentInput">Segmen</label></div>
+                    <select id="segmentInput" class="timeseries-dimension-select"></select>
+                    <small id="segmentFilterHint">Segmen mengikuti jenis unit.</small>
+                </div>
+
+                <div class="filter-step" data-step="5">
+                    <div class="filter-step-heading"><span class="filter-step-index">5</span><label for="productInput">Produk</label></div>
+                    <select id="productInput" class="timeseries-dimension-select"></select>
+                    <small id="productFilterHint">Produk mengikuti sub item dan segmen.</small>
+                </div>
+            </div>
+
+            <div class="filter-action-row">
+                <div class="filter-period-control">
+                    <label class="filter-label" for="periodMonthFilter">Periode Akhir</label>
+                    <select id="periodMonthFilter" class="period-month-select">
+                        @foreach(($dashboardPage['filters']['period_month'] ?? []) as $item)
+                            <option value="{{ $item['value'] }}" @selected(($dashboardPage['selected']['period_month'] ?? '') === $item['value'])>{{ $item['label'] }}</option>
+                        @endforeach
                     </select>
                 </div>
-                <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
-                    <label class="filter-label">Periode Akhir</label>
-                    <div class="branch-filter-dropdown" id="periodDropdownShell">
-                        <div class="branch-dropdown-toggle" id="periodDropdown">
-                            <span class="branch-dropdown-label" id="periodLabel">
-                                @php
-                                    $selectedLabel = collect($dashboardPage['filters']['period_month'] ?? [])->firstWhere('value', $dashboardPage['selected']['period_month'] ?? '')['label'] ?? 'Pilih Periode';
-                                @endphp
-                                {{ $selectedLabel }}
-                            </span>
-                            <i class="fas fa-chevron-down text-muted small"></i>
-                        </div>
-                        <div class="branch-dropdown-menu" id="periodMenu">
-                            <input type="hidden" id="periodMonthFilter" value="{{ $dashboardPage['selected']['period_month'] ?? '' }}">
-                            <div class="options-container" id="periodOptions">
-                                @foreach(($dashboardPage['filters']['period_month'] ?? []) as $item)
-                                    <div class="branch-option {{ ($dashboardPage['selected']['period_month'] ?? '') === $item['value'] ? 'selected' : '' }}" data-value="{{ $item['value'] }}" data-label="{{ $item['label'] }}">
-                                        <div class="branch-checkbox-ui"><i class="fas fa-check"></i></div>
-                                        <span class="branch-option-label">{{ $item['label'] }}</span>
-                                    </div>
-                                @endforeach
-                            </div>
-                        </div>
-                    </div>
+                <div class="filter-selection-summary" aria-live="polite">
+                    <span class="filter-summary-label">Pilihan aktif</span>
+                    <strong id="filterSelectionSummary">-</strong>
                 </div>
-                <div class="col-lg-2">
-                    <button id="applyFilters" class="btn btn-primary btn-block shadow-sm">
-                        <i class="fas fa-sync-alt mr-2"></i> Update
-                    </button>
-                </div>
+                <button id="applyFilters" class="btn btn-primary">
+                    <i class="fas fa-chart-line mr-2" aria-hidden="true"></i><span>Tampilkan Data</span>
+                </button>
             </div>
         </div>
     </div>
@@ -942,7 +901,7 @@
                      <h5 class="chart-title" id="summaryChartTitle"><i class="fas fa-chart-area mr-2 text-primary"></i>Area 6 - Konsolidasi</h5>
                     <div class="d-flex align-items-center">
                         <div class="unit-badge" id="summaryChartBadge">Total Konsolidasi Selected Branches</div>
-                        <button class="btn-export-jpg ml-2" onclick="window.downloadTimeseriesChart('summary', 'Timeseries-Area6-Consolidation')" title="Export to JPG">
+                        <button class="btn-export-jpg ml-2" onclick="window.downloadTimeseriesChart('summary', 'Timeseries-Area6-Consolidation')" title="Export to JPG" aria-label="Export grafik konsolidasi ke JPG">
                             <i class="fas fa-camera"></i>
                         </button>
                     </div>
@@ -1029,6 +988,7 @@
             const initialTimeseriesData = @json($dashboardPage['initialData'] ?? []);
             let currentCategory = @json($dashboardPage['selected']['category']);
             let currentSegment = @json($dashboardPage['selected']['segment'] ?? 'total');
+            let currentProduct = @json($dashboardPage['selected']['product'] ?? 'total');
             let currentRecoverySegment = @json($dashboardPage['selected']['recovery_segment'] ?? '');
             let currentRecoveryProduct = @json($dashboardPage['selected']['recovery_product'] ?? '');
             let charts = {};
@@ -1038,26 +998,18 @@
             // --- Data Definitions ---
             const allKancasData = @json($dashboardPage['filters']['kanca']);
             const allUnitsData = @json($dashboardPage['filters']['unit_kerja']);
-            const recoveryDimensions = @json($dashboardPage['filters']['recovery_dimensions'] ?? ['segments' => [], 'products' => [], 'products_by_segment' => []]);
             const selectedKancasInitial = @json($dashboardPage['selected']['kanca']);
             const selectedUnitInitial = @json($dashboardPage['selected']['unit_kerja']);
 
             // --- Filter Definitions ---
             const kancaInput = document.getElementById('kancaInput');
-            const unitFilterColumn = document.getElementById('unitFilterColumn');
-            const retailMicroFilterColumn = document.getElementById('retailMicroFilterColumn');
-            const retailMicroFilter = document.getElementById('retailMicroFilter');
-            
-            const unitToggle = document.getElementById('unitDropdown');
-            const unitMenu = document.getElementById('unitMenu');
-            const unitLabel = document.getElementById('unitLabel');
             const unitInput = document.getElementById('unitInput');
-            const unitOptionsContainer = document.getElementById('unitOptions');
+            const categoryInput = document.getElementById('categoryInput');
+            const segmentInput = document.getElementById('segmentInput');
+            const productInput = document.getElementById('productInput');
             const periodMonthSelect = document.getElementById('periodMonthFilter');
-            const recoveryDimensionRow = document.getElementById('recoveryDimensionRow');
-            const recoverySegmentSelect = document.getElementById('recoverySegmentFilter');
-            const recoveryProductSelect = document.getElementById('recoveryProductFilter');
             const applyBtn = document.getElementById('applyFilters');
+            const filterReadyState = document.getElementById('filterReadyState');
 
             function selectedKancaLabel() {
                 return kancaInput?.options[kancaInput.selectedIndex]?.text?.trim() || 'Area 6';
@@ -1323,23 +1275,18 @@
 
             function drawExportHeader(ctx) {
                 const { width, marginX, marginY } = A4_EXPORT;
-                const categoryBtn = document.querySelector('#categorySelector .category-btn.active');
-                let category = categoryBtn ? categoryBtn.textContent.trim() : '-';
+                let category = selectedOptionLabel(categoryInput, '-');
                 const segmentLabel = currentSegmentLabel();
                 if (segmentLabel) {
                     category += ' - ' + segmentLabel;
                 }
-                if (currentCategory === 'recovery') {
-                    if (currentRecoverySegment && recoverySegmentSelect) {
-                        category += ' - ' + recoverySegmentSelect.options[recoverySegmentSelect.selectedIndex].text;
-                    }
-                    if (currentRecoveryProduct && recoveryProductSelect) {
-                        category += ' - ' + recoveryProductSelect.options[recoveryProductSelect.selectedIndex].text;
-                    }
+                const productLabel = currentProductLabel();
+                if (productLabel) {
+                    category += ' - ' + productLabel;
                 }
                 const periodSelect = document.getElementById('periodMonthFilter');
                 const period = periodSelect?.options[periodSelect.selectedIndex]?.text || '-';
-                const unit = unitLabel?.textContent?.trim() || 'Semua Unit';
+                const unit = selectedOptionLabel(unitInput, 'Semua Unit');
                 const kanca = selectedKancaLabel();
 
                 ctx.fillStyle = '#0857c3';
@@ -1475,16 +1422,13 @@
                         const branchGridHeight = contentHeight - summaryHeight - A4_EXPORT.sectionGap;
                         const branchCardWidth = Math.floor((cardWidth - A4_EXPORT.branchGap) / 2);
                         const branchCardHeight = Math.floor((branchGridHeight - A4_EXPORT.branchGap) / 2);
-                        const categoryBtn = document.querySelector('#categorySelector .category-btn.active');
-                        let categoryText = categoryBtn ? categoryBtn.textContent : 'Timeseries';
+                        let categoryText = selectedOptionLabel(categoryInput, 'Timeseries');
                         const segmentLabel = currentSegmentLabel();
                         if (segmentLabel) {
                             categoryText += '-' + segmentLabel;
                         }
-                        if (currentCategory === 'recovery') {
-                            if (currentRecoverySegment) categoryText += '-' + currentRecoverySegment;
-                            if (currentRecoveryProduct) categoryText += '-' + currentRecoveryProduct;
-                        }
+                        const productLabel = currentProductLabel();
+                        if (productLabel) categoryText += '-' + productLabel;
                         const category = sanitizeFilePart(categoryText);
                         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
                         const { summary, branches } = resolveA4LayoutEntries(chartEntries);
@@ -1559,113 +1503,100 @@
                 if (applyBtn) {
                     applyBtn.disabled = isLoading;
                     applyBtn.innerHTML = isLoading
-                        ? '<i class="fas fa-spinner fa-spin mr-2"></i> Memuat'
-                        : '<i class="fas fa-sync-alt mr-2"></i> Update';
+                        ? '<i class="fas fa-spinner fa-spin mr-2" aria-hidden="true"></i><span>Memuat Data</span>'
+                        : '<i class="fas fa-chart-line mr-2" aria-hidden="true"></i><span>Tampilkan Data</span>';
+                }
+
+                if (filterReadyState && isLoading) {
+                    filterReadyState.classList.remove('is-pending');
+                    filterReadyState.innerHTML = '<i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i> Memuat grafik';
                 }
             }
 
-            // --- Dropdown Management ---
-            function closeAllDropdowns() {
-                if (unitMenu) unitMenu.classList.remove('show');
-                if (typeof periodMenu !== 'undefined' && periodMenu) periodMenu.classList.remove('show');
-                
-                // Reset z-indices
-                const unitShell = document.getElementById('unitDropdownShell');
-                const periodShell = document.getElementById('periodDropdownShell');
-                if (unitShell) unitShell.style.zIndex = '';
-                if (periodShell) periodShell.style.zIndex = '';
+            function selectedOptionLabel(select, fallback = '') {
+                return select?.options[select.selectedIndex]?.text?.trim() || fallback;
             }
 
-            document.addEventListener('click', closeAllDropdowns);
-            
-            if (unitMenu) unitMenu.addEventListener('click', (e) => e.stopPropagation());
-            
-            const periodMenu = document.getElementById('periodMenu');
-            const periodLabel = document.getElementById('periodLabel');
-            const periodToggle = document.getElementById('periodDropdown');
-            const periodOptions = document.getElementById('periodOptions');
-            const periodInput = document.getElementById('periodMonthFilter');
-
-            if (periodMenu) periodMenu.addEventListener('click', (e) => e.stopPropagation());
-
-            if (unitToggle) {
-                unitToggle.addEventListener('click', (e) => {
-                    console.log('Unit Toggle Clicked');
-                    e.stopPropagation();
-                    const wasOpen = unitMenu.classList.contains('show');
-                    closeAllDropdowns();
-                    if (!wasOpen) {
-                        unitMenu.classList.add('show');
-                        const shell = document.getElementById('unitDropdownShell');
-                        if (shell) shell.style.zIndex = '1001';
-                    }
-                });
+            function selectedUnitKind() {
+                return unitInput?.options[unitInput.selectedIndex]?.dataset?.unitKind || 'all';
             }
 
-            if (periodToggle) {
-                periodToggle.addEventListener('click', (e) => {
-                    console.log('Period Toggle Clicked');
-                    e.stopPropagation();
-                    const wasOpen = periodMenu.classList.contains('show');
-                    closeAllDropdowns();
-                    if (!wasOpen) {
-                        periodMenu.classList.add('show');
-                        const shell = document.getElementById('periodDropdownShell');
-                        if (shell) shell.style.zIndex = '1001';
-                    }
-                });
+            function markFiltersPending() {
+                if (filterReadyState) {
+                    filterReadyState.classList.add('is-pending');
+                    filterReadyState.innerHTML = '<i class="fas fa-circle" aria-hidden="true"></i> Pilihan berubah';
+                }
+                updateTimeseriesFilterSummary();
             }
 
-            // --- Period Filter Logic ---
-            if (periodOptions) {
-                periodOptions.querySelectorAll('.branch-option').forEach(opt => {
-                    opt.addEventListener('click', () => {
-                        const val = opt.getAttribute('data-value');
-                        const label = opt.getAttribute('data-label');
-                        
-                        if (periodInput) periodInput.value = val;
-                        if (periodLabel) periodLabel.textContent = label;
-                        
-                        periodOptions.querySelectorAll('.branch-option').forEach(o => o.classList.remove('selected'));
-                        opt.classList.add('selected');
-                        
-                        closeAllDropdowns();
-                        updateTimeseriesFilterSummary();
-                    });
-                });
+            function markFiltersApplied() {
+                if (filterReadyState) {
+                    filterReadyState.classList.remove('is-pending');
+                    filterReadyState.innerHTML = '<i class="fas fa-check" aria-hidden="true"></i> Data terbaru tampil';
+                }
             }
 
             function updateTimeseriesFilterSummary() {
-                const catBtn = document.querySelector('#categorySelector .category-btn.active');
-                const categoryText = catBtn ? catBtn.textContent.trim() : 'Simpanan';
-                const kancaText = selectedKancaLabel();
-                const unitText = unitLabel ? unitLabel.textContent.trim() : 'Semua Unit';
-                const periodText = periodLabel ? periodLabel.textContent.trim() : '';
-
-                const summarySpan = document.getElementById('filter-summary-badge');
-                if (summarySpan) {
-                    let summaryParts = [categoryText];
-                    if (kancaText && kancaText !== 'Area 6') {
-                        summaryParts.push(kancaText);
-                    }
-                    if (unitText && unitText !== 'Semua Unit Kerja') {
-                        summaryParts.push(unitText);
-                    }
-                    if (periodText && periodText !== 'Pilih Periode') {
-                        summaryParts.push(periodText);
-                    }
-                    summarySpan.innerText = summaryParts.join(' | ');
-                }
+                const summaryParts = [
+                    selectedOptionLabel(kancaInput, 'Area 6'),
+                    selectedOptionLabel(unitInput, 'Semua Unit Kerja'),
+                    selectedOptionLabel(categoryInput, 'Simpanan'),
+                    selectedOptionLabel(segmentInput, 'Semua Segmen'),
+                    selectedOptionLabel(productInput, 'Semua Produk'),
+                ];
+                const conciseSummary = summaryParts.filter(Boolean).join(' · ');
+                const selectionSummary = document.getElementById('filterSelectionSummary');
+                const mobileSummary = document.getElementById('filter-summary-badge');
+                if (selectionSummary) selectionSummary.textContent = conciseSummary;
+                if (mobileSummary) mobileSummary.textContent = conciseSummary;
             }
 
-            // --- Kantor Cabang Logic ---
+            function classifyUnit(label) {
+                const normalized = String(label || '').trim().toUpperCase();
+                if (/^(KC|KCP)\b/.test(normalized)) return 'ritel';
+                if (/^UNIT\b/.test(normalized) || normalized.includes('-- UNIT')) return 'micro';
+                return 'all';
+            }
+
             function rebuildKancaOptions() {
                 if (!kancaInput) return;
                 const initialValue = activeKancas.size === 1 ? Array.from(activeKancas)[0] : 'all';
                 kancaInput.value = Array.from(kancaInput.options).some(option => option.value === initialValue)
                     ? initialValue
                     : 'all';
-                rebuildUnitOptions();
+                rebuildUnitOptions(selectedUnitInitial || 'all');
+            }
+
+            function rebuildUnitOptions(preferredValue = 'all') {
+                if (!unitInput) return;
+                const hasSingleBranch = activeKancas.size === 1;
+                const currentValue = preferredValue || unitInput.value || 'all';
+                const unitOptions = [{ value: 'all', label: hasSingleBranch ? 'Semua Unit Kerja' : 'Pilih satu cabang lebih dulu', unitKind: 'all' }];
+
+                if (hasSingleBranch) {
+                    allUnitsData.forEach(unit => {
+                        if (unit.value !== 'all' && activeKancas.has(unit.kanca_value)) {
+                            unitOptions.push({ ...unit, unitKind: classifyUnit(unit.label) });
+                        }
+                    });
+                }
+
+                unitInput.innerHTML = '';
+                unitOptions.forEach(unit => {
+                    const option = new Option(unit.label, unit.value, false, unit.value === currentValue);
+                    option.dataset.unitKind = unit.unitKind;
+                    unitInput.add(option);
+                });
+                unitInput.disabled = !hasSingleBranch;
+                if (!unitOptions.some(unit => unit.value === currentValue)) unitInput.value = 'all';
+
+                const unitHint = document.getElementById('unitFilterHint');
+                if (unitHint) {
+                    unitHint.textContent = hasSingleBranch
+                        ? 'Pilih unit spesifik atau seluruh unit cabang.'
+                        : 'Pilih satu cabang untuk membuka daftar unit.';
+                }
+                syncSegmentOptions(false);
                 updateTimeseriesFilterSummary();
             }
 
@@ -1679,81 +1610,16 @@
                     } else {
                         activeKancas.add(kancaInput.value);
                     }
-                    rebuildUnitOptions();
-                    updateTimeseriesFilterSummary();
+                    rebuildUnitOptions('all');
+                    markFiltersPending();
                 });
             }
 
-            // --- Unit Dropdown Logic ---
-            function rebuildUnitOptions() {
-                if (!unitOptionsContainer) return;
-
-                const hasSingleBranch = activeKancas.size === 1;
-                const currentUnit = unitInput ? unitInput.value : 'all';
-                let foundCurrentUnit = currentUnit === 'all';
-                let currentUnitLabel = 'Semua Unit Kerja';
-
-                if (unitFilterColumn) {
-                    unitFilterColumn.hidden = !hasSingleBranch;
-                }
-
-                unitOptionsContainer.innerHTML = `
-                    <div class="branch-option ${currentUnit === 'all' ? 'selected' : ''}" data-value="all">
-                        <div class="branch-checkbox-ui"><i class="fas fa-check"></i></div>
-                        <span class="branch-option-label">Semua Unit Kerja</span>
-                    </div>
-                `;
-
-                allUnitsData.forEach(unit => {
-                    if (unit.value === 'all') return;
-                    if (hasSingleBranch && activeKancas.has(unit.kanca_value)) {
-                        const opt = document.createElement('div');
-                        opt.className = `branch-option ${unit.value === currentUnit ? 'selected' : ''}`;
-                        opt.setAttribute('data-value', unit.value);
-                        opt.innerHTML = `
-                            <div class="branch-checkbox-ui"><i class="fas fa-check"></i></div>
-                            <span class="branch-option-label">${escapeHtml(unit.label)}</span>
-                        `;
-                        
-                        if (unit.value === currentUnit) {
-                            foundCurrentUnit = true;
-                            currentUnitLabel = unit.label;
-                        }
-
-                        opt.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            selectUnit(unit.value, unit.label);
-                        });
-                        unitOptionsContainer.appendChild(opt);
-                    }
+            if (unitInput) {
+                unitInput.addEventListener('change', () => {
+                    syncSegmentOptions(true);
+                    markFiltersPending();
                 });
-
-                const allOpt = unitOptionsContainer.querySelector('[data-value="all"]');
-                if (allOpt) {
-                    allOpt.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        selectUnit('all', 'Semua Unit Kerja');
-                    });
-                }
-
-                if (!foundCurrentUnit) {
-                    selectUnit('all', 'Semua Unit Kerja');
-                } else if (unitLabel) {
-                    unitLabel.textContent = currentUnitLabel;
-                }
-            }
-
-            function selectUnit(value, label) {
-                if (unitInput) unitInput.value = value;
-                if (unitLabel) unitLabel.textContent = label;
-                closeAllDropdowns();
-                
-                if (unitOptionsContainer) {
-                    unitOptionsContainer.querySelectorAll('.branch-option').forEach(o => {
-                        o.classList.toggle('selected', o.getAttribute('data-value') === value);
-                    });
-                }
-                updateTimeseriesFilterSummary();
             }
 
             // --- Core Logic ---
@@ -1770,6 +1636,7 @@
                     const queryParams = new URLSearchParams({
                         category: currentCategory,
                         segment: currentSegment,
+                        product: currentProduct,
                         unit_kerja: unit,
                         period_month: periodMonth
                     });
@@ -1786,13 +1653,19 @@
 
                     if (!hasTimeseriesData(data)) {
                         renderEmptyChart();
+                        markFiltersApplied();
                         return;
                     }
 
                     renderCharts(data, selectedKanca.length);
+                    markFiltersApplied();
                 } catch (error) {
                     console.error('Failed to fetch timeseries data:', error);
                     renderEmptyChart();
+                    if (filterReadyState) {
+                        filterReadyState.classList.add('is-pending');
+                        filterReadyState.innerHTML = '<i class="fas fa-exclamation-circle" aria-hidden="true"></i> Gagal memuat data';
+                    }
                 } finally {
                     if (requestId === activeRequestId) {
                         setLoadingState(false, shouldShowSummary);
@@ -2046,16 +1919,13 @@
                     // Dynamically update the summary chart title
                     const titleEl = document.getElementById('summaryChartTitle');
                     if (titleEl) {
-                        const categoryBtn = document.querySelector('#categorySelector .category-btn.active');
-                        let label = 'Area 6 - ' + (categoryBtn ? categoryBtn.textContent.trim() : 'Konsolidasi');
+                        let label = 'Area 6 - ' + selectedOptionLabel(categoryInput, 'Konsolidasi');
                         const segmentLabel = currentSegmentLabel();
                         if (segmentLabel) {
                             label += ' (' + segmentLabel + ')';
                         }
-                        if (currentCategory === 'recovery') {
-                            const dimensions = [currentRecoverySegment, currentRecoveryProduct].filter(Boolean);
-                            if (dimensions.length > 0) label += ' - ' + dimensions.join(' / ');
-                        }
+                        const productLabel = currentProductLabel();
+                        if (productLabel) label += ' / ' + productLabel;
                         titleEl.innerHTML = `<i class="fas fa-chart-area mr-2 text-primary"></i>${escapeHtml(label)}`;
                     }
                 }
@@ -2070,13 +1940,19 @@
                     }
 
                     const isFullWidth = branchNames.length === 1;
-                    const unitSuffix = (unitInput && unitInput.value !== 'all') ? unitLabel.textContent : 'Konsolidasi';
+                    const unitSuffix = (unitInput && unitInput.value !== 'all') ? selectedOptionLabel(unitInput) : 'Konsolidasi';
 
                     // Resolve selected segment label
                     let segLabel = '';
                     const segmentLabel = currentSegmentLabel();
                     if (segmentLabel) {
                         segLabel = ' (' + segmentLabel + ')';
+                    }
+                    const productLabel = currentProductLabel();
+                    if (productLabel) {
+                        segLabel = segLabel
+                            ? segLabel.replace(/\)$/, ` / ${productLabel})`)
+                            : ` (${productLabel})`;
                     }
                     if (currentCategory === 'recovery') {
                         const dimensions = [currentRecoverySegment, currentRecoveryProduct].filter(Boolean);
@@ -2095,7 +1971,7 @@
                                     <h5 class="chart-title">${escapeHtml(displayTitle)}</h5>
                                     <div class="d-flex align-items-center">
                                         <span class="unit-badge">Daily Trend</span>
-                                        <button type="button" class="btn-export-jpg ml-2" title="Export to JPG">
+                                        <button type="button" class="btn-export-jpg ml-2" title="Export to JPG" aria-label="Export ${escapeHtml(displayTitle)} ke JPG">
                                             <i class="fas fa-camera"></i>
                                         </button>
                                     </div>
@@ -2125,176 +2001,157 @@
                 }
             }
 
-            // --- Segments Configurations ---
-            const segmentsConfig = {
-                simpanan: [
-                    { value: 'total', label: 'Simpanan Total' },
-                    { value: 'giro', label: 'Giro' },
-                    { value: 'tabungan', label: 'Tabungan' },
-                    { value: 'deposito', label: 'Deposito' },
-                    { value: 'non_wholesale', label: 'Non Wholesale' }
-                ],
-                simpanan_casa: [
-                    { value: 'total', label: 'CASA Total' },
-                    { value: 'giro', label: 'Giro' },
-                    { value: 'non_wholesale', label: 'Non Wholesale' }
-                ],
-                pinjaman: [
-                    { value: 'total', label: 'Pinjaman Total' },
-                    { value: 'small', label: 'Small' },
-                    { value: 'consumer', label: 'Consumer' },
-                    { value: 'micro', label: 'Micro' }
-                ],
-                sml: [
-                    { value: 'total', label: 'SML Total' },
-                    { value: 'small', label: 'Small' },
-                    { value: 'consumer', label: 'Consumer' },
-                    { value: 'micro', label: 'Micro' }
-                ],
-                npl: [
-                    { value: 'total', label: 'NPL Total' },
-                    { value: 'small', label: 'Small' },
-                    { value: 'consumer', label: 'Consumer' },
-                    { value: 'micro', label: 'Micro' }
-                ],
-                recovery: [
-                    { value: 'ritel', label: 'Ritel' },
-                    { value: 'micro', label: 'Mikro' }
-                ]
+            const allSegmentOption = { value: 'total', label: 'Semua Segmen' };
+            const ritelSegmentOption = { value: 'ritel', label: 'Ritel' };
+            const microSegmentOption = { value: 'micro', label: 'Micro' };
+            const wholesaleSegmentOption = { value: 'wholesale', label: 'Wholesale' };
+            const allProductOption = { value: 'total', label: 'Semua Produk' };
+            const ritelLoanProducts = [
+                allProductOption,
+                { value: 'small', label: 'Small / SME' },
+                { value: 'kecil', label: 'Kecil' },
+                { value: 'kecil_non_cashcoll', label: 'Kecil Non Cash Collateral' },
+                { value: 'cashcoll', label: 'Cash Collateral' },
+                { value: 'consumer', label: 'Consumer' },
+                { value: 'briguna_konsumer', label: 'Briguna' },
+                { value: 'kpr', label: 'KPR' },
+                { value: 'kkb', label: 'KKB' },
+            ];
+            const microLoanProducts = [
+                allProductOption,
+                { value: 'briguna_mikro', label: 'Briguna Mikro' },
+                { value: 'kupedes', label: 'Kupedes' },
+                { value: 'kur_mikro', label: 'KUR Mikro' },
+                { value: 'kur_kecil', label: 'KUR Kecil' },
+                { value: 'kur_kpp', label: 'KUR KPP' },
+            ];
+
+            const filterConfig = {
+                pinjaman: { segments: [allSegmentOption, ritelSegmentOption, microSegmentOption], products: 'loan' },
+                simpanan: {
+                    segments: [allSegmentOption, ritelSegmentOption, microSegmentOption, wholesaleSegmentOption],
+                    products: [allProductOption, { value: 'giro', label: 'Giro' }, { value: 'tabungan', label: 'Tabungan' }, { value: 'deposito', label: 'Deposito' }],
+                },
+                sml: { segments: [allSegmentOption, ritelSegmentOption, microSegmentOption], products: 'loan' },
+                npl: { segments: [allSegmentOption, ritelSegmentOption, microSegmentOption], products: 'loan' },
+                simpanan_casa: {
+                    segments: [allSegmentOption, ritelSegmentOption, microSegmentOption, wholesaleSegmentOption],
+                    products: [allProductOption, { value: 'giro', label: 'Giro' }, { value: 'tabungan', label: 'Tabungan' }],
+                },
+                ldr: { segments: [allSegmentOption, ritelSegmentOption, microSegmentOption], products: [allProductOption] },
+                recovery: { segments: [ritelSegmentOption, microSegmentOption], products: [allProductOption] },
             };
 
-            function usesRetailMicroDropdown() {
-                return ['simpanan', 'simpanan_casa'].includes(currentCategory);
+            function segmentOptionsForContext() {
+                const config = filterConfig[currentCategory] || filterConfig.simpanan;
+                const unitKind = selectedUnitKind();
+                if (unitKind === 'micro') return [microSegmentOption];
+                if (unitKind === 'ritel') {
+                    if (['simpanan', 'simpanan_casa'].includes(currentCategory)) {
+                        return [allSegmentOption, ritelSegmentOption, microSegmentOption, wholesaleSegmentOption];
+                    }
+                    return [ritelSegmentOption, microSegmentOption];
+                }
+                return config.segments;
             }
 
-            function syncRetailMicroFilter() {
-                const isApplicable = usesRetailMicroDropdown();
-                if (retailMicroFilterColumn) {
-                    retailMicroFilterColumn.classList.toggle('d-none', !isApplicable);
+            function productOptionsForContext() {
+                const config = filterConfig[currentCategory] || filterConfig.simpanan;
+                if (config.products !== 'loan') return config.products;
+                if (currentSegment === 'ritel') return ritelLoanProducts;
+                if (currentSegment === 'micro') return microLoanProducts;
+                return [allProductOption, ...ritelLoanProducts.slice(1), ...microLoanProducts.slice(1)];
+            }
+
+            function fillSelect(select, options, selectedValue) {
+                if (!select) return '';
+                select.innerHTML = '';
+                options.forEach(item => select.add(new Option(item.label, item.value, false, item.value === selectedValue)));
+                const resolved = options.some(item => item.value === selectedValue) ? selectedValue : (options[0]?.value || '');
+                select.value = resolved;
+                select.disabled = options.length <= 1;
+                return resolved;
+            }
+
+            function syncProductOptions() {
+                const options = productOptionsForContext();
+                currentProduct = fillSelect(productInput, options, currentProduct);
+                const hint = document.getElementById('productFilterHint');
+                if (hint) {
+                    hint.textContent = options.length <= 1
+                        ? 'Sub item ini ditampilkan sebagai total produk.'
+                        : `${options.length - 1} produk tersedia untuk pilihan ini.`;
                 }
-                if (retailMicroFilter) {
-                    retailMicroFilter.value = isApplicable && ['ritel', 'micro'].includes(currentSegment)
-                        ? currentSegment
-                        : '';
+            }
+
+            function syncSegmentOptions(preferUnitDefault = false) {
+                const options = segmentOptionsForContext();
+                const unitKind = selectedUnitKind();
+                let preferred = currentSegment;
+                if (preferUnitDefault && ['ritel', 'micro'].includes(unitKind)) preferred = unitKind;
+                currentSegment = fillSelect(segmentInput, options, preferred);
+                const hint = document.getElementById('segmentFilterHint');
+                if (hint) {
+                    hint.textContent = unitKind === 'ritel'
+                        ? 'KC/KCP otomatis diarahkan ke Ritel; pilihan lain tetap tersedia.'
+                        : (unitKind === 'micro'
+                            ? 'BRI Unit otomatis menggunakan segmen Micro.'
+                            : 'Pilih segmen untuk mempersempit data.');
+                }
+                syncProductOptions();
+            }
+
+            function normalizeLegacySelection() {
+                if (['simpanan', 'simpanan_casa'].includes(currentCategory)
+                    && ['giro', 'tabungan', 'deposito'].includes(currentSegment)
+                    && currentProduct === 'total') {
+                    currentProduct = currentSegment;
+                    currentSegment = 'total';
+                }
+                if (['pinjaman', 'sml', 'npl'].includes(currentCategory)
+                    && ['small', 'consumer'].includes(currentSegment)
+                    && currentProduct === 'total') {
+                    currentProduct = currentSegment;
+                    currentSegment = 'ritel';
                 }
             }
 
             function currentSegmentLabel() {
-                if (['total', ''].includes(currentSegment)) {
-                    return '';
-                }
-
-                if (usesRetailMicroDropdown() && ['ritel', 'micro'].includes(currentSegment)) {
-                    return retailMicroFilter?.options[retailMicroFilter.selectedIndex]?.text?.trim() || currentSegment;
-                }
-
-                return (segmentsConfig[currentCategory] || []).find(option => option.value === currentSegment)?.label || currentSegment;
+                return selectedOptionLabel(segmentInput, currentSegment);
             }
 
-            function rebuildRecoveryProductOptions() {
-                if (!recoveryProductSelect) return;
+            function currentProductLabel() {
+                return currentProduct === 'total' ? '' : selectedOptionLabel(productInput, currentProduct);
+            }
 
-                const productsBySegment = recoveryDimensions.products_by_segment || {};
-                const products = currentRecoverySegment
-                    ? (productsBySegment[currentRecoverySegment] || [])
-                    : (recoveryDimensions.products || []);
-
-                if (currentRecoveryProduct && !products.includes(currentRecoveryProduct)) {
-                    currentRecoveryProduct = '';
-                }
-
-                recoveryProductSelect.innerHTML = '';
-                recoveryProductSelect.add(new Option('Semua Produk Dashboard', '', currentRecoveryProduct === '', currentRecoveryProduct === ''));
-                products.forEach(product => {
-                    recoveryProductSelect.add(new Option(product, product, false, product === currentRecoveryProduct));
+            if (categoryInput) {
+                categoryInput.addEventListener('change', function () {
+                    currentCategory = this.value;
+                    currentSegment = selectedUnitKind() === 'all' && currentCategory === 'recovery' ? 'ritel' : 'total';
+                    currentProduct = 'total';
+                    syncSegmentOptions(true);
+                    markFiltersPending();
                 });
             }
 
-            function syncRecoveryDimensionVisibility() {
-                if (recoveryDimensionRow) {
-                    recoveryDimensionRow.classList.add('d-none');
-                }
-                rebuildRecoveryProductOptions();
-            }
-
-            function renderSegmentSelector() {
-                const container = document.getElementById('segmentSelector');
-                if (!container) return;
-
-                const options = segmentsConfig[currentCategory] || [];
-                
-                // Reset segment to 'total' if currentSegment is invalid for this category
-                const isValid = options.some(opt => opt.value === currentSegment)
-                    || (usesRetailMicroDropdown() && ['ritel', 'micro'].includes(currentSegment));
-                if (!isValid) {
-                    currentSegment = options[0]?.value || 'total';
-                }
-
-                syncRecoveryDimensionVisibility();
-                syncRetailMicroFilter();
-
-                container.innerHTML = options.map(opt => {
-                    const isActive = opt.value === currentSegment ? 'active' : '';
-                    return `<button type="button" class="category-btn segment-btn ${isActive}" data-value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</button>`;
-                }).join('');
-
-                // Add click listeners to segment buttons
-                container.querySelectorAll('.segment-btn').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        container.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
-                        this.classList.add('active');
-                        currentSegment = this.getAttribute('data-value');
-                        syncRetailMicroFilter();
-                        fetchData();
-                        updateTimeseriesFilterSummary();
-                    });
+            if (segmentInput) {
+                segmentInput.addEventListener('change', function () {
+                    currentSegment = this.value;
+                    currentProduct = 'total';
+                    syncProductOptions();
+                    markFiltersPending();
                 });
             }
 
-            // Category Selector
-            const categoryBtns = document.querySelectorAll('#categorySelector .category-btn');
-            categoryBtns.forEach(btn => {
-                btn.addEventListener('click', function() {
-                    categoryBtns.forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
-                    currentCategory = this.getAttribute('data-value');
-                    renderSegmentSelector();
-                    fetchData();
-                    updateTimeseriesFilterSummary();
-                });
-            });
-
-            if (retailMicroFilter) {
-                retailMicroFilter.addEventListener('change', function() {
-                    currentSegment = this.value || 'total';
-                    renderSegmentSelector();
-                    fetchData();
-                    updateTimeseriesFilterSummary();
+            if (productInput) {
+                productInput.addEventListener('change', function () {
+                    currentProduct = this.value;
+                    markFiltersPending();
                 });
             }
 
-            if (recoverySegmentSelect) {
-                recoverySegmentSelect.addEventListener('change', function() {
-                    currentRecoverySegment = this.value;
-                    rebuildRecoveryProductOptions();
-                    fetchData();
-                });
-            }
-
-            if (recoveryProductSelect) {
-                recoveryProductSelect.addEventListener('change', function() {
-                    currentRecoveryProduct = this.value;
-                    fetchData();
-                });
-            }
-
-            if (applyBtn) {
-                applyBtn.addEventListener('click', fetchData);
-            }
-
-            if (periodMonthSelect) {
-                periodMonthSelect.addEventListener('change', fetchData);
-            }
+            if (periodMonthSelect) periodMonthSelect.addEventListener('change', markFiltersPending);
+            if (applyBtn) applyBtn.addEventListener('click', fetchData);
 
             const toggleBtn = document.getElementById('btn-toggle-filters');
             const filterCard = document.querySelector('.filter-card');
@@ -2302,6 +2159,7 @@
                 toggleBtn.addEventListener('click', function () {
                     filterCard.classList.toggle('is-open');
                     const isOpen = filterCard.classList.contains('is-open');
+                    toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
                     const toggleText = toggleBtn.querySelector('.btn-toggle-text');
                     if (toggleText) {
                         toggleText.innerHTML = isOpen
@@ -2310,11 +2168,10 @@
                     }
                 });
             }
-            updateTimeseriesFilterSummary();
-
             // Initial Initialization
-            renderSegmentSelector();
+            normalizeLegacySelection();
             rebuildKancaOptions();
+            updateTimeseriesFilterSummary();
             syncSummaryVisibility(Array.from(activeKancas));
             if (hasTimeseriesData(initialTimeseriesData)) {
                 renderCharts(initialTimeseriesData, activeKancas.size);

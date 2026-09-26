@@ -238,7 +238,7 @@
         box-shadow: 
             0 10px 15px -3px rgba(0, 0, 0, 0.1), 
             0 4px 6px -2px rgba(0, 0, 0, 0.05),
-            0 25px 50px -12px rgba(0, 0, 0, 0.15);
+            0 25px 50px -12px rgba(4, 42, 95, 0.2);
         z-index: 1100; /* Above sticky headers and loaders */
         opacity: 0;
         visibility: hidden;
@@ -525,7 +525,7 @@
     .capture-status-modal .modal-content {
         border-radius: 2rem;
         border: none;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        box-shadow: 0 25px 50px -12px rgba(4, 42, 95, 0.28);
     }
     
     .btn-capture-all {

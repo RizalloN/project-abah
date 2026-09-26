@@ -1118,7 +1118,24 @@
             `;
 
             if (!append) {
-                drillHead.innerHTML = `<tr>${columns.map(column => `<th>${escapeHtml(column)}</th>`).join('')}</tr>`;
+                drillHead.innerHTML = `<tr>${columns.map(column => {
+                    const isNumeric = [
+                        'pivot_previous_balance',
+                        'baki_debet1',
+                        'plafon',
+                        'total_kewajiban',
+                        'tunggakan_pokok',
+                        'tunggakan_bunga',
+                        'tunggakan_penalti',
+                        'payment_amount',
+                        'final_payment_amount',
+                        'sai_deffered',
+                        'sai1',
+                        'umur_tunggakan',
+                    ].includes(column);
+                    const alignClass = isNumeric ? ' class="text-right"' : '';
+                    return `<th${alignClass}>${escapeHtml(getDrillColumnLabel(column))}</th>`;
+                }).join('')}</tr>`;
             }
 
             if (!rows.length && !append) {
@@ -1135,6 +1152,49 @@
             renderDrillRowsChunked(columns, rows, append);
         }
 
+        function getDrillColumnLabel(column) {
+            const labels = {
+                'pivot_before_bucket': 'Kolek Pembanding',
+                'pivot_after_bucket': 'Kolek Posisi',
+                'pivot_previous_balance': 'Baki Debet Pembanding',
+                'baki_debet1': 'Baki Debet Posisi',
+                'periode': 'Periode',
+                'cabang1': 'Cabang',
+                'unit1': 'Unit Kerja',
+                'cifno': 'CIF',
+                'nomor_rekening1': 'No. Rekening',
+                'nama_debitur1': 'Nama Debitur',
+                'plafon': 'Plafon',
+                'kol_adk1': 'Kol ADK',
+                'kolek_detail': 'Kolek Detail',
+                'kolek': 'Kolek',
+                'total_kewajiban': 'Total Kewajiban',
+                'tunggakan_pokok': 'Tunggakan Pokok',
+                'tunggakan_bunga': 'Tunggakan Bunga',
+                'tunggakan_penalti': 'Tunggakan Penalti',
+                'umur_tunggakan': 'Umur Tunggakan',
+                'tgl_realisasi': 'Tgl Realisasi',
+                'tgl_jatuh_tempo': 'Tgl Jatuh Tempo',
+                'tanggal_menunggak': 'Tgl Menunggak',
+                'tgl_bayar_terakhir': 'Tgl Bayar Terakhir',
+                'next_pmt_date': 'Tgl Pokok Berikutnya',
+                'next_pmt_int_date': 'Tgl Bunga Berikutnya',
+                'bap': 'BAP',
+                'payment_amount': 'Payment Amount',
+                'final_payment_amount': 'Final Payment Amount',
+                'sai_deffered': 'SAI Deferred',
+                'sai1': 'SAI',
+                'freq_payment': 'Freq Pokok',
+                'freq_int_payment': 'Freq Bunga',
+                'pn_pengelola1': 'PN Pengelola',
+                'segmen_dashboard': 'Segmen',
+                'produk_dashboard': 'Produk',
+                'tgl_akad_restruk': 'Tgl Akad Restruk',
+                'flag_restruk': 'Flag Restruk',
+            };
+            return labels[column] || column;
+        }
+
         function renderDrillRowsChunked(columns, rows, append) {
             if (!append) {
                 drillBody.innerHTML = '';
@@ -1149,7 +1209,24 @@
 
                 for (let i = index; i < end; i++) {
                     const tr = document.createElement('tr');
-                    tr.innerHTML = columns.map(column => `<td>${escapeHtml(formatDrillCellValue(column, rows[i][column]))}</td>`).join('');
+                    tr.innerHTML = columns.map(column => {
+                        const isNumeric = [
+                            'pivot_previous_balance',
+                            'baki_debet1',
+                            'plafon',
+                            'total_kewajiban',
+                            'tunggakan_pokok',
+                            'tunggakan_bunga',
+                            'tunggakan_penalti',
+                            'payment_amount',
+                            'final_payment_amount',
+                            'sai_deffered',
+                            'sai1',
+                            'umur_tunggakan',
+                        ].includes(column);
+                        const alignClass = isNumeric ? ' class="text-right"' : '';
+                        return `<td${alignClass}>${escapeHtml(formatDrillCellValue(column, rows[i][column]))}</td>`;
+                    }).join('');
                     fragment.appendChild(tr);
                 }
 
@@ -1171,6 +1248,23 @@
         function formatDrillCellValue(column, value) {
             if (column === 'pivot_before_bucket' || column === 'pivot_after_bucket') {
                 return displayBucketLabel(value);
+            }
+
+            const currencyColumns = [
+                'pivot_previous_balance',
+                'baki_debet1',
+                'plafon',
+                'total_kewajiban',
+                'tunggakan_pokok',
+                'tunggakan_bunga',
+                'tunggakan_penalti',
+                'payment_amount',
+                'final_payment_amount',
+                'sai_deffered',
+                'sai1',
+            ];
+            if (currencyColumns.includes(column)) {
+                return value === null || value === undefined || value === '' ? '0' : formatNumber(value);
             }
 
             return value ?? '';

@@ -30,7 +30,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `fetchKpiSheetPayload` | method | 10 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:540` |
 | `getTimeseriesPayload` | method | 10 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2583` |
 | `report.dashboard-almafacts.kpi` | route | 10 | - |
-| `test_delete_management_removes_ssa_almafacts_by_period_and_branch` | method | 10 | `tests/Unit/ManagedReportDeleteTest.php:1114` |
+| `test_delete_management_removes_ssa_almafacts_by_period_and_branch` | method | 10 | `tests/Unit/ManagedReportDeleteTest.php:1182` |
 | `financialSnapshots` | method | 9 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1941` |
 | `report.dashboard-almafacts.financial-highlight` | route | 9 | - |
 | `report.dashboard-almafacts.kinerja-laba-rugi` | route | 9 | - |

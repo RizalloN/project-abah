@@ -1,25 +1,26 @@
 <style>
     :root {
         --loan-surface: #ffffff;
-        --loan-surface-soft: #f8fbff;
-        --loan-border: rgba(8, 87, 195, 0.12);
-        --loan-border-strong: rgba(8, 87, 195, 0.2);
-        --loan-text: #0f172a;
-        --loan-muted: #5b7da7;
-        --loan-blue: #0857c3; /* BRI Nusantara */
-        --loan-blue-deep: #053b82; /* BRI Ink */
-        --loan-blue-ink: #042a5f; /* BRI Night */
-        --loan-blue-soft: #f2f7ff; /* BRI Mist */
-        --loan-cyan: #71c5e8; /* BRI Mentari */
+        --loan-surface-soft: var(--app-surface-soft, #f7faff);
+        --loan-border: var(--app-line, rgba(8, 87, 195, 0.14));
+        --loan-border-strong: rgba(8, 87, 195, 0.24);
+        --loan-text: var(--app-ink, #082b59);
+        --loan-muted: var(--app-muted, #526987);
+        --loan-blue: var(--bri-nusantara, #0857c3); /* BRI Nusantara */
+        --loan-blue-deep: var(--bri-ink, #053b82); /* BRI Ink */
+        --loan-blue-ink: var(--bri-night, #042a5f); /* BRI Night */
+        --loan-blue-soft: var(--bri-mist, #f2f7ff); /* BRI Mist */
+        --loan-cyan: var(--bri-mentari, #71c5e8); /* BRI Mentari */
         --loan-red: #ef4444;
-        --loan-radius: 20px;
-        --loan-shadow: 0 18px 34px -28px rgba(4, 42, 95, 0.28);
+        --loan-radius: var(--app-radius, 14px);
+        --loan-shadow: var(--app-shadow, 0 18px 42px -30px rgba(4, 42, 95, 0.34));
+        --loan-focus: rgba(48, 127, 226, 0.34);
     }
 
     .loan-dashboard {
         padding-bottom: 1.5rem;
         color: var(--loan-text);
-        background: #fdfdfe;
+        background: transparent;
     }
 
     .loan-shell,
@@ -27,10 +28,10 @@
         position: relative;
         border: 1px solid var(--loan-border);
         border-radius: var(--loan-radius);
-        background: #ffffff;
+        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
         box-shadow: var(--loan-shadow);
         overflow: hidden;
-        transition: transform 0.3s ease;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease;
     }
 
     .loan-shell::before,
@@ -39,7 +40,7 @@
         position: absolute;
         inset: 0 auto auto 0;
         width: 100%;
-        height: 6px;
+        height: 1px;
         background: linear-gradient(90deg, var(--loan-blue-ink), var(--loan-blue), var(--loan-cyan));
         z-index: 5;
     }
@@ -48,38 +49,47 @@
         position: relative;
         margin-bottom: 0.75rem;
         padding: 0.75rem 0.85rem;
-        border: 1px solid #f1f5f9;
-        border-radius: 12px;
-        background: #f8fafc;
-        transition: all 0.2s ease;
+        border: 1px solid var(--loan-border);
+        border-radius: 11px;
+        background: linear-gradient(180deg, #f7faff 0%, #ffffff 100%);
+        transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
         min-height: 90px;
     }
 
     .loan-filter-grid .form-group:focus-within {
         background: #ffffff;
         border-color: var(--loan-blue);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 0 0 3px var(--loan-focus);
     }
 
     .loan-filter-label {
         display: block;
         font-size: 0.65rem;
         font-weight: 800;
-        color: #64748b;
+        color: var(--loan-muted);
         text-transform: uppercase;
         letter-spacing: 0.08em;
         margin-bottom: 0.4rem;
     }
 
     .loan-filter-control {
-        border-radius: 8px !important;
+        border-radius: 10px !important;
         min-height: 38px !important;
         height: 38px !important;
-        border-color: #e2e8f0 !important;
+        border-color: #c4d6eb !important;
         background: #ffffff !important;
         font-size: 0.85rem;
         font-weight: 700;
-        color: #1e293b !important;
+        color: var(--loan-text) !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+        transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .loan-filter-control:focus,
+    .loan-filter-control:focus-visible {
+        border-color: var(--loan-blue) !important;
+        outline: none !important;
+        box-shadow: 0 0 0 3px var(--loan-focus) !important;
     }
 
     .loan-loading-chip {
@@ -88,25 +98,25 @@
         gap: 0.55rem;
         border-radius: 999px;
         padding: 0.4rem 1rem;
-        background: #f1f5f9;
-        color: #475569;
+        background: var(--loan-blue-soft);
+        color: var(--loan-blue-deep);
         font-size: 0.75rem;
         font-weight: 800;
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--loan-border-strong);
     }
 
     .loan-loading-dot {
         width: 10px;
         height: 10px;
         border-radius: 999px;
-        background: #14b8a6;
+        background: var(--loan-blue);
         animation: loanPulse 1.6s infinite;
     }
 
     @keyframes loanPulse {
-        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.45); }
-        70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(20, 184, 166, 0); }
-        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(20, 184, 166, 0); }
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(8, 87, 195, 0.38); }
+        70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(8, 87, 195, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(8, 87, 195, 0); }
     }
 
     .loan-filter-meta {
@@ -124,11 +134,13 @@
 
     .loan-title-hero {
         position: relative;
-        margin-bottom: 0.25rem;
-        padding: 1.25rem 0.5rem;
-        background: transparent;
+        margin-bottom: 1rem;
+        padding: 1.25rem 1.35rem;
+        background: linear-gradient(125deg, #ffffff 0%, #f3f8ff 72%, #edf6ff 100%);
         color: var(--loan-blue-ink);
-        border-bottom: 1px solid #f1f5f9;
+        border: 1px solid var(--loan-border);
+        border-radius: var(--loan-radius);
+        box-shadow: var(--loan-shadow);
     }
 
     .loan-title-hero__wrap {
@@ -143,7 +155,7 @@
         gap: 0.4rem;
         margin-bottom: 0.4rem;
         padding: 0.2rem 0.6rem;
-        border-radius: 4px;
+        border-radius: 999px;
         background: var(--loan-blue-soft);
         color: var(--loan-blue);
         font-size: 0.6rem;
@@ -163,14 +175,13 @@
         font-size: 1.45rem;
         font-weight: 900;
         color: var(--loan-blue-ink);
-        letter-spacing: -0.01em;
+        letter-spacing: -0.025em;
         line-height: 1.1;
-        text-transform: uppercase;
     }
 
     .loan-title-hero__desc {
         margin: 0.35rem 0 0;
-        color: #64748b;
+        color: var(--loan-muted);
         font-size: 0.8rem;
         line-height: 1.5;
         max-width: 800px;
@@ -322,6 +333,18 @@
         max-width: min(1320px, calc(100vw - 2rem));
     }
 
+    @media (min-width: 1600px) {
+        .loan-drill-modal .modal-dialog {
+            max-width: min(1800px, 94vw);
+        }
+    }
+
+    @media (min-width: 2400px) {
+        .loan-drill-modal .modal-dialog {
+            max-width: min(2400px, 95vw);
+        }
+    }
+
     .loan-drill-modal {
         z-index: 1065;
     }
@@ -349,9 +372,9 @@
     }
 
     .loan-drill-meta span {
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--loan-border);
         border-radius: 999px;
-        background: #f8fafc;
+        background: var(--loan-blue-soft);
         padding: 0.35rem 0.7rem;
     }
 
@@ -393,7 +416,7 @@
     .loan-drill-state {
         padding: 2rem;
         text-align: center;
-        color: #64748b;
+        color: var(--loan-muted);
         font-weight: 800;
     }
 
@@ -401,18 +424,18 @@
         margin-top: 0.75rem;
         font-size: 0.72rem;
         font-weight: 700;
-        color: #64748b;
+        color: var(--loan-muted);
     }
 
     /* Legend Styles */
     .loan-legend {
         display: flex;
         flex-wrap: wrap;
-        gap: 1.5rem;
+        gap: 0.75rem;
         margin-top: 1.5rem;
         padding: 1.25rem;
         background: var(--loan-surface-soft);
-        border-radius: 16px;
+        border-radius: var(--loan-radius);
         border: 1px solid var(--loan-border);
     }
 
@@ -423,11 +446,11 @@
         font-size: 0.82rem;
         font-weight: 800;
         color: var(--loan-blue-ink);
-        padding: 0.5rem 1rem;
+        padding: 0.5rem 0.85rem;
         background: #ffffff;
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(4, 42, 95, 0.04);
-        border: 1px solid rgba(255, 255, 255, 0.5);
+        border-radius: 9px;
+        box-shadow: 0 8px 20px -18px rgba(4, 42, 95, 0.4);
+        border: 1px solid var(--loan-border);
     }
 
     .loan-legend-swatch {
@@ -448,7 +471,7 @@
     /* ── Mismatch Specific ───────────────────────── */
     .loan-mismatch-summary {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 1.25rem;
         margin: 1.5rem 0;
     }
@@ -456,17 +479,17 @@
     .loan-mismatch-card {
         position: relative;
         border: 1px solid var(--loan-border);
-        border-radius: 16px;
+        border-radius: var(--loan-radius);
         padding: 1.25rem;
         background: linear-gradient(135deg, #ffffff, var(--loan-surface-soft));
-        box-shadow: 0 4px 12px rgba(4, 42, 95, 0.04);
+        box-shadow: 0 14px 30px -26px rgba(4, 42, 95, 0.38);
         overflow: hidden;
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease;
     }
 
     .loan-mismatch-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 24px rgba(4, 42, 95, 0.08);
+        border-color: var(--loan-border-strong);
+        box-shadow: 0 18px 36px -28px rgba(4, 42, 95, 0.48);
     }
 
     .loan-mismatch-card::before {
@@ -475,7 +498,7 @@
         top: 0;
         left: 0;
         width: 100%;
-        height: 4px;
+        height: 1px;
         background: linear-gradient(90deg, var(--loan-blue), var(--loan-cyan));
     }
 
@@ -550,7 +573,7 @@
         padding: 3rem 1rem;
         text-align: center;
         color: var(--loan-muted);
-        background: var(--loan-surface-soft);
+        background: linear-gradient(180deg, #fbfdff 0%, var(--loan-blue-soft) 100%);
     }
 
     .loan-empty-state strong {
@@ -568,15 +591,16 @@
     .loan-loading-overlay {
         position: absolute;
         inset: 0;
-        background: rgba(255, 255, 255, 0.85);
-        backdrop-filter: blur(14px) saturate(160%);
+        background: rgba(248, 251, 255, 0.94);
+        backdrop-filter: blur(8px) saturate(120%);
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         z-index: 100;
-        transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-        border-radius: 12px;
+        transition: opacity 0.24s ease, visibility 0.24s ease, transform 0.24s ease;
+        border: 1px solid var(--loan-border);
+        border-radius: var(--loan-radius);
     }
 
     .loan-loading-overlay.is-hidden {
@@ -617,10 +641,10 @@
 
     .loan-loading-progress-track {
         height: 8px;
-        background: #f1f5f9;
+        background: #eaf2fc;
         border-radius: 999px;
         overflow: hidden;
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--loan-border);
     }
 
     .loan-loading-progress-bar {
@@ -632,16 +656,23 @@
 
     /* ── Select2 overrides ── */
     .select2-container--bootstrap4 .select2-selection {
-        border-radius: 8px !important;
+        border-radius: 10px !important;
         min-height: 38px !important;
-        border-color: #e2e8f0 !important;
+        border-color: #c4d6eb !important;
         background: #ffffff !important;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .select2-container--bootstrap4.select2-container--focus .select2-selection,
+    .select2-container--bootstrap4.select2-container--open .select2-selection {
+        border-color: var(--loan-blue) !important;
+        box-shadow: 0 0 0 3px var(--loan-focus) !important;
     }
 
     .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered {
         line-height: 36px !important;
         font-weight: 700 !important;
-        color: #1e293b !important;
+        color: var(--loan-text) !important;
         font-size: 0.85rem !important;
     }
 
@@ -781,11 +812,11 @@
 
     /* ── Capture & Export Buttons ── */
     .btn-capture-all {
-        border-radius: 12px;
+        border-radius: 11px;
         height: 40px;
         font-weight: 700;
         border-width: 2px;
-        transition: all 0.2s ease;
+        transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
@@ -810,15 +841,21 @@
         background: #f8fbff;
         border-color: var(--loan-blue);
         color: var(--loan-blue);
-        transform: translateY(-1px);
         box-shadow: 0 4px 10px rgba(8, 87, 195, 0.15);
+    }
+
+    .btn-capture-all:focus-visible,
+    .btn-snapshot:focus-visible,
+    .capture-status-modal .btn-primary:focus-visible {
+        outline: 3px solid var(--loan-focus);
+        outline-offset: 2px;
     }
 
     /* ── Capture Status Modal (Series Logic) ── */
     .capture-status-modal .modal-content {
-        border-radius: 24px;
-        border: none;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+        border-radius: var(--loan-radius);
+        border: 1px solid var(--loan-border);
+        box-shadow: 0 30px 72px -36px rgba(4, 42, 95, 0.54);
         overflow: hidden;
     }
 
@@ -954,10 +991,80 @@
 
     @media (max-width: 768px) {
         .loan-mismatch-summary {
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
         .loan-filter-grid .form-group {
             min-height: auto;
+        }
+    }
+
+    @media (max-width: 420px) {
+        .loan-title-hero {
+            padding: 1rem;
+        }
+
+        .loan-title-hero__title {
+            overflow-wrap: anywhere;
+        }
+
+        .loan-filter-meta,
+        .loan-table-heading {
+            flex-wrap: wrap;
+            gap: 0.55rem;
+        }
+
+        .loan-mismatch-summary {
+            grid-template-columns: minmax(0, 1fr);
+            gap: 0.75rem;
+        }
+
+        .loan-mismatch-card,
+        .loan-legend {
+            padding: 1rem;
+        }
+    }
+
+    @media (pointer: coarse) {
+        .loan-filter-control,
+        .btn-capture-all {
+            min-height: 44px !important;
+            height: 44px !important;
+        }
+
+        .select2-container--bootstrap4 .select2-selection {
+            min-height: 44px !important;
+        }
+
+        .select2-container--bootstrap4 .select2-selection--single {
+            height: 44px !important;
+        }
+
+        .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered {
+            line-height: 42px !important;
+        }
+
+        .btn-snapshot {
+            width: 44px;
+            height: 44px;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .loan-shell,
+        .loan-table-shell,
+        .loan-filter-grid .form-group,
+        .loan-filter-control,
+        .loan-loading-dot,
+        .loan-mismatch-card,
+        .loan-loading-overlay,
+        .loan-loading-progress-bar,
+        .select2-container--bootstrap4 .select2-selection,
+        .btn-capture-all,
+        .btn-snapshot,
+        .pct-data-bar {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
         }
     }
 </style>

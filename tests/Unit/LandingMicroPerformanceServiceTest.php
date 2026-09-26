@@ -496,6 +496,96 @@ class LandingMicroPerformanceServiceTest extends TestCase
         $this->assertSame(530_000_000.0, (float) collect(data_get($payload, 'patterns'))->sum('amount'));
     }
 
+    public function test_blank_current_decision_identity_is_recovered_only_from_exact_account_in_same_month(): void
+    {
+        DB::table('brihc')->insert([
+            'pn' => '00020458',
+            'nama' => 'Hendri Windianarko',
+            'jabatan' => 'MBM',
+        ]);
+        DB::table('daily_loan_dinamis')->insert([
+            $this->dailyLoanRow('identity-history', '2026-09-20', 'CIF-IDENTITY', 'REK-IDENTITY', 110_000_000, 'MICRO', 'Kupedes', '2026-09-10', [
+                'pn_pemutus1' => '00020458 - Hendri Windianarko',
+                'pn_pemutus_normalized' => '20458',
+            ]),
+            $this->dailyLoanRow('identity-current', '2026-09-23', 'CIF-IDENTITY', 'REK-IDENTITY', 225_000_000, 'MICRO', 'KUR Kecil', '2026-09-22'),
+        ]);
+
+        $rows = $this->invokePrivate(
+            app(LandingMicroPerformanceService::class),
+            'fetchPlafondRealizationRows',
+            ['2026-09-23', null]
+        );
+
+        $this->assertCount(1, $rows);
+        $this->assertSame('20458', data_get($rows, '0.decision_pn'));
+        $this->assertSame('Hendri Windianarko', data_get($rows, '0.decision_name'));
+        $this->assertSame('MBM', data_get($rows, '0.decision_role'));
+        $this->assertSame('same_month_exact_account', data_get($rows, '0.decision_identity_source'));
+        $this->assertSame('2026-09-20', data_get($rows, '0.decision_identity_period'));
+        $this->assertSame(225_000_000.0, data_get($rows, '0.plafon'));
+        $this->assertSame('2026-09-22', data_get($rows, '0.realization_date'));
+
+        $ranking = $this->invokePrivate($service = app(LandingMicroPerformanceService::class), 'buildMbmDecisionRanking', [$rows, []]);
+        $pdwk = $this->invokePrivate($service, 'buildPdwkLimitSummary', [$rows]);
+        $mbmStatuses = collect(data_get(collect(data_get($pdwk, 'roles'))->firstWhere('key', 'mbm'), 'statuses'))->keyBy('key');
+
+        $this->assertTrue(data_get($ranking, 'available'));
+        $this->assertSame('Nur Elfiana', data_get($ranking, 'metrics.plafond.top.0.name'));
+        $this->assertSame(1, data_get($mbmStatuses, 'limited.pemutus'));
+    }
+
+    public function test_decision_identity_is_not_carried_across_accounts_or_months(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            $this->dailyLoanRow('identity-previous-month', '2026-08-31', 'CIF-TARGET', 'REK-TARGET', 125_000_000, 'MICRO', 'Kupedes', '2026-08-20', [
+                'pn_pemutus1' => '00020458 - Pemutus Bulan Lalu',
+                'pn_pemutus_normalized' => '20458',
+            ]),
+            $this->dailyLoanRow('identity-other-account', '2026-09-20', 'CIF-OTHER', 'REK-OTHER', 125_000_000, 'MICRO', 'Kupedes', '2026-09-10', [
+                'pn_pemutus1' => '00066855 - Pemutus Rekening Lain',
+                'pn_pemutus_normalized' => '66855',
+            ]),
+            $this->dailyLoanRow('identity-unresolved-current', '2026-09-23', 'CIF-TARGET', 'REK-TARGET', 125_000_000, 'MICRO', 'Kupedes', '2026-09-22'),
+        ]);
+
+        $rows = $this->invokePrivate(
+            app(LandingMicroPerformanceService::class),
+            'fetchPlafondRealizationRows',
+            ['2026-09-23', null]
+        );
+
+        $this->assertCount(1, $rows);
+        $this->assertSame('', data_get($rows, '0.decision_pn'));
+        $this->assertSame('unresolved', data_get($rows, '0.decision_identity_source'));
+        $this->assertNull(data_get($rows, '0.decision_identity_period'));
+        $this->assertSame('MBM', data_get($rows, '0.decision_role'));
+        $this->assertSame('nominal_fallback', data_get($rows, '0.decision_role_source'));
+    }
+
+    public function test_payload_reports_partial_decision_identity_coverage(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            $this->dailyLoanRow('coverage-history', '2026-09-20', 'CIF-COVERED', 'REK-COVERED', 100_000_000, 'MICRO', 'Kupedes', '2026-09-10', [
+                'pn_pemutus1' => '00020458 - Hendri Windianarko',
+                'pn_pemutus_normalized' => '20458',
+            ]),
+            $this->dailyLoanRow('coverage-current-recovered', '2026-09-23', 'CIF-COVERED', 'REK-COVERED', 150_000_000, 'MICRO', 'Kupedes', '2026-09-22'),
+            $this->dailyLoanRow('coverage-current-unresolved', '2026-09-23', 'CIF-UNRESOLVED', 'REK-UNRESOLVED', 80_000_000, 'MICRO', 'Kupedes', '2026-09-22'),
+        ]);
+
+        $payload = app(LandingMicroPerformanceService::class)->payload('2026-09-23', null, true);
+
+        $this->assertSame(2, data_get($payload, 'meta.identity_coverage.total_accounts'));
+        $this->assertSame(1, data_get($payload, 'meta.identity_coverage.covered_accounts'));
+        $this->assertSame(0, data_get($payload, 'meta.identity_coverage.current_period_accounts'));
+        $this->assertSame(1, data_get($payload, 'meta.identity_coverage.recovered_accounts'));
+        $this->assertSame(1, data_get($payload, 'meta.identity_coverage.unresolved_accounts'));
+        $this->assertSame(50.0, data_get($payload, 'meta.identity_coverage.coverage_percent'));
+        $this->assertFalse(data_get($payload, 'meta.identity_coverage.complete'));
+        $this->assertSame(230_000_000.0, data_get($payload, 'realization.total.amount'));
+    }
+
     public function test_manual_pdwk_account_overrides_remain_authoritative_after_source_import_changes(): void
     {
         DB::table('brihc')->insert([
@@ -1295,7 +1385,7 @@ class LandingMicroPerformanceServiceTest extends TestCase
         $this->assertSame('KC MAGETAN', data_get($payload, 'metrics.plafond.top.0.branch'));
     }
 
-    public function test_pdwk_limit_summary_uses_only_july_workbook_reference(): void
+    public function test_pdwk_limit_summary_uses_current_stop_n_go_workbook_reference(): void
     {
         $rows = [
             (object) [
@@ -1307,19 +1397,19 @@ class LandingMicroPerformanceServiceTest extends TestCase
                 'amount' => 40_000_000,
             ],
             (object) [
-                'account_key' => 'REK-75',
-                'decision_pn' => '20458',
-                'decision_name' => 'Nur Elfiana',
+                'account_key' => 'REK-MBM-75',
+                'decision_pn' => '61165',
+                'decision_name' => 'Nama BRIHC Berbeda',
                 'decision_reference_role' => 'MBM',
                 'decision_role' => 'MBM',
                 'amount' => 75_000_000,
             ],
             (object) [
-                'account_key' => 'REK-100',
-                'decision_pn' => '22781',
-                'decision_name' => 'Suprijono Edi Widodo',
-                'decision_reference_role' => 'MBM',
-                'decision_role' => 'MBM',
+                'account_key' => 'REK-KAUNIT-100',
+                'decision_pn' => '224262',
+                'decision_name' => 'Satriyo Nugroho',
+                'decision_reference_role' => 'KA UNIT',
+                'decision_role' => 'KA UNIT',
                 'amount' => 100_000_000,
             ],
             (object) [
@@ -1351,17 +1441,41 @@ class LandingMicroPerformanceServiceTest extends TestCase
         $kaUnitStatuses = collect(data_get($kaUnit, 'statuses'))->keyBy('key');
 
         $this->assertTrue($payload['available']);
-        $this->assertSame('PDWK MBM & KEPALA UNIT_2026 07 31.xlsx', $payload['source']);
-        $this->assertSame(1, data_get($mbmStatuses, 'full.pemutus'));
+        $this->assertSame('STOP N GO.xlsx', $payload['source']);
+        $this->assertSame(0, data_get($mbmStatuses, 'full.pemutus'));
         $this->assertSame(1, data_get($mbmStatuses, 'three_quarter.pemutus'));
         $this->assertSame(1, data_get($mbmStatuses, 'limited.pemutus'));
         $this->assertSame(0, data_get($mbmStatuses, 'stop.pemutus'));
         $this->assertSame(0.0, data_get($mbmStatuses, 'stop.amount'));
-        $this->assertSame(100_000_000.0, data_get($mbmStatuses, 'full.amount'));
+        $this->assertSame(0.0, data_get($mbmStatuses, 'full.amount'));
         $this->assertSame('Trimo Agung Yunianto', data_get($mbmStatuses, 'limited.people.0.name'));
-        $this->assertSame('Hendri Windianarko', data_get($mbmStatuses, 'three_quarter.reference_people.0.name'));
+        $this->assertSame('Rita Auliasari', data_get($mbmStatuses, 'three_quarter.people.0.name'));
+        $this->assertSame('Moderate', data_get($mbmStatuses, 'three_quarter.people.0.category'));
+        $this->assertSame(75, data_get($mbmStatuses, 'three_quarter.people.0.limit'));
+        $this->assertSame('KC Magetan', data_get($mbmStatuses, 'three_quarter.people.0.branch'));
+        $this->assertSame('Low', data_get($kaUnitStatuses, 'full.label'));
+        $this->assertSame('100% x PDWK', data_get($kaUnitStatuses, 'full.limit_label'));
+        $this->assertSame(1, data_get($kaUnitStatuses, 'full.pemutus'));
         $this->assertSame(1, data_get($kaUnitStatuses, 'three_quarter.pemutus'));
         $this->assertSame(50_000_000.0, data_get($kaUnitStatuses, 'three_quarter.amount'));
+
+        $mbmReference = collect($mbm['statuses'])->flatMap(fn (array $status): array => $status['reference_people']);
+        $kaUnitReference = collect($kaUnit['statuses'])->flatMap(fn (array $status): array => $status['reference_people']);
+        $allReferencePns = $mbmReference->merge($kaUnitReference)->pluck('pn');
+
+        $this->assertCount(12, $mbmReference);
+        $this->assertCount(101, $kaUnitReference);
+        $this->assertTrue($allReferencePns->contains('61165'));
+        $this->assertTrue($allReferencePns->contains('157001'));
+        $this->assertTrue($allReferencePns->contains('298122'));
+        $this->assertFalse($allReferencePns->contains('22781'));
+        $this->assertFalse($allReferencePns->contains('51635'));
+        $this->assertFalse($allReferencePns->contains('22124'));
+        $this->assertSame(7, $mbmReference->where('limit', 75)->count());
+        $this->assertSame(5, $mbmReference->where('limit', 40)->count());
+        $this->assertSame(87, $kaUnitReference->where('limit', 100)->count());
+        $this->assertSame(12, $kaUnitReference->where('limit', 75)->count());
+        $this->assertSame(2, $kaUnitReference->where('limit', 40)->count());
 
         $madiunPayload = $this->invokePrivate(
             app(LandingMicroPerformanceService::class),
@@ -1371,8 +1485,8 @@ class LandingMicroPerformanceServiceTest extends TestCase
         $madiunMbm = collect(data_get($madiunPayload, 'roles'))->firstWhere('key', 'mbm');
         $madiunStatuses = collect(data_get($madiunMbm, 'statuses'))->keyBy('key');
 
-        $this->assertCount(1, data_get($madiunStatuses, 'limited.reference_people'));
-        $this->assertCount(2, data_get($madiunStatuses, 'three_quarter.reference_people'));
+        $this->assertCount(2, data_get($madiunStatuses, 'limited.reference_people'));
+        $this->assertCount(1, data_get($madiunStatuses, 'three_quarter.reference_people'));
         $this->assertCount(0, data_get($madiunStatuses, 'full.reference_people'));
     }
 

@@ -90,7 +90,7 @@
         font-weight: 500;
         cursor: pointer;
     }
-    .table-container { width: 100%; overflow-x: hidden; }
+    .table-container { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .table-report { border-collapse: collapse; width: 100%; table-layout: auto; }
     .table-report th, .table-report td { 
         vertical-align: middle !important; 

@@ -9,7 +9,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | command | 2 |
 | file | 153 |
 | function | 374 |
-| method | 176 |
+| method | 177 |
 | unresolved_symbol | 10 |
 | route | 2 |
 | class | 16 |
@@ -89,13 +89,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| database -> core (instantiates) | 72 |
+| database -> core (instantiates) | 73 |
 | database -> core (checks_table) | 61 |
 | database -> core (writes_table) | 58 |
 | database -> core (calls) | 56 |
 | database -> import (checks_table) | 42 |
 | database -> dashboard-pinjaman (checks_table) | 26 |
-| database -> import (defines_table) | 23 |
+| database -> import (defines_table) | 24 |
 | database -> dashboard-simpanan (checks_table) | 15 |
 | database -> core (reads_table) | 15 |
 | database -> dashboard-pinjaman (alters_table) | 15 |

@@ -150,6 +150,83 @@ class Lw321PnXlsxStagingScriptTest extends TestCase
         }
     }
 
+    public function test_stager_accepts_actual_alias_headers_without_rewriting_source_headers_or_values(): void
+    {
+        $python = $this->resolvePythonBinary();
+        if ($python === null) {
+            $this->markTestSkipped('Python tidak tersedia.');
+        }
+
+        $headers = $this->sourceHeaders();
+        $headers[10] = 'NO_REKENING';
+        $headers[22] = 'KOLEK_LANCAR';
+        $headers[23] = 'KOLEK_DPK';
+        $headers[24] = 'KOLEK_KURANG_LANCAR';
+        $headers[25] = 'KOLEK_DIRAGUKAN';
+        $headers[26] = 'KOLEK_MACET';
+        $headers[40] = 'PN_REFERAL';
+        $headers[47] = 'ORGAMT_Base';
+        $headers[48] = 'CBAL_Base';
+
+        $row = array_fill(0, count($headers), '');
+        $row[1] = '21/09/2026';
+        $row[10] = '000501061071105';
+        $row[22] = '48824693';
+        $row[23] = '125000';
+        $row[24] = '0';
+        $row[25] = '0';
+        $row[26] = '0';
+        $row[40] = '00059472 - Herwan  ';
+        $row[47] = '150000000';
+        $row[48] = '48949693';
+
+        $workbookPath = tempnam(sys_get_temp_dir(), 'lw321pn_alias_source_');
+        $csvPath = tempnam(sys_get_temp_dir(), 'lw321pn_alias_stage_');
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A1', 'Metadata');
+        $sheet->fromArray($headers, null, 'A4');
+        $sheet->fromArray($row, null, 'A5');
+        $sheet->setCellValueExplicit('K5', $row[10], DataType::TYPE_STRING);
+        $sheet->setCellValueExplicit('AO5', $row[40], DataType::TYPE_STRING);
+
+        (new Xlsx($spreadsheet))->save($workbookPath);
+        $spreadsheet->disconnectWorksheets();
+
+        try {
+            $command = escapeshellarg($python)
+                . ' ' . escapeshellarg(base_path('scripts/lw321pn_xlsx_to_csv.py'))
+                . ' --input ' . escapeshellarg($workbookPath)
+                . ' --output ' . escapeshellarg($csvPath)
+                . ' --progress-every 1';
+
+            $output = [];
+            exec($command, $output, $exitCode);
+
+            $this->assertSame(0, $exitCode, implode(PHP_EOL, $output));
+
+            $handle = fopen($csvPath, 'rb');
+            $csvHeaders = fgetcsv($handle);
+            $csvRow = fgetcsv($handle);
+            $extraRow = fgetcsv($handle);
+            fclose($handle);
+
+            $expectedHeaders = $headers;
+            $expectedHeaders[0] = 'COL_0';
+            $this->assertSame($expectedHeaders, $csvHeaders);
+            $this->assertSame('21/09/2026', $csvRow[1]);
+            $this->assertSame('000501061071105', $csvRow[10]);
+            $this->assertSame('48824693', $csvRow[22]);
+            $this->assertSame('00059472 - Herwan  ', $csvRow[40]);
+            $this->assertSame('150000000', $csvRow[47]);
+            $this->assertSame('48949693', $csvRow[48]);
+            $this->assertFalse($extraRow);
+        } finally {
+            @unlink($workbookPath);
+            @unlink($csvPath);
+        }
+    }
+
     private function resolvePythonBinary(): ?string
     {
         $output = [];

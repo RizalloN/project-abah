@@ -5,7 +5,13 @@
         border-right: 1px solid rgba(8, 87, 195, 0.08) !important;
         box-shadow: 10px 0 40px rgba(8, 87, 195, 0.03) !important;
         overflow-x: hidden !important;
-        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+        transition: width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), margin-left 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease !important;
+        overscroll-behavior: contain;
+    }
+
+    body.is-resizing .main-sidebar,
+    body.hold-transition .main-sidebar {
+        transition: none !important;
     }
 
     .main-sidebar .sidebar {
@@ -15,7 +21,7 @@
         scrollbar-width: none;
         scrollbar-gutter: stable;
         padding-top: 0.5rem;
-        padding-bottom: 6rem !important; /* Fix for taskbar cutoff */
+        padding-bottom: max(6rem, calc(1.25rem + env(safe-area-inset-bottom, 0px))) !important; /* Fix for taskbar cutoff */
     }
 
     .main-sidebar .sidebar::-webkit-scrollbar {
@@ -71,7 +77,7 @@
         background: #ffffff !important;
         border-bottom: 1px solid rgba(8, 87, 195, 0.06) !important;
         padding: 1.25rem 1rem !important;
-        transition: all 0.3s ease !important;
+        transition: background-color 0.2s ease, border-color 0.2s ease !important;
         display: block !important;
         height: auto !important;
         line-height: normal !important;
@@ -92,7 +98,7 @@
         border: 1px solid rgba(8, 87, 195, 0.12) !important;
         padding: 0px !important;
         box-shadow: 0 4px 15px rgba(8, 87, 195, 0.04) !important;
-        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+        transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.22s ease, transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
         flex-shrink: 0 !important;
         display: flex !important;
         align-items: center !important;
@@ -132,14 +138,14 @@
     }
 
     .sidebar-brand-link:hover .sidebar-brand-badge {
-        transform: scale(1.05) rotate(-1.5deg);
+        transform: translateY(-1px);
         border-color: rgba(8, 87, 195, 0.25) !important;
         background: rgba(8, 87, 195, 0.08) !important;
         box-shadow: 0 6px 20px rgba(8, 87, 195, 0.1) !important;
     }
 
     .sidebar-brand-link:hover .sidebar-brand-badge img {
-        transform: scale(1.08);
+        transform: none;
     }
 
     .sidebar-brand-text {
@@ -157,10 +163,7 @@
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
-        background: linear-gradient(120deg, #0857c3 0%, #307fe2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-shadow: 0 2px 8px rgba(8, 87, 195, 0.05);
+        color: #053b82 !important;
     }
 
     .sidebar-brand-text .subtitle {
@@ -184,12 +187,12 @@
         box-shadow: 0 6px 20px rgba(8, 87, 195, 0.03) !important;
         padding: 0.72rem 0.8rem !important;
         margin: 1.25rem 0.4rem !important;
-        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+        transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.24s ease, transform 0.24s ease !important;
     }
 
     .sidebar-user-panel:hover {
         background: #eef5ff !important;
-        transform: translateY(-2px);
+        transform: translateY(-1px);
         border-color: rgba(8, 87, 195, 0.15) !important;
         box-shadow: 0 10px 25px rgba(8, 87, 195, 0.06) !important;
     }
@@ -220,7 +223,7 @@
     }
 
     .sidebar-user-panel:hover .sidebar-user-avatar {
-        transform: scale(1.05) rotate(3deg);
+        transform: none;
     }
 
     .sidebar-user-info {
@@ -268,7 +271,7 @@
         position: relative;
         overflow: hidden;
         background: transparent !important;
-        transition: all 250ms cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+        transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 220ms ease, transform 220ms cubic-bezier(0.16, 1, 0.3, 1) !important;
     }
 
     .main-sidebar .nav-sidebar > .nav-item > .nav-link .nav-icon {
@@ -279,7 +282,7 @@
         font-size: 1.08rem !important;
         text-align: center;
         color: #0857c3 !important; /* Vibrant Biru Nusantara icons */
-        transition: all 250ms cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+        transition: color 180ms ease, transform 250ms cubic-bezier(0.25, 0.8, 0.25, 1) !important;
     }
 
     .main-sidebar .nav-sidebar > .nav-item > .nav-link p {
@@ -382,7 +385,7 @@
         font-weight: 550 !important;
         background: transparent !important;
         position: relative !important;
-        transition: all 200ms ease !important;
+        transition: color 180ms ease, background-color 180ms ease, transform 200ms cubic-bezier(0.16, 1, 0.3, 1) !important;
         border: none !important;
         box-shadow: none !important;
     }
@@ -417,7 +420,7 @@
         margin-top: 0.18rem !important;
         font-size: 0.8rem !important;
         color: rgba(8, 87, 195, 0.5) !important;
-        transition: all 200ms ease !important;
+        transition: color 180ms ease, transform 200ms ease !important;
     }
 
     /* Submenu Interactive Node Dot Indicator */
@@ -431,7 +434,7 @@
         border-radius: 50% !important;
         background: rgba(8, 87, 195, 0.25) !important;
         transform: translateY(-50%) !important;
-        transition: all 200ms ease !important;
+        transition: background-color 180ms ease, box-shadow 180ms ease, transform 200ms ease !important;
     }
 
     /* Submenu Hover states */
@@ -507,107 +510,153 @@
         box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
     }
 
-    /* Collapsed Sidebar Modernization Adjustments */
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) {
-        width: 4.8rem !important;
+    @media (min-width: 992px) {
+        /* Collapsed Sidebar Modernization Adjustments */
+        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) {
+            width: 4.8rem !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .brand-link,
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .brand-link,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .brand-link {
+            padding: 1rem 0.5rem !important;
+            justify-content: center !important;
+            transition: none !important;
+            transform: none !important;
+            width: 4.8rem !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-user-panel {
+            padding: 0.6rem 0.3rem !important;
+            justify-content: center !important;
+            margin-left: 0.3rem !important;
+            margin-right: 0.3rem !important;
+            width: calc(100% - 0.6rem) !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar > .nav-item > .nav-link {
+            padding: 0.65rem 0 !important;
+            justify-content: center !important;
+            width: calc(100% - 0.8rem) !important;
+            margin: 0 auto 0.25rem auto !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-brand-badge,
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-badge,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-brand-badge,
+        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-user-avatar,
+        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-icon {
+            margin-right: 0 !important;
+            transition: none !important;
+            transform: none !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-brand-text,
+        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-user-info,
+        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar > .nav-item:not(:hover) p,
+        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar > .nav-item:not(:hover) .right,
+        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-header,
+        .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar > .nav-item:not(:hover) .nav-treeview {
+            display: none !important;
+        }
+
+        /* Expanded collapsed Hover states (Disabled to prevent layout bugs) */
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused {
+            width: 4.8rem !important;
+            box-shadow: none !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-text,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-brand-text,
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-user-info,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-user-info,
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar p,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar p,
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .right,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar .right,
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-header,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-header,
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .nav-treeview,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-treeview {
+            display: none !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .brand-link,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .brand-link {
+            padding: 1rem 0.5rem !important;
+            justify-content: center !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-user-panel,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-user-panel {
+            padding: 0.6rem 0.3rem !important;
+            justify-content: center !important;
+            margin-left: 0.3rem !important;
+            margin-right: 0.3rem !important;
+            width: calc(100% - 0.6rem) !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar > .nav-item > .nav-link,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar > .nav-item > .nav-link {
+            padding: 0.65rem 0 !important;
+            justify-content: center !important;
+            width: calc(100% - 0.8rem) !important;
+            margin: 0 auto 0.25rem auto !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-badge,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-brand-badge,
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-user-avatar,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-user-avatar,
+        .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-icon,
+        .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-icon {
+            margin-right: 0 !important;
+        }
     }
 
-    .sidebar-mini.sidebar-collapse .main-sidebar .brand-link,
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .brand-link,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .brand-link {
-        padding: 1rem 0.5rem !important;
-        justify-content: center !important;
-        transition: none !important;
-        transform: none !important;
-        width: 4.8rem !important;
+    @media (max-width: 991.98px) {
+        body:not(.sidebar-open) .main-sidebar {
+            margin-left: -250px !important;
+        }
+
+        body.sidebar-open .main-sidebar {
+            width: 260px !important;
+            margin-left: 0 !important;
+        }
     }
 
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-user-panel {
-        padding: 0.6rem 0.3rem !important;
-        justify-content: center !important;
-        margin-left: 0.3rem !important;
-        margin-right: 0.3rem !important;
-        width: calc(100% - 0.6rem) !important;
+    .main-sidebar :where(a, button, [tabindex]):focus-visible {
+        outline: 3px solid rgba(48, 127, 226, 0.46) !important;
+        outline-offset: -2px;
     }
 
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar > .nav-item > .nav-link {
-        padding: 0.65rem 0 !important;
-        justify-content: center !important;
-        width: calc(100% - 0.8rem) !important;
-        margin: 0 auto 0.25rem auto !important;
+    @media (hover: none) {
+        .sidebar-brand-link:hover .sidebar-brand-badge,
+        .sidebar-brand-link:hover .sidebar-brand-badge img,
+        .sidebar-user-panel:hover,
+        .sidebar-user-panel:hover .sidebar-user-avatar,
+        .main-sidebar .nav-sidebar .nav-link:hover,
+        .main-sidebar .nav-sidebar .nav-link:hover .nav-icon {
+            transform: none !important;
+        }
     }
 
-    .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-brand-badge,
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-badge,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-brand-badge,
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-user-avatar,
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-icon {
-        margin-right: 0 !important;
-        transition: none !important;
-        transform: none !important;
+    @media (pointer: coarse) {
+        .main-sidebar .nav-sidebar > .nav-item > .nav-link,
+        .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link {
+            min-height: 44px;
+        }
     }
 
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-brand-text,
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .sidebar-user-info,
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar > .nav-item:not(:hover) p,
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar > .nav-item:not(:hover) .right,
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-header,
-    .sidebar-mini.sidebar-collapse .main-sidebar:not(:hover):not(.sidebar-focused) .nav-sidebar > .nav-item:not(:hover) .nav-treeview {
-        display: none !important;
-    }
-
-    /* Expanded collapsed Hover states (Disabled to prevent layout bugs) */
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused {
-        width: 4.8rem !important;
-        box-shadow: none !important;
-    }
-
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-text,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-brand-text,
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-user-info,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-user-info,
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar p,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar p,
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .right,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar .right,
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-header,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-header,
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .nav-treeview,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-treeview {
-        display: none !important;
-    }
-
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .brand-link,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .brand-link {
-        padding: 1rem 0.5rem !important;
-        justify-content: center !important;
-    }
-
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-user-panel,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-user-panel {
-        padding: 0.6rem 0.3rem !important;
-        justify-content: center !important;
-        margin-left: 0.3rem !important;
-        margin-right: 0.3rem !important;
-        width: calc(100% - 0.6rem) !important;
-    }
-
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar > .nav-item > .nav-link,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar > .nav-item > .nav-link {
-        padding: 0.65rem 0 !important;
-        justify-content: center !important;
-        width: calc(100% - 0.8rem) !important;
-        margin: 0 auto 0.25rem auto !important;
-    }
-
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-brand-badge,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-brand-badge,
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .sidebar-user-avatar,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .sidebar-user-avatar,
-    .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-icon,
-    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-icon {
-        margin-right: 0 !important;
+    @media (prefers-reduced-motion: reduce) {
+        .main-sidebar,
+        .main-sidebar * {
+            scroll-behavior: auto !important;
+            transition-duration: 0.01ms !important;
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+        }
     }
 </style>
 

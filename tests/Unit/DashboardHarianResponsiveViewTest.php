@@ -98,18 +98,59 @@ class DashboardHarianResponsiveViewTest extends TestCase
         $this->assertStringContainsString('<select id="kancaInput" class="timeseries-dimension-select"', $source);
         $this->assertStringContainsString('data-user-branch-locked=', $source);
         $this->assertStringContainsString('id="unitFilterColumn"', $source);
-        $this->assertStringContainsString('unitFilterColumn.hidden = !hasSingleBranch;', $source);
+        $this->assertStringContainsString('<select id="unitInput" class="timeseries-dimension-select">', $source);
+        $this->assertStringContainsString('unitInput.disabled = !hasSingleBranch;', $source);
         $this->assertStringContainsString("kancaInput.value === 'all'", $source);
         $this->assertStringNotContainsString('id="kancaOptionsList"', $source);
         $this->assertStringContainsString("{ value: 'giro', label: 'Giro' }", $source);
         $this->assertStringContainsString("{ value: 'tabungan', label: 'Tabungan' }", $source);
         $this->assertStringContainsString("{ value: 'deposito', label: 'Deposito' }", $source);
-        $this->assertStringContainsString('id="retailMicroFilterColumn"', $source);
-        $this->assertStringContainsString('id="retailMicroFilter" class="timeseries-dimension-select"', $source);
-        $this->assertStringContainsString("function usesRetailMicroDropdown()", $source);
-        $this->assertStringContainsString("['ritel', 'micro'].includes(currentSegment)", $source);
+        $this->assertStringContainsString('<select id="categoryInput" class="timeseries-dimension-select">', $source);
+        $this->assertStringContainsString('<select id="segmentInput" class="timeseries-dimension-select"></select>', $source);
+        $this->assertStringContainsString('<select id="productInput" class="timeseries-dimension-select"></select>', $source);
+        $this->assertStringContainsString('<option value="ldr"', $source);
+        $this->assertStringContainsString('function segmentOptionsForContext()', $source);
+        $this->assertStringContainsString("if (/^(KC|KCP)\\b/.test(normalized)) return 'ritel';", $source);
+        $this->assertStringContainsString("if (/^UNIT\\b/.test(normalized) || normalized.includes('-- UNIT')) return 'micro';", $source);
+        $this->assertStringContainsString('wholesaleSegmentOption', $source);
         $this->assertStringContainsString('function currentSegmentLabel()', $source);
-        $this->assertStringContainsString('<option value="">Pilih Ritel / Micro</option>', $source);
+        $this->assertStringContainsString('product: currentProduct,', $source);
+        $this->assertStringNotContainsString('id="categorySelector"', $source);
+
+        $this->actingAs(User::factory()->make(['name' => 'Audit Timeseries', 'pn' => 'audit-timeseries', 'role' => 'admin']));
+        $html = view('report.dashboard-harian-timeseries', [
+            'dashboardPage' => [
+                'routes' => ['data' => '/dashboard-harian/timeseries/data'],
+                'filters' => [
+                    'kanca' => [
+                        ['value' => 'all', 'label' => 'Area 6'],
+                        ['value' => 'KC Madiun', 'label' => 'KC Madiun'],
+                    ],
+                    'unit_kerja' => [
+                        ['value' => 'all', 'label' => 'Semua Unit Kerja'],
+                        ['value' => 'KCP Dolopo', 'label' => 'KCP Dolopo', 'kanca_value' => 'KC Madiun'],
+                    ],
+                    'period_month' => [['value' => '2026-09', 'label' => 'September 2026']],
+                    'recovery_dimensions' => ['segments' => [], 'products' => [], 'products_by_segment' => []],
+                ],
+                'selected' => [
+                    'kanca' => 'KC Madiun',
+                    'unit_kerja' => 'KCP Dolopo',
+                    'category' => 'simpanan',
+                    'segment' => 'ritel',
+                    'product' => 'giro',
+                    'recovery_segment' => '',
+                    'recovery_product' => '',
+                    'period_month' => '2026-09',
+                    'branch_locked' => false,
+                ],
+                'initialData' => [],
+            ],
+        ])->render();
+
+        $this->assertStringContainsString('Susun tampilan timeseries', $html);
+        $this->assertStringContainsString('value="KC Madiun" selected', $html);
+        $this->assertStringContainsString('value="ldr"', $html);
     }
 
     public function test_timeseries_branch_resolution_is_single_and_defaults_to_area_6(): void

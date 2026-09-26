@@ -1,5 +1,6 @@
 @php
     $meta = (array) data_get($microPerformance, 'meta', []);
+    $decisionIdentityCoverage = (array) data_get($meta, 'identity_coverage', []);
     $realization = (array) data_get($microPerformance, 'realization', []);
     $netDisbursement = (array) data_get($microPerformance, 'net_disbursement', []);
     $pdwkLimits = (array) data_get($microPerformance, 'pdwk_limits', []);
@@ -278,6 +279,16 @@
             </div>
 
             @if(!empty($decisionRanking['available']))
+                @if((int) data_get($decisionIdentityCoverage, 'unresolved_accounts', 0) > 0)
+                    <div class="micro-ops-empty micro-ops-empty--compact" role="status">
+                        <strong>Identitas pemutus belum lengkap</strong>
+                        <small>
+                            {{ $formatInteger(data_get($decisionIdentityCoverage, 'unresolved_accounts', 0)) }} dari
+                            {{ $formatInteger(data_get($decisionIdentityCoverage, 'total_accounts', 0)) }} rekening belum memiliki PN pemutus.
+                            Ranking dan PDWK hanya memakai identitas dari posisi berjalan atau rekening yang sama pada posisi sebelumnya dalam bulan ini.
+                        </small>
+                    </div>
+                @endif
                 @foreach((array) data_get($decisionRanking, 'metrics', []) as $rankingMetric)
                     @php $isActiveRankingPanel = data_get($rankingMetric, 'key') === data_get($decisionRanking, 'default_metric', 'plafond'); @endphp
                     <div class="micro-ranking-panel"
@@ -319,7 +330,14 @@
                     </div>
                 @endforeach
             @else
-                <div class="micro-ops-empty micro-ops-empty--compact" role="status"><strong>Data pemutus MBM belum tersedia</strong></div>
+                <div class="micro-ops-empty micro-ops-empty--compact" role="status">
+                    <strong>Data pemutus MBM belum tersedia</strong>
+                    @if((int) data_get($decisionIdentityCoverage, 'unresolved_accounts', 0) > 0)
+                        <small>
+                            {{ $formatInteger(data_get($decisionIdentityCoverage, 'unresolved_accounts', 0)) }} rekening belum memiliki PN pemutus pada posisi berjalan maupun rekening yang sama pada posisi sebelumnya dalam bulan ini.
+                        </small>
+                    @endif
+                </div>
             @endif
         </section>
 
@@ -337,7 +355,7 @@
                     <div class="micro-pdwk-limit__toolbar">
                         <div>
                             <strong>Status Limit Pemutus Bertransaksi</strong>
-                            <small>Nama dan limit hanya mengikuti workbook per 31 Juli 2026; putusan dan plafon berasal dari realisasi Mikro bulan berjalan.</small>
+                            <small>Nama, kategori, dan limit mengikuti {{ data_get($pdwkLimits, 'source', 'STOP N GO.xlsx') }}; putusan dan plafon berasal dari realisasi Mikro bulan berjalan.</small>
                         </div>
                         <div class="micro-pdwk-role-toggle" role="group" aria-label="Pilih jabatan pemutus PDWK">
                             @foreach((array) data_get($pdwkLimits, 'roles', []) as $role)
@@ -366,7 +384,7 @@
                                          style="--pdwk-share: {{ $share }}%">
                                     <header>
                                         <strong>{{ data_get($status, 'label', '-') }}</strong>
-                                        <small>{{ data_get($status, 'limit', 0) > 0 ? 'Limit putusan '.data_get($status, 'limit').'% dari PDWK' : 'Tidak diberikan limit putusan' }}</small>
+                                        <small>{{ data_get($status, 'limit_label', data_get($status, 'limit', 0).'% x PDWK') }}</small>
                                         <button type="button"
                                                 class="micro-pdwk-status__detail"
                                                 data-micro-pdwk-open-detail

@@ -16,6 +16,11 @@ class MySqlBulkLoadService
     private ?DirectLargeFileLoadService $largeFileLoader = null;
     private ?\PDO $persistentPdo = null;  // OPTIMASI: Reusable PDO connection
 
+    private function periodGuardService(): ImportPeriodGuardService
+    {
+        return app(ImportPeriodGuardService::class);
+    }
+
     public function supportsNativeBulkLoad(): bool
     {
         if ($this->supportsNativeBulkLoad !== null) {
@@ -171,6 +176,8 @@ class MySqlBulkLoadService
             );
         }
 
+        $this->periodGuardService()->assertCsvRows($csvPath, $tableName, $columns);
+
         return $this->withTableWriteLock($tableName, function () use ($csvPath, $tableName, $columns, $relaxSqlMode, $beforeLoad): int {
             return $this->loadCsvIntoMysqlInternal($csvPath, $tableName, $columns, $relaxSqlMode, $beforeLoad);
         });
@@ -290,6 +297,8 @@ class MySqlBulkLoadService
          *
          * Returns: ['loaded' => int, 'duplicates_skipped' => int, 'final_count' => int]
          */
+        $this->periodGuardService()->assertCsvRows($csvPath, $targetTable, $columns);
+
         $stagingTable = $targetTable . '_staging_' . str_pad(random_int(1, 999999), 6, '0', STR_PAD_LEFT);
 
         try {
@@ -398,6 +407,7 @@ class MySqlBulkLoadService
         bool $relaxSqlMode = false
     ): int {
         $this->assertTransactionalTable($tableName, 'bulk import');
+        $this->periodGuardService()->assertCsvRows($csvPath, $tableName, $columns);
 
         if (($totalLines === null || $totalLines <= 0) && file_exists($csvPath)) {
             $totalLines = $this->countFileLines($csvPath);

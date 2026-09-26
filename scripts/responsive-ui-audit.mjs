@@ -10,6 +10,7 @@ const outputDir = path.resolve(process.env.AUDIT_OUTPUT_DIR || 'storage/framewor
 const chromePath = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const loginPn = process.env.AUDIT_PN || 'responsive-audit';
 const loginPassword = process.env.AUDIT_PASSWORD || 'responsive-audit';
+const publicOnly = process.env.AUDIT_PUBLIC_ONLY === '1';
 const waitSelector = String(process.env.AUDIT_WAIT_SELECTOR || '').trim();
 const scrollSelector = String(process.env.AUDIT_SCROLL_SELECTOR || '').trim();
 const auditStickyScroll = process.env.AUDIT_STICKY_SCROLL === '1';
@@ -897,23 +898,25 @@ try {
         runtimeErrors.push(exceptionDetails?.exception?.description || exceptionDetails?.text || 'JavaScript exception');
     });
 
-    await navigate(client, `${baseUrl}/login`);
-    const loginResult = await evaluate(client, `(() => {
-        const pn = document.querySelector('input[name="pn"]');
-        const password = document.querySelector('input[name="password"]');
-        const form = pn?.form || document.querySelector('form');
-        if (!pn || !password || !form) return { ok: false, fields: Array.from(document.querySelectorAll('input')).map((input) => input.name) };
-        pn.value = ${JSON.stringify(loginPn)};
-        password.value = ${JSON.stringify(loginPassword)};
-        pn.dispatchEvent(new Event('input', { bubbles: true }));
-        password.dispatchEvent(new Event('input', { bubbles: true }));
-        form.requestSubmit();
-        return { ok: true };
-    })()`);
-    if (!loginResult?.ok) {
-        throw new Error(`Form login tidak dikenali: ${JSON.stringify(loginResult)}`);
+    if (!publicOnly) {
+        await navigate(client, `${baseUrl}/login`);
+        const loginResult = await evaluate(client, `(() => {
+            const pn = document.querySelector('input[name="pn"]');
+            const password = document.querySelector('input[name="password"]');
+            const form = pn?.form || document.querySelector('form');
+            if (!pn || !password || !form) return { ok: false, fields: Array.from(document.querySelectorAll('input')).map((input) => input.name) };
+            pn.value = ${JSON.stringify(loginPn)};
+            password.value = ${JSON.stringify(loginPassword)};
+            pn.dispatchEvent(new Event('input', { bubbles: true }));
+            password.dispatchEvent(new Event('input', { bubbles: true }));
+            form.requestSubmit();
+            return { ok: true };
+        })()`);
+        if (!loginResult?.ok) {
+            throw new Error(`Form login tidak dikenali: ${JSON.stringify(loginResult)}`);
+        }
+        await waitForPage(client, "location.pathname !== '/login' && document.readyState === 'complete'", loginTimeoutMs);
     }
-    await waitForPage(client, "location.pathname !== '/login' && document.readyState === 'complete'", loginTimeoutMs);
 
     const results = [];
     for (const route of routes) {

@@ -1092,6 +1092,46 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
         $this->assertEqualsWithDelta(100.0, (float) $rows[0]->baki_debet1, 0.001);
     }
 
+    public function test_matrix_drilldown_does_not_replace_a_zero_current_balance_with_the_previous_balance(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            [
+                'periode' => '2026-06-30',
+                'nomor_rekening1' => 'PAID-OFF-1',
+                'baki_debet1' => 100,
+                'kolek' => '1',
+                'umur_tunggakan' => 0,
+            ],
+            [
+                'periode' => '2026-07-10',
+                'nomor_rekening1' => 'PAID-OFF-1',
+                'baki_debet1' => 0,
+                'kolek' => '1',
+                'umur_tunggakan' => 0,
+            ],
+        ]);
+
+        $method = new ReflectionMethod(DashboardPinjamanReportController::class, 'buildMatrixDrilldownQuery');
+        $method->setAccessible(true);
+        $rows = $method->invoke(
+            new DashboardPinjamanReportController(),
+            '2026-07-10',
+            '2026-06-30',
+            ['segmen' => [], 'produk' => [], 'cabang' => [], 'unit' => []],
+            'L',
+            [
+                'pivot_previous_balance',
+                'nomor_rekening1',
+                'baki_debet1',
+            ],
+            'L'
+        )->get();
+
+        $this->assertCount(1, $rows);
+        $this->assertEqualsWithDelta(100.0, (float) $rows[0]->pivot_previous_balance, 0.001);
+        $this->assertEqualsWithDelta(0.0, (float) $rows[0]->baki_debet1, 0.001);
+    }
+
     public function test_matrix_keeps_distinct_anonymous_rows_consistent_between_pivot_and_detail(): void
     {
         DB::table('daily_loan_dinamis')->insert([

@@ -10,6 +10,7 @@ use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Jobs\PrepareCsvStagingJob;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\ImportDuplicateGuardService;
+use App\Services\Import\ImportPeriodGuardService;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Services\Import\SmartContentHeaderGuardService;
@@ -57,6 +58,32 @@ class ImportFileController extends Controller
     private function smartGuardService(): SmartContentHeaderGuardService
     {
         return app(SmartContentHeaderGuardService::class);
+    }
+
+    private function periodGuardService(): ImportPeriodGuardService
+    {
+        return app(ImportPeriodGuardService::class);
+    }
+
+    private function assertImportPeriodMapping(string $tableName, array $columnBlueprint, ?string $manualPeriode = null): void
+    {
+        $columns = array_column($columnBlueprint, 'column');
+        $policy = $this->periodGuardService()->policyFor($tableName);
+        if ($manualPeriode !== null && $policy !== null) {
+            $columns[] = $policy['column'];
+        }
+
+        $this->periodGuardService()->assertMappedColumns($tableName, $columns);
+    }
+
+    private function assertImportPeriodRow(string $tableName, array $row, ?string $manualPeriode = null, ?int $rowNumber = null): void
+    {
+        $policy = $this->periodGuardService()->policyFor($tableName);
+        if ($manualPeriode !== null && $policy !== null) {
+            $row[$policy['column']] = $manualPeriode;
+        }
+
+        $this->periodGuardService()->assertRow($tableName, $row, $rowNumber);
     }
 
     private const SAFE_MEMORY_LIMIT = '512M';
@@ -517,13 +544,17 @@ class ImportFileController extends Controller
             };
         }
 
-        $mapped = $this->normalizeDailyLoanHeader($header);
-        $aliasCandidate = $this->smartGuardService()->resolveAliasCandidate($header, $this->getDailyLoanPreviewOrder());
-        if ($aliasCandidate !== null) {
-            return $aliasCandidate;
+        if ($tableName === 'daily_loan_dinamis') {
+            $mapped = $this->normalizeDailyLoanHeader($header);
+            $aliasCandidate = $this->smartGuardService()->resolveAliasCandidate($header, $this->getDailyLoanPreviewOrder());
+            if ($aliasCandidate !== null) {
+                return $aliasCandidate;
+            }
+
+            return $mapped;
         }
 
-        return $mapped;
+        return $this->normalizeDailyLoanHeader($header);
     }
 
     private function sortFilterValues(array &$values): void
@@ -961,6 +992,9 @@ class ImportFileController extends Controller
             }
             $requested[] = 'textbox20';
             $requested[] = 'textbox21';
+            if ($this->isIbbizImportTable($tableName)) {
+                $requested[] = 'periode';
+            }
         }
 
         $requested[] = 'created_at';
@@ -1217,9 +1251,11 @@ class ImportFileController extends Controller
         array $columnBlueprint,
         int $batchSize
     ): bool {
-        if (!$this->supportsNativeBulkLoad()) {
+        if (!$this->supportsNativeBulkLoad() || $this->isIbbizImportTable($tableName)) {
             return false;
         }
+
+        $this->assertImportPeriodMapping($tableName, $columnBlueprint, $manualPeriode);
 
         $headerCount = max(1, count($csvHeaders));
         $bulkColumns = $this->buildBulkLoadColumnsForMappedRows($tableName, $isBrilinkSummary, $columnBlueprint);
@@ -1427,6 +1463,7 @@ class ImportFileController extends Controller
 
                     $mappedRow = $this->applyManualImportPeriode($mappedRow, $tableName, $manualPeriode);
                     $mappedRow = $this->applyImportTimestamps($mappedRow, $tableName);
+                    $this->assertImportPeriodRow($tableName, $mappedRow, $manualPeriode, $rowsDone + 1);
                     if (!$shouldInsertRow($mappedRow)) {
                         continue;
                     }
@@ -1544,6 +1581,12 @@ class ImportFileController extends Controller
         int $jobId,
         array $columnBlueprint
     ): bool {
+        if ($this->isIbbizImportTable($tableName)) {
+            return false;
+        }
+
+        $this->assertImportPeriodMapping($tableName, $columnBlueprint, $manualPeriode);
+
         $bulkColumns = $this->buildBulkLoadColumnsForMappedRows($tableName, $isBrilinkSummary, $columnBlueprint);
         if (empty($bulkColumns)) {
             $lastErrorMsg = 'Kolom bulk load kosong untuk tabel tujuan.';
@@ -1627,6 +1670,7 @@ class ImportFileController extends Controller
 
                 $mappedRow = $this->applyManualImportPeriode($mappedRow, $tableName, $manualPeriode);
                 $mappedRow = $this->applyImportTimestamps($mappedRow, $tableName);
+                $this->assertImportPeriodRow($tableName, $mappedRow, $manualPeriode, $rowCounter + 1);
                 if (!$shouldInsertRow($mappedRow)) {
                     $rowCounter++;
                     continue;
@@ -1745,6 +1789,7 @@ class ImportFileController extends Controller
         if (!$isBrilinkSummary && empty($columnBlueprint)) {
             $columnBlueprint = $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders, $tableName);
         }
+        $this->assertImportPeriodMapping($tableName, $columnBlueprint, $manualPeriode);
 
         $bulkColumns = $this->buildBulkLoadColumnsForMappedRows($tableName, $isBrilinkSummary, $columnBlueprint);
         if (empty($bulkColumns)) {
@@ -1822,7 +1867,10 @@ class ImportFileController extends Controller
                     continue;
                 }
 
+                $ibbizPeriode = $this->resolveIbbizBulkPeriodeValue($tableName, $parsedRow, $manualPeriode);
+                $mappedRow = $this->applyManualImportPeriode($mappedRow, $tableName, $ibbizPeriode);
                 $mappedRow = $this->applyImportTimestamps($mappedRow, $tableName);
+                $this->assertImportPeriodRow($tableName, $mappedRow, null, $rowCounter + 1);
                 if (!$shouldInsertRow($mappedRow)) {
                     $rowCounter++;
                     continue;
@@ -1832,7 +1880,7 @@ class ImportFileController extends Controller
                 fputcsv($bulkHandle, array_map($csvFormatter, $bulkValues));
 
                 if (is_resource($periodBulkHandle)) {
-                    $bulkPeriode = $this->resolveIbbizBulkPeriodeValue($tableName, $parsedRow, $manualPeriode);
+                    $bulkPeriode = $ibbizPeriode;
                     if ($bulkPeriode !== null) {
                         fputcsv($periodBulkHandle, [
                             $mappedRow['uniqueid_namareport'] ?? null,
@@ -4939,6 +4987,7 @@ class ImportFileController extends Controller
                     );
                 }
                 $columnBlueprint = $isBrilinkSummary ? [] : $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders, $tableName);
+                $this->assertImportPeriodMapping($tableName, $columnBlueprint, $manualImportPeriode);
                 $batchSize = $this->resolveImportBatchSize($tableName);
                 $progressStep = strtolower($tableName) === 'daily_loan_dinamis' ? 200 : 500;
 
@@ -5239,6 +5288,7 @@ class ImportFileController extends Controller
 
                     $mappedRow = $this->applyManualImportPeriode($mappedRow, $tableName, $manualImportPeriode);
                     $mappedRow = $this->applyImportTimestamps($mappedRow, $tableName);
+                    $this->assertImportPeriodRow($tableName, $mappedRow, $manualImportPeriode, $rowCounter + 1);
 
                     if (!$shouldInsertRow($mappedRow)) {
                         $rowCounter++;
@@ -5462,6 +5512,7 @@ class ImportFileController extends Controller
                         [$posisiIndex, $tahunIndex] = $this->detectImportDateHeaderIndexes($csvHeaders);
 
                         $columnBlueprint = $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders, $tableName);
+                        $this->assertImportPeriodMapping($tableName, $columnBlueprint, $manualImportPeriode);
                     }
                     
                     $rowCounter++;
@@ -5590,7 +5641,9 @@ class ImportFileController extends Controller
                 }
                 
                 $rowData = $this->applyManualImportPeriode($rowData, $tableName, $manualImportPeriode);
-                $dataToInsert[] = $this->applyImportTimestamps($rowData, $tableName);
+                $rowData = $this->applyImportTimestamps($rowData, $tableName);
+                $this->assertImportPeriodRow($tableName, $rowData, $manualImportPeriode, $rowCounter + 1);
+                $dataToInsert[] = $rowData;
                 $rowCounter++;
             }
             } finally {
@@ -5742,7 +5795,7 @@ class ImportFileController extends Controller
         };
 
         $bulkLoadHandled = false;
-        if ($this->supportsNativeBulkLoad()) {
+        if ($this->supportsNativeBulkLoad() && !$this->isIbbizImportTable($tableName)) {
             $filteredRows = array_values(array_filter($dataToInsert, static function (array $row) use ($shouldInsertRow) {
                 return $shouldInsertRow($row) !== false;
             }));

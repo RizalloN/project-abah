@@ -6,10 +6,11 @@
     .floating-scrollbar-wrapper {
         position: fixed;
         bottom: 0;
-        z-index: 9999;
+        z-index: 1035;
         height: 12px;
         background: rgba(255, 255, 255, 0.4);
         backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
         border-top: 1px solid rgba(0, 0, 0, 0.05);
         display: none;
         overflow-x: auto;
@@ -18,6 +19,14 @@
         opacity: 0.6;
         box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
         border-radius: 10px 10px 0 0;
+    }
+
+    body.modal-open .floating-scrollbar-wrapper,
+    body.swal2-shown .floating-scrollbar-wrapper,
+    body.page-route-navigating .floating-scrollbar-wrapper,
+    .modal.show ~ .floating-scrollbar-wrapper {
+        display: none !important;
+        pointer-events: none !important;
     }
 
     .floating-scrollbar-wrapper:hover {
@@ -75,13 +84,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let activeContainer = null;
     let isSyncing = false;
 
-    console.log("Floating scrollbar initial check:", {
-        floatScroll: floatScroll,
-        floatContent: floatContent
-    });
-
     if (!floatScroll || !floatContent) {
-        console.error("Floating scrollbar elements not found!");
         return;
     }
 
@@ -93,14 +96,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateFloatingScroll() {
+        if (document.body.classList.contains('modal-open') || document.body.classList.contains('swal2-shown') || document.querySelector('.modal.show')) {
+            floatScroll.style.display = 'none';
+            activeContainer = null;
+            return;
+        }
+
         const containers = document.querySelectorAll('.kinerja-table-container, .table-container');
         let currentBest = null;
 
-        console.log("updateFloatingScroll running. Containers count: " + containers.length);
-
         containers.forEach(container => {
             if (container.offsetParent === null) {
-                console.log("Container is hidden (offsetParent is null):", container);
                 return; // Hidden by tabs etc.
             }
 
@@ -111,26 +117,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const needsScroll = container.scrollWidth > container.clientWidth + 5;
             const realScrollbarHidden = rect.bottom > windowHeight - 10;
 
-            console.log("Container check: ", {
-                el: container,
-                className: container.className,
-                rectTop: rect.top,
-                rectBottom: rect.bottom,
-                windowHeight: windowHeight,
-                isVisible: isVisible,
-                needsScroll: needsScroll,
-                scrollWidth: container.scrollWidth,
-                clientWidth: container.clientWidth,
-                realScrollbarHidden: realScrollbarHidden
-            });
-
             if (isVisible && needsScroll && realScrollbarHidden) {
                 if (!currentBest) currentBest = container;
             }
         });
 
         if (currentBest) {
-            console.log("updateFloatingScroll: selected container", currentBest);
             activeContainer = currentBest;
             const rect = activeContainer.getBoundingClientRect();
             
@@ -179,8 +171,12 @@ document.addEventListener('DOMContentLoaded', function() {
     window.addEventListener('resize', updateFloatingScroll);
     
     // Bootstrap Events
-    $(document).on('shown.bs.tab shown.bs.collapse', function() {
+    $(document).on('shown.bs.tab shown.bs.collapse hidden.bs.modal', function() {
         setTimeout(updateFloatingScroll, 150);
+    });
+    $(document).on('shown.bs.modal', function() {
+        floatScroll.style.display = 'none';
+        activeContainer = null;
     });
 
     // Observer for layout changes (sidebar toggle, etc)

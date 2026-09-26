@@ -68,6 +68,7 @@ class DashboardPinjamanReportController extends Controller
         'nomor_rekening1',
         'nama_debitur1',
         'plafon',
+        'pivot_previous_balance',
         'baki_debet1',
         'kol_adk1',
         'kolek_detail',

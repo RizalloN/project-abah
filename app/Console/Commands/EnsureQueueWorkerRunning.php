@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Jobs\AuditAndHealSnapshotsJob;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
+use App\Services\Import\QueueWorkerControlService;
 use App\Services\Import\SnapshotQueuePauseService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -28,6 +29,7 @@ class EnsureQueueWorkerRunning extends Command
 
     public function handle(): int
     {
+        $workerControl = app(QueueWorkerControlService::class);
         $checkInterval = (int) $this->option('check-interval');
         $timeout = (string) ($this->option('timeout') ?? config('queue.worker_timeout', 0));
         $memory = (string) ($this->option('memory') ?? config('queue.worker_memory', 512));
@@ -36,6 +38,14 @@ class EnsureQueueWorkerRunning extends Command
         $pools = $this->resolveWorkerPools();
 
         if ((bool) $this->option('once')) {
+            if (!$workerControl->isEnabled()) {
+                if ($this->output) {
+                    $this->warn('Queue worker monitor dinonaktifkan melalui Job Management.');
+                }
+
+                return 0;
+            }
+
             $this->recoverOrphanedImports();
 
             foreach ($pools as $poolName => $pool) {
@@ -55,6 +65,18 @@ class EnsureQueueWorkerRunning extends Command
             return 0;
         }
 
+        // A deliberate CLI invocation is itself an explicit request to enable
+        // this project monitor again after it was stopped from the UI.
+        $workerControl->markEnabled();
+
+        if (!$workerControl->isEnabled()) {
+            if ($this->output) {
+                $this->warn('Queue worker monitor dinonaktifkan melalui Job Management.');
+            }
+
+            return 0;
+        }
+
         if ($this->output) {
             $this->info('Queue worker monitor started.');
             foreach ($pools as $poolName => $pool) {
@@ -64,49 +86,63 @@ class EnsureQueueWorkerRunning extends Command
             $this->newLine();
         }
 
-        while (true) {
-            try {
-                $this->maintainMonitorHealth();
-                $this->recoverOrphanedImports();
+        try {
+            while ($workerControl->isEnabled()) {
+                $workerControl->touchMonitorHeartbeat();
 
-                foreach ($pools as $poolName => $pool) {
-                    $this->checkAndEnsureWorker(
-                        $poolName,
-                        $pool['queues'],
-                        $pool['workers'],
-                        $timeout,
-                        $memory,
-                        $maxJobs,
-                        $maxTime
-                    );
-                }
-
-                $this->dispatchSnapshotAuditIfIdle();
-            } catch (\Illuminate\Database\QueryException | \PDOException $e) {
-                if ($this->output) {
-                    $this->error('Database connection lost in monitor loop, reconnecting: ' . $e->getMessage());
-                }
-                Log::warning('Database connection lost in monitor loop, attempting reconnect.', [
-                    'exception' => $e::class,
-                    'message' => $e->getMessage(),
-                ]);
                 try {
-                    DB::purge();
-                    DB::reconnect();
-                } catch (\Throwable $reconnectError) {
-                    Log::error('Database reconnect failed: ' . $reconnectError->getMessage());
-                }
-            } catch (\Throwable $e) {
-                if ($this->output) {
-                    $this->error('Monitor loop unexpected error: ' . $e->getMessage());
-                }
-                Log::error('Monitor loop unexpected error', [
-                    'exception' => $e::class,
-                    'message' => $e->getMessage(),
-                ]);
-            }
+                    $this->maintainMonitorHealth();
+                    $this->recoverOrphanedImports();
 
-            sleep($checkInterval);
+                    foreach ($pools as $poolName => $pool) {
+                        $this->checkAndEnsureWorker(
+                            $poolName,
+                            $pool['queues'],
+                            $pool['workers'],
+                            $timeout,
+                            $memory,
+                            $maxJobs,
+                            $maxTime
+                        );
+                    }
+
+                    $this->dispatchSnapshotAuditIfIdle();
+                } catch (\Illuminate\Database\QueryException | \PDOException $e) {
+                    if ($this->output) {
+                        $this->error('Database connection lost in monitor loop, reconnecting: ' . $e->getMessage());
+                    }
+                    Log::warning('Database connection lost in monitor loop, attempting reconnect.', [
+                        'exception' => $e::class,
+                        'message' => $e->getMessage(),
+                    ]);
+                    try {
+                        DB::purge();
+                        DB::reconnect();
+                    } catch (\Throwable $reconnectError) {
+                        Log::error('Database reconnect failed: ' . $reconnectError->getMessage());
+                    }
+                } catch (\Throwable $e) {
+                    if ($this->output) {
+                        $this->error('Monitor loop unexpected error: ' . $e->getMessage());
+                    }
+                    Log::error('Monitor loop unexpected error', [
+                        'exception' => $e::class,
+                        'message' => $e->getMessage(),
+                    ]);
+                }
+
+                // Wait in short intervals so the Job Management stop switch is
+                // honored promptly instead of blocking for the full check interval.
+                for ($elapsed = 0; $elapsed < max(1, $checkInterval); $elapsed++) {
+                    if (!$workerControl->isEnabled()) {
+                        break 2;
+                    }
+                    sleep(1);
+                    $workerControl->touchMonitorHeartbeat();
+                }
+            }
+        } finally {
+            $workerControl->clearOwnMonitorHeartbeat();
         }
 
         return 0;

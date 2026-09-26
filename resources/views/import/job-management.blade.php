@@ -13,8 +13,8 @@
                 <h2 class="job-management-hero__title h4 font-weight-bold text-white mb-0"><i class="fas fa-tasks mr-2"></i> Manajemen Job &amp; Antrian</h2>
                 <p class="job-management-hero__text mb-0">Pemantauan realtime status antrean import, snapshot rebuild, dan worker execution.</p>
             </div>
-            <div class="job-management-hero__badge mt-3 mt-md-0">
-                <i class="fas fa-circle text-success mr-2 status-pulse-dot"></i> Worker Aktif
+            <div class="job-management-hero__badge mt-3 mt-md-0" id="worker-hero-badge">
+                <i class="fas fa-circle text-secondary mr-2 status-pulse-dot"></i> Memeriksa Worker
             </div>
         </div>
     </div>
@@ -22,6 +22,8 @@
     <!-- Keep main wrapper and data attributes intact -->
     <div class="card border-0 shadow-sm job-management-main-card" id="job-management-card"
         data-fetch-url="{{ route('job-management.data') }}"
+        data-worker-start-url="{{ route('job-management.worker.start') }}"
+        data-worker-stop-url="{{ route('job-management.worker.stop') }}"
         data-clear-url="{{ route('job-management.clear') }}"
         data-bulk-delete-url="{{ route('job-management.bulk-destroy') }}"
         data-destroy-url-template="{{ route('job-management.destroy', ['jobId' => '__JOB_ID__']) }}"
@@ -98,6 +100,23 @@
         <div class="card-body p-4 bg-light">
             <div id="job-management-notice" class="alert alert-info d-none mb-4 shadow-sm border-0" style="border-radius: 10px;"></div>
             <div id="job-management-queue-health" class="alert alert-warning d-none mb-4 shadow-sm border-0" style="border-radius: 10px;"></div>
+
+            <div class="card border-0 shadow-sm mb-4" id="worker-control-card" style="border-radius: 14px;">
+                <div class="card-body d-flex flex-column flex-lg-row align-items-lg-center justify-content-between">
+                    <div class="pr-lg-4 mb-3 mb-lg-0">
+                        <div class="d-flex align-items-center mb-1">
+                            <span class="badge badge-secondary mr-2" id="worker-status-badge">Memeriksa</span>
+                            <strong id="worker-status-label">Status worker sedang diperiksa</strong>
+                        </div>
+                        <div class="text-muted small" id="worker-status-message">Menunggu heartbeat monitor dari server.</div>
+                        <code class="d-block mt-2 small" id="worker-command">php artisan queue:ensure-running --timeout=0 --memory=512 --max-jobs=25 --max-time=3600 --check-interval=30</code>
+                    </div>
+                    <div class="d-flex flex-wrap" style="gap: 8px;">
+                        <button type="button" class="btn btn-sm btn-success" id="btn-worker-start"><i class="fas fa-play mr-1"></i>Aktifkan Worker</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="btn-worker-stop"><i class="fas fa-stop mr-1"></i>Matikan Worker</button>
+                    </div>
+                </div>
+            </div>
 
             <!-- Active & Snapshot Grids -->
             <div class="row">
@@ -225,6 +244,13 @@ document.addEventListener('DOMContentLoaded', function () {
     const activeJobCountLabel = document.getElementById('active-job-count-label');
     const notice = document.getElementById('job-management-notice');
     const queueHealth = document.getElementById('job-management-queue-health');
+    const workerHeroBadge = document.getElementById('worker-hero-badge');
+    const workerStatusBadge = document.getElementById('worker-status-badge');
+    const workerStatusLabel = document.getElementById('worker-status-label');
+    const workerStatusMessage = document.getElementById('worker-status-message');
+    const workerCommand = document.getElementById('worker-command');
+    const btnWorkerStart = document.getElementById('btn-worker-start');
+    const btnWorkerStop = document.getElementById('btn-worker-stop');
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
 
     let currentPage = 1;
@@ -240,6 +266,19 @@ document.addEventListener('DOMContentLoaded', function () {
     function showNotice(message, tone = 'info') { notice.className = `job-management-notice job-management-notice--${tone}`; notice.textContent = message; notice.classList.remove('d-none'); }
     function hideNotice() { notice.classList.add('d-none'); notice.textContent = ''; }
     function renderQueueHealth(payload) { if (!payload || !payload.message) { queueHealth.classList.add('d-none'); queueHealth.textContent = ''; return; } queueHealth.className = `job-management-notice job-management-notice--${escapeHtml(payload.tone || 'info')}`; queueHealth.textContent = payload.message; queueHealth.classList.remove('d-none'); if ((payload.status || '') === 'ok') { queueHealth.classList.add('job-management-notice--subtle'); } else { queueHealth.classList.remove('job-management-notice--subtle'); } }
+    function renderWorkerStatus(payload) {
+        if (!payload) return;
+        const tone = ['success', 'info', 'warning', 'secondary', 'danger'].includes(payload.tone) ? payload.tone : 'secondary';
+        const active = payload.state === 'active';
+        workerStatusBadge.className = `badge badge-${tone} mr-2`;
+        workerStatusBadge.textContent = payload.state_label || 'Status tidak diketahui';
+        workerStatusLabel.textContent = `${Number(payload.worker_count || 0).toLocaleString('id-ID')} worker terdeteksi`;
+        workerStatusMessage.textContent = payload.message || '-';
+        workerCommand.textContent = payload.command || '';
+        workerHeroBadge.innerHTML = `<i class="fas fa-circle text-${tone} mr-2 status-pulse-dot"></i>${escapeHtml(payload.state_label || 'Status Worker')}`;
+        btnWorkerStart.disabled = active || payload.state === 'starting' || payload.state === 'stopping';
+        btnWorkerStop.disabled = payload.state === 'stopped' || payload.state === 'stopping';
+    }
     function statusBadge(job) { return `<span class="job-status-badge job-status-badge--${escapeHtml(job.status_tone || 'muted')}">${escapeHtml(job.status_label || job.status)}</span>`; }
     function progressMarkup(job) { const percent = Math.max(0, Math.min(100, Number(job.percent || 0))); return `<div class="job-progress"><div class="job-progress__bar" style="width:${percent}%"></div></div><div class="job-progress__meta"><span class="font-weight-bold">${percent}%</span><span>${Number(job.processed_rows || 0).toLocaleString('id-ID')} / ${Number(job.total_rows || 0).toLocaleString('id-ID')} baris</span></div>`; }
     function snapshotDetailMarkup(job) { const items = []; if (job.stage_label) items.push(`<span><i class="fas fa-layer-group mr-1"></i>${escapeHtml(job.stage_label)}</span>`); if (job.current_report_label) items.push(`<span><i class="far fa-chart-bar mr-1"></i>${escapeHtml(job.current_report_label)}</span>`); if (job.current_period) items.push(`<span><i class="far fa-calendar-alt mr-1"></i>${escapeHtml(job.current_period)}</span>`); if (Number(job.report_total_units || 0) > 0) items.push(`<span><i class="fas fa-stream mr-1"></i>${Number(job.report_completed_units || 0).toLocaleString('id-ID')} / ${Number(job.report_total_units || 0).toLocaleString('id-ID')} periode</span>`); return items.join(''); }
@@ -269,7 +308,33 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderManagedDeleteJobs(items, summary = {}) { const activeCount = Number(summary.active_jobs || 0); managedDeleteJobCountLabel.textContent = `${activeCount.toLocaleString('id-ID')} job delete aktif`; if (!Array.isArray(items) || items.length === 0) { managedDeleteGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-trash-alt fa-2x mb-2 d-block text-muted opacity-50"></i>Belum ada progress delete yang sedang antre atau berjalan.</div></div>`; return; } managedDeleteGrid.innerHTML = items.map((job) => `<div class="col-xl-6 mb-3"><div class="job-active-card job-active-card--delete"><div class="job-active-card__header"><div><div class="job-active-card__title">#${escapeHtml(job.id)} • ${escapeHtml(job.report_name || 'Managed Delete')}</div><div class="job-active-card__sub">${escapeHtml(job.table_name || '-')} • ${escapeHtml(job.file_name || '-')}</div></div>${statusBadge(job)}</div><div class="job-active-card__body">${progressMarkup(job)}<div class="job-active-card__message">${escapeHtml(job.message || '-')}</div><div class="job-active-card__meta"><span><i class="fas fa-layer-group mr-1"></i>${escapeHtml(job.stage_label || job.phase || '-')}</span><span><i class="fas fa-stream mr-1"></i>${Number(job.scope_count || 0).toLocaleString('id-ID')} scope</span><span><i class="fas fa-history mr-1"></i>${escapeHtml(job.updated_at_label || '-')}</span><span><i class="far fa-clock mr-1"></i>${escapeHtml(job.duration_label || '-')}</span>${job.queue_name ? `<span><i class="fas fa-server mr-1"></i>${escapeHtml(job.queue_name)}${job.queue_job_id ? ' #' + escapeHtml(job.queue_job_id) : ''}</span>` : ''}</div></div><div class="job-active-card__footer">${job.can_cancel ? (job.termination_requested ? '<span class="job-active-card__hint">Force stop sudah dikirim.</span>' : '<span class="job-active-card__hint">Delete aktif dapat dibatalkan dengan aman.</span>') : '<span class="job-active-card__hint">Delete ini sudah selesai atau tidak aktif.</span>'}<div class="job-active-card__actions">${forceStopDeleteButton(job)}${cancelDeleteButton(job)}</div></div></div></div>`).join(''); }
     function renderTable(items) { currentJobs = Array.isArray(items) ? items : []; if (currentJobs.length === 0) { tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-5"><i class="fas fa-inbox fa-2x mb-2 d-block text-muted opacity-50"></i>Tidak ada data job untuk filter ini.</td></tr>'; syncSelectionState(); return; } tableBody.innerHTML = currentJobs.map((job) => `<tr><td class="text-center job-col-check">${rowCheckbox(job)}</td><td class="font-weight-bold" style="color: #0857c3;">#${job.id}</td><td><div class="job-table-primary">${escapeHtml(job.report_name)}</div><div class="job-table-secondary">${escapeHtml(job.table_name || '-')}</div></td><td><div class="job-table-primary">${escapeHtml(job.file_name)}</div><div class="job-table-secondary">By ${escapeHtml(job.created_by_name || 'System')}</div></td><td>${statusBadge(job)}</td><td>${progressMarkup(job)}<div class="job-table-secondary mt-1">${escapeHtml(job.message || '-')}</div></td><td><div class="job-table-primary">${escapeHtml(job.updated_at_label || '-')}</div><div class="job-table-secondary">Durasi ${escapeHtml(job.duration_label || '-')}</div></td><td class="text-center"><div class="job-table-actions">${forceStartButton(job, true)}${terminateButton(job, true)}${deleteButton(job, true)}</div></td></tr>`).join(''); syncSelectionState(); }
     function renderPagination(meta) { const total = Number(meta.total || 0); paginationMeta.textContent = `${total.toLocaleString('id-ID')} job`; if (!meta.last_page || meta.last_page <= 1) { pagination.classList.add('d-none'); pagination.innerHTML = ''; return; } const buttons = []; for (let page = 1; page <= meta.last_page; page++) { buttons.push(`<button type="button" class="job-page-btn ${page === meta.current_page ? 'is-active' : ''}" data-page="${page}">${page}</button>`); } pagination.innerHTML = `<div class="job-management-pagination__meta">Menampilkan ${meta.from || 0}-${meta.to || 0} dari ${total.toLocaleString('id-ID')} job</div><div class="job-management-pagination__actions">${buttons.join('')}</div>`; pagination.classList.remove('d-none'); }
-    async function fetchData(page = 1) { if (loading) { refreshRequestedWhileLoading = true; return; } loading = true; currentPage = page; try { const params = new URLSearchParams({ page: String(page), status: filterStatus.value || 'all', search: filterSearch.value || '', active_only: activeOnly.checked ? '1' : '0' }); const response = await fetch(`${card.dataset.fetchUrl}?${params.toString()}`, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } }); const payload = await response.json().catch(() => ({})); if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal memuat data job.'); hideNotice(); renderQueueHealth(payload.queue_health || null); renderSummary(payload.summary || {}); renderSnapshotJobs(payload.snapshot_jobs || [], payload.snapshot_summary || {}); renderRawQueueJobs(payload.raw_queue_jobs || [], payload.raw_queue_summary || {}); renderManagedDeleteJobs(payload.managed_delete_jobs || [], payload.managed_delete_summary || {}); renderActiveJobs(payload.active_jobs || []); renderTable(payload.jobs || []); renderPagination(payload.pagination || {}); } catch (error) { showNotice(error.message || 'Gagal memuat data job.', 'warning'); } finally { loading = false; if (refreshRequestedWhileLoading && !document.hidden) { refreshRequestedWhileLoading = false; fetchData(currentPage); } } }
+    async function fetchData(page = 1) { if (loading) { refreshRequestedWhileLoading = true; return; } loading = true; currentPage = page; try { const params = new URLSearchParams({ page: String(page), status: filterStatus.value || 'all', search: filterSearch.value || '', active_only: activeOnly.checked ? '1' : '0' }); const response = await fetch(`${card.dataset.fetchUrl}?${params.toString()}`, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } }); const payload = await response.json().catch(() => ({})); if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal memuat data job.'); hideNotice(); renderWorkerStatus(payload.worker_status || null); renderQueueHealth(payload.queue_health || null); renderSummary(payload.summary || {}); renderSnapshotJobs(payload.snapshot_jobs || [], payload.snapshot_summary || {}); renderRawQueueJobs(payload.raw_queue_jobs || [], payload.raw_queue_summary || {}); renderManagedDeleteJobs(payload.managed_delete_jobs || [], payload.managed_delete_summary || {}); renderActiveJobs(payload.active_jobs || []); renderTable(payload.jobs || []); renderPagination(payload.pagination || {}); } catch (error) { showNotice(error.message || 'Gagal memuat data job.', 'warning'); } finally { loading = false; if (refreshRequestedWhileLoading && !document.hidden) { refreshRequestedWhileLoading = false; fetchData(currentPage); } } }
+    async function setWorkerState(action) {
+        const isStart = action === 'start';
+        const confirmation = await Swal.fire({
+            icon: isStart ? 'question' : 'warning',
+            title: isStart ? 'Aktifkan worker monitor?' : 'Matikan worker monitor?',
+            text: isStart
+                ? 'Server akan menjalankan monitor worker di background dengan konfigurasi yang ditampilkan.'
+                : 'Job yang sedang diproses diselesaikan dahulu. Worker tidak akan dimatikan paksa.',
+            showCancelButton: true,
+            confirmButtonText: isStart ? 'Aktifkan' : 'Matikan',
+            cancelButtonText: 'Batal'
+        });
+        if (!confirmation.isConfirmed) return;
+        btnWorkerStart.disabled = true;
+        btnWorkerStop.disabled = true;
+        const response = await fetch(isStart ? card.dataset.workerStartUrl : card.dataset.workerStopUrl, {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken },
+            body: JSON.stringify({})
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal mengubah status worker.');
+        renderWorkerStatus(payload.worker_status || null);
+        showNotice(payload.message || 'Status worker diperbarui.', 'info');
+        window.setTimeout(() => fetchData(currentPage), 1500);
+    }
     async function forceStartJob(jobId) { const confirmation = await Swal.fire({ icon: 'warning', title: 'Force start job ini?', text: 'Job queued akan diproses langsung tanpa menunggu worker queue.', showCancelButton: true, confirmButtonText: 'Force Start', cancelButtonText: 'Batal' }); if (!confirmation.isConfirmed) return; const response = await fetch(templateUrl(card.dataset.forceStartUrlTemplate, jobId), { method: 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken }, body: JSON.stringify({}) }); const payload = await response.json().catch(() => ({})); if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal force start job.'); showNotice(payload.message || 'Force start dijalankan.', 'info'); await fetchData(currentPage); }
     async function forceStartSnapshot(rebuildId) { const confirmation = await Swal.fire({ icon: 'warning', title: 'Force start snapshot ini?', text: 'Snapshot rebuild queued akan diproses langsung tanpa menunggu worker queue.', showCancelButton: true, confirmButtonText: 'Force Start', cancelButtonText: 'Batal' }); if (!confirmation.isConfirmed) return; const response = await fetch(templateUrl(card.dataset.forceStartSnapshotUrlTemplate, rebuildId), { method: 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken }, body: JSON.stringify({}) }); const payload = await response.json().catch(() => ({})); if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal force start snapshot.'); showNotice(payload.message || 'Force start snapshot dijalankan.', 'info'); await fetchData(currentPage); }
     async function terminateJob(jobId) { const confirmation = await Swal.fire({ icon: 'warning', title: 'Terminate job ini?', text: 'Jika job sedang processing, worker akan menghentikan proses pada checkpoint berikutnya.', showCancelButton: true, confirmButtonText: 'Terminate', cancelButtonText: 'Batal' }); if (!confirmation.isConfirmed) return; const response = await fetch(templateUrl(card.dataset.terminateUrlTemplate, jobId), { method: 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken }, body: JSON.stringify({}) }); const payload = await response.json().catch(() => ({})); if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal terminate job.'); showNotice(payload.message || 'Permintaan terminate dikirim.', 'info'); await fetchData(currentPage); }
@@ -286,6 +351,8 @@ document.addEventListener('DOMContentLoaded', function () {
     function startAutoRefresh() { scheduleAutoRefresh(); }
 
     btnRefresh.addEventListener('click', () => fetchData(currentPage));
+    btnWorkerStart.addEventListener('click', async () => { try { await setWorkerState('start'); } catch (error) { Swal.fire({ icon: 'error', title: 'Aktivasi Worker Gagal', text: error.message || 'Gagal mengaktifkan worker.' }); await fetchData(currentPage); } });
+    btnWorkerStop.addEventListener('click', async () => { try { await setWorkerState('stop'); } catch (error) { Swal.fire({ icon: 'error', title: 'Stop Worker Gagal', text: error.message || 'Gagal mematikan worker.' }); await fetchData(currentPage); } });
     btnPurgeQueueJobs.addEventListener('click', async () => { try { await purgeQueueJobs(); } catch (error) { Swal.fire({ icon: 'error', title: 'Purge Gagal', text: error.message || 'Gagal purge queue jobs.' }); } });
     btnClear.addEventListener('click', async () => { try { await clearJobs(); } catch (error) { Swal.fire({ icon: 'error', title: 'Clear Gagal', text: error.message || 'Gagal clear jobs.' }); } });
     btnDeleteSelected.addEventListener('click', async () => { try { await bulkDeleteJobs(); } catch (error) { Swal.fire({ icon: 'error', title: 'Bulk Delete Gagal', text: error.message || 'Gagal menghapus job terpilih.' }); } });
@@ -877,4 +944,3 @@ document.addEventListener('DOMContentLoaded', function () {
 }
 </style>
 @endsection
-

@@ -19,6 +19,7 @@ class ImportExecutionService
     private const DAILY_LOAN_IMPORT_QUEUE = 'imports-daily-loan';
     private const DAILY_LOAN_REPORT_ID = 8;
     private const DISPATCHED_KEY_PREFIX = 'import_excel_dispatched_job_';
+    private const RUNTIME_OWNER_KEY_PREFIX = 'import_excel_runtime_owner_';
     private const DISPATCHED_TTL_HOURS = 6;
     private const STALE_QUEUED_MINUTES = 10;
     private const TERMINATION_EXCEPTION_PREFIX = 'import_job_terminated_by_request:';
@@ -29,6 +30,7 @@ class ImportExecutionService
         'ssa_pinjaman',
         'hourly_dpk',
         'lw325_ph',
+        'lw321pn',
     ];
 
     public function __construct(
@@ -488,6 +490,8 @@ class ImportExecutionService
             return;
         }
 
+        $this->rememberRuntimeOwner($jobId, $executionSource);
+
         try {
             $this->progressService->markProcessing($jobId, [
                 'status' => 'processing',
@@ -510,7 +514,9 @@ class ImportExecutionService
                 'job_id' => $jobId,
                 'params' => $params,
                 'headers' => $headers,
-            ], function (string $event, array $payload) use ($jobId, $streamSend): void {
+            ], function (string $event, array $payload) use ($executionSource, $jobId, $streamSend): void {
+                $this->rememberRuntimeOwner($jobId, $executionSource);
+
                 if ($this->progressService->isTerminationRequested($jobId)) {
                     throw new \RuntimeException(self::TERMINATION_EXCEPTION_PREFIX . $jobId);
                 }
@@ -638,6 +644,7 @@ class ImportExecutionService
             );
             $this->releaseDispatchMarker($jobId);
         } finally {
+            $this->forgetRuntimeOwner($jobId);
             $lock->release();
         }
     }
@@ -914,18 +921,42 @@ class ImportExecutionService
         $recovered = [];
         foreach ($candidates as $job) {
             $jobId = (int) ($job->id ?? 0);
-            if ($jobId <= 0
-                || $this->hasActiveQueueRow($jobId)
-                || $this->hasActiveExecutionLock($jobId)) {
+            if ($jobId <= 0) {
                 continue;
             }
 
             $progress = $this->progressService->getCachedProgress($jobId);
-            if (!$this->isRecoverableZeroProgressProcessingJob($jobId, $job, $progress)) {
+            $queueRow = $this->findActiveQueueRow($jobId);
+            $hasExecutionLock = $this->hasActiveExecutionLock($jobId);
+            $runtimeOwnerState = $this->runtimeOwnerState($jobId);
+            if ($this->runtimeOwnerProtectsExecution($runtimeOwnerState)) {
                 continue;
             }
 
-            $job = $this->recoverZeroProgressProcessingJob($jobId, $job, false, $progress);
+            $confirmedOrphan = $this->isConfirmedOrphanedQueueExecution(
+                $job,
+                $queueRow,
+                $progress,
+                $minimumAgeSeconds,
+                $hasExecutionLock,
+                $runtimeOwnerState
+            );
+            if ($hasExecutionLock && !$confirmedOrphan) {
+                continue;
+            }
+            if ($queueRow !== null && !$confirmedOrphan) {
+                continue;
+            }
+
+            if (!$confirmedOrphan && !$this->isRecoverableZeroProgressProcessingJob($jobId, $job, $progress)) {
+                continue;
+            }
+
+            if ($confirmedOrphan) {
+                $this->forceReleaseOrphanedTableExecutionLock($jobId, $job);
+            }
+
+            $job = $this->recoverZeroProgressProcessingJob($jobId, $job, $confirmedOrphan, $progress);
             if (!$job || strtolower((string) ($job->status ?? '')) !== 'queued') {
                 continue;
             }
@@ -950,6 +981,15 @@ class ImportExecutionService
 
         if (!$force && !$this->isRecoverableZeroProgressProcessingJob($jobId, $job, $progress)) {
             return $job;
+        }
+
+        if (!$force) {
+            $runtimeOwnerState = $this->runtimeOwnerState($jobId);
+            if ($this->runtimeOwnerProtectsExecution($runtimeOwnerState)
+                || $this->hasActiveExecutionLock($jobId)
+                || $this->findActiveQueueRow($jobId) !== null) {
+                return $job;
+            }
         }
 
         if ($force && !$this->isZeroProgressProcessingJob($jobId, $job)) {
@@ -1045,16 +1085,71 @@ class ImportExecutionService
             === 'Worker queue sudah mengambil job import dan sedang memulai proses.';
     }
 
-    private function hasActiveQueueRow(int $jobId): bool
+    private function findActiveQueueRow(int $jobId): ?object
     {
         try {
             return DB::table('jobs')
                 ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%')
                 ->where('payload', 'like', '%jobId%')
                 ->where('payload', 'like', '%i:' . $jobId . ';%')
-                ->exists();
+                ->orderByDesc('id')
+                ->first(['id', 'reserved_at']);
         } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function isConfirmedOrphanedQueueExecution(
+        object $job,
+        ?object $queueRow,
+        array $progress,
+        int $minimumAgeSeconds,
+        bool $hasExecutionLock,
+        string $runtimeOwnerState
+    ): bool {
+        $reservedAt = $queueRow->reserved_at ?? null;
+        if (strtolower(trim((string) ($job->status ?? ''))) !== 'processing') {
             return false;
+        }
+
+        if ($this->runtimeOwnerProtectsExecution($runtimeOwnerState)) {
+            return false;
+        }
+
+        $phase = strtolower(trim((string) ($progress['phase'] ?? '')));
+        if (!in_array($phase, [
+            'polars',
+            'validating',
+            'preparing_load_plan',
+            'loading',
+        ], true)) {
+            return false;
+        }
+
+        $minimumOrphanAge = max(90, $minimumAgeSeconds);
+        if ($hasExecutionLock && $runtimeOwnerState === 'missing') {
+            // Backward compatibility for jobs started before runtime-owner
+            // tracking existed. Preserve the old active-phase grace period.
+            $minimumOrphanAge = max($minimumOrphanAge, 15 * 60);
+        }
+
+        if ($reservedAt !== null) {
+            return (time() - (int) $reservedAt) > $minimumOrphanAge;
+        }
+
+        if ($queueRow !== null || !$hasExecutionLock) {
+            return false;
+        }
+
+        $lastPulse = $progress['updated_at'] ?? $job->updated_at ?? null;
+        if ($lastPulse === null || $lastPulse === '') {
+            return true;
+        }
+
+        try {
+            return Carbon::parse($lastPulse)->lt(now()->subSeconds($minimumOrphanAge));
+        } catch (\Throwable) {
+            return true;
         }
     }
 
@@ -1071,6 +1166,151 @@ class ImportExecutionService
             if ($acquired) {
                 $lock->release();
             }
+        }
+    }
+
+    private function rememberRuntimeOwner(int $jobId, string $executionSource): void
+    {
+        if ($jobId <= 0) {
+            return;
+        }
+
+        $this->importCache()->put($this->runtimeOwnerKey($jobId), [
+            'pid' => getmypid(),
+            'touched_at' => time(),
+            'execution_source' => trim($executionSource) !== '' ? trim($executionSource) : 'worker',
+        ], now()->addHours(self::DISPATCHED_TTL_HOURS));
+    }
+
+    private function forgetRuntimeOwner(int $jobId): void
+    {
+        $key = $this->runtimeOwnerKey($jobId);
+        $owner = $this->importCache()->get($key);
+        if (!is_array($owner) || (int) ($owner['pid'] ?? 0) === getmypid()) {
+            $this->importCache()->forget($key);
+        }
+    }
+
+    private function runtimeOwnerState(int $jobId): string
+    {
+        $owner = $this->importCache()->get($this->runtimeOwnerKey($jobId));
+        if (!is_array($owner)) {
+            return 'missing';
+        }
+
+        $pid = (int) ($owner['pid'] ?? 0);
+        $executionSource = strtolower(trim((string) ($owner['execution_source'] ?? 'worker')));
+        $processState = $this->probeRuntimeProcess($pid, $executionSource);
+        if ($processState === 'live' || $processState === 'dead') {
+            return $processState;
+        }
+
+        $touchedAt = (int) ($owner['touched_at'] ?? 0);
+        if ($touchedAt > 0 && (time() - $touchedAt) <= $this->runtimeOwnerFreshSeconds()) {
+            return 'fresh';
+        }
+
+        return 'uncertain';
+    }
+
+    private function runtimeOwnerProtectsExecution(string $state): bool
+    {
+        return in_array($state, ['live', 'fresh', 'uncertain'], true);
+    }
+
+    private function runtimeOwnerFreshSeconds(): int
+    {
+        return max(90, (int) config('import.queue.runtime_owner_fresh_seconds', 180));
+    }
+
+    /**
+     * @return 'live'|'dead'|'uncertain'
+     */
+    protected function probeRuntimeProcess(int $pid, string $executionSource): string
+    {
+        if ($pid <= 0) {
+            return 'dead';
+        }
+
+        if ($pid === getmypid()) {
+            return 'live';
+        }
+
+        $isInlineExecution = in_array($executionSource, ['inline_direct', 'inline_fallback'], true);
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            if (! function_exists('shell_exec') || ! function_exists('mb_convert_encoding')) {
+                return 'uncertain';
+            }
+
+            $script = "try { \$process = Get-Process -Id {$pid} -ErrorAction Stop; if (\$null -eq \$process) { '__MISSING__' } else { '__FOUND__' } } catch [Microsoft.PowerShell.Commands.ProcessCommandException] { '__MISSING__' } catch { '__PROBE_ERROR__' }";
+            $encoded = base64_encode(mb_convert_encoding($script, 'UTF-16LE', 'UTF-8'));
+            $output = shell_exec(
+                'powershell.exe -NoProfile -NonInteractive -NoLogo -ExecutionPolicy Bypass -EncodedCommand '
+                . escapeshellarg($encoded)
+                . ' 2>NUL'
+            );
+            $normalized = strtolower(trim((string) $output));
+
+            if (str_contains($normalized, '__missing__')) {
+                return 'dead';
+            }
+            if (!str_contains($normalized, '__found__') || str_contains($normalized, '__probe_error__')) {
+                return 'uncertain';
+            }
+            return $isInlineExecution ? 'uncertain' : 'live';
+        }
+
+        $processPath = '/proc/' . $pid;
+        $commandLine = @file_get_contents($processPath . '/cmdline');
+        if (is_string($commandLine) && $commandLine !== '') {
+            if ($isInlineExecution) {
+                return 'uncertain';
+            }
+
+            $normalized = strtolower(str_replace("\0", ' ', $commandLine));
+
+            return str_contains($normalized, 'queue:work') || str_contains($normalized, 'queue:listen')
+                ? 'live'
+                : 'uncertain';
+        }
+
+        if (is_dir('/proc') && !file_exists($processPath)) {
+            return 'dead';
+        }
+
+        if (function_exists('posix_kill') && @posix_kill($pid, 0)) {
+            return 'uncertain';
+        }
+
+        return 'uncertain';
+    }
+
+    private function runtimeOwnerKey(int $jobId): string
+    {
+        return self::RUNTIME_OWNER_KEY_PREFIX . $jobId;
+    }
+
+    private function forceReleaseOrphanedTableExecutionLock(int $jobId, object $job): void
+    {
+        $tableName = $this->resolveExpectedTableName($job);
+        if ($tableName === '') {
+            $state = $this->progressService->getJobState($jobId);
+            $tableName = strtolower(trim((string) ($state['params']['table_name'] ?? '')));
+        }
+
+        $scope = preg_replace('/[^a-z0-9_]+/', '_', strtolower(trim($tableName))) ?: '';
+        if ($scope === '') {
+            return;
+        }
+
+        try {
+            $this->importCache()->lock('import:table-execution:' . $scope, 1)->forceRelease();
+        } catch (\Throwable $e) {
+            Log::warning('Failed to release orphaned import table lock: ' . $e->getMessage(), [
+                'job_id' => $jobId,
+                'table_scope' => $scope,
+            ]);
         }
     }
 
@@ -1180,6 +1420,8 @@ class ImportExecutionService
                 ]);
             }
         }
+
+        $cache->forget($this->runtimeOwnerKey($jobId));
     }
 
     private function shouldRedispatchQueuedJob(object $job): bool

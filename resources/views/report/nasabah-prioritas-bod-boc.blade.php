@@ -169,7 +169,7 @@
         border-bottom: 2px solid rgba(0,0,0,0.1) !important;
         border-right: 1px solid rgba(255,255,255,0.1) !important;
         position: sticky;
-        top: 41px; /* Adjust based on header height */
+        top: var(--abah-table-head-top, 41px);
         z-index: 9;
     }
 

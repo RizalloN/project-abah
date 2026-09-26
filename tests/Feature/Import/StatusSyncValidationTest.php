@@ -324,6 +324,314 @@ class StatusSyncValidationTest extends TestCase
         Bus::assertNotDispatched(\App\Jobs\RunImportJob::class);
     }
 
+    public function test_orphaned_lw321pn_reserved_job_is_requeued_without_waiting_for_phase_timeout(): void
+    {
+        Bus::fake();
+        $jobId = 13;
+        $state = [
+            'params' => [
+                'job_id' => $jobId,
+                'table_name' => 'lw321pn',
+                'file_path' => 'excel_imports/lw321pn.csv',
+            ],
+            'headers' => ['PERIODE'],
+        ];
+
+        $this->createTestJob($jobId, 'processing', [
+            'total_files' => 319769,
+            'file_name' => 'lw321pn.csv',
+            'folder_path' => 'imports',
+            'id_report' => 28,
+            'job_context' => json_encode([
+                'table_name' => 'lw321pn',
+                'state' => $state,
+            ]),
+            'updated_at' => now()->subMinutes(3),
+        ]);
+        $this->progressService->cacheProgress($jobId, [
+            'status' => 'processing',
+            'phase' => 'polars',
+            'percent' => 18,
+            'message' => 'Fast-path LW321PN aktif. Memuat CSV ke staging table...',
+            'processed_rows' => 0,
+            'total_rows' => 319769,
+        ]);
+        DB::table('import_jobs')->where('id', $jobId)->update([
+            'updated_at' => now()->subMinutes(3),
+        ]);
+        $cacheStore = trim((string) config('import.cache_store', 'file'));
+        $cache = $cacheStore !== '' ? Cache::store($cacheStore) : Cache::getFacadeRoot();
+        $cache->put('import_job_progress_heartbeat:' . $jobId, now()->subMinutes(3)->timestamp, now()->addHour());
+        $cache->put('import_excel_runtime_owner_' . $jobId, [
+            'pid' => 999999,
+            'touched_at' => now()->subMinutes(3)->timestamp,
+        ], now()->addHour());
+        $tableLock = $cache->lock('import:table-execution:lw321pn', 3600);
+        $this->assertTrue($tableLock->get());
+
+        DB::table('jobs')->insert([
+            'queue' => 'imports-high',
+            'reserved_at' => now()->subMinutes(3)->timestamp,
+            'available_at' => now()->subMinutes(3)->timestamp,
+            'created_at' => now()->subMinutes(3)->timestamp,
+            'payload' => 'O:21:"App\\Jobs\\RunImportJob":1:{s:5:"jobId";i:13;}',
+        ]);
+
+        $executionService = new class($this->progressService) extends ImportExecutionService {
+            protected function probeRuntimeProcess(int $pid, string $executionSource): string
+            {
+                return 'dead';
+            }
+        };
+        $recovered = $executionService->recoverOrphanedZeroProgressJobs(60);
+
+        $this->assertSame([$jobId], $recovered);
+        $this->assertSame('queued', DB::table('import_jobs')->where('id', $jobId)->value('status'));
+        $this->assertSame(0, DB::table('jobs')->count());
+        Bus::assertDispatched(\App\Jobs\RunImportJob::class, fn ($job): bool => $job->jobId === $jobId);
+
+        $tableLockProbe = $cache->lock('import:table-execution:lw321pn', 60);
+        $this->assertTrue($tableLockProbe->get());
+        $tableLockProbe->release();
+    }
+
+    public function test_orphaned_lw321pn_with_consumed_queue_row_and_dead_runtime_owner_is_requeued(): void
+    {
+        Bus::fake();
+        $jobId = 14;
+        $this->createTestJob($jobId, 'processing', [
+            'total_files' => 319769,
+            'file_name' => 'lw321pn-consumed.csv',
+            'folder_path' => 'imports',
+            'id_report' => 28,
+            'job_context' => json_encode([
+                'table_name' => 'lw321pn',
+                'state' => [
+                    'params' => [
+                        'job_id' => $jobId,
+                        'table_name' => 'lw321pn',
+                        'file_path' => 'excel_imports/lw321pn-consumed.csv',
+                    ],
+                    'headers' => ['PERIODE'],
+                ],
+            ]),
+            'updated_at' => now()->subMinutes(3),
+        ]);
+        $this->progressService->cacheProgress($jobId, [
+            'status' => 'processing',
+            'phase' => 'polars',
+            'percent' => 18,
+            'message' => 'Fast-path LW321PN aktif. Memuat CSV ke staging table...',
+            'processed_rows' => 0,
+            'total_rows' => 319769,
+        ]);
+        DB::table('import_jobs')->where('id', $jobId)->update([
+            'updated_at' => now()->subMinutes(3),
+        ]);
+
+        $cacheStore = trim((string) config('import.cache_store', 'file'));
+        $cache = $cacheStore !== '' ? Cache::store($cacheStore) : Cache::getFacadeRoot();
+        $cachedProgress = $cache->get('import_job_progress:' . $jobId, []);
+        $cachedProgress['updated_at'] = now()->subMinutes(3)->toIso8601String();
+        $cache->put('import_job_progress:' . $jobId, $cachedProgress, now()->addHour());
+        $cache->put('import_excel_runtime_owner_' . $jobId, [
+            'pid' => 999999,
+            'touched_at' => now()->subMinutes(3)->timestamp,
+        ], now()->addHour());
+        $runtimeLock = $cache->lock('import_excel_execute_job_' . $jobId, 3600);
+        $this->assertTrue($runtimeLock->get());
+
+        $executionService = new class($this->progressService) extends ImportExecutionService {
+            protected function probeRuntimeProcess(int $pid, string $executionSource): string
+            {
+                return 'dead';
+            }
+        };
+        $recovered = $executionService->recoverOrphanedZeroProgressJobs(60);
+
+        $this->assertSame([$jobId], $recovered);
+        $this->assertSame('queued', DB::table('import_jobs')->where('id', $jobId)->value('status'));
+        Bus::assertDispatched(\App\Jobs\RunImportJob::class, fn ($job): bool => $job->jobId === $jobId);
+
+        $runtimeLockProbe = $cache->lock('import_excel_execute_job_' . $jobId, 60);
+        $this->assertTrue($runtimeLockProbe->get());
+        $runtimeLockProbe->release();
+    }
+
+    public function test_live_runtime_owner_without_execution_lock_is_not_requeued(): void
+    {
+        Bus::fake();
+        $jobId = 15;
+        $this->createTestJob($jobId, 'processing', [
+            'total_files' => 319769,
+            'file_name' => 'lw321pn-live.csv',
+            'folder_path' => 'imports',
+            'id_report' => 28,
+            'job_context' => json_encode([
+                'table_name' => 'lw321pn',
+                'state' => [
+                    'params' => [
+                        'job_id' => $jobId,
+                        'table_name' => 'lw321pn',
+                        'file_path' => 'excel_imports/lw321pn-live.csv',
+                    ],
+                    'headers' => ['PERIODE'],
+                ],
+            ]),
+            'updated_at' => now()->subMinutes(3),
+        ]);
+        $this->progressService->cacheProgress($jobId, [
+            'status' => 'processing',
+            'phase' => 'polars',
+            'percent' => 18,
+            'processed_rows' => 0,
+            'total_rows' => 319769,
+        ]);
+        DB::table('import_jobs')->where('id', $jobId)->update([
+            'updated_at' => now()->subMinutes(3),
+        ]);
+
+        $cacheStore = trim((string) config('import.cache_store', 'file'));
+        $cache = $cacheStore !== '' ? Cache::store($cacheStore) : Cache::getFacadeRoot();
+        $cachedProgress = $cache->get('import_job_progress:' . $jobId, []);
+        $cachedProgress['updated_at'] = now()->subMinutes(3)->toIso8601String();
+        $cache->put('import_job_progress:' . $jobId, $cachedProgress, now()->addHour());
+        $cache->put('import_excel_runtime_owner_' . $jobId, [
+            'pid' => getmypid(),
+            'touched_at' => now()->subMinutes(3)->timestamp,
+            'execution_source' => 'worker',
+        ], now()->addHour());
+        DB::table('jobs')->insert([
+            'queue' => 'imports-high',
+            'reserved_at' => now()->subMinutes(3)->timestamp,
+            'available_at' => now()->subMinutes(3)->timestamp,
+            'created_at' => now()->subMinutes(3)->timestamp,
+            'payload' => 'O:21:"App\\Jobs\\RunImportJob":1:{s:5:"jobId";i:15;}',
+        ]);
+
+        $recovered = $this->executionService->recoverOrphanedZeroProgressJobs(60);
+
+        $this->assertSame([], $recovered);
+        $this->assertSame('processing', DB::table('import_jobs')->where('id', $jobId)->value('status'));
+        $this->assertSame(1, DB::table('jobs')->count());
+        Bus::assertNotDispatched(\App\Jobs\RunImportJob::class);
+    }
+
+    public function test_dispatch_does_not_recover_lw321pn_with_a_live_runtime_owner(): void
+    {
+        Bus::fake();
+        $jobId = 16;
+        $this->createTestJob($jobId, 'processing', [
+            'total_files' => 319769,
+            'file_name' => 'lw321pn-live-dispatch.csv',
+            'folder_path' => 'imports',
+            'id_report' => 28,
+            'job_context' => json_encode([
+                'table_name' => 'lw321pn',
+                'state' => [
+                    'params' => [
+                        'job_id' => $jobId,
+                        'table_name' => 'lw321pn',
+                        'file_path' => 'excel_imports/lw321pn-live-dispatch.csv',
+                    ],
+                    'headers' => ['PERIODE'],
+                ],
+            ]),
+            'updated_at' => now()->subMinutes(20),
+        ]);
+
+        $cacheStore = trim((string) config('import.cache_store', 'file'));
+        $cache = $cacheStore !== '' ? Cache::store($cacheStore) : Cache::getFacadeRoot();
+        $cache->put('import_job_progress:' . $jobId, [
+            'status' => 'processing',
+            'phase' => 'polars',
+            'percent' => 18,
+            'processed_rows' => 0,
+            'updated_at' => now()->subMinutes(20)->toIso8601String(),
+        ], now()->addHour());
+        $cache->put('import_excel_runtime_owner_' . $jobId, [
+            'pid' => getmypid(),
+            'touched_at' => now()->subMinutes(20)->timestamp,
+            'execution_source' => 'worker',
+        ], now()->addHour());
+
+        $this->assertFalse($this->executionService->dispatch($jobId));
+        $this->assertSame('processing', DB::table('import_jobs')->where('id', $jobId)->value('status'));
+        Bus::assertNotDispatched(\App\Jobs\RunImportJob::class);
+    }
+
+    public function test_inline_lw321pn_with_fresh_owner_is_protected_when_process_probe_is_uncertain(): void
+    {
+        Bus::fake();
+        $jobId = 17;
+        $this->createTestJob($jobId, 'processing', [
+            'total_files' => 319769,
+            'file_name' => 'lw321pn-inline.csv',
+            'folder_path' => 'imports',
+            'id_report' => 28,
+            'job_context' => json_encode([
+                'table_name' => 'lw321pn',
+                'state' => [
+                    'params' => [
+                        'job_id' => $jobId,
+                        'table_name' => 'lw321pn',
+                        'file_path' => 'excel_imports/lw321pn-inline.csv',
+                    ],
+                    'headers' => ['PERIODE'],
+                ],
+            ]),
+            'updated_at' => now()->subMinutes(3),
+        ]);
+        $this->progressService->cacheProgress($jobId, [
+            'status' => 'processing',
+            'phase' => 'loading',
+            'percent' => 18,
+            'processed_rows' => 0,
+            'total_rows' => 319769,
+        ]);
+        DB::table('import_jobs')->where('id', $jobId)->update([
+            'updated_at' => now()->subMinutes(3),
+        ]);
+
+        $cacheStore = trim((string) config('import.cache_store', 'file'));
+        $cache = $cacheStore !== '' ? Cache::store($cacheStore) : Cache::getFacadeRoot();
+        $cachedProgress = $cache->get('import_job_progress:' . $jobId, []);
+        $cachedProgress['updated_at'] = now()->subMinutes(3)->toIso8601String();
+        $cache->put('import_job_progress:' . $jobId, $cachedProgress, now()->addHour());
+        $cache->put('import_excel_runtime_owner_' . $jobId, [
+            'pid' => 999998,
+            'touched_at' => time(),
+            'execution_source' => 'inline_fallback',
+        ], now()->addHour());
+        $runtimeLock = $cache->lock('import_excel_execute_job_' . $jobId, 3600);
+        $this->assertTrue($runtimeLock->get());
+
+        $executionService = new class($this->progressService) extends ImportExecutionService {
+            public array $probedExecutionSources = [];
+
+            protected function probeRuntimeProcess(int $pid, string $executionSource): string
+            {
+                $this->probedExecutionSources[] = $executionSource;
+
+                return 'uncertain';
+            }
+        };
+
+        try {
+            $recovered = $executionService->recoverOrphanedZeroProgressJobs(60);
+
+            $this->assertSame([], $recovered);
+            $this->assertSame(['inline_fallback'], $executionService->probedExecutionSources);
+            $this->assertSame('processing', DB::table('import_jobs')->where('id', $jobId)->value('status'));
+
+            $runtimeLockProbe = $cache->lock('import_excel_execute_job_' . $jobId, 60);
+            $this->assertFalse($runtimeLockProbe->get());
+            Bus::assertNotDispatched(\App\Jobs\RunImportJob::class);
+        } finally {
+            $runtimeLock->release();
+        }
+    }
+
     public function test_stale_processing_job_with_runtime_lock_is_not_failed(): void
     {
         $jobId = 12;

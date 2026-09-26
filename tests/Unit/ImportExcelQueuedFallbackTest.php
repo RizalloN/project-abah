@@ -22,6 +22,10 @@ class ImportExcelQueuedFallbackTest extends TestCase
     protected function tearDown(): void
     {
         Storage::disk('local')->delete('testing/queued_fallback_daily_loan.csv');
+        Storage::disk('local')->delete('testing/queued_fallback_hourly_dpk.csv');
+        Storage::disk('local')->delete('testing/queued_fallback_lw321.csv');
+        Storage::disk('local')->delete('testing/queued_retained_lw321.xlsx');
+        Storage::disk('local')->delete('testing/queued_retained_lw321_staged.csv');
         Storage::disk('local')->delete('testing/queued_fallback_ssa_pinjaman.xlsx');
         Storage::disk('local')->delete('testing/queued_fallback_ssa_pinjaman_staged.csv');
         @rmdir(storage_path('app/private/testing'));
@@ -168,6 +172,357 @@ class ImportExcelQueuedFallbackTest extends TestCase
         $this->assertFalse($stagedFallbackCalled);
         $this->assertSame('failed', $result['status']);
         $this->assertStringContainsString('Direct load berhenti setelah commit.', $failedMessage);
+    }
+
+    public function test_handled_hourly_csv_pipeline_rejects_completed_zero_success_for_non_empty_source(): void
+    {
+        $relativePath = 'testing/queued_fallback_hourly_dpk.csv';
+        Storage::disk('local')->put(
+            $relativePath,
+            "Minute of POSISI,MBNAME,BRNAME,PRODUK,SEGMEN2,Saldo\n2026-09-25 10:00:00,MB,BR,Giro,Ritel,1000\n"
+        );
+
+        $service = new ExcelQueuedImportService();
+        $failedMessage = '';
+        $cleanupCalled = false;
+        $job = (object) [
+            'status' => 'completed',
+            'total_success' => 0,
+            'total_failed' => 0,
+            'total_files' => 0,
+        ];
+
+        $result = $service->execute([
+            'job_id' => 27,
+            'params' => [
+                'job_id' => 27,
+                'file_path' => $relativePath,
+                'table_name' => 'hourly_dpk',
+                'header_index' => 0,
+                'active_filters' => [],
+                'total_rows' => 2,
+                'delimiter' => ',',
+            ],
+            'headers' => ['Minute of POSISI', 'MBNAME', 'BRNAME', 'PRODUK', 'SEGMEN2', 'Saldo'],
+        ], [
+            'resolve_import_strategy' => fn (string $tableName) => new class {
+                public function importMode(array $context = []): string
+                {
+                    return 'bulk_csv_staging';
+                }
+
+                public function transformHeaders(array $headers): array
+                {
+                    return ['posisi', 'mbname', 'brname', 'produk', 'segmen2', 'saldo'];
+                }
+            },
+            'mark_failed' => function (
+                int $jobId,
+                string $message,
+                int $success = 0,
+                int $failed = 0
+            ) use (&$failedMessage): void {
+                $failedMessage = $message;
+            },
+            'find_job' => fn (int $jobId) => $job,
+            'update_job' => fn (int $jobId, array $attributes, ?array $progressPayload = null) => null,
+            'assert_transactional_table' => fn (string $tableName, string $context) => null,
+            'assert_duplicate_guard' => fn (string $tableName) => null,
+            'is_csv_file' => fn (string $path) => true,
+            'detect_csv_delimiter' => fn (string $path) => ',',
+            'count_csv_data_rows' => fn (string $path, ?string $tableName = null) => 1,
+            'resolve_csv_data_row_estimate' => fn (?int $totalRows, int $headerIndex) => 1,
+            'run_csv_pipeline' => fn (array $payload) => app(ImportPipelineService::class)->runCsvPipeline($payload),
+            'process_staged_csv_stream' => fn (): bool => true,
+            'cleanup_successful_import_artifacts' => function () use (&$cleanupCalled): void {
+                $cleanupCalled = true;
+            },
+        ]);
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame(0, $result['total_success']);
+        $this->assertFalse($cleanupCalled);
+        $this->assertStringContainsString('sumber berisi 1 baris data', $failedMessage);
+        $this->assertStringContainsString('tidak ada baris yang berhasil disimpan', $failedMessage);
+        $this->assertTrue(Storage::disk('local')->exists($relativePath));
+    }
+
+    public function test_lw321_direct_exception_does_not_start_staged_fallback(): void
+    {
+        $relativePath = 'testing/queued_fallback_lw321.csv';
+        Storage::disk('local')->put($relativePath, "PERIODE,NO_REKENING,CBAL_Base\n2026-09-21,123,1000\n");
+
+        $service = new ExcelQueuedImportService();
+        $stagedFallbackCalled = false;
+        $failedMessage = '';
+
+        $result = $service->execute([
+            'job_id' => 79,
+            'params' => [
+                'job_id' => 79,
+                'file_path' => $relativePath,
+                'table_name' => 'lw321pn',
+                'header_index' => 0,
+                'active_filters' => [],
+                'total_rows' => 2,
+                'delimiter' => ',',
+            ],
+            'headers' => ['PERIODE', 'NO_REKENING', 'CBAL_Base'],
+        ], [
+            'resolve_import_strategy' => fn (string $tableName) => new class {
+                public function importMode(array $context = []): string
+                {
+                    return 'bulk_csv_direct';
+                }
+            },
+            'mark_failed' => function (
+                int $jobId,
+                string $message,
+                int $success = 0,
+                int $failed = 0
+            ) use (&$failedMessage): void {
+                $failedMessage = $message;
+            },
+            'find_job' => fn (int $jobId) => (object) [
+                'status' => 'processing',
+                'total_success' => 0,
+                'total_failed' => 0,
+                'total_files' => 1,
+            ],
+            'update_job' => fn (int $jobId, array $attributes, ?array $progressPayload = null) => null,
+            'assert_transactional_table' => fn (string $tableName, string $context) => null,
+            'assert_duplicate_guard' => fn (string $tableName) => null,
+            'is_csv_file' => fn (string $path) => true,
+            'detect_csv_delimiter' => fn (string $path) => ',',
+            'count_csv_data_rows' => fn (string $path, ?string $tableName = null) => 1,
+            'resolve_csv_data_row_estimate' => fn (?int $totalRows, int $headerIndex) => 1,
+            'run_csv_pipeline' => fn (array $payload) => app(ImportPipelineService::class)->runCsvPipeline($payload),
+            'process_daily_loan_direct_csv_stream' => function (): bool {
+                throw new \RuntimeException('Direct LW321 load gagal.');
+            },
+            'process_staged_csv_stream' => function () use (&$stagedFallbackCalled): bool {
+                $stagedFallbackCalled = true;
+
+                return true;
+            },
+        ]);
+
+        $this->assertFalse($stagedFallbackCalled);
+        $this->assertSame('failed', $result['status']);
+        $this->assertStringContainsString('Direct LW321 load gagal.', $failedMessage);
+        $this->assertTrue(Storage::disk('local')->exists($relativePath));
+    }
+
+    public function test_lw321_filtered_exception_does_not_fallback_or_complete_the_job(): void
+    {
+        $relativePath = 'testing/queued_fallback_lw321.csv';
+        Storage::disk('local')->put($relativePath, "PERIODE,NO_REKENING,CBAL_Base\n2026-09-21,123,1000\n");
+
+        $service = new ExcelQueuedImportService();
+        $job = (object) [
+            'status' => 'processing',
+            'total_success' => 0,
+            'total_failed' => 0,
+            'total_files' => 1,
+        ];
+        $stagedFallbackCalled = false;
+        $failedMessage = '';
+
+        $result = $service->execute([
+            'job_id' => 80,
+            'params' => [
+                'job_id' => 80,
+                'file_path' => $relativePath,
+                'table_name' => 'lw321pn',
+                'header_index' => 0,
+                'active_filters' => [],
+                'total_rows' => 2,
+                'delimiter' => ',',
+            ],
+            'headers' => ['PERIODE', 'NO_REKENING', 'CBAL_Base'],
+        ], [
+            'resolve_import_strategy' => fn (string $tableName) => new class {
+                public function importMode(array $context = []): string
+                {
+                    return 'bulk_csv_filtered';
+                }
+            },
+            'mark_failed' => function (
+                int $jobId,
+                string $message,
+                int $success = 0,
+                int $failed = 0
+            ) use (&$failedMessage): void {
+                $failedMessage = $message;
+            },
+            'find_job' => fn (int $jobId) => $job,
+            'update_job' => fn (int $jobId, array $attributes, ?array $progressPayload = null) => null,
+            'assert_transactional_table' => fn (string $tableName, string $context) => null,
+            'assert_duplicate_guard' => fn (string $tableName) => null,
+            'is_csv_file' => fn (string $path) => true,
+            'detect_csv_delimiter' => fn (string $path) => ',',
+            'count_csv_data_rows' => fn (string $path, ?string $tableName = null) => 1,
+            'resolve_csv_data_row_estimate' => fn (?int $totalRows, int $headerIndex) => 1,
+            'run_csv_pipeline' => fn (array $payload) => app(ImportPipelineService::class)->runCsvPipeline($payload),
+            'process_daily_loan_bulk_csv_stream' => function (): bool {
+                throw new \RuntimeException('Filtered LW321 load gagal.');
+            },
+            'process_staged_csv_stream' => function () use (&$stagedFallbackCalled, $job): bool {
+                $stagedFallbackCalled = true;
+                $job->status = 'completed';
+
+                return true;
+            },
+        ]);
+
+        $this->assertFalse($stagedFallbackCalled);
+        $this->assertSame('processing', $job->status);
+        $this->assertSame('failed', $result['status']);
+        $this->assertStringContainsString('Filtered LW321 load gagal.', $failedMessage);
+        $this->assertTrue(Storage::disk('local')->exists($relativePath));
+    }
+
+    public function test_lw321_filtered_false_result_does_not_fallback_or_complete_the_job(): void
+    {
+        $relativePath = 'testing/queued_fallback_lw321.csv';
+        Storage::disk('local')->put($relativePath, "PERIODE,NO_REKENING,CBAL_Base\n2026-09-21,123,1000\n");
+
+        $service = new ExcelQueuedImportService();
+        $job = (object) [
+            'status' => 'processing',
+            'total_success' => 0,
+            'total_failed' => 0,
+            'total_files' => 1,
+        ];
+        $stagedFallbackCalled = false;
+        $failedMessage = '';
+
+        $result = $service->execute([
+            'job_id' => 82,
+            'params' => [
+                'job_id' => 82,
+                'file_path' => $relativePath,
+                'table_name' => 'lw321pn',
+                'header_index' => 0,
+                'active_filters' => [],
+                'total_rows' => 2,
+                'delimiter' => ',',
+            ],
+            'headers' => ['PERIODE', 'NO_REKENING', 'CBAL_Base'],
+        ], [
+            'resolve_import_strategy' => fn (string $tableName) => new class {
+                public function importMode(array $context = []): string
+                {
+                    return 'bulk_csv_filtered';
+                }
+            },
+            'mark_failed' => function (
+                int $jobId,
+                string $message,
+                int $success = 0,
+                int $failed = 0
+            ) use (&$failedMessage): void {
+                $failedMessage = $message;
+            },
+            'find_job' => fn (int $jobId) => $job,
+            'update_job' => fn (int $jobId, array $attributes, ?array $progressPayload = null) => null,
+            'assert_transactional_table' => fn (string $tableName, string $context) => null,
+            'assert_duplicate_guard' => fn (string $tableName) => null,
+            'is_csv_file' => fn (string $path) => true,
+            'detect_csv_delimiter' => fn (string $path) => ',',
+            'count_csv_data_rows' => fn (string $path, ?string $tableName = null) => 1,
+            'resolve_csv_data_row_estimate' => fn (?int $totalRows, int $headerIndex) => 1,
+            'run_csv_pipeline' => fn (array $payload) => app(ImportPipelineService::class)->runCsvPipeline($payload),
+            'process_daily_loan_bulk_csv_stream' => fn (): bool => false,
+            'process_staged_csv_stream' => function () use (&$stagedFallbackCalled, $job): bool {
+                $stagedFallbackCalled = true;
+                $job->status = 'completed';
+
+                return true;
+            },
+        ]);
+
+        $this->assertFalse($stagedFallbackCalled);
+        $this->assertSame('processing', $job->status);
+        $this->assertSame('failed', $result['status']);
+        $this->assertStringContainsString('fast-path filtered CSV tidak tersedia', $failedMessage);
+        $this->assertTrue(Storage::disk('local')->exists($relativePath));
+    }
+
+    public function test_successful_lw321_import_sends_source_and_staged_files_to_cleanup(): void
+    {
+        $relativePath = 'testing/queued_retained_lw321.xlsx';
+        $stagedRelativePath = 'testing/queued_retained_lw321_staged.csv';
+        Storage::disk('local')->put($relativePath, 'placeholder workbook payload');
+        Storage::disk('local')->put(
+            $stagedRelativePath,
+            "PERIODE,NO_REKENING,CBAL_Base\n2026-09-21,123,1000\n"
+        );
+
+        $service = new ExcelQueuedImportService();
+        $cleanupCalled = false;
+        $cleanupExtraPaths = [];
+        $job = (object) [
+            'status' => 'completed',
+            'total_success' => 1,
+            'total_failed' => 0,
+            'total_files' => 1,
+        ];
+
+        $result = $service->execute([
+            'job_id' => 81,
+            'params' => [
+                'job_id' => 81,
+                'file_path' => $relativePath,
+                'staged_csv_path' => Storage::path($stagedRelativePath),
+                'table_name' => 'lw321pn',
+                'header_index' => 0,
+                'active_filters' => [],
+                'total_rows' => 2,
+                'delimiter' => ',',
+            ],
+            'headers' => ['PERIODE', 'NO_REKENING', 'CBAL_Base'],
+        ], [
+            'resolve_import_strategy' => fn (string $tableName) => new class {
+                public function importMode(array $context = []): string
+                {
+                    return 'bulk_csv_filtered';
+                }
+            },
+            'mark_failed' => function (int $jobId, string $message): void {
+                $this->fail('Successful LW321 import should not fail: ' . $message);
+            },
+            'find_job' => fn (int $jobId) => $job,
+            'update_job' => fn (int $jobId, array $attributes, ?array $progressPayload = null) => null,
+            'assert_transactional_table' => fn (string $tableName, string $context) => null,
+            'assert_duplicate_guard' => fn (string $tableName) => null,
+            'is_csv_file' => fn (string $path) => str_ends_with(strtolower($path), '.csv'),
+            'detect_csv_delimiter' => fn (string $path) => ',',
+            'count_csv_data_rows' => fn (string $path, ?string $tableName = null) => 1,
+            'resolve_csv_data_row_estimate' => fn (?int $totalRows, int $headerIndex) => 1,
+            'run_csv_pipeline' => fn (array $payload) => app(ImportPipelineService::class)->runCsvPipeline($payload),
+            'process_daily_loan_bulk_csv_stream' => fn (): bool => true,
+            'process_staged_csv_stream' => function (): bool {
+                $this->fail('Successful LW321 filtered import must not use staged legacy fallback.');
+            },
+            'cleanup_successful_import_artifacts' => function (
+                int $jobId,
+                string $callbackRelativePath,
+                string $absolutePath,
+                array $extraPaths = []
+            ) use (&$cleanupCalled, &$cleanupExtraPaths, $relativePath): void {
+                $cleanupCalled = true;
+                $cleanupExtraPaths = $extraPaths;
+                $this->assertSame(81, $jobId);
+                $this->assertSame($relativePath, $callbackRelativePath);
+            },
+        ]);
+
+        $this->assertSame('completed', $result['status']);
+        $this->assertTrue($cleanupCalled);
+        $this->assertContains(Storage::path($stagedRelativePath), $cleanupExtraPaths);
+        $this->assertTrue(Storage::disk('local')->exists($relativePath));
+        $this->assertTrue(Storage::disk('local')->exists($stagedRelativePath));
     }
 
     public function test_daily_loan_lock_exception_returns_success_when_persisted_totals_are_complete(): void

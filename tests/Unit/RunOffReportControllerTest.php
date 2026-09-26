@@ -22,6 +22,7 @@ class RunOffReportControllerTest extends TestCase
         Schema::dropIfExists('daily_loan_dinamis');
         Schema::create('daily_loan_dinamis', function (Blueprint $table): void {
             $table->id();
+            $table->string('uniqueid_namareport')->nullable();
             $table->date('periode')->nullable();
             $table->string('cabang1')->nullable();
             $table->string('nomor_rekening1')->nullable();
@@ -151,6 +152,77 @@ class RunOffReportControllerTest extends TestCase
         $this->assertSame(25000, $row['paid_amount_cents']);
     }
 
+    public function test_it_matches_lw321_current_position_with_a_canonical_account_key(): void
+    {
+        $baseline = $this->row(
+            '2026-06-30', 'KC Madiun', '12345678901234', 'Micro', 'Kupedes', '250.00', '2026-07-10', null, null, '1000.00'
+        );
+        $baseline['uniqueid_namareport'] = 'DAILY:BASELINE';
+
+        $current = $this->row(
+            '2026-07-25', 'KC Madiun', '012345678901234', 'Micro', 'Kupedes', '250.00', '2026-07-20', null, null, '900.00'
+        );
+        $current['uniqueid_namareport'] = 'LW321PN:CURRENT';
+
+        DB::table('daily_loan_dinamis')->insert([$baseline, $current]);
+
+        $report = app(RunOffReportService::class)->build(refresh: true);
+        $row = collect($report['rows'])->first(fn (array $row): bool =>
+            $row['category'] === 'MICRO TOTAL' && $row['branch'] === 'KC Madiun'
+        );
+
+        $this->assertSame('Daily Loan Dinamis', $report['baseline_source_label']);
+        $this->assertSame('LW321PN', $report['latest_source_label']);
+        $this->assertSame(1, $row['baseline_accounts']);
+        $this->assertSame(1, $row['remaining_accounts']);
+        $this->assertSame(0, $row['paid_accounts']);
+        $this->assertSame(25000, $row['remaining_amount_cents']);
+    }
+
+    public function test_it_rejects_a_baseline_without_principal_schedule_amount_instead_of_showing_zero_run_off(): void
+    {
+        $baseline = $this->row(
+            '2026-06-30', 'KC Madiun', 'BASE-LW', 'Micro', 'Kupedes', '0.00', '2026-07-10', null
+        );
+        $baseline['uniqueid_namareport'] = 'LW321PN:BASELINE';
+        $baseline['npb_pokok_la'] = null;
+
+        $current = $this->row(
+            '2026-07-25', 'KC Madiun', 'BASE-LW', 'Micro', 'Kupedes', '0.00', '2026-07-20', null, null, '900.00'
+        );
+        $current['uniqueid_namareport'] = 'LW321PN:CURRENT';
+        $current['npb_pokok_la'] = null;
+
+        DB::table('daily_loan_dinamis')->insert([$baseline, $current]);
+
+        $report = app(RunOffReportService::class)->build(refresh: true);
+
+        $this->assertSame('LW321PN', $report['baseline_source_label']);
+        $this->assertStringContainsString('1 rekening jadwal tanpa NPB Pokok LA', $report['error']);
+        $this->assertSame([], $report['rows']);
+    }
+
+    public function test_it_rejects_partial_baseline_principal_amount_coverage(): void
+    {
+        $complete = $this->row(
+            '2026-06-30', 'KC Madiun', 'BASE-COMPLETE', 'Micro', 'Kupedes', '100.00', '2026-07-10', null
+        );
+        $missing = $this->row(
+            '2026-06-30', 'KC Madiun', 'BASE-MISSING', 'Micro', 'Kupedes', '0.00', '2026-07-12', null
+        );
+        $missing['npb_pokok_la'] = null;
+        $current = $this->row(
+            '2026-07-25', 'KC Madiun', 'BASE-COMPLETE', 'Micro', 'Kupedes', '0.00', '2026-07-20', null
+        );
+
+        DB::table('daily_loan_dinamis')->insert([$complete, $missing, $current]);
+
+        $report = app(RunOffReportService::class)->build(refresh: true);
+
+        $this->assertStringContainsString('1 rekening jadwal tanpa NPB Pokok LA', $report['error']);
+        $this->assertSame([], $report['rows']);
+    }
+
     public function test_controller_renders_three_metric_groups(): void
     {
         $this->seedRunOffFixtures();
@@ -202,6 +274,7 @@ class RunOffReportControllerTest extends TestCase
         string $balance = '1.00'
     ): array {
         return [
+            'uniqueid_namareport' => null,
             'periode' => $period,
             'cabang1' => $branch,
             'nomor_rekening1' => $account,

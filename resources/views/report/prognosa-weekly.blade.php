@@ -435,6 +435,19 @@
         outline-offset: 1px;
     }
 
+    @media (pointer: coarse) {
+        .prognosa-segmented button,
+        .prognosa-week-trigger {
+            min-width: 44px;
+            min-height: 44px;
+        }
+
+        .prognosa-week-trigger {
+            width: 44px;
+            height: 44px;
+        }
+    }
+
     .prognosa-week-surface {
         cursor: default;
         user-select: none;
@@ -599,7 +612,7 @@
     }
 
     .prognosa-table thead tr:nth-child(2) th {
-        top: 34px;
+        top: var(--abah-table-head-top, 34px);
         height: 48px;
         color: #334155;
         background: #edf2f7;

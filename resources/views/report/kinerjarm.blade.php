@@ -1610,7 +1610,7 @@
     }
 
     .kinerja-rm-performance-table thead tr:nth-child(2) th {
-        top: 38px;
+        top: var(--abah-table-head-top, 38px);
         background: #1d436f;
     }
 
@@ -1827,7 +1827,7 @@
     }
 
     .kinerja-quality-series-table thead tr:nth-child(2) th {
-        top: 38px;
+        top: var(--abah-table-head-top, 38px);
         background: #1d436f !important;
     }
 

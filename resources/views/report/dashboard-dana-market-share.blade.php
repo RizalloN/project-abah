@@ -236,7 +236,7 @@
     }
 
     .market-instansi-table thead tr:nth-child(2) th {
-        top: 42px;
+        top: var(--abah-table-head-top, 42px);
         z-index: 4;
         padding-top: 0.45rem;
         padding-bottom: 0.45rem;

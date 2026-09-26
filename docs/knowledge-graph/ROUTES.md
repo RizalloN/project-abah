@@ -2,8 +2,8 @@
 
 | Methods | URI | Name | Domain | Handler |
 | --- | --- | --- | --- | --- |
-| POST | `confirm-password` | `generated::1IlUES9fcl4xE0ov` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
-| POST | `login` | `generated::iKwVRwHFv9iay8nm` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
+| POST | `confirm-password` | `-` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
+| POST | `login` | `-` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
 | GET | `login` | `login` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::create` |
 | POST | `logout` | `logout` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::destroy` |
 | GET | `confirm-password` | `password.confirm` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::show` |
@@ -49,10 +49,10 @@
 | GET | `drive/office/files/{file}/{documentKey}/source` | `drive.office.source` | bank-pipeline | `App\Http\Controllers\DriveAsixOfficeController::source` |
 | GET | `drive/pipeline-summary` | `drive.pipeline-summary` | bank-pipeline | `App\Http\Controllers\DriveAsixController::pipelineSummary` |
 | POST | `drive/upload` | `drive.upload` | bank-pipeline | `App\Http\Controllers\DriveAsixController::upload` |
+| GET | `up` | `-` | core | Closure |
 | POST | `file-management/delete` | `file-management.destroy` | core | `App\Http\Controllers\Admin\FileManagementController::destroy` |
 | GET | `file-management/download` | `file-management.download` | core | `App\Http\Controllers\Admin\FileManagementDownloadController::__invoke` |
 | GET | `file-management` | `file-management.index` | core | `App\Http\Controllers\Admin\FileManagementController::index` |
-| GET | `up` | `generated::5LjUxzLlRXQhDNdE` | core | Closure |
 | GET | `/` | `home` | core | Closure |
 | GET | `link-management` | `link-management.index` | core | `App\Http\Controllers\Admin\LinkManagementController::index` |
 | POST | `link-management` | `link-management.update` | core | `App\Http\Controllers\Admin\LinkManagementController::update` |
@@ -204,6 +204,9 @@
 | GET | `import-excel/preview` | `import.excel.preview` | import | `App\Http\Controllers\Import\ImportExcelController::previewExcel` |
 | GET | `import-excel/stream` | `import.excel.stream` | import | `App\Http\Controllers\Import\ImportExcelController::processExcelStream` |
 | POST | `import-excel/upload` | `import.excel.upload` | import | `App\Http\Controllers\Import\ImportExcelController::uploadExcel` |
+| POST | `import-excel/upload-chunk` | `import.excel.upload-chunk` | import | `App\Http\Controllers\Import\ImportExcelController::uploadExcelChunk` |
+| POST | `import-excel/upload-chunk/finalize` | `import.excel.upload-chunk.finalize` | import | `App\Http\Controllers\Import\ImportExcelController::finalizeExcelChunkUpload` |
+| POST | `import-excel/upload-chunk/init` | `import.excel.upload-chunk.init` | import | `App\Http\Controllers\Import\ImportExcelController::initExcelChunkUpload` |
 | POST | `import-excel/gi405-rec-dh/chunk` | `import.gi405.chunk` | import | `App\Http\Controllers\Import\ImportExcelController::processExcelChunk` |
 | POST | `import-excel/gi405-rec-dh/init` | `import.gi405.init` | import | `App\Http\Controllers\Import\Gi405RecDhImportExcelController::initExcelImport` |
 | GET | `import-excel/gi405-rec-dh/prepare-preview` | `import.gi405.prepare-preview` | import | `App\Http\Controllers\Import\Gi405RecDhImportExcelController::preparePreviewStream` |
@@ -287,6 +290,8 @@
 | POST | `job-management/queue-job/purge` | `job-management.queue.purge` | import | `App\Http\Controllers\Import\ImportJobManagementController::purgeQueueJobs` |
 | POST | `job-management/snapshot/{rebuildId}/force-start` | `job-management.snapshot.force-start` | import | `App\Http\Controllers\Import\ImportJobManagementController::forceStartSnapshot` |
 | POST | `job-management/{jobId}/terminate` | `job-management.terminate` | import | `App\Http\Controllers\Import\ImportJobManagementController::terminate` |
+| POST | `job-management/worker/start` | `job-management.worker.start` | import | `App\Http\Controllers\Import\ImportJobManagementController::startWorker` |
+| POST | `job-management/worker/stop` | `job-management.worker.stop` | import | `App\Http\Controllers\Import\ImportJobManagementController::stopWorker` |
 | GET | `report-management` | `report-management.index` | import | `App\Http\Controllers\Import\ImportIndexController::reportManagement` |
 | GET | `report/optimalisasi-digital/brilink` | `report.brilink` | import | `App\Http\Controllers\Report\DigitalPerformanceController::performanceBrilink` |
 | GET | `report/optimalisasi-digital/brimo` | `report.brimo` | import | `App\Http\Controllers\PerformanceBrimoController::index` |

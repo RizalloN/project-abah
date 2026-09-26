@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Console\Commands\SyncBrihcReferenceCommand;
 use App\Support\ReportCacheVersion;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -286,7 +287,7 @@ class SyncBrihcReferenceCommandTest extends TestCase
         (new Xlsx($spreadsheet))->save($listPath);
 
         try {
-            $command = app(\App\Console\Commands\SyncBrihcReferenceCommand::class);
+            $command = app(SyncBrihcReferenceCommand::class);
             $method = new \ReflectionMethod($command, 'readSourceRows');
             $source = $method->invoke($command, $listPath);
             $this->assertSame(4, count($source['rows']));
@@ -317,5 +318,86 @@ class SyncBrihcReferenceCommandTest extends TestCase
             'bc' => '552',
             'positiondesc' => 'RM BISNIS KECIL',
         ]);
+    }
+
+    public function test_it_syncs_update_hc_with_exact_roles_and_preserves_missing_ponorogo_assignment(): void
+    {
+        $timestamp = now();
+        $this->app['db']->table('brihc')->insert([
+            ['uniqueid_brihc' => 'stale-area-mantri', 'pn' => '100', 'nama' => 'Mantri Lama', 'jabatan' => 'MANTRI', 'created_at' => $timestamp, 'updated_at' => $timestamp],
+            ['uniqueid_brihc' => 'keep-quality', 'pn' => '101', 'nama' => 'Quality Tetap', 'jabatan' => 'RM SME QUALITY', 'created_at' => $timestamp, 'updated_at' => $timestamp],
+            ['uniqueid_brihc' => 'ponorogo-current', 'pn' => '700', 'nama' => 'Mantri Ponorogo Lama', 'jabatan' => 'MANTRI', 'created_at' => $timestamp, 'updated_at' => $timestamp],
+        ]);
+        $this->app['db']->table('brihc_pemasar')->insert([
+            ['uniqueid_namareport' => 'stale-area-mantri', 'pernr' => '100', 'completename' => 'Mantri Lama', 'positiondesc' => 'MANTRI', 'psadesc' => 'KC Madiun', 'bc' => '1', 'orgdesc' => 'UNIT LAMA', 'created_at' => $timestamp, 'updated_at' => $timestamp],
+            ['uniqueid_namareport' => 'keep-recovery', 'pernr' => '102', 'completename' => 'Recovery Tetap', 'positiondesc' => 'MANTRI RECOVERY', 'psadesc' => 'KC Madiun', 'bc' => null, 'orgdesc' => null, 'created_at' => $timestamp, 'updated_at' => $timestamp],
+            ['uniqueid_namareport' => 'keep-outside-area', 'pernr' => '103', 'completename' => 'Mantri Situbondo', 'positiondesc' => 'MANTRI', 'psadesc' => 'KC Situbondo', 'bc' => null, 'orgdesc' => null, 'created_at' => $timestamp, 'updated_at' => $timestamp],
+            ['uniqueid_namareport' => 'ponorogo-current', 'pernr' => '700', 'completename' => 'Mantri Ponorogo Lama', 'positiondesc' => 'MANTRI', 'psadesc' => 'KC Ponorogo', 'bc' => '7777', 'orgdesc' => 'UNIT ACUAN PONOROGO', 'created_at' => $timestamp, 'updated_at' => $timestamp],
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'update_hc_').'.xlsx';
+        $spreadsheet = new Spreadsheet;
+        $spreadsheet->getActiveSheet()->setTitle('Rekap');
+        $headers = ['PSADESC', 'NIP', 'PERNR', 'COMPLETENAME', 'ESGDESC', 'JG', 'PG', 'JOBDESC', 'BC', 'UKER'];
+        $rowsBySheet = [
+            'Madiun' => [
+                ['KC Madiun', '-', '200', 'Mantri Madiun Baru', 'PT', 'JG05', 'PG06', 'ASSOCIATE MANTRI 1', '3200', 'UNIT BARU'],
+                ['KC Madiun', '-', '201', 'Recovery Tidak Diambil', 'PT', 'JG05', 'PG06', 'MANTRI RECOVERY', '3200', 'UNIT BARU'],
+                ['KC Madiun', '-', '202', 'RM SME Baru', 'PT', 'JG07', 'PG08', 'RM BISNIS KECIL', null, null],
+            ],
+            'Magetan' => [
+                ['KC Magetan', '-', '300', 'RM Mikro Baru', 'PT', 'JG06', 'PG07', 'RM MIKRO', '49', 'KC MAGETAN'],
+            ],
+            'Ngawi' => [
+                ['KC Ngawi', '-', '400', 'RM KPR Baru', 'PT', 'JG06', 'PG07', 'RM BISNIS KONSUMER - KPR', '57', 'KC NGAWI'],
+                ['KC Ngawi', '-', '401', 'RM Briguna Baru', 'PT', 'JG06', 'PG07', 'RM BISNIS KONSUMER - BRIGUNA', '57', 'KC NGAWI'],
+            ],
+            'Ponorogo' => [
+                ['KC Ponorogo', '-', '700', 'Mantri Ponorogo Baru', 'PT', 'JG05', 'PG06', 'JUNIOR ASSOCIATE MANTRI', null, null],
+            ],
+        ];
+        foreach ($rowsBySheet as $title => $rows) {
+            $sheet = $spreadsheet->createSheet();
+            $sheet->setTitle($title);
+            $sheet->fromArray(array_merge([$headers], $rows));
+        }
+        (new Xlsx($spreadsheet))->save($path);
+
+        $pinjamanVersion = ReportCacheVersion::get('pinjaman');
+        $consumerVersion = ReportCacheVersion::get('consumer');
+        $brihcVersion = ReportCacheVersion::get('brihc');
+        try {
+            $this->artisan('reference:sync-brihc', ['file' => $path])
+                ->expectsOutputToContain('"source_format": "update_hc"')
+                ->assertExitCode(0);
+        } finally {
+            @unlink($path);
+        }
+
+        $this->assertDatabaseMissing('brihc', ['uniqueid_brihc' => 'stale-area-mantri']);
+        $this->assertDatabaseMissing('brihc_pemasar', ['uniqueid_namareport' => 'stale-area-mantri']);
+        $this->assertDatabaseHas('brihc_pemasar', ['uniqueid_namareport' => 'keep-recovery']);
+        $this->assertDatabaseHas('brihc_pemasar', ['uniqueid_namareport' => 'keep-outside-area']);
+        $this->assertDatabaseHas('brihc', ['uniqueid_brihc' => 'keep-quality']);
+        $this->assertDatabaseHas('brihc_pemasar', [
+            'pernr' => '700',
+            'completename' => 'Mantri Ponorogo Baru',
+            'positiondesc' => 'MANTRI',
+            'bc' => '7777',
+            'orgdesc' => 'UNIT ACUAN PONOROGO',
+        ]);
+        $this->assertDatabaseHas('brihc_pemasar', [
+            'pernr' => '202',
+            'positiondesc' => 'RM BISNIS KECIL',
+            'bc' => '45',
+            'orgdesc' => 'KC Madiun',
+        ]);
+        $this->assertDatabaseHas('brihc_pemasar', ['pernr' => '300', 'positiondesc' => 'RM MIKRO']);
+        $this->assertDatabaseHas('brihc_pemasar', ['pernr' => '400', 'positiondesc' => 'RM BISNIS KONSUMER - KPR']);
+        $this->assertDatabaseHas('brihc_pemasar', ['pernr' => '401', 'positiondesc' => 'RM BISNIS KONSUMER - BRIGUNA']);
+        $this->assertDatabaseMissing('brihc_pemasar', ['pernr' => '201']);
+        $this->assertSame($pinjamanVersion + 1, ReportCacheVersion::get('pinjaman'));
+        $this->assertSame($consumerVersion + 1, ReportCacheVersion::get('consumer'));
+        $this->assertSame($brihcVersion + 1, ReportCacheVersion::get('brihc'));
     }
 }

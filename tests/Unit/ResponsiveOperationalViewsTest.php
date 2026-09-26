@@ -186,6 +186,40 @@ class ResponsiveOperationalViewsTest extends TestCase
         $this->assertStringContainsString('z-index: 55 !important;', $source);
     }
 
+    public function test_report_families_use_runtime_offsets_for_second_header_rows(): void
+    {
+        $paths = [
+            'views/dashboard/partials/consumer-operations.blade.php',
+            'views/report/dashboard-dana-market-share-area6.blade.php',
+            'views/report/dashboard-dana-hourly-dpk.blade.php',
+            'views/report/dashboard-dana-market-share.blade.php',
+            'views/report/dashboard-dana-market-share-sektoral.blade.php',
+            'views/report/kinerjarm.blade.php',
+            'views/report/prognosa-weekly.blade.php',
+            'views/report/nasabah-prioritas-bod-boc.blade.php',
+            'views/report/kinerja-new-payroll.blade.php',
+            'views/report/program-referral-partner-perusahaan-anak.blade.php',
+        ];
+
+        foreach ($paths as $path) {
+            $source = file_get_contents(resource_path($path));
+
+            $this->assertStringContainsString('var(--abah-table-head-top,', $source, $path);
+        }
+    }
+
+    public function test_drive_and_prognosa_controls_expand_for_coarse_pointers(): void
+    {
+        $drive = file_get_contents(resource_path('views/drive/index.blade.php'));
+        $prognosa = file_get_contents(resource_path('views/report/prognosa-weekly.blade.php'));
+
+        $this->assertStringContainsString('@media (pointer:coarse)', $drive);
+        $this->assertStringContainsString('.btn-dv-icon,.dv-summary-refresh{width:44px;height:44px;', $drive);
+        $this->assertSame(5, substr_count($drive, 'aria-label="Tutup'));
+        $this->assertStringContainsString('@media (pointer: coarse)', $prognosa);
+        $this->assertMatchesRegularExpression('/\.prognosa-week-trigger\s*\{\s*width:\s*44px;\s*height:\s*44px;/s', $prognosa);
+    }
+
     public function test_matrix_multi_row_header_uses_the_runtime_sticky_offset(): void
     {
         $source = file_get_contents(resource_path('views/report/dashboard-pinjaman/_partials/_styles.blade.php'));

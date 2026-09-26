@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <title>Login - Dashboard A-Six</title>
     <link rel="icon" type="image/svg+xml" href="{{ asset('images/a-six-logo.svg') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,15 +13,13 @@
             --primary: #0857c3;
             --primary-dark: #053b82;
             --primary-light: #2563eb;
-            --accent-cyan: #06b6d4;
-            --accent-emerald: #10b981;
-            --accent-orange: #f97316;
-            --bg-dark: #070d18;
+            --primary-soft: #eaf3ff;
+            --bg-page: #f4f8ff;
             --surface: #ffffff;
-            --border: #e2e8f0;
+            --border: #d6e6fb;
             --border-focus: #3b82f6;
-            --text-main: #0f172a;
-            --text-muted: #64748b;
+            --text-main: #082b59;
+            --text-muted: #52647d;
             --danger: #dc2626;
         }
 
@@ -31,46 +29,52 @@
             padding: 0;
         }
 
+        html {
+            width: 100%;
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+
         body {
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 24px;
-            background-color: var(--bg-dark);
-            background-image: 
-                radial-gradient(circle at 15% 20%, rgba(8, 87, 195, 0.42) 0%, transparent 45%),
-                radial-gradient(circle at 85% 80%, rgba(6, 182, 212, 0.28) 0%, transparent 45%),
-                radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.95) 0%, rgba(7, 13, 24, 0.98) 100%);
+            padding:
+                max(24px, env(safe-area-inset-top, 0px))
+                max(24px, env(safe-area-inset-right, 0px))
+                max(24px, env(safe-area-inset-bottom, 0px))
+                max(24px, env(safe-area-inset-left, 0px));
+            background-color: var(--bg-page);
+            background-image:
+                radial-gradient(circle at 10% 10%, rgba(48, 127, 226, 0.18) 0%, transparent 32%),
+                radial-gradient(circle at 90% 88%, rgba(113, 197, 232, 0.18) 0%, transparent 30%),
+                linear-gradient(145deg, #f9fbff 0%, #eef5ff 100%);
             color: var(--text-main);
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             position: relative;
             overflow-x: hidden;
         }
 
-        /* Ambient vector illustration lines */
         .ambient-mesh {
             position: absolute;
             inset: 0;
             pointer-events: none;
-            opacity: 0.25;
-            background-size: 40px 40px;
-            background-image: 
-                linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            opacity: 0;
+            background: none;
         }
 
         .ambient-glow {
             position: absolute;
-            width: 500px;
-            height: 500px;
+            width: min(500px, 100vw);
+            height: min(500px, 100vw);
             border-radius: 50%;
             filter: blur(80px);
             pointer-events: none;
-            opacity: 0.18;
+            opacity: 0.12;
         }
-        .glow-1 { top: -100px; left: -100px; background: #0857c3; }
-        .glow-2 { bottom: -120px; right: -100px; background: #06b6d4; }
+        .glow-1 { top: 0; left: 0; background: #0857c3; transform: translate(-35%, -35%); }
+        .glow-2 { right: 0; bottom: 0; background: #71c5e8; transform: translate(35%, 35%); }
 
         @keyframes revealCard {
             from {
@@ -87,13 +91,12 @@
             width: 100%;
             max-width: 440px;
             padding: 38px 36px;
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            border-radius: 24px;
-            background: rgba(255, 255, 255, 0.94);
-            box-shadow: 
-                0 25px 60px -12px rgba(0, 0, 0, 0.45),
-                0 0 0 1px rgba(255, 255, 255, 0.3) inset,
-                0 10px 30px -5px rgba(8, 87, 195, 0.2);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow:
+                0 28px 70px -34px rgba(5, 59, 130, 0.42),
+                0 1px 0 rgba(255, 255, 255, 0.9) inset;
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
             animation: revealCard 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -108,13 +111,19 @@
             margin-bottom: 24px;
             text-decoration: none;
             color: var(--text-main);
+            border-radius: 14px;
+        }
+
+        .brand:focus-visible {
+            outline: 3px solid rgba(8, 87, 195, 0.24);
+            outline-offset: 4px;
         }
 
         .brand-icon-box {
             width: 46px;
             height: 46px;
-            border-radius: 14px;
-            background: linear-gradient(135deg, #0857c3 0%, #2563eb 100%);
+            border-radius: 12px;
+            background: linear-gradient(135deg, #053b82 0%, #0857c3 100%);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -206,14 +215,14 @@
             width: 100%;
             height: 46px;
             padding: 0 14px;
-            border: 1.5px solid #cbd5e1;
+            border: 1.5px solid #b9cee9;
             border-radius: 12px;
             font-size: 0.95rem;
             font-weight: 500;
-            color: #0f172a;
+            color: #102d52;
             background: #ffffff;
             outline: none;
-            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         input::placeholder {
@@ -225,7 +234,8 @@
             border-color: #94a3b8;
         }
 
-        input:focus {
+        input:focus,
+        input:focus-visible {
             border-color: var(--primary);
             background: #ffffff;
             box-shadow: 0 0 0 3.5px rgba(8, 87, 195, 0.16);
@@ -252,6 +262,7 @@
             display: inline-flex;
             align-items: center;
             gap: 8px;
+            min-height: 44px;
             color: #475569;
             font-size: 0.85rem;
             font-weight: 600;
@@ -260,8 +271,8 @@
         }
 
         .remember input {
-            width: 17px;
-            height: 17px;
+            width: 18px;
+            height: 18px;
             accent-color: var(--primary);
             border-radius: 4px;
             cursor: pointer;
@@ -310,14 +321,19 @@
             justify-content: center;
             gap: 8px;
             box-shadow: 0 10px 24px -4px rgba(8, 87, 195, 0.45);
-            transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: background-color 0.18s ease, box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         button[type="submit"]:hover,
-        button[type="submit"]:focus {
+        button[type="submit"]:focus-visible {
             background: linear-gradient(135deg, #053b82 0%, #1e40af 100%);
             transform: translateY(-2px);
             box-shadow: 0 14px 28px -4px rgba(8, 87, 195, 0.55);
+        }
+
+        button[type="submit"]:focus-visible {
+            outline: 3px solid rgba(8, 87, 195, 0.25);
+            outline-offset: 4px;
         }
 
         button[type="submit"]:active {
@@ -360,12 +376,65 @@
 
         @media (max-width: 480px) {
             body {
+                align-items: flex-start;
                 padding: 16px;
             }
 
             .login-card {
                 padding: 28px 22px;
-                border-radius: 20px;
+                border-radius: 16px;
+            }
+
+            .card-footer-info {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 5px;
+            }
+        }
+
+        @media (max-width: 320px) {
+            body {
+                padding: 10px;
+            }
+
+            .login-card {
+                padding: 24px 16px;
+                border-radius: 16px;
+            }
+
+            .brand {
+                gap: 9px;
+            }
+
+            .brand-icon-box {
+                width: 42px;
+                height: 42px;
+            }
+
+            .brand-badge {
+                font-size: 0.58rem;
+                letter-spacing: 0.08em;
+            }
+
+            .brand-title {
+                font-size: 1rem;
+            }
+
+            .remember-row {
+                align-items: flex-start;
+                flex-direction: column;
+                margin-bottom: 20px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                scroll-behavior: auto !important;
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
             }
         }
     </style>

@@ -84,6 +84,38 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
         $this->assertStringNotContainsString('min-width: 320px;', $layout);
     }
 
+    public function test_public_and_standalone_surfaces_use_the_mobile_safe_viewport_contract(): void
+    {
+        $paths = [
+            'views/layouts/guest.blade.php',
+            'views/auth/login.blade.php',
+            'views/errors/503.blade.php',
+            'views/errors/database-unavailable.blade.php',
+            'views/presentation.blade.php',
+        ];
+
+        foreach ($paths as $path) {
+            $source = file_get_contents(resource_path($path));
+
+            $this->assertStringContainsString('viewport-fit=cover', $source, $path);
+            $this->assertStringContainsString('interactive-widget=resizes-content', $source, $path);
+        }
+    }
+
+    public function test_shared_formal_theme_covers_keyboard_touch_and_high_contrast_inputs(): void
+    {
+        $layout = file_get_contents(resource_path('views/layouts/admin.blade.php'));
+        $guestCss = file_get_contents(resource_path('css/app.css'));
+
+        $this->assertStringContainsString('--app-success-soft:', $layout);
+        $this->assertStringContainsString('.content-wrapper .btn-outline-primary', $layout);
+        $this->assertStringContainsString('.content-wrapper .page-link', $layout);
+        $this->assertStringContainsString('[data-ui="empty"]', $layout);
+        $this->assertStringContainsString('@media (forced-colors: active)', $layout);
+        $this->assertStringContainsString('@media (prefers-reduced-motion: reduce)', $guestCss);
+        $this->assertStringContainsString('accent-color: #0857c3;', $guestCss);
+    }
+
     public function test_fixed_height_operational_surfaces_follow_the_dynamic_viewport(): void
     {
         $excelPreview = file_get_contents(resource_path('views/import/preview_excel.blade.php'));
@@ -107,5 +139,26 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
         $this->assertStringContainsString('scrollbar-gutter: auto;', $style);
         $this->assertStringNotContainsString('scrollbar-gutter: stable both-edges;', $style);
         $this->assertStringNotContainsString('top: var(--table-sticky-top);', $style);
+    }
+
+    public function test_navbar_and_content_wrapper_have_no_invisible_left_margin_when_minimized(): void
+    {
+        $layout = file_get_contents(resource_path('views/layouts/admin.blade.php'));
+        $sidebar = file_get_contents(resource_path('views/layouts/sidebar.blade.php'));
+
+        $desktopMediaPos = strpos($layout, '@media (min-width: 992px)');
+        $this->assertNotFalse($desktopMediaPos);
+        $marginLeft48Pos = strpos($layout, 'margin-left: 4.8rem !important;', $desktopMediaPos);
+        $this->assertNotFalse($marginLeft48Pos);
+        $this->assertSame(1, substr_count($layout, 'margin-left: 4.8rem !important;'));
+
+        $mobileMediaPos = strrpos($layout, '@media (max-width: 991.98px)');
+        $this->assertNotFalse($mobileMediaPos);
+        $this->assertStringContainsString('margin-left: 0 !important;', substr($layout, $mobileMediaPos, 500));
+
+        $this->assertStringContainsString('body:not(.sidebar-open) .main-sidebar', $sidebar);
+        $this->assertStringContainsString('margin-left: -250px !important;', $sidebar);
+        $this->assertStringContainsString('body.is-resizing', $layout);
+        $this->assertStringContainsString('transition: margin-left 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', $layout);
     }
 }

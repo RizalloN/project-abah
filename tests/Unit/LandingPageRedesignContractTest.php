@@ -191,6 +191,13 @@ class LandingPageRedesignContractTest extends TestCase
         $this->assertStringContainsString('100% x PDWK', $service);
         $this->assertStringContainsString('75% x PDWK', $service);
         $this->assertStringContainsString('40% x PDWK', $service);
+        $this->assertStringContainsString("'label' => 'Low'", $service);
+        $this->assertStringContainsString("'label' => 'Moderate'", $service);
+        $this->assertStringContainsString("'label' => 'Moderate to High'", $service);
+        $this->assertStringContainsString("'source' => 'STOP N GO.xlsx'", $service);
+        $this->assertStringContainsString('person?.category', $view);
+        $this->assertStringContainsString('person?.limit', $view);
+        $this->assertStringContainsString('person?.branch', $view);
         $this->assertStringContainsString('Produktivitas Mantri', $partial);
         $this->assertStringContainsString('Roster aktif BRIHC', $partial);
         $this->assertStringContainsString('micro-mantri-table--summary', $partial);

@@ -1109,10 +1109,74 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $giro = $service->fetchTimeseriesTrend(['2026-05'], 'simpanan', 'KC Madiun', null, 'giro');
         $tabungan = $service->fetchTimeseriesTrend(['2026-05'], 'simpanan', 'KC Madiun', null, 'tabungan');
         $deposito = $service->fetchTimeseriesTrend(['2026-05'], 'simpanan', 'KC Madiun', null, 'deposito');
+        $giroRitel = $service->fetchTimeseriesTrend(['2026-05'], 'simpanan', 'KC Madiun', null, 'ritel', 'giro');
+        $depositoWholesale = $service->fetchTimeseriesTrend(['2026-05'], 'simpanan', 'KC Madiun', null, 'wholesale', 'deposito');
 
         $this->assertSame(6.0, $giro['series']['KC Madiun']['2026-05'][0]);
         $this->assertSame(15.0, $tabungan['series']['KC Madiun']['2026-05'][0]);
         $this->assertSame(24.0, $deposito['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(1.0, $giroRitel['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(9.0, $depositoWholesale['series']['KC Madiun']['2026-05'][0]);
+    }
+
+    public function test_timeseries_supports_loan_products_and_ldr_segments(): void
+    {
+        $this->createSourceMetadataTables();
+
+        Schema::table('dashboard_harian_snapshots', function (Blueprint $table): void {
+            foreach ([
+                'total_os_non_commercial',
+                'total_simpanan',
+                'sme_os',
+                'consumer_os',
+                'simpanan_ritel',
+                'micro_os',
+                'simpanan_mikro',
+                'kpr_os',
+                'kur_kecil_os',
+            ] as $column) {
+                $table->decimal($column, 20, 2)->default(0);
+            }
+        });
+
+        DB::table('dashboard_harian_snapshots')->insert([
+            'uniqueid_dhs' => 'madiun-products-ldr-2026-05-01',
+            'snapshot_period' => '2026-05-01',
+            'kanca_key' => 'kc-madiun',
+            'kanca_label' => 'KC Madiun',
+            'unit_key' => 'kc-madiun',
+            'unit_label' => 'KC Madiun',
+            'source_row_count' => 1,
+            'total_os_non_commercial' => 600_000_000_000,
+            'total_simpanan' => 1_000_000_000_000,
+            'sme_os' => 200_000_000_000,
+            'consumer_os' => 100_000_000_000,
+            'simpanan_ritel' => 500_000_000_000,
+            'micro_os' => 300_000_000_000,
+            'simpanan_mikro' => 500_000_000_000,
+            'kpr_os' => 25_000_000_000,
+            'kur_kecil_os' => 15_000_000_000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $canUseSnapshotMetrics = new \ReflectionProperty($service, 'canUseSnapshotMetricsCache');
+        $canUseSnapshotMetrics->setAccessible(true);
+        $canUseSnapshotMetrics->setValue($service, true);
+
+        $kpr = $service->fetchTimeseriesTrend(['2026-05'], 'pinjaman', 'KC Madiun', null, 'ritel', 'kpr');
+        $kurKecil = $service->fetchTimeseriesTrend(['2026-05'], 'pinjaman', 'KC Madiun', null, 'micro', 'kur_kecil');
+        $ldrTotal = $service->fetchTimeseriesTrend(['2026-05'], 'ldr', 'KC Madiun');
+        $ldrRitel = $service->fetchTimeseriesTrend(['2026-05'], 'ldr', 'KC Madiun', null, 'ritel');
+        $ldrMicro = $service->fetchTimeseriesTrend(['2026-05'], 'ldr', 'KC Madiun', null, 'micro');
+
+        $this->assertSame(25.0, $kpr['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(15.0, $kurKecil['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame('percent', $ldrTotal['value_type']);
+        $this->assertSame(60.0, $ldrTotal['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(60.0, $ldrRitel['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(60.0, $ldrMicro['series']['KC Madiun']['2026-05'][0]);
     }
 
     public function test_recovery_timeseries_uses_gi405_daily_delta_for_ritel_and_mikro(): void

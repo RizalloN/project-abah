@@ -15,6 +15,7 @@ class ResponsiveUiAuditScriptTest extends TestCase
         $this->assertStringContainsString("name: 'laptop', width: 1366, height: 768", $script);
         $this->assertStringContainsString('AUDIT_NAVIGATION_TIMEOUT_MS', $script);
         $this->assertStringContainsString('AUDIT_LOGIN_TIMEOUT_MS', $script);
+        $this->assertStringContainsString('AUDIT_PUBLIC_ONLY', $script);
         $this->assertStringContainsString('AUDIT_WAIT_TIMEOUT_MS', $script);
         $this->assertStringContainsString('AUDIT_CHROME_TIMEOUT_MS', $script);
         $this->assertStringContainsString('AUDIT_SCROLL_SELECTOR', $script);

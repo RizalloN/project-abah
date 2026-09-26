@@ -21,6 +21,8 @@ use App\Services\Import\L1133CsvImporter;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Services\Import\SmartContentHeaderGuardService;
+use App\Services\Import\Strategies\Lw321PnImportStrategy;
+use App\Support\Lw321DailyLoanSyncService;
 use App\Support\StrictDateParser;
 use App\Support\SpreadsheetFileFormatDetector;
 use Illuminate\Http\Request;
@@ -3665,7 +3667,7 @@ class ImportExcelController extends Controller
             $normalizedHeaders = $this->forceSsaAlmafactsPositionHeadersByIndex($normalizedHeaders);
         }
 
-        if ($this->isSsaSimpananTable($tableName) || $this->isSsaPinjamanTable($tableName)) {
+        if ($this->isHourlyDpkTable($tableName) || $this->isSsaSimpananTable($tableName) || $this->isSsaPinjamanTable($tableName) || $this->isLw321PnTable($tableName)) {
             $normalizedHeaders = array_values(
                 $this->resolveImportStrategy($tableName)->transformHeaders($normalizedHeaders)
             );
@@ -7455,10 +7457,28 @@ class ImportExcelController extends Controller
             return;
         }
 
-        $guard = app(ImportDuplicateGuardService::class);
         foreach ($normalizedPeriods as $period) {
-            $guard->assertSlotEmpty('daily_loan_dinamis', ['periode' => $period]);
-            $guard->assertSlotEmpty('lw321pn', ['periode' => $period]);
+            if (!Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')) {
+                app(ImportDuplicateGuardService::class)
+                    ->assertSlotEmpty('daily_loan_dinamis', ['periode' => $period]);
+
+                continue;
+            }
+
+            $hasAuthoritativeDailyLoan = DB::table('daily_loan_dinamis')
+                ->where('periode', $period)
+                ->where(function ($query): void {
+                    $query->whereNull('uniqueid_namareport')
+                        ->orWhere('uniqueid_namareport', 'not like', Lw321DailyLoanSyncService::TARGET_ID_PREFIX.'%');
+                })
+                ->exists();
+
+            if ($hasAuthoritativeDailyLoan) {
+                throw new \RuntimeException(
+                    "Data untuk slot periode (periode={$period}) sudah ada di tabel daily_loan_dinamis. "
+                    . 'Hapus data periode terkait terlebih dahulu sebelum import ulang.'
+                );
+            }
         }
     }
 
@@ -7472,16 +7492,75 @@ class ImportExcelController extends Controller
         $guard = app(ImportDuplicateGuardService::class);
         foreach ($normalizedPeriods as $period) {
             $guard->assertSlotEmpty('lw321pn', ['periode' => $period]);
-            $guard->assertSlotEmpty('daily_loan_dinamis', ['periode' => $period]);
         }
     }
 
-    private function assertLw321AlternateSourcePeriodsEmptyOrFail(array $periods): void
+    private function deleteLw321MaterializedRowsForPeriods(array $periods): int
     {
-        $guard = app(ImportDuplicateGuardService::class);
-        foreach ($this->normalizeDailyLoanReplacePeriods($periods) as $period) {
-            $guard->assertSlotEmpty('lw321pn', ['periode' => $period]);
+        $normalizedPeriods = $this->normalizeDailyLoanReplacePeriods($periods);
+        if (
+            $normalizedPeriods === []
+            || !Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
+        ) {
+            return 0;
         }
+
+        return (int) DB::table('daily_loan_dinamis')
+            ->whereIn('periode', $normalizedPeriods)
+            ->where('uniqueid_namareport', 'like', Lw321DailyLoanSyncService::TARGET_ID_PREFIX.'%')
+            ->delete();
+    }
+
+    private function deleteLw321MaterializedRowsForPeriodsOnPdo(\PDO $pdo, array $periods): int
+    {
+        $normalizedPeriods = $this->normalizeDailyLoanReplacePeriods($periods);
+        if (
+            $normalizedPeriods === []
+            || !Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
+        ) {
+            return 0;
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($normalizedPeriods), '?'));
+        $statement = $pdo->prepare(
+            "DELETE FROM `daily_loan_dinamis` WHERE `periode` IN ({$placeholders}) "
+            . 'AND `uniqueid_namareport` LIKE ?'
+        );
+        $statement->execute(array_merge(
+            $normalizedPeriods,
+            [Lw321DailyLoanSyncService::TARGET_ID_PREFIX.'%']
+        ));
+
+        return $statement->rowCount();
+    }
+
+    private function hasLw321MaterializedRowsForPeriods(array $periods): bool
+    {
+        $normalizedPeriods = $this->normalizeDailyLoanReplacePeriods($periods);
+        if (
+            $normalizedPeriods === []
+            || !Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')
+        ) {
+            return false;
+        }
+
+        return DB::table('daily_loan_dinamis')
+            ->whereIn('periode', $normalizedPeriods)
+            ->where('uniqueid_namareport', 'like', Lw321DailyLoanSyncService::TARGET_ID_PREFIX.'%')
+            ->exists();
+    }
+
+    private function buildDailyLoanTakeoverBeforeLoadCallback(array $periods, ?callable $beforeLoad = null): \Closure
+    {
+        $normalizedPeriods = $this->normalizeDailyLoanReplacePeriods($periods);
+
+        return function (\PDO $pdo) use ($normalizedPeriods, $beforeLoad): void {
+            if ($beforeLoad !== null) {
+                $beforeLoad($pdo);
+            }
+
+            $this->deleteLw321MaterializedRowsForPeriodsOnPdo($pdo, $normalizedPeriods);
+        };
     }
 
     /**
@@ -7838,6 +7917,10 @@ class ImportExcelController extends Controller
         $uniquePrefix = (string) ($loadPlan['unique_id_prefix'] ?? 'imp');
         $replaceExistingPeriods = (bool) ($loadPlan['replace_existing_periods'] ?? false);
         $replacePeriods = array_values((array) ($loadPlan['replace_periods'] ?? []));
+        $incomingPeriods = $this->normalizeDailyLoanReplacePeriods(array_merge(
+            (array) ($loadPlan['period_hints'] ?? []),
+            $replacePeriods
+        ));
         $originalSqlMode = null;
         $originalUniqueChecks = null;
         $originalForeignKeyChecks = null;
@@ -7851,11 +7934,7 @@ class ImportExcelController extends Controller
             }
 
             if (!$replaceExistingPeriods) {
-                $this->assertDailyLoanImportPeriodsEmptyOrFail(
-                    array_merge((array) ($loadPlan['period_hints'] ?? []), $replacePeriods)
-                );
-            } else {
-                $this->assertLw321AlternateSourcePeriodsEmptyOrFail($replacePeriods);
+                $this->assertDailyLoanImportPeriodsEmptyOrFail($incomingPeriods);
             }
 
             $pdo->beginTransaction();
@@ -7882,6 +7961,8 @@ class ImportExcelController extends Controller
                         'replace_periods' => $replacePeriods,
                     ]);
                 }
+            } else {
+                $this->deleteLw321MaterializedRowsForPeriodsOnPdo($pdo, $incomingPeriods);
             }
 
             $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `daily_loan_dinamis` "
@@ -8463,6 +8544,8 @@ class ImportExcelController extends Controller
         }
 
         if ($this->isLw321PnTable($tableName)) {
+            $this->assertLw321PnFastPathColumnsMapped($filterAliases);
+
             return 'WHERE src.`periode` IS NOT NULL AND src.`no_rekening` IS NOT NULL AND src.`balance_dalam_idr` IS NOT NULL';
         }
 
@@ -8481,6 +8564,30 @@ class ImportExcelController extends Controller
         ];
 
         return 'WHERE ' . implode(' AND ', $whereClauses);
+    }
+
+    private function assertLw321PnFastPathColumnsMapped(array $filterAliases): void
+    {
+        $mapped = array_fill_keys(array_map(
+            static fn ($column): string => strtolower(trim((string) $column)),
+            array_keys($filterAliases)
+        ), true);
+        $required = array_values(array_filter(
+            Lw321PnImportStrategy::requiredColumns(),
+            static fn (string $column): bool => $column !== 'uniqueid_namareport'
+        ));
+        $missing = array_values(array_filter(
+            $required,
+            static fn (string $column): bool => !isset($mapped[strtolower($column)])
+        ));
+
+        if ($missing !== []) {
+            throw new \RuntimeException(
+                'Import LW321PN dibatalkan: header sumber tidak dapat dipetakan ke kolom wajib: '
+                . implode(', ', $missing)
+                . '. Gunakan template/header LW321PN yang sudah ditetapkan.'
+            );
+        }
     }
 
     private function deleteDlyKapResegmentasiScopesFromFastPathStage(string $stagingTable, string $innerSelectSql, string $whereClauses): int
@@ -8753,15 +8860,19 @@ class ImportExcelController extends Controller
                 throw new \RuntimeException("Import {$label} sedang berjalan di background. Silakan tunggu.");
             }
 
+            $dailyLoanPeriods = [];
+            $lw321Periods = [];
             try {
                 if ($isDailyLoan) {
-                    $this->assertDailyLoanImportPeriodsEmptyOrFail(
-                        $this->collectDailyLoanPeriodsFromFastPathStage($stagingTable, $innerSelectSql, $whereClauses)
+                    $dailyLoanPeriods = $this->collectDailyLoanPeriodsFromFastPathStage(
+                        $stagingTable,
+                        $innerSelectSql,
+                        $whereClauses
                     );
+                    $this->assertDailyLoanImportPeriodsEmptyOrFail($dailyLoanPeriods);
                 } elseif ($isLw321Pn) {
-                    $this->assertLw321PnImportPeriodsEmptyOrFail(
-                        $this->collectLw321PnPeriodsFromFastPathStage($stagingTable, $context)
-                    );
+                    $lw321Periods = $this->collectLw321PnPeriodsFromFastPathStage($stagingTable, $context);
+                    $this->assertLw321PnImportPeriodsEmptyOrFail($lw321Periods);
                 }
             } catch (\Throwable $e) {
                 $this->releaseMysqlAdvisoryLockOnDb($lockName);
@@ -8797,6 +8908,10 @@ class ImportExcelController extends Controller
                         $this->deleteDlyKapResegmentasiScopesFromFastPathStage($stagingTable, $innerSelectSql, $whereClauses);
                     }
 
+                    if ($isDailyLoan) {
+                        $this->deleteLw321MaterializedRowsForPeriods($dailyLoanPeriods);
+                    }
+
                     $inserted = DB::affectingStatement($sql);
 
                     if ($isLw321Pn && $inserted !== $baseTotal) {
@@ -8804,6 +8919,12 @@ class ImportExcelController extends Controller
                         throw new \RuntimeException(
                             "Import LW321PN dibatalkan: {$invalidRows} baris memiliki PERIODE, NOMOR_REKENING, atau BALANCE DALAM IDR yang tidak valid. Tidak ada data yang ditulis."
                         );
+                    }
+
+                    if ($isLw321Pn) {
+                        foreach ($lw321Periods as $lw321Period) {
+                            app(Lw321DailyLoanSyncService::class)->validateSourcePeriod($lw321Period);
+                        }
                     }
 
                     if ($isLw321Npd) {
@@ -10096,6 +10217,16 @@ class ImportExcelController extends Controller
             'kode' => 'kode_uker',
             'segmen_dashboard' => 'segmen_dashboard',
             'produk_dashboard' => 'produk_dashboard',
+            'cbal_base' => 'balance_dalam_idr',
+            'cbal' => 'balance_dalam_idr',
+            'orgamt_base' => 'plafon_dalam_idr',
+            'orgamt' => 'plafon_dalam_idr',
+            'kolek_lancar' => 'kolektibilitas_lancar',
+            'kolek_dpk' => 'kolektibilitas_dpk',
+            'kolek_kurang_lancar' => 'kolektibilitas_kurang_lancar',
+            'kolek_diragukan' => 'kolektibilitas_diragukan',
+            'kolek_macet' => 'kolektibilitas_macet',
+            'pn_referal' => 'pn_referral',
         ];
 
         if (isset($aliasMap[$raw])) {
@@ -10560,9 +10691,19 @@ class ImportExcelController extends Controller
             return;
         }
 
+        $sourceHeaders = array_map(static function ($header): string {
+            $label = ltrim(trim((string) $header), "\xEF\xBB\xBF\x{FEFF}");
+
+            return $label !== '' ? $label : '(kosong)';
+        }, $normalizedHeaders);
+        $normalizedHeaders = array_values(
+            $this->resolveImportStrategy($tableName)->transformHeaders($normalizedHeaders)
+        );
+
         $headerLookup = [];
         $headerCounts = [];
-        foreach ($normalizedHeaders as $header) {
+        $headerSources = [];
+        foreach ($normalizedHeaders as $index => $header) {
             $normalized = $this->isHourlyDpkPositionHeader($header)
                 ? 'posisi'
                 : $this->normalizeImportColumnName((string) $header);
@@ -10572,6 +10713,7 @@ class ImportExcelController extends Controller
 
             $headerLookup[$normalized] = true;
             $headerCounts[$normalized] = ($headerCounts[$normalized] ?? 0) + 1;
+            $headerSources[$normalized][] = $sourceHeaders[$index] ?? (string) $header;
         }
 
         $required = [
@@ -10590,24 +10732,39 @@ class ImportExcelController extends Controller
             }
         }
 
-        if ($missing === []) {
+        $duplicates = [];
+        foreach ($required as $normalized => $label) {
+            if (($headerCounts[$normalized] ?? 0) > 1) {
+                $duplicates[] = $label . ' (' . implode(', ', $headerSources[$normalized] ?? []) . ')';
+            }
+        }
+
+        if ($missing === [] && $duplicates === []) {
             return;
         }
 
-        $message = 'Import Hourly DPK dibatalkan: struktur header file tidak sesuai. '
-            . 'Kolom wajib yang belum ditemukan: ' . implode(', ', $missing) . '.';
+        $messageParts = ['Import Hourly DPK dibatalkan: struktur header file tidak sesuai.'];
+        if ($missing !== []) {
+            $messageParts[] = 'Kolom wajib yang belum ditemukan: ' . implode(', ', $missing) . '.';
+        }
+        if ($duplicates !== []) {
+            $messageParts[] = 'Kolom terpetakan ganda/ambigu: ' . implode('; ', $duplicates)
+                . '. Setiap kolom wajib hanya boleh muncul satu kali.';
+        }
 
         if (in_array('SALDO', $missing, true)) {
-            $message .= ' Kolom nominal harus bernama SALDO. '
+            $messageParts[] = 'Kolom nominal harus bernama SALDO. '
                 . 'Jika kolom nominal tertulis PRODUK, ubah header tersebut menjadi SALDO; '
                 . 'kolom PRODUK tetap khusus berisi jenis produk seperti DEP/GIRO/TABUNGAN.';
 
             if (($headerCounts['produk'] ?? 0) > 1) {
-                $message .= ' Terdeteksi lebih dari satu header PRODUK, sehingga salah satunya kemungkinan adalah kolom SALDO.';
+                $messageParts[] = 'Terdeteksi lebih dari satu header PRODUK, sehingga salah satunya kemungkinan adalah kolom SALDO.';
             }
         }
 
-        throw new \RuntimeException($message);
+        $messageParts[] = 'Header yang terbaca: ' . implode(', ', $sourceHeaders) . '.';
+
+        throw new \RuntimeException(implode(' ', $messageParts));
     }
 
     private function applyDerivedHourlyDpkValues(array $finalRow, array $row, array $normalizedHeaders, array $context): array
@@ -12933,6 +13090,8 @@ class ImportExcelController extends Controller
                 return false;
             }
 
+            $this->assertValidHourlyDpkHeaders($tableName, $normalizedHeadersForSession);
+
             if ($this->isDlyKapResegmentasiTable($tableName)) {
                 $normalizedHeadersForSession = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
             }
@@ -13127,6 +13286,15 @@ class ImportExcelController extends Controller
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
+            if (
+                isset($tableName)
+                && $this->isHourlyDpkTable((string) $tableName)
+                && str_starts_with($e->getMessage(), 'Import Hourly DPK dibatalkan:')
+            ) {
+                throw $e;
+            }
+
             return false;
         }
     }
@@ -13158,7 +13326,10 @@ class ImportExcelController extends Controller
             ], 409);
         }
 
-        $previewMetaForHeaders = (array) ($previewState['previewMeta'] ?? []);
+        $previewMetaForHeaders = (array) (
+            $previewState['previewMeta']
+            ?? session('excel_preview_meta', [])
+        );
         $previewPath = (string) (
             $previewMetaForHeaders['path']
             ?? $previewState['path']
@@ -13203,6 +13374,30 @@ class ImportExcelController extends Controller
         $schemaValidationResponse = $this->validateImportSchemaOrResponse($tableName);
         if ($schemaValidationResponse !== null) {
             return $schemaValidationResponse;
+        }
+
+        if ($this->isHourlyDpkTable($tableName)) {
+            $previewHeaders = array_values((array) (
+                $previewMetaForHeaders['source_headers']
+                ?? $previewMetaForHeaders['normalized_headers']
+                ?? []
+            ));
+
+            if ($previewHeaders === []) {
+                return response()->json([
+                    'status' => 'error',
+                    'text' => 'Import Hourly DPK dibatalkan sebelum antrean: header sumber tidak tersedia. Silakan buka ulang preview dan upload file kembali.',
+                ], 422);
+            }
+
+            try {
+                $this->assertValidHourlyDpkHeaders($tableName, $previewHeaders);
+            } catch (\RuntimeException $e) {
+                return response()->json([
+                    'status' => 'error',
+                    'text' => $e->getMessage(),
+                ], 422);
+            }
         }
 
         $activeFilters = json_decode($request->active_filters_json ?? '{}', true) ?: [];
@@ -13726,17 +13921,28 @@ class ImportExcelController extends Controller
             $failed = max(0, $csvRowsPrepared - $inserted);
             $this->applyManualColumnValuesAfterLoad($tableName, $importContext, $inserted);
 
+            $finalStatus = ($inserted > 0 || $csvRowsPrepared === 0) ? 'completed' : 'failed';
+            $completionMessage = $finalStatus === 'completed'
+                ? 'Import selesai diproses.'
+                : 'Tidak ada baris data yang berhasil dimasukkan ke tabel ' . $tableName . '.';
+
             if ($jobId > 0) {
                 $this->progressService()->updateTotals(
                     $jobId,
                     $inserted,
                     $failed,
                     $csvRowsPrepared,
-                    ($inserted > 0 || $csvRowsPrepared === 0) ? 'completed' : 'failed'
+                    $finalStatus,
+                    [
+                        'percent' => 100,
+                        'message' => $completionMessage,
+                    ]
                 );
             }
 
-            $send('complete', [
+            $send($finalStatus === 'completed' ? 'complete' : 'error', [
+                'status' => $finalStatus,
+                'message' => $completionMessage,
                 'total_success' => $inserted,
                 'total_failed' => $failed,
                 'total_rows' => $csvRowsPrepared,
@@ -13820,15 +14026,26 @@ class ImportExcelController extends Controller
             }
 
             $rowsDone = $inserted; // In full mode, we assume all inserted
-            
+
+            $finalStatus = ($inserted > 0 || $estimatedTotalRows === 0) ? 'completed' : 'failed';
+            $completionMessage = $finalStatus === 'completed'
+                ? 'Import selesai diproses (fast-path).'
+                : 'Tidak ada baris data yang berhasil dimasukkan ke tabel ' . $tableName . '.';
+
             if ($jobId > 0) {
-                $this->progressService()->updateTotals($jobId, $inserted, 0, $inserted, 'completed', [
+                $this->progressService()->updateTotals($jobId, $inserted, 0, $inserted, $finalStatus, [
                     'percent' => 100,
-                    'message' => 'Import selesai diproses (fast-path).',
+                    'message' => $completionMessage,
                 ]);
             }
-            
-            $send('complete', ['total_success' => $inserted, 'total_failed' => 0, 'total_rows' => $inserted]);
+
+            $send($finalStatus === 'completed' ? 'complete' : 'error', [
+                'status' => $finalStatus,
+                'message' => $completionMessage,
+                'total_success' => $inserted,
+                'total_failed' => 0,
+                'total_rows' => $inserted,
+            ]);
             fclose($handle);
             return true;
         }
@@ -14032,6 +14249,7 @@ class ImportExcelController extends Controller
             fclose($outputHandle);
             $outputHandle = null;
 
+            $dailyLoanTakeoverPeriods = array_keys($dailyLoanImportPeriods);
             $dailyLoanLockAcquired = false;
             try {
                 if ($cachedIsDailyLoan || $cachedIsLw321Pn) {
@@ -14041,9 +14259,20 @@ class ImportExcelController extends Controller
 
                     $dailyLoanLockAcquired = true;
                     if ($cachedIsDailyLoan) {
-                        $this->assertDailyLoanImportPeriodsEmptyOrFail(array_keys($dailyLoanImportPeriods));
+                        $this->assertDailyLoanImportPeriodsEmptyOrFail($dailyLoanTakeoverPeriods);
+
+                        if (
+                            !$forceDirectLoad
+                            && $this->hasLw321MaterializedRowsForPeriods($dailyLoanTakeoverPeriods)
+                        ) {
+                            throw new \RuntimeException(
+                                'Import Daily Loan memerlukan takeover materialized LW321, tetapi jalur chunked '
+                                . 'tidak dapat menjamin delete dan insert dalam satu transaksi. '
+                                . 'Ulangi melalui jalur direct LOAD DATA.'
+                            );
+                        }
                     } else {
-                        $this->assertLw321PnImportPeriodsEmptyOrFail(array_keys($dailyLoanImportPeriods));
+                        $this->assertLw321PnImportPeriodsEmptyOrFail($dailyLoanTakeoverPeriods);
                     }
                 }
 
@@ -14088,6 +14317,12 @@ class ImportExcelController extends Controller
                     }
 
                     $directLoadBeforeLoad = $beforeDirectLoad;
+                    if ($cachedIsDailyLoan) {
+                        $directLoadBeforeLoad = $this->buildDailyLoanTakeoverBeforeLoadCallback(
+                            $dailyLoanTakeoverPeriods,
+                            $directLoadBeforeLoad
+                        );
+                    }
                     if ($tableName === 'hourly_dpk') {
                         $directLoadBeforeLoad = $this->buildHourlyDpkBeforeLoadCallback(
                             $hourlyDpkReplaceSlots,
@@ -14155,7 +14390,17 @@ class ImportExcelController extends Controller
             $finalStatus = match (true) {
                 $failed > 0 && $inserted > 0 => 'failed_partial',
                 $failed > 0 => 'failed',
+                $inserted === 0 && ($estimatedTotalRows > 0 || $rowsDone > 0) => 'failed',
+                $inserted === 0 => 'failed',
                 default => 'completed',
+            };
+
+            $completionMessage = match ($finalStatus) {
+                'completed' => 'Import selesai diproses.',
+                'failed_partial' => 'Import selesai dengan kegagalan parsial.',
+                default => ($inserted === 0)
+                    ? 'Tidak ada baris data yang berhasil dimasukkan ke tabel ' . $tableName . '.'
+                    : 'Import gagal diproses.',
             };
 
             if ($jobId > 0) {
@@ -14167,18 +14412,14 @@ class ImportExcelController extends Controller
                     $finalStatus,
                     [
                         'percent' => 100,
-                        'message' => $finalStatus === 'completed'
-                            ? 'Import selesai diproses.'
-                            : 'Import selesai dengan kegagalan parsial.',
+                        'message' => $completionMessage,
                     ]
                 );
             }
 
             $send($finalStatus === 'completed' ? 'complete' : 'error', [
                 'status' => $finalStatus,
-                'message' => $finalStatus === 'completed'
-                    ? 'Import selesai diproses.'
-                    : 'Import selesai dengan kegagalan parsial.',
+                'message' => $completionMessage,
                 'total_success' => $inserted,
                 'total_failed' => $failed,
                 'total_rows' => $rowsDone,

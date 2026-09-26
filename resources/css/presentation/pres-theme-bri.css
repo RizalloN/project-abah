@@ -12,7 +12,11 @@
     .apple-presentation-mode {
       background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(239, 247, 255, 0.96) 54%, rgba(226, 239, 252, 0.98) 100%) !important;
-      padding: 5.2rem 2.35rem 4.7rem !important;
+      padding:
+        max(5.2rem, calc(4.35rem + env(safe-area-inset-top, 0px)))
+        max(2.35rem, calc(1.5rem + env(safe-area-inset-right, 0px)))
+        max(4.7rem, calc(3.85rem + env(safe-area-inset-bottom, 0px)))
+        max(2.35rem, calc(1.5rem + env(safe-area-inset-left, 0px))) !important;
     }
 
     .apple-presentation-mode::before,
@@ -56,14 +60,14 @@
     }
 
     .pres-top-bar {
-      top: 0.85rem !important;
+      top: max(0.85rem, env(safe-area-inset-top, 0px)) !important;
       padding: 0.62rem 0.75rem !important;
-      border-left: 4px solid var(--pres-academic) !important;
+      border-left-color: rgba(216, 224, 234, 0.94) !important;
       border-radius: 8px !important;
     }
 
     .pres-bottom-bar {
-      bottom: 0.82rem !important;
+      bottom: max(0.82rem, env(safe-area-inset-bottom, 0px)) !important;
       padding: 0.52rem 0.68rem !important;
       border-radius: 8px !important;
     }
@@ -377,7 +381,8 @@
     }
 
     .pres-digital-list .pres-glass-card {
-      border-left: 4px solid var(--pres-academic) !important;
+      border-left-width: 1px !important;
+      border-left-color: rgba(17, 85, 200, 0.26) !important;
     }
 
     .pres-digital-value {
@@ -747,7 +752,7 @@
       width: calc(100% + 1.2rem) !important;
       height: calc(100% + 1.1rem) !important;
       max-width: min(1810px, calc(100vw - 1rem)) !important;
-      max-height: min(875px, calc(100vh - 3.5rem)) !important;
+      max-height: min(875px, calc(100dvh - 3.5rem)) !important;
       transform: translate(-50%, -50%) !important;
       border: 7px solid rgba(8, 87, 195, 0.12) !important;
       border-radius: 28px !important;
@@ -1434,12 +1439,15 @@
       width: 0%;
       background: #0071e3;
       border-radius: 2px;
+      transform: scaleX(0);
+      transform-origin: left center;
       transition: none;
     }
 
     .pres-auto-progress-fill.is-running {
       width: 100%;
-      transition: width var(--pres-autoplay-duration) linear !important;
+      transform: scaleX(1);
+      transition: transform var(--pres-autoplay-duration) linear !important;
     }
 
     #apple-presentation-mode.theme-dark .pres-auto-progress-fill {

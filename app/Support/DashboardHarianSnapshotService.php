@@ -5472,6 +5472,7 @@ class DashboardHarianSnapshotService
         array|string|null $kancaKey = null,
         array|string|null $unitKey = null,
         string $segment = 'total',
+        string $product = 'total',
         ?string $recoverySegment = null,
         ?string $recoveryProduct = null
     ): array {
@@ -5500,85 +5501,13 @@ class DashboardHarianSnapshotService
             ];
         }
 
-        $valueType = $category === 'sml' ? 'percent' : 'currency';
+        $metricDefinition = $this->resolveTimeseriesMetricDefinition($category, $segment, $product);
+        $valueType = $metricDefinition['value_type'];
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
-
-        $numerator = '';
-        $denominator = '';
-        $metric = '';
-
-        if ($valueType === 'percent') {
-            // SML metric segments
-            if ($segment === 'small') {
-                $numerator = 'sme_sml';
-                $denominator = 'sme_os';
-            } elseif ($segment === 'consumer') {
-                $numerator = 'consumer_sml';
-                $denominator = 'consumer_os';
-            } elseif ($segment === 'micro') {
-                $numerator = 'micro_sml';
-                $denominator = 'micro_os';
-            } else {
-                $numerator = 'total_sml_abs_non_commercial';
-                $denominator = 'total_os_non_commercial';
-            }
-        } else {
-            // Currency metrics: simpanan, simpanan_casa, pinjaman, npl
-            if ($category === 'simpanan') {
-                if ($segment === 'ritel') {
-                    $metric = 'simpanan_ritel';
-                } elseif ($segment === 'micro') {
-                    $metric = 'simpanan_mikro';
-                } elseif ($segment === 'giro') {
-                    $metric = '(COALESCE(giro_ritel, 0) + COALESCE(giro_mikro, 0) + COALESCE(giro_wholesale, 0))';
-                } elseif ($segment === 'tabungan') {
-                    $metric = '(COALESCE(tabungan_ritel, 0) + COALESCE(tabungan_mikro, 0) + COALESCE(tabungan_wholesale, 0))';
-                } elseif ($segment === 'deposito') {
-                    $metric = '(COALESCE(deposito_ritel, 0) + COALESCE(deposito_mikro, 0) + COALESCE(deposito_wholesale, 0))';
-                } elseif ($segment === 'non_wholesale') {
-                    $metric = '(COALESCE(simpanan_ritel, 0) + COALESCE(simpanan_mikro, 0))';
-                } else {
-                    $metric = 'total_simpanan';
-                }
-            } elseif ($category === 'simpanan_casa') {
-                if ($segment === 'ritel') {
-                    $metric = 'casa_ritel';
-                } elseif ($segment === 'micro') {
-                    $metric = 'casa_mikro';
-                } elseif ($segment === 'giro') {
-                    $metric = '(COALESCE(giro_ritel, 0) + COALESCE(giro_mikro, 0) + COALESCE(giro_wholesale, 0))';
-                } elseif ($segment === 'wholesale') {
-                    $metric = '(COALESCE(giro_wholesale, 0) + COALESCE(tabungan_wholesale, 0))';
-                } elseif ($segment === 'non_wholesale') {
-                    $metric = '(COALESCE(giro_ritel, 0) + COALESCE(tabungan_ritel, 0) + COALESCE(giro_mikro, 0) + COALESCE(tabungan_mikro, 0))';
-                } else {
-                    $metric = '(COALESCE(giro_ritel, 0) + COALESCE(tabungan_ritel, 0) + COALESCE(giro_mikro, 0) + COALESCE(tabungan_mikro, 0) + COALESCE(giro_wholesale, 0) + COALESCE(tabungan_wholesale, 0))';
-                }
-            } elseif ($category === 'pinjaman') {
-                if ($segment === 'small') {
-                    $metric = 'sme_os';
-                } elseif ($segment === 'consumer') {
-                    $metric = 'consumer_os';
-                } elseif ($segment === 'micro') {
-                    $metric = 'micro_os';
-                } else {
-                    $metric = 'total_os_non_commercial';
-                }
-            } elseif ($category === 'npl') {
-                if ($segment === 'small') {
-                    $metric = 'sme_npl';
-                } elseif ($segment === 'consumer') {
-                    $metric = 'consumer_npl';
-                } elseif ($segment === 'micro') {
-                    $metric = 'micro_npl';
-                } else {
-                    $metric = 'total_npl_abs_non_commercial';
-                }
-            } else {
-                $metric = 'total_simpanan';
-            }
-        }
+        $numerator = $metricDefinition['numerator'];
+        $denominator = $metricDefinition['denominator'];
+        $metric = $metricDefinition['metric'];
 
         $query = DB::table(self::SNAPSHOT_TABLE)
             ->selectRaw('snapshot_period')
@@ -5678,6 +5607,125 @@ class DashboardHarianSnapshotService
             'area_total' => $finalAreaTotal,
             'value_type' => $valueType,
         ];
+    }
+
+    private function resolveTimeseriesMetricDefinition(string $category, string $segment, string $product): array
+    {
+        $category = strtolower(trim($category));
+        $segment = strtolower(trim($segment));
+        $product = strtolower(trim($product));
+        $segment = $segment === '' ? 'total' : $segment;
+        $product = $product === '' ? 'total' : $product;
+
+        $loanProducts = [
+            'small' => 'sme',
+            'consumer' => 'consumer',
+            'kecil' => 'kecil',
+            'kecil_non_cashcoll' => 'kecil_non_cashcoll',
+            'cashcoll' => 'cashcoll',
+            'briguna_konsumer' => 'briguna_konsumer',
+            'kpr' => 'kpr',
+            'kkb' => 'kkb',
+            'briguna_mikro' => 'briguna_mikro',
+            'kupedes' => 'kupedes',
+            'kur_mikro' => 'kur_mikro',
+            'kur_kecil' => 'kur_kecil',
+            'kur_kpp' => 'kur_kpp',
+        ];
+
+        // Backward compatibility for links created before product became a separate filter.
+        if ($product === 'total' && isset($loanProducts[$segment])) {
+            $product = $segment;
+            $segment = in_array($product, ['briguna_mikro', 'kupedes', 'kur_mikro', 'kur_kecil', 'kur_kpp'], true)
+                ? 'micro'
+                : 'ritel';
+        }
+
+        if (in_array($category, ['pinjaman', 'sml', 'npl'], true)) {
+            $suffix = $category === 'pinjaman' ? 'os' : $category;
+            if (isset($loanProducts[$product])) {
+                $base = $loanProducts[$product];
+                $numerator = "{$base}_{$suffix}";
+                $denominator = "{$base}_os";
+            } elseif ($segment === 'ritel') {
+                $numerator = "(COALESCE(sme_{$suffix}, 0) + COALESCE(consumer_{$suffix}, 0))";
+                $denominator = '(COALESCE(sme_os, 0) + COALESCE(consumer_os, 0))';
+            } elseif ($segment === 'micro') {
+                $numerator = "micro_{$suffix}";
+                $denominator = 'micro_os';
+            } else {
+                $numerator = $category === 'pinjaman'
+                    ? 'total_os_non_commercial'
+                    : "total_{$suffix}_abs_non_commercial";
+                $denominator = 'total_os_non_commercial';
+            }
+
+            if ($category === 'sml') {
+                return ['value_type' => 'percent', 'numerator' => $numerator, 'denominator' => $denominator, 'metric' => ''];
+            }
+
+            return ['value_type' => 'currency', 'numerator' => '', 'denominator' => '', 'metric' => $numerator];
+        }
+
+        if ($category === 'ldr') {
+            if ($segment === 'ritel') {
+                $numerator = '(COALESCE(sme_os, 0) + COALESCE(consumer_os, 0))';
+                $denominator = 'simpanan_ritel';
+            } elseif ($segment === 'micro') {
+                $numerator = 'micro_os';
+                $denominator = 'simpanan_mikro';
+            } else {
+                $numerator = 'total_os_non_commercial';
+                $denominator = 'total_simpanan';
+            }
+
+            return ['value_type' => 'percent', 'numerator' => $numerator, 'denominator' => $denominator, 'metric' => ''];
+        }
+
+        if ($category === 'simpanan') {
+            if ($product === 'total' && in_array($segment, ['giro', 'tabungan', 'deposito'], true)) {
+                $product = $segment;
+                $segment = 'total';
+            }
+            if ($segment === 'non_wholesale') {
+                return ['value_type' => 'currency', 'numerator' => '', 'denominator' => '', 'metric' => '(COALESCE(simpanan_ritel, 0) + COALESCE(simpanan_mikro, 0))'];
+            }
+
+            $segments = $segment === 'total' ? ['ritel', 'mikro', 'wholesale'] : [$segment === 'micro' ? 'mikro' : $segment];
+            $products = in_array($product, ['giro', 'tabungan', 'deposito'], true) ? [$product] : ['giro', 'tabungan', 'deposito'];
+            $columns = [];
+            foreach ($segments as $segmentKey) {
+                foreach ($products as $productKey) {
+                    $columns[] = "COALESCE({$productKey}_{$segmentKey}, 0)";
+                }
+            }
+
+            return ['value_type' => 'currency', 'numerator' => '', 'denominator' => '', 'metric' => '(' . implode(' + ', $columns) . ')'];
+        }
+
+        if ($category === 'simpanan_casa') {
+            if ($product === 'total' && in_array($segment, ['giro', 'tabungan'], true)) {
+                $product = $segment;
+                $segment = 'total';
+            }
+            if ($segment === 'non_wholesale') {
+                $segment = 'total';
+                $segments = ['ritel', 'mikro'];
+            } else {
+                $segments = $segment === 'total' ? ['ritel', 'mikro', 'wholesale'] : [$segment === 'micro' ? 'mikro' : $segment];
+            }
+            $products = in_array($product, ['giro', 'tabungan'], true) ? [$product] : ['giro', 'tabungan'];
+            $columns = [];
+            foreach ($segments as $segmentKey) {
+                foreach ($products as $productKey) {
+                    $columns[] = "COALESCE({$productKey}_{$segmentKey}, 0)";
+                }
+            }
+
+            return ['value_type' => 'currency', 'numerator' => '', 'denominator' => '', 'metric' => '(' . implode(' + ', $columns) . ')'];
+        }
+
+        return ['value_type' => 'currency', 'numerator' => '', 'denominator' => '', 'metric' => 'total_simpanan'];
     }
 
     public function fetchRecoveryDimensionOptions(): array

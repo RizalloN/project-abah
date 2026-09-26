@@ -163,4 +163,39 @@ class MySqlBulkLoadServiceTest extends TestCase
             Schema::dropIfExists('bulk_load_php_fallback_test');
         }
     }
+
+    public function test_period_guard_rejects_invalid_middle_row_before_any_chunk_is_inserted(): void
+    {
+        Schema::dropIfExists('jumlah_merchant_detail');
+        Schema::create('jumlah_merchant_detail', function (Blueprint $table): void {
+            $table->date('POSISI')->nullable();
+            $table->string('TID')->nullable();
+        });
+
+        $csvPath = storage_path('framework/testing/bulk_load_period_guard.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+        file_put_contents($csvPath, "2026-09-22,TID-001\n2026-02-30,TID-002\n2026-09-24,TID-003\n");
+
+        try {
+            try {
+                (new MySqlBulkLoadService())->loadCsvIntoMysqlChunked(
+                    $csvPath,
+                    'jumlah_merchant_detail',
+                    ['POSISI', 'TID'],
+                    null,
+                    1
+                );
+                $this->fail('Bulk load semestinya dibatalkan oleh period guard.');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('pada baris 2', $e->getMessage());
+            }
+
+            $this->assertSame(0, DB::table('jumlah_merchant_detail')->count());
+        } finally {
+            @unlink($csvPath);
+            Schema::dropIfExists('jumlah_merchant_detail');
+        }
+    }
 }

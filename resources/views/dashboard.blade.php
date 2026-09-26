@@ -30,13 +30,11 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
 @endphp
 
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&display=swap');
-
 :root {
   /* Brand & Vibrant Palette */
-  --c-blue: #0857c3;
-  --c-blue-d: #053b82;
-  --c-blue-l: #2563eb;
+  --c-blue: var(--bri-nusantara, #0857c3);
+  --c-blue-d: var(--bri-ink, #053b82);
+  --c-blue-l: var(--bri-cakrawala, #307fe2);
   --c-blue-subtle: #eff6ff;
   --c-blue-border: #bfdbfe;
   
@@ -74,13 +72,13 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   --c-orange-l: #f97316;
   
   /* Neutrals & Surfaces */
-  --c-surface: #ffffff;
-  --c-surf: #f8fafc;
-  --c-surf-elevated: #f1f5f9;
-  --c-border: #e2e8f0;
-  --c-border-strong: #cbd5e1;
-  --c-text-main: #0f172a;
-  --c-text-muted: #64748b;
+  --c-surface: var(--app-surface, #ffffff);
+  --c-surf: var(--app-surface-soft, #f7faff);
+  --c-surf-elevated: #eef4fc;
+  --c-border: var(--app-line, #d8e5f7);
+  --c-border-strong: var(--app-line-strong, #b9cfee);
+  --c-text-main: var(--app-ink, #0b1f3a);
+  --c-text-muted: var(--app-muted, #526987);
   --c-text-subtle: #94a3b8;
   
   /* Shadows & Depth */
@@ -94,8 +92,8 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;
-  --r-xl: 22px;
-  --r-2xl: 26px;
+  --r-xl: 16px;
+  --r-2xl: 16px;
   --r-pill: 9999px;
 }
 
@@ -128,7 +126,7 @@ $tsPinjaman = json_encode(data_get($timeseries,'pinjaman',[]));
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, #0857c3 0%, #06b6d4 50%, #10b981 100%);
+  background: linear-gradient(90deg, #053b82 0%, #0857c3 54%, #71c5e8 100%);
 }
 
 .db-brand {
@@ -10590,7 +10588,39 @@ body.sme-vendor-modal-open { overflow: hidden; }
     height: 128px;
   }
 }
+
+.db-shell :where(button, select, input, textarea, a[href], [role="button"]):focus-visible {
+  outline: 3px solid rgba(48, 127, 226, 0.42) !important;
+  outline-offset: 2px;
+}
+
+.db-shell button,
+.db-shell [role="button"] {
+  max-width: 100%;
+}
+
+@media (max-width: 359.98px) {
+  .db-shell button,
+  .db-shell [role="button"] {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (pointer: coarse) {
+  .db-shell :where(button, select, input:not([type="hidden"]), [role="button"], a.btn) {
+    min-height: 44px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .db-shell,
+  .db-shell * {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
   .loan-analytics-card *, .sme-ops-vendor-item *, .sme-vendor-modal * { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
 </style>
@@ -14064,7 +14094,8 @@ document.addEventListener('DOMContentLoaded', function() {
       <span class="micro-pdwk-modal__pn">${escapeHtml(person?.pn || '-')}</span>
       <span>
         <strong class="micro-pdwk-modal__name">${escapeHtml(person?.name || '-')}</strong>
-        <small class="micro-pdwk-modal__unit">${escapeHtml(person?.unit || person?.branch || '-')}</small>
+        <small class="micro-pdwk-modal__unit">${escapeHtml(person?.unit || '-')} &middot; ${escapeHtml(person?.branch || '-')}</small>
+        <small class="micro-pdwk-modal__unit">${escapeHtml(person?.category || '-')} &middot; Limit ${Number(person?.limit || 0).toLocaleString('id-ID')}% x PDWK</small>
       </span>
     </div>
   `).join('');
@@ -14103,7 +14134,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     window.Swal.fire({
       title: `${escapeHtml(role.label || 'Pemutus')} - ${escapeHtml(status.label || 'Status PDWK')}`,
-      html: `<p class="micro-pdwk-modal__lead">Nama dan limit PDWK hanya menggunakan workbook per 31 Juli 2026. Putusan dan plafon tetap mengacu pada realisasi Mikro bulan berjalan.</p>
+      html: `<p class="micro-pdwk-modal__lead">Nama, kategori, limit, unit, dan cabang PDWK menggunakan referensi STOP N GO.xlsx. Putusan dan plafon tetap mengacu pada realisasi Mikro bulan berjalan.</p>
         <div class="micro-pdwk-modal__summary">
           <div><span>Pemutus aktif</span><strong>${Number(status.pemutus || 0).toLocaleString('id-ID')}</strong></div>
           <div><span>Plafon realisasi</span><strong>${escapeHtml(metricValues[1]?.textContent?.trim() || '-')}</strong></div>

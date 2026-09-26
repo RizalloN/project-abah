@@ -3,6 +3,8 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportFileController;
+use App\Services\Import\ImportProgressService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -543,7 +545,7 @@ class ImportFileControllerTest extends TestCase
         $this->assertSame('numeric', $blueprint[7]['type']);
     }
 
-    public function test_ibbisniz_corp_bulk_columns_keep_periode_out_of_main_fastpath(): void
+    public function test_ibbisniz_corp_bulk_columns_include_periode_in_main_fastpath(): void
     {
         Schema::create('ibbisniz_corp', function ($table): void {
             $table->string('uniqueid_namareport')->primary();
@@ -562,8 +564,74 @@ class ImportFileControllerTest extends TestCase
             ],
         ]);
 
-        $this->assertNotContains('periode', $columns);
-        $this->assertSame(['uniqueid_namareport', 'wilayah', 'created_at', 'updated_at'], $columns);
+        $this->assertContains('periode', $columns);
+        $this->assertSame(['uniqueid_namareport', 'wilayah', 'periode', 'created_at', 'updated_at'], $columns);
+    }
+
+    public function test_ibbisniz_staging_csv_contains_manual_periode_before_main_load(): void
+    {
+        Schema::create('ibbisniz_corp', function ($table): void {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('periode')->nullable();
+            $table->string('wilayah')->nullable();
+            $table->string('cabang')->nullable();
+            $table->timestamps();
+        });
+
+        $sourcePath = storage_path('framework/testing/ibbisniz_period_guard.csv');
+        if (!is_dir(dirname($sourcePath))) {
+            @mkdir(dirname($sourcePath), 0777, true);
+        }
+        file_put_contents($sourcePath, "TEXTBOX10,TEXTBOX11\nR - KANWIL MALANG,45 - KC MADIUN\n");
+
+        $controller = new ImportFileController();
+        $headers = ['TEXTBOX10', 'TEXTBOX11'];
+        $blueprint = $this->invokeMethod($controller, 'buildColumnImportBlueprint', [
+            [0, 1],
+            $headers,
+            'ibbisniz_corp',
+        ]);
+        $columns = $this->invokeMethod($controller, 'buildBulkLoadColumnsForMappedRows', [
+            'ibbisniz_corp',
+            false,
+            $blueprint,
+        ]);
+        $progress = \Mockery::mock(ImportProgressService::class);
+        $progress->shouldReceive('cacheProgress')->zeroOrMoreTimes();
+
+        $stagingPath = '';
+        try {
+            $stagingPath = $controller->prepareCsvStaging(901, [
+                'file_path' => $sourcePath,
+                'delimiter' => ',',
+                'selected_columns' => [0, 1],
+                'table_name' => 'ibbisniz_corp',
+                'unique_suffix' => '_IBBIZ',
+                'manual_periode' => '2026-05-10',
+                'headers' => $headers,
+                'column_blueprint' => $blueprint,
+                'total_rows' => 1,
+            ], $progress);
+
+            $handle = fopen($stagingPath, 'rb');
+            $this->assertNotFalse($handle);
+            $values = fgetcsv($handle);
+            fclose($handle);
+
+            $periodIndex = array_search('periode', $columns, true);
+            $this->assertNotFalse($periodIndex);
+            $this->assertSame('2026-05-10', $values[$periodIndex] ?? null);
+        } finally {
+            @unlink($sourcePath);
+            if ($stagingPath !== '') {
+                @unlink($stagingPath);
+            }
+            $sidecarPath = (string) Cache::get('ibbiz_period_bulk_csv:901', '');
+            if ($sidecarPath !== '') {
+                @unlink($sidecarPath);
+            }
+            Cache::forget('ibbiz_period_bulk_csv:901');
+        }
     }
 
     public function test_manual_periode_is_applied_only_for_ibbiz_tables(): void
@@ -759,6 +827,63 @@ class ImportFileControllerTest extends TestCase
             \Illuminate\Support\Facades\File::deleteDirectory($importDirectory);
             session()->forget(['import_files', 'final_import_path']);
         }
+    }
+
+    public function test_merchant_and_qris_tables_preserve_posisi_and_merchant_columns(): void
+    {
+        $controller = new ImportFileController();
+
+        // 1. Verify mapped column names for merchant detail
+        $edcCols = ['TAHUN', 'PERIODE', 'POSISI', 'NAMA_KANCA', 'NAMA_UKER', 'NOREK'];
+        $edcMapped = [];
+        foreach ($edcCols as $idx => $hdr) {
+            $edcMapped[$hdr] = $this->invokeMethod($controller, 'resolveMappedImportColumnName', ['jumlah_merchant_detail', $idx, $hdr]);
+        }
+
+        $this->assertSame('tahun', $edcMapped['TAHUN']);
+        $this->assertSame('periode', $edcMapped['PERIODE']);
+        $this->assertSame('posisi', $edcMapped['POSISI']);
+        $this->assertSame('nama_kanca', $edcMapped['NAMA_KANCA']);
+        $this->assertSame('nama_uker', $edcMapped['NAMA_UKER']);
+        $this->assertSame('norek', $edcMapped['NOREK']);
+
+        // 2. Verify mapped column names for QRIS detail
+        $qrisCols = ['PERIODE', 'POSISI', 'MBDESC', 'BRDESC'];
+        $qrisMapped = [];
+        foreach ($qrisCols as $idx => $hdr) {
+            $qrisMapped[$hdr] = $this->invokeMethod($controller, 'resolveMappedImportColumnName', ['jumlah_merchant_qris_detail', $idx, $hdr]);
+        }
+
+        $this->assertSame('periode', $qrisMapped['PERIODE']);
+        $this->assertSame('posisi', $qrisMapped['POSISI']);
+
+        // 3. Verify bulk columns contain POSISI for both tables
+        Schema::create('jumlah_merchant_qris_detail', function ($table): void {
+            $table->string('uniqueid_namareport')->primary();
+            $table->string('PERIODE')->nullable();
+            $table->date('POSISI')->nullable();
+            $table->string('MBDESC')->nullable();
+            $table->string('BRDESC')->nullable();
+            $table->timestamps();
+        });
+
+        $qrisBlueprint = $this->invokeMethod($controller, 'buildColumnImportBlueprint', [
+            [0, 1, 2, 3],
+            ['PERIODE', 'POSISI', 'MBDESC', 'BRDESC'],
+            'jumlah_merchant_qris_detail',
+        ]);
+        $qrisBulkCols = $this->invokeMethod($controller, 'buildBulkLoadColumnsForMappedRows', [
+            'jumlah_merchant_qris_detail',
+            false,
+            $qrisBlueprint,
+        ]);
+
+        $this->assertContains('POSISI', $qrisBulkCols);
+        $this->assertContains('PERIODE', $qrisBulkCols);
+
+        // 4. Verify daily loan still maps aliases
+        $dailyMappedPosisi = $this->invokeMethod($controller, 'resolveMappedImportColumnName', ['daily_loan_dinamis', 0, 'POSISI']);
+        $this->assertSame('periode', $dailyMappedPosisi);
     }
 
     private function invokeMethod(object $target, string $method, array $args = [])

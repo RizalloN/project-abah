@@ -73,7 +73,7 @@ class ExcelQueuedImportService
         };
 
         try {
-            $path = Storage::path($relativePath);
+            $path = $this->resolveImportAbsolutePath($relativePath);
             $workingPath = $path;
             $workingHeaderIndex = $headerIndex;
             $workingEstimatedTotalRows = $estimatedTotalRows;
@@ -192,11 +192,12 @@ class ExcelQueuedImportService
                 }
             }
 
-            if (!($callbacks['is_csv_file'])($path) && $stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
-                $workingPath = $stagedCsvPath;
+            $resolvedStagedPath = $stagedCsvPath !== '' ? $this->resolveImportAbsolutePath($stagedCsvPath) : '';
+            if (!($callbacks['is_csv_file'])($path) && $resolvedStagedPath !== '' && file_exists($resolvedStagedPath)) {
+                $workingPath = $resolvedStagedPath;
                 $workingHeaderIndex = 0;
                 $workingCsvDelimiter = ',';
-                $cleanupExtraPaths[] = $stagedCsvPath;
+                $cleanupExtraPaths[] = $resolvedStagedPath;
             }
 
             if (($callbacks['is_csv_file'])($workingPath)) {
@@ -279,20 +280,24 @@ class ExcelQueuedImportService
                         $params
                     ): array {
                         try {
-                            return [
-                                'handled' => ($callbacks['process_daily_loan_direct_csv_stream'])(
-                                    $send,
-                                    $workingPath,
-                                    $tableName,
-                                    $normalizedHeaders,
-                                    $jobId,
-                                    $totalDataRows,
-                                    $delimiter,
-                                    $params
-                                ),
-                            ];
+                            $handled = ($callbacks['process_daily_loan_direct_csv_stream'])(
+                                $send,
+                                $workingPath,
+                                $tableName,
+                                $normalizedHeaders,
+                                $jobId,
+                                $totalDataRows,
+                                $delimiter,
+                                $params
+                            );
+
+                            if (! $handled && strtolower(trim($tableName)) === 'lw321pn') {
+                                throw new \RuntimeException('Import LW321PN dibatalkan: fast-path direct CSV tidak tersedia dan legacy fallback dinonaktifkan.');
+                            }
+
+                            return ['handled' => $handled];
                         } catch (\Throwable $e) {
-                            if (strtolower(trim($tableName)) === 'daily_loan_dinamis') {
+                            if ($this->requiresStrictCsvFastPath($tableName)) {
                                 throw $e;
                             }
 
@@ -317,20 +322,28 @@ class ExcelQueuedImportService
                         $params
                     ): array {
                         try {
-                            return [
-                                'handled' => ($callbacks['process_daily_loan_bulk_csv_stream'])(
-                                    $send,
-                                    $workingPath,
-                                    $tableName,
-                                    $normalizedHeaders,
-                                    $activeFilters,
-                                    $jobId,
-                                    max(0, $totalDataRows),
-                                    $delimiter,
-                                    $params
-                                ),
-                            ];
+                            $handled = ($callbacks['process_daily_loan_bulk_csv_stream'])(
+                                $send,
+                                $workingPath,
+                                $tableName,
+                                $normalizedHeaders,
+                                $activeFilters,
+                                $jobId,
+                                max(0, $totalDataRows),
+                                $delimiter,
+                                $params
+                            );
+
+                            if (! $handled && strtolower(trim($tableName)) === 'lw321pn') {
+                                throw new \RuntimeException('Import LW321PN dibatalkan: fast-path filtered CSV tidak tersedia dan legacy fallback dinonaktifkan.');
+                            }
+
+                            return ['handled' => $handled];
                         } catch (\Throwable $e) {
+                            if ($this->requiresStrictCsvFastPath($tableName)) {
+                                throw $e;
+                            }
+
                             Log::warning('Filtered fast-path Daily Loan CSV unavailable, fallback ke mode lama: ' . $e->getMessage(), [
                                 'job_id' => $jobId,
                                 'table_name' => $tableName,
@@ -375,6 +388,17 @@ class ExcelQueuedImportService
 
                 if (($csvPipeline['handled'] ?? false) === true) {
                     $job = $jobId > 0 ? $findJob($jobId) : null;
+                    if (
+                        $totalDataRows > 0
+                        && $job
+                        && $job->status === 'completed'
+                        && (int) ($job->total_success ?? 0) === 0
+                    ) {
+                        return $fail(
+                            "Import {$tableName} ditolak: sumber berisi {$totalDataRows} baris data, tetapi tidak ada baris yang berhasil disimpan."
+                        );
+                    }
+
                     if ($job && $job->status === 'completed') {
                         ($callbacks['cleanup_successful_import_artifacts'])($jobId, $relativePath, $path, $cleanupExtraPaths);
                     }
@@ -752,6 +776,31 @@ class ExcelQueuedImportService
         $resolvedTable = strtolower(trim($tableName));
 
         return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn'], true);
+    }
+
+    private function requiresStrictCsvFastPath(string $tableName): bool
+    {
+        return in_array(strtolower(trim($tableName)), ['daily_loan_dinamis', 'lw321pn'], true);
+    }
+
+    private function resolveImportAbsolutePath(string $path): string
+    {
+        $trimmed = trim($path);
+        if ($trimmed !== '' && file_exists($trimmed)) {
+            return $trimmed;
+        }
+
+        $storagePath = Storage::path($trimmed);
+        if (file_exists($storagePath)) {
+            return $storagePath;
+        }
+
+        $legacyStoragePath = storage_path('app/' . ltrim($trimmed, '/\\'));
+        if (file_exists($legacyStoragePath)) {
+            return $legacyStoragePath;
+        }
+
+        return $storagePath;
     }
 
 }

@@ -110,7 +110,7 @@
 .consumer-ops-rm-table th:last-child,.consumer-ops-rm-table td:last-child { border-right:0; }
 .consumer-ops-rm-table thead tr:first-child th { background:#082f63; text-align:center; }
 .consumer-ops-rm-table thead tr:first-child th:nth-child(-n+3) { text-align:left; }
-.consumer-ops-rm-table thead tr:nth-child(2) th { top:35px; color:#cfe9ff; background:#0b4d8d; text-align:center; }
+.consumer-ops-rm-table thead tr:nth-child(2) th { top:var(--abah-table-head-top,35px); color:#cfe9ff; background:#0b4d8d; text-align:center; }
 .consumer-ops-rm-table tbody td { background:#fff; }
 .consumer-ops-rm-table tbody tr:nth-child(even) td { background:#f8fbfe; }
 .consumer-ops-rm-table tbody tr:hover td { background:#eef7ff; }

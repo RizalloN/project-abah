@@ -4,12 +4,35 @@
 @tailwind utilities;
 
 @layer base {
+    :root {
+        color-scheme: light;
+        accent-color: #0857c3;
+        --guest-focus-ring: rgb(48 127 226 / 0.34);
+        --guest-safe-top: env(safe-area-inset-top, 0px);
+        --guest-safe-right: env(safe-area-inset-right, 0px);
+        --guest-safe-bottom: env(safe-area-inset-bottom, 0px);
+        --guest-safe-left: env(safe-area-inset-left, 0px);
+    }
+
     html {
         text-size-adjust: 100%;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+        scrollbar-color: #9eb7da #eef5ff;
     }
 
     body {
-        min-width: 320px;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: hidden;
+        padding-top: var(--guest-safe-top);
+        padding-right: var(--guest-safe-right);
+        padding-bottom: var(--guest-safe-bottom);
+        padding-left: var(--guest-safe-left);
+        font-variant-numeric: tabular-nums;
+        text-rendering: optimizeLegibility;
     }
 
     img,
@@ -17,6 +40,42 @@
     video,
     canvas {
         max-width: 100%;
+        height: auto;
+    }
+
+    ::selection {
+        color: #042a5f;
+        background: rgb(113 197 232 / 0.42);
+    }
+
+    :where(a, button) {
+        text-underline-offset: 0.18em;
+    }
+
+    :where(a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+        outline: 3px solid var(--guest-focus-ring);
+        outline-offset: 2px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        html {
+            scroll-behavior: auto !important;
+        }
+
+        *,
+        *::before,
+        *::after {
+            scroll-behavior: auto !important;
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
+    }
+
+    @media (forced-colors: active) {
+        :where(a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+            outline: 2px solid CanvasText;
+        }
     }
 }
 
@@ -32,5 +91,14 @@
     .tw-scroll-x {
         @apply w-full overflow-x-auto;
         -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+        scrollbar-width: thin;
+    }
+
+    @media (pointer: coarse) {
+        .tw-touch-target {
+            min-width: 44px;
+            min-height: 44px;
+        }
     }
 }

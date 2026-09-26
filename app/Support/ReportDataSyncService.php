@@ -375,7 +375,7 @@ class ReportDataSyncService
             'context' => $result,
         ]);
 
-        foreach ($result['periods'] as $period) {
+        foreach ($result['mutated_periods'] as $period) {
             ManagedReportManagementService::invalidateTableCache('daily_loan_dinamis');
             $this->markSnapshotDirtyAfterSourceMutation('daily_loan_dinamis', $period, $source);
             $this->markDashboardHarianCompositeDirty('daily_loan_dinamis', $period, $source);
@@ -1124,7 +1124,13 @@ class ReportDataSyncService
             : 'lightweight';
     }
 
-    public function cleanupDerivedArtifactsAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null, ?string $deleteId = null): array
+    public function cleanupDerivedArtifactsAfterDelete(
+        string $tableName,
+        ?string $periodHint = null,
+        ?string $source = null,
+        ?string $deleteId = null,
+        bool $reconcileLwFallback = true
+    ): array
     {
         $normalizedTable = strtolower(trim($tableName));
         if ($normalizedTable === '') {
@@ -1142,13 +1148,46 @@ class ReportDataSyncService
                 'daily_loan_reinserted_rows' => $materialized['inserted_rows'],
             ];
 
-            foreach ($materialized['periods'] as $period) {
-                foreach ($this->cleanupDerivedArtifactsAfterDelete('daily_loan_dinamis', $period, $source, $deleteId) as $table => $count) {
+            foreach ($materialized['mutated_periods'] as $period) {
+                foreach ($this->cleanupDerivedArtifactsAfterDelete('daily_loan_dinamis', $period, $source, $deleteId, false) as $table => $count) {
                     $deleted[$period . ':' . $table] = $count;
                 }
             }
 
             return $deleted;
+        }
+
+        $deleted = [];
+        $fallbackFailure = null;
+
+        if (
+            $reconcileLwFallback
+            && $normalizedTable === 'daily_loan_dinamis'
+            && trim((string) $periodHint) !== ''
+            && Schema::hasTable('lw321pn')
+            && DB::table('lw321pn')->where('periode', $periodHint)->exists()
+        ) {
+            try {
+                $fallback = app(Lw321DailyLoanSyncService::class)->synchronize($periodHint);
+                $deleted['lw321_fallback_removed_rows'] = (int) $fallback['deleted_rows'];
+                $deleted['lw321_fallback_inserted_rows'] = (int) $fallback['inserted_rows'];
+
+                $this->writeAudit('daily_loan_dinamis', $periodHint, null, $source, 'lw321_fallback_after_daily_delete', 'success', [
+                    'affected_rows' => (int) $fallback['inserted_rows'],
+                    'context' => $fallback,
+                ]);
+            } catch (Throwable $e) {
+                $deleted['lw321_fallback_failed'] = 1;
+                $fallbackFailure = $e;
+                $this->writeAudit('daily_loan_dinamis', $periodHint, null, $source, 'lw321_fallback_after_daily_delete', 'failed', [
+                    'message' => $e->getMessage(),
+                ]);
+                Log::warning('Raw LW321 tidak dapat dipromosikan setelah Daily Loan dihapus; snapshot periode tetap dibersihkan.', [
+                    'period' => $periodHint,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                ]);
+            }
         }
 
         $cleanupMap = match ($normalizedTable) {
@@ -1196,8 +1235,6 @@ class ReportDataSyncService
             ],
             default => [],
         };
-
-        $deleted = [];
 
         foreach ($cleanupMap as $snapshotTable => $periodColumn) {
             if (!Schema::hasTable($snapshotTable)) {
@@ -1279,6 +1316,15 @@ class ReportDataSyncService
         }
 
         $this->bumpReportCacheVersion($this->cacheScopeForTable($normalizedTable));
+
+        if ($fallbackFailure !== null) {
+            throw new \RuntimeException(
+                'Daily Loan sudah dihapus, tetapi fallback LW321 periode '.$periodHint
+                .' gagal divalidasi: '.$fallbackFailure->getMessage(),
+                0,
+                $fallbackFailure
+            );
+        }
 
         return $deleted;
     }

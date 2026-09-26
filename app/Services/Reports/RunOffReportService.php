@@ -79,12 +79,18 @@ class RunOffReportService
         }
 
         $current = Carbon::parse($latestPeriod);
+        $dueStart = $current->copy()->startOfMonth()->toDateString();
+        $dueEnd = $current->copy()->endOfMonth()->toDateString();
         $baselinePeriod = $periodContext['baseline_period'];
+        $latestSourceLabel = $this->sourceLabelForPeriod($latestPeriod);
+        $baselineSourceLabel = $this->sourceLabelForPeriod($baselinePeriod);
         if (!$periodContext['baseline_available']) {
             return $this->emptyReport(
                 'Data posisi akhir bulan sebelumnya (' . Carbon::parse($baselinePeriod)->translatedFormat('d M Y') . ') belum tersedia.',
                 $latestPeriod,
-                $baselinePeriod
+                $baselinePeriod,
+                $latestSourceLabel,
+                $baselineSourceLabel
             );
         }
 
@@ -99,17 +105,31 @@ class RunOffReportService
             fn (): array => $this->aggregateRunOff(
                 $baselinePeriod,
                 $latestPeriod,
-                $current->copy()->startOfMonth()->toDateString(),
-                $current->copy()->endOfMonth()->toDateString()
+                $dueStart,
+                $dueEnd
             )
         );
+
+        $missingBaselineAmounts = (int) ($aggregates['missing_baseline_amounts'] ?? 0);
+        if ($missingBaselineAmounts > 0) {
+            return $this->emptyReport(
+                'Data pembanding ' . Carbon::parse($baselinePeriod)->translatedFormat('d M Y')
+                    . " memiliki {$missingBaselineAmounts} rekening jadwal tanpa NPB Pokok LA, sehingga nominal Run OFF tidak dapat dihitung tanpa mengarang nilai.",
+                $latestPeriod,
+                $baselinePeriod,
+                $latestSourceLabel,
+                $baselineSourceLabel
+            );
+        }
 
         $selectedBranches = $this->selectedBranches($scope);
 
         return [
-            'title' => 'Monitoring Run OFF Daily Loan',
+            'title' => 'Monitoring Run OFF Pinjaman',
             'latest_period' => $latestPeriod,
             'baseline_period' => $baselinePeriod,
+            'latest_source_label' => $latestSourceLabel,
+            'baseline_source_label' => $baselineSourceLabel,
             'report_month' => $current->translatedFormat('F Y'),
             'rows' => $this->buildRows(
                 $aggregates['baseline']['data'],
@@ -192,6 +212,7 @@ class RunOffReportService
      *     baseline: array{data: array<string, array<string, array<string, array{accounts: int, amount_cents: int}>>>},
      *     remaining: array{data: array<string, array<string, array<string, array{accounts: int, amount_cents: int}>>>},
      *     product_labels: array<string, string>,
+     *     missing_baseline_amounts: int,
      *     fetched_at: string
      * }
      */
@@ -205,25 +226,28 @@ class RunOffReportService
         // A schedule can remain in the month after the account has been paid off.
         // Keep one current account snapshot so remaining Run Off only includes
         // accounts with an outstanding balance at the latest position.
+        $latestAccountKey = $this->accountKeyExpression('latest_source.nomor_rekening1');
+        $baselineAccountKey = $this->accountKeyExpression('baseline_source.nomor_rekening1');
+
         $latestPaymentDates = DB::table(self::TABLE . ' as latest_source')
             ->selectRaw(
-                'TRIM(latest_source.nomor_rekening1) AS account_key, '
+                "{$latestAccountKey} AS account_key, "
                 . 'MIN(latest_source.next_pmt_date) AS next_pmt_date, '
                 . 'MAX(COALESCE(latest_source.baki_debet1, 0)) AS baki_debet1'
             )
             ->where('latest_source.periode', $latestPeriod)
             ->whereNotNull('latest_source.nomor_rekening1')
             ->whereRaw("TRIM(latest_source.nomor_rekening1) <> ''")
-            ->groupByRaw('TRIM(latest_source.nomor_rekening1)');
+            ->groupByRaw($latestAccountKey);
 
         $productExpression = $this->productExpression('baseline_source');
         $baselinePopulation = DB::table(self::TABLE . ' as baseline_source')
             ->selectRaw(
-                'TRIM(baseline_source.nomor_rekening1) AS account_key, '
+                "{$baselineAccountKey} AS account_key, "
                 . 'baseline_source.cabang1 AS cabang, '
                 . 'baseline_source.segmen_dashboard AS segment, '
                 . "{$productExpression} AS product_label, "
-                . 'COALESCE(baseline_source.npb_pokok_la, 0) AS npb_pokok_la'
+                . 'baseline_source.npb_pokok_la AS npb_pokok_la'
             )
             ->where('baseline_source.periode', $baselinePeriod)
             ->whereNotNull('baseline_source.nomor_rekening1')
@@ -241,7 +265,8 @@ class RunOffReportService
             ->selectRaw(
                 'baseline.cabang, baseline.segment, baseline.product_label, '
                 . 'COUNT(*) AS baseline_accounts, '
-                . 'SUM(baseline.npb_pokok_la) AS baseline_amount, '
+                . 'SUM(COALESCE(baseline.npb_pokok_la, 0)) AS baseline_amount, '
+                . 'SUM(CASE WHEN baseline.npb_pokok_la IS NULL THEN 1 ELSE 0 END) AS missing_baseline_amounts, '
                 . 'SUM(CASE WHEN latest_payment.next_pmt_date BETWEEN ? AND ? '
                 . 'AND latest_payment.baki_debet1 > 0 THEN 1 ELSE 0 END) AS remaining_accounts, '
                 . 'SUM(CASE WHEN latest_payment.next_pmt_date BETWEEN ? AND ? '
@@ -255,7 +280,9 @@ class RunOffReportService
         $baseline = [];
         $remaining = [];
         $productLabels = [];
+        $missingBaselineAmounts = 0;
         foreach ($rows as $row) {
+            $missingBaselineAmounts += (int) ($row->missing_baseline_amounts ?? 0);
             $branchKey = $this->branchKey((string) $row->cabang);
             $segmentKey = $this->segmentKey((string) $row->segment);
             $productLabel = trim((string) $row->product_label);
@@ -280,6 +307,7 @@ class RunOffReportService
             'baseline' => ['data' => $baseline],
             'remaining' => ['data' => $remaining],
             'product_labels' => $productLabels,
+            'missing_baseline_amounts' => $missingBaselineAmounts,
             'fetched_at' => now()->toDateTimeString(),
         ];
     }
@@ -528,19 +556,58 @@ class RunOffReportService
         return $negative ? -$cents : $cents;
     }
 
+    private function accountKeyExpression(string $column): string
+    {
+        $trimmed = "TRIM(COALESCE({$column}, ''))";
+        $withoutLeadingZeros = DB::connection()->getDriverName() === 'sqlite'
+            ? "LTRIM({$trimmed}, '0')"
+            : "TRIM(LEADING '0' FROM {$trimmed})";
+
+        return "CASE"
+            . " WHEN {$trimmed} = '' THEN ''"
+            . " WHEN {$withoutLeadingZeros} = '' THEN '0'"
+            . " ELSE {$withoutLeadingZeros} END";
+    }
+
+    private function sourceLabelForPeriod(?string $period): string
+    {
+        if (
+            $period === null
+            || $period === ''
+            || !Schema::hasColumn(self::TABLE, 'uniqueid_namareport')
+        ) {
+            return 'Daily Loan Dinamis';
+        }
+
+        $fromLw321 = DB::table(self::TABLE)
+            ->where('periode', $period)
+            ->where('uniqueid_namareport', 'like', 'LW321PN:%')
+            ->exists();
+
+        return $fromLw321 ? 'LW321PN' : 'Daily Loan Dinamis';
+    }
+
     private function cacheKey(int $cacheVersion, string $latestPeriod, string $baselinePeriod): string
     {
-        return 'report:run_off:daily_loan:v3:'
+        return 'report:run_off:daily_loan:v4:'
             . $cacheVersion
             . ':' . $latestPeriod . ':' . $baselinePeriod;
     }
 
-    private function emptyReport(string $message, ?string $latestPeriod = null, ?string $baselinePeriod = null): array
+    private function emptyReport(
+        string $message,
+        ?string $latestPeriod = null,
+        ?string $baselinePeriod = null,
+        ?string $latestSourceLabel = null,
+        ?string $baselineSourceLabel = null
+    ): array
     {
         return [
-            'title' => 'Monitoring Run OFF Daily Loan',
+            'title' => 'Monitoring Run OFF Pinjaman',
             'latest_period' => $latestPeriod,
             'baseline_period' => $baselinePeriod,
+            'latest_source_label' => $latestSourceLabel ?? 'Daily Loan Dinamis',
+            'baseline_source_label' => $baselineSourceLabel ?? 'Daily Loan Dinamis',
             'report_month' => $latestPeriod ? Carbon::parse($latestPeriod)->translatedFormat('F Y') : null,
             'rows' => [],
             'fetched_at' => now()->toDateTimeString(),

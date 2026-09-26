@@ -183,6 +183,62 @@ class ImportExcelControllerHourlyDpkTest extends TestCase
         $contextMethod->invoke($controller, 'hourly_dpk', $headers);
     }
 
+    public function test_hourly_dpk_smart_header_mapping_accepts_bri_aliases_bom_and_minor_typos(): void
+    {
+        $strategy = app(\App\Services\Import\Strategies\HourlyDpkImportStrategy::class);
+
+        $this->assertSame([
+            'posisi',
+            'mbname',
+            'brname',
+            'segmen2',
+            'produk',
+            'saldo',
+        ], $strategy->transformHeaders([
+            "\xEF\xBB\xBFminute-of-position",
+            'MB Name',
+            'BR Nmae',
+            'Segment 2',
+            'Product',
+            'SADLO',
+        ]));
+    }
+
+    public function test_hourly_dpk_header_error_lists_all_missing_duplicate_and_read_headers(): void
+    {
+        $controller = new ImportExcelController();
+        $method = new ReflectionMethod(ImportExcelController::class, 'assertValidHourlyDpkHeaders');
+        $method->setAccessible(true);
+
+        try {
+            $method->invoke($controller, 'hourly_dpk', [
+                'Minute of POSISI',
+                'MBNAME',
+                'MB Name',
+                'PRODUK',
+            ]);
+            $this->fail('Header Hourly DPK yang tidak lengkap seharusnya ditolak.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('Kolom wajib yang belum ditemukan: BRNAME, SEGMEN2, SALDO', $e->getMessage());
+            $this->assertStringContainsString('Kolom terpetakan ganda/ambigu: MBNAME (MBNAME, MB Name)', $e->getMessage());
+            $this->assertStringContainsString('Header yang terbaca: Minute of POSISI, MBNAME, MB Name, PRODUK', $e->getMessage());
+        }
+    }
+
+    public function test_hourly_dpk_promotes_single_bri_segmen_header_but_keeps_distinct_segment_columns(): void
+    {
+        $strategy = app(\App\Services\Import\Strategies\HourlyDpkImportStrategy::class);
+
+        $this->assertSame(
+            ['posisi', 'mbname', 'brname', 'produk', 'segmen2', 'saldo'],
+            $strategy->transformHeaders(['POSISI', 'MBNAME', 'BRNAME', 'PRODUK', 'SEGMEN', 'SALDO'])
+        );
+        $this->assertSame(
+            ['posisi', 'mbname', 'brname', 'segmen', 'segmen2', 'produk', 'saldo'],
+            $strategy->transformHeaders(['POSISI', 'MBNAME', 'BRNAME', 'SEGMEN', 'SEGMEN2', 'PRODUK', 'SALDO'])
+        );
+    }
+
     public function test_hourly_dpk_preview_accepts_minute_of_posisi_display_header(): void
     {
         $controller = new ImportExcelController();

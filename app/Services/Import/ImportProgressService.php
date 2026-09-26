@@ -963,16 +963,32 @@ class ImportProgressService
             return;
         }
 
-        try {
-            DB::table('jobs')
-                ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%')
-                ->where('payload', 'like', '%jobId%')
-                ->where('payload', 'like', '%i:' . $jobId . ';%')
-                ->delete();
-        } catch (\Throwable $e) {
-            Log::warning('Failed to clean queued import job rows: ' . $e->getMessage(), [
-                'job_id' => $jobId,
-            ]);
+        $attempts = 0;
+        while ($attempts < 3) {
+            $attempts++;
+            try {
+                DB::table('jobs')
+                    ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%')
+                    ->where('payload', 'like', '%jobId%')
+                    ->where('payload', 'like', '%i:' . $jobId . ';%')
+                    ->delete();
+                break;
+            } catch (\Throwable $e) {
+                $isDeadlock = str_contains($e->getMessage(), 'Deadlock')
+                    || str_contains($e->getMessage(), '1213')
+                    || str_contains($e->getMessage(), '40001');
+
+                if ($isDeadlock && $attempts < 3) {
+                    usleep(50000); // 50ms backoff
+                    continue;
+                }
+
+                Log::warning('Failed to clean queued import job rows: ' . $e->getMessage(), [
+                    'job_id' => $jobId,
+                    'attempt' => $attempts,
+                ]);
+                break;
+            }
         }
     }
 

@@ -6,23 +6,23 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 59 |
+| file | 60 |
 | function | 1 |
-| method | 290 |
+| method | 303 |
 | unresolved_symbol | 10 |
-| class | 53 |
+| class | 54 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `TestCase` | class | 186 | `tests/TestCase.php:13` |
-| `setUp` | method | 93 | `tests/TestCase.php:17` |
-| `ManagedReportDeleteTest` | class | 56 | `tests/Unit/ManagedReportDeleteTest.php:20` |
-| `LandingMicroPerformanceServiceTest` | class | 46 | `tests/Unit/LandingMicroPerformanceServiceTest.php:16` |
-| `invokePrivate` | method | 28 | `tests/Unit/LandingMicroPerformanceServiceTest.php:1851` |
-| `dailyLoanRow` | method | 25 | `tests/Unit/LandingMicroPerformanceServiceTest.php:1536` |
-| `ResponsiveOperationalViewsTest` | class | 21 | `tests/Unit/ResponsiveOperationalViewsTest.php:7` |
+| `TestCase` | class | 190 | `tests/TestCase.php:13` |
+| `setUp` | method | 97 | `tests/TestCase.php:17` |
+| `ManagedReportDeleteTest` | class | 57 | `tests/Unit/ManagedReportDeleteTest.php:21` |
+| `LandingMicroPerformanceServiceTest` | class | 49 | `tests/Unit/LandingMicroPerformanceServiceTest.php:16` |
+| `invokePrivate` | method | 30 | `tests/Unit/LandingMicroPerformanceServiceTest.php:1965` |
+| `dailyLoanRow` | method | 28 | `tests/Unit/LandingMicroPerformanceServiceTest.php:1650` |
+| `ResponsiveOperationalViewsTest` | class | 23 | `tests/Unit/ResponsiveOperationalViewsTest.php:7` |
 | `LandingConsumerOperationalServiceTest` | class | 20 | `tests/Unit/LandingConsumerOperationalServiceTest.php:16` |
 | `ReportDataSyncServiceTest` | class | 20 | `tests/Unit/ReportDataSyncServiceTest.php:26` |
 | `LandingSmeOperationalServiceTest` | class | 18 | `tests/Unit/LandingSmeOperationalServiceTest.php:11` |
@@ -35,17 +35,17 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `ManagedReportRebuildTest` | class | 14 | `tests/Unit/ManagedReportRebuildTest.php:26` |
 | `DirectLargeFileLoadServiceTest` | class | 13 | `tests/Unit/DirectLargeFileLoadServiceTest.php:10` |
 | `StatusSyncManualTestScript` | class | 13 | `tests/Manual/StatusSyncManualTestScript.php:23` |
+| `AdminLayoutResponsiveGuardrailTest` | class | 12 | `tests/Unit/AdminLayoutResponsiveGuardrailTest.php:7` |
+| `MySqlBulkLoadServiceTest` | class | 12 | `tests/Unit/MySqlBulkLoadServiceTest.php:12` |
 | `PruneReportDailyHistoryCommandTest` | class | 12 | `tests/Feature/PruneReportDailyHistoryCommandTest.php:12` |
 | `guardDatabaseConnection` | method | 12 | `tests/TestCase.php:40` |
 | `LinkManagementControllerTest` | class | 11 | `tests/Unit/LinkManagementControllerTest.php:11` |
-| `MySqlBulkLoadServiceTest` | class | 11 | `tests/Unit/MySqlBulkLoadServiceTest.php:12` |
 | `setUp` | method | 11 | `tests/Unit/LandingMicroPerformanceServiceTest.php:18` |
 | `snapshot` | method | 11 | `tests/Unit/LandingConsumerOperationalServiceTest.php:597` |
 | `ConsumerKanwilReferenceTest` | class | 10 | `tests/Unit/ConsumerKanwilReferenceTest.php:8` |
 | `LandingSmeAnalyticsContractTest` | class | 10 | `tests/Unit/LandingSmeAnalyticsContractTest.php:7` |
 | `ManagedReportManagementServiceTest` | class | 10 | `tests/Unit/ManagedReportManagementServiceTest.php:9` |
 | `MicroNettDisbursementCalculatorTest` | class | 10 | `tests/Unit/MicroNettDisbursementCalculatorTest.php:12` |
-| `PolarsArchitectureTest` | class | 10 | `tests/Unit/PolarsArchitectureTest.php:21` |
 
 ## Class Nodes
 
@@ -70,6 +70,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `LinkManagementControllerTest` - `tests/Unit/LinkManagementControllerTest.php`
 - `Lw321PnXlsxStagingScriptTest` - `tests/Unit/Lw321PnXlsxStagingScriptTest.php`
 - `ManagedReportDeleteTest` - `tests/Unit/ManagedReportDeleteTest.php`
+- `ManagedReportManagementPeriodPriorityTest` - `tests/Unit/ManagedReportManagementPeriodPriorityTest.php`
 - `ManagedReportManagementServiceTest` - `tests/Unit/ManagedReportManagementServiceTest.php`
 - `ManagedReportRebuildTest` - `tests/Unit/ManagedReportRebuildTest.php`
 - `MicroNettDisbursementCalculatorTest` - `tests/Unit/MicroNettDisbursementCalculatorTest.php`
@@ -107,33 +108,33 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| tests -> core (calls) | 81 |
-| tests -> core (instantiates) | 76 |
-| import -> tests (extends) | 50 |
-| import -> tests (calls) | 43 |
+| tests -> core (calls) | 84 |
+| tests -> core (instantiates) | 81 |
+| import -> tests (extends) | 51 |
+| import -> tests (calls) | 44 |
 | dashboard-pinjaman -> tests (calls) | 42 |
-| tests -> dashboard-pinjaman (writes_table) | 35 |
+| tests -> dashboard-pinjaman (writes_table) | 40 |
 | tests -> dashboard-pinjaman (contains) | 34 |
-| tests -> core (writes_table) | 32 |
+| tests -> core (writes_table) | 33 |
+| tests -> import (contains) | 29 |
 | tests -> jobs-snapshots (contains) | 29 |
-| tests -> import (contains) | 28 |
-| jobs-snapshots -> tests (calls) | 24 |
+| jobs-snapshots -> tests (calls) | 26 |
 | dashboard-pinjaman -> tests (extends) | 22 |
 | tests -> dashboard-pinjaman (defines_table) | 19 |
-| jobs-snapshots -> tests (extends) | 18 |
+| jobs-snapshots -> tests (extends) | 19 |
 | tests -> core (defines_table) | 17 |
-| tests -> import (instantiates) | 14 |
+| tests -> import (defines_table) | 15 |
+| tests -> import (instantiates) | 15 |
 | dashboard-simpanan -> tests (extends) | 14 |
 | tests -> import (calls) | 13 |
 | dashboard-simpanan -> tests (calls) | 13 |
 | tests -> dashboard-pinjaman (reads_table) | 12 |
-| tests -> import (defines_table) | 11 |
+| tests -> import (writes_table) | 12 |
+| tests -> jobs-snapshots (calls) | 11 |
 | access-control -> tests (calls) | 10 |
-| tests -> jobs-snapshots (calls) | 10 |
+| tests -> access-control (contains) | 10 |
 | database -> tests (calls) | 9 |
-| tests -> import (writes_table) | 9 |
 | tests -> core (renders) | 9 |
-| tests -> access-control (contains) | 9 |
 | tests -> access-control (calls) | 8 |
 | tests -> core (extends) | 8 |
 | tests -> marketshare (contains) | 8 |

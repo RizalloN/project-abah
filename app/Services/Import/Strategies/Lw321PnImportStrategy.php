@@ -96,10 +96,37 @@ class Lw321PnImportStrategy implements ImportStrategyInterface
         return ['ok' => true];
     }
 
+    /**
+     * @return array<int, string>
+     */
+    public static function requiredColumns(): array
+    {
+        return self::REQUIRED_COLUMNS;
+    }
+
+    private const HEADER_ALIASES = [
+        'cbal_base' => 'balance_dalam_idr',
+        'cbal' => 'balance_dalam_idr',
+        'balance_dalam_idr' => 'balance_dalam_idr',
+        'orgamt_base' => 'plafon_dalam_idr',
+        'orgamt' => 'plafon_dalam_idr',
+        'plafon_dalam_idr' => 'plafon_dalam_idr',
+        'kolek_lancar' => 'kolektibilitas_lancar',
+        'kolek_dpk' => 'kolektibilitas_dpk',
+        'kolek_kurang_lancar' => 'kolektibilitas_kurang_lancar',
+        'kolek_diragukan' => 'kolektibilitas_diragukan',
+        'kolek_macet' => 'kolektibilitas_macet',
+        'pn_referal' => 'pn_referral',
+    ];
+
     public function transformHeaders(array $headers): array
     {
         return array_map(
-            static fn ($header): string => trim((string) preg_replace('/^\xEF\xBB\xBF/u', '', (string) $header)),
+            static function ($header): string {
+                $clean = trim((string) preg_replace('/^\xEF\xBB\xBF/u', '', (string) $header));
+                $norm = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '_', trim($clean)));
+                return self::HEADER_ALIASES[$norm] ?? $clean;
+            },
             $headers
         );
     }

@@ -709,7 +709,8 @@ class SmartContentHeaderGuardService
     private function isKnownAliasOf(string $normHeader, string $dbColLower): bool
     {
         $accountAliases = ['acctno', 'no_rekening', 'nomor_rekening', 'nomor_rekening1', 'rekening', 'norek', 'account_number', 'acc_no'];
-        $balanceAliases = ['saldo', 'saldo_idr', 'baki_debet', 'baki_debet1', 'outstanding', 'os_idr', 'os', 'total_kewajiban', 'nominal', 'balance', 'jml_nominal_casa', 'textbox9', 'textbox20', 'textbox21'];
+        $balanceAliases = ['saldo', 'saldo_idr', 'baki_debet', 'baki_debet1', 'outstanding', 'os_idr', 'os', 'total_kewajiban', 'nominal', 'balance', 'balance_dalam_idr', 'cbal_base', 'cbal', 'jml_nominal_casa', 'textbox9', 'textbox20', 'textbox21'];
+        $plafonAliases = ['plafon', 'plafon_dalam_idr', 'orgamt_base', 'orgamt'];
         $dateAliases = ['periode', 'posisi', 'tgl_posisi', 'tanggal_posisi', 'tanggal', 'date', 'tgl_data', 'waktu', 'month_day_year_of_posisi'];
         $cifAliases = ['cif', 'cif1', 'cifno', 'cif_no', 'nomor_cif', 'no_cif'];
         $branchNameAliases = ['nama_kanca', 'nama_cabang', 'cabang', 'cabang1', 'kanca', 'brname', 'mbname', 'nama_uker', 'unit1', 'branch_name'];
@@ -722,6 +723,10 @@ class SmartContentHeaderGuardService
         }
 
         if (in_array($dbColLower, $balanceAliases, true) && in_array($norm, $balanceAliases, true)) {
+            return true;
+        }
+
+        if (in_array($dbColLower, $plafonAliases, true) && in_array($norm, $plafonAliases, true)) {
             return true;
         }
 

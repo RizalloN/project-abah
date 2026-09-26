@@ -316,14 +316,14 @@
 
     /* Excel Corporate Header Styling */
     .loan-mismatch-table thead th {
-        background-color: #475569 !important; /* Premium corporate slate gray */
+        background-color: #0f5eb8 !important;
         color: #ffffff !important;
         font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif !important;
         font-weight: 700 !important;
         font-size: 0.74rem !important;
         letter-spacing: 0.02em !important;
         padding: 8px !important;
-        border: 1px solid #334155 !important;
+        border: 1px solid #0a4b94 !important;
         text-align: center !important;
         vertical-align: middle !important;
         white-space: nowrap;
@@ -331,13 +331,13 @@
     }
 
     .loan-mismatch-table thead tr:first-child th {
-        background-color: #1e293b !important; /* Deep corporate dark slate */
-        border: 1px solid #0f172a !important;
+        background-color: #053b82 !important;
+        border: 1px solid #042a5f !important;
     }
 
     .loan-mismatch-table thead tr:nth-child(2) th {
-        background-color: #334155 !important; /* Slate */
-        border: 1px solid #1e293b !important;
+        background-color: #0857c3 !important;
+        border: 1px solid #053b82 !important;
     }
 
     /* Grid Cells with Excel Grid Lines */

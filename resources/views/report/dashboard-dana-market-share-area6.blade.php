@@ -210,7 +210,7 @@
     .msa-table { border-collapse: separate; border-spacing: 0; font-size: .78rem; min-width: 1420px; width: 100%; }
     .msa-table th, .msa-table td { border-bottom: 1px solid #dbe5f1; border-right: 1px solid #dbe5f1; padding: .58rem .62rem; text-align: right; white-space: nowrap; }
     .msa-table thead th { background: #124c91; color: #fff; font-weight: 900; height: 42px; position: sticky; text-align: center; top: 0; z-index: 5; }
-    .msa-table thead tr:nth-child(2) th { background: #173f72; top: 42px; z-index: 6; }
+    .msa-table thead tr:nth-child(2) th { background: #173f72; top: var(--abah-table-head-top, 42px); z-index: 6; }
     .msa-table .share-head { background: #0874c9; }
     .msa-table .branch-head, .msa-table .branch-cell { left: 0; min-width: 170px; position: sticky; text-align: left; }
     .msa-table .branch-head { background: #103760; z-index: 8; }

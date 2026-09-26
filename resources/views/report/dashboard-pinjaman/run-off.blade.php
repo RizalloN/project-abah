@@ -52,7 +52,10 @@
             <p class="runoff-subtitle">{{ $scopeLabel }} · laporan {{ $report_month ?: '-' }} · posisi terbaru {{ $latestLabel }}</p>
         </div>
         <div class="runoff-actions">
-            <span class="runoff-chip"><i class="fas fa-database"></i> Daily Loan Dinamis</span>
+            <span class="runoff-chip">
+                <i class="fas fa-database"></i>
+                Pembanding: {{ $baseline_source_label ?? 'Daily Loan Dinamis' }} | Posisi: {{ $latest_source_label ?? 'Daily Loan Dinamis' }}
+            </span>
             @if($isBranchScoped)
                 <span class="runoff-chip"><i class="fas fa-lock"></i> Cabang terkunci</span>
             @endif

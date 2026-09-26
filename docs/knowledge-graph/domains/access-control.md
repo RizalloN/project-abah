@@ -8,7 +8,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | file | 38 |
 | function | 4 |
-| method | 84 |
+| method | 85 |
 | unresolved_symbol | 26 |
 | middleware | 8 |
 | route | 18 |
@@ -21,7 +21,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
 | `current` | method | 50 | `app/Support/UserBranchScope.php:111` |
-| `User` | class | 46 | `app/Models/User.php:10` |
+| `User` | class | 47 | `app/Models/User.php:10` |
 | `users` | table | 29 | - |
 | `forKey` | method | 28 | `app/Support/UserBranchScope.php:68` |
 | `update` | method | 22 | `app/Http/Controllers/Admin/UserManagementController.php:159` |
@@ -53,8 +53,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Route Nodes
 
-- `generated::1IlUES9fcl4xE0ov` - `confirm-password`
-- `generated::iKwVRwHFv9iay8nm` - `login`
+- `confirm-password` - `confirm-password`
+- `login` - `login`
 - `login` - `login`
 - `logout` - `logout`
 - `password.confirm` - `confirm-password`
@@ -117,7 +117,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| import -> access-control (protected_by) | 776 |
+| import -> access-control (protected_by) | 803 |
 | dashboard-simpanan -> access-control (protected_by) | 185 |
 | dashboard-pinjaman -> access-control (protected_by) | 175 |
 | bank-pipeline -> access-control (protected_by) | 114 |
@@ -135,7 +135,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | access-control -> core (extends) | 11 |
 | access-control -> tests (calls) | 10 |
 | prognosa -> access-control (instantiates) | 10 |
-| tests -> access-control (contains) | 9 |
+| tests -> access-control (contains) | 10 |
 | tests -> access-control (calls) | 8 |
 | marketshare -> access-control (protected_by) | 8 |
 | access-control -> dashboard-simpanan (references_route) | 7 |
@@ -146,4 +146,4 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | prognosa -> access-control (protected_by) | 5 |
 | access-control -> marketshare (references_route) | 4 |
 | database -> access-control (checks_table) | 4 |
-| access-control -> presentation (calls) | 4 |
+| dashboard-harian -> access-control (calls) | 4 |

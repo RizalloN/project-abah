@@ -15,7 +15,21 @@ DATE_HEADERS = {
     "NEXT_INT_PMT_DATE",
     "TGL_MENUNGGAK",
     "TGL_REALISASI",
-    "TGL JATUH TEMPO",
+    "TGL_JATUH_TEMPO",
+}
+
+HEADER_ALIASES = {
+    "NO_REKENING": "NOMOR_REKENING",
+    "ORGAMT_BASE": "PLAFON_DALAM_IDR",
+    "ORGAMT": "PLAFON_DALAM_IDR",
+    "CBAL_BASE": "BALANCE_DALAM_IDR",
+    "CBAL": "BALANCE_DALAM_IDR",
+    "KOLEK_LANCAR": "KOLEKTIBILITAS_LANCAR",
+    "KOLEK_DPK": "KOLEKTIBILITAS_DPK",
+    "KOLEK_KURANG_LANCAR": "KOLEKTIBILITAS_KURANG_LANCAR",
+    "KOLEK_DIRAGUKAN": "KOLEKTIBILITAS_DIRAGUKAN",
+    "KOLEK_MACET": "KOLEKTIBILITAS_MACET",
+    "PN_REFERAL": "PN_REFERRAL",
 }
 
 REQUIRED_HEADERS = {
@@ -80,9 +94,23 @@ def normalize_header(value):
     return re.sub(r"[^A-Z0-9]+", "_", str(value or "").strip().upper()).strip("_")
 
 
+def canonical_header(value):
+    normalized = normalize_header(value)
+    return HEADER_ALIASES.get(normalized, normalized)
+
+
+def is_header_row(values):
+    canonical = {canonical_header(value) for value in values if str(value or "").strip()}
+    return {"PERIODE", "NOMOR_REKENING"}.issubset(canonical)
+
+
+def is_date_header(value):
+    return canonical_header(value) in DATE_HEADERS
+
+
 def validate_headers(headers):
-    normalized = {normalize_header(header) for header in headers if str(header or "").strip()}
-    missing = sorted(REQUIRED_HEADERS - normalized)
+    canonical = {canonical_header(header) for header in headers if str(header or "").strip()}
+    missing = sorted(REQUIRED_HEADERS - canonical)
     if missing:
         raise RuntimeError(
             "Schema sumber LW321PN tidak lengkap. Kolom yang hilang: " + ", ".join(missing)
@@ -302,9 +330,8 @@ def fast_preview_xlsx(args):
     header_row = None
     preview_rows = []
     for row_number, values in resolved_rows:
-        upper = [str(value).strip().upper() for value in values]
         if header_row is None:
-            if "PERIODE" in upper and "NOMOR_REKENING" in upper:
+            if is_header_row(values):
                 header_row = row_number
                 headers = [
                     str(value).strip() if value and str(value).strip() else f"COL_{index}"
@@ -325,7 +352,7 @@ def fast_preview_xlsx(args):
         if any(str(value).strip() for value in values):
             normalized = (values + [""] * len(headers))[:len(headers)]
             for index, header in enumerate(headers):
-                if str(header).strip().upper() in DATE_HEADERS:
+                if is_date_header(header):
                     normalized[index] = excel_serial_to_date(normalized[index])
             preview_rows.append(normalized)
 
@@ -382,8 +409,7 @@ def fast_preview_xlsx_fastexcel(args):
     headers = []
     for index, row in enumerate(rows):
         values = [preview_string(value) for value in row]
-        upper = [value.strip().upper() for value in values]
-        if "PERIODE" in upper and "NOMOR_REKENING" in upper:
+        if is_header_row(values):
             header_offset = index
             headers = [
                 value.strip() if value and value.strip() else f"COL_{column_index}"
@@ -415,7 +441,7 @@ def fast_preview_xlsx_fastexcel(args):
             continue
 
         for index, header in enumerate(headers):
-            if str(header).strip().upper() in DATE_HEADERS:
+            if is_date_header(header):
                 normalized[index] = excel_serial_to_date(normalized[index])
 
         preview_rows.append(normalized)
@@ -459,8 +485,7 @@ def stream_xlsx_to_csv_fastexcel(args):
         header_index = None
         headers = []
         for row_index, row in enumerate(frame.head(64).iter_rows()):
-            upper = [str(value or "").strip().upper() for value in row]
-            if "PERIODE" not in upper or "NOMOR_REKENING" not in upper:
+            if not is_header_row(row):
                 continue
 
             header_index = row_index
@@ -539,10 +564,9 @@ def stream_xlsx_to_csv_xml(args):
 
                 row_number = int(row.attrib.get("r", "0") or 0)
                 values = row_values(row, shared_map)
-                upper = [str(value).strip().upper() for value in values]
 
                 if header_row is None:
-                    if "PERIODE" in upper and "NOMOR_REKENING" in upper:
+                    if is_header_row(values):
                         header_row = row_number
                         headers = [
                             str(value).strip() if value and str(value).strip() else f"COL_{index}"
@@ -566,7 +590,7 @@ def stream_xlsx_to_csv_xml(args):
                     continue
 
                 for index, header in enumerate(headers):
-                    if str(header).strip().upper() in DATE_HEADERS:
+                    if is_date_header(header):
                         normalized[index] = excel_serial_to_date(normalized[index])
 
                 writer.writerow(normalized)

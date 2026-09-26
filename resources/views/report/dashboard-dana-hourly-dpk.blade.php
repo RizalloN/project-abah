@@ -416,7 +416,7 @@
     }
 
     .hourly-table thead tr:nth-child(2) th {
-        top: 42px;
+        top: var(--abah-table-head-top, 42px);
         background: #0b519d;
     }
 
