@@ -11,7 +11,11 @@ class QueueWorkerControlService
 {
     public const COMMAND = 'php artisan queue:ensure-running --timeout=0 --memory=512 --max-jobs=25 --max-time=3600 --check-interval=30';
 
-    private const HEARTBEAT_TTL_SECONDS = 75;
+    private const HEARTBEAT_TTL_SECONDS = 180;
+
+    private const HEARTBEAT_ACTIVE_GRACE_SECONDS = 90;
+
+    private const STARTUP_CONFIRM_TIMEOUT_MILLISECONDS = 5000;
 
     public function isEnabled(): bool
     {
@@ -23,7 +27,12 @@ class QueueWorkerControlService
         $this->markEnabled();
 
         $alreadyActive = $this->isMonitorActive();
-        $started = $alreadyActive || $this->startDetachedMonitor();
+        $launchAccepted = $alreadyActive || $this->startDetachedMonitor();
+        $started = $alreadyActive || ($launchAccepted && $this->waitForMonitorStartup());
+
+        if (!$started) {
+            Cache::forget($this->key('launch-requested-at'));
+        }
 
         return array_merge($this->status(), [
             'start_requested' => true,
@@ -72,7 +81,7 @@ class QueueWorkerControlService
         $heartbeat = Cache::get($this->key('monitor-heartbeat'));
         if (is_array($heartbeat)
             && is_numeric($heartbeat['timestamp'] ?? null)
-            && (time() - (int) $heartbeat['timestamp']) <= 45) {
+            && (time() - (int) $heartbeat['timestamp']) <= self::HEARTBEAT_ACTIVE_GRACE_SECONDS) {
             return true;
         }
 
@@ -103,7 +112,7 @@ class QueueWorkerControlService
             'worker_count' => $workerCount,
             'state' => $state,
             'state_label' => match ($state) {
-                'active' => 'Worker Monitor Aktif',
+                'active' => 'Worker Monitor Berjalan',
                 'starting' => 'Worker Monitor Sedang Dimulai',
                 'stopping' => 'Worker Sedang Dihentikan',
                 'stopped' => 'Worker Dimatikan',
@@ -127,7 +136,9 @@ class QueueWorkerControlService
     private function statusMessage(string $state, int $workerCount): string
     {
         return match ($state) {
-            'active' => "Monitor aktif dan mendeteksi {$workerCount} worker. Worker baru akan dijalankan saat antrean membutuhkannya.",
+            'active' => $workerCount > 0
+                ? "Monitor berjalan dan mendeteksi {$workerCount} worker aktif."
+                : 'Monitor berjalan dan siap. Tidak ada worker anak karena antrean sedang kosong; worker akan otomatis dibuat saat ada job.',
             'starting' => 'Proses monitor sudah dijalankan dan sedang menunggu heartbeat pertama dari server.',
             'stopping' => 'Perintah berhenti sudah dikirim. Worker aktif akan selesai secara aman setelah job saat ini.',
             'stopped' => 'Worker monitor dimatikan. Job baru tetap masuk antrean tetapi tidak dijalankan otomatis.',
@@ -156,7 +167,7 @@ class QueueWorkerControlService
         return max(count($pids), $this->workerProcessCount());
     }
 
-    private function startDetachedMonitor(): bool
+    protected function startDetachedMonitor(): bool
     {
         $lock = Cache::lock($this->key('start-lock'), 15);
         if (!$lock->get()) {
@@ -168,7 +179,12 @@ class QueueWorkerControlService
                 return true;
             }
 
-            $php = (new PhpExecutableFinder())->find(false) ?: PHP_BINARY ?: 'php';
+            $php = $this->resolvePhpCliBinary();
+            if ($php === null) {
+                Log::error('Queue worker monitor could not find a PHP CLI executable.');
+
+                return false;
+            }
             $artisan = base_path('artisan');
             $logPath = storage_path('logs/queue-worker-monitor.log');
             $arguments = [
@@ -184,7 +200,7 @@ class QueueWorkerControlService
             if (PHP_OS_FAMILY === 'Windows') {
                 $argumentLine = implode(' ', array_map([$this, 'windowsCommandLineQuote'], $arguments));
                 $script = sprintf(
-                    '$p = Start-Process -FilePath %s -ArgumentList %s -WorkingDirectory %s -WindowStyle Hidden -RedirectStandardOutput %s -RedirectStandardError %s -PassThru; $p.Id',
+                    'Start-Process -FilePath %s -ArgumentList %s -WorkingDirectory %s -WindowStyle Hidden -RedirectStandardOutput %s -RedirectStandardError %s',
                     $this->powershellQuote($php),
                     $this->powershellQuote($argumentLine),
                     $this->powershellQuote(base_path()),
@@ -221,7 +237,7 @@ class QueueWorkerControlService
                 return false;
             }
 
-            if (preg_match('/\b(\d+)\b/', (string) $output, $matches)) {
+            if (PHP_OS_FAMILY !== 'Windows' && preg_match('/\b(\d+)\b/', (string) $output, $matches)) {
                 Cache::put($this->key('monitor-launch-pid'), (int) $matches[1], now()->addHours(8));
             }
 
@@ -231,6 +247,64 @@ class QueueWorkerControlService
         } finally {
             $lock->release();
         }
+    }
+
+    protected function waitForMonitorStartup(): bool
+    {
+        $deadline = microtime(true) + (self::STARTUP_CONFIRM_TIMEOUT_MILLISECONDS / 1000);
+
+        do {
+            if ($this->isMonitorActive()) {
+                return true;
+            }
+
+            usleep(100000);
+        } while (microtime(true) < $deadline);
+
+        Log::error('Queue worker monitor launch was not confirmed by a heartbeat or live process.', [
+            'timeout_ms' => self::STARTUP_CONFIRM_TIMEOUT_MILLISECONDS,
+        ]);
+
+        return false;
+    }
+
+    private function resolvePhpCliBinary(): ?string
+    {
+        $finderCandidate = (new PhpExecutableFinder())->find(false);
+        $runtimeConfig = trim((string) (getenv('PHPRC') ?: ($_SERVER['PHPRC'] ?? '')));
+        $runtimeDirectory = $runtimeConfig !== ''
+            ? (is_dir($runtimeConfig) ? $runtimeConfig : dirname($runtimeConfig))
+            : '';
+
+        $candidates = [
+            PHP_BINARY,
+            $runtimeDirectory !== '' ? $runtimeDirectory . DIRECTORY_SEPARATOR . 'php.exe' : null,
+            PHP_BINDIR . DIRECTORY_SEPARATOR . 'php.exe',
+            PHP_BINDIR . DIRECTORY_SEPARATOR . 'php',
+            dirname((string) PHP_BINARY, 3) . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'php.exe',
+            dirname(base_path(), 2) . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'php.exe',
+            $finderCandidate,
+            'php',
+        ];
+
+        return $this->firstUsablePhpCliBinary($candidates);
+    }
+
+    private function firstUsablePhpCliBinary(array $candidates): ?string
+    {
+        foreach (array_unique(array_filter($candidates, static fn ($candidate): bool => is_string($candidate) && trim($candidate) !== '')) as $candidate) {
+            $candidate = trim($candidate);
+            $name = strtolower((string) basename(str_replace('\\', '/', $candidate)));
+            if (!in_array($name, ['php.exe', 'php'], true)) {
+                continue;
+            }
+
+            if ($candidate === 'php' || is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     private function monitorProcessCount(): int

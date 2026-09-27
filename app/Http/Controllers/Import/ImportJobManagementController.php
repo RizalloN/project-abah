@@ -214,7 +214,7 @@ class ImportJobManagementController extends Controller
             'status' => 'success',
             'message' => ($status['already_active'] ?? false)
                 ? 'Worker monitor sudah aktif.'
-                : 'Worker monitor sedang diaktifkan dari server.',
+                : 'Worker monitor berhasil dijalankan dan heartbeat server sudah terdeteksi.',
             'worker_status' => $status,
         ]);
     }

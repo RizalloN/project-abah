@@ -26,8 +26,8 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 | Metric | Count |
 | --- | ---: |
 | Source files | 892 |
-| Graph nodes | 10,425 |
-| Graph edges | 40,926 |
+| Graph nodes | 10,447 |
+| Graph edges | 41,013 |
 | Domains | 19 |
 
 ## Read The Right Artifact
@@ -45,9 +45,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Node | Kind | Domain | Degree |
 | --- | --- | --- | ---: |
-| `ImportExcelController` | class | import | 385 |
+| `ImportExcelController` | class | import | 390 |
 | `DashboardSimpananController` | class | dashboard-simpanan | 360 |
-| `daily_loan_dinamis` | table | dashboard-pinjaman | 329 |
+| `daily_loan_dinamis` | table | dashboard-pinjaman | 332 |
 | `DashboardHarianSnapshotService` | class | dashboard-harian | 260 |
 | `DashboardPinjamanReportController` | class | dashboard-pinjaman | 196 |
 | `TestCase` | class | tests | 190 |

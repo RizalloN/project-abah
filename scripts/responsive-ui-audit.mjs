@@ -14,6 +14,7 @@ const publicOnly = process.env.AUDIT_PUBLIC_ONLY === '1';
 const waitSelector = String(process.env.AUDIT_WAIT_SELECTOR || '').trim();
 const scrollSelector = String(process.env.AUDIT_SCROLL_SELECTOR || '').trim();
 const auditStickyScroll = process.env.AUDIT_STICKY_SCROLL === '1';
+const captureHorizontalScroll = process.env.AUDIT_CAPTURE_HORIZONTAL_SCROLL === '1';
 const landingScope = String(process.env.AUDIT_LANDING_SCOPE || '').trim().toLowerCase();
 const positiveInteger = (value, fallback) => {
     const parsed = Number.parseInt(String(value || ''), 10);
@@ -35,6 +36,7 @@ const allViewports = [
     { name: 'tablet-landscape', width: 1024, height: 768, deviceScaleFactor: 1 },
     { name: 'laptop', width: 1366, height: 768, deviceScaleFactor: 1 },
     { name: 'desktop', width: 1440, height: 900, deviceScaleFactor: 1 },
+    { name: 'wide-desktop', width: 1920, height: 1080, deviceScaleFactor: 1 },
     { name: 'high-end-desktop', width: 2560, height: 1440, deviceScaleFactor: 1 },
 ];
 const requestedViewports = new Set((process.env.AUDIT_VIEWPORTS || '')
@@ -332,6 +334,10 @@ const auditExpression = `(async () => {
                 return { cell, style, rect };
             })
             .filter(({ style, rect }) => style.position === 'sticky' && isVisible(null, style, rect));
+        const horizontalStickyLayerCells = visibleStickyCells.filter(({ style }) => (
+            Number.isFinite(Number.parseFloat(style.left))
+            || Number.isFinite(Number.parseFloat(style.right))
+        ));
         const transparentStickyCells = visibleStickyCells
             .filter(({ style }) => isTransparent(style.backgroundColor) && style.backgroundImage === 'none')
             .slice(0, 12)
@@ -363,7 +369,20 @@ const auditExpression = `(async () => {
                 declaredCells: 0,
                 alignedCells: 0,
                 frozen: true,
+                noOverlap: true,
+                occlusionTested: 0,
+                unobscured: true,
+                layerContractRequired: table.classList.contains('abah-table-managed'),
+                layerManagedCells: horizontalStickyLayerCells
+                    .filter(({ cell }) => cell.classList.contains('abah-table-sticky-x'))
+                    .length,
+                missingLayerCells: horizontalStickyLayerCells
+                    .filter(({ cell }) => !cell.classList.contains('abah-table-sticky-x'))
+                    .slice(0, 16)
+                    .map(({ cell }) => selectorFor(cell)),
                 diagnostics: [],
+                overlapDiagnostics: [],
+                occlusionDiagnostics: [],
             },
             pageHeader: {
                 eligible: false,
@@ -519,6 +538,65 @@ const auditExpression = `(async () => {
             result.horizontalColumns.frozen = before.length > 0
                 && horizontalDiagnostics.every(({ stable }) => stable);
             result.horizontalColumns.diagnostics = horizontalDiagnostics.slice(0, 16);
+
+            const horizontalOverlapDiagnostics = Array.from(table.rows)
+                .flatMap((row) => {
+                    const stickyRects = Array.from(row.cells)
+                        .map((cell) => ({ cell, style: getComputedStyle(cell), rect: cell.getBoundingClientRect() }))
+                        .filter(({ style, rect }) => style.position === 'sticky'
+                            && Number.isFinite(Number.parseFloat(style.left))
+                            && rect.width > 1
+                            && rect.right > (horizontalWrapperRect?.left || 0)
+                            && rect.left < (horizontalWrapperRect?.right || window.innerWidth))
+                        .sort((first, second) => first.rect.left - second.rect.left);
+
+                    return stickyRects.slice(1).map((current, stickyIndex) => {
+                        const previous = stickyRects[stickyIndex];
+                        const overlap = previous.rect.right - current.rect.left;
+                        return overlap > 2 ? {
+                            previous: selectorFor(previous.cell),
+                            current: selectorFor(current.cell),
+                            previousRight: rounded(previous.rect.right),
+                            currentLeft: rounded(current.rect.left),
+                            overlap: rounded(overlap),
+                        } : null;
+                    }).filter(Boolean);
+                });
+            result.horizontalColumns.noOverlap = horizontalOverlapDiagnostics.length === 0;
+            result.horizontalColumns.overlapDiagnostics = horizontalOverlapDiagnostics.slice(0, 16);
+
+            const horizontalOcclusionDiagnostics = before.map(({ cell }) => {
+                const rect = cell.getBoundingClientRect();
+                const visibleRect = visibleRectWithinAncestors(cell, rect);
+                const sampleX = Math.min(visibleRect.right - 6, visibleRect.left + (visibleRect.width * 0.75));
+                const sampleY = visibleRect.top + (visibleRect.height * 0.5);
+                if (visibleRect.width < 12
+                    || visibleRect.height < 12
+                    || sampleX < 0
+                    || sampleX >= window.innerWidth
+                    || sampleY < 8
+                    || sampleY >= window.innerHeight - 8) {
+                    return null;
+                }
+
+                const topElement = document.elementFromPoint(sampleX, sampleY);
+                if (topElement?.closest('#global-floating-scrollbar')) {
+                    return null;
+                }
+                const unobscured = Boolean(topElement && (topElement === cell || cell.contains(topElement)));
+                return {
+                    selector: selectorFor(cell),
+                    topElement: topElement ? selectorFor(topElement) : null,
+                    sampleX: rounded(sampleX),
+                    sampleY: rounded(sampleY),
+                    unobscured,
+                };
+            }).filter(Boolean);
+            result.horizontalColumns.occlusionTested = horizontalOcclusionDiagnostics.length;
+            result.horizontalColumns.unobscured = horizontalOcclusionDiagnostics.every(({ unobscured }) => unobscured);
+            result.horizontalColumns.occlusionDiagnostics = horizontalOcclusionDiagnostics
+                .filter(({ unobscured }) => !unobscured)
+                .slice(0, 16);
             horizontalWrapper.scrollLeft = initialScrollLeft;
             await nextFrame();
         }
@@ -1116,6 +1194,19 @@ try {
             pageResult.runtimeErrors = [...runtimeErrors];
             pageResult.landingScopeState = landingScopeState;
 
+            if (captureHorizontalScroll) {
+                pageResult.capturedHorizontalScroll = await evaluate(client, `(() => {
+                    const wrapper = document.querySelector('.hourly-table-shell .abah-table-scrollable-x')
+                        || document.querySelector('.hourly-table-shell')
+                        || document.querySelector('.abah-table-scrollable-x, .abah-table-scroll, .table-responsive');
+                    if (!wrapper) return null;
+                    const range = Math.max(0, wrapper.scrollWidth - wrapper.clientWidth);
+                    wrapper.scrollLeft = Math.min(range, Math.max(160, Math.round(wrapper.clientWidth * 0.25)));
+                    return wrapper.scrollLeft;
+                })()`);
+                await sleep(250);
+            }
+
             const screenshot = await client.send('Page.captureScreenshot', {
                 format: 'png',
                 fromSurface: true,
@@ -1130,7 +1221,12 @@ try {
 
     const stickyAuditFailed = (table) => (
         (table.verticalHeader.tested && (!table.verticalHeader.frozen || !table.verticalHeader.noOverlap))
-        || (table.horizontalColumns.tested && !table.horizontalColumns.frozen)
+        || (table.horizontalColumns.tested && (
+            !table.horizontalColumns.frozen
+            || !table.horizontalColumns.noOverlap
+            || (table.horizontalColumns.occlusionTested > 0 && !table.horizontalColumns.unobscured)
+            || (table.horizontalColumns.layerContractRequired && table.horizontalColumns.missingLayerCells.length > 0)
+        ))
         || (table.pageHeader.eligible && (!table.pageHeader.tested || !table.pageHeader.frozen))
         || table.transparentStickyCells.length > 0
     );

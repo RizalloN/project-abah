@@ -8,7 +8,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | command | 2 |
 | file | 22 |
-| method | 404 |
+| method | 406 |
 | route | 9 |
 | class | 16 |
 | table | 2 |
@@ -103,7 +103,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | dashboard-harian -> core (calls) | 79 |
-| dashboard-harian -> core (instantiates) | 66 |
+| dashboard-harian -> core (instantiates) | 68 |
 | dashboard-harian -> access-control (protected_by) | 45 |
 | dashboard-harian -> dashboard-pinjaman (writes_table) | 28 |
 | dashboard-harian -> core (accepts) | 23 |
@@ -115,10 +115,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | core -> dashboard-harian (calls) | 10 |
 | dashboard-simpanan -> dashboard-harian (writes_table) | 9 |
 | dashboard-harian -> import (reads_table) | 8 |
+| dashboard-harian -> tests (calls) | 8 |
 | database -> dashboard-harian (checks_table) | 7 |
 | jobs-snapshots -> dashboard-harian (calls) | 7 |
 | dashboard-harian -> import (checks_table) | 7 |
-| dashboard-harian -> tests (calls) | 7 |
 | dashboard-harian -> tests (extends) | 7 |
 | dashboard-harian -> platform (calls) | 6 |
 | dashboard-harian -> core (defines_table) | 6 |
@@ -127,8 +127,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | database -> dashboard-harian (alters_table) | 5 |
 | dashboard-harian -> dashboard-pinjaman (reads_table) | 5 |
 | dashboard-harian -> import (contains) | 5 |
+| tests -> dashboard-harian (contains) | 5 |
 | dashboard-pinjaman -> dashboard-harian (reads_table) | 4 |
 | dashboard-harian -> access-control (calls) | 4 |
 | import -> dashboard-harian (reads_table) | 4 |
 | jobs-snapshots -> dashboard-harian (writes_table) | 4 |
-| dashboard-harian -> dashboard-simpanan (calls) | 4 |

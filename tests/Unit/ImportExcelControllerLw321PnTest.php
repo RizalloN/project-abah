@@ -15,6 +15,7 @@ class ImportExcelControllerLw321PnTest extends TestCase
 {
     protected function tearDown(): void
     {
+        Schema::dropIfExists('tmp_bulk_csv_stage_1_footer');
         Schema::dropIfExists('lw321pn');
         Schema::dropIfExists('daily_loan_dinamis');
 
@@ -192,5 +193,98 @@ class ImportExcelControllerLw321PnTest extends TestCase
         $this->assertContains('plafon_dalam_idr', $rulesByHeader['plafon_dalam_idr'] ?? $rulesByHeader['ORGAMT_Base'] ?? []);
         $this->assertContains('kolektibilitas_lancar', $rulesByHeader['kolektibilitas_lancar'] ?? $rulesByHeader['KOLEK_LANCAR'] ?? []);
         $this->assertContains('pn_referral', $rulesByHeader['pn_referral'] ?? $rulesByHeader['PN_REFERAL'] ?? []);
+    }
+
+    public function test_lw321pn_ignores_only_empty_or_separator_only_staging_rows(): void
+    {
+        Schema::create('tmp_bulk_csv_stage_1_footer', function (Blueprint $table): void {
+            $table->id();
+            $table->text('c0')->nullable();
+            $table->text('c1')->nullable();
+            $table->text('c2')->nullable();
+        });
+
+        DB::table('tmp_bulk_csv_stage_1_footer')->insert([
+            ['c0' => '---', 'c1' => '---', 'c2' => '---'],
+            ['c0' => '', 'c1' => ' ', 'c2' => null],
+            ['c0' => "\r", 'c1' => null, 'c2' => null],
+            ['c0' => '25/09/2026', 'c1' => '055201007777102', 'c2' => '4602164.00'],
+            ['c0' => '25/09/2026', 'c1' => '', 'c2' => '4602164.00'],
+        ]);
+
+        $method = new ReflectionMethod(ImportExcelController::class, 'deleteIgnorableLw321PnStagingRows');
+        $method->setAccessible(true);
+        $deleted = $method->invoke(new ImportExcelController(), 'tmp_bulk_csv_stage_1_footer', 3);
+
+        $this->assertSame(3, $deleted);
+        $this->assertSame(2, DB::table('tmp_bulk_csv_stage_1_footer')->count());
+        $this->assertTrue(DB::table('tmp_bulk_csv_stage_1_footer')->where('c1', '055201007777102')->exists());
+        $this->assertTrue(DB::table('tmp_bulk_csv_stage_1_footer')->where('c1', '')->exists());
+    }
+
+    public function test_lw321pn_actual_source_headers_map_exactly_one_to_one(): void
+    {
+        $controller = new class extends ImportExcelController {
+            protected function schemaColumnsForBulkImport(string $tableName): array
+            {
+                return array_merge(
+                    Lw321PnImportStrategy::requiredColumns(),
+                    ['created_at', 'updated_at']
+                );
+            }
+        };
+        $contextMethod = new ReflectionMethod(ImportExcelController::class, 'buildImportContext');
+        $contextMethod->setAccessible(true);
+        $context = $contextMethod->invoke($controller, 'lw321pn', $this->actualSourceHeaders());
+
+        $guard = new ReflectionMethod(ImportExcelController::class, 'assertLw321PnFastPathMappingIsOneToOne');
+        $guard->setAccessible(true);
+        $guard->invoke($controller, $context);
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_lw321pn_rejects_duplicate_source_mapping_for_the_same_target_column(): void
+    {
+        $controller = new class extends ImportExcelController {
+            protected function schemaColumnsForBulkImport(string $tableName): array
+            {
+                return array_merge(
+                    Lw321PnImportStrategy::requiredColumns(),
+                    ['created_at', 'updated_at']
+                );
+            }
+        };
+        $headers = [...$this->actualSourceHeaders(), 'CBAL_Base'];
+        $contextMethod = new ReflectionMethod(ImportExcelController::class, 'buildImportContext');
+        $contextMethod->setAccessible(true);
+        $context = $contextMethod->invoke($controller, 'lw321pn', $headers);
+
+        $guard = new ReflectionMethod(ImportExcelController::class, 'assertLw321PnFastPathMappingIsOneToOne');
+        $guard->setAccessible(true);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Kolom target ganda');
+
+        $guard->invoke($controller, $context);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function actualSourceHeaders(): array
+    {
+        return [
+            'PERIODE', 'KODE_KANWIL', 'KANWIL', 'KODE_KANCA', 'KANCA', 'KODE_UKER', 'UKER',
+            'CURRENCY', 'LN_TYPE', 'NO_REKENING', 'NAMA_DEBITUR', 'PLAFON', 'NEXT_PMT_DATE',
+            'NEXT_INT_PMT_DATE', 'RATE', 'TGL_MENUNGGAK', 'TGL_REALISASI', 'TGL_JATUH_TEMPO',
+            'JANGKA_WAKTU', 'FLAG_RESTRUK', 'CIFNO', 'KOLEK_LANCAR', 'KOLEK_DPK',
+            'KOLEK_KURANG_LANCAR', 'KOLEK_DIRAGUKAN', 'KOLEK_MACET', 'TUNGGAKAN_POKOK',
+            'TUNGGAKAN_BUNGA', 'TUNGGAKAN_PINALTI', 'FREQ_PAYMENT', 'FREQ_INT_PAYMENT', 'CODE',
+            'DESCRIPTION', 'SEGMEN_LV1', 'DESC_SEGMEN_LV1', 'KOL_ADK', 'PN_PENGELOLA_SINGLEPN',
+            'PN_PENGELOLA_1', 'PN_PEMRAKARSA', 'PN_REFERAL', 'PN_RESTRUK', 'PN_PENGELOLA_2',
+            'PN_Pemutus', 'PN_CRM', 'PN_RM_Referral_Naik_Segmentasi', 'PN_RM_CRR', 'ORGAMT_Base',
+            'CBAL_Base',
+        ];
     }
 }

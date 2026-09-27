@@ -369,21 +369,31 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
         ]));
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('pasangan segmen/produk');
+        $this->expectExceptionMessage('DESCRIPTION nonkosong');
 
         app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
     }
 
-    public function test_sync_rejects_a_blank_description_instead_of_silently_dropping_its_classification(): void
+    public function test_sync_materializes_a_source_blank_description_without_guessing_classification(): void
     {
         DB::table('lw321pn')->insert(array_merge($this->sourceRow(), [
             'description' => '',
         ]));
 
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('pasangan segmen/produk');
+        $result = app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
+        $mapped = DB::table('daily_loan_dinamis')->where('periode', '2026-09-08')->first();
+        $validation = $result['validation']['periods']['2026-09-08'];
 
-        app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
+        $this->assertSame(1, $result['inserted_rows']);
+        $this->assertNull($mapped->description);
+        $this->assertNull($mapped->segmen_dashboard);
+        $this->assertNull($mapped->produk_dashboard);
+        $this->assertSame(1, $validation['source']['blank_description_rows']);
+        $this->assertSame(1, $validation['source']['unresolved_classification_rows']);
+        $this->assertSame(1, $validation['target']['unclassified_rows']);
+        $this->assertFalse($validation['parity']['classification_complete']);
+        $this->assertTrue($validation['parity']['classification_matches_source']);
+        $this->assertSame(1, $validation['parity']['expected_unclassified_rows']);
     }
 
     public function test_sync_accepts_zero_balance_rows_when_dataset_has_nonzero_balance_and_reports_parity(): void
@@ -448,7 +458,7 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
         $this->assertSame('00123456 - REFERRAL UJI', $mapped->pn_referral1);
     }
 
-    public function test_prior_daily_fallback_is_rejected_when_cif_differs(): void
+    public function test_prior_daily_fallback_with_different_cif_materializes_without_borrowing_classification(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             'uniqueid_namareport' => 'DAILY:PRIOR',
@@ -465,10 +475,14 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
             'description' => null,
         ]));
 
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('pasangan segmen/produk');
+        $result = app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
+        $mapped = DB::table('daily_loan_dinamis')->where('periode', '2026-09-08')->first();
 
-        app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
+        $this->assertSame(1, $result['inserted_rows']);
+        $this->assertNull($mapped->description);
+        $this->assertNull($mapped->segmen_dashboard);
+        $this->assertNull($mapped->produk_dashboard);
+        $this->assertSame(1, $result['validation']['periods']['2026-09-08']['target']['unclassified_rows']);
     }
 
     public function test_current_valid_description_wins_over_prior_daily_classification(): void
@@ -534,6 +548,26 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
         $this->assertSame(0, $metrics['unmapped_description_rows']);
         $this->assertSame('80.00', $metrics['balance_total']);
         $this->assertSame(0, DB::table('daily_loan_dinamis')->count());
+    }
+
+    public function test_source_and_raw_validation_accept_a_source_blank_description(): void
+    {
+        DB::table('lw321pn')->insert(array_merge($this->sourceRow(), [
+            'description' => null,
+        ]));
+
+        $metrics = app(Lw321DailyLoanSyncService::class)->validateRawSourcePeriod('08/09/2026');
+
+        $this->assertSame(1, $metrics['row_count']);
+        $this->assertSame(1, $metrics['blank_description_rows']);
+        $this->assertSame(1, $metrics['unresolved_classification_rows']);
+        $this->assertSame(0, DB::table('daily_loan_dinamis')->count());
+
+        $materializationMetrics = app(Lw321DailyLoanSyncService::class)->validateSourcePeriod('08/09/2026');
+
+        $this->assertSame(1, $materializationMetrics['row_count']);
+        $this->assertSame(1, $materializationMetrics['blank_description_rows']);
+        $this->assertSame(1, $materializationMetrics['unresolved_classification_rows']);
     }
 
     private function createSourceTable(): void

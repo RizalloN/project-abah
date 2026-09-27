@@ -855,7 +855,7 @@ class KinerjaRmMikroReportController extends Controller
 
     private function fetchAvailablePeriods(bool $includeMantriSourcePeriods = false): Collection
     {
-        $cacheKey = 'kinerja_rm_mikro_periods_v3:'.$this->reportCacheVersion().':'.($includeMantriSourcePeriods ? 'mantri' : 'rm');
+        $cacheKey = 'kinerja_rm_mikro_periods_v4_daily:'.$this->reportCacheVersion().':'.($includeMantriSourcePeriods ? 'mantri' : 'rm');
 
         return Cache::remember($cacheKey, 600, function () use ($includeMantriSourcePeriods) {
             $periods = $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode', function ($query): void {
@@ -875,7 +875,7 @@ class KinerjaRmMikroReportController extends Controller
                     ->values();
             }
 
-            return $this->latestPeriodPerMonth($periods)
+            return $periods
                 ->sortDesc()
                 ->values();
         });
@@ -929,8 +929,10 @@ class KinerjaRmMikroReportController extends Controller
 
         if ($requestedDate !== null) {
             $requestedMonth = Carbon::parse($requestedDate)->format('Y-m');
-            $match = $periods->first(fn ($period) => str_starts_with((string) $period, $requestedMonth))
-                ?? $periods->first(fn ($period) => $period <= $requestedDate);
+            $match = $periods->first(fn ($period) => (string) $period === $requestedDate)
+                ?? $periods->first(fn ($period) => str_starts_with((string) $period, $requestedMonth) && $period <= $requestedDate)
+                ?? $periods->first(fn ($period) => $period <= $requestedDate)
+                ?? $periods->first(fn ($period) => str_starts_with((string) $period, $requestedMonth));
             if ($match !== null) {
                 return $match;
             }
@@ -1034,7 +1036,7 @@ class KinerjaRmMikroReportController extends Controller
             ? ':'.$this->dailyLoanPeriodCacheFingerprint($period)
             : '';
 
-        return Cache::remember('kinerja_rm_mikro_mantri_v15_nett_account_dedup:'.$this->reportCacheVersion().':'.$period.':'.$category.':'.$extremeLowView.$cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
+        return Cache::remember('kinerja_rm_mikro_mantri_v16_active_brihc_roster:'.$this->reportCacheVersion().':'.$period.':'.$category.':'.$extremeLowView.$cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
             return match ($category) {
                 'kuadran' => $this->mantriKuadranPayload($period),
                 'produktivitas_mantri' => $this->mantriProductivityPayload($period),
@@ -1156,13 +1158,15 @@ class KinerjaRmMikroReportController extends Controller
                     ];
                 }
 
+                if ($roster['available']) {
+                    return null;
+                }
+
                 return [
-                    'bc' => $roster['available'] ? '-' : (string) ($row['branch_code'] ?? '-'),
-                    'unit' => $roster['available'] ? 'RM LAIN' : (string) ($row['unit'] ?? '-'),
+                    'bc' => (string) ($row['branch_code'] ?? '-'),
+                    'unit' => (string) ($row['unit'] ?? '-'),
                     'cabang' => (string) ($row['cabang'] ?? '-'),
-                    'pn_pengelola' => $roster['available']
-                        ? 'RM LAIN'
-                        : (string) ($row['owner'] ?? 'RM LAIN'),
+                    'pn_pengelola' => (string) ($row['owner'] ?? 'RM LAIN'),
                     'realisasi_deb' => (int) $row['realisasi_deb'],
                     'realisasi_os' => (float) $row['realisasi_os'],
                 ];

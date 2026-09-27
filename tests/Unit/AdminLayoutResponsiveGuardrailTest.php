@@ -17,6 +17,17 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
         $this->assertStringContainsString('ensureWrapper', $layout);
         $this->assertStringContainsString('syncReadableCellTitles', $layout);
         $this->assertStringContainsString('syncStickyHeaderSurfaces', $layout);
+        $this->assertStringContainsString('syncHorizontalStickyLayers', $layout);
+        $this->assertStringContainsString("cell.classList.toggle('abah-table-sticky-x', isHorizontalSticky);", $layout);
+        $this->assertStringContainsString("cell.style.setProperty('z-index', String(minimumLayer), 'important');", $layout);
+        $this->assertStringContainsString("cell.dataset.abahManagedStickyLayer = '1';", $layout);
+        $this->assertStringContainsString("cell.style.setProperty('z-index', originalValue, originalPriority);", $layout);
+        $this->assertStringContainsString('.abah-table-managed thead :is(th, td).abah-table-sticky-x', $layout);
+        $this->assertStringContainsString('.abah-floating-table-header__table thead :is(th, td).abah-floating-sticky-x', $layout);
+        $this->assertMatchesRegularExpression(
+            '/\.abah-table-managed thead :is\(th, td\)\.abah-table-sticky-x\s*\{[^}]*z-index:\s*60\s*!important;[^}]*background-clip:\s*border-box;[^}]*isolation:\s*isolate;/s',
+            $layout
+        );
         $this->assertStringContainsString("target.closest('table')", $layout);
         $this->assertStringContainsString('--abah-table-header-height', $layout);
         $this->assertStringContainsString('.abah-sticky-surface', $layout);

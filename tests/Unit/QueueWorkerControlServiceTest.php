@@ -45,6 +45,60 @@ class QueueWorkerControlServiceTest extends TestCase
         );
     }
 
+    public function test_active_monitor_is_not_reported_as_stopped_when_queue_is_idle(): void
+    {
+        $service = new QueueWorkerControlService();
+        $service->touchMonitorHeartbeat();
+
+        $status = $service->status();
+
+        $this->assertSame('active', $status['state']);
+        $this->assertSame('Worker Monitor Berjalan', $status['state_label']);
+        $this->assertSame(0, $status['worker_count']);
+        $this->assertStringContainsString('Monitor berjalan dan siap', $status['message']);
+        $this->assertStringContainsString('antrean sedang kosong', $status['message']);
+    }
+
+    public function test_php_cli_resolution_rejects_apache_binary(): void
+    {
+        $service = new QueueWorkerControlService();
+        $method = new \ReflectionMethod($service, 'firstUsablePhpCliBinary');
+
+        $resolved = $method->invoke($service, [
+            'C:\\xampp\\apache\\bin\\httpd.exe',
+            PHP_BINARY,
+        ]);
+
+        $this->assertSame(PHP_BINARY, $resolved);
+        $this->assertContains(strtolower(basename(str_replace('\\', '/', $resolved))), ['php.exe', 'php']);
+    }
+
+    public function test_enable_only_succeeds_after_monitor_startup_is_confirmed(): void
+    {
+        $service = new class extends QueueWorkerControlService
+        {
+            private int $activeChecks = 0;
+
+            public function isMonitorActive(): bool
+            {
+                $this->activeChecks++;
+
+                return $this->activeChecks >= 2;
+            }
+
+            protected function startDetachedMonitor(): bool
+            {
+                return true;
+            }
+        };
+
+        $status = $service->enable();
+
+        $this->assertTrue($status['started']);
+        $this->assertFalse($status['already_active']);
+        $this->assertSame('active', $status['state']);
+    }
+
     public function test_controller_start_and_stop_return_worker_status_payload(): void
     {
         $controller = new ImportJobManagementController(
@@ -108,6 +162,7 @@ class QueueWorkerControlServiceTest extends TestCase
         $this->assertStringContainsString("Artisan::call('queue:restart')", $serviceSource);
         $this->assertStringNotContainsString('taskkill /F', $serviceSource);
         $this->assertStringNotContainsString('kill -9', $serviceSource);
+        $this->assertStringNotContainsString('-PassThru; $p.Id', $serviceSource);
         $this->assertStringContainsString('$workerControl->markEnabled();', $commandSource);
         $this->assertStringContainsString('QueueWorkerControlService::class)->isEnabled()', $providerSource);
         $this->assertStringContainsString('data-worker-start-url', $viewSource);

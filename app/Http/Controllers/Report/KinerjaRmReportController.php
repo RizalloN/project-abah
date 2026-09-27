@@ -1504,7 +1504,7 @@ class KinerjaRmReportController extends Controller
 
     private function fetchAvailablePeriods(): Collection
     {
-        $cacheKey = 'kinerja_rm_periods_v4:'.$this->reportCacheVersion();
+        $cacheKey = 'kinerja_rm_periods_v5_daily:'.$this->reportCacheVersion();
 
         return Cache::remember($cacheKey, 600, function () {
             $periods = $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode')
@@ -1512,7 +1512,7 @@ class KinerjaRmReportController extends Controller
                 ->unique()
                 ->values();
 
-            return $this->latestPeriodPerMonth($periods)
+            return $periods
                 ->sortDesc()
                 ->values();
         });

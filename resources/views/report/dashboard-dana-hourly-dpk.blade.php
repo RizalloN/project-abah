@@ -391,6 +391,7 @@
 
     .hourly-table th,
     .hourly-table td {
+        box-sizing: border-box;
         border-right: 1px solid #dce7f3;
         border-bottom: 1px solid #dce7f3;
         padding: 0.72rem 0.7rem;
@@ -403,9 +404,10 @@
         min-width: 112px;
     }
 
+    .content-wrapper .hourly-table thead th,
     .hourly-table thead th {
         position: sticky;
-        z-index: 3;
+        z-index: 30;
         top: 0;
         background: #073b78;
         color: #fff;
@@ -415,9 +417,11 @@
         text-transform: uppercase;
     }
 
+    .content-wrapper .hourly-table thead tr:nth-child(2) th,
     .hourly-table thead tr:nth-child(2) th {
         top: var(--abah-table-head-top, 42px);
         background: #0b519d;
+        z-index: 30;
     }
 
     .hourly-table tbody td {
@@ -436,10 +440,13 @@
         background: #eaf4ff !important;
     }
 
+    .content-wrapper .hourly-table .hourly-sticky,
+    .content-wrapper .hourly-table tbody td.hourly-sticky,
+    .hourly-table tbody td.hourly-sticky,
     .hourly-sticky {
         position: sticky;
-        z-index: 4;
-        left: 0;
+        z-index: 15 !important;
+        left: var(--hourly-sticky-left, 0px);
         background: #ffffff !important;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -452,7 +459,7 @@
     }
 
     .hourly-sticky-branch {
-        left: 58px;
+        --hourly-sticky-left: 58px;
         min-width: 160px;
         width: 160px;
         max-width: 160px;
@@ -460,7 +467,7 @@
     }
 
     .hourly-sticky-code {
-        left: 218px;
+        --hourly-sticky-left: 218px;
         min-width: 110px;
         width: 110px;
         max-width: 110px;
@@ -468,17 +475,17 @@
     }
 
     .hourly-sticky-unit {
-        left: 328px;
+        --hourly-sticky-left: 328px;
         min-width: 300px;
         width: 300px;
         max-width: 300px;
         text-align: left !important;
         border-right: 2px solid #b8cce4 !important;
-        box-shadow: 12px 0 18px -18px rgba(15, 23, 42, 0.75);
+        box-shadow: 8px 0 16px -6px rgba(15, 23, 42, 0.22);
     }
 
     .hourly-sticky-area-code {
-        left: 58px;
+        --hourly-sticky-left: 58px;
         min-width: 112px;
         width: 112px;
         max-width: 112px;
@@ -486,13 +493,21 @@
     }
 
     .hourly-sticky-area-branch {
-        left: 170px;
+        --hourly-sticky-left: 170px;
         min-width: 210px;
         width: 210px;
         max-width: 210px;
         text-align: left !important;
         border-right: 2px solid #b8cce4 !important;
-        box-shadow: 12px 0 18px -18px rgba(15, 23, 42, 0.75);
+        box-shadow: 8px 0 16px -6px rgba(15, 23, 42, 0.22);
+    }
+
+    .content-wrapper .hourly-table thead th.hourly-sticky-area-branch,
+    .content-wrapper .hourly-table thead th.hourly-sticky-unit,
+    .hourly-table thead th.hourly-sticky-area-branch,
+    .hourly-table thead th.hourly-sticky-unit {
+        border-right: 2px solid #002d62 !important;
+        box-shadow: 8px 0 16px -6px rgba(15, 23, 42, 0.4);
     }
 
     .hourly-table tbody tr:nth-child(even) td.hourly-sticky {
@@ -503,15 +518,32 @@
         background: #eaf4ff !important;
     }
 
+    .content-wrapper .hourly-table thead th.hourly-sticky,
+    .content-wrapper .hourly-table thead .hourly-sticky,
+    .hourly-table thead th.hourly-sticky,
     .hourly-table thead .hourly-sticky {
-        z-index: 5;
+        position: sticky;
+        top: 0;
+        z-index: 60 !important;
         background: #073b78 !important;
+        background-clip: border-box;
+        isolation: isolate;
     }
 
     .hourly-total td {
         background: #ffeb3b !important;
         color: #10213a !important;
         font-weight: 950 !important;
+    }
+
+    .hourly-table tbody tr.hourly-total td.hourly-sticky {
+        background: #ffeb3b !important;
+        color: #10213a !important;
+    }
+
+    .hourly-table tbody tr.hourly-total td.hourly-sticky-area-branch,
+    .hourly-table tbody tr.hourly-total td.hourly-sticky-unit {
+        border-right: 2px solid #d97706 !important;
     }
 
     .hourly-subtotal-retail td {
@@ -522,12 +554,22 @@
         font-weight: 950 !important;
     }
 
+    .hourly-table tbody tr.hourly-subtotal-retail td.hourly-sticky {
+        background: #dbeafe !important;
+        color: #052f63 !important;
+    }
+
     .hourly-subtotal-micro td {
         background: #d1fae5 !important;
         color: #065f46 !important;
         border-top: 2px solid #059669 !important;
         border-bottom: 2px solid #059669 !important;
         font-weight: 950 !important;
+    }
+
+    .hourly-table tbody tr.hourly-subtotal-micro td.hourly-sticky {
+        background: #d1fae5 !important;
+        color: #065f46 !important;
     }
 
     .hourly-delta-positive {
@@ -868,6 +910,53 @@
 @section('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const stickyTables = Array.from(document.querySelectorAll('.hourly-table'));
+    const syncStickyColumns = function (table) {
+        const firstHeaderRow = table.tHead && table.tHead.rows.length ? table.tHead.rows[0] : null;
+        if (!firstHeaderRow) return;
+
+        const stickyHeaders = Array.from(firstHeaderRow.cells).filter(function (cell) {
+            return cell.classList.contains('hourly-sticky');
+        });
+        const measurements = [];
+        let offset = 0;
+
+        stickyHeaders.forEach(function (cell) {
+            const columnClass = Array.from(cell.classList).find(function (className) {
+                return className.indexOf('hourly-sticky-') === 0;
+            });
+            if (!columnClass) return;
+
+            measurements.push({ columnClass: columnClass, offset: offset });
+            offset += cell.getBoundingClientRect().width;
+        });
+
+        measurements.forEach(function (measurement) {
+            table.querySelectorAll('.' + measurement.columnClass).forEach(function (cell) {
+                const nextOffset = measurement.offset + 'px';
+                if (cell.style.getPropertyValue('--hourly-sticky-left') !== nextOffset) {
+                    cell.style.setProperty('--hourly-sticky-left', nextOffset);
+                }
+            });
+        });
+    };
+    const syncAllStickyColumns = function () {
+        stickyTables.forEach(syncStickyColumns);
+    };
+
+    syncAllStickyColumns();
+    if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(syncAllStickyColumns);
+    }
+    if ('ResizeObserver' in window) {
+        const stickyResizeObserver = new ResizeObserver(syncAllStickyColumns);
+        stickyTables.forEach(function (table) {
+            stickyResizeObserver.observe(table);
+        });
+    } else {
+        window.addEventListener('resize', syncAllStickyColumns, { passive: true });
+    }
+
     const exportLink = document.querySelector('[data-hourly-export-pdf]');
     const updateExportLink = function () {
         if (!exportLink) return;

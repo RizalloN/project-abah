@@ -154,7 +154,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         Cache::put('report_cache_version:pinjaman', 2);
 
         $periodsRefreshed = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', []);
-        $this->assertSame(['2026-04-18'], $periodsRefreshed->all());
+        $this->assertSame(['2026-04-18', '2026-04-17'], $periodsRefreshed->all());
     }
 
     public function test_kinerja_rm_period_options_include_daily_loan_source_periods(): void
@@ -192,7 +192,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
 
         $periods = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', []);
 
-        $this->assertSame(['2026-04-20', '2026-03-31', '2025-12-31'], $periods->all());
+        $this->assertSame(['2026-04-20', '2026-04-10', '2026-03-31', '2025-12-31'], $periods->all());
     }
 
     public function test_landing_small_quadrant_summary_reuses_kpi_rows_and_keeps_pn_fallback(): void
@@ -763,7 +763,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertFalse($rows->contains(fn (array $row): bool => str_contains($row['rm'], 'ARI PRASETIAWAN')));
     }
 
-    public function test_kinerja_rm_requested_mid_month_uses_latest_period_in_that_month(): void
+    public function test_kinerja_rm_requested_mid_month_uses_exact_period_when_available(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             ['periode' => '2026-05-15'],
@@ -774,10 +774,14 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
         $periods = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', []);
 
-        $this->assertSame(['2026-05-17', '2026-04-30'], $periods->all());
-        $this->assertSame('2026-05-17', $this->invokePrivateMethod($controller, 'resolveSelectedPeriod', [
+        $this->assertSame(['2026-05-17', '2026-05-15', '2026-04-30'], $periods->all());
+        $this->assertSame('2026-05-15', $this->invokePrivateMethod($controller, 'resolveSelectedPeriod', [
             $periods,
             '2026-05-15',
+        ]));
+        $this->assertSame('2026-05-15', $this->invokePrivateMethod($controller, 'resolveSelectedPeriod', [
+            $periods,
+            '2026-05-16',
         ]));
     }
 

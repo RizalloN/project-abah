@@ -272,7 +272,12 @@ document.addEventListener('DOMContentLoaded', function () {
         const active = payload.state === 'active';
         workerStatusBadge.className = `badge badge-${tone} mr-2`;
         workerStatusBadge.textContent = payload.state_label || 'Status tidak diketahui';
-        workerStatusLabel.textContent = `${Number(payload.worker_count || 0).toLocaleString('id-ID')} worker terdeteksi`;
+        const workerCount = Number(payload.worker_count || 0);
+        workerStatusLabel.textContent = active
+            ? (workerCount > 0
+                ? `${workerCount.toLocaleString('id-ID')} worker sedang berjalan`
+                : 'Monitor berjalan • antrean sedang idle')
+            : `${workerCount.toLocaleString('id-ID')} worker terdeteksi`;
         workerStatusMessage.textContent = payload.message || '-';
         workerCommand.textContent = payload.command || '';
         workerHeroBadge.innerHTML = `<i class="fas fa-circle text-${tone} mr-2 status-pulse-dot"></i>${escapeHtml(payload.state_label || 'Status Worker')}`;

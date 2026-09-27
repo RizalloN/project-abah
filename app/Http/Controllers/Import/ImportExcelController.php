@@ -4706,6 +4706,26 @@ class ImportExcelController extends Controller
         return (int) $affected;
     }
 
+    private function deleteIgnorableLw321PnStagingRows(string $stagingTable, int $columnCount): int
+    {
+        if (!preg_match('/^tmp_bulk_csv_stage_\d+_[a-z0-9]+$/', $stagingTable)) {
+            throw new \RuntimeException('Nama staging table LW321PN tidak valid.');
+        }
+
+        $separatorOnlyClauses = [];
+        foreach (range(0, max(0, $columnCount - 1)) as $index) {
+            $expression = "TRIM(REPLACE(REPLACE(REPLACE(COALESCE(`c{$index}`, ''), CHAR(13), ''), CHAR(10), ''), CHAR(9), ''))";
+            foreach (['-', '=', '_', '*', '~'] as $separator) {
+                $expression = "REPLACE({$expression}, '{$separator}', '')";
+            }
+            $separatorOnlyClauses[] = "{$expression} = ''";
+        }
+
+        return DB::affectingStatement(
+            "DELETE FROM `{$stagingTable}` WHERE " . implode(' AND ', $separatorOnlyClauses)
+        );
+    }
+
     private function processCsvFromStagingTableStream(
         callable $send,
         string $csvPath,
@@ -8590,6 +8610,207 @@ class ImportExcelController extends Controller
         }
     }
 
+    private function assertLw321PnFastPathMappingIsOneToOne(array $context): void
+    {
+        $requiredColumns = array_values(array_filter(
+            Lw321PnImportStrategy::requiredColumns(),
+            static fn (string $column): bool => $column !== 'uniqueid_namareport'
+        ));
+        $requiredLookup = array_fill_keys(array_map('strtolower', $requiredColumns), true);
+        $sourcesByColumn = [];
+        $invalidSourceMappings = [];
+
+        foreach ((array) ($context['header_rules'] ?? []) as $sourceIndex => $rule) {
+            $matches = [];
+            foreach ((array) ($rule['db_candidates'] ?? []) as $candidateColumn) {
+                $candidate = strtolower(trim((string) $candidateColumn));
+                if ($candidate !== '' && isset($requiredLookup[$candidate])) {
+                    $matches[$candidate] = true;
+                }
+            }
+
+            $matchedColumns = array_keys($matches);
+            if (count($matchedColumns) !== 1) {
+                $invalidSourceMappings[] = sprintf(
+                    '#%d %s -> [%s]',
+                    (int) $sourceIndex + 1,
+                    (string) ($rule['header_name'] ?? 'unknown'),
+                    implode(', ', $matchedColumns)
+                );
+                continue;
+            }
+
+            $sourcesByColumn[$matchedColumns[0]][] = (int) $sourceIndex;
+        }
+
+        $missing = [];
+        $duplicates = [];
+        foreach (array_keys($requiredLookup) as $requiredColumn) {
+            $sources = $sourcesByColumn[$requiredColumn] ?? [];
+            if ($sources === []) {
+                $missing[] = $requiredColumn;
+            } elseif (count($sources) > 1) {
+                $duplicates[] = $requiredColumn . ' dari index ' . implode('/', array_map(
+                    static fn (int $index): int => $index + 1,
+                    $sources
+                ));
+            }
+        }
+
+        if ($invalidSourceMappings !== [] || $missing !== [] || $duplicates !== []) {
+            throw new \RuntimeException(
+                'Import LW321PN dibatalkan: mapping header harus tepat satu-ke-satu. '
+                . ($invalidSourceMappings !== [] ? 'Header ambigu/tidak dikenal: ' . implode('; ', $invalidSourceMappings) . '. ' : '')
+                . ($missing !== [] ? 'Kolom target tanpa sumber: ' . implode(', ', $missing) . '. ' : '')
+                . ($duplicates !== [] ? 'Kolom target ganda: ' . implode(', ', $duplicates) . '.' : '')
+            );
+        }
+    }
+
+    private function inspectInvalidLw321PnFastPathRows(
+        string $stagingTable,
+        array $context,
+        string $innerSelectSql
+    ): array {
+        if (!preg_match('/^tmp_bulk_csv_stage_\d+_[a-z0-9]+$/', $stagingTable)) {
+            throw new \RuntimeException('Nama staging table LW321PN tidak valid untuk preflight.');
+        }
+
+        $requiredColumns = ['periode', 'no_rekening', 'balance_dalam_idr'];
+        $sourceIndexes = [];
+        foreach ((array) ($context['header_rules'] ?? []) as $sourceIndex => $rule) {
+            foreach ((array) ($rule['db_candidates'] ?? []) as $candidateColumn) {
+                $candidate = strtolower(trim((string) $candidateColumn));
+                if (in_array($candidate, $requiredColumns, true) && !array_key_exists($candidate, $sourceIndexes)) {
+                    $sourceIndexes[$candidate] = (int) $sourceIndex;
+                }
+            }
+        }
+
+        $missing = array_values(array_diff($requiredColumns, array_keys($sourceIndexes)));
+        if ($missing !== []) {
+            throw new \RuntimeException(
+                'Preflight LW321PN tidak dapat menemukan sumber kolom: ' . implode(', ', $missing)
+            );
+        }
+
+        $normalizedSql = "SELECT\n{$innerSelectSql},\n`id`\nFROM `{$stagingTable}`";
+        $invalidCondition = 'src.`periode` IS NULL OR src.`no_rekening` IS NULL OR src.`balance_dalam_idr` IS NULL';
+        $summary = DB::selectOne(
+            "SELECT COUNT(*) AS invalid_rows,\n"
+            . "SUM(CASE WHEN src.`periode` IS NULL THEN 1 ELSE 0 END) AS invalid_periode,\n"
+            . "SUM(CASE WHEN src.`no_rekening` IS NULL THEN 1 ELSE 0 END) AS invalid_no_rekening,\n"
+            . "SUM(CASE WHEN src.`balance_dalam_idr` IS NULL THEN 1 ELSE 0 END) AS invalid_balance\n"
+            . "FROM (\n{$normalizedSql}\n) AS src\n"
+            . "WHERE {$invalidCondition}"
+        );
+
+        $invalidRows = (int) ($summary->invalid_rows ?? 0);
+        if ($invalidRows === 0) {
+            return [
+                'invalid_rows' => 0,
+                'invalid_periode' => 0,
+                'invalid_no_rekening' => 0,
+                'invalid_balance' => 0,
+                'samples' => [],
+            ];
+        }
+
+        $periodColumn = $this->quoteSqlIdentifier('c' . $sourceIndexes['periode']);
+        $accountColumn = $this->quoteSqlIdentifier('c' . $sourceIndexes['no_rekening']);
+        $balanceColumn = $this->quoteSqlIdentifier('c' . $sourceIndexes['balance_dalam_idr']);
+        $samples = DB::select(
+            "SELECT src.`id` AS staging_id,\n"
+            . "raw.{$periodColumn} AS raw_periode,\n"
+            . "raw.{$accountColumn} AS raw_no_rekening,\n"
+            . "raw.{$balanceColumn} AS raw_balance_dalam_idr\n"
+            . "FROM (\n{$normalizedSql}\n) AS src\n"
+            . "INNER JOIN `{$stagingTable}` AS raw ON raw.`id` = src.`id`\n"
+            . "WHERE {$invalidCondition}\n"
+            . "ORDER BY src.`id`\n"
+            . 'LIMIT 10'
+        );
+
+        return [
+            'invalid_rows' => $invalidRows,
+            'invalid_periode' => (int) ($summary->invalid_periode ?? 0),
+            'invalid_no_rekening' => (int) ($summary->invalid_no_rekening ?? 0),
+            'invalid_balance' => (int) ($summary->invalid_balance ?? 0),
+            'samples' => array_map(static fn ($row): array => (array) $row, $samples),
+        ];
+    }
+
+    private function inspectLw321PnInsertedParity(
+        string $stagingTable,
+        string $tableName,
+        array $context,
+        string $innerSelectSql,
+        string $whereClauses,
+        array $insertColumns
+    ): array {
+        if ($tableName !== 'lw321pn' || !preg_match('/^tmp_bulk_csv_stage_\d+_[a-z0-9]+$/', $stagingTable)) {
+            throw new \RuntimeException('Target atau staging table tidak valid untuk audit parity LW321PN.');
+        }
+
+        $uniqueIdColumn = (string) ($context['unique_id_col'] ?? 'uniqueid_namareport');
+        $compareColumns = array_values(array_filter(
+            $insertColumns,
+            static fn (string $column): bool => !in_array(strtolower($column), ['created_at', 'updated_at'], true)
+        ));
+        $metadata = (array) ($context['table_column_meta_by_lower'] ?? []);
+        $mismatchSelects = [];
+        $mismatchConditions = [];
+
+        foreach ($compareColumns as $column) {
+            $columnLower = strtolower($column);
+            $targetColumn = 'target.' . $this->quoteSqlIdentifier($column);
+            $sourceColumn = 'src.' . $this->quoteSqlIdentifier($column);
+            $isTextual = (bool) ($metadata[$columnLower]['is_textual'] ?? false);
+            $equalExpression = $isTextual
+                ? "CAST({$targetColumn} AS BINARY) <=> CAST({$sourceColumn} AS BINARY)"
+                : "{$targetColumn} <=> {$sourceColumn}";
+            $mismatchCondition = "NOT ({$equalExpression})";
+            $alias = 'mismatch_' . preg_replace('/[^a-z0-9_]+/', '_', $columnLower);
+            $mismatchSelects[] = "SUM(CASE WHEN {$mismatchCondition} THEN 1 ELSE 0 END) AS "
+                . $this->quoteSqlIdentifier($alias);
+            $mismatchConditions[] = $mismatchCondition;
+        }
+
+        $normalizedSourceSql = "SELECT src.*\nFROM (\n"
+            . "  SELECT\n{$innerSelectSql},\n  `id`\n"
+            . "  FROM `{$stagingTable}`\n"
+            . ") AS src\n"
+            . $whereClauses;
+        $quotedUniqueId = $this->quoteSqlIdentifier($uniqueIdColumn);
+        $summarySql = "SELECT COUNT(*) AS source_rows,\n"
+            . "SUM(CASE WHEN target.{$quotedUniqueId} IS NULL THEN 1 ELSE 0 END) AS missing_target_rows,\n"
+            . "SUM(CASE WHEN target.{$quotedUniqueId} IS NOT NULL AND ("
+            . implode(' OR ', $mismatchConditions)
+            . ") THEN 1 ELSE 0 END) AS mismatched_rows,\n"
+            . implode(",\n", $mismatchSelects)
+            . "\nFROM (\n{$normalizedSourceSql}\n) AS src\n"
+            . "LEFT JOIN `{$tableName}` AS target\n"
+            . "  ON target.{$quotedUniqueId} = src.{$quotedUniqueId}";
+        $summary = (array) DB::selectOne($summarySql);
+        $columnMismatches = [];
+
+        foreach ($compareColumns as $column) {
+            $alias = 'mismatch_' . preg_replace('/[^a-z0-9_]+/', '_', strtolower($column));
+            $count = (int) ($summary[$alias] ?? 0);
+            if ($count > 0) {
+                $columnMismatches[$column] = $count;
+            }
+        }
+
+        return [
+            'source_rows' => (int) ($summary['source_rows'] ?? 0),
+            'missing_target_rows' => (int) ($summary['missing_target_rows'] ?? 0),
+            'mismatched_rows' => (int) ($summary['mismatched_rows'] ?? 0),
+            'compared_columns' => count($compareColumns),
+            'column_mismatches' => $columnMismatches,
+        ];
+    }
+
     private function deleteDlyKapResegmentasiScopesFromFastPathStage(string $stagingTable, string $innerSelectSql, string $whereClauses): int
     {
         $scopeSql = "SELECT DISTINCT src.`periode`, src.`kanwil`, src.`kode_cabang`, src.`kode_unit`\n"
@@ -8771,10 +8992,25 @@ class ImportExcelController extends Controller
             $skipLines = ($backend === 'polars') ? 0 : 1;
             $loadedRows = $this->loadCsvIntoStagingTable($sourcePath, $stagingTable, $headerCount, $delimiter, $skipLines);
 
+            if ($isLw321Pn && $loadedRows > 0) {
+                $ignoredFormattingRows = $this->deleteIgnorableLw321PnStagingRows($stagingTable, $headerCount);
+                if ($ignoredFormattingRows > 0) {
+                    $loadedRows = max(0, $loadedRows - $ignoredFormattingRows);
+                    Log::info('LW321PN import ignored non-data separator rows.', [
+                        'ignored_rows' => $ignoredFormattingRows,
+                        'remaining_rows' => $loadedRows,
+                    ]);
+                }
+            }
+
             $sqlParts = $this->buildFastPathBulkImportSqlParts($context, $stagingTable);
             $insertColumns = $sqlParts['insert_columns'];
             $selectClauses = $sqlParts['select_clauses'];
             $filterAliases = $sqlParts['filter_aliases'];
+
+            if ($isLw321Pn) {
+                $this->assertLw321PnFastPathMappingIsOneToOne($context);
+            }
 
             if (count($insertColumns) <= (!empty($context['unique_id_col']) ? 3 : 2)) {
                 throw new \RuntimeException("Mapping kolom {$label} untuk fast import tidak valid.");
@@ -8804,6 +9040,31 @@ class ImportExcelController extends Controller
                 . "  FROM `{$stagingTable}`\n"
                 . ") AS src\n"
                 . $whereClauses;
+
+            if ($isLw321Pn) {
+                $invalidLw321Rows = $this->inspectInvalidLw321PnFastPathRows(
+                    $stagingTable,
+                    $context,
+                    $innerSelectSql
+                );
+                if ($invalidLw321Rows['invalid_rows'] > 0) {
+                    Log::error('LW321PN preflight found invalid required source values.', [
+                        'job_id' => $jobId,
+                        'table' => $tableName,
+                        'invalid_summary' => $invalidLw321Rows,
+                    ]);
+
+                    throw new \RuntimeException(sprintf(
+                        'Import LW321PN dibatalkan saat preflight: %d baris data tidak valid '
+                        . '(PERIODE: %d, NOMOR_REKENING: %d, BALANCE DALAM IDR: %d). '
+                        . 'Tidak ada data yang ditulis.',
+                        $invalidLw321Rows['invalid_rows'],
+                        $invalidLw321Rows['invalid_periode'],
+                        $invalidLw321Rows['invalid_no_rekening'],
+                        $invalidLw321Rows['invalid_balance']
+                    ));
+                }
+            }
 
             if ($isDlyKapResegmentasi) {
                 $updatableColumns = array_values(array_filter(
@@ -8922,8 +9183,35 @@ class ImportExcelController extends Controller
                     }
 
                     if ($isLw321Pn) {
+                        $parity = $this->inspectLw321PnInsertedParity(
+                            $stagingTable,
+                            $tableName,
+                            $context,
+                            $innerSelectSql,
+                            $whereClauses,
+                            $insertColumns
+                        );
+                        if (
+                            $parity['source_rows'] !== $baseTotal
+                            || $parity['missing_target_rows'] > 0
+                            || $parity['mismatched_rows'] > 0
+                        ) {
+                            Log::error('LW321PN source-to-target parity failed; transaction will roll back.', [
+                                'job_id' => $jobId,
+                                'parity' => $parity,
+                            ]);
+                            throw new \RuntimeException(
+                                'Import LW321PN dibatalkan: audit source-to-database menemukan perbedaan nilai. '
+                                . 'Tidak ada data yang ditulis.'
+                            );
+                        }
+                        Log::info('LW321PN source-to-target parity passed before commit.', [
+                            'job_id' => $jobId,
+                            'parity' => $parity,
+                        ]);
+
                         foreach ($lw321Periods as $lw321Period) {
-                            app(Lw321DailyLoanSyncService::class)->validateSourcePeriod($lw321Period);
+                            app(Lw321DailyLoanSyncService::class)->validateRawSourcePeriod($lw321Period);
                         }
                     }
 
@@ -8971,16 +9259,26 @@ class ImportExcelController extends Controller
             $status = $failed > 0
                 ? ($inserted > 0 ? 'failed_partial' : 'failed')
                 : 'completed';
+            $terminalMessage = match ($status) {
+                'completed' => "Fast import {$label} berhasil. Seluruh {$inserted} baris tersimpan.",
+                'failed_partial' => "Fast import {$label} selesai sebagian: {$inserted} berhasil, {$failed} gagal.",
+                default => "Fast import {$label} gagal. Tidak ada baris yang tersimpan.",
+            };
 
             if ($jobId > 0) {
-                $this->progressService()->updateTotals($jobId, $inserted, $failed, $baseTotal, $status);
+                $this->progressService()->updateTotals($jobId, $inserted, $failed, $baseTotal, $status, [
+                    'status' => $status,
+                    'phase' => $status === 'completed' ? 'completed' : $status,
+                    'percent' => 100,
+                    'message' => $terminalMessage,
+                    'processed_rows' => $inserted + $failed,
+                    'total_rows' => $baseTotal,
+                ]);
             }
 
             $send('progress', [
                 'percent' => 98,
-                'message' => empty($activeFilters)
-                    ? "Fast import {$label} selesai diproses."
-                    : "Fast import {$label} terfilter selesai diproses.",
+                'message' => $terminalMessage,
                 'rows_done' => $inserted,
                 'total' => $baseTotal,
                 'speed' => 0,

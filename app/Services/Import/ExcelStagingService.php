@@ -628,9 +628,12 @@ class ExcelStagingService
                     continue;
                 }
 
-                // Normalize decimals (cached)
+                // Normalize values without treating textual date/time values as decimals.
                 for ($i = 0; $i < $headerCount; $i++) {
-                    $rowValues[$i] = $this->normalizeDecimalValueForStaging($rowValues[$i]);
+                    $rowValues[$i] = $this->normalizeValueForStaging(
+                        (string) ($normalizedHeaders[$i] ?? ''),
+                        $rowValues[$i]
+                    );
                 }
 
                 // OPTIMASI: Use optimized CSV line builder (40-50% faster)
@@ -747,7 +750,10 @@ class ExcelStagingService
                 }
 
                 foreach ($rowValues as $index => $value) {
-                    $rowValues[$index] = $this->normalizeDecimalValueForStaging($value);
+                    $rowValues[$index] = $this->normalizeValueForStaging(
+                        (string) ($normalizedHeaders[$index] ?? ''),
+                        $value
+                    );
                 }
 
                 fputcsv($outputHandle, $rowValues);
@@ -1559,6 +1565,42 @@ class ExcelStagingService
         }
 
         return $result;
+    }
+
+    private function normalizeValueForStaging(string $header, $value)
+    {
+        $normalizedHeader = strtoupper(trim((string) preg_replace('/[^A-Z0-9]+/i', '_', $header), '_'));
+        $dateHeaders = [
+            'POSISI',
+            'POSITION',
+            'MINUTE_OF_POSISI',
+            'MINUTE_OF_POSITION',
+            'MONTH_DAY_YEAR_OF_POSISI',
+            'MONTH_DAY_YEAR_OF_POSITION',
+            'TANGGAL_POSISI',
+            'WAKTU_POSISI',
+            'DATETIME_POSISI',
+            'PERIODE',
+            'MONTH_DAY_YEAR_OF_PERIODE',
+            'TANGGAL',
+            'DATE',
+        ];
+
+        if (in_array($normalizedHeader, $dateHeaders, true)) {
+            if ($value === null) {
+                return null;
+            }
+
+            if ($value instanceof \DateTimeInterface) {
+                return $value->format('Y-m-d H:i:s');
+            }
+
+            $trimmed = trim((string) $value);
+
+            return $trimmed === '' ? null : $trimmed;
+        }
+
+        return $this->normalizeDecimalValueForStaging($value);
     }
 
     /**

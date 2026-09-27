@@ -101,6 +101,29 @@ final class Lw321DailyLoanSyncService
     }
 
     /**
+     * Validate the persisted LW321 source without requiring fields that are
+     * derived only for Daily Loan materialization. Raw LW321 must remain an
+     * exact source copy even when DESCRIPTION is legitimately blank; the
+     * stricter validateSourcePeriod() guard still blocks unsafe materialization.
+     *
+     * @return array<string, mixed>
+     */
+    public function validateRawSourcePeriod(string $period): array
+    {
+        $this->assertSchemaReady();
+
+        $normalizedPeriod = StrictDateParser::normalize(trim($period));
+        if ($normalizedPeriod === null) {
+            throw new RuntimeException("Periode LW321 tidak valid: {$period}.");
+        }
+
+        $metrics = $this->sourceValidationMetrics($normalizedPeriod);
+        $this->assertSourcePeriodIsSafe($normalizedPeriod, $metrics, false);
+
+        return $metrics;
+    }
+
+    /**
      * @return array{source_rows:int,inserted_rows:int,deleted_rows:int,mutated:bool,skipped:bool,validation:array<string,mixed>}
      */
     private function synchronizePeriod(string $period): array
@@ -187,16 +210,18 @@ final class Lw321DailyLoanSyncService
                     $targetValidation['balance_total']
                 );
                 $classificationComplete = $targetValidation['unclassified_rows'] === 0;
+                $expectedUnclassifiedRows = $sourceValidation['unresolved_classification_rows'];
+                $classificationMatchesSource = $targetValidation['unclassified_rows'] === $expectedUnclassifiedRows;
                 $qualityComplete = $targetValidation['unresolved_quality_rows'] === 0;
 
                 if (! $rowCountMatches
                     || ! $balanceTotalMatches
-                    || ! $classificationComplete
+                    || ! $classificationMatchesSource
                     || ! $qualityComplete
                     || $targetValidation['blank_account_rows'] > 0
                     || $targetValidation['null_balance_rows'] > 0) {
                     throw new RuntimeException(sprintf(
-                        'Materialisasi LW321 periode %s gagal validasi target: rows %d/%d, saldo %s/%s, rekening kosong %d, saldo NULL %d, klasifikasi kosong %d, kualitas kosong %d. Transaksi dibatalkan.',
+                        'Materialisasi LW321 periode %s gagal validasi target: rows %d/%d, saldo %s/%s, rekening kosong %d, saldo NULL %d, klasifikasi kosong %d/%d sesuai sumber, kualitas kosong %d. Transaksi dibatalkan.',
                         $period,
                         $targetValidation['row_count'],
                         $sourceRows,
@@ -205,6 +230,7 @@ final class Lw321DailyLoanSyncService
                         $targetValidation['blank_account_rows'],
                         $targetValidation['null_balance_rows'],
                         $targetValidation['unclassified_rows'],
+                        $expectedUnclassifiedRows,
                         $targetValidation['unresolved_quality_rows']
                     ));
                 }
@@ -223,6 +249,8 @@ final class Lw321DailyLoanSyncService
                             'row_count_matches' => $rowCountMatches,
                             'balance_total_matches' => $balanceTotalMatches,
                             'classification_complete' => $classificationComplete,
+                            'classification_matches_source' => $classificationMatchesSource,
+                            'expected_unclassified_rows' => $expectedUnclassifiedRows,
                             'quality_complete' => $qualityComplete,
                         ],
                     ],
@@ -381,7 +409,11 @@ final class Lw321DailyLoanSyncService
      *     balance_total:string
      * }  $metrics
      */
-    private function assertSourcePeriodIsSafe(string $period, array $metrics): void
+    private function assertSourcePeriodIsSafe(
+        string $period,
+        array $metrics,
+        bool $requireMaterializationClassification = true
+    ): void
     {
         if ($metrics['row_count'] === 0) {
             return;
@@ -411,11 +443,11 @@ final class Lw321DailyLoanSyncService
             ));
         }
 
-        if ($metrics['unresolved_classification_rows'] > 0) {
+        if ($requireMaterializationClassification && $metrics['unmapped_description_rows'] > 0) {
             throw new RuntimeException(sprintf(
-                'Materialisasi LW321 periode %s ditolak: %d baris belum memiliki pasangan segmen/produk yang dapat dibuktikan dari DESCRIPTION LW atau rekening+CIF Daily Loan sebelumnya.',
+                'Materialisasi LW321 periode %s ditolak: %d baris memiliki DESCRIPTION nonkosong yang belum memiliki mapping segmen/produk resmi.',
                 $period,
-                $metrics['unresolved_classification_rows']
+                $metrics['unmapped_description_rows']
             ));
         }
 

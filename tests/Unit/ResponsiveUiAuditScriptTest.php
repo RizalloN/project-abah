@@ -13,12 +13,14 @@ class ResponsiveUiAuditScriptTest extends TestCase
         $this->assertStringContainsString("name: 'phone-landscape', width: 844, height: 390", $script);
         $this->assertStringContainsString("name: 'tablet-landscape', width: 1024, height: 768", $script);
         $this->assertStringContainsString("name: 'laptop', width: 1366, height: 768", $script);
+        $this->assertStringContainsString("name: 'wide-desktop', width: 1920, height: 1080", $script);
         $this->assertStringContainsString('AUDIT_NAVIGATION_TIMEOUT_MS', $script);
         $this->assertStringContainsString('AUDIT_LOGIN_TIMEOUT_MS', $script);
         $this->assertStringContainsString('AUDIT_PUBLIC_ONLY', $script);
         $this->assertStringContainsString('AUDIT_WAIT_TIMEOUT_MS', $script);
         $this->assertStringContainsString('AUDIT_CHROME_TIMEOUT_MS', $script);
         $this->assertStringContainsString('AUDIT_SCROLL_SELECTOR', $script);
+        $this->assertStringContainsString('AUDIT_CAPTURE_HORIZONTAL_SCROLL', $script);
     }
 
     public function test_sticky_audit_is_generic_and_checks_both_scroll_axes_and_backgrounds(): void
@@ -31,6 +33,15 @@ class ResponsiveUiAuditScriptTest extends TestCase
         $this->assertStringContainsString('verticalHeader', $script);
         $this->assertStringContainsString('noOverlap', $script);
         $this->assertStringContainsString('horizontalColumns', $script);
+        $this->assertStringContainsString('horizontalColumns.noOverlap', $script);
+        $this->assertStringContainsString('overlapDiagnostics', $script);
+        $this->assertStringContainsString('document.elementFromPoint(sampleX, sampleY)', $script);
+        $this->assertStringContainsString('horizontalColumns.unobscured', $script);
+        $this->assertStringContainsString('occlusionDiagnostics', $script);
+        $this->assertStringContainsString("cell.classList.contains('abah-table-sticky-x')", $script);
+        $this->assertStringContainsString('horizontalColumns.missingLayerCells.length > 0', $script);
+        $this->assertStringContainsString("topElement?.closest('#global-floating-scrollbar')", $script);
+        $this->assertStringContainsString('capturedHorizontalScroll', $script);
         $this->assertStringContainsString('pageHeader', $script);
         $this->assertStringContainsString('window.scrollTo({ left: originalPageX, top: targetPageY', $script);
         $this->assertStringContainsString('.abah-floating-table-header:not([hidden])', $script);

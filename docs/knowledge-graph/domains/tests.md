@@ -22,7 +22,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `LandingMicroPerformanceServiceTest` | class | 49 | `tests/Unit/LandingMicroPerformanceServiceTest.php:16` |
 | `invokePrivate` | method | 30 | `tests/Unit/LandingMicroPerformanceServiceTest.php:1965` |
 | `dailyLoanRow` | method | 28 | `tests/Unit/LandingMicroPerformanceServiceTest.php:1650` |
-| `ResponsiveOperationalViewsTest` | class | 23 | `tests/Unit/ResponsiveOperationalViewsTest.php:7` |
+| `ResponsiveOperationalViewsTest` | class | 24 | `tests/Unit/ResponsiveOperationalViewsTest.php:7` |
 | `LandingConsumerOperationalServiceTest` | class | 20 | `tests/Unit/LandingConsumerOperationalServiceTest.php:16` |
 | `ReportDataSyncServiceTest` | class | 20 | `tests/Unit/ReportDataSyncServiceTest.php:26` |
 | `LandingSmeOperationalServiceTest` | class | 18 | `tests/Unit/LandingSmeOperationalServiceTest.php:11` |
@@ -135,6 +135,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | tests -> access-control (contains) | 10 |
 | database -> tests (calls) | 9 |
 | tests -> core (renders) | 9 |
+| dashboard-harian -> tests (calls) | 8 |
 | tests -> access-control (calls) | 8 |
 | tests -> core (extends) | 8 |
-| tests -> marketshare (contains) | 8 |

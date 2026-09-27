@@ -82,6 +82,55 @@ class ExcelStagingServiceLegacyXlsTest extends TestCase
         }
     }
 
+    public function test_hourly_dpk_textual_datetime_with_comma_is_preserved_by_staging_fallback(): void
+    {
+        $sourcePath = $this->temporaryPath('.xlsx');
+        $stagedPath = $this->temporaryPath('.csv');
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getActiveSheet()->fromArray([
+            ['Minute of POSISI', 'MBNAME', 'BRNAME', 'PRODUK', 'SEGMEN2', 'Saldo'],
+            [
+                'September 25, 2026 at 10:00 AM',
+                '00045 -- KC Madiun(Konsolidasi-MB)',
+                '00045 -- KC Madiun',
+                'GIRO',
+                'RITEL',
+                '13833797168.82',
+            ],
+        ]);
+        (new Xlsx($spreadsheet))->save($sourcePath);
+        $spreadsheet->disconnectWorksheets();
+
+        try {
+            $service = new ExcelStagingService();
+            $result = $service->stageExcelToCsv(
+                static function (): void {
+                },
+                $sourcePath,
+                0,
+                ['posisi', 'mbname', 'brname', 'produk', 'segmen2', 'saldo'],
+                $stagedPath,
+                __DIR__ . '/missing-reader.py',
+                'hourly_dpk_fallback_test_',
+                0,
+                ['table_name' => 'hourly_dpk']
+            );
+
+            $handle = fopen($stagedPath, 'rb');
+            $headers = fgetcsv($handle);
+            $row = fgetcsv($handle);
+            fclose($handle);
+
+            $this->assertSame(1, $result['total_rows']);
+            $this->assertSame(['posisi', 'mbname', 'brname', 'produk', 'segmen2', 'saldo'], $headers);
+            $this->assertSame('September 25, 2026 at 10:00 AM', $row[0]);
+            $this->assertSame('13833797168.82', $row[5]);
+        } finally {
+            @unlink($sourcePath);
+            @unlink($stagedPath);
+        }
+    }
+
     private function temporaryPath(string $extension): string
     {
         $base = tempnam(sys_get_temp_dir(), 'legacy_xls_');

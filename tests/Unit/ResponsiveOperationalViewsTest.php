@@ -34,6 +34,21 @@ class ResponsiveOperationalViewsTest extends TestCase
         );
     }
 
+    public function test_hourly_dpk_sticky_columns_use_rendered_width_offsets(): void
+    {
+        $source = file_get_contents(resource_path('views/report/dashboard-dana-hourly-dpk.blade.php'));
+
+        $this->assertStringContainsString('left: var(--hourly-sticky-left, 0px);', $source);
+        $this->assertStringContainsString('const syncStickyColumns = function (table)', $source);
+        $this->assertStringContainsString("offset += cell.getBoundingClientRect().width;", $source);
+        $this->assertStringContainsString("cell.style.setProperty('--hourly-sticky-left', nextOffset);", $source);
+        $this->assertStringContainsString('new ResizeObserver(syncAllStickyColumns)', $source);
+        $this->assertStringContainsString('z-index: 60 !important;', $source);
+        $this->assertStringContainsString('z-index: 15 !important;', $source);
+        $this->assertStringContainsString('background-clip: border-box;', $source);
+        $this->assertStringContainsString('isolation: isolate;', $source);
+    }
+
     public function test_shared_table_guards_do_not_create_nested_vertical_scrolling(): void
     {
         $layout = file_get_contents(resource_path('views/layouts/admin.blade.php'));

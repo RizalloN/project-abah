@@ -1243,6 +1243,9 @@
             position: sticky !important;
             right: var(--abah-floating-sticky-right, auto) !important;
             left: var(--abah-floating-sticky-left, auto) !important;
+            z-index: 80 !important;
+            background-clip: border-box;
+            isolation: isolate;
         }
 
         @media print {
@@ -1258,6 +1261,18 @@
         .content-wrapper .abah-table-managed thead th.sticky-col,
         .content-wrapper .abah-table-managed thead th[class*="sticky"] {
             z-index: 45;
+        }
+
+        .content-wrapper .abah-table-managed thead :is(th, td).abah-table-sticky-x {
+            z-index: 60 !important;
+            background-clip: border-box;
+            isolation: isolate;
+        }
+
+        .content-wrapper .abah-table-managed :is(tbody, tfoot) :is(th, td).abah-table-sticky-x {
+            z-index: 15;
+            background-clip: border-box;
+            isolation: isolate;
         }
 
         .content-wrapper .abah-table-managed th,
@@ -2334,6 +2349,47 @@
             });
         };
 
+        const syncHorizontalStickyLayers = function (table) {
+            table.querySelectorAll('th, td').forEach(function (cell) {
+                const style = window.getComputedStyle(cell);
+                const left = Number.parseFloat(style.left);
+                const right = Number.parseFloat(style.right);
+                const isHorizontalSticky = style.position === 'sticky'
+                    && (Number.isFinite(left) || Number.isFinite(right));
+
+                cell.classList.toggle('abah-table-sticky-x', isHorizontalSticky);
+
+                if (!isHorizontalSticky) {
+                    if (cell.dataset.abahManagedStickyLayer === '1') {
+                        const originalValue = cell.dataset.abahOriginalStickyZ || '';
+                        const originalPriority = cell.dataset.abahOriginalStickyZPriority || '';
+                        if (originalValue) {
+                            cell.style.setProperty('z-index', originalValue, originalPriority);
+                        } else {
+                            cell.style.removeProperty('z-index');
+                        }
+                        delete cell.dataset.abahManagedStickyLayer;
+                        delete cell.dataset.abahOriginalStickyZ;
+                        delete cell.dataset.abahOriginalStickyZPriority;
+                    }
+                    return;
+                }
+
+                const minimumLayer = cell.closest('thead') ? 80 : 20;
+                const currentLayer = Number.parseInt(window.getComputedStyle(cell).zIndex, 10);
+                if (Number.isFinite(currentLayer) && currentLayer >= minimumLayer) {
+                    return;
+                }
+
+                if (cell.dataset.abahManagedStickyLayer !== '1') {
+                    cell.dataset.abahManagedStickyLayer = '1';
+                    cell.dataset.abahOriginalStickyZ = cell.style.getPropertyValue('z-index');
+                    cell.dataset.abahOriginalStickyZPriority = cell.style.getPropertyPriority('z-index');
+                }
+                cell.style.setProperty('z-index', String(minimumLayer), 'important');
+            });
+        };
+
         const syncReadableCellTitles = function (table) {
             table.querySelectorAll('th, td').forEach(function (cell) {
                 if (cell.hasAttribute('title') || cell.closest('[data-abah-no-cell-title]')) {
@@ -2634,6 +2690,7 @@
             table.classList.add('abah-table-managed');
             syncHeaderOffsets(table);
             syncStickyHeaderSurfaces(table);
+            syncHorizontalStickyLayers(table);
             syncReadableCellTitles(table);
             syncScrollableWrapper(table, wrapper);
         };

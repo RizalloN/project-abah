@@ -13,7 +13,7 @@ flowchart LR
     d_39bcb775e4["bank-pipeline"] -->|117| d_c393a69167["access-control"]
     d_59830ebc3a["tests"] -->|109| d_0d45f5fd46["core"]
     d_59830ebc3a["tests"] -->|108| d_c1933689a3["dashboard-pinjaman"]
-    d_c1933689a3["dashboard-pinjaman"] -->|102| d_0d45f5fd46["core"]
+    d_c1933689a3["dashboard-pinjaman"] -->|104| d_0d45f5fd46["core"]
     d_3549b0028b["database"] -->|90| d_d942f64886["import"]
     d_59830ebc3a["tests"] -->|90| d_d942f64886["import"]
     d_7c16aa6a77["jobs-snapshots"] -->|83| d_c1933689a3["dashboard-pinjaman"]
@@ -21,7 +21,7 @@ flowchart LR
     d_d942f64886["import"] -->|78| d_59830ebc3a["tests"]
     d_c1933689a3["dashboard-pinjaman"] -->|71| d_7c16aa6a77["jobs-snapshots"]
     d_0d45f5fd46["core"] -->|67| d_c393a69167["access-control"]
-    d_7c16aa6a77["jobs-snapshots"] -->|62| d_d942f64886["import"]
+    d_7c16aa6a77["jobs-snapshots"] -->|64| d_d942f64886["import"]
     d_7c16aa6a77["jobs-snapshots"] -->|60| d_0d45f5fd46["core"]
     d_3549b0028b["database"] -->|58| d_c1933689a3["dashboard-pinjaman"]
     d_c1933689a3["dashboard-pinjaman"] -->|58| d_59830ebc3a["tests"]
@@ -50,13 +50,13 @@ flowchart LR
 
 | Domain | Nodes | Detail |
 | --- | ---: | --- |
-| import | 2887 | [open](domains/import.md) |
+| import | 2900 | [open](domains/import.md) |
 | core | 1347 | [open](domains/core.md) |
-| dashboard-pinjaman | 1275 | [open](domains/dashboard-pinjaman.md) |
-| jobs-snapshots | 834 | [open](domains/jobs-snapshots.md) |
+| dashboard-pinjaman | 1277 | [open](domains/dashboard-pinjaman.md) |
+| jobs-snapshots | 839 | [open](domains/jobs-snapshots.md) |
 | dashboard-simpanan | 759 | [open](domains/dashboard-simpanan.md) |
 | database | 737 | [open](domains/database.md) |
-| dashboard-harian | 460 | [open](domains/dashboard-harian.md) |
+| dashboard-harian | 462 | [open](domains/dashboard-harian.md) |
 | tests | 428 | [open](domains/tests.md) |
 | bank-pipeline | 399 | [open](domains/bank-pipeline.md) |
 | presentation | 278 | [open](domains/presentation.md) |

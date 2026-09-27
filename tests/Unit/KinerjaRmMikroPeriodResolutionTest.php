@@ -138,7 +138,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
 
         $periods = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'fetchAvailablePeriods', true);
 
-        $this->assertSame(['2026-07-14'], $periods->all());
+        $this->assertSame(['2026-07-14', '2026-07-12'], $periods->all());
     }
 
     public function test_mantri_defaults_to_productivity_report(): void
@@ -149,7 +149,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame('produktivitas_mantri', array_key_first($categories));
     }
 
-    public function test_requested_mid_month_uses_latest_micro_kur_period_in_that_month(): void
+    public function test_requested_mid_month_uses_exact_micro_kur_period_when_available(): void
     {
         DB::table('performance_rm_snapshots')->insert([
             ['periode' => '2026-05-15', 'segmen' => 'MICRO', 'produk' => 'KUR-MIKRO'],
@@ -160,8 +160,9 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $controller = new KinerjaRmMikroReportController();
         $periods = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods');
 
-        $this->assertSame(['2026-05-17', '2026-04-30'], $periods->all());
-        $this->assertSame('2026-05-17', $this->invokePrivateMethod($controller, 'resolveSelectedPeriod', $periods, '2026-05-15'));
+        $this->assertSame(['2026-05-17', '2026-05-15', '2026-04-30'], $periods->all());
+        $this->assertSame('2026-05-15', $this->invokePrivateMethod($controller, 'resolveSelectedPeriod', $periods, '2026-05-15'));
+        $this->assertSame('2026-05-15', $this->invokePrivateMethod($controller, 'resolveSelectedPeriod', $periods, '2026-05-16'));
     }
 
     public function test_embedded_payload_serves_last_ready_period_while_latest_daily_loan_is_synced(): void
@@ -455,10 +456,10 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $payload = $this->invokePrivateMethod($controller, 'mantriProductivityPayload', '2026-05-06');
         $names = collect($payload['rows'])->pluck('nama_mantri')->all();
 
-        $this->assertSame(['RM LAIN', 'Mantri Aktif', 'Mantri Briguna Aktif'], $names);
+        $this->assertSame(['Mantri Aktif', 'Mantri Briguna Aktif'], $names);
         $this->assertNotContains('Mantri Collection', $names);
-        $this->assertSame(3, (int) $payload['total']['jumlah_mantri']);
-        $this->assertSame(350000000.0, (float) $payload['total']['realisasi_os']);
+        $this->assertSame(2, (int) $payload['total']['jumlah_mantri']);
+        $this->assertSame(250000000.0, (float) $payload['total']['realisasi_os']);
         $this->assertSame(150000000.0, (float) collect($payload['rows'])->firstWhere('pn_mantri', '00000001')['realisasi_os']);
     }
 
