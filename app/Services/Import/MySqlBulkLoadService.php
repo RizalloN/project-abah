@@ -160,7 +160,8 @@ class MySqlBulkLoadService
         string $tableName,
         array $columns,
         bool $relaxSqlMode = false,
-        ?callable $beforeLoad = null
+        ?callable $beforeLoad = null,
+        ?callable $afterLoad = null
     ): int {
         $this->assertTransactionalTable($tableName, 'bulk import');
 
@@ -178,8 +179,8 @@ class MySqlBulkLoadService
 
         $this->periodGuardService()->assertCsvRows($csvPath, $tableName, $columns);
 
-        return $this->withTableWriteLock($tableName, function () use ($csvPath, $tableName, $columns, $relaxSqlMode, $beforeLoad): int {
-            return $this->loadCsvIntoMysqlInternal($csvPath, $tableName, $columns, $relaxSqlMode, $beforeLoad);
+        return $this->withTableWriteLock($tableName, function () use ($csvPath, $tableName, $columns, $relaxSqlMode, $beforeLoad, $afterLoad): int {
+            return $this->loadCsvIntoMysqlInternal($csvPath, $tableName, $columns, $relaxSqlMode, $beforeLoad, $afterLoad);
         });
     }
 
@@ -188,7 +189,8 @@ class MySqlBulkLoadService
         string $tableName,
         array $columns,
         bool $relaxSqlMode = false,
-        ?callable $beforeLoad = null
+        ?callable $beforeLoad = null,
+        ?callable $afterLoad = null
     ): int {
         if (!file_exists($csvPath)) {
             throw new \RuntimeException('File CSV sementara tidak ditemukan untuk bulk load.');
@@ -238,11 +240,15 @@ class MySqlBulkLoadService
                 $affected = $pdo->exec($sql);
                 $pdo->exec('SET @skip_snapshot_invalidation = NULL');
 
-                $pdo->commit();
-
                 if ($affected === false) {
                     throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi.');
                 }
+
+                if ($afterLoad !== null) {
+                    $afterLoad($pdo, (int) $affected);
+                }
+
+                $pdo->commit();
 
                 if ($relaxSqlMode && $originalSqlMode !== null) {
                     try {

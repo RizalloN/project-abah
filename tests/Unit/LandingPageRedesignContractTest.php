@@ -367,7 +367,8 @@ class LandingPageRedesignContractTest extends TestCase
         $this->assertStringContainsString('KC MADIUN', $html);
         $this->assertStringContainsString('FUNGSI BISNIS MIKRO', $html);
         $this->assertStringContainsString('Rp 750 jt', $html);
-        $this->assertStringContainsString('Rp 375 jt', $html);
+        $this->assertStringContainsString('Jumlah RM', $html);
+        $this->assertStringContainsString('Personel dalam roster BRIHC', $html);
     }
 
     public function test_micro_billing_controls_survive_lazy_load_and_use_compact_nusantara_layout(): void
@@ -554,5 +555,15 @@ class LandingPageRedesignContractTest extends TestCase
         $this->assertStringContainsString('.db-shell.landing-mobile .loan-analytics-head', $view);
         $this->assertStringContainsString("document.addEventListener('landing:scopechange', scheduleSync);", $view);
         $this->assertStringContainsString('chart?.canvas?.offsetParent', $view);
+    }
+
+    public function test_landing_loan_segments_prefetch_after_browser_idle_without_slow_connection(): void
+    {
+        $view = file_get_contents(resource_path('views/dashboard.blade.php'));
+
+        $this->assertStringContainsString('const prefetchLandingLoanScopes = async () =>', $view);
+        $this->assertStringContainsString("navigator.connection?.saveData", $view);
+        $this->assertStringContainsString("window.requestIdleCallback(() => prefetchLandingLoanScopes()", $view);
+        $this->assertStringContainsString('await Promise.allSettled([', $view);
     }
 }

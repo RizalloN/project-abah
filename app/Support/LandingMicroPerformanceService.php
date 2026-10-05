@@ -32,7 +32,7 @@ final class LandingMicroPerformanceService
 
     private const PAYLOAD_CACHE_HOURS = 6;
 
-    private const STABLE_CACHE_DAYS = 2;
+    private const STABLE_CACHE_DAYS = 7;
 
     private const BUILD_LOCK_SECONDS = 180;
 
@@ -239,6 +239,7 @@ final class LandingMicroPerformanceService
     public function payload(?string $requestedPeriod, ?array $branchScope = null, bool $forceRefresh = false): array
     {
         $empty = $this->emptyPayload($branchScope);
+        $period = null;
         if (! $this->hasTable(self::SOURCE_TABLE)) {
             return $empty;
         }
@@ -282,20 +283,37 @@ final class LandingMicroPerformanceService
                 $ytdPeriod ?? 'none',
                 $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
             ]);
+            $durableCacheKey = $this->durablePayloadCacheKey($period, $branchScope);
 
             if ($forceRefresh) {
                 Cache::forget($cacheKey);
                 Cache::forget($stableCacheKey);
+                $durable = Cache::get($durableCacheKey);
+                if (is_array($durable)) {
+                    $this->deferPayloadRefresh(
+                        $cacheKey,
+                        $stableCacheKey,
+                        $period,
+                        $previousPeriod,
+                        $ytdPeriod,
+                        $branchScope
+                    );
+
+                    return $this->markPayloadAsRefreshing($durable);
+                }
             }
 
             $cached = Cache::get($cacheKey);
             if (is_array($cached)) {
+                Cache::put($durableCacheKey, $cached, now()->addDays(self::STABLE_CACHE_DAYS));
+
                 return $cached;
             }
 
             $stable = Cache::get($stableCacheKey);
             if (! $forceRefresh && is_array($stable)) {
                 Cache::put($cacheKey, $stable, now()->addSeconds(30));
+                Cache::put($durableCacheKey, $stable, now()->addDays(self::STABLE_CACHE_DAYS));
                 $this->deferPayloadRefresh(
                     $cacheKey,
                     $stableCacheKey,
@@ -322,6 +340,13 @@ final class LandingMicroPerformanceService
                 'scope' => $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
                 'error' => $exception->getMessage(),
             ]);
+
+            $durable = $period !== null
+                ? Cache::get($this->durablePayloadCacheKey($period, $branchScope))
+                : null;
+            if (is_array($durable)) {
+                return $this->markPayloadAsRefreshing($durable, $exception->getMessage());
+            }
 
             $empty['meta']['error'] = $exception->getMessage();
 
@@ -411,13 +436,17 @@ final class LandingMicroPerformanceService
                 $payload = $this->buildPayload($period, $previousPeriod, $ytdPeriod, $branchScope);
                 Cache::put($cacheKey, $payload, now()->addHours(self::PAYLOAD_CACHE_HOURS));
                 Cache::put($stableCacheKey, $payload, now()->addDays(self::STABLE_CACHE_DAYS));
+                Cache::put($this->durablePayloadCacheKey($period, $branchScope), $payload, now()->addDays(self::STABLE_CACHE_DAYS));
 
                 return $payload;
             });
         } catch (LockTimeoutException) {
-            $stable = Cache::get($stableCacheKey);
+            $stable = Cache::get($stableCacheKey)
+                ?? Cache::get($this->durablePayloadCacheKey($period, $branchScope));
 
-            return is_array($stable) ? $stable : $this->emptyPayload($branchScope);
+            return is_array($stable)
+                ? $this->markPayloadAsRefreshing($stable)
+                : $this->emptyPayload($branchScope);
         }
     }
 
@@ -456,6 +485,7 @@ final class LandingMicroPerformanceService
                 $payload = $this->buildPayload($period, $previousPeriod, $ytdPeriod, $branchScope);
                 Cache::put($cacheKey, $payload, now()->addHours(self::PAYLOAD_CACHE_HOURS));
                 Cache::put($stableCacheKey, $payload, now()->addDays(self::STABLE_CACHE_DAYS));
+                Cache::put($this->durablePayloadCacheKey($period, $branchScope), $payload, now()->addDays(self::STABLE_CACHE_DAYS));
             } catch (Throwable $exception) {
                 Log::warning('Refresh cache landing Mikro gagal.', [
                     'period' => $period,
@@ -469,6 +499,31 @@ final class LandingMicroPerformanceService
                 Cache::forget($pendingKey);
             }
         }, 'landing-micro-performance:'.md5($cacheKey), true);
+    }
+
+    /** @param array<string, mixed>|null $branchScope */
+    private function durablePayloadCacheKey(string $period, ?array $branchScope): string
+    {
+        return implode(':', [
+            'landing',
+            'micro-performance',
+            self::CACHE_VERSION,
+            'last-valid',
+            $period,
+            $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
+        ]);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function markPayloadAsRefreshing(array $payload, ?string $error = null): array
+    {
+        $payload['meta']['cache_stale'] = true;
+        $payload['meta']['refresh_pending'] = true;
+        if ($error !== null && $error !== '') {
+            $payload['meta']['refresh_error'] = $error;
+        }
+
+        return $payload;
     }
 
     /**
@@ -944,16 +999,22 @@ final class LandingMicroPerformanceService
             return $this->emptyPhSummary();
         }
 
-        $currentPeriod = DB::table('lw325_ph')->where('periode', '<=', $period)->max('periode');
+        $currentPeriodQuery = DB::table('lw325_ph')->where('periode', '<=', $period);
+        $this->applyBranchFilter($currentPeriodQuery, 'kanca', $branchScope);
+        $currentPeriod = $currentPeriodQuery->max('periode');
         if (! $currentPeriod) {
             return $this->emptyPhSummary();
         }
 
         $currentPeriod = Carbon::parse($currentPeriod)->toDateString();
-        $previousPeriod = Carbon::parse($currentPeriod)->startOfMonth()->subDay()->toDateString();
-        if (! DB::table('lw325_ph')->where('periode', $previousPeriod)->exists()) {
-            return $this->emptyPhSummary($currentPeriod, $previousPeriod);
+        $previousCutoff = Carbon::parse($currentPeriod)->startOfMonth()->subDay()->toDateString();
+        $previousPeriodQuery = DB::table('lw325_ph')->where('periode', '<=', $previousCutoff);
+        $this->applyBranchFilter($previousPeriodQuery, 'kanca', $branchScope);
+        $previousPeriod = $previousPeriodQuery->max('periode');
+        if (! $previousPeriod) {
+            return $this->emptyPhSummary($currentPeriod, $previousCutoff);
         }
+        $previousPeriod = Carbon::parse($previousPeriod)->toDateString();
 
         $tupok = DB::table('lw325_ph as n')
             ->join('lw325_ph as o', function ($join) use ($currentPeriod, $previousPeriod): void {

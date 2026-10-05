@@ -7,8 +7,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 2 |
-| file | 153 |
-| function | 374 |
+| file | 154 |
+| function | 376 |
 | method | 177 |
 | unresolved_symbol | 10 |
 | route | 2 |
@@ -91,13 +91,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | database -> core (instantiates) | 73 |
 | database -> core (checks_table) | 61 |
-| database -> core (writes_table) | 58 |
+| database -> core (writes_table) | 60 |
 | database -> core (calls) | 56 |
-| database -> import (checks_table) | 42 |
+| database -> import (checks_table) | 43 |
 | database -> dashboard-pinjaman (checks_table) | 26 |
-| database -> import (defines_table) | 24 |
+| database -> import (defines_table) | 25 |
+| database -> core (reads_table) | 16 |
 | database -> dashboard-simpanan (checks_table) | 15 |
-| database -> core (reads_table) | 15 |
 | database -> dashboard-pinjaman (alters_table) | 15 |
 | database -> jobs-snapshots (checks_table) | 14 |
 | database -> core (accepts) | 13 |

@@ -398,7 +398,7 @@ CSV;
         $this->assertSame(1, data_get($magetanPayload, 'quadrants.branches.0.products.briguna.coverage.classified'));
     }
 
-    public function test_quadrant_period_uses_latest_snapshot_in_requested_month_like_kpi(): void
+    public function test_quadrant_period_does_not_move_past_the_requested_landing_date(): void
     {
         Http::fake(fn () => Http::response("Nama Instansi,Potensi Briguna,RM PIC 1\nInstansi A,100,RM A", 200));
         DB::table('performance_targets')->insert([
@@ -417,9 +417,9 @@ CSV;
             true
         );
 
-        $this->assertSame('2026-08-31', data_get($payload, 'quadrants.period'));
-        $this->assertSame(1, data_get($payload, 'quadrants.branches.0.products.briguna.rows.0.q1'));
-        $this->assertSame(0, data_get($payload, 'quadrants.branches.0.products.briguna.rows.0.q4'));
+        $this->assertSame('2026-08-30', data_get($payload, 'quadrants.period'));
+        $this->assertSame(0, data_get($payload, 'quadrants.branches.0.products.briguna.rows.0.q1'));
+        $this->assertSame(1, data_get($payload, 'quadrants.branches.0.products.briguna.rows.0.q3'));
     }
 
     public function test_briguna_quadrant_uses_audited_target_and_dynamic_snapshot_realisation(): void

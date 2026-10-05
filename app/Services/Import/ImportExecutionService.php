@@ -1326,6 +1326,15 @@ class ImportExecutionService
             $tableName = strtolower(trim((string) ($state['params']['table_name'] ?? '')));
         }
 
+        if ($tableName === 'simpanan_multipn') {
+            $context = $this->decodeJobContext($job);
+            // Only the staged Excel path has the period/branch slot guard. Do not
+            // broaden automatic replay to the dedicated stream or missing sources.
+            return ($context['controller'] ?? '') === ImportExcelController::class
+                && ($context['mode'] ?? '') === 'import_optimized'
+                && is_file((string) data_get($context, 'state.params.staged_csv_path', ''));
+        }
+
         return in_array($tableName, self::ZERO_PROGRESS_RECOVERABLE_TABLES, true);
     }
 

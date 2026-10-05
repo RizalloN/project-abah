@@ -10,6 +10,24 @@ use Tests\TestCase;
 
 class QueueWorkerPoolTest extends TestCase
 {
+    public function test_worker_capacity_adapts_to_ready_work_without_counting_orphan_reservations_as_workers(): void
+    {
+        $command = new EnsureQueueWorkerRunning();
+        $method = new ReflectionMethod($command, 'workersNeededForDemand');
+
+        foreach ([
+            [4, 0, 1, 0, 1], // One job needs only one worker.
+            [4, 0, 20, 0, 4], // Backlog is capped at configured capacity.
+            [4, 1, 1, 0, 0], // Existing idle worker is sufficient.
+            [4, 1, 1, 1, 1], // Busy worker leaves demand for another worker.
+            [4, 0, 1, 10, 1], // Orphan reservations do not create phantom capacity.
+            [4, 4, 20, 4, 0],
+            [4, 0, 0, 10, 0],
+        ] as [$capacity, $active, $ready, $reserved, $expected]) {
+            $this->assertSame($expected, $method->invoke($command, $capacity, $active, $ready, $reserved));
+        }
+    }
+
     public function test_latency_sensitive_queues_have_isolated_worker_pools(): void
     {
         $pools = config('queue.worker_pools');
@@ -22,7 +40,10 @@ class QueueWorkerPoolTest extends TestCase
         $this->assertSame('snapshots-parallel', $pools['snapshots']['queues']);
         $this->assertGreaterThanOrEqual(3, $pools['snapshots']['workers']);
         $this->assertSame('remote-sources', $pools['remote-sources']['queues']);
-        $this->assertSame('default,reports-low', $pools['background']['queues']);
+        $this->assertSame('default', $pools['background']['queues']);
+        $this->assertGreaterThanOrEqual(2, $pools['background']['workers']);
+        $this->assertSame('reports-low', $pools['reports-low']['queues']);
+        $this->assertSame(1, $pools['reports-low']['workers']);
         $this->assertSame('shadow-backfill', $pools['shadow-backfill']['queues']);
         $this->assertSame(1, config('queue.worker_sleep'));
     }
@@ -81,13 +102,12 @@ class QueueWorkerPoolTest extends TestCase
 
         $this->assertStringNotContainsString('$heartbeatWorkers + $freshReservedWorkers', $source);
         $this->assertStringContainsString('registeredWorkerProcessCount($poolName, $now)', $source);
-        $this->assertStringContainsString("'reserved_at' => null", $source);
-        $this->assertStringContainsString('Released snapshot jobs reserved by a dead worker process.', $source);
+        $this->assertStringNotContainsString("'reserved_at' => null", $source);
+        $this->assertStringContainsString('DatabaseQueue owns reservation recovery through retry_after', $source);
         $this->assertStringContainsString("'queue:worker-pool:pids:' . sha1(\$poolName)", $source);
-        $this->assertStringContainsString("'powershell.exe'", $source);
-        $this->assertFileExists(base_path('scripts/start_queue_worker.ps1'));
-        $launcher = file_get_contents(base_path('scripts/start_queue_worker.ps1'));
-        $this->assertStringContainsString('-RedirectStandardOutput $OutputLog', $launcher);
+        $this->assertStringContainsString("'create_process_group' => true", $source);
+        $this->assertStringContainsString("'create_new_console' => false", $source);
+        $this->assertStringNotContainsString('taskkill /F', $source);
     }
 
     public function test_staging_dispatch_reports_queued_until_worker_reserves_job(): void

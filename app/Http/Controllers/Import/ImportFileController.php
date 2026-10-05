@@ -78,12 +78,42 @@ class ImportFileController extends Controller
 
     private function assertImportPeriodRow(string $tableName, array $row, ?string $manualPeriode = null, ?int $rowNumber = null): void
     {
+        $this->assertUsakIbbizNominativeRow($tableName, $row, $rowNumber);
+
         $policy = $this->periodGuardService()->policyFor($tableName);
         if ($manualPeriode !== null && $policy !== null) {
             $row[$policy['column']] = $manualPeriode;
         }
 
         $this->periodGuardService()->assertRow($tableName, $row, $rowNumber);
+    }
+
+    private function assertUsakIbbizNominativeRow(string $tableName, array $row, ?int $rowNumber = null): void
+    {
+        if (strtolower(trim($tableName)) !== 'usak_ibbiz_uker') {
+            return;
+        }
+
+        $required = ['kanwil', 'kanca', 'uker', 'corporate_id', 'nama_perusahaan', 'status', 'deskripsi'];
+        $missing = array_values(array_filter(
+            $required,
+            static fn (string $column): bool => trim((string) ($row[$column] ?? '')) === ''
+        ));
+        $corporateId = strtoupper(trim((string) ($row['corporate_id'] ?? '')));
+        $status = strtoupper(trim((string) ($row['status'] ?? '')));
+        $description = strtoupper(trim((string) ($row['deskripsi'] ?? '')));
+        $valid = $missing === []
+            && str_starts_with($corporateId, 'IBB')
+            && in_array($status, ['1', '2', '3'], true)
+            && in_array($description, ['ACTIVE', 'ACTIVATED', 'DEACTIVATED', 'UNREG'], true);
+
+        if (!$valid) {
+            $rowLabel = $rowNumber !== null ? " pada baris {$rowNumber}" : '';
+            throw new \RuntimeException(
+                'Data IB Bisnis User Aktif tidak valid'.$rowLabel.'. '
+                .'Corporate ID harus berawalan IBB, status harus 1/2/3, dan deskripsi harus ACTIVE/ACTIVATED/DEACTIVATED/UNREG.'
+            );
+        }
     }
 
     private const SAFE_MEMORY_LIMIT = '512M';
@@ -469,6 +499,8 @@ class ImportFileController extends Controller
 
     private function buildColumnImportBlueprint(array $selectedColumns, array $csvHeaders, string $tableName = ''): array
     {
+        $this->assertIbbizSourceLayout($tableName, $csvHeaders);
+
         $blueprint = [];
 
         foreach ($selectedColumns as $index) {
@@ -508,6 +540,46 @@ class ImportFileController extends Controller
         }
 
         return $blueprint;
+    }
+
+    private function assertIbbizSourceLayout(string $tableName, array $headers): void
+    {
+        if (strtolower(trim($tableName)) !== 'usak_ibbiz_uker') {
+            return;
+        }
+
+        $normalized = array_map(
+            fn ($header): string => $this->normalizeImportHeaderName((string) $header),
+            array_values($headers)
+        );
+        $expected = [
+            ['TEXTBOX23', 'PERIODE'],
+            ['TEXTBOX10', 'NO', 'NOMOR'],
+            ['TEXTBOX11', 'KANWIL'],
+            ['TEXTBOX12', 'KANCA'],
+            ['TEXTBOX7', 'UKER'],
+            ['TEXTBOX13', 'CORPORATE_ID', 'CORPORATEID'],
+            ['TEXTBOX14', 'NAMA_PERUSAHAAN'],
+            ['TEXTBOX5', 'STATUS'],
+            ['TEXTBOX4', 'DESKRIPSI'],
+            ['REFERRAL'],
+        ];
+
+        $valid = count($normalized) === count($expected);
+        foreach ($expected as $index => $acceptedHeaders) {
+            if (!isset($normalized[$index]) || !in_array($normalized[$index], $acceptedHeaders, true)) {
+                $valid = false;
+                break;
+            }
+        }
+
+        if (!$valid) {
+            throw new \InvalidArgumentException(
+                'Struktur file tidak sesuai laporan IB Bisnis User Aktif By Uker. '
+                .'Gunakan file nominatif 10 kolom yang memuat Corporate ID, Nama Perusahaan, Status, Deskripsi, dan Referral. '
+                .'File rekap yang memuat JUMLAHUSER/JUMLAHTRANSAKSI/NOMINAL/FEE tidak boleh masuk ke tabel nominatif.'
+            );
+        }
     }
 
     private function resolveMappedImportColumnName(string $tableName, int $index, string $header): ?string
@@ -3339,6 +3411,14 @@ class ImportFileController extends Controller
             }
         } else { return back()->with('error', 'Format file tidak didukung.'); }
         
+        try {
+            $this->assertIbbizSourceLayout($tableName, $headers);
+        } catch (\InvalidArgumentException $e) {
+            $this->cleanupImportDirectory($filePath);
+
+            return redirect()->route('import.index')->with('error', $e->getMessage());
+        }
+
         $formattedUniqueValues = [];
         foreach ($uniqueValues as $index => $valuesMap) {
             $keys = array_keys($valuesMap);
@@ -4716,6 +4796,7 @@ class ImportFileController extends Controller
                 $isBrilinkSummary,
                 $this->isJumlahMerchantDetailTable($tableName)
             );
+            $this->assertIbbizSourceLayout($tableName, $meta['headers'] ?? []);
         } catch (\Throwable $e) {
             return response()->json([
                 'status' => 'error',

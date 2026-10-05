@@ -9,6 +9,7 @@ class GenericCsvImportStrategy implements ImportStrategyInterface
         'daily_loan_dinamis',
         'simpanan_multipn',
         'gi405_recovery',
+        'gi405_singlerow',
         'ssa_pinjaman',
         'ssa_simpanan',
         'hourly_dpk',

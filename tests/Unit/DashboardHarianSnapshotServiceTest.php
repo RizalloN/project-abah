@@ -1129,9 +1129,16 @@ class DashboardHarianSnapshotServiceTest extends TestCase
                 'total_simpanan',
                 'sme_os',
                 'consumer_os',
+                'sme_sml',
+                'consumer_sml',
+                'micro_sml',
+                'sme_npl',
+                'consumer_npl',
+                'micro_npl',
                 'simpanan_ritel',
                 'micro_os',
                 'simpanan_mikro',
+                'kecil_os',
                 'kpr_os',
                 'kur_kecil_os',
             ] as $column) {
@@ -1151,9 +1158,16 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             'total_simpanan' => 1_000_000_000_000,
             'sme_os' => 200_000_000_000,
             'consumer_os' => 100_000_000_000,
+            'sme_sml' => 20_000_000_000,
+            'consumer_sml' => 5_000_000_000,
+            'micro_sml' => 30_000_000_000,
+            'sme_npl' => 4_000_000_000,
+            'consumer_npl' => 3_000_000_000,
+            'micro_npl' => 2_000_000_000,
             'simpanan_ritel' => 500_000_000_000,
             'micro_os' => 300_000_000_000,
             'simpanan_mikro' => 500_000_000_000,
+            'kecil_os' => 200_000_000_000,
             'kpr_os' => 25_000_000_000,
             'kur_kecil_os' => 15_000_000_000,
             'created_at' => now(),
@@ -1167,12 +1181,22 @@ class DashboardHarianSnapshotServiceTest extends TestCase
 
         $kpr = $service->fetchTimeseriesTrend(['2026-05'], 'pinjaman', 'KC Madiun', null, 'ritel', 'kpr');
         $kurKecil = $service->fetchTimeseriesTrend(['2026-05'], 'pinjaman', 'KC Madiun', null, 'micro', 'kur_kecil');
+        $smeKecil = $service->fetchTimeseriesTrend(['2026-05'], 'pinjaman', 'KC Madiun', null, 'sme', 'kecil');
+        $consumerAllProducts = $service->fetchTimeseriesTrend(['2026-05'], 'pinjaman', 'KC Madiun', null, 'consumer');
+        $microAllProducts = $service->fetchTimeseriesTrend(['2026-05'], 'pinjaman', 'KC Madiun', null, 'micro');
+        $smeSml = $service->fetchTimeseriesTrend(['2026-05'], 'sml', 'KC Madiun', null, 'sme');
+        $consumerNpl = $service->fetchTimeseriesTrend(['2026-05'], 'npl', 'KC Madiun', null, 'consumer');
         $ldrTotal = $service->fetchTimeseriesTrend(['2026-05'], 'ldr', 'KC Madiun');
         $ldrRitel = $service->fetchTimeseriesTrend(['2026-05'], 'ldr', 'KC Madiun', null, 'ritel');
         $ldrMicro = $service->fetchTimeseriesTrend(['2026-05'], 'ldr', 'KC Madiun', null, 'micro');
 
         $this->assertSame(25.0, $kpr['series']['KC Madiun']['2026-05'][0]);
         $this->assertSame(15.0, $kurKecil['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(200.0, $smeKecil['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(100.0, $consumerAllProducts['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(300.0, $microAllProducts['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(10.0, $smeSml['series']['KC Madiun']['2026-05'][0]);
+        $this->assertSame(3.0, $consumerNpl['series']['KC Madiun']['2026-05'][0]);
         $this->assertSame('percent', $ldrTotal['value_type']);
         $this->assertSame(60.0, $ldrTotal['series']['KC Madiun']['2026-05'][0]);
         $this->assertSame(60.0, $ldrRitel['series']['KC Madiun']['2026-05'][0]);

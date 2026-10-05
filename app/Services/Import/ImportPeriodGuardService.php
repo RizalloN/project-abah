@@ -17,6 +17,7 @@ class ImportPeriodGuardService
         'ssa_pinjaman' => ['column' => 'month_day_year_of_periode', 'type' => 'date'],
         'ssa_almafacts' => ['column' => 'month_day_year_of_posisi', 'type' => 'date'],
         'gi405_recovery' => ['column' => 'periode', 'type' => 'date'],
+        'gi405_singlerow' => ['column' => 'periode', 'type' => 'date'],
         'cognos_ph' => ['column' => 'periode', 'type' => 'date'],
         'cognos_recovery' => ['column' => 'periode', 'type' => 'date'],
         'dly_kap_resegmentasi' => ['column' => 'periode', 'type' => 'date'],

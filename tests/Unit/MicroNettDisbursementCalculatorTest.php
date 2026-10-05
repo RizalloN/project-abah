@@ -109,7 +109,7 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         $this->assertSame(0, $kur['gt_250_realisasi_deb']);
     }
 
-    public function test_previous_cif_exposure_scope_and_per_account_subtraction_are_preserved(): void
+    public function test_previous_cif_exposure_is_applied_once_per_distinct_event(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             $this->row('OLD-KUR', 100_000_000, ['periode' => '2026-08-31']),
@@ -126,7 +126,90 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         $this->assertSame(2, $kur['realisasi_deb']);
         $this->assertSame(300_000_000.0, $kur['realisasi_os']);
         $this->assertSame(2, $mantri['realisasi_deb']);
-        $this->assertSame(200_000_000.0, $mantri['realisasi_os']);
+        $this->assertSame(400_000_000.0, $mantri['realisasi_os']);
+    }
+
+    public function test_mtd_keeps_disappeared_booking_and_deduplicates_daily_positions(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            $this->row('00012345', 200_000_000, ['periode' => '2026-09-05']),
+            $this->row('12345', 250_000_000, ['periode' => '2026-09-06']),
+            $this->row('00012345', 225_000_000, ['periode' => '2026-09-07']),
+            $this->row('OTHER', 100_000_000, [
+                'periode' => '2026-09-20',
+                'tgl_realisasi' => '2026-09-20',
+            ]),
+        ]);
+
+        foreach (['kurRm', 'mantri'] as $method) {
+            $result = app(MicroNettDisbursementCalculator::class)->{$method}('2026-09-19');
+            $this->assertCount(1, $result);
+            $this->assertSame(1, $result[0]['realisasi_deb']);
+            $this->assertSame(250_000_000.0, $result[0]['realisasi_os']);
+        }
+    }
+
+    public function test_first_non_blank_owner_is_kept_across_mtd_positions(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            $this->row('00012345', 200_000_000, [
+                'periode' => '2026-09-05',
+                'pn_pemrakarsa1' => '',
+            ]),
+            $this->row('12345', 250_000_000, [
+                'periode' => '2026-09-06',
+                'pn_pemrakarsa1' => '000777',
+            ]),
+            $this->row('00012345', 300_000_000, [
+                'periode' => '2026-09-07',
+                'pn_pemrakarsa1' => '000888',
+            ]),
+        ]);
+
+        $calculator = app(MicroNettDisbursementCalculator::class);
+        $this->assertSame('000777', $calculator->kurRm('2026-09-19')[0]['rm']);
+        $this->assertSame('000777', $calculator->mantri('2026-09-19')[0]['owner']);
+    }
+
+    public function test_zero_padded_previous_account_is_not_double_counted(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            $this->row('000999', 100_000_000, ['periode' => '2026-08-31']),
+            $this->row('999', 80_000_000, ['periode' => '2026-08-31']),
+            $this->row('NEW', 300_000_000),
+        ]);
+
+        foreach (['kurRm', 'mantri'] as $method) {
+            $result = app(MicroNettDisbursementCalculator::class)->{$method}('2026-09-19');
+            $this->assertSame(200_000_000.0, $result[0]['realisasi_os']);
+        }
+    }
+
+    public function test_mantri_consumes_complete_micro_cif_baseline_once_per_event(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            $this->row('OLD', 300_000_000, ['periode' => '2026-08-31']),
+            $this->row('NEW-A', 250_000_000),
+            $this->row('NEW-B', 100_000_000, ['tgl_realisasi' => '2026-09-06']),
+        ]);
+
+        $calculator = app(MicroNettDisbursementCalculator::class);
+        $this->assertSame(-250_000_000.0, $calculator->kurRm('2026-09-19')[0]['realisasi_os']);
+        $this->assertSame(50_000_000.0, $calculator->mantri('2026-09-19')[0]['realisasi_os']);
+    }
+
+    public function test_kur_uses_only_official_kur_ritel_description(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            $this->row('OFFICIAL', 200_000_000),
+            $this->row('SHADOW', 900_000_000, ['description' => 'KUR Ritel Shadow Classification']),
+        ]);
+
+        $result = app(MicroNettDisbursementCalculator::class)->kurRm('2026-09-19');
+
+        $this->assertCount(1, $result);
+        $this->assertSame(1, $result[0]['realisasi_deb']);
+        $this->assertSame(200_000_000.0, $result[0]['realisasi_os']);
     }
 
     private function row(string $account, float $amount, array $overrides = []): array

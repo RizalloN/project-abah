@@ -165,6 +165,22 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame('2026-05-15', $this->invokePrivateMethod($controller, 'resolveSelectedPeriod', $periods, '2026-05-16'));
     }
 
+    public function test_older_snapshot_does_not_mask_newer_ready_source_at_selected_date(): void
+    {
+        DB::table('performance_rm_snapshots')->insert([
+            'periode' => '2026-07-23', 'segmen' => 'MICRO', 'produk' => 'KUR-MIKRO',
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-07-24', 'produk_kinerja' => 'KURMIKRO',
+            'description' => 'Kredit Mikro - KUR Ritel 2015',
+            'nomor_rekening1' => 'READY-CURRENT', 'tgl_realisasi' => '2026-07-24',
+        ]);
+        $controller = new KinerjaRmMikroReportController();
+
+        $this->assertSame('2026-07-24', $this->invokePrivateMethod($controller, 'resolveEmbeddedReadyPeriod', '2026-07-24', false));
+        $this->assertSame('2026-07-23', $this->invokePrivateMethod($controller, 'resolveEmbeddedReadyPeriod', '2026-07-23', false));
+    }
+
     public function test_embedded_payload_serves_last_ready_period_while_latest_daily_loan_is_synced(): void
     {
         Queue::fake();

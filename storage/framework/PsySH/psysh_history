@@ -1,0 +1,12 @@
+DB::table('usak_ibbiz_uker')->selectRaw("periode, COUNT(*) total, SUM(UPPER(TRIM(deskripsi)) IN ('ACTIVE','ACTIVATED')) active_rows, COUNT(DISTINCT corporate_id) corp, SUM(corporate_id IS NULL OR TRIM(corporate_id)='') blank_corp, SUM(kanca IS NULL OR TRIM(kanca)='') blank_kanca, MIN(created_at) min_created, MAX(created_at) max_created")->groupBy('periode')->orderByDesc('periode')->limit(12)->get()->toJson(JSON_PRETTY_PRINT);
+DB::table('usak_ibbiz_uker')->selectRaw("periode, kanwil, kanca, uker, status, deskripsi, referral, COUNT(*) total")->whereIn('periode',['2026-09-29','2026-09-25'])->groupBy('periode','kanwil','kanca','uker','status','deskripsi','referral')->orderBy('periode')->orderByDesc('total')->limit(40)->get()->toJson(JSON_PRETTY_PRINT);
+DB::table('usak_ibbiz_uker')->select(['kanwil','kanca','uker','corporate_id','nama_perusahaan','status','deskripsi','referral'])->where('periode','2026-09-29')->limit(15)->get()->toJson(JSON_PRETTY_PRINT);
+DB::table('usak_ibbiz_uker')->selectRaw("status, deskripsi, COUNT(*) total")->where('periode','2026-09-29')->groupBy('status','deskripsi')->get()->toJson(JSON_PRETTY_PRINT);
+DB::table('import_jobs')->where('table_name','usak_ibbiz_uker')->orderByDesc('id')->limit(10)->get()->toJson(JSON_PRETTY_PRINT);
+Schema::getColumnListing('import_jobs');
+DB::table('import_jobs')->orderByDesc('id')->limit(15)->get()->toJson(JSON_PRETTY_PRINT);
+DB::table('import_jobs')->select(['id','file_name','status','total_files','total_success','total_failed','created_at'])->where('id_report',36)->orderByDesc('id')->limit(15)->get()->toJson(JSON_PRETTY_PRINT);
+DB::table('import_jobs')->selectRaw("id, JSON_EXTRACT(job_context, '$.import_params.headers') headers, JSON_EXTRACT(job_context, '$.import_params.active_filters') filters")->where('id_report',36)->orderByDesc('id')->limit(8)->get()->toJson(JSON_PRETTY_PRINT);
+DB::table('usak_ibbiz_uker')->selectRaw("status, deskripsi, COUNT(*) total")->where('periode','2026-09-25')->groupBy('status','deskripsi')->orderByDesc('total')->get()->toJson(JSON_PRETTY_PRINT);
+DB::table('usak_ibbiz_uker')->selectRaw("kanca, COUNT(*) total, SUM(UPPER(TRIM(deskripsi)) IN ('ACTIVE','ACTIVATED')) active_rows")->whereIn('periode',['2026-09-29','2026-09-25'])->groupBy('periode','kanca')->orderBy('periode')->get()->toJson(JSON_PRETTY_PRINT);
+exit

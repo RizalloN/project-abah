@@ -103,6 +103,177 @@ class PresentationFundingStrategyService
     }
 
     /**
+     * @return array<string, array{rows: array<int, array<string, mixed>>, dates: array<string, string>}>
+     */
+    public function buildDigitalUnitBreakdown(?string $period, string $branch): array
+    {
+        $target = $period ? Carbon::parse($period)->startOfDay() : now()->startOfDay();
+        $branch = strtoupper(trim($branch));
+
+        $edcPeriods = $this->datePeriods('jumlah_merchant_detail', 'POSISI', $target);
+        $qrisPeriods = $this->datePeriods('jumlah_merchant_qris_detail', 'POSISI', $target);
+        $casaPeriods = $this->datePeriods(['casa_brilink_web', 'casa_brilink_edc'], 'periode', $target->copy()->endOfMonth());
+        $brimoPeriods = $this->datePeriods(['user_brimo_rpt_v2', 'user_brimo_fin'], 'posisi', $target);
+        $brilinkPeriods = $this->monthNamePeriods('brilink_web_laporan_summary_transaksi_brilink_web', 'periode', $target);
+        $qlolaPeriods = $this->datePeriods('usak_ibbiz_uker', 'periode', $target);
+
+        return [
+            'edc' => $this->buildDigitalUnitRows(
+                ['jumlah_merchant_detail'],
+                $edcPeriods,
+                $edcPeriods,
+                $branch,
+                'UPPER(TRIM(NAMA_KANCA))',
+                'TRIM(NAMA_UKER)',
+                'DATE(POSISI)',
+                fn (string $key): string => "COUNT(DISTINCT CASE WHEN DATE(POSISI) = ? THEN MID END) as metric_{$key}",
+                'integer'
+            ),
+            'qris' => $this->buildDigitalUnitRows(
+                ['jumlah_merchant_qris_detail'],
+                $qrisPeriods,
+                $qrisPeriods,
+                $branch,
+                'UPPER(TRIM(MBDESC))',
+                'TRIM(BRDESC)',
+                'POSISI',
+                fn (string $key): string => "COALESCE(SUM(CASE WHEN POSISI = ? THEN COALESCE(CAST(AKUMULASI_SV_TOTAL AS DECIMAL(20,2)), 0) ELSE 0 END), 0) as metric_{$key}",
+                'currency'
+            ),
+            'casa_merchant' => $this->buildDigitalUnitRows(
+                ['casa_brilink_web', 'casa_brilink_edc'],
+                $casaPeriods,
+                $casaPeriods,
+                $branch,
+                'UPPER(TRIM(mbdesc))',
+                'TRIM(brdesc)',
+                'periode',
+                fn (string $key): string => "COALESCE(SUM(CASE WHEN periode = ? THEN COALESCE(jml_nominal_casa, 0) ELSE 0 END), 0) as metric_{$key}",
+                'currency'
+            ),
+            'brimo' => $this->buildDigitalUnitRows(
+                ['user_brimo_rpt_v2', 'user_brimo_fin'],
+                $brimoPeriods,
+                $brimoPeriods,
+                $branch,
+                'UPPER(TRIM(COALESCE(mbdesc, branch)))',
+                'TRIM(brdesc)',
+                'posisi',
+                fn (string $key): string => "COALESCE(SUM(CASE WHEN posisi = ? THEN COALESCE(jumlah, 0) ELSE 0 END), 0) as metric_{$key}",
+                'currency'
+            ),
+            'brilink' => $this->buildDigitalUnitRows(
+                ['brilink_web_laporan_summary_transaksi_brilink_web'],
+                $brilinkPeriods,
+                $this->monthPeriodLabels($brilinkPeriods, $target),
+                $branch,
+                'UPPER(TRIM(cabang))',
+                'TRIM(uker)',
+                'periode',
+                fn (string $key): string => "COALESCE(SUM(CASE WHEN periode = ? THEN COALESCE(total_nominal, 0) ELSE 0 END), 0) as metric_{$key}",
+                'currency'
+            ),
+            'qlola' => $this->buildDigitalUnitRows(
+                ['usak_ibbiz_uker'],
+                $qlolaPeriods,
+                $qlolaPeriods,
+                $branch,
+                "UPPER(TRIM(CASE WHEN LOCATE(' - ', kanca) > 0 THEN SUBSTRING(kanca, LOCATE(' - ', kanca) + 3) ELSE kanca END))",
+                'TRIM(uker)',
+                'periode',
+                fn (string $key): string => "COUNT(CASE WHEN periode = ? AND UPPER(TRIM(deskripsi)) IN ('ACTIVE', 'ACTIVATED') THEN 1 END) as metric_{$key}",
+                'integer'
+            ),
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $tables
+     * @param  array{ytd: ?string, mtd: ?string, current: ?string}  $queryPeriods
+     * @param  array{ytd: ?string, mtd: ?string, current: ?string}  $labelPeriods
+     * @return array{rows: array<int, array<string, mixed>>, dates: array<string, string>}
+     */
+    private function buildDigitalUnitRows(
+        array $tables,
+        array $queryPeriods,
+        array $labelPeriods,
+        string $branch,
+        string $branchExpression,
+        string $unitExpression,
+        string $periodExpression,
+        callable $metricSql,
+        string $format
+    ): array {
+        $metricsByUnit = [];
+        $availablePeriods = array_values(array_unique(array_filter($queryPeriods)));
+
+        if ($branch !== '' && $availablePeriods !== []) {
+            foreach ($tables as $table) {
+                if (! Schema::hasTable($table)) {
+                    continue;
+                }
+
+                $query = DB::table($table)->selectRaw($unitExpression.' as unit_label');
+                foreach ($queryPeriods as $key => $value) {
+                    $query->selectRaw($metricSql($key), [$value]);
+                }
+
+                $rows = $query
+                    ->whereRaw($branchExpression.' = ?', [$branch])
+                    ->whereRaw($unitExpression." <> ''")
+                    ->whereIn(DB::raw($periodExpression), $availablePeriods)
+                    ->groupByRaw($unitExpression)
+                    ->get();
+
+                foreach ($rows as $row) {
+                    $unit = trim((string) ($row->unit_label ?? ''));
+                    if ($unit === '') {
+                        continue;
+                    }
+
+                    foreach (['ytd', 'mtd', 'current'] as $key) {
+                        $metricsByUnit[$unit][$key] = (float) ($metricsByUnit[$unit][$key] ?? 0)
+                            + (float) ($row->{"metric_{$key}"} ?? 0);
+                    }
+                }
+            }
+        }
+
+        uksort($metricsByUnit, 'strnatcasecmp');
+        $rows = [];
+        foreach ($metricsByUnit as $unit => $metrics) {
+            $ytd = (float) ($metrics['ytd'] ?? 0);
+            $mtd = (float) ($metrics['mtd'] ?? 0);
+            $current = (float) ($metrics['current'] ?? 0);
+            if ($ytd === 0.0 && $mtd === 0.0 && $current === 0.0) {
+                continue;
+            }
+
+            $deltaMtd = $current - $mtd;
+            $deltaYtd = $current - $ytd;
+            $rows[] = [
+                'no' => count($rows) + 1,
+                'branch' => $unit,
+                'ytd' => $this->formatMetric($ytd, $format),
+                'mtd' => $this->formatMetric($mtd, $format),
+                'current' => $this->formatMetric($current, $format),
+                'd_mtd' => $this->formatSignedMetric($deltaMtd, $format),
+                'd_mtd_raw' => $deltaMtd,
+                'd_ytd' => $this->formatSignedMetric($deltaYtd, $format),
+                'd_ytd_raw' => $deltaYtd,
+                'rka' => '-',
+            ];
+        }
+
+        return [
+            'rows' => $rows,
+            'dates' => collect($labelPeriods)->map(fn ($value): string => $value
+                ? Carbon::parse((string) $value)->locale('id')->translatedFormat('d M y')
+                : '-')->all(),
+        ];
+    }
+
+    /**
      * @param  array<int, string>  $branches
      * @return array<int, array<string, mixed>>
      */

@@ -327,6 +327,16 @@ class KinerjaRmMikroReportController extends Controller
             ->values();
     }
 
+    public function landingKurRmRoster(): array
+    {
+        return $this->brihcKurRmReferences(collect())
+            ->flatten(1)
+            ->filter(static fn (array $reference): bool => $reference['active'] && $reference['pn'] !== '-')
+            ->unique('identity')
+            ->values()
+            ->all();
+    }
+
     private function asUnassignedKurRmRow(array $row, string $source): array
     {
         $row['pn'] = '-';
@@ -2001,7 +2011,7 @@ class KinerjaRmMikroReportController extends Controller
         $freshnessKey = 'snapshot:daily_loan:auto-sync:check:kinerja_rm_mikro:'
             .$period.':v'.$this->reportCacheVersion();
 
-        return (bool) Cache::remember($freshnessKey, now()->addSeconds(30), function () use ($period, $source): bool {
+        return (bool) Cache::remember($freshnessKey, now()->addMinutes(10), function () use ($period, $source): bool {
             $snapshot = Schema::hasTable(self::SNAPSHOT_TABLE)
                 ? DB::table(self::SNAPSHOT_TABLE)
                     ->where('periode', $period)
@@ -2046,11 +2056,12 @@ class KinerjaRmMikroReportController extends Controller
 
     private function resolveEmbeddedReadyPeriod(string $requestedPeriod, bool $mantri): ?string
     {
-        $cacheKey = 'kinerja_rm_mikro:embedded_ready_period:'
+        $cacheKey = 'kinerja_rm_mikro:embedded_ready_period:v2:'
             .($mantri ? 'mantri' : 'rm').':'
             .$requestedPeriod.':v'.$this->reportCacheVersion();
 
-        return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($requestedPeriod, $mantri): ?string {
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($requestedPeriod, $mantri): ?string {
+            $snapshotPeriod = null;
             if (Schema::hasTable(self::SNAPSHOT_TABLE)) {
                 $snapshotQuery = DB::table(self::SNAPSHOT_TABLE)
                     ->where('periode', '<=', $requestedPeriod);
@@ -2066,7 +2077,7 @@ class KinerjaRmMikroReportController extends Controller
                     ->orderByDesc('periode')
                     ->value('periode');
 
-                if ($snapshotPeriod) {
+                if ($snapshotPeriod === $requestedPeriod) {
                     return Carbon::parse($snapshotPeriod)->toDateString();
                 }
             }
@@ -2074,7 +2085,7 @@ class KinerjaRmMikroReportController extends Controller
             if (! Schema::hasTable(self::SOURCE_TABLE)
                 || ! Schema::hasColumn(self::SOURCE_TABLE, 'segmen_kinerja')
                 || ! Schema::hasColumn(self::SOURCE_TABLE, 'produk_kinerja')) {
-                return null;
+                return $snapshotPeriod ? Carbon::parse($snapshotPeriod)->toDateString() : null;
             }
 
             $sourceQuery = DB::table(self::SOURCE_TABLE)
@@ -2105,8 +2116,12 @@ class KinerjaRmMikroReportController extends Controller
                 ->orderByDesc('periode')
                 ->value('periode');
 
-            return $sourcePeriod
-                ? Carbon::parse($sourcePeriod)->toDateString()
+            // An older snapshot must not mask a newer, normalized source
+            // position that the embedded report can already aggregate.
+            $readyPeriod = max($snapshotPeriod ?? '', $sourcePeriod ?? '');
+
+            return $readyPeriod !== ''
+                ? Carbon::parse($readyPeriod)->toDateString()
                 : null;
         });
     }

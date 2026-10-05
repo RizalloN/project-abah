@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "anthropic-frontend-design": {
+      "version": "1.0.2",
+      "installedAt": "2026-09-28T00:55:43.473Z",
+      "platform": "gemini"
+    }
+  }
+}

@@ -45,6 +45,7 @@ beforeEach(function (): void {
         $table->string('segmen')->nullable();
         $table->string('ket_produk_tiering')->nullable();
         $table->string('kualitas')->nullable();
+        $table->string('flag_movement_kualitas')->nullable();
         foreach ([
             'plafond',
             'baki_debet',
@@ -200,9 +201,82 @@ it('renders the CRAS mapping workspace and navigation entry', function (): void 
         ->assertSee('Wilayah yang Perlu Dilihat')
         ->assertSee('NPL Terbesar')
         ->assertSee('SML Terbesar')
+        ->assertSee('Series Movement Kualitas UG dan DG')
+        ->assertSee('1. Pilih Segmen')
+        ->assertSee('2. Pilih Produk')
+        ->assertSee('Semua Produk Small')
+        ->assertSee('Consumer')
         ->assertSee('id="crasPortfolioMap"', false)
         ->assertSee('Sector Acceptance Criteria LPG')
         ->assertSee('Marketshare CRAS LPG');
+});
+
+it('builds dependent Small and Consumer product movement series for area and branch scope', function (): void {
+    $base = [
+        'br_number' => '00045',
+        'ket_unit_kerja' => 'KC MADIUN',
+        'status_rekening' => 'AKTIF',
+        'sektor_ekonomi' => 'PERDAGANGAN',
+        'sub_sektor_ekonomi' => 'ECERAN',
+        'loan_type' => 'KMK',
+        'ket_produk_tiering' => 'KECIL',
+        'kualitas' => '1',
+    ];
+
+    DB::table('cras')->insert([
+        $base + ['cras_uuid' => 'series-cashcoll-ug-madiun', 'cras_periode' => '2026-01-31', 'ket_kanca' => 'KC Madiun', 'segmen' => 'Small', 'produk' => 'Cashcoll', 'flag_movement_kualitas' => 'UG', 'baki_debet' => '100'],
+        $base + ['cras_uuid' => 'series-cashcoll-ug-ngawi', 'cras_periode' => '2026-01-31', 'ket_kanca' => 'KC Ngawi', 'segmen' => 'Small', 'produk' => 'Cashcoll', 'flag_movement_kualitas' => 'UG', 'baki_debet' => '50'],
+        $base + ['cras_uuid' => 'series-cashcoll-dg-madiun', 'cras_periode' => '2026-08-31', 'ket_kanca' => 'KC Madiun', 'segmen' => 'Small', 'produk' => 'Cashcoll', 'flag_movement_kualitas' => 'DG', 'baki_debet' => '200'],
+        $base + ['cras_uuid' => 'series-small-ug-madiun', 'cras_periode' => '2026-01-31', 'ket_kanca' => 'KC Madiun', 'segmen' => 'Small', 'produk' => 'Small', 'flag_movement_kualitas' => 'UG', 'baki_debet' => '300'],
+        $base + ['cras_uuid' => 'series-consumer-dg-madiun', 'cras_periode' => '2026-08-31', 'ket_kanca' => 'KC Madiun', 'segmen' => 'Consumer', 'produk' => 'BRIGUNA', 'flag_movement_kualitas' => 'DG', 'baki_debet' => '400'],
+        $base + ['cras_uuid' => 'series-consumer-dg-ngawi', 'cras_periode' => '2026-08-31', 'ket_kanca' => 'KC Ngawi', 'segmen' => 'Consumer', 'produk' => 'KPR', 'flag_movement_kualitas' => 'DG', 'baki_debet' => '600'],
+        $base + ['cras_uuid' => 'series-kur-small-excluded', 'cras_periode' => '2026-01-31', 'ket_kanca' => 'KC Madiun', 'segmen' => 'Small', 'produk' => 'KUR-Small', 'flag_movement_kualitas' => 'UG', 'baki_debet' => '900'],
+        array_merge($base, ['cras_uuid' => 'series-ph-excluded', 'cras_periode' => '2026-01-31', 'ket_kanca' => 'KC Madiun', 'status_rekening' => 'PH', 'segmen' => 'Small', 'produk' => 'Small', 'flag_movement_kualitas' => 'UG', 'baki_debet' => '1000']),
+        $base + ['cras_uuid' => 'series-stay-excluded', 'cras_periode' => '2026-01-31', 'ket_kanca' => 'KC Madiun', 'segmen' => 'Consumer', 'produk' => 'Konsumtif Lainnya', 'flag_movement_kualitas' => 'STAY', 'baki_debet' => '2000'],
+    ]);
+
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', ['periode' => '2026-08-31']))
+        ->assertOk()
+        ->assertJsonPath('movement_series.ready', true)
+        ->assertJsonPath('movement_series.scope.label', 'Seluruh Area 6')
+        ->assertJsonCount(8, 'movement_series.periods')
+        ->assertJsonPath('movement_series.periods.0.value', '2026-01-31')
+        ->assertJsonPath('movement_series.periods.7.value', '2026-08-31')
+        ->assertJsonCount(2, 'movement_series.segments')
+        ->assertJsonPath('movement_series.segments.0.key', 'small')
+        ->assertJsonCount(4, 'movement_series.segments.0.products')
+        ->assertJsonPath('movement_series.segments.0.products.0.label', 'Semua Produk Small')
+        ->assertJsonPath('movement_series.segments.0.products.0.rows.0.values.2026-01-31', 1350)
+        ->assertJsonPath('movement_series.segments.0.products.1.label', 'Cashcoll')
+        ->assertJsonPath('movement_series.segments.0.products.1.rows.0.values.2026-01-31', 150)
+        ->assertJsonPath('movement_series.segments.0.products.2.label', 'KUR-Small')
+        ->assertJsonPath('movement_series.segments.0.products.2.rows.0.values.2026-01-31', 900)
+        ->assertJsonPath('movement_series.segments.0.products.3.label', 'Small')
+        ->assertJsonPath('movement_series.segments.0.products.3.rows.0.values.2026-01-31', 300)
+        ->assertJsonPath('movement_series.segments.1.key', 'consumer')
+        ->assertJsonCount(4, 'movement_series.segments.1.products')
+        ->assertJsonPath('movement_series.segments.1.products.0.rows.1.values.2026-08-31', 1000)
+        ->assertJsonPath('movement_series.segments.1.products.1.label', 'BRIGUNA')
+        ->assertJsonPath('movement_series.segments.1.products.1.rows.1.values.2026-08-31', 400)
+        ->assertJsonPath('movement_series.segments.1.products.2.label', 'Konsumtif Lainnya')
+        ->assertJsonPath('movement_series.segments.1.products.2.rows.0.values.2026-01-31', 0)
+        ->assertJsonPath('movement_series.segments.1.products.3.label', 'KPR')
+        ->assertJsonPath('movement_series.segments.1.products.3.rows.1.values.2026-08-31', 600);
+
+    $this->actingAs($user)
+        ->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', [
+            'periode' => '2026-08-31',
+            'wilayah' => 'madiun',
+        ]))
+        ->assertOk()
+        ->assertJsonPath('movement_series.scope.label', 'KC Madiun')
+        ->assertJsonPath('movement_series.segments.0.products.0.rows.0.values.2026-01-31', 1300)
+        ->assertJsonPath('movement_series.segments.1.products.0.rows.1.values.2026-08-31', 400)
+        ->assertJsonPath('movement_series.segments.1.products.3.label', 'KPR')
+        ->assertJsonPath('movement_series.segments.1.products.3.rows.1.values.2026-08-31', 0);
 });
 
 it('maps Micro and Small with segment-specific SAC colors and excludes Briguna Mikro', function (): void {

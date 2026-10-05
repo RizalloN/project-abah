@@ -705,6 +705,42 @@ class ImportFileControllerTest extends TestCase
         $this->assertSame([2, 3, 4, 5, 6, 7, 8, 9], array_column($blueprint, 'index'));
     }
 
+    public function test_usak_ibbiz_uker_rejects_aggregate_report_layout(): void
+    {
+        $controller = new ImportFileController();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Struktur file tidak sesuai laporan IB Bisnis User Aktif By Uker');
+
+        $this->invokeMethod($controller, 'buildColumnImportBlueprint', [
+            range(0, 9),
+            ['textbox10', 'textbox17', 'textbox11', 'MBDESC', 'textbox12', 'textbox21', 'JUMLAHUSER', 'JUMLAHTRANSAKSI', 'NOMINAL', 'FEE'],
+            'usak_ibbiz_uker',
+        ]);
+    }
+
+    public function test_usak_ibbiz_uker_rejects_non_nominative_row_semantics(): void
+    {
+        $controller = new ImportFileController();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Data IB Bisnis User Aktif tidak valid pada baris 2');
+
+        $this->invokeMethod($controller, 'assertUsakIbbizNominativeRow', [
+            'usak_ibbiz_uker',
+            [
+                'kanwil' => '45',
+                'kanca' => 'KC Madiun',
+                'uker' => '45',
+                'corporate_id' => 'KC Madiun',
+                'nama_perusahaan' => '670',
+                'status' => '11,038',
+                'deskripsi' => '310,104,276,396.00',
+            ],
+            2,
+        ]);
+    }
+
     public function test_ibbiz_preview_headers_are_mapped_neatly(): void
     {
         $controller = new ImportFileController();

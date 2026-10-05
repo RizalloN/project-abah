@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Jobs\AuditAndHealSnapshotsJob;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
+use App\Services\Import\QueueSupervisorProcessRunner;
 use App\Services\Import\QueueWorkerControlService;
 use App\Services\Import\SnapshotQueuePauseService;
 use Illuminate\Console\Command;
@@ -15,6 +16,12 @@ use Symfony\Component\Process\PhpExecutableFinder;
 
 class EnsureQueueWorkerRunning extends Command
 {
+    /** @var array<int, resource> */
+    private array $windowsWorkerProcesses = [];
+
+    /** @var array<int, array{pool: string, started_at: float, stable: bool}> */
+    private array $windowsWorkerStarts = [];
+
     protected $signature = 'queue:ensure-running
                           {--queues= : Queues to monitor}
                           {--timeout= : Queue worker timeout in seconds (0 = unlimited)}
@@ -23,6 +30,7 @@ class EnsureQueueWorkerRunning extends Command
                           {--max-jobs= : Maximum jobs before restart (0 = unlimited)}
                           {--max-time= : Maximum seconds before restart (0 = unlimited)}
                           {--check-interval=60 : How often to check if worker is running}
+                          {--managed : Started by the application watchdog; never re-enable a disabled monitor}
                           {--once : Run one check and exit}';
 
     protected $description = 'Ensure queue worker is running, restart if stopped';
@@ -65,13 +73,24 @@ class EnsureQueueWorkerRunning extends Command
             return 0;
         }
 
-        // A deliberate CLI invocation is itself an explicit request to enable
-        // this project monitor again after it was stopped from the UI.
-        $workerControl->markEnabled();
+        $managedLaunch = (bool) $this->option('managed');
+        // A deliberate operator CLI invocation is an explicit enable request.
+        // A delayed managed launcher must never undo a Stop action from the UI.
+        if (!$managedLaunch) {
+            $workerControl->markEnabled();
+        }
 
         if (!$workerControl->isEnabled()) {
             if ($this->output) {
                 $this->warn('Queue worker monitor dinonaktifkan melalui Job Management.');
+            }
+
+            return 0;
+        }
+
+        if (!$workerControl->claimMonitorLeadership()) {
+            if ($this->output) {
+                $this->warn('Monitor lain sudah memegang leadership. Proses duplikat dihentikan.');
             }
 
             return 0;
@@ -88,7 +107,13 @@ class EnsureQueueWorkerRunning extends Command
 
         try {
             while ($workerControl->isEnabled()) {
-                $workerControl->touchMonitorHeartbeat();
+                if (!$workerControl->touchMonitorHeartbeat()) {
+                    if ($this->output) {
+                        $this->warn('Leadership monitor berpindah ke proses lain. Monitor ini berhenti aman.');
+                    }
+                    break;
+                }
+                $this->reapFinishedWindowsWorkers();
 
                 try {
                     $this->maintainMonitorHealth();
@@ -137,8 +162,14 @@ class EnsureQueueWorkerRunning extends Command
                     if (!$workerControl->isEnabled()) {
                         break 2;
                     }
+                    if ($workerControl->consumeDemandSignal()) {
+                        break;
+                    }
                     sleep(1);
-                    $workerControl->touchMonitorHeartbeat();
+                    $this->reapFinishedWindowsWorkers();
+                    if (!$workerControl->touchMonitorHeartbeat()) {
+                        break 2;
+                    }
                 }
             }
         } finally {
@@ -151,8 +182,10 @@ class EnsureQueueWorkerRunning extends Command
     private function recoverOrphanedImports(): void
     {
         try {
-            $reconciled = app(ImportProgressService::class)->purgeStaleProcessingJobs();
             $recoveredJobIds = app(ImportExecutionService::class)->recoverOrphanedZeroProgressJobs();
+            // Give confirmed zero-progress orphans a recovery opportunity before
+            // the stale sweep turns them terminal and excludes them from recovery.
+            $reconciled = app(ImportProgressService::class)->purgeStaleProcessingJobs();
             app(SnapshotQueuePauseService::class)->resumeWhenNoActiveImports();
 
             if ($reconciled > 0 && $this->output) {
@@ -192,46 +225,10 @@ class EnsureQueueWorkerRunning extends Command
             $now = time();
             $retryAfter = $this->queueRetryAfterSeconds();
             $staleReservedCutoff = $now - $retryAfter;
-            $heartbeatWorkers = $this->freshWorkerHeartbeatCount($poolName, $now);
-            $registeredWorkers = $this->registeredWorkerProcessCount($poolName, $now);
-            $orphanGraceCutoff = $now - 120;
-            $isSnapshotOnlyPool = count(array_filter(
-                $queueNames,
-                static fn (string $queue): bool => str_starts_with($queue, 'snapshots-')
-            )) === count($queueNames);
-            $orphanCandidates = DB::table('jobs')
-                ->whereIn('queue', $queueNames)
-                ->whereNotNull('reserved_at')
-                ->where('reserved_at', '<=', $orphanGraceCutoff)
-                ->count();
-            $detectedWorkers = 0;
-            if ($orphanCandidates > 0 && max($heartbeatWorkers, $registeredWorkers) === 0) {
-                $detectedWorkers = $this->queueWorkerProcessCount($queues);
-            }
 
+            // DatabaseQueue owns reservation recovery through retry_after. A short
+            // heartbeat/probe outage is not proof that a long import is dead.
             $releasedOrphanJobs = 0;
-            if ($orphanCandidates > 0 && max($heartbeatWorkers, $registeredWorkers, $detectedWorkers) === 0) {
-                $releasedOrphanJobs = DB::table('jobs')
-                    ->whereIn('queue', $queueNames)
-                    ->whereNotNull('reserved_at')
-                    ->where('reserved_at', '<=', $orphanGraceCutoff)
-                    ->update([
-                        'reserved_at' => null,
-                        'available_at' => $now,
-                    ]);
-
-                if ($releasedOrphanJobs > 0) {
-                    $logMessage = $isSnapshotOnlyPool
-                        ? 'Released snapshot jobs reserved by a dead worker process.'
-                        : 'Released queue jobs reserved by a dead worker process.';
-
-                    Log::warning($logMessage, [
-                        'pool' => $poolName,
-                        'queues' => $queues,
-                        'released_jobs' => $releasedOrphanJobs,
-                    ]);
-                }
-            }
 
             $pendingJobs = DB::table('jobs')
                 ->whereIn('queue', $queueNames)
@@ -241,32 +238,29 @@ class EnsureQueueWorkerRunning extends Command
                         ->orWhere('reserved_at', '<=', $staleReservedCutoff);
                 })
                 ->count();
-            $oldestReadyJobCreatedAt = DB::table('jobs')
-                ->whereIn('queue', $queueNames)
-                ->where('available_at', '<=', $now)
-                ->whereNull('reserved_at')
-                ->min('created_at');
+            if ($pendingJobs === 0) {
+                // Idle pools need neither OS probes nor additional queue scans.
+                return;
+            }
+
+            $heartbeatWorkers = $this->freshWorkerHeartbeatCount($poolName, $now);
+            $registeredWorkers = $this->registeredWorkerProcessCount($poolName, $now);
+            $detectedWorkers = 0;
             $staleReservedJobs = DB::table('jobs')
                 ->whereIn('queue', $queueNames)
                 ->whereNotNull('reserved_at')
                 ->where('reserved_at', '<=', $staleReservedCutoff)
                 ->count();
-            if ($pendingJobs === 0) {
-                // No jobs ready to process, don't need worker.
-                return;
-            }
 
             $freshReservedWorkers = DB::table('jobs')
                 ->whereIn('queue', $queueNames)
                 ->whereNotNull('reserved_at')
                 ->where('reserved_at', '>', $staleReservedCutoff)
                 ->count();
-            $pendingWaitSeconds = $oldestReadyJobCreatedAt !== null
-                ? max(0, $now - (int) $oldestReadyJobCreatedAt)
-                : 0;
-            $startupLeaseWorkers = $pendingWaitSeconds <= 15
-                ? (int) Cache::get($this->workerLeaseKey($poolName), 0)
-                : 0;
+            // The lease describes workers launched moments ago, regardless of
+            // how old the waiting job is. Tying it to pending age caused a fast
+            // demand signal to launch the same pool twice before first heartbeat.
+            $startupLeaseWorkers = (int) Cache::get($this->workerLeaseKey($poolName), 0);
             // A reserved job is not proof that its worker process is still alive. On a
             // worker crash it remains reserved until retry_after and must not suppress recovery.
             $knownWorkers = max($heartbeatWorkers, $registeredWorkers, $startupLeaseWorkers);
@@ -274,10 +268,19 @@ class EnsureQueueWorkerRunning extends Command
                 $detectedWorkers = $this->queueWorkerProcessCount($queues);
             }
             $activeWorkers = max($knownWorkers, $detectedWorkers);
-            $workersToStart = max(0, $desiredWorkers - $activeWorkers);
+            $workersToStart = $this->workersNeededForDemand($desiredWorkers, $activeWorkers, $pendingJobs, $freshReservedWorkers);
 
             if ($workersToStart > 0) {
-                $this->warn("[" . now()->toDateTimeString() . "] Pool {$poolName} needs {$workersToStart} worker(s) for {$pendingJobs} ready job(s).");
+                if ($this->poolLaunchBackoffActive($poolName, $now)) {
+                    if ($this->output) {
+                        $this->warn("Pool {$poolName} sedang cooldown setelah kegagalan launch; retry dilakukan otomatis.");
+                    }
+                    return;
+                }
+
+                if ($this->output) {
+                    $this->warn("[" . now()->toDateTimeString() . "] Pool {$poolName} needs {$workersToStart} worker(s) for {$pendingJobs} ready job(s).");
+                }
 
                 $startedWorkers = 0;
                 for ($workerNumber = 1; $workerNumber <= $workersToStart; $workerNumber++) {
@@ -296,13 +299,15 @@ class EnsureQueueWorkerRunning extends Command
                         min($desiredWorkers, $activeWorkers + $startedWorkers),
                         now()->addSeconds(15)
                     );
+                } else {
+                    $this->recordPoolLaunchFailure($poolName, $now);
                 }
 
                 if ($this->output) {
                     $this->info("Pool {$poolName}: {$startedWorkers} worker(s) started.");
                 }
 
-                Log::warning('Queue worker was not running. Automatically restarted.', [
+                Log::warning($startedWorkers > 0 ? 'Queue worker capacity increased.' : 'Queue worker launch failed; retry scheduled.', [
                     'pool' => $poolName,
                     'pending_jobs' => $pendingJobs,
                     'fresh_reserved_jobs' => $freshReservedWorkers,
@@ -331,6 +336,15 @@ class EnsureQueueWorkerRunning extends Command
         } finally {
             $poolLock->release();
         }
+    }
+
+    private function workersNeededForDemand(int $capacity, int $active, int $ready, int $reserved): int
+    {
+        // Reservations estimate occupancy, but never establish process liveness.
+        $busy = min(max(0, $active), max(0, $reserved));
+        $target = min(max(0, $capacity), max(0, $ready) + $busy);
+
+        return max(0, $target - max(0, $active));
     }
 
     private function queueWorkerProcessCount(string $queues): int
@@ -370,13 +384,17 @@ class EnsureQueueWorkerRunning extends Command
             return $cachedOutput;
         }
 
-        if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
-            return '';
+        if (PHP_OS_FAMILY === 'Windows') {
+            $script = "\$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process -Filter \"Name = 'php.exe'\" | ForEach-Object { \$_.CommandLine }";
+            $encoded = base64_encode(mb_convert_encoding($script, 'UTF-16LE', 'UTF-8'));
+            $command = ['powershell.exe', '-NoProfile', '-NonInteractive', '-NoLogo', '-EncodedCommand', $encoded];
+        } else {
+            $command = ['ps', '-eo', 'args'];
         }
-
-        $script = "\$ProgressPreference = 'SilentlyContinue'; Get-CimInstance Win32_Process -Filter \"Name = 'php.exe'\" -ErrorAction SilentlyContinue | ForEach-Object { \$_.CommandLine }";
-        $encoded = base64_encode(mb_convert_encoding($script, 'UTF-16LE', 'UTF-8'));
-        $output = shell_exec('powershell.exe -NoProfile -NonInteractive -NoLogo -ExecutionPolicy Bypass -EncodedCommand ' . escapeshellarg($encoded) . ' 2>NUL') ?? '';
+        [$exitCode, $output, $error] = app(QueueSupervisorProcessRunner::class)->run($command);
+        if ($exitCode !== 0) {
+            throw new \RuntimeException('Cannot inspect queue workers: ' . $error);
+        }
 
         $cachedOutput = $output;
         $cachedAt = time();
@@ -417,48 +435,51 @@ class EnsureQueueWorkerRunning extends Command
         // Start worker in background (non-blocking).
         $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
         if ($isWindows) {
-            $launcher = base_path('scripts/start_queue_worker.ps1');
-            $launcherArgs = [
-                '-NoProfile',
-                '-NonInteractive',
-                '-NoLogo',
-                '-ExecutionPolicy',
-                'Bypass',
-                '-File',
-                $launcher,
-                '-PhpExecutable',
-                $php,
-                '-ArtisanPath',
-                $artisan,
-                '-WorkingDirectory',
+            $process = @proc_open(
+                array_merge([$php], $workerArgs),
+                [
+                    0 => ['file', 'NUL', 'r'],
+                    1 => ['file', $logBase . '.out.log', 'a'],
+                    2 => ['file', $logBase . '.err.log', 'a'],
+                ],
+                $pipes,
                 base_path(),
-                '-Queues',
-                $queues,
-                '-Timeout',
-                $timeout,
-                '-Memory',
-                $memory,
-                '-Sleep',
-                (string) max(0, (int) config('queue.worker_sleep', 1)),
-                '-OutputLog',
-                $logBase . '.out.log',
-                '-ErrorLog',
-                $logBase . '.err.log',
-                '-MaxJobs',
-                (string) $maxJobs,
-                '-MaxTime',
-                (string) $maxTime,
-            ];
-            $launcherArgumentLine = implode(' ', array_map([$this, 'windowsCommandLineQuote'], $launcherArgs));
-            $launcherCommand = sprintf(
-                "\$ProgressPreference = 'SilentlyContinue'; Start-Process -FilePath %s -ArgumentList %s -WorkingDirectory %s -WindowStyle Hidden",
-                $this->powershellQuote('powershell.exe'),
-                $this->powershellQuote($launcherArgumentLine),
-                $this->powershellQuote(base_path())
+                null,
+                [
+                    'bypass_shell' => true,
+                    'create_process_group' => true,
+                    'create_new_console' => false,
+                ]
             );
-            $encoded = base64_encode(mb_convert_encoding($launcherCommand, 'UTF-16LE', 'UTF-8'));
-            $powershellBinary = 'powershell.exe';
-            $command = $powershellBinary . ' -NoProfile -NonInteractive -NoLogo -ExecutionPolicy Bypass -EncodedCommand ' . escapeshellarg($encoded) . ' 2>NUL';
+
+            if (!is_resource($process)) {
+                Log::error('Queue worker process could not be started.', [
+                    'pool' => $poolName,
+                    'queues' => $queues,
+                ]);
+
+                return null;
+            }
+
+            $status = proc_get_status($process);
+            $pid = (int) ($status['pid'] ?? 0);
+            if (!($status['running'] ?? false) || $pid <= 0) {
+                @proc_close($process);
+
+                return null;
+            }
+
+            // Keep the process resource alive for the lifetime of the monitor.
+            // This avoids a second Session-0 launcher and lets workers inherit the
+            // same service context that successfully started the monitor.
+            $this->windowsWorkerProcesses[$pid] = $process;
+            $this->windowsWorkerStarts[$pid] = [
+                'pool' => $poolName,
+                'started_at' => microtime(true),
+                'stable' => false,
+            ];
+
+            return $pid;
         } else {
             $args = array_map('escapeshellarg', array_merge([$php], $workerArgs));
             $command = sprintf(
@@ -485,9 +506,93 @@ class EnsureQueueWorkerRunning extends Command
             : 0;
     }
 
+    private function reapFinishedWindowsWorkers(): void
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            return;
+        }
+
+        foreach ($this->windowsWorkerProcesses as $pid => $process) {
+            $status = proc_get_status($process);
+            $startup = $this->windowsWorkerStarts[$pid] ?? null;
+            $age = $startup !== null ? microtime(true) - $startup['started_at'] : null;
+            if ($status['running'] ?? false) {
+                if ($startup !== null && !$startup['stable'] && $age >= 15) {
+                    $this->resetPoolLaunchBackoff($startup['pool']);
+                    $this->windowsWorkerStarts[$pid]['stable'] = true;
+                }
+                continue;
+            }
+
+            @proc_close($process);
+            unset($this->windowsWorkerProcesses[$pid], $this->windowsWorkerStarts[$pid]);
+            if ($startup !== null) {
+                $poolName = $startup['pool'];
+                // Only remove this monitor's positively observed exited child.
+                // No reservations are released and no live processes are killed.
+                $key = $this->workerPidKey($poolName);
+                $registered = Cache::get($key, []);
+                if (is_array($registered)) {
+                    unset($registered[$pid]);
+                    if ($registered === []) {
+                        Cache::forget($key);
+                    } else {
+                        Cache::put($key, $registered, now()->addHours(8));
+                    }
+                }
+                $leaseKey = $this->workerLeaseKey($poolName);
+                $lease = max(0, (int) Cache::get($leaseKey, 0) - 1);
+                if ($lease > 0) {
+                    Cache::put($leaseKey, $lease, now()->addSeconds(15));
+                } else {
+                    Cache::forget($leaseKey);
+                }
+                if (!$startup['stable'] && $age < 15 && (int) ($status['exitcode'] ?? -1) !== 0) {
+                    $this->recordPoolLaunchFailure($poolName, time());
+                }
+            }
+        }
+    }
+
     private function workerLeaseKey(string $poolName): string
     {
         return 'queue:worker-pool:lease:' . sha1($poolName);
+    }
+
+    private function poolLaunchBackoffActive(string $poolName, int $now): bool
+    {
+        $state = Cache::get($this->poolLaunchBackoffKey($poolName), []);
+
+        return is_array($state) && (int) ($state['next_retry_at'] ?? 0) > $now;
+    }
+
+    private function recordPoolLaunchFailure(string $poolName, int $now): void
+    {
+        $key = $this->poolLaunchBackoffKey($poolName);
+        $state = Cache::get($key, []);
+        $failures = max(0, (int) (is_array($state) ? ($state['failures'] ?? 0) : 0)) + 1;
+        $delay = min(300, 10 * (2 ** min(5, $failures - 1)));
+        Cache::put($key, [
+            'failures' => $failures,
+            'last_failure_at' => $now,
+            'next_retry_at' => $now + $delay,
+        ], now()->addHours(2));
+
+        Log::warning('Queue worker pool launch entered adaptive backoff.', [
+            'pool' => $poolName,
+            'consecutive_failures' => $failures,
+            'retry_in_seconds' => $delay,
+        ]);
+    }
+
+    private function resetPoolLaunchBackoff(string $poolName): void
+    {
+        Cache::forget($this->poolLaunchBackoffKey($poolName));
+    }
+
+    private function poolLaunchBackoffKey(string $poolName): string
+    {
+        return 'queue:worker-pool:launch-backoff:' . sha1($poolName);
     }
 
     private function freshWorkerHeartbeatCount(string $poolName, int $now): int
@@ -525,19 +630,8 @@ class EnsureQueueWorkerRunning extends Command
                 continue;
             }
 
-            $lastHeartbeat = (int) ($heartbeats[(string) $pid] ?? 0);
-            $age = $now - (int) $registeredAt;
-
-            // Detect stuck/frozen worker: alive in OS for > 60s, but no heartbeat for > 180s
-            // and not holding any active import progress.
-            if ($age > 60 && $lastHeartbeat > 0 && ($now - $lastHeartbeat) > 180) {
-                if ($this->isWorkerStuck($pid, $lastHeartbeat, $now, $poolName)) {
-                    Log::warning("Terminating stuck worker process PID {$pid} for pool {$poolName} (no heartbeat for " . ($now - $lastHeartbeat) . "s)");
-                    $this->terminateProcess($pid);
-                    continue;
-                }
-            }
-
+            // Looping heartbeats pause while a legitimate long job is running.
+            // Never force-kill an exact live PID from heartbeat age alone.
             $alive[(string) $pid] = (int) $registeredAt;
         }
 
@@ -548,45 +642,6 @@ class EnsureQueueWorkerRunning extends Command
         }
 
         return count($alive);
-    }
-
-    private function isWorkerStuck(int $pid, int $lastHeartbeat, int $now, string $poolName): bool
-    {
-        $secondsWithoutHeartbeat = $lastHeartbeat > 0 ? ($now - $lastHeartbeat) : 9999;
-        if ($secondsWithoutHeartbeat < 180) {
-            return false;
-        }
-
-        if (str_starts_with($poolName, 'import')) {
-            try {
-                if (app(ImportProgressService::class)->hasActiveProcessingJobs()) {
-                    return false;
-                }
-            } catch (\Throwable) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private function terminateProcess(int $pid): bool
-    {
-        if ($pid <= 0) {
-            return false;
-        }
-
-        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-            $output = shell_exec("taskkill /F /PID {$pid} 2>NUL");
-            return $output !== null;
-        }
-
-        if (function_exists('posix_kill')) {
-            return @posix_kill($pid, 9);
-        }
-
-        $output = shell_exec("kill -9 {$pid} 2>/dev/null");
-        return $output !== null;
     }
 
     private function maintainMonitorHealth(): void
@@ -615,13 +670,21 @@ class EnsureQueueWorkerRunning extends Command
                 return;
             }
 
+            // A slow audit is still one audit. Do not queue another copy on
+            // each monitor restart/interval while its predecessor is pending.
+            if (DB::table('jobs')->where('queue', 'snapshots-parallel')
+                ->where('payload', 'like', '%' . class_basename(AuditAndHealSnapshotsJob::class) . '%')
+                ->exists()) {
+                return;
+            }
+
             $busySnapshotJobs = DB::table('jobs')->where('queue', 'snapshots-parallel')->count();
             if ($busySnapshotJobs > 5) {
                 return;
             }
 
-            $lastAuditDispatch = $now;
             AuditAndHealSnapshotsJob::dispatch();
+            $lastAuditDispatch = $now;
 
             if ($this->output) {
                 $this->line("[" . now()->toDateTimeString() . "] Periodic snapshot audit & auto-heal dispatched.");
@@ -644,9 +707,13 @@ class EnsureQueueWorkerRunning extends Command
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
             $script = "\$ProgressPreference = 'SilentlyContinue'; (Get-Process -Name php -ErrorAction SilentlyContinue).Id";
             $encoded = base64_encode(mb_convert_encoding($script, 'UTF-16LE', 'UTF-8'));
-            $output = shell_exec('powershell.exe -NoProfile -NonInteractive -NoLogo -ExecutionPolicy Bypass -EncodedCommand ' . escapeshellarg($encoded) . ' 2>NUL') ?? '';
+            $command = ['powershell.exe', '-NoProfile', '-NonInteractive', '-NoLogo', '-EncodedCommand', $encoded];
         } else {
-            $output = shell_exec('pgrep -x php 2>/dev/null') ?? '';
+            $command = ['pgrep', '-x', 'php'];
+        }
+        [$exitCode, $output, $error] = app(QueueSupervisorProcessRunner::class)->run($command);
+        if ($exitCode !== 0 && !(PHP_OS_FAMILY !== 'Windows' && $exitCode === 1)) {
+            throw new \RuntimeException('Cannot inspect worker PIDs: ' . $error);
         }
 
         $pids = array_values(array_unique(array_map(
@@ -672,16 +739,6 @@ class EnsureQueueWorkerRunning extends Command
     private function workerPidKey(string $poolName): string
     {
         return 'queue:worker-pool:pids:' . sha1($poolName);
-    }
-
-    private function powershellQuote(string $value): string
-    {
-        return "'" . str_replace("'", "''", $value) . "'";
-    }
-
-    private function windowsCommandLineQuote(string $value): string
-    {
-        return '"' . str_replace('"', '\\"', $value) . '"';
     }
 
     private function normalizeQueues(string $queues): string
@@ -748,7 +805,11 @@ class EnsureQueueWorkerRunning extends Command
 
     private function commandLineLooksLikeQueueWorker(string $commandLine): bool
     {
-        return str_contains($commandLine, 'queue:work') || str_contains($commandLine, 'queue:listen');
+        $normalized = strtolower(str_replace('\\', '/', $commandLine));
+        $artisan = strtolower(str_replace('\\', '/', base_path('artisan')));
+
+        return str_contains($normalized, $artisan)
+            && (str_contains($normalized, 'queue:work') || str_contains($normalized, 'queue:listen'));
     }
 
     private function commandLineCoversQueues(string $commandLine, array $queueNames): bool

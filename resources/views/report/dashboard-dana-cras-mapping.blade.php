@@ -12,6 +12,15 @@
     $lpgPayload = data_get($payload, 'lpg', []);
     $lpgFilterOptions = data_get($lpgPayload, 'filters.options', []);
     $lpgSelectedFilters = data_get($lpgPayload, 'filters.selected', []);
+    $movementSeries = data_get($payload, 'movement_series', []);
+    $movementSegments = data_get($movementSeries, 'segments', []);
+    $movementInitialSegment = $movementSegments[0] ?? [];
+    $movementInitialProduct = data_get($movementInitialSegment, 'products.0', []);
+    $movementPeriods = data_get($movementSeries, 'periods', []);
+    $movementLatestPeriod = $movementPeriods === [] ? [] : $movementPeriods[array_key_last($movementPeriods)];
+    $movementInitialRows = data_get($movementInitialProduct, 'rows', []);
+    $movementInitialUg = collect($movementInitialRows)->firstWhere('movement', 'UG') ?? [];
+    $movementInitialDg = collect($movementInitialRows)->firstWhere('movement', 'DG') ?? [];
     $filterOptions = data_get($payload, 'filters.options', []);
     $selectedFilters = data_get($payload, 'filters.selected', []);
     $primaryFilterLabels = [
@@ -1302,6 +1311,244 @@
         text-align: center;
     }
 
+    .cras-movement-series {
+        margin-top: 0.8rem;
+        border: 1px solid var(--cras-border);
+        border-radius: 6px;
+        background: var(--cras-white);
+        overflow: hidden;
+    }
+
+    .cras-movement-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.85rem;
+        border-bottom: 1px solid var(--cras-border);
+        background: #f8fafc;
+    }
+
+    .cras-movement-head h2 {
+        margin: 0;
+        color: var(--cras-ink);
+        font-size: 0.88rem;
+        font-weight: 800;
+    }
+
+    .cras-movement-head p {
+        margin: 0.16rem 0 0;
+        color: var(--cras-muted);
+        font-size: 0.69rem;
+        line-height: 1.5;
+    }
+
+    .cras-movement-scope {
+        flex: 0 0 auto;
+        padding: 0.36rem 0.58rem;
+        border: 1px solid #b8d1e8;
+        border-radius: 999px;
+        background: #eef6fd;
+        color: var(--cras-blue-dark);
+        font-size: 0.68rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .cras-movement-body {
+        padding: 0.85rem;
+    }
+
+    .cras-movement-toolbar {
+        display: grid;
+        grid-template-columns: minmax(260px, 1.15fr) minmax(240px, 0.85fr);
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+        padding: 0.72rem;
+        border: 1px solid #c9dced;
+        border-radius: 6px;
+        background: #f4f8fc;
+    }
+
+    .cras-movement-control-label {
+        display: block;
+        margin-bottom: 0.35rem;
+        color: #334155;
+        font-size: 0.65rem;
+        font-weight: 800;
+        letter-spacing: 0.035em;
+        text-transform: uppercase;
+    }
+
+    .cras-movement-segments {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.35rem;
+        padding: 0.25rem;
+        border: 1px solid #cbd8e6;
+        border-radius: 6px;
+        background: #e6eef7;
+    }
+
+    .cras-movement-segment-button {
+        min-height: 42px;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid transparent;
+        border-radius: 5px;
+        background: transparent;
+        color: #526174;
+        font-size: 0.74rem;
+        font-weight: 800;
+        cursor: pointer;
+        transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .cras-movement-segment-button:hover,
+    .cras-movement-segment-button:focus-visible {
+        border-color: #9bbbd7;
+        background: #ffffff;
+        color: var(--cras-blue-dark);
+        outline: 0;
+    }
+
+    .cras-movement-segment-button.is-active {
+        border-color: var(--cras-blue);
+        background: var(--cras-blue);
+        color: #ffffff;
+        box-shadow: 0 3px 8px rgba(11, 92, 171, 0.2);
+    }
+
+    .cras-movement-product-field select {
+        width: 100%;
+        min-height: 48px;
+        padding: 0.55rem 2.15rem 0.55rem 0.72rem;
+        border: 1px solid #b9cce0;
+        border-radius: 6px;
+        background: #ffffff;
+        color: var(--cras-ink);
+        font-size: 0.75rem;
+        font-weight: 750;
+    }
+
+    .cras-movement-product-field select:focus {
+        border-color: var(--cras-blue);
+        box-shadow: 0 0 0 3px rgba(11, 92, 171, 0.14);
+        outline: 0;
+    }
+
+    .cras-movement-summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(160px, 0.75fr));
+        margin-bottom: 0.75rem;
+        border: 1px solid var(--cras-border);
+        border-radius: 6px;
+        overflow: hidden;
+        background: #ffffff;
+    }
+
+    .cras-movement-selection,
+    .cras-movement-kpi {
+        min-width: 0;
+        padding: 0.72rem 0.8rem;
+        border-right: 1px solid var(--cras-border);
+    }
+
+    .cras-movement-kpi:last-child { border-right: 0; }
+    .cras-movement-selection span,
+    .cras-movement-kpi span { display: block; color: var(--cras-muted); font-size: 0.62rem; font-weight: 800; text-transform: uppercase; }
+    .cras-movement-selection strong,
+    .cras-movement-kpi strong { display: block; margin-top: 0.18rem; color: var(--cras-ink); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+    .cras-movement-selection small { display: block; margin-top: 0.14rem; color: var(--cras-muted); font-size: 0.64rem; }
+    .cras-movement-kpi[data-tone="ug"] strong { color: var(--cras-teal); }
+    .cras-movement-kpi[data-tone="dg"] strong { color: var(--cras-npl); }
+
+    .cras-movement-card {
+        min-width: 0;
+        border: 1px solid var(--cras-border);
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .cras-movement-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.62rem 0.72rem;
+        border-bottom: 1px solid var(--cras-border);
+        background: #ffffff;
+    }
+
+    .cras-movement-card-head strong,
+    .cras-movement-card-head small { display: block; }
+    .cras-movement-card-head strong { color: var(--cras-ink); font-size: 0.76rem; }
+    .cras-movement-card-head small { margin-top: 0.12rem; color: var(--cras-muted); font-size: 0.64rem; }
+    .cras-movement-card-head > span { flex: 0 0 auto; color: var(--cras-blue-dark); font-size: 0.64rem; font-weight: 800; }
+
+    .cras-movement-table-wrap {
+        max-width: 100%;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+    }
+
+    .cras-movement-table {
+        width: 100%;
+        min-width: 810px;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 0.69rem;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .cras-movement-table th,
+    .cras-movement-table td {
+        padding: 0.55rem 0.62rem;
+        border-right: 1px solid #e7edf4;
+        border-bottom: 1px solid #e7edf4;
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .cras-movement-table th:last-child,
+    .cras-movement-table td:last-child { border-right: 0; }
+    .cras-movement-table tbody tr:last-child th,
+    .cras-movement-table tbody tr:last-child td { border-bottom: 0; }
+
+    .cras-movement-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #eaf0f6;
+        color: #334155;
+        font-weight: 800;
+    }
+
+    .cras-movement-table th:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 3;
+        min-width: 92px;
+        text-align: left;
+        background: #f8fafc;
+    }
+
+    .cras-movement-table thead th:first-child {
+        z-index: 4;
+        background: #dfe9f3;
+    }
+
+    .cras-movement-table tbody th { color: var(--cras-ink); font-weight: 800; }
+    .cras-movement-table tbody tr[data-movement="UG"] th { border-left: 4px solid var(--cras-teal); }
+    .cras-movement-table tbody tr[data-movement="DG"] th { border-left: 4px solid var(--cras-npl); }
+    .cras-movement-table tbody tr:hover td { background: #f8fbfd; }
+
+    .cras-movement-empty {
+        padding: 1rem;
+        color: var(--cras-muted);
+        font-size: 0.72rem;
+        text-align: center;
+    }
+
     .cras-empty {
         padding: 4rem 1rem;
         text-align: center;
@@ -1361,6 +1608,13 @@
         .cras-context-bar > .cras-filter-button { width: 100%; }
         .cras-lpg-head, .cras-lpg-table-head { flex-direction: column; }
         .cras-lpg-reference { text-align: left; }
+        .cras-movement-head { flex-direction: column; }
+        .cras-movement-scope { white-space: normal; }
+        .cras-movement-toolbar { grid-template-columns: minmax(0, 1fr); }
+        .cras-movement-summary { grid-template-columns: minmax(0, 1fr); }
+        .cras-movement-selection,
+        .cras-movement-kpi { border-right: 0; border-bottom: 1px solid var(--cras-border); }
+        .cras-movement-kpi:last-child { border-bottom: 0; }
         .cras-sac-sort { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
         .cras-lpg-controls { grid-template-columns: minmax(0, 1fr); }
         .cras-lpg-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1406,6 +1660,7 @@
         .cras-kpi-item:last-child { border-bottom: 0; }
         .cras-detail-grid { grid-template-columns: minmax(0, 1fr); }
         .cras-filter-actions { grid-template-columns: minmax(0, 1fr); }
+        .cras-movement-segments { grid-template-columns: minmax(0, 1fr); }
     }
 </style>
 
@@ -1773,6 +2028,100 @@
                 @endif
             </section>
         </div>
+
+        <section class="cras-movement-series" aria-labelledby="crasMovementSeriesTitle" data-cras-movement-section>
+            <div class="cras-movement-head">
+                <div>
+                    <h2 id="crasMovementSeriesTitle"><i class="fas fa-table mr-1 text-primary" aria-hidden="true"></i> Series Movement Kualitas UG dan DG</h2>
+                    <p>Posisi Januari–Agustus 2026 · status rekening AKTIF · nilai merupakan total Baki Debet. Gunakan filter Wilayah di atas untuk melihat Area 6 atau satu cabang.</p>
+                </div>
+                <span class="cras-movement-scope" data-cras-movement-scope>{{ data_get($movementSeries, 'scope.label', 'Seluruh Area 6') }}</span>
+            </div>
+
+            @if(!empty($movementSeries['ready']))
+                <div class="cras-movement-body">
+                    <div class="cras-movement-toolbar" aria-label="Pilihan series movement">
+                        <div>
+                            <span class="cras-movement-control-label">1. Pilih Segmen</span>
+                            <div class="cras-movement-segments" role="group" aria-label="Pilih segmen kredit">
+                                @foreach($movementSegments as $segmentIndex => $movementSegment)
+                                    <button type="button"
+                                            class="cras-movement-segment-button @if($segmentIndex === 0) is-active @endif"
+                                            data-cras-movement-segment="{{ $movementSegment['key'] ?? '' }}"
+                                            aria-pressed="{{ $segmentIndex === 0 ? 'true' : 'false' }}">
+                                        {{ $movementSegment['label'] ?? '-' }}
+                                    </button>
+                                @endforeach
+                            </div>
+                        </div>
+
+                        <label class="cras-movement-product-field" for="crasMovementProduct">
+                            <span class="cras-movement-control-label">2. Pilih Produk</span>
+                            <select id="crasMovementProduct" data-cras-movement-product>
+                                @foreach(data_get($movementInitialSegment, 'products', []) as $movementProduct)
+                                    <option value="{{ $movementProduct['key'] ?? '' }}">{{ $movementProduct['label'] ?? '-' }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+                    </div>
+
+                    <div class="cras-movement-summary" aria-live="polite">
+                        <div class="cras-movement-selection">
+                            <span>Series Aktif</span>
+                            <strong data-cras-movement-selection>{{ data_get($movementInitialSegment, 'label', '-') }} · {{ data_get($movementInitialProduct, 'label', '-') }}</strong>
+                            <small data-cras-movement-criteria>{{ data_get($movementInitialProduct, 'criteria', '-') }}</small>
+                        </div>
+                        <div class="cras-movement-kpi" data-tone="ug">
+                            <span>UG {{ $movementLatestPeriod['label'] ?? 'Periode Terakhir' }}</span>
+                            <strong data-cras-movement-kpi="UG">Rp {{ number_format((float) data_get($movementInitialUg, 'values.'.($movementLatestPeriod['value'] ?? ''), 0), 2, ',', '.') }}</strong>
+                        </div>
+                        <div class="cras-movement-kpi" data-tone="dg">
+                            <span>DG {{ $movementLatestPeriod['label'] ?? 'Periode Terakhir' }}</span>
+                            <strong data-cras-movement-kpi="DG">Rp {{ number_format((float) data_get($movementInitialDg, 'values.'.($movementLatestPeriod['value'] ?? ''), 0), 2, ',', '.') }}</strong>
+                        </div>
+                    </div>
+
+                    <article class="cras-movement-card">
+                        <div class="cras-movement-card-head">
+                            <div>
+                                <strong data-cras-movement-table-title>{{ data_get($movementInitialProduct, 'label', '-') }}</strong>
+                                <small>Movement kualitas terhadap posisi baki debet setiap akhir bulan.</small>
+                            </div>
+                            <span data-cras-movement-period-count>{{ count($movementPeriods) }} periode</span>
+                        </div>
+                        <div class="cras-movement-table-wrap" tabindex="0" aria-label="Geser horizontal untuk melihat seluruh periode series movement">
+                            <table class="cras-movement-table">
+                                <caption class="sr-only" data-cras-movement-caption>Baki debet movement UG dan DG {{ data_get($movementInitialProduct, 'label', '') }} periode Januari sampai Agustus 2026</caption>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Movement</th>
+                                        @foreach($movementPeriods as $seriesPeriod)
+                                            <th scope="col">{{ $seriesPeriod['label'] ?? '-' }}</th>
+                                        @endforeach
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($movementInitialRows as $seriesRow)
+                                        <tr data-movement="{{ $seriesRow['movement'] ?? '' }}">
+                                            <th scope="row">{{ $seriesRow['movement'] ?? '-' }}</th>
+                                            @foreach($movementPeriods as $seriesPeriod)
+                                                @php($seriesValue = data_get($seriesRow, 'values.'.($seriesPeriod['value'] ?? ''), 0))
+                                                <td data-cras-movement-value="{{ $seriesRow['movement'] ?? '' }}|{{ $seriesPeriod['value'] ?? '' }}">
+                                                    Rp {{ number_format((float) $seriesValue, 2, ',', '.') }}
+                                                </td>
+                                            @endforeach
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </article>
+                </div>
+                <div class="cras-movement-empty" data-cras-movement-empty hidden>Tidak ada data movement UG atau DG pada cakupan ini.</div>
+            @else
+                <div class="cras-movement-empty" data-cras-movement-empty>{{ data_get($movementSeries, 'message', 'Data series movement belum tersedia.') }}</div>
+            @endif
+        </section>
     @else
         <section class="cras-filter-panel cras-empty">
             <i class="fas fa-map"></i>
@@ -1829,6 +2178,15 @@ document.addEventListener('DOMContentLoaded', function () {
     const lpgSortButtons = Array.from(app.querySelectorAll('[data-cras-lpg-sort]'));
     const lpgTableTitle = app.querySelector('[data-cras-sac-table-title]');
     const lpgTableDescription = app.querySelector('[data-cras-sac-table-description]');
+    const movementScope = app.querySelector('[data-cras-movement-scope]');
+    const movementEmpty = app.querySelector('[data-cras-movement-empty]');
+    const movementBody = app.querySelector('.cras-movement-body');
+    const movementSegmentButtons = Array.from(app.querySelectorAll('[data-cras-movement-segment]'));
+    const movementProductSelect = app.querySelector('[data-cras-movement-product]');
+    const movementSelection = app.querySelector('[data-cras-movement-selection]');
+    const movementCriteria = app.querySelector('[data-cras-movement-criteria]');
+    const movementTableTitle = app.querySelector('[data-cras-movement-table-title]');
+    const movementCaption = app.querySelector('[data-cras-movement-caption]');
     const viewTriggers = Array.from(app.querySelectorAll('[data-cras-view-trigger]'));
     const viewPanels = Array.from(app.querySelectorAll('[data-cras-view-panel]'));
     const activeFilters = app.querySelector('[data-cras-active-filters]');
@@ -1850,12 +2208,15 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     const numberFormat = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 });
     const compactFormat = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    const movementNumberFormat = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     let geoData = null;
     let geoLayer = null;
     let fullBounds = null;
     let rankingMode = 'district';
     let activeView = new URLSearchParams(window.location.search).get('view') === 'sac' ? 'sac' : 'mapping';
     let lpgSort = String(payload.lpg?.filters?.selected?.sort || 'os_desc');
+    let movementSegmentKey = String(payload.movement_series?.segments?.[0]?.key || 'small');
+    let movementProductKey = 'all';
     let districtMetricCache = new Map();
 
     const map = window.L.map(mapElement, {
@@ -2025,6 +2386,71 @@ document.addEventListener('DOMContentLoaded', function () {
             lpgTableBody.appendChild(row);
         });
         if (lpgEmpty) lpgEmpty.hidden = (lpg.industry_rows || []).length > 0;
+    }
+
+    function renderMovementSeries() {
+        const series = payload.movement_series || {};
+        const segments = Array.isArray(series.segments) ? series.segments : [];
+        if (movementScope) {
+            movementScope.textContent = String(series.scope?.label || 'Seluruh Area 6');
+        }
+        const ready = Boolean(series.ready && segments.length);
+        if (movementEmpty) {
+            movementEmpty.hidden = ready;
+            if (!ready) movementEmpty.textContent = String(series.message || 'Data series movement belum tersedia.');
+        }
+        if (movementBody) movementBody.hidden = !ready;
+        if (!ready) return;
+
+        let segment = segments.find(function (item) {
+            return String(item.key || '') === movementSegmentKey;
+        }) || segments[0];
+        movementSegmentKey = String(segment.key || '');
+        movementSegmentButtons.forEach(function (button) {
+            const active = String(button.dataset.crasMovementSegment || '') === movementSegmentKey;
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+
+        const products = Array.isArray(segment.products) ? segment.products : [];
+        let product = products.find(function (item) {
+            return String(item.key || '') === movementProductKey;
+        }) || products[0];
+        if (!product) return;
+        movementProductKey = String(product.key || '');
+
+        if (movementProductSelect) {
+            movementProductSelect.innerHTML = '';
+            products.forEach(function (item) {
+                const option = document.createElement('option');
+                option.value = String(item.key || '');
+                option.textContent = String(item.label || '-');
+                option.selected = option.value === movementProductKey;
+                movementProductSelect.appendChild(option);
+            });
+        }
+
+        const selectionLabel = String(segment.label || '-') + ' · ' + String(product.label || '-');
+        if (movementSelection) movementSelection.textContent = selectionLabel;
+        if (movementCriteria) movementCriteria.textContent = String(product.criteria || '-');
+        if (movementTableTitle) movementTableTitle.textContent = String(product.label || '-');
+        if (movementCaption) movementCaption.textContent = 'Baki debet movement UG dan DG ' + selectionLabel + ' periode Januari sampai Agustus 2026';
+
+        const rows = Array.isArray(product.rows) ? product.rows : [];
+        app.querySelectorAll('[data-cras-movement-value]').forEach(function (cell) {
+            const parts = String(cell.dataset.crasMovementValue || '').split('|');
+            const row = rows.find(function (item) {
+                return String(item.movement || '') === parts[0];
+            });
+            cell.textContent = 'Rp ' + movementNumberFormat.format(Number(row?.values?.[parts[1]] || 0));
+        });
+
+        const latestPeriod = series.periods?.[series.periods.length - 1];
+        ['UG', 'DG'].forEach(function (movement) {
+            const node = app.querySelector('[data-cras-movement-kpi="' + movement + '"]');
+            const row = rows.find(function (item) { return String(item.movement || '') === movement; });
+            if (node) node.textContent = 'Rp ' + movementNumberFormat.format(Number(row?.values?.[latestPeriod?.value] || 0));
+        });
     }
 
     function metricPalette(key) {
@@ -2465,6 +2891,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderAll(fit) {
         districtMetricCache = new Map();
         renderLpg();
+        renderMovementSeries();
         renderKpis();
         renderSecondaryMetrics();
         renderOverview();
@@ -2620,6 +3047,19 @@ document.addEventListener('DOMContentLoaded', function () {
             });
             loadData();
         });
+    });
+
+    movementSegmentButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            movementSegmentKey = String(button.dataset.crasMovementSegment || 'small');
+            movementProductKey = 'all';
+            renderMovementSeries();
+        });
+    });
+
+    movementProductSelect?.addEventListener('change', function () {
+        movementProductKey = String(movementProductSelect.value || 'all');
+        renderMovementSeries();
     });
 
     viewTriggers.forEach(function (button) {

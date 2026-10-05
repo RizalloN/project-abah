@@ -5,6 +5,9 @@ namespace Tests\Unit;
 use App\Console\Commands\EnsureQueueWorkerRunning;
 use App\Providers\AppServiceProvider;
 use App\Services\Import\ImportProgressService;
+use App\Services\Import\ImportExecutionService;
+use App\Services\Import\SnapshotQueuePauseService;
+use App\Services\Import\QueueSupervisorProcessRunner;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Queue\Events\Looping;
 use Illuminate\Support\Facades\Cache;
@@ -16,6 +19,41 @@ use Tests\TestCase;
 
 class QueueWorkerSelfHealingTest extends TestCase
 {
+    public function test_monitor_does_not_duplicate_an_already_queued_or_running_snapshot_audit(): void
+    {
+        \Illuminate\Support\Facades\Bus::fake();
+        $progress = \Mockery::mock(ImportProgressService::class);
+        $progress->shouldReceive('hasActiveProcessingJobs')->andReturn(false);
+        $this->app->instance(ImportProgressService::class, $progress);
+        $row = DB::table('jobs')->insertGetId([
+            'queue' => 'snapshots-parallel', 'reserved_at' => time(),
+            'available_at' => time(), 'created_at' => time(),
+            'payload' => json_encode(['displayName' => \App\Jobs\AuditAndHealSnapshotsJob::class]),
+        ]);
+        $command = new EnsureQueueWorkerRunning();
+        $method = new ReflectionMethod($command, 'dispatchSnapshotAuditIfIdle');
+        $method->invoke($command);
+        \Illuminate\Support\Facades\Bus::assertNotDispatched(\App\Jobs\AuditAndHealSnapshotsJob::class);
+        DB::table('jobs')->where('id', $row)->delete();
+        $method->invoke($command);
+        \Illuminate\Support\Facades\Bus::assertDispatchedTimes(\App\Jobs\AuditAndHealSnapshotsJob::class, 1);
+    }
+
+    public function test_monitor_attempts_safe_recovery_before_terminal_stale_sweep(): void
+    {
+        $execution = \Mockery::mock(ImportExecutionService::class);
+        $execution->shouldReceive('recoverOrphanedZeroProgressJobs')->once()->globally()->ordered()->andReturn([]);
+        $progress = \Mockery::mock(ImportProgressService::class);
+        $progress->shouldReceive('purgeStaleProcessingJobs')->once()->globally()->ordered()->andReturn(0);
+        $pause = \Mockery::mock(SnapshotQueuePauseService::class);
+        $pause->shouldReceive('resumeWhenNoActiveImports')->once()->andReturn(false);
+        $this->app->instance(ImportExecutionService::class, $execution);
+        $this->app->instance(ImportProgressService::class, $progress);
+        $this->app->instance(SnapshotQueuePauseService::class, $pause);
+        $command = new EnsureQueueWorkerRunning();
+        (new ReflectionMethod($command, 'recoverOrphanedImports'))->invoke($command);
+    }
+
     private string $originalDefaultConnection;
     private mixed $originalSqliteDatabase;
 
@@ -69,6 +107,47 @@ class QueueWorkerSelfHealingTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_idle_pool_skips_process_probes_and_uses_one_queue_query(): void
+    {
+        $runner = $this->createMock(QueueSupervisorProcessRunner::class);
+        $runner->expects($this->never())->method('run');
+        $this->app->instance(QueueSupervisorProcessRunner::class, $runner);
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        try {
+            $command = new EnsureQueueWorkerRunning();
+            (new ReflectionMethod($command, 'checkAndEnsureWorker'))->invoke(
+                $command, 'idle-test', 'idle-test', 4, '0', '512', 25, 3600
+            );
+            $this->assertCount(1, DB::getQueryLog());
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+    }
+
+    public function test_failed_process_probe_preserves_registry_and_defers_launch(): void
+    {
+        $pool = 'probe-failure-test';
+        $key = 'queue:worker-pool:pids:' . sha1($pool);
+        $registered = ['987654' => time()];
+        Cache::put($key, $registered, 60);
+        DB::table('jobs')->insert([
+            'queue' => $pool, 'available_at' => time(), 'created_at' => time(),
+        ]);
+        $runner = $this->createMock(QueueSupervisorProcessRunner::class);
+        $runner->expects($this->once())->method('run')->willThrowException(new \RuntimeException('probe timeout'));
+        $this->app->instance(QueueSupervisorProcessRunner::class, $runner);
+        $command = new EnsureQueueWorkerRunning();
+        (new ReflectionMethod($command, 'checkAndEnsureWorker'))->invoke(
+            $command, $pool, $pool, 4, '0', '512', 25, 3600
+        );
+
+        $this->assertSame($registered, Cache::get($key));
+        $this->assertNull(Cache::get('queue:worker-pool:lease:' . sha1($pool)));
+        $this->assertNull(DB::table('jobs')->value('reserved_at'));
+    }
+
     public function test_multi_queue_worker_covers_all_member_pools(): void
     {
         $provider = new AppServiceProvider($this->app);
@@ -88,7 +167,7 @@ class QueueWorkerSelfHealingTest extends TestCase
         $this->assertContains('shadow-backfill', $poolNames);
     }
 
-    public function test_orphaned_reserved_jobs_are_released_for_import_pools(): void
+    public function test_short_stale_reservation_is_not_released_without_dead_owner_proof(): void
     {
         $now = time();
 
@@ -120,8 +199,8 @@ class QueueWorkerSelfHealingTest extends TestCase
 
         $job = DB::table('jobs')->where('id', 101)->first();
         $this->assertNotNull($job);
-        $this->assertNull($job->reserved_at, 'Orphaned reserved_at must be reset to null');
-        $this->assertGreaterThanOrEqual($now - 5, $job->available_at, 'Available_at must be reset to now');
+        $this->assertSame($now - 300, (int) $job->reserved_at);
+        $this->assertSame($now - 300, (int) $job->available_at);
     }
 
     public function test_has_live_processing_lease_returns_false_for_stale_reservation_without_lock(): void
@@ -183,34 +262,12 @@ class QueueWorkerSelfHealingTest extends TestCase
         $this->assertTrue($service->hasActiveProcessingJobsForTable('daily_loan_dinamis'));
     }
 
-    public function test_is_worker_stuck_identifies_deadlocked_worker(): void
+    public function test_looping_heartbeat_age_alone_never_force_kills_live_worker(): void
     {
-        $command = new EnsureQueueWorkerRunning();
-        $method = new ReflectionMethod($command, 'isWorkerStuck');
+        $source = file_get_contents(app_path('Console/Commands/EnsureQueueWorkerRunning.php'));
 
-        $now = time();
-        $pid = 99999;
-
-        // Fresh heartbeat (10s ago) -> NOT stuck
-        $this->assertFalse($method->invoke($command, $pid, $now - 10, $now, 'background'));
-
-        // Missing heartbeat for 300s -> IS stuck
-        $this->assertTrue($method->invoke($command, $pid, $now - 300, $now, 'background'));
-
-        // For import pool, if active import job is running -> NOT stuck
-        DB::table('import_jobs')->insert([
-            'id' => 150,
-            'status' => 'processing',
-            'updated_at' => now(),
-        ]);
-        $lock = Cache::store('array')->lock('import_excel_execute_job_150', 60);
-        Config::set('import.cache_store', 'array');
-        $lock->get();
-
-        try {
-            $this->assertFalse($method->invoke($command, $pid, $now - 300, $now, 'imports-high'));
-        } finally {
-            $lock->release();
-        }
+        $this->assertStringNotContainsString('taskkill /F', $source);
+        $this->assertStringNotContainsString('kill -9', $source);
+        $this->assertStringContainsString('Never force-kill an exact live PID from heartbeat age alone.', $source);
     }
 }

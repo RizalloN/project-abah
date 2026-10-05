@@ -93,31 +93,65 @@ final class SmallRmRealizationCalculator
         // Coverage is deliberately independent of the initiator filter. A
         // period containing SMALL source data is authoritative even when every
         // realization in a selected scope is zero or lacks an initiator.
-        $coveredPeriods = DB::table(self::SOURCE_TABLE)
+        $coverageRows = $this->sourceQueryForPeriodRange()
             ->whereIn('periode', $periods)
-            ->where('segmen_kinerja', 'SMALL')
-            ->select('periode')
-            ->distinct()
-            ->pluck('periode')
-            ->mapWithKeys(fn ($period): array => [(string) $period => true])
-            ->all();
+            ->whereIn('produk_kinerja', $products)
+            ->get([
+                'periode',
+                'segmen_kinerja',
+                'produk_kinerja',
+                $this->selectAlias($columns, ['description'], 'description'),
+            ]);
+        $coveredPeriods = [];
+        foreach ($coverageRows as $row) {
+            $classification = DailyLoanManualSegmentRule::classify(
+                $row->description ?? null,
+                $row->segmen_kinerja ?? null,
+                $row->produk_kinerja ?? null
+            );
+            if ($classification['segment'] === 'SMALL'
+                && in_array($classification['product'], $products, true)) {
+                $coveredPeriods[(string) $row->periode] = true;
+            }
+        }
 
         if ($coveredPeriods === []) {
             return $emptyResult;
         }
 
-        $candidateQuery = DB::table(self::SOURCE_TABLE)
-            ->where('segmen_kinerja', 'SMALL')
+        $candidateQuery = $this->sourceQueryForPeriodRange()
             ->whereIn('produk_kinerja', $products)
-            ->whereIn('periode', $periods);
+            ->where(function (Builder $query) use ($periods): void {
+                foreach ($periods as $index => $period) {
+                    $range = [Carbon::parse($period)->startOfMonth()->toDateString(), $period];
+                    $method = $index === 0 ? 'whereBetween' : 'orWhereBetween';
+                    $query->{$method}('periode', $range);
+                }
+            });
 
+        // Select the relevant accounts first, then retain their complete
+        // monthly observations across assignment changes. Filtering the
+        // observations themselves can invent a different event owner.
+        $assignmentQuery = clone $candidateQuery;
         $this->applyAssignmentFilters(
-            $candidateQuery,
+            $assignmentQuery,
             $columns,
             $selectedCabang,
             $selectedRmCategory,
             $initiatorValues
         );
+        if ($selectedCabang !== null || $selectedRmCategory !== null || $initiatorValues !== []) {
+            $accountAliases = [];
+            foreach ($assignmentQuery->distinct()->pluck('nomor_rekening1') as $rawAccount) {
+                $account = $this->canonicalAccount($rawAccount);
+                if ($account !== '') {
+                    foreach ($this->accountLookupCandidates($account, [(string) $rawAccount]) as $alias) {
+                        $accountAliases[$alias] = true;
+                    }
+                }
+            }
+            $candidateQuery->whereIn('nomor_rekening1', array_keys($accountAliases));
+        }
 
         $selects = [
             'periode',
@@ -125,7 +159,10 @@ final class SmallRmRealizationCalculator
             'pn_pemrakarsa1 as initiator',
             'nomor_rekening1 as account_number',
             'plafon',
+            'segmen_kinerja',
+            'produk_kinerja',
             $cifColumn.' as cif_key',
+            $this->selectAlias($columns, ['description'], 'description'),
             $this->selectAlias($columns, ['cabang_normalized', 'cabang1'], 'cabang'),
             $this->selectAlias($columns, ['unit_normalized', 'unit1'], 'unit'),
             $this->selectAlias($columns, ['branch_normalized'], 'branch_code'),
@@ -136,56 +173,135 @@ final class SmallRmRealizationCalculator
 
         $candidateRows = $candidateQuery
             ->select($selects)
-            ->orderBy('periode')
-            ->orderBy($dateColumn)
-            ->when(isset($columns['id']), static fn (Builder $query): Builder => $query->orderBy('id'))
-            ->get();
+            ->get()
+            ->sortBy(static fn (object $row): string => implode('|', [
+                (string) ($row->periode ?? ''),
+                (string) ($row->realization_date ?? ''),
+                str_pad((string) ($row->id ?? ''), 20, '0', STR_PAD_LEFT),
+            ]));
+
+        // An official description seen at any position up to the cutoff owns
+        // the account classification for the monthly event. This prevents an
+        // earlier stale SMALL shadow from surviving when a later source row
+        // identifies the same account as MEDIUM (for example RITKOM).
+        $officialSegmentsByAccount = [];
+        foreach ($candidateRows as $row) {
+            $account = $this->canonicalAccount($row->account_number ?? null);
+            if ($account === '') {
+                continue;
+            }
+            $classification = DailyLoanManualSegmentRule::classify(
+                $row->description ?? null,
+                $row->segmen_kinerja ?? null,
+                $row->produk_kinerja ?? null
+            );
+            if ($classification['matched']) {
+                $officialSegmentsByAccount[$account][$classification['segment']] = true;
+            }
+        }
 
         $deduplicated = [];
         $excludedBlankInitiator = 0;
         foreach ($candidateRows as $row) {
-            $period = $this->dateValue($row->periode ?? null);
+            $sourcePeriod = $this->dateValue($row->periode ?? null);
             $realizationDate = $this->dateValue($row->realization_date ?? null);
-            $account = $this->normalizeKey($row->account_number ?? null);
-            if ($period === null || $account === '' || ($realizationDate !== null && $realizationDate > $period)) {
+            $rawAccount = $this->normalizeKey($row->account_number ?? null);
+            $account = $this->canonicalAccount($rawAccount);
+            if ($sourcePeriod === null
+                || $account === ''
+                || ($realizationDate !== null && $realizationDate > $sourcePeriod)) {
+                continue;
+            }
+
+            $classification = DailyLoanManualSegmentRule::classify(
+                $row->description ?? null,
+                $row->segmen_kinerja ?? null,
+                $row->produk_kinerja ?? null
+            );
+            $officialSegments = array_keys($officialSegmentsByAccount[$account] ?? []);
+            $effectiveSegment = count($officialSegments) === 1
+                ? $officialSegments[0]
+                : (count($officialSegments) > 1 ? '' : $classification['segment']);
+            if ($effectiveSegment !== 'SMALL'
+                || ! in_array($classification['product'], $products, true)) {
                 continue;
             }
 
             $initiator = $this->normalizeLabel($row->initiator ?? null);
-            if ($initiator === '') {
-                $excludedBlankInitiator++;
-
-                continue;
-            }
-
             $cif = $this->normalizeKey($row->cif_key ?? null);
             if ($cif === '') {
                 $cif = 'ACCOUNT:'.$account;
             }
 
-            // A facility is credited once even when duplicate source rows have
-            // different or missing CIF labels for the same account.
-            $dedupeKey = implode('|', [$period, $account]);
-            $currentPlafon = max(0.0, (float) ($row->plafon ?? 0));
-            if (isset($deduplicated[$dedupeKey])) {
-                if ($currentPlafon > $deduplicated[$dedupeKey]['plafon']) {
-                    $deduplicated[$dedupeKey]['plafon'] = $currentPlafon;
+            foreach ($periods as $targetPeriod) {
+                $monthStart = Carbon::parse($targetPeriod)->startOfMonth()->toDateString();
+                if ($sourcePeriod < $monthStart || $sourcePeriod > $targetPeriod) {
+                    continue;
                 }
 
+                $dedupeKey = implode('|', [$targetPeriod, $account]);
+                $currentPlafon = max(0.0, (float) ($row->plafon ?? 0));
+                if (! isset($deduplicated[$dedupeKey])) {
+                    $deduplicated[$dedupeKey] = [
+                        'period' => $targetPeriod,
+                        'realization_date' => $realizationDate,
+                        'cif' => $cif,
+                        'account' => $account,
+                        'account_aliases' => [$rawAccount => true],
+                        'initiator' => $initiator,
+                        'rm_identity' => $initiator !== '' ? $this->rmIdentity($initiator) : '',
+                        'cabang' => $this->normalizeLabel($row->cabang ?? null),
+                        'unit' => $this->normalizeLabel($row->unit ?? null),
+                        'branch_code' => $this->normalizeLabel($row->branch_code ?? null),
+                        'plafon' => $currentPlafon,
+                        'plafon_observations' => $initiator !== '' ? [[
+                            'plafon' => $currentPlafon,
+                            'initiator' => $initiator,
+                            'cabang' => $this->normalizeLabel($row->cabang ?? null),
+                            'unit' => $this->normalizeLabel($row->unit ?? null),
+                            'branch_code' => $this->normalizeLabel($row->branch_code ?? null),
+                        ]] : [],
+                    ];
+
+                    continue;
+                }
+
+                $deduplicated[$dedupeKey]['account_aliases'][$rawAccount] = true;
+                $observations = $deduplicated[$dedupeKey]['plafon_observations'];
+                $lastObservedPlafon = $observations !== [] ? $observations[array_key_last($observations)]['plafon'] : -1.0;
+                if ($initiator !== '' && $currentPlafon > $lastObservedPlafon) {
+                    $deduplicated[$dedupeKey]['plafon_observations'][] = [
+                        'plafon' => $currentPlafon,
+                        'initiator' => $initiator,
+                        'cabang' => $this->normalizeLabel($row->cabang ?? null),
+                        'unit' => $this->normalizeLabel($row->unit ?? null),
+                        'branch_code' => $this->normalizeLabel($row->branch_code ?? null),
+                    ];
+                }
+                $deduplicated[$dedupeKey]['plafon'] = max(
+                    (float) $deduplicated[$dedupeKey]['plafon'],
+                    $currentPlafon
+                );
+                if ($deduplicated[$dedupeKey]['initiator'] === '' && $initiator !== '') {
+                    $deduplicated[$dedupeKey]['initiator'] = $initiator;
+                    $deduplicated[$dedupeKey]['rm_identity'] = $this->rmIdentity($initiator);
+                    $deduplicated[$dedupeKey]['cabang'] = $this->normalizeLabel($row->cabang ?? null);
+                    $deduplicated[$dedupeKey]['unit'] = $this->normalizeLabel($row->unit ?? null);
+                    $deduplicated[$dedupeKey]['branch_code'] = $this->normalizeLabel($row->branch_code ?? null);
+                }
+                if ($deduplicated[$dedupeKey]['realization_date'] === null && $realizationDate !== null) {
+                    $deduplicated[$dedupeKey]['realization_date'] = $realizationDate;
+                }
+            }
+        }
+
+        foreach ($deduplicated as $key => $candidate) {
+            if ($candidate['initiator'] !== '') {
                 continue;
             }
-            $deduplicated[$dedupeKey] = [
-                'period' => $period,
-                'realization_date' => $realizationDate,
-                'cif' => $cif,
-                'account' => $account,
-                'initiator' => $initiator,
-                'rm_identity' => $this->rmIdentity($initiator),
-                'cabang' => $this->normalizeLabel($row->cabang ?? null),
-                'unit' => $this->normalizeLabel($row->unit ?? null),
-                'branch_code' => $this->normalizeLabel($row->branch_code ?? null),
-                'plafon' => $currentPlafon,
-            ];
+
+            $excludedBlankInitiator++;
+            unset($deduplicated[$key]);
         }
 
         if ($deduplicated === []) {
@@ -195,26 +311,44 @@ final class SmallRmRealizationCalculator
             return $emptyResult;
         }
 
-        $previousPeriods = $this->previousPeriodsByTarget($periods);
+        $previousPeriods = $this->previousPeriodsByTarget($periods, $products, $columns);
         $previousPlafondByPeriodAccount = [];
         $previousPeriodValues = array_values(array_unique(array_values($previousPeriods)));
-        $candidateAccounts = collect($deduplicated)
-            ->pluck('account')
-            ->unique()
-            ->values()
-            ->all();
+        $candidateAccounts = [];
+        foreach ($deduplicated as $candidate) {
+            foreach ($this->accountLookupCandidates($candidate['account'], array_keys($candidate['account_aliases'])) as $alias) {
+                $candidateAccounts[$alias] = true;
+            }
+        }
+        $candidateAccounts = array_keys($candidateAccounts);
         if ($previousPeriodValues !== [] && $candidateAccounts !== []) {
             $previousRows = DB::table(self::SOURCE_TABLE)
                 ->whereIn('periode', $previousPeriodValues)
-                ->where('segmen_kinerja', 'SMALL')
                 ->whereIn('produk_kinerja', $products)
                 ->whereIn('nomor_rekening1', $candidateAccounts)
-                ->get(['periode', 'nomor_rekening1 as account_number', 'plafon']);
+                ->get([
+                    'periode',
+                    'nomor_rekening1 as account_number',
+                    'plafon',
+                    'segmen_kinerja',
+                    'produk_kinerja',
+                    $this->selectAlias($columns, ['description'], 'description'),
+                ]);
 
             foreach ($previousRows as $row) {
                 $period = $this->dateValue($row->periode ?? null);
-                $account = $this->normalizeKey($row->account_number ?? null);
+                $account = $this->canonicalAccount($row->account_number ?? null);
                 if ($period === null || $account === '') {
+                    continue;
+                }
+
+                $classification = DailyLoanManualSegmentRule::classify(
+                    $row->description ?? null,
+                    $row->segmen_kinerja ?? null,
+                    $row->produk_kinerja ?? null
+                );
+                if ($classification['segment'] !== 'SMALL'
+                    || ! in_array($classification['product'], $products, true)) {
                     continue;
                 }
 
@@ -255,6 +389,31 @@ final class SmallRmRealizationCalculator
                     ? max(0.0, (float) $candidate['plafon'] - $previousPlafond)
                     : 0.0);
             if ($amount <= 0.0001) {
+                continue;
+            }
+
+            // An old facility can change initiator when its limit is raised.
+            // Attribute that event to the first observed increase, not to the
+            // owner of the unchanged opening balance earlier in the month.
+            if (! $isCurrentMonthBooking && $hasPreviousAccount) {
+                $increaseOwnerFound = false;
+                foreach ($candidate['plafon_observations'] as $observation) {
+                    if ($observation['plafon'] > $previousPlafond) {
+                        $candidate = array_replace($candidate, array_diff_key($observation, ['plafon' => true]));
+                        $candidate['rm_identity'] = $this->rmIdentity($candidate['initiator']);
+                        $increaseOwnerFound = true;
+                        break;
+                    }
+                }
+                if (! $increaseOwnerFound) {
+                    $excludedBlankInitiator++;
+
+                    continue;
+                }
+                $observations = $candidate['plafon_observations'];
+                $amount = max(0.0, (float) $observations[array_key_last($observations)]['plafon'] - $previousPlafond);
+            }
+            if (! $this->matchesEventAssignment($candidate, $columns, $selectedCabang, $selectedRmCategory, $initiatorValues)) {
                 continue;
             }
 
@@ -313,7 +472,7 @@ final class SmallRmRealizationCalculator
      * @param  array<int, string>  $targetPeriods
      * @return array<string, string>
      */
-    private function previousPeriodsByTarget(array $targetPeriods): array
+    private function previousPeriodsByTarget(array $targetPeriods, array $products, array $columns): array
     {
         $previousMonths = collect($targetPeriods)
             ->mapWithKeys(function (string $period): array {
@@ -321,19 +480,34 @@ final class SmallRmRealizationCalculator
 
                 return [$period => [$month->copy()->startOfMonth()->toDateString(), $month->copy()->endOfMonth()->toDateString()]];
             });
-        $available = DB::table(self::SOURCE_TABLE)
-            ->where('segmen_kinerja', 'SMALL')
+        $available = $this->sourceQueryForPeriodRange()
+            ->whereIn('produk_kinerja', $products)
             ->where(function (Builder $query) use ($previousMonths): void {
                 foreach ($previousMonths as $index => $range) {
                     $method = $index === 0 ? 'whereBetween' : 'orWhereBetween';
                     $query->{$method}('periode', $range);
                 }
             })
-            ->select('periode')
-            ->distinct()
+            ->get([
+                'periode',
+                'segmen_kinerja',
+                'produk_kinerja',
+                $this->selectAlias($columns, ['description'], 'description'),
+            ])
+            ->filter(function (object $row) use ($products): bool {
+                $classification = DailyLoanManualSegmentRule::classify(
+                    $row->description ?? null,
+                    $row->segmen_kinerja ?? null,
+                    $row->produk_kinerja ?? null
+                );
+
+                return $classification['segment'] === 'SMALL'
+                    && in_array($classification['product'], $products, true);
+            })
             ->pluck('periode')
             ->map(fn ($period): ?string => $this->dateValue($period))
             ->filter()
+            ->unique()
             ->values();
 
         return $previousMonths
@@ -344,6 +518,15 @@ final class SmallRmRealizationCalculator
             })
             ->filter()
             ->all();
+    }
+
+    private function sourceQueryForPeriodRange(): Builder
+    {
+        if (DB::getDriverName() === 'mysql') {
+            return DB::query()->fromRaw(self::SOURCE_TABLE.' FORCE INDEX (idx_snapshot_filter_optimized)');
+        }
+
+        return DB::table(self::SOURCE_TABLE);
     }
 
     /** @return array{covered_periods:array<string, bool>,rows:array<int, array<string, mixed>>,diagnostics:array<string, int|float>} */
@@ -407,6 +590,24 @@ final class SmallRmRealizationCalculator
     }
 
     /** @param array<string, bool> $columns */
+    private function matchesEventAssignment(array $candidate, array $columns, ?string $cabang, ?string $category, array $initiators): bool
+    {
+        if ($cabang !== null && trim($cabang) !== ''
+            && (isset($columns['cabang_normalized']) || isset($columns['cabang1']))
+            && strtoupper(trim($candidate['cabang'])) !== strtoupper(trim($cabang))) {
+            return false;
+        }
+        if (in_array($category, ['KC', 'KCP'], true)
+            && (isset($columns['unit_normalized']) || isset($columns['unit1']))
+            && str_starts_with(strtoupper(trim($candidate['unit'])), 'KCP') !== ($category === 'KCP')) {
+            return false;
+        }
+        $initiators = array_values(array_filter(array_map(static fn ($value): string => strtoupper(trim((string) $value)), $initiators)));
+
+        return $initiators === [] || in_array(strtoupper(trim($candidate['initiator'])), $initiators, true);
+    }
+
+    /** @param array<string, bool> $columns */
     private function selectAlias(array $columns, array $candidates, string $alias): mixed
     {
         foreach ($candidates as $candidate) {
@@ -437,6 +638,37 @@ final class SmallRmRealizationCalculator
     private function normalizeKey(mixed $value): string
     {
         return strtoupper($this->normalizeLabel($value));
+    }
+
+    private function canonicalAccount(mixed $value): string
+    {
+        $account = $this->normalizeKey($value);
+        if ($account === '') {
+            return '';
+        }
+
+        return ltrim($account, '0') ?: '0';
+    }
+
+    /**
+     * Build exact aliases for an indexed whereIn lookup. No function is
+     * applied to nomor_rekening1, so the lookup remains SARGable.
+     *
+     * @param  array<int, string>  $rawAliases
+     * @return array<int, string>
+     */
+    private function accountLookupCandidates(string $canonical, array $rawAliases): array
+    {
+        $aliases = array_fill_keys(
+            array_filter($rawAliases, static fn (string $value): bool => $value !== ''),
+            true
+        );
+        $aliases[$canonical] = true;
+        if (ctype_digit($canonical) && strlen($canonical) < 15) {
+            $aliases[str_pad($canonical, 15, '0', STR_PAD_LEFT)] = true;
+        }
+
+        return array_keys($aliases);
     }
 
     private function normalizeBranchCode(mixed $value): string

@@ -77,7 +77,9 @@
     $mantriRosterSummary = (array) data_get($realization, 'mantri_roster', []);
 @endphp
 
-<div class="micro-ops" data-micro-performance-ready="1">
+<div class="micro-ops" data-micro-performance-ready="1"
+     data-requested-period="{{ request()->query('periode', data_get($meta, 'period', '')) }}"
+     data-period="{{ data_get($meta, 'period', '') }}">
     @if(empty($meta['available']))
         <div class="micro-ops-empty" role="status">
             <i class="fas fa-database" aria-hidden="true"></i>
@@ -281,10 +283,10 @@
             @if(!empty($decisionRanking['available']))
                 @if((int) data_get($decisionIdentityCoverage, 'unresolved_accounts', 0) > 0)
                     <div class="micro-ops-empty micro-ops-empty--compact" role="status">
-                        <strong>Identitas pemutus belum lengkap</strong>
+                        <strong>Ranking tersedia · cakupan identitas belum penuh</strong>
                         <small>
                             {{ $formatInteger(data_get($decisionIdentityCoverage, 'unresolved_accounts', 0)) }} dari
-                            {{ $formatInteger(data_get($decisionIdentityCoverage, 'total_accounts', 0)) }} rekening belum memiliki PN pemutus.
+                            {{ $formatInteger(data_get($decisionIdentityCoverage, 'total_accounts', 0)) }} rekening realisasi Mikro belum memiliki PN pemutus; angka ini bukan jumlah rekening MBM saja.
                             Ranking dan PDWK hanya memakai identitas dari posisi berjalan atau rekening yang sama pada posisi sebelumnya dalam bulan ini.
                         </small>
                     </div>
@@ -764,7 +766,7 @@
                     <div class="micro-rm-kur-head__copy">
                         <span class="micro-ops-eyebrow">RM KUR KECIL MIKRO</span>
                         <h4 id="micro-rm-kur-title">Produktivitas RM KUR Kecil Mikro</h4>
-                        <p>Realisasi MTD produk KUR Ritel 2015 per RM. Nilai menggunakan snapshot Daily Loan dan identitas personel mengutamakan roster BRIHC.</p>
+                        <p>Nett disbursement MTD produk KUR Ritel 2015 per RM, berdasarkan snapshot Daily Loan dan roster BRIHC.</p>
                     </div>
                     <div class="micro-rm-kur-head__meta" aria-label="Konteks data produktivitas RM KUR Kecil Mikro">
                         <span><i class="fas fa-map-marker-alt" aria-hidden="true"></i>{{ data_get($rmKurProductivity, 'scope_label', data_get($meta, 'scope_label', 'Area 6')) }}</span>
@@ -778,8 +780,8 @@
                 <div class="micro-rm-kur-summary" aria-label="Ringkasan produktivitas RM KUR Kecil Mikro">
                     <article>
                         <span>RM Produktif</span>
-                        <strong>{{ $formatInteger(data_get($rmKurProductivity, 'total.rm_count', 0)) }}</strong>
-                        <small>RM dengan realisasi MTD</small>
+                        <strong>{{ $formatInteger(max(0, data_get($rmKurProductivity, 'distribution.total.rm_count', 0) - data_get($rmKurProductivity, 'distribution.total.counts.zero', 0))) }}</strong>
+                        <small>PN BRIHC dengan realisasi MTD</small>
                     </article>
                     <article>
                         <span>Debitur Realisasi</span>
@@ -787,16 +789,73 @@
                         <small>Rekening baru bulan berjalan</small>
                     </article>
                     <article>
-                        <span>Plafon Realisasi</span>
+                        <span>Nett Disbursement</span>
                         <strong>{{ $formatAmount(data_get($rmKurProductivity, 'total.realisasi_os', 0)) }}</strong>
                         <small>Akumulasi MTD</small>
                     </article>
                     <article>
-                        <span>Rata-rata / RM</span>
-                        <strong>{{ $formatAmount(data_get($rmKurProductivity, 'total.average_per_rm', 0)) }}</strong>
-                        <small>Plafon produktif per RM</small>
+                        <span>Jumlah RM</span>
+                        <strong>{{ $formatInteger(data_get($rmKurProductivity, 'distribution.total.rm_count', 0)) }}</strong>
+                        <small>Personel dalam roster BRIHC</small>
                     </article>
                 </div>
+
+                <section class="micro-rm-kur-guidance" aria-labelledby="micro-rm-kur-distribution-title">
+                    <h5 id="micro-rm-kur-distribution-title">Persebaran Nett Disbursement RM Mikro</h5>
+                    <p>Jumlah orang dan persentase terhadap RM pada masing-masing BO/KCP. Batas kategori mengikuti guidance produktivitas RM Mikro; nilai mengikuti posisi tanggal di atas. Roster menggunakan BRIHC yang tersedia saat ini.</p>
+                    @if(data_get($rmKurProductivity, 'distribution.total.rm_count', 0) > 0)
+                        <div class="micro-mantri-table-wrap" tabindex="0" role="region" aria-label="Persebaran RM per BO dan KCP, geser untuk melihat semua kategori">
+                            <table class="micro-mantri-table micro-rm-kur-distribution-table">
+                                <caption class="sr-only">Persebaran nett disbursement MTD RM Mikro per BO/KCP</caption>
+                                <thead>
+                                    <tr>
+                                        <th rowspan="2" scope="col">Branch Office</th>
+                                        <th rowspan="2" scope="col">Kode BO/KCP</th>
+                                        <th rowspan="2" scope="col">Unit Kerja</th>
+                                        <th rowspan="2" scope="col">Jumlah RM</th>
+                                        @foreach(data_get($rmKurProductivity, 'distribution.tiers', []) as $tier)
+                                            <th colspan="2" scope="colgroup">{{ $tier['label'] }}<span class="micro-rm-kur-range">{{ $tier['range'] }}</span></th>
+                                        @endforeach
+                                    </tr>
+                                    <tr>
+                                        @foreach(data_get($rmKurProductivity, 'distribution.tiers', []) as $tier)
+                                            <th scope="col">Org</th><th scope="col">%</th>
+                                        @endforeach
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach(data_get($rmKurProductivity, 'distribution.rows', []) as $group)
+                                        <tr>
+                                            <th scope="row">{{ $group['cabang'] }}</th>
+                                            <td>{{ $group['branch_code'] }}</td>
+                                            <td>{{ $group['unit'] }}</td>
+                                            <td class="strong">{{ $formatInteger($group['rm_count']) }}</td>
+                                            @foreach(array_keys(data_get($rmKurProductivity, 'distribution.tiers', [])) as $key)
+                                                <td class="strong">{{ $formatInteger($group['counts'][$key]) }}</td>
+                                                <td>{{ number_format($group['percentages'][$key], 1, ',', '.') }}%</td>
+                                            @endforeach
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <th colspan="3" scope="row">Total {{ data_get($rmKurProductivity, 'scope_label', 'Area 6') }}</th>
+                                        <td>{{ $formatInteger(data_get($rmKurProductivity, 'distribution.total.rm_count', 0)) }}</td>
+                                        @foreach(array_keys(data_get($rmKurProductivity, 'distribution.tiers', [])) as $key)
+                                            <td>{{ $formatInteger(data_get($rmKurProductivity, "distribution.total.counts.$key", 0)) }}</td>
+                                            <td>{{ number_format(data_get($rmKurProductivity, "distribution.total.percentages.$key", 0), 1, ',', '.') }}%</td>
+                                        @endforeach
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        @if(data_get($rmKurProductivity, 'distribution.unassigned_amount', 0) != 0)
+                            <p role="note">Nett disbursement {{ $formatAmount(data_get($rmKurProductivity, 'distribution.unassigned_amount')) }} belum terhubung ke PN RM aktif BRIHC. Nilainya tetap ada di rincian, tetapi tidak dihitung sebagai orang dalam persebaran. Kategori Belum Realisasi berarti belum ada realisasi yang terhubung ke PN tersebut; persebaran belum final selama identitas ini belum lengkap.</p>
+                        @endif
+                    @else
+                        <p role="status">Persebaran belum tersedia: diperlukan snapshot periode dan roster RM Mikro BRIHC. Data yang belum tersedia tidak dianggap sebagai belum realisasi.</p>
+                    @endif
+                </section>
 
                 @if(!empty($rmKurProductivity['available']))
                     <div class="micro-mantri-table-wrap micro-rm-kur-table-wrap">
@@ -810,7 +869,7 @@
                                     <th>RM KUR Kecil Mikro</th>
                                     <th>Unit Kerja</th>
                                     <th>Debitur</th>
-                                    <th>Plafon (Rp Juta)</th>
+                                    <th>Nett Disbursement (Rp Juta)</th>
                                     <th>Rata-rata / Debitur (Rp Juta)</th>
                                 </tr>
                             </thead>
@@ -1636,6 +1695,13 @@
             scrollbar-gutter: auto;
             -webkit-overflow-scrolling: touch;
         }
+        .micro-rm-kur-guidance { padding: 0 20px 20px; }
+        .micro-rm-kur-guidance h5 { margin: 8px 0; font-size: 16px; font-weight: 700; }
+        .micro-rm-kur-guidance p { margin: 8px 0 16px; color: #475569; font-size: 13px; line-height: 1.6; max-width: 75ch; }
+        .micro-rm-kur-guidance [role="region"]:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+        .micro-rm-kur-distribution-table { min-width: 1200px; font-variant-numeric: tabular-nums; }
+        .micro-rm-kur-distribution-table thead th { text-align: center; }
+        .micro-rm-kur-distribution-table .micro-rm-kur-range { display: block; color: #e0efff; font-size: 11px; font-weight: 500; white-space: nowrap; }
         .micro-rm-kur-table { min-width: 1040px; }
         .micro-rm-kur-table thead tr:first-child th,
         .micro-rm-kur-table tfoot th,

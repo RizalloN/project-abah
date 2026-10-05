@@ -15,6 +15,36 @@ class ExcelStagingService
         return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['xlsx', 'xls'], true);
     }
 
+    public function stageGi405SingleRowXlsxToCsv(
+        callable $send,
+        string $sourcePath,
+        int $headerIndex,
+        array $normalizedHeaders,
+        string $stagedCsvPath
+    ): array {
+        if (strtolower(pathinfo($sourcePath, PATHINFO_EXTENSION)) !== 'xlsx') {
+            throw new \RuntimeException(
+                'GI405 Single Row wajib menggunakan XLSX agar nilai mentah angka dapat dipertahankan tanpa konversi float.'
+            );
+        }
+
+        $normalizer = app(Gi405SingleRowValueNormalizer::class);
+        $result = $this->stageExcelToCsvViaNativeXlsx(
+            $send,
+            $sourcePath,
+            $headerIndex,
+            $normalizedHeaders,
+            $stagedCsvPath,
+            static fn (string $header, mixed $value): ?string => $normalizer->normalizeForStaging($header, $value)
+        );
+
+        if ($result === null) {
+            throw new \RuntimeException('XLSX GI405 Single Row tidak dapat dibaca melalui streaming XML.');
+        }
+
+        return $result;
+    }
+
     private function initDecimalNormalizer(): void
     {
         if ($this->decimalNormalizer !== null) {
@@ -555,32 +585,48 @@ class ExcelStagingService
         string $sourcePath,
         int $headerIndex,
         array $normalizedHeaders,
-        string $stagedCsvPath
+        string $stagedCsvPath,
+        ?callable $valueNormalizer = null
     ): ?array {
         if (!$this->supportsNativeXlsxStreaming($sourcePath)) {
+            if ($valueNormalizer !== null) {
+                throw new \RuntimeException('Container XLSX tidak valid atau ekstensi Zip/XML PHP tidak tersedia.');
+            }
             return null;
         }
 
         $zip = new \ZipArchive();
         if ($zip->open($sourcePath) !== true) {
+            if ($valueNormalizer !== null) {
+                throw new \RuntimeException('Container XLSX tidak dapat dibuka.');
+            }
             return null;
         }
 
         $outputHandle = @fopen($stagedCsvPath, 'wb');
         if ($outputHandle === false) {
             $zip->close();
+            if ($valueNormalizer !== null) {
+                throw new \RuntimeException("CSV staging GI405 tidak dapat dibuat: {$stagedCsvPath}.");
+            }
             return null;
         }
 
         try {
             $worksheetEntry = $this->resolveFirstWorksheetEntry($zip);
             if ($worksheetEntry === null) {
+                if ($valueNormalizer !== null) {
+                    throw new \RuntimeException('Worksheet pertama XLSX tidak ditemukan.');
+                }
                 return null;
             }
 
             $sharedStrings = $this->readSharedStrings($zip);
             $reader = new \XMLReader();
             if (!$reader->open('zip://' . str_replace('\\', '/', $sourcePath) . '#' . $worksheetEntry, null, LIBXML_NONET | LIBXML_COMPACT)) {
+                if ($valueNormalizer !== null) {
+                    throw new \RuntimeException("Worksheet XLSX `{$worksheetEntry}` tidak dapat dibuka.");
+                }
                 return null;
             }
 
@@ -600,6 +646,7 @@ class ExcelStagingService
             $processedRows = 0;
             $progressEvery = 100000;
             $lastProgressAt = 0;
+            $buffer = '';
             $bufferSize = 0;
             $maxBufferSize = 4194304; // 4MB buffer (quadrupled for better throughput)
 
@@ -630,10 +677,10 @@ class ExcelStagingService
 
                 // Normalize values without treating textual date/time values as decimals.
                 for ($i = 0; $i < $headerCount; $i++) {
-                    $rowValues[$i] = $this->normalizeValueForStaging(
-                        (string) ($normalizedHeaders[$i] ?? ''),
-                        $rowValues[$i]
-                    );
+                    $header = (string) ($normalizedHeaders[$i] ?? '');
+                    $rowValues[$i] = $valueNormalizer !== null
+                        ? $valueNormalizer($header, $rowValues[$i])
+                        : $this->normalizeValueForStaging($header, $rowValues[$i]);
                 }
 
                 // OPTIMASI: Use optimized CSV line builder (40-50% faster)
@@ -680,8 +727,15 @@ class ExcelStagingService
                 'header_index' => 0,
                 'headers' => array_values($normalizedHeaders),
             ];
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            logger()->warning('Native XLSX staging failed.', [
+                'source_path' => $sourcePath,
+                'message' => $e->getMessage(),
+            ]);
             @unlink($stagedCsvPath);
+            if ($valueNormalizer !== null) {
+                throw $e;
+            }
             return null;
         } finally {
             fclose($outputHandle);

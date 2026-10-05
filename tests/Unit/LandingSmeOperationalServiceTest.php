@@ -5,11 +5,34 @@ namespace Tests\Unit;
 use App\Http\Controllers\Report\KinerjaRmReportController;
 use App\Support\LandingSmeOperationalService;
 use App\Support\UserBranchScope;
+use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\TestCase;
 
 class LandingSmeOperationalServiceTest extends TestCase
 {
+    public function test_payload_forwards_selected_landing_period_to_small_quadrants(): void
+    {
+        Http::fake(fn () => Http::response("header\n", 200));
+        $controller = Mockery::mock(KinerjaRmReportController::class);
+        $controller->shouldReceive('landingSmallQuadrantSummary')
+            ->once()
+            ->with('2026-09-30')
+            ->andReturn([
+                'period' => '2026-09-29',
+                'period_label' => '29 Sep 2026',
+                'branches' => [],
+            ]);
+
+        $payload = (new LandingSmeOperationalService($controller))->payload(
+            null,
+            true,
+            '2026-09-30'
+        );
+
+        $this->assertSame('2026-09-29', data_get($payload, 'quadrants.period'));
+    }
+
     public function test_parsers_keep_only_area_6_kc_and_requested_kcp_units(): void
     {
         $service = $this->service();
@@ -93,9 +116,12 @@ class LandingSmeOperationalServiceTest extends TestCase
         $this->assertCount(2, $parsed['records']);
         $this->assertSame(['KC MADIUN', 'KC MADIUN'], array_column($parsed['records'], 'branch'));
         $this->assertSame('', $parsed['records'][0]['rm']);
+        $this->assertSame(['deb' => 24, 'amount_juta' => 22300.0], $parsed['records'][0]['total']);
         $this->assertSame(['deb' => 7, 'amount_juta' => 6700.0], $parsed['records'][0]['statuses']['belum_ots']);
         $this->assertSame(['deb' => 16, 'amount_juta' => 14600.0], $parsed['records'][0]['statuses']['analisa_rm']);
         $this->assertSame(['deb' => 1, 'amount_juta' => 1000.0], $parsed['records'][0]['statuses']['realisasi']);
+        $this->assertSame(['deb' => 0, 'amount_juta' => 0.0], $parsed['records'][0]['statuses']['carry_over']);
+        $this->assertSame('Agustus', $parsed['period_label']);
     }
 
     public function test_extension_and_restructuring_parsers_preserve_status_pairs(): void
@@ -153,16 +179,19 @@ class LandingSmeOperationalServiceTest extends TestCase
 
         foreach ([
             '1Iidgzfevd8WSjP7An4zQSRe6qVevQYBF',
-            '1Rgs0kU6iZxu3WY6J1wiZpc9JCxNlb5gg',
+            '1QNOlNFQsNeYtm43w52cKEHmuUuUDEIT4',
             '1ZVzkRkBaBFdgkrQQPXO4JHTnSHCU39pi',
             '1c7UCMOO2aHnusgJ9jOlLKN7SebQKdRIi',
-            '1e0c4lnq-A_E1Dh4LTn2NTx24BRNOQhoZ',
+            '14sQxMWrKLhyrhENBEJWgN2In0vvG2_iq',
         ] as $spreadsheetId) {
             $this->assertStringContainsString($spreadsheetId, $serviceSource);
         }
 
         $this->assertStringContainsString("'sheet' => 'REKAP PROGRESS'", $serviceSource);
         $this->assertStringContainsString("'sheet' => 'DOWNLINE NASABAH MEDIUM'", $serviceSource);
+        $this->assertStringContainsString("'sheet' => 'AGEN GAS'", $serviceSource);
+        $this->assertStringContainsString("'sheet' => 'SPBU'", $serviceSource);
+        $this->assertStringContainsString('ouid=104421189091698527488', $serviceSource);
         $this->assertStringContainsString("'csv_mode' => 'gviz'", $serviceSource);
     }
 
@@ -174,7 +203,7 @@ class LandingSmeOperationalServiceTest extends TestCase
         $leafHeader = ['', '', '', ''];
         $data = ['AREA 6', '0045', '00045', 'KC Madiun'];
 
-        for ($vendor = 1; $vendor <= 15; $vendor++) {
+        for ($vendor = 1; $vendor <= 17; $vendor++) {
             array_push($groupHeader, 'VENDOR '.$vendor, '', '', '', '', '', '', '', '', '', '', '');
             array_push($metricHeader, 'TOTAL PIPELINE', '', '', '', '', 'OTS', '', '', '', '', 'PEMBIAYAAN', '');
             array_push($leafHeader, '', '', '', '', '', 'Sudah OTS', 'Belum OTS', '', '', '', 'Berminat', 'Tidak Berminat');
@@ -192,6 +221,41 @@ class LandingSmeOperationalServiceTest extends TestCase
             ['pipeline' => 14, 'ots' => 24, 'interested' => 34],
             $rtl['records'][0]['vendors']['pupuk_indonesia']
         );
+        $this->assertSame(
+            ['pipeline' => 16, 'ots' => 26, 'interested' => 36],
+            $rtl['records'][0]['vendors']['agen_gas']
+        );
+        $this->assertSame(
+            ['pipeline' => 17, 'ots' => 27, 'interested' => 37],
+            $rtl['records'][0]['vendors']['spbu_hiswana_migas']
+        );
+        $this->assertSame([], $rtl['records'][0]['formula_errors']);
+    }
+
+    public function test_rtl_parser_maps_vendor_by_named_header_and_ignores_formula_errors_outside_area_6(): void
+    {
+        $service = $this->service();
+        $groupHeader = ['AREA HEAD', 'KODE KANCA', 'KODE UKER', 'UKER'];
+        $metricHeader = ['', '', '', ''];
+        $leafHeader = ['', '', '', ''];
+        $areaSix = ['AREA 6', '0045', '00045', 'KC Madiun'];
+        $outsideArea = ['AREA 5', '0033', '00033', 'KC Kediri'];
+
+        foreach (['AGEN GAS', 'VENDOR PETROKIMIA', 'KIOS PUPUK LENGKAP'] as $vendor) {
+            array_push($groupHeader, $vendor, '', '', '', '', '', '', '', '', '', '', '');
+            array_push($metricHeader, 'TOTAL PIPELINE', '', '', '', '', 'OTS', '', '', '', '', 'PEMBIAYAAN', '');
+            array_push($leafHeader, '', '', '', '', '', 'Sudah OTS', 'Belum OTS', '', '', '', 'Berminat', 'Tidak Berminat');
+        }
+        array_push($areaSix, 11, 0, 0, 0, 0, 7, 0, 0, 0, 0, 5, 0, 4, 0, 0, 0, 0, 3, 0, 0, 0, 0, 2, 0, 9, 0, 0, 0, 0, 6, 0, 0, 0, 0, 4, 0);
+        array_push($outsideArea, '#N/A', 0, 0, 0, 0, '#N/A', 0, 0, 0, 0, '#N/A', 0, '#N/A', 0, 0, 0, 0, '#N/A', 0, 0, 0, 0, '#N/A', 0, '#N/A', 0, 0, 0, 0, '#N/A', 0, 0, 0, 0, '#N/A', 0);
+
+        $parsed = $service->parseRtlPipelineCsv($this->csv([$groupHeader, $metricHeader, $leafHeader, $areaSix, $outsideArea]));
+
+        $this->assertCount(1, $parsed['records']);
+        $this->assertSame(['pipeline' => 11, 'ots' => 7, 'interested' => 5], $parsed['records'][0]['vendors']['agen_gas']);
+        $this->assertSame(['pipeline' => 4, 'ots' => 3, 'interested' => 2], $parsed['records'][0]['vendors']['petrokimia']);
+        $this->assertSame(['pipeline' => 9, 'ots' => 6, 'interested' => 4], $parsed['records'][0]['vendors']['kios_pupuk_lengkap']);
+        $this->assertSame([], $parsed['records'][0]['formula_errors']);
     }
 
     public function test_vendor_nominative_parser_flattens_headers_and_keeps_only_area_6_rows(): void

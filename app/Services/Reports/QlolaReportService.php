@@ -106,7 +106,9 @@ class QlolaReportService
         $corpBranchExpression = $this->normalizeSqlExpression('cabang');
         $usakBranchExpression = $this->normalizeSqlExpression('kanca');
         $corpPeriod = DB::table('ibbisniz_corp')->max('periode');
-        $usakPeriod = DB::table('usak_ibbiz_uker')->max('periode');
+        $usakPeriod = DB::table('usak_ibbiz_uker')
+            ->whereIn(DB::raw('UPPER(TRIM(deskripsi))'), ['ACTIVE', 'ACTIVATED', 'DEACTIVATED', 'UNREG'])
+            ->max('periode');
 
         $transactionRows = DB::table('ibbisniz_corp')
             ->selectRaw("{$corpGroupExpression} as branch")

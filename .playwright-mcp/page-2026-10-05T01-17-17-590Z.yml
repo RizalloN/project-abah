@@ -1,0 +1,1150 @@
+- generic [active] [ref=f5e1]:
+  - link "Lewati ke konten utama" [ref=f5e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=f5e3]:
+    - navigation [ref=f5e4]:
+      - list [ref=f5e5]:
+        - listitem [ref=f5e6]:
+          - button "Toggle sidebar" [ref=f5e7] [cursor=pointer]:
+            - generic [ref=f5e8]: 
+        - listitem [ref=f5e9]:
+          - generic "A-Six dashboard" [ref=f5e10]:
+            - generic [ref=f5e11]:
+              - generic [ref=f5e12]: A-Six Dashboard
+              - generic [ref=f5e13]: Area 6 Monitoring
+      - list [ref=f5e14]:
+        - listitem [ref=f5e15]:
+          - button "RI 90179583 - RizalloN Akses Area 6 " [ref=f5e16] [cursor=pointer]:
+            - generic [ref=f5e17]: RI
+            - generic [ref=f5e18]:
+              - generic [ref=f5e19]: 90179583 - RizalloN
+              - generic [ref=f5e20]: Akses Area 6
+            - generic [ref=f5e21]: 
+          - text: 
+    - complementary [ref=f5e22]:
+      - link "Logo A-Six A-Six Dashboard Portal" [ref=f5e23] [cursor=pointer]:
+        - /url: http://localhost/dashboard
+        - generic [ref=f5e24]:
+          - img "Logo A-Six" [ref=f5e27]
+          - generic [ref=f5e28]:
+            - generic [ref=f5e29]: A-Six
+            - generic [ref=f5e30]: Dashboard Portal
+      - generic [ref=f5e31]:
+        - generic [ref=f5e33]:
+          - generic [ref=f5e34]: RI
+          - generic [ref=f5e35]:
+            - generic [ref=f5e36]: RizalloN
+            - generic [ref=f5e37]: "90179583"
+        - navigation [ref=f5e38]:
+          - menu [ref=f5e39]:
+            - listitem [ref=f5e40]:
+              - link " Landing Page " [ref=f5e41] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e42]: 
+                - paragraph [ref=f5e43]:
+                  - text: Landing Page
+                  - generic [ref=f5e44]: 
+              - list [ref=f5e45]:
+                - listitem [ref=f5e46]:
+                  - link " Landing Page Pinjaman" [ref=f5e47] [cursor=pointer]:
+                    - /url: http://localhost/dashboard
+                    - generic [ref=f5e48]: 
+                    - paragraph [ref=f5e49]: Landing Page Pinjaman
+                - listitem [ref=f5e50]:
+                  - link " Landing Page Simpanan" [ref=f5e51] [cursor=pointer]:
+                    - /url: http://localhost/dashboard/simpanan
+                    - generic [ref=f5e52]: 
+                    - paragraph [ref=f5e53]: Landing Page Simpanan
+            - listitem [ref=f5e54]:
+              - link " Dashboard Harian " [ref=f5e55] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e56]: 
+                - paragraph [ref=f5e57]:
+                  - text: Dashboard Harian
+                  - generic [ref=f5e58]: 
+              - text:   
+            - listitem [ref=f5e59]:
+              - link " Dashboard Simpanan " [ref=f5e60] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e61]: 
+                - paragraph [ref=f5e62]:
+                  - text: Dashboard Simpanan
+                  - generic [ref=f5e63]: 
+              - text:  
+            - listitem [ref=f5e64]:
+              - link " Dashboard Pinjaman " [ref=f5e65] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e66]: 
+                - paragraph [ref=f5e67]:
+                  - text: Dashboard Pinjaman
+                  - generic [ref=f5e68]: 
+              - text:          
+            - listitem [ref=f5e69]:
+              - link " Dashboard Almafacts " [ref=f5e70] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e71]: 
+                - paragraph [ref=f5e72]:
+                  - text: Dashboard Almafacts
+                  - generic [ref=f5e73]: 
+              - text:   
+            - listitem [ref=f5e74]:
+              - link " KPI " [ref=f5e75] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e76]: 
+                - paragraph [ref=f5e77]:
+                  - text: KPI
+                  - generic [ref=f5e78]: 
+              - text:        
+            - listitem [ref=f5e79]:
+              - link " Prognosa " [ref=f5e80] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e81]: 
+                - paragraph [ref=f5e82]:
+                  - text: Prognosa
+                  - generic [ref=f5e83]: 
+              - text: 
+            - listitem [ref=f5e84]:
+              - link " Bank Pipeline" [ref=f5e85] [cursor=pointer]:
+                - /url: http://localhost/drive
+                - generic [ref=f5e86]: 
+                - paragraph [ref=f5e87]: Bank Pipeline
+            - listitem [ref=f5e88]:
+              - link " Marketshare " [ref=f5e89] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e90]: 
+                - paragraph [ref=f5e91]:
+                  - text: Marketshare
+                  - generic [ref=f5e92]: 
+              - text:     
+            - listitem [ref=f5e93]: MANAGEMENT
+            - listitem [ref=f5e94]:
+              - link " Management " [ref=f5e95] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e96]: 
+                - paragraph [ref=f5e97]:
+                  - text: Management
+                  - generic [ref=f5e98]: 
+              - text:    
+            - listitem [ref=f5e99]:
+              - link " Report " [ref=f5e100] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e101]: 
+                - paragraph [ref=f5e102]:
+                  - text: Report
+                  - generic [ref=f5e103]: 
+              - text:  
+            - listitem [ref=f5e104]: REPORT
+            - listitem [ref=f5e105]:
+              - link " Optimalisasi Digital Channel " [ref=f5e106] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e107]: 
+                - paragraph [ref=f5e108]:
+                  - text: Optimalisasi Digital Channel
+                  - generic [ref=f5e109]: 
+              - text:      
+            - listitem [ref=f5e110]:
+              - link " Rekening Transaksi Debitur " [ref=f5e111] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e112]: 
+                - paragraph [ref=f5e113]:
+                  - text: Rekening Transaksi Debitur
+                  - generic [ref=f5e114]: 
+              - text:  
+            - listitem [ref=f5e115]:
+              - link " Peningkatan Payroll Berkualitas " [ref=f5e116] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e117]: 
+                - paragraph [ref=f5e118]:
+                  - text: Peningkatan Payroll Berkualitas
+                  - generic [ref=f5e119]: 
+              - text: 
+            - listitem [ref=f5e120]:
+              - link " Kolaborasi Perusahaan Anak " [ref=f5e121] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e122]: 
+                - paragraph [ref=f5e123]:
+                  - text: Kolaborasi Perusahaan Anak
+                  - generic [ref=f5e124]: 
+              - text: 
+            - listitem [ref=f5e125]:
+              - link " Optimalisasi Nasabah Prioritas BOD/BOC Nasabah Wholesale dan Komersial " [ref=f5e126] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e127]: 
+                - paragraph [ref=f5e128]:
+                  - text: Optimalisasi Nasabah Prioritas BOD/BOC Nasabah Wholesale dan Komersial
+                  - generic [ref=f5e129]: 
+              - text: 
+            - listitem [ref=f5e130]:
+              - link " Business Cluster " [ref=f5e131] [cursor=pointer]:
+                - /url: "#"
+                - generic [ref=f5e132]: 
+                - paragraph [ref=f5e133]:
+                  - text: Business Cluster
+                  - generic [ref=f5e134]: 
+              - text:  
+    - generic [ref=f5e138]:
+      - generic [ref=f5e139]:
+        - generic [ref=f5e140]:
+          - img "A-SIX" [ref=f5e142]
+          - generic [ref=f5e143]:
+            - generic [ref=f5e144]: A-SIX Area 6 — Dashboard Realtime
+            - generic [ref=f5e145]: Ringkasan posisi keuangan, portofolio, dan 8 strategi digital
+        - generic [ref=f5e146]:
+          - generic "Ubah lingkup angka landing page" [ref=f5e147] [cursor=pointer]:
+            - generic [aria-hidden]: 
+            - generic [ref=f5e148]: Pilih cabang landing page
+            - combobox "Pilih cabang landing page " [ref=f5e149]:
+              - option "Area 6 (Semua Cabang)" [selected]
+              - option "KC Madiun"
+              - option "KC Magetan"
+              - option "KC Ngawi"
+              - option "KC Ponorogo"
+            - text: 
+          - generic [ref=f5e150]:
+            - combobox [ref=f5e151] [cursor=pointer]:
+              - option "03 Oct 2026"
+              - option "02 Oct 2026" [selected]
+              - option "01 Oct 2026"
+              - option "30 Sep 2026"
+              - option "29 Sep 2026"
+              - option "28 Sep 2026"
+              - option "27 Sep 2026"
+              - option "26 Sep 2026"
+              - option "25 Sep 2026"
+              - option "24 Sep 2026"
+              - option "23 Sep 2026"
+              - option "22 Sep 2026"
+              - option "21 Sep 2026"
+              - option "20 Sep 2026"
+              - option "19 Sep 2026"
+              - option "18 Sep 2026"
+              - option "17 Sep 2026"
+              - option "16 Sep 2026"
+              - option "15 Sep 2026"
+              - option "14 Sep 2026"
+              - option "12 Sep 2026"
+              - option "11 Sep 2026"
+              - option "10 Sep 2026"
+              - option "09 Sep 2026"
+              - option "08 Sep 2026"
+              - option "07 Sep 2026"
+              - option "06 Sep 2026"
+              - option "05 Sep 2026"
+              - option "04 Sep 2026"
+              - option "03 Sep 2026"
+              - option "02 Sep 2026"
+              - option "01 Sep 2026"
+              - option "31 Aug 2026"
+              - option "30 Aug 2026"
+              - option "29 Aug 2026"
+              - option "28 Aug 2026"
+              - option "27 Aug 2026"
+              - option "26 Aug 2026"
+              - option "25 Aug 2026"
+              - option "23 Aug 2026"
+              - option "22 Aug 2026"
+              - option "21 Aug 2026"
+              - option "20 Aug 2026"
+              - option "19 Aug 2026"
+              - option "18 Aug 2026"
+              - option "17 Aug 2026"
+              - option "15 Aug 2026"
+              - option "14 Aug 2026"
+              - option "13 Aug 2026"
+              - option "12 Aug 2026"
+              - option "11 Aug 2026"
+              - option "10 Aug 2026"
+              - option "09 Aug 2026"
+              - option "08 Aug 2026"
+              - option "07 Aug 2026"
+              - option "06 Aug 2026"
+              - option "05 Aug 2026"
+              - option "04 Aug 2026"
+              - option "03 Aug 2026"
+              - option "02 Aug 2026"
+              - option "01 Aug 2026"
+              - option "31 Jul 2026"
+              - option "30 Jul 2026"
+              - option "29 Jul 2026"
+              - option "28 Jul 2026"
+              - option "27 Jul 2026"
+              - option "26 Jul 2026"
+              - option "25 Jul 2026"
+              - option "24 Jul 2026"
+              - option "23 Jul 2026"
+              - option "22 Jul 2026"
+              - option "21 Jul 2026"
+              - option "20 Jul 2026"
+              - option "19 Jul 2026"
+              - option "18 Jul 2026"
+              - option "17 Jul 2026"
+              - option "16 Jul 2026"
+              - option "15 Jul 2026"
+              - option "14 Jul 2026"
+              - option "13 Jul 2026"
+              - option "12 Jul 2026"
+              - option "11 Jul 2026"
+              - option "10 Jul 2026"
+              - option "09 Jul 2026"
+              - option "08 Jul 2026"
+              - option "07 Jul 2026"
+              - option "06 Jul 2026"
+              - option "05 Jul 2026"
+              - option "04 Jul 2026"
+              - option "03 Jul 2026"
+              - option "02 Jul 2026"
+              - option "01 Jul 2026"
+              - option "30 Jun 2026"
+              - option "29 Jun 2026"
+              - option "28 Jun 2026"
+              - option "27 Jun 2026"
+              - option "26 Jun 2026"
+              - option "25 Jun 2026"
+              - option "24 Jun 2026"
+              - option "23 Jun 2026"
+              - option "22 Jun 2026"
+              - option "21 Jun 2026"
+              - option "20 Jun 2026"
+              - option "19 Jun 2026"
+              - option "18 Jun 2026"
+              - option "17 Jun 2026"
+              - option "16 Jun 2026"
+              - option "15 Jun 2026"
+              - option "14 Jun 2026"
+              - option "13 Jun 2026"
+              - option "12 Jun 2026"
+              - option "11 Jun 2026"
+              - option "10 Jun 2026"
+              - option "09 Jun 2026"
+              - option "08 Jun 2026"
+              - option "07 Jun 2026"
+              - option "06 Jun 2026"
+              - option "05 Jun 2026"
+              - option "04 Jun 2026"
+              - option "03 Jun 2026"
+              - option "02 Jun 2026"
+              - option "01 Jun 2026"
+              - option "31 May 2026"
+              - option "30 May 2026"
+              - option "29 May 2026"
+              - option "28 May 2026"
+              - option "27 May 2026"
+              - option "26 May 2026"
+              - option "25 May 2026"
+              - option "24 May 2026"
+              - option "23 May 2026"
+              - option "22 May 2026"
+              - option "21 May 2026"
+              - option "20 May 2026"
+              - option "19 May 2026"
+              - option "18 May 2026"
+              - option "17 May 2026"
+              - option "16 May 2026"
+              - option "15 May 2026"
+              - option "14 May 2026"
+              - option "13 May 2026"
+              - option "12 May 2026"
+              - option "11 May 2026"
+              - option "10 May 2026"
+              - option "09 May 2026"
+              - option "08 May 2026"
+              - option "07 May 2026"
+              - option "06 May 2026"
+              - option "05 May 2026"
+              - option "04 May 2026"
+              - option "03 May 2026"
+              - option "02 May 2026"
+              - option "01 May 2026"
+              - option "30 Apr 2026"
+              - option "29 Apr 2026"
+              - option "28 Apr 2026"
+              - option "27 Apr 2026"
+              - option "26 Apr 2026"
+              - option "25 Apr 2026"
+              - option "24 Apr 2026"
+              - option "23 Apr 2026"
+              - option "22 Apr 2026"
+              - option "21 Apr 2026"
+              - option "20 Apr 2026"
+              - option "19 Apr 2026"
+              - option "18 Apr 2026"
+              - option "17 Apr 2026"
+              - option "16 Apr 2026"
+              - option "15 Apr 2026"
+              - option "14 Apr 2026"
+              - option "13 Apr 2026"
+              - option "12 Apr 2026"
+              - option "11 Apr 2026"
+              - option "10 Apr 2026"
+              - option "09 Apr 2026"
+              - option "08 Apr 2026"
+              - option "07 Apr 2026"
+              - option "06 Apr 2026"
+              - option "05 Apr 2026"
+              - option "04 Apr 2026"
+              - option "03 Apr 2026"
+              - option "02 Apr 2026"
+              - option "01 Apr 2026"
+              - option "31 Mar 2026"
+              - option "30 Mar 2026"
+              - option "29 Mar 2026"
+              - option "28 Mar 2026"
+              - option "27 Mar 2026"
+              - option "26 Mar 2026"
+              - option "25 Mar 2026"
+              - option "24 Mar 2026"
+              - option "23 Mar 2026"
+              - option "22 Mar 2026"
+              - option "21 Mar 2026"
+              - option "20 Mar 2026"
+              - option "19 Mar 2026"
+              - option "18 Mar 2026"
+              - option "17 Mar 2026"
+              - option "16 Mar 2026"
+              - option "15 Mar 2026"
+              - option "14 Mar 2026"
+              - option "13 Mar 2026"
+              - option "12 Mar 2026"
+              - option "11 Mar 2026"
+              - option "10 Mar 2026"
+              - option "09 Mar 2026"
+              - option "08 Mar 2026"
+              - option "07 Mar 2026"
+              - option "06 Mar 2026"
+              - option "05 Mar 2026"
+              - option "04 Mar 2026"
+              - option "03 Mar 2026"
+              - option "02 Mar 2026"
+              - option "01 Mar 2026"
+              - option "28 Feb 2026"
+              - option "27 Feb 2026"
+              - option "26 Feb 2026"
+              - option "25 Feb 2026"
+              - option "24 Feb 2026"
+              - option "23 Feb 2026"
+              - option "22 Feb 2026"
+              - option "21 Feb 2026"
+              - option "20 Feb 2026"
+              - option "19 Feb 2026"
+              - option "18 Feb 2026"
+              - option "17 Feb 2026"
+              - option "16 Feb 2026"
+              - option "15 Feb 2026"
+              - option "14 Feb 2026"
+              - option "13 Feb 2026"
+              - option "12 Feb 2026"
+              - option "11 Feb 2026"
+              - option "10 Feb 2026"
+              - option "09 Feb 2026"
+              - option "08 Feb 2026"
+              - option "07 Feb 2026"
+              - option "06 Feb 2026"
+              - option "05 Feb 2026"
+              - option "04 Feb 2026"
+              - option "03 Feb 2026"
+              - option "02 Feb 2026"
+              - option "01 Feb 2026"
+              - option "31 Jan 2026"
+              - option "30 Jan 2026"
+              - option "29 Jan 2026"
+              - option "28 Jan 2026"
+              - option "27 Jan 2026"
+              - option "26 Jan 2026"
+              - option "25 Jan 2026"
+              - option "24 Jan 2026"
+              - option "23 Jan 2026"
+              - option "22 Jan 2026"
+              - option "21 Jan 2026"
+              - option "20 Jan 2026"
+              - option "19 Jan 2026"
+              - option "18 Jan 2026"
+              - option "17 Jan 2026"
+              - option "16 Jan 2026"
+              - option "15 Jan 2026"
+              - option "14 Jan 2026"
+              - option "13 Jan 2026"
+              - option "12 Jan 2026"
+              - option "11 Jan 2026"
+              - option "10 Jan 2026"
+              - option "09 Jan 2026"
+              - option "08 Jan 2026"
+              - option "07 Jan 2026"
+              - option "06 Jan 2026"
+              - option "05 Jan 2026"
+              - option "04 Jan 2026"
+              - option "03 Jan 2026"
+              - option "02 Jan 2026"
+              - option "01 Jan 2026"
+              - option "31 Dec 2025"
+              - option "30 Dec 2025"
+              - option "29 Dec 2025"
+              - option "28 Dec 2025"
+              - option "27 Dec 2025"
+              - option "26 Dec 2025"
+              - option "25 Dec 2025"
+              - option "24 Dec 2025"
+              - option "23 Dec 2025"
+              - option "22 Dec 2025"
+              - option "21 Dec 2025"
+              - option "20 Dec 2025"
+              - option "19 Dec 2025"
+              - option "18 Dec 2025"
+              - option "17 Dec 2025"
+              - option "16 Dec 2025"
+              - option "15 Dec 2025"
+              - option "14 Dec 2025"
+              - option "13 Dec 2025"
+              - option "12 Dec 2025"
+              - option "11 Dec 2025"
+              - option "10 Dec 2025"
+              - option "09 Dec 2025"
+              - option "08 Dec 2025"
+              - option "07 Dec 2025"
+              - option "06 Dec 2025"
+              - option "05 Dec 2025"
+              - option "04 Dec 2025"
+              - option "03 Dec 2025"
+              - option "02 Dec 2025"
+              - option "01 Dec 2025"
+              - option "30 Nov 2025"
+              - option "31 Oct 2025"
+              - option "30 Sep 2025"
+              - option "31 Aug 2025"
+              - option "31 Jul 2025"
+              - option "30 Jun 2025"
+              - option "31 May 2025"
+              - option "30 Apr 2025"
+              - option "31 Mar 2025"
+              - option "28 Feb 2025"
+              - option "31 Jan 2025"
+            - generic: 
+          - button " Mode Presentasi" [ref=f5e152] [cursor=pointer]:
+            - generic [ref=f5e153]: 
+            - text: Mode Presentasi
+          - button " Unduh PPT" [ref=f5e154] [cursor=pointer]:
+            - generic [ref=f5e155]: 
+            - text: Unduh PPT
+          - generic [ref=f5e156]:
+            - generic [ref=f5e157]: 
+            - text: Live Snapshot
+          - generic [ref=f5e158]: "Updated: 29 Sep 2026 00:00 WIB"
+          - generic [ref=f5e159]: 08.17.17 WIB
+      - generic [ref=f5e160]:
+        - generic [ref=f5e161]:
+          - generic [ref=f5e163]:
+            - generic [ref=f5e164]: 
+            - text: Dana Simpanan
+          - generic [ref=f5e166]: Rp14,44 T
+          - generic [ref=f5e167]: 4280 rekening | 0 CIF
+          - generic [ref=f5e168]:
+            - generic [ref=f5e169]: 
+            - text: "-0,10% MtM"
+          - button "Detail " [ref=f5e170] [cursor=pointer]:
+            - text: Detail
+            - generic [ref=f5e171]: 
+        - generic [ref=f5e172]:
+          - generic [ref=f5e174]:
+            - generic [ref=f5e175]: 
+            - text: OS
+          - generic [ref=f5e177]: Rp15,51 T
+          - generic [ref=f5e178]: 9292 rekening | 4 cabang
+          - generic [ref=f5e179]:
+            - generic [ref=f5e180]: 
+            - text: "-0,24% MtM"
+          - button "Detail " [ref=f5e181] [cursor=pointer]:
+            - text: Detail
+            - generic [ref=f5e182]: 
+        - generic [ref=f5e183]:
+          - generic [ref=f5e184]:
+            - generic [ref=f5e185]: 
+            - text: LDR (Loan to Deposit Ratio)
+          - generic [ref=f5e187]: 1,07x
+          - generic [ref=f5e188]: Gap pinjaman vs simpanan Rp1,07 T
+          - button "Detail " [ref=f5e189] [cursor=pointer]:
+            - text: Detail
+            - generic [ref=f5e190]: 
+        - generic [ref=f5e191]:
+          - generic [ref=f5e192]:
+            - generic [ref=f5e193]: 
+            - text: Growth Simpanan MtM
+          - generic [ref=f5e195]: "-0,10%"
+          - generic [ref=f5e196]: vs 30 Sep 2026
+        - generic [ref=f5e197]:
+          - generic [ref=f5e198]:
+            - generic [ref=f5e199]: 
+            - text: Growth Pinjaman MtM
+          - generic [ref=f5e201]: "-0,24%"
+          - generic [ref=f5e202]: vs 30 Sep 2026
+        - generic [ref=f5e203]:
+          - generic [ref=f5e204]:
+            - generic [ref=f5e205]: 
+            - text: CASA Ratio (Harian)
+          - generic [ref=f5e207]: 12,4%
+          - generic [ref=f5e208]: Rp3,92 T CASA
+          - button "Detail " [ref=f5e209] [cursor=pointer]:
+            - text: Detail
+            - generic [ref=f5e210]: 
+      - generic [ref=f5e211]:
+        - generic [ref=f5e212]:
+          - generic [ref=f5e213]: Kinerja Mikro
+          - generic [ref=f5e215]:
+            - group "Pilihan lingkup kinerja" [ref=f5e217]:
+              - button "Area 6 Konsolidasi" [ref=f5e218] [cursor=pointer]:
+                - generic [aria-hidden] [ref=f5e220]: 
+                - generic [ref=f5e221]:
+                  - strong [ref=f5e222]: Area 6
+                  - generic [ref=f5e223]: Konsolidasi
+              - button "SME Small Business" [ref=f5e224] [cursor=pointer]:
+                - generic [aria-hidden] [ref=f5e226]: 
+                - generic [ref=f5e227]:
+                  - strong [ref=f5e228]: SME
+                  - generic [ref=f5e229]: Small Business
+              - button "Konsumer Consumer Banking" [ref=f5e230] [cursor=pointer]:
+                - generic [aria-hidden] [ref=f5e232]: 
+                - generic [ref=f5e233]:
+                  - strong [ref=f5e234]: Konsumer
+                  - generic [ref=f5e235]: Consumer Banking
+              - button "Micro Micro Banking" [pressed] [ref=f5e236] [cursor=pointer]:
+                - generic [aria-hidden] [ref=f5e238]: 
+                - generic [ref=f5e239]:
+                  - strong [ref=f5e240]: Micro
+                  - generic [ref=f5e241]: Micro Banking
+            - generic [ref=f5e242]:
+              - generic [ref=f5e243]:
+                - generic [ref=f5e244]: 
+                - text: "Harian: 02 Oct 2026"
+              - generic [ref=f5e245]:
+                - generic [ref=f5e246]: 
+                - text: "Pinjaman: 02 Oct 2026"
+              - generic [ref=f5e247]:
+                - generic [ref=f5e248]: 
+                - text: "Detail: 30 Sep 2026"
+        - text:                                                                                         
+        - generic [ref=f5e249]:
+          - generic [ref=f5e250]:
+            - generic [ref=f5e252]:
+              - generic [ref=f5e253]: 
+              - text: Prognosa Mingguan
+            - tablist "Pilih week prognosa MICRO" [ref=f5e254]:
+              - tab "Week 1 02 Okt 26" [ref=f5e255] [cursor=pointer]:
+                - generic [ref=f5e256]: Week 1
+                - generic [ref=f5e257]: 02 Okt 26
+              - tab "Week 2 Belum ada posisi" [ref=f5e258] [cursor=pointer]:
+                - generic [ref=f5e259]: Week 2
+                - generic [ref=f5e260]: Belum ada posisi
+              - tab "Week 3 Belum ada posisi" [ref=f5e261] [cursor=pointer]:
+                - generic [ref=f5e262]: Week 3
+                - generic [ref=f5e263]: Belum ada posisi
+              - tab "Week 4 Belum ada posisi" [ref=f5e264] [cursor=pointer]:
+                - generic [ref=f5e265]: Week 4
+                - generic [ref=f5e266]: Belum ada posisi
+              - tab "Week 5 02 Okt 26" [selected] [ref=f5e267] [cursor=pointer]:
+                - generic [ref=f5e268]: Week 5
+                - generic [ref=f5e269]: 02 Okt 26
+          - generic [ref=f5e270]:
+            - button "Lihat detail OUTSTANDING (OS)" [ref=f5e271] [cursor=pointer]:
+              - generic [ref=f5e272]: 
+              - generic [ref=f5e274]: OUTSTANDING (OS)
+              - generic [ref=f5e276]:
+                - generic [ref=f5e277]:
+                  - generic [ref=f5e278]:
+                    - generic [ref=f5e279]: OS Micro per 02 Oktober 2026
+                    - generic [ref=f5e280]: 10.977.924
+                    - generic [ref=f5e281]: Rp Juta
+                  - generic [ref=f5e282]:
+                    - generic [ref=f5e283]: RKA Oktober 26
+                    - generic [ref=f5e284]: 11.166.850
+                    - generic [ref=f5e285]: Rp Juta
+                - generic [ref=f5e286]:
+                  - generic [ref=f5e287]:
+                    - generic [ref=f5e288]: "% Penc. RKA Oktober 26"
+                    - generic [ref=f5e289]: 98,31%
+                  - generic [ref=f5e290]:
+                    - generic [ref=f5e291]: Gap thd RKA Oktober 26
+                    - generic [ref=f5e292]: (188.926)
+                    - generic [ref=f5e293]: Rp Juta
+                - generic "Prognosa W5" [ref=f5e294]:
+                  - generic [ref=f5e295]:
+                    - generic [ref=f5e296]: Prognosa W5
+                    - generic [ref=f5e297]: 10.986.279
+                    - generic [ref=f5e298]: Rp Juta
+                  - generic [ref=f5e299]:
+                    - generic [ref=f5e300]: "% Penc. Prognosa · 02 Okt 26"
+                    - generic [ref=f5e301]: 99,92%
+                    - generic [ref=f5e302]: Posisi 10.977.924 Rp Juta
+                - separator [ref=f5e303]
+                - generic [ref=f5e304]:
+                  - generic [ref=f5e305]:
+                    - generic [ref=f5e306]: DtD
+                    - generic [ref=f5e307]: "+9.368"
+                    - generic [ref=f5e308]: 
+                  - generic [ref=f5e310]:
+                    - generic [ref=f5e311]: MtD
+                    - generic [ref=f5e312]: "+5.974"
+                    - generic [ref=f5e313]: 
+                  - generic [ref=f5e315]:
+                    - generic [ref=f5e316]: MtM
+                    - generic [ref=f5e317]: "+40.069"
+                    - generic [ref=f5e318]: 
+                  - generic [ref=f5e320]:
+                    - generic [ref=f5e321]: YtD
+                    - generic [ref=f5e322]: "+61.964"
+                    - generic [ref=f5e323]: 
+            - button "Lihat detail SPECIAL MENTION LOAN (SML)" [ref=f5e325] [cursor=pointer]:
+              - generic [ref=f5e326]: 
+              - generic [ref=f5e328]: SPECIAL MENTION LOAN (SML)
+              - generic [ref=f5e330]:
+                - generic [ref=f5e331]:
+                  - generic [ref=f5e332]:
+                    - generic [ref=f5e333]: SML Micro per 02 Oktober 2026
+                    - generic [ref=f5e334]: "631.135"
+                    - generic [ref=f5e335]: Rp Juta
+                  - generic [ref=f5e336]:
+                    - generic [ref=f5e337]: RKA Oktober 26
+                    - generic [ref=f5e338]: "722.660"
+                    - generic [ref=f5e339]: Rp Juta
+                - generic [ref=f5e340]:
+                  - generic [ref=f5e341]:
+                    - generic [ref=f5e342]: "% Penc. RKA Oktober 26"
+                    - generic [ref=f5e343]: 114,50%
+                  - generic [ref=f5e344]:
+                    - generic [ref=f5e345]: Gap thd RKA Oktober 26
+                    - generic [ref=f5e346]: "+91.525"
+                    - generic [ref=f5e347]: Rp Juta
+                - generic "Prognosa W5" [ref=f5e348]:
+                  - generic [ref=f5e349]:
+                    - generic [ref=f5e350]: Prognosa W5
+                    - generic [ref=f5e351]: "587.919"
+                    - generic [ref=f5e352]: Rp Juta
+                  - generic [ref=f5e353]:
+                    - generic [ref=f5e354]: "% Penc. Prognosa · 02 Okt 26"
+                    - generic [ref=f5e355]: 93,15%
+                    - generic [ref=f5e356]: Posisi 631.135 Rp Juta
+                - separator [ref=f5e357]
+                - generic [ref=f5e358]:
+                  - generic [ref=f5e359]:
+                    - generic [ref=f5e360]: DtD
+                    - generic [ref=f5e361]: "+44.280"
+                    - generic [ref=f5e362]: 
+                  - generic [ref=f5e364]:
+                    - generic [ref=f5e365]: MtD
+                    - generic [ref=f5e366]: "+45.130"
+                    - generic [ref=f5e367]: 
+                  - generic [ref=f5e369]:
+                    - generic [ref=f5e370]: MtM
+                    - generic [ref=f5e371]: (2.082)
+                    - generic [ref=f5e372]: 
+                  - generic [ref=f5e374]:
+                    - generic [ref=f5e375]: YtD
+                    - generic [ref=f5e376]: (17.515)
+                    - generic [ref=f5e377]: 
+            - button "Lihat detail NON-PERFORMING LOAN (NPL)" [ref=f5e379] [cursor=pointer]:
+              - generic [ref=f5e380]: 
+              - generic [ref=f5e382]: NON-PERFORMING LOAN (NPL)
+              - generic [ref=f5e384]:
+                - generic [ref=f5e385]:
+                  - generic [ref=f5e386]:
+                    - generic [ref=f5e387]: NPL Micro per 02 Oktober 2026
+                    - generic [ref=f5e388]: "455.086"
+                    - generic [ref=f5e389]: Rp Juta
+                  - generic [ref=f5e390]:
+                    - generic [ref=f5e391]: RKA Oktober 26
+                    - generic [ref=f5e392]: "385.004"
+                    - generic [ref=f5e393]: Rp Juta
+                - generic [ref=f5e394]:
+                  - generic [ref=f5e395]:
+                    - generic [ref=f5e396]: "% Penc. RKA Oktober 26"
+                    - generic [ref=f5e397]: 84,60%
+                  - generic [ref=f5e398]:
+                    - generic [ref=f5e399]: Gap thd RKA Oktober 26
+                    - generic [ref=f5e400]: (70.082)
+                    - generic [ref=f5e401]: Rp Juta
+                - generic "Prognosa W5" [ref=f5e402]:
+                  - generic [ref=f5e403]:
+                    - generic [ref=f5e404]: Prognosa W5
+                    - generic [ref=f5e405]: "455.230"
+                    - generic [ref=f5e406]: Rp Juta
+                  - generic [ref=f5e407]:
+                    - generic [ref=f5e408]: "% Penc. Prognosa · 02 Okt 26"
+                    - generic [ref=f5e409]: 100,03%
+                    - generic [ref=f5e410]: Posisi 455.086 Rp Juta
+                - separator [ref=f5e411]
+                - generic [ref=f5e412]:
+                  - generic [ref=f5e413]:
+                    - generic [ref=f5e414]: DtD
+                    - generic [ref=f5e415]: "+3.046"
+                    - generic [ref=f5e416]: 
+                  - generic [ref=f5e418]:
+                    - generic [ref=f5e419]: MtD
+                    - generic [ref=f5e420]: "+5.404"
+                    - generic [ref=f5e421]: 
+                  - generic [ref=f5e423]:
+                    - generic [ref=f5e424]: MtM
+                    - generic [ref=f5e425]: (13.272)
+                    - generic [ref=f5e426]: 
+                  - generic [ref=f5e428]:
+                    - generic [ref=f5e429]: YtD
+                    - generic [ref=f5e430]: "+113.117"
+                    - generic [ref=f5e431]: 
+          - generic [ref=f5e433]:
+            - generic [ref=f5e434]:
+              - generic [ref=f5e435]:
+                - generic [ref=f5e436]: 
+                - generic [ref=f5e438]: KINERJA PRODUK MIKRO (Rp Juta)
+              - region "Tabel data. Geser horizontal untuk melihat kolom lainnya." [ref=f5e440]:
+                - table [ref=f5e441]:
+                  - rowgroup [ref=f5e442]:
+                    - row [ref=f5e443]:
+                      - columnheader "Segmen" [ref=f5e444]
+                      - columnheader "OUTSTANDING (OS)" [ref=f5e445]
+                      - columnheader "SPECIAL MENTION LOAN (SML)" [ref=f5e446]
+                      - columnheader "NON-PERFORMING LOAN (NPL)" [ref=f5e447]
+                    - row [ref=f5e448]:
+                      - columnheader "Pencapaian" [ref=f5e449]
+                      - columnheader "YTD Des 25" [ref=f5e451]
+                      - columnheader "MTD Sep 26" [ref=f5e453]
+                      - columnheader "RKA Oktober 26" [ref=f5e455]
+                      - columnheader "% Penc." [ref=f5e457]
+                      - columnheader "Pencapaian" [ref=f5e458]
+                      - columnheader "YTD Des 25" [ref=f5e460]
+                      - columnheader "MTD Sep 26" [ref=f5e462]
+                      - columnheader "RKA Oktober 26" [ref=f5e464]
+                      - columnheader "% Penc." [ref=f5e466]
+                      - columnheader "Pencapaian" [ref=f5e467]
+                      - columnheader "YTD Des 25" [ref=f5e469]
+                      - columnheader "MTD Sep 26" [ref=f5e471]
+                      - columnheader "RKA Oktober 26" [ref=f5e473]
+                      - columnheader "% Penc." [ref=f5e475]
+                  - rowgroup [ref=f5e476]:
+                    - row [ref=f5e477]:
+                      - cell " KUR Mikro" [ref=f5e478]:
+                        - generic [ref=f5e479]:
+                          - generic [ref=f5e480]: 
+                          - generic [ref=f5e482]: KUR Mikro
+                      - cell "6.936.783" [ref=f5e483]
+                      - cell "681.664" [ref=f5e486]
+                      - cell "9.346" [ref=f5e489]
+                      - cell "6.467.661" [ref=f5e492]
+                      - cell "107,25%" [ref=f5e495]
+                      - cell "212.571" [ref=f5e496]
+                      - cell "29.084" [ref=f5e499]
+                      - cell "29.374" [ref=f5e502]
+                      - cell "212.257" [ref=f5e505]
+                      - cell "99,85%" [ref=f5e508]
+                      - cell "119.766" [ref=f5e509]
+                      - cell "26.731" [ref=f5e512]
+                      - cell "1.443" [ref=f5e515]
+                      - cell "99.173" [ref=f5e518]
+                      - cell "82,81%" [ref=f5e521]
+                    - row [ref=f5e522]:
+                      - cell " Kupedes" [ref=f5e523]:
+                        - generic [ref=f5e524]:
+                          - generic [ref=f5e525]: 
+                          - generic [ref=f5e527]: Kupedes
+                      - cell "3.256.965" [ref=f5e528]
+                      - cell "(640.541)" [ref=f5e531]
+                      - cell "(2.246)" [ref=f5e534]
+                      - cell "3.916.544" [ref=f5e537]
+                      - cell "83,16%" [ref=f5e540]
+                      - cell "399.211" [ref=f5e541]
+                      - cell "(49.121)" [ref=f5e544]
+                      - cell "14.086" [ref=f5e547]
+                      - cell "496.509" [ref=f5e550]
+                      - cell "124,37%" [ref=f5e553]
+                      - cell "314.447" [ref=f5e554]
+                      - cell "81.438" [ref=f5e557]
+                      - cell "4.084" [ref=f5e560]
+                      - cell "270.742" [ref=f5e563]
+                      - cell "86,10%" [ref=f5e566]
+                    - row [ref=f5e567]:
+                      - cell " KUR Kecil" [ref=f5e568]:
+                        - generic [ref=f5e569]:
+                          - generic [ref=f5e570]: 
+                          - generic [ref=f5e572]: KUR Kecil
+                      - cell "535.804" [ref=f5e573]
+                      - cell "(66.195)" [ref=f5e576]
+                      - cell "(737)" [ref=f5e579]
+                      - cell "512.353" [ref=f5e582]
+                      - cell "104,58%" [ref=f5e585]
+                      - cell "18.125" [ref=f5e586]
+                      - cell "2.778" [ref=f5e589]
+                      - cell "1.661" [ref=f5e592]
+                      - cell "12.288" [ref=f5e595]
+                      - cell "67,80%" [ref=f5e598]
+                      - cell "18.400" [ref=f5e599]
+                      - cell "4.235" [ref=f5e602]
+                      - cell "(95)" [ref=f5e605]
+                      - cell "12.617" [ref=f5e608]
+                      - cell "68,57%" [ref=f5e611]
+                    - row [ref=f5e612]:
+                      - cell " KUR KPP" [ref=f5e613]:
+                        - generic [ref=f5e614]:
+                          - generic [ref=f5e615]: 
+                          - generic [ref=f5e617]: KUR KPP
+                      - cell "130.687" [ref=f5e618]
+                      - cell "100.815" [ref=f5e621]
+                      - cell "(139)" [ref=f5e624]
+                      - cell "118.988" [ref=f5e627]
+                      - cell "109,83%" [ref=f5e630]
+                      - cell "341" [ref=f5e631]
+                      - cell "341" [ref=f5e634]
+                      - cell "199" [ref=f5e637]
+                      - cell "0" [ref=f5e640]
+                      - cell "0,00%" [ref=f5e642]
+                      - cell "0" [ref=f5e643]
+                      - cell "0" [ref=f5e645]
+                      - cell "0" [ref=f5e647]
+                      - cell "0" [ref=f5e649]
+                      - cell "100,00%" [ref=f5e651]
+                    - row [ref=f5e652]:
+                      - cell " Briguna Mikro" [ref=f5e653]:
+                        - generic [ref=f5e654]:
+                          - generic [ref=f5e655]: 
+                          - generic [ref=f5e657]: Briguna Mikro
+                      - cell "117.686" [ref=f5e658]
+                      - cell "(13.779)" [ref=f5e661]
+                      - cell "(251)" [ref=f5e664]
+                      - cell "151.304" [ref=f5e667]
+                      - cell "77,78%" [ref=f5e670]
+                      - cell "887" [ref=f5e671]
+                      - cell "(598)" [ref=f5e674]
+                      - cell "(190)" [ref=f5e677]
+                      - cell "1.606" [ref=f5e680]
+                      - cell "181,11%" [ref=f5e683]
+                      - cell "2.474" [ref=f5e684]
+                      - cell "713" [ref=f5e687]
+                      - cell "(28)" [ref=f5e690]
+                      - cell "2.472" [ref=f5e693]
+                      - cell "99,93%" [ref=f5e696]
+                    - row [ref=f5e697]:
+                      - cell "TOTAL" [ref=f5e698]
+                      - cell "10.977.924" [ref=f5e699]
+                      - cell "61.964" [ref=f5e702]
+                      - cell "5.974" [ref=f5e705]
+                      - cell "11.166.850" [ref=f5e708]
+                      - cell "98,31%" [ref=f5e711]
+                      - cell "631.135" [ref=f5e712]
+                      - cell "(17.515)" [ref=f5e715]
+                      - cell "45.130" [ref=f5e718]
+                      - cell "722.660" [ref=f5e721]
+                      - cell "114,50%" [ref=f5e724]
+                      - cell "455.086" [ref=f5e725]
+                      - cell "113.117" [ref=f5e728]
+                      - cell "5.404" [ref=f5e731]
+                      - cell "385.004" [ref=f5e734]
+                      - cell "84,60%" [ref=f5e737]
+            - generic [ref=f5e738]:
+              - generic [ref=f5e739]:
+                - generic [ref=f5e740]: 
+                - generic [ref=f5e742]: KOMPOSISI TOTAL (Rp Juta)
+              - generic [ref=f5e743]:
+                - table "Komposisi kualitas portofolio Mikro posisi dan MTD" [ref=f5e744]:
+                  - row [ref=f5e745]:
+                    - columnheader "Kualitas" [ref=f5e746]
+                    - columnheader "02 Okt 26" [ref=f5e747]
+                    - columnheader "30 Sep 26" [ref=f5e748]
+                  - generic [ref=f5e749]:
+                    - text: LR
+                    - generic [ref=f5e750]: Daily Loan Dinamis
+                  - row [ref=f5e751]:
+                    - rowheader "LR" [ref=f5e752]
+                    - cell "256.312 2,33%" [ref=f5e754]:
+                      - generic [ref=f5e756]:
+                        - generic [ref=f5e757]: "256.312"
+                        - generic [ref=f5e758]: 2,33%
+                    - cell "256.312 2,33%" [ref=f5e759]:
+                      - generic [ref=f5e761]:
+                        - generic [ref=f5e762]: "256.312"
+                        - generic [ref=f5e763]: 2,33%
+                  - generic [ref=f5e764]:
+                    - text: SML
+                    - generic [ref=f5e765]: Daily Loan Dinamis
+                  - row [ref=f5e766]:
+                    - rowheader "SML 1" [ref=f5e767]
+                    - cell "263.962 2,40%" [ref=f5e769]:
+                      - generic [ref=f5e771]:
+                        - generic [ref=f5e772]: "263.962"
+                        - generic [ref=f5e773]: 2,40%
+                    - cell "263.962 2,40%" [ref=f5e774]:
+                      - generic [ref=f5e776]:
+                        - generic [ref=f5e777]: "263.962"
+                        - generic [ref=f5e778]: 2,40%
+                  - row [ref=f5e779]:
+                    - rowheader "SML 2" [ref=f5e780]
+                    - cell "143.120 1,30%" [ref=f5e782]:
+                      - generic [ref=f5e784]:
+                        - generic [ref=f5e785]: "143.120"
+                        - generic [ref=f5e786]: 1,30%
+                    - cell "143.120 1,30%" [ref=f5e787]:
+                      - generic [ref=f5e789]:
+                        - generic [ref=f5e790]: "143.120"
+                        - generic [ref=f5e791]: 1,30%
+                  - row [ref=f5e792]:
+                    - rowheader "SML 3" [ref=f5e793]
+                    - cell "178.755 1,63%" [ref=f5e795]:
+                      - generic [ref=f5e797]:
+                        - generic [ref=f5e798]: "178.755"
+                        - generic [ref=f5e799]: 1,63%
+                    - cell "178.755 1,63%" [ref=f5e800]:
+                      - generic [ref=f5e802]:
+                        - generic [ref=f5e803]: "178.755"
+                        - generic [ref=f5e804]: 1,63%
+                  - generic [ref=f5e805]:
+                    - text: NPL
+                    - generic [ref=f5e806]: SSA Pinjaman
+                  - row [ref=f5e807]:
+                    - rowheader "KL" [ref=f5e808]
+                    - cell "44.308 0,40%" [ref=f5e810]:
+                      - generic [ref=f5e812]:
+                        - generic [ref=f5e813]: "44.308"
+                        - generic [ref=f5e814]: 0,40%
+                    - cell "39.704 0,36%" [ref=f5e815]:
+                      - generic [ref=f5e817]:
+                        - generic [ref=f5e818]: "39.704"
+                        - generic [ref=f5e819]: 0,36%
+                  - row [ref=f5e820]:
+                    - rowheader "D" [ref=f5e821]
+                    - cell "71.419 0,65%" [ref=f5e823]:
+                      - generic [ref=f5e825]:
+                        - generic [ref=f5e826]: "71.419"
+                        - generic [ref=f5e827]: 0,65%
+                    - cell "72.481 0,66%" [ref=f5e828]:
+                      - generic [ref=f5e830]:
+                        - generic [ref=f5e831]: "72.481"
+                        - generic [ref=f5e832]: 0,66%
+                  - row [ref=f5e833]:
+                    - rowheader "M" [ref=f5e834]
+                    - cell "339.359 3,09%" [ref=f5e836]:
+                      - generic [ref=f5e838]:
+                        - generic [ref=f5e839]: "339.359"
+                        - generic [ref=f5e840]: 3,09%
+                    - cell "337.497 3,07%" [ref=f5e841]:
+                      - generic [ref=f5e843]:
+                        - generic [ref=f5e844]: "337.497"
+                        - generic [ref=f5e845]: 3,07%
+                  - row [ref=f5e846]:
+                    - rowheader "TOTAL LAR" [ref=f5e847]
+                    - cell "1.297.235 11,82%" [ref=f5e849]:
+                      - generic [ref=f5e851]:
+                        - generic [ref=f5e852]: 1.297.235
+                        - generic [ref=f5e853]: 11,82%
+                    - cell "1.291.831 11,77%" [ref=f5e854]:
+                      - generic [ref=f5e856]:
+                        - generic [ref=f5e857]: 1.291.831
+                        - generic [ref=f5e858]: 11,77%
+                - generic [ref=f5e859]:
+                  - generic [ref=f5e860]: TOTAL PORTOFOLIO KREDIT
+                  - generic [ref=f5e861]: 10.977.924 Rp Juta
+          - generic [ref=f5e863]:
+            - generic [ref=f5e864]:
+              - generic [ref=f5e865]:
+                - generic [ref=f5e866]: 
+                - generic [ref=f5e868]: TREND POSISI (Rp Juta)
+              - generic [ref=f5e869]:
+                - generic [ref=f5e870]:
+                  - generic [ref=f5e871]: OUTSTANDING (OS)
+                  - img [ref=f5e873]:
+                    - generic [ref=f5e875]: 10.915.960
+                    - generic [ref=f5e877]: 10.937.855
+                    - generic [ref=f5e879]: 10.971.950
+                    - generic [ref=f5e881]: 10.977.924
+                  - generic [ref=f5e883]:
+                    - generic [ref=f5e884]: 31 Dec '25
+                    - generic [ref=f5e885]: 02 Sep '26
+                    - generic [ref=f5e886]: 30 Sep '26
+                    - generic [ref=f5e887]: 02 Oct '26
+                - generic [ref=f5e888]:
+                  - generic [ref=f5e889]: SPECIAL MENTION LOAN (SML)
+                  - img [ref=f5e891]:
+                    - generic [ref=f5e893]: "648.650"
+                    - generic [ref=f5e895]: "633.216"
+                    - generic [ref=f5e897]: "586.004"
+                    - generic [ref=f5e899]: "631.135"
+                  - generic [ref=f5e901]:
+                    - generic [ref=f5e902]: 31 Dec '25
+                    - generic [ref=f5e903]: 02 Sep '26
+                    - generic [ref=f5e904]: 30 Sep '26
+                    - generic [ref=f5e905]: 02 Oct '26
+                - generic [ref=f5e906]:
+                  - generic [ref=f5e907]: NON-PERFORMING LOAN (NPL)
+                  - img [ref=f5e909]:
+                    - generic [ref=f5e911]: "341.970"
+                    - generic [ref=f5e913]: "468.358"
+                    - generic [ref=f5e915]: "449.682"
+                    - generic [ref=f5e917]: "455.086"
+                  - generic [ref=f5e919]:
+                    - generic [ref=f5e920]: 31 Dec '25
+                    - generic [ref=f5e921]: 02 Sep '26
+                    - generic [ref=f5e922]: 30 Sep '26
+                    - generic [ref=f5e923]: 02 Oct '26
+            - generic [ref=f5e924]:
+              - generic [ref=f5e925]:
+                - generic [ref=f5e926]: 
+                - generic [ref=f5e928]: Performance Vs RKA
+              - table [ref=f5e931]:
+                - rowgroup [ref=f5e932]:
+                  - row [ref=f5e933]:
+                    - columnheader "Indikator" [ref=f5e934]
+                    - columnheader "Posisi (sd 02 Oktober 2026) (Rp Juta)" [ref=f5e935]: Posisi(sd 02 Oktober 2026)(Rp Juta)
+                    - columnheader "RKA Oktober 26 (Rp Juta)" [ref=f5e936]: RKA Oktober 26(Rp Juta)
+                    - columnheader "% Pencapaian RKA" [ref=f5e937]
+                    - columnheader "Gap thd RKA Oktober 26 (Rp Juta)" [ref=f5e938]: Gap thd RKAOktober 26 (Rp Juta)
+                    - columnheader "Status" [ref=f5e939]
+                  - row [ref=f5e940]:
+                    - columnheader "September 26" [ref=f5e941]
+                    - columnheader "Oktober 26" [ref=f5e942]
+                - rowgroup [ref=f5e943]:
+                  - row [ref=f5e944]:
+                    - cell " OS" [ref=f5e945]:
+                      - generic [ref=f5e946]: 
+                      - generic [ref=f5e948]: OS
+                    - cell "10.977.924" [ref=f5e949]
+                    - cell "11.166.850" [ref=f5e950]
+                    - cell "98,40%" [ref=f5e951]
+                    - cell "98,31%" [ref=f5e952]
+                    - cell "(188.926)" [ref=f5e953]
+                    - cell "" [ref=f5e954]:
+                      - 'generic "Pencapaian: 98,31% vs September 26: 98,40%" [ref=f5e955]': 
+                  - row [ref=f5e957]:
+                    - cell " SML" [ref=f5e958]:
+                      - generic [ref=f5e959]: 
+                      - generic [ref=f5e961]: SML
+                    - cell "631.135" [ref=f5e962]
+                    - cell "722.660" [ref=f5e963]
+                    - cell "117,84%" [ref=f5e964]
+                    - cell "114,50%" [ref=f5e965]
+                    - cell "+91.525" [ref=f5e966]
+                    - cell "" [ref=f5e967]:
+                      - 'generic "Pencapaian: 114,50% vs September 26: 117,84%" [ref=f5e968]': 
+                  - row [ref=f5e970]:
+                    - cell " NPL" [ref=f5e971]:
+                      - generic [ref=f5e972]: 
+                      - generic [ref=f5e974]: NPL
+                    - cell "455.086" [ref=f5e975]
+                    - cell "385.004" [ref=f5e976]
+                    - cell "81,01%" [ref=f5e977]
+                    - cell "84,60%" [ref=f5e978]
+                    - cell "(70.082)" [ref=f5e979]
+                    - cell "" [ref=f5e980]:
+                      - 'generic "Pencapaian: 84,60% vs September 26: 81,01%" [ref=f5e981]': 
+        - text: 
+      - text:                                                
+  - generic:
+    - generic:
+      - generic: Menyiapkan Dokumen PPT...
+      - generic: Sedang menyusun visual presentasi executive.
+  - generic:
+    - status "Memuat data Dashboard Area 6":
+      - generic:
+        - generic:
+          - generic: Memuat data Dashboard Area 6
+          - generic: Mengambil snapshot simpanan, pinjaman, harian, dan 8 strategi digital.
+  - status "Memuat halaman":
+    - generic:
+      - generic:
+        - generic: 
+        - generic:
+          - paragraph: Memuat halaman
+          - generic: Menyiapkan tampilan berikutnya dengan data terbaru.
+      - paragraph:
+        - generic: Mohon tunggu sebentar

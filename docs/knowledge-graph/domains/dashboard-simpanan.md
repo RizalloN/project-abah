@@ -7,11 +7,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 1 |
-| file | 44 |
+| file | 46 |
 | function | 4 |
-| method | 621 |
+| method | 639 |
 | route | 37 |
-| class | 31 |
+| class | 33 |
 | unresolved_symbol | 1 |
 | table | 10 |
 | view | 10 |
@@ -20,36 +20,36 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `DashboardSimpananController` | class | 360 | `app/Http/Controllers/DashboardSimpananController.php:48` |
+| `DashboardSimpananController` | class | 364 | `app/Http/Controllers/DashboardSimpananController.php:48` |
 | `simpanan_multipn` | table | 85 | - |
 | `RasioCasaDebiturController` | class | 71 | `app/Http/Controllers/RasioCasaDebiturController.php:20` |
 | `ssa_simpanan` | table | 55 | - |
 | `DashboardDanaService` | class | 37 | `app/Support/DashboardDanaService.php:11` |
-| `buildDashboardPayloadFresh` | method | 36 | `app/Http/Controllers/DashboardSimpananController.php:9088` |
-| `formatCurrencyCompact` | method | 36 | `app/Http/Controllers/DashboardSimpananController.php:14294` |
+| `formatCurrencyCompact` | method | 37 | `app/Http/Controllers/DashboardSimpananController.php:14668` |
+| `buildDashboardPayloadFresh` | method | 36 | `app/Http/Controllers/DashboardSimpananController.php:9462` |
 | `RekeningDormantController` | class | 35 | `app/Http/Controllers/RekeningDormantController.php:19` |
-| `dashboardBranchNames` | method | 30 | `app/Http/Controllers/DashboardSimpananController.php:14198` |
+| `dashboardBranchNames` | method | 32 | `app/Http/Controllers/DashboardSimpananController.php:14572` |
 | `DashboardSimpananHarianSnapshotSourceTest` | class | 28 | `tests/Unit/DashboardSimpananHarianSnapshotSourceTest.php:16` |
-| `reportCacheVersion` | method | 28 | `app/Http/Controllers/DashboardSimpananController.php:14357` |
-| `buildArea6PortfolioLandingFresh` | method | 25 | `app/Http/Controllers/DashboardSimpananController.php:9767` |
+| `reportCacheVersion` | method | 28 | `app/Http/Controllers/DashboardSimpananController.php:14731` |
+| `effectiveDashboardBranchScope` | method | 27 | `app/Http/Controllers/DashboardSimpananController.php:14551` |
+| `buildArea6PortfolioLandingFresh` | method | 25 | `app/Http/Controllers/DashboardSimpananController.php:10141` |
+| `buildLandingSimpananPayloadFresh` | method | 24 | `app/Http/Controllers/DashboardSimpananController.php:204` |
 | `dashboard` | route | 22 | - |
 | `fetchData` | method | 22 | `app/Http/Controllers/RasioCasaDebiturController.php:63` |
-| `buildLandingSimpananPayloadFresh` | method | 21 | `app/Http/Controllers/DashboardSimpananController.php:204` |
-| `area6HarianSnapshotSummaryQuery` | method | 20 | `app/Http/Controllers/DashboardSimpananController.php:11866` |
-| `effectiveDashboardBranchScope` | method | 20 | `app/Http/Controllers/DashboardSimpananController.php:14177` |
-| `readMarketShareMappingWorkbookPreview` | method | 19 | `app/Http/Controllers/DashboardSimpananController.php:3404` |
-| `buildDigitalCard` | method | 18 | `app/Http/Controllers/DashboardSimpananController.php:13981` |
-| `dashboardBranchDisplayNames` | method | 18 | `app/Http/Controllers/DashboardSimpananController.php:14220` |
+| `area6HarianSnapshotSummaryQuery` | method | 20 | `app/Http/Controllers/DashboardSimpananController.php:12240` |
+| `dashboardBranchDisplayNames` | method | 20 | `app/Http/Controllers/DashboardSimpananController.php:14594` |
+| `readMarketShareMappingWorkbookPreview` | method | 19 | `app/Http/Controllers/DashboardSimpananController.php:3711` |
+| `buildDigitalCard` | method | 18 | `app/Http/Controllers/DashboardSimpananController.php:14355` |
 | `dashboard_simpanan_snapshots` | table | 18 | - |
-| `formatInteger` | method | 18 | `app/Http/Controllers/DashboardSimpananController.php:14272` |
-| `marketShareMappingIndex` | method | 18 | `app/Http/Controllers/DashboardSimpananController.php:2144` |
+| `formatInteger` | method | 18 | `app/Http/Controllers/DashboardSimpananController.php:14646` |
+| `marketShareMappingIndex` | method | 18 | `app/Http/Controllers/DashboardSimpananController.php:2451` |
+| `rekening_dormant_snapshots` | table | 18 | - |
 | `LandingSimpananCardTest` | class | 17 | `tests/Unit/LandingSimpananCardTest.php:10` |
 | `SsaSimpananBusinessSegmentBackfillService` | class | 17 | `app/Services/SsaSimpananBusinessSegmentBackfillService.php:11` |
-| `buildBrimoPerformanceCard` | method | 17 | `app/Http/Controllers/DashboardSimpananController.php:13105` |
-| `buildQlolaPerformanceCard` | method | 17 | `app/Http/Controllers/DashboardSimpananController.php:13431` |
+| `WarmDashboardSimpananCacheJob` | class | 17 | `app/Jobs/WarmDashboardSimpananCacheJob.php:13` |
+| `buildBrimoPerformanceCard` | method | 17 | `app/Http/Controllers/DashboardSimpananController.php:13479` |
+| `buildQlolaPerformanceCard` | method | 17 | `app/Http/Controllers/DashboardSimpananController.php:13805` |
 | `computeSummarySnapshot` | method | 17 | `app/Http/Controllers/RasioCasaDebiturController.php:576` |
-| `configureLandingBranchScope` | method | 17 | `app/Http/Controllers/DashboardSimpananController.php:14151` |
-| `formatPeriodLabel` | method | 17 | `app/Http/Controllers/DashboardSimpananController.php:14327` |
 
 ## Route Nodes
 
@@ -103,6 +103,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `EnsureDashboardSimpananSnapshotJobTest` - `tests/Unit/EnsureDashboardSimpananSnapshotJobTest.php`
 - `EnsureRasioCasaSnapshotJob` - `app/Jobs/EnsureRasioCasaSnapshotJob.php`
 - `EnsureRekeningDormantSnapshotJob` - `app/Jobs/EnsureRekeningDormantSnapshotJob.php`
+- `LandingSimpananBranchScopeTest` - `tests/Unit/LandingSimpananBranchScopeTest.php`
 - `LandingSimpananCardTest` - `tests/Unit/LandingSimpananCardTest.php`
 - `OptimizedDashboardDanaService` - `app/Support/OptimizedDashboardDanaService.php`
 - `RasioCasaDebiturController` - `app/Http/Controllers/RasioCasaDebiturController.php`
@@ -119,6 +120,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `SimpananMultiPnSnapshotGate` - `app/Support/SimpananMultiPnSnapshotGate.php`
 - `SimpananMultiPnSnapshotGateTest` - `tests/Unit/SimpananMultiPnSnapshotGateTest.php`
 - `SimpananMultiPnSourcePreservationTest` - `tests/Unit/SimpananMultiPnSourcePreservationTest.php`
+- `SimpananMultiPnStagedSlotGuardTest` - `tests/Unit/SimpananMultiPnStagedSlotGuardTest.php`
 - `SimpananMultipnIndexCompactionMigrationTest` - `tests/Unit/SimpananMultipnIndexCompactionMigrationTest.php`
 - `SsaSimpananBusinessSegmentBackfillService` - `app/Services/SsaSimpananBusinessSegmentBackfillService.php`
 - `SsaSimpananSnapshotBuilder` - `app/Support/SsaSimpananSnapshotBuilder.php`
@@ -159,28 +161,29 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| dashboard-simpanan -> core (calls) | 220 |
+| dashboard-simpanan -> core (calls) | 221 |
 | dashboard-simpanan -> access-control (protected_by) | 185 |
+| dashboard-simpanan -> core (instantiates) | 61 |
 | dashboard-simpanan -> core (accepts) | 59 |
-| dashboard-simpanan -> core (instantiates) | 55 |
 | dashboard-simpanan -> access-control (calls) | 28 |
 | dashboard-simpanan -> jobs-snapshots (uses_trait) | 24 |
 | dashboard-simpanan -> dashboard-pinjaman (reads_table) | 22 |
 | dashboard-harian -> dashboard-simpanan (writes_table) | 19 |
 | import -> dashboard-simpanan (writes_table) | 19 |
+| dashboard-simpanan -> tests (extends) | 16 |
 | database -> dashboard-simpanan (checks_table) | 15 |
-| dashboard-simpanan -> tests (extends) | 14 |
+| dashboard-simpanan -> tests (calls) | 15 |
 | jobs-snapshots -> dashboard-simpanan (reads_table) | 13 |
-| dashboard-simpanan -> tests (calls) | 13 |
 | platform -> dashboard-simpanan (references_route) | 12 |
 | dashboard-simpanan -> dashboard-pinjaman (checks_table) | 11 |
+| dashboard-simpanan -> import (contains) | 11 |
 | jobs-snapshots -> dashboard-simpanan (writes_table) | 10 |
+| dashboard-simpanan -> dashboard-harian (writes_table) | 10 |
 | dashboard-simpanan -> core (uses_trait) | 10 |
-| dashboard-simpanan -> dashboard-harian (writes_table) | 9 |
+| dashboard-simpanan -> platform (calls) | 9 |
 | dashboard-simpanan -> jobs-snapshots (implements) | 9 |
 | core -> dashboard-simpanan (references_route) | 9 |
 | database -> dashboard-simpanan (alters_table) | 8 |
-| dashboard-simpanan -> platform (calls) | 8 |
 | dashboard-simpanan -> jobs-snapshots (calls) | 8 |
 | presentation -> dashboard-simpanan (references_route) | 8 |
 | dashboard-simpanan -> platform (extends_view) | 8 |
@@ -188,4 +191,3 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | database -> dashboard-simpanan (defines_table) | 7 |
 | dashboard-simpanan -> import (checks_table) | 7 |
 | dashboard-simpanan -> import (reads_table) | 7 |
-| import -> dashboard-simpanan (reads_table) | 7 |

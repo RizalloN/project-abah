@@ -7,7 +7,6 @@ use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobQueued;
 use Illuminate\Queue\Events\Looping;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\DB;
@@ -160,7 +159,8 @@ class AppServiceProvider extends ServiceProvider
                 return;
             }
 
-            if (!app(QueueWorkerControlService::class)->isEnabled()) {
+            $workerControl = app(QueueWorkerControlService::class);
+            if (!$workerControl->isEnabled()) {
                 return;
             }
 
@@ -170,18 +170,15 @@ class AppServiceProvider extends ServiceProvider
                 return;
             }
 
-            if (!Cache::add('queue_worker_auto_ensure:throttle:' . sha1($workerPool['name']), true, now()->addSeconds(10))) {
-                return;
-            }
+            $workerControl->signalDemand($queue);
 
-            try {
-                Artisan::call('queue:ensure-running', [
-                    '--once' => true,
-                    '--queues' => $workerPool['queues'],
-                    '--workers' => $workerPool['workers'],
-                ]);
-            } catch (\Throwable $e) {
-                report($e);
+            if (!$workerControl->isMonitorActive()
+                && Cache::add('queue_worker_monitor_recovery:throttle', true, now()->addSeconds(30))) {
+                try {
+                    $workerControl->ensureMonitorRunning('job-queued');
+                } catch (\Throwable $e) {
+                    report($e);
+                }
             }
         });
     }

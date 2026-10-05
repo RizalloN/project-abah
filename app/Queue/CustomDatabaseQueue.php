@@ -4,11 +4,30 @@ namespace App\Queue;
 
 use App\Traits\IdReusable;
 use Illuminate\Queue\DatabaseQueue as BaseDatabaseQueue;
+use Illuminate\Queue\Jobs\DatabaseJobRecord;
 use Illuminate\Support\Collection;
 
 class CustomDatabaseQueue extends BaseDatabaseQueue
 {
     use IdReusable;
+
+    protected function getNextAvailableJob($queue)
+    {
+        // Reused IDs do not represent arrival order: fresh low IDs must not
+        // continually overtake older jobs when the queue is busy.
+        $job = $this->database->table($this->table)
+            ->lock($this->getLockForPopping())
+            ->where('queue', $this->getQueue($queue))
+            ->where(function ($query) {
+                $this->isAvailable($query);
+                $this->isReservedButExpired($query);
+            })
+            ->orderBy('created_at', 'asc')
+            ->orderBy('id', 'asc')
+            ->first();
+
+        return $job ? new DatabaseJobRecord((object) $job) : null;
+    }
 
     /**
      * Push a new job onto the queue.

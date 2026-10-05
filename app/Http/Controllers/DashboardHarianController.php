@@ -70,6 +70,11 @@ class DashboardHarianController extends Controller
         $selectedCategory = $request->input('category', 'simpanan'); // Default to simpanan
         $selectedSegment = $request->input('segment', 'total'); // Default to total
         $selectedProduct = $request->input('product', 'total');
+        [$selectedSegment, $selectedProduct] = $this->normalizeTimeseriesLoanSelection(
+            $selectedCategory,
+            $selectedSegment,
+            $selectedProduct
+        );
         if ($selectedCategory === 'recovery' && !in_array($selectedSegment, ['ritel', 'micro'], true)) {
             $selectedSegment = 'ritel';
         }
@@ -119,6 +124,7 @@ class DashboardHarianController extends Controller
         $category = $request->input('category', 'simpanan');
         $segment = $request->input('segment', 'total');
         $product = $request->input('product', 'total');
+        [$segment, $product] = $this->normalizeTimeseriesLoanSelection($category, $segment, $product);
         if ($category === 'recovery' && !in_array($segment, ['ritel', 'micro'], true)) {
             $segment = 'ritel';
         }
@@ -150,6 +156,7 @@ class DashboardHarianController extends Controller
         $dashboardPage = [
             'routes' => [
                 'data' => route('dashboard.harian.keragaan-uker.data'),
+                'exportPdf' => route('dashboard.harian.keragaan-uker.export-pdf'),
             ],
             'filters' => $filters,
             'selected' => [
@@ -340,6 +347,9 @@ class DashboardHarianController extends Controller
             ->reject(fn (array $option): bool => (string) ($option['value'] ?? '') === 'all')
             ->values()
             ->all();
+        if (UserBranchScope::current() === null) {
+            array_unshift($filters['kanca'], ['value' => 'area6', 'label' => 'Area 6 Madiun']);
+        }
         $unitOptions = collect($filters['unit_kerja'] ?? [])
             ->reject(fn (array $option): bool => (string) ($option['value'] ?? '') === DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE)
             ->values();
@@ -432,7 +442,7 @@ class DashboardHarianController extends Controller
         $resolvedMonth = $this->resolveTimeseriesMonth($selectedMonth, $monthOptions);
 
         $cacheKey = 'dashboard_harian:timeseries:' . md5(json_encode([
-            'schema' => 'v8-guided-segment-product-ldr',
+            'schema' => 'v9-loan-segment-products',
             'version' => $this->reportCacheVersion(),
             'category' => $category,
             'kanca' => $selectedKanca,
@@ -1163,6 +1173,47 @@ class DashboardHarianController extends Controller
         return [$selectedKanca, $selectedUnit, $branchLocked];
     }
 
+    private function normalizeTimeseriesLoanSelection(string $category, string $segment, string $product): array
+    {
+        if (!in_array($category, ['pinjaman', 'sml', 'npl'], true)) {
+            return [$segment, $product];
+        }
+
+        $productsBySegment = [
+            'sme' => ['kecil'],
+            'consumer' => ['total', 'briguna_konsumer', 'kpr', 'kkb'],
+            'micro' => ['total', 'briguna_mikro', 'kupedes', 'kur_mikro', 'kur_kecil', 'kur_kpp'],
+        ];
+        $legacyProductSegments = [
+            'small' => 'sme',
+            'consumer' => 'consumer',
+            'kecil' => 'sme',
+            'kecil_non_cashcoll' => 'sme',
+            'cashcoll' => 'sme',
+            'briguna_konsumer' => 'consumer',
+            'kpr' => 'consumer',
+            'kkb' => 'consumer',
+            'briguna_mikro' => 'micro',
+            'kupedes' => 'micro',
+            'kur_mikro' => 'micro',
+            'kur_kecil' => 'micro',
+            'kur_kpp' => 'micro',
+        ];
+
+        if (!isset($productsBySegment[$segment])) {
+            $segment = $legacyProductSegments[$product]
+                ?? ($segment === 'small' ? 'sme' : ($segment === 'consumer' ? 'consumer' : 'sme'));
+        }
+        if ($product === 'small' || $product === 'consumer') {
+            $product = 'total';
+        }
+        if (!in_array($product, $productsBySegment[$segment], true)) {
+            $product = $productsBySegment[$segment][0];
+        }
+
+        return [$segment, $product];
+    }
+
     private function timeseriesFilterOptions(array|string $selectedKanca, array|string|null $selectedUnit, bool $branchLocked): array
     {
         $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions(null, $selectedKanca, $selectedUnit);
@@ -1241,6 +1292,10 @@ class DashboardHarianController extends Controller
     {
         $selectedKanca = $this->normalizeFilter($request->input('kanca'));
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
+
+        if ($selectedKanca === 'area6') {
+            return [self::AREA_6_KANCA, null];
+        }
 
         if ($selectedKanca === null) {
             $selectedUnit = null;

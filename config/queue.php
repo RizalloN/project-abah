@@ -48,8 +48,14 @@ return [
             'workers' => (int) env('QUEUE_REMOTE_SOURCE_WORKERS', 2),
         ],
         'background' => [
-            'queues' => 'default,reports-low',
-            'workers' => (int) env('QUEUE_BACKGROUND_WORKERS', env('ABAH_REPORT_WORKERS', 3)),
+            // Sinkronisasi hasil import tidak boleh antre di belakang cache warm
+            // yang dapat memindai jutaan baris data sumber.
+            'queues' => 'default',
+            'workers' => (int) env('QUEUE_BACKGROUND_WORKERS', env('ABAH_REPORT_WORKERS', 2)),
+        ],
+        'reports-low' => [
+            'queues' => 'reports-low',
+            'workers' => (int) env('QUEUE_REPORTS_LOW_WORKERS', 1),
         ],
         'shadow-backfill' => [
             'queues' => 'shadow-backfill',
@@ -190,6 +196,8 @@ return [
         'database' => env('DB_CONNECTION', 'sqlite'),
         'table' => 'job_batches',
     ],
+
+    'supervisor_run_as_user' => env('QUEUE_SUPERVISOR_RUN_AS_USER'),
 
     /*
     |--------------------------------------------------------------------------

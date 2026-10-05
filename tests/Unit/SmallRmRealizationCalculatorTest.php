@@ -26,6 +26,7 @@ class SmallRmRealizationCalculatorTest extends TestCase
             $table->date('periode');
             $table->string('segmen_kinerja')->nullable();
             $table->string('produk_kinerja')->nullable();
+            $table->string('description')->nullable();
             $table->string('cabang_normalized')->nullable();
             $table->string('unit_normalized')->nullable();
             $table->string('branch_normalized')->nullable();
@@ -223,6 +224,145 @@ class SmallRmRealizationCalculatorTest extends TestCase
         $this->assertSame(0.0, $result['diagnostics']['credited_rp']);
     }
 
+    public function test_booking_seen_before_cutoff_remains_in_mtd_when_missing_from_final_position(): void
+    {
+        $this->insertRow('2026-09-05', 'CIF-EARLY', '000000000012345', 750, 700, '2026-09-05');
+        $this->insertRow('2026-09-25', 'CIF-OTHER', '99999', 100, 100, '2025-01-01');
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-09-25']);
+        $row = collect($result['rows'])->firstWhere('rm_identity', 'PN:63020');
+
+        $this->assertNotNull($row);
+        $this->assertSame(1, $row['deb']);
+        $this->assertSame(750.0, $row['rp']);
+        $this->assertSame(1, $result['diagnostics']['events']);
+    }
+
+    public function test_canonical_account_matches_zero_padded_previous_position_sargably(): void
+    {
+        $this->insertRow('2026-08-31', 'CIF-PAD', '000000000012345', 500, 450, '2025-01-01');
+        $this->insertRow('2026-09-25', 'CIF-PAD', '12345', 800, 700, '2025-01-01');
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-09-25']);
+        $row = collect($result['rows'])->firstWhere('rm_identity', 'PN:63020');
+
+        $this->assertNotNull($row);
+        $this->assertSame(1, $row['deb']);
+        $this->assertSame(300.0, $row['rp']);
+        $this->assertSame(300.0, $result['diagnostics']['plafond_increase_rp']);
+    }
+
+    public function test_official_medium_description_excludes_stale_small_shadow(): void
+    {
+        $this->insertRow('2026-09-05', 'CIF-MEDIUM', 'MEDIUM-ACCOUNT', 850, 850, '2026-09-05', '00063020 - ANTON PURWANTO', [
+            'description' => null,
+            'segmen_kinerja' => 'SMALL',
+            'produk_kinerja' => 'COMMERCIAL',
+        ]);
+        $this->insertRow('2026-09-25', 'CIF-MEDIUM', 'MEDIUM-ACCOUNT', 900, 900, '2026-09-12', '00063020 - ANTON PURWANTO', [
+            'description' => '10. RITKOM -> Rp. 5 M S/D 15 M',
+            'segmen_kinerja' => 'SMALL',
+            'produk_kinerja' => 'COMMERCIAL',
+        ]);
+        $this->insertRow('2026-09-25', 'CIF-SMALL', 'SMALL-ACCOUNT', 400, 400, '2026-09-12', '00063020 - ANTON PURWANTO', [
+            'description' => 'KREDIT PANGAN',
+            'segmen_kinerja' => 'SMALL',
+            'produk_kinerja' => 'COMMERCIAL',
+        ]);
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-09-25']);
+        $row = collect($result['rows'])->firstWhere('rm_identity', 'PN:63020');
+
+        $this->assertNotNull($row);
+        $this->assertSame(1, $row['deb']);
+        $this->assertSame(400.0, $row['rp']);
+    }
+
+    public function test_first_valid_initiator_owns_mtd_event_and_maximum_plafond_is_credited(): void
+    {
+        $this->insertRow('2026-09-03', 'CIF-FIRST', 'FIRST-PN', 400, 400, '2026-09-03', '');
+        $this->insertRow('2026-09-05', 'CIF-FIRST', 'FIRST-PN', 600, 600, '2026-09-03');
+        $this->insertRow('2026-09-25', 'CIF-FIRST', 'FIRST-PN', 550, 550, '2026-09-03', '00024959 - RM LATER');
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-09-25']);
+        $rows = collect($result['rows'])->keyBy('rm_identity');
+
+        $this->assertSame(600.0, $rows['PN:63020']['rp']);
+        $this->assertArrayNotHasKey('PN:24959', $rows->all());
+    }
+
+    public function test_plafond_increase_uses_the_initiator_at_the_increase_not_the_opening_position(): void
+    {
+        $this->insertRow('2026-07-31', 'CIF-INCREASE', 'INCREASE', 1750, 1600, '2024-09-20');
+        $this->insertRow('2026-08-02', 'CIF-INCREASE', 'INCREASE', 1750, 1600, '2024-09-20');
+        $this->insertRow('2026-08-26', 'CIF-INCREASE', 'INCREASE', 2100, 1950, '2024-09-20', '00022116 - RM EVENT', [
+            'unit_normalized' => 'UNIT EVENT',
+            'branch_normalized' => '49',
+        ]);
+        $this->insertRow('2026-08-31', 'CIF-INCREASE', 'INCREASE', 2100, 1950, '2024-09-20', '00024959 - RM LATER');
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-08-02', '2026-08-31']);
+
+        $this->assertCount(1, $result['rows']);
+        $this->assertSame('2026-08-31', $result['rows'][0]['period']);
+        $this->assertSame('PN:22116', $result['rows'][0]['rm_identity']);
+        $this->assertSame('UNIT EVENT', $result['rows'][0]['unit']);
+        $this->assertSame('49', $result['rows'][0]['branch_code']);
+        $this->assertSame(350.0, $result['rows'][0]['rp']);
+        $this->assertSame(1, $result['rows'][0]['deb']);
+    }
+
+    public function test_increase_already_present_at_first_observation_keeps_its_event_initiator(): void
+    {
+        $this->insertRow('2026-07-31', 'CIF-INCREASE', 'INCREASE', 500, 450, '2024-01-01');
+        $this->insertRow('2026-08-02', 'CIF-INCREASE', 'INCREASE', 600, 550, '2024-01-01');
+        $this->insertRow('2026-08-31', 'CIF-INCREASE', 'INCREASE', 650, 600, '2024-01-01', '00024959 - RM LATER');
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-08-31']);
+
+        $this->assertCount(1, $result['rows']);
+        $this->assertSame('PN:63020', $result['rows'][0]['rm_identity']);
+        $this->assertSame(150.0, $result['rows'][0]['rp']);
+    }
+
+    public function test_increase_waits_for_a_valid_initiator_at_the_raised_limit(): void
+    {
+        $this->insertRow('2026-07-31', 'CIF-INCREASE', 'INCREASE', 100, 100, '2024-01-01');
+        $this->insertRow('2026-08-02', 'CIF-INCREASE', 'INCREASE', 100, 100, '2024-01-01');
+        $this->insertRow('2026-08-10', 'CIF-INCREASE', 'INCREASE', 200, 200, '2024-01-01', '');
+        $this->insertRow('2026-08-20', 'CIF-INCREASE', 'INCREASE', 200, 200, '2024-01-01', '00022116 - RM EVENT');
+        $this->insertRow('2026-08-31', 'CIF-INCREASE', 'INCREASE', 300, 300, '2024-01-01', '');
+
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-08-10', '2026-08-31']);
+
+        $this->assertCount(1, $result['rows']);
+        $this->assertSame('2026-08-31', $result['rows'][0]['period']);
+        $this->assertSame('PN:22116', $result['rows'][0]['rm_identity']);
+        $this->assertSame(100.0, $result['rows'][0]['rp']);
+    }
+
+    public function test_assignment_filter_does_not_change_the_increase_owner_or_amount(): void
+    {
+        $this->insertRow('2026-07-31', 'CIF-INCREASE', '000000000012345', 500, 450, '2024-01-01');
+        $this->insertRow('2026-08-02', 'CIF-INCREASE', '000000000012345', 600, 550, '2024-01-01');
+        $this->insertRow('2026-08-31', 'CIF-INCREASE', '12345', 700, 600, '2024-01-01', '00022116 - RM LATER', [
+            'cabang_normalized' => 'KC MADIUN',
+            'unit_normalized' => 'KCP LATER',
+        ]);
+        $calculator = new SmallRmRealizationCalculator;
+        $global = $calculator->calculate(['2026-08-31']);
+        $owner = $calculator->calculate(['2026-08-31'], [], null, null, ['00063020 - ANTON PURWANTO']);
+        $later = $calculator->calculate(['2026-08-31'], [], null, null, ['00022116 - RM LATER']);
+        $otherBranch = $calculator->calculate(['2026-08-31'], [], 'KC MADIUN');
+        $otherCategory = $calculator->calculate(['2026-08-31'], [], null, 'KCP');
+
+        $this->assertSame($global['rows'], $owner['rows']);
+        $this->assertSame(200.0, $owner['rows'][0]['rp']);
+        $this->assertSame([], $later['rows']);
+        $this->assertSame([], $otherBranch['rows']);
+        $this->assertSame([], $otherCategory['rows']);
+    }
+
     private function insertRow(
         string $period,
         string $cif,
@@ -237,6 +377,7 @@ class SmallRmRealizationCalculatorTest extends TestCase
             'periode' => $period,
             'segmen_kinerja' => 'SMALL',
             'produk_kinerja' => 'COMMERCIAL',
+            'description' => null,
             'cabang_normalized' => 'KC PONOROGO',
             'unit_normalized' => 'KC PONOROGO',
             'branch_normalized' => '70',

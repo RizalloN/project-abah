@@ -18,7 +18,7 @@ class WarmDashboardSimpananCacheJob implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 900;
 
-    public int $uniqueFor = 600;
+    public int $uniqueFor = 86400;
 
     /** @param array<string, mixed> $context */
     public function __construct(public string $type, public array $context)

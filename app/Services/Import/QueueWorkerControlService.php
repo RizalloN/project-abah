@@ -17,38 +17,103 @@ class QueueWorkerControlService
 
     private const STARTUP_CONFIRM_TIMEOUT_MILLISECONDS = 5000;
 
+    private const LAUNCH_REQUEST_GRACE_SECONDS = 20;
+
+    private const AUTO_RECOVERY_MAX_BACKOFF_SECONDS = 300;
+
     public function isEnabled(): bool
     {
-        return (bool) Cache::get($this->key('enabled'), true);
+        if (Cache::has($this->key('enabled'))) {
+            return (bool) Cache::get($this->key('enabled'));
+        }
+
+        $enabled = $this->readDurableEnabledState();
+        Cache::forever($this->key('enabled'), $enabled);
+
+        return $enabled;
     }
 
     public function enable(): array
     {
         $this->markEnabled();
 
-        $alreadyActive = $this->isMonitorActive();
-        $launchAccepted = $alreadyActive || $this->startDetachedMonitor();
-        $started = $alreadyActive || ($launchAccepted && $this->waitForMonitorStartup());
+        return $this->ensureMonitorRunning('manual', true);
+    }
 
-        if (!$started) {
+    public function ensureMonitorRunning(string $trigger = 'watchdog', bool $force = false): array
+    {
+        if (!$this->isEnabled()) {
+            return array_merge($this->status(), [
+                'start_requested' => false,
+                'started' => false,
+                'startup_confirmed' => false,
+                'already_active' => false,
+                'recovery_skipped' => 'disabled',
+            ]);
+        }
+
+        $this->pruneStaleMonitorState();
+        $alreadyActive = $this->isMonitorActive();
+        if ($alreadyActive) {
+            $this->resetRecoveryBackoff('healthy', $trigger);
+
+            return array_merge($this->status(), [
+                'start_requested' => true,
+                'started' => true,
+                'startup_confirmed' => true,
+                'already_active' => true,
+            ]);
+        }
+
+        $recovery = $this->recoveryState();
+        $nextRetryAt = (int) ($recovery['next_retry_at'] ?? 0);
+        if (!$force && $nextRetryAt > time()) {
+            return array_merge($this->status(), [
+                'start_requested' => false,
+                'started' => false,
+                'startup_confirmed' => false,
+                'already_active' => false,
+                'recovery_skipped' => 'backoff',
+                'next_retry_at' => now()->setTimestamp($nextRetryAt)->toIso8601String(),
+            ]);
+        }
+
+        $launchAccepted = $this->startDetachedMonitor();
+        $startupConfirmed = $launchAccepted && $this->waitForMonitorStartup();
+
+        if ($startupConfirmed) {
+            $this->resetRecoveryBackoff('recovered', $trigger);
+        } elseif (!$launchAccepted) {
             Cache::forget($this->key('launch-requested-at'));
+            $this->recordRecoveryFailure($trigger, 'launcher_rejected');
+        } else {
+            $this->recordRecoveryPending($trigger);
         }
 
         return array_merge($this->status(), [
             'start_requested' => true,
-            'started' => $started,
-            'already_active' => $alreadyActive,
+            'started' => $launchAccepted,
+            'startup_confirmed' => $startupConfirmed,
+            'already_active' => false,
         ]);
     }
 
     public function markEnabled(): void
     {
         Cache::forever($this->key('enabled'), true);
+        $this->writeDurableEnabledState(true);
+        if (PHP_OS_FAMILY === 'Windows') {
+            app(WindowsDetachedProcessLauncher::class)->setTaskEnabled(true);
+        }
     }
 
     public function disable(): array
     {
         Cache::forever($this->key('enabled'), false);
+        $this->writeDurableEnabledState(false);
+        if (PHP_OS_FAMILY === 'Windows') {
+            app(WindowsDetachedProcessLauncher::class)->setTaskEnabled(false);
+        }
 
         // Laravel's restart signal is project/cache scoped. Workers finish the
         // current job and then exit; no unrelated PHP process is force-killed.
@@ -59,13 +124,41 @@ class QueueWorkerControlService
         ]);
     }
 
-    public function touchMonitorHeartbeat(): void
+    public function claimMonitorLeadership(): bool
     {
+        $lock = Cache::lock($this->key('leader-election-lock'), 10);
+        if (!$lock->get()) {
+            return false;
+        }
+
+        try {
+            return $this->touchMonitorHeartbeat();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function touchMonitorHeartbeat(): bool
+    {
+        $heartbeat = Cache::get($this->key('monitor-heartbeat'));
+        $timestamp = is_array($heartbeat) && is_numeric($heartbeat['timestamp'] ?? null)
+            ? (int) $heartbeat['timestamp']
+            : 0;
+        $ownerPid = is_array($heartbeat) ? (int) ($heartbeat['pid'] ?? 0) : 0;
+        if ($ownerPid > 0
+            && $ownerPid !== getmypid()
+            && $timestamp <= (time() + 5)
+            && (time() - $timestamp) <= self::HEARTBEAT_ACTIVE_GRACE_SECONDS) {
+            return false;
+        }
+
         Cache::forget($this->key('launch-requested-at'));
         Cache::put($this->key('monitor-heartbeat'), [
             'pid' => getmypid(),
             'timestamp' => time(),
         ], now()->addSeconds(self::HEARTBEAT_TTL_SECONDS));
+
+        return true;
     }
 
     public function clearOwnMonitorHeartbeat(): void
@@ -76,13 +169,27 @@ class QueueWorkerControlService
         }
     }
 
+    public function signalDemand(string $queue): void
+    {
+        Cache::put($this->key('demand-signal'), [
+            'queue' => trim($queue) !== '' ? trim($queue) : 'default',
+            'timestamp' => time(),
+        ], now()->addMinutes(2));
+    }
+
+    public function consumeDemandSignal(): bool
+    {
+        return Cache::pull($this->key('demand-signal')) !== null;
+    }
+
     public function isMonitorActive(): bool
     {
         $heartbeat = Cache::get($this->key('monitor-heartbeat'));
-        if (is_array($heartbeat)
-            && is_numeric($heartbeat['timestamp'] ?? null)
-            && (time() - (int) $heartbeat['timestamp']) <= self::HEARTBEAT_ACTIVE_GRACE_SECONDS) {
-            return true;
+        if (is_array($heartbeat) && is_numeric($heartbeat['timestamp'] ?? null)) {
+            $age = time() - (int) $heartbeat['timestamp'];
+            if ($age >= -5 && $age <= self::HEARTBEAT_ACTIVE_GRACE_SECONDS) {
+                return true;
+            }
         }
 
         return $this->monitorProcessCount() > 0;
@@ -130,6 +237,7 @@ class QueueWorkerControlService
                 ? now()->setTimestamp($heartbeatAt)->toIso8601String()
                 : null,
             'message' => $this->statusMessage($state, $workerCount),
+            'recovery' => $this->recoveryState(),
         ];
     }
 
@@ -179,6 +287,11 @@ class QueueWorkerControlService
                 return true;
             }
 
+            $launchRequestedAt = (int) Cache::get($this->key('launch-requested-at'), 0);
+            if ($launchRequestedAt > 0 && (time() - $launchRequestedAt) <= self::LAUNCH_REQUEST_GRACE_SECONDS) {
+                return true;
+            }
+
             $php = $this->resolvePhpCliBinary();
             if ($php === null) {
                 Log::error('Queue worker monitor could not find a PHP CLI executable.');
@@ -195,21 +308,27 @@ class QueueWorkerControlService
                 '--max-jobs=25',
                 '--max-time=3600',
                 '--check-interval=30',
+                '--managed',
             ];
 
             if (PHP_OS_FAMILY === 'Windows') {
-                $argumentLine = implode(' ', array_map([$this, 'windowsCommandLineQuote'], $arguments));
-                $script = sprintf(
-                    'Start-Process -FilePath %s -ArgumentList %s -WorkingDirectory %s -WindowStyle Hidden -RedirectStandardOutput %s -RedirectStandardError %s',
-                    $this->powershellQuote($php),
-                    $this->powershellQuote($argumentLine),
-                    $this->powershellQuote(base_path()),
-                    $this->powershellQuote($logPath),
-                    $this->powershellQuote(storage_path('logs/queue-worker-monitor-error.log'))
+                $pid = app(WindowsDetachedProcessLauncher::class)->launch(
+                    array_merge([$php], $arguments),
+                    base_path(),
+                    $logPath,
+                    storage_path('logs/queue-worker-monitor-error.log'),
+                    storage_path('logs/queue-worker-monitor-launcher-error.log')
                 );
-                $encoded = base64_encode(mb_convert_encoding($script, 'UTF-16LE', 'UTF-8'));
-                $command = 'powershell.exe -NoProfile -NonInteractive -NoLogo -ExecutionPolicy Bypass -EncodedCommand '
-                    . escapeshellarg($encoded) . ' 2>NUL';
+                if ($pid === null) {
+                    return false;
+                }
+
+                if ($pid > 0) {
+                    Cache::put($this->key('monitor-launch-pid'), $pid, now()->addHours(8));
+                }
+                Cache::put($this->key('launch-requested-at'), time(), now()->addSeconds(60));
+
+                return true;
             } else {
                 $command = sprintf(
                     'cd %s && ( %s > %s 2>&1 & echo $! )',
@@ -268,6 +387,117 @@ class QueueWorkerControlService
         return false;
     }
 
+    private function pruneStaleMonitorState(): void
+    {
+        $heartbeat = Cache::get($this->key('monitor-heartbeat'));
+        $timestamp = is_array($heartbeat) && is_numeric($heartbeat['timestamp'] ?? null)
+            ? (int) $heartbeat['timestamp']
+            : 0;
+        $invalidHeartbeat = !is_array($heartbeat)
+            || $timestamp <= 0
+            || $timestamp > (time() + 5)
+            || (time() - $timestamp) > self::HEARTBEAT_ACTIVE_GRACE_SECONDS;
+
+        if ($heartbeat !== null && $invalidHeartbeat && $this->monitorProcessCount() === 0) {
+            Cache::forget($this->key('monitor-heartbeat'));
+            Cache::forget($this->key('monitor-launch-pid'));
+        }
+
+        $launchRequestedAt = (int) Cache::get($this->key('launch-requested-at'), 0);
+        if ($launchRequestedAt > 0 && (time() - $launchRequestedAt) > 60) {
+            Cache::forget($this->key('launch-requested-at'));
+        }
+    }
+
+    private function recordRecoveryFailure(string $trigger, string $reason): void
+    {
+        $state = $this->recoveryState();
+        $failures = max(0, (int) ($state['consecutive_failures'] ?? 0)) + 1;
+        $delay = min(self::AUTO_RECOVERY_MAX_BACKOFF_SECONDS, 15 * (2 ** min(4, $failures - 1)));
+        Cache::put($this->key('recovery-state'), [
+            'state' => 'backoff',
+            'trigger' => $trigger,
+            'reason' => $reason,
+            'consecutive_failures' => $failures,
+            'last_attempt_at' => time(),
+            'next_retry_at' => time() + $delay,
+        ], now()->addHours(8));
+    }
+
+    private function recordRecoveryPending(string $trigger): void
+    {
+        Cache::put($this->key('recovery-state'), [
+            'state' => 'starting',
+            'trigger' => $trigger,
+            'reason' => 'awaiting_heartbeat',
+            'consecutive_failures' => (int) ($this->recoveryState()['consecutive_failures'] ?? 0),
+            'last_attempt_at' => time(),
+            'next_retry_at' => time() + self::LAUNCH_REQUEST_GRACE_SECONDS,
+        ], now()->addHours(8));
+    }
+
+    private function resetRecoveryBackoff(string $state, string $trigger): void
+    {
+        Cache::put($this->key('recovery-state'), [
+            'state' => $state,
+            'trigger' => $trigger,
+            'reason' => null,
+            'consecutive_failures' => 0,
+            'last_attempt_at' => time(),
+            'next_retry_at' => 0,
+        ], now()->addHours(8));
+    }
+
+    private function recoveryState(): array
+    {
+        $state = Cache::get($this->key('recovery-state'), []);
+
+        return is_array($state) ? $state : [];
+    }
+
+    private function readDurableEnabledState(): bool
+    {
+        $path = $this->durableControlStatePath();
+        if (!is_file($path)) {
+            return true;
+        }
+
+        $state = json_decode((string) @file_get_contents($path), true);
+
+        return !is_array($state) || !array_key_exists('enabled', $state)
+            ? true
+            : (bool) $state['enabled'];
+    }
+
+    private function writeDurableEnabledState(bool $enabled): void
+    {
+        $path = $this->durableControlStatePath();
+        $directory = dirname($path);
+        if (!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)) {
+            Log::error('Queue worker durable control directory could not be created.', ['path' => $directory]);
+            return;
+        }
+
+        $temporaryPath = $path . '.' . getmypid() . '.tmp';
+        $payload = json_encode([
+            'enabled' => $enabled,
+            'updated_at' => now()->toIso8601String(),
+        ], JSON_UNESCAPED_SLASHES);
+        if (@file_put_contents($temporaryPath, $payload, LOCK_EX) === false || !@rename($temporaryPath, $path)) {
+            @unlink($temporaryPath);
+            Log::error('Queue worker durable control state could not be written.', ['path' => $path]);
+        }
+    }
+
+    private function durableControlStatePath(): string
+    {
+        if (app()->environment('testing')) {
+            return storage_path('framework/testing/queue-worker-control-' . getmypid() . '.json');
+        }
+
+        return storage_path('framework/queue-worker-control.json');
+    }
+
     private function resolvePhpCliBinary(): ?string
     {
         $finderCandidate = (new PhpExecutableFinder())->find(false);
@@ -299,8 +529,15 @@ class QueueWorkerControlService
                 continue;
             }
 
-            if ($candidate === 'php' || is_file($candidate)) {
+            if ($candidate === 'php') {
                 return $candidate;
+            }
+
+            if (is_file($candidate)) {
+                // Apache on Windows may expose PHP_BINARY as \xampp\php\php.exe.
+                // It resolves on Apache's current drive but is invalid when Task
+                // Scheduler starts in another drive, so always return an absolute path.
+                return realpath($candidate) ?: $candidate;
             }
         }
 
@@ -352,25 +589,23 @@ class QueueWorkerControlService
         static $cachedOutput = null;
         static $cachedAt = 0;
 
-        if ($cachedOutput !== null && (time() - $cachedAt) <= 5) {
+        if ($cachedAt > 0 && (time() - $cachedAt) <= 5) {
             return $cachedOutput;
-        }
-
-        if (!function_exists('shell_exec')) {
-            return null;
         }
 
         if (PHP_OS_FAMILY === 'Windows') {
-            $script = '$ProgressPreference = \'SilentlyContinue\'; Get-CimInstance Win32_Process -Filter "Name = \'php.exe\'" -ErrorAction SilentlyContinue | ForEach-Object { $_.CommandLine }';
+            $script = '$ErrorActionPreference = \'Stop\'; Get-CimInstance Win32_Process -Filter "Name = \'php.exe\'" | ForEach-Object { $_.CommandLine }';
             $encoded = base64_encode(mb_convert_encoding($script, 'UTF-16LE', 'UTF-8'));
-            $cachedOutput = shell_exec('powershell.exe -NoProfile -NonInteractive -NoLogo -ExecutionPolicy Bypass -EncodedCommand '
-                . escapeshellarg($encoded) . ' 2>NUL');
-            $cachedAt = time();
-
-            return $cachedOutput;
+            $command = ['powershell.exe', '-NoProfile', '-NonInteractive', '-NoLogo', '-EncodedCommand', $encoded];
+        } else {
+            $command = ['ps', '-eo', 'args'];
         }
-
-        $cachedOutput = shell_exec('ps -eo args 2>/dev/null');
+        try {
+            [$exitCode, $output] = app(QueueSupervisorProcessRunner::class)->run($command);
+            $cachedOutput = $exitCode === 0 ? $output : null;
+        } catch (\Throwable) {
+            $cachedOutput = null;
+        }
         $cachedAt = time();
 
         return $cachedOutput;
@@ -383,13 +618,4 @@ class QueueWorkerControlService
         return 'queue:worker-control:' . sha1(strtolower(str_replace('\\', '/', $project))) . ':' . $suffix;
     }
 
-    private function powershellQuote(string $value): string
-    {
-        return "'" . str_replace("'", "''", $value) . "'";
-    }
-
-    private function windowsCommandLineQuote(string $value): string
-    {
-        return '"' . str_replace('"', '\\"', $value) . '"';
-    }
 }

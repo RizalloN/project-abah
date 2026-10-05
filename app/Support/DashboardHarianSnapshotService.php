@@ -951,6 +951,192 @@ class DashboardHarianSnapshotService
         ];
     }
 
+    public function buildKeragaanPdfPayload(string $period, ?string $rkaPeriod, array $branches, bool $areaScope): array
+    {
+        $selected = Carbon::parse($period);
+        $period = $selected->toDateString();
+        $branches = array_values(array_unique(array_filter(array_map('trim', $branches))));
+        if ($branches === [] || (!$areaScope && count($branches) !== 1)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'kanca' => 'Pilih Area 6 atau satu cabang untuk export PDF.',
+            ]);
+        }
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'period' => 'Snapshot Dashboard Harian belum tersedia untuk export PDF.',
+            ]);
+        }
+
+        $branchKeys = array_map(fn (string $branch): string => $this->slugKey($this->normalizeKancaLabel($branch) ?: $branch), $branches);
+        $query = DB::table(self::SNAPSHOT_TABLE)->whereIn('kanca_key', $branchKeys)
+            ->whereColumn('unit_key', $areaScope ? '=' : '<>', 'kanca_key');
+        // Read exact calendar comparators; never rebuild or substitute a missing snapshot during export.
+        $comparison = [
+            'current' => $period,
+            'ytd' => $selected->copy()->subYear()->endOfYear()->toDateString(),
+            'mtd' => $selected->copy()->subMonthsNoOverflow(1)->endOfMonth()->toDateString(),
+            'mtm' => $selected->copy()->subMonthsNoOverflow(1)->toDateString(),
+            'h1' => (clone $query)->where('snapshot_period', '<', $period)->max('snapshot_period'),
+        ];
+        $resolvedRka = Carbon::parse($rkaPeriod ?: $period)->startOfMonth()->toDateString();
+        $comparison['rka'] = $resolvedRka;
+        $sourceRows = (clone $query)->whereIn('snapshot_period', array_values(array_unique(array_filter([
+            $comparison['current'], $comparison['ytd'], $comparison['mtd'], $comparison['mtm'], $comparison['h1'],
+        ]))))->get(array_merge(['snapshot_period', 'kanca_key', 'kanca_label', 'unit_key', 'unit_label'], self::METRIC_COLUMNS));
+        $currentRows = $sourceRows->where('snapshot_period', $period);
+        if ($currentRows->isEmpty() || ($areaScope && count(array_diff($branchKeys, $currentRows->pluck('kanca_key')->all())) > 0)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'period' => 'Snapshot periode terpilih belum lengkap untuk cakupan cabang ini. Pilih periode yang tersedia.',
+            ]);
+        }
+
+        // Maps use current detail offices even when the report itself groups rows by branch.
+        // Include only components needed to finalize the two balances; stored totals can be stale.
+        $mapColumns = ['total_simpanan', 'giro_ritel', 'tabungan_ritel', 'deposito_ritel',
+            'giro_mikro', 'tabungan_mikro', 'deposito_mikro', 'giro_wholesale', 'tabungan_wholesale', 'deposito_wholesale',
+            'kecil_non_cashcoll_os', 'cashcoll_os', 'briguna_konsumer_os', 'kpr_os', 'kkb_os',
+            'briguna_mikro_os', 'kupedes_os', 'kur_mikro_os', 'kur_kecil_os', 'kur_kpp_os'];
+        $mapRows = $areaScope
+            ? DB::table(self::SNAPSHOT_TABLE)->whereIn('kanca_key', $branchKeys)
+                ->where('snapshot_period', $period)->whereColumn('unit_key', '<>', 'kanca_key')
+                ->get(array_merge(['kanca_key', 'kanca_label', 'unit_key', 'unit_label'], $mapColumns))
+            : $currentRows;
+        $activeOffices = [];
+        foreach ($mapRows as $mapRow) {
+            $balances = $this->finalizeMetrics((array) $mapRow);
+            if ($balances['total_simpanan'] === 0.0 && $balances['total_os'] === 0.0) {
+                continue;
+            }
+            $activeOffices[] = [
+                'kanca_key' => $mapRow->kanca_key, 'kanca_label' => $mapRow->kanca_label,
+                'unit_key' => $mapRow->unit_key, 'unit_label' => $mapRow->unit_label, 'label' => $mapRow->unit_label,
+                'total_simpanan' => $balances['total_simpanan'], 'total_os' => $balances['total_os'],
+            ];
+        }
+        usort($activeOffices, fn (array $a, array $b): int => strnatcasecmp($a['label'], $b['label']));
+
+        $definitions = [
+            'total_simpanan' => 'Simpanan Total', 'simpanan_ritel' => 'Simpanan Ritel',
+            'simpanan_mikro' => 'Simpanan Mikro', 'simpanan_wholesale' => 'Simpanan Wholesale',
+            'total_os' => 'OS Total', 'sme_os' => 'OS SME', 'consumer_os' => 'OS Konsumer', 'micro_os' => 'OS Mikro',
+            'total_sml_abs_non_commercial' => 'SML Total', 'sme_sml' => 'SML SME',
+            'consumer_sml' => 'SML Konsumer', 'micro_sml' => 'SML Mikro',
+            'total_npl_abs_non_commercial' => 'NPL Total', 'sme_npl' => 'NPL SME',
+            'consumer_npl' => 'NPL Konsumer', 'micro_npl' => 'NPL Mikro', 'rec_dh_total' => 'Recovery DH',
+        ];
+        $offices = [];
+        $officeMetrics = [];
+        foreach ($sourceRows->groupBy(fn ($row): string => $row->kanca_key . '|' . $row->unit_key) as $identity => $rows) {
+            $latest = $rows->sortByDesc('snapshot_period')->first();
+            $metrics = [];
+            foreach ($rows as $row) {
+                $metrics[$row->snapshot_period] = $this->finalizeMetrics((array) $row);
+            }
+            $offices[$identity] = [
+                'kanca_key' => $latest->kanca_key, 'kanca_label' => $latest->kanca_label,
+                'unit_key' => $latest->unit_key, 'unit_label' => $latest->unit_label,
+                'label' => $areaScope ? $latest->kanca_label : $latest->unit_label,
+            ];
+            $officeMetrics[$identity] = $metrics;
+        }
+        uasort($offices, fn (array $a, array $b): int => strnatcasecmp($a['label'], $b['label']));
+
+        $rkaGroups = $this->rkaLookupService()->aggregateByGroup(
+            $this->dashboardRkaMetricDefinitions(),
+            $this->rkaLookupService()->resolveMonthColumn($resolvedRka),
+            $branches, [], $areaScope ? 'kanca' : 'uker', (int) substr($resolvedRka, 0, 4)
+        );
+        // The lookup removes numeric prefixes, suffix annotations, punctuation and DETAIL.
+        $scopeKey = static function (string $label): string {
+            $label = strtoupper(ltrim(trim($label), "'\" "));
+            $label = preg_replace('/^\d+\s*[\p{Pd}]+\s*|^\d+\s+/u', '', $label) ?? $label;
+            $label = preg_replace('/\s*\(([^)]*)\)\s*$/u', '', $label) ?? $label;
+            $label = preg_replace('/[\p{Pd}.]+/u', ' ', $label) ?? $label;
+            $label = preg_replace('/\s+/', ' ', $label) ?? $label;
+            return trim(preg_replace('/\s+DETAIL$/u', '', $label) ?? $label);
+        };
+        $rkaByOffice = [];
+        foreach ($rkaGroups as $metric => $groups) {
+            foreach ($groups as $label => $value) {
+                $key = $scopeKey($label);
+                $rkaByOffice[$key][$metric] = ($rkaByOffice[$key][$metric] ?? 0.0) + (float) $value;
+            }
+        }
+        foreach ($rkaByOffice as $key => $metrics) {
+            $rkaByOffice[$key] = $this->finalizeRkaMetrics($metrics);
+        }
+
+        $makeRow = function (string $label, array $values, bool $lowerBetter): array {
+            $current = $values['current'];
+            $deltas = [];
+            foreach (['dtd' => 'h1', 'mtd' => 'mtd', 'mtm' => 'mtm', 'rka' => 'rka'] as $deltaKey => $valueKey) {
+                $deltas[$deltaKey] = $current !== null && $values[$valueKey] !== null ? $current - $values[$valueKey] : null;
+            }
+            $target = $values['rka'];
+            $achievement = $current !== null && $target !== null
+                ? $this->keragaanAchievement($current, $target, $lowerBetter) : null;
+            return ['label' => $label, 'values' => $values, 'deltas' => $deltas, 'achievement' => $achievement];
+        };
+        $sections = [];
+        foreach ($definitions as $key => $label) {
+            $lowerBetter = str_contains($key, 'sml') || str_contains($key, 'npl');
+            $rows = [];
+            $allRows = [];
+            foreach ($offices as $identity => $office) {
+                $values = [];
+                foreach (['ytd', 'mtd', 'mtm', 'h1', 'current'] as $position) {
+                    $values[$position] = $comparison[$position] !== null
+                        ? ($officeMetrics[$identity][$comparison[$position]][$key] ?? null) : null;
+                }
+                $values['rka'] = $rkaByOffice[$scopeKey($office['label'])][$key] ?? null;
+                $row = $makeRow($office['label'], $values, $lowerBetter);
+                // Keep every source-backed comparison and target in totals before presentation filtering.
+                $allRows[$identity] = $row;
+                if (!$areaScope) {
+                    $current = $officeMetrics[$identity][$period] ?? null;
+                    if ($current !== null && $current['total_simpanan'] === 0.0 && $current['total_os'] === 0.0) {
+                        continue;
+                    }
+                    $officeLabel = $scopeKey($office['label']);
+                    $isKc = str_starts_with($officeLabel, 'KC ');
+                    $isKcp = str_starts_with($officeLabel, 'KCP ');
+                    $isUnit = str_starts_with($officeLabel, 'UNIT ');
+                    if (in_array($key, ['simpanan_ritel', 'simpanan_wholesale', 'sme_os', 'sme_sml', 'sme_npl', 'consumer_os', 'consumer_sml', 'consumer_npl'], true)
+                        && !$isKc && !$isKcp) {
+                        continue;
+                    }
+                    if ($key === 'simpanan_mikro' && !$isUnit) {
+                        continue;
+                    }
+                    if ($values['current'] === 0.0 && (in_array($key, ['total_simpanan', 'simpanan_ritel', 'simpanan_mikro', 'simpanan_wholesale', 'total_os'], true)
+                        || ($isKcp && in_array($key, ['sme_os', 'sme_sml', 'sme_npl', 'consumer_os', 'consumer_sml', 'consumer_npl'], true)))) {
+                        continue;
+                    }
+                }
+                $rows[$identity] = $row;
+            }
+            $totals = [];
+            foreach (['ytd', 'mtd', 'mtm', 'h1', 'current', 'rka'] as $position) {
+                $values = array_map(fn (array $row) => $row['values'][$position], $allRows);
+                // An incomplete comparison must not look like a complete lower balance.
+                $totals[$position] = $values === [] || in_array(null, $values, true) ? null : array_sum($values);
+            }
+            $hiddenCurrentValues = array_map(fn (array $row) => $row['values']['current'], array_diff_key($allRows, $rows));
+            $sections[] = [
+                'key' => $key, 'label' => $label, 'lower_better' => $lowerBetter, 'rows' => array_values($rows),
+                'hidden_row_count' => count($allRows) - count($rows),
+                'hidden_current_value' => in_array(null, $hiddenCurrentValues, true) ? null : (float) array_sum($hiddenCurrentValues),
+                'totals_include_hidden_rows' => count($allRows) > count($rows),
+                'total' => $makeRow($areaScope ? 'Area 6 Madiun' : $branches[0], $totals, $lowerBetter),
+            ];
+        }
+
+        return [
+            'period' => $period, 'rka_period' => $resolvedRka, 'comparison_periods' => $comparison,
+            'sections' => $sections, 'offices' => array_values($offices), 'active_offices' => $activeOffices,
+        ];
+    }
+
     private function keragaanUkerMetricDefinitions(string $type): array
     {
         return match ($type) {
@@ -5634,11 +5820,11 @@ class DashboardHarianSnapshotService
         ];
 
         // Backward compatibility for links created before product became a separate filter.
-        if ($product === 'total' && isset($loanProducts[$segment])) {
+        if ($product === 'total' && isset($loanProducts[$segment]) && $segment !== 'consumer') {
             $product = $segment;
             $segment = in_array($product, ['briguna_mikro', 'kupedes', 'kur_mikro', 'kur_kecil', 'kur_kpp'], true)
                 ? 'micro'
-                : 'ritel';
+                : ($product === 'small' ? 'sme' : 'ritel');
         }
 
         if (in_array($category, ['pinjaman', 'sml', 'npl'], true)) {
@@ -5647,6 +5833,12 @@ class DashboardHarianSnapshotService
                 $base = $loanProducts[$product];
                 $numerator = "{$base}_{$suffix}";
                 $denominator = "{$base}_os";
+            } elseif ($segment === 'sme') {
+                $numerator = "sme_{$suffix}";
+                $denominator = 'sme_os';
+            } elseif ($segment === 'consumer') {
+                $numerator = "consumer_{$suffix}";
+                $denominator = 'consumer_os';
             } elseif ($segment === 'ritel') {
                 $numerator = "(COALESCE(sme_{$suffix}, 0) + COALESCE(consumer_{$suffix}, 0))";
                 $denominator = '(COALESCE(sme_os, 0) + COALESCE(consumer_os, 0))';

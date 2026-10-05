@@ -88,6 +88,8 @@ Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttl
         ->name('dashboard.harian.keragaan-uker');
     Route::get('/dashboard-harian/keragaan-uker/data', [DashboardHarianController::class, 'keragaanUkerData'])
         ->name('dashboard.harian.keragaan-uker.data');
+    Route::get('/dashboard-harian/keragaan-uker/export-pdf', \App\Http\Controllers\KeragaanPdfController::class)
+        ->name('dashboard.harian.keragaan-uker.export-pdf');
     Route::get('/dashboard-harian/data', [DashboardHarianController::class, 'data'])
         ->name('dashboard.harian.data');
     Route::get('/dashboard-harian/export', [DashboardHarianController::class, 'exportExcel'])

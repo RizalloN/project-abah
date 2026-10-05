@@ -1161,6 +1161,84 @@ class LandingMicroPerformanceServiceTest extends TestCase
         );
     }
 
+    public function test_micro_durable_payload_cache_is_isolated_by_effective_period(): void
+    {
+        $service = app(LandingMicroPerformanceService::class);
+
+        $julyKey = $this->invokePrivate($service, 'durablePayloadCacheKey', ['2026-07-31', null]);
+        $augustKey = $this->invokePrivate($service, 'durablePayloadCacheKey', ['2026-08-25', null]);
+
+        $this->assertNotSame($julyKey, $augustKey);
+        $this->assertStringContainsString(':2026-07-31:area6', $julyKey);
+        $this->assertStringContainsString(':2026-08-25:area6', $augustKey);
+    }
+
+    public function test_micro_force_refresh_only_uses_durable_payload_for_selected_effective_period(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            $this->dailyLoanRow('cache-july', '2026-07-31', 'CIF-JULY', 'REK-JULY', 10_000_000, 'MICRO', 'Kupedes'),
+            $this->dailyLoanRow('cache-august', '2026-08-25', 'CIF-AUGUST', 'REK-AUGUST', 20_000_000, 'MICRO', 'Kupedes'),
+        ]);
+
+        $service = app(LandingMicroPerformanceService::class);
+        $julyKey = $this->invokePrivate($service, 'durablePayloadCacheKey', ['2026-07-31', null]);
+        $augustKey = $this->invokePrivate($service, 'durablePayloadCacheKey', ['2026-08-25', null]);
+        Cache::put($julyKey, ['meta' => ['period' => '2026-07-31'], 'cache_marker' => 'july']);
+        Cache::put($augustKey, ['meta' => ['period' => '2026-08-25'], 'cache_marker' => 'august']);
+
+        $payload = $service->payload('2026-08-25', null, true);
+
+        $this->assertSame('august', $payload['cache_marker']);
+        $this->assertSame('2026-08-25', data_get($payload, 'meta.period'));
+        $this->assertTrue(data_get($payload, 'meta.cache_stale'));
+        $this->assertTrue(data_get($payload, 'meta.refresh_pending'));
+    }
+
+    public function test_micro_error_fallback_only_uses_durable_payload_for_resolved_period(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            $this->dailyLoanRow('error-july', '2026-07-31', 'CIF-ERROR-JULY', 'REK-ERROR-JULY', 10_000_000, 'MICRO', 'Kupedes'),
+            $this->dailyLoanRow('error-august', '2026-08-25', 'CIF-ERROR-AUGUST', 'REK-ERROR-AUGUST', 20_000_000, 'MICRO', 'Kupedes'),
+        ]);
+
+        $service = app(LandingMicroPerformanceService::class);
+        $julyKey = $this->invokePrivate($service, 'durablePayloadCacheKey', ['2026-07-31', null]);
+        $augustKey = $this->invokePrivate($service, 'durablePayloadCacheKey', ['2026-08-25', null]);
+        Cache::put($julyKey, ['meta' => ['period' => '2026-07-31'], 'cache_marker' => 'july']);
+        Cache::put($augustKey, ['meta' => ['period' => '2026-08-25'], 'cache_marker' => 'august']);
+
+        $failed = false;
+        DB::listen(function ($query) use (&$failed): void {
+            if (! $failed && in_array('2026-08-01', $query->bindings, true)) {
+                $failed = true;
+                throw new \RuntimeException('Simulasi gagal setelah periode efektif ditemukan.');
+            }
+        });
+
+        $payload = $service->payload('2026-08-25');
+
+        $this->assertTrue($failed);
+        $this->assertSame('august', $payload['cache_marker']);
+        $this->assertSame('2026-08-25', data_get($payload, 'meta.period'));
+        $this->assertSame(
+            'Simulasi gagal setelah periode efektif ditemukan.',
+            data_get($payload, 'meta.refresh_error')
+        );
+    }
+
+    public function test_micro_error_before_period_resolution_does_not_serve_an_unrelated_durable_payload(): void
+    {
+        $service = app(LandingMicroPerformanceService::class);
+        $julyKey = $this->invokePrivate($service, 'durablePayloadCacheKey', ['2026-07-31', null]);
+        Cache::put($julyKey, ['meta' => ['period' => '2026-07-31'], 'cache_marker' => 'july']);
+
+        $payload = $service->payload('tanggal-tidak-valid');
+
+        $this->assertArrayNotHasKey('cache_marker', $payload);
+        $this->assertNull(data_get($payload, 'meta.period'));
+        $this->assertNotEmpty(data_get($payload, 'meta.error'));
+    }
+
     public function test_realization_products_expose_realized_and_pending_mantri_without_double_counting_total(): void
     {
         DB::table('brihc_pemasar')->insert([
@@ -1227,6 +1305,26 @@ class LandingMicroPerformanceServiceTest extends TestCase
         $this->assertSame(1, data_get($payload, 'turun_pokok.deb'));
         $this->assertSame(40_000_000.0, data_get($payload, 'lunas.amount'));
         $this->assertSame(1, data_get($payload, 'lunas.deb'));
+    }
+
+    public function test_micro_ph_summary_uses_latest_available_previous_period_when_month_end_is_missing(): void
+    {
+        DB::table('lw325_ph')->insert([
+            ['uniqueid_namareport' => 'prev-nearest', 'periode' => '2026-07-30', 'acctno' => '0001', 'kanca' => 'KC Madiun', 'unit' => 'UNIT A', 'segmen_dashboard' => 'Micro', 'pokok' => 100_000_000],
+            ['uniqueid_namareport' => 'curr-nearest', 'periode' => '2026-08-25', 'acctno' => '0001', 'kanca' => 'KC Madiun', 'unit' => 'UNIT A', 'segmen_dashboard' => 'Micro', 'pokok' => 70_000_000],
+            ['uniqueid_namareport' => 'prev-nearest-paid', 'periode' => '2026-07-30', 'acctno' => '0002', 'kanca' => 'KC Madiun', 'unit' => 'UNIT A', 'segmen_dashboard' => 'Micro', 'pokok' => 40_000_000],
+        ]);
+
+        $payload = $this->invokePrivate(
+            app(LandingMicroPerformanceService::class),
+            'buildMicroPhSummary',
+            ['2026-08-25', null]
+        );
+
+        $this->assertTrue($payload['available']);
+        $this->assertSame('2026-07-30', $payload['comparison_period']);
+        $this->assertSame(30_000_000.0, data_get($payload, 'turun_pokok.amount'));
+        $this->assertSame(40_000_000.0, data_get($payload, 'lunas.amount'));
     }
 
     public function test_micro_quality_composition_splits_sml_from_daily_loan_and_npl_from_ssa(): void

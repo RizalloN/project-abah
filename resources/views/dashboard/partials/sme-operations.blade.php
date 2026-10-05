@@ -21,6 +21,10 @@
     $formatAmount = static fn ($value): string => number_format((float) $value, 0, ',', '.');
     $formatPercent = static fn ($value): string => number_format((float) $value, 2, ',', '.') . '%';
     $sourceState = static function (array $module): array {
+        if (data_get($module, 'quality.complete') === false || data_get($module, 'reconciliation.matches') === false) {
+            return ['label' => 'Sumber perlu rekonsiliasi', 'class' => 'is-stale', 'icon' => 'fas fa-exclamation-triangle'];
+        }
+
         if (!empty($module['stale'])) {
             return ['label' => 'Cache terakhir', 'class' => 'is-stale', 'icon' => 'fas fa-history'];
         }
@@ -45,6 +49,7 @@
         'sudah_diputus' => 'fas fa-gavel',
         'realisasi' => 'fas fa-check-circle',
         'batal' => 'fas fa-times-circle',
+        'carry_over' => 'fas fa-forward',
     ];
     $extensionIcons = [
         'analisa_rm' => 'fas fa-search-dollar',
@@ -267,9 +272,21 @@
                 <span class="sme-ops-section-number">03</span>
                 <span class="sme-ops-feature-icon"><i class="fas fa-fire-alt"></i></span>
                 <div>
-                    <span class="sme-ops-kicker">{{ $formatInteger(data_get($hotProspects, 'rm_count', 0)) }} RM &middot; {{ $formatInteger(data_get($hotProspects, 'unit_count', 0)) }} unit kerja</span>
+                    <span class="sme-ops-kicker">
+                        @if((int) data_get($hotProspects, 'rm_count', 0) > 0)
+                            {{ $formatInteger(data_get($hotProspects, 'rm_count', 0)) }} RM
+                        @else
+                            {{ $formatInteger(data_get($hotProspects, 'total.deb', 0)) }} prospek
+                        @endif
+                        &middot; {{ $formatInteger(data_get($hotProspects, 'unit_count', 0)) }} unit kerja
+                    </span>
                     <h3 id="sme-hot-title">Monitoring Hot Prospek</h3>
-                    <p>Posisi calon debitur pada setiap tahap proses kredit.</p>
+                    <p>
+                        Posisi calon debitur pada setiap tahap proses kredit.
+                        @if(data_get($hotProspects, 'period_label'))
+                            Snapshot {{ data_get($hotProspects, 'period_label') }}: {{ $formatInteger(data_get($hotProspects, 'total.deb', 0)) }} prospek &middot; Rp {{ $formatAmount(data_get($hotProspects, 'total.amount_juta', 0)) }} juta.
+                        @endif
+                    </p>
                 </div>
             </div>
             <a class="sme-ops-source {{ $hotState['class'] }}" href="{{ data_get($hotProspects, 'source_url', '#') }}" target="_blank" rel="noopener noreferrer">

@@ -365,7 +365,7 @@ class ExcelQueuedImportService
                         $delimiter,
                         $params
                     ): array {
-                        $forceDirectLoad = in_array($tableName, ['simpanan_multipn', 'lw325_ph', 'ssa_simpanan', 'ssa_pinjaman', 'ssa_almafacts', 'hourly_dpk', 'l1133', 'brihc', 'wilayah_mbm'], true);
+                        $forceDirectLoad = in_array($tableName, ['simpanan_multipn', 'lw325_ph', 'ssa_simpanan', 'ssa_pinjaman', 'ssa_almafacts', 'hourly_dpk', 'l1133', 'brihc', 'wilayah_mbm', 'gi405_singlerow'], true);
 
                         return [
                             'handled' => ($callbacks['process_staged_csv_stream'])(
@@ -432,7 +432,7 @@ class ExcelQueuedImportService
                 $job = $jobId > 0 ? $findJob($jobId) : null;
                 if ($job && $job->status === 'completed') {
                     ($callbacks['cleanup_successful_import_artifacts'])($jobId, $relativePath, $path, $stagedCsvPath !== '' ? [$stagedCsvPath] : []);
-                    if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
+                    if ($tableName !== 'simpanan_multipn' && $stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
                         @unlink($stagedCsvPath);
                     }
                 }

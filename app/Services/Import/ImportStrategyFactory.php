@@ -9,6 +9,7 @@ use App\Services\Import\Strategies\CognosPhImportStrategy;
 use App\Services\Import\Strategies\CognosRecoveryImportStrategy;
 use App\Services\Import\Strategies\DlyKapResegmentasiImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
+use App\Services\Import\Strategies\Gi405SingleRowImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\HourlyDpkImportStrategy;
 use App\Services\Import\Strategies\ImportStrategyInterface;
@@ -32,6 +33,7 @@ class ImportStrategyFactory
             app(DailyLoanImportStrategy::class),
             app(SimpananMultiPnImportStrategy::class),
             app(Gi405RecDhImportStrategy::class),
+            app(Gi405SingleRowImportStrategy::class),
             app(SsaPinjamanImportStrategy::class),
             app(SsaSimpananImportStrategy::class),
             app(HourlyDpkImportStrategy::class),

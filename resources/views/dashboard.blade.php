@@ -20,6 +20,10 @@ $area6ScopePayloads = is_array(data_get($area6Portfolio, 'scopes')) ? data_get($
 if (empty($area6ScopePayloads)) {
   $area6ScopePayloads = [$area6DefaultScope => $area6Portfolio];
 }
+$requestedLandingScope = request()->query('landing_scope');
+if (is_string($requestedLandingScope) && array_key_exists($requestedLandingScope, $area6ScopePayloads)) {
+  $area6DefaultScope = $requestedLandingScope;
+}
 $digitalUpdatedAt = data_get($dashboard ?? [], 'digital_performance.updated_at');
 $simpananReport = collect($liveReports)->firstWhere('key', 'simpanan') ?? [];
 $pinjamanReport = collect($liveReports)->firstWhere('key', 'pinjaman') ?? [];
@@ -10654,7 +10658,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
 
       @if(!empty($periods) && count($periods) > 0)
       <div class="db-date-picker-container">
-        <select class="db-date-picker-select" id="periode-selector">
+        <select class="db-date-picker-select" id="periode-selector" data-applied-period="{{ $selectedPeriod }}">
           @foreach($periods as $p)
             <option value="{{ $p }}" {{ $p === $selectedPeriod ? 'selected' : '' }}>
               {{ \Carbon\Carbon::parse($p)->translatedFormat('d M Y') }}
@@ -12054,7 +12058,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
       <article class="landing-insight landing-insight--realization">
         @php
           $realizationScopes = data_get($landingRealization, 'scopes', []);
-          $realizationDefaultScope = data_get($landingRealization, 'default_scope', $area6DefaultScope);
+          $realizationDefaultScope = $area6DefaultScope;
         @endphp
         <header class="landing-insight__head">
           <div class="landing-insight__title">
@@ -13670,7 +13674,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!microPerformanceDashboard || !microPerformanceDashboard.dataset.url) {
       return Promise.resolve();
     }
-    if (!forceRefresh && microPerformanceDashboard.dataset.loaded === '1') {
+    const requestedPeriod = document.getElementById('periode-selector')?.value || '';
+    if (!forceRefresh && microPerformanceDashboard.dataset.loaded === '1'
+        && microPerformanceDashboard.dataset.loadedPeriod === requestedPeriod) {
       return Promise.resolve();
     }
     if (microPerformanceRequest) {
@@ -13680,6 +13686,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 90000);
     const requestUrl = new URL(microPerformanceDashboard.dataset.url, window.location.origin);
+    requestUrl.searchParams.set('periode', requestedPeriod);
     requestUrl.searchParams.set('_', String(Date.now()));
     if (forceRefresh) {
       requestUrl.searchParams.set('refresh', '1');
@@ -13701,12 +13708,19 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!response.ok || !html.includes('data-micro-performance-ready="1"')) {
           throw new Error('Respons Mikro tidak lengkap atau sesi login telah berakhir.');
         }
+        const fragment = new DOMParser().parseFromString(html, 'text/html');
+        const result = fragment.querySelector('[data-micro-performance-ready]');
+        if (result?.dataset.requestedPeriod !== requestedPeriod) {
+          throw new Error('Tanggal respons Mikro tidak sesuai pilihan. Silakan muat ulang tabel.');
+        }
+        if (document.getElementById('periode-selector')?.value !== requestedPeriod) return;
         closeMicroPipelineModal();
         document.querySelector('body > [data-micro-pipeline-modal]')?.remove();
         closeMicroPipelineSourceModal();
         document.querySelector('body > [data-micro-pipeline-source-modal]')?.remove();
         microPerformanceDashboard.innerHTML = html;
         microPerformanceDashboard.dataset.loaded = '1';
+        microPerformanceDashboard.dataset.loadedPeriod = requestedPeriod;
         initializeMicroBilling(microPerformanceDashboard);
         prepareMicroPipelineModal();
       })
@@ -13917,6 +13931,34 @@ document.addEventListener('DOMContentLoaded', function() {
       button.addEventListener(eventName, () => loadLoanAnalytics(button.dataset.area6Scope, false), { passive: true });
     });
   });
+
+  const prefetchLandingLoanScopes = async () => {
+    if (document.visibilityState !== 'visible' || navigator.connection?.saveData || /(^|-)2g$/.test(navigator.connection?.effectiveType || '')) {
+      return;
+    }
+
+    const scopes = ['sme', 'consumer', 'micro']
+      .filter(scope => scope !== initialArea6Scope);
+    for (const scope of scopes) {
+      const operationalLoader = scope === 'sme'
+        ? loadSmeOperations
+        : (scope === 'consumer' ? loadConsumerOperations : loadMicroPerformance);
+      await Promise.allSettled([
+        operationalLoader(false),
+        loadLoanAnalytics(scope, false),
+      ]);
+    }
+  };
+
+  const scheduleLandingLoanPrefetch = () => {
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(() => prefetchLandingLoanScopes(), { timeout: 2500 });
+      return;
+    }
+
+    window.setTimeout(() => prefetchLandingLoanScopes(), 1500);
+  };
+  scheduleLandingLoanPrefetch();
 
   document.addEventListener('click', event => {
     const retry = event.target.closest('[data-loan-analytics-retry]');
@@ -14493,6 +14535,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
   const dateSelector = document.getElementById('periode-selector');
   if (dateSelector) {
+    // History/BFCache may restore the select independently of the page data.
+    window.addEventListener('pageshow', () => {
+      const appliedPeriod = dateSelector.dataset.appliedPeriod;
+      if (appliedPeriod && dateSelector.value !== appliedPeriod) {
+        dateSelector.value = appliedPeriod;
+      }
+    });
     dateSelector.addEventListener('change', function() {
       const globalLoader = document.getElementById('dashboard-global-loader');
       setDashboardLoaderCopy(
@@ -14502,6 +14551,8 @@ document.addEventListener('DOMContentLoaded', function() {
       if (globalLoader) globalLoader.classList.add('active');
       const targetUrl = new URL(window.location.href);
       targetUrl.searchParams.set('periode', this.value);
+      const activeScope = document.querySelector('.area6-scope-btn.active')?.dataset.area6Scope;
+      if (activeScope) targetUrl.searchParams.set('landing_scope', activeScope);
       targetUrl.searchParams.delete('_area6');
       window.location.href = targetUrl.toString();
     });

@@ -15,6 +15,7 @@ use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportPipelineService;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\ImportStrategyFactory;
+use App\Services\Import\Gi405SingleRowValueNormalizer;
 use App\Services\Import\ImportDuplicateGuardService;
 use App\Services\Import\DlyKapResegmentasiCsvImporter;
 use App\Services\Import\L1133CsvImporter;
@@ -806,7 +807,7 @@ class ImportExcelController extends Controller
     {
         $resolvedTable = strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName())));
 
-        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'lw321pn'], true);
+        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'lw321pn', 'gi405_singlerow'], true);
     }
 
     private function normalizeImportActiveFilters(array $filters, ?string $tableName = null): array
@@ -831,6 +832,11 @@ class ImportExcelController extends Controller
     private function isGi405RecDhTable(?string $tableName = null): bool
     {
         return strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName()))) === 'gi405_recovery';
+    }
+
+    private function isGi405SingleRowTable(?string $tableName = null): bool
+    {
+        return strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName()))) === 'gi405_singlerow';
     }
 
     private function isLw325PhTable(?string $tableName = null): bool
@@ -873,6 +879,34 @@ class ImportExcelController extends Controller
         $uniqueId = trim((string) ($row['uniqueid_namareport'] ?? ''));
 
         return $kode !== '' && $tanggal !== '' && $uniqueId !== '';
+    }
+
+    private function assertRequiredGi405SingleRowImportData(array $row): void
+    {
+        $required = [
+            'periode',
+            'branch',
+            'currency',
+            'posting_control',
+            'account_number',
+            'description',
+            'begining_balance',
+            'today_debit',
+            'today_credit',
+            'ending_balance',
+        ];
+
+        $missing = array_values(array_filter($required, static function (string $column) use ($row): bool {
+            $value = $row[$column] ?? null;
+
+            return $value === null || trim((string) $value) === '';
+        }));
+
+        if ($missing !== []) {
+            throw new \RuntimeException(
+                'Import GI405 Single Row dibatalkan: nilai wajib kosong setelah normalisasi: ' . implode(', ', $missing) . '.'
+            );
+        }
     }
 
     private function assertGi405RecDhNumericMapping(array $row, array $normalizedHeaders, array $finalRow): void
@@ -4456,12 +4490,17 @@ class ImportExcelController extends Controller
         string $csvPath,
         string $tableName,
         array $columns,
-        ?callable $beforeLoad = null
+        ?callable $beforeLoad = null,
+        ?callable $afterLoad = null
     ): int {
         $bulkLoadService = $this->bulkLoadService();
 
         if (!$bulkLoadService->supportsNativeBulkLoad()) {
             throw new \RuntimeException('LOCAL INFILE tidak aktif di MySQL/PDO. Direct load tidak tersedia.');
+        }
+
+        if ($afterLoad !== null) {
+            return $bulkLoadService->loadCsvIntoMysql($csvPath, $tableName, $columns, false, $beforeLoad, $afterLoad);
         }
 
         return $bulkLoadService->loadCsvIntoMysql($csvPath, $tableName, $columns, false, $beforeLoad);
@@ -7580,6 +7619,52 @@ class ImportExcelController extends Controller
             }
 
             $this->deleteLw321MaterializedRowsForPeriodsOnPdo($pdo, $normalizedPeriods);
+        };
+    }
+
+    private function buildGi405SingleRowBeforeLoadCallback(array $periods, ?callable $beforeLoad = null): \Closure
+    {
+        $periods = array_values(array_unique(array_filter(array_map(
+            static fn ($period): string => trim((string) $period),
+            $periods
+        ), static fn (string $period): bool => $period !== '')));
+
+        return static function (\PDO $pdo) use ($periods, $beforeLoad): void {
+            if ($beforeLoad !== null) {
+                $beforeLoad($pdo);
+            }
+            if ($periods === []) {
+                throw new \RuntimeException('Import GI405 Single Row dibatalkan: periode sumber tidak ditemukan.');
+            }
+
+            $placeholders = implode(', ', array_fill(0, count($periods), '?'));
+            $statement = $pdo->prepare("DELETE FROM `gi405_singlerow` WHERE `periode` IN ({$placeholders})");
+            $statement->execute($periods);
+        };
+    }
+
+    private function buildGi405SingleRowAfterLoadCallback(array $periodCounts): \Closure
+    {
+        $periodCounts = array_map('intval', $periodCounts);
+
+        return static function (\PDO $pdo, int $affectedRows) use ($periodCounts): void {
+            $expectedTotal = array_sum($periodCounts);
+            if ($affectedRows !== $expectedTotal) {
+                throw new \RuntimeException(
+                    "Import GI405 Single Row dibatalkan: MySQL menyimpan {$affectedRows} dari {$expectedTotal} baris sumber."
+                );
+            }
+
+            $statement = $pdo->prepare('SELECT COUNT(*) FROM `gi405_singlerow` WHERE `periode` = ?');
+            foreach ($periodCounts as $period => $expectedRows) {
+                $statement->execute([(string) $period]);
+                $storedRows = (int) $statement->fetchColumn();
+                if ($storedRows !== $expectedRows) {
+                    throw new \RuntimeException(
+                        "Import GI405 Single Row periode {$period} dibatalkan: database berisi {$storedRows} dari {$expectedRows} baris sumber."
+                    );
+                }
+            }
         };
     }
 
@@ -10892,6 +10977,10 @@ class ImportExcelController extends Controller
             return null;
         }
 
+        if (($context['table_name'] ?? '') === 'gi405_singlerow') {
+            $this->assertRequiredGi405SingleRowImportData($finalRow);
+        }
+
         if (($context['table_name'] ?? '') === 'ssa_almafacts' && !$this->hasRequiredSsaAlmafactsImportData($finalRow)) {
             return null;
         }
@@ -11334,6 +11423,10 @@ class ImportExcelController extends Controller
             $scale = $rule['decimal_scale'] ?? null;
             if (!is_int($scale) || $scale < 0) {
                 $scale = strtoupper(trim($headerName)) === 'RATE' ? 6 : 2;
+            }
+
+            if (!empty($rule['exact_decimal'])) {
+                return app(Gi405SingleRowValueNormalizer::class)->normalizeDecimal($value, $scale);
             }
 
             return $this->normalizeDecimalValue(
@@ -13141,6 +13234,43 @@ class ImportExcelController extends Controller
         );
     }
 
+    private function assertGi405SingleRowSourceHeaderContract(string $tableName, array $headers): void
+    {
+        if (!$this->isGi405SingleRowTable($tableName)) {
+            return;
+        }
+
+        $headers = $this->resolveImportStrategy($tableName)->transformHeaders($headers);
+        $available = array_fill_keys(array_map('strtolower', $headers), true);
+        $required = [
+            'periode',
+            'branch',
+            'currency',
+            'posting_control',
+            'account_number',
+            'c_c',
+            'p_c',
+            'f_c',
+            'description',
+            'begining_balance',
+            'equivalents_idr',
+            'equivalents_usd',
+            'today_debit',
+            'today_credit',
+            'ending_balance',
+        ];
+        $missing = array_values(array_filter(
+            $required,
+            static fn (string $column): bool => !isset($available[$column])
+        ));
+
+        if ($missing !== []) {
+            throw new \RuntimeException(
+                'Import GI405 Single Row dibatalkan: kolom sumber wajib tidak ditemukan: ' . implode(', ', $missing) . '.'
+            );
+        }
+    }
+
     /**
      * Initialize queued import job dengan deteksi header, estimasi baris, dan staging CSV.
      * Method ini dipanggil DARI DALAM job execution (async) supaya tidak blocking response ke user.
@@ -13404,6 +13534,7 @@ class ImportExcelController extends Controller
             }
 
             $this->assertSsaSourceHeaderContract($tableName, $normalizedHeadersForSession);
+            $this->assertGi405SingleRowSourceHeaderContract($tableName, $normalizedHeadersForSession);
 
             // ── Staging Excel to CSV (jika perlu) ───────────────────────
             $stagedCsvPath = $lw321PnStagedCsvPath;
@@ -13925,6 +14056,17 @@ class ImportExcelController extends Controller
         int $jobId = 0
     ): ?array {
         $stagedCsvPath = $this->createStagedCsvPath($tableName);
+
+        if ($this->isGi405SingleRowTable($tableName)) {
+            return $this->excelStagingService()->stageGi405SingleRowXlsxToCsv(
+                $send,
+                $sourcePath,
+                $headerIndex,
+                $normalizedHeaders,
+                $stagedCsvPath
+            );
+        }
+
         $scriptPath = null;
         $extraConfig = [
             'table_name' => $tableName,
@@ -14391,6 +14533,8 @@ class ImportExcelController extends Controller
                 $ssaReplacePeriodColumn = 'Month_Day_Year_of_Periode';
             } elseif ($this->isSsaAlmafactsTable($tableName)) {
                 $ssaReplacePeriodColumn = 'month_day_year_of_posisi';
+            } elseif ($this->isGi405SingleRowTable($tableName)) {
+                $ssaReplacePeriodColumn = 'periode';
             }
 
             if ($jobId > 0) {
@@ -14417,7 +14561,9 @@ class ImportExcelController extends Controller
             $headerCount = $context['header_count'];
             $reservedGapIds = [];
             $reservedGapIdOffset = 0;
+            $simpananImportSlots = [];
             $dailyLoanImportPeriods = [];
+            $gi405SingleRowPeriodCounts = [];
             $hourlyDpkReplaceSlots = ['dates' => [], 'datetimes' => []];
             $ssaAlmafactsForwardFillValues = [];
 
@@ -14460,10 +14606,26 @@ class ImportExcelController extends Controller
                     continue;
                 }
 
+                if ($cachedIsSimpananMultiPN) {
+                    // Guard only rows selected by mapping/filtering, and retain actual
+                    // period/branch pairs rather than their Cartesian product.
+                    $slot = [
+                        'posisi' => trim((string) ($finalRow['posisi'] ?? '')),
+                        'kantor_cabang' => trim((string) ($finalRow['kantor_cabang'] ?? '')),
+                    ];
+                    if ($slot['posisi'] === '' || $slot['kantor_cabang'] === '') {
+                        throw new \RuntimeException('Import Simpanan MultiPN dibatalkan: POSISI/KANTOR_CABANG baris terpilih tidak lengkap untuk validasi anti-duplikat.');
+                    }
+                    $simpananImportSlots[json_encode($slot, JSON_THROW_ON_ERROR)] = $slot;
+                }
+
                 if ($ssaReplacePeriodColumn !== null) {
                     $periodValue = trim((string) ($finalRow[$ssaReplacePeriodColumn] ?? ''));
                     if ($periodValue !== '') {
                         $ssaReplacePeriods[$periodValue] = true;
+                        if ($this->isGi405SingleRowTable($tableName)) {
+                            $gi405SingleRowPeriodCounts[$periodValue] = (int) ($gi405SingleRowPeriodCounts[$periodValue] ?? 0) + 1;
+                        }
                     }
                 }
 
@@ -14549,7 +14711,13 @@ class ImportExcelController extends Controller
 
             $dailyLoanTakeoverPeriods = array_keys($dailyLoanImportPeriods);
             $dailyLoanLockAcquired = false;
+            $simpananSlotLockNames = [];
             try {
+                if ($cachedIsSimpananMultiPN && $simpananImportSlots !== []) {
+                    ksort($simpananImportSlots, SORT_STRING);
+                    $simpananSlotLockNames = $this->acquireSimpananMultiPnSlotLocks(array_values($simpananImportSlots));
+                }
+
                 if ($cachedIsDailyLoan || $cachedIsLw321Pn) {
                     if (!$this->acquireMysqlAdvisoryLockOnDb(self::DAILY_LOAN_IMPORT_LOCK_NAME, 10)) {
                         throw new \RuntimeException('Import sumber nominatif pinjaman sedang berjalan. Tunggu proses sebelumnya selesai terlebih dahulu.');
@@ -14576,7 +14744,7 @@ class ImportExcelController extends Controller
 
                 if ($forceDirectLoad) {
                     $ssaReplacePeriods = array_values(array_keys($ssaReplacePeriods));
-                    if ($ssaReplacePeriodColumn !== null && $ssaReplacePeriods !== []) {
+                    if ($ssaReplacePeriodColumn !== null && $ssaReplacePeriods !== [] && !$this->isGi405SingleRowTable($tableName)) {
                         if ($jobId > 0) {
                             $this->rememberDetectedImportPeriods($jobId, $ssaReplacePeriods);
                         }
@@ -14627,6 +14795,16 @@ class ImportExcelController extends Controller
                             $beforeDirectLoad
                         );
                     }
+                    $directLoadAfterLoad = null;
+                    if ($this->isGi405SingleRowTable($tableName)) {
+                        $directLoadBeforeLoad = $this->buildGi405SingleRowBeforeLoadCallback(
+                            array_keys($gi405SingleRowPeriodCounts),
+                            $directLoadBeforeLoad
+                        );
+                        $directLoadAfterLoad = $this->buildGi405SingleRowAfterLoadCallback(
+                            $gi405SingleRowPeriodCounts
+                        );
+                    }
 
                     $send('progress', [
                         'percent' => 96,
@@ -14643,7 +14821,8 @@ class ImportExcelController extends Controller
                         $directLoadSourcePath,
                         $tableName,
                         $bulkLoadColumns,
-                        $directLoadBeforeLoad
+                        $directLoadBeforeLoad,
+                        $directLoadAfterLoad
                     );
                 } else {
                     if ($tableName === 'hourly_dpk') {
@@ -14678,6 +14857,16 @@ class ImportExcelController extends Controller
                     );
                 }
             } finally {
+                foreach (array_reverse($simpananSlotLockNames) as $slotLockName) {
+                    try {
+                        app(ImportDuplicateGuardService::class)->releaseAdvisoryLock($slotLockName);
+                    } catch (\Throwable $e) {
+                        Log::warning('Failed to release staged Simpanan MultiPN slot lock: ' . $e->getMessage(), [
+                            'job_id' => $jobId,
+                            'slot_lock' => $slotLockName,
+                        ]);
+                    }
+                }
                 if ($dailyLoanLockAcquired) {
                     $this->releaseMysqlAdvisoryLockOnDb(self::DAILY_LOAN_IMPORT_LOCK_NAME);
                 }
@@ -14751,11 +14940,18 @@ class ImportExcelController extends Controller
             throw new \RuntimeException('Import Simpanan MultiPN dibatalkan: KANTOR_CABANG tidak terdeteksi sehingga slot anti-duplikat tidak bisa divalidasi.');
         }
 
+        return $this->acquireSimpananMultiPnSlotLocks(
+            app(ImportDuplicateGuardService::class)->buildSlotValues('simpanan_multipn', $periodHints, $branchHints)
+        );
+    }
+
+    private function acquireSimpananMultiPnSlotLocks(array $slots): array
+    {
         $guard = app(ImportDuplicateGuardService::class);
         $slotLockNames = [];
 
         try {
-            foreach ($guard->buildSlotValues('simpanan_multipn', $periodHints, $branchHints) as $slot) {
+            foreach ($slots as $slot) {
                 $slotLockNames[] = $guard->acquireAdvisoryLock('simpanan_multipn', $slot);
                 $guard->assertSlotEmpty('simpanan_multipn', $slot);
             }

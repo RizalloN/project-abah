@@ -77,6 +77,10 @@ class DailyLoanManualSegmentRuleTest extends TestCase
                 '10. RITKOM -> Rp. 5 M S/D 15 M',
                 'MEDIUM',
             ],
+            'medium ritkom 15 to 25 billion' => [
+                '11. RITKOM -> Rp. 15 M S/D 25 M',
+                'MEDIUM',
+            ],
             'medium kwl' => [
                 '(KWL) 2. MENENGAH > Rp 50 M S/D 200 M',
                 'MEDIUM',

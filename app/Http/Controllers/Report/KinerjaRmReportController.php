@@ -78,9 +78,7 @@ class KinerjaRmReportController extends Controller
     public function landingSmallQuadrantSummary(?string $requestedPeriod = null): array
     {
         $availablePeriods = $this->fetchAvailablePeriods();
-        $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $requestedPeriod)
-            ?? $availablePeriods->first()
-            ?? Carbon::now()->toDateString();
+        $selectedPeriod = $this->resolveLandingSmallPeriod($availablePeriods, $requestedPeriod);
         $performance = $this->fetchRetailRealizationPerformance(
             'SMALL',
             $selectedPeriod,
@@ -197,6 +195,21 @@ class KinerjaRmReportController extends Controller
                 (array) ($performance['months'] ?? [])
             ),
         ];
+    }
+
+    private function resolveLandingSmallPeriod(Collection $availablePeriods, ?string $requestedPeriod): string
+    {
+        $normalizedRequestedPeriod = $this->normalizeDate($requestedPeriod);
+        $landingPeriods = $normalizedRequestedPeriod !== null
+            ? $availablePeriods
+                ->filter(fn (string $period): bool => $period <= $normalizedRequestedPeriod)
+                ->values()
+            : $availablePeriods;
+
+        return $this->resolveSelectedPeriod($landingPeriods, $requestedPeriod)
+            ?? $normalizedRequestedPeriod
+            ?? $availablePeriods->first()
+            ?? Carbon::now()->toDateString();
     }
 
     /**

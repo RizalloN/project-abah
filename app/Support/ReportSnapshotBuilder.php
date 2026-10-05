@@ -2354,6 +2354,7 @@ class ReportSnapshotBuilder
             if (DB::getDriverName() !== 'mysql') {
                 $snapshotColumns = array_flip(Schema::getColumnListing(self::PERFORMANCE_RM_SNAPSHOT_TABLE));
                 $this->updateSmallPerformanceRmRealizationMetrics($period, self::PERFORMANCE_RM_SNAPSHOT_TABLE, $snapshotColumns);
+                $this->updateMicroPerformanceRmRealizationMetrics($period, self::PERFORMANCE_RM_SNAPSHOT_TABLE, $snapshotColumns);
                 $this->updateSmallPerformanceRmQuadrantsSqlFirst($period);
                 $rowCount = (int) DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
                     ->where('periode', $period)
@@ -2384,6 +2385,7 @@ class ReportSnapshotBuilder
             $rowCount = count($rows);
             $snapshotColumns = array_flip(Schema::getColumnListing(self::PERFORMANCE_RM_SNAPSHOT_TABLE));
             $this->updateSmallPerformanceRmRealizationMetrics($period, self::PERFORMANCE_RM_SNAPSHOT_TABLE, $snapshotColumns);
+            $this->updateMicroPerformanceRmRealizationMetrics($period, self::PERFORMANCE_RM_SNAPSHOT_TABLE, $snapshotColumns);
             $this->updateSmallPerformanceRmQuadrantsSqlFirst($period);
             $rowCount = (int) DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
                 ->where('periode', $period)
@@ -2474,6 +2476,7 @@ class ReportSnapshotBuilder
 
         $this->updateConsumerPerformanceRmSurplusMetrics($period, $snapshotTable, $snapshotColumns);
         $this->updateSmallPerformanceRmRealizationMetrics($period, $snapshotTable, $snapshotColumns);
+        $this->updateMicroPerformanceRmRealizationMetrics($period, $snapshotTable, $snapshotColumns);
         $this->updateSmallPerformanceRmQuadrantsSqlFirst($period, $snapshotTable);
 
         return (int) DB::table($snapshotTable)
@@ -2940,7 +2943,7 @@ class ReportSnapshotBuilder
                 ->where('produk', 'SMALL');
 
             if (isset($snapshotColumns['branch_code'])) {
-                $query->where('branch_code', (string) ($metric['branch_code'] ?? ''));
+                $query->whereRaw("COALESCE(TRIM(branch_code), '') = ?", [trim((string) ($metric['branch_code'] ?? ''))]);
             }
 
             $exists = $query->exists();
@@ -2964,6 +2967,78 @@ class ReportSnapshotBuilder
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
+                if (isset($snapshotColumns['branch_code'])) {
+                    $insert['branch_code'] = (string) ($metric['branch_code'] ?? '');
+                }
+                DB::table($snapshotTable)->insert($insert);
+            }
+        }
+    }
+
+    /**
+     * Replace the generic KUR-MIKRO realization with the canonical signed-nett
+     * calculation. Position metrics stay untouched, while monthly activity is
+     * retained even when the producer has no account left at the cutoff.
+     *
+     * @param  array<string, int>  $snapshotColumns
+     */
+    private function updateMicroPerformanceRmRealizationMetrics(string $period, string $snapshotTable, array $snapshotColumns): void
+    {
+        if (! isset($snapshotColumns['realisasi_deb'], $snapshotColumns['realisasi_os'])) {
+            return;
+        }
+
+        $metricColumns = ['realisasi_deb', 'realisasi_os'];
+        foreach (['w1', 'w2', 'w3', 'w4', 'lt_250', 'gt_250'] as $prefix) {
+            $metricColumns[] = $prefix.'_realisasi_deb';
+            $metricColumns[] = $prefix.'_realisasi_os';
+        }
+        $metricColumns = array_values(array_filter(
+            $metricColumns,
+            static fn (string $column): bool => isset($snapshotColumns[$column])
+        ));
+
+        $reset = array_fill_keys($metricColumns, 0);
+        $reset['updated_at'] = now();
+        DB::table($snapshotTable)
+            ->where('periode', $period)
+            ->where('segmen', 'MICRO')
+            ->where('produk', 'KUR-MIKRO')
+            ->update($reset);
+
+        foreach (app(MicroNettDisbursementCalculator::class)->kurRm($period) as $metric) {
+            $values = ['rm' => (string) ($metric['rm'] ?? ''), 'updated_at' => now()];
+            foreach ($metricColumns as $column) {
+                $values[$column] = str_ends_with($column, '_deb')
+                    ? (int) ($metric[$column] ?? 0)
+                    : (float) ($metric[$column] ?? 0.0);
+            }
+
+            $query = DB::table($snapshotTable)
+                ->where('periode', $period)
+                ->where('cabang', (string) ($metric['cabang'] ?? ''))
+                ->where('unit', (string) ($metric['unit'] ?? ''))
+                ->whereRaw('UPPER(TRIM(rm)) = ?', [strtoupper(trim((string) ($metric['rm'] ?? '')))])
+                ->where('segmen', 'MICRO')
+                ->where('produk', 'KUR-MIKRO');
+
+            if (isset($snapshotColumns['branch_code'])) {
+                $query->whereRaw("COALESCE(TRIM(branch_code), '') = ?", [trim((string) ($metric['branch_code'] ?? ''))]);
+            }
+
+            $exists = $query->exists();
+            $query->update($values);
+
+            if (! $exists) {
+                $insert = [
+                    'periode' => $period,
+                    'cabang' => (string) ($metric['cabang'] ?? ''),
+                    'unit' => (string) ($metric['unit'] ?? ''),
+                    'rm' => (string) ($metric['rm'] ?? ''),
+                    'segmen' => 'MICRO',
+                    'produk' => 'KUR-MIKRO',
+                    'created_at' => now(),
+                ] + $values;
                 if (isset($snapshotColumns['branch_code'])) {
                     $insert['branch_code'] = (string) ($metric['branch_code'] ?? '');
                 }

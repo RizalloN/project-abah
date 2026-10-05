@@ -29,10 +29,11 @@ final class MicroNettDisbursementCalculator
 
         $periodDate = Carbon::parse($period);
         $periodStart = $periodDate->copy()->startOfMonth()->toDateString();
-        $rows = $this->kurRitelQuery($period)
+        $rows = $this->kurRitelBaseQuery()
+            ->whereBetween('periode', [$periodStart, $period])
             ->whereBetween('tgl_realisasi', [$periodStart, $period])
             ->get([
-                'cabang_normalized', 'cabang1', 'unit_normalized', 'unit1',
+                'periode', 'cabang_normalized', 'cabang1', 'unit_normalized', 'unit1',
                 'branch_normalized', 'branch1', 'pn_pemrakarsa1', 'nomor_rekening1',
                 'cifno', 'plafon', 'tgl_realisasi',
             ]);
@@ -57,9 +58,12 @@ final class MicroNettDisbursementCalculator
             $key = implode('|', [$cabang, $unit, $branchCode, $rm]);
             $metrics[$key] ??= $this->blankKurMetric($period, $cabang, $unit, $branchCode, $rm);
 
-            $account = strtoupper(trim((string) ($row->nomor_rekening1 ?? '')));
+            $account = $this->canonicalAccount($row->nomor_rekening1 ?? null);
             $cif = strtoupper(trim((string) ($row->cifno ?? '')));
             $plafond = (float) ($row->plafon ?? 0);
+            // The prior closed exposure belongs to this distinct booking
+            // event. Daily-position duplicates have already been collapsed,
+            // so apply it once per canonical account, not once per CIF/month.
             $nett = $plafond - (float) ($previousOs[$cif] ?? 0);
             $date = Carbon::parse((string) $row->tgl_realisasi);
             $week = min(4, intdiv(max(0, $date->day - 1), 7) + 1);
@@ -104,15 +108,15 @@ final class MicroNettDisbursementCalculator
 
         $periodDate = Carbon::parse($period);
         $periodStart = $periodDate->copy()->startOfMonth()->toDateString();
-        $rows = DB::table(self::SOURCE_TABLE)
-            ->where('periode', $period)
+        $rows = $this->sourceQueryForPeriodRange()
+            ->whereBetween('periode', [$periodStart, $period])
             ->whereBetween('tgl_realisasi', [$periodStart, $period])
             ->where('segmen_kinerja', 'MICRO')
             ->whereNotIn('produk_kinerja', ['BRIGUNAMIKRO', 'BRIGUNAKONSUMER'])
             ->get([
-                'cabang_normalized', 'cabang1', 'unit_normalized', 'unit1',
+                'periode', 'cabang_normalized', 'cabang1', 'unit_normalized', 'unit1',
                 'branch_normalized', 'branch1', 'pn_pemrakarsa1', 'nomor_rekening1',
-                'cifno', 'plafon',
+                'cifno', 'plafon', 'tgl_realisasi',
             ]);
         $rows = $this->deduplicateCurrentAccounts($rows);
 
@@ -121,6 +125,7 @@ final class MicroNettDisbursementCalculator
         }
 
         $previousOs = $this->previousCompleteOsByCif($periodDate, $rows->pluck('cifno')->all());
+        $remainingPreviousOs = $previousOs;
         $metrics = [];
 
         foreach ($rows as $row) {
@@ -143,10 +148,15 @@ final class MicroNettDisbursementCalculator
                 'realisasi_os' => 0.0,
             ];
 
-            $account = strtoupper(trim((string) ($row->nomor_rekening1 ?? '')));
+            $account = $this->canonicalAccount($row->nomor_rekening1 ?? null);
             $cif = strtoupper(trim((string) ($row->cifno ?? '')));
             $plafond = (float) ($row->plafon ?? 0);
-            $nett = max(0.0, $plafond - (float) ($previousOs[$cif] ?? 0));
+            // A CIF may produce several account rows for the same monthly
+            // event. Consume its complete prior micro exposure once across
+            // those rows, after daily-position duplicates were collapsed.
+            $availablePreviousOs = (float) ($remainingPreviousOs[$cif] ?? 0);
+            $nett = max(0.0, $plafond - $availablePreviousOs);
+            $remainingPreviousOs[$cif] = max(0.0, $availablePreviousOs - $plafond);
             $metrics[$key]['accounts'][$account !== '' ? $account : $cif] = true;
             $metrics[$key]['realisasi_os'] += $nett;
         }
@@ -159,10 +169,15 @@ final class MicroNettDisbursementCalculator
         }, $metrics));
     }
 
-    private function kurRitelQuery(string $period)
+    private function kurRitelQuery(string $period): Builder
     {
-        return DB::table(self::SOURCE_TABLE)
-            ->where('periode', $period)
+        return $this->kurRitelBaseQuery()
+            ->where('periode', $period);
+    }
+
+    private function kurRitelBaseQuery(): Builder
+    {
+        return $this->sourceQueryForPeriodRange()
             ->where('segmen_kinerja', 'MICRO')
             ->whereIn('produk_kinerja', ['KURMIKRO', 'KURKECIL'])
             ->whereRaw($this->normalizedDescriptionSql('description').' = ?', [$this->normalizeToken(self::KUR_RITEL_DESCRIPTION)]);
@@ -176,6 +191,8 @@ final class MicroNettDisbursementCalculator
     {
         $previousPeriod = DB::table(self::SOURCE_TABLE)
             ->where('periode', '<=', $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString())
+            ->where('segmen_kinerja', 'MICRO')
+            ->whereNotIn('produk_kinerja', ['BRIGUNAMIKRO', 'BRIGUNAKONSUMER'])
             ->max('periode');
         $cifs = array_values(array_unique(array_filter(array_map(
             static fn ($cif): string => strtoupper(trim((string) $cif)),
@@ -198,6 +215,8 @@ final class MicroNettDisbursementCalculator
     {
         $previousPeriod = DB::table(self::SOURCE_TABLE)
             ->where('periode', '<=', $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString())
+            ->where('segmen_kinerja', 'MICRO')
+            ->whereNotIn('produk_kinerja', ['BRIGUNAMIKRO', 'BRIGUNAKONSUMER'])
             ->max('periode');
         $cifs = array_values(array_unique(array_filter(array_map(
             static fn ($cif): string => strtoupper(trim((string) $cif)),
@@ -210,6 +229,8 @@ final class MicroNettDisbursementCalculator
 
         $query = DB::table(self::SOURCE_TABLE)
             ->where('periode', $previousPeriod)
+            ->where('segmen_kinerja', 'MICRO')
+            ->whereNotIn('produk_kinerja', ['BRIGUNAMIKRO', 'BRIGUNAKONSUMER'])
             ->whereIn(DB::raw('UPPER(TRIM(cifno))'), $cifs);
 
         return $this->accountOsByCif($query);
@@ -218,41 +239,72 @@ final class MicroNettDisbursementCalculator
     /** @return array<string, float> */
     private function accountOsByCif(Builder $query): array
     {
-        $accountSql = "UPPER(TRIM(COALESCE(nomor_rekening1, '')))";
-        $accounts = $query
-            ->selectRaw('UPPER(TRIM(cifno)) as cif_key')
-            // A missing account number cannot establish that two rows are duplicates.
-            ->selectRaw("CASE WHEN MIN({$accountSql}) = '' THEN SUM(COALESCE(baki_debet1, 0)) ELSE MAX(COALESCE(baki_debet1, 0)) END as account_os")
-            ->groupByRaw('UPPER(TRIM(cifno))')
-            ->groupByRaw($accountSql);
+        $accounts = [];
+        $missingAccountSequence = 0;
 
-        return DB::query()->fromSub($accounts, 'accounts')
-            ->selectRaw('cif_key, SUM(account_os) as previous_os')
-            ->groupBy('cif_key')
-            ->pluck('previous_os', 'cif_key')
-            ->map(static fn ($value): float => (float) $value)
-            ->all();
+        foreach ($query->get(['cifno', 'nomor_rekening1', 'baki_debet1']) as $row) {
+            $cif = strtoupper(trim((string) ($row->cifno ?? '')));
+            if ($cif === '') {
+                continue;
+            }
+
+            $account = $this->canonicalAccount($row->nomor_rekening1 ?? null);
+            // A missing account number cannot establish that two rows are duplicates.
+            $key = $account !== '' ? $cif.'|'.$account : $cif.'|ROW:'.(++$missingAccountSequence);
+            $amount = (float) ($row->baki_debet1 ?? 0);
+            $accounts[$key] = isset($accounts[$key]) ? max($accounts[$key], $amount) : $amount;
+        }
+
+        $totals = [];
+        foreach ($accounts as $key => $amount) {
+            $cif = strstr($key, '|', true);
+            $totals[$cif] = ($totals[$cif] ?? 0.0) + $amount;
+        }
+
+        return $totals;
     }
 
     /** @param Collection<int, object> $rows @return Collection<int, object> */
     private function deduplicateCurrentAccounts(Collection $rows): Collection
     {
         $accounts = [];
-        foreach ($rows as $index => $row) {
-            $account = strtoupper(trim((string) ($row->nomor_rekening1 ?? '')));
-            $key = json_encode([
-                $this->normalizedValue($row->cabang_normalized ?? null, $row->cabang1 ?? null),
-                $this->normalizedValue($row->unit_normalized ?? null, $row->unit1 ?? null),
-                $this->normalizedValue($row->branch_normalized ?? null, $row->branch1 ?? null),
-                strtoupper(trim((string) ($row->pn_pemrakarsa1 ?? ''))) ?: self::UNASSIGNED_RM,
-                $account !== '' ? 'ACCOUNT:'.$account : 'ROW:'.$index,
-            ]);
-            if (! isset($accounts[$key]) || (float) ($row->plafon ?? 0) > (float) ($accounts[$key]->plafon ?? 0)) {
-                $accounts[$key] = $row;
+        $orderedRows = $rows->values()->sortBy(static fn (object $row, int $index): string => implode('|', [
+            (string) ($row->periode ?? ''),
+            (string) ($row->tgl_realisasi ?? ''),
+            str_pad((string) $index, 12, '0', STR_PAD_LEFT),
+        ]));
+
+        foreach ($orderedRows as $index => $row) {
+            $account = $this->canonicalAccount($row->nomor_rekening1 ?? null);
+            $key = $account !== '' ? 'ACCOUNT:'.$account : 'ROW:'.$index;
+
+            if (! isset($accounts[$key])) {
+                $accounts[$key] = clone $row;
+                continue;
+            }
+
+            $current = $accounts[$key];
+            if ((float) ($row->plafon ?? 0) > (float) ($current->plafon ?? 0)) {
+                $current->plafon = $row->plafon;
+            }
+            if (trim((string) ($current->pn_pemrakarsa1 ?? '')) === '' && trim((string) ($row->pn_pemrakarsa1 ?? '')) !== '') {
+                $current->pn_pemrakarsa1 = $row->pn_pemrakarsa1;
             }
         }
 
         return collect(array_values($accounts));
+    }
+
+    private function canonicalAccount(mixed $account): string
+    {
+        $account = strtoupper(trim((string) $account));
+        if ($account === '') {
+            return '';
+        }
+
+        $canonical = ltrim($account, '0');
+
+        return $canonical !== '' ? $canonical : '0';
     }
 
     private function blankKurMetric(string $period, string $cabang, string $unit, string $branchCode, string $rm): array
@@ -280,6 +332,15 @@ final class MicroNettDisbursementCalculator
         $value = trim((string) $normalized);
 
         return strtoupper($value !== '' ? $value : trim((string) $fallback));
+    }
+
+    private function sourceQueryForPeriodRange(): Builder
+    {
+        if (DB::getDriverName() === 'mysql') {
+            return DB::query()->fromRaw(self::SOURCE_TABLE.' FORCE INDEX (idx_snapshot_filter_optimized)');
+        }
+
+        return DB::table(self::SOURCE_TABLE);
     }
 
     private function normalizedDescriptionSql(string $column): string

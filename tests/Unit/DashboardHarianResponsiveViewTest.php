@@ -112,6 +112,17 @@ class DashboardHarianResponsiveViewTest extends TestCase
         $this->assertStringContainsString('function segmentOptionsForContext()', $source);
         $this->assertStringContainsString("if (/^(KC|KCP)\\b/.test(normalized)) return 'ritel';", $source);
         $this->assertStringContainsString("if (/^UNIT\\b/.test(normalized) || normalized.includes('-- UNIT')) return 'micro';", $source);
+        $this->assertStringContainsString("const smeSegmentOption = { value: 'sme', label: 'SME' };", $source);
+        $this->assertStringContainsString("const consumerSegmentOption = { value: 'consumer', label: 'Konsumer' };", $source);
+        $this->assertStringContainsString("const loanMicroSegmentOption = { value: 'micro', label: 'Mikro' };", $source);
+        $this->assertStringContainsString('pinjaman: { segments: loanSegmentOptions, products: \'loan\' }', $source);
+        $this->assertStringContainsString('const smeLoanProducts = [', $source);
+        $this->assertStringContainsString("{ value: 'kecil', label: 'Kecil' }", $source);
+        $this->assertStringNotContainsString("{ value: 'total', label: 'Semua Produk SME' }", $source);
+        $this->assertStringNotContainsString("{ value: 'kecil_non_cashcoll', label: 'Kecil Non Cash Collateral' }", $source);
+        $this->assertStringNotContainsString("{ value: 'cashcoll', label: 'Cash Collateral' }", $source);
+        $this->assertStringContainsString("{ value: 'total', label: 'Semua Produk Konsumer' }", $source);
+        $this->assertStringContainsString("{ value: 'total', label: 'Semua Produk Mikro' }", $source);
         $this->assertStringContainsString('wholesaleSegmentOption', $source);
         $this->assertStringContainsString('function currentSegmentLabel()', $source);
         $this->assertStringContainsString('product: currentProduct,', $source);
@@ -185,6 +196,20 @@ class DashboardHarianResponsiveViewTest extends TestCase
             null,
             false,
         ], $resolve->invoke($controller, $areaWithUnitRequest));
+    }
+
+    public function test_timeseries_loan_selection_normalizes_legacy_segments_and_products(): void
+    {
+        $controller = new DashboardHarianController(new DashboardHarianSnapshotService());
+        $normalize = new \ReflectionMethod($controller, 'normalizeTimeseriesLoanSelection');
+        $normalize->setAccessible(true);
+
+        $this->assertSame(['sme', 'kecil'], $normalize->invoke($controller, 'pinjaman', 'total', 'total'));
+        $this->assertSame(['sme', 'kecil'], $normalize->invoke($controller, 'sml', 'ritel', 'cashcoll'));
+        $this->assertSame(['consumer', 'kpr'], $normalize->invoke($controller, 'npl', 'ritel', 'kpr'));
+        $this->assertSame(['micro', 'kur_mikro'], $normalize->invoke($controller, 'pinjaman', 'total', 'kur_mikro'));
+        $this->assertSame(['consumer', 'total'], $normalize->invoke($controller, 'pinjaman', 'consumer', 'total'));
+        $this->assertSame(['ritel', 'total'], $normalize->invoke($controller, 'ldr', 'ritel', 'total'));
     }
 
     public function test_ssa_position_filters_use_native_date_pickers(): void

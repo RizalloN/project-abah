@@ -205,7 +205,7 @@ class ImportJobManagementController extends Controller
         if (!($status['started'] ?? false)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Worker monitor gagal dijalankan. Periksa izin proses server dan log queue-worker-monitor-error.log.',
+                'message' => 'Worker monitor gagal dijalankan. Periksa izin proses server serta log queue-worker-monitor-launcher-error.log dan queue-worker-monitor-error.log.',
                 'worker_status' => $status,
             ], 500);
         }
@@ -214,9 +214,11 @@ class ImportJobManagementController extends Controller
             'status' => 'success',
             'message' => ($status['already_active'] ?? false)
                 ? 'Worker monitor sudah aktif.'
-                : 'Worker monitor berhasil dijalankan dan heartbeat server sudah terdeteksi.',
+                : (($status['startup_confirmed'] ?? false)
+                    ? 'Worker monitor berhasil dijalankan dan heartbeat server sudah terdeteksi.'
+                    : 'Proses worker monitor berhasil dibuat dan sedang menunggu heartbeat pertama.'),
             'worker_status' => $status,
-        ]);
+        ], ($status['startup_confirmed'] ?? false) ? 200 : 202);
     }
 
     public function stopWorker(QueueWorkerControlService $workerControl)

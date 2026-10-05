@@ -462,9 +462,15 @@ class DashboardSimpananController extends Controller
         $digitalChannelStrategy = $this->buildDigitalChannelStrategyPayload($period);
         $casaDebiturStrategy = $this->buildCasaDebiturStrategyPayload($period);
         $dormantStrategy = $this->buildDormantStrategyPayload($period);
-        $payrollQualityStrategy = $this->buildPayrollQualityStrategyPayload($period);
-        $perusahaanAnakStrategy = $this->buildPerusahaanAnakStrategyPayload($period);
-        $ecosystemValueChainStrategy = $this->buildEcosystemValueChainStrategyPayload($period);
+        $payrollQualityStrategy = $this->scopePayrollQualityStrategyPayload(
+            $this->buildPayrollQualityStrategyPayload($period)
+        );
+        $perusahaanAnakStrategy = $this->scopePerusahaanAnakStrategyPayload(
+            $this->buildPerusahaanAnakStrategyPayload($period)
+        );
+        $ecosystemValueChainStrategy = $this->scopeEcosystemValueChainStrategyPayload(
+            $this->buildEcosystemValueChainStrategyPayload($period)
+        );
 
         $area6Portfolio = [
             'title' => 'Kinerja Simpanan ' . $scopeLabel,
@@ -824,9 +830,13 @@ class DashboardSimpananController extends Controller
     {
         try {
             $service = app(PresentationFundingStrategyService::class);
-            $res = $service->build($period, []);
+            $branches = $this->dashboardBranchNames();
+            $res = $service->build($period, $branches);
+            $branchScope = $this->effectiveDashboardBranchScope();
+            $unitBreakdown = $branchScope !== null
+                ? $service->buildDigitalUnitBreakdown($period, $branchScope['upper_label'])
+                : [];
 
-            $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
             $channelKeys = ['edc', 'qris', 'casa_merchant', 'brimo', 'brilink', 'qlola'];
             $channelPayload = [];
 
@@ -837,10 +847,13 @@ class DashboardSimpananController extends Controller
                 $branchRows = [];
                 foreach ($branches as $idx => $b) {
                     $bRow = collect($res['scopes'][$b]['digital']['rows'] ?? [])->firstWhere('key', $chKey);
-                    if ($bRow) {
+                    $hasData = (float) data_get($bRow, 'positions.current.raw', 0) !== 0.0
+                        || (float) data_get($bRow, 'positions.mtd.raw', 0) !== 0.0
+                        || (float) data_get($bRow, 'positions.ytd.raw', 0) !== 0.0;
+                    if ($bRow && $hasData) {
                         $branchRows[] = [
-                            'no' => $idx + 1,
-                            'branch' => ucwords(strtolower($b)),
+                            'no' => count($branchRows) + 1,
+                            'branch' => $this->dashboardBranchDisplayNames()[$idx] ?? ucwords(strtolower($b)),
                             'ytd' => $bRow['positions']['ytd']['fmt'] ?? '-',
                             'mtd' => $bRow['positions']['mtd']['fmt'] ?? '-',
                             'current' => $bRow['positions']['current']['fmt'] ?? '-',
@@ -851,6 +864,9 @@ class DashboardSimpananController extends Controller
                             'rka' => $bRow['rka']['fmt'] ?? '-',
                         ];
                     }
+                }
+                if ($branchScope !== null) {
+                    $branchRows = (array) data_get($unitBreakdown, $chKey.'.rows', []);
                 }
 
                 $channelPayload[$chKey] = [
@@ -864,7 +880,7 @@ class DashboardSimpananController extends Controller
                         'current' => $areaRow['positions']['current']['label'] ?? '31 Agt 26',
                     ],
                     'total' => [
-                        'branch' => 'Area 6 Konsolidasi',
+                        'branch' => $this->dashboardScopeLabel(),
                         'ytd' => $areaRow['positions']['ytd']['fmt'] ?? '-',
                         'mtd' => $areaRow['positions']['mtd']['fmt'] ?? '-',
                         'current' => $areaRow['positions']['current']['fmt'] ?? '-',
@@ -875,6 +891,8 @@ class DashboardSimpananController extends Controller
                         'rka' => $areaRow['rka']['fmt'] ?? '-',
                     ],
                     'branches' => $branchRows,
+                    'dimension_label' => $branchScope !== null ? 'Unit Kerja' : 'Cabang',
+                    'total_label' => 'Total ' . $this->dashboardScopeLabel(),
                 ];
             }
 
@@ -893,39 +911,62 @@ class DashboardSimpananController extends Controller
             }
 
             $target = $period ? Carbon::parse($period) : now();
-            $branches = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+            $scope = $this->effectiveDashboardBranchScope();
+            $useUnitBreakdown = $scope !== null && Schema::hasTable('rasio_casa_debitur_uker_snapshots');
+            $sourceTable = $useUnitBreakdown
+                ? 'rasio_casa_debitur_uker_snapshots'
+                : 'rasio_casa_debitur_snapshots';
 
-            $casaPeriod = DB::table('rasio_casa_debitur_snapshots')
-                ->where('loan_period', '<=', $target->toDateString())
-                ->max('loan_period');
+            $periodQuery = DB::table($sourceTable)
+                ->where('loan_period', '<=', $target->toDateString());
+            if ($useUnitBreakdown) {
+                $periodQuery->whereRaw("UPPER(TRIM(COALESCE(source_branch_key, ''))) LIKE ?", [
+                    '%'.$scope['upper_label'].'%',
+                ]);
+            }
+            $casaPeriod = $periodQuery->max('loan_period');
 
             if (!$casaPeriod) {
                 return [];
             }
 
-            $rows = DB::table('rasio_casa_debitur_snapshots')
-                ->where('loan_period', $casaPeriod)
-                ->get();
+            $rowsQuery = DB::table($sourceTable)->where('loan_period', $casaPeriod);
+            if ($useUnitBreakdown) {
+                $rowsQuery->whereRaw("UPPER(TRIM(COALESCE(source_branch_key, ''))) LIKE ?", [
+                    '%'.$scope['upper_label'].'%',
+                ]);
+            } else {
+                $rowsQuery->whereIn(
+                    DB::raw('UPPER(TRIM(branch_key))'),
+                    array_map(static fn (string $branch): string => strtoupper(trim($branch)), $this->dashboardBranchNames())
+                );
+            }
+            $rows = $rowsQuery->get();
 
             $branchRows = [];
             $totalOs = 0.0;
             $totalCasa = 0.0;
 
-            foreach ($branches as $idx => $b) {
-                $row = $rows->first(function ($item) use ($b) {
-                    return strtoupper(trim((string) ($item->branch_key ?? ''))) === strtoupper(trim($b))
-                        && strtolower(trim((string) ($item->segment_key ?? ''))) === 'total';
-                });
-
+            $breakdownRows = $rows
+                ->filter(fn ($item): bool => strtolower(trim((string) ($item->segment_key ?? ''))) === 'total')
+                ->values();
+            foreach ($breakdownRows as $row) {
                 $os = (float) ($row->os_amount ?? 0);
                 $casa = (float) ($row->casa_amount ?? 0);
+                if ($os === 0.0 && $casa === 0.0) {
+                    continue;
+                }
+
                 $ratio = $os > 0 ? ($casa / $os) * 100 : 0.0;
                 $totalOs += $os;
                 $totalCasa += $casa;
+                $label = $useUnitBreakdown
+                    ? trim((string) ($row->uker_label ?? $row->uker_key ?? ''))
+                    : trim((string) ($row->branch_label ?? $row->branch_key ?? ''));
 
                 $branchRows[] = [
-                    'no' => $idx + 1,
-                    'branch' => $b,
+                    'no' => count($branchRows) + 1,
+                    'branch' => $label !== '' ? $label : '-',
                     'os' => $os,
                     'os_fmt' => 'Rp ' . number_format($os / 1_000_000_000_000, 2, ',', '.') . ' T',
                     'casa' => $casa,
@@ -934,6 +975,12 @@ class DashboardSimpananController extends Controller
                     'ratio_fmt' => number_format($ratio, 2, ',', '.') . '%',
                 ];
             }
+
+            usort($branchRows, static fn (array $a, array $b): int => strnatcasecmp($a['branch'], $b['branch']));
+            foreach ($branchRows as $index => &$branchRow) {
+                $branchRow['no'] = $index + 1;
+            }
+            unset($branchRow);
 
             $totalRatio = $totalOs > 0 ? ($totalCasa / $totalOs) * 100 : 0.0;
 
@@ -975,6 +1022,8 @@ class DashboardSimpananController extends Controller
                 ],
                 'branches' => $branchRows,
                 'segments' => $segmentRows,
+                'dimension_label' => $useUnitBreakdown ? 'Unit Kerja' : 'Cabang',
+                'total_label' => 'Total ' . $this->dashboardScopeLabel(),
             ];
         } catch (\Throwable $e) {
             report($e);
@@ -990,7 +1039,9 @@ class DashboardSimpananController extends Controller
             }
 
             $target = $period ? Carbon::parse($period) : now();
-            $branches = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+            $scope = $this->effectiveDashboardBranchScope();
+            $branches = $this->dashboardBranchDisplayNames();
+            $useUnitBreakdown = $scope !== null && Schema::hasColumn('rekening_dormant_snapshots', 'unit_kerja');
 
             $curDate = DB::table('rekening_dormant_snapshots')
                 ->where('posisi', '<=', $target->toDateString())
@@ -1018,21 +1069,35 @@ class DashboardSimpananController extends Controller
             $totYtd = 0;
 
             $periods = array_values(array_unique(array_filter([$curDate, $mtdDate, $ytdDate])));
-            $countsByPeriodAndBranch = DB::table('rekening_dormant_snapshots')
+            $dimensionSql = $useUnitBreakdown
+                ? "TRIM(COALESCE(unit_kerja, ''))"
+                : 'UPPER(TRIM(branch_label))';
+            $countsQuery = DB::table('rekening_dormant_snapshots')
                 ->whereIn('posisi', $periods)
                 ->whereIn(
                     DB::raw('UPPER(TRIM(branch_label))'),
                     array_map(static fn (string $branch): string => strtoupper(trim($branch)), $branches)
-                )
+                );
+            if ($useUnitBreakdown) {
+                $countsQuery->whereRaw("TRIM(COALESCE(unit_kerja, '')) <> ''");
+            }
+            $countsByPeriodAndBranch = $countsQuery
                 ->selectRaw('posisi')
-                ->selectRaw('UPPER(TRIM(branch_label)) as branch_key')
+                ->selectRaw($dimensionSql.' as branch_key')
                 ->selectRaw('COALESCE(SUM(COALESCE(dormant_count, 0)), 0) as dormant_count')
                 ->groupBy('posisi', 'branch_key')
                 ->get()
                 ->keyBy(fn ($row): string => Carbon::parse($row->posisi)->toDateString().'|'.(string) $row->branch_key);
 
-            foreach ($branches as $idx => $b) {
-                $branchKey = strtoupper(trim($b));
+            $dimensions = $useUnitBreakdown
+                ? $countsByPeriodAndBranch->pluck('branch_key')->filter()->unique()->sort(SORT_NATURAL | SORT_FLAG_CASE)->values()->all()
+                : array_map(static fn (string $branch): string => strtoupper(trim($branch)), $branches);
+
+            foreach ($dimensions as $b) {
+                $branchKey = $useUnitBreakdown ? trim((string) $b) : strtoupper(trim((string) $b));
+                $displayBranch = $useUnitBreakdown
+                    ? $branchKey
+                    : (collect($branches)->first(fn (string $branch): bool => strtoupper(trim($branch)) === $branchKey) ?? $branchKey);
                 $curCount = (int) ($countsByPeriodAndBranch->get(Carbon::parse($curDate)->toDateString().'|'.$branchKey)->dormant_count ?? 0);
                 $mtdCount = $mtdDate
                     ? (int) ($countsByPeriodAndBranch->get(Carbon::parse($mtdDate)->toDateString().'|'.$branchKey)->dormant_count ?? 0)
@@ -1048,9 +1113,13 @@ class DashboardSimpananController extends Controller
                 $dMtd = $curCount - $mtdCount;
                 $dYtd = $curCount - $ytdCount;
 
+                if ($curCount === 0 && $mtdCount === 0 && $ytdCount === 0) {
+                    continue;
+                }
+
                 $branchRows[] = [
-                    'no' => $idx + 1,
-                    'branch' => $b,
+                    'no' => count($branchRows) + 1,
+                    'branch' => $displayBranch,
                     'current' => $curCount,
                     'current_fmt' => number_format($curCount, 0, ',', '.'),
                     'mtd' => $mtdCount,
@@ -1086,6 +1155,8 @@ class DashboardSimpananController extends Controller
                     'd_ytd_fmt' => ($totDYtd > 0 ? '+' : '') . number_format($totDYtd, 0, ',', '.'),
                 ],
                 'branches' => $branchRows,
+                'dimension_label' => $useUnitBreakdown ? 'Unit Kerja' : 'Cabang',
+                'total_label' => 'Total ' . $this->dashboardScopeLabel(),
             ];
         } catch (\Throwable $e) {
             report($e);
@@ -1344,6 +1415,215 @@ class DashboardSimpananController extends Controller
                 'records' => [],
             ];
         });
+    }
+
+    /**
+     * Keep remote/baseline strategy data inside the selected landing branch.
+     * These sources only expose KC granularity, so branch users see their own
+     * KC aggregate instead of rows belonging to other branches.
+     */
+    private function scopePayrollQualityStrategyPayload(array $payload): array
+    {
+        $scope = $this->effectiveDashboardBranchScope();
+        if ($scope === null) {
+            return $payload;
+        }
+
+        $scopeLabel = $scope['label'];
+        $rows = collect((array) ($payload['rows'] ?? []))
+            ->filter(fn (array $row): bool => strcasecmp(trim((string) ($row['kc'] ?? '')), $scopeLabel) === 0)
+            ->values()
+            ->map(function (array $row, int $index): array {
+                $row['no'] = $index + 1;
+
+                return $row;
+            })
+            ->all();
+
+        $totalPerusahaan = count($rows);
+        $totalPegawai = (int) collect($rows)->sum('pegawai');
+        $totalPotensi = (int) collect($rows)->sum('potensi');
+        $totalExisting = (int) collect($rows)->sum('existing');
+        $totalRealisasi = (int) collect($rows)->sum('realisasi');
+        $totalKunjungan = collect($rows)->filter(fn (array $row): bool => !empty($row['kunjungan']))->count();
+        $persenKunjungan = $totalPerusahaan > 0 ? (int) round(($totalKunjungan / $totalPerusahaan) * 100) : 0;
+
+        $branchSummary = [
+            'branch' => $scopeLabel,
+            'perusahaan' => $totalPerusahaan,
+            'pegawai' => $totalPegawai,
+            'pegawai_fmt' => number_format($totalPegawai, 0, ',', '.'),
+            'potensi' => $totalPotensi,
+            'potensi_fmt' => number_format($totalPotensi, 0, ',', '.'),
+            'realisasi' => $totalRealisasi,
+            'realisasi_fmt' => number_format($totalRealisasi, 0, ',', '.'),
+            'kunjungan' => $totalKunjungan,
+            'persen_kunjungan' => $persenKunjungan,
+            'kunjungan_fmt' => $totalKunjungan.' / '.$totalPerusahaan.' ('.$persenKunjungan.'%)',
+        ];
+
+        $summary = (array) ($payload['summary'] ?? []);
+        $summary = array_replace($summary, [
+            'total_perusahaan' => $totalPerusahaan,
+            'total_pegawai' => $totalPegawai,
+            'total_pegawai_fmt' => number_format($totalPegawai, 0, ',', '.'),
+            'total_potensi' => $totalPotensi,
+            'total_potensi_fmt' => number_format($totalPotensi, 0, ',', '.'),
+            'total_existing' => $totalExisting,
+            'total_existing_fmt' => number_format($totalExisting, 0, ',', '.'),
+            'total_realisasi' => $totalRealisasi,
+            'total_realisasi_fmt' => number_format($totalRealisasi, 0, ',', '.'),
+            'total_kunjungan' => $totalKunjungan,
+            'persen_kunjungan' => $persenKunjungan,
+            'branches' => $totalPerusahaan > 0 ? [$scopeLabel => $branchSummary] : [],
+        ]);
+
+        $payload['summary'] = $summary;
+        $payload['rows'] = $rows;
+        $payload['dimension_label'] = 'Cabang';
+        $payload['total_label'] = 'Total '.$scopeLabel;
+
+        return $payload;
+    }
+
+    private function scopePerusahaanAnakStrategyPayload(array $payload): array
+    {
+        $scope = $this->effectiveDashboardBranchScope();
+        if ($scope === null) {
+            return $payload;
+        }
+
+        $scopeLabel = $scope['label'];
+        $rows = collect((array) ($payload['rows'] ?? []))
+            ->filter(fn (array $row): bool => strcasecmp(trim((string) ($row['kc'] ?? '')), $scopeLabel) === 0)
+            ->values()
+            ->map(function (array $row, int $index): array {
+                $row['no'] = $index + 1;
+                $row['id'] = $index + 1;
+
+                return $row;
+            })
+            ->all();
+
+        $totalPipeline = count($rows);
+        $totalSudah = collect($rows)->filter(fn (array $row): bool => !empty($row['is_terakuisisi']))->count();
+        $totalBelum = $totalPipeline - $totalSudah;
+        $persenAkuisisi = $totalPipeline > 0 ? round(($totalSudah / $totalPipeline) * 100, 1) : 0.0;
+        $totalJuli = (float) collect($rows)->sum('saldo_juli');
+        $totalAgustus = (float) collect($rows)->sum('saldo_agustus');
+        $totalSeptember = (float) collect($rows)->sum('saldo_september');
+        $entities = collect($rows)->pluck('perusahaan_anak')->filter(fn ($value): bool => trim((string) $value) !== '' && $value !== '-')->unique()->sort()->values()->all();
+
+        $branchSummary = [
+            'branch' => $scopeLabel,
+            'total_pipeline' => $totalPipeline,
+            'total_sudah' => $totalSudah,
+            'total_belum' => $totalBelum,
+            'persen_akuisisi' => $persenAkuisisi,
+            'persen_akuisisi_fmt' => number_format($persenAkuisisi, 1, ',', '.').'%',
+            'saldo_juli' => $totalJuli,
+            'saldo_juli_fmt' => 'Rp '.number_format($totalJuli, 0, ',', '.'),
+            'saldo_agustus' => $totalAgustus,
+            'saldo_agustus_fmt' => 'Rp '.number_format($totalAgustus, 0, ',', '.'),
+            'saldo_september' => $totalSeptember,
+            'saldo_september_fmt' => 'Rp '.number_format($totalSeptember, 0, ',', '.'),
+        ];
+
+        $summary = (array) ($payload['summary'] ?? []);
+        $summary = array_replace($summary, [
+            'total_pipeline' => $totalPipeline,
+            'total_mitra' => $totalPipeline,
+            'total_sudah' => $totalSudah,
+            'total_belum' => $totalBelum,
+            'persen_akuisisi' => $persenAkuisisi,
+            'persen_akuisisi_fmt' => number_format($persenAkuisisi, 1, ',', '.').'%',
+            'total_saldo_juli' => $totalJuli,
+            'total_saldo_juli_fmt' => 'Rp '.number_format($totalJuli, 0, ',', '.'),
+            'total_saldo_agustus' => $totalAgustus,
+            'total_saldo_agustus_fmt' => 'Rp '.number_format($totalAgustus, 0, ',', '.'),
+            'total_saldo_september' => $totalSeptember,
+            'total_saldo_september_fmt' => 'Rp '.number_format($totalSeptember, 0, ',', '.'),
+            'entities' => $entities,
+            'branches' => $totalPipeline > 0 ? [$scopeLabel => $branchSummary] : [],
+        ]);
+
+        $payload['summary'] = $summary;
+        $payload['rows'] = $rows;
+        $payload['dimension_label'] = 'Cabang';
+        $payload['total_label'] = 'Total '.$scopeLabel;
+
+        return $payload;
+    }
+
+    private function scopeEcosystemValueChainStrategyPayload(array $payload): array
+    {
+        $scope = $this->effectiveDashboardBranchScope();
+        if ($scope === null) {
+            return $payload;
+        }
+
+        $scopeLabel = $scope['label'];
+        $records = collect((array) ($payload['records'] ?? []))
+            ->filter(fn (array $row): bool => strcasecmp(trim((string) ($row['cabang'] ?? '')), $scopeLabel) === 0)
+            ->values()
+            ->map(function (array $row, int $index): array {
+                $row['no'] = $index + 1;
+
+                return $row;
+            })
+            ->all();
+
+        $summary = (array) ($payload['summary'] ?? []);
+        $totalAccounts = count($records);
+        $totalBalance = (float) collect($records)->sum('saldo');
+        $avgBalance = $totalAccounts > 0 ? $totalBalance / $totalAccounts : 0.0;
+        $oldBranchSummary = collect((array) ($summary['branches'] ?? []))
+            ->first(fn (array $row, string $key): bool => strcasecmp(trim((string) ($row['branch'] ?? $key)), $scopeLabel) === 0);
+
+        $ecosystems = collect($records)
+            ->groupBy(fn (array $row): string => (string) ($row['ekosistem'] ?? '-'))
+            ->map(function ($items, string $key) use ($summary, $totalBalance): array {
+                $saldo = (float) $items->sum('saldo');
+                $label = (string) data_get($summary, 'ecosystems.'.$key.'.label', $key);
+
+                return [
+                    'saldo' => $saldo,
+                    'count' => $items->count(),
+                    'label' => $label,
+                    'saldo_fmt' => str_replace('Rp', 'Rp ', $this->formatCurrencyCompact($saldo)),
+                    'saldo_full' => 'Rp '.number_format($saldo, 0, ',', '.'),
+                    'count_fmt' => number_format($items->count(), 0, ',', '.'),
+                    'share_pct' => $totalBalance > 0 ? round(($saldo / $totalBalance) * 100, 1) : 0.0,
+                ];
+            })
+            ->filter(fn (array $row): bool => $row['count'] > 0)
+            ->all();
+        $dominant = collect($ecosystems)->sortByDesc('saldo')->first();
+
+        $summary = array_replace($summary, [
+            'totalAccounts' => $totalAccounts,
+            'total_accounts_fmt' => number_format($totalAccounts, 0, ',', '.'),
+            'totalBalance' => $totalBalance,
+            'total_balance_fmt' => str_replace('Rp', 'Rp ', $this->formatCurrencyCompact($totalBalance)),
+            'total_balance_full' => 'Rp '.number_format($totalBalance, 0, ',', '.'),
+            'avg_balance' => $avgBalance,
+            'avg_balance_fmt' => str_replace('Rp', 'Rp ', $this->formatCurrencyCompact($avgBalance)),
+            'avg_balance_full' => 'Rp '.number_format($avgBalance, 0, ',', '.'),
+            'dominant_ecosystem' => (string) ($dominant['label'] ?? '-'),
+            'dominant_ecosystem_saldo' => (string) ($dominant['saldo_fmt'] ?? 'Rp 0'),
+            'dominant_ecosystem_share' => number_format((float) ($dominant['share_pct'] ?? 0), 1, ',', '.').'%',
+            'ecosystems' => $ecosystems,
+            'branches' => $totalAccounts > 0 && is_array($oldBranchSummary)
+                ? [$scopeLabel => $oldBranchSummary]
+                : [],
+        ]);
+
+        $payload['summary'] = $summary;
+        $payload['records'] = $records;
+        $payload['dimension_label'] = 'Cabang';
+        $payload['total_label'] = 'Total '.$scopeLabel;
+
+        return $payload;
     }
 
     private function parsePayrollPipelineCsv(string $csvContent, string $sheetUrl): array
@@ -1786,17 +2066,29 @@ class DashboardSimpananController extends Controller
         }
 
         $branchLabelCol = Schema::hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'kanca_label') ? 'kanca_label' : 'branch_label';
-
-        $rows = DB::table(self::HARIAN_SNAPSHOT_TABLE)
+        $scope = $this->effectiveDashboardBranchScope();
+        $query = DB::table(self::HARIAN_SNAPSHOT_TABLE)
             ->where('snapshot_period', $period)
-            ->whereIn(DB::raw("UPPER(TRIM({$branchLabelCol}))"), $this->dashboardBranchNames())
-            ->where(function ($q) {
+            ->whereIn(DB::raw("UPPER(TRIM({$branchLabelCol}))"), $this->dashboardBranchNames());
+
+        if ($scope !== null) {
+            $query->whereColumn('unit_key', '<>', 'kanca_key')
+                ->whereRaw("TRIM(COALESCE(unit_label, '')) <> ''")
+                ->whereRaw("UPPER(TRIM(COALESCE(unit_label, ''))) NOT LIKE '%KONSOL%'");
+            $dimensionSql = "TRIM(unit_label)";
+        } else {
+            $query->where(function ($q) {
                 $q->where('unit_key', '')
                     ->orWhereNull('unit_key')
                     ->orWhere('unit_label', 'like', '%Konsol%')
-                    ->orWhere('unit_label', '');
-            })
-            ->selectRaw("UPPER(TRIM({$branchLabelCol})) as branch_key")
+                    ->orWhere('unit_label', '')
+                    ->orWhereColumn('unit_key', 'kanca_key');
+            });
+            $dimensionSql = "UPPER(TRIM({$branchLabelCol}))";
+        }
+
+        $rows = $query
+            ->selectRaw($dimensionSql.' as branch_key')
             ->selectRaw("COALESCE(SUM(total_simpanan), 0) as total_simpanan")
             ->selectRaw("COALESCE(SUM(tabungan_ritel + tabungan_mikro + tabungan_wholesale), 0) as total_tabungan")
             ->selectRaw("COALESCE(SUM(deposito_ritel + deposito_mikro + deposito_wholesale), 0) as total_deposito")
@@ -1807,17 +2099,25 @@ class DashboardSimpananController extends Controller
 
         $result = [];
         $totalAll = 0.0;
-        foreach ($this->dashboardBranchDisplayNames() as $displayName) {
-            $key = strtoupper(trim($displayName));
+        $dimensions = $scope !== null
+            ? $rows->keys()->filter()->sort(SORT_NATURAL | SORT_FLAG_CASE)->values()->all()
+            : $this->dashboardBranchDisplayNames();
+        foreach ($dimensions as $displayName) {
+            $key = $scope !== null ? trim((string) $displayName) : strtoupper(trim((string) $displayName));
             $r = $rows->get($key);
             $simpanan = $r ? (float) $r->total_simpanan : 0.0;
             $tabungan = $r ? (float) $r->total_tabungan : 0.0;
             $deposito = $r ? (float) $r->total_deposito : 0.0;
             $giro = $r ? (float) $r->total_giro : 0.0;
+
+            if ($scope !== null && $simpanan === 0.0) {
+                continue;
+            }
+
             $totalAll += $simpanan;
 
-            $result[$displayName] = [
-                'name' => $displayName,
+            $result[$key] = [
+                'name' => $scope !== null ? $key : $displayName,
                 'simpanan' => $simpanan,
                 'simpanan_fmt' => $this->formatCurrencyCompact($simpanan),
                 'tabungan' => $tabungan,
@@ -1832,9 +2132,9 @@ class DashboardSimpananController extends Controller
             ];
         }
 
-        foreach ($result as $displayName => $data) {
-            $result[$displayName]['share_pct'] = $totalAll > 0 ? ($data['simpanan'] / $totalAll) * 100 : 0.0;
-            $result[$displayName]['share_pct_fmt'] = number_format($result[$displayName]['share_pct'], 2, ',', '.') . '%';
+        foreach ($result as $dimensionKey => $data) {
+            $result[$dimensionKey]['share_pct'] = $totalAll > 0 ? ($data['simpanan'] / $totalAll) * 100 : 0.0;
+            $result[$dimensionKey]['share_pct_fmt'] = number_format($result[$dimensionKey]['share_pct'], 2, ',', '.') . '%';
         }
 
         return array_values($result);
@@ -1844,9 +2144,11 @@ class DashboardSimpananController extends Controller
     {
         $this->configureLandingBranchScope($request);
         $branchScope = $this->effectiveDashboardBranchScope();
+        $this->releaseSessionLockIfNeeded();
         $smeOperations = app(LandingSmeOperationalService::class)->payload(
             $branchScope,
-            $request->boolean('refresh')
+            $request->boolean('refresh'),
+            $request->query('periode')
         );
         $smeOperations['restructuring_frequency'] = app(LandingLoanAnalyticsService::class)->restructuringFrequency(
             $request->query('periode'),
@@ -1877,13 +2179,15 @@ class DashboardSimpananController extends Controller
     public function consumerOperations(Request $request): View
     {
         $this->configureLandingBranchScope($request);
+        $branchScope = $this->effectiveDashboardBranchScope();
+        $this->releaseSessionLockIfNeeded();
         $consumerOperations = app(LandingConsumerOperationalService::class)->payload(
             $request->query('periode'),
-            $this->effectiveDashboardBranchScope(),
+            $branchScope,
             $request->boolean('refresh')
         );
         $consumerOperations['pn_mismatch'] = app(LandingPnMismatchService::class)->summary(
-            'consumer', data_get($consumerOperations, 'quadrants.period'), $this->effectiveDashboardBranchScope()
+            'consumer', data_get($consumerOperations, 'quadrants.period'), $branchScope
         );
 
         return view('dashboard.partials.consumer-operations', compact('consumerOperations'));
@@ -1893,6 +2197,7 @@ class DashboardSimpananController extends Controller
     {
         $this->configureLandingBranchScope($request);
         $branchScope = $this->effectiveDashboardBranchScope();
+        $this->releaseSessionLockIfNeeded();
         $microPerformance = app(LandingMicroPerformanceService::class)->payload(
             $request->query('periode'),
             $branchScope,
@@ -1969,10 +2274,12 @@ class DashboardSimpananController extends Controller
         $this->configureLandingBranchScope($request);
         $scope = strtolower(trim((string) $request->query('scope')));
         abort_unless(in_array($scope, ['sme', 'consumer', 'micro'], true), 404);
+        $branchScope = $this->effectiveDashboardBranchScope();
+        $this->releaseSessionLockIfNeeded();
 
         $analytics = app(LandingLoanAnalyticsService::class)->payload(
             $request->query('periode'),
-            $this->effectiveDashboardBranchScope(),
+            $branchScope,
             $request->boolean('refresh'),
             $scope
         );
@@ -7789,6 +8096,66 @@ class DashboardSimpananController extends Controller
     /** @param  array<string, mixed>|null  $branchScope */
     private function buildLandingRmKurProductivity(?string $period, ?array $branchScope): array
     {
+        $scopeKey = (string) ($branchScope['key'] ?? UserBranchScope::AREA_SCOPE);
+        $cacheKey = implode(':', [
+            'landing',
+            'micro-rm-kur-productivity',
+            'v3-nett-distribution',
+            ReportCacheVersion::composite(['pinjaman', 'brihc']),
+            $period ?? 'none',
+            $scopeKey,
+        ]);
+        $durableKey = implode(':', [
+            'landing',
+            'micro-rm-kur-productivity',
+            'v3-nett-distribution',
+            'last-valid',
+            $period ?? 'none',
+            $scopeKey,
+        ]);
+
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            Cache::put($durableKey, $cached, now()->addDays(7));
+
+            return $cached;
+        }
+
+        $durable = Cache::get($durableKey);
+        if (is_array($durable)) {
+            $pendingKey = $cacheKey.':refresh-pending';
+            if (Cache::add($pendingKey, true, now()->addMinutes(10))) {
+                defer(function () use ($cacheKey, $durableKey, $pendingKey, $period, $branchScope): void {
+                    try {
+                        $payload = $this->buildLandingRmKurProductivityFresh($period, $branchScope);
+                        Cache::put($cacheKey, $payload, now()->addMinutes(15));
+                        Cache::put($durableKey, $payload, now()->addDays(7));
+                    } catch (Throwable $exception) {
+                        Log::warning('Refresh cache produktivitas RM KUR landing gagal.', [
+                            'period' => $period,
+                            'scope' => $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
+                            'error' => $exception->getMessage(),
+                        ]);
+                    } finally {
+                        Cache::forget($pendingKey);
+                    }
+                }, 'landing-micro-rm-kur:'.md5($cacheKey), true);
+            }
+            $durable['refresh_pending'] = true;
+
+            return $durable;
+        }
+
+        $payload = $this->buildLandingRmKurProductivityFresh($period, $branchScope);
+        Cache::put($cacheKey, $payload, now()->addMinutes(15));
+        Cache::put($durableKey, $payload, now()->addDays(7));
+
+        return $payload;
+    }
+
+    /** @param  array<string, mixed>|null  $branchScope */
+    private function buildLandingRmKurProductivityFresh(?string $period, ?array $branchScope): array
+    {
         $payload = $this->invokeKinerjaRmMikroPayload('per_rm', $period, false, null, true);
         $scopeBranch = strtoupper(trim((string) ($branchScope['upper_label'] ?? '')));
         $rows = collect($payload['rows'] ?? []);
@@ -7826,6 +8193,13 @@ class DashboardSimpananController extends Controller
         return [
             'available' => $rows->isNotEmpty(),
             'source' => 'Daily Loan Dinamis - Kredit Mikro KUR Ritel 2015; roster utama BRIHC',
+            'distribution' => $dataPeriod ? app(\App\Support\LandingRmKurDistribution::class)->build(
+                $rows->all(),
+                collect(app(\App\Http\Controllers\Report\KinerjaRmMikroReportController::class)->landingKurRmRoster())
+                    ->filter(static fn (array $person): bool => $scopeBranch === ''
+                        || strtoupper(trim($person['branch'])) === $scopeBranch)
+                    ->values()->all()
+            ) : null,
             'period' => $dataPeriod,
             'data_period' => $dataPeriod,
             'period_label' => $dataPeriod

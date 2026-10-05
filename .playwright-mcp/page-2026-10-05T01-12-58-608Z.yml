@@ -1,0 +1,28 @@
+- main [ref=f1e2]:
+  - link "Beranda Dashboard A-Six" [ref=f1e3] [cursor=pointer]:
+    - /url: http://localhost
+    - img "Logo A-Six" [ref=f1e5]
+    - generic [ref=f1e6]:
+      - generic [ref=f1e7]: Area 6 Executive
+      - generic [ref=f1e8]: Dashboard A-Six
+  - generic [ref=f1e9]:
+    - heading "Selamat Datang" [level=1] [ref=f1e10]
+    - paragraph [ref=f1e11]: Silakan masukkan identitas akun untuk mengakses monitoring kinerja.
+  - generic [ref=f1e12]:
+    - generic [ref=f1e13]:
+      - generic [ref=f1e14]: Personal Number (PN)
+      - textbox "Personal Number (PN)" [active] [ref=f1e16]:
+        - /placeholder: "Contoh: 00123456"
+    - generic [ref=f1e17]:
+      - generic [ref=f1e18]: Password
+      - textbox "Password" [ref=f1e20]:
+        - /placeholder: Masukkan kata sandi
+    - generic [ref=f1e21]:
+      - generic [ref=f1e22] [cursor=pointer]:
+        - checkbox "Ingat saya" [ref=f1e23]
+        - generic [ref=f1e24]: Ingat saya
+      - generic [ref=f1e25]: Sistem Aktif
+    - button "Masuk ke Dashboard" [ref=f1e28] [cursor=pointer]
+  - generic [ref=f1e32]:
+    - generic [ref=f1e33]: A-SIX Realtime System
+    - generic [ref=f1e34]: © 2026 PT Bank Rakyat Indonesia

@@ -14,10 +14,13 @@ use Illuminate\Support\Facades\Log;
 
 class AuditAndHealSnapshotsJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, SnapshotJobRetryWindow;
 
     public int $timeout = 600;
     public int $tries = 3;
+    // Waiting for an import/overlap lock is not an execution failure. The
+    // retry window allows deferrals; actual exceptions remain bounded.
+    public int $maxExceptions = 3;
 
     public function __construct(
         public bool $force = false

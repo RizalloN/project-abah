@@ -25,6 +25,13 @@ final class LandingLoanAnalyticsService
 
     private const AREA_BRANCHES = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
 
+    private const SSA_BRANCH_VALUES = [
+        'KC MADIUN' => ['KC MADIUN', 'KC Madiun', '00045 -- KC Madiun (Konsolidasi-MB)'],
+        'KC MAGETAN' => ['KC MAGETAN', 'KC Magetan', '00049 -- KC Magetan (Konsolidasi-MB)'],
+        'KC NGAWI' => ['KC NGAWI', 'KC Ngawi', '00057 -- KC Ngawi (Konsolidasi-MB)'],
+        'KC PONOROGO' => ['KC PONOROGO', 'KC Ponorogo', '00070 -- KC Ponorogo (Konsolidasi-MB)'],
+    ];
+
     private const SEGMENTS = [
         'sme' => 'SMALL',
         'consumer' => 'CONSUMER',
@@ -50,7 +57,7 @@ final class LandingLoanAnalyticsService
         }
 
         try {
-            $period = $this->resolvePeriod($requestedPeriod, $branchScope, $segmentScope);
+            $period = $this->resolvePeriodCached($requestedPeriod, $branchScope, $segmentScope);
             if ($period === null) {
                 return $empty;
             }
@@ -66,42 +73,63 @@ final class LandingLoanAnalyticsService
                 $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
                 $segmentScope ?? 'all-segments',
             ]);
+            $durableCacheKey = implode(':', [
+                'landing',
+                'loan-analytics',
+                self::CACHE_VERSION,
+                'last-valid',
+                $period,
+                $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
+                $segmentScope ?? 'all-segments',
+            ]);
 
             if ($forceRefresh) {
                 Cache::forget($cacheKey);
+                $durable = Cache::get($durableCacheKey);
+                if (is_array($durable)) {
+                    $this->deferAnalyticsRefresh(
+                        $cacheKey,
+                        $durableCacheKey,
+                        $period,
+                        $year,
+                        $branchScope,
+                        $segmentScope
+                    );
+                    $durable['meta']['cache_stale'] = true;
+                    $durable['meta']['refresh_pending'] = true;
+
+                    return $durable;
+                }
             }
 
-            return Cache::remember($cacheKey, now()->addMinutes(15), function () use ($period, $year, $branchScope, $segmentScope): array {
-                $periods = $this->periodsForYear($year, $period, $branchScope, $segmentScope);
-                $monthEnds = $periods
-                    ->filter(static fn (string $candidate): bool => Carbon::parse($candidate)->isLastOfMonth())
-                    ->values();
-                $segments = $segmentScope !== null
-                    ? [$segmentScope => self::SEGMENTS[$segmentScope]]
-                    : self::SEGMENTS;
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached)) {
+                Cache::put($durableCacheKey, $cached, now()->addDays(7));
 
-                $dailySegments = array_diff_key($segments, ['micro' => true]);
-                $quality = $this->qualityPayload($year, $monthEnds, $branchScope, $dailySegments);
-                if (isset($segments['micro'])) {
-                    $quality['micro'] = $this->microSsaQualityPayload($year, $period, $branchScope);
-                }
+                return $cached;
+            }
 
-                return [
-                    'meta' => [
-                        'available' => $monthEnds->isNotEmpty(),
-                        'period' => $period,
-                        'period_label' => Carbon::parse($period)->translatedFormat('d M Y'),
-                        'year' => $year,
-                        'scope_label' => $branchScope['label'] ?? 'Area 6',
-                        'source' => 'Daily Loan Dinamis',
-                        'error' => '',
-                    ],
-                    'quality' => $quality,
-                    'tariff_relief' => $segmentScope === null || $segmentScope === 'sme'
-                        ? $this->tariffPayload($period, $year, $branchScope)
-                        : $this->emptyTariffPayload(),
-                ];
-            });
+            $durable = Cache::get($durableCacheKey);
+            if (! $forceRefresh && is_array($durable)) {
+                $this->deferAnalyticsRefresh(
+                    $cacheKey,
+                    $durableCacheKey,
+                    $period,
+                    $year,
+                    $branchScope,
+                    $segmentScope
+                );
+                $durable['meta']['cache_stale'] = true;
+                $durable['meta']['refresh_pending'] = true;
+
+                return $durable;
+            }
+
+            $payload = $this->buildAnalyticsPayload($period, $year, $branchScope, $segmentScope);
+            Cache::put($cacheKey, $payload, now()->addMinutes(15));
+            Cache::put($durableCacheKey, $payload, now()->addDays(7));
+
+            return $payload;
         } catch (Throwable $exception) {
             Log::warning('Analitik landing pinjaman gagal dihitung.', [
                 'period' => $requestedPeriod,
@@ -109,10 +137,108 @@ final class LandingLoanAnalyticsService
                 'error' => $exception->getMessage(),
             ]);
 
+            $durableCacheKey = implode(':', [
+                'landing',
+                'loan-analytics',
+                self::CACHE_VERSION,
+                'last-valid',
+                $period ?? $requestedPeriod ?? 'none',
+                $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
+                $segmentScope ?? 'all-segments',
+            ]);
+            $durable = Cache::get($durableCacheKey);
+            if (is_array($durable)) {
+                $durable['meta']['cache_stale'] = true;
+                $durable['meta']['refresh_error'] = $exception->getMessage();
+
+                return $durable;
+            }
+
             $empty['meta']['error'] = $exception->getMessage();
 
             return $empty;
         }
+    }
+
+    /**
+     * @param array<string, mixed>|null $branchScope
+     * @return array<string, mixed>
+     */
+    private function buildAnalyticsPayload(
+        string $period,
+        int $year,
+        ?array $branchScope,
+        ?string $segmentScope
+    ): array {
+        $periods = $this->periodsForYear($year, $period, $branchScope, $segmentScope);
+        $monthEnds = $periods
+            ->filter(static fn (string $candidate): bool => Carbon::parse($candidate)->isLastOfMonth())
+            ->values();
+        $segments = $segmentScope !== null
+            ? [$segmentScope => self::SEGMENTS[$segmentScope]]
+            : self::SEGMENTS;
+
+        $dailySegments = array_diff_key($segments, ['micro' => true]);
+        $quality = $this->qualityPayload($year, $monthEnds, $branchScope, $dailySegments);
+        if (isset($segments['micro'])) {
+            $quality['micro'] = $this->microSsaQualityPayload($year, $period, $branchScope);
+        }
+
+        return [
+            'meta' => [
+                'available' => $monthEnds->isNotEmpty(),
+                'period' => $period,
+                'period_label' => Carbon::parse($period)->translatedFormat('d M Y'),
+                'year' => $year,
+                'scope_label' => $branchScope['label'] ?? 'Area 6',
+                'source' => 'Daily Loan Dinamis',
+                'error' => '',
+            ],
+            'quality' => $quality,
+            'tariff_relief' => $segmentScope === null || $segmentScope === 'sme'
+                ? $this->tariffPayload($period, $year, $branchScope)
+                : $this->emptyTariffPayload(),
+        ];
+    }
+
+    /** @param array<string, mixed>|null $branchScope */
+    private function deferAnalyticsRefresh(
+        string $cacheKey,
+        string $durableCacheKey,
+        string $period,
+        int $year,
+        ?array $branchScope,
+        ?string $segmentScope
+    ): void {
+        $pendingKey = $cacheKey.':refresh-pending';
+        if (! Cache::add($pendingKey, true, now()->addMinutes(10))) {
+            return;
+        }
+
+        defer(function () use (
+            $cacheKey,
+            $durableCacheKey,
+            $period,
+            $year,
+            $branchScope,
+            $segmentScope,
+            $pendingKey
+        ): void {
+            try {
+                $payload = $this->buildAnalyticsPayload($period, $year, $branchScope, $segmentScope);
+                Cache::put($cacheKey, $payload, now()->addMinutes(15));
+                Cache::put($durableCacheKey, $payload, now()->addDays(7));
+            } catch (Throwable $exception) {
+                Log::warning('Refresh cache analitik landing pinjaman gagal.', [
+                    'period' => $period,
+                    'scope' => $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
+                    'segment' => $segmentScope,
+                    'error' => $exception->getMessage(),
+                ]);
+            } finally {
+                Cache::forget($pendingKey);
+            }
+        }, 'landing-loan-analytics:'.md5($cacheKey), true);
     }
 
     /**
@@ -130,7 +256,7 @@ final class LandingLoanAnalyticsService
         }
 
         try {
-            $period = $this->resolvePeriod($requestedPeriod, $branchScope, 'sme');
+            $period = $this->resolvePeriodCached($requestedPeriod, $branchScope, 'sme');
             if ($period === null) {
                 return $empty;
             }
@@ -439,7 +565,7 @@ final class LandingLoanAnalyticsService
         if ($this->ssaTariffSourceIsReady()) {
             $query = DB::table(self::SSA_LOAN_TABLE)
                 ->whereBetween('month_day_year_of_periode', [sprintf('%d-01-01', $year), $latestPeriod])
-                ->whereRaw("UPPER(TRIM(COALESCE(segmen_dashboard, ''))) = 'MICRO'");
+                ->whereIn('segmen_dashboard', ['Micro', 'MICRO', 'micro']);
             $this->applySsaBranchScope($query, $branchScope);
 
             $lrCondition = Schema::hasColumn(self::SSA_LOAN_TABLE, 'flag_restruk')
@@ -600,7 +726,7 @@ final class LandingLoanAnalyticsService
         $queryPeriods = collect($pairs)->flatMap(static fn (array $pair): array => array_values($pair))->unique()->values();
         $query = DB::table(self::SSA_LOAN_TABLE)
             ->whereIn('month_day_year_of_periode', $queryPeriods->all())
-            ->whereRaw("UPPER(TRIM(COALESCE(segmen_dashboard, ''))) = 'SMALL'")
+            ->whereIn('segmen_dashboard', ['Small', 'SMALL', 'small'])
             ->whereBetween('kolektabilitas_one_obligor', [1, 5]);
         $this->applySsaBranchScope($query, $branchScope);
 
@@ -713,16 +839,13 @@ final class LandingLoanAnalyticsService
     {
         $branch = strtoupper(trim((string) ($branchScope['upper_label'] ?? '')));
         $branches = $branch !== '' ? [$branch] : self::AREA_BRANCHES;
+        $sourceValues = collect($branches)
+            ->flatMap(static fn (string $branchLabel): array => self::SSA_BRANCH_VALUES[$branchLabel] ?? [$branchLabel])
+            ->unique()
+            ->values()
+            ->all();
 
-        $query->where(function (Builder $scope) use ($branches): void {
-            foreach ($branches as $index => $branchLabel) {
-                $method = $index === 0 ? 'whereRaw' : 'orWhereRaw';
-                $scope->{$method}(
-                    "UPPER(TRIM(COALESCE(nama_cabang, ''))) LIKE ?",
-                    ['%'.$branchLabel.'%']
-                );
-            }
-        });
+        $query->whereIn('nama_cabang', $sourceValues);
     }
 
     private function ssaTariffSourceIsReady(): bool
@@ -741,11 +864,37 @@ final class LandingLoanAnalyticsService
     }
 
     /** @param array<string, mixed>|null $branchScope */
+    private function resolvePeriodCached(
+        ?string $requestedPeriod,
+        ?array $branchScope,
+        ?string $segmentScope
+    ): ?string {
+        $requestedKey = $requestedPeriod !== null && trim($requestedPeriod) !== ''
+            ? Carbon::parse($requestedPeriod)->toDateString()
+            : 'latest';
+        $cacheKey = implode(':', [
+            'landing',
+            'loan-analytics-period',
+            'v1',
+            ReportCacheVersion::composite(['pinjaman', 'harian']),
+            $requestedKey,
+            $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
+            $segmentScope ?? 'all-segments',
+        ]);
+
+        return Cache::remember(
+            $cacheKey,
+            now()->addMinutes(10),
+            fn (): ?string => $this->resolvePeriod($requestedPeriod, $branchScope, $segmentScope)
+        );
+    }
+
+    /** @param array<string, mixed>|null $branchScope */
     private function resolvePeriod(?string $requestedPeriod, ?array $branchScope, ?string $segmentScope): ?string
     {
         if ($segmentScope === 'micro' && $this->ssaTariffSourceIsReady()) {
             $ssaQuery = DB::table(self::SSA_LOAN_TABLE)
-                ->whereRaw("UPPER(TRIM(COALESCE(segmen_dashboard, ''))) = 'MICRO'");
+                ->whereIn('segmen_dashboard', ['Micro', 'MICRO', 'micro']);
             $this->applySsaBranchScope($ssaQuery, $branchScope);
             if ($requestedPeriod !== null && trim($requestedPeriod) !== '') {
                 $ssaQuery->where('month_day_year_of_periode', '<=', Carbon::parse($requestedPeriod)->toDateString());
@@ -804,7 +953,7 @@ final class LandingLoanAnalyticsService
         if ($segmentScope === 'micro' && $this->ssaTariffSourceIsReady()) {
             $ssaQuery = DB::table(self::SSA_LOAN_TABLE)
                 ->whereBetween('month_day_year_of_periode', [sprintf('%d-01-01', $year), $period])
-                ->whereRaw("UPPER(TRIM(COALESCE(segmen_dashboard, ''))) = 'MICRO'");
+                ->whereIn('segmen_dashboard', ['Micro', 'MICRO', 'micro']);
             $this->applySsaBranchScope($ssaQuery, $branchScope);
 
             return $ssaQuery

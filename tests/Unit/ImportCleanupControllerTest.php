@@ -8,6 +8,51 @@ use Tests\TestCase;
 
 class ImportCleanupControllerTest extends TestCase
 {
+    public function test_completed_multipn_keeps_recovery_evidence_for_seven_days(): void
+    {
+        [$sourcePath, $stagingPath] = $this->createImportArtifacts('multipn-retained');
+        DB::shouldReceive('table->where->first')->once()->andReturn((object) [
+            'id' => 65, 'id_report' => 9, 'status' => 'completed',
+            'total_files' => 10, 'total_success' => 10, 'total_failed' => 0,
+            'updated_at' => now()->subDay()->toDateTimeString(),
+            'folder_path' => dirname($sourcePath), 'file_name' => basename($sourcePath),
+        ]);
+        try {
+            $result = (new ImportCleanupController())->cleanupSuccessfulJobArtifacts(65, [$stagingPath]);
+            $this->assertFalse($result['eligible']);
+            $this->assertFileExists($sourcePath);
+            $this->assertFileExists($stagingPath);
+        } finally {
+            $this->cleanupIfExists($sourcePath);
+            $this->cleanupIfExists($stagingPath);
+        }
+    }
+
+    public function test_orphan_sweep_protects_old_queued_source_and_staging_files(): void
+    {
+        $originalStorage = storage_path();
+        $this->app->useStoragePath($originalStorage . '/framework/testing/cleanup-protection-' . getmypid());
+        [$sourcePath, $stagingPath] = $this->createImportArtifacts('pending');
+        touch($sourcePath, now()->subDays(2)->timestamp);
+        touch($stagingPath, now()->subDays(2)->timestamp);
+        DB::shouldReceive('table->whereIn->where->orderBy->get')->once()->andReturn(collect());
+        DB::shouldReceive('table->whereIn->get')->once()->andReturn(collect([(object) [
+            'id' => 63, 'id_report' => 9, 'status' => 'queued',
+            'folder_path' => dirname($sourcePath), 'file_name' => basename($sourcePath),
+            'job_context' => json_encode(['state' => ['params' => ['staged_csv_path' => str_replace('\\', '/', $stagingPath)]]]),
+        ]]));
+        try {
+            $result = (new ImportCleanupController())->cleanupCompletedJobsAndOrphanedFiles(12);
+            $this->assertSame(0, $result['deleted_file_count']);
+            $this->assertFileExists($sourcePath);
+            $this->assertFileExists($stagingPath);
+        } finally {
+            $this->cleanupIfExists($sourcePath);
+            $this->cleanupIfExists($stagingPath);
+            $this->app->useStoragePath($originalStorage);
+        }
+    }
+
     public function test_cleanup_successful_job_artifacts_removes_source_and_staging_files_for_partial_success(): void
     {
         $controller = new ImportCleanupController();

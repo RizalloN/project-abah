@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 final class DailyLoanManualSegmentRule
 {
-    public const VERSION = 'daily-loan-manual-segment-v1';
+    public const VERSION = 'daily-loan-manual-segment-v2';
 
     /**
      * Description is the business source of truth for the manual segment only.
@@ -75,6 +75,7 @@ final class DailyLoanManualSegmentRule
             'segment' => 'MEDIUM',
             'descriptions' => [
                 '10. RITKOM -> Rp. 5 M S/D 15 M',
+                '11. RITKOM -> Rp. 15 M S/D 25 M',
                 '(KWL) 1. MENENGAH > Rp 25 M S/D 50 M',
                 '(KWL) 2. MENENGAH > Rp 50 M S/D 200 M',
             ],

@@ -8,6 +8,7 @@ use App\Services\Import\Strategies\CognosRecoveryImportStrategy;
 use App\Services\Import\Strategies\DailyLoanImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
+use App\Services\Import\Strategies\Gi405SingleRowImportStrategy;
 use App\Services\Import\Strategies\HourlyDpkImportStrategy;
 use App\Services\Import\Strategies\L1133ImportStrategy;
 use App\Services\Import\Strategies\Lw321PnImportStrategy;
@@ -41,6 +42,7 @@ class PolarsArchitectureTest extends TestCase
             [SsaPinjamanImportStrategy::class, 'bulk_csv_staging', []],
             [HourlyDpkImportStrategy::class, 'bulk_csv_staging', []],
             [Gi405RecDhImportStrategy::class, 'bulk_csv_filtered', []],
+            [Gi405SingleRowImportStrategy::class, 'bulk_csv_staging', []],
             [GenericCsvImportStrategy::class, 'bulk_csv_staging', []],
             [CognosPhImportStrategy::class, 'bulk_csv_staging', []],
             [CognosRecoveryImportStrategy::class, 'bulk_csv_staging', []],
@@ -88,6 +90,7 @@ class PolarsArchitectureTest extends TestCase
             [SsaPinjamanImportStrategy::class, 'ssa_pinjaman'],
             [HourlyDpkImportStrategy::class, 'hourly_dpk'],
             [Gi405RecDhImportStrategy::class, 'gi405_recovery'],
+            [Gi405SingleRowImportStrategy::class, 'gi405_singlerow'],
             [Lw325PhImportStrategy::class, 'lw325_ph'],
             [Lw321PnImportStrategy::class, 'lw321pn'],
             [CognosPhImportStrategy::class, 'cognos_ph'],

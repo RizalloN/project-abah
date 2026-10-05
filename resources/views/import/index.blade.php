@@ -1734,6 +1734,7 @@
             const isCognosPh = reportName.includes('cognos ph');
             const isCognosRecovery = reportName.includes('cognos recovery');
             const isGi405RecDh = tableName === 'gi405_recovery' || importController.includes('Gi405RecDhImportExcelController');
+            const isGi405SingleRow = tableName === 'gi405_singlerow';
             const isSsaSimpanan = tableName === 'ssa_simpanan';
             const isSsaPinjaman = tableName === 'ssa_pinjaman';
             const isInputRekanan = tableName === 'input_rekanan';
@@ -1856,6 +1857,33 @@
                 inputExcel.setAttribute('accept', '.xlsx,.xls,.csv');
                 configurePeriodeInput({ visible: false });
                 applySimpananUploadMode();
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (isGi405SingleRow) {
+                formExcel.style.display = 'block';
+                inputExcel.disabled = false;
+                inputExcel.required = true;
+                inputExcel.setAttribute('accept', '.xlsx');
+                formImport.action = "{{ route('import.excel.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+                formImport.dataset.chunkedUpload = '1';
+                formImport.dataset.chunkInitUrl = "{{ route('import.excel.upload-chunk.init') }}";
+                formImport.dataset.chunkUploadUrl = "{{ route('import.excel.upload-chunk') }}";
+                formImport.dataset.chunkFinalizeUrl = "{{ route('import.excel.upload-chunk.finalize') }}";
+
+                if (excelLabel) {
+                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload GI405 Single Row (.xlsx)';
+                }
+                if (excelHelp) {
+                    excelHelp.textContent = 'XLSX diproses lewat streaming XML presisi, tanpa konversi float. Seluruh baris untuk periode sumber akan diganti secara atomik.';
+                }
+
+                configurePeriodeInput({ visible: false });
+                configureKancaInput({ visible: false });
+                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload GI405 Single Row');
                 updateReportSummary();
                 updateFileSelectionUI();
                 return;

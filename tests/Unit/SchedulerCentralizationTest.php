@@ -12,7 +12,8 @@ class SchedulerCentralizationTest extends TestCase
         $consoleRoutes = file_get_contents(base_path('routes/console.php'));
 
         $this->assertStringNotContainsString('$schedule->command(', $kernel);
-        $this->assertSame(1, substr_count($consoleRoutes, 'queue:ensure-running --once'));
+        $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('queue:watchdog')"));
+        $this->assertSame(0, substr_count($consoleRoutes, 'queue:ensure-running --once'));
         $this->assertSame(1, substr_count($consoleRoutes, "if (config('services.public_access_health.enabled', false))"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('network:update-duckdns'"));
         $this->assertSame(1, substr_count($consoleRoutes, "Schedule::command('network:public-health --fix'"));
@@ -55,7 +56,7 @@ class SchedulerCentralizationTest extends TestCase
             $consoleRoutes
         );
         $this->assertStringContainsString(
-            "queue:ensure-running --once --timeout=900 --memory=512",
+            "Schedule::command('queue:watchdog')",
             $consoleRoutes
         );
         $this->assertStringContainsString(

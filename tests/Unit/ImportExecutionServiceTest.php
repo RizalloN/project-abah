@@ -757,7 +757,7 @@ class ImportExecutionServiceTest extends TestCase
         $this->assertFalse($shouldFallback);
     }
 
-    public function test_simpanan_multipn_is_not_recovered_by_generic_zero_progress_recovery(): void
+    public function test_simpanan_multipn_without_guarded_staging_is_not_recovered_by_generic_recovery(): void
     {
         $jobId = 196;
         $progressService = Mockery::mock(ImportProgressService::class);
@@ -783,6 +783,32 @@ class ImportExecutionServiceTest extends TestCase
         ]);
 
         $this->assertFalse($recoverable);
+    }
+
+    public function test_simpanan_excel_with_preserved_staging_is_eligible_for_safe_orphan_recovery(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'multipn_recovery_');
+        $progress = Mockery::mock(ImportProgressService::class);
+        $progress->shouldReceive('getJobState')->andReturn(['params' => ['table_name' => 'simpanan_multipn']]);
+        $service = new ImportExecutionService($progress);
+        $method = new \ReflectionMethod($service, 'isRecoverableZeroProgressImportJob');
+        $job = (object) [
+            'id' => 196, 'id_report' => 9,
+            'job_context' => json_encode([
+                'controller' => ImportExcelController::class,
+                'mode' => 'import_optimized',
+                'state' => ['params' => ['staged_csv_path' => $path]],
+            ]),
+        ];
+        try {
+            $this->assertTrue($method->invoke($service, 196, $job));
+            unlink($path);
+            $this->assertFalse($method->invoke($service, 196, $job));
+        } finally {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
     }
 
     public function test_has_queued_execution_recognizes_queued_status_with_dispatch_marker(): void

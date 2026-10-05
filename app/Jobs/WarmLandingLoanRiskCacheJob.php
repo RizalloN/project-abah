@@ -19,20 +19,27 @@ class WarmLandingLoanRiskCacheJob implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 1200;
 
-    public int $uniqueFor = 900;
+    public int $uniqueFor = 86400;
+
+    // Default preserves deserialization of jobs queued before this field existed.
+    private ?int $reportVersion = null;
 
     public function __construct(public readonly string $period)
     {
+        $this->reportVersion = ReportCacheVersion::get('pinjaman');
         $this->onQueue('reports-low');
     }
 
     public function uniqueId(): string
     {
-        return $this->period.':report-v'.ReportCacheVersion::get('pinjaman');
+        // Never recompute the version while Laravel releases the unique lock.
+        // Legacy payloads have no recoverable dispatch-time version; keep them
+        // in a separate namespace so they cannot release a newer job's lock.
+        return $this->period.':report-v'.($this->reportVersion ?? 'legacy');
     }
 
     public function handle(LandingLoanRiskCacheService $service): void
     {
-        $service->rebuild($this->period);
+        $service->warm($this->period);
     }
 }

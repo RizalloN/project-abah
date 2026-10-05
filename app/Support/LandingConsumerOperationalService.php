@@ -16,6 +16,8 @@ final class LandingConsumerOperationalService
 {
     private const CACHE_PREFIX = 'landing:consumer:institution-pipeline:v2';
 
+    private const QUADRANT_CACHE_VERSION = 'v2';
+
     private const BRANCHES = [
         'madiun' => 'KC MADIUN',
         'magetan' => 'KC MAGETAN',
@@ -99,7 +101,7 @@ final class LandingConsumerOperationalService
     {
         $pipeline = $this->pipelinePayload($branchScope, $forceRefresh);
         $kprPipeline = $this->kprPipelinePayload($branchScope, $forceRefresh);
-        $quadrants = $this->quadrantPayload($requestedPeriod, $branchScope);
+        $quadrants = $this->cachedQuadrantPayload($requestedPeriod, $branchScope, $forceRefresh);
 
         return [
             'meta' => [
@@ -108,11 +110,110 @@ final class LandingConsumerOperationalService
                 'period' => $quadrants['period'] ?? null,
                 'period_label' => $quadrants['period_label'] ?? 'Belum ada data',
                 'generated_at' => now()->toIso8601String(),
+                'cache_stale' => (bool) ($quadrants['cache_stale'] ?? false),
+                'refresh_pending' => (bool) ($quadrants['refresh_pending'] ?? false),
             ],
             'pipeline' => $pipeline,
             'kpr_pipeline' => $kprPipeline,
             'quadrants' => $quadrants,
         ];
+    }
+
+    /**
+     * @param array<string, mixed>|null $branchScope
+     * @return array<string, mixed>
+     */
+    private function cachedQuadrantPayload(
+        ?string $requestedPeriod,
+        ?array $branchScope,
+        bool $forceRefresh
+    ): array {
+        $periodKey = $requestedPeriod ? Carbon::parse($requestedPeriod)->toDateString() : 'latest';
+        $scopeKey = (string) ($branchScope['key'] ?? UserBranchScope::AREA_SCOPE);
+        $version = ReportCacheVersion::composite(['pinjaman', 'consumer']);
+        $cacheKey = implode(':', [
+            'landing', 'consumer', 'quadrants', self::QUADRANT_CACHE_VERSION,
+            $version, $periodKey, $scopeKey,
+        ]);
+        $durableKey = implode(':', [
+            'landing', 'consumer', 'quadrants', self::QUADRANT_CACHE_VERSION,
+            'last-valid', $periodKey, $scopeKey,
+        ]);
+
+        if ($forceRefresh) {
+            Cache::forget($cacheKey);
+            $durable = Cache::get($durableKey);
+            if (is_array($durable)) {
+                $this->deferQuadrantRefresh($cacheKey, $durableKey, $requestedPeriod, $branchScope);
+                $durable['cache_stale'] = true;
+                $durable['refresh_pending'] = true;
+
+                return $durable;
+            }
+        } else {
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached)) {
+                Cache::put($durableKey, $cached, now()->addDays(7));
+
+                return $cached;
+            }
+
+            $durable = Cache::get($durableKey);
+            if (is_array($durable)) {
+                $this->deferQuadrantRefresh($cacheKey, $durableKey, $requestedPeriod, $branchScope);
+                $durable['cache_stale'] = true;
+                $durable['refresh_pending'] = true;
+
+                return $durable;
+            }
+        }
+
+        try {
+            $payload = $this->quadrantPayload($requestedPeriod, $branchScope);
+            Cache::put($cacheKey, $payload, now()->addHours(6));
+            Cache::put($durableKey, $payload, now()->addDays(7));
+
+            return $payload;
+        } catch (Throwable $exception) {
+            $durable = Cache::get($durableKey);
+            if (is_array($durable)) {
+                $durable['cache_stale'] = true;
+                $durable['refresh_error'] = $exception->getMessage();
+
+                return $durable;
+            }
+
+            throw $exception;
+        }
+    }
+
+    /** @param array<string, mixed>|null $branchScope */
+    private function deferQuadrantRefresh(
+        string $cacheKey,
+        string $durableKey,
+        ?string $requestedPeriod,
+        ?array $branchScope
+    ): void {
+        $pendingKey = $cacheKey.':refresh-pending';
+        if (! Cache::add($pendingKey, true, now()->addMinutes(10))) {
+            return;
+        }
+
+        defer(function () use ($cacheKey, $durableKey, $requestedPeriod, $branchScope, $pendingKey): void {
+            try {
+                $payload = $this->quadrantPayload($requestedPeriod, $branchScope);
+                Cache::put($cacheKey, $payload, now()->addHours(6));
+                Cache::put($durableKey, $payload, now()->addDays(7));
+            } catch (Throwable $exception) {
+                logger()->warning('Refresh cache landing Konsumer gagal.', [
+                    'period' => $requestedPeriod,
+                    'scope' => $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
+                    'error' => $exception->getMessage(),
+                ]);
+            } finally {
+                Cache::forget($pendingKey);
+            }
+        }, 'landing-consumer-quadrants:'.md5($cacheKey), true);
     }
 
     /**
@@ -464,22 +565,7 @@ final class LandingConsumerOperationalService
         $periodQuery = DB::table('performance_rm_snapshots')
             ->where('segmen', 'CONSUMER')
             ->whereIn(DB::raw('UPPER(TRIM(cabang))'), $areaBranches->values()->all());
-        if ($requestedPeriod) {
-            $requestedDate = Carbon::parse($requestedPeriod);
-            $period = (clone $periodQuery)
-                ->whereBetween('periode', [
-                    $requestedDate->copy()->startOfMonth()->toDateString(),
-                    $requestedDate->copy()->endOfMonth()->toDateString(),
-                ])
-                ->max('periode');
-            if (! $period) {
-                $period = $periodQuery
-                    ->where('periode', '<=', $requestedDate->toDateString())
-                    ->max('periode');
-            }
-        } else {
-            $period = $periodQuery->max('periode');
-        }
+        $period = $this->resolveQuadrantPeriod($periodQuery, $requestedPeriod);
         if (! $period) {
             return $empty;
         }
@@ -761,6 +847,21 @@ final class LandingConsumerOperationalService
             'period_label' => Carbon::parse($end)->translatedFormat('d M Y'),
             'branches' => $branchPayloads->all(),
         ];
+    }
+
+    private function resolveQuadrantPeriod($periodQuery, ?string $requestedPeriod): ?string
+    {
+        if (! $requestedPeriod) {
+            $period = (clone $periodQuery)->max('periode');
+
+            return $period !== null ? (string) $period : null;
+        }
+
+        $period = (clone $periodQuery)
+            ->where('periode', '<=', Carbon::parse($requestedPeriod)->toDateString())
+            ->max('periode');
+
+        return $period !== null ? (string) $period : null;
     }
 
     /**

@@ -1048,6 +1048,9 @@
                     <span class="period-card-sub">POSISI LAPORAN</span>
                     <span class="period-card-date" id="periodLabel">-</span>
                 </div>
+                <button type="button" class="btn btn-light btn-sm" id="exportKeragaanPdf" title="Laporan lengkap seluruh indikator dan unit dalam cabang terpilih">
+                    <i class="fas fa-file-pdf" aria-hidden="true"></i> Export to PDF
+                </button>
             </div>
 
             <!-- Single-Row Filter Bar (Collapsible for Mobile/Tablet) -->
@@ -1202,8 +1205,18 @@
         let latestRequestId = 0;
         const tableSortState = {};
 
+        document.getElementById('exportKeragaanPdf').addEventListener('click', () => {
+            if (!els.kanca.value || !els.period.value) {
+                alert('Pilih Area atau Cabang dan posisi laporan terlebih dahulu.');
+                return;
+            }
+            const params = new URLSearchParams({ kanca: els.kanca.value, posisi_terakhir: els.period.value, posisi_rka: els.rka.value || '' });
+            window.open(`${page.routes.exportPdf}?${params}`, '_blank', 'noopener');
+        });
+
         function selectedScalar(value, fallback = '') {
             if (Array.isArray(value)) {
+                if (value.length === 4 && ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'].every(branch => value.includes(branch))) return 'area6';
                 return value.length === 1 ? value[0] : fallback;
             }
 
@@ -1429,7 +1442,7 @@
 
             els.kanca.innerHTML = `<option value="">Pilih cabang</option>${optionHtml(withSelectedOption(filters.kanca, selectedKanca), selectedKanca)}`;
             els.unit.innerHTML = optionHtml(filters.unit_kerja || [], selectedUnit);
-            els.unit.disabled = els.kanca.value === '';
+            els.unit.disabled = els.kanca.value === '' || els.kanca.value === 'area6';
             els.dataType.innerHTML = optionHtml(page.dataTypes || [], selectedDataType);
             syncPeriodDatePicker(
                 filters.posisi_terakhir || [],

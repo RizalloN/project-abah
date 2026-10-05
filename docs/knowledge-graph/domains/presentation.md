@@ -7,7 +7,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | file | 14 |
-| method | 251 |
+| method | 253 |
 | unresolved_symbol | 1 |
 | class | 9 |
 | trait | 1 |
@@ -19,7 +19,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | --- | ---: | --- |
 | `NativeOpenXmlPowerPointRenderer` | class | 72 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:9` |
 | `PresentationScopeDataService` | class | 53 | `app/Services/Presentation/PresentationScopeDataService.php:14` |
-| `PresentationFundingStrategyService` | class | 39 | `app/Services/Presentation/PresentationFundingStrategyService.php:16` |
+| `PresentationFundingStrategyService` | class | 41 | `app/Services/Presentation/PresentationFundingStrategyService.php:16` |
 | `PresentationDeckDataService` | class | 38 | `app/Services/Presentation/PresentationDeckDataService.php:10` |
 | `PresentationPowerPointExportTest` | class | 33 | `tests/Unit/PresentationPowerPointExportTest.php:11` |
 | `PresentationExportManager` | class | 23 | `app/Services/Presentation/PresentationExportManager.php:11` |
@@ -73,7 +73,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| presentation -> core (calls) | 60 |
+| presentation -> core (calls) | 62 |
 | presentation -> core (accepts) | 24 |
 | presentation -> core (instantiates) | 24 |
 | jobs-snapshots -> presentation (calls) | 10 |

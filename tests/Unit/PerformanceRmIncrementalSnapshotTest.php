@@ -6,6 +6,7 @@ use App\Support\ConsumerRmPositionHistoryStore;
 use App\Support\ConsumerRmRealizationCalculator;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\LandingConsumerOperationalService;
+use App\Support\MicroNettDisbursementCalculator;
 use App\Support\ReportSnapshotBuilder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Config;
@@ -884,6 +885,53 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
             'produk' => 'SMALL',
             'realisasi_deb' => 4,
             'realisasi_os' => 1750000000,
+        ]);
+    }
+
+    public function test_kur_snapshot_and_cabang_use_the_same_canonical_nett_calculator(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        $this->insertDailyLoanRow(
+            '000123456',
+            'KURMIKRO',
+            300000000,
+            295000000,
+            'CIF-KUR-NEW',
+            '2026-05-31',
+            'MICRO',
+            tglRealisasi: '2026-05-08'
+        );
+        DB::table('daily_loan_dinamis')
+            ->where('nomor_rekening1', '000123456')
+            ->update([
+                'description' => 'Kredit Mikro - KUR Ritel 2015',
+                'pn_pemrakarsa1' => 'RM A',
+            ]);
+
+        $expected = collect(app(MicroNettDisbursementCalculator::class)->kurRm('2026-05-31'))->first();
+        $this->assertNotNull($expected);
+
+        $builder->rebuildPerformanceRm('2026-05-31', true);
+
+        $snapshot = DB::table('performance_rm_snapshots')
+            ->where('periode', '2026-05-31')
+            ->where('segmen', 'MICRO')
+            ->where('produk', 'KUR-MIKRO')
+            ->where('rm', 'RM A')
+            ->first();
+
+        $this->assertNotNull($snapshot);
+        foreach (['realisasi_deb', 'realisasi_os', 'w2_realisasi_deb', 'w2_realisasi_os', 'gt_250_realisasi_deb', 'gt_250_realisasi_os'] as $column) {
+            $this->assertEquals($expected[$column], $snapshot->{$column});
+        }
+        $this->assertDatabaseHas('performance_rm_cabang_snapshots', [
+            'periode' => '2026-05-31',
+            'cabang' => 'KC MADIUN',
+            'segmen' => 'MICRO',
+            'produk' => 'KUR-MIKRO',
+            'realisasi_deb' => 1,
+            'realisasi_os' => 300000000,
         ]);
     }
 

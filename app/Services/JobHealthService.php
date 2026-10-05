@@ -211,58 +211,15 @@ class JobHealthService
 
     private function purgeStaleQueueRows(): array
     {
-        $reportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
-
+        // Queue age alone is not proof of abandonment. Deleting an old ready or
+        // reserved row can silently lose work or race a legitimate long job.
         return [
-            // Database queue retry_after owns pending/reserved import rows. Removing
-            // them here can race a legitimate long-running import.
             'imports' => 0,
             'reserved_imports' => 0,
-            'managed_imports' => $this->deletePendingQueueRows(
-                ['imports-high', 'reports-low', 'default'],
-                [RunManagedReportLoadJob::class, RunManagedReportDeleteJob::class],
-                self::MANAGED_QUEUE_STALE_SECONDS
-            ),
-            'reports_low' => $this->deletePendingQueueRows(
-                ['reports-low', 'remote-sources'],
-                [
-                    SyncImportedReportJob::class,
-                    WarmReportCacheJob::class,
-                    EnsureDashboardSnapshotJob::class,
-                    EnsureDashboardSimpananSnapshotJob::class,
-                    EnsureRasioCasaSnapshotJob::class,
-                    EnsureRekeningDormantSnapshotJob::class,
-                    RunManagedReportSnapshotRebuildJob::class,
-                    RefreshRemoteDashboardSourcesJob::class,
-                ],
-                self::REPORT_QUEUE_STALE_SECONDS
-            ),
-            'configured_report_queue' => $this->deletePendingQueueRows(
-                [$reportQueue],
-                [
-                    SyncImportedReportJob::class,
-                    WarmReportCacheJob::class,
-                    EnsureDashboardSnapshotJob::class,
-                    EnsureDashboardSimpananSnapshotJob::class,
-                    EnsureRasioCasaSnapshotJob::class,
-                    EnsureRekeningDormantSnapshotJob::class,
-                    RunManagedReportSnapshotRebuildJob::class,
-                ],
-                self::REPORT_QUEUE_STALE_SECONDS
-            ),
-            'reserved_reports' => $this->deleteReservedQueueRows(
-                [$reportQueue, 'reports-low', 'remote-sources'],
-                [
-                    SyncImportedReportJob::class,
-                    WarmReportCacheJob::class,
-                    EnsureDashboardSnapshotJob::class,
-                    EnsureDashboardSimpananSnapshotJob::class,
-                    EnsureRasioCasaSnapshotJob::class,
-                    EnsureRekeningDormantSnapshotJob::class,
-                    RefreshRemoteDashboardSourcesJob::class,
-                ],
-                self::REPORT_QUEUE_STALE_SECONDS
-            ),
+            'managed_imports' => 0,
+            'reports_low' => 0,
+            'configured_report_queue' => 0,
+            'reserved_reports' => 0,
         ];
     }
 

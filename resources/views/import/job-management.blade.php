@@ -40,7 +40,7 @@
         <div class="card-header bg-white border-bottom py-3 px-4 job-management-toolbar">
             <div class="row align-items-center">
                 <!-- Telemetry Stats Strip -->
-                <div class="col-xl-5 col-lg-5 d-flex justify-content-between pr-lg-4 border-right job-summary-grid">
+                <div class="col-xl-4 col-lg-5 d-flex justify-content-between pr-lg-4 border-right job-summary-grid">
                     <div class="job-summary-item text-center">
                         <div class="job-summary-label">Aktif</div>
                         <div class="job-summary-val text-primary" id="summary-active">0</div>
@@ -60,8 +60,8 @@
                 </div>
 
                 <!-- Filters & Action Panel -->
-                <div class="col-xl-7 col-lg-7 pl-lg-4 job-filter-panel mt-3 mt-lg-0">
-                    <div class="d-flex align-items-center justify-content-lg-end flex-wrap job-filter-controls" style="gap: 8px;">
+                <div class="col-xl-8 col-lg-7 pl-lg-4 job-filter-panel mt-3 mt-lg-0">
+                    <div class="d-flex align-items-center justify-content-lg-end flex-wrap job-filter-controls" style="gap: 10px;">
                         <select id="job-filter-status" class="form-control form-control-sm custom-select job-status-select">
                             <option value="all">Semua Status</option>
                             <option value="queued">Queued</option>
@@ -79,16 +79,18 @@
                             <input type="text" id="job-filter-search" class="form-control border-left-0 pl-0" placeholder="Cari job...">
                         </div>
                         
-                        <div class="custom-control custom-switch d-inline-flex align-items-center mx-1">
-                            <input type="checkbox" class="custom-control-input" id="job-filter-active-only">
-                            <label class="custom-control-label font-weight-bold text-muted" style="font-size: 0.8rem; cursor: pointer; user-select: none;" for="job-filter-active-only">Aktif</label>
-                        </div>
-                        <div class="custom-control custom-switch d-inline-flex align-items-center mx-1">
-                            <input type="checkbox" class="custom-control-input" id="job-auto-refresh" checked>
-                            <label class="custom-control-label font-weight-bold text-muted" style="font-size: 0.8rem; cursor: pointer; user-select: none;" for="job-auto-refresh">Auto</label>
+                        <div class="job-filter-switch-wrap d-inline-flex align-items-center">
+                            <div class="custom-control custom-switch d-inline-flex align-items-center">
+                                <input type="checkbox" class="custom-control-input" id="job-filter-active-only">
+                                <label class="custom-control-label font-weight-bold text-muted" for="job-filter-active-only">Aktif</label>
+                            </div>
+                            <div class="custom-control custom-switch d-inline-flex align-items-center">
+                                <input type="checkbox" class="custom-control-input" id="job-auto-refresh" checked>
+                                <label class="custom-control-label font-weight-bold text-muted" for="job-auto-refresh">Auto</label>
+                            </div>
                         </div>
 
-                        <div class="d-inline-flex align-items-center" style="gap: 4px;">
+                        <div class="job-action-btn-group d-inline-flex align-items-center" style="gap: 6px;">
                             <button type="button" id="btn-job-refresh" class="btn btn-sm job-btn-primary" title="Refresh data"><i class="fas fa-sync-alt"></i></button>
                             <button type="button" id="btn-job-clear" class="btn btn-sm job-btn-outline-danger" title="Bersihkan riwayat job"><i class="fas fa-trash-alt"></i></button>
                         </div>
@@ -468,21 +470,33 @@ document.addEventListener('DOMContentLoaded', function () {
 
 /* 3. Toolbar & Telemetry */
 .job-management-toolbar {
+    display: block !important;
+    width: 100% !important;
     background: #ffffff;
     border-bottom: 1px solid #e2e8f0;
+    padding: 1rem 1.5rem !important;
+}
+.job-management-toolbar > .row {
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+.job-summary-grid {
+    min-width: 0;
 }
 .job-summary-item {
     flex: 1 1 0;
-    min-width: 60px;
+    min-width: 0;
     padding: 0 0.5rem;
 }
 .job-summary-label {
-    font-size: 0.7rem;
-    font-weight: 800;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #64748b;
-    margin-bottom: 0.2rem;
+    font-size: 0.68rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.07em !important;
+    text-transform: uppercase !important;
+    color: #64748b !important;
+    white-space: nowrap !important;
+    margin-bottom: 0.2rem !important;
 }
 .job-summary-val {
     font-size: 1.25rem;
@@ -491,19 +505,30 @@ document.addEventListener('DOMContentLoaded', function () {
     letter-spacing: -0.01em;
 }
 
+.job-filter-controls {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    flex-wrap: nowrap !important;
+    gap: 10px !important;
+}
+
 .job-status-select {
-    width: 150px !important;
+    width: 155px !important;
     min-width: 140px;
-    height: 36px !important;
-    border-radius: 8px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    max-height: 38px !important;
+    border-radius: 9px !important;
     border: 1px solid #cbd5e1 !important;
     font-size: 0.82rem !important;
     font-weight: 600 !important;
     color: #1e293b !important;
     background-color: #ffffff !important;
     box-shadow: none !important;
-    padding: 0.25rem 1.75rem 0.25rem 0.65rem !important;
+    padding: 0.25rem 1.75rem 0.25rem 0.75rem !important;
     cursor: pointer;
+    line-height: 1.4 !important;
 }
 .job-status-select:focus {
     border-color: #0857c3 !important;
@@ -511,26 +536,61 @@ document.addEventListener('DOMContentLoaded', function () {
 }
 
 .job-filter-search-group {
-    width: 175px !important;
-    height: 36px !important;
+    width: 200px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    margin-bottom: 0 !important;
+}
+.job-filter-search-group .input-group-prepend {
+    height: 38px !important;
 }
 .job-filter-search-group .input-group-text {
-    border-radius: 8px 0 0 8px !important;
+    border-radius: 9px 0 0 9px !important;
     border-color: #cbd5e1 !important;
-    height: 36px !important;
-    font-size: 0.8rem;
-    padding: 0 0.65rem;
+    height: 38px !important;
+    min-height: 38px !important;
+    font-size: 0.82rem;
+    padding: 0 0.75rem;
+    background-color: #f8fafc !important;
+    color: #94a3b8 !important;
 }
 .job-filter-search-group .form-control {
-    border-radius: 0 8px 8px 0 !important;
+    border-radius: 0 9px 9px 0 !important;
     border-color: #cbd5e1 !important;
-    height: 36px !important;
+    height: 38px !important;
+    min-height: 38px !important;
     font-size: 0.82rem !important;
-    padding: 0.25rem 0.65rem !important;
+    padding: 0.25rem 0.75rem !important;
+    color: #1e293b !important;
 }
 .job-filter-search-group .form-control:focus {
     border-color: #0857c3 !important;
     box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.15) !important;
+}
+
+.job-filter-switch-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    padding: 0 0.75rem;
+    height: 38px;
+    min-height: 38px;
+    box-sizing: border-box;
+}
+.job-filter-switch-wrap .custom-switch {
+    margin: 0 !important;
+    padding-left: 2rem !important;
+}
+.job-filter-switch-wrap .custom-control-label {
+    font-size: 0.78rem !important;
+    font-weight: 700 !important;
+    color: #475569 !important;
+    user-select: none;
+    cursor: pointer;
+    line-height: 1.4 !important;
 }
 
 .custom-switch .custom-control-label::before {
@@ -548,12 +608,19 @@ document.addEventListener('DOMContentLoaded', function () {
     border-color: #0857c3;
 }
 
+.job-action-btn-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
 /* Buttons */
 .job-btn-primary {
-    border-radius: 8px !important;
+    border-radius: 9px !important;
     font-weight: 700;
-    height: 36px;
-    min-width: 36px;
+    height: 38px;
+    min-height: 38px;
+    min-width: 38px;
     padding: 0 0.75rem;
     display: inline-flex;
     align-items: center;
@@ -570,10 +637,11 @@ document.addEventListener('DOMContentLoaded', function () {
     color: #ffffff;
 }
 .job-btn-outline-danger {
-    border-radius: 8px !important;
+    border-radius: 9px !important;
     font-weight: 700;
-    height: 36px;
-    min-width: 36px;
+    height: 38px;
+    min-height: 38px;
+    min-width: 38px;
     padding: 0 0.75rem;
     display: inline-flex;
     align-items: center;
@@ -592,6 +660,23 @@ document.addEventListener('DOMContentLoaded', function () {
     opacity: 0.45;
     border-color: #e2e8f0;
     color: #94a3b8;
+}
+
+#btn-job-refresh.job-btn-primary,
+#btn-job-clear.job-btn-outline-danger {
+    height: 38px !important;
+    min-height: 38px !important;
+    width: 38px !important;
+    min-width: 38px !important;
+    padding: 0 !important;
+    border-radius: 9px !important;
+}
+
+#btn-job-delete-selected {
+    height: 36px !important;
+    min-height: 36px !important;
+    white-space: nowrap !important;
+    padding: 0 0.85rem !important;
 }
 
 /* 4. Active Cards */
@@ -931,6 +1016,26 @@ document.addEventListener('DOMContentLoaded', function () {
         margin: 0 !important;
     }
 
+    .job-filter-search-group {
+        grid-column: 1 / -1;
+        width: 100% !important;
+    }
+
+    .job-filter-switch-wrap {
+        grid-column: 1 / -1;
+        display: flex;
+        justify-content: space-around;
+        width: 100%;
+    }
+
+    .job-action-btn-group {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+        width: 100%;
+    }
+
     .job-filter-controls .custom-control {
         min-width: 0;
         margin: 0 !important;
@@ -938,7 +1043,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     #btn-job-refresh,
     #btn-job-clear {
-        width: 100%;
+        width: 100% !important;
         min-height: 38px;
         margin: 0 !important;
     }

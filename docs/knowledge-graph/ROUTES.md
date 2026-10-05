@@ -67,6 +67,7 @@
 | GET | `dashboard-harian/export` | `dashboard.harian.export` | dashboard-harian | `App\Http\Controllers\DashboardHarianController::exportExcel` |
 | GET | `dashboard-harian/keragaan-uker` | `dashboard.harian.keragaan-uker` | dashboard-harian | `App\Http\Controllers\DashboardHarianController::keragaanUker` |
 | GET | `dashboard-harian/keragaan-uker/data` | `dashboard.harian.keragaan-uker.data` | dashboard-harian | `App\Http\Controllers\DashboardHarianController::keragaanUkerData` |
+| GET | `dashboard-harian/keragaan-uker/export-pdf` | `dashboard.harian.keragaan-uker.export-pdf` | dashboard-harian | `App\Http\Controllers\KeragaanPdfController::__invoke` |
 | GET | `dashboard-harian/timeseries` | `dashboard.harian.timeseries` | dashboard-harian | `App\Http\Controllers\DashboardHarianController::timeseries` |
 | GET | `dashboard-harian/timeseries/data` | `dashboard.harian.timeseries.data` | dashboard-harian | `App\Http\Controllers\DashboardHarianController::timeseriesData` |
 | GET | `report/dashboard-dana/hourly-dpk` | `report.dashboard-dana.hourly-dpk` | dashboard-harian | `App\Http\Controllers\DashboardSimpananController::hourlyDpkIndex` |

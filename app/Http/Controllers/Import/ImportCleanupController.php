@@ -84,13 +84,15 @@ class ImportCleanupController extends Controller
 
         $activePaths = [];
         $activeJobs = DB::table('import_jobs')
-            ->whereIn('status', ['uploaded', 'processing'])
+            ->whereIn('status', ['uploaded', 'queued', 'staging', 'processing', 'failed', 'failed_partial', 'completed'])
             ->get();
 
         foreach ($activeJobs as $job) {
-            $resolved = $this->resolveJobSourcePath($job);
-            if ($resolved) {
-                $activePaths[strtolower($resolved)] = true;
+            if ($this->isCleanupEligibleJob($job)) {
+                continue;
+            }
+            foreach ($this->recoverableArtifactPaths($job) as $resolved) {
+                $activePaths[$this->artifactPathKey($resolved)] = true;
             }
         }
 
@@ -102,7 +104,7 @@ class ImportCleanupController extends Controller
 
             foreach (File::files($directory) as $file) {
                 $fullPath = $file->getPathname();
-                if (isset($activePaths[strtolower($fullPath)])) {
+                if (isset($activePaths[$this->artifactPathKey($fullPath)])) {
                     continue;
                 }
 
@@ -124,7 +126,7 @@ class ImportCleanupController extends Controller
 
             foreach (File::files($directory) as $file) {
                 $fullPath = $file->getPathname();
-                if (isset($activePaths[strtolower($fullPath)])) {
+                if (isset($activePaths[$this->artifactPathKey($fullPath)])) {
                     continue;
                 }
 
@@ -154,6 +156,18 @@ class ImportCleanupController extends Controller
         }
 
         $status = strtolower((string) ($job->status ?? ''));
+        $context = json_decode((string) ($job->job_context ?? ''), true) ?: [];
+        $isMultiPn = (int) ($job->id_report ?? 0) === 9
+            || strtolower((string) ($context['table_name'] ?? '')) === 'simpanan_multipn';
+        if ($isMultiPn) {
+            // Keep recovery evidence for a week; never discard a partial import.
+            if ($status !== 'completed' || (int) ($job->total_failed ?? 0) > 0
+                || (int) ($job->total_success ?? 0) !== (int) ($job->total_files ?? 0)
+                || empty($job->updated_at)
+                || \Illuminate\Support\Carbon::parse($job->updated_at)->gt(now()->subDays(7))) {
+                return false;
+            }
+        }
         if (!in_array($status, ['completed', 'failed_partial'], true)) {
             return false;
         }
@@ -162,6 +176,32 @@ class ImportCleanupController extends Controller
         $totalSuccess = max(0, (int) ($job->total_success ?? 0));
 
         return $totalFiles === 0 || $totalSuccess > 0;
+    }
+
+    private function recoverableArtifactPaths(object $job): array
+    {
+        $paths = array_filter([$this->resolveJobSourcePath($job)]);
+        $context = json_decode((string) ($job->job_context ?? ''), true) ?: [];
+        foreach (['file_path', 'staged_csv_path'] as $field) {
+            foreach ([$context[$field] ?? null, data_get($context, 'state.params.' . $field)] as $path) {
+                if (!is_string($path) || trim($path) === '') {
+                    continue;
+                }
+                if ($this->isAbsolutePath($path) || str_starts_with($path, '/')) {
+                    $paths[] = $path;
+                } else {
+                    $paths[] = storage_path('app/' . $path);
+                    $paths[] = storage_path('app/private/' . $path);
+                }
+            }
+        }
+
+        return array_values(array_unique($paths));
+    }
+
+    private function artifactPathKey(string $path): string
+    {
+        return strtolower(str_replace('\\', '/', realpath($path) ?: $path));
     }
 
     private function resolveJobSourcePath($job): ?string

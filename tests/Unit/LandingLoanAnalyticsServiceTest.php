@@ -69,6 +69,21 @@ class LandingLoanAnalyticsServiceTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_date_switch_and_refresh_never_return_another_periods_analytics(): void
+    {
+        $this->insert('2026-09-30', 100_000_000, 1, 'N', 'SMALL', 'KC MADIUN', 0.10);
+        $this->insert('2026-10-02', 200_000_000, 1, 'N', 'SMALL', 'KC MADIUN', 0.10);
+        $service = app(LandingLoanAnalyticsService::class);
+        $sep = $service->payload('2026-09-30');
+        $oct = $service->payload('2026-10-02');
+        $back = $service->payload('2026-09-30', null, true);
+
+        $this->assertSame('2026-09-30', $sep['meta']['period']);
+        $this->assertSame('2026-10-02', $oct['meta']['period']);
+        $this->assertSame('2026-09-30', $back['meta']['period']);
+        $this->assertTrue($back['meta']['refresh_pending']);
+    }
+
     public function test_quality_uses_exact_month_end_and_respects_locked_branch(): void
     {
         $this->insert('2026-01-30', 100_000_000, 1, 'Y', 'SMALL', 'KC MADIUN', 0.10);

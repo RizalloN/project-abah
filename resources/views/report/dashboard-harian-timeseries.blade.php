@@ -2003,22 +2003,24 @@
 
             const allSegmentOption = { value: 'total', label: 'Semua Segmen' };
             const ritelSegmentOption = { value: 'ritel', label: 'Ritel' };
+            const smeSegmentOption = { value: 'sme', label: 'SME' };
+            const consumerSegmentOption = { value: 'consumer', label: 'Konsumer' };
             const microSegmentOption = { value: 'micro', label: 'Micro' };
+            const loanMicroSegmentOption = { value: 'micro', label: 'Mikro' };
             const wholesaleSegmentOption = { value: 'wholesale', label: 'Wholesale' };
             const allProductOption = { value: 'total', label: 'Semua Produk' };
-            const ritelLoanProducts = [
-                allProductOption,
-                { value: 'small', label: 'Small / SME' },
+            const loanSegmentOptions = [smeSegmentOption, consumerSegmentOption, loanMicroSegmentOption];
+            const smeLoanProducts = [
                 { value: 'kecil', label: 'Kecil' },
-                { value: 'kecil_non_cashcoll', label: 'Kecil Non Cash Collateral' },
-                { value: 'cashcoll', label: 'Cash Collateral' },
-                { value: 'consumer', label: 'Consumer' },
+            ];
+            const consumerLoanProducts = [
+                { value: 'total', label: 'Semua Produk Konsumer' },
                 { value: 'briguna_konsumer', label: 'Briguna' },
                 { value: 'kpr', label: 'KPR' },
                 { value: 'kkb', label: 'KKB' },
             ];
             const microLoanProducts = [
-                allProductOption,
+                { value: 'total', label: 'Semua Produk Mikro' },
                 { value: 'briguna_mikro', label: 'Briguna Mikro' },
                 { value: 'kupedes', label: 'Kupedes' },
                 { value: 'kur_mikro', label: 'KUR Mikro' },
@@ -2027,13 +2029,13 @@
             ];
 
             const filterConfig = {
-                pinjaman: { segments: [allSegmentOption, ritelSegmentOption, microSegmentOption], products: 'loan' },
+                pinjaman: { segments: loanSegmentOptions, products: 'loan' },
                 simpanan: {
                     segments: [allSegmentOption, ritelSegmentOption, microSegmentOption, wholesaleSegmentOption],
                     products: [allProductOption, { value: 'giro', label: 'Giro' }, { value: 'tabungan', label: 'Tabungan' }, { value: 'deposito', label: 'Deposito' }],
                 },
-                sml: { segments: [allSegmentOption, ritelSegmentOption, microSegmentOption], products: 'loan' },
-                npl: { segments: [allSegmentOption, ritelSegmentOption, microSegmentOption], products: 'loan' },
+                sml: { segments: loanSegmentOptions, products: 'loan' },
+                npl: { segments: loanSegmentOptions, products: 'loan' },
                 simpanan_casa: {
                     segments: [allSegmentOption, ritelSegmentOption, microSegmentOption, wholesaleSegmentOption],
                     products: [allProductOption, { value: 'giro', label: 'Giro' }, { value: 'tabungan', label: 'Tabungan' }],
@@ -2045,6 +2047,9 @@
             function segmentOptionsForContext() {
                 const config = filterConfig[currentCategory] || filterConfig.simpanan;
                 const unitKind = selectedUnitKind();
+                if (config.products === 'loan') {
+                    return unitKind === 'micro' ? [loanMicroSegmentOption] : config.segments;
+                }
                 if (unitKind === 'micro') return [microSegmentOption];
                 if (unitKind === 'ritel') {
                     if (['simpanan', 'simpanan_casa'].includes(currentCategory)) {
@@ -2058,9 +2063,10 @@
             function productOptionsForContext() {
                 const config = filterConfig[currentCategory] || filterConfig.simpanan;
                 if (config.products !== 'loan') return config.products;
-                if (currentSegment === 'ritel') return ritelLoanProducts;
+                if (currentSegment === 'sme') return smeLoanProducts;
+                if (currentSegment === 'consumer') return consumerLoanProducts;
                 if (currentSegment === 'micro') return microLoanProducts;
-                return [allProductOption, ...ritelLoanProducts.slice(1), ...microLoanProducts.slice(1)];
+                return [allProductOption];
             }
 
             function fillSelect(select, options, selectedValue) {
@@ -2088,15 +2094,20 @@
                 const options = segmentOptionsForContext();
                 const unitKind = selectedUnitKind();
                 let preferred = currentSegment;
-                if (preferUnitDefault && ['ritel', 'micro'].includes(unitKind)) preferred = unitKind;
+                if (preferUnitDefault && unitKind === 'micro') preferred = 'micro';
+                if (preferUnitDefault && unitKind === 'ritel' && !['pinjaman', 'sml', 'npl'].includes(currentCategory)) preferred = 'ritel';
                 currentSegment = fillSelect(segmentInput, options, preferred);
                 const hint = document.getElementById('segmentFilterHint');
                 if (hint) {
-                    hint.textContent = unitKind === 'ritel'
+                    hint.textContent = ['pinjaman', 'sml', 'npl'].includes(currentCategory)
+                        ? (unitKind === 'micro'
+                            ? 'BRI Unit otomatis menggunakan segmen Mikro.'
+                            : 'Pilih SME, Konsumer, atau Mikro untuk menampilkan produknya.')
+                        : (unitKind === 'ritel'
                         ? 'KC/KCP otomatis diarahkan ke Ritel; pilihan lain tetap tersedia.'
                         : (unitKind === 'micro'
                             ? 'BRI Unit otomatis menggunakan segmen Micro.'
-                            : 'Pilih segmen untuk mempersempit data.');
+                            : 'Pilih segmen untuk mempersempit data.'));
                 }
                 syncProductOptions();
             }
@@ -2108,11 +2119,21 @@
                     currentProduct = currentSegment;
                     currentSegment = 'total';
                 }
-                if (['pinjaman', 'sml', 'npl'].includes(currentCategory)
-                    && ['small', 'consumer'].includes(currentSegment)
-                    && currentProduct === 'total') {
-                    currentProduct = currentSegment;
-                    currentSegment = 'ritel';
+                if (['pinjaman', 'sml', 'npl'].includes(currentCategory)) {
+                    if (currentSegment === 'small' && currentProduct === 'total') {
+                        currentSegment = 'sme';
+                    }
+                    if (currentSegment === 'ritel') {
+                        if (['small', 'kecil', 'kecil_non_cashcoll', 'cashcoll'].includes(currentProduct)) {
+                            currentSegment = 'sme';
+                            if (currentProduct === 'small') currentProduct = 'total';
+                        } else if (['consumer', 'briguna_konsumer', 'kpr', 'kkb'].includes(currentProduct)) {
+                            currentSegment = 'consumer';
+                            if (currentProduct === 'consumer') currentProduct = 'total';
+                        } else {
+                            currentSegment = 'sme';
+                        }
+                    }
                 }
             }
 

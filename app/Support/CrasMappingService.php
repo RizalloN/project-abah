@@ -12,6 +12,28 @@ class CrasMappingService
 {
     private const TABLE = 'cras';
 
+    private const MOVEMENT_SERIES_PERIODS = [
+        '2026-01-31' => 'Jan 2026',
+        '2026-02-28' => 'Feb 2026',
+        '2026-03-31' => 'Mar 2026',
+        '2026-04-30' => 'Apr 2026',
+        '2026-05-31' => 'Mei 2026',
+        '2026-06-30' => 'Jun 2026',
+        '2026-07-31' => 'Jul 2026',
+        '2026-08-31' => 'Agu 2026',
+    ];
+
+    private const MOVEMENT_SERIES_SEGMENTS = [
+        'small' => [
+            'label' => 'Small',
+            'source_value' => 'Small',
+        ],
+        'consumer' => [
+            'label' => 'Consumer',
+            'source_value' => 'Consumer',
+        ],
+    ];
+
     private const FILTER_COLUMNS = [
         'sektor' => 'sektor_ekonomi',
         'sub_sektor' => 'sub_sektor_ekonomi',
@@ -105,6 +127,7 @@ class CrasMappingService
         });
 
         $lpg = app(CrasLpgPortfolioService::class)->payload($input, $period, $selected['wilayah']);
+        $movementSeries = $this->movementSeries($selected['wilayah']);
 
         return [
             'ready' => true,
@@ -127,6 +150,7 @@ class CrasMappingService
             'metrics' => $computed['metrics'],
             'coverage' => $computed['coverage'],
             'lpg' => $lpg,
+            'movement_series' => $movementSeries,
             'source' => [
                 'label' => 'SSA CRAS',
                 'geojson_label' => (string) config('marketshare-geography.source.label', 'Batas Administrasi Kecamatan'),
@@ -146,7 +170,203 @@ class CrasMappingService
             'units' => [],
             'metrics' => $this->emptyMetrics(),
             'coverage' => [],
+            'movement_series' => [
+                'ready' => false,
+                'message' => $message,
+                'periods' => [],
+                'segments' => [],
+            ],
         ];
+    }
+
+    private function movementSeries(string $region): array
+    {
+        return Cache::remember('cras_mapping:movement_series:v5:'.$region, now()->addMinutes(10), function () use ($region): array {
+            $periods = array_map(
+                fn (string $label, string $value): array => ['value' => $value, 'label' => $label],
+                self::MOVEMENT_SERIES_PERIODS,
+                array_keys(self::MOVEMENT_SERIES_PERIODS)
+            );
+            $values = array_fill_keys(array_keys(self::MOVEMENT_SERIES_PERIODS), 0.0);
+            $segments = [];
+
+            foreach (self::MOVEMENT_SERIES_SEGMENTS as $key => $definition) {
+                $segments[$key] = [
+                    'key' => $key,
+                    'label' => $definition['label'],
+                    'products' => [
+                        'all' => $this->emptyMovementSeriesProduct(
+                            'all',
+                            'Semua Produk '.$definition['label'],
+                            'Seluruh produk pada segmen '.$definition['label'],
+                            $values
+                        ),
+                    ],
+                ];
+            }
+
+            foreach ($this->movementSeriesProductCatalog() as $segmentKey => $products) {
+                if (! isset($segments[$segmentKey])) {
+                    continue;
+                }
+                foreach ($products as $product) {
+                    $segments[$segmentKey]['products'][$product] = $this->emptyMovementSeriesProduct(
+                        $product,
+                        $product,
+                        'Segmen '.$segments[$segmentKey]['label'].' · Produk '.$product,
+                        $values
+                    );
+                }
+            }
+
+            $query = DB::table(self::TABLE)
+                ->whereBetween('cras_periode', [array_key_first(self::MOVEMENT_SERIES_PERIODS), array_key_last(self::MOVEMENT_SERIES_PERIODS)])
+                ->where('status_rekening', 'AKTIF')
+                ->whereIn('flag_movement_kualitas', ['UG', 'DG'])
+                ->whereIn('segmen', array_column(self::MOVEMENT_SERIES_SEGMENTS, 'source_value'));
+            $this->applyRegionFilter($query, $region);
+
+            if (DB::connection()->getDriverName() === 'mysql') {
+                $rows = $query
+                    ->selectRaw('`cras_periode`, `flag_movement_kualitas`, `segmen`, `produk`, SUM('.$this->mysqlNumericExpression('baki_debet').') AS `baki_debet`')
+                    ->groupBy('cras_periode', 'flag_movement_kualitas', 'segmen', 'produk')
+                    ->cursor();
+            } else {
+                $rows = $query->select([
+                    'cras_periode',
+                    'flag_movement_kualitas',
+                    'segmen',
+                    'produk',
+                    'baki_debet',
+                ])->cursor();
+            }
+
+            foreach ($rows as $row) {
+                $period = Carbon::parse($row->cras_periode)->toDateString();
+                $movement = trim((string) $row->flag_movement_kualitas);
+                $segmentKey = match ($row->segmen) {
+                    'Small' => 'small',
+                    'Consumer' => 'consumer',
+                    default => null,
+                };
+                $product = trim((string) $row->produk);
+
+                if ($segmentKey === null || $product === '' || ! isset($segments[$segmentKey]['products']['all']['rows'][$movement]['values'][$period])) {
+                    if ($segmentKey !== null && $product !== '' && ! isset($segments[$segmentKey]['products'][$product])) {
+                        $segments[$segmentKey]['products'][$product] = $this->emptyMovementSeriesProduct(
+                            $product,
+                            $product,
+                            'Segmen '.$segments[$segmentKey]['label'].' · Produk '.$product,
+                            $values
+                        );
+                    }
+                    continue;
+                }
+
+                if (! isset($segments[$segmentKey]['products'][$product])) {
+                    $segments[$segmentKey]['products'][$product] = $this->emptyMovementSeriesProduct(
+                        $product,
+                        $product,
+                        'Segmen '.$segments[$segmentKey]['label'].' · Produk '.$product,
+                        $values
+                    );
+                }
+
+                $amount = $this->parseNumber($row->baki_debet);
+                $segments[$segmentKey]['products']['all']['rows'][$movement]['values'][$period] += $amount;
+                $segments[$segmentKey]['products'][$product]['rows'][$movement]['values'][$period] += $amount;
+            }
+
+            foreach ($segments as &$segment) {
+                $allProducts = $segment['products']['all'];
+                unset($segment['products']['all']);
+                uasort($segment['products'], fn (array $left, array $right): int => strnatcasecmp($left['label'], $right['label']));
+                $segment['products'] = ['all' => $allProducts] + $segment['products'];
+
+                foreach ($segment['products'] as &$product) {
+                    $product['rows'] = array_values($product['rows']);
+                    foreach ($product['rows'] as &$row) {
+                        $row['values'] = array_map(fn (float $value): float => round($value, 2), $row['values']);
+                    }
+                    unset($row);
+                }
+                unset($product);
+                $segment['products'] = array_values($segment['products']);
+            }
+            unset($segment);
+
+            return [
+                'ready' => true,
+                'message' => '',
+                'scope' => [
+                    'key' => $region,
+                    'label' => $this->movementSeriesScopeLabel($region),
+                ],
+                'periods' => array_values($periods),
+                'segments' => array_values($segments),
+                'criteria' => [
+                    'status_rekening' => 'AKTIF',
+                    'movements' => ['UG', 'DG'],
+                    'metric' => 'Baki Debet',
+                ],
+            ];
+        });
+    }
+
+    private function emptyMovementSeriesProduct(string $key, string $label, string $criteria, array $values): array
+    {
+        return [
+            'key' => $key,
+            'label' => $label,
+            'criteria' => $criteria,
+            'rows' => [
+                'UG' => ['movement' => 'UG', 'values' => $values],
+                'DG' => ['movement' => 'DG', 'values' => $values],
+            ],
+        ];
+    }
+
+    private function movementSeriesProductCatalog(): array
+    {
+        return Cache::remember('cras_mapping:movement_series_products:v1', now()->addMinutes(10), function (): array {
+            $catalog = array_fill_keys(array_keys(self::MOVEMENT_SERIES_SEGMENTS), []);
+            $rows = DB::table(self::TABLE)
+                ->whereBetween('cras_periode', [array_key_first(self::MOVEMENT_SERIES_PERIODS), array_key_last(self::MOVEMENT_SERIES_PERIODS)])
+                ->where('status_rekening', 'AKTIF')
+                ->whereIn('segmen', array_column(self::MOVEMENT_SERIES_SEGMENTS, 'source_value'))
+                ->whereNotNull('produk')
+                ->whereRaw("TRIM(`produk`) <> ''")
+                ->select(['segmen', 'produk'])
+                ->distinct()
+                ->orderBy('segmen')
+                ->orderBy('produk')
+                ->get();
+
+            foreach ($rows as $row) {
+                $segmentKey = match ($row->segmen) {
+                    'Small' => 'small',
+                    'Consumer' => 'consumer',
+                    default => null,
+                };
+                $product = trim((string) $row->produk);
+                if ($segmentKey !== null && $product !== '') {
+                    $catalog[$segmentKey][] = $product;
+                }
+            }
+
+            return $catalog;
+        });
+    }
+
+    private function movementSeriesScopeLabel(string $region): string
+    {
+        if ($region === 'all') {
+            return 'Seluruh Area 6';
+        }
+
+        $label = trim((string) config("marketshare-geography.branches.{$region}.label", ''));
+
+        return $label === '' ? 'Seluruh Area 6' : 'KC '.$label;
     }
 
     private function periodOptions(): array

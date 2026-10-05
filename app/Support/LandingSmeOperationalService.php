@@ -8,12 +8,16 @@ use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
 use Throwable;
 
 final class LandingSmeOperationalService
 {
-    private const CACHE_KEY = 'landing:sme:external:v6';
+    // Perubahan struktur vendor harus langsung memintas cache ringkasan lama.
+    private const CACHE_KEY = 'landing:sme:external:v9';
+
+    private const QUADRANT_CACHE_VERSION = 'v2';
 
     private const ALLOWED_UNITS = [
         '45' => 'KC MADIUN',
@@ -28,15 +32,17 @@ final class LandingSmeOperationalService
 
     private const SOURCES = [
         'hot_prospects' => [
-            'spreadsheet_id' => '1e0c4lnq-A_E1Dh4LTn2NTx24BRNOQhoZ',
+            'spreadsheet_id' => '14sQxMWrKLhyrhENBEJWgN2In0vvG2_iq',
+            'source_url' => 'https://docs.google.com/spreadsheets/d/14sQxMWrKLhyrhENBEJWgN2In0vvG2_iq/edit?usp=sharing&ouid=104421189091698527488&rtpof=true&sd=true',
             'sheet' => 'REKAP PROGRESS',
             'label' => 'Monitoring Hot Prospek',
             'csv_mode' => 'gviz',
         ],
         'rtl_pipeline' => [
-            'spreadsheet_id' => '1Rgs0kU6iZxu3WY6J1wiZpc9JCxNlb5gg',
+            'spreadsheet_id' => '1QNOlNFQsNeYtm43w52cKEHmuUuUDEIT4',
+            'source_url' => 'https://docs.google.com/spreadsheets/d/1QNOlNFQsNeYtm43w52cKEHmuUuUDEIT4/edit?usp=sharing&ouid=104421189091698527488&rtpof=true&sd=true',
             'sheet' => 'REKAP',
-            'label' => 'RTL Pipeline',
+            'label' => 'Pipeline RO Malang',
         ],
         'extension' => [
             'spreadsheet_id' => '1Iidgzfevd8WSjP7An4zQSRe6qVevQYBF',
@@ -63,6 +69,7 @@ final class LandingSmeOperationalService
         'sudah_diputus' => 'Sudah Diputus',
         'realisasi' => 'Realisasi',
         'batal' => 'Batal',
+        'carry_over' => 'Carry Over',
     ];
 
     private const EXTENSION_STATUSES = [
@@ -97,7 +104,9 @@ final class LandingSmeOperationalService
         ['key' => 'downline_medium', 'label' => 'Downline Nasabah Medium', 'sheet' => 'DOWNLINE NASABAH MEDIUM', 'icon' => 'fas fa-sitemap', 'include' => true],
         ['key' => 'downline_commercial', 'label' => 'Downline Nasabah Commercial', 'sheet' => 'DOWNLINE NASABAH COMERCIAL', 'icon' => 'fas fa-project-diagram', 'include' => true],
         ['key' => 'pupuk_indonesia', 'label' => 'Pupuk Indonesia', 'sheet' => 'PUPUK INDONESIA', 'icon' => 'fas fa-seedling', 'include' => true],
-        ['key' => 'kios_pupuk_lengkap', 'label' => 'Kios Pupuk Lengkap', 'sheet' => 'KIOS PUPUK LENGKAP', 'icon' => 'fas fa-store', 'include' => false],
+        ['key' => 'kios_pupuk_lengkap', 'label' => 'Kios Pupuk Lengkap', 'sheet' => 'KIOS PUPUK LENGKAP', 'icon' => 'fas fa-store', 'include' => true],
+        ['key' => 'agen_gas', 'label' => 'Agen Gas', 'sheet' => 'AGEN GAS', 'icon' => 'fas fa-fire', 'include' => true],
+        ['key' => 'spbu_hiswana_migas', 'label' => 'SPBU Hiswana Migas', 'sheet' => 'SPBU', 'icon' => 'fas fa-gas-pump', 'include' => true],
     ];
 
     public function __construct(
@@ -106,12 +115,97 @@ final class LandingSmeOperationalService
     }
 
     /** @param array<string, mixed>|null $branchScope */
-    public function payload(?array $branchScope = null, bool $forceRefresh = false): array
+    public function payload(
+        ?array $branchScope = null,
+        bool $forceRefresh = false,
+        ?string $requestedPeriod = null
+    ): array
     {
         $external = $this->externalPayload($forceRefresh);
-        $quadrants = $this->kinerjaRmReportController->landingSmallQuadrantSummary();
+        $quadrants = $this->cachedQuadrants($requestedPeriod, $forceRefresh);
 
         return $this->buildScopedPayload($external, $quadrants, $branchScope);
+    }
+
+    /** @return array<string, mixed> */
+    private function cachedQuadrants(?string $requestedPeriod, bool $forceRefresh): array
+    {
+        $periodKey = $requestedPeriod ? Carbon::parse($requestedPeriod)->toDateString() : 'latest';
+        $version = ReportCacheVersion::composite(['pinjaman', 'harian']);
+        $cacheKey = implode(':', ['landing', 'sme', 'quadrants', self::QUADRANT_CACHE_VERSION, $version, $periodKey]);
+        $durableKey = implode(':', [
+            'landing', 'sme', 'quadrants', self::QUADRANT_CACHE_VERSION,
+            'last-valid', $periodKey,
+        ]);
+
+        if ($forceRefresh) {
+            Cache::forget($cacheKey);
+            $durable = Cache::get($durableKey);
+            if (is_array($durable)) {
+                $this->deferQuadrantRefresh($cacheKey, $durableKey, $requestedPeriod);
+                $durable['cache_stale'] = true;
+                $durable['refresh_pending'] = true;
+
+                return $durable;
+            }
+        } else {
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached)) {
+                Cache::put($durableKey, $cached, now()->addDays(7));
+
+                return $cached;
+            }
+
+            $durable = Cache::get($durableKey);
+            if (is_array($durable)) {
+                $this->deferQuadrantRefresh($cacheKey, $durableKey, $requestedPeriod);
+                $durable['cache_stale'] = true;
+                $durable['refresh_pending'] = true;
+
+                return $durable;
+            }
+        }
+
+        try {
+            $payload = $this->kinerjaRmReportController->landingSmallQuadrantSummary($requestedPeriod);
+            Cache::put($cacheKey, $payload, now()->addHours(6));
+            Cache::put($durableKey, $payload, now()->addDays(7));
+
+            return $payload;
+        } catch (Throwable $exception) {
+            $durable = Cache::get($durableKey);
+            if (is_array($durable)) {
+                $durable['cache_stale'] = true;
+                $durable['refresh_error'] = $exception->getMessage();
+
+                return $durable;
+            }
+
+            throw $exception;
+        }
+    }
+
+    private function deferQuadrantRefresh(string $cacheKey, string $durableKey, ?string $requestedPeriod): void
+    {
+        $pendingKey = $cacheKey.':refresh-pending';
+        if (! Cache::add($pendingKey, true, now()->addMinutes(10))) {
+            return;
+        }
+
+        defer(function () use ($cacheKey, $durableKey, $requestedPeriod, $pendingKey): void {
+            try {
+                $payload = $this->kinerjaRmReportController->landingSmallQuadrantSummary($requestedPeriod);
+                Cache::put($cacheKey, $payload, now()->addHours(6));
+                Cache::put($durableKey, $payload, now()->addDays(7));
+            } catch (Throwable $exception) {
+                Log::warning('Refresh cache landing SME gagal.', [
+                    'period' => $requestedPeriod,
+                    'error' => $exception->getMessage(),
+                ]);
+            } finally {
+                Cache::forget($pendingKey);
+            }
+        }, 'landing-sme-quadrants:'.md5($cacheKey), true);
     }
 
     /**
@@ -296,6 +390,8 @@ final class LandingSmeOperationalService
                 'scope_label' => $scopeLabel,
                 'generated_at' => now()->toDateTimeString(),
                 'calendar_week' => $calendarWeek,
+                'cache_stale' => (bool) ($quadrants['cache_stale'] ?? false),
+                'refresh_pending' => (bool) ($quadrants['refresh_pending'] ?? false),
             ],
             'quadrants' => $this->scopeQuadrants($quadrants, $branch),
             'realization_tiers' => $this->scopeRealizationTiers((array) ($quadrants['realization_tiers'] ?? []), $branch),
@@ -441,11 +537,21 @@ final class LandingSmeOperationalService
         ]);
         $header = $matrix[$headerIndex] ?? [];
         $isSummaryLayout = $this->findColumn($header, ['NAMA RM']) < 0;
+        $periodLabel = '';
+        foreach (array_slice($matrix, 0, $headerIndex + 1) as $headingRow) {
+            foreach ($headingRow as $heading) {
+                if (preg_match('/(?:PROGRES|PROGRESS)\s+HOT\s+PROSPEK\s+(.+?)(?:\s+NO)?$/i', $heading, $matches) === 1) {
+                    $periodLabel = ucwords(strtolower(trim($matches[1])));
+                    break 2;
+                }
+            }
+        }
         $column = [
             'branch_code' => $this->findColumn($header, ['KODE KANCA']),
             'unit_code' => $this->findColumn($header, ['KODE UKER']),
             'unit' => $this->findColumn($header, ['UNIT KERJA', 'UKER']),
             'rm' => $this->findColumn($header, ['NAMA RM']),
+            'total' => $this->findColumnStartingWith($header, 'TOTAL HOT PROSPEK'),
         ];
 
         $statusColumns = $isSummaryLayout
@@ -457,6 +563,7 @@ final class LandingSmeOperationalService
                 'sudah_diputus' => [$this->findColumnStartingWith($header, 'SUDAH DIPUTUS')],
                 'realisasi' => [$this->findColumnStartingWith($header, 'REALISASI')],
                 'batal' => [$this->findColumnStartingWith($header, 'BATAL')],
+                'carry_over' => [$this->findColumnStartingWith($header, 'CARRY OVER')],
             ]
             : [
                 'belum_ots' => $this->columnsStartingWith($header, 'BELUM OTS PEMUTUS'),
@@ -466,6 +573,7 @@ final class LandingSmeOperationalService
                 'sudah_diputus' => [$this->findColumn($header, ['SUDAH DIPUTUS'])],
                 'realisasi' => [$this->findColumnStartingWith($header, 'REALISASI')],
                 'batal' => [$this->findColumn($header, ['BATAL'])],
+                'carry_over' => [$this->findColumnStartingWith($header, 'CARRY OVER')],
             ];
 
         $records = [];
@@ -497,11 +605,19 @@ final class LandingSmeOperationalService
                 'unit_code' => $unitCode,
                 'unit' => $this->clean($this->cell($row, $column['unit'])),
                 'rm' => $rm,
+                'total' => [
+                    'deb' => $column['total'] >= 0
+                        ? (int) round($this->number($this->cell($row, $column['total'])) ?? 0)
+                        : (int) collect($statuses)->sum('deb'),
+                    'amount_juta' => $column['total'] >= 0
+                        ? ($this->number($this->cell($row, $column['total'] + 1)) ?? 0.0)
+                        : (float) collect($statuses)->sum('amount_juta'),
+                ],
                 'statuses' => $statuses,
             ];
         }
 
-        return ['records' => $records];
+        return ['records' => $records, 'period_label' => $periodLabel];
     }
 
     /** @return array<string, mixed> */
@@ -523,22 +639,7 @@ final class LandingSmeOperationalService
         }
 
         $metricHeader = $this->rtlFlattenedHeader($headerRows);
-        $pipelineColumns = array_slice($this->rtlPipelineColumns($metricHeader), 0, count(self::VENDORS));
-
-        $vendorColumns = [];
-        foreach (self::VENDORS as $position => $vendor) {
-            if (! isset($pipelineColumns[$position])) {
-                continue;
-            }
-
-            $start = $pipelineColumns[$position];
-            $end = ($pipelineColumns[$position + 1] ?? count($metricHeader)) - 1;
-            $vendorColumns[$vendor['key']] = [
-                'pipeline' => $start,
-                'ots' => $this->rtlMetricColumn($metricHeader, $start, $end, 'SUDAH OTS'),
-                'interested' => $this->rtlMetricColumn($metricHeader, $start, $end, 'BERMINAT', 'TIDAK BERMINAT'),
-            ];
-        }
+        $vendorColumns = $this->rtlVendorColumns($metricHeader);
 
         $unitCodeColumn = $this->findColumn($header, ['KODE UKER']);
         $unitColumn = $this->findColumn($header, ['UKER']);
@@ -550,7 +651,16 @@ final class LandingSmeOperationalService
             }
 
             $vendors = [];
+            $formulaErrors = [];
             foreach ($vendorColumns as $vendorKey => $columns) {
+                foreach ($columns as $metric => $index) {
+                    if ($index !== null && $this->isSpreadsheetFormulaError($this->cell($row, $index))) {
+                        $formulaErrors[] = [
+                            'vendor' => $vendorKey,
+                            'metric' => $metric,
+                        ];
+                    }
+                }
                 $vendors[$vendorKey] = [
                     'pipeline' => (int) round($this->number($this->cell($row, $columns['pipeline'])) ?? 0),
                     'ots' => $columns['ots'] === null
@@ -567,6 +677,7 @@ final class LandingSmeOperationalService
                 'unit_code' => $unitCode,
                 'unit' => $this->clean($this->cell($row, $unitColumn)),
                 'vendors' => $vendors,
+                'formula_errors' => $formulaErrors,
             ];
         }
 
@@ -889,10 +1000,27 @@ final class LandingSmeOperationalService
                 'amount_juta' => (float) $records->sum(fn (array $row): float => (float) data_get($row, 'statuses.'.$key.'.amount_juta', 0)),
             ];
         }
+        $total = [
+            'deb' => (int) $records->sum(fn (array $row): int => (int) data_get($row, 'total.deb', 0)),
+            'amount_juta' => (float) $records->sum(fn (array $row): float => (float) data_get($row, 'total.amount_juta', 0)),
+        ];
+        $statusTotal = [
+            'deb' => (int) collect($statuses)->sum('deb'),
+            'amount_juta' => (float) collect($statuses)->sum('amount_juta'),
+        ];
 
         return array_merge($this->moduleMeta($source, $records->isNotEmpty()), [
+            'period_label' => (string) ($source['period_label'] ?? ''),
             'rm_count' => $records->pluck('rm')->filter()->unique()->count(),
             'unit_count' => $records->pluck('unit_code')->filter()->unique()->count(),
+            'total' => $total,
+            'reconciliation' => [
+                'status_total' => $statusTotal,
+                'deb_delta' => $total['deb'] - $statusTotal['deb'],
+                'amount_delta_juta' => $total['amount_juta'] - $statusTotal['amount_juta'],
+                'matches' => $total['deb'] === $statusTotal['deb']
+                    && abs($total['amount_juta'] - $statusTotal['amount_juta']) < 0.005,
+            ],
             'statuses' => $statuses,
         ]);
     }
@@ -932,11 +1060,29 @@ final class LandingSmeOperationalService
             ];
         }
 
+        $formulaErrors = $records
+            ->flatMap(function (array $record): array {
+                return collect((array) ($record['formula_errors'] ?? []))
+                    ->map(fn (array $error): array => array_merge($error, [
+                        'unit_code' => (string) ($record['unit_code'] ?? ''),
+                        'unit' => (string) ($record['unit'] ?? ''),
+                    ]))
+                    ->all();
+            })
+            ->values();
+
         return array_merge($this->moduleMeta($source, $records->isNotEmpty()), [
             'unit_count' => $records->pluck('unit_code')->filter()->unique()->count(),
             'total_pipeline' => array_sum(array_column($vendors, 'pipeline')),
             'total_ots' => array_sum(array_column($vendors, 'ots')),
             'total_interested' => array_sum(array_column($vendors, 'interested')),
+            'quality' => [
+                'complete' => $formulaErrors->isEmpty(),
+                'formula_error_count' => $formulaErrors->count(),
+                'affected_units' => $formulaErrors->pluck('unit_code')->filter()->unique()->values()->all(),
+                'affected_vendors' => $formulaErrors->pluck('vendor')->filter()->unique()->values()->all(),
+                'affected_metrics' => $formulaErrors->pluck('metric')->filter()->unique()->values()->all(),
+            ],
             'vendors' => $vendors,
         ]);
     }
@@ -1152,7 +1298,7 @@ final class LandingSmeOperationalService
             'stale' => $stale,
             'label' => $source['label'],
             'sheet' => $source['sheet'],
-            'source_url' => sprintf(
+            'source_url' => $source['source_url'] ?? sprintf(
                 'https://docs.google.com/spreadsheets/d/%s/edit',
                 $source['spreadsheet_id']
             ),
@@ -1181,6 +1327,14 @@ final class LandingSmeOperationalService
     private function stableSourceKey(string $key): string
     {
         return self::CACHE_KEY.':'.$key.':stable';
+    }
+
+    private function isSpreadsheetFormulaError(mixed $value): bool
+    {
+        return preg_match(
+            '/^#(?:VALUE!|REF!|DIV\/0!|N\/A|NAME\?)$/i',
+            trim((string) $value)
+        ) === 1;
     }
 
     /** @return array<int, array<int, string>> */
@@ -1319,6 +1473,107 @@ final class LandingSmeOperationalService
             ->filter(static fn ($value): bool => $value !== null)
             ->values()
             ->all();
+    }
+
+    /**
+     * Memetakan blok vendor dari nama pada header sumber, bukan posisi kolom.
+     * Jadi, penambahan/urutan vendor pada workbook tidak dapat menggeser angka
+     * vendor lain. Fallback posisi hanya dipakai untuk layout lama tanpa nama
+     * vendor (fixture historis), bukan untuk workbook operasional saat ini.
+     *
+     * @param array<int, string> $metricHeader
+     * @return array<string, array{pipeline:int, ots:?int, interested:?int}>
+     */
+    private function rtlVendorColumns(array $metricHeader): array
+    {
+        $pipelineColumns = $this->rtlPipelineColumns($metricHeader);
+        $mapped = [];
+        foreach ($pipelineColumns as $position => $start) {
+            $vendorKey = $this->rtlVendorKeyForHeader((string) ($metricHeader[$start] ?? ''));
+            if ($vendorKey === null || isset($mapped[$vendorKey])) {
+                continue;
+            }
+
+            $end = ($pipelineColumns[$position + 1] ?? count($metricHeader)) - 1;
+            $mapped[$vendorKey] = [
+                'pipeline' => $start,
+                'ots' => $this->rtlMetricColumn($metricHeader, $start, $end, 'SUDAH OTS'),
+                'interested' => $this->rtlMetricColumn($metricHeader, $start, $end, 'BERMINAT', 'TIDAK BERMINAT'),
+            ];
+        }
+
+        if ($mapped !== []) {
+            // Beberapa header vendor sumber memakai merged cell kosong. Isi hanya
+            // blok anonim "TOTAL PIPELINE" pada posisi vendor yang sudah baku;
+            // header bernama yang tidak dikenal tetap tidak dipaksa ke vendor lain.
+            foreach ($pipelineColumns as $position => $start) {
+                $vendor = self::VENDORS[$position] ?? null;
+                $header = $this->normaliseLabel((string) ($metricHeader[$start] ?? ''));
+                if ($vendor === null || isset($mapped[$vendor['key']]) || $header !== 'TOTAL PIPELINE') {
+                    continue;
+                }
+
+                $end = ($pipelineColumns[$position + 1] ?? count($metricHeader)) - 1;
+                $mapped[$vendor['key']] = [
+                    'pipeline' => $start,
+                    'ots' => $this->rtlMetricColumn($metricHeader, $start, $end, 'SUDAH OTS'),
+                    'interested' => $this->rtlMetricColumn($metricHeader, $start, $end, 'BERMINAT', 'TIDAK BERMINAT'),
+                ];
+            }
+
+            return $mapped;
+        }
+
+        $fallback = [];
+        foreach (self::VENDORS as $position => $vendor) {
+            if (! isset($pipelineColumns[$position])) {
+                continue;
+            }
+
+            $start = $pipelineColumns[$position];
+            $end = ($pipelineColumns[$position + 1] ?? count($metricHeader)) - 1;
+            $fallback[$vendor['key']] = [
+                'pipeline' => $start,
+                'ots' => $this->rtlMetricColumn($metricHeader, $start, $end, 'SUDAH OTS'),
+                'interested' => $this->rtlMetricColumn($metricHeader, $start, $end, 'BERMINAT', 'TIDAK BERMINAT'),
+            ];
+        }
+
+        return $fallback;
+    }
+
+    private function rtlVendorKeyForHeader(string $header): ?string
+    {
+        $label = $this->normaliseLabel($header);
+        $aliases = [
+            'petrokimia' => ['PETROKIMIA'],
+            'developer' => ['DEVELOPER'],
+            'ahm' => ['AHM'],
+            'charoen_pokphand' => ['CHAROEN', 'CHAOEN'],
+            'mitra_bpp' => ['MITRA BPP'],
+            'hipmi' => ['HIPMI'],
+            'mbg_va_bri' => ['MBG'],
+            'value_chain_kanpus' => ['VALUE CHAIN'],
+            'lunas_putus' => ['LUNAS PUTUS'],
+            'eksportir_dhe' => ['EKSPORTIR'],
+            'potensi_kipk' => ['KIPK'],
+            'downline_medium' => ['DOWNLINE NASABAH MEDIUM'],
+            'downline_commercial' => ['DOWNLINE NASABAH COMMERCIAL', 'DOWNLINE NASABAH COMERCIAL'],
+            'kios_pupuk_lengkap' => ['KIOS PUPUK'],
+            'pupuk_indonesia' => ['PUPUK INDONESIA'],
+            'agen_gas' => ['AGEN GAS'],
+            'spbu_hiswana_migas' => ['SPBU'],
+        ];
+
+        foreach ($aliases as $key => $names) {
+            foreach ($names as $name) {
+                if (str_contains($label, $name)) {
+                    return $key;
+                }
+            }
+        }
+
+        return null;
     }
 
     /** @param array<int, string> $row */

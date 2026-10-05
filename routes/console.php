@@ -300,11 +300,7 @@ Schedule::command('optimize')
     ->withoutOverlapping(180)
     ->runInBackground();
 
-Schedule::command(
-    'queue:ensure-running --once --timeout=900 --memory=512'
-    . ' --max-jobs=' . (int) config('queue.worker_max_jobs', 25)
-    . ' --max-time=' . (int) config('queue.worker_max_time', 3600)
-)
+Schedule::command('queue:watchdog')
     ->everyMinute()
     ->withoutOverlapping(2)
     ->runInBackground();

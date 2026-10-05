@@ -33,6 +33,8 @@
   $ecosystemPillars = (array) data_get($ecosystemSummary, 'ecosystems', []);
   $analyticsByScope = data_get($dashboard ?? [], 'analytics_by_scope', data_get($area6Portfolio, 'analytics_by_scope', []));
   $isBranchLanding = ($selectedLandingBranch ?? 'area6') !== 'area6';
+  $landingScopeLabel = $landingBranchLabel ?? 'Area 6';
+  $landingTotalLabel = 'TOTAL ' . strtoupper($landingScopeLabel);
 
   // Pre-calculate SVG Trend per scope for client-side instant switching
   $trendScopesSvg = [];
@@ -56,18 +58,19 @@
 
 :root {
   /* Brand Nusantara & Cakrawala Palette */
-  --c-blue: #0857c3;
-  --c-blue-d: #053b82;
-  --c-cakrawala: #307fe2;
-  --c-cakrawala-l: #4f96ee;
-  --c-cakrawala-subtle: #eff6fe;
-  --c-cakrawala-border: #93c2fa;
-  
+  --c-blue: var(--bri-nusantara, #0857c3);
+  --c-blue-d: var(--bri-ink, #053b82);
+  --c-blue-l: var(--bri-cakrawala, #307fe2);
+  --c-blue-subtle: #eff6ff;
+  --c-blue-border: #bfdbfe;
+  --c-cakrawala: var(--c-blue-l);
+  --c-cakrawala-border: var(--c-blue-border);
+
   --c-teal: #0f766e;
   --c-teal-l: #0d9488;
   --c-teal-subtle: #f0fdfa;
   --c-teal-border: #99f6e4;
-  
+
   --c-purple: #7c3aed;
   --c-purple-l: #8b5cf6;
   --c-purple-subtle: #f5f3ff;
@@ -87,249 +90,277 @@
   --c-red-l: #ef4444;
   --c-red-subtle: #fef2f2;
   --c-red-border: #fecaca;
+
+  --c-cyan: #0891b2;
+  --c-cyan-l: #06b6d4;
+  --c-cyan-subtle: #ecfeff;
+  --c-cyan-border: #a5f3fc;
   
-  /* Surfaces & High-Contrast Typography */
-  --c-surface: #ffffff;
-  --c-surf: #f8fafc;
-  --c-surf-elevated: #f1f5f9;
-  --c-border: #e2e8f0;
-  --c-border-strong: #cbd5e1;
-  --c-text-main: #0f172a;
-  --c-text-muted: #475569;
-  --c-text-subtle: #64748b;
+  --c-pink: #db2777;
+  --c-orange: #ea580c;
+  --c-orange-l: #f97316;
+
+  /* Neutrals & Surfaces */
+  --c-surface: var(--app-surface, #ffffff);
+  --c-surf: var(--app-surface-soft, #f7faff);
+  --c-surf-elevated: #eef4fc;
+  --c-border: var(--app-line, #d8e5f7);
+  --c-border-strong: var(--app-line-strong, #b9cfee);
+  --c-text-main: var(--app-ink, #0b1f3a);
+  --c-text-muted: var(--app-muted, #526987);
+  --c-text-subtle: #94a3b8;
   
   /* Modern Executive Elevation Shadows */
   --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
   --shadow-sm: 0 2px 4px rgba(15, 23, 42, 0.03), 0 1px 2px rgba(15, 23, 42, 0.02);
   --shadow-md: 0 6px 18px -3px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
   --shadow-lg: 0 16px 32px -4px rgba(15, 23, 42, 0.08), 0 6px 16px -2px rgba(15, 23, 42, 0.04);
-  --shadow-hover: 0 16px 32px -6px rgba(48, 127, 226, 0.2), 0 6px 12px -2px rgba(15, 23, 42, 0.04);
+  --shadow-hover: 0 20px 36px -6px rgba(8, 87, 195, 0.12), 0 8px 16px -3px rgba(15, 23, 42, 0.06);
   
-  /* Radii */
+  /* Border Radii */
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;
-  --r-xl: 20px;
-  --r-2xl: 24px;
+  --r-xl: 16px;
+  --r-2xl: 16px;
+  --r-pill: 9999px;
 }
 
 .db-shell {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: var(--c-text-main);
-  background: #f1f5f9;
-  min-height: 100vh;
-  padding: 0.85rem 1.25rem 2.5rem;
+  background: transparent;
+  padding: 0 0 1.25rem;
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── EXECUTIVE HERO BANNER: VIBRANT BIRU NUSANTARA & BIRU CAKRAWALA ── */
+/* ── HEADER (HARMONIZED WITH LANDING PINJAMAN) ── */
+.db-header,
 .simpanan-hero {
-  position: relative;
-  background: linear-gradient(135deg, #003b75 0%, #00529c 100%);
-  border: 1px solid rgba(219, 229, 239, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.15rem 1.65rem;
+  margin-bottom: 1.25rem;
+  background: #ffffff;
+  border: 1px solid var(--c-border);
   border-radius: var(--r-xl);
-  padding: 1.25rem 1.75rem;
-  margin-bottom: 1.35rem;
-  box-shadow: 0 4px 20px rgba(0, 70, 133, 0.08);
+  box-shadow: var(--shadow-md);
+  position: relative;
   overflow: hidden;
-  color: #ffffff;
+  gap: 1.25rem;
+  flex-wrap: wrap;
 }
 
+.db-header::before,
 .simpanan-hero::before {
   content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 3px;
-  background: #307fe2;
+  height: 4px;
+  background: linear-gradient(90deg, #053b82 0%, #0857c3 54%, #71c5e8 100%);
+  z-index: 5;
 }
 
-.simpanan-hero__ambient {
+.db-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.95rem;
+}
+
+.db-logo {
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, #0857c3 0%, #2563eb 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  box-shadow: 0 6px 16px -2px rgba(8, 87, 195, 0.4);
+  padding: 8px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.db-logo:hover {
+  transform: scale(1.05);
+}
+
+.db-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.db-title {
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: var(--c-text-main);
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.db-subtitle {
+  font-size: 0.72rem;
+  font-weight: 550;
+  color: var(--c-text-muted);
+  margin-top: 0.15rem;
+}
+
+.db-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+/* Branch Picker */
+.db-branch-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  cursor: pointer;
+}
+
+.db-branch-picker i {
   position: absolute;
-  top: -90px;
-  right: 80px;
-  width: 440px;
-  height: 290px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 70%);
+  left: 0.75rem;
+  font-size: 0.72rem;
+  color: var(--c-blue);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.db-branch-picker select,
+.hero-control-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 0.45rem 1.6rem 0.45rem 2rem;
+  font-size: 0.72rem;
+  font-weight: 750;
+  color: #1e293b;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  min-height: 38px;
+  font-family: inherit;
+}
+
+.db-branch-picker select:hover,
+.hero-control-select:hover {
+  border-color: var(--c-blue);
+  background-color: var(--c-blue-subtle);
+}
+
+.db-branch-picker select:focus,
+.hero-control-select:focus {
+  outline: none;
+  border-color: var(--c-blue);
+  box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.16);
+}
+
+/* Date Picker */
+.db-date-picker-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.db-date-picker-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 0.45rem 2rem 0.45rem 0.85rem;
+  font-size: 0.72rem;
+  font-weight: 750;
+  color: #1e293b;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  min-height: 38px;
+  font-family: inherit;
+}
+
+.db-date-picker-select:hover {
+  border-color: var(--c-blue);
+  background-color: var(--c-blue-subtle);
+}
+
+.db-date-picker-select:focus {
+  outline: none;
+  border-color: var(--c-blue);
+  box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.16);
+}
+
+.db-date-picker-icon {
+  position: absolute;
+  right: 0.75rem;
+  font-size: 0.72rem;
+  color: var(--c-blue);
   pointer-events: none;
 }
 
-.simpanan-hero__content {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1.75rem;
-}
-
-.simpanan-hero__left {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.simpanan-hero__eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.68rem;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  color: #e0f2fe;
-  background: rgba(48, 127, 226, 0.28);
-  border: 1px solid rgba(147, 194, 250, 0.45);
-  padding: 0.25rem 0.8rem;
-  border-radius: 9999px;
-  margin-bottom: 0.5rem;
-  text-transform: uppercase;
-}
-
-.simpanan-hero__pulse {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #67e8f9;
-  box-shadow: 0 0 10px #38bdf8;
-  animation: heroPulse 2s infinite;
-}
-
-@keyframes heroPulse {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(103, 232, 249, 0.8); }
-  70% { transform: scale(1.05); box-shadow: 0 0 0 6px rgba(103, 232, 249, 0); }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(103, 232, 249, 0); }
-}
-
-.simpanan-hero__title {
-  font-size: 1.45rem;
-  font-weight: 900;
-  letter-spacing: -0.025em;
-  color: #ffffff;
-  margin: 0 0 0.35rem;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  line-height: 1.2;
-}
-
-.simpanan-hero__badge {
-  font-size: 0.75rem;
-  font-weight: 850;
-  background: rgba(48, 127, 226, 0.35);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  padding: 0.22rem 0.8rem;
-  border-radius: 9999px;
-  letter-spacing: 0;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-}
-
-.simpanan-hero__subtitle {
-  font-size: 0.82rem;
-  color: #e2e8f0;
-  max-width: 680px;
-  line-height: 1.45;
-  margin: 0 0 0.95rem;
-  font-weight: 500;
-}
-
-.simpanan-hero__controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.hero-control-pill {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: var(--r-md);
-  padding: 0.4rem 0.85rem;
-  color: #ffffff;
-  font-size: 0.76rem;
-  font-weight: 750;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  cursor: pointer;
-  line-height: 1;
-}
-
-.hero-control-pill:hover {
-  background: rgba(48, 127, 226, 0.3);
-  border-color: #93c2fa;
-}
-
-.hero-control-pill i {
-  color: #7dd3fc;
-  font-size: 0.82rem;
-}
-
-.hero-control-label {
-  color: #cbd5e1;
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.hero-control-select {
-  border: none;
-  background: transparent;
-  color: #ffffff;
-  font-size: 0.78rem;
-  font-weight: 800;
-  outline: none;
-  cursor: pointer;
-  font-family: inherit;
-  padding-right: 0.3rem;
-}
-
-.hero-control-select option {
-  color: #0f172a;
-  background: #ffffff;
-}
-
-.hero-status-pill {
+.db-meta-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  background: rgba(16, 185, 129, 0.22);
-  border: 1px solid rgba(16, 185, 129, 0.4);
-  color: #6ee7b7;
-  font-size: 0.74rem;
-  font-weight: 800;
   padding: 0.42rem 0.85rem;
-  border-radius: var(--r-md);
-  line-height: 1;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #15803d;
+  border-radius: var(--r-pill);
+  min-height: 38px;
+  white-space: nowrap;
 }
 
-.hero-status-dot {
-  width: 7px;
-  height: 7px;
+.kc-live {
+  width: 8px;
+  height: 8px;
+  background: #10b981;
   border-radius: 50%;
-  background: #34d399;
-  box-shadow: 0 0 6px #34d399;
+  box-shadow: 0 0 10px #10b981;
+  animation: pulse-live 1.8s infinite;
+  display: inline-block;
 }
 
-/* Modern Vector Illustration in Biru Nusantara & Cakrawala */
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.db-now {
+  font-size: 0.7rem;
+  color: var(--c-text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .simpanan-hero__visual {
-  flex: 0 0 210px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .simpanan-hero__svg {
-  width: 210px;
-  height: 110px;
-  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.35));
+  width: 90px;
+  height: 44px;
+  filter: drop-shadow(0 2px 6px rgba(8, 87, 195, 0.12));
+  transition: transform 0.2s ease;
+}
+
+.simpanan-hero__svg:hover {
+  transform: scale(1.04);
 }
 
 /* ── AREA 6 PORTFOLIO PANEL ── */
@@ -1203,9 +1234,12 @@
   border-collapse: collapse;
 }
 
+.content-wrapper .table.dc-table thead th,
+.table.dc-table thead th,
+.dc-table thead th,
 .dc-table th {
-  background: #004685;
-  color: #ffffff;
+  background: #004685 !important;
+  color: #ffffff !important;
   font-weight: 700;
   padding: 0.65rem 0.85rem;
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -1215,9 +1249,12 @@
   white-space: nowrap;
 }
 
+.content-wrapper .table.dc-table thead th.col-highlight,
+.table.dc-table thead th.col-highlight,
+.dc-table thead th.col-highlight,
 .dc-table th.col-highlight {
-  background: #003666;
-  color: #ffffff;
+  background: #003666 !important;
+  color: #ffffff !important;
   font-weight: 800;
   border-left: 1.5px solid rgba(255, 255, 255, 0.25);
   border-right: 1.5px solid rgba(255, 255, 255, 0.25);
@@ -1669,6 +1706,8 @@
   border-spacing: 0;
 }
 
+.content-wrapper .table.payroll-branch-table thead th,
+.table.payroll-branch-table thead th,
 .payroll-branch-table thead th {
   background: #004685 !important;
   color: #ffffff !important;
@@ -1847,32 +1886,13 @@
 }
 
 .simpanan-hero {
-  isolation: isolate;
-  padding: 1.35rem 1.65rem;
-  border-color: rgba(147, 194, 250, 0.36);
-  background: linear-gradient(118deg, rgba(0, 59, 117, 0.98) 0%, rgba(0, 82, 156, 0.97) 56%, rgba(48, 127, 226, 0.94) 100%);
-  box-shadow: 0 14px 32px -20px rgba(0, 59, 117, 0.7), var(--shadow-sm);
+  background: #ffffff !important;
+  border: 1px solid var(--c-border) !important;
+  box-shadow: var(--shadow-md) !important;
 }
 
 .simpanan-hero::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  opacity: 0.2;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.13) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.13) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: linear-gradient(90deg, transparent 8%, #000 72%, transparent 100%);
-}
-
-.simpanan-hero__eyebrow,
-.simpanan-hero__badge,
-.hero-control-pill,
-.hero-status-pill {
-  box-shadow: none;
+  display: none !important;
 }
 
 .simpanan-hero__title {
@@ -1886,13 +1906,21 @@
 
 .hero-control-pill,
 .hero-status-pill {
-  min-height: 42px;
+  min-height: 38px;
 }
 
 .hero-control-pill {
-  background: rgba(255, 255, 255, 0.13);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 12px;
+  color: #1e293b;
+  box-shadow: var(--shadow-xs);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hero-control-pill:hover {
+  border-color: var(--c-blue);
+  background-color: var(--c-blue-subtle);
 }
 
 .hero-control-select {
@@ -2281,60 +2309,52 @@
 </style>
 
 <div class="db-shell">
-  {{-- EXECUTIVE HERO COMMAND BANNER (VIBRANT BIRU NUSANTARA & BIRU CAKRAWALA) --}}
-  <div class="simpanan-hero">
-    <div class="simpanan-hero__ambient" aria-hidden="true"></div>
-    <div class="simpanan-hero__content">
-      <div class="simpanan-hero__left">
-        <div class="simpanan-hero__eyebrow">
-          <span class="simpanan-hero__pulse"></span>
-          <span>FUNDING &amp; TREASURY INTELLIGENCE &middot; DPK AREA 6</span>
-        </div>
-        <h1 class="simpanan-hero__title">
-          Landing Page Simpanan
-          <span class="simpanan-hero__badge">{{ $landingBranchLabel ?? 'Area 6' }}</span>
-        </h1>
-        <p class="simpanan-hero__subtitle">
-          Monitoring terpadu keragaan portofolio Tabungan, Deposito, dan Giro serta evaluasi Prognosa Mingguan dengan arsitektur data terintegrasi.
-        </p>
-
-        {{-- CONTROLS BAR --}}
-        <div class="simpanan-hero__controls">
-          @if(!empty($landingBranchOptions))
-          <label class="hero-control-pill" title="{{ !empty($landingBranchLocked) ? 'Cabang dikunci sesuai wilayah user' : 'Ubah lingkup cabang' }}">
-            <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
-            <span class="hero-control-label">Cabang:</span>
-            <select id="landing-branch-selector" class="hero-control-select" {{ !empty($landingBranchLocked) ? 'disabled' : '' }}>
-              @foreach($landingBranchOptions as $branchKey => $branchLabel)
-                <option value="{{ $branchKey }}" {{ $branchKey === ($selectedLandingBranch ?? 'area6') ? 'selected' : '' }}>{{ $branchLabel }}</option>
-              @endforeach
-            </select>
-          </label>
-          @endif
-
-          @if(!empty($periods) && count($periods) > 0)
-          <label class="hero-control-pill" title="Pilih tanggal posisi">
-            <i class="fas fa-calendar-alt" aria-hidden="true"></i>
-            <span class="hero-control-label">Posisi:</span>
-            <select class="hero-control-select" id="periode-selector">
-              @foreach($periods as $p)
-                <option value="{{ $p }}" {{ $p === $selectedPeriod ? 'selected' : '' }}>
-                  {{ \Carbon\Carbon::parse($p)->translatedFormat('d M Y') }}
-                </option>
-              @endforeach
-            </select>
-          </label>
-          @endif
-
-          <div class="hero-status-pill">
-            <span class="hero-status-dot"></span>
-            <span>Live Snapshot Terkini</span>
-          </div>
-        </div>
+  {{-- EXECUTIVE HEADER (HARMONIZED WITH LANDING PINJAMAN) --}}
+  <div class="db-header simpanan-hero">
+    <div class="db-brand">
+      <div class="db-logo">
+        <img src="{{ asset('images/a-six-logo.svg') }}" alt="A-SIX">
       </div>
+      <div>
+        <div class="db-title">A-SIX {{ $landingBranchLabel ?? 'Area 6' }} — Landing Page Simpanan</div>
+        <div class="db-subtitle">Monitoring Portofolio Tabungan, Deposito, &amp; Giro &middot; Evaluasi DPK Terpadu</div>
+      </div>
+    </div>
 
-      {{-- HERO RIGHT: HIGH-CONTRAST VECTOR ARTWORK IN BIRU NUSANTARA & CAKRAWALA --}}
-      <div class="simpanan-hero__visual" aria-hidden="true">
+    <div class="db-meta simpanan-hero__controls">
+      @if(!empty($landingBranchOptions))
+      <label class="db-branch-picker hero-control-pill" title="{{ !empty($landingBranchLocked) ? 'Cabang dikunci sesuai wilayah user' : 'Ubah lingkup cabang' }}">
+        <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
+        <span class="hero-control-label">{{ !empty($landingBranchLocked) ? 'Cabang User' : 'Lingkup Cabang' }}</span>
+        <select id="landing-branch-selector" class="hero-control-select" {{ !empty($landingBranchLocked) ? 'disabled' : '' }}>
+          @foreach($landingBranchOptions as $branchKey => $branchLabel)
+            <option value="{{ $branchKey }}" {{ $branchKey === ($selectedLandingBranch ?? 'area6') ? 'selected' : '' }}>{{ $branchLabel }}</option>
+          @endforeach
+        </select>
+      </label>
+      @endif
+
+      @if(!empty($periods) && count($periods) > 0)
+      <div class="db-date-picker-container hero-control-pill" title="Pilih tanggal posisi">
+        <select class="db-date-picker-select hero-control-select" id="periode-selector">
+          @foreach($periods as $p)
+            <option value="{{ $p }}" {{ $p === $selectedPeriod ? 'selected' : '' }}>
+              {{ \Carbon\Carbon::parse($p)->translatedFormat('d M Y') }}
+            </option>
+          @endforeach
+        </select>
+        <i class="fas fa-calendar-alt db-date-picker-icon"></i>
+      </div>
+      @endif
+
+      <span class="db-meta-chip hero-status-pill">
+        <span class="kc-live"></span>
+        Live Snapshot
+      </span>
+      <span class="db-now" id="db-clock"></span>
+
+      {{-- EXECUTIVE VECTOR EMBLEM FOR FUNDING IDENTITY --}}
+      <div class="simpanan-hero__visual" aria-hidden="true" title="Simpanan Executive Emblem">
         <svg viewBox="0 0 240 120" fill="none" xmlns="http://www.w3.org/2000/svg" class="simpanan-hero__svg">
           <defs>
             <linearGradient id="vaultGradBlue" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -2814,7 +2834,7 @@
             <thead>
               <tr>
                 <th class="text-center" style="width: 50px;">NO</th>
-                <th>UNIT KERJA / CABANG</th>
+                <th>{{ strtoupper(data_get($initialChannel, 'dimension_label', 'Cabang')) }}</th>
                 <th class="text-right" id="th-ytd">{{ data_get($initDates, 'ytd', '-') }}</th>
                 <th class="text-right" id="th-mtd">{{ data_get($initDates, 'mtd', '-') }}</th>
                 <th class="text-right col-highlight" id="th-current">{{ data_get($initDates, 'current', '-') }}</th>
@@ -2867,7 +2887,7 @@
                 <tr class="total-row">
                   <td colspan="2" class="text-center font-weight-bold">
                     <i class="fas fa-globe-asia text-primary mr-1"></i>
-                    TOTAL AREA 6 KONSOLIDASI
+                    {{ strtoupper(data_get($initialChannel, 'total_label', $landingTotalLabel)) }}
                   </td>
                   <td class="text-right font-weight-bold">{{ $initTotal['ytd'] ?? '-' }}</td>
                   <td class="text-right font-weight-bold">{{ $initTotal['mtd'] ?? '-' }}</td>
@@ -2926,7 +2946,7 @@
               <i class="fas fa-percentage text-primary mr-1"></i> RASIO CASA DEBITUR
             </div>
             <div class="sdd-toggle" id="casaViewToggle">
-              <button type="button" class="sdd-toggle-btn active" data-target="casa-table-cabang" aria-pressed="true">Cabang</button>
+              <button type="button" class="sdd-toggle-btn active" data-target="casa-table-cabang" aria-pressed="true">{{ data_get($casaDebiturStrategy, 'dimension_label', 'Cabang') }}</button>
               <button type="button" class="sdd-toggle-btn" data-target="casa-table-segmen" aria-pressed="false">Segmen</button>
             </div>
           </div>
@@ -2953,7 +2973,7 @@
               <thead>
                 <tr>
                   <th class="text-center" style="width: 40px;">NO</th>
-                  <th>UNIT KERJA / CABANG</th>
+                  <th>{{ strtoupper(data_get($casaDebiturStrategy, 'dimension_label', 'Cabang')) }}</th>
                   <th class="text-right">OUTSTANDING</th>
                   <th class="text-right">SALDO CASA</th>
                   <th class="text-right col-highlight" style="width: 140px;">RASIO CASA</th>
@@ -2989,7 +3009,7 @@
               <tfoot>
                 <tr class="total-row">
                   <td colspan="2" class="text-center font-weight-bold">
-                    <i class="fas fa-globe-asia text-primary mr-1"></i> TOTAL AREA 6 KONSOL
+                    <i class="fas fa-calculator text-primary mr-1"></i> {{ strtoupper(data_get($casaDebiturStrategy, 'total_label', $landingTotalLabel)) }}
                   </td>
                   <td class="text-right font-weight-bold">{{ data_get($casaDebiturStrategy, 'total.os_fmt', '-') }}</td>
                   <td class="text-right font-weight-bold text-primary">{{ data_get($casaDebiturStrategy, 'total.casa_fmt', '-') }}</td>
@@ -3043,7 +3063,7 @@
               <tfoot>
                 <tr class="total-row">
                   <td colspan="2" class="text-center font-weight-bold">
-                    <i class="fas fa-globe-asia text-primary mr-1"></i> TOTAL AREA 6 KONSOL
+                    <i class="fas fa-calculator text-primary mr-1"></i> {{ strtoupper(data_get($casaDebiturStrategy, 'total_label', $landingTotalLabel)) }}
                   </td>
                   <td class="text-right font-weight-bold">{{ data_get($casaDebiturStrategy, 'total.os_fmt', '-') }}</td>
                   <td class="text-right font-weight-bold text-primary">{{ data_get($casaDebiturStrategy, 'total.casa_fmt', '-') }}</td>
@@ -3103,7 +3123,7 @@
               <thead>
                 <tr>
                   <th class="text-center" style="width: 40px;">NO</th>
-                  <th>UNIT KERJA / CABANG</th>
+                  <th>{{ strtoupper(data_get($dormantStrategy, 'dimension_label', 'Cabang')) }}</th>
                   <th class="text-right">{{ data_get($dormantStrategy, 'dates.ytd', '31 Des 25') }}</th>
                   <th class="text-right">{{ data_get($dormantStrategy, 'dates.mtd', '31 Agt 26') }}</th>
                   <th class="text-right col-highlight">{{ data_get($dormantStrategy, 'dates.current', '04 Sep 26') }}</th>
@@ -3150,7 +3170,7 @@
               <tfoot>
                 <tr class="total-row">
                   <td colspan="2" class="text-center font-weight-bold">
-                    <i class="fas fa-globe-asia text-primary mr-1"></i> TOTAL AREA 6 KONSOL
+                    <i class="fas fa-calculator text-primary mr-1"></i> {{ strtoupper(data_get($dormantStrategy, 'total_label', $landingTotalLabel)) }}
                   </td>
                   <td class="text-right font-weight-bold">{{ data_get($dormantStrategy, 'total.ytd_fmt', '-') }}</td>
                   <td class="text-right font-weight-bold">{{ data_get($dormantStrategy, 'total.mtd_fmt', '-') }}</td>
@@ -3202,7 +3222,7 @@
         <div class="payroll-kpi-box">
           <span class="payroll-kpi-label"><i class="fas fa-building mr-1"></i> Total Mitra Pipeline</span>
           <span class="payroll-kpi-value">{{ data_get($payrollSummary, 'total_perusahaan', 0) }} <span style="font-size: 0.8rem; font-weight: 600; color: #64748b;">Instansi</span></span>
-          <span class="payroll-kpi-sub">Wilayah Madiun Raya</span>
+          <span class="payroll-kpi-sub">Lingkup {{ $landingScopeLabel }}</span>
         </div>
         <div class="payroll-kpi-box">
           <span class="payroll-kpi-label"><i class="fas fa-users mr-1"></i> Total Potensi Pegawai</span>
@@ -3224,14 +3244,14 @@
       <!-- Tabel Pipeline Berdasarkan Cabang (Area 6 Madiun) -->
       @php
         $payrollBranches = (array) data_get($payrollSummary, 'branches', []);
-        $payrollBranchOrder = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+        $payrollBranchOrder = array_keys(array_filter($payrollBranches, fn ($branch) => (int) data_get($branch, 'perusahaan', 0) > 0));
       @endphp
       <div class="payroll-branch-table-container">
         <table class="table payroll-branch-table" id="payrollBranchTable">
           <thead>
             <tr>
               <th style="width: 40px;" class="text-center">#</th>
-              <th>Kantor Cabang (KC)</th>
+              <th>{{ data_get($payrollQualityStrategy, 'dimension_label', 'Kantor Cabang (KC)') }}</th>
               <th class="text-center">Jumlah Mitra</th>
               <th class="text-right">Total Pegawai</th>
               <th class="text-right" style="color: #93c5fd !important;">Potensi Payroll</th>
@@ -3281,7 +3301,7 @@
           <tfoot id="payrollBranchFoot">
             <tr class="font-weight-bold">
               <td colspan="2" class="text-center" style="color: #004685; font-size: 0.82rem;">
-                <i class="fas fa-calculator mr-1"></i> TOTAL AREA 6 KONSOL
+                <i class="fas fa-calculator mr-1"></i> {{ strtoupper(data_get($payrollQualityStrategy, 'total_label', $landingTotalLabel)) }}
               </td>
               <td class="text-center" style="color: #0369a1;">
                 {{ data_get($payrollSummary, 'total_perusahaan', 0) }} Instansi
@@ -3329,7 +3349,7 @@
         <div class="payroll-kpi-box">
           <span class="payroll-kpi-label"><i class="fas fa-wallet mr-1"></i> Total Rekening Kelolaan</span>
           <span class="payroll-kpi-value">{{ data_get($ecosystemSummary, 'total_accounts_fmt', '2.069') }} <span style="font-size: 0.8rem; font-weight: 600; color: #64748b;">Rekening</span></span>
-          <span class="payroll-kpi-sub">Wilayah Madiun Raya (4 KC)</span>
+          <span class="payroll-kpi-sub">Lingkup {{ $landingScopeLabel }}</span>
         </div>
         <div class="payroll-kpi-box">
           <span class="payroll-kpi-label"><i class="fas fa-coins mr-1"></i> Total Saldo Terakhir</span>
@@ -3377,14 +3397,14 @@
 
       <!-- Tabel Konsolidasi Level Cabang (Area 6 Madiun) -->
       @php
-        $ecoBranchOrder = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+        $ecoBranchOrder = array_keys(array_filter($ecosystemBranches, fn ($branch) => (int) data_get($branch, 'rekening', 0) > 0));
       @endphp
       <div class="payroll-branch-table-container">
         <table class="table payroll-branch-table ecosystem-branch-table mb-0" id="ecosystemBranchTable">
           <thead>
             <tr>
               <th style="width: 40px;" class="text-center">#</th>
-              <th>Kantor Cabang (KC)</th>
+              <th>{{ data_get($ecosystemStrategy, 'dimension_label', 'Kantor Cabang (KC)') }}</th>
               <th class="text-center">Total Rekening</th>
               <th class="text-right" style="color: #93c5fd !important;">Total Saldo Kelolaan</th>
               <th class="text-right" style="color: #86efac !important;">Rata-Rata Saldo</th>
@@ -3432,7 +3452,7 @@
           <tfoot>
             <tr class="total-row" style="background:#eff6ff !important; border-top: 2px solid #cbd5e1;">
               <td colspan="2" class="font-weight-bold text-dark" style="font-size: 0.82rem;">
-                <i class="fas fa-globe-asia text-primary mr-1"></i> TOTAL AREA 6 KONSOL
+                <i class="fas fa-calculator text-primary mr-1"></i> {{ strtoupper(data_get($ecosystemStrategy, 'total_label', $landingTotalLabel)) }}
               </td>
               <td class="text-center font-weight-bold text-primary" style="font-size: 0.84rem;">
                 {{ data_get($ecosystemSummary, 'total_accounts_fmt', '2.069') }} Rekening
@@ -3484,7 +3504,7 @@
         <div class="payroll-kpi-box">
           <span class="payroll-kpi-label"><i class="fas fa-building mr-1"></i> Total Pipeline Mitra</span>
           <span class="payroll-kpi-value">{{ data_get($perusahaanAnakSummary, 'total_pipeline', 0) }} <span style="font-size: 0.8rem; font-weight: 600; color: #64748b;">Mitra</span></span>
-          <span class="payroll-kpi-sub">Wilayah Madiun Raya (4 KC)</span>
+          <span class="payroll-kpi-sub">Lingkup {{ $landingScopeLabel }}</span>
         </div>
         <div class="payroll-kpi-box payroll-kpi-box--accent">
           <span class="payroll-kpi-label" style="color: #166534;"><i class="fas fa-check-circle mr-1"></i> Sudah Terakuisisi</span>
@@ -3506,14 +3526,14 @@
       <!-- Tabel Konsolidasi Cabang Perusahaan Anak (Area 6 Madiun) -->
       @php
         $paBranches = (array) data_get($perusahaanAnakSummary, 'branches', []);
-        $paBranchOrder = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+        $paBranchOrder = array_keys(array_filter($paBranches, fn ($branch) => (int) data_get($branch, 'total_pipeline', 0) > 0));
       @endphp
       <div class="payroll-branch-table-container">
         <table class="table payroll-branch-table mb-0" id="perusahaanAnakBranchTable">
           <thead>
             <tr>
               <th style="width: 40px;" class="text-center">#</th>
-              <th>Kantor Cabang (KC)</th>
+              <th>{{ data_get($perusahaanAnakStrategy, 'dimension_label', 'Kantor Cabang (KC)') }}</th>
               <th class="text-center">Total Pipeline</th>
               <th class="text-center" style="color: #86efac !important;">Terakuisisi</th>
               <th class="text-center" style="color: #fde68a !important;">Belum Terakuisisi</th>
@@ -3562,7 +3582,7 @@
           <tfoot>
             <tr class="font-weight-bold" style="background:#eff6ff !important; border-top: 2px solid #cbd5e1;">
               <td colspan="2" class="text-center" style="color: #004685; font-size: 0.82rem;">
-                <i class="fas fa-globe-asia text-primary mr-1"></i> TOTAL AREA 6 KONSOL
+                <i class="fas fa-calculator text-primary mr-1"></i> {{ strtoupper(data_get($perusahaanAnakStrategy, 'total_label', $landingTotalLabel)) }}
               </td>
               <td class="text-center" style="color: #0369a1;">
                 {{ data_get($perusahaanAnakSummary, 'total_pipeline', 0) }} Mitra
@@ -3771,8 +3791,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
       tfoot.innerHTML = `<tr class="total-row">
         <td colspan="2" class="text-center font-weight-bold">
-          <i class="fas fa-globe-asia text-primary mr-1"></i>
-          TOTAL AREA 6 KONSOLIDASI
+          <i class="fas fa-calculator text-primary mr-1"></i>
+          ${(data.total_label || 'TOTAL {{ strtoupper($landingScopeLabel) }}').toUpperCase()}
         </td>
         <td class="text-right font-weight-bold">${tot.ytd || '-'}</td>
         <td class="text-right font-weight-bold">${tot.mtd || '-'}</td>
@@ -4016,6 +4036,16 @@ document.addEventListener('DOMContentLoaded', function() {
       window.location.href = targetUrl.toString();
     });
   }
+
+  // Live snapshot clock updater
+  function updateSimpananClock() {
+    const clockEl = document.getElementById('db-clock');
+    if (!clockEl) return;
+    const now = new Date();
+    clockEl.textContent = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB';
+  }
+  setInterval(updateSimpananClock, 1000);
+  updateSimpananClock();
 
   // 6. CASA View Toggle (Cabang vs Segmen)
   const casaButtons = document.querySelectorAll('#casaViewToggle .sdd-toggle-btn');
@@ -4596,18 +4626,11 @@ document.addEventListener('DOMContentLoaded', function() {
           <button type="button" class="modal-tab-btn" data-kc="ALL">
             Semua ({{ count($payrollRows) }})
           </button>
-          <button type="button" class="modal-tab-btn" data-kc="KC Madiun">
-            KC Madiun ({{ data_get($payrollSummary, 'branches.KC Madiun.perusahaan', 0) }})
-          </button>
-          <button type="button" class="modal-tab-btn" data-kc="KC Magetan">
-            KC Magetan ({{ data_get($payrollSummary, 'branches.KC Magetan.perusahaan', 0) }})
-          </button>
-          <button type="button" class="modal-tab-btn" data-kc="KC Ngawi">
-            KC Ngawi ({{ data_get($payrollSummary, 'branches.KC Ngawi.perusahaan', 0) }})
-          </button>
-          <button type="button" class="modal-tab-btn" data-kc="KC Ponorogo">
-            KC Ponorogo ({{ data_get($payrollSummary, 'branches.KC Ponorogo.perusahaan', 0) }})
-          </button>
+          @foreach($payrollBranchOrder as $branchName)
+            <button type="button" class="modal-tab-btn" data-kc="{{ $branchName }}">
+              {{ $branchName }} ({{ data_get($payrollBranches, $branchName.'.perusahaan', 0) }})
+            </button>
+          @endforeach
         </div>
         <div style="min-width: 200px;">
           <input type="text" id="payrollModalSearch" class="form-control form-control-sm" placeholder="Cari nama perusahaan / CIF..." style="font-size: 0.75rem; border-radius: 6px;">
@@ -4620,7 +4643,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <tr>
               <th style="width: 40px;" class="text-center">#</th>
               <th>Nama Perusahaan / Mitra</th>
-              <th>Cabang (KC)</th>
+              <th>{{ data_get($payrollQualityStrategy, 'dimension_label', 'Cabang (KC)') }}</th>
               <th>Segmen</th>
               <th>Status</th>
               <th class="text-right">Pegawai</th>
@@ -4723,18 +4746,11 @@ document.addEventListener('DOMContentLoaded', function() {
           <button type="button" class="modal-tab-btn active" data-kc="ALL">
             Semua ({{ count($ecosystemRecords) }})
           </button>
-          <button type="button" class="modal-tab-btn" data-kc="KC Madiun">
-            KC Madiun ({{ data_get($ecosystemBranches, 'KC Madiun.rekening_fmt', 0) }})
-          </button>
-          <button type="button" class="modal-tab-btn" data-kc="KC Magetan">
-            KC Magetan ({{ data_get($ecosystemBranches, 'KC Magetan.rekening_fmt', 0) }})
-          </button>
-          <button type="button" class="modal-tab-btn" data-kc="KC Ngawi">
-            KC Ngawi ({{ data_get($ecosystemBranches, 'KC Ngawi.rekening_fmt', 0) }})
-          </button>
-          <button type="button" class="modal-tab-btn" data-kc="KC Ponorogo">
-            KC Ponorogo ({{ data_get($ecosystemBranches, 'KC Ponorogo.rekening_fmt', 0) }})
-          </button>
+          @foreach($ecoBranchOrder as $branchName)
+            <button type="button" class="modal-tab-btn" data-kc="{{ $branchName }}">
+              {{ $branchName }} ({{ data_get($ecosystemBranches, $branchName.'.rekening_fmt', 0) }})
+            </button>
+          @endforeach
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2">
           <select id="ecosystemModalFilterCategory" class="form-control form-control-sm" style="font-size: 0.75rem; border-radius: 6px; width: auto;">
@@ -4757,7 +4773,7 @@ document.addEventListener('DOMContentLoaded', function() {
           <thead class="thead-light" style="position: sticky; top: 0; z-index: 5; background: #f8fafc;">
             <tr>
               <th style="width: 45px;" class="text-center">#</th>
-              <th>Kantor Cabang</th>
+              <th>{{ data_get($ecosystemStrategy, 'dimension_label', 'Kantor Cabang') }}</th>
               <th>Segmen Ekosistem</th>
               <th>Nama Nasabah</th>
               <th>Nomor Rekening</th>
@@ -4817,18 +4833,11 @@ document.addEventListener('DOMContentLoaded', function() {
           <button type="button" class="modal-tab-btn active" data-kc="ALL">
             Semua ({{ count($perusahaanAnakRows) }})
           </button>
-          <button type="button" class="modal-tab-btn" data-kc="KC Madiun">
-            KC Madiun ({{ data_get($perusahaanAnakSummary, 'branches.KC Madiun.total_pipeline', 0) }})
-          </button>
-          <button type="button" class="modal-tab-btn" data-kc="KC Magetan">
-            KC Magetan ({{ data_get($perusahaanAnakSummary, 'branches.KC Magetan.total_pipeline', 0) }})
-          </button>
-          <button type="button" class="modal-tab-btn" data-kc="KC Ngawi">
-            KC Ngawi ({{ data_get($perusahaanAnakSummary, 'branches.KC Ngawi.total_pipeline', 0) }})
-          </button>
-          <button type="button" class="modal-tab-btn" data-kc="KC Ponorogo">
-            KC Ponorogo ({{ data_get($perusahaanAnakSummary, 'branches.KC Ponorogo.total_pipeline', 0) }})
-          </button>
+          @foreach($paBranchOrder as $branchName)
+            <button type="button" class="modal-tab-btn" data-kc="{{ $branchName }}">
+              {{ $branchName }} ({{ data_get($paBranches, $branchName.'.total_pipeline', 0) }})
+            </button>
+          @endforeach
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2">
           <select id="paModalFilterEntity" class="form-control form-control-sm" style="font-size: 0.75rem; border-radius: 6px; width: auto;">
@@ -4854,7 +4863,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <tr>
               <th style="width: 40px;" class="text-center">#</th>
               <th>Nama Partner / Vendor</th>
-              <th>Kantor Cabang</th>
+              <th>{{ data_get($perusahaanAnakStrategy, 'dimension_label', 'Kantor Cabang') }}</th>
               <th>Entitas Anak</th>
               <th class="text-center">Status Akuisisi</th>
               <th>CIF NO</th>

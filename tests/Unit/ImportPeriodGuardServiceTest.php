@@ -32,6 +32,7 @@ class ImportPeriodGuardServiceTest extends TestCase
             'ssa pinjaman' => ['ssa_pinjaman', 'month_day_year_of_periode', 'date'],
             'ssa almafacts' => ['ssa_almafacts', 'month_day_year_of_posisi', 'date'],
             'gi405 recovery' => ['gi405_recovery', 'periode', 'date'],
+            'gi405 single row' => ['gi405_singlerow', 'periode', 'date'],
             'cognos ph' => ['cognos_ph', 'periode', 'date'],
             'cognos recovery' => ['cognos_recovery', 'periode', 'date'],
             'dly kap resegmentasi' => ['dly_kap_resegmentasi', 'periode', 'date'],
