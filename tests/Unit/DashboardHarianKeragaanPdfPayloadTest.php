@@ -79,13 +79,43 @@ class DashboardHarianKeragaanPdfPayloadTest extends TestCase
         $this->mockRka('uker', ['giro_ritel' => ['KC MADIUN' => 150], 'giro_mikro' => ['0042 - UNIT DAGANGAN (Madiun)' => 250]]);
         $payload = (new DashboardHarianSnapshotService())->buildKeragaanPdfPayload('2026-09-30', '2026-09-01', ['KC Madiun'], false);
         $rows = collect($payload['sections'][0]['rows'])->keyBy('label');
-        $this->assertCount(3, $rows);
+        $this->assertSame(['KC Madiun', 'Mikro'], $rows->keys()->all());
         $this->assertSame(150.0, $rows['KC Madiun']['values']['rka']);
-        $this->assertSame(250.0, $rows['UNIT Dagangan']['values']['rka']);
-        $this->assertNull($rows['UNIT Closed']['values']['current']);
-        $this->assertNull($rows['UNIT Closed']['deltas']['mtd']);
-        $this->assertSame(70.0, $rows['UNIT Closed']['values']['mtd']);
+        $this->assertNull($rows['Mikro']['values']['rka']);
+        $this->assertNull($rows['Mikro']['values']['current']);
+        $this->assertNull($rows['Mikro']['deltas']['mtd']);
+        $this->assertNull($rows['Mikro']['values']['mtd']);
         $this->assertNull($payload['sections'][0]['total']['values']['current']);
+    }
+
+    public function test_branch_savings_total_groups_units_as_micro_without_changing_other_sections_or_totals(): void
+    {
+        foreach (['2025-12-31', '2026-08-30', '2026-08-31', '2026-09-29', '2026-09-30'] as $period) {
+            foreach ([
+                'kc-madiun-detail' => ['KC Madiun', 100],
+                'kcp-sudirman' => ['KCP Sudirman', 50],
+                'unit-one' => ['UNIT One', 30],
+                'unit-two' => ['UNIT Two', 20],
+            ] as $unitKey => [$label, $value]) {
+                $this->snapshot($period, 'KC Madiun', $unitKey, $label, $value);
+            }
+        }
+        $this->mockRka('uker', [
+            'giro_ritel' => ['KC MADIUN' => 110, 'KCP SUDIRMAN' => 55],
+            'giro_mikro' => ['UNIT ONE' => 35, 'UNIT TWO' => 25],
+        ]);
+        $sections = collect((new DashboardHarianSnapshotService())->buildKeragaanPdfPayload('2026-09-30', '2026-09-01', ['KC Madiun'], false)['sections'])->keyBy('key');
+        $savings = $sections['total_simpanan'];
+        $this->assertSame(['KC Madiun', 'KCP Sudirman', 'Mikro'], array_column($savings['rows'], 'label'));
+        $this->assertSame(50.0, $savings['rows'][2]['values']['current']);
+        $this->assertSame(50.0, $savings['rows'][2]['values']['mtd']);
+        $this->assertSame(60.0, $savings['rows'][2]['values']['rka']);
+        $this->assertSame(-10.0, $savings['rows'][2]['deltas']['rka']);
+        $this->assertEqualsWithDelta(83.33, $savings['rows'][2]['achievement'], 0.01);
+        $this->assertSame(200.0, $savings['total']['values']['current']);
+        $this->assertSame(225.0, $savings['total']['values']['rka']);
+        $this->assertFalse($savings['totals_include_hidden_rows']);
+        $this->assertSame(['KC Madiun', 'KCP Sudirman', 'UNIT One', 'UNIT Two'], array_column($sections['total_os']['rows'], 'label'));
     }
 
     public function test_branch_filters_inactive_and_segment_offices_without_losing_comparisons_or_targets(): void
@@ -106,7 +136,7 @@ class DashboardHarianKeragaanPdfPayloadTest extends TestCase
         $payload = (new DashboardHarianSnapshotService())->buildKeragaanPdfPayload('2026-09-30', '2026-09-01', ['KC Madiun'], false);
         $sections = collect($payload['sections'])->keyBy('key');
         $labels = fn (string $key): array => array_column($sections[$key]['rows'], 'label');
-        $this->assertSame(['KC Madiun', 'KCP Active', 'UNIT Active'], $labels('total_simpanan'));
+        $this->assertSame(['KC Madiun', 'KCP Active', 'Mikro'], $labels('total_simpanan'));
         $this->assertSame(['KC Madiun'], $labels('simpanan_ritel'));
         $this->assertSame(['UNIT Active'], $labels('simpanan_mikro'));
         $this->assertSame(['KCP Active'], $labels('simpanan_wholesale'));

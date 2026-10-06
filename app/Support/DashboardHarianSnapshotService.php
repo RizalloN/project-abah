@@ -1122,11 +1122,32 @@ class DashboardHarianSnapshotService
                 $totals[$position] = $values === [] || in_array(null, $values, true) ? null : array_sum($values);
             }
             $hiddenCurrentValues = array_map(fn (array $row) => $row['values']['current'], array_diff_key($allRows, $rows));
+            $visibleRowCount = count($rows);
+            if (!$areaScope && $key === 'total_simpanan') {
+                $microRows = [];
+                foreach ($rows as $identity => $row) {
+                    $officeLabel = $scopeKey($row['label']);
+                    if (str_starts_with($officeLabel, 'KC ') || str_starts_with($officeLabel, 'KCP ')) {
+                        continue;
+                    }
+                    $microRows[] = $row;
+                    unset($rows[$identity]);
+                }
+                if ($microRows !== []) {
+                    $microValues = [];
+                    foreach (['ytd', 'mtd', 'mtm', 'h1', 'current', 'rka'] as $position) {
+                        $positionValues = array_column(array_column($microRows, 'values'), $position);
+                        $microValues[$position] = in_array(null, $positionValues, true)
+                            ? null : array_sum($positionValues);
+                    }
+                    $rows['micro'] = $makeRow('Mikro', $microValues, $lowerBetter);
+                }
+            }
             $sections[] = [
                 'key' => $key, 'label' => $label, 'lower_better' => $lowerBetter, 'rows' => array_values($rows),
-                'hidden_row_count' => count($allRows) - count($rows),
+                'hidden_row_count' => count($allRows) - $visibleRowCount,
                 'hidden_current_value' => in_array(null, $hiddenCurrentValues, true) ? null : (float) array_sum($hiddenCurrentValues),
-                'totals_include_hidden_rows' => count($allRows) > count($rows),
+                'totals_include_hidden_rows' => count($allRows) > $visibleRowCount,
                 'total' => $makeRow($areaScope ? 'Area 6 Madiun' : $branches[0], $totals, $lowerBetter),
             ];
         }
