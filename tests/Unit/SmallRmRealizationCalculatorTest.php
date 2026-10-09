@@ -363,6 +363,71 @@ class SmallRmRealizationCalculatorTest extends TestCase
         $this->assertSame([], $otherCategory['rows']);
     }
 
+    public function test_numeric_account_aliases_remain_string_bindings_for_indexed_history_lookup(): void
+    {
+        $this->insertRow('2026-06-30', 'CIF', '004501500196155', 500, 450, '2025-01-01');
+        $this->insertRow('2026-07-31', 'CIF', '4501500196155', 800, 700, '2025-01-01');
+        DB::enableQueryLog();
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-07-31']);
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+        $history = collect($queries)->first(fn (array $q): bool =>
+            str_contains($q['query'], '"nomor_rekening1" in')
+            && str_contains($q['query'], '"periode" in'));
+        $this->assertNotNull($history);
+        $aliases = array_filter($history['bindings'], fn ($value): bool =>
+            in_array((string) $value, ['4501500196155', '004501500196155'], true));
+        $this->assertCount(2, $aliases);
+        foreach ($aliases as $alias) {
+            $this->assertIsString($alias);
+        }
+        $this->assertSame(300.0, $result['diagnostics']['credited_rp']);
+    }
+
+    public function test_large_history_lookup_is_bounded_without_losing_accounts(): void
+    {
+        for ($i = 0; $i < 205; $i++) {
+            $account = (string) (4501500190000 + $i);
+            $this->insertRow('2026-06-30', 'CIF-'.$i, $account, 500, 450, '2025-01-01');
+            $this->insertRow('2026-07-31', 'CIF-'.$i, $account, 800, 700, '2025-01-01');
+        }
+        DB::enableQueryLog();
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-07-31']);
+        $queries = collect(DB::getQueryLog())->filter(fn (array $q): bool =>
+            str_contains($q['query'], '"nomor_rekening1" in')
+            && str_contains($q['query'], '"periode" in'));
+        DB::disableQueryLog();
+        $this->assertCount(3, $queries);
+        foreach ($queries as $query) {
+            $this->assertLessThanOrEqual(210, count($query['bindings']));
+        }
+        $this->assertSame(205, $result['diagnostics']['plafond_increase_accounts']);
+        $this->assertSame(61500.0, $result['diagnostics']['credited_rp']);
+    }
+
+    public function test_previous_month_skips_latest_position_without_small_source(): void
+    {
+        $this->insertRow('2026-06-29', 'CIF', '12345', 500, 450, '2025-01-01');
+        $this->insertRow('2026-06-30', 'OTHER', '98765', 900, 800, '2025-01-01', null, ['segmen_kinerja' => 'MEDIUM']);
+        $this->insertRow('2026-07-31', 'CIF', '12345', 800, 700, '2025-01-01');
+        $result = (new SmallRmRealizationCalculator)->calculate(['2026-07-31'], [], 'KC PONOROGO');
+        $this->assertSame(300.0, $result['diagnostics']['credited_rp']);
+    }
+
+    public function test_scoped_account_batches_preserve_all_accounts_and_global_results(): void
+    {
+        for ($i = 0; $i < 205; $i++) {
+            $account = (string) (4501500190000 + $i);
+            $this->insertRow('2026-06-30', 'CIF-'.$i, $account, 500, 450, '2025-01-01');
+            $this->insertRow('2026-07-31', 'CIF-'.$i, $account, 800, 700, '2025-01-01');
+        }
+        $calculator = new SmallRmRealizationCalculator;
+        $all = $calculator->calculate(['2026-07-31']);
+        $scoped = $calculator->calculate(['2026-07-31'], [], 'KC PONOROGO');
+        $this->assertEquals($all, $scoped);
+        $this->assertSame(61500.0, $scoped['diagnostics']['credited_rp']);
+    }
+
     private function insertRow(
         string $period,
         string $cif,

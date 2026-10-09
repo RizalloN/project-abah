@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Http\Controllers\Report\KinerjaRmReportController;
+use App\Jobs\WarmLandingSmeQuadrantsJob;
 use Carbon\Carbon;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
@@ -118,17 +119,18 @@ final class LandingSmeOperationalService
     public function payload(
         ?array $branchScope = null,
         bool $forceRefresh = false,
-        ?string $requestedPeriod = null
+        ?string $requestedPeriod = null,
+        bool $allowDeferredCold = false
     ): array
     {
         $external = $this->externalPayload($forceRefresh);
-        $quadrants = $this->cachedQuadrants($requestedPeriod, $forceRefresh);
+        $quadrants = $this->cachedQuadrants($requestedPeriod, $forceRefresh, $allowDeferredCold);
 
         return $this->buildScopedPayload($external, $quadrants, $branchScope);
     }
 
     /** @return array<string, mixed> */
-    private function cachedQuadrants(?string $requestedPeriod, bool $forceRefresh): array
+    private function cachedQuadrants(?string $requestedPeriod, bool $forceRefresh, bool $allowDeferredCold = false): array
     {
         $periodKey = $requestedPeriod ? Carbon::parse($requestedPeriod)->toDateString() : 'latest';
         $version = ReportCacheVersion::composite(['pinjaman', 'harian']);
@@ -140,25 +142,27 @@ final class LandingSmeOperationalService
 
         if ($forceRefresh) {
             Cache::forget($cacheKey);
-            $durable = Cache::get($durableKey);
+            $durable = $this->readQuadrantCache($durableKey, true);
             if (is_array($durable)) {
-                $this->deferQuadrantRefresh($cacheKey, $durableKey, $requestedPeriod);
+                $this->deferQuadrantRefresh($cacheKey, $durableKey, $requestedPeriod, $allowDeferredCold);
                 $durable['cache_stale'] = true;
                 $durable['refresh_pending'] = true;
 
                 return $durable;
             }
         } else {
-            $cached = Cache::get($cacheKey);
+            $cached = $this->readQuadrantCache($cacheKey, false);
             if (is_array($cached)) {
-                Cache::put($durableKey, $cached, now()->addDays(7));
+                if ($this->quadrantPayloadIsValid($cached)) {
+                    Cache::put($durableKey, $cached, now()->addDays(7));
+                }
 
                 return $cached;
             }
 
-            $durable = Cache::get($durableKey);
+            $durable = $this->readQuadrantCache($durableKey, true);
             if (is_array($durable)) {
-                $this->deferQuadrantRefresh($cacheKey, $durableKey, $requestedPeriod);
+                $this->deferQuadrantRefresh($cacheKey, $durableKey, $requestedPeriod, $allowDeferredCold);
                 $durable['cache_stale'] = true;
                 $durable['refresh_pending'] = true;
 
@@ -166,17 +170,28 @@ final class LandingSmeOperationalService
             }
         }
 
+        if ($allowDeferredCold) {
+            $this->deferQuadrantRefresh($cacheKey, $durableKey, $requestedPeriod, true);
+
+            return [
+                'available' => false,
+                'period' => $requestedPeriod,
+                'branches' => [],
+                'refresh_pending' => true,
+            ];
+        }
+
         try {
             $payload = $this->kinerjaRmReportController->landingSmallQuadrantSummary($requestedPeriod);
-            Cache::put($cacheKey, $payload, now()->addHours(6));
-            Cache::put($durableKey, $payload, now()->addDays(7));
+            $payload = $this->cacheQuadrantPayload($cacheKey, $durableKey, $payload);
 
             return $payload;
         } catch (Throwable $exception) {
-            $durable = Cache::get($durableKey);
+            $durable = $this->readQuadrantCache($durableKey, true);
             if (is_array($durable)) {
                 $durable['cache_stale'] = true;
                 $durable['refresh_error'] = $exception->getMessage();
+                $durable['refresh_pending'] = true;
 
                 return $durable;
             }
@@ -185,8 +200,13 @@ final class LandingSmeOperationalService
         }
     }
 
-    private function deferQuadrantRefresh(string $cacheKey, string $durableKey, ?string $requestedPeriod): void
+    private function deferQuadrantRefresh(string $cacheKey, string $durableKey, ?string $requestedPeriod, bool $queued = false): void
     {
+        if ($queued) {
+            WarmLandingSmeQuadrantsJob::dispatch($requestedPeriod);
+
+            return;
+        }
         $pendingKey = $cacheKey.':refresh-pending';
         if (! Cache::add($pendingKey, true, now()->addMinutes(10))) {
             return;
@@ -195,8 +215,7 @@ final class LandingSmeOperationalService
         defer(function () use ($cacheKey, $durableKey, $requestedPeriod, $pendingKey): void {
             try {
                 $payload = $this->kinerjaRmReportController->landingSmallQuadrantSummary($requestedPeriod);
-                Cache::put($cacheKey, $payload, now()->addHours(6));
-                Cache::put($durableKey, $payload, now()->addDays(7));
+                $payload = $this->cacheQuadrantPayload($cacheKey, $durableKey, $payload);
             } catch (Throwable $exception) {
                 Log::warning('Refresh cache landing SME gagal.', [
                     'period' => $requestedPeriod,
@@ -206,6 +225,69 @@ final class LandingSmeOperationalService
                 Cache::forget($pendingKey);
             }
         }, 'landing-sme-quadrants:'.md5($cacheKey), true);
+    }
+
+    public function warmQuadrants(?string $requestedPeriod): bool
+    {
+        $periodKey = $requestedPeriod ? Carbon::parse($requestedPeriod)->toDateString() : 'latest';
+        $version = ReportCacheVersion::composite(['pinjaman', 'harian']);
+        $cacheKey = implode(':', ['landing', 'sme', 'quadrants', self::QUADRANT_CACHE_VERSION, $version, $periodKey]);
+        $durableKey = implode(':', ['landing', 'sme', 'quadrants', self::QUADRANT_CACHE_VERSION, 'last-valid', $periodKey]);
+        if ($this->quadrantPayloadIsValid(Cache::get($cacheKey))) {
+            return true;
+        }
+        $payload = $this->kinerjaRmReportController->landingSmallQuadrantSummary($requestedPeriod);
+        $this->cacheQuadrantPayload($cacheKey, $durableKey, $payload);
+
+        return $this->quadrantPayloadIsValid($payload);
+    }
+
+    private function quadrantPayloadIsValid(mixed $payload): bool
+    {
+        return is_array($payload)
+            && !empty($payload['available'])
+            && !empty($payload['period'])
+            && empty($payload['error'])
+            && empty($payload['refresh_error'])
+            && empty($payload['refresh_pending'])
+            && empty($payload['cache_stale']);
+    }
+
+    private function readQuadrantCache(string $key, bool $durable): ?array
+    {
+        $payload = Cache::get($key);
+        if ($this->quadrantPayloadIsValid($payload)) {
+            return $payload;
+        }
+        if (!$durable && is_array($payload) && (int) ($payload['retry_after'] ?? 0) > now()->timestamp) {
+            return $payload;
+        }
+        if ($payload !== null) {
+            Cache::forget($key);
+        }
+
+        return null;
+    }
+
+    private function cacheQuadrantPayload(string $cacheKey, string $durableKey, array $payload): array
+    {
+        if ($this->quadrantPayloadIsValid($payload)) {
+            Cache::put($cacheKey, $payload, now()->addHours(6));
+            Cache::put($durableKey, $payload, now()->addDays(7));
+
+            return $payload;
+        }
+
+        $durable = $this->readQuadrantCache($durableKey, true);
+        if ($durable !== null) {
+            $payload = $durable;
+            $payload['cache_stale'] = true;
+        }
+        $payload['refresh_pending'] = true;
+        $payload['retry_after'] = now()->addSeconds(30)->timestamp;
+        Cache::put($cacheKey, $payload, now()->addSeconds(30));
+
+        return $payload;
     }
 
     /**
@@ -391,7 +473,9 @@ final class LandingSmeOperationalService
                 'generated_at' => now()->toDateTimeString(),
                 'calendar_week' => $calendarWeek,
                 'cache_stale' => (bool) ($quadrants['cache_stale'] ?? false),
-                'refresh_pending' => (bool) ($quadrants['refresh_pending'] ?? false),
+                'refresh_pending' => (bool) ($quadrants['refresh_pending'] ?? false)
+                    || collect(self::SOURCES)->keys()->contains(fn (string $key): bool => !empty($external[$key]['meta']['refresh_pending'])),
+                'error' => (string) ($quadrants['error'] ?? $quadrants['refresh_error'] ?? ''),
             ],
             'quadrants' => $this->scopeQuadrants($quadrants, $branch),
             'realization_tiers' => $this->scopeRealizationTiers((array) ($quadrants['realization_tiers'] ?? []), $branch),
@@ -465,17 +549,75 @@ final class LandingSmeOperationalService
         if (! $forceRefresh) {
             $cached = Cache::get(self::CACHE_KEY);
             if (is_array($cached)) {
-                return $cached;
+                $hasErrors = collect(self::SOURCES)->keys()->contains(
+                    fn (string $key): bool => !empty($cached[$key]['meta']['error'])
+                );
+                if (!$hasErrors || (int) ($cached['_retry_after'] ?? 0) > now()->timestamp) {
+                    return $cached;
+                }
             }
         }
 
+        $fallback = [];
+        $hasStable = false;
+        foreach (self::SOURCES as $key => $source) {
+            $stable = Cache::get($this->stableSourceKey($key));
+            if (is_array($stable) && !empty($stable['meta']['available'])) {
+                $hasStable = true;
+                $stable['meta']['stale'] = true;
+                $stable['meta']['refresh_pending'] = true;
+                $fallback[$key] = $stable;
+            } else {
+                $fallback[$key] = [
+                    'records' => [],
+                    'meta' => array_merge($this->sourceMeta($source, false), [
+                        'available' => false,
+                        'refresh_pending' => true,
+                    ]),
+                ];
+            }
+        }
+        if ($hasStable) {
+            $this->deferExternalRefresh();
+
+            return $fallback;
+        }
+
+        return $this->fetchExternalPayload(5);
+    }
+
+    private function deferExternalRefresh(): void
+    {
+        $pendingKey = self::CACHE_KEY.':refresh-pending';
+        if (!Cache::add($pendingKey, true, now()->addSeconds(60))) {
+            return;
+        }
+        defer(function () use ($pendingKey): void {
+            $lock = Cache::lock(self::CACHE_KEY.':refresh-lock', 60);
+            $locked = false;
+            try {
+                $locked = $lock->get();
+                if ($locked) {
+                    $this->fetchExternalPayload(20);
+                }
+            } finally {
+                if ($locked) {
+                    $lock->release();
+                }
+                Cache::forget($pendingKey);
+            }
+        }, 'landing-sme-external-refresh', true);
+    }
+
+    private function fetchExternalPayload(int $timeoutSeconds): array
+    {
         try {
-            $responses = Http::pool(function (Pool $pool): array {
+            $responses = Http::pool(function (Pool $pool) use ($timeoutSeconds): array {
                 $requests = [];
                 foreach (self::SOURCES as $key => $source) {
                     $requests[] = $pool->as($key)
-                        ->connectTimeout(5)
-                        ->timeout(20)
+                        ->connectTimeout(min(2, $timeoutSeconds))
+                        ->timeout($timeoutSeconds)
                         ->get($this->csvUrl($source));
                 }
 
@@ -522,7 +664,17 @@ final class LandingSmeOperationalService
             }
         }
 
-        Cache::put(self::CACHE_KEY, $payload, now()->addMinutes(5));
+        $hasErrors = collect($payload)->contains(fn (array $source): bool => !empty($source['meta']['error']));
+        if ($hasErrors) {
+            foreach ($payload as &$source) {
+                if (!empty($source['meta']['error'])) {
+                    $source['meta']['refresh_pending'] = true;
+                }
+            }
+            unset($source);
+            $payload['_retry_after'] = now()->addSeconds(30)->timestamp;
+        }
+        Cache::put(self::CACHE_KEY, $payload, $hasErrors ? now()->addSeconds(30) : now()->addMinutes(5));
 
         return $payload;
     }

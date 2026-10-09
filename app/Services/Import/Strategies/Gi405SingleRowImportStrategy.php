@@ -3,6 +3,8 @@
 namespace App\Services\Import\Strategies;
 
 use App\Services\Import\Gi405SingleRowValueNormalizer;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class Gi405SingleRowImportStrategy implements ImportStrategyInterface
 {
@@ -36,9 +38,21 @@ class Gi405SingleRowImportStrategy implements ImportStrategyInterface
 
     public function prepareContext(array $context): array
     {
-        $decimalColumns = array_fill_keys(Gi405SingleRowValueNormalizer::DECIMAL_COLUMNS, true);
+        if (! Schema::hasTable('referensi_uker')) {
+            throw new \RuntimeException('Import GI405 Single Row memerlukan tabel referensi_uker untuk mengisi nama cabang dan unit kerja.');
+        }
+
+        $context['gi405_uker_lookup'] = [];
+        foreach (DB::table('referensi_uker')->get(['kode_uker', 'nama_cabang', 'nama_uker']) as $reference) {
+            $context['gi405_uker_lookup'][(string) $reference->kode_uker] = [
+                'nama_cabang' => $reference->nama_cabang,
+                'nama_uker' => $reference->nama_uker,
+            ];
+        }
+
         $textColumns = array_fill_keys([
             'BRANCH', 'CURRENCY', 'POSTING_CONTROL', 'ACCOUNT_NUMBER', 'C_C', 'P_C', 'F_C', 'DESCRIPTION',
+            ...Gi405SingleRowValueNormalizer::DECIMAL_COLUMNS,
         ], true);
 
         foreach ((array) ($context['header_rules'] ?? []) as $index => $rule) {
@@ -47,7 +61,6 @@ class Gi405SingleRowImportStrategy implements ImportStrategyInterface
                 (array) ($rule['db_candidates'] ?? [])
             );
 
-            $context['header_rules'][$index]['exact_decimal'] = array_intersect_key($decimalColumns, array_fill_keys($candidates, true)) !== [];
             if (array_intersect_key($textColumns, array_fill_keys($candidates, true)) !== []) {
                 $context['header_rules'][$index]['preserve_source_text'] = true;
                 $context['header_rules'][$index]['preserve_source_text_exact'] = true;
@@ -63,7 +76,7 @@ class Gi405SingleRowImportStrategy implements ImportStrategyInterface
     public function validateSchema(array $availableColumns): array
     {
         $required = array_merge(
-            ['uniqueid_namareport'],
+            ['uniqueid_namareport', 'source_periode', 'nama_cabang', 'nama_uker'],
             array_values(self::COLUMN_MAP),
             ['created_at', 'updated_at']
         );

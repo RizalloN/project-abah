@@ -96,6 +96,7 @@ final class SmallRmRealizationCalculator
         $coverageRows = $this->sourceQueryForPeriodRange()
             ->whereIn('periode', $periods)
             ->whereIn('produk_kinerja', $products)
+            ->distinct()
             ->get([
                 'periode',
                 'segmen_kinerja',
@@ -129,6 +130,22 @@ final class SmallRmRealizationCalculator
                 }
             });
 
+        // Resolve the indexed period/segment catalog before loading account
+        // rows. Exact predicates can use all leading columns of the existing
+        // snapshot index; broad monthly ranges cannot.
+        $catalog = (clone $candidateQuery)->distinct()->get(['periode', 'segmen_kinerja', 'produk_kinerja']);
+        $observationPeriods = $catalog->pluck('periode')->unique()->values()->all();
+        $segments = $catalog->pluck('segmen_kinerja')->unique()->values();
+        $candidateQuery = $this->sourceQueryForPeriodRange()
+            ->whereIn('periode', $observationPeriods)
+            ->whereIn('produk_kinerja', $products)
+            ->where(function (Builder $query) use ($segments): void {
+                $query->whereIn('segmen_kinerja', $segments->filter(fn ($value) => $value !== null)->all());
+                if ($segments->contains(null)) {
+                    $query->orWhereNull('segmen_kinerja');
+                }
+            });
+
         // Select the relevant accounts first, then retain their complete
         // monthly observations across assignment changes. Filtering the
         // observations themselves can invent a different event owner.
@@ -140,6 +157,7 @@ final class SmallRmRealizationCalculator
             $selectedRmCategory,
             $initiatorValues
         );
+        $accountAliases = null;
         if ($selectedCabang !== null || $selectedRmCategory !== null || $initiatorValues !== []) {
             $accountAliases = [];
             foreach ($assignmentQuery->distinct()->pluck('nomor_rekening1') as $rawAccount) {
@@ -150,7 +168,6 @@ final class SmallRmRealizationCalculator
                     }
                 }
             }
-            $candidateQuery->whereIn('nomor_rekening1', array_keys($accountAliases));
         }
 
         $selects = [
@@ -171,9 +188,21 @@ final class SmallRmRealizationCalculator
             $selects[] = 'id';
         }
 
-        $candidateRows = $candidateQuery
-            ->select($selects)
-            ->get()
+        if ($accountAliases !== null) {
+            // Resolve dates once, then use the existing (periode, rekening)
+            // index in bounded batches without dropping assignment history.
+            $candidateRows = collect();
+            foreach (array_chunk(array_map('strval', array_keys($accountAliases)), 200) as $aliases) {
+                $candidateRows = $candidateRows->concat(DB::table(self::SOURCE_TABLE)
+                    ->whereIn('periode', $observationPeriods)
+                    ->whereIn('produk_kinerja', $products)
+                    ->whereIn('nomor_rekening1', $aliases)
+                    ->get($selects));
+            }
+        } else {
+            $candidateRows = $candidateQuery->get($selects);
+        }
+        $candidateRows = $candidateRows
             ->sortBy(static fn (object $row): string => implode('|', [
                 (string) ($row->periode ?? ''),
                 (string) ($row->realization_date ?? ''),
@@ -320,20 +349,26 @@ final class SmallRmRealizationCalculator
                 $candidateAccounts[$alias] = true;
             }
         }
-        $candidateAccounts = array_keys($candidateAccounts);
+        $candidateAccounts = array_map('strval', array_keys($candidateAccounts));
         if ($previousPeriodValues !== [] && $candidateAccounts !== []) {
-            $previousRows = DB::table(self::SOURCE_TABLE)
-                ->whereIn('periode', $previousPeriodValues)
-                ->whereIn('produk_kinerja', $products)
-                ->whereIn('nomor_rekening1', $candidateAccounts)
-                ->get([
-                    'periode',
-                    'nomor_rekening1 as account_number',
-                    'plafon',
-                    'segmen_kinerja',
-                    'produk_kinerja',
-                    $this->selectAlias($columns, ['description'], 'description'),
-                ]);
+            // Keep account predicates below MariaDB's large-IN conversion
+            // threshold so (periode, nomor_rekening1) remains a range lookup.
+            $previousRows = (function () use ($previousPeriodValues, $products, $candidateAccounts, $columns): \Generator {
+                foreach (array_chunk($candidateAccounts, 200) as $accounts) {
+                    yield from DB::table(self::SOURCE_TABLE)
+                        ->whereIn('periode', $previousPeriodValues)
+                        ->whereIn('produk_kinerja', $products)
+                        ->whereIn('nomor_rekening1', $accounts)
+                        ->get([
+                            'periode',
+                            'nomor_rekening1 as account_number',
+                            'plafon',
+                            'segmen_kinerja',
+                            'produk_kinerja',
+                            $this->selectAlias($columns, ['description'], 'description'),
+                        ]);
+                }
+            })();
 
             foreach ($previousRows as $row) {
                 $period = $this->dateValue($row->periode ?? null);
@@ -480,44 +515,29 @@ final class SmallRmRealizationCalculator
 
                 return [$period => [$month->copy()->startOfMonth()->toDateString(), $month->copy()->endOfMonth()->toDateString()]];
             });
-        $available = $this->sourceQueryForPeriodRange()
-            ->whereIn('produk_kinerja', $products)
-            ->where(function (Builder $query) use ($previousMonths): void {
-                foreach ($previousMonths as $index => $range) {
-                    $method = $index === 0 ? 'whereBetween' : 'orWhereBetween';
-                    $query->{$method}('periode', $range);
+        $resolved = [];
+        return $previousMonths->map(function (array $range) use ($products, $columns, &$resolved): ?string {
+            if (array_key_exists($range[0], $resolved)) {
+                return $resolved[$range[0]];
+            }
+            $dates = DB::table(self::SOURCE_TABLE)->whereBetween('periode', $range)
+                ->distinct()->orderByDesc('periode')->pluck('periode');
+            foreach ($dates as $date) {
+                $classifications = $this->sourceQueryForPeriodRange()->where('periode', $date)
+                    ->whereIn('produk_kinerja', $products)->distinct()->get([
+                        'segmen_kinerja', 'produk_kinerja',
+                        $this->selectAlias($columns, ['description'], 'description'),
+                    ]);
+                foreach ($classifications as $row) {
+                    $classification = DailyLoanManualSegmentRule::classify($row->description ?? null, $row->segmen_kinerja ?? null, $row->produk_kinerja ?? null);
+                    if ($classification['segment'] === 'SMALL' && in_array($classification['product'], $products, true)) {
+                        return $resolved[$range[0]] = $this->dateValue($date);
+                    }
                 }
-            })
-            ->get([
-                'periode',
-                'segmen_kinerja',
-                'produk_kinerja',
-                $this->selectAlias($columns, ['description'], 'description'),
-            ])
-            ->filter(function (object $row) use ($products): bool {
-                $classification = DailyLoanManualSegmentRule::classify(
-                    $row->description ?? null,
-                    $row->segmen_kinerja ?? null,
-                    $row->produk_kinerja ?? null
-                );
+            }
 
-                return $classification['segment'] === 'SMALL'
-                    && in_array($classification['product'], $products, true);
-            })
-            ->pluck('periode')
-            ->map(fn ($period): ?string => $this->dateValue($period))
-            ->filter()
-            ->unique()
-            ->values();
-
-        return $previousMonths
-            ->map(function (array $range) use ($available): ?string {
-                return $available
-                    ->filter(static fn (string $period): bool => $period >= $range[0] && $period <= $range[1])
-                    ->max();
-            })
-            ->filter()
-            ->all();
+            return $resolved[$range[0]] = null;
+        })->filter()->all();
     }
 
     private function sourceQueryForPeriodRange(): Builder
@@ -668,7 +688,7 @@ final class SmallRmRealizationCalculator
             $aliases[str_pad($canonical, 15, '0', STR_PAD_LEFT)] = true;
         }
 
-        return array_keys($aliases);
+        return array_map('strval', array_keys($aliases));
     }
 
     private function normalizeBranchCode(mixed $value): string

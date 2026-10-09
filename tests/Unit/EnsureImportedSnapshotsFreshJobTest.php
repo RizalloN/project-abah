@@ -17,6 +17,25 @@ use Tests\TestCase;
 
 class EnsureImportedSnapshotsFreshJobTest extends TestCase
 {
+    public function test_abandoned_unique_dispatch_lock_expires_after_the_reservation_and_execution_window(): void
+    {
+        Config::set('queue.default', 'database');
+        Config::set('queue.connections.database.retry_after', 14400);
+        $job = new EnsureImportedSnapshotsFreshJob('daily_loan_dinamis', '2026-05-06');
+        $lock = new \Illuminate\Bus\UniqueLock(Cache::store('array'));
+
+        $this->assertGreaterThanOrEqual(14400 + $job->timeout, $job->uniqueFor());
+        $this->assertTrue($lock->acquire($job));
+        $this->assertFalse($lock->acquire($job));
+        $this->travel($job->uniqueFor() + 1)->seconds();
+        try {
+            $this->assertTrue($lock->acquire($job));
+        } finally {
+            $lock->release($job);
+            $this->travelBack();
+        }
+    }
+
     private SnapshotSourceSignatureService $sourceSignatures;
 
     protected function setUp(): void
@@ -45,6 +64,8 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
 
     public function test_daily_loan_freshness_rebuilds_legacy_performance_rm_snapshot(): void
     {
+        Config::set('queue.default', 'database');
+        \Illuminate\Support\Facades\Bus::fake();
         DB::table('daily_loan_dinamis')->insert([
             'periode' => '2026-05-06',
             'baki_debet1' => 1000,
@@ -79,6 +100,8 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
             ->handle($builder, $dashboardHarian, $this->sourceSignatures);
 
         $this->assertSame(4, (int) Cache::get('report_cache_version:pinjaman'));
+        \Illuminate\Support\Facades\Bus::assertDispatched(\App\Jobs\WarmLandingSmeQuadrantsJob::class, fn ($job): bool =>
+            $job->period === '2026-05-06' && $job->queue === 'default');
         $this->assertTrue($this->sourceSignatures->isFresh(
             'daily_loan_dinamis',
             'performance_rm_snapshots',

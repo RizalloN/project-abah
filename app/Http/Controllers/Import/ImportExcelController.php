@@ -781,6 +781,11 @@ class ImportExcelController extends Controller
             return $normalizedValue;
         }
 
+        if ($this->isGi405SingleRowTable((string) ($context['table_name'] ?? ''))
+            && (function_exists('mb_strlen') ? mb_strlen($normalizedValue) : strlen($normalizedValue)) > $maxLength) {
+            throw new \RuntimeException("Nilai GI405 Single Row pada kolom {$dbColumn} melebihi kapasitas {$maxLength} karakter.");
+        }
+
         if (function_exists('mb_substr')) {
             return mb_substr($normalizedValue, 0, $maxLength);
         }
@@ -885,7 +890,10 @@ class ImportExcelController extends Controller
     {
         $required = [
             'periode',
+            'source_periode',
             'branch',
+            'nama_cabang',
+            'nama_uker',
             'currency',
             'posting_control',
             'account_number',
@@ -906,6 +914,34 @@ class ImportExcelController extends Controller
             throw new \RuntimeException(
                 'Import GI405 Single Row dibatalkan: nilai wajib kosong setelah normalisasi: ' . implode(', ', $missing) . '.'
             );
+        }
+    }
+
+    private function applyGi405SingleRowUnitNames(array $row, array $context): array
+    {
+        $branch = trim((string) ($row['branch'] ?? ''));
+        $code = preg_match('/^\d{1,5}$/', $branch) === 1 ? str_pad($branch, 5, '0', STR_PAD_LEFT) : '';
+        $reference = $context['gi405_uker_lookup'][$code] ?? null;
+
+        if (! is_array($reference)
+            || trim((string) ($reference['nama_cabang'] ?? '')) === ''
+            || trim((string) ($reference['nama_uker'] ?? '')) === '') {
+            throw new \RuntimeException("Import GI405 Single Row dibatalkan: kode BRANCH `{$branch}` tidak memiliki nama cabang dan unit kerja lengkap di referensi_uker.");
+        }
+
+        $row['nama_cabang'] = $reference['nama_cabang'];
+        $row['nama_uker'] = $reference['nama_uker'];
+
+        return $row;
+    }
+
+    private function assertGi405SingleRowSourceValuesUnchanged(array $row, array $headers, array $mapped): void
+    {
+        foreach ($headers as $index => $header) {
+            $column = $header === 'periode' ? 'source_periode' : $header;
+            if ((string) ($row[$index] ?? '') !== (string) ($mapped[$column] ?? '')) {
+                throw new \RuntimeException("Import GI405 Single Row dibatalkan: nilai sumber kolom `{$header}` berubah saat pemetaan.");
+            }
         }
     }
 
@@ -4387,6 +4423,12 @@ class ImportExcelController extends Controller
             $columns[] = $context['table_columns_by_lower']['posisi_jam'] ?? 'posisi_jam';
         }
 
+        if ($this->isGi405SingleRowTable($tableName) && isset($context['table_columns_lookup']['source_periode'])) {
+            $columns[] = $context['table_columns_by_lower']['source_periode'] ?? 'source_periode';
+            $columns[] = $context['table_columns_by_lower']['nama_cabang'] ?? 'nama_cabang';
+            $columns[] = $context['table_columns_by_lower']['nama_uker'] ?? 'nama_uker';
+        }
+
         return array_values(array_unique($columns));
     }
 
@@ -7643,11 +7685,11 @@ class ImportExcelController extends Controller
         };
     }
 
-    private function buildGi405SingleRowAfterLoadCallback(array $periodCounts): \Closure
+    private function buildGi405SingleRowAfterLoadCallback(array $periodCounts, string $csvPath, array $columns): \Closure
     {
         $periodCounts = array_map('intval', $periodCounts);
 
-        return static function (\PDO $pdo, int $affectedRows) use ($periodCounts): void {
+        return function (\PDO $pdo, int $affectedRows) use ($periodCounts, $csvPath, $columns): void {
             $expectedTotal = array_sum($periodCounts);
             if ($affectedRows !== $expectedTotal) {
                 throw new \RuntimeException(
@@ -7665,7 +7707,108 @@ class ImportExcelController extends Controller
                     );
                 }
             }
+
+            $this->assertGi405SingleRowStoredValuesMatchCsv($pdo, $csvPath, $columns, $expectedTotal);
         };
+    }
+
+    private function gi405SingleRowCompletionMessage(array $periodCounts, int $inserted): string
+    {
+        $importedPeriods = array_map(
+            static fn (string $period): string => Carbon::parse($period)->format('d/m/Y'),
+            array_keys($periodCounts)
+        );
+        $message = 'GI405 periode sumber ' . implode(', ', $importedPeriods) . ': ' . number_format($inserted, 0, ',', '.') . ' baris tersimpan.';
+
+        $periods = DB::table('gi405_singlerow')->distinct()->orderBy('periode')->pluck('periode')->all();
+        if (count($periods) < 2) {
+            return $message;
+        }
+
+        $available = array_fill_keys(array_map(static fn ($period): string => substr((string) $period, 0, 7), $periods), true);
+        $cursor = Carbon::parse((string) $periods[0])->startOfMonth();
+        $last = Carbon::parse((string) end($periods))->startOfMonth();
+        $missing = [];
+        while ($cursor->lessThanOrEqualTo($last)) {
+            if (! isset($available[$cursor->format('Y-m')])) {
+                $missing[] = $cursor->format('m/Y');
+            }
+            $cursor->addMonth();
+        }
+
+        return $missing === []
+            ? $message
+            : $message . ' Periode GI405 belum tersedia: ' . implode(', ', $missing) . '.';
+    }
+
+    private function assertGi405SingleRowStoredValuesMatchCsv(\PDO $pdo, string $csvPath, array $columns, int $expectedTotal): void
+    {
+        $indexes = array_flip($columns);
+        if (! isset($indexes['uniqueid_namareport'])) {
+            throw new \RuntimeException('Import GI405 Single Row dibatalkan: kolom identitas bulk load tidak tersedia.');
+        }
+
+        $compareColumns = array_values(array_diff($columns, ['uniqueid_namareport', 'created_at', 'updated_at']));
+        $quotedColumns = implode(', ', array_map(static fn (string $column): string => '`'.str_replace('`', '``', $column).'`', $compareColumns));
+        $handle = fopen($csvPath, 'rb');
+        if ($handle === false) {
+            throw new \RuntimeException('Import GI405 Single Row dibatalkan: CSV audit tidak dapat dibuka.');
+        }
+
+        $checked = 0;
+        $batch = [];
+        try {
+            while (($record = fgetcsv($handle)) !== false) {
+                if (count($record) !== count($columns)) {
+                    throw new \RuntimeException('Import GI405 Single Row dibatalkan: jumlah kolom CSV audit tidak sesuai.');
+                }
+                $id = (string) $record[$indexes['uniqueid_namareport']];
+                if ($id === '' || isset($batch[$id])) {
+                    throw new \RuntimeException('Import GI405 Single Row dibatalkan: identitas baris CSV audit kosong atau duplikat.');
+                }
+                $batch[$id] = $record;
+
+                if (count($batch) >= 500) {
+                    $checked += $this->assertGi405SingleRowStoredBatchMatchesCsv($pdo, $batch, $indexes, $compareColumns, $quotedColumns);
+                    $batch = [];
+                }
+            }
+            if ($batch !== []) {
+                $checked += $this->assertGi405SingleRowStoredBatchMatchesCsv($pdo, $batch, $indexes, $compareColumns, $quotedColumns);
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        if ($checked !== $expectedTotal) {
+            throw new \RuntimeException("Import GI405 Single Row dibatalkan: audit nilai memeriksa {$checked} dari {$expectedTotal} baris.");
+        }
+    }
+
+    private function assertGi405SingleRowStoredBatchMatchesCsv(\PDO $pdo, array $batch, array $indexes, array $compareColumns, string $quotedColumns): int
+    {
+        $placeholders = implode(', ', array_fill(0, count($batch), '?'));
+        $statement = $pdo->prepare("SELECT `uniqueid_namareport`, {$quotedColumns} FROM `gi405_singlerow` WHERE `uniqueid_namareport` IN ({$placeholders})");
+        $statement->execute(array_keys($batch));
+        $stored = [];
+        foreach ($statement->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+            $stored[(string) $row['uniqueid_namareport']] = $row;
+        }
+        if (count($stored) !== count($batch)) {
+            throw new \RuntimeException('Import GI405 Single Row dibatalkan: ada baris CSV audit yang tidak ditemukan di database.');
+        }
+
+        foreach ($batch as $id => $record) {
+            foreach ($compareColumns as $column) {
+                $expected = $record[$indexes[$column]];
+                $expected = $expected === '\\N' ? null : $expected;
+                if ($stored[$id][$column] !== $expected) {
+                    throw new \RuntimeException("Import GI405 Single Row dibatalkan: nilai kolom `{$column}` berubah saat disimpan (ID {$id}).");
+                }
+            }
+        }
+
+        return count($batch);
     }
 
     /**
@@ -10847,6 +10990,9 @@ class ImportExcelController extends Controller
     {
         $row = $this->alignImportedRowWithNormalizedHeaders($row, $normalizedHeaders);
         $row = $this->padRow($row, $context['header_count']);
+        $gi405PeriodIndex = ($context['table_name'] ?? '') === 'gi405_singlerow'
+            ? array_search('periode', $normalizedHeaders, true)
+            : false;
         $mappedExcelData = [];
 
         $indexesToProcess = $context['processing_indexes'] ?? ($context['valid_indexes'] ?? []);
@@ -10930,6 +11076,12 @@ class ImportExcelController extends Controller
             $finalRow[$resolvedColumn] = $this->normalizeValueForDatabaseColumn($resolvedColumn, $value, $context);
         }
 
+        if ($gi405PeriodIndex !== false) {
+            $finalRow['source_periode'] = $this->normalizeValueForDatabaseColumn(
+                'source_periode', $row[$gi405PeriodIndex] ?? null, $context
+            );
+        }
+
         foreach ((array) ($context['manual_column_values'] ?? []) as $manualColumn => $manualValue) {
             $manualColumnLower = strtolower((string) $manualColumn);
             if (isset($context['skip_columns_lookup'][$manualColumnLower])) {
@@ -10978,7 +11130,9 @@ class ImportExcelController extends Controller
         }
 
         if (($context['table_name'] ?? '') === 'gi405_singlerow') {
+            $finalRow = $this->applyGi405SingleRowUnitNames($finalRow, $context);
             $this->assertRequiredGi405SingleRowImportData($finalRow);
+            $this->assertGi405SingleRowSourceValuesUnchanged($row, $normalizedHeaders, $finalRow);
         }
 
         if (($context['table_name'] ?? '') === 'ssa_almafacts' && !$this->hasRequiredSsaAlmafactsImportData($finalRow)) {
@@ -13597,6 +13751,9 @@ class ImportExcelController extends Controller
                         'exception' => $e::class,
                         'message' => $e->getMessage(),
                     ]);
+                    if ($this->isGi405SingleRowTable($tableName)) {
+                        throw $e;
+                    }
                     return false;
                 }
             }
@@ -13718,8 +13875,9 @@ class ImportExcelController extends Controller
 
             if (
                 isset($tableName)
-                && $this->isHourlyDpkTable((string) $tableName)
-                && str_starts_with($e->getMessage(), 'Import Hourly DPK dibatalkan:')
+                && ($this->isGi405SingleRowTable((string) $tableName)
+                    || ($this->isHourlyDpkTable((string) $tableName)
+                        && str_starts_with($e->getMessage(), 'Import Hourly DPK dibatalkan:')))
             ) {
                 throw $e;
             }
@@ -14802,7 +14960,9 @@ class ImportExcelController extends Controller
                             $directLoadBeforeLoad
                         );
                         $directLoadAfterLoad = $this->buildGi405SingleRowAfterLoadCallback(
-                            $gi405SingleRowPeriodCounts
+                            $gi405SingleRowPeriodCounts,
+                            $outputCsvPath,
+                            $bulkLoadColumns
                         );
                     }
 
@@ -14889,6 +15049,10 @@ class ImportExcelController extends Controller
                     ? 'Tidak ada baris data yang berhasil dimasukkan ke tabel ' . $tableName . '.'
                     : 'Import gagal diproses.',
             };
+
+            if ($finalStatus === 'completed' && $this->isGi405SingleRowTable($tableName)) {
+                $completionMessage = $this->gi405SingleRowCompletionMessage($gi405SingleRowPeriodCounts, $inserted);
+            }
 
             if ($jobId > 0) {
                 $this->progressService()->updateTotals(

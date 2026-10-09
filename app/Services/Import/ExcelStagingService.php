@@ -2,6 +2,8 @@
 
 namespace App\Services\Import;
 
+use App\Support\StrictDateParser;
+
 class ExcelStagingService
 {
     private array $decimalNormalizationCache = [];
@@ -29,17 +31,41 @@ class ExcelStagingService
         }
 
         $normalizer = app(Gi405SingleRowValueNormalizer::class);
+        $sourcePeriods = [];
         $result = $this->stageExcelToCsvViaNativeXlsx(
             $send,
             $sourcePath,
             $headerIndex,
             $normalizedHeaders,
             $stagedCsvPath,
-            static fn (string $header, mixed $value): ?string => $normalizer->normalizeForStaging($header, $value)
+            static function (string $header, mixed $value) use ($normalizer, &$sourcePeriods): ?string {
+                $raw = $normalizer->normalizeForStaging($header, $value);
+                if ($normalizer->normalizeHeader($header) === 'PERIODE' && $raw !== null) {
+                    $serial = is_numeric($raw) ? (float) $raw : 0.0;
+                    $period = $serial > 20000 && $serial < 60000
+                        ? gmdate('Y-m-d', (int) round(($serial - 25569) * 86400))
+                        : StrictDateParser::normalize($raw);
+                    $sourcePeriods[$period] = true;
+                }
+
+                return $raw;
+            }
         );
 
         if ($result === null) {
             throw new \RuntimeException('XLSX GI405 Single Row tidak dapat dibaca melalui streaming XML.');
+        }
+
+        if (count($sourcePeriods) !== 1) {
+            throw new \RuntimeException('GI405 Single Row wajib berisi tepat satu periode sumber per file. Import dibatalkan agar bulan tidak salah sasaran.');
+        }
+
+        if (preg_match('/(\d{2})-(\d{2})-(\d{4})\.xlsx$/i', basename($sourcePath), $dateParts) === 1) {
+            $filenamePeriod = StrictDateParser::normalize("{$dateParts[1]}/{$dateParts[2]}/{$dateParts[3]}");
+            $sourcePeriod = array_key_first($sourcePeriods);
+            if ($filenamePeriod !== $sourcePeriod) {
+                throw new \RuntimeException("Periode GI405 Single Row pada nama file ({$filenamePeriod}) berbeda dari isi Excel ({$sourcePeriod}). Import dibatalkan.");
+            }
         }
 
         return $result;

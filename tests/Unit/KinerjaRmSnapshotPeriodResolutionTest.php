@@ -234,6 +234,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
         $summary = $controller->landingSmallQuadrantSummary('2026-08-22');
 
+        $this->assertTrue($summary['available']);
         $this->assertSame(3, $summary['total_rm']);
         $this->assertSame(['KC MADIUN', 'KC NGAWI'], array_column($summary['branches'], 'branch'));
         $this->assertSame(2, $summary['branches'][0]['total_rm']);

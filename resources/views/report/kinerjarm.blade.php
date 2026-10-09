@@ -2165,13 +2165,13 @@ document.addEventListener('DOMContentLoaded', function() {
             signal: controller.signal
         })
         .then(response => {
-            clearTimeout(timeoutId);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             return response.text();
         })
         .then(html => {
+            if (controller !== requestAbortController) return;
             ajaxContainer.innerHTML = html;
             restoreKinerjaTabState();
             ajaxWrapper.classList.remove('loading-active');
@@ -2186,6 +2186,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         })
         .catch(error => {
+            if (controller !== requestAbortController) return;
             clearTimeout(timeoutId);
             ajaxWrapper.classList.remove('loading-active');
             console.error('Error fetching kinerja data:', error);
@@ -2200,6 +2201,10 @@ document.addEventListener('DOMContentLoaded', function() {
             showErrorAlert(errorMsg);
         })
         .finally(() => {
+            clearTimeout(timeoutId);
+            if (controller !== requestAbortController) return;
+            requestAbortController = null;
+            ajaxWrapper.classList.remove('loading-active');
             if (submitButton) {
                 submitButton.disabled = false;
                 submitButton.innerHTML = '<i class="fas fa-search"></i> TAMPILKAN';

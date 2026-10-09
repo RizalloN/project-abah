@@ -3,15 +3,19 @@
 namespace App\Console\Commands;
 
 use App\Jobs\AuditAndHealSnapshotsJob;
+use App\Jobs\EnsureImportedSnapshotsFreshJob;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\QueueSupervisorProcessRunner;
 use App\Services\Import\QueueWorkerControlService;
 use App\Services\Import\SnapshotQueuePauseService;
+use App\Support\LatestSnapshotRecoveryService;
+use App\Support\StrictDateParser;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Process\PhpExecutableFinder;
 
 class EnsureQueueWorkerRunning extends Command
@@ -37,6 +41,7 @@ class EnsureQueueWorkerRunning extends Command
 
     public function handle(): int
     {
+        $restartSignal = Cache::get('illuminate:queue:restart');
         $workerControl = app(QueueWorkerControlService::class);
         $checkInterval = (int) $this->option('check-interval');
         $timeout = (string) ($this->option('timeout') ?? config('queue.worker_timeout', 0));
@@ -107,6 +112,9 @@ class EnsureQueueWorkerRunning extends Command
 
         try {
             while ($workerControl->isEnabled()) {
+                if ($this->monitorRestartRequested($restartSignal)) {
+                    break;
+                }
                 if (!$workerControl->touchMonitorHeartbeat()) {
                     if ($this->output) {
                         $this->warn('Leadership monitor berpindah ke proses lain. Monitor ini berhenti aman.');
@@ -162,6 +170,9 @@ class EnsureQueueWorkerRunning extends Command
                     if (!$workerControl->isEnabled()) {
                         break 2;
                     }
+                    if ($this->monitorRestartRequested($restartSignal)) {
+                        break 2;
+                    }
                     if ($workerControl->consumeDemandSignal()) {
                         break;
                     }
@@ -177,6 +188,20 @@ class EnsureQueueWorkerRunning extends Command
         }
 
         return 0;
+    }
+
+    private function monitorRestartRequested(mixed $initialSignal): bool
+    {
+        if (Cache::get('illuminate:queue:restart') === $initialSignal) {
+            return false;
+        }
+
+        // Release only this monitor's heartbeat in handle()'s finally block.
+        // Workers finish their current jobs and the enabled watchdog launches
+        // a new monitor that reads the updated code.
+        Log::info('Queue worker monitor yielding to queue restart signal.');
+
+        return true;
     }
 
     private function recoverOrphanedImports(): void
@@ -517,6 +542,14 @@ class EnsureQueueWorkerRunning extends Command
             $startup = $this->windowsWorkerStarts[$pid] ?? null;
             $age = $startup !== null ? microtime(true) - $startup['started_at'] : null;
             if ($status['running'] ?? false) {
+                if ($startup !== null) {
+                    try {
+                        app(\App\Support\LandingCacheWorkerGuard::class)
+                            ->stopOverdueChild($process, (int) $pid, $startup['started_at']);
+                    } catch (\Throwable $exception) {
+                        Log::warning('Landing cache worker inspection unavailable; process retained.', ['error' => $exception->getMessage()]);
+                    }
+                }
                 if ($startup !== null && !$startup['stable'] && $age >= 15) {
                     $this->resetPoolLaunchBackoff($startup['pool']);
                     $this->windowsWorkerStarts[$pid]['stable'] = true;
@@ -657,16 +690,23 @@ class EnsureQueueWorkerRunning extends Command
 
     private function dispatchSnapshotAuditIfIdle(): void
     {
-        static $lastAuditDispatch = 0;
-        $now = time();
-
-        if (($now - $lastAuditDispatch) < 300) {
+        $dispatchLock = Cache::lock('queue:monitor:snapshot-maintenance-dispatch', 60);
+        if (!$dispatchLock->get()) {
             return;
         }
 
         try {
             $importProgress = app(ImportProgressService::class);
             if ($importProgress->hasActiveProcessingJobs()) {
+                return;
+            }
+
+            // Aggregate audits cannot detect every absent downstream snapshot.
+            // Keep the existing source-aware freshness checks alive even when
+            // the scheduler is offline or the aggregate audit queue is busy.
+            $this->dispatchLatestSnapshotFreshnessChecks();
+
+            if (Cache::has('queue:monitor:snapshot-audit-cooldown')) {
                 return;
             }
 
@@ -684,13 +724,55 @@ class EnsureQueueWorkerRunning extends Command
             }
 
             AuditAndHealSnapshotsJob::dispatch();
-            $lastAuditDispatch = $now;
+            Cache::put('queue:monitor:snapshot-audit-cooldown', true, 300);
 
             if ($this->output) {
                 $this->line("[" . now()->toDateTimeString() . "] Periodic snapshot audit & auto-heal dispatched.");
             }
         } catch (\Throwable $e) {
             Log::debug('Could not dispatch periodic snapshot audit: ' . $e->getMessage());
+        } finally {
+            $dispatchLock->release();
+        }
+    }
+
+    private function dispatchLatestSnapshotFreshnessChecks(): void
+    {
+        foreach (LatestSnapshotRecoveryService::supportedSources() as $table) {
+            $cooldownKey = 'queue:monitor:snapshot-freshness:' . $table;
+            if (Cache::has($cooldownKey) || !Schema::hasTable($table)) {
+                continue;
+            }
+
+            $periodColumn = LatestSnapshotRecoveryService::sourcePeriodColumn($table);
+            if ($periodColumn === null || !Schema::hasColumn($table, $periodColumn)) {
+                continue;
+            }
+            $period = StrictDateParser::normalize((string) DB::table($table)->max($periodColumn));
+            if ($period === null) {
+                continue;
+            }
+
+            // A reserved or deferred freshness job retains ownership. Leave it
+            // to the queue retry policy; never release it or create a duplicate.
+            if (DB::table('jobs')->whereIn('queue', ['snapshots-priority', 'snapshots-parallel'])
+                ->where('payload', 'like', '%' . class_basename(EnsureImportedSnapshotsFreshJob::class) . '%')
+                ->where('payload', 'like', '%' . $table . '%')
+                ->where('payload', 'like', '%' . $period . '%')
+                ->exists()) {
+                continue;
+            }
+
+            try {
+                EnsureImportedSnapshotsFreshJob::dispatch($table, $period, static::class)
+                    ->onQueue('snapshots-priority');
+                Cache::put($cooldownKey, true, 900);
+            } catch (\Throwable $e) {
+                Log::warning('Could not dispatch source snapshot freshness check.', [
+                    'table' => $table,
+                    'message' => $e->getMessage(),
+                ]);
+            }
         }
     }
 

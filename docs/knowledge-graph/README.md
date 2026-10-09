@@ -25,9 +25,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 917 |
-| Graph nodes | 10,746 |
-| Graph edges | 42,121 |
+| Source files | 927 |
+| Graph nodes | 10,844 |
+| Graph edges | 42,535 |
 | Domains | 19 |
 
 ## Read The Right Artifact
@@ -45,11 +45,11 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Node | Kind | Domain | Degree |
 | --- | --- | --- | ---: |
-| `ImportExcelController` | class | import | 396 |
-| `DashboardSimpananController` | class | dashboard-simpanan | 364 |
+| `ImportExcelController` | class | import | 403 |
+| `DashboardSimpananController` | class | dashboard-simpanan | 366 |
 | `daily_loan_dinamis` | table | dashboard-pinjaman | 340 |
-| `DashboardHarianSnapshotService` | class | dashboard-harian | 271 |
-| `TestCase` | class | tests | 205 |
+| `DashboardHarianSnapshotService` | class | dashboard-harian | 272 |
+| `TestCase` | class | tests | 208 |
 | `DashboardPinjamanReportController` | class | dashboard-pinjaman | 196 |
 | `nama_report` | table | core | 192 |
 | `import_jobs` | table | import | 168 |
@@ -58,13 +58,13 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 | `ReportSnapshotBuilder` | class | jobs-snapshots | 147 |
 | `KinerjaRmReportController` | class | dashboard-pinjaman | 145 |
 | `lw325_ph` | table | dashboard-pinjaman | 122 |
-| `setUp` | method | tests | 103 |
+| `setUp` | method | tests | 105 |
 | `ImportProgressService` | class | import | 102 |
+| `jobs` | table | jobs-snapshots | 102 |
 | `AlmafactsDashboardController` | class | almafacts | 101 |
 | `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 99 |
 | `ImportPerformancePisPerProdukController` | class | import | 95 |
 | `ImportReportPhController` | class | import | 95 |
-| `dashboard_harian_snapshots` | table | dashboard-harian | 95 |
 
 ## Edge Semantics
 

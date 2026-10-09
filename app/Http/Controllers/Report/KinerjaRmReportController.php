@@ -182,6 +182,7 @@ class KinerjaRmReportController extends Controller
             ->all();
 
         return [
+            'available' => $availablePeriods->contains($selectedPeriod),
             'period' => $selectedPeriod,
             'period_label' => Carbon::parse($selectedPeriod)->translatedFormat('d M Y'),
             'total_rm' => $rows->count(),

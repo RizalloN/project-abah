@@ -27,6 +27,17 @@ class LatestSnapshotRecoveryService
         'l1133' => 'periode',
     ];
 
+    /** @return array<int, string> */
+    public static function supportedSources(): array
+    {
+        return array_keys(self::SOURCE_PERIOD_COLUMNS);
+    }
+
+    public static function sourcePeriodColumn(string $table): ?string
+    {
+        return self::SOURCE_PERIOD_COLUMNS[$table] ?? null;
+    }
+
     /**
      * Queue freshness checks for the latest available period of each source.
      *

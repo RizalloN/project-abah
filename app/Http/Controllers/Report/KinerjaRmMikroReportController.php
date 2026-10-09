@@ -84,6 +84,8 @@ class KinerjaRmMikroReportController extends Controller
 
     public function index(Request $request): View
     {
+        $this->releaseSessionLockIfNeeded();
+
         $selectedRmCategory = array_key_exists((string) $request->input('kategori_rm'), self::RM_CATEGORIES)
             ? (string) $request->input('kategori_rm')
             : 'rm_mikro_kur';

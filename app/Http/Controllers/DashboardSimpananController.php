@@ -196,9 +196,21 @@ class DashboardSimpananController extends Controller
         $periodKey = $selectedPeriod ?: 'latest';
         $cacheKey = "landing_simpanan:payload:" . self::LANDING_SOURCE_CACHE_VERSION . ":{$periodKey}:{$branchKey}:v{$cacheVersion}";
 
-        return Cache::remember($cacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () use ($selectedPeriod) {
-            return $this->buildLandingSimpananPayloadFresh($selectedPeriod);
-        });
+        $cached = $this->readLandingPayloadCache($cacheKey);
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $payload = $this->buildLandingSimpananPayloadFresh($selectedPeriod);
+        if (!$this->landingPayloadIsReady($payload)) {
+            $payload['meta']['refresh_pending'] = true;
+            $payload['meta']['retry_after'] = now()->addSeconds(30)->timestamp;
+        }
+        Cache::put($cacheKey, $payload, $this->landingPayloadIsReady($payload)
+            ? now()->addMinutes(self::PAYLOAD_CACHE_MINUTES)
+            : now()->addSeconds(30));
+
+        return $payload;
     }
 
     private function buildLandingSimpananPayloadFresh(?string $selectedPeriod = null): array
@@ -523,6 +535,7 @@ class DashboardSimpananController extends Controller
         return [
             'period' => $period,
             'period_label' => $this->formatSourcePeriodLabel($period),
+            'meta' => ['refresh_pending' => $rows->isEmpty()],
             'area6_portfolio' => $area6Portfolio,
             'composition' => $analyticsByScope['area6']['composition'] ?? [],
             'trend' => $analyticsByScope['area6']['trend'] ?? [],
@@ -2148,7 +2161,8 @@ class DashboardSimpananController extends Controller
         $smeOperations = app(LandingSmeOperationalService::class)->payload(
             $branchScope,
             $request->boolean('refresh'),
-            $request->query('periode')
+            $request->query('periode'),
+            true
         );
         $smeOperations['restructuring_frequency'] = app(LandingLoanAnalyticsService::class)->restructuringFrequency(
             $request->query('periode'),
@@ -9314,6 +9328,31 @@ class DashboardSimpananController extends Controller
         );
     }
 
+    private function landingPayloadIsReady(mixed $payload): bool
+    {
+        return is_array($payload)
+            && !empty($payload['period'])
+            && !data_get($payload, 'meta.refresh_pending', false)
+            && !data_get($payload, 'meta.error');
+    }
+
+    private function readLandingPayloadCache(string $key, bool $durable = false): ?array
+    {
+        $payload = Cache::get($key);
+        if ($this->landingPayloadIsReady($payload)) {
+            return $payload;
+        }
+        if (!$durable && is_array($payload)
+            && (int) data_get($payload, 'meta.retry_after', 0) > now()->timestamp) {
+            return $payload;
+        }
+        if ($payload !== null) {
+            Cache::forget($key);
+        }
+
+        return null;
+    }
+
     private function buildDashboardPayload(?string $selectedPeriod = null): array
     {
         $cacheVersion = $this->reportCacheVersion();
@@ -9327,23 +9366,25 @@ class DashboardSimpananController extends Controller
         $durableFallbackKey = 'dashboard_simpanan:payload:' . $periodPrefix . self::LANDING_SOURCE_CACHE_VERSION . ':durable:' . $branchKey;
 
         // 1. Primary fresh cache (TTL 30 minutes)
-        $cachedPayload = Cache::get($payloadCacheKey);
+        $cachedPayload = $this->readLandingPayloadCache($payloadCacheKey);
         if (is_array($cachedPayload)) {
             return $cachedPayload;
         }
 
         // 2. Latest cache (TTL 60 minutes) -> Serve immediately and revalidate asynchronously
-        $latestPayload = Cache::get($latestCacheKey);
+        $latestPayload = $this->readLandingPayloadCache($latestCacheKey, true);
         if (is_array($latestPayload)) {
-            Cache::put($payloadCacheKey, $latestPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
+            $latestPayload['meta']['refresh_pending'] = true;
+            Cache::put($payloadCacheKey, $latestPayload, now()->addSeconds(30));
             $this->deferDashboardPayloadRefresh($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey, $selectedPeriod, $durableFallbackKey);
 
             return $latestPayload;
         }
 
         // 3. Stable cache for current version (TTL 24 hours) -> Serve immediately and revalidate asynchronously
-        $stableLatestPayload = Cache::get($stableLatestCacheKey);
+        $stableLatestPayload = $this->readLandingPayloadCache($stableLatestCacheKey, true);
         if (is_array($stableLatestPayload)) {
+            $stableLatestPayload['meta']['refresh_pending'] = true;
             Cache::put($payloadCacheKey, $stableLatestPayload, now()->addSeconds(30));
             $this->deferDashboardPayloadRefresh($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey, $selectedPeriod, $durableFallbackKey);
 
@@ -9351,8 +9392,9 @@ class DashboardSimpananController extends Controller
         }
 
         // 4. Cross-version durable fallback -> Serves last stable data (<50ms) across version bumps
-        $durableFallback = Cache::get($durableFallbackKey);
+        $durableFallback = $this->readLandingPayloadCache($durableFallbackKey, true);
         if (is_array($durableFallback)) {
+            $durableFallback['meta']['refresh_pending'] = true;
             Cache::put($payloadCacheKey, $durableFallback, now()->addSeconds(30));
             $this->deferDashboardPayloadRefresh($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey, $selectedPeriod, $durableFallbackKey);
 
@@ -9371,7 +9413,7 @@ class DashboardSimpananController extends Controller
             }
 
             if ($locked) {
-                $populated = Cache::get($payloadCacheKey);
+                $populated = $this->readLandingPayloadCache($payloadCacheKey);
                 if (is_array($populated)) {
                     return $populated;
                 }
@@ -9396,10 +9438,10 @@ class DashboardSimpananController extends Controller
         }
 
         // 6. Fallback if lock was held by another concurrent request
-        $retryPayload = Cache::get($payloadCacheKey)
-            ?: Cache::get($latestCacheKey)
-            ?: Cache::get($stableLatestCacheKey)
-            ?: Cache::get($durableFallbackKey);
+        $retryPayload = $this->readLandingPayloadCache($payloadCacheKey)
+            ?: $this->readLandingPayloadCache($latestCacheKey, true)
+            ?: $this->readLandingPayloadCache($stableLatestCacheKey, true)
+            ?: $this->readLandingPayloadCache($durableFallbackKey, true);
 
         if (is_array($retryPayload)) {
             return $retryPayload;
@@ -9431,6 +9473,15 @@ class DashboardSimpananController extends Controller
         ?string $durableFallbackKey = null
     ): array {
         $freshPayload = $this->buildDashboardPayloadFresh($selectedPeriod);
+        if (!$this->landingPayloadIsReady($freshPayload)) {
+            $fallback = $durableFallbackKey ? $this->readLandingPayloadCache($durableFallbackKey, true) : null;
+            $freshPayload = $fallback ?? $freshPayload;
+            $freshPayload['meta']['refresh_pending'] = true;
+            $freshPayload['meta']['retry_after'] = now()->addSeconds(30)->timestamp;
+            Cache::put($payloadCacheKey, $freshPayload, now()->addSeconds(30));
+
+            return $freshPayload;
+        }
         Cache::put($payloadCacheKey, $freshPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
         Cache::put($latestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
         Cache::put($stableLatestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES * 24));
@@ -10069,6 +10120,11 @@ class DashboardSimpananController extends Controller
         }
 
         try {
+            if ($type === 'sme-quadrants') {
+                app(LandingSmeOperationalService::class)->warmQuadrants($context['period'] ?? null);
+
+                return;
+            }
             if ($type === 'micro-readiness') {
                 $microPayload = $this->buildPresentationMicroForPeriod($period);
                 Cache::put(

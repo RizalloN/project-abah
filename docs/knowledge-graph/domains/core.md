@@ -7,14 +7,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 24 |
-| file | 121 |
+| file | 124 |
 | function | 1 |
-| method | 685 |
-| unresolved_symbol | 386 |
+| method | 694 |
+| unresolved_symbol | 387 |
 | route | 16 |
 | class | 65 |
 | table | 23 |
-| view | 44 |
+| view | 45 |
 
 ## Main Hubs
 
@@ -23,33 +23,33 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `nama_report` | table | 192 | - |
 | `ReportDataSyncService` | class | 87 | `app/Support/ReportDataSyncService.php:19` |
 | `LandingMicroPerformanceService` | class | 83 | `app/Support/LandingMicroPerformanceService.php:16` |
-| `normalize` | method | 75 | `app/Support/StrictDateParser.php:29` |
+| `normalize` | method | 77 | `app/Support/StrictDateParser.php:29` |
+| `LandingSmeOperationalService` | class | 76 | `app/Support/LandingSmeOperationalService.php:16` |
 | `rka` | table | 73 | - |
 | `ManagedReportManagementService` | class | 71 | `app/Support/ManagedReportManagementService.php:11` |
-| `LandingSmeOperationalService` | class | 62 | `app/Support/LandingSmeOperationalService.php:15` |
 | `Controller` | class | 53 | `app/Http/Controllers/Controller.php:7` |
 | `RkaLookupService` | class | 46 | `app/Support/RkaLookupService.php:11` |
 | `apply` | method | 42 | `app/Support/SargableDateFilter.php:9` |
 | `DataPhReportController` | class | 40 | `app/Http/Controllers/Report/DataPhReportController.php:15` |
 | `KinerjaNonPtpReportController` | class | 39 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:17` |
-| `LandingConsumerOperationalService` | class | 36 | `app/Support/LandingConsumerOperationalService.php:15` |
+| `LandingConsumerOperationalService` | class | 39 | `app/Support/LandingConsumerOperationalService.php:15` |
 | `FileManagementController` | class | 33 | `app/Http/Controllers/Admin/FileManagementController.php:24` |
 | `lw321pn` | table | 33 | - |
 | `syncImportedTable` | method | 31 | `app/Support/ReportDataSyncService.php:135` |
 | `dly_kap_resegmentasi` | table | 27 | - |
 | `LinkManagementController` | class | 26 | `app/Http/Controllers/Admin/LinkManagementController.php:17` |
 | `index` | method | 26 | `app/Http/Controllers/Report/DataPhReportController.php:23` |
+| `referensi_uker` | table | 25 | - |
 | `analyzeTable` | method | 24 | `app/Support/ReportDataSyncService.php:21` |
 | `performance_targets` | table | 24 | - |
 | `drive.index` | view | 23 | `resources/views/drive/index.blade.php:1` |
 | `performance_pis_per_produk` | table | 23 | - |
 | `ShadowColumnRuleEngine` | class | 22 | `app/Services/Shadow/ShadowColumnRuleEngine.php:8` |
 | `SppgReportService` | class | 21 | `app/Services/Reports/SppgReportService.php:15` |
-| `buildPayload` | method | 21 | `app/Support/LandingMicroPerformanceService.php:533` |
+| `buildPayload` | method | 21 | `app/Support/LandingMicroPerformanceService.php:532` |
 | `index` | method | 21 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:52` |
-| `fetchPlafondRealizationRows` | method | 20 | `app/Support/LandingMicroPerformanceService.php:1326` |
-| `quadrantPayload` | method | 20 | `app/Support/LandingConsumerOperationalService.php:537` |
-| `PruneReportDailyHistoryCommand` | class | 19 | `app/Console/Commands/PruneReportDailyHistoryCommand.php:19` |
+| `fetchPlafondRealizationRows` | method | 20 | `app/Support/LandingMicroPerformanceService.php:1325` |
+| `quadrantPayload` | method | 20 | `app/Support/LandingConsumerOperationalService.php:587` |
 
 ## Route Nodes
 
@@ -183,6 +183,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `components.text.input`
 - `dashboard` - `resources/views/dashboard.blade.php`
 - `dashboard.partials.consumer-operations` - `resources/views/dashboard/partials/consumer-operations.blade.php`
+- `dashboard.partials.landing-page-recovery` - `resources/views/dashboard/partials/landing-page-recovery.blade.php`
 - `dashboard.partials.micro-performance` - `resources/views/dashboard/partials/micro-performance.blade.php`
 - `dashboard.partials.pn-mismatch` - `resources/views/dashboard/partials/pn-mismatch.blade.php`
 - `dashboard.partials.sme-operations` - `resources/views/dashboard/partials/sme-operations.blade.php`
@@ -242,33 +243,33 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| import -> core (calls) | 824 |
-| import -> core (instantiates) | 401 |
+| import -> core (calls) | 833 |
+| import -> core (instantiates) | 416 |
 | dashboard-pinjaman -> core (calls) | 326 |
 | dashboard-simpanan -> core (calls) | 221 |
-| import -> core (accepts) | 187 |
+| jobs-snapshots -> core (calls) | 191 |
+| import -> core (accepts) | 189 |
 | bank-pipeline -> core (calls) | 169 |
-| jobs-snapshots -> core (calls) | 168 |
 | dashboard-pinjaman -> core (instantiates) | 116 |
 | prognosa -> core (calls) | 105 |
-| tests -> core (instantiates) | 97 |
-| tests -> core (calls) | 94 |
+| tests -> core (instantiates) | 103 |
+| tests -> core (calls) | 102 |
 | dashboard-pinjaman -> core (accepts) | 92 |
 | dashboard-harian -> core (calls) | 89 |
-| database -> core (instantiates) | 73 |
+| database -> core (instantiates) | 74 |
 | dashboard-harian -> core (instantiates) | 71 |
 | almafacts -> core (calls) | 69 |
+| jobs-snapshots -> core (instantiates) | 65 |
 | bank-pipeline -> core (instantiates) | 64 |
 | bank-pipeline -> core (accepts) | 64 |
+| database -> core (checks_table) | 62 |
 | presentation -> core (calls) | 62 |
-| database -> core (checks_table) | 61 |
 | dashboard-simpanan -> core (instantiates) | 61 |
 | database -> core (writes_table) | 60 |
 | access-control -> core (calls) | 60 |
 | dashboard-simpanan -> core (accepts) | 59 |
 | core -> access-control (protected_by) | 58 |
 | database -> core (calls) | 56 |
-| jobs-snapshots -> core (instantiates) | 53 |
 | tests -> core (writes_table) | 34 |
 | dashboard-pinjaman -> core (writes_table) | 33 |
-| prognosa -> core (instantiates) | 32 |
+| jobs-snapshots -> core (uses_trait) | 33 |

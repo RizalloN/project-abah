@@ -48,15 +48,18 @@ class Gi405SingleRowValueNormalizer
 
         $header = $this->normalizeHeader($header);
         $raw = (string) $value;
-        if (trim($raw) === '') {
+        if ($raw === '') {
             return null;
+        }
+        if ($raw === '\\N') {
+            throw new \RuntimeException('Nilai literal `\\N` pada GI405 Single Row tidak dapat dibedakan dari penanda NULL saat bulk load. Import dibatalkan agar data sumber tidak berubah.');
         }
 
         if ($header === 'PERIODE') {
             if (is_numeric($raw)) {
                 $serial = (float) $raw;
                 if ($serial > 20000 && $serial < 60000) {
-                    return gmdate('Y-m-d', (int) round(($serial - 25569) * 86400));
+                    return $raw;
                 }
             }
 
@@ -65,15 +68,11 @@ class Gi405SingleRowValueNormalizer
                 throw new \RuntimeException("Tanggal GI405 Single Row tidak valid: `{$raw}`.");
             }
 
-            return $normalized;
+            return $raw;
         }
 
         if (in_array($header, self::DECIMAL_COLUMNS, true)) {
-            return $this->normalizeDecimal($raw, 2);
-        }
-
-        if (in_array($header, self::IDENTIFIER_COLUMNS, true) && is_numeric(trim($raw))) {
-            return $this->normalizeDecimal($raw, 0);
+            return $this->normalizeDecimal($raw);
         }
 
         return $raw;
@@ -85,73 +84,15 @@ class Gi405SingleRowValueNormalizer
             return null;
         }
 
-        $raw = trim((string) $value);
-        if ($raw === '' || $raw === '\\N') {
+        $raw = (string) $value;
+        if ($raw === '') {
             return null;
         }
-
-        $negative = false;
-        if (preg_match('/^\((.*)\)$/', $raw, $matches) === 1) {
-            $raw = trim((string) ($matches[1] ?? ''));
-            $negative = true;
-        }
-        if (str_ends_with($raw, '-')) {
-            $raw = rtrim(substr($raw, 0, -1));
-            $negative = true;
-        }
-
-        $raw = preg_replace('/\s+/u', '', $raw) ?? '';
-        if (str_contains($raw, ',') && str_contains($raw, '.')) {
-            if (strrpos($raw, ',') > strrpos($raw, '.')) {
-                $raw = str_replace('.', '', $raw);
-                $raw = str_replace(',', '.', $raw);
-            } else {
-                $raw = str_replace(',', '', $raw);
-            }
-        } elseif (str_contains($raw, ',')) {
-            $parts = explode(',', $raw);
-            $last = (string) end($parts);
-            $raw = count($parts) > 2 || strlen($last) === 3
-                ? str_replace(',', '', $raw)
-                : str_replace(',', '.', $raw);
-        }
-
-        if (preg_match('/^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/', $raw, $matches) !== 1) {
+        if (preg_match('/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/', $raw) !== 1) {
             throw new \RuntimeException("Nilai angka GI405 Single Row tidak valid: `{$value}`.");
         }
 
-        $negative = $negative || ($matches[1] ?? '') === '-';
-        $integer = ltrim((string) ($matches[2] ?? '0'), '0');
-        $fraction = (string) ($matches[3] ?? '');
-        $exponent = (int) ($matches[4] ?? 0);
-        $digits = ($integer === '' ? '0' : $integer) . $fraction;
-        $decimalPosition = strlen($integer === '' ? '0' : $integer) + $exponent;
-
-        if ($decimalPosition <= 0) {
-            $digits = str_repeat('0', -$decimalPosition) . $digits;
-            $decimalPosition = 0;
-        } elseif ($decimalPosition >= strlen($digits)) {
-            $digits .= str_repeat('0', $decimalPosition - strlen($digits));
-        }
-
-        $whole = $decimalPosition === 0 ? '0' : substr($digits, 0, $decimalPosition);
-        $decimal = substr($digits, $decimalPosition);
-        $discarded = substr($decimal, $scale);
-        if ($discarded !== '' && trim($discarded, '0') !== '') {
-            throw new \RuntimeException(
-                "Nilai angka GI405 Single Row `{$value}` memiliki presisi melebihi {$scale} desimal. Import dibatalkan agar data tidak dibulatkan."
-            );
-        }
-
-        $whole = ltrim($whole, '0');
-        $whole = $whole === '' ? '0' : $whole;
-        $decimal = str_pad(substr($decimal, 0, $scale), $scale, '0');
-        $isZero = $whole === '0' && trim($decimal, '0') === '';
-        $prefix = $negative && !$isZero ? '-' : '';
-
-        return $scale > 0
-            ? $prefix . $whole . '.' . $decimal
-            : $prefix . $whole;
+        return $raw;
     }
 
     public function normalizeHeader(string $header): string

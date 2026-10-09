@@ -12224,6 +12224,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
     </div>
   </div>
 </div>
+@include('dashboard.partials.landing-page-recovery')
 @endsection
 
 @section('scripts')
@@ -12887,6 +12888,41 @@ document.addEventListener('DOMContentLoaded', function() {
     chart.update();
   });
 
+  // Bounded rereads let background snapshots finish without invalidating their cache.
+  const landingRecovery = (() => {
+    const states = new Map();
+    const delays = [5000, 10000, 20000, 40000, 60000, 60000];
+    return {
+      clear(key) {
+        const state = states.get(key);
+        if (state?.timer) window.clearTimeout(state.timer);
+        states.delete(key);
+      },
+      schedule(key, retry, isCurrent = () => true, error = null) {
+        if (error?.retryable === false) { this.clear(key); return; }
+        const state = states.get(key) || { attempts: 0, timer: null };
+        if (state.timer || state.attempts >= delays.length) return;
+        state.timer = window.setTimeout(() => {
+          state.timer = null;
+          if (!isCurrent()) { this.clear(key); return; }
+          retry();
+        }, delays[state.attempts++]);
+        states.set(key, state);
+      },
+    };
+  })();
+  const landingResponseError = (response, message) => {
+    const error = new Error(message);
+    error.retryable = !response.redirected
+      && ([408, 425, 429].includes(response.status) || response.status >= 500);
+    return error;
+  };
+  const landingPartialPending = (root, selector) => {
+    const result = root.querySelector(selector);
+    return result?.dataset.refreshPending === '1' || result?.dataset.cacheStale === '1'
+      || result?.dataset.loadError === '1';
+  };
+
   const loanAnalyticsSlots = scope => Array.from(document.querySelectorAll(
     `[data-loan-analytics-slot][data-loan-analytics-scope="${scope}"]`
   ));
@@ -12896,6 +12932,8 @@ document.addEventListener('DOMContentLoaded', function() {
       return Promise.resolve();
     }
 
+    const recoveryKey = `loan:${scope}:${dashboardShell.dataset.loanAnalyticsUrl}`;
+    if (forceRefresh) landingRecovery.clear(recoveryKey);
     const slots = loanAnalyticsSlots(scope);
     if (!slots.length) return Promise.resolve();
     if (!forceRefresh && slots.every(slot => slot.dataset.loaded === '1')) return Promise.resolve();
@@ -12905,7 +12943,7 @@ document.addEventListener('DOMContentLoaded', function() {
       slot.classList.remove('is-error', 'is-empty');
       slot.classList.add('is-loading');
       slot.setAttribute('aria-busy', 'true');
-      if (forceRefresh) delete slot.dataset.loaded;
+      if (slot.dataset.loaded === '1') slot.dataset.rendered = '1';
     });
 
     const controller = new AbortController();
@@ -12922,10 +12960,11 @@ document.addEventListener('DOMContentLoaded', function() {
       signal: controller.signal,
     })
       .then(async response => {
+        if (!response.ok || response.redirected || !response.headers.get('content-type')?.includes('application/json')) throw landingResponseError(response, 'Analitik pinjaman belum dapat dimuat atau sesi login telah berakhir.');
         const payload = await response.json();
-        if (!response.ok || payload?.scope !== scope) {
-          throw new Error(payload?.message || 'Respons analitik pinjaman tidak valid.');
-        }
+        if (payload?.scope !== scope) throw landingResponseError(response, 'Respons analitik pinjaman tidak valid.');
+        if (payload.meta?.error && slots.some(slot => slot.dataset.rendered === '1')) throw new Error('Pembaruan analitik belum selesai.');
+        const pending = Boolean(payload.meta?.refresh_pending || payload.meta?.cache_stale || payload.meta?.error);
 
         slots.forEach(slot => {
           const section = slot.dataset.loanAnalyticsSlot;
@@ -12933,19 +12972,27 @@ document.addEventListener('DOMContentLoaded', function() {
           slot.innerHTML = typeof html === 'string' ? html : '';
           slot.classList.toggle('is-empty', !slot.innerHTML.trim());
           slot.classList.remove('is-loading', 'is-error');
-          slot.dataset.loaded = '1';
+          slot.dataset.loaded = pending ? '0' : '1';
+          slot.dataset.rendered = '1';
           slot.setAttribute('aria-busy', 'false');
           if (slot.offsetParent !== null) initializeLandingAnalyticsCharts(slot);
         });
+        if (pending) landingRecovery.schedule(recoveryKey, () => loadLoanAnalytics(scope));
+        else landingRecovery.clear(recoveryKey);
       })
       .catch(error => {
+        landingRecovery.schedule(recoveryKey, () => {
+          slots.forEach(slot => { slot.dataset.loaded = '0'; });
+          loadLoanAnalytics(scope);
+        }, () => true, error);
         const message = error?.name === 'AbortError'
           ? 'Analitik belum selesai dalam 90 detik.'
           : (error?.message || 'Analitik pinjaman belum dapat dimuat.');
         slots.forEach(slot => {
           slot.classList.remove('is-loading', 'is-empty');
-          slot.classList.add('is-error');
           slot.setAttribute('aria-busy', 'false');
+          if (slot.dataset.rendered === '1') return;
+          slot.classList.add('is-error');
           slot.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${escapeHtml(message)}<button type="button" data-loan-analytics-retry="${scope}">Coba lagi</button>`;
         });
       })
@@ -13611,6 +13658,14 @@ document.addEventListener('DOMContentLoaded', function() {
       return smeOperationsRequest;
     }
 
+    const recoveryKey = `sme-operations:${smeOperationsDashboard.dataset.url}`;
+    if (forceRefresh) landingRecovery.clear(recoveryKey);
+    const retryRead = () => {
+      smeOperationsDashboard.dataset.loaded = '0';
+      loadSmeOperations(false);
+    };
+    const isCurrent = () => true;
+    if (smeOperationsDashboard.dataset.loaded === '1') smeOperationsDashboard.dataset.rendered = '1';
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 35000);
     const requestUrl = new URL(smeOperationsDashboard.dataset.url, window.location.origin);
@@ -13632,8 +13687,11 @@ document.addEventListener('DOMContentLoaded', function() {
     })
       .then(async response => {
         const html = await response.text();
-        if (!response.ok || !html.includes('data-sme-operations-ready="1"')) {
-          throw new Error('Respons SME tidak lengkap atau sesi login telah berakhir.');
+        if (!response.ok || response.redirected || !html.includes('data-sme-operations-ready="1"')) {
+          throw landingResponseError(response, 'Respons SME tidak lengkap atau sesi login telah berakhir.');
+        }
+        if (smeOperationsDashboard.dataset.rendered === '1' && html.includes('data-load-error="1"')) {
+          throw new Error('Pembaruan belum selesai. Data terakhir tetap ditampilkan.');
         }
 
         closeSmeVendorModal();
@@ -13641,12 +13699,18 @@ document.addEventListener('DOMContentLoaded', function() {
         document.querySelector('body > [data-sme-vendor-modal]')?.remove();
         document.querySelector('body > [data-sme-unproductive-modal]')?.remove();
         smeOperationsDashboard.innerHTML = html;
-        smeOperationsDashboard.dataset.loaded = '1';
+        const pending = landingPartialPending(smeOperationsDashboard, '[data-sme-operations-ready]');
+        smeOperationsDashboard.dataset.loaded = pending ? '0' : '1';
+        smeOperationsDashboard.dataset.rendered = '1';
+        if (pending) landingRecovery.schedule(recoveryKey, retryRead, isCurrent);
+        else landingRecovery.clear(recoveryKey);
         prepareSmeVendorModal();
         prepareSmeUnproductiveModal();
       })
       .catch(error => {
-        if (forceRefresh && smeOperationsDashboard.dataset.loaded === '1') {
+        if (!isCurrent()) return;
+        landingRecovery.schedule(recoveryKey, retryRead, isCurrent, error);
+        if (smeOperationsDashboard.dataset.rendered === '1') {
           const refreshButton = smeOperationsDashboard.querySelector('[data-sme-operations-refresh]');
           if (refreshButton) {
             refreshButton.title = 'Pembaruan gagal. Data terakhir tetap ditampilkan.';
@@ -13683,6 +13747,15 @@ document.addEventListener('DOMContentLoaded', function() {
       return microPerformanceRequest;
     }
 
+    const recoveryKey = `micro-performance:${requestedPeriod}`;
+    if (forceRefresh) landingRecovery.clear(recoveryKey);
+    const retryRead = () => {
+      microPerformanceDashboard.dataset.loaded = '0';
+      loadMicroPerformance(false);
+    };
+    const isCurrent = () => (document.getElementById('periode-selector')?.value || '') === requestedPeriod;
+    if (microPerformanceDashboard.dataset.loadedPeriod !== requestedPeriod) delete microPerformanceDashboard.dataset.rendered;
+    else if (microPerformanceDashboard.dataset.loaded === '1') microPerformanceDashboard.dataset.rendered = '1';
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 90000);
     const requestUrl = new URL(microPerformanceDashboard.dataset.url, window.location.origin);
@@ -13705,8 +13778,11 @@ document.addEventListener('DOMContentLoaded', function() {
     })
       .then(async response => {
         const html = await response.text();
-        if (!response.ok || !html.includes('data-micro-performance-ready="1"')) {
-          throw new Error('Respons Mikro tidak lengkap atau sesi login telah berakhir.');
+        if (!response.ok || response.redirected || !html.includes('data-micro-performance-ready="1"')) {
+          throw landingResponseError(response, 'Respons Mikro tidak lengkap atau sesi login telah berakhir.');
+        }
+        if (microPerformanceDashboard.dataset.rendered === '1' && html.includes('data-load-error="1"')) {
+          throw new Error('Pembaruan belum selesai. Data terakhir tetap ditampilkan.');
         }
         const fragment = new DOMParser().parseFromString(html, 'text/html');
         const result = fragment.querySelector('[data-micro-performance-ready]');
@@ -13719,13 +13795,19 @@ document.addEventListener('DOMContentLoaded', function() {
         closeMicroPipelineSourceModal();
         document.querySelector('body > [data-micro-pipeline-source-modal]')?.remove();
         microPerformanceDashboard.innerHTML = html;
-        microPerformanceDashboard.dataset.loaded = '1';
+        const pending = landingPartialPending(microPerformanceDashboard, '[data-micro-performance-ready]');
+        microPerformanceDashboard.dataset.loaded = pending ? '0' : '1';
+        microPerformanceDashboard.dataset.rendered = '1';
+        if (pending) landingRecovery.schedule(recoveryKey, retryRead, isCurrent);
+        else landingRecovery.clear(recoveryKey);
         microPerformanceDashboard.dataset.loadedPeriod = requestedPeriod;
         initializeMicroBilling(microPerformanceDashboard);
         prepareMicroPipelineModal();
       })
       .catch(error => {
-        if (forceRefresh && microPerformanceDashboard.dataset.loaded === '1') {
+        if (!isCurrent()) return;
+        landingRecovery.schedule(recoveryKey, retryRead, isCurrent, error);
+        if (microPerformanceDashboard.dataset.rendered === '1') {
           return;
         }
         const message = error?.name === 'AbortError'
@@ -13755,6 +13837,14 @@ document.addEventListener('DOMContentLoaded', function() {
       return consumerOperationsRequest;
     }
 
+    const recoveryKey = `consumer-operations:${consumerOperationsDashboard.dataset.url}`;
+    if (forceRefresh) landingRecovery.clear(recoveryKey);
+    const retryRead = () => {
+      consumerOperationsDashboard.dataset.loaded = '0';
+      loadConsumerOperations(false);
+    };
+    const isCurrent = () => true;
+    if (consumerOperationsDashboard.dataset.loaded === '1') consumerOperationsDashboard.dataset.rendered = '1';
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 35000);
     const requestUrl = new URL(consumerOperationsDashboard.dataset.url, window.location.origin);
@@ -13776,14 +13866,23 @@ document.addEventListener('DOMContentLoaded', function() {
     })
       .then(async response => {
         const html = await response.text();
-        if (!response.ok || !html.includes('data-consumer-operations-ready="1"')) {
-          throw new Error('Respons Konsumer tidak lengkap atau sesi login telah berakhir.');
+        if (!response.ok || response.redirected || !html.includes('data-consumer-operations-ready="1"')) {
+          throw landingResponseError(response, 'Respons Konsumer tidak lengkap atau sesi login telah berakhir.');
+        }
+        if (consumerOperationsDashboard.dataset.rendered === '1' && html.includes('data-load-error="1"')) {
+          throw new Error('Pembaruan belum selesai. Data terakhir tetap ditampilkan.');
         }
         consumerOperationsDashboard.innerHTML = html;
-        consumerOperationsDashboard.dataset.loaded = '1';
+        const pending = landingPartialPending(consumerOperationsDashboard, '[data-consumer-operations-ready]');
+        consumerOperationsDashboard.dataset.loaded = pending ? '0' : '1';
+        consumerOperationsDashboard.dataset.rendered = '1';
+        if (pending) landingRecovery.schedule(recoveryKey, retryRead, isCurrent);
+        else landingRecovery.clear(recoveryKey);
       })
       .catch(error => {
-        if (forceRefresh && consumerOperationsDashboard.dataset.loaded === '1') {
+        if (!isCurrent()) return;
+        landingRecovery.schedule(recoveryKey, retryRead, isCurrent, error);
+        if (consumerOperationsDashboard.dataset.rendered === '1') {
           const refreshButton = consumerOperationsDashboard.querySelector('[data-consumer-operations-refresh]');
           if (refreshButton) refreshButton.title = 'Pembaruan gagal. Data terakhir tetap ditampilkan.';
           return;

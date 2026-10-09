@@ -1465,6 +1465,11 @@ document.addEventListener('DOMContentLoaded', function () {
                   (skippedRowsText ? '<br>Contoh baris: ' + skippedRowsText : '') +
                   '</small>'
                 : '';
+            var gi405Message = String(d.message || '').startsWith('GI405 periode sumber') ? String(d.message) : '';
+            var gi405HasMissingPeriod = gi405Message.includes('Periode GI405 belum tersedia:');
+            var gi405Html = gi405Message
+                ? '<br><small class="' + (gi405HasMissingPeriod ? 'text-warning' : 'text-muted') + '">' + escapeHtml(gi405Message) + '</small>'
+                : '';
 
             activateStep('step-done', 'line-3');
             setProgress(100, 'Import selesai!', d.total_rows || 0, d.total_rows || 0, 0);
@@ -1487,10 +1492,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     });
                 } else {
                     themedSwal({
-                        icon: d.total_failed > 0 ? 'warning' : 'success',
-                        title: d.total_failed > 0 ? 'Import Memiliki Kendala' : 'Import Sukses',
+                        icon: d.total_failed > 0 || gi405HasMissingPeriod ? 'warning' : 'success',
+                        title: d.total_failed > 0 || gi405HasMissingPeriod ? 'Import Selesai, Periksa Periode' : 'Import Sukses',
                         html: 'Berhasil mengimport <b>' + Number(d.total_success).toLocaleString('id-ID') + ' baris</b> data ke database.' +
                               (d.total_failed > 0 ? '<br><small class="text-warning">' + Number(d.total_failed).toLocaleString('id-ID') + ' baris gagal saat insert atau tidak lolos proses validasi.</small>' : '') +
+                              gi405Html +
                               skippedHtml,
                         confirmButtonText: 'Lanjut',
                     }).then(function () {

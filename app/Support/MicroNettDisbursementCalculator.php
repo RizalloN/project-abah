@@ -193,7 +193,7 @@ final class MicroNettDisbursementCalculator
             ->where('periode', '<=', $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString())
             ->where('segmen_kinerja', 'MICRO')
             ->whereNotIn('produk_kinerja', ['BRIGUNAMIKRO', 'BRIGUNAKONSUMER'])
-            ->max('periode');
+            ->orderByDesc('periode')->value('periode');
         $cifs = array_values(array_unique(array_filter(array_map(
             static fn ($cif): string => strtoupper(trim((string) $cif)),
             $cifs
@@ -217,7 +217,7 @@ final class MicroNettDisbursementCalculator
             ->where('periode', '<=', $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString())
             ->where('segmen_kinerja', 'MICRO')
             ->whereNotIn('produk_kinerja', ['BRIGUNAMIKRO', 'BRIGUNAKONSUMER'])
-            ->max('periode');
+            ->orderByDesc('periode')->value('periode');
         $cifs = array_values(array_unique(array_filter(array_map(
             static fn ($cif): string => strtoupper(trim((string) $cif)),
             $cifs

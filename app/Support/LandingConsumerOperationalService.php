@@ -112,6 +112,7 @@ final class LandingConsumerOperationalService
                 'generated_at' => now()->toIso8601String(),
                 'cache_stale' => (bool) ($quadrants['cache_stale'] ?? false),
                 'refresh_pending' => (bool) ($quadrants['refresh_pending'] ?? false),
+                'error' => (string) ($quadrants['error'] ?? $quadrants['refresh_error'] ?? ''),
             ],
             'pipeline' => $pipeline,
             'kpr_pipeline' => $kprPipeline,
@@ -142,7 +143,7 @@ final class LandingConsumerOperationalService
 
         if ($forceRefresh) {
             Cache::forget($cacheKey);
-            $durable = Cache::get($durableKey);
+            $durable = $this->readQuadrantCache($durableKey, true);
             if (is_array($durable)) {
                 $this->deferQuadrantRefresh($cacheKey, $durableKey, $requestedPeriod, $branchScope);
                 $durable['cache_stale'] = true;
@@ -151,14 +152,16 @@ final class LandingConsumerOperationalService
                 return $durable;
             }
         } else {
-            $cached = Cache::get($cacheKey);
+            $cached = $this->readQuadrantCache($cacheKey, false);
             if (is_array($cached)) {
-                Cache::put($durableKey, $cached, now()->addDays(7));
+                if ($this->quadrantPayloadIsValid($cached)) {
+                    Cache::put($durableKey, $cached, now()->addDays(7));
+                }
 
                 return $cached;
             }
 
-            $durable = Cache::get($durableKey);
+            $durable = $this->readQuadrantCache($durableKey, true);
             if (is_array($durable)) {
                 $this->deferQuadrantRefresh($cacheKey, $durableKey, $requestedPeriod, $branchScope);
                 $durable['cache_stale'] = true;
@@ -170,15 +173,15 @@ final class LandingConsumerOperationalService
 
         try {
             $payload = $this->quadrantPayload($requestedPeriod, $branchScope);
-            Cache::put($cacheKey, $payload, now()->addHours(6));
-            Cache::put($durableKey, $payload, now()->addDays(7));
+            $payload = $this->cacheQuadrantPayload($cacheKey, $durableKey, $payload);
 
             return $payload;
         } catch (Throwable $exception) {
-            $durable = Cache::get($durableKey);
+            $durable = $this->readQuadrantCache($durableKey, true);
             if (is_array($durable)) {
                 $durable['cache_stale'] = true;
                 $durable['refresh_error'] = $exception->getMessage();
+                $durable['refresh_pending'] = true;
 
                 return $durable;
             }
@@ -202,8 +205,7 @@ final class LandingConsumerOperationalService
         defer(function () use ($cacheKey, $durableKey, $requestedPeriod, $branchScope, $pendingKey): void {
             try {
                 $payload = $this->quadrantPayload($requestedPeriod, $branchScope);
-                Cache::put($cacheKey, $payload, now()->addHours(6));
-                Cache::put($durableKey, $payload, now()->addDays(7));
+                $payload = $this->cacheQuadrantPayload($cacheKey, $durableKey, $payload);
             } catch (Throwable $exception) {
                 logger()->warning('Refresh cache landing Konsumer gagal.', [
                     'period' => $requestedPeriod,
@@ -214,6 +216,54 @@ final class LandingConsumerOperationalService
                 Cache::forget($pendingKey);
             }
         }, 'landing-consumer-quadrants:'.md5($cacheKey), true);
+    }
+
+    private function quadrantPayloadIsValid(mixed $payload): bool
+    {
+        return is_array($payload)
+            && !empty($payload['available'])
+            && !empty($payload['period'])
+            && empty($payload['error'])
+            && empty($payload['refresh_error'])
+            && empty($payload['refresh_pending'])
+            && empty($payload['cache_stale']);
+    }
+
+    private function readQuadrantCache(string $key, bool $durable): ?array
+    {
+        $payload = Cache::get($key);
+        if ($this->quadrantPayloadIsValid($payload)) {
+            return $payload;
+        }
+        if (!$durable && is_array($payload) && (int) ($payload['retry_after'] ?? 0) > now()->timestamp) {
+            return $payload;
+        }
+        if ($payload !== null) {
+            Cache::forget($key);
+        }
+
+        return null;
+    }
+
+    private function cacheQuadrantPayload(string $cacheKey, string $durableKey, array $payload): array
+    {
+        if ($this->quadrantPayloadIsValid($payload)) {
+            Cache::put($cacheKey, $payload, now()->addHours(6));
+            Cache::put($durableKey, $payload, now()->addDays(7));
+
+            return $payload;
+        }
+
+        $durable = $this->readQuadrantCache($durableKey, true);
+        if ($durable !== null) {
+            $payload = $durable;
+            $payload['cache_stale'] = true;
+        }
+        $payload['refresh_pending'] = true;
+        $payload['retry_after'] = now()->addSeconds(30)->timestamp;
+        Cache::put($cacheKey, $payload, now()->addSeconds(30));
+
+        return $payload;
     }
 
     /**

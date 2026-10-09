@@ -312,7 +312,6 @@ final class LandingMicroPerformanceService
 
             $stable = Cache::get($stableCacheKey);
             if (! $forceRefresh && is_array($stable)) {
-                Cache::put($cacheKey, $stable, now()->addSeconds(30));
                 Cache::put($durableCacheKey, $stable, now()->addDays(self::STABLE_CACHE_DAYS));
                 $this->deferPayloadRefresh(
                     $cacheKey,
@@ -323,7 +322,7 @@ final class LandingMicroPerformanceService
                     $branchScope
                 );
 
-                return $stable;
+                return $this->markPayloadAsRefreshing($stable);
             }
 
             return $this->buildAndCachePayload(
@@ -446,7 +445,7 @@ final class LandingMicroPerformanceService
 
             return is_array($stable)
                 ? $this->markPayloadAsRefreshing($stable)
-                : $this->emptyPayload($branchScope);
+                : $this->markPayloadAsRefreshing($this->emptyPayload($branchScope));
         }
     }
 

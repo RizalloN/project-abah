@@ -192,7 +192,10 @@
 }
 </style>
 
-<div class="consumer-ops" data-consumer-operations-ready="1">
+<div class="consumer-ops" data-consumer-operations-ready="1"
+     data-refresh-pending="{{ (!empty($meta['refresh_pending'])) ? '1' : '0' }}"
+     data-cache-stale="{{ !empty($meta['cache_stale']) ? '1' : '0' }}"
+     data-load-error="{{ !empty($meta['error']) ? '1' : '0' }}">
     <header class="consumer-ops-hero">
         <div class="consumer-ops-hero__copy">
             <span class="consumer-ops-eyebrow">Consumer Growth Command Center</span>

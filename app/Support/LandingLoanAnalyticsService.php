@@ -85,7 +85,7 @@ final class LandingLoanAnalyticsService
 
             if ($forceRefresh) {
                 Cache::forget($cacheKey);
-                $durable = Cache::get($durableCacheKey);
+                $durable = $this->readAnalyticsCache($durableCacheKey, true);
                 if (is_array($durable)) {
                     $this->deferAnalyticsRefresh(
                         $cacheKey,
@@ -102,14 +102,16 @@ final class LandingLoanAnalyticsService
                 }
             }
 
-            $cached = Cache::get($cacheKey);
+            $cached = $this->readAnalyticsCache($cacheKey, false);
             if (is_array($cached)) {
-                Cache::put($durableCacheKey, $cached, now()->addDays(7));
+                if ($this->analyticsPayloadIsValid($cached)) {
+                    Cache::put($durableCacheKey, $cached, now()->addDays(7));
+                }
 
                 return $cached;
             }
 
-            $durable = Cache::get($durableCacheKey);
+            $durable = $this->readAnalyticsCache($durableCacheKey, true);
             if (! $forceRefresh && is_array($durable)) {
                 $this->deferAnalyticsRefresh(
                     $cacheKey,
@@ -126,8 +128,7 @@ final class LandingLoanAnalyticsService
             }
 
             $payload = $this->buildAnalyticsPayload($period, $year, $branchScope, $segmentScope);
-            Cache::put($cacheKey, $payload, now()->addMinutes(15));
-            Cache::put($durableCacheKey, $payload, now()->addDays(7));
+            $payload = $this->cacheAnalyticsPayload($cacheKey, $durableCacheKey, $payload);
 
             return $payload;
         } catch (Throwable $exception) {
@@ -146,15 +147,17 @@ final class LandingLoanAnalyticsService
                 $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
                 $segmentScope ?? 'all-segments',
             ]);
-            $durable = Cache::get($durableCacheKey);
+            $durable = $this->readAnalyticsCache($durableCacheKey, true);
             if (is_array($durable)) {
                 $durable['meta']['cache_stale'] = true;
                 $durable['meta']['refresh_error'] = $exception->getMessage();
+                $durable['meta']['refresh_pending'] = true;
 
                 return $durable;
             }
 
             $empty['meta']['error'] = $exception->getMessage();
+            $empty['meta']['refresh_pending'] = true;
 
             return $empty;
         }
@@ -226,8 +229,7 @@ final class LandingLoanAnalyticsService
         ): void {
             try {
                 $payload = $this->buildAnalyticsPayload($period, $year, $branchScope, $segmentScope);
-                Cache::put($cacheKey, $payload, now()->addMinutes(15));
-                Cache::put($durableCacheKey, $payload, now()->addDays(7));
+                $payload = $this->cacheAnalyticsPayload($cacheKey, $durableCacheKey, $payload);
             } catch (Throwable $exception) {
                 Log::warning('Refresh cache analitik landing pinjaman gagal.', [
                     'period' => $period,
@@ -239,6 +241,54 @@ final class LandingLoanAnalyticsService
                 Cache::forget($pendingKey);
             }
         }, 'landing-loan-analytics:'.md5($cacheKey), true);
+    }
+
+    private function analyticsPayloadIsValid(mixed $payload): bool
+    {
+        return is_array($payload)
+            && !empty($payload['meta']['available'])
+            && !empty($payload['meta']['period'])
+            && empty($payload['meta']['error'])
+            && empty($payload['meta']['refresh_error'])
+            && empty($payload['meta']['refresh_pending'])
+            && empty($payload['meta']['cache_stale']);
+    }
+
+    private function readAnalyticsCache(string $key, bool $durable): ?array
+    {
+        $payload = Cache::get($key);
+        if ($this->analyticsPayloadIsValid($payload)) {
+            return $payload;
+        }
+        if (!$durable && is_array($payload) && (int) ($payload['meta']['retry_after'] ?? 0) > now()->timestamp) {
+            return $payload;
+        }
+        if ($payload !== null) {
+            Cache::forget($key);
+        }
+
+        return null;
+    }
+
+    private function cacheAnalyticsPayload(string $cacheKey, string $durableKey, array $payload): array
+    {
+        if ($this->analyticsPayloadIsValid($payload)) {
+            Cache::put($cacheKey, $payload, now()->addMinutes(15));
+            Cache::put($durableKey, $payload, now()->addDays(7));
+
+            return $payload;
+        }
+
+        $durable = $this->readAnalyticsCache($durableKey, true);
+        if ($durable !== null) {
+            $payload = $durable;
+            $payload['meta']['cache_stale'] = true;
+        }
+        $payload['meta']['refresh_pending'] = true;
+        $payload['meta']['retry_after'] = now()->addSeconds(30)->timestamp;
+        Cache::put($cacheKey, $payload, now()->addSeconds(30));
+
+        return $payload;
     }
 
     /**

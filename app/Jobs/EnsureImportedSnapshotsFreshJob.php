@@ -35,6 +35,16 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
     public $timeout = 2400;
     public $backoff = [60, 300];
 
+    public function uniqueFor(): int
+    {
+        // A crash between acquiring the unique lock and persisting the queue
+        // row must not suppress this source forever. Retain a full reservation
+        // window plus execution time; processing overlap locks remain in force.
+        $connection = (string) config('queue.default', 'database');
+
+        return max(10800, (int) config('queue.connections.' . $connection . '.retry_after', 7200) + $this->timeout + 300);
+    }
+
     private ?string $resolvedPeriodScope = null;
 
     public function __construct(
@@ -137,6 +147,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
             && $periodScope !== ''
             && config('queue.default') !== 'sync') {
             WarmLandingLoanRiskCacheJob::dispatch($periodScope);
+            WarmLandingSmeQuadrantsJob::dispatch($periodScope);
             WarmDashboardSimpananCacheJob::dispatch('micro-readiness', [
                 'period' => $periodScope,
             ]);

@@ -75,6 +75,7 @@ class AppServiceProvider extends ServiceProvider
         $this->registerSecurityRateLimiters();
         $this->registerQueueWorkerAutoEnsure();
         $this->registerQueueWorkerHeartbeats();
+        $this->registerLandingCacheExecutionTracking();
 
         // Record user logins to login_histories table
         Event::listen(\Illuminate\Auth\Events\Login::class, function (\Illuminate\Auth\Events\Login $event): void {
@@ -181,6 +182,29 @@ class AppServiceProvider extends ServiceProvider
                 }
             }
         });
+    }
+
+    private function registerLandingCacheExecutionTracking(): void
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            return;
+        }
+        Event::listen(\Illuminate\Queue\Events\JobProcessing::class, function ($event): void {
+            try {
+                app(\App\Support\LandingCacheWorkerGuard::class)->started($event->job, getmypid());
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        });
+        foreach ([\Illuminate\Queue\Events\JobProcessed::class, \Illuminate\Queue\Events\JobExceptionOccurred::class] as $eventClass) {
+            Event::listen($eventClass, function (): void {
+                try {
+                    app(\App\Support\LandingCacheWorkerGuard::class)->finished(getmypid());
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            });
+        }
     }
 
     private function registerQueueWorkerHeartbeats(): void

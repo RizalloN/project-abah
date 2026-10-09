@@ -4598,6 +4598,7 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 </script>
+@include('dashboard.partials.landing-page-recovery')
 @endsection
 
 @push('modals')

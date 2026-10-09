@@ -78,6 +78,9 @@
 @endphp
 
 <div class="micro-ops" data-micro-performance-ready="1"
+     data-refresh-pending="{{ (!empty($meta['refresh_pending']) || !empty($rmKurProductivity['refresh_pending'])) ? '1' : '0' }}"
+     data-cache-stale="{{ !empty($meta['cache_stale']) ? '1' : '0' }}"
+     data-load-error="{{ !empty($meta['error']) ? '1' : '0' }}"
      data-requested-period="{{ request()->query('periode', data_get($meta, 'period', '')) }}"
      data-period="{{ data_get($meta, 'period', '') }}">
     @if(empty($meta['available']))

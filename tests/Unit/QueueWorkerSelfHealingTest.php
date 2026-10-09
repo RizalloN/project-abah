@@ -19,6 +19,118 @@ use Tests\TestCase;
 
 class QueueWorkerSelfHealingTest extends TestCase
 {
+    public function test_monitor_restart_signal_exits_gracefully_without_disabling_control_or_touching_jobs(): void
+    {
+        Cache::forever('illuminate:queue:restart', 100);
+        $service = \Mockery::mock(\App\Services\Import\QueueWorkerControlService::class);
+        $service->shouldReceive('markEnabled')->never();
+        $service->shouldReceive('disable')->never();
+        $service->shouldReceive('isEnabled')->twice()->andReturn(true);
+        $service->shouldReceive('claimMonitorLeadership')->once()->andReturnUsing(function (): bool {
+            Cache::forever('illuminate:queue:restart', 101);
+
+            return true;
+        });
+        $service->shouldReceive('touchMonitorHeartbeat')->never();
+        $service->shouldReceive('clearOwnMonitorHeartbeat')->once();
+        $this->app->instance(\App\Services\Import\QueueWorkerControlService::class, $service);
+        $row = DB::table('jobs')->insertGetId([
+            'queue' => 'snapshots-parallel', 'reserved_at' => time(), 'payload' => '{}',
+        ]);
+        $before = DB::table('jobs')->where('id', $row)->first();
+
+        $this->assertSame(0, \Illuminate\Support\Facades\Artisan::call('queue:ensure-running', ['--managed' => true]));
+        $this->assertEquals($before, DB::table('jobs')->where('id', $row)->first());
+    }
+
+    public function test_new_monitor_ignores_restart_signal_it_already_observed_at_startup(): void
+    {
+        Cache::forever('illuminate:queue:restart', 100);
+        $method = new ReflectionMethod(EnsureQueueWorkerRunning::class, 'monitorRestartRequested');
+        $this->assertFalse($method->invoke(new EnsureQueueWorkerRunning(), 100));
+        Cache::forever('illuminate:queue:restart', 101);
+        $this->assertTrue($method->invoke(new EnsureQueueWorkerRunning(), 100));
+        $this->assertFalse($method->invoke(new EnsureQueueWorkerRunning(), 101));
+    }
+
+    public function test_monitor_checks_all_landing_sources_even_when_snapshot_queue_is_busy(): void
+    {
+        \Illuminate\Support\Facades\Bus::fake();
+        $progress = \Mockery::mock(ImportProgressService::class);
+        $progress->shouldReceive('hasActiveProcessingJobs')->andReturn(false);
+        $this->app->instance(ImportProgressService::class, $progress);
+        $sources = ['daily_loan_dinamis', 'simpanan_multipn', 'ssa_simpanan', 'hourly_dpk', 'ssa_pinjaman', 'lw325_ph', 'gi405_recovery', 'dly_kap_resegmentasi', 'l1133'];
+        foreach ($sources as $source) {
+            $this->createFreshnessSource($source);
+        }
+        for ($i = 0; $i < 6; $i++) {
+            DB::table('jobs')->insert(['queue' => 'snapshots-parallel', 'payload' => '{}']);
+        }
+
+        $command = new EnsureQueueWorkerRunning();
+        (new ReflectionMethod($command, 'dispatchSnapshotAuditIfIdle'))->invoke($command);
+
+        \Illuminate\Support\Facades\Bus::assertDispatchedTimes(\App\Jobs\EnsureImportedSnapshotsFreshJob::class, 9);
+        foreach ($sources as $source) {
+            \Illuminate\Support\Facades\Bus::assertDispatched(\App\Jobs\EnsureImportedSnapshotsFreshJob::class, function ($job) use ($source): bool {
+                return (new \ReflectionProperty($job, 'tableName'))->getValue($job) === $source
+                    && (new \ReflectionProperty($job, 'periodHint'))->getValue($job) === '2026-10-06'
+                    && $job->queue === 'snapshots-priority';
+            });
+        }
+        \Illuminate\Support\Facades\Bus::assertNotDispatched(\App\Jobs\AuditAndHealSnapshotsJob::class);
+    }
+
+    public function test_monitor_freshness_cooldown_survives_a_new_monitor_instance(): void
+    {
+        \Illuminate\Support\Facades\Bus::fake();
+        $progress = \Mockery::mock(ImportProgressService::class);
+        $progress->shouldReceive('hasActiveProcessingJobs')->andReturn(false);
+        $this->app->instance(ImportProgressService::class, $progress);
+        $this->createFreshnessSource('daily_loan_dinamis');
+
+        $method = new ReflectionMethod(EnsureQueueWorkerRunning::class, 'dispatchSnapshotAuditIfIdle');
+        $method->invoke(new EnsureQueueWorkerRunning());
+        $method->invoke(new EnsureQueueWorkerRunning());
+
+        \Illuminate\Support\Facades\Bus::assertDispatchedTimes(\App\Jobs\EnsureImportedSnapshotsFreshJob::class, 1);
+        \Illuminate\Support\Facades\Bus::assertDispatchedTimes(\App\Jobs\AuditAndHealSnapshotsJob::class, 1);
+    }
+
+    public function test_monitor_yields_freshness_checks_to_active_imports(): void
+    {
+        \Illuminate\Support\Facades\Bus::fake();
+        $progress = \Mockery::mock(ImportProgressService::class);
+        $progress->shouldReceive('hasActiveProcessingJobs')->andReturn(true);
+        $this->app->instance(ImportProgressService::class, $progress);
+        $this->createFreshnessSource('daily_loan_dinamis');
+
+        (new ReflectionMethod(EnsureQueueWorkerRunning::class, 'dispatchSnapshotAuditIfIdle'))
+            ->invoke(new EnsureQueueWorkerRunning());
+
+        \Illuminate\Support\Facades\Bus::assertNothingDispatched();
+        $this->assertFalse(Cache::has('queue:monitor:snapshot-freshness:daily_loan_dinamis'));
+    }
+
+    public function test_monitor_preserves_reserved_freshness_owner_and_retries_after_completion(): void
+    {
+        \Illuminate\Support\Facades\Bus::fake();
+        $this->createFreshnessSource('daily_loan_dinamis');
+        $reservedAt = time() - 7201;
+        $row = DB::table('jobs')->insertGetId([
+            'queue' => 'snapshots-priority', 'reserved_at' => $reservedAt,
+            'payload' => json_encode(['displayName' => \App\Jobs\EnsureImportedSnapshotsFreshJob::class, 'tableName' => 'daily_loan_dinamis', 'periodHint' => '2026-10-06']),
+        ]);
+        $method = new ReflectionMethod(EnsureQueueWorkerRunning::class, 'dispatchLatestSnapshotFreshnessChecks');
+        $method->invoke(new EnsureQueueWorkerRunning());
+        \Illuminate\Support\Facades\Bus::assertNothingDispatched();
+        $this->assertSame($reservedAt, (int) DB::table('jobs')->where('id', $row)->value('reserved_at'));
+
+        DB::table('jobs')->where('id', $row)->delete();
+        $method->invoke(new EnsureQueueWorkerRunning());
+        \Illuminate\Support\Facades\Bus::assertDispatchedTimes(\App\Jobs\EnsureImportedSnapshotsFreshJob::class, 1);
+    }
+
     public function test_monitor_does_not_duplicate_an_already_queued_or_running_snapshot_audit(): void
     {
         \Illuminate\Support\Facades\Bus::fake();
@@ -39,6 +151,25 @@ class QueueWorkerSelfHealingTest extends TestCase
         \Illuminate\Support\Facades\Bus::assertDispatchedTimes(\App\Jobs\AuditAndHealSnapshotsJob::class, 1);
     }
 
+    public function test_historical_freshness_backlog_does_not_starve_latest_source_period(): void
+    {
+        \Illuminate\Support\Facades\Bus::fake();
+        $this->createFreshnessSource('daily_loan_dinamis');
+        $row = DB::table('jobs')->insertGetId([
+            'queue' => 'snapshots-parallel', 'reserved_at' => time(),
+            'payload' => json_encode(['displayName' => \App\Jobs\EnsureImportedSnapshotsFreshJob::class, 'tableName' => 'daily_loan_dinamis', 'periodHint' => '2026-09-29']),
+        ]);
+
+        (new ReflectionMethod(EnsureQueueWorkerRunning::class, 'dispatchLatestSnapshotFreshnessChecks'))
+            ->invoke(new EnsureQueueWorkerRunning());
+
+        \Illuminate\Support\Facades\Bus::assertDispatched(\App\Jobs\EnsureImportedSnapshotsFreshJob::class, function ($job): bool {
+            return (new \ReflectionProperty($job, 'periodHint'))->getValue($job) === '2026-10-06'
+                && $job->queue === 'snapshots-priority';
+        });
+        $this->assertNotNull(DB::table('jobs')->where('id', $row)->value('reserved_at'));
+    }
+
     public function test_monitor_attempts_safe_recovery_before_terminal_stale_sweep(): void
     {
         $execution = \Mockery::mock(ImportExecutionService::class);
@@ -52,6 +183,16 @@ class QueueWorkerSelfHealingTest extends TestCase
         $this->app->instance(SnapshotQueuePauseService::class, $pause);
         $command = new EnsureQueueWorkerRunning();
         (new ReflectionMethod($command, 'recoverOrphanedImports'))->invoke($command);
+    }
+
+    private function createFreshnessSource(string $source): void
+    {
+        $column = \App\Support\LatestSnapshotRecoveryService::sourcePeriodColumn($source);
+        Schema::create($source, function (Blueprint $table) use ($column): void {
+            $table->increments('id');
+            $table->date($column);
+        });
+        DB::table($source)->insert([$column => '2026-10-06']);
     }
 
     private string $originalDefaultConnection;
