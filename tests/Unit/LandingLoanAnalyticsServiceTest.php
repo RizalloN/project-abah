@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Support\LandingLoanAnalyticsService;
+use App\Support\ReportCacheVersion;
 use App\Support\UserBranchScope;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
@@ -12,6 +13,33 @@ use Tests\TestCase;
 
 class LandingLoanAnalyticsServiceTest extends TestCase
 {
+    public function test_micro_month_detail_is_reused_across_dates_but_invalidates_on_source_change_and_manual_refresh(): void
+    {
+        $this->insertDetailed('2026-01-31', 100_000_000, 2, 'SML1', 10, 'N', 'MICRO', 'KC MADIUN');
+        $this->insertDetailed('2026-02-28', 200_000_000, 2, 'SML2', 40, 'N', 'MICRO', 'KC MADIUN');
+        $service = app(LandingLoanAnalyticsService::class);
+        $method = new \ReflectionMethod($service, 'microDailySmlBreakdown');
+        $scope = UserBranchScope::forKey('madiun');
+        $jan = $method->invoke($service, collect(['2026-01-31']), $scope);
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $both = $method->invoke($service, collect(['2026-01-31', '2026-02-28']), $scope);
+        $aggregates = collect(DB::getQueryLog())->filter(fn ($q) => str_contains($q['query'], 'sml1_amount'));
+        $this->assertCount(1, $aggregates);
+        $this->assertNotContains('2026-01-31', $aggregates->first()['bindings']);
+        $this->assertEquals($jan->get('2026-01-31'), $both->get('2026-01-31'));
+        DB::table('daily_loan_dinamis')->where('periode', '2026-01-31')->update(['baki_debet1' => 300_000_000]);
+        ReportCacheVersion::bump('pinjaman');
+        $updated = $method->invoke($service, collect(['2026-01-31']), $scope);
+        $this->assertEquals(300_000_000, $updated->get('2026-01-31')->sml1_amount);
+        DB::table('daily_loan_dinamis')->where('periode', '2026-01-31')->update(['baki_debet1' => 400_000_000]);
+        $refreshed = $method->invoke($service, collect(['2026-01-31']), $scope, true);
+        $this->assertEquals(400_000_000, $refreshed->get('2026-01-31')->sml1_amount);
+        $otherBranch = $method->invoke($service, collect(['2026-01-31']), UserBranchScope::forKey('ngawi'));
+        $this->assertTrue($otherBranch->isEmpty());
+        DB::disableQueryLog();
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -299,6 +327,87 @@ class LandingLoanAnalyticsServiceTest extends TestCase
                 + data_get($payload, 'quality.micro.series.sml3.0')
         );
         $this->assertStringContainsString('dinormalisasi', data_get($payload, 'quality.micro.detail_method'));
+    }
+
+    public function test_month_end_discovery_uses_exact_date_probes_and_never_reads_other_segments(): void
+    {
+        $this->insert('2026-01-30', 999, 1, 'N', 'CONSUMER', 'KC MADIUN', 0.1);
+        $this->insert('2026-01-31', 100, 1, 'N', 'CONSUMER', 'KC MADIUN', 0.1);
+        $this->insert('2026-02-28', 200, 1, 'N', 'SMALL', 'KC MADIUN', 0.1);
+        $this->insert('2026-03-31', 300, 1, 'N', 'CONSUMER', 'KC MADIUN', 0.1);
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $periods = (new \ReflectionMethod(LandingLoanAnalyticsService::class, 'periodsForYear'))->invoke(
+            app(LandingLoanAnalyticsService::class), 2026, '2026-03-15', UserBranchScope::forKey('madiun'), 'consumer'
+        );
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $this->assertSame(['2026-01-31'], $periods->all());
+        $this->assertCount(2, $queries);
+        foreach ($queries as $query) {
+            $this->assertStringContainsString('exists', strtolower($query['query']));
+            $this->assertStringContainsString('"periode" = ?', $query['query']);
+            $this->assertContains('CONSUMER', $query['bindings']);
+            $this->assertNotContains('SMALL', $query['bindings']);
+            $this->assertNotContains('2026-03-31', $query['bindings']);
+        }
+    }
+
+    public function test_micro_quality_remains_available_when_only_ssa_source_exists(): void
+    {
+        Schema::drop('daily_loan_dinamis');
+        $this->insertSsa('2026-01-31', 125_000_000, 'MICRO', 'KC MADIUN', 2);
+        $this->insertSsa('2026-01-31', 900_000_000, 'MICRO', 'KC NGAWI', 2);
+
+        $payload = app(LandingLoanAnalyticsService::class)->payload('2026-01-31', UserBranchScope::forKey('madiun'), false, 'micro');
+
+        $this->assertTrue(data_get($payload, 'meta.available'));
+        $this->assertSame('', data_get($payload, 'meta.error'));
+        $this->assertSame(125.0, data_get($payload, 'quality.micro.series.sml.0'));
+        $this->assertSame(['micro'], array_keys($payload['quality']));
+    }
+
+    public function test_competing_cold_builder_returns_pending_then_recovers_after_lock_release(): void
+    {
+        $this->insert('2026-01-31', 125_000_000, 1, 'Y', 'CONSUMER', 'KC MADIUN', 0.1);
+        $service = app(LandingLoanAnalyticsService::class);
+        $version = (new \ReflectionClass($service))->getConstant('CACHE_VERSION');
+        $key = implode(':', ['landing', 'loan-analytics', $version, ReportCacheVersion::composite(['pinjaman', 'harian']), 2026, '2026-01-31', 'madiun', 'consumer']);
+        $lock = Cache::lock($key.':build-lock', 180);
+        $this->assertTrue($lock->get());
+        try {
+            $pending = $service->payload('2026-01-31', UserBranchScope::forKey('madiun'), false, 'consumer');
+            $this->assertTrue(data_get($pending, 'meta.refresh_pending'));
+            $this->assertFalse(data_get($pending, 'meta.available'));
+        } finally {
+            $lock->release();
+        }
+        $ready = $service->payload('2026-01-31', UserBranchScope::forKey('madiun'), false, 'consumer');
+        $this->assertTrue(data_get($ready, 'meta.available'));
+        $this->assertSame(125.0, data_get($ready, 'quality.consumer.series.lr.0'));
+    }
+
+    public function test_consumer_request_does_not_query_ssa_or_other_segment_data(): void
+    {
+        $this->insert('2026-01-31', 125_000_000, 1, 'N', 'CONSUMER', 'KC MADIUN', 0.1);
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $payload = app(LandingLoanAnalyticsService::class)->payload('2026-01-31', UserBranchScope::forKey('madiun'), false, 'consumer');
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $this->assertSame(['consumer'], array_keys($payload['quality']));
+        $sourceReads = array_filter($queries, fn (array $query): bool => str_contains($query['query'], 'from "daily_loan_dinamis"'));
+        $this->assertNotEmpty($sourceReads);
+        foreach ($sourceReads as $query) {
+            $this->assertContains('CONSUMER', $query['bindings']);
+            $this->assertNotContains('SMALL', $query['bindings']);
+            $this->assertNotContains('MICRO', $query['bindings']);
+        }
+        foreach ($queries as $query) {
+            $this->assertStringNotContainsString('from "ssa_pinjaman"', $query['query']);
+        }
     }
 
     private function insert(

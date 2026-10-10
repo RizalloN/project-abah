@@ -8,8 +8,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | file | 38 |
 | function | 4 |
-| method | 85 |
-| unresolved_symbol | 27 |
+| method | 86 |
+| unresolved_symbol | 28 |
 | middleware | 8 |
 | route | 18 |
 | class | 19 |
@@ -20,9 +20,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `current` | method | 51 | `app/Support/UserBranchScope.php:111` |
-| `User` | class | 50 | `app/Models/User.php:10` |
-| `forKey` | method | 31 | `app/Support/UserBranchScope.php:68` |
+| `User` | class | 52 | `app/Models/User.php:10` |
+| `current` | method | 52 | `app/Support/UserBranchScope.php:111` |
+| `forKey` | method | 36 | `app/Support/UserBranchScope.php:68` |
 | `users` | table | 29 | - |
 | `update` | method | 22 | `app/Http/Controllers/Admin/UserManagementController.php:159` |
 | `LoginRequest` | class | 20 | `app/Http/Requests/Auth/LoginRequest.php:15` |
@@ -125,18 +125,18 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | core -> access-control (protected_by) | 58 |
 | dashboard-harian -> access-control (protected_by) | 50 |
 | input-management -> access-control (protected_by) | 35 |
+| dashboard-pinjaman -> access-control (calls) | 31 |
 | dashboard-simpanan -> access-control (calls) | 28 |
 | access-control -> core (accepts) | 27 |
-| dashboard-pinjaman -> access-control (calls) | 25 |
 | almafacts -> access-control (protected_by) | 25 |
 | access-control -> core (uses_component) | 13 |
 | tests -> access-control (calls) | 12 |
 | bank-pipeline -> access-control (calls) | 11 |
+| access-control -> tests (calls) | 11 |
 | database -> access-control (protected_by) | 11 |
 | access-control -> core (extends) | 11 |
-| access-control -> tests (calls) | 10 |
+| tests -> access-control (contains) | 11 |
 | prognosa -> access-control (instantiates) | 10 |
-| tests -> access-control (contains) | 10 |
 | marketshare -> access-control (protected_by) | 8 |
 | access-control -> dashboard-simpanan (references_route) | 7 |
 | dashboard-harian -> access-control (calls) | 7 |

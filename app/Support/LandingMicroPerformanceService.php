@@ -310,7 +310,7 @@ final class LandingMicroPerformanceService
                 return $cached;
             }
 
-            $stable = Cache::get($stableCacheKey);
+            $stable = Cache::get($stableCacheKey) ?? Cache::get($durableCacheKey);
             if (! $forceRefresh && is_array($stable)) {
                 Cache::put($durableCacheKey, $stable, now()->addDays(self::STABLE_CACHE_DAYS));
                 $this->deferPayloadRefresh(
@@ -1000,7 +1000,9 @@ final class LandingMicroPerformanceService
 
         $currentPeriodQuery = DB::table('lw325_ph')->where('periode', '<=', $period);
         $this->applyBranchFilter($currentPeriodQuery, 'kanca', $branchScope);
-        $currentPeriod = $currentPeriodQuery->max('periode');
+        // ORDER BY + LIMIT walks the periode-leading index backwards and stops
+        // at the first matching branch row; MAX() with LIKE scanned every row.
+        $currentPeriod = $currentPeriodQuery->orderByDesc('periode')->value('periode');
         if (! $currentPeriod) {
             return $this->emptyPhSummary();
         }
@@ -1009,7 +1011,7 @@ final class LandingMicroPerformanceService
         $previousCutoff = Carbon::parse($currentPeriod)->startOfMonth()->subDay()->toDateString();
         $previousPeriodQuery = DB::table('lw325_ph')->where('periode', '<=', $previousCutoff);
         $this->applyBranchFilter($previousPeriodQuery, 'kanca', $branchScope);
-        $previousPeriod = $previousPeriodQuery->max('periode');
+        $previousPeriod = $previousPeriodQuery->orderByDesc('periode')->value('periode');
         if (! $previousPeriod) {
             return $this->emptyPhSummary($currentPeriod, $previousCutoff);
         }
@@ -2967,17 +2969,17 @@ final class LandingMicroPerformanceService
         for ($month = 0; $month < $limit; $month++) {
             $monthStart = $cursor->copy()->startOfMonth();
             $monthEnd = $cursor->copy()->endOfMonth();
-            $query = $this->periodLookupQuery()
-                ->whereBetween('periode', [$monthStart->toDateString(), $monthEnd->toDateString()]);
+            // A month is closed only when its last calendar day holds data, so
+            // probe that exact date instead of scanning the month for MAX().
+            $query = $this->periodLookupQuery()->where('periode', $monthEnd->toDateString());
             $this->applyDailyMicroFilter($query);
             $this->applyDailyBranchFilter($query, '', $branchScope);
-            $candidate = $query->max('periode');
 
-            if ($candidate === null || ! Carbon::parse((string) $candidate)->isSameDay($monthEnd)) {
+            if (! $query->exists()) {
                 break;
             }
 
-            $periods->push(Carbon::parse((string) $candidate)->toDateString());
+            $periods->push($monthEnd->toDateString());
             $cursor->subMonthNoOverflow();
         }
 

@@ -1084,6 +1084,11 @@
     }
     .daily-table thead tr.column-row th.delta-col {
         background: var(--daily-table-cyan);
+        color: #ffffff;
+    }
+    .daily-table thead th.delta-col .column-heading .main {
+        text-transform: none;
+        font-weight: 700;
     }
     .daily-table thead tr.rka-sub-row th {
         top: var(--daily-header-rka-top);
@@ -1149,6 +1154,7 @@
         height: 100%;
         min-height: var(--daily-header-group-height);
         text-align: center;
+        color: #ffffff !important;
     }
     .daily-table thead .column-heading {
         display: flex;
@@ -1246,6 +1252,11 @@
         background: var(--daily-table-blue);
         box-shadow: none;
         text-align: center !important;
+        color: #ffffff !important;
+    }
+    .daily-table thead .sticky-label .header-center,
+    .daily-table thead .group-label .header-center {
+        color: #ffffff !important;
     }
 
     /* Row Hover and Striping */
@@ -2620,7 +2631,7 @@
                         </colgroup>
                         <thead>
                             <tr class="group-row text-center">
-                                <th class="sticky-label group-label" rowspan="3"><span class="header-center">Keterangan</span></th>
+                                <th class="sticky-label group-label" rowspan="3"><span class="header-center text-white">Keterangan</span></th>
                                 <th class="group-position" colspan="7" data-position-group-colspan><span class="header-center">Posisi</span></th>
                                 <th class="group-delta" colspan="5"><span class="header-center">Delta Terhadap</span></th>
                                 <th class="group-rka" colspan="6"><span class="header-center">Perbandingan RKA</span></th>
@@ -2648,19 +2659,19 @@
                                     <span class="column-heading"><span class="main text-white" data-label-current>-</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-delta-yoy>-</span></span>
+                                    <span class="column-heading"><span class="main" data-label-delta-yoy>YoY</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-delta-ytd>-</span></span>
+                                    <span class="column-heading"><span class="main" data-label-delta-ytd>YtD</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2" data-mtm-toggle>
-                                    <span class="column-heading"><span class="main" data-label-delta-mtm>-</span></span>
+                                    <span class="column-heading"><span class="main" data-label-delta-mtm>MtM</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-delta-mtd>-</span></span>
+                                    <span class="column-heading"><span class="main" data-label-delta-mtd>MtD</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-delta-dtd>-</span></span>
+                                    <span class="column-heading"><span class="main" data-label-delta-dtd>DtD</span></span>
                                 </th>
                                 <th class="value-col rka-col rka-period-cell" colspan="3">
                                     <span class="rka-period-label" data-label-rka-period>RKA</span>
@@ -3927,11 +3938,26 @@
             setTextContent(headerLabels.current, payload.selected_period ? formatDateShort(payload.selected_period) : '-');
             setTextContent(headerLabels.rka, periods.rka ? 'RKA ' + String(formatMonthYear(periods.rka.period)).toUpperCase() : 'RKA');
             setTextContent(headerLabels.rkaDec, periods.rka_dec ? 'RKA ' + String(formatMonthYear(periods.rka_dec.period)).toUpperCase() : 'RKA Des');
-            setTextContent(headerLabels.deltaYoy, periods.yoy ? formatDateShort(periods.yoy.period) : '-');
-            setTextContent(headerLabels.deltaYtd, periods.ytd ? formatDateShort(periods.ytd.period) : '-');
-            setTextContent(headerLabels.deltaMtm, periods.mtm ? formatDateShort(periods.mtm.period) : '-');
-            setTextContent(headerLabels.deltaMtd, periods.mtd ? formatDateShort(periods.mtd.period) : '-');
-            setTextContent(headerLabels.deltaDtd, hasH1 ? formatDateShort(periods.h1.period) : '-');
+            setTextContent(headerLabels.deltaYoy, 'YoY');
+            if (headerLabels.deltaYoy) {
+                headerLabels.deltaYoy.title = periods.yoy ? 'Pembanding: ' + formatDateShort(periods.yoy.period) : 'YoY';
+            }
+            setTextContent(headerLabels.deltaYtd, 'YtD');
+            if (headerLabels.deltaYtd) {
+                headerLabels.deltaYtd.title = periods.ytd ? 'Pembanding: ' + formatDateShort(periods.ytd.period) : 'YtD';
+            }
+            setTextContent(headerLabels.deltaMtm, 'MtM');
+            if (headerLabels.deltaMtm) {
+                headerLabels.deltaMtm.title = periods.mtm ? 'Pembanding: ' + formatDateShort(periods.mtm.period) : 'MtM';
+            }
+            setTextContent(headerLabels.deltaMtd, 'MtD');
+            if (headerLabels.deltaMtd) {
+                headerLabels.deltaMtd.title = periods.mtd ? 'Pembanding: ' + formatDateShort(periods.mtd.period) : 'MtD';
+            }
+            setTextContent(headerLabels.deltaDtd, 'DtD');
+            if (headerLabels.deltaDtd) {
+                headerLabels.deltaDtd.title = hasH1 ? 'Pembanding: ' + formatDateShort(periods.h1.period) : 'DtD';
+            }
 
             togglePositionColumns(hasH1);
             renderTable(payload);

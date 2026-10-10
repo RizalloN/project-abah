@@ -48,3 +48,6 @@ snippet*.txt
 # File spreadsheet yang ditempatkan sementara di public/ jangan ikut ke repo
 /public/**/*.xls
 /public/**/*.xlsx
+
+# Playwright MCP snapshots/screenshots
+/.playwright-mcp/

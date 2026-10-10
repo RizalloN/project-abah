@@ -6,11 +6,13 @@ use App\Support\ConsumerRmRealizationCalculator;
 use App\Support\LandingConsumerOperationalService;
 use App\Support\UserBranchScope;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Defer\DeferredCallbackCollection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class LandingConsumerOperationalServiceTest extends TestCase
@@ -55,6 +57,50 @@ class LandingConsumerOperationalServiceTest extends TestCase
             $table->string('jobgrade')->nullable();
             $table->string('jg')->nullable();
         });
+    }
+
+    public function test_expired_external_sources_serve_stable_data_before_any_network_request(): void
+    {
+        Http::fake(fn () => Http::response('', 503));
+        $service = app(LandingConsumerOperationalService::class);
+        $stableKey = new ReflectionMethod($service, 'stableCacheKey');
+        foreach (['madiun', 'caruban', 'kpr-madiun'] as $key) {
+            Cache::put($stableKey->invoke($service, $key), [
+                'available' => true, 'key' => $key, 'row_count' => 2,
+                'total_potential' => 100, 'rows' => [['name' => 'Retained source']],
+            ]);
+        }
+        $scope = ['key' => 'madiun'];
+        $pipeline = (new ReflectionMethod($service, 'pipelinePayload'))->invoke($service, $scope, false);
+        $kpr = (new ReflectionMethod($service, 'kprPipelinePayload'))->invoke($service, $scope, false);
+
+        Http::assertNothingSent();
+        $this->assertSame(['madiun', 'caruban'], array_column($pipeline['sources'], 'key'));
+        $this->assertTrue($pipeline['sources'][0]['stale']);
+        $this->assertTrue($kpr['stale']);
+        $this->assertSame(2, $kpr['row_count']);
+
+        app(DeferredCallbackCollection::class)->invoke();
+        Http::assertSentCount(3);
+        (new ReflectionMethod($service, 'pipelinePayload'))->invoke($service, $scope, false);
+        (new ReflectionMethod($service, 'kprPipelinePayload'))->invoke($service, $scope, false);
+        Http::assertSentCount(3);
+        $this->assertSame(2, Cache::get($stableKey->invoke($service, 'kpr-madiun'))['row_count']);
+    }
+
+    public function test_cold_external_failures_are_throttled_without_creating_stable_empty_data(): void
+    {
+        Http::fake(fn () => Http::response('', 503));
+        $service = app(LandingConsumerOperationalService::class);
+        foreach (range(1, 2) as $attempt) {
+            $pipeline = (new ReflectionMethod($service, 'pipelinePayload'))->invoke($service, ['key' => 'madiun'], false);
+            $kpr = (new ReflectionMethod($service, 'kprPipelinePayload'))->invoke($service, ['key' => 'madiun'], false);
+            $this->assertFalse($pipeline['available']);
+            $this->assertFalse($kpr['available']);
+        }
+        Http::assertSentCount(3);
+        $key = (new ReflectionMethod($service, 'stableCacheKey'))->invoke($service, 'kpr-madiun');
+        $this->assertNull(Cache::get($key));
     }
 
     public function test_pipeline_parser_ranks_top_ten_by_potensi_briguna_and_accepts_caruban_alias(): void

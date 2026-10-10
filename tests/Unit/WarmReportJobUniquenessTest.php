@@ -97,7 +97,7 @@ class WarmReportJobUniquenessTest extends TestCase
         $service->expects($this->never())->method('rebuild');
         $period = '2026-09-30';
         $key = (new \ReflectionMethod(LandingLoanRiskCacheService::class, 'currentCacheKey'))->invoke($service, $period);
-        Cache::put($key, ['period' => $period, 'rows' => [], 'branch_totals' => [], 'area_totals' => []], 3600);
+        Cache::put($key, ['available' => true, 'period' => $period, 'rows' => [], 'branch_totals' => [], 'area_totals' => []], 3600);
         $generation = $service->generation();
         $job = new WarmLandingLoanRiskCacheJob($period);
         $job->handle($service);

@@ -10,12 +10,15 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 
 class WarmLandingLoanRiskCacheJob implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 3;
+    public int $tries = 20;
+
+    public int $backoff = 60;
 
     public int $timeout = 1200;
 
@@ -40,6 +43,20 @@ class WarmLandingLoanRiskCacheJob implements ShouldBeUnique, ShouldQueue
 
     public function handle(LandingLoanRiskCacheService $service): void
     {
-        $service->warm($this->period);
+        $lock = Cache::lock('landing:loan-risk:build:'.$this->period, $this->timeout + 30);
+        if (!$lock->get()) {
+            $this->release($this->backoff);
+
+            return;
+        }
+        try {
+            $payload = $service->warm($this->period);
+            if (empty($payload['available']) || !empty($payload['refresh_pending'])
+                || ($payload['period'] ?? null) !== $this->period) {
+                $this->release($this->backoff);
+            }
+        } finally {
+            $lock->release();
+        }
     }
 }

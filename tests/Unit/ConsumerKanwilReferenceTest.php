@@ -37,6 +37,40 @@ class ConsumerKanwilReferenceTest extends TestCase
         $this->assertEquals(3750000000.0, $rm['target_os']);
     }
 
+    public function test_cumulative_target_matches_ro_workbook_schedules_through_october(): void
+    {
+        // Expected values are the RO workbook's "Target JG" column with FH3 = 10.
+        $cases = [
+            ['00409222 - Novan Yoga Pratama', 18, 3550000000.0, 168, 24400000000.0],
+            ['00370794 - Fatin Hifzhani Fitri', 18, 3550000000.0, 170, 26250000000.0],
+            ['Lindiawati', 18, 3550000000.0, 72, 14200000000.0],
+            ['00411312', 16, 1700000000.0, 48, 5100000000.0],
+            ['00300861 - RIDHO ARDIANTO', 19, 3700000000.0, 190, 37000000000.0],
+        ];
+
+        foreach ($cases as [$rm, $deb, $os, $expectedDeb, $expectedOs]) {
+            $target = ConsumerKanwilReference::cumulativeTarget($rm, 10, $deb, $os);
+            $this->assertSame($expectedDeb, $target['target_deb'], $rm);
+            $this->assertEquals($expectedOs, $target['target_os'], $rm);
+        }
+    }
+
+    public function test_cumulative_target_is_zero_before_join_month_and_uses_ramp_early(): void
+    {
+        $this->assertSame(
+            ['target_deb' => 0, 'target_os' => 0.0],
+            ConsumerKanwilReference::cumulativeTarget('00411312', 7, 16, 1700000000.0)
+        );
+        $this->assertEquals(
+            ['target_deb' => 32, 'target_os' => 3400000000.0],
+            ConsumerKanwilReference::cumulativeTarget('00374061', 2, 18, 3550000000.0)
+        );
+        $this->assertEquals(
+            ['target_deb' => 0, 'target_os' => 0.0],
+            ConsumerKanwilReference::cumulativeTarget('RM TIDAK DIKENAL', 0, 19, 3700000000.0)
+        );
+    }
+
     public function test_find_rm_returns_null_for_unknown(): void
     {
         $this->assertNull(ConsumerKanwilReference::findRm('UNKNOWN RM NAME XYZ'));

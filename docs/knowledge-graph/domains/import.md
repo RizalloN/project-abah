@@ -9,7 +9,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | command | 8 |
 | file | 163 |
 | function | 2 |
-| method | 2475 |
+| method | 2478 |
 | route | 156 |
 | class | 138 |
 | trait | 7 |
@@ -289,9 +289,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| import -> core (calls) | 833 |
+| import -> core (calls) | 835 |
 | import -> access-control (protected_by) | 803 |
-| import -> core (instantiates) | 416 |
+| import -> core (instantiates) | 418 |
 | import -> core (accepts) | 189 |
 | import -> jobs-snapshots (calls) | 82 |
 | import -> tests (extends) | 52 |
@@ -309,8 +309,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | import -> core (defines_table) | 21 |
 | core -> import (reads_table) | 21 |
 | import -> dashboard-simpanan (writes_table) | 19 |
+| import -> jobs-snapshots (writes_table) | 18 |
 | jobs-snapshots -> import (contains) | 18 |
-| import -> jobs-snapshots (writes_table) | 17 |
 | import -> jobs-snapshots (uses_trait) | 17 |
 | import -> dashboard-pinjaman (reads_table) | 16 |
 | import -> dashboard-harian (calls) | 16 |

@@ -148,6 +148,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
             && config('queue.default') !== 'sync') {
             WarmLandingLoanRiskCacheJob::dispatch($periodScope);
             WarmLandingSmeQuadrantsJob::dispatch($periodScope);
+            WarmKinerjaRmRitelCacheJob::dispatch();
             WarmDashboardSimpananCacheJob::dispatch('micro-readiness', [
                 'period' => $periodScope,
             ]);

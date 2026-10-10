@@ -19,9 +19,9 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class PrognosaWeeklyController extends Controller
 {
-    private const SPREADSHEET_ID = '1qta-IbVG5edMAy36Ku-GCvs_sesfmmXt';
+    private const SPREADSHEET_ID = '1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM';
 
-    private const SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1qta-IbVG5edMAy36Ku-GCvs_sesfmmXt/edit?usp=sharing';
+    private const SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/'.self::SPREADSHEET_ID.'/edit?usp=sharing';
 
     private const REPORT_FIRST_COLUMN = 2; // B
 
@@ -126,10 +126,10 @@ class PrognosaWeeklyController extends Controller
     /** @var array<string, array{label: string, sheet: string}> */
     private const SHEETS = [
         'area' => ['label' => 'Area 6', 'sheet' => 'Area 6'],
-        'madiun' => ['label' => 'KC Madiun', 'sheet' => 'KC Madiun'],
-        'magetan' => ['label' => 'KC Magetan', 'sheet' => 'KC Magetan'],
-        'ngawi' => ['label' => 'KC Ngawi', 'sheet' => 'KC Ngawi'],
-        'ponorogo' => ['label' => 'KC Ponorogo', 'sheet' => 'KC Ponorogo'],
+        'madiun' => ['label' => 'KC Madiun', 'sheet' => 'Madiun'],
+        'magetan' => ['label' => 'KC Magetan', 'sheet' => '2. Magetan'],
+        'ngawi' => ['label' => 'KC Ngawi', 'sheet' => '3. Ngawi'],
+        'ponorogo' => ['label' => 'KC Ponorogo', 'sheet' => 'Ponorogo'],
     ];
 
     public function __construct(private ?DashboardHarianSnapshotService $dashboardHarianSnapshotService = null) {}
@@ -329,13 +329,13 @@ class PrognosaWeeklyController extends Controller
         return sprintf(
             'https://docs.google.com/spreadsheets/d/%s/gviz/tq?%s',
             self::SPREADSHEET_ID,
-            http_build_query(['tqx' => 'out:csv', 'sheet' => $sheetName])
+            http_build_query(['tqx' => 'out:csv', 'sheet' => $sheetName, 'headers' => 0])
         );
     }
 
     private function cacheKey(string $sheetKey): string
     {
-        return 'prognosa_weekly:forecast:v8:source_direct:'.$sheetKey;
+        return 'prognosa_weekly:forecast:v9:'.self::SPREADSHEET_ID.':'.$sheetKey;
     }
 
     /**
@@ -852,13 +852,48 @@ class PrognosaWeeklyController extends Controller
             'dpk_scope' => '',
         ];
         $result = [];
+        $officeKey = null;
+        $officeRowsByLabel = [];
+        foreach ($dailyRowsByKey as $key => $dailyRow) {
+            if (str_contains($key, '__office__')) {
+                $officeLabel = preg_replace('/^[A-Z]\s*\d+\s+/', '', $this->normalizeIndicatorLabel((string) ($dailyRow['label'] ?? '')));
+                $officeRowsByLabel[$officeLabel][] = $key;
+            }
+        }
 
         foreach ($forecastRows as $forecastRow) {
             $number = $this->cleanCell((string) ($forecastRow[0] ?? ''));
             $label = $this->cleanCell((string) ($forecastRow[1] ?? ''));
             $normalizedLabel = $this->normalizeIndicatorLabel($label);
+            $previousContext = $context;
             $context = $this->updateForecastContext($context, $normalizedLabel);
+            if ($context !== $previousContext) {
+                $officeKey = null;
+            }
             $metricKeys = $this->forecastMetricKeys($context, $normalizedLabel);
+            if ($normalizedLabel === '2 OS TOTAL' && ! isset($dailyRowsByKey['total_os'])) {
+                $metricKeys = ['total_os_non_commercial'];
+            }
+            $officeLabel = preg_replace('/^[A-Z]\s*\d+\s+/', '', $normalizedLabel);
+            $officeHeadingKeys = $officeRowsByLabel[$officeLabel] ?? [];
+            if ($officeHeadingKeys !== []) {
+                $officeKey = explode('__office__', $officeHeadingKeys[0], 2)[1];
+                $metricKeys = array_values(array_filter($officeHeadingKeys, function (string $key) use ($context): bool {
+                    $metric = explode('__office__', $key, 2)[0];
+
+                    return $context['section'] === 'pinjaman'
+                        ? str_ends_with($metric, '_'.$context['loan_family'])
+                            && str_starts_with($metric, match ($context['loan_segment']) {
+                                'small' => 'sme_', 'consumer' => 'consumer_', 'micro' => 'micro_', default => '',
+                            })
+                        : $metric === 'simpanan_'.$context['dpk_scope'];
+                }));
+            } elseif (preg_match('/^(?:[A-Z]\s*\d+\s+)?(?:KC|KCP)\s+/', $normalizedLabel) === 1) {
+                $officeKey = '__unmatched__';
+                $metricKeys = [];
+            } elseif ($officeKey !== null) {
+                $metricKeys = array_map(fn (string $key): string => $key.'__office_detail__'.$officeKey, $metricKeys);
+            }
             $isLowerBetter = $context['section'] === 'pinjaman'
                 && in_array($context['loan_family'], ['sml', 'npl'], true);
             $isPercentage = $this->isPercentageIndicator($normalizedLabel);
@@ -1018,12 +1053,13 @@ class PrognosaWeeklyController extends Controller
         if (in_array($label, ['DANA PIHAK KE TIGA', '1 SIMPANAN'], true)) {
             return ['section' => 'dpk', 'loan_family' => '', 'loan_segment' => '', 'dpk_scope' => ''];
         }
-        if (in_array($label, ['RECOVERY DH', '7 REC DH PER SEGMEN'], true)) {
+        if (in_array($label, ['RECOVERY DH', '5 REC DH PER SEGMEN', '7 REC DH PER SEGMEN'], true)) {
             return ['section' => 'recovery', 'loan_family' => '', 'loan_segment' => '', 'dpk_scope' => ''];
         }
 
-        if ($context['section'] === 'pinjaman' && $context['loan_family'] === 'os') {
+        if ($context['section'] === 'pinjaman' && in_array($context['loan_family'], ['os', 'sml', 'npl'], true)) {
             $context['loan_segment'] = match ($label) {
+                'A COMMERCIAL' => 'commercial',
                 'MICRO', 'MICRO TOTAL', 'C MIKRO', 'D MIKRO' => 'micro',
                 'RITEL' => 'retail',
                 'A SME', 'B SME', 'KECIL', 'KECIL KOMERSIAL', 'SMALL', 'SME', 'COMMERCIAL',
@@ -1055,6 +1091,8 @@ class PrognosaWeeklyController extends Controller
     private function forecastMetricKeys(array $context, string $label): array
     {
         $directMetric = match ($label) {
+            '2 OS TOTAL' => 'total_os',
+            'TOTAL OS NON COMMERCIAL' => 'total_os_non_commercial',
             '3 TOTAL SML NON COMMERCIAL' => 'total_sml_pct_non_commercial',
             'TOTAL SML ABS NON COMMERCIAL' => 'total_sml_abs_non_commercial',
             '4 TOTAL NPL NON COMMERCIAL' => 'total_npl_pct_non_commercial',
@@ -1080,7 +1118,7 @@ class PrognosaWeeklyController extends Controller
 
         if ($context['section'] === 'recovery') {
             return match ($label) {
-                'RECOVERY DH', '7 REC DH PER SEGMEN' => ['rec_dh_total'],
+                'RECOVERY DH', '5 REC DH PER SEGMEN', '7 REC DH PER SEGMEN' => ['rec_dh_total'],
                 'RITEL' => ['rec_dh_small'],
                 'MICRO' => ['rec_dh_micro'],
                 default => [],
@@ -1113,14 +1151,18 @@ class PrognosaWeeklyController extends Controller
             'KUPEDES' => ["kupedes_{$family}"],
             'BRIGUNA MIKRO' => ["briguna_mikro_{$family}"],
             'KUR MIKRO' => ["kur_mikro_{$family}"],
-            'KREDIT MIKRO KPP' => ["kur_kpp_{$family}"],
+            'KREDIT MIKRO KPP', 'KUR KPP' => ["kur_kpp_{$family}"],
             'KUR KECIL' => ["kur_kecil_{$family}"],
             'RITEL' => ["sme_{$family}", "consumer_{$family}"],
+            'A COMMERCIAL' => ["commercial_{$family}"],
             'A SME', 'B SME' => ["sme_{$family}"],
             'KECIL', 'KECIL KOMERSIAL' => ["kecil_{$family}"],
+            'KECIL NON CASHCOLL', 'KECIL NON CASHCALL' => ["kecil_non_cashcoll_{$family}"],
+            'CASHCOLL', 'CASHCALL' => ["cashcoll_{$family}"],
             'B KONSUMER', 'C KONSUMER', 'CONSUMER' => ["consumer_{$family}"],
             'BRIGUNA', 'BRIGUNA RITEL' => ["briguna_konsumer_{$family}"],
             'KPR' => ["kpr_{$family}"],
+            'KKB' => ["kkb_{$family}"],
             default => [],
         };
     }
@@ -1291,7 +1333,7 @@ class PrognosaWeeklyController extends Controller
         return match (true) {
             in_array($label, [
                 'PINJAMAN', '2 OS TOTAL', 'DANA PIHAK KE TIGA', '1 SIMPANAN',
-                'RECOVERY DH', '7 REC DH PER SEGMEN',
+                'RECOVERY DH', '5 REC DH PER SEGMEN', '7 REC DH PER SEGMEN',
             ], true) => 'section',
             $number !== '' && $number !== '-' => 'category',
             str_starts_with($label, 'TOTAL ') => 'subtotal',
@@ -1396,10 +1438,13 @@ class PrognosaWeeklyController extends Controller
         $value = str_replace(['%', 'Rp', ' '], '', $value);
 
         if (str_contains($value, ',') && str_contains($value, '.')) {
-            $value = str_replace('.', '', $value);
-            $value = str_replace(',', '.', $value);
+            $value = strrpos($value, ',') > strrpos($value, '.')
+                ? str_replace(',', '.', str_replace('.', '', $value))
+                : str_replace(',', '', $value);
         } elseif (str_contains($value, ',')) {
-            $value = str_replace(',', '.', $value);
+            $value = preg_match('/^-?\d{1,3}(?:,\d{3})+$/', $value) === 1
+                ? str_replace(',', '', $value)
+                : str_replace(',', '.', $value);
         } elseif (substr_count($value, '.') > 1 || preg_match('/^-?\d{1,3}\.\d{3}$/', $value) === 1) {
             $value = str_replace('.', '', $value);
         }

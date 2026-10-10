@@ -2,14 +2,19 @@
 
 namespace App\Support;
 
+use App\Jobs\CaptureConsumerRmPositionHistoryJob;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 class ConsumerRmRealizationCalculator
 {
-    public const FORMULA_VERSION = 'consumer-cif-event-v2';
+    public const FORMULA_VERSION = 'consumer-ro-hybrid-v3';
+
+    /** Daily positions skip weekends and holidays; beyond this the booking day is unobserved. */
+    private const BOOKING_POSITION_MAX_GAP_DAYS = 4;
 
     public const UNASSIGNED_RM = 'PN BELUM TERISI';
 
@@ -17,8 +22,8 @@ class ConsumerRmRealizationCalculator
      * Calculate monthly Consumer realization from the current nominative and
      * the preceding month-end nominative. Each realized account is counted
      * once. Briguna uses the complete product/CIF balance movement at the
-     * first available position for each current-month realization event.
-     * KPR remains a separate gross booked-plafond calculation.
+     * booking position, or the settled facility when no daily position near
+     * the booking exists (Kanwil RO workbook). KPR remains gross plafond.
      *
      * @return array<string, array<string, mixed>>
      */
@@ -195,6 +200,8 @@ class ConsumerRmRealizationCalculator
             );
             $currentMetricsByCif[$metricKey]['account_first_period'][$accountKey] ??=
                 (string) ($row->first_seen_period ?? $period);
+            $currentMetricsByCif[$metricKey]['account_realization'][$accountKey] ??=
+                (string) ($row->realization_date ?? $period);
         }
 
         if ($currentMetricsByCif === []) {
@@ -272,12 +279,16 @@ class ConsumerRmRealizationCalculator
             }
         }
 
-        // Build one Briguna value per observed product/CIF event. The prior
-        // implementation paired a new account with only one old account; that
-        // drifts whenever a CIF owns several facilities. The business measure
-        // is the complete CIF exposure at the event position minus the complete
-        // product/CIF exposure at the preceding month-end.
+        // Briguna Nett Disbursement, reverse engineered against the Kanwil RO
+        // workbook ("Form Realisasi Briguna 2026 - Kuadran RM") and RO daily
+        // figures: the complete product/CIF exposure at the booking position
+        // minus the product/CIF exposure at the preceding month-end. When no
+        // daily position exists near the booking (month-end-only history), that
+        // exposure would also absorb a month of unrelated instalments, so the
+        // booking is paired with the facility it settled instead, the way the
+        // workbook's XLOOKUP resolves the first matching source row.
         $brigunaEvents = [];
+        $settledPreviousAccounts = [];
         foreach ($currentMetricsByCif as $metric) {
             $product = $this->canonicalProduct((string) $metric['produk']);
             if ($product !== 'BRIGUNA-KONSUMER') {
@@ -294,6 +305,11 @@ class ConsumerRmRealizationCalculator
                     'event_period' => $eventPeriod,
                     'accounts' => [],
                 ];
+                $brigunaEvents[$eventKey]['realization_dates'][] = substr(
+                    (string) ($metric['account_realization'][$accountKey] ?? $eventPeriod),
+                    0,
+                    10
+                );
                 $brigunaEvents[$eventKey]['accounts'][$accountKey] = max(
                     (float) ($brigunaEvents[$eventKey]['accounts'][$accountKey] ?? 0.0),
                     (float) $currentPlafon
@@ -316,6 +332,25 @@ class ConsumerRmRealizationCalculator
             $event['booking_count'] = count($event['accounts']);
             // Realisasi Baru is gross booked plafond. Nett Disbursement only
             // applies to Suplesi, using aggregate product/CIF baki debet.
+            if ($baselineAccounts !== [] && $this->bookingPositionGapDays($event) > self::BOOKING_POSITION_MAX_GAP_DAYS) {
+                $event['net_disbursement'] = 0.0;
+                foreach ($event['accounts'] as $accountKey => $bookedPlafon) {
+                    $previousAccount = $this->settledPreviousAccount(
+                        $baselineAccounts,
+                        $eventAccounts,
+                        (string) $accountKey,
+                        $settledPreviousAccounts[$event['clean_cif']] ?? []
+                    );
+                    $previousOs = 0.0;
+                    if ($previousAccount !== null) {
+                        $settledPreviousAccounts[$event['clean_cif']][$previousAccount] = true;
+                        $previousOs = (float) ($baselineAccounts[$previousAccount]['os'] ?? 0.0);
+                    }
+                    $event['net_disbursement'] += max(0.0, (float) $bookedPlafon - $previousOs);
+                }
+
+                continue;
+            }
             $event['net_disbursement'] = $baselineAccounts === []
                 ? $event['booking_plafon']
                 : max(
@@ -425,6 +460,53 @@ class ConsumerRmRealizationCalculator
         }
 
         return $metricsByGroup;
+    }
+
+    /** @param  array{event_period: string, realization_dates?: array<int, string>}  $event */
+    private function bookingPositionGapDays(array $event): int
+    {
+        $dates = array_filter($event['realization_dates'] ?? [], static fn (string $date): bool => $date !== '');
+        if ($dates === []) {
+            return 0;
+        }
+
+        return max(0, (int) Carbon::parse(min($dates))->diffInDays(Carbon::parse($event['event_period']), false));
+    }
+
+    /**
+     * Previous-month facility that a Briguna booking settled: the same account
+     * when it was rebooked, otherwise the first source row (import order) of
+     * the CIF that no longer appears at the booking's first position.
+     *
+     * @param  array<string, array{os: float, lookup_order: string}>  $baselineAccounts
+     * @param  array<string, array{os: float, lookup_order: string}>  $eventAccounts
+     * @param  array<string, bool>  $usedAccounts
+     */
+    private function settledPreviousAccount(
+        array $baselineAccounts,
+        array $eventAccounts,
+        string $accountKey,
+        array $usedAccounts
+    ): ?string {
+        if (isset($baselineAccounts[$accountKey]) && ! isset($usedAccounts[$accountKey])) {
+            return $accountKey;
+        }
+
+        $candidates = array_filter(
+            $baselineAccounts,
+            static fn (array $baseline, int|string $previousAccount): bool => ! isset($eventAccounts[$previousAccount])
+                && ! isset($usedAccounts[$previousAccount])
+                && (float) ($baseline['os'] ?? 0.0) > 0.0,
+            ARRAY_FILTER_USE_BOTH
+        );
+        uasort($candidates, static fn (array $left, array $right): int => strcmp(
+            (string) ($left['lookup_order'] ?? ''),
+            (string) ($right['lookup_order'] ?? '')
+        ));
+
+        $selected = array_key_first($candidates);
+
+        return $selected === null ? null : (string) $selected;
     }
 
     /**
@@ -557,19 +639,27 @@ class ConsumerRmRealizationCalculator
 
         try {
             $archive = app(ConsumerRmPositionHistoryStore::class);
-            if ($archive->hasCapture($period) && $archive->hasCapture($previousEnd)) {
+            $periodCaptured = $archive->hasCapture($period);
+            $previousCaptured = $archive->hasCapture($previousEnd);
+            if ($archive->schemaReady() && Schema::hasTable('daily_loan_dinamis')) {
                 $archivePeriods = $archive->availablePeriods($periodStart, $period);
-                $rawPeriods = Schema::hasTable('daily_loan_dinamis')
-                    ? DB::table('daily_loan_dinamis')
-                        ->whereBetween('periode', [$periodStart, $period])
-                        ->distinct()
-                        ->orderBy('periode')
-                        ->pluck('periode')
-                        ->map(static fn ($value): string => substr((string) $value, 0, 10))
-                        ->all()
-                    : [];
+                $rawPeriods = DB::table('daily_loan_dinamis')
+                    ->whereBetween('periode', [$periodStart, $period])
+                    ->distinct()
+                    ->orderBy('periode')
+                    ->pluck('periode')
+                    ->map(static fn ($value): string => substr((string) $value, 0, 10))
+                    ->all();
+                $missingPeriods = array_values(array_diff($rawPeriods, $archivePeriods));
+                if (! $previousCaptured
+                    && DB::table('daily_loan_dinamis')->where('periode', $previousEnd)->exists()) {
+                    $missingPeriods[] = $previousEnd;
+                }
+                // A skipped post-import sync leaves gaps that force this read
+                // onto the full nominative. Restore them off the request path.
+                $this->queueMissingCaptures($missingPeriods);
 
-                if (array_diff($rawPeriods, $archivePeriods) === []) {
+                if ($periodCaptured && $previousCaptured && $missingPeriods === []) {
                     return [
                         'table' => ConsumerRmPositionHistoryStore::HISTORY_TABLE,
                         'period' => 'periode',
@@ -632,6 +722,18 @@ class ConsumerRmRealizationCalculator
             'initiator' => $initiator,
             'lookup_order' => $lookupOrder,
         ];
+    }
+
+    /** @param  array<int, string>  $periods */
+    private function queueMissingCaptures(array $periods): void
+    {
+        foreach (array_unique($periods) as $missingPeriod) {
+            // One request per period per window keeps a failing capture from
+            // being re-queued by every dashboard read.
+            if (Cache::add('consumer_rm_capture_requested:'.$missingPeriod, true, now()->addMinutes(30))) {
+                CaptureConsumerRmPositionHistoryJob::dispatch($missingPeriod);
+            }
+        }
     }
 
     private function resolvePreviousMonthEndPeriod(

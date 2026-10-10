@@ -29,6 +29,7 @@ class KinerjaRmMikroReportController extends Controller
     private const KUR_RITEL_DESCRIPTION = 'Kredit Mikro - KUR Ritel 2015';
 
     private const REPORT_CATEGORIES = [
+        'nett_disbursement' => 'Nett Disbursement',
         'per_uker' => 'Per UKER',
         'per_rm' => 'Per RM',
         'series_bulanan' => 'Series Bulanan',
@@ -38,6 +39,7 @@ class KinerjaRmMikroReportController extends Controller
     ];
 
     private const MANTRI_REPORT_CATEGORIES = [
+        'nett_disbursement' => 'Nett Disbursement',
         'produktivitas_mantri' => 'Produktivitas per Mantri',
         'kuadran' => 'Kuadran',
         'unit_pemutus' => 'Unit per Pemutus',
@@ -191,6 +193,7 @@ class KinerjaRmMikroReportController extends Controller
         }
 
         return match ($category) {
+            'nett_disbursement' => $this->nettWorkbookPayload($period, false),
             'per_rm' => $this->perRmPayload($period, true),
             'series_bulanan' => $this->seriesBulananPayload($period),
             'series_harian' => $this->seriesHarianPayload($period),
@@ -198,6 +201,64 @@ class KinerjaRmMikroReportController extends Controller
             'per_tiering' => $this->tieringPayload($period),
             default => $this->perUkerPayload($period),
         };
+    }
+
+    private function nettWorkbookPayload(string $period, bool $mantri): array
+    {
+        $reference = app(\App\Support\MicroRmRosterReference::class);
+        $referenceVersion = $mantri ? 'mantri' : $reference->fingerprint();
+
+        return Cache::remember($this->cacheKey('nett_workbook_v4-sdm-offices', $period, [$referenceVersion, $mantri ? 'mantri' : 'rm']), 600, function () use ($period, $mantri, $reference): array {
+            if (! $mantri) {
+                $scope = UserBranchScope::current();
+                $roster = collect($reference->people($period, $this->landingKurRmRoster()))->filter(fn (array $person): bool => $scope === null
+                    || $this->normalizeKey($person['branch']) === $this->normalizeKey($scope['upper_label']))->values()->all();
+                $rows = $this->snapshotAggregates($period, ['rm'])->values()->map(function (array $row): array {
+                    $identity = trim((string) ($row['rm'] ?? ''));
+                    [$pn, $name] = preg_match('/^\d+$/', $identity)
+                        ? [$identity, ''] : $this->splitRm($identity);
+
+                    return array_merge($row, ['pn' => $pn, 'nama' => $name]);
+                })->all();
+                $rm = app(\App\Support\MicroRmNettWorkbook::class)->build($rows, $roster, $scope['label'] ?? 'Area 6', $period);
+                $rm['reference_sources'] = collect($reference->data()['sources'])->filter(fn (array $source): bool => $scope === null
+                    || $source['branch'] === $scope['upper_label'])->values()->all();
+
+                return ['rows' => [], 'total' => [], 'nett_workbook' => ['rmKurProductivity' => $rm]];
+            }
+            $data = $this->mantriProductivityPayload($period);
+            $scope = UserBranchScope::current();
+            $roster = collect($this->activeMantriRosterState()['people'])->filter(fn (array $person): bool => $scope === null
+                || $this->normalizeKey($person['branch']) === $this->normalizeKey($scope['upper_label']));
+            $employment = collect();
+            if (Schema::hasTable('brihc_pemasar')) {
+                $columns = array_values(array_intersect(['pernr', 'pn_mantri', 'positiondesc', 'esgdesc'], Schema::getColumnListing('brihc_pemasar')));
+                $employment = DB::table('brihc_pemasar')->select($columns)->get()->keyBy(fn ($row): string => $this->brihcPemasarMantriKey($row));
+            }
+            $roster = $roster->map(function (array $person) use ($employment): array {
+                $reference = $employment->get($person['pn']);
+                $position = $this->normalizeKey((string) ($reference->positiondesc ?? ''));
+                $status = $this->normalizeKey((string) ($reference->esgdesc ?? ''));
+                $person['category'] = match (true) {
+                    $position === 'MANTRI BRIGUNA' => 'briguna',
+                    str_contains($status, 'KONTRAK') => 'contract',
+                    str_contains($status, 'PT') => 'pt',
+                    default => 'unknown',
+                };
+
+                return $person;
+            })->values()->all();
+            $territories = Schema::hasTable('wilayah_mbm')
+                ? DB::table('wilayah_mbm')->select('bc', 'nama_uker', 'cabang', 'nama_mbm')->get()->map(fn ($row): array => (array) $row)->all()
+                : [];
+            $scopedRows = collect($data['rows'])->filter(fn (array $row): bool => $scope === null
+                || $this->normalizeKey($row['cabang']) === $this->normalizeKey($scope['upper_label']))->values()->all();
+            $workbook = app(\App\Support\MicroNettWorkbook::class)->mantri($scopedRows, $roster, $territories, $period, (int) ($data['working_days'] ?? $this->networkDays(Carbon::parse($period)->startOfMonth()->toDateString(), $period)));
+
+            $workbook['total']['branch'] = $scope['label'] ?? 'Area 6';
+
+            return ['rows' => [], 'total' => [], 'nett_workbook' => ['mantriPerformance' => $workbook]];
+        });
     }
 
     private function perUkerPayload(string $period): array
@@ -1042,6 +1103,10 @@ class KinerjaRmMikroReportController extends Controller
     {
         if ($period === null) {
             return ['rows' => [], 'total' => [], 'working_days' => 0];
+        }
+
+        if ($category === 'nett_disbursement') {
+            return $this->nettWorkbookPayload($period, true);
         }
 
         $cacheFingerprint = $category === 'extreme_low_mantri'

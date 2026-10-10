@@ -102,6 +102,9 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         $this->assertSame(4, (int) Cache::get('report_cache_version:pinjaman'));
         \Illuminate\Support\Facades\Bus::assertDispatched(\App\Jobs\WarmLandingSmeQuadrantsJob::class, fn ($job): bool =>
             $job->period === '2026-05-06' && $job->queue === 'default');
+        // Warmed after the performance rebuild bumped the report version.
+        \Illuminate\Support\Facades\Bus::assertDispatched(\App\Jobs\WarmKinerjaRmRitelCacheJob::class, fn ($job): bool =>
+            $job->queue === 'reports-low' && str_starts_with($job->uniqueId(), 'report-v'));
         $this->assertTrue($this->sourceSignatures->isFresh(
             'daily_loan_dinamis',
             'performance_rm_snapshots',

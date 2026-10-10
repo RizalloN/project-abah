@@ -89,6 +89,57 @@ class LandingLoanRiskCacheServiceTest extends TestCase
         $this->assertSame(3, $payload['area_totals']['kts_count']);
     }
 
+    public function test_empty_source_rebuild_preserves_last_valid_metrics_and_generation(): void
+    {
+        $service = app(LandingLoanRiskCacheService::class);
+        $valid = $service->rebuild('2026-08-29');
+        $generation = $service->generation();
+        ReportCacheVersion::bump('pinjaman');
+        DB::table('daily_loan_dinamis')->where('cabang1', '<>', 'KC Banyuwangi')->delete();
+
+        $result = $service->rebuild('2026-08-29');
+
+        $this->assertTrue($result['available']);
+        $this->assertTrue($result['refresh_pending']);
+        $this->assertSame($valid['area_totals'], $result['area_totals']);
+        $this->assertSame($generation, $service->generation());
+        $this->assertSame($valid['area_totals'], $service->snapshot('2026-08-29')['area_totals']);
+    }
+
+    public function test_missing_period_is_unavailable_without_publishing_empty_cache(): void
+    {
+        $service = app(LandingLoanRiskCacheService::class);
+        $generation = $service->generation();
+
+        $result = $service->rebuild('2026-08-30');
+
+        $this->assertFalse($result['available']);
+        $this->assertTrue($result['refresh_pending']);
+        $this->assertSame($generation, $service->generation());
+        $this->assertFalse(Cache::has('dashboard_simpanan:loan_risk:v1:2026-08-30:stable'));
+    }
+
+    public function test_existing_zero_balance_accounts_produce_valid_zero_risk(): void
+    {
+        DB::table('daily_loan_dinamis')->update([
+            'baki_debet1' => 0,
+            'tunggakan_pokok' => 0,
+            'tunggakan_bunga' => 0,
+            'tunggakan_penalti' => 0,
+        ]);
+        $service = app(LandingLoanRiskCacheService::class);
+        $generation = $service->generation();
+
+        $result = $service->rebuild('2026-08-29');
+
+        $this->assertTrue($result['available']);
+        $this->assertFalse($result['refresh_pending']);
+        $this->assertSame(0, $result['area_totals']['kts_count']);
+        $this->assertSame(0.0, $result['area_totals']['small_arrears_amount']);
+        $this->assertGreaterThan($generation, $service->generation());
+        $this->assertTrue($service->snapshot('2026-08-29')['available']);
+    }
+
     public function test_controller_ranking_uses_materialized_cache_and_preserves_scope_rules(): void
     {
         app(LandingLoanRiskCacheService::class)->rebuild('2026-08-29');

@@ -2319,6 +2319,51 @@ final class ConsumerKanwilReference
     ];
 
     /**
+     * Cumulative target exceptions from "Form Realisasi Briguna 2026 (Kuadran
+     * RM) ver. RO", sheet RM column "Target JG" (FH/FI). Monthly quadrants
+     * keep the full monthly target; only the year-to-date target differs:
+     * - ramp_months: the first N months use the ramp target (16 Deb / Rp1,7 M).
+     * - start_month: months before the RM joined carry no target.
+     */
+    public const TARGET_SCHEDULES = [
+        '00020853' => ['start_month' => 7],  // Lindiawati
+        '00374061' => ['ramp_months' => 6, 'ramp_target_deb' => 16, 'ramp_target_os' => 1700000000.0], // Novan Yoga Pratama
+        '00370794' => ['ramp_months' => 5, 'ramp_target_deb' => 16, 'ramp_target_os' => 1700000000.0], // Fatin Hifzhani Fitri
+        '00409343' => ['start_month' => 7],  // Ellysa Tria Ferantika
+        '00402291' => ['start_month' => 3],  // Ivana Inka Putri
+        '00409344' => ['start_month' => 7],  // Ahmad Khowiyun Nur Aziiz
+        '00411312' => ['start_month' => 8],  // Fairus Mumtazah
+        '00411322' => ['start_month' => 8],  // Rahma Kurniawati
+    ];
+
+    /**
+     * Year-to-date target through $throughMonth, matching the RO workbook.
+     *
+     * @return array{target_deb: int, target_os: float}
+     */
+    public static function cumulativeTarget(
+        string $identifier,
+        int $throughMonth,
+        int $monthlyTargetDeb,
+        float $monthlyTargetOs
+    ): array {
+        $pn = self::findRm($identifier)['pn'] ?? null;
+        $schedule = $pn !== null ? (self::TARGET_SCHEDULES[$pn] ?? []) : [];
+        $startMonth = (int) ($schedule['start_month'] ?? 1);
+        $rampMonths = (int) ($schedule['ramp_months'] ?? 0);
+        $targetDeb = 0;
+        $targetOs = 0.0;
+
+        for ($month = max(1, $startMonth); $month <= $throughMonth; $month++) {
+            $inRamp = $month <= $rampMonths;
+            $targetDeb += $inRamp ? (int) $schedule['ramp_target_deb'] : $monthlyTargetDeb;
+            $targetOs += $inRamp ? (float) $schedule['ramp_target_os'] : $monthlyTargetOs;
+        }
+
+        return ['target_deb' => $targetDeb, 'target_os' => $targetOs];
+    }
+
+    /**
      * Look up official RM target by PN or Name.
      *
      * @return array{target_deb: int, target_os: float, jg: string}|null

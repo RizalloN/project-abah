@@ -324,6 +324,20 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $this->assertSame(350000000.0 + 449391868.0, $metric['realisasi_os']);
     }
 
+    public function test_briguna_month_end_only_history_nets_only_the_settled_facility(): void
+    {
+        // Booked on the 5th but first observed at month-end: a month of the
+        // still-open facility's instalments must not reduce the RO nett.
+        $this->insertDailyLoanRow('OPEN', 'BRIGUNAKONSUMER', 200000000, 150000000, 'CIF-ME', '2026-04-30', tglRealisasi: '2024-01-10', uniqueId: 'row-a');
+        $this->insertDailyLoanRow('SETTLED', 'BRIGUNAKONSUMER', 120000000, 90000000, 'CIF-ME', '2026-04-30', tglRealisasi: '2025-01-10', uniqueId: 'row-b');
+        $this->insertDailyLoanRow('OPEN', 'BRIGUNAKONSUMER', 200000000, 145000000, 'CIF-ME', '2026-05-31', tglRealisasi: '2024-01-10');
+        $this->insertDailyLoanRow('NEW', 'BRIGUNAKONSUMER', 300000000, 297000000, 'CIF-ME', '2026-05-31', tglRealisasi: '2026-05-05');
+
+        $metric = collect(app(ConsumerRmRealizationCalculator::class)->calculate('2026-05-31'))->first();
+        $this->assertSame(1, $metric['suplesi_deb']);
+        $this->assertSame(210000000.0, $metric['realisasi_os']);
+    }
+
     public function test_briguna_keeps_facility_estimate_when_origination_day_is_unavailable(): void
     {
         $this->insertDailyLoanRow('OLD', 'BRIGUNAKONSUMER', 300000000, 255851152, 'CIF-MISSING', '2026-06-30', tglRealisasi: '2024-02-24');

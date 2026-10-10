@@ -6,12 +6,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 20 |
+| file | 24 |
 | function | 14 |
-| method | 300 |
+| method | 305 |
 | unresolved_symbol | 22 |
 | route | 24 |
-| class | 17 |
+| class | 21 |
 | table | 2 |
 
 ## Main Hubs
@@ -88,6 +88,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `DriveAsixUploadUiContractTest` - `tests/Unit/DriveAsixUploadUiContractTest.php`
 - `DriveAsixVersionConflictException` - `app/Exceptions/DriveAsixVersionConflictException.php`
 - `DriveAsixWorkbookException` - `app/Exceptions/DriveAsixWorkbookException.php`
+- `MicroNettWorkbook` - `app/Support/MicroNettWorkbook.php`
+- `MicroNettWorkbookTest` - `tests/Unit/MicroNettWorkbookTest.php`
+- `MicroRmNettWorkbook` - `app/Support/MicroRmNettWorkbook.php`
+- `MicroRmNettWorkbookTest` - `tests/Unit/MicroRmNettWorkbookTest.php`
 - `OfficeDocumentPreviewService` - `app/Services/DriveAsix/OfficeDocumentPreviewService.php`
 - `OnlyOfficeDocumentStorageService` - `app/Services/DriveAsix/OnlyOfficeDocumentStorageService.php`
 - `OnlyOfficeEditorService` - `app/Services/DriveAsix/OnlyOfficeEditorService.php`
@@ -105,23 +109,24 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| bank-pipeline -> core (calls) | 169 |
+| bank-pipeline -> core (calls) | 170 |
 | bank-pipeline -> access-control (protected_by) | 114 |
 | bank-pipeline -> core (instantiates) | 64 |
 | bank-pipeline -> core (accepts) | 64 |
 | core -> bank-pipeline (references_route) | 28 |
 | bank-pipeline -> access-control (calls) | 11 |
-| bank-pipeline -> core (extends) | 8 |
+| bank-pipeline -> core (extends) | 10 |
 | bank-pipeline -> core (renders) | 6 |
 | bank-pipeline -> tests (calls) | 4 |
 | tests -> bank-pipeline (instantiates) | 3 |
+| tests -> bank-pipeline (contains) | 3 |
 | bank-pipeline -> tests (extends) | 3 |
 | bank-pipeline -> access-control (defines_table) | 2 |
 | database -> bank-pipeline (defines_table) | 2 |
 | database -> bank-pipeline (alters_table) | 2 |
 | marketshare -> bank-pipeline (calls) | 2 |
+| presentation -> bank-pipeline (instantiates) | 2 |
 | bank-pipeline -> marketshare (contains) | 2 |
-| tests -> bank-pipeline (contains) | 2 |
 | core -> bank-pipeline (accepts) | 1 |
 | core -> bank-pipeline (calls) | 1 |
 | bank-pipeline -> core (references_route) | 1 |
@@ -130,7 +135,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | jobs-snapshots -> bank-pipeline (calls) | 1 |
 | bank-pipeline -> access-control (instantiates) | 1 |
 | kpi -> bank-pipeline (references_route) | 1 |
-| presentation -> bank-pipeline (instantiates) | 1 |
 | bank-pipeline -> core (uses_trait) | 1 |
+| bank-pipeline -> dashboard-pinjaman (contains) | 1 |
 | bank-pipeline -> kpi (contains) | 1 |
 | platform -> bank-pipeline (references_route) | 1 |

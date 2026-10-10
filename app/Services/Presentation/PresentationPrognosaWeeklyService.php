@@ -19,19 +19,19 @@ use Throwable;
 
 class PresentationPrognosaWeeklyService
 {
-    private const SPREADSHEET_ID = '1qta-IbVG5edMAy36Ku-GCvs_sesfmmXt';
+    public const SPREADSHEET_ID = '1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM';
 
-    private const CACHE_KEY = 'presentation:prognosa_weekly:v5';
+    private const CACHE_KEY = 'presentation:prognosa_weekly:v6:'.self::SPREADSHEET_ID;
 
-    private const STABLE_CACHE_KEY = 'presentation:prognosa_weekly:stable:v5';
+    private const STABLE_CACHE_KEY = 'presentation:prognosa_weekly:stable:v6:'.self::SPREADSHEET_ID;
 
     /** @var array<string, array<int, string>> */
     private const SHEETS = [
         'area6' => ['Area 6', 'Report AREA', 'area'],
-        'KC MADIUN' => ['KC Madiun', 'MADIUN', 'madiun'],
-        'KC MAGETAN' => ['KC Magetan', 'MAGETAN', 'magetan'],
-        'KC NGAWI' => ['KC Ngawi', 'NGAWI', 'ngawi'],
-        'KC PONOROGO' => ['KC Ponorogo', 'PONOROGO', 'ponorogo'],
+        'KC MADIUN' => ['Madiun', 'KC Madiun', 'MADIUN', 'madiun'],
+        'KC MAGETAN' => ['2. Magetan', 'KC Magetan', 'MAGETAN', 'magetan'],
+        'KC NGAWI' => ['3. Ngawi', 'KC Ngawi', 'NGAWI', 'ngawi'],
+        'KC PONOROGO' => ['Ponorogo', 'KC Ponorogo', 'PONOROGO', 'ponorogo'],
     ];
 
     /** @return array<string, mixed> */
@@ -190,7 +190,7 @@ class PresentationPrognosaWeeklyService
     {
         return (string) config(
             'services.presentation_prognosa.local_path',
-            storage_path('app/private/presentation/prognosa-weekly.xlsx')
+            storage_path('app/private/presentation/prognosa-weekly-'.self::SPREADSHEET_ID.'.xlsx')
         );
     }
 
@@ -228,6 +228,8 @@ class PresentationPrognosaWeeklyService
             File::ensureDirectoryExists(dirname($targetPath));
             if (! @copy($sourcePath, $targetPath)) {
                 report(new RuntimeException('Fallback lokal Prognosa Weekly tidak dapat diperbarui.'));
+            } else {
+                file_put_contents($targetPath.'.source', self::SPREADSHEET_ID, LOCK_EX);
             }
         } catch (Throwable $exception) {
             report($exception);
@@ -284,6 +286,10 @@ class PresentationPrognosaWeeklyService
 
     private function localWorkbookMatchesCurrentSource(string $path): bool
     {
+        if (! is_file($path.'.source') || trim((string) file_get_contents($path.'.source')) !== self::SPREADSHEET_ID) {
+            return false;
+        }
+
         try {
             $reader = IOFactory::createReaderForFile($path);
             $sheetNames = $reader->listWorksheetNames($path);
@@ -303,7 +309,7 @@ class PresentationPrognosaWeeklyService
         return sprintf(
             'https://docs.google.com/spreadsheets/d/%s/gviz/tq?%s',
             self::SPREADSHEET_ID,
-            http_build_query(['tqx' => 'out:csv', 'sheet' => $sheetName])
+            http_build_query(['tqx' => 'out:csv', 'sheet' => $sheetName, 'headers' => 0])
         );
     }
 
@@ -760,12 +766,15 @@ class PresentationPrognosaWeeklyService
 
         $recoveryRow = $this->firstCsvRowByLabels(
             $matrix,
-            ['7 REC DH PER SEGMEN', 'RECOVERY DH'],
+            ['5 REC DH PER SEGMEN', '7 REC DH PER SEGMEN', 'RECOVERY DH'],
             $nplTotal + 1,
             $lastRow,
             $labelColumn
         );
         $rows['recovery'] = $recoveryRow === null ? [] : [$recoveryRow];
+        if ($recoveryRow !== null) {
+            $nplEnd = min($nplEnd, $recoveryRow - 1);
+        }
 
         $sections = [
             'os' => [$osStart, $osEnd],
@@ -789,8 +798,17 @@ class PresentationPrognosaWeeklyService
 
         foreach ($sections as $suffix => [$start, $end]) {
             foreach ($creditRows as $metric => $labels) {
-                $row = $this->firstCsvRowByLabels($matrix, $labels, $start, $end, $labelColumn);
-                $rows["{$metric}_{$suffix}"] = $row === null ? [] : [$row];
+                $matchedRows = $this->csvRowsByLabels(
+                    $matrix,
+                    $metric === 'sme_non_cashcoll' ? ['KECIL NON CASHCOLL'] : $labels,
+                    $start,
+                    $end,
+                    $labelColumn
+                );
+                if ($metric === 'sme_non_cashcoll' && $matchedRows === []) {
+                    $matchedRows = $this->csvRowsByLabels($matrix, ['KECIL'], $start, $end, $labelColumn);
+                }
+                $rows["{$metric}_{$suffix}"] = $matchedRows;
             }
         }
 
@@ -963,7 +981,9 @@ class PresentationPrognosaWeeklyService
         $value = trim($value, "() \t\n\r\0\x0B");
         $value = str_replace(['%', 'Rp', ' '], '', $value);
 
-        if (str_contains($value, ',') && str_contains($value, '.')) {
+        if (preg_match('/^-?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/', $value) === 1) {
+            $value = str_replace(',', '', $value);
+        } elseif (str_contains($value, ',') && str_contains($value, '.')) {
             $value = str_replace('.', '', $value);
             $value = str_replace(',', '.', $value);
         } elseif (str_contains($value, ',')) {

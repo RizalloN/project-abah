@@ -180,6 +180,11 @@ final class ConsumerRmPositionHistoryStore
         }
     }
 
+    public function schemaReady(): bool
+    {
+        return $this->archiveSchemaReady();
+    }
+
     public function hasCapture(string $period): bool
     {
         $period = $this->normalizePeriod($period);

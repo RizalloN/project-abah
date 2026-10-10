@@ -450,6 +450,13 @@ final class LandingConsumerOperationalService
             if (is_array($cached)) {
                 $payloads->put($key, $cached);
             } else {
+                $stable = ! $forceRefresh ? Cache::get($this->stableCacheKey((string) $key)) : null;
+                if (is_array($stable) && ! empty($stable['available'])) {
+                    $stable['stale'] = true;
+                    $payloads->put($key, $stable);
+                    $this->deferPipelineRefresh($branchScope, false);
+                    continue;
+                }
                 $pending->put($key, $source);
             }
         }
@@ -505,6 +512,7 @@ final class LandingConsumerOperationalService
                         'fetched_at' => null,
                     ]);
                 }
+                Cache::put($this->cacheKey((string) $key), $payloads->get($key), now()->addSeconds(30));
             }
         }
 
@@ -541,6 +549,14 @@ final class LandingConsumerOperationalService
             return $cached;
         }
 
+        $stable = ! $forceRefresh ? Cache::get($this->stableCacheKey((string) $source['key'])) : null;
+        if (is_array($stable) && ! empty($stable['available'])) {
+            $stable['stale'] = true;
+            $this->deferPipelineRefresh($branchScope, true);
+
+            return $stable;
+        }
+
         try {
             $response = Http::connectTimeout(5)
                 ->timeout(20)
@@ -559,11 +575,12 @@ final class LandingConsumerOperationalService
             if (is_array($stable)) {
                 $stable['stale'] = true;
                 $stable['error'] = $exception->getMessage();
+                Cache::put($cacheKey, $stable, now()->addSeconds(30));
 
                 return $stable;
             }
 
-            return [
+            $empty = [
                 'visible' => true,
                 'key' => $source['key'],
                 'branch_key' => $source['branch_key'],
@@ -580,7 +597,32 @@ final class LandingConsumerOperationalService
                 'rows' => [],
                 'fetched_at' => null,
             ];
+            Cache::put($cacheKey, $empty, now()->addSeconds(30));
+
+            return $empty;
         }
+    }
+
+    private function deferPipelineRefresh(?array $branchScope, bool $kpr): void
+    {
+        $pendingKey = 'landing:consumer:external-refresh:'.($kpr ? 'kpr' : 'institutions').':'.($branchScope['key'] ?? 'area');
+        if (! Cache::add($pendingKey, true, now()->addMinutes(2))) {
+            return;
+        }
+
+        defer(function () use ($branchScope, $kpr, $pendingKey): void {
+            try {
+                if ($kpr) {
+                    $this->kprPipelinePayload($branchScope, true);
+                } else {
+                    $this->pipelinePayload($branchScope, true);
+                }
+            } catch (Throwable $exception) {
+                logger()->warning('Refresh pipeline Konsumer gagal.', ['error' => $exception->getMessage()]);
+            } finally {
+                Cache::forget($pendingKey);
+            }
+        }, $pendingKey, true);
     }
 
     /** @param array<string, mixed>|null $branchScope */

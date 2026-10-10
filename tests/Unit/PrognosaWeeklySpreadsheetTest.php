@@ -132,7 +132,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         $this->assertSame(1, preg_match('/<select[^>]+id="prognosa-sheet"[^>]*>/', $html, $matches));
         $this->assertStringContainsString('disabled', $matches[0]);
         $this->assertStringNotContainsString('onchange=', $matches[0]);
-        Http::assertSent(fn ($request) => $this->requestedSheetName($request->url()) === 'KC Madiun');
+        Http::assertSent(fn ($request) => $this->requestedSheetName($request->url()) === 'Madiun');
         Http::assertSentCount(1);
     }
 
@@ -190,7 +190,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         $this->assertSame('406', data_get($data, 'rows.0.cells.9.value'));
         $this->assertStringContainsString('name="week" value="5"', $html);
         $this->assertStringContainsString(
-            '1qta-IbVG5edMAy36Ku-GCvs_sesfmmXt',
+            '1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM',
             $data['spreadsheetUrl']
         );
     }
@@ -218,7 +218,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         $this->assertSame(2, $data['activeForecastWeek']);
         $this->assertSame('1. Simpanan', data_get($data, 'rows.0.label'));
         $this->assertSame('222', data_get($data, 'rows.0.cells.9.value'));
-        Http::assertSent(fn ($request) => $this->requestedSheetName($request->url()) === 'KC Madiun');
+        Http::assertSent(fn ($request) => $this->requestedSheetName($request->url()) === 'Madiun');
     }
 
     public function test_weekly_prognosa_ignores_an_invalid_week_override(): void
@@ -522,6 +522,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
     public function test_presentation_falls_back_to_last_local_workbook_when_drive_is_unavailable(): void
     {
         $path = $this->presentationPrognosaFixture();
+        file_put_contents($path.'.source', '1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM');
         config(['services.presentation_prognosa.local_path' => $path]);
         Http::fake([
             'docs.google.com/*' => Http::response('', 503),
@@ -531,6 +532,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
             $payload = app(PresentationPrognosaWeeklyService::class)->payload(true);
         } finally {
             @unlink($path);
+            @unlink($path.'.source');
         }
 
         $this->assertTrue((bool) data_get($payload, 'meta.available'));
@@ -587,6 +589,53 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         ];
         $exactCurrent = $method->invoke($controller, $dailyRowsByKeyWithExact, ['kecil_os'], 'current');
         $this->assertEquals(999.0, $exactCurrent);
+    }
+
+    public function test_source_numbers_accept_english_grouping_and_indonesian_decimals(): void
+    {
+        $controller = app(PrognosaWeeklyController::class);
+        $method = new \ReflectionMethod($controller, 'parseLocaleNumber');
+        foreach (['17,288,822' => 17288822.0, '437,123.45' => 437123.45, '437.123,45' => 437123.45, '(1,234)' => -1234.0, '2,75%' => 2.75] as $source => $expected) {
+            $this->assertSame($expected, $method->invoke($controller, $source));
+        }
+    }
+
+    public function test_office_forecast_compares_with_its_own_actual_and_resets_at_segment_boundary(): void
+    {
+        $controller = app(PrognosaWeeklyController::class);
+        $method = new \ReflectionMethod($controller, 'buildDashboardAlignedRows');
+        $dailyRows = [
+            ['key' => 'sme_os', 'values' => ['current' => 900_000_000]],
+            ['key' => 'sme_os__office__kc-madiun-detail', 'label' => 'B.1 KC Madiun', 'values' => ['current' => 400_000_000]],
+            ['key' => 'sme_os__office__kcp-caruban', 'label' => 'B.2 KCP Caruban', 'values' => ['current' => 200_000_000]],
+            ['key' => 'kecil_non_cashcoll_os__office_detail__kc-madiun-detail', 'values' => ['current' => 350_000_000]],
+            ['key' => 'kecil_non_cashcoll_os__office_detail__kcp-caruban', 'values' => ['current' => 150_000_000]],
+            ['key' => 'cashcoll_os__office_detail__kcp-caruban', 'values' => ['current' => 50_000_000]],
+            ['key' => 'consumer_os', 'values' => ['current' => 700_000_000]],
+            ['key' => 'rec_dh_total', 'values' => ['current' => 25_000_000]],
+        ];
+        $source = array_map(fn (string $label): array => ['', $label, '1,234'], [
+            '2. OS Total', 'B. SME', 'B.1 KC Madiun', 'Kecil Non Cashcoll',
+            'B.2 KCP Caruban', 'Kecil Non Cashcoll', 'Cashcoll', 'C. Konsumer', '5. Rec DH per Segmen',
+        ]);
+        $rows = $method->invoke($controller, $source, $dailyRows, 2, []);
+        $this->assertSame(['', '900', '400', '350', '200', '150', '50', '700', '25'], array_map(fn (array $row): string => $row['cells'][8]['value'], $rows));
+        $this->assertSame('1.234', $rows[5]['cells'][9]['value']);
+        $this->assertSame('recovery', $rows[8]['section']);
+    }
+
+    public function test_dashboard_source_maps_total_commercial_kkb_and_kpp_to_exact_snapshot_metrics(): void
+    {
+        $controller = app(PrognosaWeeklyController::class);
+        $method = new \ReflectionMethod($controller, 'buildDashboardAlignedRows');
+        $keys = ['total_os', 'total_os_non_commercial', 'commercial_os', 'kkb_os', 'kur_kpp_os'];
+        $dailyRows = array_map(fn (string $key, int $index): array => ['key' => $key, 'values' => ['current' => ($index + 1) * 1_000_000]], $keys, array_keys($keys));
+        $source = array_map(fn (string $label): array => ['', $label, '10'], ['2. OS Total', 'Total OS Non Commercial', 'A. Commercial', 'C. Konsumer', 'KKB', 'D. Mikro', 'KUR KPP']);
+        $rows = $method->invoke($controller, $source, $dailyRows, 2, []);
+        foreach ([0 => 0, 1 => 1, 2 => 2, 4 => 3, 6 => 4] as $sourceIndex => $metricIndex) {
+            $this->assertSame([$keys[$metricIndex]], $rows[$sourceIndex]['metric_keys']);
+            $this->assertSame((string) ($metricIndex + 1), $rows[$sourceIndex]['cells'][8]['value']);
+        }
     }
 
     private function weeklyController(
@@ -701,7 +750,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
     private function presentationPrognosaFixture(): string
     {
         $spreadsheet = new Spreadsheet;
-        $sheetNames = ['Area 6', 'KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+        $sheetNames = ['Area 6', 'Madiun', '2. Magetan', '3. Ngawi', 'Ponorogo'];
         $labels = [
             '1. Simpanan',
             'A. Ritel',
@@ -778,7 +827,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
                 'Total SML (ABS) Non Commercial' => [2_031_018, 2_034_941],
                 'Total NPL (ABS) Non Commercial' => [751_310, 741_761],
             ],
-            'KC Madiun' => [
+            'Madiun' => [
                 '1. Simpanan' => [4_188_552, 4_188_553],
             ],
         ];
@@ -1025,10 +1074,10 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         $spreadsheet = new Spreadsheet;
         $branchBases = [
             'Area 6' => 1_000,
-            'KC Madiun' => 100,
-            'KC Magetan' => 200,
-            'KC Ngawi' => 300,
-            'KC Ponorogo' => 400,
+            'Madiun' => 100,
+            '2. Magetan' => 200,
+            '3. Ngawi' => 300,
+            'Ponorogo' => 400,
         ];
 
         foreach ($branchBases as $sheetIndex => $base) {

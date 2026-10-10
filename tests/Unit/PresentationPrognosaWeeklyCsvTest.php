@@ -13,6 +13,60 @@ use Tests\TestCase;
 
 class PresentationPrognosaWeeklyCsvTest extends TestCase
 {
+    public function test_october_source_sums_office_products_and_preserves_english_grouped_amounts(): void
+    {
+        Carbon::setTestNow('2026-10-09 12:00:00');
+        $matrix = array_map(static fn ($line) => str_getcsv($line, ',', '"', ''), explode("\n", trim($this->dashboardCsvFixture(1_000))));
+        $matrix[3][8] = 'WEEK 1 (3 Okt 26)';
+        $matrix[3][9] = 'WEEK 2 (10 Okt 26)';
+        $matrix[3][10] = 'WEEK 3 (17 Okt 26)';
+        $matrix[3][11] = 'WEEK 4 (24 Okt 26)';
+        $matrix[3][12] = 'WEEK 5 (31 Okt 26)';
+        $osIndex = array_search('2. OS Total', array_column($matrix, 0), true);
+        $matrix[$osIndex][9] = '15,544,586';
+        $extra = [];
+        foreach ([['B.1 KC Madiun', ''], ['Kecil Non Cashcoll', '1,234'], ['Cashcoll', '50'], ['B.2 KCP Caruban', ''], ['Kecil Non Cashcoll', '2,345'], ['Cashcoll', '75'], ['Briguna', '3,456']] as [$label, $amount]) {
+            $row = array_fill(0, 13, $amount);
+            $row[0] = $label;
+            $extra[] = $row;
+        }
+        array_splice($matrix, $osIndex + 1, 0, $extra);
+        $recovery = array_fill(0, 13, '1,234.50');
+        $recovery[0] = '5. Rec DH per Segmen';
+        $matrix = array_values(array_filter($matrix, static fn ($row) => ! in_array($row[0], ['7. Rec DH per Segmen', 'RECOVERY DH'], true)));
+        $matrix[] = $recovery;
+        $service = app(PresentationPrognosaWeeklyService::class);
+        try {
+            $payload = (new \ReflectionMethod($service, 'parseMatrices'))->invoke($service, ['area6' => $matrix]);
+        } finally {
+            Carbon::setTestNow();
+        }
+        $this->assertSame(2, data_get($payload, 'meta.week_number'));
+        $this->assertSame([1, 2, 3, 4, 5], data_get($payload, 'meta.available_weeks'));
+        $this->assertSame(15_544_586_000_000.0, data_get($payload, 'scopes.area6.metrics.os.value'));
+        $this->assertSame(3_579_000_000.0, data_get($payload, 'scopes.area6.metrics.sme_non_cashcoll_os.value'));
+        $this->assertSame(125_000_000.0, data_get($payload, 'scopes.area6.metrics.sme_cashcoll_os.value'));
+        $this->assertSame(4_886_000_000.0, data_get($payload, 'scopes.area6.metrics.consumer_briguna_os.value'));
+        $this->assertSame(1_234_500_000.0, data_get($payload, 'scopes.area6.metrics.recovery.value'));
+    }
+
+    public function test_local_workbook_requires_matching_source_provenance(): void
+    {
+        $path = $this->structuredWorkbookFixture();
+        $service = app(PresentationPrognosaWeeklyService::class);
+        $method = new \ReflectionMethod($service, 'localWorkbookMatchesCurrentSource');
+        try {
+            $this->assertFalse($method->invoke($service, $path));
+            file_put_contents($path.'.source', 'old-source');
+            $this->assertFalse($method->invoke($service, $path));
+            file_put_contents($path.'.source', PresentationPrognosaWeeklyService::SPREADSHEET_ID);
+            $this->assertTrue($method->invoke($service, $path));
+        } finally {
+            @unlink($path);
+            @unlink($path.'.source');
+        }
+    }
+
     public function test_presentation_uses_current_august_week_four_for_all_scopes(): void
     {
         Carbon::setTestNow('2026-08-27 12:00:00');
@@ -22,10 +76,10 @@ class PresentationPrognosaWeeklyCsvTest extends TestCase
 
         $fixtures = [
             'Area 6' => $this->csvFixture(1_000),
-            'KC Madiun' => $this->csvFixture(2_000, true),
-            'KC Magetan' => $this->csvFixture(3_000),
-            'KC Ngawi' => $this->csvFixture(4_000),
-            'KC Ponorogo' => $this->csvFixture(5_000),
+            'Madiun' => $this->csvFixture(2_000, true),
+            '2. Magetan' => $this->csvFixture(3_000),
+            '3. Ngawi' => $this->csvFixture(4_000),
+            'Ponorogo' => $this->csvFixture(5_000),
         ];
 
         Http::fake(function (Request $request) use ($fixtures) {
@@ -85,10 +139,10 @@ class PresentationPrognosaWeeklyCsvTest extends TestCase
 
         $fixtures = [
             'Area 6' => $this->csvFixture(1_000, false, '30 AGUSTUS 2026', true),
-            'KC Madiun' => $this->csvFixture(2_000, false, '30 AGUSTUS 2026', true),
-            'KC Magetan' => $this->csvFixture(3_000, false, '30 AGUSTUS 2026', true),
-            'KC Ngawi' => $this->csvFixture(4_000, false, '30 AGUSTUS 2026', true),
-            'KC Ponorogo' => $this->csvFixture(5_000, false, '30 AGUSTUS 2026', true),
+            'Madiun' => $this->csvFixture(2_000, false, '30 AGUSTUS 2026', true),
+            '2. Magetan' => $this->csvFixture(3_000, false, '30 AGUSTUS 2026', true),
+            '3. Ngawi' => $this->csvFixture(4_000, false, '30 AGUSTUS 2026', true),
+            'Ponorogo' => $this->csvFixture(5_000, false, '30 AGUSTUS 2026', true),
         ];
 
         Http::fake(function (Request $request) use ($fixtures) {
@@ -126,10 +180,10 @@ class PresentationPrognosaWeeklyCsvTest extends TestCase
 
         $fixtures = [
             'Area 6' => $this->csvFixture(1_000, false, '31 AGUSTUS 2026', false, true),
-            'KC Madiun' => $this->csvFixture(2_000, false, '31 AGUSTUS 2026', false, true),
-            'KC Magetan' => $this->csvFixture(3_000, false, '31 AGUSTUS 2026', false, true),
-            'KC Ngawi' => $this->csvFixture(4_000, false, '31 AGUSTUS 2026', false, true),
-            'KC Ponorogo' => $this->csvFixture(5_000, false, '31 AGUSTUS 2026', false, true),
+            'Madiun' => $this->csvFixture(2_000, false, '31 AGUSTUS 2026', false, true),
+            '2. Magetan' => $this->csvFixture(3_000, false, '31 AGUSTUS 2026', false, true),
+            '3. Ngawi' => $this->csvFixture(4_000, false, '31 AGUSTUS 2026', false, true),
+            'Ponorogo' => $this->csvFixture(5_000, false, '31 AGUSTUS 2026', false, true),
         ];
 
         Http::fake(function (Request $request) use ($fixtures) {
@@ -155,12 +209,12 @@ class PresentationPrognosaWeeklyCsvTest extends TestCase
         $this->assertSame(1_050_000_000.0, data_get($payload, 'scopes.area6.metrics.os.value'));
         $this->assertSame(1_050_000_000.0, data_get($payload, 'scopes.area6.weeks.W5.metrics.os.value'));
         $this->assertSame(
-            '1qta-IbVG5edMAy36Ku-GCvs_sesfmmXt',
+            '1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM',
             data_get($payload, 'meta.spreadsheet_id')
         );
         Http::assertSent(static fn (Request $request): bool => str_contains(
             $request->url(),
-            '/d/1qta-IbVG5edMAy36Ku-GCvs_sesfmmXt/'
+            '/d/1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM/'
         ));
     }
 
@@ -191,10 +245,10 @@ class PresentationPrognosaWeeklyCsvTest extends TestCase
 
         $fixtures = [
             'Area 6' => $this->dashboardCsvFixture(1_000),
-            'KC Madiun' => $this->dashboardCsvFixture(2_000),
-            'KC Magetan' => $this->dashboardCsvFixture(3_000),
-            'KC Ngawi' => $this->dashboardCsvFixture(4_000),
-            'KC Ponorogo' => $this->dashboardCsvFixture(5_000),
+            'Madiun' => $this->dashboardCsvFixture(2_000),
+            '2. Magetan' => $this->dashboardCsvFixture(3_000),
+            '3. Ngawi' => $this->dashboardCsvFixture(4_000),
+            'Ponorogo' => $this->dashboardCsvFixture(5_000),
         ];
 
         Http::fake(function (Request $request) use ($fixtures) {
@@ -429,10 +483,10 @@ class PresentationPrognosaWeeklyCsvTest extends TestCase
         $spreadsheet = new Spreadsheet;
         $sheets = [
             'Area 6' => 1_000,
-            'KC Madiun' => 2_000,
-            'KC Magetan' => 3_000,
-            'KC Ngawi' => 4_000,
-            'KC Ponorogo' => 5_000,
+            'Madiun' => 2_000,
+            '2. Magetan' => 3_000,
+            '3. Ngawi' => 4_000,
+            'Ponorogo' => 5_000,
         ];
 
         foreach ($sheets as $index => $base) {

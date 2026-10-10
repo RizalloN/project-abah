@@ -143,6 +143,30 @@
         background: #ffffff !important;
         overflow-x: auto;
         overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        scroll-behavior: smooth;
+        scrollbar-width: thin;
+        scrollbar-color: #94a3b8 #f1f5f9;
+    }
+
+    .rm-mikro-table-wrap::-webkit-scrollbar {
+        width: 8px;
+        height: 10px;
+    }
+
+    .rm-mikro-table-wrap::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 6px;
+    }
+
+    .rm-mikro-table-wrap::-webkit-scrollbar-thumb {
+        background: #94a3b8;
+        border-radius: 6px;
+        border: 2px solid #f1f5f9;
+    }
+
+    .rm-mikro-table-wrap::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
     }
 
     .rm-mikro-table-wrap.table-container {
@@ -596,7 +620,7 @@
     $total = $payload['total'] ?? [];
 @endphp
 
-<div class="loan-dashboard pt-4 px-3">
+<div class="loan-dashboard pt-4 px-3 {{ $selectedReportCategory === 'nett_disbursement' ? 'micro-nett-page' : '' }}">
     <div class="rm-mikro-hero animate-reveal">
         <h1>Kinerja RM Mikro</h1>
         <p>Analisis & Produktivitas RM Mikro</p>
@@ -623,12 +647,12 @@
                         </select>
                     </div>
                     <div class="col-xl-4 col-lg-8">
-                        <label class="loan-filter-label">KATEGORI REPORT</label>
-                        <div class="rm-mikro-tabs">
+                        <label class="loan-filter-label" for="kategori_report">LAPORAN</label>
+                        <select id="kategori_report" name="kategori_report" class="form-control loan-filter-control">
                             @foreach ($reportCategories as $key => $label)
-                                <button class="rm-mikro-tab {{ $key === $selectedReportCategory ? 'active' : '' }}" type="submit" name="kategori_report" value="{{ $key }}">{{ $label }}</button>
+                                <option value="{{ $key }}" @selected($key === $selectedReportCategory)>{{ $label }}</option>
                             @endforeach
-                        </div>
+                        </select>
                     </div>
                     <div class="col-xl-2 col-lg-4 d-flex align-items-end">
                         <button type="submit" class="btn btn-primary font-weight-bold w-100" style="border-radius: 12px; min-height: 44px;">
@@ -637,32 +661,40 @@
                     </div>
                 </div>
             </form>
-            <div class="d-flex flex-wrap align-items-center justify-content-between mt-3" style="gap: 0.75rem;">
+            <div class="d-flex flex-wrap align-items-center justify-content-between mt-3 rm-mikro-filter-context" style="gap: 0.75rem;">
                 <div class="rm-mikro-info-badge">
                     <i class="far fa-calendar-alt mr-2 text-primary"></i>
                     <span>Periode Posisi: <strong>{{ $selectedPeriodLabel }}</strong></span>
                 </div>
+                @if($selectedReportCategory !== 'nett_disbursement')
                 <div class="rm-mikro-info-badge">
                     <i class="fas fa-bullseye mr-2 text-warning"></i>
                     <span>Target Realisasi RM Bulanan: <strong>{{ $formatAmount($targetMonthlyJuta) }} Rp.Juta</strong></span>
                 </div>
+                @endif
             </div>
         </div>
     </div>
 
     <div class="card loan-table-shell animate-reveal">
         <div class="card-body p-4">
+            @if($selectedReportCategory !== 'nett_disbursement')
             <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
                 <div>
                     <h5 class="mb-1 font-weight-bold text-dark">{{ $reportCategories[$selectedReportCategory] ?? 'Per UKER' }}</h5>
                 </div>
+                @if($selectedReportCategory !== 'nett_disbursement')
                 <div class="loan-table-badge">
                     <i class="fas fa-table"></i>
                     <span>{{ number_format($rows->count(), 0, ',', '.') }} baris</span>
                 </div>
+                @endif
             </div>
+            @endif
 
-            @if ($selectedRmCategory === 'mantri')
+            @if ($selectedReportCategory === 'nett_disbursement')
+                @include('report.dashboard-pinjaman._kinerjarmmikro_partials._nett_workbook')
+            @elseif ($selectedRmCategory === 'mantri')
                 @if ($selectedReportCategory === 'unit_pemutus')
                     @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_unit_pemutus', ['rows' => $rows])
                 @elseif ($selectedReportCategory === 'kuadran')
@@ -697,6 +729,11 @@
 @section('scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        const rmCategory = document.getElementById('kategori_rm');
+        rmCategory?.addEventListener('change', function () {
+            document.getElementById('kategori_report').value = 'nett_disbursement';
+            rmCategory.form.requestSubmit();
+        });
         document.querySelectorAll('.rm-mikro-table-wrap').forEach(el => {
             el.classList.add('table-container');
         });

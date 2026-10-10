@@ -2,9 +2,11 @@
 
 namespace Tests\Unit;
 
+use App\Jobs\CaptureConsumerRmPositionHistoryJob;
 use App\Support\ConsumerRmPositionHistoryStore;
 use App\Support\ConsumerRmRealizationCalculator;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -121,6 +123,28 @@ class ConsumerRmPositionHistoryStoreTest extends TestCase
             ->first();
         $this->assertSame('CIF-KPR', $kpr->cifno_clean);
         $this->assertSame('900', $kpr->account_key);
+    }
+
+    public function test_calculator_queues_capture_for_missing_archive_periods_once(): void
+    {
+        Bus::fake();
+        DB::table('daily_loan_dinamis')->insert([
+            $this->sourceRow(['uniqueid_namareport' => 'BASE', 'periode' => '2026-08-31', 'tgl_realisasi' => '2026-08-01']),
+            $this->sourceRow(['uniqueid_namareport' => 'CUR', 'periode' => '2026-09-08']),
+        ]);
+        $store = app(ConsumerRmPositionHistoryStore::class);
+        $this->assertTrue($store->capturePeriod('2026-08-31')['verified']);
+
+        $calculator = app(ConsumerRmRealizationCalculator::class);
+        $calculator->calculate('2026-09-08');
+        $calculator->calculate('2026-09-08');
+
+        Bus::assertDispatchedTimes(CaptureConsumerRmPositionHistoryJob::class, 1);
+        Bus::assertDispatched(
+            CaptureConsumerRmPositionHistoryJob::class,
+            fn (CaptureConsumerRmPositionHistoryJob $job): bool => $job->period === '2026-09-08'
+                && $job->queue === 'snapshots-priority'
+        );
     }
 
     public function test_duplicate_account_with_populated_owner_keeps_realization_identical_after_capture(): void

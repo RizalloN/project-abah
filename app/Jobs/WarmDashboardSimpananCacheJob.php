@@ -16,6 +16,8 @@ class WarmDashboardSimpananCacheJob implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 3;
 
+    public int $backoff = 0;
+
     public int $timeout = 900;
 
     public int $uniqueFor = 86400;
@@ -24,6 +26,10 @@ class WarmDashboardSimpananCacheJob implements ShouldBeUnique, ShouldQueue
     public function __construct(public string $type, public array $context)
     {
         $this->onQueue('reports-low');
+        if (in_array($type, ['dashboard-payload', 'micro-readiness', 'area6-portfolio', 'sme-quadrants'], true)) {
+            $this->tries = 20;
+            $this->backoff = 60;
+        }
     }
 
     public function uniqueId(): string
@@ -33,6 +39,9 @@ class WarmDashboardSimpananCacheJob implements ShouldBeUnique, ShouldQueue
 
     public function handle(DashboardSimpananController $controller): void
     {
-        $controller->warmDashboardSimpananCache($this->type, $this->context);
+        $ready = $controller->warmDashboardSimpananCache($this->type, $this->context);
+        if (!$ready && in_array($this->type, ['dashboard-payload', 'micro-readiness', 'area6-portfolio', 'sme-quadrants'], true)) {
+            $this->release($this->backoff);
+        }
     }
 }

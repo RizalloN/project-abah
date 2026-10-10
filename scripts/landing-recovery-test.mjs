@@ -74,6 +74,21 @@ test('analytics transient errors preserve rendered data and retry; login stops',
   assert.equal(h.slots[0].innerHTML, 'tariff');
   await h.tick(); assert.equal(h.slots[0].innerHTML, 'tariff'); assert.equal(h.timers.size, 0);
 });
+
+test('empty pending analytics preserve valid charts and first load remains recoverable', async () => {
+  const pending = { ...json(), json: async () => ({ scope: 'sme', meta: { refresh_pending: true }, tariff_html: '', quality_html: '' }) };
+  const h = harness(); h.responses.push(json(), pending, json());
+  await h.loadLoanAnalytics('sme'); await h.loadLoanAnalytics('sme', true);
+  assert.equal(h.slots[0].innerHTML, 'tariff');
+  assert.equal(h.slots[0].dataset.loaded, '0');
+  await h.tick(); assert.equal(h.slots[0].dataset.loaded, '1');
+  const cold = harness(); cold.responses.push(pending, new Error('network'), json());
+  await cold.loadLoanAnalytics('sme');
+  assert.notEqual(cold.slots[0].dataset.rendered, '1');
+  assert.match(cold.slots[0].innerHTML, /sedang disiapkan/);
+  await cold.tick(); assert.match(cold.slots[0].innerHTML, /Coba lagi/);
+  await cold.tick(); assert.equal(cold.slots[0].innerHTML, 'tariff');
+});
 test('recovery is bounded, deduplicated, cancelled on success and rejects obsolete period', async () => {
   const h = harness(); let calls = 0;
   const retry = () => { calls++; h.landingRecovery.schedule('pending', retry); };
@@ -84,6 +99,13 @@ test('recovery is bounded, deduplicated, cancelled on success and rejects obsole
   h.landingRecovery.schedule('clear', retry); h.landingRecovery.clear('clear'); assert.equal(h.timers.size, 0);
 });
 for (const [scope, loader] of [['sme', 'loadSmeOperations'], ['consumer', 'loadConsumerOperations'], ['micro', 'loadMicroPerformance']]) {
+  test(`${scope} pending replacement cannot erase the last valid panel`, async () => {
+    const h = harness(); h.responses.push(html(scope), html(scope, true), html(scope));
+    await h[loader](); const visible = h.roots[scope].innerHTML;
+    await h[loader](true); assert.equal(h.roots[scope].innerHTML, visible);
+    await h.tick(); assert.equal(h.roots[scope].dataset.loaded, '1');
+    assert.equal(h.timers.size, 0);
+  });
   test(`${scope} pending and error payloads recover without clearing cache or visible data`, async () => {
     const h = harness(); h.responses.push(html(scope, true), html(scope, false, true), html(scope));
     await h[loader](); const visible = h.roots[scope].innerHTML;
@@ -101,6 +123,27 @@ for (const [scope, loader] of [['sme', 'loadSmeOperations'], ['consumer', 'loadC
 test('micro polling ignores a period changed while waiting', async () => {
   const h = harness(); h.responses.push(html('micro', true));
   await h.loadMicroPerformance(); h.period.value = '2026-10-05'; await h.tick(); assert.equal(h.requests.length, 1);
+});
+
+test('background prefetch waits for foreground reads and runs cold loaders sequentially', async () => {
+  const calls = [];
+  let finishForeground;
+  let finishConsumer;
+  const context = {
+    document: { visibilityState: 'visible' }, navigator: {}, initialArea6Scope: 'sme',
+    smeOperationsRequest: new Promise(resolve => { finishForeground = resolve; }),
+    consumerOperationsRequest: null, microPerformanceRequest: null, loanAnalyticsRequests: new Map(),
+    loadSmeOperations: async () => calls.push('sme'),
+    loadConsumerOperations: () => { calls.push('consumer'); return new Promise(resolve => { finishConsumer = resolve; }); },
+    loadMicroPerformance: async () => calls.push('micro'),
+    loadLoanAnalytics: async scope => calls.push(`analytics:${scope}`),
+  };
+  vm.createContext(context);
+  vm.runInContext(extract('prefetchLandingLoanScopes') + '\nglobalThis.prefetch = prefetchLandingLoanScopes;', context);
+  const request = context.prefetch(); await flush(); assert.deepEqual(calls, []);
+  finishForeground(); await flush(); assert.deepEqual(calls, ['consumer']);
+  finishConsumer(); await request;
+  assert.deepEqual(calls, ['consumer', 'analytics:consumer', 'micro', 'analytics:micro']);
 });
 
 const pageRecoveryBlade = readFileSync(new URL('../resources/views/dashboard/partials/landing-page-recovery.blade.php', import.meta.url), 'utf8');

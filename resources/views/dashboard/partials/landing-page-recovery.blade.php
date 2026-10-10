@@ -32,6 +32,6 @@
     };
     browser.setTimeout(reread, delays[attempts]);
   };
-  recoverLandingPage(@json((bool) data_get($dashboard ?? [], 'meta.refresh_pending', false)), window, document);
+  recoverLandingPage(@json(\App\Support\LandingPayloadState::pending($dashboard ?? [])), window, document);
 })();
 </script>

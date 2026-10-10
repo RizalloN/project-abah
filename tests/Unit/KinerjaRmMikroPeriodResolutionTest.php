@@ -141,12 +141,30 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame(['2026-07-14', '2026-07-12'], $periods->all());
     }
 
-    public function test_mantri_defaults_to_productivity_report(): void
+    public function test_nett_workbook_scopes_zero_realization_roster_and_cache_per_branch(): void
+    {
+        foreach (['MADIUN' => '1', 'NGAWI' => '2'] as $branch => $pn) {
+            DB::table('brihc_pemasar')->insert(['uniqueid_namareport' => $pn, 'pernr' => $pn, 'completename' => 'Mantri '.$pn, 'positiondesc' => 'MANTRI', 'esgdesc' => 'PT', 'psadesc' => 'KC '.$branch, 'orgdesc' => 'UNIT '.$branch]);
+        }
+        $controller = new KinerjaRmMikroReportController();
+        foreach (['madiun' => 'KC MADIUN', 'ngawi' => 'KC NGAWI'] as $scope => $branch) {
+            auth()->setUser(new \Illuminate\Auth\GenericUser(['id' => $scope === 'madiun' ? '0045' : '0057']));
+            $payload = $this->invokePrivateMethod($controller, 'nettWorkbookPayload', '2026-10-06', true);
+            $workbook = $payload['nett_workbook']['mantriPerformance'];
+            $this->assertCount(1, $workbook['sheet_rows']['bo']);
+            $this->assertSame($branch, $workbook['sheet_rows']['bo'][0]['branch']);
+            $this->assertSame(1, $workbook['total']['headcount']['pt_non_briguna']);
+            $this->assertSame(0.0, $workbook['total']['net_disbursement']['amount']);
+        }
+    }
+
+    public function test_mantri_defaults_to_nett_workbook_and_preserves_productivity_report(): void
     {
         $categories = (new ReflectionClass(KinerjaRmMikroReportController::class))
             ->getConstant('MANTRI_REPORT_CATEGORIES');
 
-        $this->assertSame('produktivitas_mantri', array_key_first($categories));
+        $this->assertSame('nett_disbursement', array_key_first($categories));
+        $this->assertArrayHasKey('produktivitas_mantri', $categories);
     }
 
     public function test_requested_mid_month_uses_exact_micro_kur_period_when_available(): void

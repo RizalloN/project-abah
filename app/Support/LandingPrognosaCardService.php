@@ -3,9 +3,13 @@
 namespace App\Support;
 
 use App\Services\Presentation\PresentationPrognosaWeeklyService;
+use Illuminate\Support\Facades\Cache;
+use Throwable;
 
 final class LandingPrognosaCardService
 {
+    private const CACHE_KEY = 'landing:prognosa:v2:'.PresentationPrognosaWeeklyService::SPREADSHEET_ID;
+
     public function __construct(
         private readonly PresentationPrognosaWeeklyService $prognosaWeeklyService
     ) {
@@ -23,7 +27,7 @@ final class LandingPrognosaCardService
             $scope = UserBranchScope::current();
             $sourceScope = $scope['upper_label'] ?? UserBranchScope::AREA_SCOPE;
         }
-        $payload = $this->prognosaWeeklyService->payload();
+        $payload = $this->landingPayload();
 
         data_set(
             $dashboard,
@@ -32,6 +36,65 @@ final class LandingPrognosaCardService
         );
 
         return $dashboard;
+    }
+
+    private function landingPayload(): array
+    {
+        $cached = Cache::get(self::CACHE_KEY);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $stable = Cache::get(self::CACHE_KEY.':last-valid');
+        if (is_array($stable)) {
+            data_set($stable, 'meta.stale', true);
+            data_set($stable, 'meta.refresh_pending', true);
+            Cache::put(self::CACHE_KEY, $stable, now()->addSeconds(30));
+
+            $pendingKey = self::CACHE_KEY.':refresh-pending';
+            if (Cache::add($pendingKey, true, now()->addMinutes(5))) {
+                defer(function () use ($pendingKey): void {
+                    try {
+                        $this->refreshLandingPayload(true);
+                    } finally {
+                        Cache::forget($pendingKey);
+                    }
+                }, 'landing-prognosa-refresh', true);
+            }
+
+            return $stable;
+        }
+
+        return $this->refreshLandingPayload();
+    }
+
+    private function refreshLandingPayload(bool $forceFresh = false): array
+    {
+        try {
+            $payload = $this->prognosaWeeklyService->payload($forceFresh);
+        } catch (Throwable $exception) {
+            $payload = ['meta' => ['available' => false, 'error' => $exception->getMessage()]];
+        }
+
+        $available = (bool) data_get($payload, 'meta.available', false);
+        $fresh = $available && !data_get($payload, 'meta.stale', false);
+        if ($fresh) {
+            Cache::put(self::CACHE_KEY.':last-valid', $payload, now()->addDays(7));
+        } else {
+            $stable = Cache::get(self::CACHE_KEY.':last-valid');
+            if (is_array($stable)) {
+                data_set($stable, 'meta.stale', true);
+                data_set($stable, 'meta.refresh_pending', true);
+                $payload = $stable;
+            } elseif ($available) {
+                // Seed from the presentation service's own last-known-good source.
+                Cache::put(self::CACHE_KEY.':last-valid', $payload, now()->addDays(7));
+            }
+        }
+
+        Cache::put(self::CACHE_KEY, $payload, $fresh ? now()->addMinutes(10) : now()->addSeconds(30));
+
+        return $payload;
     }
 
     /**

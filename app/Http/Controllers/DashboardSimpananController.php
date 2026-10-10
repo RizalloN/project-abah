@@ -100,6 +100,7 @@ class DashboardSimpananController extends Controller
     public function index(Request $request): View
     {
         $this->configureLandingBranchScope($request);
+        $this->releaseSessionLockIfNeeded();
         $periodsService = app(\App\Support\DashboardHarianSnapshotService::class);
         $availablePeriods = $periodsService->fetchPeriods();
         
@@ -2200,8 +2201,10 @@ class DashboardSimpananController extends Controller
             $branchScope,
             $request->boolean('refresh')
         );
-        $consumerOperations['pn_mismatch'] = app(LandingPnMismatchService::class)->summary(
-            'consumer', data_get($consumerOperations, 'quadrants.period'), $branchScope
+        $this->appendLandingSection($consumerOperations, 'pn_mismatch', fn (): array =>
+            app(LandingPnMismatchService::class)->summary(
+                'consumer', data_get($consumerOperations, 'quadrants.period'), $branchScope
+            )
         );
 
         return view('dashboard.partials.consumer-operations', compact('consumerOperations'));
@@ -2217,18 +2220,33 @@ class DashboardSimpananController extends Controller
             $branchScope,
             $request->boolean('refresh')
         );
-        $microPerformance['rm_kur_productivity'] = $this->buildLandingRmKurProductivity(
-            data_get($microPerformance, 'meta.period'),
-            $branchScope
+        $this->appendLandingSection($microPerformance, 'rm_kur_productivity', fn (): array =>
+            $this->buildLandingRmKurProductivity(data_get($microPerformance, 'meta.period'), $branchScope)
         );
-        $microPerformance['pn_mismatch'] = app(LandingPnMismatchService::class)->summary(
-            'micro', data_get($microPerformance, 'meta.period'), $branchScope
+        $this->appendLandingSection($microPerformance, 'pn_mismatch', fn (): array =>
+            app(LandingPnMismatchService::class)->summary('micro', data_get($microPerformance, 'meta.period'), $branchScope)
         );
-        $microPerformance['pipeline'] = app(LandingMicroPipelineService::class)->payload(
-            $branchScope
+        $this->appendLandingSection($microPerformance, 'pipeline', fn (): array =>
+            app(LandingMicroPipelineService::class)->payload($branchScope)
         );
 
         return view('dashboard.partials.micro-performance', compact('microPerformance'));
+    }
+
+    /** Keep an auxiliary source failure from discarding an otherwise usable segment. */
+    private function appendLandingSection(array &$payload, string $section, callable $reader): void
+    {
+        try {
+            $payload[$section] = $reader();
+        } catch (Throwable $exception) {
+            Log::warning('Sumber tambahan landing pinjaman gagal dibaca.', [
+                'section' => $section,
+                'period' => data_get($payload, 'meta.period'),
+                'error' => $exception->getMessage(),
+            ]);
+            $payload[$section] = ['available' => false, 'refresh_pending' => true];
+            $payload['meta']['refresh_pending'] = true;
+        }
     }
 
     public function pnMismatchNominatives(Request $request): \Illuminate\Http\JsonResponse
@@ -8351,29 +8369,42 @@ class DashboardSimpananController extends Controller
 
         if ($forceFresh) {
             Cache::forget($cacheKey);
-            Cache::forget($durableKey);
         }
 
         $decision = Cache::get($cacheKey);
-        if (!is_array($decision)) {
+        if (!$this->landingDecisionSummaryIsReady($decision, $requestedPeriod)
+            && !(is_array($decision) && (int) ($decision['retry_after'] ?? 0) > now()->timestamp)) {
             $durableFallback = Cache::get($durableKey);
-            if (is_array($durableFallback)) {
+            if ($this->landingDecisionSummaryIsReady($durableFallback, $requestedPeriod)) {
                 $decision = $durableFallback;
+                $decision['cache_stale'] = true;
+                $decision['refresh_pending'] = true;
+                $decision['retry_after'] = now()->addSeconds(30)->timestamp;
+                Cache::put($cacheKey, $decision, now()->addSeconds(30));
                 $landingBranchKey = $this->landingBranchCacheKey();
-                WarmDashboardSimpananCacheJob::dispatch('micro-readiness', [
-                    'period' => $requestedPeriod,
-                    'landingBranchKey' => $landingBranchKey,
-                ]);
+                try {
+                    WarmDashboardSimpananCacheJob::dispatch('micro-readiness', [
+                        'period' => $requestedPeriod,
+                        'landingBranchKey' => $landingBranchKey,
+                    ]);
+                } catch (Throwable $exception) {
+                    Log::warning('Refresh ringkasan putusan landing gagal dijadwalkan.', ['error' => $exception->getMessage()]);
+                }
             } else {
                 $decision = $this->buildLandingDecisionSummary($requestedPeriod);
+                $ready = $this->landingDecisionSummaryIsReady($decision, $requestedPeriod);
+                if (!$ready) {
+                    $decision['refresh_pending'] = true;
+                    $decision['retry_after'] = now()->addSeconds(30)->timestamp;
+                }
                 Cache::put(
                     $cacheKey,
                     $decision,
-                    !empty($decision['refresh_pending'])
-                        ? now()->addSeconds(30)
-                        : now()->addMinutes(5)
+                    $ready ? now()->addMinutes(5) : now()->addSeconds(30)
                 );
-                Cache::put($durableKey, $decision, now()->addDays(7));
+                if ($ready) {
+                    Cache::put($durableKey, $decision, now()->addDays(7));
+                }
             }
         }
 
@@ -8391,6 +8422,18 @@ class DashboardSimpananController extends Controller
             . $period . ':'
             . self::LANDING_SOURCE_CACHE_VERSION . ':v'
             . $this->reportCacheVersion();
+    }
+
+    private function landingDecisionSummaryIsReady(mixed $decision, string $requestedPeriod): bool
+    {
+        return is_array($decision)
+            && !empty($decision['available'])
+            && !empty($decision['period'])
+            && ($decision['requested_period'] ?? $decision['period']) === $requestedPeriod
+            && empty($decision['error'])
+            && empty($decision['refresh_error'])
+            && empty($decision['refresh_pending'])
+            && empty($decision['cache_stale']);
     }
 
     private function emptyLandingExecutiveSummary(): array
@@ -9332,7 +9375,7 @@ class DashboardSimpananController extends Controller
     {
         return is_array($payload)
             && !empty($payload['period'])
-            && !data_get($payload, 'meta.refresh_pending', false)
+            && !\App\Support\LandingPayloadState::pending($payload)
             && !data_get($payload, 'meta.error');
     }
 
@@ -9402,7 +9445,7 @@ class DashboardSimpananController extends Controller
         }
 
         // 5. Absolute cold start: Acquire atomic lock with wait timeout to prevent cache stampede
-        $lock = Cache::lock($payloadCacheKey . ':lock', self::CACHE_LOCK_SECONDS);
+        $lock = Cache::lock($payloadCacheKey . ':lock', 300);
         $locked = false;
 
         try {
@@ -9427,7 +9470,7 @@ class DashboardSimpananController extends Controller
                 );
             }
         } catch (Throwable $e) {
-            Log::warning('Dashboard simpanan payload lock failed, computing fresh.', [
+            Log::warning('Dashboard landing gagal dibangun atau lock tidak tersedia.', [
                 'error' => $e->getMessage(),
                 'period' => $selectedPeriod,
             ]);
@@ -9447,22 +9490,12 @@ class DashboardSimpananController extends Controller
             return $retryPayload;
         }
 
-        // Last resort: generate fresh if absolutely no cache exists anywhere
-        try {
-            return $this->cacheFreshDashboardPayload(
-                $payloadCacheKey,
-                $latestCacheKey,
-                $stableLatestCacheKey,
-                $selectedPeriod,
-                $durableFallbackKey
-            );
-        } catch (Throwable $e) {
-            Log::warning('Dashboard simpanan payload gagal dimuat langsung.', [
-                'error' => $e->getMessage(),
-            ]);
-        }
+        // Do not start another expensive build while the lock owner is working.
+        $pending = $this->emptyDashboard(false);
+        $pending['meta']['refresh_pending'] = true;
+        $pending['meta']['retry_after'] = now()->addSeconds(30)->timestamp;
 
-        return $this->emptyDashboard(false);
+        return $pending;
     }
 
     private function cacheFreshDashboardPayload(
@@ -10010,9 +10043,7 @@ class DashboardSimpananController extends Controller
 
         if ($forceFresh) {
             $freshPayload = $this->buildArea6PortfolioLandingFresh($loanPeriod, $dailyLoanPeriod);
-            Cache::put($cacheKey, $freshPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
-            Cache::put($latestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
-            Cache::put($stableLatestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
+            $this->cacheLandingPortfolioPayload($cacheKey, $latestCacheKey, $stableLatestCacheKey, $freshPayload);
 
             return $freshPayload;
         }
@@ -10025,7 +10056,7 @@ class DashboardSimpananController extends Controller
 
         $latestPayload = Cache::get($latestCacheKey);
 
-        if (is_array($latestPayload)) {
+        if (is_array($latestPayload) && !\App\Support\LandingPayloadState::pending($latestPayload)) {
             Cache::put($cacheKey, $latestPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
             $this->deferArea6PortfolioRefresh($cacheKey, $latestCacheKey, $stableLatestCacheKey, $loanPeriod, $dailyLoanPeriod);
 
@@ -10034,7 +10065,7 @@ class DashboardSimpananController extends Controller
 
         $stableLatestPayload = Cache::get($stableLatestCacheKey);
 
-        if (is_array($stableLatestPayload)) {
+        if (is_array($stableLatestPayload) && !\App\Support\LandingPayloadState::pending($stableLatestPayload)) {
             Cache::put($cacheKey, $stableLatestPayload, now()->addSeconds(30));
             $this->deferArea6PortfolioRefresh($cacheKey, $latestCacheKey, $stableLatestCacheKey, $loanPeriod, $dailyLoanPeriod);
 
@@ -10053,9 +10084,7 @@ class DashboardSimpananController extends Controller
 
             if ($locked) {
                 $freshPayload = $this->buildArea6PortfolioLandingFresh($loanPeriod, $dailyLoanPeriod);
-                Cache::put($cacheKey, $freshPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
-                Cache::put($latestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
-                Cache::put($stableLatestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
+                $this->cacheLandingPortfolioPayload($cacheKey, $latestCacheKey, $stableLatestCacheKey, $freshPayload);
 
                 return $freshPayload;
             }
@@ -10082,6 +10111,19 @@ class DashboardSimpananController extends Controller
         return $this->emptyArea6PortfolioLanding();
     }
 
+    private function cacheLandingPortfolioPayload(string $cacheKey, string $latestKey, string $stableKey, array $payload): void
+    {
+        if (\App\Support\LandingPayloadState::pending($payload)) {
+            Cache::put($cacheKey, $payload, now()->addSeconds(30));
+
+            return;
+        }
+
+        Cache::put($cacheKey, $payload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
+        Cache::put($latestKey, $payload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
+        Cache::put($stableKey, $payload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
+    }
+
     private function deferArea6PortfolioRefresh(string $cacheKey, string $latestCacheKey, string $stableLatestCacheKey, ?string $loanPeriod, ?string $dailyLoanPeriod): void
     {
         $landingBranchKey = $this->landingBranchCacheKey();
@@ -10096,7 +10138,7 @@ class DashboardSimpananController extends Controller
     }
 
     /** @param array<string, mixed> $context */
-    public function warmDashboardSimpananCache(string $type, array $context): void
+    public function warmDashboardSimpananCache(string $type, array $context): bool
     {
         if (array_key_exists('landingBranchKey', $context)) {
             $this->configureLandingBranchFromKey((string) $context['landingBranchKey']);
@@ -10110,20 +10152,20 @@ class DashboardSimpananController extends Controller
                 . $this->reportCacheVersion()
             : (string) ($context['payloadCacheKey'] ?? $context['cacheKey'] ?? '');
         if ($cacheKey === '') {
-            return;
+            return true;
         }
 
-        $lockSeconds = $type === 'presentation-payload' ? 300 : self::CACHE_LOCK_SECONDS;
+        $lockSeconds = in_array($type, ['dashboard-payload', 'micro-readiness', 'area6-portfolio'], true)
+            ? 930
+            : ($type === 'presentation-payload' ? 300 : self::CACHE_LOCK_SECONDS);
         $lock = Cache::lock($cacheKey . ':lock', $lockSeconds);
         if (!$lock->get()) {
-            return;
+            return false;
         }
 
         try {
             if ($type === 'sme-quadrants') {
-                app(LandingSmeOperationalService::class)->warmQuadrants($context['period'] ?? null);
-
-                return;
+                return app(LandingSmeOperationalService::class)->warmQuadrants($context['period'] ?? null);
             }
             if ($type === 'micro-readiness') {
                 $microPayload = $this->buildPresentationMicroForPeriod($period);
@@ -10136,22 +10178,32 @@ class DashboardSimpananController extends Controller
                 );
 
                 $decision = $this->buildLandingDecisionSummary($period);
+                $decisionReady = $this->landingDecisionSummaryIsReady($decision, $period);
+                $durableDecisionKey = 'dashboard_simpanan:landing_decision:durable:' . $period . ':' . $this->landingBranchCacheKey();
+                if (!$decisionReady) {
+                    $durableDecision = Cache::get($durableDecisionKey);
+                    if ($this->landingDecisionSummaryIsReady($durableDecision, $period)) {
+                        $decision = $durableDecision;
+                        $decision['cache_stale'] = true;
+                    }
+                    $decision['refresh_pending'] = true;
+                    $decision['retry_after'] = now()->addSeconds(30)->timestamp;
+                }
                 Cache::put(
                     $this->landingDecisionSummaryCacheKey($period),
                     $decision,
-                    !empty($decision['refresh_pending'])
-                        ? now()->addSeconds(30)
-                        : now()->addMinutes(5)
+                    $decisionReady ? now()->addMinutes(5) : now()->addSeconds(30)
                 );
 
-                $durableDecisionKey = 'dashboard_simpanan:landing_decision:durable:' . $period . ':' . $this->landingBranchCacheKey();
-                Cache::put($durableDecisionKey, $decision, now()->addDays(7));
+                if ($decisionReady) {
+                    Cache::put($durableDecisionKey, $decision, now()->addDays(7));
+                }
 
-                return;
+                return $decisionReady && empty($microPayload['refresh_pending']);
             }
 
             if ($type === 'dashboard-payload') {
-                $this->cacheFreshDashboardPayload(
+                $payload = $this->cacheFreshDashboardPayload(
                     $cacheKey,
                     (string) ($context['latestCacheKey'] ?? ''),
                     (string) ($context['stableLatestCacheKey'] ?? ''),
@@ -10159,7 +10211,7 @@ class DashboardSimpananController extends Controller
                     $context['durableFallbackKey'] ?? null
                 );
 
-                return;
+                return $this->landingPayloadIsReady($payload);
             }
 
             if ($type === 'area6-portfolio') {
@@ -10167,11 +10219,14 @@ class DashboardSimpananController extends Controller
                     $context['loanPeriod'] ?? null,
                     $context['dailyLoanPeriod'] ?? null
                 );
+                if (\App\Support\LandingPayloadState::pending($freshPayload)) {
+                    return false;
+                }
                 Cache::put($cacheKey, $freshPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
                 Cache::put((string) ($context['latestCacheKey'] ?? ''), $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
                 Cache::put((string) ($context['stableLatestCacheKey'] ?? ''), $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
 
-                return;
+                return true;
             }
 
             if ($type === 'presentation-payload') {
@@ -10192,6 +10247,8 @@ class DashboardSimpananController extends Controller
         } finally {
             $lock->release();
         }
+
+        return true;
     }
 
     private function buildArea6PortfolioLandingFresh(?string $loanPeriod, ?string $dailyLoanPeriod = null): array
@@ -12488,11 +12545,13 @@ class DashboardSimpananController extends Controller
                 'title' => '5 KTS Terbanyak',
                 'tone' => 'orange',
                 'rows' => $kts['rows'],
+                'refresh_pending' => (bool) ($kts['refresh_pending'] ?? false),
             ],
             [
                 'title' => '5 Tunggakan Kecil',
                 'tone' => 'teal',
                 'rows' => $smallArrears['rows'],
+                'refresh_pending' => (bool) ($smallArrears['refresh_pending'] ?? false),
             ],
         ];
     }
@@ -12955,10 +13014,11 @@ class DashboardSimpananController extends Controller
             ->selectRaw('COUNT(DISTINCT account_number) as account_count')
             ->selectRaw('COUNT(DISTINCT cabang1) as branch_count')
             ->selectRaw('COUNT(DISTINCT unit1) as unit_count')
+            ->selectRaw('COUNT(*) as source_row_count')
             ->selectRaw('MAX(updated_at) as source_updated_at')
             ->first();
 
-        if (!$row) {
+        if (!$row || (int) ($row->source_row_count ?? 0) === 0) {
             return null;
         }
 
@@ -12990,7 +13050,7 @@ class DashboardSimpananController extends Controller
                 && Schema::hasColumn(self::LOAN_SNAPSHOT_TABLE, 'cabang1')
                 && Schema::hasColumn(self::LOAN_SNAPSHOT_TABLE, 'loan_balance')
             ) {
-                return DB::table(self::LOAN_SNAPSHOT_TABLE)
+                $snapshotRows = DB::table(self::LOAN_SNAPSHOT_TABLE)
                     ->where('periode', $period)
                     ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), $this->dashboardBranchNames())
                     ->whereNotNull('cabang1')
@@ -13000,6 +13060,9 @@ class DashboardSimpananController extends Controller
                     ->orderByDesc('total_balance')
                     ->limit(5)
                     ->get();
+                if ($snapshotRows->isNotEmpty()) {
+                    return $snapshotRows;
+                }
             }
 
             if (

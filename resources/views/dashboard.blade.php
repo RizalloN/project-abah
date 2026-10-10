@@ -12941,7 +12941,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     slots.forEach(slot => {
       slot.classList.remove('is-error', 'is-empty');
-      slot.classList.add('is-loading');
+      slot.classList.toggle('is-loading', slot.dataset.rendered !== '1');
       slot.setAttribute('aria-busy', 'true');
       if (slot.dataset.loaded === '1') slot.dataset.rendered = '1';
     });
@@ -12969,11 +12969,20 @@ document.addEventListener('DOMContentLoaded', function() {
         slots.forEach(slot => {
           const section = slot.dataset.loanAnalyticsSlot;
           const html = section === 'tariff' ? payload.tariff_html : payload.quality_html;
+          if (pending && (typeof html !== 'string' || !html.trim())) {
+            slot.dataset.loaded = '0';
+            slot.classList.remove('is-loading', 'is-error', 'is-empty');
+            slot.setAttribute('aria-busy', 'false');
+            if (slot.dataset.rendered !== '1') {
+              slot.innerHTML = '<div role="status">Analitik sedang disiapkan. Data akan dimuat kembali otomatis.</div>';
+            }
+            return;
+          }
           slot.innerHTML = typeof html === 'string' ? html : '';
           slot.classList.toggle('is-empty', !slot.innerHTML.trim());
           slot.classList.remove('is-loading', 'is-error');
           slot.dataset.loaded = pending ? '0' : '1';
-          slot.dataset.rendered = '1';
+          slot.dataset.rendered = slot.innerHTML.trim() ? '1' : '0';
           slot.setAttribute('aria-busy', 'false');
           if (slot.offsetParent !== null) initializeLandingAnalyticsCharts(slot);
         });
@@ -13690,7 +13699,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!response.ok || response.redirected || !html.includes('data-sme-operations-ready="1"')) {
           throw landingResponseError(response, 'Respons SME tidak lengkap atau sesi login telah berakhir.');
         }
-        if (smeOperationsDashboard.dataset.rendered === '1' && html.includes('data-load-error="1"')) {
+        const incoming = new DOMParser().parseFromString(html, 'text/html');
+        if (smeOperationsDashboard.dataset.rendered === '1'
+            && landingPartialPending(incoming, '[data-sme-operations-ready]')) {
           throw new Error('Pembaruan belum selesai. Data terakhir tetap ditampilkan.');
         }
 
@@ -13701,7 +13712,7 @@ document.addEventListener('DOMContentLoaded', function() {
         smeOperationsDashboard.innerHTML = html;
         const pending = landingPartialPending(smeOperationsDashboard, '[data-sme-operations-ready]');
         smeOperationsDashboard.dataset.loaded = pending ? '0' : '1';
-        smeOperationsDashboard.dataset.rendered = '1';
+        smeOperationsDashboard.dataset.rendered = html.includes('data-load-error="1"') ? '0' : '1';
         if (pending) landingRecovery.schedule(recoveryKey, retryRead, isCurrent);
         else landingRecovery.clear(recoveryKey);
         prepareSmeVendorModal();
@@ -13781,7 +13792,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!response.ok || response.redirected || !html.includes('data-micro-performance-ready="1"')) {
           throw landingResponseError(response, 'Respons Mikro tidak lengkap atau sesi login telah berakhir.');
         }
-        if (microPerformanceDashboard.dataset.rendered === '1' && html.includes('data-load-error="1"')) {
+        const incoming = new DOMParser().parseFromString(html, 'text/html');
+        if (microPerformanceDashboard.dataset.rendered === '1'
+            && landingPartialPending(incoming, '[data-micro-performance-ready]')) {
           throw new Error('Pembaruan belum selesai. Data terakhir tetap ditampilkan.');
         }
         const fragment = new DOMParser().parseFromString(html, 'text/html');
@@ -13797,7 +13810,7 @@ document.addEventListener('DOMContentLoaded', function() {
         microPerformanceDashboard.innerHTML = html;
         const pending = landingPartialPending(microPerformanceDashboard, '[data-micro-performance-ready]');
         microPerformanceDashboard.dataset.loaded = pending ? '0' : '1';
-        microPerformanceDashboard.dataset.rendered = '1';
+        microPerformanceDashboard.dataset.rendered = html.includes('data-load-error="1"') ? '0' : '1';
         if (pending) landingRecovery.schedule(recoveryKey, retryRead, isCurrent);
         else landingRecovery.clear(recoveryKey);
         microPerformanceDashboard.dataset.loadedPeriod = requestedPeriod;
@@ -13869,13 +13882,15 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!response.ok || response.redirected || !html.includes('data-consumer-operations-ready="1"')) {
           throw landingResponseError(response, 'Respons Konsumer tidak lengkap atau sesi login telah berakhir.');
         }
-        if (consumerOperationsDashboard.dataset.rendered === '1' && html.includes('data-load-error="1"')) {
+        const incoming = new DOMParser().parseFromString(html, 'text/html');
+        if (consumerOperationsDashboard.dataset.rendered === '1'
+            && landingPartialPending(incoming, '[data-consumer-operations-ready]')) {
           throw new Error('Pembaruan belum selesai. Data terakhir tetap ditampilkan.');
         }
         consumerOperationsDashboard.innerHTML = html;
         const pending = landingPartialPending(consumerOperationsDashboard, '[data-consumer-operations-ready]');
         consumerOperationsDashboard.dataset.loaded = pending ? '0' : '1';
-        consumerOperationsDashboard.dataset.rendered = '1';
+        consumerOperationsDashboard.dataset.rendered = html.includes('data-load-error="1"') ? '0' : '1';
         if (pending) landingRecovery.schedule(recoveryKey, retryRead, isCurrent);
         else landingRecovery.clear(recoveryKey);
       })
@@ -14036,16 +14051,21 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
+    // Idle CPU does not mean the active segment has finished its database reads.
+    await Promise.allSettled([
+      smeOperationsRequest, consumerOperationsRequest, microPerformanceRequest,
+      ...loanAnalyticsRequests.values(),
+    ]);
     const scopes = ['sme', 'consumer', 'micro']
       .filter(scope => scope !== initialArea6Scope);
     for (const scope of scopes) {
+      if (document.visibilityState !== 'visible') return;
       const operationalLoader = scope === 'sme'
         ? loadSmeOperations
         : (scope === 'consumer' ? loadConsumerOperations : loadMicroPerformance);
-      await Promise.allSettled([
-        operationalLoader(false),
-        loadLoanAnalytics(scope, false),
-      ]);
+      await operationalLoader(false);
+      if (document.visibilityState !== 'visible') return;
+      await loadLoanAnalytics(scope, false);
     }
   };
 

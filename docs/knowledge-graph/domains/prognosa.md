@@ -6,10 +6,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 6 |
-| method | 172 |
+| file | 7 |
+| method | 184 |
 | route | 1 |
-| class | 5 |
+| class | 6 |
 | view | 1 |
 
 ## Main Hubs
@@ -18,34 +18,34 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | --- | ---: | --- |
 | `PrognosaWeeklyController` | class | 67 | `app/Http/Controllers/PrognosaWeeklyController.php:20` |
 | `PresentationPrognosaWeeklyService` | class | 57 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:20` |
-| `PrognosaWeeklySpreadsheetTest` | class | 29 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:19` |
-| `LandingPrognosaCardService` | class | 26 | `app/Support/LandingPrognosaCardService.php:7` |
+| `LandingPrognosaCardService` | class | 34 | `app/Support/LandingPrognosaCardService.php:9` |
+| `PrognosaWeeklySpreadsheetTest` | class | 32 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:19` |
 | `buildDashboardAlignedRows` | method | 19 | `app/Http/Controllers/PrognosaWeeklyController.php:831` |
 | `LandingPrognosaCardServiceTest` | class | 14 | `tests/Unit/LandingPrognosaCardServiceTest.php:11` |
 | `cleanCell` | method | 14 | `app/Http/Controllers/PrognosaWeeklyController.php:581` |
 | `buildDashboardAlignedPayload` | method | 13 | `app/Http/Controllers/PrognosaWeeklyController.php:686` |
-| `weeklyController` | method | 13 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:592` |
+| `weeklyController` | method | 13 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:641` |
 | `index` | method | 12 | `app/Http/Controllers/PrognosaWeeklyController.php:137` |
-| `parseMatrices` | method | 12 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:336` |
+| `parseMatrices` | method | 12 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:342` |
 | `test_weekly_prognosa_locks_sheet_to_authenticated_branch` | method | 12 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:106` |
 | `test_weekly_prognosa_reads_dashboard_layout_with_indicator_in_column_a` | method | 12 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:198` |
 | `test_weekly_prognosa_reads_the_official_area_sheet` | method | 12 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:27` |
-| `weeklyDailyPayload` | method | 12 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:610` |
-| `weeklyPrognosaCsvFixture` | method | 12 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:813` |
-| `dateFromCell` | method | 11 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:1408` |
-| `decorateCard` | method | 11 | `app/Support/LandingPrognosaCardService.php:123` |
+| `weeklyDailyPayload` | method | 12 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:659` |
+| `weeklyPrognosaCsvFixture` | method | 12 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:862` |
+| `dateFromCell` | method | 11 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:1428` |
+| `decorateCard` | method | 11 | `app/Support/LandingPrognosaCardService.php:186` |
 | `fetchSheet` | method | 11 | `app/Http/Controllers/PrognosaWeeklyController.php:219` |
-| `parseLegacySpreadsheet` | method | 11 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:1087` |
+| `parseLegacySpreadsheet` | method | 11 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:1107` |
 | `test_weekly_position_is_refreshed_while_forecast_target_stays_cached` | method | 11 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:241` |
+| `LandingPrognosaAvailabilityTest` | class | 10 | `tests/Unit/LandingPrognosaAvailabilityTest.php:12` |
 | `card` | method | 10 | `tests/Unit/LandingPrognosaCardServiceTest.php:345` |
-| `localFallbackPayload` | method | 10 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:238` |
+| `localFallbackPayload` | method | 10 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:240` |
 | `metric` | method | 10 | `tests/Unit/LandingPrognosaCardServiceTest.php:355` |
-| `normaliseLabel` | method | 10 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:1481` |
+| `normaliseLabel` | method | 10 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:1501` |
 | `parseWorksheetMatrix` | method | 10 | `app/Http/Controllers/PrognosaWeeklyController.php:400` |
-| `resolvePositionColumns` | method | 10 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:1153` |
+| `resolvePositionColumns` | method | 10 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:1173` |
 | `test_weekly_prognosa_reads_week_five_from_the_new_shifted_layout` | method | 10 | `tests/Unit/PrognosaWeeklySpreadsheetTest.php:167` |
 | `matrixFromCsvResponse` | method | 9 | `app/Http/Controllers/PrognosaWeeklyController.php:305` |
-| `metricRows` | method | 9 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:1238` |
 
 ## Route Nodes
 
@@ -53,6 +53,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Class Nodes
 
+- `LandingPrognosaAvailabilityTest` - `tests/Unit/LandingPrognosaAvailabilityTest.php`
 - `LandingPrognosaCardService` - `app/Support/LandingPrognosaCardService.php`
 - `LandingPrognosaCardServiceTest` - `tests/Unit/LandingPrognosaCardServiceTest.php`
 - `PresentationPrognosaWeeklyService` - `app/Services/Presentation/PresentationPrognosaWeeklyService.php`
@@ -67,15 +68,15 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| prognosa -> core (calls) | 105 |
-| prognosa -> core (instantiates) | 32 |
+| prognosa -> core (calls) | 110 |
+| prognosa -> core (instantiates) | 37 |
 | prognosa -> core (accepts) | 28 |
 | prognosa -> access-control (instantiates) | 10 |
 | prognosa -> access-control (protected_by) | 5 |
 | dashboard-pinjaman -> prognosa (calls) | 3 |
+| prognosa -> tests (extends) | 3 |
 | prognosa -> access-control (calls) | 2 |
 | tests -> prognosa (contains) | 2 |
-| prognosa -> tests (extends) | 2 |
 | presentation -> prognosa (contains) | 2 |
 | prognosa -> dashboard-harian (injects) | 1 |
 | prognosa -> presentation (calls) | 1 |

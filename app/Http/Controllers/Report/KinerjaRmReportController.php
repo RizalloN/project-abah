@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
+use Throwable;
 
 class KinerjaRmReportController extends Controller
 {
@@ -28,6 +29,10 @@ class KinerjaRmReportController extends Controller
     private const SOURCE_TABLE = 'daily_loan_dinamis';
 
     private const SNAPSHOT_TABLE = 'performance_rm_snapshots';
+
+    // Payload keys carry the report cache version, which imports, snapshot
+    // rebuilds and BRIHC syncs bump; a short TTL only forced cold rebuilds.
+    private const PAYLOAD_CACHE_SECONDS = 1800;
 
     // Mapping segmen ke product options
     private const SEGMENT_PRODUCT_MAP = [
@@ -1760,7 +1765,7 @@ class KinerjaRmReportController extends Controller
         ?string $selectedRmCategory = null,
         bool $includeInactive = false
     ): array {
-        $cacheKey = 'kinerja_rm_retail_performance_v20-small-brihc-name-unit:'.$this->reportCacheVersion().':'.md5(json_encode([
+        $cacheKey = 'kinerja_rm_retail_performance_v21-briguna-ro-ytd-target:'.$this->reportCacheVersion().':'.md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'cabang' => $selectedCabang,
@@ -1769,7 +1774,7 @@ class KinerjaRmReportController extends Controller
             'include_inactive' => $includeInactive,
         ]));
 
-        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $selectedCabang, $selectedProduct, $selectedRmCategory, $includeInactive) {
+        return Cache::remember($cacheKey, self::PAYLOAD_CACHE_SECONDS, function () use ($segmen, $selectedPeriod, $selectedCabang, $selectedProduct, $selectedRmCategory, $includeInactive) {
             $selectedDate = Carbon::parse($selectedPeriod)->startOfDay();
             $yearStart = $selectedDate->copy()->startOfYear()->toDateString();
             $sourcePeriods = $this->fetchPeriodList(self::SOURCE_TABLE, 'periode')
@@ -1927,7 +1932,7 @@ class KinerjaRmReportController extends Controller
                 'diagnostics' => [],
             ];
             if ($segmen === 'SMALL' && $monthlyPeriods->isNotEmpty()) {
-                $smallRealization = (new SmallRmRealizationCalculator)->calculate(
+                $smallRealization = $this->cachedSmallRealization(
                     $monthlyPeriods->all(),
                     $productValues,
                     $selectedCabang,
@@ -2006,6 +2011,11 @@ class KinerjaRmReportController extends Controller
                 }
                 $targetDeb = (int) ($target['target_jg_deb'] ?? 0);
                 $targetRp = (float) ($target['target_jg_os'] ?? 0.0);
+                // RO year-to-date target honours ramp/join schedules; every
+                // other RM keeps monthly target x elapsed months.
+                $ytdTarget = $segmen === 'CONSUMER' && $selectedProduct !== 'KPR'
+                    ? ConsumerKanwilReference::cumulativeTarget($data['rm'], $targetMonthCount, $targetDeb, $targetRp)
+                    : ['target_deb' => $targetDeb * $targetMonthCount, 'target_os' => $targetRp * $targetMonthCount];
 
                 if ($segmen === 'CONSUMER') {
                     foreach ($monthMetrics as &$mMetric) {
@@ -2024,7 +2034,6 @@ class KinerjaRmReportController extends Controller
                 $previousReportMetric = $previousReportPeriod !== null
                     ? ($data['periods'][$previousReportPeriod] ?? $emptyMetric(true))
                     : null;
-                $averageMonthlyRp = $targetMonthCount > 0 ? $accumulatedRp / $targetMonthCount : 0.0;
                 $firstActiveClosedMonthIndex = $closedMonths->search(
                     fn (array $month): bool => (bool) ($monthMetrics[$month['key']]['has_data'] ?? false)
                 );
@@ -2043,7 +2052,7 @@ class KinerjaRmReportController extends Controller
                     ? ($monthMetrics[$previousClosedMonthKey]['lar_pct'] ?? null)
                     : null;
                 $quadrant = match ($segmen) {
-                    'CONSUMER' => $this->calculateConsumerQuadrant($averageMonthlyRp, $targetRp),
+                    'CONSUMER' => $this->calculateConsumerQuadrant($accumulatedRp, (float) $ytdTarget['target_os']),
                     'SMALL' => $smallRatasRp !== null && $smallLarPct !== null
                         ? $this->calculateSmallPerformanceQuadrant(
                             $smallRatasRp,
@@ -2062,10 +2071,15 @@ class KinerjaRmReportController extends Controller
                     'rm_display' => trim(explode('-', $data['rm'], 2)[1] ?? $data['rm']),
                     'latest_loan_os' => (float) ($currentMetric['lar_loan_os'] ?? 0),
                     'latest_has_data' => (bool) ($currentMetric['has_data'] ?? false),
-                    'target' => ['deb' => $targetDeb, 'rp' => $targetRp],
+                    'target' => [
+                        'deb' => $targetDeb,
+                        'rp' => $targetRp,
+                        'ytd_deb' => (int) $ytdTarget['target_deb'],
+                        'ytd_rp' => (float) $ytdTarget['target_os'],
+                    ],
                     'months' => $monthMetrics,
                     'delta' => [
-                        'ytd' => $accumulatedRp - ($targetRp * $targetMonthCount),
+                        'ytd' => $accumulatedRp - (float) $ytdTarget['target_os'],
                         'mtd' => (float) $currentMetric['rp'] - $targetRp,
                         'mom' => $previousMonthMetric !== null
                             ? (float) $currentMetric['rp'] - (float) $previousMonthMetric['rp']
@@ -2190,6 +2204,100 @@ class KinerjaRmReportController extends Controller
         });
     }
 
+    /**
+     * The SMALL calculator reads only Daily Loan positions from the month
+     * before the first target through the last target. Key its result by those
+     * positions' recorded source signatures, so imports of other reports or of
+     * later dates do not force a full rescan; a period without a recorded
+     * signature falls back to the report cache version.
+     *
+     * @param  array<int, string>  $targetPeriods
+     * @param  array<int, string>  $productValues
+     * @return array<string, mixed>
+     */
+    private function cachedSmallRealization(
+        array $targetPeriods,
+        array $productValues,
+        ?string $selectedCabang,
+        ?string $selectedRmCategory
+    ): array {
+        $compute = static fn (): array => (new SmallRmRealizationCalculator)->calculate(
+            $targetPeriods,
+            $productValues,
+            $selectedCabang,
+            $selectedRmCategory
+        );
+        if ($targetPeriods === []) {
+            return $compute();
+        }
+
+        try {
+            $rangeStart = Carbon::parse(min($targetPeriods))->startOfMonth()->subMonthNoOverflow()->toDateString();
+            $sourcePeriods = DB::table(self::SOURCE_TABLE)
+                ->whereBetween('periode', [$rangeStart, (string) max($targetPeriods)])
+                ->distinct()
+                ->orderBy('periode')
+                ->pluck('periode')
+                ->all();
+            $fingerprint = $this->dailyLoanSignatureFingerprint($sourcePeriods);
+        } catch (Throwable) {
+            return $compute();
+        }
+
+        $cacheKey = 'kinerja_rm_small_realization:v1:'.$fingerprint.':'.md5(json_encode([
+            $targetPeriods, $productValues, $selectedCabang, $selectedRmCategory,
+        ]));
+
+        return Cache::remember($cacheKey, now()->addDays(7), $compute);
+    }
+
+    /**
+     * Fingerprint of Daily Loan positions from the source signatures recorded
+     * when their snapshots were rebuilt. Without a signature for every period
+     * it falls back to the report cache version (previous behaviour).
+     *
+     * @param  array<int, mixed>  $periods
+     */
+    private function dailyLoanSignatureFingerprint(array $periods): string
+    {
+        $periods = collect($periods)
+            ->map(fn ($value): string => substr((string) $value, 0, 10))
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+        $fallback = 'v'.$this->reportCacheVersion();
+        if ($periods === []) {
+            return $fallback;
+        }
+
+        try {
+            if (! Schema::hasTable('snapshot_source_signatures')) {
+                return $fallback;
+            }
+            $signatures = DB::table('snapshot_source_signatures')
+                ->where('source_table', self::SOURCE_TABLE)
+                ->where('snapshot_table', 'dashboard_pinjaman_snapshots')
+                ->whereIn('period_key', $periods)
+                ->pluck('source_signature', 'period_key')
+                ->all();
+        } catch (Throwable) {
+            return $fallback;
+        }
+
+        foreach ($periods as $period) {
+            if (trim((string) ($signatures[$period] ?? '')) === '') {
+                return $fallback;
+            }
+        }
+
+        return 's'.md5(implode('|', array_map(
+            static fn (string $period): string => $period.'='.$signatures[$period],
+            $periods
+        )));
+    }
+
     private function fetchBranchRows(
         string $segmen,
         string $selectedPeriod,
@@ -2221,7 +2329,7 @@ class KinerjaRmReportController extends Controller
             'quality_source' => $detailedQualityRows !== null ? 'daily-loan-bucket-v2-restruk-split' : 'snapshot',
         ]));
 
-        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $comparisonPeriodValues, $comparisonKeys, $emptyComparisonValues, $realisasiPeriod, $selectedCabang, $selectedProduct, $qualityType, $selectedRmCategory, $detailedQualityRows, $sortByUnitCode) {
+        return Cache::remember($cacheKey, self::PAYLOAD_CACHE_SECONDS, function () use ($segmen, $selectedPeriod, $comparisonPeriodValues, $comparisonKeys, $emptyComparisonValues, $realisasiPeriod, $selectedCabang, $selectedProduct, $qualityType, $selectedRmCategory, $detailedQualityRows, $sortByUnitCode) {
             if ($segmen === 'CONSUMER'
                 && Schema::hasTable(self::SOURCE_TABLE)
                 && Schema::hasColumn(self::SOURCE_TABLE, 'segmen_kinerja')
@@ -2733,7 +2841,9 @@ class KinerjaRmReportController extends Controller
             return collect();
         }
 
-        $cacheKey = 'kinerja_rm_quality_detail_v3-consumer-product-split:'.$this->reportCacheVersion().':'.md5(json_encode([
+        // Reads only these Daily Loan positions: key by their source signatures.
+        $cacheKey = 'kinerja_rm_quality_detail_v4-consumer-product-split:'
+            .$this->dailyLoanSignatureFingerprint($periods->all()).':'.md5(json_encode([
             'segmen' => $segmen,
             'periods' => $periods->all(),
             'cabang' => $selectedCabang,
@@ -2741,7 +2851,7 @@ class KinerjaRmReportController extends Controller
             'rm_category' => $selectedRmCategory,
         ]));
 
-        return Cache::remember($cacheKey, 300, function () use ($segmen, $periods, $sourceProducts, $selectedCabang, $selectedRmCategory): Collection {
+        return Cache::remember($cacheKey, self::PAYLOAD_CACHE_SECONDS, function () use ($segmen, $periods, $sourceProducts, $selectedCabang, $selectedRmCategory): Collection {
             $bucketExpression = LoanQualityBucketMapper::buildSqlExpression('d');
             $bucketRows = DB::table(self::SOURCE_TABLE.' as d')
                 ->whereIn('d.periode', $periods->all())
@@ -3386,9 +3496,14 @@ class KinerjaRmReportController extends Controller
 
         $snapshotCount = (int) ($snapshot->cnt ?? 0);
         $lastUpdated = $snapshot?->last_updated ? Carbon::parse($snapshot->last_updated) : null;
+        // The source scan cannot use an index, so remember the verdict for the
+        // current snapshot build; a rebuild changes the key immediately.
+        $freshnessKey = 'kinerja_rm_snapshot_needs_sync:v1:'.$period.':'.$snapshotCount.':'
+            .($lastUpdated?->toDateTimeString() ?? 'none');
         $needsSync = $snapshotCount <= 0
-            || ($lastUpdated !== null && $this->dailyLoanSourceUpdatedAfter($period, $lastUpdated))
-            || $this->snapshotRealisasiLooksStale($period);
+            || (bool) Cache::remember($freshnessKey, now()->addMinutes(10), fn (): bool => (
+                $lastUpdated !== null && $this->dailyLoanSourceUpdatedAfter($period, $lastUpdated)
+            ) || $this->snapshotRealisasiLooksStale($period));
 
         if (! $needsSync) {
             return;

@@ -111,6 +111,16 @@ class LandingLoanRiskCacheService
 
         [$branchTotals, $areaTotals] = $this->loadTotals($period, $accountColumn, $penaltyColumn);
 
+        // GROUP BY returns no branch rows when the scoped source is absent.
+        // Zero risk metrics with existing accounts are still a valid result.
+        if ($branchTotals === []) {
+            $stable = Cache::get($this->stableCacheKey($period));
+
+            return $this->isPayload($stable, $period)
+                ? array_replace($stable, ['refresh_pending' => true])
+                : $this->emptyPayload($period, true);
+        }
+
         $payload = [
             'available' => true,
             'period' => $period,
@@ -265,6 +275,7 @@ class LandingLoanRiskCacheService
     private function isPayload($payload, string $period): bool
     {
         return is_array($payload)
+            && !empty($payload['available'])
             && ($payload['period'] ?? null) === $period
             && isset($payload['rows'], $payload['branch_totals'], $payload['area_totals']);
     }

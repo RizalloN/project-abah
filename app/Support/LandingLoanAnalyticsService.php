@@ -51,12 +51,11 @@ final class LandingLoanAnalyticsService
     {
         $segmentScope = is_string($segmentScope) && isset(self::SEGMENTS[$segmentScope]) ? $segmentScope : null;
         $empty = $this->emptyPayload($requestedPeriod, $branchScope);
-        $microSsaOnly = $segmentScope === 'micro' && $this->ssaTariffSourceIsReady();
-        if (! $this->sourceIsReady() && ! $microSsaOnly) {
-            return $empty;
-        }
-
         try {
+            $microSsaOnly = $segmentScope === 'micro' && $this->ssaTariffSourceIsReady();
+            if (! $this->sourceIsReady() && ! $microSsaOnly) {
+                return $empty;
+            }
             $period = $this->resolvePeriodCached($requestedPeriod, $branchScope, $segmentScope);
             if ($period === null) {
                 return $empty;
@@ -93,7 +92,8 @@ final class LandingLoanAnalyticsService
                         $period,
                         $year,
                         $branchScope,
-                        $segmentScope
+                        $segmentScope,
+                        true
                     );
                     $durable['meta']['cache_stale'] = true;
                     $durable['meta']['refresh_pending'] = true;
@@ -127,10 +127,24 @@ final class LandingLoanAnalyticsService
                 return $durable;
             }
 
-            $payload = $this->buildAnalyticsPayload($period, $year, $branchScope, $segmentScope);
-            $payload = $this->cacheAnalyticsPayload($cacheKey, $durableCacheKey, $payload);
+            $lock = Cache::lock($cacheKey.':build-lock', 180);
+            if (! $lock->get()) {
+                $empty['meta']['refresh_pending'] = true;
 
-            return $payload;
+                return $empty;
+            }
+            try {
+                // Another request may have completed while this request resolved its period.
+                $cached = $this->readAnalyticsCache($cacheKey, false);
+                if (is_array($cached)) {
+                    return $cached;
+                }
+                $payload = $this->buildAnalyticsPayload($period, $year, $branchScope, $segmentScope, $forceRefresh);
+
+                return $this->cacheAnalyticsPayload($cacheKey, $durableCacheKey, $payload);
+            } finally {
+                $lock->release();
+            }
         } catch (Throwable $exception) {
             Log::warning('Analitik landing pinjaman gagal dihitung.', [
                 'period' => $requestedPeriod,
@@ -171,7 +185,8 @@ final class LandingLoanAnalyticsService
         string $period,
         int $year,
         ?array $branchScope,
-        ?string $segmentScope
+        ?string $segmentScope,
+        bool $forceRefresh = false
     ): array {
         $periods = $this->periodsForYear($year, $period, $branchScope, $segmentScope);
         $monthEnds = $periods
@@ -184,7 +199,7 @@ final class LandingLoanAnalyticsService
         $dailySegments = array_diff_key($segments, ['micro' => true]);
         $quality = $this->qualityPayload($year, $monthEnds, $branchScope, $dailySegments);
         if (isset($segments['micro'])) {
-            $quality['micro'] = $this->microSsaQualityPayload($year, $period, $branchScope);
+            $quality['micro'] = $this->microSsaQualityPayload($year, $period, $branchScope, $forceRefresh);
         }
 
         return [
@@ -211,7 +226,8 @@ final class LandingLoanAnalyticsService
         string $period,
         int $year,
         ?array $branchScope,
-        ?string $segmentScope
+        ?string $segmentScope,
+        bool $forceRefresh = false
     ): void {
         $pendingKey = $cacheKey.':refresh-pending';
         if (! Cache::add($pendingKey, true, now()->addMinutes(10))) {
@@ -225,10 +241,11 @@ final class LandingLoanAnalyticsService
             $year,
             $branchScope,
             $segmentScope,
+            $forceRefresh,
             $pendingKey
         ): void {
             try {
-                $payload = $this->buildAnalyticsPayload($period, $year, $branchScope, $segmentScope);
+                $payload = $this->buildAnalyticsPayload($period, $year, $branchScope, $segmentScope, $forceRefresh);
                 $payload = $this->cacheAnalyticsPayload($cacheKey, $durableCacheKey, $payload);
             } catch (Throwable $exception) {
                 Log::warning('Refresh cache analitik landing pinjaman gagal.', [
@@ -422,6 +439,9 @@ final class LandingLoanAnalyticsService
      */
     private function qualityPayload(int $year, Collection $monthEnds, ?array $branchScope, array $segments): array
     {
+        if ($segments === []) {
+            return [];
+        }
         $rows = $this->microQualitySnapshotRows($monthEnds, $branchScope, $segments);
         if ($rows === null) {
             $rows = collect();
@@ -593,7 +613,7 @@ final class LandingLoanAnalyticsService
      * @param  array<string, mixed>|null  $branchScope
      * @return array<string, mixed>
      */
-    private function microSsaQualityPayload(int $year, string $latestPeriod, ?array $branchScope): array
+    private function microSsaQualityPayload(int $year, string $latestPeriod, ?array $branchScope, bool $forceRefresh = false): array
     {
         $labels = [];
         $periodLabels = [];
@@ -614,7 +634,7 @@ final class LandingLoanAnalyticsService
         $rows = collect();
         if ($this->ssaTariffSourceIsReady()) {
             $query = DB::table(self::SSA_LOAN_TABLE)
-                ->whereBetween('month_day_year_of_periode', [sprintf('%d-01-01', $year), $latestPeriod])
+                ->whereIn('month_day_year_of_periode', $this->closedMonthEnds($year, $latestPeriod))
                 ->whereIn('segmen_dashboard', ['Micro', 'MICRO', 'micro']);
             $this->applySsaBranchScope($query, $branchScope);
 
@@ -634,7 +654,7 @@ final class LandingLoanAnalyticsService
                 ->filter(static fn (object $row): bool => Carbon::parse($row->periode)->isLastOfMonth())
                 ->keyBy(static fn (object $row): string => substr((string) $row->periode, 0, 10));
         }
-        $smlDetails = $this->microDailySmlBreakdown($rows->keys(), $branchScope);
+        $smlDetails = $this->microDailySmlBreakdown($rows->keys(), $branchScope, $forceRefresh);
 
         for ($month = 1; $month <= 12; $month++) {
             $monthDate = Carbon::create($year, $month, 1);
@@ -702,13 +722,36 @@ final class LandingLoanAnalyticsService
      * @param  array<string, mixed>|null  $branchScope
      * @return Collection<string, object>
      */
-    private function microDailySmlBreakdown(Collection $periods, ?array $branchScope): Collection
+    private function microDailySmlBreakdown(Collection $periods, ?array $branchScope, bool $forceRefresh = false): Collection
     {
         $periods = $periods->filter()->unique()->values();
         $hasDetail = Schema::hasColumn(self::SOURCE_TABLE, 'kolek_detail');
         $hasAge = Schema::hasColumn(self::SOURCE_TABLE, 'umur_tunggakan');
         if (! $this->sourceIsReady() || $periods->isEmpty() || (! $hasDetail && ! $hasAge)) {
             return collect();
+        }
+
+        // Historical month-end detail is identical across selected daily dates.
+        // Key it by that month-end's own source signature so a daily import of
+        // another date no longer forces a full rescan of every closed month;
+        // without a stored signature fall back to the global report version.
+        $scopeKey = (string) ($branchScope['key'] ?? UserBranchScope::AREA_SCOPE);
+        $fallbackVersion = 'v'.ReportCacheVersion::composite(['pinjaman', 'harian']);
+        $signatures = $this->dailyLoanPeriodSignatures($periods);
+        $cacheKey = static fn (string $period): string => 'landing:micro-sml-detail:v2:'.$scopeKey.':'.$period.':'
+            .($signatures[$period] ?? $fallbackVersion);
+        $rows = collect();
+        $missing = [];
+        foreach ($periods as $period) {
+            $cached = $forceRefresh ? null : Cache::get($cacheKey($period));
+            if (is_array($cached) && ($cached['periode'] ?? null) === $period) {
+                $rows->put($period, (object) $cached);
+            } else {
+                $missing[] = $period;
+            }
+        }
+        if ($missing === []) {
+            return $rows;
         }
 
         $detailExpression = $hasDetail
@@ -730,12 +773,12 @@ final class LandingLoanAnalyticsService
         ])) ?: '1 = 0';
 
         $query = DB::table(self::SOURCE_TABLE)
-            ->whereIn('periode', $periods->all())
+            ->whereIn('periode', $missing)
             ->where('segmen_kinerja', self::SEGMENTS['micro'])
             ->whereRaw('(COALESCE(kolek, 0) * 1) = 2');
         $this->applyBranchScope($query, $branchScope);
 
-        return $query
+        $freshRows = $query
             ->selectRaw('periode')
             ->selectRaw("SUM(CASE WHEN {$sml1Condition} THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS sml1_amount")
             ->selectRaw("SUM(CASE WHEN {$sml2Condition} THEN COALESCE(baki_debet1, 0) ELSE 0 END) AS sml2_amount")
@@ -743,6 +786,42 @@ final class LandingLoanAnalyticsService
             ->groupBy('periode')
             ->get()
             ->keyBy(static fn (object $row): string => substr((string) $row->periode, 0, 10));
+
+        foreach ($freshRows as $period => $row) {
+            $value = (array) $row;
+            $value['periode'] = $period;
+            Cache::put($cacheKey($period), $value, now()->addDays(isset($signatures[$period]) ? 35 : 2));
+            $rows->put($period, (object) $value);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Source signatures recorded when Daily Loan snapshots were rebuilt for each
+     * period; they change only when that period's source rows change.
+     *
+     * @param  Collection<int, string>  $periods
+     * @return array<string, string>
+     */
+    private function dailyLoanPeriodSignatures(Collection $periods): array
+    {
+        try {
+            if (! Schema::hasTable('snapshot_source_signatures')) {
+                return [];
+            }
+
+            return DB::table('snapshot_source_signatures')
+                ->where('source_table', self::SOURCE_TABLE)
+                ->where('snapshot_table', 'dashboard_pinjaman_snapshots')
+                ->whereIn('period_key', $periods->all())
+                ->whereNotNull('source_signature')
+                ->pluck('source_signature', 'period_key')
+                ->map(static fn ($signature): string => substr((string) $signature, 0, 16))
+                ->all();
+        } catch (Throwable) {
+            return [];
+        }
     }
 
     /**
@@ -950,7 +1029,7 @@ final class LandingLoanAnalyticsService
                 $ssaQuery->where('month_day_year_of_periode', '<=', Carbon::parse($requestedPeriod)->toDateString());
             }
 
-            $ssaPeriod = $ssaQuery->max('month_day_year_of_periode');
+            $ssaPeriod = $ssaQuery->orderByDesc('month_day_year_of_periode')->value('month_day_year_of_periode');
             if ($ssaPeriod !== null) {
                 return substr((string) $ssaPeriod, 0, 10);
             }
@@ -1000,24 +1079,22 @@ final class LandingLoanAnalyticsService
         ?string $segmentScope
     ): Collection
     {
+        // Only month-end observations are consumed by the chart. Probe these
+        // exact indexed dates instead of enumerating every daily loan in a year.
+        $candidates = $this->closedMonthEnds($year, $period);
         if ($segmentScope === 'micro' && $this->ssaTariffSourceIsReady()) {
             $ssaQuery = DB::table(self::SSA_LOAN_TABLE)
-                ->whereBetween('month_day_year_of_periode', [sprintf('%d-01-01', $year), $period])
                 ->whereIn('segmen_dashboard', ['Micro', 'MICRO', 'micro']);
             $this->applySsaBranchScope($ssaQuery, $branchScope);
 
-            return $ssaQuery
-                ->distinct()
-                ->orderBy('month_day_year_of_periode')
-                ->pluck('month_day_year_of_periode')
-                ->map(static fn ($value): string => substr((string) $value, 0, 10))
-                ->unique()
+            return collect($candidates)
+                ->filter(fn (string $candidate): bool => (clone $ssaQuery)->where('month_day_year_of_periode', $candidate)->exists())
                 ->values();
         }
 
         if ($segmentScope === 'micro' && $this->microQualitySnapshotIsReady()) {
             $snapshotQuery = DB::table(self::PERFORMANCE_SNAPSHOT_TABLE)
-                ->whereBetween('periode', [sprintf('%d-01-01', $year), $period])
+                ->whereIn('periode', $candidates)
                 ->where('segmen', 'MICRO');
             $this->applySnapshotBranchScope($snapshotQuery, $branchScope);
             $snapshotPeriods = $snapshotQuery
@@ -1032,20 +1109,30 @@ final class LandingLoanAnalyticsService
             }
         }
 
-        $query = DB::table(self::SOURCE_TABLE)
-            ->whereBetween('periode', [sprintf('%d-01-01', $year), $period]);
+        $query = DB::table(self::SOURCE_TABLE);
         if ($segmentScope !== null) {
             $query->where('segmen_kinerja', self::SEGMENTS[$segmentScope]);
         }
         $this->applyBranchScope($query, $branchScope);
 
-        return $query
-            ->distinct()
-            ->orderBy('periode')
-            ->pluck('periode')
-            ->map(static fn ($value): string => substr((string) $value, 0, 10))
-            ->unique()
+        return collect($candidates)
+            ->filter(fn (string $candidate): bool => (clone $query)->where('periode', $candidate)->exists())
             ->values();
+    }
+
+    /** @return list<string> */
+    private function closedMonthEnds(int $year, string $latestPeriod): array
+    {
+        $periods = [];
+        for ($month = 1; $month <= 12; $month++) {
+            $closing = Carbon::create($year, $month, 1)->endOfMonth()->toDateString();
+            if ($closing > $latestPeriod) {
+                break;
+            }
+            $periods[] = $closing;
+        }
+
+        return $periods;
     }
 
     /** @param array<string, mixed>|null $branchScope */

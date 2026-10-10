@@ -1467,6 +1467,35 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(1, $month['q1']);
     }
 
+    public function test_daily_loan_fingerprint_survives_unrelated_imports_and_tracks_period_signatures(): void
+    {
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+        $periods = ['2026-08-31', '2026-09-30'];
+        $fallback = $this->invokePrivateMethod($controller, 'dailyLoanSignatureFingerprint', [$periods]);
+        $this->assertStringStartsWith('v', $fallback);
+
+        (require database_path('migrations/2026_05_09_000001_create_snapshot_source_signatures_table.php'))->up();
+        foreach ($periods as $period) {
+            DB::table('snapshot_source_signatures')->insert([
+                'source_table' => 'daily_loan_dinamis', 'snapshot_table' => 'dashboard_pinjaman_snapshots',
+                'period_key' => $period, 'source_signature' => 'sig-'.$period,
+            ]);
+        }
+        $signed = $this->invokePrivateMethod($controller, 'dailyLoanSignatureFingerprint', [$periods]);
+        $this->assertStringStartsWith('s', $signed);
+
+        // A Simpanan or other report import bumps the global version only.
+        Cache::put('report_cache_version:simpanan', 99, now()->addDay());
+        $this->assertSame($signed, $this->invokePrivateMethod($controller, 'dailyLoanSignatureFingerprint', [$periods]));
+
+        // Re-importing one of the positions changes its recorded signature.
+        DB::table('snapshot_source_signatures')->where('period_key', '2026-09-30')->update(['source_signature' => 'sig-reimport']);
+        $this->assertNotSame($signed, $this->invokePrivateMethod($controller, 'dailyLoanSignatureFingerprint', [$periods]));
+
+        // A position without a signature keeps the version-based behaviour.
+        $this->assertStringStartsWith('v', $this->invokePrivateMethod($controller, 'dailyLoanSignatureFingerprint', [[...$periods, '2026-10-08']]));
+    }
+
     public function test_consumer_retail_performance_merges_old_and_new_pn_through_brihc_roster(): void
     {
         DB::table('daily_loan_dinamis')->insert([
@@ -1503,7 +1532,9 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertCount(1, $performance['rows']);
         $this->assertSame('00409222 - Novan Yoga Pratama', $performance['rows'][0]['rm']);
         $this->assertSame(7100000000.0, $performance['rows'][0]['accumulated']['rp']);
-        $this->assertSame(2, $performance['rows'][0]['quadrant']);
+        // RO workbook: Novan's first six months use the 1,7 M ramp target.
+        $this->assertSame(3400000000.0, $performance['rows'][0]['target']['ytd_rp']);
+        $this->assertSame(1, $performance['rows'][0]['quadrant']);
     }
 
     public function test_consumer_branch_filter_keeps_history_from_branch_before_latest_assignment(): void

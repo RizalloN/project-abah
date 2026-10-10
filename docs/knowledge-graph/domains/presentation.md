@@ -6,10 +6,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 14 |
-| method | 253 |
+| file | 15 |
+| method | 258 |
 | unresolved_symbol | 1 |
-| class | 9 |
+| class | 10 |
 | trait | 1 |
 | view | 2 |
 
@@ -50,6 +50,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Class Nodes
 
+- `KinerjaMicroNettPresentationTest` - `tests/Unit/KinerjaMicroNettPresentationTest.php`
 - `NativeOpenXmlPowerPointRenderer` - `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php`
 - `NativeOpenXmlPowerPointRendererTest` - `tests/Unit/NativeOpenXmlPowerPointRendererTest.php`
 - `PowerPointExportService` - `app/Services/Presentation/PowerPointExportService.php`
@@ -74,24 +75,28 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | presentation -> core (calls) | 62 |
+| presentation -> core (instantiates) | 26 |
 | presentation -> core (accepts) | 24 |
-| presentation -> core (instantiates) | 24 |
 | jobs-snapshots -> presentation (calls) | 10 |
 | presentation -> dashboard-simpanan (references_route) | 8 |
+| dashboard-pinjaman -> presentation (calls) | 6 |
 | dashboard-simpanan -> presentation (accepts) | 4 |
 | access-control -> presentation (calls) | 4 |
 | presentation -> import (reads_table) | 4 |
 | presentation -> core (checks_table) | 3 |
 | jobs-snapshots -> presentation (uses_trait) | 3 |
+| presentation -> dashboard-pinjaman (contains) | 3 |
+| presentation -> tests (extends) | 3 |
 | presentation -> marketshare (contains) | 3 |
 | jobs-snapshots -> presentation (accepts) | 2 |
 | presentation -> dashboard-simpanan (reads_table) | 2 |
+| presentation -> dashboard-pinjaman (renders) | 2 |
+| presentation -> bank-pipeline (instantiates) | 2 |
 | marketshare -> presentation (instantiates) | 2 |
 | input-management -> presentation (uses_trait) | 2 |
 | presentation -> access-control (contains) | 2 |
 | presentation -> jobs-snapshots (contains) | 2 |
 | presentation -> prognosa (contains) | 2 |
-| presentation -> tests (extends) | 2 |
 | dashboard-simpanan -> presentation (calls) | 1 |
 | dashboard-simpanan -> presentation (renders) | 1 |
 | presentation -> input-management (injects) | 1 |
@@ -99,7 +104,3 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | presentation -> core (injects) | 1 |
 | presentation -> input-management (calls) | 1 |
 | presentation -> dashboard-simpanan (checks_table) | 1 |
-| presentation -> dashboard-pinjaman (calls) | 1 |
-| presentation -> core (reads_table) | 1 |
-| prognosa -> presentation (calls) | 1 |
-| presentation -> tests (calls) | 1 |

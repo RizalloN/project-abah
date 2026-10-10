@@ -231,4 +231,26 @@ class DashboardHarianResponsiveViewTest extends TestCase
         $this->assertStringContainsString('type="date" id="filter-posisi-terakhir"', $dashboardHtml);
         $this->assertStringContainsString('type="date" id="periodFilter"', $ukerHtml);
     }
+
+    public function test_daily_table_header_has_white_keterangan_and_delta_labels_yoy_ytd_mtm_mtd_dtd(): void
+    {
+        $dashboard = file_get_contents(resource_path('views/report/dashboard-harian.blade.php'));
+
+        $this->assertStringContainsString('<span class="header-center text-white">Keterangan</span>', $dashboard);
+        $this->assertStringContainsString('.daily-table thead .sticky-label,', $dashboard);
+        $this->assertStringContainsString('.daily-table thead .group-label {', $dashboard);
+        $this->assertStringContainsString('color: #ffffff !important;', $dashboard);
+
+        $this->assertStringContainsString('data-label-delta-yoy>YoY</span>', $dashboard);
+        $this->assertStringContainsString('data-label-delta-ytd>YtD</span>', $dashboard);
+        $this->assertStringContainsString('data-label-delta-mtm>MtM</span>', $dashboard);
+        $this->assertStringContainsString('data-label-delta-mtd>MtD</span>', $dashboard);
+        $this->assertStringContainsString('data-label-delta-dtd>DtD</span>', $dashboard);
+
+        $this->assertStringContainsString("setTextContent(headerLabels.deltaYoy, 'YoY');", $dashboard);
+        $this->assertStringContainsString("setTextContent(headerLabels.deltaYtd, 'YtD');", $dashboard);
+        $this->assertStringContainsString("setTextContent(headerLabels.deltaMtm, 'MtM');", $dashboard);
+        $this->assertStringContainsString("setTextContent(headerLabels.deltaMtd, 'MtD');", $dashboard);
+        $this->assertStringContainsString("setTextContent(headerLabels.deltaDtd, 'DtD');", $dashboard);
+    }
 }

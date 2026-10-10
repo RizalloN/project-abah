@@ -1,0 +1,157 @@
+{
+  "description": "Referensi identitas RM Mikro dari empat file SDM yang diberikan pengguna. Tidak berisi nominal transaksi.",
+  "sources": [
+    {
+      "branch": "KC PONOROGO",
+      "position_date": "2026-10-09",
+      "file": "report_Rincian Pekerja_09Oct26 ponorogo.xlsx"
+    },
+    {
+      "branch": "KC NGAWI",
+      "position_date": "2026-09-21",
+      "file": "DATA PEKERJA BO NGAWI 21-09-2026.xlsx"
+    },
+    {
+      "branch": "KC MADIUN",
+      "position_date": "2026-09-21",
+      "file": "Master Data SDM Posisi Tanggal 21092026 Madiun.xlsx"
+    },
+    {
+      "branch": "KC MAGETAN",
+      "position_date": "2026-09-21",
+      "file": "Data Pekerja 21 Sep 2026 magetan.xlsx"
+    }
+  ],
+  "people": [
+    {
+      "pn": "00167231",
+      "name": "Sandi Prayogo",
+      "branch": "KC PONOROGO",
+      "unit": "KC PONOROGO",
+      "office_type": "kc",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)",
+      "effective_from": "2026-02-01"
+    },
+    {
+      "pn": "00206947",
+      "name": "Very Wicaksono Nugroho",
+      "branch": "KC PONOROGO",
+      "unit": "KC PONOROGO",
+      "office_type": "kc",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)",
+      "effective_from": "2026-01-01"
+    },
+    {
+      "pn": "00223311",
+      "name": "Catur Priyatnanda Aditya",
+      "branch": "KC PONOROGO",
+      "unit": "KC PONOROGO",
+      "office_type": "kc",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)",
+      "effective_from": "2026-10-01"
+    },
+    {
+      "pn": "00335871",
+      "name": "Aulia Rika Ramadhani",
+      "branch": "KC PONOROGO",
+      "unit": "KC PONOROGO",
+      "office_type": "kc",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)",
+      "effective_from": "2026-01-01"
+    },
+    {
+      "pn": "00122187",
+      "name": "Abi Choirul Anwar",
+      "branch": "KC NGAWI",
+      "unit": "KC NGAWI",
+      "office_type": "kc",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)"
+    },
+    {
+      "pn": "00172695",
+      "name": "Sugiyono",
+      "branch": "KC NGAWI",
+      "unit": "KC NGAWI",
+      "office_type": "kc",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)"
+    },
+    {
+      "pn": "00231484",
+      "name": "Hendry Alpha Aswinaldo Djajadi",
+      "branch": "KC NGAWI",
+      "unit": "KC NGAWI",
+      "office_type": "kc",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)"
+    },
+    {
+      "pn": "00121911",
+      "name": "Indrawan Adhitia",
+      "branch": "KC MADIUN",
+      "unit": "KCP DOLOPO",
+      "office_type": "kcp",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)"
+    },
+    {
+      "pn": "00151454",
+      "name": "Alfiyan Sanjaya",
+      "branch": "KC MADIUN",
+      "unit": "KCP CARUBAN",
+      "office_type": "kcp",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)"
+    },
+    {
+      "pn": "00218297",
+      "name": "Oktantio Bagus Oranda",
+      "branch": "KC MADIUN",
+      "unit": "KC MADIUN",
+      "office_type": "kc",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)"
+    },
+    {
+      "pn": "00360186",
+      "name": "Muh Ashar Fatoni",
+      "branch": "KC MADIUN",
+      "unit": "KC MADIUN",
+      "office_type": "kc",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)"
+    },
+    {
+      "pn": "00173900",
+      "name": "Bibi Zia Respita",
+      "branch": "KC MAGETAN",
+      "unit": "KC MAGETAN",
+      "office_type": "kc",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)"
+    },
+    {
+      "pn": "00229336",
+      "name": "Afif Fahrotu Riza",
+      "branch": "KC MAGETAN",
+      "unit": "KC MAGETAN",
+      "office_type": "kc",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)"
+    },
+    {
+      "pn": "00274093",
+      "name": "Paura Rangga Zobda",
+      "branch": "KC MAGETAN",
+      "unit": "KC MAGETAN",
+      "office_type": "kc",
+      "role": "RM MIKRO",
+      "employment_status": "PT (peserta pens.)"
+    }
+  ]
+}

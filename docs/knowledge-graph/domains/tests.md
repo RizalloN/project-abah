@@ -6,24 +6,24 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 67 |
+| file | 70 |
 | function | 1 |
-| method | 352 |
+| method | 363 |
 | unresolved_symbol | 10 |
-| class | 61 |
+| class | 64 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `TestCase` | class | 208 | `tests/TestCase.php:13` |
-| `setUp` | method | 105 | `tests/TestCase.php:17` |
+| `TestCase` | class | 215 | `tests/TestCase.php:13` |
+| `setUp` | method | 107 | `tests/TestCase.php:17` |
 | `ManagedReportDeleteTest` | class | 57 | `tests/Unit/ManagedReportDeleteTest.php:21` |
-| `LandingMicroPerformanceServiceTest` | class | 54 | `tests/Unit/LandingMicroPerformanceServiceTest.php:16` |
-| `invokePrivate` | method | 35 | `tests/Unit/LandingMicroPerformanceServiceTest.php:2063` |
-| `dailyLoanRow` | method | 30 | `tests/Unit/LandingMicroPerformanceServiceTest.php:1748` |
+| `LandingMicroPerformanceServiceTest` | class | 54 | `tests/Unit/LandingMicroPerformanceServiceTest.php:17` |
+| `invokePrivate` | method | 35 | `tests/Unit/LandingMicroPerformanceServiceTest.php:2069` |
+| `dailyLoanRow` | method | 30 | `tests/Unit/LandingMicroPerformanceServiceTest.php:1754` |
 | `ResponsiveOperationalViewsTest` | class | 24 | `tests/Unit/ResponsiveOperationalViewsTest.php:7` |
-| `LandingConsumerOperationalServiceTest` | class | 20 | `tests/Unit/LandingConsumerOperationalServiceTest.php:16` |
+| `LandingConsumerOperationalServiceTest` | class | 22 | `tests/Unit/LandingConsumerOperationalServiceTest.php:18` |
 | `LandingSmeOperationalServiceTest` | class | 20 | `tests/Unit/LandingSmeOperationalServiceTest.php:12` |
 | `ReportDataSyncServiceTest` | class | 20 | `tests/Unit/ReportDataSyncServiceTest.php:26` |
 | `LandingPageRedesignContractTest` | class | 18 | `tests/Unit/LandingPageRedesignContractTest.php:9` |
@@ -39,13 +39,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `DirectLargeFileLoadServiceTest` | class | 13 | `tests/Unit/DirectLargeFileLoadServiceTest.php:10` |
 | `StatusSyncManualTestScript` | class | 13 | `tests/Manual/StatusSyncManualTestScript.php:23` |
 | `AdminLayoutResponsiveGuardrailTest` | class | 12 | `tests/Unit/AdminLayoutResponsiveGuardrailTest.php:7` |
+| `ConsumerKanwilReferenceTest` | class | 12 | `tests/Unit/ConsumerKanwilReferenceTest.php:8` |
 | `MySqlBulkLoadServiceTest` | class | 12 | `tests/Unit/MySqlBulkLoadServiceTest.php:12` |
 | `PruneReportDailyHistoryCommandTest` | class | 12 | `tests/Feature/PruneReportDailyHistoryCommandTest.php:12` |
 | `guardDatabaseConnection` | method | 12 | `tests/TestCase.php:40` |
 | `row` | method | 12 | `tests/Unit/MicroNettDisbursementCalculatorTest.php:215` |
 | `LinkManagementControllerTest` | class | 11 | `tests/Unit/LinkManagementControllerTest.php:11` |
 | `invoke` | method | 11 | `tests/Unit/LandingOperationalPeriodCacheTest.php:179` |
-| `setUp` | method | 11 | `tests/Unit/LandingMicroPerformanceServiceTest.php:18` |
 
 ## Class Nodes
 
@@ -60,7 +60,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `GeneratedColumnConsistencyTest` - `tests/Unit/GeneratedColumnConsistencyTest.php`
 - `JobHealthServiceTest` - `tests/Unit/JobHealthServiceTest.php`
 - `KejarLabaReportControllerTest` - `tests/Unit/KejarLabaReportControllerTest.php`
+- `KinerjaMicroNettRouteTest` - `tests/Unit/KinerjaMicroNettRouteTest.php`
 - `KinerjaNonPtpReportControllerTest` - `tests/Unit/KinerjaNonPtpReportControllerTest.php`
+- `LandingAvailabilityIsolationTest` - `tests/Unit/LandingAvailabilityIsolationTest.php`
 - `LandingConsumerOperationalServiceTest` - `tests/Unit/LandingConsumerOperationalServiceTest.php`
 - `LandingDashboardCacheRecoveryTest` - `tests/Unit/LandingDashboardCacheRecoveryTest.php`
 - `LandingMbmDateInteractionTest` - `tests/Unit/LandingMbmDateInteractionTest.php`
@@ -80,6 +82,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ManagedReportManagementServiceTest` - `tests/Unit/ManagedReportManagementServiceTest.php`
 - `ManagedReportRebuildTest` - `tests/Unit/ManagedReportRebuildTest.php`
 - `MicroNettDisbursementCalculatorTest` - `tests/Unit/MicroNettDisbursementCalculatorTest.php`
+- `MicroRmRosterReferenceTest` - `tests/Unit/MicroRmRosterReferenceTest.php`
 - `MySqlBulkLoadServiceTest` - `tests/Unit/MySqlBulkLoadServiceTest.php`
 - `OfficeDocumentPreviewServiceTest` - `tests/Unit/OfficeDocumentPreviewServiceTest.php`
 - `PartitionMaintenanceServiceTest` - `tests/Unit/PartitionMaintenanceServiceTest.php`
@@ -115,20 +118,20 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| tests -> core (instantiates) | 103 |
-| tests -> core (calls) | 102 |
+| tests -> core (instantiates) | 113 |
+| tests -> core (calls) | 112 |
 | import -> tests (extends) | 52 |
 | import -> tests (calls) | 47 |
 | tests -> dashboard-pinjaman (writes_table) | 47 |
-| dashboard-pinjaman -> tests (calls) | 43 |
-| tests -> dashboard-pinjaman (contains) | 36 |
+| dashboard-pinjaman -> tests (calls) | 46 |
+| tests -> dashboard-pinjaman (contains) | 38 |
 | tests -> jobs-snapshots (contains) | 35 |
 | tests -> core (writes_table) | 34 |
 | jobs-snapshots -> tests (calls) | 33 |
 | tests -> import (contains) | 30 |
-| jobs-snapshots -> tests (extends) | 23 |
-| dashboard-pinjaman -> tests (extends) | 22 |
-| tests -> dashboard-pinjaman (defines_table) | 19 |
+| jobs-snapshots -> tests (extends) | 24 |
+| dashboard-pinjaman -> tests (extends) | 23 |
+| tests -> dashboard-pinjaman (defines_table) | 22 |
 | tests -> core (defines_table) | 17 |
 | dashboard-simpanan -> tests (extends) | 16 |
 | tests -> import (defines_table) | 15 |
@@ -138,10 +141,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | tests -> dashboard-pinjaman (reads_table) | 12 |
 | tests -> import (writes_table) | 12 |
 | dashboard-harian -> tests (calls) | 12 |
+| tests -> jobs-snapshots (calls) | 12 |
 | tests -> core (renders) | 12 |
 | tests -> access-control (calls) | 12 |
-| tests -> jobs-snapshots (calls) | 11 |
-| access-control -> tests (calls) | 10 |
+| access-control -> tests (calls) | 11 |
+| tests -> access-control (contains) | 11 |
 | dashboard-harian -> tests (extends) | 10 |
-| tests -> access-control (contains) | 10 |
 | database -> tests (calls) | 9 |

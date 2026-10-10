@@ -7,6 +7,7 @@ use App\Support\LandingMicroPerformanceService;
 use App\Support\ReportCacheVersion;
 use App\Support\UserBranchScope;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Defer\DeferredCallbackCollection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -1152,6 +1153,11 @@ class LandingMicroPerformanceServiceTest extends TestCase
         ]);
         ReportCacheVersion::bump('pinjaman');
 
+        $second = $service->payload('2026-08-25');
+
+        $this->assertSame(1, data_get($second, 'realization.mantri_roster.total_active'));
+        $this->assertTrue(data_get($second, 'meta.refresh_pending'));
+        app(DeferredCallbackCollection::class)->invoke();
         $second = $service->payload('2026-08-25');
 
         $this->assertSame(2, data_get($second, 'realization.mantri_roster.total_active'));
