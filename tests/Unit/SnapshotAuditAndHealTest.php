@@ -190,4 +190,57 @@ class SnapshotAuditAndHealTest extends TestCase
         $this->assertSame(0, $result['rebuilds_dispatched'], 'Throttle must suppress second rebuild dispatch');
         Queue::assertNothingPushed();
     }
+
+    public function test_verified_clean_period_is_not_reaudited_until_data_version_changes(): void
+    {
+        Queue::fake();
+        \Illuminate\Support\Facades\DB::table('daily_loan_dinamis')->insert([
+            ['periode' => '2026-10-07', 'baki_debet1' => 10, 'nomor_rekening1' => 'A'],
+            ['periode' => '2026-10-08', 'baki_debet1' => 20, 'nomor_rekening1' => 'B'],
+        ]);
+
+        $importService = Mockery::mock(ImportProgressService::class);
+        $importService->shouldReceive('hasActiveProcessingJobsForTable')->andReturn(false);
+
+        $audited = [];
+        $coordinator = Mockery::mock(SnapshotAuditCoordinator::class);
+        $coordinator->shouldReceive('runAudit')
+            ->andReturnUsing(function (string $table, ?string $period) use (&$audited): array {
+                $audited[] = $period;
+
+                return $period === '2026-10-07'
+                    ? ['status' => 'error', 'discrepancies' => []]
+                    : ['status' => 'clean', 'discrepancies' => []];
+            });
+
+        $guard = Mockery::mock(SnapshotIntegrityGuard::class);
+        $guard->shouldReceive('inspectTable')->andReturn([]);
+
+        $service = new SnapshotAuditAndHealService(
+            $importService,
+            $coordinator,
+            Mockery::mock(SnapshotAuditService::class),
+            $guard
+        );
+
+        $service->auditAndHealTable('daily_loan_dinamis', null, false, 5);
+        $this->assertSame(['2026-10-08', '2026-10-07'], $audited);
+
+        // The clean period is skipped; the errored one is retried.
+        $audited = [];
+        $second = $service->auditAndHealTable('daily_loan_dinamis', null, false, 5);
+        $this->assertSame(['2026-10-07'], $audited);
+        $this->assertSame(1, $second['periods_skipped_clean']);
+
+        // A new import bumps the version, so every period is audited again.
+        \App\Support\ReportCacheVersion::bump('pinjaman');
+        $audited = [];
+        $service->auditAndHealTable('daily_loan_dinamis', null, false, 5);
+        $this->assertSame(['2026-10-08', '2026-10-07'], $audited);
+
+        // Forced audits never use the clean marker.
+        $audited = [];
+        $service->auditAndHealTable('daily_loan_dinamis', null, true, 5);
+        $this->assertSame(['2026-10-08', '2026-10-07'], $audited);
+    }
 }

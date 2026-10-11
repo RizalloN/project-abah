@@ -556,6 +556,15 @@ class ReportSnapshotBuilder
         return count($rows);
     }
 
+    /**
+     * The per-row balance stored in dashboard_pinjaman_snapshots, so
+     * reconciliation compares the source with the same rule.
+     */
+    public function dashboardLoanBalanceSql(string $column): string
+    {
+        return $this->buildNormalizedLoanBalanceExpression($column);
+    }
+
     private function buildNormalizedLoanBalanceExpression(string $column): string
     {
         $base = $this->loanBalanceRoundingBase();

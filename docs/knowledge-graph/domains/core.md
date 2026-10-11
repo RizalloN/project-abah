@@ -6,13 +6,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| command | 24 |
-| file | 126 |
+| command | 25 |
+| file | 127 |
 | function | 1 |
-| method | 700 |
-| unresolved_symbol | 387 |
+| method | 706 |
+| unresolved_symbol | 391 |
 | route | 16 |
-| class | 67 |
+| class | 68 |
 | table | 23 |
 | view | 45 |
 
@@ -122,6 +122,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ReportDataSyncService` - `app/Support/ReportDataSyncService.php`
 - `ReportFilterService` - `app/Services/Reports/ReportFilterService.php`
 - `ReportIndexHintResolver` - `app/Support/ReportIndexHintResolver.php`
+- `RestoreDatabasePartCommand` - `app/Console/Commands/RestoreDatabasePartCommand.php`
 - `RkaLookupService` - `app/Support/RkaLookupService.php`
 - `SafeSqlDumpRecoveryService` - `app/Services/SafeSqlDumpRecoveryService.php`
 - `SargableDateFilter` - `app/Support/SargableDateFilter.php`
@@ -147,6 +148,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `benchmark:simulate-delete` - `app/Console/Commands/SimulateDeleteScenarioCommand.php`
 - `dashboard-sources:refresh` - `app/Console/Commands/RefreshRemoteDashboardSourcesCommand.php`
 - `database:performance-tune` - `app/Console/Commands/TuneDatabasePerformanceCommand.php`
+- `database:restore-part` - `app/Console/Commands/RestoreDatabasePartCommand.php`
 - `db:recover-safe-dump` - `app/Console/Commands/RecoverSafeDumpCommand.php`
 - `doc:markdown` - `app/Console/Commands/ConvertDocumentToMarkdownCommand.php`
 - `key:generate`
@@ -247,20 +249,21 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | import -> core (calls) | 835 |
 | import -> core (instantiates) | 418 |
-| dashboard-pinjaman -> core (calls) | 336 |
+| dashboard-pinjaman -> core (calls) | 332 |
 | dashboard-simpanan -> core (calls) | 225 |
-| jobs-snapshots -> core (calls) | 192 |
+| jobs-snapshots -> core (calls) | 193 |
 | import -> core (accepts) | 189 |
 | bank-pipeline -> core (calls) | 170 |
 | dashboard-pinjaman -> core (instantiates) | 120 |
 | tests -> core (instantiates) | 113 |
 | tests -> core (calls) | 112 |
 | prognosa -> core (calls) | 110 |
+| database -> core (instantiates) | 93 |
 | dashboard-pinjaman -> core (accepts) | 93 |
 | dashboard-harian -> core (calls) | 89 |
-| database -> core (instantiates) | 74 |
 | dashboard-harian -> core (instantiates) | 71 |
 | almafacts -> core (calls) | 69 |
+| database -> core (calls) | 68 |
 | jobs-snapshots -> core (instantiates) | 66 |
 | bank-pipeline -> core (instantiates) | 64 |
 | bank-pipeline -> core (accepts) | 64 |
@@ -271,7 +274,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | access-control -> core (calls) | 60 |
 | dashboard-simpanan -> core (accepts) | 59 |
 | core -> access-control (protected_by) | 58 |
-| database -> core (calls) | 56 |
 | prognosa -> core (instantiates) | 37 |
 | tests -> core (writes_table) | 34 |
 | dashboard-pinjaman -> core (writes_table) | 33 |

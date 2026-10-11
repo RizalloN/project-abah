@@ -9,7 +9,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | command | 19 |
 | file | 90 |
 | function | 2 |
-| method | 699 |
+| method | 702 |
 | unresolved_symbol | 23 |
 | queue | 6 |
 | route | 1 |
@@ -21,7 +21,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `ReportSnapshotBuilder` | class | 147 | `app/Support/ReportSnapshotBuilder.php:12` |
+| `ReportSnapshotBuilder` | class | 148 | `app/Support/ReportSnapshotBuilder.php:12` |
 | `jobs` | table | 102 | - |
 | `performance_rm_snapshots` | table | 94 | - |
 | `EnsureQueueWorkerRunning` | class | 50 | `app/Console/Commands/EnsureQueueWorkerRunning.php:21` |
@@ -192,7 +192,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| jobs-snapshots -> core (calls) | 192 |
+| jobs-snapshots -> core (calls) | 193 |
 | import -> jobs-snapshots (calls) | 82 |
 | jobs-snapshots -> core (instantiates) | 66 |
 | dashboard-pinjaman -> jobs-snapshots (writes_table) | 36 |
@@ -201,13 +201,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | jobs-snapshots -> tests (calls) | 33 |
 | jobs-snapshots -> core (uses_trait) | 33 |
 | jobs-snapshots -> dashboard-pinjaman (reads_table) | 27 |
+| jobs-snapshots -> dashboard-pinjaman (writes_table) | 24 |
 | dashboard-simpanan -> jobs-snapshots (uses_trait) | 24 |
 | jobs-snapshots -> tests (extends) | 24 |
 | jobs-snapshots -> core (accepts) | 23 |
-| jobs-snapshots -> dashboard-pinjaman (writes_table) | 23 |
 | import -> jobs-snapshots (reads_table) | 22 |
 | import -> jobs-snapshots (instantiates) | 22 |
-| dashboard-pinjaman -> jobs-snapshots (calls) | 18 |
+| dashboard-pinjaman -> jobs-snapshots (calls) | 19 |
 | import -> jobs-snapshots (writes_table) | 18 |
 | jobs-snapshots -> core (extends) | 18 |
 | jobs-snapshots -> import (contains) | 18 |
@@ -219,6 +219,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | tests -> jobs-snapshots (calls) | 12 |
 | import -> jobs-snapshots (checks_table) | 11 |
 | import -> jobs-snapshots (accepts) | 11 |
+| jobs-snapshots -> platform (calls) | 11 |
 | jobs-snapshots -> import (calls) | 10 |
 | core -> jobs-snapshots (calls) | 10 |
-| jobs-snapshots -> presentation (calls) | 10 |

@@ -771,7 +771,12 @@ class DashboardHarianSnapshotService
         return sprintf('%04d-%02d-01', $resolvedYear, $resolvedMonth);
     }
 
-    public function resolveComparisonPeriods(string $selectedPeriod, ?string $rkaPeriod = null, ?string $mtmPeriod = null): array
+    public function resolveComparisonPeriods(
+        string $selectedPeriod,
+        ?string $rkaPeriod = null,
+        ?string $mtmPeriod = null,
+        array $customPeriods = []
+    ): array
     {
         $selected = Carbon::parse($selectedPeriod);
         $resolvedRka = $this->resolveEffectiveRkaPeriod($rkaPeriod ? substr($rkaPeriod, 0, 7) : null, $selectedPeriod);
@@ -779,14 +784,34 @@ class DashboardHarianSnapshotService
             ? $this->resolveEffectivePeriod($mtmPeriod)
             : $this->resolveEffectivePeriod($selected->copy()->subMonthsNoOverflow(1)->toDateString());
 
+        $resolvedYoy = !empty($customPeriods['yoy'])
+            ? $this->resolveEffectivePeriod($customPeriods['yoy'])
+            : $this->resolveEffectivePeriod($selected->copy()->subYearsNoOverflow(1)->endOfMonth()->toDateString());
+
+        $resolvedYtd = !empty($customPeriods['ytd'])
+            ? $this->resolveEffectivePeriod($customPeriods['ytd'])
+            : $this->resolveEffectivePeriod($selected->copy()->subYearsNoOverflow(1)->endOfYear()->toDateString());
+
+        $resolvedM2 = !empty($customPeriods['m2'])
+            ? $this->resolveEffectivePeriod($customPeriods['m2'])
+            : $this->resolveEffectivePeriod($selected->copy()->subMonthsNoOverflow(2)->endOfMonth()->toDateString());
+
+        $resolvedMtd = !empty($customPeriods['mtd'])
+            ? $this->resolveEffectivePeriod($customPeriods['mtd'])
+            : $this->resolveEffectivePeriod($selected->copy()->subMonthsNoOverflow(1)->endOfMonth()->toDateString());
+
+        $resolvedH1 = !empty($customPeriods['h1'])
+            ? $this->resolveEffectivePeriod($customPeriods['h1'])
+            : $this->resolvePreviousPeriod($selectedPeriod);
+
         return [
             'current' => $selectedPeriod,
-            'yoy' => $this->resolveEffectivePeriod($selected->copy()->subYearsNoOverflow(1)->endOfMonth()->toDateString()),
-            'ytd' => $this->resolveEffectivePeriod($selected->copy()->subYearsNoOverflow(1)->endOfYear()->toDateString()),
-            'm2' => $this->resolveEffectivePeriod($selected->copy()->subMonthsNoOverflow(2)->endOfMonth()->toDateString()),
+            'yoy' => $resolvedYoy,
+            'ytd' => $resolvedYtd,
+            'm2' => $resolvedM2,
             'mtm' => $resolvedMtm,
-            'mtd' => $this->resolveEffectivePeriod($selected->copy()->subMonthsNoOverflow(1)->endOfMonth()->toDateString()),
-            'h1' => $this->resolvePreviousPeriod($selectedPeriod),
+            'mtd' => $resolvedMtd,
+            'h1' => $resolvedH1,
             'h2' => $this->resolvePreviousNthPeriod($selectedPeriod, 2),
             'rka' => $resolvedRka,
             'rka_dec' => $resolvedRka ? Carbon::parse($resolvedRka)->month(12)->startOfMonth()->toDateString() : null,
@@ -1764,6 +1789,25 @@ class DashboardHarianSnapshotService
 
     public function buildDashboardPayload(?string $selectedPeriod, ?string $rkaPeriod = null, array|string|null $kancaKey = null, array|string|null $unitKey = null, ?string $mtmPeriod = null): array
     {
+        return $this->buildDashboardPayloadWithCustomPeriods(
+            $selectedPeriod,
+            $rkaPeriod,
+            $kancaKey,
+            $unitKey,
+            $mtmPeriod,
+            []
+        );
+    }
+
+    public function buildDashboardPayloadWithCustomPeriods(
+        ?string $selectedPeriod,
+        ?string $rkaPeriod = null,
+        array|string|null $kancaKey = null,
+        array|string|null $unitKey = null,
+        ?string $mtmPeriod = null,
+        array $customPeriods = []
+    ): array
+    {
         if (!$selectedPeriod) {
             return [
                 'selected_period' => null,
@@ -1785,7 +1829,12 @@ class DashboardHarianSnapshotService
 
         $isRetailConsolidated = $this->isKeragaanUkerKonsolScope($unitKey);
         $metricUnitKey = $isRetailConsolidated ? null : $unitKey;
-        $comparisonPeriods = $this->resolveComparisonPeriods($selectedPeriod, $rkaPeriod, $mtmPeriod);
+        $comparisonPeriods = $this->resolveComparisonPeriods(
+            $selectedPeriod,
+            $rkaPeriod,
+            $mtmPeriod,
+            $customPeriods
+        );
         $neededPeriods = array_values(array_unique(array_filter([
             $selectedPeriod,
             $comparisonPeriods['yoy'],

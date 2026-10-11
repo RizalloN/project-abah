@@ -253,4 +253,67 @@ class DashboardHarianResponsiveViewTest extends TestCase
         $this->assertStringContainsString("setTextContent(headerLabels.deltaMtd, 'MtD');", $dashboard);
         $this->assertStringContainsString("setTextContent(headerLabels.deltaDtd, 'DtD');", $dashboard);
     }
+
+    public function test_daily_table_has_excel_like_column_context_menu_hide_and_date_override(): void
+    {
+        $dashboard = file_get_contents(resource_path('views/report/dashboard-harian.blade.php'));
+
+        // Context menu pop up and buttons
+        $this->assertStringContainsString('id="dailyTableContextMenu"', $dashboard);
+        $this->assertStringContainsString('class="daily-context-menu"', $dashboard);
+        $this->assertStringContainsString('id="ctxBtnHideColumn"', $dashboard);
+        $this->assertStringContainsString('id="ctxBtnChangeDate"', $dashboard);
+        $this->assertStringContainsString('id="ctxBtnResetDate"', $dashboard);
+        $this->assertStringContainsString('id="ctxBtnUnhideAll"', $dashboard);
+
+        // Header unhide pill button
+        $this->assertStringContainsString('id="btnUnhideAllColumns"', $dashboard);
+        $this->assertStringContainsString('id="hiddenColumnsCountBadge"', $dashboard);
+
+        // Date override modal
+        $this->assertStringContainsString('id="modalOverrideColumnDate"', $dashboard);
+        $this->assertStringContainsString('id="btnModalApplyColumnDate"', $dashboard);
+        $this->assertStringContainsString('id="btnModalResetColumnDate"', $dashboard);
+
+        // Column keys on thead & colgroup
+        $this->assertStringContainsString('data-col-key="pos_yoy"', $dashboard);
+        $this->assertStringContainsString('data-col-key="delta_yoy"', $dashboard);
+        $this->assertStringContainsString('data-col-key="rka_target"', $dashboard);
+        $this->assertStringContainsString('data-col-key="rka_dec_target"', $dashboard);
+
+        // JS logic
+        $this->assertStringContainsString('const applyHiddenColumns = function ()', $dashboard);
+        $this->assertStringContainsString('const hideColumn = function (colKey)', $dashboard);
+        $this->assertStringContainsString('const unhideAllColumns = function ()', $dashboard);
+        $this->assertStringContainsString('params.set(\'yoy_period\', customPeriods.yoy);', $dashboard);
+        $this->assertStringContainsString('params.set(\'ytd_period\', customPeriods.ytd);', $dashboard);
+
+        // Mobile Android Touch Long-Press and Modal Positioning Assertions
+        $this->assertStringContainsString('theadEl.addEventListener(\'touchstart\'', $dashboard);
+        $this->assertStringContainsString('th.classList.add(\'th-touch-active\');', $dashboard);
+        $this->assertStringContainsString('document.body.appendChild(modalOverride);', $dashboard);
+        $this->assertStringContainsString('document.body.appendChild(contextMenu);', $dashboard);
+        $this->assertStringContainsString('.th-touch-active', $dashboard);
+        $this->assertStringContainsString('#modalOverrideColumnDate .modal-dialog', $dashboard);
+        $this->assertStringContainsString('id="modalOverrideColumnDate" tabindex="-1" role="dialog" aria-hidden="true">' . "\n" . '        <div class="modal-dialog modal-sm" role="document">', $dashboard);
+
+        // Row context menu and hide row logic assertions
+        $this->assertStringContainsString('id="dailyTableRowContextMenu"', $dashboard);
+        $this->assertStringContainsString('id="ctxBtnHideRow"', $dashboard);
+        $this->assertStringContainsString('id="ctxBtnUnhideAllRows"', $dashboard);
+        $this->assertStringContainsString('id="btnUnhideAllRows"', $dashboard);
+        $this->assertStringContainsString('id="hiddenRowsCountBadge"', $dashboard);
+        $this->assertStringContainsString('const applyHiddenRows = function ()', $dashboard);
+        $this->assertStringContainsString('const hideRow = function (rowKey)', $dashboard);
+        $this->assertStringContainsString('const unhideAllRows = function ()', $dashboard);
+        $this->assertStringContainsString('tbodyEl.addEventListener(\'touchstart\'', $dashboard);
+        $this->assertStringContainsString('tr.classList.add(\'tr-touch-active\');', $dashboard);
+        $this->assertStringContainsString('document.body.appendChild(rowContextMenu);', $dashboard);
+        $this->assertStringContainsString('.daily-row-hidden', $dashboard);
+
+        // Export Excel and image capture customization assertions
+        $this->assertStringContainsString('params.set(\'hidden_columns\', Array.from(hiddenColumns).join(\',\'));', $dashboard);
+        $this->assertStringContainsString('params.set(\'hidden_rows\', Array.from(hiddenRows).join(\',\'));', $dashboard);
+        $this->assertStringContainsString('row.classList.contains(\'daily-row-hidden\')', $dashboard);
+    }
 }

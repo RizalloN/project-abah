@@ -50,6 +50,18 @@ class BackupDatabaseDailyCommand extends Command
             $this->line('Ukuran gzip: '.$this->formatBytes((int) $result['compressed_bytes']));
         }
 
+        $stats = (array) ($result['stats'] ?? []);
+        if (isset($stats['parts_total'])) {
+            $this->line(sprintf(
+                'Part: %d total, %d di-dump, %d dipakai ulang dari backup sebelumnya (%s SQL di-dump, %d detik).',
+                (int) $stats['parts_total'],
+                (int) ($stats['parts_dumped'] ?? 0),
+                (int) ($stats['parts_reused'] ?? 0),
+                $this->formatBytes((int) ($stats['dumped_uncompressed_bytes'] ?? 0)),
+                (int) ($stats['duration_seconds'] ?? 0)
+            ));
+        }
+
         foreach ((array) ($result['deleted_backups'] ?? []) as $deleted) {
             $this->line('Retensi menghapus: '.$deleted);
         }
@@ -65,6 +77,7 @@ class BackupDatabaseDailyCommand extends Command
             'compressed_bytes' => $result['compressed_bytes'] ?? 0,
             'uncompressed_bytes' => $result['uncompressed_bytes'] ?? 0,
             'deleted_backups' => $result['deleted_backups'] ?? [],
+            'stats' => $stats,
             'warnings' => $warnings,
         ]);
 

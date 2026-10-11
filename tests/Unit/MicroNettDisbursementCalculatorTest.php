@@ -55,6 +55,27 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         $this->assertSame(200_000_000.0, $kur['gt_250_realisasi_os']);
     }
 
+    public function test_cached_reads_match_fresh_reads_and_refresh_on_new_data_version(): void
+    {
+        \Illuminate\Support\Facades\Cache::flush();
+        $calculator = app(MicroNettDisbursementCalculator::class);
+
+        // An empty month is not pinned: data imported afterwards must appear.
+        $this->assertSame([], $calculator->cachedMantri('2026-09-19'));
+        DB::table('daily_loan_dinamis')->insert([$this->row('NEW', 300_000_000)]);
+        $this->assertSame($calculator->mantri('2026-09-19'), $calculator->cachedMantri('2026-09-19'));
+        $this->assertSame($calculator->kurRm('2026-09-19'), $calculator->cachedKurRm('2026-09-19'));
+
+        // Within one data version the month scan is shared.
+        DB::table('daily_loan_dinamis')->insert([$this->row('NEW-2', 100_000_000)]);
+        $this->assertSame(1, $calculator->cachedMantri('2026-09-19')[0]['realisasi_deb']);
+
+        // An import bumps the version and the cached read sees the new rows.
+        \App\Support\ReportCacheVersion::bump('pinjaman');
+        $this->assertSame(2, $calculator->cachedMantri('2026-09-19')[0]['realisasi_deb']);
+        $this->assertSame(2, $calculator->cachedKurRm('2026-09-19')[0]['realisasi_deb']);
+    }
+
     public function test_duplicate_previous_accounts_keep_maximum_os_once_and_sum_distinct_accounts(): void
     {
         DB::table('daily_loan_dinamis')->insert([

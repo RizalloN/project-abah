@@ -221,11 +221,28 @@ class DashboardHarianController extends Controller
         $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
         $selectedMtm = $this->resolveOptionalMtmPeriod($request->input('mtm_period'), $selectedPeriod);
+        $selectedYoy = $this->resolveOptionalCustomPeriod($request->input('yoy_period'), $selectedPeriod);
+        $selectedYtd = $this->resolveOptionalCustomPeriod($request->input('ytd_period'), $selectedPeriod);
+        $selectedM2  = $this->resolveOptionalCustomPeriod($request->input('m2_period'), $selectedPeriod);
+        $selectedMtd = $this->resolveOptionalCustomPeriod($request->input('mtd_period'), $selectedPeriod);
+        $selectedH1  = $this->resolveOptionalCustomPeriod($request->input('h1_period'), $selectedPeriod);
+
         $filters = $this->keragaanFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
         $filters['mtm_period'] = $filters['posisi_terakhir'] ?? [];
 
         return response()->json(
-            $this->payload($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit, $selectedMtm)
+            $this->payload(
+                $selectedPeriod,
+                $selectedRka,
+                $selectedKanca,
+                $selectedUnit,
+                $selectedMtm,
+                $selectedYoy,
+                $selectedYtd,
+                $selectedM2,
+                $selectedMtd,
+                $selectedH1
+            )
             + ['available_filters' => $filters]
         );
     }
@@ -244,14 +261,49 @@ class DashboardHarianController extends Controller
 
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
         $selectedMtm = $this->resolveOptionalMtmPeriod($request->input('mtm_period'), $selectedPeriod);
+        $selectedYoy = $this->resolveOptionalCustomPeriod($request->input('yoy_period'), $selectedPeriod);
+        $selectedYtd = $this->resolveOptionalCustomPeriod($request->input('ytd_period'), $selectedPeriod);
+        $selectedM2  = $this->resolveOptionalCustomPeriod($request->input('m2_period'), $selectedPeriod);
+        $selectedMtd = $this->resolveOptionalCustomPeriod($request->input('mtd_period'), $selectedPeriod);
+        $selectedH1  = $this->resolveOptionalCustomPeriod($request->input('h1_period'), $selectedPeriod);
 
-        $payload = $this->dashboardHarianSnapshotService->buildDashboardPayload(
-            $selectedPeriod,
-            $selectedRka,
-            $selectedKanca,
-            $selectedUnit,
-            $selectedMtm
-        );
+        $customPeriods = array_filter([
+            'yoy' => $selectedYoy,
+            'ytd' => $selectedYtd,
+            'm2' => $selectedM2,
+            'mtd' => $selectedMtd,
+            'h1' => $selectedH1,
+        ]);
+
+        $payload = !empty($customPeriods) && method_exists($this->dashboardHarianSnapshotService, 'buildDashboardPayloadWithCustomPeriods')
+            ? $this->dashboardHarianSnapshotService->buildDashboardPayloadWithCustomPeriods(
+                $selectedPeriod,
+                $selectedRka,
+                $selectedKanca,
+                $selectedUnit,
+                $selectedMtm,
+                $customPeriods
+            )
+            : $this->dashboardHarianSnapshotService->buildDashboardPayload(
+                $selectedPeriod,
+                $selectedRka,
+                $selectedKanca,
+                $selectedUnit,
+                $selectedMtm
+            );
+
+        $resolveHiddenList = function ($input): array {
+            if (is_array($input)) {
+                return array_values(array_filter(array_map('trim', array_map('strval', $input))));
+            }
+            if (is_string($input) && trim($input) !== '') {
+                return array_values(array_filter(array_map('trim', explode(',', $input))));
+            }
+            return [];
+        };
+
+        $hiddenColumns = $resolveHiddenList($request->input('hidden_columns'));
+        $hiddenRows = $resolveHiddenList($request->input('hidden_rows'));
 
         $filename = sprintf(
             'dashboard-harian_%s_%s.xlsx',
@@ -259,12 +311,12 @@ class DashboardHarianController extends Controller
             $this->sanitizeExportToken($payload['summary']['scope_label'] ?? $payload['summary']['kanca_label'] ?? 'area-6')
         );
 
-        return response()->streamDownload(function () use ($payload) {
+        return response()->streamDownload(function () use ($payload, $hiddenColumns, $hiddenRows) {
             $spreadsheet = new Spreadsheet();
             $sheet = $spreadsheet->getActiveSheet();
             $sheet->setTitle('Dashboard Harian');
 
-            $this->fillDashboardHarianSheet($sheet, $payload);
+            $this->fillDashboardHarianSheet($sheet, $payload, $hiddenColumns, $hiddenRows);
 
             $writer = new Xlsx($spreadsheet);
             $writer->save('php://output');
@@ -275,26 +327,70 @@ class DashboardHarianController extends Controller
         ]);
     }
 
-    private function payload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit, ?string $selectedMtm = null): array
+    private function payload(
+        ?string $selectedPeriod,
+        ?string $selectedRka,
+        array|string|null $selectedKanca,
+        array|string|null $selectedUnit,
+        ?string $selectedMtm = null,
+        ?string $selectedYoy = null,
+        ?string $selectedYtd = null,
+        ?string $selectedM2 = null,
+        ?string $selectedMtd = null,
+        ?string $selectedH1 = null
+    ): array
     {
         $cacheKey = 'dashboard_harian:payload:' . md5(json_encode([
-            'schema' => 'penc-pct-v27-retail-konsol-unit-scope',
+            'schema' => 'penc-pct-v28-retail-konsol-unit-scope',
             'version' => $this->reportCacheVersion(),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,
             'mtm' => $selectedMtm,
+            'yoy' => $selectedYoy,
+            'ytd' => $selectedYtd,
+            'm2' => $selectedM2,
+            'mtd' => $selectedMtd,
+            'h1' => $selectedH1,
             'kanca' => $selectedKanca,
             'unit' => $selectedUnit,
         ]));
 
-        return $this->rememberDashboardPayload($cacheKey, function () use ($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit, $selectedMtm) {
-            return $this->dashboardHarianSnapshotService->buildDashboardPayload(
-                $selectedPeriod,
-                $selectedRka,
-                $selectedKanca,
-                $selectedUnit,
-                $selectedMtm
-            );
+        return $this->rememberDashboardPayload($cacheKey, function () use (
+            $selectedPeriod,
+            $selectedRka,
+            $selectedKanca,
+            $selectedUnit,
+            $selectedMtm,
+            $selectedYoy,
+            $selectedYtd,
+            $selectedM2,
+            $selectedMtd,
+            $selectedH1
+        ) {
+            $customPeriods = array_filter([
+                'yoy' => $selectedYoy,
+                'ytd' => $selectedYtd,
+                'm2' => $selectedM2,
+                'mtd' => $selectedMtd,
+                'h1' => $selectedH1,
+            ]);
+
+            return !empty($customPeriods) && method_exists($this->dashboardHarianSnapshotService, 'buildDashboardPayloadWithCustomPeriods')
+                ? $this->dashboardHarianSnapshotService->buildDashboardPayloadWithCustomPeriods(
+                    $selectedPeriod,
+                    $selectedRka,
+                    $selectedKanca,
+                    $selectedUnit,
+                    $selectedMtm,
+                    $customPeriods
+                )
+                : $this->dashboardHarianSnapshotService->buildDashboardPayload(
+                    $selectedPeriod,
+                    $selectedRka,
+                    $selectedKanca,
+                    $selectedUnit,
+                    $selectedMtm
+                );
         });
     }
 
@@ -612,7 +708,7 @@ class DashboardHarianController extends Controller
         }
     }
 
-    private function fillDashboardHarianSheet(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, array $payload): void
+    private function fillDashboardHarianSheet(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, array $payload, array $hiddenColumns = [], array $hiddenRows = []): void
     {
         $summary = $payload['summary'] ?? [];
         $periods = $payload['comparison_periods'] ?? [];
@@ -709,6 +805,9 @@ class DashboardHarianController extends Controller
             $numberFormat = ($row['type'] ?? 'currency') === 'percent' ? '#,##0.00' : '#,##0';
             $sheet->getStyle("B{$rowIndex}:{$lastColumn}{$rowIndex}")->getNumberFormat()->setFormatCode($numberFormat);
             $rowKey = (string) ($row['key'] ?? '');
+            if (in_array($rowKey, $hiddenRows, true)) {
+                $sheet->getRowDimension($rowIndex)->setVisible(false);
+            }
             $qualityRows[$rowIndex] = $this->isDashboardHarianQualityTarget($rowKey)
                 || $this->isDashboardHarianLdrTarget($rowKey);
             $ldrRows[$rowIndex] = $this->isDashboardHarianLdrTarget($rowKey);
@@ -823,6 +922,38 @@ class DashboardHarianController extends Controller
             }
 
             $sheet->getColumnDimension($column)->setAutoSize(true);
+        }
+
+        $colKeyIndexMap = [
+            'keterangan' => 1,
+            'pos_yoy' => 2,
+            'pos_ytd' => 3,
+            'pos_m2' => 4,
+            'pos_mtm' => 5,
+            'pos_mtd' => 6,
+        ];
+        $colIndex = 7;
+        if ($hasH1) {
+            $colKeyIndexMap['pos_h1'] = $colIndex++;
+        }
+        $colKeyIndexMap['pos_current'] = $colIndex++;
+        $colKeyIndexMap['delta_yoy'] = $colIndex++;
+        $colKeyIndexMap['delta_ytd'] = $colIndex++;
+        $colKeyIndexMap['delta_mtm'] = $colIndex++;
+        $colKeyIndexMap['delta_mtd'] = $colIndex++;
+        $colKeyIndexMap['delta_dtd'] = $colIndex++;
+        $colKeyIndexMap['rka_target'] = $colIndex++;
+        $colKeyIndexMap['rka_gap'] = $colIndex++;
+        $colKeyIndexMap['rka_pct'] = $colIndex++;
+        $colKeyIndexMap['rka_dec_target'] = $colIndex++;
+        $colKeyIndexMap['rka_dec_gap'] = $colIndex++;
+        $colKeyIndexMap['rka_dec_pct'] = $colIndex++;
+
+        foreach ($hiddenColumns as $colKey) {
+            if (isset($colKeyIndexMap[$colKey])) {
+                $colLetter = Coordinate::stringFromColumnIndex($colKeyIndexMap[$colKey]);
+                $sheet->getColumnDimension($colLetter)->setVisible(false);
+            }
         }
     }
 
@@ -1101,7 +1232,7 @@ class DashboardHarianController extends Controller
         return $sanitized !== '' ? strtolower($sanitized) : 'export';
     }
 
-    private function resolveOptionalMtmPeriod(mixed $value, ?string $selectedPeriod): ?string
+    private function resolveOptionalCustomPeriod(mixed $value, ?string $selectedPeriod): ?string
     {
         $raw = trim((string) $value);
         if ($raw === '' || !$selectedPeriod) {
@@ -1117,6 +1248,11 @@ class DashboardHarianController extends Controller
         $resolved = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($candidate);
 
         return $resolved && $resolved !== $selectedPeriod ? $resolved : null;
+    }
+
+    private function resolveOptionalMtmPeriod(mixed $value, ?string $selectedPeriod): ?string
+    {
+        return $this->resolveOptionalCustomPeriod($value, $selectedPeriod);
     }
 
     private function normalizeFilter($value): array|string|null

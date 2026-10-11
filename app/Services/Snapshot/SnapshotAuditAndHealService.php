@@ -5,6 +5,7 @@ namespace App\Services\Snapshot;
 use App\Jobs\EnsureImportedSnapshotsFreshJob;
 use App\Jobs\SmartPartialSnapshotRebuildJob;
 use App\Services\Import\ImportProgressService;
+use App\Support\ReportCacheVersion;
 use App\Support\SnapshotAuditCoordinator;
 use App\Support\SnapshotAuditService;
 use App\Support\SnapshotIntegrityGuard;
@@ -18,6 +19,7 @@ class SnapshotAuditAndHealService
 {
     private const REBUILD_THROTTLE_SECONDS = 300;
     private const AUDIT_COOLDOWN_SECONDS = 180;
+    private const CLEAN_PERIOD_REVERIFY_SECONDS = 7200;
 
     /**
      * @var array<int, string>
@@ -170,8 +172,23 @@ class SnapshotAuditAndHealService
             $totalDiscrepancies = 0;
             $totalRebuilds = 0;
 
+            $skippedCleanPeriods = 0;
+
             foreach ($periodsToAudit as $p) {
+                // Each period audit scans the full source and snapshot rows of
+                // that period. Re-auditing an unchanged, verified-clean period
+                // every cycle kept the database saturated around the clock.
+                $cleanKey = $this->verifiedCleanPeriodKey($normalizedTable, (string) $p);
+                if (!$force && Cache::has($cleanKey)) {
+                    $skippedCleanPeriods++;
+                    continue;
+                }
+
                 $subResult = $this->auditAndHealSinglePeriod($normalizedTable, $p, $force);
+                if (($subResult['audit_status'] ?? null) === 'clean'
+                    && ($subResult['status'] ?? null) === 'clean') {
+                    Cache::put($cleanKey, now()->toIso8601String(), now()->addSeconds(self::CLEAN_PERIOD_REVERIFY_SECONDS));
+                }
                 if (!empty($subResult['affected_periods'])) {
                     $allAffectedPeriods = array_merge($allAffectedPeriods, $subResult['affected_periods']);
                 }
@@ -185,7 +202,8 @@ class SnapshotAuditAndHealService
                 'status' => $uniqueAffected !== [] ? 'discrepancies_detected' : 'clean',
                 'table_name' => $normalizedTable,
                 'period_hint' => $periodHint,
-                'periods_audited' => count($periodsToAudit),
+                'periods_audited' => count($periodsToAudit) - $skippedCleanPeriods,
+                'periods_skipped_clean' => $skippedCleanPeriods,
                 'discrepancies_found' => count($uniqueAffected),
                 'affected_periods' => $uniqueAffected,
                 'rebuilds_dispatched' => $totalRebuilds,
@@ -246,12 +264,34 @@ class SnapshotAuditAndHealService
 
         return [
             'status' => $uniqueAffectedPeriods !== [] ? 'discrepancies_detected' : 'clean',
+            'audit_status' => (string) ($auditResult['status'] ?? ''),
             'table_name' => $normalizedTable,
             'period_hint' => $periodHint,
             'discrepancies_found' => count($uniqueAffectedPeriods),
             'affected_periods' => $uniqueAffectedPeriods,
             'rebuilds_dispatched' => $rebuildsDispatched,
         ];
+    }
+
+    /**
+     * Imports, deletes and snapshot rebuilds bump the table's report cache
+     * version, so a changed period gets a new key and is audited again.
+     */
+    private function verifiedCleanPeriodKey(string $table, string $period): string
+    {
+        $scope = match ($table) {
+            'daily_loan_dinamis' => 'pinjaman',
+            'simpanan_multipn', 'ssa_simpanan' => 'simpanan',
+            default => 'global',
+        };
+
+        return implode(':', [
+            'snapshot:audit:verified-clean',
+            $table,
+            $period,
+            ReportCacheVersion::get($scope),
+            ReportCacheVersion::get('global'),
+        ]);
     }
 
     public function resolveRecentPeriods(string $table, int $limit = 5): array

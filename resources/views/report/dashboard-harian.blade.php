@@ -2480,6 +2480,168 @@
             width: 100% !important;
         }
     }
+
+    /* Hidden Columns Utility */
+    .daily-table .col-hidden,
+    .daily-table col.col-hidden,
+    .daily-table th.col-hidden,
+    .daily-table td.col-hidden {
+        display: none !important;
+        width: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+    }
+
+    /* Hidden Rows Utility */
+    .daily-table tbody tr.daily-row-hidden {
+        display: none !important;
+    }
+
+    .daily-table tbody tr {
+        -webkit-touch-callout: none;
+    }
+
+    .daily-table tbody tr.tr-touch-active > td {
+        background-color: rgba(0, 82, 156, 0.12) !important;
+        transition: background-color 0.12s ease;
+    }
+
+    /* Excel-like Modern Context Menu */
+    .daily-context-menu {
+        position: fixed;
+        z-index: 10090;
+        background: #ffffff;
+        border: 1px solid rgba(198, 214, 236, 0.95);
+        border-radius: 10px;
+        box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.2), 0 8px 12px -6px rgba(15, 23, 42, 0.12);
+        min-width: 240px;
+        max-width: 320px;
+        padding: 0.35rem 0;
+        font-family: inherit;
+        animation: dailyContextMenuFadeIn 0.12s ease-out;
+        user-select: none;
+    }
+
+    @keyframes dailyContextMenuFadeIn {
+        from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .daily-context-menu-header {
+        padding: 0.5rem 0.85rem 0.4rem;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #004685;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        border-bottom: 1px solid #edf2f7;
+        margin-bottom: 0.25rem;
+        background: #f8fbff;
+        border-top-left-radius: 9px;
+        border-top-right-radius: 9px;
+    }
+
+    .daily-context-menu-item {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        padding: 0.5rem 0.85rem;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #334155;
+        background: transparent;
+        border: none;
+        text-align: left;
+        cursor: pointer;
+        transition: background 0.12s ease, color 0.12s ease;
+        gap: 0.65rem;
+    }
+
+    .daily-context-menu-item:hover,
+    .daily-context-menu-item:focus {
+        background: #eef6ff;
+        color: #00529c;
+        outline: none;
+    }
+
+    .daily-context-menu-item i {
+        font-size: 0.88rem;
+        width: 1.15rem;
+        text-align: center;
+    }
+
+    .daily-context-menu-divider {
+        height: 1px;
+        background: #e2e8f0;
+        margin: 0.3rem 0;
+    }
+
+    /* Unhide pill button in header */
+    .btn-unhide-columns {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        background: rgba(255, 255, 255, 0.15);
+        border: 1px solid rgba(255, 255, 255, 0.38);
+        color: #ffffff !important;
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 0.32rem 0.75rem;
+        border-radius: 20px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-decoration: none !important;
+    }
+
+    .btn-unhide-columns:hover {
+        background: rgba(255, 255, 255, 0.28);
+        border-color: #ffffff;
+        color: #ffffff !important;
+        transform: translateY(-1px);
+    }
+
+    /* Header touch & selection rules for mobile long-press */
+    .daily-table thead th[data-col-key] {
+        -webkit-touch-callout: none !important;
+        -webkit-user-select: none !important;
+        -moz-user-select: none !important;
+        -ms-user-select: none !important;
+        user-select: none !important;
+        touch-action: pan-x pan-y;
+        cursor: pointer;
+    }
+
+    .daily-table thead th[data-col-key].th-touch-active {
+        filter: brightness(0.92);
+        box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+        transition: filter 0.12s ease;
+    }
+
+    /* Column Date Override Modal & Backdrop Positioning */
+    #modalOverrideColumnDate {
+        z-index: 10095 !important;
+    }
+
+    #modalOverrideColumnDate .modal-dialog {
+        z-index: 10096 !important;
+        margin: clamp(2.2rem, 7vh, 4.2rem) auto 1.5rem !important;
+        max-width: 380px !important;
+        width: calc(100% - 2rem) !important;
+    }
+
+    body > .modal-backdrop,
+    .modal-backdrop {
+        z-index: 10092 !important;
+        background-color: rgba(15, 23, 42, 0.45) !important;
+    }
+
+    .modal-backdrop.show {
+        opacity: 0.45 !important;
+    }
 </style>
 @endsection
 
@@ -2491,6 +2653,12 @@
                 <h1 class="daily-panel-title">DASHBOARD KERAGAAN HARIAN</h1>
             </div>
             <div class="daily-panel-actions d-flex align-items-center">
+                <button type="button" id="btnUnhideAllColumns" class="btn-unhide-columns mr-2 d-none" title="Klik untuk menampilkan semua kolom yang disembunyikan">
+                    <i class="fas fa-eye"></i> <span id="hiddenColumnsCountBadge">0</span> Kolom Tersembunyi (Buka)
+                </button>
+                <button type="button" id="btnUnhideAllRows" class="btn-unhide-columns mr-2 d-none" title="Klik untuk menampilkan semua baris yang disembunyikan">
+                    <i class="fas fa-eye"></i> <span id="hiddenRowsCountBadge">0</span> Baris Tersembunyi (Buka)
+                </button>
                 <a id="exportExcelBtn" href="{{ route('dashboard.harian.export') }}" class="btn btn-sm btn-export-all mr-2">
                     <i class="fas fa-file-excel mr-1"></i> EXPORT EXCEL
                 </a>
@@ -2608,95 +2776,94 @@
             <div class="daily-table-wrap">
                     <table class="table table-hover daily-table">
                         <colgroup>
-                            <col style="width: var(--daily-label-width);">
-                            <col style="width: var(--daily-position-width);" class="numeric-col">
-                            <col style="width: var(--daily-position-width);" class="numeric-col">
-                            <col style="width: var(--daily-position-width);" class="numeric-col">
-                            <col style="width: var(--daily-position-width);" class="numeric-col">
-                            <col style="width: var(--daily-position-width);" class="numeric-col">
-                            <col style="width: var(--daily-position-width);" class="numeric-col">
-                            <col style="width: var(--daily-position-width);" class="numeric-col position-col-h1">
-                            <col style="width: var(--daily-position-width);" class="numeric-col">
-                            <col style="width: var(--daily-delta-width);" class="numeric-col">
-                            <col style="width: var(--daily-delta-width);" class="numeric-col">
-                            <col style="width: var(--daily-delta-width);" class="numeric-col">
-                            <col style="width: var(--daily-delta-width);" class="numeric-col">
-                            <col style="width: var(--daily-delta-width);" class="numeric-col">
-                            <col style="width: var(--daily-rka-width);" class="numeric-col">
-                            <col style="width: var(--daily-rka-width);" class="numeric-col">
-                            <col style="width: var(--daily-rka-width);" class="numeric-col">
-                            <col style="width: var(--daily-rka-width);" class="numeric-col">
-                            <col style="width: var(--daily-rka-width);" class="numeric-col">
-                            <col style="width: var(--daily-rka-width);" class="numeric-col">
+                            <col style="width: var(--daily-label-width);" data-col-key="keterangan">
+                            <col style="width: var(--daily-position-width);" class="numeric-col" data-col-key="pos_yoy">
+                            <col style="width: var(--daily-position-width);" class="numeric-col" data-col-key="pos_ytd">
+                            <col style="width: var(--daily-position-width);" class="numeric-col" data-col-key="pos_m2">
+                            <col style="width: var(--daily-position-width);" class="numeric-col" data-col-key="pos_mtm">
+                            <col style="width: var(--daily-position-width);" class="numeric-col" data-col-key="pos_mtd">
+                            <col style="width: var(--daily-position-width);" class="numeric-col position-col-h1" data-col-key="pos_h1">
+                            <col style="width: var(--daily-position-width);" class="numeric-col" data-col-key="pos_current">
+                            <col style="width: var(--daily-delta-width);" class="numeric-col" data-col-key="delta_yoy">
+                            <col style="width: var(--daily-delta-width);" class="numeric-col" data-col-key="delta_ytd">
+                            <col style="width: var(--daily-delta-width);" class="numeric-col" data-col-key="delta_mtm">
+                            <col style="width: var(--daily-delta-width);" class="numeric-col" data-col-key="delta_mtd">
+                            <col style="width: var(--daily-delta-width);" class="numeric-col" data-col-key="delta_dtd">
+                            <col style="width: var(--daily-rka-width);" class="numeric-col" data-col-key="rka_target">
+                            <col style="width: var(--daily-rka-width);" class="numeric-col" data-col-key="rka_gap">
+                            <col style="width: var(--daily-rka-width);" class="numeric-col" data-col-key="rka_pct">
+                            <col style="width: var(--daily-rka-width);" class="numeric-col" data-col-key="rka_dec_target">
+                            <col style="width: var(--daily-rka-width);" class="numeric-col" data-col-key="rka_dec_gap">
+                            <col style="width: var(--daily-rka-width);" class="numeric-col" data-col-key="rka_dec_pct">
                         </colgroup>
                         <thead>
                             <tr class="group-row text-center">
-                                <th class="sticky-label group-label" rowspan="3"><span class="header-center text-white">Keterangan</span></th>
-                                <th class="group-position" colspan="7" data-position-group-colspan><span class="header-center">Posisi</span></th>
-                                <th class="group-delta" colspan="5"><span class="header-center">Delta Terhadap</span></th>
-                                <th class="group-rka" colspan="6"><span class="header-center">Perbandingan RKA</span></th>
+                                <th class="sticky-label group-label" rowspan="3" data-col-key="keterangan"><span class="header-center text-white">Keterangan</span></th>
+                                <th class="group-position" colspan="7" data-position-group-colspan data-group-header="position"><span class="header-center">Posisi</span></th>
+                                <th class="group-delta" colspan="5" data-delta-group-colspan data-group-header="delta"><span class="header-center">Delta Terhadap</span></th>
+                                <th class="group-rka" colspan="6" data-rka-group-colspan data-group-header="rka"><span class="header-center">Perbandingan RKA</span></th>
                             </tr>
                             <tr class="column-row text-center">
-                                <th class="value-col position-col" rowspan="2">
+                                <th class="value-col position-col" rowspan="2" data-col-key="pos_yoy" data-col-type="position" data-col-name="Posisi YoY">
                                     <span class="column-heading"><span class="main" data-label-yoy>-</span></span>
                                 </th>
-                                <th class="value-col position-col" rowspan="2">
+                                <th class="value-col position-col" rowspan="2" data-col-key="pos_ytd" data-col-type="position" data-col-name="Posisi YtD">
                                     <span class="column-heading"><span class="main" data-label-ytd>-</span></span>
                                 </th>
-                                <th class="value-col position-col" rowspan="2">
+                                <th class="value-col position-col" rowspan="2" data-col-key="pos_m2" data-col-type="position" data-col-name="Posisi M-2">
                                     <span class="column-heading"><span class="main" data-label-m2>-</span></span>
                                 </th>
-                                <th class="value-col position-col" rowspan="2" data-mtm-toggle>
+                                <th class="value-col position-col" rowspan="2" data-mtm-toggle data-col-key="pos_mtm" data-col-type="position" data-col-name="Posisi MtM">
                                     <span class="column-heading"><span class="main" data-label-mtm>-</span></span>
                                 </th>
-                                <th class="value-col position-col" rowspan="2">
+                                <th class="value-col position-col" rowspan="2" data-col-key="pos_mtd" data-col-type="position" data-col-name="Posisi MtD">
                                     <span class="column-heading"><span class="main" data-label-mtd>-</span></span>
                                 </th>
-                                <th class="value-col position-col position-col-h1" rowspan="2">
+                                <th class="value-col position-col position-col-h1" rowspan="2" data-col-key="pos_h1" data-col-type="position" data-col-name="Posisi H-1">
                                     <span class="column-heading"><span class="main" data-label-h1>-</span></span>
                                 </th>
-                                <th class="value-col position-col" rowspan="2" style="background-color: var(--primary-blue-light);">
+                                <th class="value-col position-col" rowspan="2" style="background-color: var(--primary-blue-light);" data-col-key="pos_current" data-col-type="position" data-col-name="Posisi Terakhir">
                                     <span class="column-heading"><span class="main text-white" data-label-current>-</span></span>
                                 </th>
-                                <th class="value-col delta-col" rowspan="2">
+                                <th class="value-col delta-col" rowspan="2" data-col-key="delta_yoy" data-col-type="delta" data-col-name="Delta YoY">
                                     <span class="column-heading"><span class="main" data-label-delta-yoy>YoY</span></span>
                                 </th>
-                                <th class="value-col delta-col" rowspan="2">
+                                <th class="value-col delta-col" rowspan="2" data-col-key="delta_ytd" data-col-type="delta" data-col-name="Delta YtD">
                                     <span class="column-heading"><span class="main" data-label-delta-ytd>YtD</span></span>
                                 </th>
-                                <th class="value-col delta-col" rowspan="2" data-mtm-toggle>
+                                <th class="value-col delta-col" rowspan="2" data-mtm-toggle data-col-key="delta_mtm" data-col-type="delta" data-col-name="Delta MtM">
                                     <span class="column-heading"><span class="main" data-label-delta-mtm>MtM</span></span>
                                 </th>
-                                <th class="value-col delta-col" rowspan="2">
+                                <th class="value-col delta-col" rowspan="2" data-col-key="delta_mtd" data-col-type="delta" data-col-name="Delta MtD">
                                     <span class="column-heading"><span class="main" data-label-delta-mtd>MtD</span></span>
                                 </th>
-                                <th class="value-col delta-col" rowspan="2">
+                                <th class="value-col delta-col" rowspan="2" data-col-key="delta_dtd" data-col-type="delta" data-col-name="Delta DtD">
                                     <span class="column-heading"><span class="main" data-label-delta-dtd>DtD</span></span>
                                 </th>
-                                <th class="value-col rka-col rka-period-cell" colspan="3">
+                                <th class="value-col rka-col rka-period-cell" colspan="3" data-subgroup-header="rka">
                                     <span class="rka-period-label" data-label-rka-period>RKA</span>
                                 </th>
-                                <th class="value-col rka-col rka-period-cell" colspan="3">
+                                <th class="value-col rka-col rka-period-cell" colspan="3" data-subgroup-header="rka_dec">
                                     <span class="rka-period-label" data-label-rka-dec-period>RKA Des</span>
                                 </th>
                             </tr>
                             <tr class="rka-sub-row text-center">
-                                <th class="value-col rka-col">
+                                <th class="value-col rka-col" data-col-key="rka_target" data-col-type="rka" data-col-name="RKA Target (Rp)">
                                     <span class="rka-sub-label">Rp</span>
                                 </th>
-                                <th class="value-col rka-col">
+                                <th class="value-col rka-col" data-col-key="rka_gap" data-col-type="rka" data-col-name="RKA GAP">
                                     <span class="rka-sub-label">GAP</span>
                                 </th>
-                                <th class="value-col rka-col">
+                                <th class="value-col rka-col" data-col-key="rka_pct" data-col-type="rka" data-col-name="RKA %">
                                     <span class="rka-sub-label">%</span>
                                 </th>
-                                <th class="value-col rka-col">
+                                <th class="value-col rka-col" data-col-key="rka_dec_target" data-col-type="rka" data-col-name="RKA Des Target (Rp)">
                                     <span class="rka-sub-label">Rp</span>
                                 </th>
-                                <th class="value-col rka-col">
+                                <th class="value-col rka-col" data-col-key="rka_dec_gap" data-col-type="rka" data-col-name="RKA Des GAP">
                                     <span class="rka-sub-label">GAP</span>
                                 </th>
-                                <th class="value-col rka-col">
+                                <th class="value-col rka-col" data-col-key="rka_dec_pct" data-col-type="rka" data-col-name="RKA Des %">
                                     <span class="rka-sub-label">%</span>
                                 </th>
                             </tr>
@@ -2705,6 +2872,91 @@
                             <tr><td colspan="20" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Excel-like Column Context Menu -->
+    <div id="dailyTableContextMenu" class="daily-context-menu" style="display: none;">
+        <div class="daily-context-menu-header">
+            <i class="fas fa-columns"></i>
+            <span id="ctxMenuColTitle" class="text-truncate">Nama Kolom</span>
+        </div>
+        <button type="button" class="daily-context-menu-item" id="ctxBtnHideColumn">
+            <i class="fas fa-eye-slash text-danger"></i>
+            <span>Sembunyikan Kolom</span>
+        </button>
+        <button type="button" class="daily-context-menu-item" id="ctxBtnChangeDate">
+            <i class="fas fa-calendar-alt text-primary"></i>
+            <span>Ubah Tanggal Kolom...</span>
+        </button>
+        <button type="button" class="daily-context-menu-item" id="ctxBtnResetDate">
+            <i class="fas fa-undo-alt text-warning"></i>
+            <span>Kembalikan Tanggal Default</span>
+        </button>
+        <div class="daily-context-menu-divider" id="ctxDividerUnhide" style="display: none;"></div>
+        <button type="button" class="daily-context-menu-item text-success" id="ctxBtnUnhideAll" style="display: none;">
+            <i class="fas fa-eye"></i>
+            <span>Tampilkan Semua Kolom (<span id="ctxUnhideCount">0</span>)</span>
+        </button>
+    </div>
+
+    <!-- Excel-like Row Context Menu -->
+    <div id="dailyTableRowContextMenu" class="daily-context-menu" style="display: none;">
+        <div class="daily-context-menu-header">
+            <i class="fas fa-bars"></i>
+            <span id="ctxMenuRowTitle" class="text-truncate">Nama Baris</span>
+        </div>
+        <button type="button" class="daily-context-menu-item" id="ctxBtnHideRow">
+            <i class="fas fa-eye-slash text-danger"></i>
+            <span>Sembunyikan Baris</span>
+        </button>
+        <div class="daily-context-menu-divider" id="ctxDividerUnhideRow" style="display: none;"></div>
+        <button type="button" class="daily-context-menu-item text-success" id="ctxBtnUnhideAllRows" style="display: none;">
+            <i class="fas fa-eye"></i>
+            <span>Tampilkan Semua Baris (<span id="ctxUnhideRowCount">0</span>)</span>
+        </button>
+    </div>
+
+    <!-- Modal Ubah Tanggal Kolom Posisi -->
+    <div class="modal fade" id="modalOverrideColumnDate" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-sm" role="document">
+            <div class="modal-content shadow-lg" style="border-radius: 14px; border: 1px solid #c9d7e7;">
+                <div class="modal-header py-2 px-3" style="background: linear-gradient(135deg, #003b75 0%, #00529c 100%); color: #fff; border-top-left-radius: 13px; border-top-right-radius: 13px;">
+                    <h6 class="modal-title font-weight-bold" style="font-size: 0.88rem;">
+                        <i class="fas fa-calendar-alt mr-2 text-warning"></i><span id="modalOverrideColumnTitle">Ubah Tanggal Kolom</span>
+                    </h6>
+                    <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close" style="opacity: 0.85;">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body p-3">
+                    <div class="mb-2 text-muted" style="font-size: 0.76rem;">
+                        Pilih tanggal pembanding untuk kolom <b id="modalOverrideColumnBadge" class="text-primary">-</b>:
+                    </div>
+                    <div class="form-group mb-3">
+                        <label class="small font-weight-bold text-dark mb-1">Pilih dari Tanggal Snapshot:</label>
+                        <select id="modalOverrideSelectPreset" class="form-control form-control-sm daily-filter-select" style="min-height: 36px; padding: 0.35rem 0.65rem; font-size: 0.82rem;">
+                            <option value="">-- Gunakan Tanggal Default --</option>
+                        </select>
+                    </div>
+                    <div class="form-group mb-1">
+                        <label class="small font-weight-bold text-dark mb-1">Atau Masukkan Tanggal Tertentu:</label>
+                        <input type="date" id="modalOverrideInputCustom" class="form-control form-control-sm daily-date-input" style="min-height: 36px; padding: 0.35rem 0.65rem; font-size: 0.82rem;">
+                    </div>
+                    <div id="modalOverrideCurrentInfo" class="mt-2 text-muted small" style="font-size: 0.72rem;"></div>
+                </div>
+                <div class="modal-footer py-2 px-3 d-flex justify-content-between bg-light" style="border-bottom-left-radius: 13px; border-bottom-right-radius: 13px;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnModalResetColumnDate" style="font-size: 0.78rem;">
+                        <i class="fas fa-undo-alt mr-1"></i> Default
+                    </button>
+                    <div>
+                        <button type="button" class="btn btn-sm btn-light mr-1" data-dismiss="modal" style="font-size: 0.78rem;">Batal</button>
+                        <button type="button" class="btn btn-sm btn-primary" id="btnModalApplyColumnDate" style="font-size: 0.78rem;">
+                            <i class="fas fa-check mr-1"></i> Terapkan
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2840,7 +3092,181 @@
             },
         };
         let latestFilters = initialFilters;
+        let latestComparisonPeriods = (initialData && initialData.comparison_periods) ? initialData.comparison_periods : {};
         let mtmOverrideVisible = false;
+
+        const hiddenColumns = new Set();
+        const customPeriods = {
+            yoy: null,
+            ytd: null,
+            m2: null,
+            mtm: initialSelected.mtm_period || null,
+            mtd: null,
+            h1: null,
+        };
+
+        const positionKeys = ['pos_yoy', 'pos_ytd', 'pos_m2', 'pos_mtm', 'pos_mtd', 'pos_h1', 'pos_current'];
+        const deltaKeys = ['delta_yoy', 'delta_ytd', 'delta_mtm', 'delta_mtd', 'delta_dtd'];
+        const rkaTargetKeys = ['rka_target', 'rka_gap', 'rka_pct'];
+        const rkaDecKeys = ['rka_dec_target', 'rka_dec_gap', 'rka_dec_pct'];
+
+        const columnTitles = {
+            pos_yoy: 'Posisi YoY',
+            pos_ytd: 'Posisi YtD',
+            pos_m2: 'Posisi M-2',
+            pos_mtm: 'Posisi MtM',
+            pos_mtd: 'Posisi MtD',
+            pos_h1: 'Posisi H-1',
+            pos_current: 'Posisi Terakhir',
+            delta_yoy: 'Delta YoY',
+            delta_ytd: 'Delta YtD',
+            delta_mtm: 'Delta MtM',
+            delta_mtd: 'Delta MtD',
+            delta_dtd: 'Delta DtD',
+            rka_target: 'RKA Rp',
+            rka_gap: 'RKA GAP',
+            rka_pct: 'RKA %',
+            rka_dec_target: 'RKA Des Rp',
+            rka_dec_gap: 'RKA Des GAP',
+            rka_dec_pct: 'RKA Des %',
+        };
+
+        const applyHiddenColumns = function () {
+            const table = document.querySelector('.daily-table');
+            if (!table) return;
+
+            table.querySelectorAll('[data-col-key]').forEach(function (el) {
+                const key = el.getAttribute('data-col-key');
+                if (hiddenColumns.has(key)) {
+                    el.classList.add('col-hidden');
+                } else {
+                    el.classList.remove('col-hidden');
+                }
+            });
+
+            const hasH1 = Boolean(latestComparisonPeriods && latestComparisonPeriods.h1 && latestComparisonPeriods.h1.period);
+            const activePosKeys = hasH1 ? positionKeys : positionKeys.filter(function (k) { return k !== 'pos_h1'; });
+            const visiblePosCount = activePosKeys.filter(function (k) { return !hiddenColumns.has(k); }).length;
+            const posHeader = document.querySelector('[data-position-group-colspan]');
+            if (posHeader) {
+                if (visiblePosCount === 0) {
+                    posHeader.classList.add('col-hidden');
+                } else {
+                    posHeader.classList.remove('col-hidden');
+                    posHeader.setAttribute('colspan', visiblePosCount);
+                }
+            }
+
+            const visibleDeltaCount = deltaKeys.filter(function (k) { return !hiddenColumns.has(k); }).length;
+            const deltaHeader = document.querySelector('[data-delta-group-colspan]');
+            if (deltaHeader) {
+                if (visibleDeltaCount === 0) {
+                    deltaHeader.classList.add('col-hidden');
+                } else {
+                    deltaHeader.classList.remove('col-hidden');
+                    deltaHeader.setAttribute('colspan', visibleDeltaCount);
+                }
+            }
+
+            const visibleRkaTargetCount = rkaTargetKeys.filter(function (k) { return !hiddenColumns.has(k); }).length;
+            const rkaTargetHeader = document.querySelector('[data-subgroup-header="rka"]');
+            if (rkaTargetHeader) {
+                if (visibleRkaTargetCount === 0) {
+                    rkaTargetHeader.classList.add('col-hidden');
+                } else {
+                    rkaTargetHeader.classList.remove('col-hidden');
+                    rkaTargetHeader.setAttribute('colspan', visibleRkaTargetCount);
+                }
+            }
+
+            const visibleRkaDecCount = rkaDecKeys.filter(function (k) { return !hiddenColumns.has(k); }).length;
+            const rkaDecHeader = document.querySelector('[data-subgroup-header="rka_dec"]');
+            if (rkaDecHeader) {
+                if (visibleRkaDecCount === 0) {
+                    rkaDecHeader.classList.add('col-hidden');
+                } else {
+                    rkaDecHeader.classList.remove('col-hidden');
+                    rkaDecHeader.setAttribute('colspan', visibleRkaDecCount);
+                }
+            }
+
+            const visibleRkaTotal = visibleRkaTargetCount + visibleRkaDecCount;
+            const rkaGroupHeader = document.querySelector('[data-rka-group-colspan]');
+            if (rkaGroupHeader) {
+                if (visibleRkaTotal === 0) {
+                    rkaGroupHeader.classList.add('col-hidden');
+                } else {
+                    rkaGroupHeader.classList.remove('col-hidden');
+                    rkaGroupHeader.setAttribute('colspan', visibleRkaTotal);
+                }
+            }
+
+            const btnUnhide = document.getElementById('btnUnhideAllColumns');
+            const unhideBadge = document.getElementById('hiddenColumnsCountBadge');
+            if (btnUnhide && unhideBadge) {
+                const count = hiddenColumns.size;
+                unhideBadge.textContent = count;
+                if (count > 0) {
+                    btnUnhide.classList.remove('d-none');
+                } else {
+                    btnUnhide.classList.add('d-none');
+                }
+            }
+
+            scheduleTableViewportSync();
+        };
+
+        const hideColumn = function (colKey) {
+            if (!colKey || colKey === 'keterangan') return;
+            hiddenColumns.add(colKey);
+            applyHiddenColumns();
+        };
+
+        const unhideAllColumns = function () {
+            hiddenColumns.clear();
+            applyHiddenColumns();
+        };
+
+        const hiddenRows = new Set();
+
+        const applyHiddenRows = function () {
+            const table = document.querySelector('.daily-table');
+            if (!table) return;
+
+            table.querySelectorAll('tbody tr[data-row-key]').forEach(function (tr) {
+                const key = tr.getAttribute('data-row-key');
+                if (hiddenRows.has(key)) {
+                    tr.classList.add('daily-row-hidden');
+                } else {
+                    tr.classList.remove('daily-row-hidden');
+                }
+            });
+
+            const btnUnhideRow = document.getElementById('btnUnhideAllRows');
+            const unhideRowBadge = document.getElementById('hiddenRowsCountBadge');
+            if (btnUnhideRow && unhideRowBadge) {
+                const count = hiddenRows.size;
+                unhideRowBadge.textContent = count;
+                if (count > 0) {
+                    btnUnhideRow.classList.remove('d-none');
+                } else {
+                    btnUnhideRow.classList.add('d-none');
+                }
+            }
+
+            scheduleTableViewportSync();
+        };
+
+        const hideRow = function (rowKey) {
+            if (!rowKey) return;
+            hiddenRows.add(rowKey);
+            applyHiddenRows();
+        };
+
+        const unhideAllRows = function () {
+            hiddenRows.clear();
+            applyHiddenRows();
+        };
         const MILLION_UNIT = 1000000;
         const BILLION_UNIT = 1000000000;
         const TABLE_MONEY_UNIT = MILLION_UNIT;
@@ -2967,6 +3393,7 @@
                 positionGroupColspan.setAttribute('colspan', show ? '7' : '6');
             }
 
+            applyHiddenColumns();
             scheduleTableViewportSync();
         };
 
@@ -3484,6 +3911,21 @@
 
             if (state.mtm_period) {
                 params.set('mtm_period', state.mtm_period);
+            } else if (customPeriods.mtm) {
+                params.set('mtm_period', customPeriods.mtm);
+            }
+
+            if (customPeriods.yoy) params.set('yoy_period', customPeriods.yoy);
+            if (customPeriods.ytd) params.set('ytd_period', customPeriods.ytd);
+            if (customPeriods.m2) params.set('m2_period', customPeriods.m2);
+            if (customPeriods.mtd) params.set('mtd_period', customPeriods.mtd);
+            if (customPeriods.h1) params.set('h1_period', customPeriods.h1);
+
+            if (hiddenColumns.size > 0) {
+                params.set('hidden_columns', Array.from(hiddenColumns).join(','));
+            }
+            if (hiddenRows.size > 0) {
+                params.set('hidden_rows', Array.from(hiddenRows).join(','));
             }
 
             return params;
@@ -3854,29 +4296,29 @@
                     return pct >= 100 ? 'pct-achieve-good' : pct >= 90 ? 'pct-achieve-warn' : 'pct-achieve-bad';
                 };
 
-                rowCells.push('<td class="sticky-label"><span class="metric-label" title="' + escapeHtml(row.label) + '">' + escapeHtml(row.label) + '</span></td>');
-                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.yoy, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.ytd, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.m2, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtm, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtd, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="sticky-label" data-col-key="keterangan"><span class="metric-label" title="' + escapeHtml(row.label) + '">' + escapeHtml(row.label) + '</span></td>');
+                rowCells.push('<td class="value-col position-col" data-col-key="pos_yoy"><span class="cell-text">' + formatValue(value.yoy, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col position-col" data-col-key="pos_ytd"><span class="cell-text">' + formatValue(value.ytd, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col position-col" data-col-key="pos_m2"><span class="cell-text">' + formatValue(value.m2, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col position-col" data-col-key="pos_mtm"><span class="cell-text">' + formatValue(value.mtm, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col position-col" data-col-key="pos_mtd"><span class="cell-text">' + formatValue(value.mtd, row.type, row.key) + '</span></td>');
 
                 if (hasH1) {
-                    rowCells.push('<td class="value-col position-col position-col-h1" data-position-col="h1"><span class="cell-text">' + formatValue(value.h1, row.type, row.key) + '</span></td>');
+                    rowCells.push('<td class="value-col position-col position-col-h1" data-position-col="h1" data-col-key="pos_h1"><span class="cell-text">' + formatValue(value.h1, row.type, row.key) + '</span></td>');
                 }
 
-                rowCells.push('<td class="value-col position-col metric-value font-weight-bold bg-light"><span class="cell-text text-primary">' + formatValue(value.current, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.yoy) + '"><span class="cell-text">' + fmtDelta(delta.yoy, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.ytd) + '"><span class="cell-text">' + fmtDelta(delta.ytd, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.mtm) + '"><span class="cell-text">' + fmtDelta(delta.mtm, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.mtd) + '"><span class="cell-text">' + fmtDelta(delta.mtd, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.dtd) + '"><span class="cell-text">' + fmtDelta(delta.dtd, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col ' + dcFn(rkaComparison.rka.delta) + '"><span class="cell-text">' + fmtDelta(rkaComparison.rka.delta, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col ' + pctAchieveClass(rkaComparison.rka.achievement, rkaComparison.rka.delta) + '"><span class="cell-text">' + formatAchievement(rkaComparison.rka.achievement) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka_dec, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col ' + dcFn(rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + fmtDelta(rkaComparison.rkaDec.delta, row.type, row.key) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col ' + pctAchieveClass(rkaComparison.rkaDec.achievement, rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + formatAchievement(rkaComparison.rkaDec.achievement) + '</span></td>');
+                rowCells.push('<td class="value-col position-col metric-value font-weight-bold bg-light" data-col-key="pos_current"><span class="cell-text text-primary">' + formatValue(value.current, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.yoy) + '" data-col-key="delta_yoy"><span class="cell-text">' + fmtDelta(delta.yoy, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.ytd) + '" data-col-key="delta_ytd"><span class="cell-text">' + fmtDelta(delta.ytd, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.mtm) + '" data-col-key="delta_mtm"><span class="cell-text">' + fmtDelta(delta.mtm, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.mtd) + '" data-col-key="delta_mtd"><span class="cell-text">' + fmtDelta(delta.mtd, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + dcFn(delta.dtd) + '" data-col-key="delta_dtd"><span class="cell-text">' + fmtDelta(delta.dtd, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col" data-col-key="rka_target"><span class="cell-text">' + formatValue(value.rka, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + dcFn(rkaComparison.rka.delta) + '" data-col-key="rka_gap"><span class="cell-text">' + fmtDelta(rkaComparison.rka.delta, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + pctAchieveClass(rkaComparison.rka.achievement, rkaComparison.rka.delta) + '" data-col-key="rka_pct"><span class="cell-text">' + formatAchievement(rkaComparison.rka.achievement) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col" data-col-key="rka_dec_target"><span class="cell-text">' + formatValue(value.rka_dec, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + dcFn(rkaComparison.rkaDec.delta) + '" data-col-key="rka_dec_gap"><span class="cell-text">' + fmtDelta(rkaComparison.rkaDec.delta, row.type, row.key) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + pctAchieveClass(rkaComparison.rkaDec.achievement, rkaComparison.rkaDec.delta) + '" data-col-key="rka_dec_pct"><span class="cell-text">' + formatAchievement(rkaComparison.rkaDec.achievement) + '</span></td>');
 
                 const rowClasses = ['row-depth-' + row.depth];
                 if (blockClassMap[row.key]) {
@@ -3897,9 +4339,13 @@
                     rowClasses.push('row-hidden-by-scope');
                 }
 
-                return '<tr class="' + rowClasses.join(' ') + '">' + rowCells.join('') + '</tr>';
+                const rowKey = String(row.key || ('row_' + index));
+                const rowLabel = String(row.label || rowKey);
+                return '<tr class="' + rowClasses.join(' ') + '" data-row-key="' + escapeHtml(rowKey) + '" data-row-label="' + escapeHtml(rowLabel) + '">' + rowCells.join('') + '</tr>';
             }).join('');
 
+            applyHiddenColumns();
+            applyHiddenRows();
             scheduleTableViewportSync();
         };
 
@@ -3909,6 +4355,7 @@
             const filters = payload.available_filters || initialFilters;
             const hasH1 = Boolean(periods.h1 && periods.h1.period);
             latestFilters = filters;
+            latestComparisonPeriods = periods;
             const current = currentState();
 
             renderKancaDropdown(filters.kanca || [], current.kanca);
@@ -3961,6 +4408,7 @@
 
             togglePositionColumns(hasH1);
             renderTable(payload);
+            applyHiddenColumns();
         };
 
         const fetchData = function () {
@@ -4180,7 +4628,7 @@
                 let currentBlock = null;
 
                 tbodyRows.forEach(row => {
-                    if (row.classList.contains('row-hidden-by-scope')) return;
+                    if (row.classList.contains('row-hidden-by-scope') || row.classList.contains('daily-row-hidden')) return;
                     
                     const blockIndex = blockClasses.findIndex(cls => row.classList.contains(cls));
                     const isNewBlock = blockIndex !== -1;
@@ -4208,14 +4656,13 @@
                 let originalColWidths = [];
                 const expectedColCount = positionH1Header && positionH1Header.classList.contains('position-col-hidden') ? 18 : 19;
                 for (const row of tbodyRows) {
-                    if (row.cells.length === expectedColCount && !row.classList.contains('row-hidden-by-scope')) {
+                    if (row.cells.length === expectedColCount && !row.classList.contains('row-hidden-by-scope') && !row.classList.contains('daily-row-hidden')) {
                         originalColWidths = Array.from(row.cells).map(cell => cell.getBoundingClientRect().width);
                         break;
                     }
                 }
                 if (originalColWidths.length === 0) {
-                    // Fallback to the first row of tbody if no matching non-hidden rows found with the visible column count
-                    const firstRow = document.querySelector('#daily-dashboard-body tr');
+                    const firstRow = document.querySelector('#daily-dashboard-body tr:not(.row-hidden-by-scope):not(.daily-row-hidden)');
                     if (firstRow && firstRow.cells.length === expectedColCount) {
                         originalColWidths = Array.from(firstRow.cells).map(cell => cell.getBoundingClientRect().width);
                     }
@@ -4225,8 +4672,8 @@
                 let colgroupHtml = '';
                 let tableRealWidth = 0;
                 if (originalColWidths.length === expectedColCount) {
-                    colgroupHtml = '<colgroup>' + originalColWidths.map(w => `<col style="width: ${w}px; min-width: ${w}px; max-width: ${w}px;">`).join('') + '</colgroup>';
-                    tableRealWidth = originalColWidths.reduce((a, b) => a + b, 0);
+                    colgroupHtml = '<colgroup>' + originalColWidths.map(w => w > 0 ? `<col style="width: ${w}px; min-width: ${w}px; max-width: ${w}px;">` : '<col style="display:none;width:0;">').join('') + '</colgroup>';
+                    tableRealWidth = originalColWidths.reduce((a, b) => a + (b > 0 ? b : 0), 0);
                 } else {
                     colgroupHtml = originalTable.querySelector('colgroup').outerHTML;
                     tableRealWidth = Math.ceil(Math.max(originalTable.scrollWidth, originalTable.getBoundingClientRect().width));
@@ -4259,6 +4706,17 @@
                                 table-layout: fixed !important;
                                 margin: 0 !important;
                                 background: #ffffff !important;
+                            }
+                            .daily-table .col-hidden,
+                            .daily-table col.col-hidden,
+                            .daily-table th.col-hidden,
+                            .daily-table td.col-hidden,
+                            .daily-table tr.daily-row-hidden {
+                                display: none !important;
+                                width: 0 !important;
+                                padding: 0 !important;
+                                margin: 0 !important;
+                                border: none !important;
                             }
                             .daily-table th,
                             .daily-table td {
@@ -4306,6 +4764,10 @@
                         const tableHtml = `<table class="daily-table" style="width: ${tableRealWidth}px; table-layout: fixed;">${colgroupHtml}${theadHtml}<tbody>${rows.map(r => {
                             const clone = r.cloneNode(true);
                             clone.querySelectorAll('.sticky-label, td, th').forEach(cell => {
+                                if (cell.classList.contains('col-hidden')) {
+                                    cell.style.display = 'none';
+                                    return;
+                                }
                                 cell.style.position = 'static';
                                 cell.style.backgroundColor = window.getComputedStyle(cell).backgroundColor;
                                 cell.style.color = window.getComputedStyle(cell).color;
@@ -4601,7 +5063,553 @@ if (window.jQuery && captureModal) {
             });
         }
 
+        // --- Context Menu and Column Manipulation Logic ---
+        const contextMenu = document.getElementById('dailyTableContextMenu');
+        const ctxColTitle = document.getElementById('ctxMenuColTitle');
+        const ctxBtnHide = document.getElementById('ctxBtnHideColumn');
+        const ctxBtnChangeDate = document.getElementById('ctxBtnChangeDate');
+        const ctxBtnResetDate = document.getElementById('ctxBtnResetDate');
+        const ctxBtnUnhideAll = document.getElementById('ctxBtnUnhideAll');
+        const ctxUnhideCount = document.getElementById('ctxUnhideCount');
+        const ctxDividerUnhide = document.getElementById('ctxDividerUnhide');
+        const btnUnhideAllHeader = document.getElementById('btnUnhideAllColumns');
+        let activeContextColKey = null;
+
+        if (contextMenu && contextMenu.parentNode !== document.body) {
+            document.body.appendChild(contextMenu);
+        }
+
+        const hideContextMenu = function () {
+            if (contextMenu) {
+                contextMenu.style.display = 'none';
+            }
+            activeContextColKey = null;
+        };
+
+        const showContextMenu = function (event, th) {
+            hideRowContextMenu();
+            const colKey = th.getAttribute('data-col-key');
+            if (!colKey || colKey === 'keterangan') {
+                return;
+            }
+
+            activeContextColKey = colKey;
+            const colType = th.getAttribute('data-col-type') || '';
+            const colName = th.getAttribute('data-col-name') || columnTitles[colKey] || colKey;
+
+            let subDate = '';
+            const headingSpan = th.querySelector('.main');
+            if (headingSpan) {
+                const text = headingSpan.textContent.trim();
+                if (text && text !== '-') {
+                    subDate = ' (' + text + ')';
+                }
+            }
+            if (ctxColTitle) {
+                ctxColTitle.textContent = colName + subDate;
+            }
+
+            const isPositionCol = (colType === 'position');
+            const overrideKey = colKey.replace('pos_', '');
+            if (ctxBtnChangeDate) {
+                ctxBtnChangeDate.style.display = isPositionCol ? 'flex' : 'none';
+            }
+            if (ctxBtnResetDate) {
+                const isOverridden = isPositionCol && Boolean(customPeriods[overrideKey]);
+                ctxBtnResetDate.style.display = isOverridden ? 'flex' : 'none';
+            }
+
+            if (hiddenColumns.size > 0) {
+                if (ctxDividerUnhide) ctxDividerUnhide.style.display = 'block';
+                if (ctxBtnUnhideAll) ctxBtnUnhideAll.style.display = 'flex';
+                if (ctxUnhideCount) ctxUnhideCount.textContent = hiddenColumns.size;
+            } else {
+                if (ctxDividerUnhide) ctxDividerUnhide.style.display = 'none';
+                if (ctxBtnUnhideAll) ctxBtnUnhideAll.style.display = 'none';
+            }
+
+            if (contextMenu) {
+                contextMenu.style.display = 'block';
+                const menuWidth = contextMenu.offsetWidth || 240;
+                const menuHeight = contextMenu.offsetHeight || 160;
+                let posX = (event && typeof event.clientX === 'number') ? event.clientX : 20;
+                let posY = (event && typeof event.clientY === 'number') ? event.clientY : 80;
+
+                if (posX + menuWidth > window.innerWidth - 10) {
+                    posX = Math.max(8, window.innerWidth - menuWidth - 10);
+                }
+                if (posX < 8) {
+                    posX = 8;
+                }
+                if (posY + menuHeight > window.innerHeight - 10) {
+                    posY = Math.max(10, window.innerHeight - menuHeight - 10);
+                }
+                if (posY < 10) {
+                    posY = 10;
+                }
+
+                contextMenu.style.left = posX + 'px';
+                contextMenu.style.top = posY + 'px';
+            }
+        };
+
+        const theadEl = document.querySelector('.daily-table thead');
+        let touchTimer = null;
+        let touchStartPos = { x: 0, y: 0 };
+        let touchTargetTh = null;
+        let isLongPressTriggered = false;
+        let suppressClickUntil = 0;
+
+        const cancelLongPress = function () {
+            if (touchTimer) {
+                clearTimeout(touchTimer);
+                touchTimer = null;
+            }
+            if (touchTargetTh) {
+                touchTargetTh.classList.remove('th-touch-active');
+                touchTargetTh = null;
+            }
+        };
+
+        if (theadEl) {
+            theadEl.addEventListener('contextmenu', function (event) {
+                const th = event.target.closest('th[data-col-key]');
+                if (!th) return;
+
+                event.preventDefault();
+                event.stopPropagation();
+                cancelLongPress();
+                showContextMenu(event, th);
+            });
+
+            theadEl.addEventListener('touchstart', function (event) {
+                if (event.touches.length !== 1) {
+                    cancelLongPress();
+                    return;
+                }
+
+                const th = event.target.closest('th[data-col-key]');
+                if (!th || th.getAttribute('data-col-key') === 'keterangan') {
+                    cancelLongPress();
+                    return;
+                }
+
+                const touch = event.touches[0];
+                touchStartPos = { x: touch.clientX, y: touch.clientY };
+                touchTargetTh = th;
+                isLongPressTriggered = false;
+                th.classList.add('th-touch-active');
+
+                touchTimer = setTimeout(function () {
+                    touchTimer = null;
+                    if (touchTargetTh) {
+                        touchTargetTh.classList.remove('th-touch-active');
+                    }
+                    isLongPressTriggered = true;
+                    suppressClickUntil = Date.now() + 450;
+
+                    if (window.navigator && typeof window.navigator.vibrate === 'function') {
+                        try {
+                            window.navigator.vibrate(35);
+                        } catch (e) {
+                            // ignore silent errors if vibration is disallowed
+                        }
+                    }
+
+                    showContextMenu({
+                        clientX: touchStartPos.x,
+                        clientY: touchStartPos.y
+                    }, th);
+                }, 420);
+            }, { passive: true });
+
+            theadEl.addEventListener('touchmove', function (event) {
+                if (!touchTimer) return;
+                if (!event.touches.length) {
+                    cancelLongPress();
+                    return;
+                }
+
+                const touch = event.touches[0];
+                const deltaX = Math.abs(touch.clientX - touchStartPos.x);
+                const deltaY = Math.abs(touch.clientY - touchStartPos.y);
+
+                if (deltaX > 9 || deltaY > 9) {
+                    cancelLongPress();
+                }
+            }, { passive: true });
+
+            theadEl.addEventListener('touchend', function (event) {
+                if (isLongPressTriggered) {
+                    if (event.cancelable) {
+                        event.preventDefault();
+                    }
+                    isLongPressTriggered = false;
+                }
+                cancelLongPress();
+            });
+
+            theadEl.addEventListener('touchcancel', function () {
+                isLongPressTriggered = false;
+                cancelLongPress();
+            });
+        }
+
+        if (ctxBtnHide) {
+            ctxBtnHide.addEventListener('click', function () {
+                if (activeContextColKey) {
+                    hideColumn(activeContextColKey);
+                }
+                hideContextMenu();
+            });
+        }
+
+        if (ctxBtnUnhideAll) {
+            ctxBtnUnhideAll.addEventListener('click', function () {
+                unhideAllColumns();
+                hideContextMenu();
+            });
+        }
+
+        if (btnUnhideAllHeader) {
+            btnUnhideAllHeader.addEventListener('click', function () {
+                unhideAllColumns();
+            });
+        }
+
+        // --- Row Context Menu and Row Manipulation Logic ---
+        const rowContextMenu = document.getElementById('dailyTableRowContextMenu');
+        const ctxRowTitle = document.getElementById('ctxMenuRowTitle');
+        const ctxBtnHideRow = document.getElementById('ctxBtnHideRow');
+        const ctxBtnUnhideAllRows = document.getElementById('ctxBtnUnhideAllRows');
+        const ctxUnhideRowCount = document.getElementById('ctxUnhideRowCount');
+        const ctxDividerUnhideRow = document.getElementById('ctxDividerUnhideRow');
+        const btnUnhideAllRowsHeader = document.getElementById('btnUnhideAllRows');
+        let activeContextRowKey = null;
+
+        if (rowContextMenu && rowContextMenu.parentNode !== document.body) {
+            document.body.appendChild(rowContextMenu);
+        }
+
+        const hideRowContextMenu = function () {
+            if (rowContextMenu) {
+                rowContextMenu.style.display = 'none';
+            }
+            activeContextRowKey = null;
+        };
+
+        const showRowContextMenu = function (event, tr) {
+            hideContextMenu();
+            const rowKey = tr.getAttribute('data-row-key');
+            if (!rowKey) return;
+
+            activeContextRowKey = rowKey;
+            const rowLabel = tr.getAttribute('data-row-label') || rowKey;
+
+            if (ctxRowTitle) {
+                ctxRowTitle.textContent = 'Baris: ' + rowLabel;
+            }
+
+            if (hiddenRows.size > 0) {
+                if (ctxDividerUnhideRow) ctxDividerUnhideRow.style.display = 'block';
+                if (ctxBtnUnhideAllRows) ctxBtnUnhideAllRows.style.display = 'flex';
+                if (ctxUnhideRowCount) ctxUnhideRowCount.textContent = hiddenRows.size;
+            } else {
+                if (ctxDividerUnhideRow) ctxDividerUnhideRow.style.display = 'none';
+                if (ctxBtnUnhideAllRows) ctxBtnUnhideAllRows.style.display = 'none';
+            }
+
+            if (rowContextMenu) {
+                rowContextMenu.style.display = 'block';
+                const menuWidth = rowContextMenu.offsetWidth || 240;
+                const menuHeight = rowContextMenu.offsetHeight || 140;
+                let posX = (event && typeof event.clientX === 'number') ? event.clientX : 20;
+                let posY = (event && typeof event.clientY === 'number') ? event.clientY : 80;
+
+                if (posX + menuWidth > window.innerWidth - 10) {
+                    posX = Math.max(8, window.innerWidth - menuWidth - 10);
+                }
+                if (posX < 8) posX = 8;
+                if (posY + menuHeight > window.innerHeight - 10) {
+                    posY = Math.max(10, window.innerHeight - menuHeight - 10);
+                }
+                if (posY < 10) posY = 10;
+
+                rowContextMenu.style.left = posX + 'px';
+                rowContextMenu.style.top = posY + 'px';
+            }
+        };
+
+        const tbodyEl = document.getElementById('daily-dashboard-body');
+        let rowTouchTimer = null;
+        let rowTouchStartPos = { x: 0, y: 0 };
+        let rowTouchTargetTr = null;
+        let isRowLongPressTriggered = false;
+
+        const cancelRowLongPress = function () {
+            if (rowTouchTimer) {
+                clearTimeout(rowTouchTimer);
+                rowTouchTimer = null;
+            }
+            if (rowTouchTargetTr) {
+                rowTouchTargetTr.classList.remove('tr-touch-active');
+                rowTouchTargetTr = null;
+            }
+        };
+
+        if (tbodyEl) {
+            tbodyEl.addEventListener('contextmenu', function (event) {
+                const tr = event.target.closest('tr[data-row-key]');
+                if (!tr) return;
+
+                event.preventDefault();
+                event.stopPropagation();
+                cancelRowLongPress();
+                showRowContextMenu(event, tr);
+            });
+
+            tbodyEl.addEventListener('touchstart', function (event) {
+                if (event.touches.length !== 1) {
+                    cancelRowLongPress();
+                    return;
+                }
+
+                const tr = event.target.closest('tr[data-row-key]');
+                if (!tr) {
+                    cancelRowLongPress();
+                    return;
+                }
+
+                const touch = event.touches[0];
+                rowTouchStartPos = { x: touch.clientX, y: touch.clientY };
+                rowTouchTargetTr = tr;
+                isRowLongPressTriggered = false;
+                tr.classList.add('tr-touch-active');
+
+                rowTouchTimer = setTimeout(function () {
+                    rowTouchTimer = null;
+                    if (rowTouchTargetTr) {
+                        rowTouchTargetTr.classList.remove('tr-touch-active');
+                    }
+                    isRowLongPressTriggered = true;
+                    suppressClickUntil = Date.now() + 450;
+
+                    if (window.navigator && typeof window.navigator.vibrate === 'function') {
+                        try {
+                            window.navigator.vibrate(35);
+                        } catch (e) {
+                            // ignore silent errors
+                        }
+                    }
+
+                    showRowContextMenu({
+                        clientX: rowTouchStartPos.x,
+                        clientY: rowTouchStartPos.y
+                    }, tr);
+                }, 420);
+            }, { passive: true });
+
+            tbodyEl.addEventListener('touchmove', function (event) {
+                if (!rowTouchTimer) return;
+                if (!event.touches.length) {
+                    cancelRowLongPress();
+                    return;
+                }
+
+                const touch = event.touches[0];
+                const deltaX = Math.abs(touch.clientX - rowTouchStartPos.x);
+                const deltaY = Math.abs(touch.clientY - rowTouchStartPos.y);
+
+                if (deltaX > 9 || deltaY > 9) {
+                    cancelRowLongPress();
+                }
+            }, { passive: true });
+
+            tbodyEl.addEventListener('touchend', function (event) {
+                if (isRowLongPressTriggered) {
+                    if (event.cancelable) {
+                        event.preventDefault();
+                    }
+                    isRowLongPressTriggered = false;
+                }
+                cancelRowLongPress();
+            });
+
+            tbodyEl.addEventListener('touchcancel', function () {
+                isRowLongPressTriggered = false;
+                cancelRowLongPress();
+            });
+        }
+
+        if (ctxBtnHideRow) {
+            ctxBtnHideRow.addEventListener('click', function () {
+                if (activeContextRowKey) {
+                    hideRow(activeContextRowKey);
+                }
+                hideRowContextMenu();
+            });
+        }
+
+        if (ctxBtnUnhideAllRows) {
+            ctxBtnUnhideAllRows.addEventListener('click', function () {
+                unhideAllRows();
+                hideRowContextMenu();
+            });
+        }
+
+        if (btnUnhideAllRowsHeader) {
+            btnUnhideAllRowsHeader.addEventListener('click', function () {
+                unhideAllRows();
+            });
+        }
+
+        // --- Column Date Override Modal Logic ---
+        const modalOverride = document.getElementById('modalOverrideColumnDate');
+        const modalTitle = document.getElementById('modalOverrideColumnTitle');
+        const modalBadge = document.getElementById('modalOverrideColumnBadge');
+        const modalSelectPreset = document.getElementById('modalOverrideSelectPreset');
+        const modalInputCustom = document.getElementById('modalOverrideInputCustom');
+        const modalCurrentInfo = document.getElementById('modalOverrideCurrentInfo');
+        const btnModalApply = document.getElementById('btnModalApplyColumnDate');
+        const btnModalReset = document.getElementById('btnModalResetColumnDate');
+        let currentModalColKey = null;
+
+        if (modalOverride && modalOverride.parentNode !== document.body) {
+            document.body.appendChild(modalOverride);
+        }
+
+        const openDateOverrideModal = function (colKey) {
+            if (modalOverride && modalOverride.parentNode !== document.body) {
+                document.body.appendChild(modalOverride);
+            }
+
+            currentModalColKey = colKey;
+            const overrideKey = colKey.replace('pos_', '');
+            const colName = columnTitles[colKey] || colKey;
+
+            if (modalTitle) modalTitle.textContent = 'Ubah Tanggal: ' + colName;
+            if (modalBadge) modalBadge.textContent = colName;
+
+            let activePeriod = customPeriods[overrideKey] || '';
+            if (!activePeriod && latestComparisonPeriods && latestComparisonPeriods[overrideKey]) {
+                activePeriod = latestComparisonPeriods[overrideKey].period || '';
+            }
+            if (!activePeriod && overrideKey === 'current') {
+                activePeriod = selects.posisi_terakhir ? selects.posisi_terakhir.value : '';
+            }
+
+            const snapshotDates = (latestFilters.posisi_terakhir || []).map(function (opt) {
+                return String(opt.value || '').slice(0, 10);
+            }).filter(function (val) {
+                return /^\d{4}-\d{2}-\d{2}$/.test(val);
+            });
+
+            if (modalSelectPreset) {
+                let html = '<option value="">-- Pilih Tanggal Tersedia --</option>';
+                snapshotDates.forEach(function (dt) {
+                    const selected = (dt === activePeriod) ? 'selected' : '';
+                    html += '<option value="' + escapeHtml(dt) + '" ' + selected + '>' + escapeHtml(formatDateShort(dt)) + ' (' + dt + ')</option>';
+                });
+                modalSelectPreset.innerHTML = html;
+            }
+
+            if (modalInputCustom) {
+                modalInputCustom.value = activePeriod;
+            }
+
+            if (modalCurrentInfo) {
+                modalCurrentInfo.innerHTML = 'Tanggal aktif saat ini: <b>' + (activePeriod ? formatDateShort(activePeriod) : '-') + '</b>' +
+                    (customPeriods[overrideKey] ? ' <span class="badge badge-warning">Custom</span>' : ' <span class="badge badge-light">Default</span>');
+            }
+
+            if (window.jQuery && modalOverride) {
+                window.jQuery(modalOverride).modal('show');
+            }
+        };
+
+        if (ctxBtnChangeDate) {
+            ctxBtnChangeDate.addEventListener('click', function () {
+                const targetKey = activeContextColKey;
+                hideContextMenu();
+                if (targetKey) {
+                    openDateOverrideModal(targetKey);
+                }
+            });
+        }
+
+        if (ctxBtnResetDate) {
+            ctxBtnResetDate.addEventListener('click', function () {
+                const targetKey = activeContextColKey;
+                hideContextMenu();
+                if (targetKey) {
+                    const overrideKey = targetKey.replace('pos_', '');
+                    customPeriods[overrideKey] = null;
+                    fetchData();
+                }
+            });
+        }
+
+        if (modalSelectPreset && modalInputCustom) {
+            modalSelectPreset.addEventListener('change', function () {
+                if (modalSelectPreset.value) {
+                    modalInputCustom.value = modalSelectPreset.value;
+                }
+            });
+        }
+
+        if (btnModalApply) {
+            btnModalApply.addEventListener('click', function () {
+                if (!currentModalColKey) return;
+                const overrideKey = currentModalColKey.replace('pos_', '');
+                const chosenDate = (modalInputCustom && modalInputCustom.value) ? modalInputCustom.value : (modalSelectPreset ? modalSelectPreset.value : '');
+
+                if (chosenDate) {
+                    if (overrideKey === 'current') {
+                        if (selects.posisi_terakhir) selects.posisi_terakhir.value = chosenDate;
+                    } else {
+                        customPeriods[overrideKey] = chosenDate;
+                    }
+                }
+
+                if (window.jQuery && modalOverride) {
+                    window.jQuery(modalOverride).modal('hide');
+                }
+                fetchData();
+            });
+        }
+
+        if (btnModalReset) {
+            btnModalReset.addEventListener('click', function () {
+                if (!currentModalColKey) return;
+                const overrideKey = currentModalColKey.replace('pos_', '');
+                if (overrideKey === 'current') {
+                    if (selects.posisi_terakhir && latestFilters.posisi_terakhir && latestFilters.posisi_terakhir.length) {
+                        selects.posisi_terakhir.value = latestFilters.posisi_terakhir[latestFilters.posisi_terakhir.length - 1].value;
+                    }
+                } else {
+                    customPeriods[overrideKey] = null;
+                }
+
+                if (window.jQuery && modalOverride) {
+                    window.jQuery(modalOverride).modal('hide');
+                }
+                fetchData();
+            });
+        }
+
         document.addEventListener('click', function (event) {
+            if (Date.now() < suppressClickUntil) {
+                return;
+            }
+
+            if (contextMenu && !contextMenu.contains(event.target)) {
+                hideContextMenu();
+            }
+
+            if (rowContextMenu && !rowContextMenu.contains(event.target)) {
+                hideRowContextMenu();
+            }
+
             Object.keys(dropdowns).forEach(function (key) {
                 const dropdown = dropdowns[key];
                 if (dropdown && dropdown.root && !dropdown.root.contains(event.target)) {
@@ -4620,6 +5628,20 @@ if (window.jQuery && captureModal) {
             }
         });
 
+        document.addEventListener('touchstart', function (event) {
+            if (contextMenu && contextMenu.style.display !== 'none' && !contextMenu.contains(event.target)) {
+                if (!event.target.closest('th[data-col-key]')) {
+                    hideContextMenu();
+                }
+            }
+
+            if (rowContextMenu && rowContextMenu.style.display !== 'none' && !rowContextMenu.contains(event.target)) {
+                if (!event.target.closest('tr[data-row-key]')) {
+                    hideRowContextMenu();
+                }
+            }
+        }, { passive: true });
+
         document.addEventListener('dblclick', function (event) {
             if (
                 mtmOverridePanel
@@ -4633,6 +5655,8 @@ if (window.jQuery && captureModal) {
 
         document.addEventListener('keydown', function (event) {
             if (event.key === 'Escape') {
+                hideContextMenu();
+                hideRowContextMenu();
                 hideMtmOverridePanel();
             }
         });

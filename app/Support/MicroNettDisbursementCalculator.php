@@ -3,8 +3,10 @@
 namespace App\Support;
 
 use Carbon\Carbon;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -17,6 +19,27 @@ final class MicroNettDisbursementCalculator
     private const UNASSIGNED_RM = 'RM LAIN';
 
     private const AREA_6_BRANCHES = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+
+    private const READ_CACHE_VERSION = 'v1';
+
+    private const READ_CACHE_SECONDS = 1800;
+
+    /**
+     * Report reads share one month scan of the nominative per data version;
+     * snapshot builders keep calling kurRm() directly for a fresh read.
+     *
+     * @return array<int, array<string, int|float|string>>
+     */
+    public function cachedKurRm(string $period): array
+    {
+        return $this->rememberNonEmpty('kur-rm', $period, fn (): array => $this->kurRm($period));
+    }
+
+    /** @return array<int, array<string, int|float|string>> */
+    public function cachedMantri(string $period): array
+    {
+        return $this->rememberNonEmpty('mantri', $period, fn (): array => $this->mantri($period));
+    }
 
     /**
      * @return array<int, array<string, int|float|string>>
@@ -332,6 +355,41 @@ final class MicroNettDisbursementCalculator
         $value = trim((string) $normalized);
 
         return strtoupper($value !== '' ? $value : trim((string) $fallback));
+    }
+
+    /** @param callable(): array $compute */
+    private function rememberNonEmpty(string $kind, string $period, callable $compute): array
+    {
+        $key = implode(':', [
+            'micro-nett', self::READ_CACHE_VERSION, $kind,
+            ReportCacheVersion::get('pinjaman'), Carbon::parse($period)->toDateString(),
+        ]);
+        $cached = Cache::get($key);
+        if (is_array($cached) && $cached !== []) {
+            return $cached;
+        }
+
+        $build = function () use ($key, $compute): array {
+            $cached = Cache::get($key);
+            if (is_array($cached) && $cached !== []) {
+                return $cached;
+            }
+
+            $result = $compute();
+            // An empty month may still be loading; never pin "no data".
+            if ($result !== []) {
+                Cache::put($key, $result, now()->addSeconds(self::READ_CACHE_SECONDS));
+            }
+
+            return $result;
+        };
+
+        // Concurrent report tabs wait for one scan instead of each running it.
+        try {
+            return Cache::lock($key.':build', 300)->block(120, $build);
+        } catch (LockTimeoutException) {
+            return $build();
+        }
     }
 
     private function sourceQueryForPeriodRange(): Builder

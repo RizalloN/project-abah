@@ -241,7 +241,8 @@ class LandingSimpananBranchScopeTest extends TestCase
             'landingBranchLabel' => 'KC Madiun',
         ])->render();
 
-        $this->assertStringContainsString('Cabang User', $html);
+        $this->assertStringContainsString('Cabang dikunci sesuai wilayah user', $html);
+        $this->assertMatchesRegularExpression('/<option value="madiun"[^>]*selected[^>]*>KC Madiun<\/option>/', $html);
         $this->assertMatchesRegularExpression('/id="landing-branch-selector"[^>]*disabled/', $html);
         $this->assertStringContainsString('UNIT A', $html);
         $this->assertStringContainsString('TOTAL KC MADIUN', $html);

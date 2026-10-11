@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Services\DatabaseBackup\ChunkedDatabaseBackupWriter;
 use App\Services\DatabaseBackup\CompressedDatabaseDumpRunner;
+use App\Services\Import\ImportProgressService;
 use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Support\Facades\Config;
@@ -13,12 +15,17 @@ class DailyDatabaseBackupService
 {
     private const MANIFEST_SCHEMA_VERSION = 1;
 
+    private const CHUNKED_MANIFEST_SCHEMA_VERSION = 2;
+
+    private const CHUNKED_TOP_LEVEL_ENTRIES = ['data', 'manifest.json', 'post-data.sql.gz', 'schema.sql.gz'];
+
     private const MANAGED_BY = 'project-abah-daily-backup';
 
     private const MANIFEST_FILENAME = 'manifest.json';
 
     public function __construct(
-        private readonly CompressedDatabaseDumpRunner $dumpRunner
+        private readonly CompressedDatabaseDumpRunner $dumpRunner,
+        private readonly ?ChunkedDatabaseBackupWriter $chunkedWriter = null
     ) {}
 
     /**
@@ -137,6 +144,21 @@ class DailyDatabaseBackupService
             $credentialsPath = $temporaryDirectory.DIRECTORY_SEPARATOR.'.mysql-client.cnf';
 
             try {
+                if ($this->layoutMode() === 'chunked') {
+                    return $this->createChunkedBackup(
+                        $baseDirectory,
+                        $temporaryDirectory,
+                        $finalDirectory,
+                        $credentialsPath,
+                        $binary,
+                        $databaseConfig,
+                        $database,
+                        $now,
+                        $startedAt,
+                        $timezone
+                    );
+                }
+
                 $this->writeCredentialsFile($credentialsPath, $databaseConfig);
                 $command = $this->buildDumpCommand(
                     $binary,
@@ -231,6 +253,226 @@ class DailyDatabaseBackupService
             }
         } finally {
             $this->releaseLock($lockHandle);
+        }
+    }
+
+    /**
+     * Chunked layout: schema, per-table and per-period data parts and
+     * post-data (triggers) under one verified manifest. Unchanged periods of
+     * the previous backup are hard-linked instead of dumped again.
+     *
+     * @param  array<string, mixed>  $databaseConfig
+     * @return array<string, mixed>
+     */
+    private function createChunkedBackup(
+        string $baseDirectory,
+        string $temporaryDirectory,
+        string $finalDirectory,
+        string $credentialsPath,
+        string $binary,
+        array $databaseConfig,
+        string $database,
+        DateTimeImmutable $now,
+        DateTimeImmutable $startedAt,
+        DateTimeZone $timezone
+    ): array {
+        $warnings = $this->waitForActiveImports();
+        $previous = $this->latestChunkedBackup($baseDirectory, $finalDirectory);
+
+        $this->writeCredentialsFile($credentialsPath, $databaseConfig);
+        try {
+            $written = $this->chunkedWriter()->write(
+                $temporaryDirectory,
+                $this->baseDumpOptions($binary, $credentialsPath, $databaseConfig),
+                $database,
+                $previous,
+                $now
+            );
+        } finally {
+            $this->deleteFileIfPresent($credentialsPath);
+        }
+
+        $parts = $written['parts'];
+        $compressedBytes = array_sum(array_map(static fn (array $part): int => (int) $part['compressed_bytes'], $parts));
+        $uncompressedBytes = array_sum(array_map(static fn (array $part): int => (int) $part['uncompressed_bytes'], $parts));
+        $completedAt = new DateTimeImmutable('now', $timezone);
+        $duration = $completedAt->getTimestamp() - $startedAt->getTimestamp();
+
+        $this->writeManifestAtomically($temporaryDirectory.DIRECTORY_SEPARATOR.self::MANIFEST_FILENAME, [
+            'schema_version' => self::CHUNKED_MANIFEST_SCHEMA_VERSION,
+            'managed_by' => self::MANAGED_BY,
+            'status' => 'verified',
+            'layout' => 'chunked',
+            'database' => $database,
+            'backup_date' => $now->format('Y-m-d'),
+            'created_at' => $startedAt->format(DATE_ATOM),
+            'completed_at' => $completedAt->format(DATE_ATOM),
+            'duration_seconds' => $duration,
+            'compression' => 'gzip',
+            'compression_level' => $this->compressionLevel(),
+            'compressed_bytes' => $compressedBytes,
+            'uncompressed_bytes' => $uncompressedBytes,
+            'reused_from' => $previous !== null ? basename($previous['directory']) : null,
+            'stats' => $written['stats'],
+            'restore_command' => 'php artisan database:restore-daily --backup="'.basename($finalDirectory).'" --database=<target>',
+            'parts' => $parts,
+        ]);
+
+        if (file_exists($finalDirectory)) {
+            throw new RuntimeException("Target backup hari ini muncul saat proses berjalan: {$finalDirectory}");
+        }
+        if (! @rename($temporaryDirectory, $finalDirectory)) {
+            throw new RuntimeException('Gagal menyelesaikan commit atomik folder backup harian.');
+        }
+
+        [$deletedBackups, $pruneWarnings] = $this->pruneRetainedBackups($baseDirectory);
+        foreach ($parts as $part) {
+            if (($part['stable'] ?? true) === false) {
+                $warnings[] = 'Data berubah saat part '.$part['key'].' di-dump; part akan di-dump ulang besok.';
+            }
+        }
+
+        return $this->result(
+            'completed',
+            $finalDirectory,
+            null,
+            $finalDirectory.DIRECTORY_SEPARATOR.self::MANIFEST_FILENAME,
+            $compressedBytes,
+            $uncompressedBytes,
+            $this->readFreeSpace($baseDirectory),
+            $deletedBackups,
+            [...$warnings, ...$pruneWarnings],
+            $written['stats'] + ['duration_seconds' => $duration]
+        );
+    }
+
+    private function layoutMode(): string
+    {
+        return strtolower(trim((string) config('database_backup.mode', 'single'))) === 'chunked'
+            ? 'chunked'
+            : 'single';
+    }
+
+    private function chunkedWriter(): ChunkedDatabaseBackupWriter
+    {
+        return $this->chunkedWriter ?? app(ChunkedDatabaseBackupWriter::class);
+    }
+
+    /**
+     * Each part is its own transaction, consistent per table, so start only
+     * when no import is writing. A backup is never skipped: after the wait it
+     * proceeds and records the condition.
+     *
+     * @return array<int, string>
+     */
+    private function waitForActiveImports(): array
+    {
+        $deadline = time() + 60 * max(0, (int) config('database_backup.import_wait_minutes', 30));
+        try {
+            $imports = app(ImportProgressService::class);
+            while ($imports->hasActiveProcessingJobs()) {
+                if (time() >= $deadline) {
+                    return ['Import masih berjalan saat backup dimulai; part tabel import dapat berbeda beberapa menit.'];
+                }
+                sleep(30);
+            }
+        } catch (Throwable) {
+            return [];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array{directory: string, manifest: array<string, mixed>}|null
+     */
+    private function latestChunkedBackup(string $baseDirectory, string $excludeDirectory): ?array
+    {
+        $latest = null;
+        foreach (new \FilesystemIterator($baseDirectory, \FilesystemIterator::SKIP_DOTS) as $item) {
+            if (! $item->isDir() || $item->isLink()
+                || $this->normalizePath($item->getPathname()) === $this->normalizePath($excludeDirectory)) {
+                continue;
+            }
+            $inspected = $this->inspectManagedBackupDirectory($baseDirectory, $item->getPathname());
+            if ($inspected === null || ($inspected['manifest']['layout'] ?? null) !== 'chunked') {
+                continue;
+            }
+            if ($latest === null || strcmp($inspected['backup_date'], $latest['backup_date']) > 0) {
+                $latest = $inspected;
+            }
+        }
+
+        return $latest === null ? null : ['directory' => $latest['directory'], 'manifest' => $latest['manifest']];
+    }
+
+    /**
+     * @param  array<string, mixed>  $databaseConfig
+     * @return array<int, string>
+     */
+    private function baseDumpOptions(string $binary, string $credentialsPath, array $databaseConfig): array
+    {
+        $charset = trim((string) ($databaseConfig['charset'] ?? 'utf8mb4'));
+
+        return [
+            $binary,
+            '--defaults-extra-file='.$credentialsPath,
+            '--default-character-set='.($charset !== '' ? $charset : 'utf8mb4'),
+            '--single-transaction',
+            '--quick',
+            '--skip-lock-tables',
+            // Parts of one table load concurrently on restore; no LOCK TABLES.
+            '--skip-add-locks',
+            '--skip-comments',
+            '--skip-dump-date',
+            '--hex-blob',
+            '--no-tablespaces',
+            '--max-allowed-packet=67108864',
+        ];
+    }
+
+    /**
+     * Resolve a verified chunked backup by folder name, or the newest one.
+     *
+     * @return array{directory: string, manifest: array<string, mixed>}
+     */
+    public function resolveChunkedBackup(?string $folderName = null): array
+    {
+        $baseDirectory = $this->resolveBaseDirectory();
+        if ($folderName !== null && trim($folderName) !== '') {
+            $name = basename(str_replace('\\', '/', trim($folderName)));
+            $inspected = $this->inspectManagedBackupDirectory($baseDirectory, $baseDirectory.DIRECTORY_SEPARATOR.$name);
+            if ($inspected === null || ($inspected['manifest']['layout'] ?? null) !== 'chunked') {
+                throw new RuntimeException("Folder backup chunked tidak valid: {$name}");
+            }
+
+            return ['directory' => $inspected['directory'], 'manifest' => $inspected['manifest']];
+        }
+
+        $latest = is_dir($baseDirectory) ? $this->latestChunkedBackup($baseDirectory, '') : null;
+        if ($latest === null) {
+            throw new RuntimeException('Belum ada backup chunked terverifikasi di '.$baseDirectory);
+        }
+
+        return $latest;
+    }
+
+    /**
+     * @param  array{directory: string, manifest: array<string, mixed>}  $backup
+     * @param  array<int, string>|null  $tables
+     */
+    public function verifyChunkedParts(array $backup, ?array $tables = null): void
+    {
+        foreach ((array) $backup['manifest']['parts'] as $part) {
+            if ($tables !== null && ($part['kind'] ?? '') === 'data' && ! in_array($part['table'], $tables, true)) {
+                continue;
+            }
+
+            $path = $backup['directory'].DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, (string) $part['file']);
+            $hash = is_file($path) ? hash_file('sha256', $path) : false;
+            if (! is_string($hash) || ! hash_equals((string) $part['sha256_compressed'], $hash)) {
+                throw new RuntimeException('Checksum part backup tidak cocok dengan manifest: '.$part['file']);
+            }
         }
     }
 
@@ -714,6 +956,19 @@ class DailyDatabaseBackupService
     private function verifyExistingManagedBackup(array $backup): void
     {
         $manifest = $backup['manifest'];
+        if (($manifest['layout'] ?? null) === 'chunked') {
+            foreach ((array) $manifest['parts'] as $part) {
+                $path = $backup['directory'].DIRECTORY_SEPARATOR
+                    .str_replace('/', DIRECTORY_SEPARATOR, (string) $part['file']);
+                $hash = hash_file('sha256', $path);
+                if (! is_string($hash) || ! hash_equals((string) $part['sha256_compressed'], $hash)) {
+                    throw new RuntimeException('Checksum part backup tidak cocok dengan manifest: '.$part['file']);
+                }
+            }
+
+            return;
+        }
+
         $backupPath = $backup['backup_path'];
         $expectedCompressedHash = (string) ($manifest['sha256_compressed'] ?? '');
         $compressedHash = hash_file('sha256', $backupPath);
@@ -853,6 +1108,11 @@ class DailyDatabaseBackupService
         }
 
         $manifest = json_decode((string) file_get_contents($manifestPath), true);
+        if (is_array($manifest)
+            && (int) ($manifest['schema_version'] ?? 0) === self::CHUNKED_MANIFEST_SCHEMA_VERSION) {
+            return $this->inspectChunkedManifest($directory, $manifestPath, $manifest, $date->format('Y-m-d'));
+        }
+
         if (! is_array($manifest)
             || (int) ($manifest['schema_version'] ?? 0) !== self::MANIFEST_SCHEMA_VERSION
             || ($manifest['managed_by'] ?? null) !== self::MANAGED_BY
@@ -895,6 +1155,63 @@ class DailyDatabaseBackupService
             'backup_path' => $backupPath,
             'manifest_path' => $manifestPath,
             'backup_date' => $date->format('Y-m-d'),
+            'manifest' => $manifest,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @return array{directory: string, backup_path: string, manifest_path: string, backup_date: string, manifest: array<string, mixed>}|null
+     */
+    private function inspectChunkedManifest(
+        string $directory,
+        string $manifestPath,
+        array $manifest,
+        string $backupDate
+    ): ?array {
+        $parts = $manifest['parts'] ?? null;
+        if (($manifest['managed_by'] ?? null) !== self::MANAGED_BY
+            || ($manifest['status'] ?? null) !== 'verified'
+            || ($manifest['layout'] ?? null) !== 'chunked'
+            || ($manifest['backup_date'] ?? null) !== $backupDate
+            || ($manifest['compression'] ?? null) !== 'gzip'
+            || ! is_array($parts)
+            || $parts === []) {
+            return null;
+        }
+
+        $kinds = array_count_values(array_map(static fn ($part): string => (string) ($part['kind'] ?? ''), $parts));
+        if (($kinds['schema'] ?? 0) !== 1 || ($kinds['post'] ?? 0) !== 1) {
+            return null;
+        }
+
+        foreach ($parts as $part) {
+            $file = (string) ($part['file'] ?? '');
+            if (preg_match('#^(schema|post-data)\.sql\.gz$|^data/[A-Za-z0-9_\-]+(/[A-Za-z0-9_\-]+)?\.sql\.gz$#', $file) !== 1
+                || str_contains($file, '..')) {
+                return null;
+            }
+
+            $path = $directory.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $file);
+            if (! is_file($path)
+                || is_link($path)
+                || (int) filesize($path) !== (int) ($part['compressed_bytes'] ?? -1)
+                || ! preg_match('/^[a-f0-9]{64}$/', (string) ($part['sha256_compressed'] ?? ''))
+                || ! preg_match('/^[a-f0-9]{64}$/', (string) ($part['sha256_uncompressed'] ?? ''))) {
+                return null;
+            }
+        }
+
+        $entries = array_values(array_diff(scandir($directory) ?: [], ['.', '..']));
+        if (array_diff($entries, self::CHUNKED_TOP_LEVEL_ENTRIES) !== []) {
+            return null;
+        }
+
+        return [
+            'directory' => $directory,
+            'backup_path' => $directory.DIRECTORY_SEPARATOR.'schema.sql.gz',
+            'manifest_path' => $manifestPath,
+            'backup_date' => $backupDate,
             'manifest' => $manifest,
         ];
     }
@@ -1044,9 +1361,11 @@ class DailyDatabaseBackupService
         int $uncompressedBytes,
         int $freeSpaceBytes,
         array $deletedBackups,
-        array $warnings
+        array $warnings,
+        array $stats = []
     ): array {
         return [
+            'stats' => $stats,
             'status' => $status,
             'directory' => $directory,
             'backup_file' => $backupFile,

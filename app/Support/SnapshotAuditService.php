@@ -52,8 +52,14 @@ class SnapshotAuditService
             return $this->auditUnavailable($sourceTable, $snapshotTable, $periodHint);
         }
 
+        // The snapshot stores the Excel-workbook OS helper value, not the raw
+        // balance. Comparing raw balances flagged every period as mismatched
+        // and re-queued its rebuild on every audit cycle.
+        $snapshotBalance = DB::getDriverName() === 'mysql'
+            ? app(ReportSnapshotBuilder::class)->dashboardLoanBalanceSql('baki_debet1')
+            : 'baki_debet1';
         $sourceMetrics = $this->getSourceMetrics($sourceTable, 'periode', $periodHint, [
-            'total_balance' => 'SUM(CAST(COALESCE(baki_debet1, 0) AS DECIMAL(20,2)))',
+            'total_balance' => "SUM(CAST(COALESCE({$snapshotBalance}, 0) AS DECIMAL(20,2)))",
             'record_count' => 'COUNT(*)',
             'distinct_accounts' => 'COUNT(DISTINCT nomor_rekening1)',
         ]);

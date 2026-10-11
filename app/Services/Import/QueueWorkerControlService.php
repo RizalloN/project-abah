@@ -21,6 +21,11 @@ class QueueWorkerControlService
 
     private const AUTO_RECOVERY_MAX_BACKOFF_SECONDS = 300;
 
+    private const RESTART_YIELD_TIMEOUT_SECONDS = 8;
+
+    /** Longer than one scheduled watchdog cycle plus its launch backoff. */
+    private const RESTART_HANDOVER_SECONDS = 150;
+
     public function isEnabled(): bool
     {
         if (Cache::has($this->key('enabled'))) {
@@ -124,6 +129,82 @@ class QueueWorkerControlService
         ]);
     }
 
+    /**
+     * Graceful restart: every worker finishes its current job, exits, and is
+     * relaunched by a fresh monitor that loads the deployed code. Nothing is
+     * force-killed, so an import in progress is never cut off midway.
+     */
+    public function restart(?string $requestedBy = null): array
+    {
+        if (!$this->isEnabled()) {
+            return array_merge($this->status(), [
+                'restart_requested' => false,
+                'restart_rejected' => 'disabled',
+            ]);
+        }
+
+        $lock = Cache::lock($this->key('restart-lock'), 30);
+        if (!$lock->get()) {
+            return array_merge($this->status(), [
+                'restart_requested' => false,
+                'restart_rejected' => 'in_progress',
+            ]);
+        }
+
+        try {
+            $previousMonitorPid = $this->monitorHeartbeatPid();
+            Artisan::call('queue:restart');
+            $signalAt = (int) Cache::get('illuminate:queue:restart', time());
+            Cache::put($this->key('restart-request'), [
+                'requested_at' => time(),
+                'requested_by' => $requestedBy,
+                'signal_at' => $signalAt,
+                'previous_monitor_pid' => $previousMonitorPid,
+            ], now()->addHours(12));
+
+            // The monitor checks the signal every second and releases its
+            // heartbeat on exit; launch the replacement once it has yielded.
+            $deadline = microtime(true) + self::RESTART_YIELD_TIMEOUT_SECONDS;
+            while ($previousMonitorPid > 0
+                && $this->monitorHeartbeatPid() === $previousMonitorPid
+                && microtime(true) < $deadline) {
+                usleep(250000);
+            }
+
+            $relaunch = $this->monitorHeartbeatPid() === $previousMonitorPid && $previousMonitorPid > 0
+                ? ['started' => false, 'startup_confirmed' => false]
+                : $this->ensureMonitorRunning('manual-restart', true);
+
+            Log::warning('Queue workers restart requested from Job Management.', [
+                'requested_by' => $requestedBy,
+                'previous_monitor_pid' => $previousMonitorPid,
+                'monitor_relaunched' => (bool) ($relaunch['startup_confirmed'] ?? false),
+            ]);
+
+            return array_merge($this->status(), [
+                'restart_requested' => true,
+                'monitor_relaunched' => (bool) ($relaunch['startup_confirmed'] ?? false),
+            ]);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /** @return array{requested_at:int,requested_by:?string,signal_at:int,previous_monitor_pid:int}|null */
+    public function lastRestartRequest(): ?array
+    {
+        $request = Cache::get($this->key('restart-request'));
+
+        return is_array($request) ? $request : null;
+    }
+
+    public function monitorHeartbeatPid(): int
+    {
+        $heartbeat = Cache::get($this->key('monitor-heartbeat'));
+
+        return is_array($heartbeat) ? (int) ($heartbeat['pid'] ?? 0) : 0;
+    }
+
     public function claimMonitorLeadership(): bool
     {
         $lock = Cache::lock($this->key('leader-election-lock'), 10);
@@ -209,9 +290,15 @@ class QueueWorkerControlService
             ? (int) $heartbeat['timestamp']
             : null;
 
+        $restartRequest = $this->lastRestartRequest();
+        // The old monitor exits before its replacement starts; within that
+        // hand-over window an absent monitor is expected, not an outage.
+        $isRestarting = $enabled && !$monitorActive && $restartRequest !== null
+            && (time() - (int) ($restartRequest['requested_at'] ?? 0)) <= self::RESTART_HANDOVER_SECONDS;
+
         $state = !$enabled
             ? ($workerCount > 0 || $monitorActive ? 'stopping' : 'stopped')
-            : ($monitorActive ? 'active' : ($isStarting ? 'starting' : 'inactive'));
+            : ($monitorActive ? 'active' : ($isRestarting ? 'restarting' : ($isStarting ? 'starting' : 'inactive')));
 
         return [
             'enabled' => $enabled,
@@ -221,6 +308,7 @@ class QueueWorkerControlService
             'state_label' => match ($state) {
                 'active' => 'Worker Monitor Berjalan',
                 'starting' => 'Worker Monitor Sedang Dimulai',
+                'restarting' => 'Worker Sedang Direstart',
                 'stopping' => 'Worker Sedang Dihentikan',
                 'stopped' => 'Worker Dimatikan',
                 default => 'Worker Monitor Tidak Aktif',
@@ -228,6 +316,7 @@ class QueueWorkerControlService
             'tone' => match ($state) {
                 'active' => 'success',
                 'starting' => 'info',
+                'restarting' => 'info',
                 'stopping' => 'warning',
                 'stopped' => 'secondary',
                 default => 'danger',
@@ -248,6 +337,7 @@ class QueueWorkerControlService
                 ? "Monitor berjalan dan mendeteksi {$workerCount} worker aktif."
                 : 'Monitor berjalan dan siap. Tidak ada worker anak karena antrean sedang kosong; worker akan otomatis dibuat saat ada job.',
             'starting' => 'Proses monitor sudah dijalankan dan sedang menunggu heartbeat pertama dari server.',
+            'restarting' => 'Monitor lama sudah berhenti dengan aman. Monitor baru dengan kode terbaru sedang dijalankan (maksimal ±1 menit oleh watchdog).',
             'stopping' => 'Perintah berhenti sudah dikirim. Worker aktif akan selesai secara aman setelah job saat ini.',
             'stopped' => 'Worker monitor dimatikan. Job baru tetap masuk antrean tetapi tidak dijalankan otomatis.',
             default => 'Worker monitor belum aktif. Klik Aktifkan Worker untuk menjalankannya dari server.',

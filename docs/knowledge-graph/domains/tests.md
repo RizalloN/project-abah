@@ -8,7 +8,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | file | 70 |
 | function | 1 |
-| method | 363 |
+| method | 364 |
 | unresolved_symbol | 10 |
 | class | 64 |
 
@@ -16,8 +16,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `TestCase` | class | 215 | `tests/TestCase.php:13` |
-| `setUp` | method | 107 | `tests/TestCase.php:17` |
+| `TestCase` | class | 216 | `tests/TestCase.php:13` |
+| `setUp` | method | 108 | `tests/TestCase.php:17` |
 | `ManagedReportDeleteTest` | class | 57 | `tests/Unit/ManagedReportDeleteTest.php:21` |
 | `LandingMicroPerformanceServiceTest` | class | 54 | `tests/Unit/LandingMicroPerformanceServiceTest.php:17` |
 | `invokePrivate` | method | 35 | `tests/Unit/LandingMicroPerformanceServiceTest.php:2069` |
@@ -32,18 +32,18 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `setUp` | method | 17 | `tests/Feature/PruneReportDailyHistoryCommandTest.php:16` |
 | `LandingOperationalPeriodCacheTest` | class | 16 | `tests/Unit/LandingOperationalPeriodCacheTest.php:20` |
 | `LandingPayloadRecoveryTest` | class | 16 | `tests/Unit/LandingPayloadRecoveryTest.php:19` |
+| `MicroNettDisbursementCalculatorTest` | class | 16 | `tests/Unit/MicroNettDisbursementCalculatorTest.php:12` |
 | `DataPhReportControllerTest` | class | 15 | `tests/Unit/DataPhReportControllerTest.php:14` |
-| `MicroNettDisbursementCalculatorTest` | class | 15 | `tests/Unit/MicroNettDisbursementCalculatorTest.php:12` |
 | `SmartContentHeaderGuardServiceTest` | class | 15 | `tests/Unit/SmartContentHeaderGuardServiceTest.php:9` |
 | `ManagedReportRebuildTest` | class | 14 | `tests/Unit/ManagedReportRebuildTest.php:26` |
 | `DirectLargeFileLoadServiceTest` | class | 13 | `tests/Unit/DirectLargeFileLoadServiceTest.php:10` |
 | `StatusSyncManualTestScript` | class | 13 | `tests/Manual/StatusSyncManualTestScript.php:23` |
+| `row` | method | 13 | `tests/Unit/MicroNettDisbursementCalculatorTest.php:236` |
 | `AdminLayoutResponsiveGuardrailTest` | class | 12 | `tests/Unit/AdminLayoutResponsiveGuardrailTest.php:7` |
 | `ConsumerKanwilReferenceTest` | class | 12 | `tests/Unit/ConsumerKanwilReferenceTest.php:8` |
 | `MySqlBulkLoadServiceTest` | class | 12 | `tests/Unit/MySqlBulkLoadServiceTest.php:12` |
 | `PruneReportDailyHistoryCommandTest` | class | 12 | `tests/Feature/PruneReportDailyHistoryCommandTest.php:12` |
 | `guardDatabaseConnection` | method | 12 | `tests/TestCase.php:40` |
-| `row` | method | 12 | `tests/Unit/MicroNettDisbursementCalculatorTest.php:215` |
 | `LinkManagementControllerTest` | class | 11 | `tests/Unit/LinkManagementControllerTest.php:11` |
 | `invoke` | method | 11 | `tests/Unit/LandingOperationalPeriodCacheTest.php:179` |
 
@@ -121,8 +121,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | tests -> core (instantiates) | 113 |
 | tests -> core (calls) | 112 |
 | import -> tests (extends) | 52 |
+| tests -> dashboard-pinjaman (writes_table) | 48 |
 | import -> tests (calls) | 47 |
-| tests -> dashboard-pinjaman (writes_table) | 47 |
 | dashboard-pinjaman -> tests (calls) | 46 |
 | tests -> dashboard-pinjaman (contains) | 38 |
 | tests -> jobs-snapshots (contains) | 35 |
@@ -144,7 +144,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | tests -> jobs-snapshots (calls) | 12 |
 | tests -> core (renders) | 12 |
 | tests -> access-control (calls) | 12 |
+| database -> tests (calls) | 11 |
 | access-control -> tests (calls) | 11 |
 | tests -> access-control (contains) | 11 |
 | dashboard-harian -> tests (extends) | 10 |
-| database -> tests (calls) | 9 |

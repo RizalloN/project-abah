@@ -346,6 +346,82 @@ class DashboardHarianLdrRkaFormattingTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    public function test_fill_dashboard_harian_sheet_hides_specified_columns_and_rows(): void
+    {
+        $controller = new DashboardHarianController(new DashboardHarianSnapshotService());
+        $method = new ReflectionMethod(DashboardHarianController::class, 'fillDashboardHarianSheet');
+        $method->setAccessible(true);
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+
+        $method->invoke($controller, $sheet, [
+            'summary' => [
+                'kanca_label' => 'Area 6',
+                'unit_label' => 'Semua Unit Kerja',
+                'source' => 'test',
+            ],
+            'selected_period' => '2026-06-18',
+            'selected_period_label' => '18 Jun 26',
+            'selected_rka_period' => '2026-06-01',
+            'comparison_periods' => [
+                'yoy' => ['period' => '2025-06-18'],
+                'ytd' => ['period' => '2025-12-31'],
+                'm2' => ['period' => '2026-04-30'],
+                'mtm' => ['period' => '2026-05-31'],
+                'mtd' => ['period' => '2026-06-01'],
+                'h1' => ['period' => '2026-06-17'],
+                'rka' => ['period' => '2026-06-01'],
+                'rka_dec' => ['period' => '2026-12-01'],
+            ],
+            'rows' => [
+                [
+                    'key' => 'simpanan_total',
+                    'label' => '1. Total Simpanan',
+                    'type' => 'currency',
+                    'values' => ['current' => 100_000_000],
+                    'deltas' => [],
+                ],
+                [
+                    'key' => 'simpanan_ritel',
+                    'label' => 'A. Simpanan Ritel',
+                    'type' => 'currency',
+                    'values' => ['current' => 50_000_000],
+                    'deltas' => [],
+                ],
+                [
+                    'key' => 'simpanan_mikro',
+                    'label' => 'B. Simpanan Mikro',
+                    'type' => 'currency',
+                    'values' => ['current' => 50_000_000],
+                    'deltas' => [],
+                ],
+            ],
+        ], ['pos_mtm', 'delta_mtm'], ['simpanan_ritel']);
+
+        // Data rows start at row 8
+        // Row 8: simpanan_total (visible)
+        // Row 9: simpanan_ritel (hidden)
+        // Row 10: simpanan_mikro (visible)
+        $this->assertTrue($sheet->getRowDimension(8)->getVisible());
+        $this->assertFalse($sheet->getRowDimension(9)->getVisible());
+        $this->assertTrue($sheet->getRowDimension(10)->getVisible());
+
+        // Columns:
+        // A: keterangan (visible)
+        // B: pos_yoy (visible)
+        // E: pos_mtm (hidden)
+        // K: delta_mtm (hidden - index 11 because hasH1 is true)
+        // H: pos_current (visible)
+        $this->assertTrue($sheet->getColumnDimension('A')->getVisible());
+        $this->assertTrue($sheet->getColumnDimension('B')->getVisible());
+        $this->assertFalse($sheet->getColumnDimension('E')->getVisible());
+        $this->assertFalse($sheet->getColumnDimension('K')->getVisible());
+        $this->assertTrue($sheet->getColumnDimension('H')->getVisible());
+
+        $spreadsheet->disconnectWorksheets();
+    }
+
     private function assertConditionalRule(Conditional $rule, string $operator, string $condition): void
     {
         $this->assertSame($operator, $rule->getOperatorType());

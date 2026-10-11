@@ -9,7 +9,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | command | 3 |
 | file | 111 |
 | function | 3 |
-| method | 1093 |
+| method | 1094 |
 | route | 35 |
 | class | 56 |
 | table | 16 |
@@ -19,7 +19,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `daily_loan_dinamis` | table | 346 | - |
+| `daily_loan_dinamis` | table | 348 | - |
 | `DashboardPinjamanReportController` | class | 196 | `app/Http/Controllers/DashboardPinjamanReportController.php:28` |
 | `KinerjaRmReportController` | class | 148 | `app/Http/Controllers/Report/KinerjaRmReportController.php:23` |
 | `lw325_ph` | table | 122 | - |
@@ -222,11 +222,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| dashboard-pinjaman -> core (calls) | 336 |
+| dashboard-pinjaman -> core (calls) | 332 |
 | dashboard-pinjaman -> access-control (protected_by) | 175 |
 | dashboard-pinjaman -> core (instantiates) | 120 |
 | dashboard-pinjaman -> core (accepts) | 93 |
-| tests -> dashboard-pinjaman (writes_table) | 47 |
+| tests -> dashboard-pinjaman (writes_table) | 48 |
 | dashboard-pinjaman -> tests (calls) | 46 |
 | tests -> dashboard-pinjaman (contains) | 38 |
 | import -> dashboard-pinjaman (writes_table) | 37 |
@@ -237,12 +237,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | jobs-snapshots -> dashboard-pinjaman (reads_table) | 27 |
 | database -> dashboard-pinjaman (checks_table) | 26 |
 | core -> dashboard-pinjaman (reads_table) | 25 |
-| jobs-snapshots -> dashboard-pinjaman (writes_table) | 23 |
+| jobs-snapshots -> dashboard-pinjaman (writes_table) | 24 |
 | dashboard-pinjaman -> tests (extends) | 23 |
 | dashboard-simpanan -> dashboard-pinjaman (reads_table) | 22 |
 | tests -> dashboard-pinjaman (defines_table) | 22 |
 | dashboard-pinjaman -> platform (calls) | 21 |
-| dashboard-pinjaman -> jobs-snapshots (calls) | 18 |
+| dashboard-pinjaman -> jobs-snapshots (calls) | 19 |
 | dashboard-pinjaman -> jobs-snapshots (uses_trait) | 17 |
 | import -> dashboard-pinjaman (reads_table) | 16 |
 | core -> dashboard-pinjaman (checks_table) | 16 |

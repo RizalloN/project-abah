@@ -311,6 +311,7 @@ Route::middleware(['auth', 'role:admin', 'user.branch.scope', 'release.session.l
     Route::get('/job-management/data', [ImportJobManagementController::class, 'data'])->name('job-management.data');
     Route::post('/job-management/worker/start', [ImportJobManagementController::class, 'startWorker'])->middleware('throttle:admin-sensitive')->name('job-management.worker.start');
     Route::post('/job-management/worker/stop', [ImportJobManagementController::class, 'stopWorker'])->middleware('throttle:admin-sensitive')->name('job-management.worker.stop');
+    Route::post('/job-management/worker/restart', [ImportJobManagementController::class, 'restartWorker'])->middleware('throttle:admin-sensitive')->name('job-management.worker.restart');
     Route::post('/job-management/clear', [ImportJobManagementController::class, 'clear'])->middleware('throttle:admin-sensitive')->name('job-management.clear');
     Route::post('/job-management/bulk-delete', [ImportJobManagementController::class, 'bulkDestroy'])->middleware('throttle:admin-sensitive')->name('job-management.bulk-destroy');
     Route::post('/job-management/{jobId}/force-start', [ImportJobManagementController::class, 'forceStart'])->middleware('throttle:admin-sensitive')->name('job-management.force-start');

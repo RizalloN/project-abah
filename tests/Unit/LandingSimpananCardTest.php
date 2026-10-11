@@ -22,10 +22,12 @@ class LandingSimpananCardTest extends TestCase
     public function test_landing_simpanan_view_contract_has_three_cards_tabungan_deposito_giro(): void
     {
         $view = file_get_contents(resource_path('views/dashboard/simpanan.blade.php'));
+        $styles = $view
+            . file_get_contents(resource_path('views/dashboard/partials/simpanan-landing-styles.blade.php'))
+            . file_get_contents(resource_path('views/dashboard/partials/simpanan-section-styles.blade.php'));
 
-        $this->assertStringContainsString('simpanan-hero', $view);
-        $this->assertStringContainsString('simpanan-hero__svg', $view);
-        $this->assertStringNotContainsString('class="kpi-strip"', $view);
+        $this->assertStringContainsString("@section('title', 'A-SIX | Dashboard Simpanan')", $view);
+        $this->assertStringContainsString('class="kpi-strip"', $view);
         $this->assertStringContainsString('area6-card-grid--three', $view);
         $this->assertStringContainsString('bg-tabungan', $view);
         $this->assertStringContainsString('bg-deposito', $view);
@@ -35,10 +37,13 @@ class LandingSimpananCardTest extends TestCase
         $this->assertStringContainsString('selectLandingPrognosaWeek', $view);
         $this->assertStringContainsString('data-area6-scope', $view);
         $this->assertStringContainsString('data-area6-content-scope', $view);
-        $this->assertStringContainsString('container: simpanan-landing / inline-size', $view);
-        $this->assertStringContainsString('@container simpanan-landing (max-width: 1100px)', $view);
-        $this->assertStringContainsString('@container simpanan-landing (max-width: 620px)', $view);
-        $this->assertStringContainsString('@media (prefers-reduced-motion: reduce)', $view);
+        $this->assertStringContainsString('container: simpanan-landing / inline-size', $styles);
+        $this->assertStringContainsString('@container simpanan-landing (max-width: 1100px)', $styles);
+        $this->assertStringContainsString('@container simpanan-landing (max-width: 620px)', $styles);
+        $this->assertStringContainsString('shell.getBoundingClientRect().width', $styles);
+        $this->assertStringContainsString("shell.classList.toggle('landing-mobile', mobile)", $styles);
+        $this->assertStringContainsString('new ResizeObserver(schedule).observe(shell)', $styles);
+        $this->assertStringContainsString('@media (prefers-reduced-motion: reduce)', $styles);
         $this->assertStringContainsString('aria-pressed="{{ $scopeKey === $area6DefaultScope', $view);
         $this->assertStringContainsString('DtD', $view);
         $this->assertStringContainsString('MtD', $view);
@@ -49,7 +54,7 @@ class LandingSimpananCardTest extends TestCase
         $this->assertStringNotContainsString('simpananDonutChart', $view);
         $this->assertStringContainsString('simpanan-sekat-stack', $view);
         $this->assertStringContainsString('trend-position-card', $view);
-        $this->assertStringContainsString('TREND POSISI (Rp Juta)', $view);
+        $this->assertStringContainsString('TREND POSISI SIMPANAN', $view);
         $this->assertStringContainsString('simpanan-trend-svg-tabungan', $view);
         $this->assertStringContainsString('simpanan-trend-svg-deposito', $view);
         $this->assertStringContainsString('simpanan-trend-svg-giro', $view);
@@ -376,19 +381,19 @@ class LandingSimpananCardTest extends TestCase
         ]);
 
         $html = $view->render();
-        $this->assertStringContainsString('Landing Page Simpanan', $html);
-        $this->assertStringContainsString('simpanan-hero', $html);
-        $this->assertStringContainsString('simpanan-hero__svg', $html);
-        $this->assertStringNotContainsString('kpi-strip', $html);
+        $this->assertStringContainsString('Dashboard Simpanan', $html);
+        $this->assertStringContainsString('class="kpi-strip"', $html);
+        $this->assertStringContainsString('100.000', $html);
+        $this->assertStringContainsString('60,00%', $html);
         $this->assertStringNotContainsString('Pertumbuhan MtM', $html);
         $this->assertStringNotContainsString('Pertumbuhan YtD', $html);
         $this->assertStringContainsString('simpanan-sekat-stack', $html);
         $this->assertStringContainsString('trend-position-card', $html);
-        $this->assertStringContainsString('TREND POSISI (Rp Juta)', $html);
+        $this->assertStringContainsString('TREND POSISI SIMPANAN', $html);
         $this->assertStringContainsString('simpananMonthlyChart', $html);
         $this->assertStringContainsString('1. OPTIMALISASI DIGITAL CHANNEL', $html);
         $this->assertStringContainsString('digitalChannelTriggers', $html);
-        $this->assertStringContainsString('2. REKENING TRANSAKSI DEBITUR & REKENING DORMANT', $html);
+        $this->assertStringContainsString('2. REKENING TRANSAKSI DEBITUR &amp; REKENING DORMANT', $html);
         $this->assertStringContainsString('sekat-rekening-debitur-dormant', $html);
         $this->assertStringContainsString('3. PENINGKATAN PAYROLL BERKUALITAS', $html);
         $this->assertStringContainsString('sekat-peningkatan-payroll', $html);
@@ -397,7 +402,7 @@ class LandingSimpananCardTest extends TestCase
         $this->assertStringContainsString('SPPG KAB PONOROGO', $html);
         $this->assertStringContainsString('1.508', $html);
         $this->assertStringContainsString('12.379', $html);
-        $this->assertStringContainsString('4. ECOSYSTEM & VALUE CHAIN', $html);
+        $this->assertStringContainsString('4. ECOSYSTEM &amp; VALUE CHAIN', $html);
         $this->assertStringContainsString('sekat-ecosystem-value-chain', $html);
         $this->assertStringContainsString('2.069', $html);
         $this->assertStringContainsString('5. PERUSAHAAN ANAK', $html);

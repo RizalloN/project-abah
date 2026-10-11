@@ -7,6 +7,7 @@ use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\ActiveImportJobCounter;
 use App\Services\Import\QueueWorkerControlService;
+use App\Services\Import\QueueWorkerMonitorService;
 use App\Support\ManagedReportSnapshotRebuildCoordinator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -173,6 +174,7 @@ class ImportJobManagementController extends Controller
             ],
             'queue_health' => $this->resolveQueueHealth(),
             'worker_status' => $workerControl->status(),
+            'worker_monitor' => $this->resolveWorkerMonitor(),
             'snapshot_jobs' => $snapshotJobs,
             'managed_delete_jobs' => $managedDeleteJobs,
             'managed_delete_summary' => [
@@ -230,6 +232,41 @@ class ImportJobManagementController extends Controller
             'message' => 'Perintah berhenti dikirim. Worker menyelesaikan job aktif lalu berhenti dengan aman.',
             'worker_status' => $status,
         ]);
+    }
+
+    public function restartWorker(Request $request, QueueWorkerControlService $workerControl)
+    {
+        $status = $workerControl->restart(optional($request->user())->name);
+        $rejected = (string) ($status['restart_rejected'] ?? '');
+        if ($rejected !== '') {
+            return response()->json([
+                'status' => 'error',
+                'message' => $rejected === 'disabled'
+                    ? 'Worker sedang dimatikan. Gunakan Aktifkan Worker untuk menjalankannya kembali.'
+                    : 'Restart worker sedang diproses. Tunggu beberapa detik lalu periksa status.',
+                'worker_status' => $status,
+            ], 409);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => ($status['monitor_relaunched'] ?? false)
+                ? 'Restart dikirim dan monitor baru sudah aktif. Worker lama menyelesaikan job aktif lalu diganti otomatis.'
+                : 'Restart dikirim. Monitor lama sedang berhenti; monitor baru dijalankan otomatis oleh watchdog dalam ±1 menit.',
+            'worker_status' => $status,
+            'worker_monitor' => $this->resolveWorkerMonitor(),
+        ]);
+    }
+
+    private function resolveWorkerMonitor(): ?array
+    {
+        try {
+            return app(QueueWorkerMonitorService::class)->snapshot();
+        } catch (\Throwable $e) {
+            Log::warning('Worker monitor telemetry unavailable.', ['message' => $e->getMessage()]);
+
+            return null;
+        }
     }
 
     public function forceStart(int $jobId, ImportProgressService $progressService, ImportExecutionService $executionService)

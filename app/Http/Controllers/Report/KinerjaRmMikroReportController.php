@@ -729,7 +729,7 @@ class KinerjaRmMikroReportController extends Controller
         ];
 
         $scope = UserBranchScope::current();
-        $nettRows = collect(app(MicroNettDisbursementCalculator::class)->kurRm($period))
+        $nettRows = collect(app(MicroNettDisbursementCalculator::class)->cachedKurRm($period))
             ->filter(fn (array $row): bool => $scope === null
                 || $this->normalizeKey((string) ($row['cabang'] ?? '')) === $this->normalizeKey($scope['upper_label']))
             ->groupBy(fn (array $row): string => $this->rowKey($row, $group))
@@ -1214,7 +1214,7 @@ class KinerjaRmMikroReportController extends Controller
         $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
         $workingDays = $this->networkDays($periodStart, $period);
         $roster = $this->activeMantriRosterState();
-        $nettRows = collect(app(MicroNettDisbursementCalculator::class)->mantri($period))
+        $nettRows = collect(app(MicroNettDisbursementCalculator::class)->cachedMantri($period))
             ->filter(function (array $row): bool {
                 $scope = UserBranchScope::current();
 
@@ -1579,7 +1579,7 @@ class KinerjaRmMikroReportController extends Controller
 
     private function mantriMonthlyRealizationsByPn(string $period, string $periodStart): array
     {
-        return collect(app(MicroNettDisbursementCalculator::class)->mantri($period))
+        return collect(app(MicroNettDisbursementCalculator::class)->cachedMantri($period))
             ->filter(function (array $row): bool {
                 $scope = UserBranchScope::current();
 
