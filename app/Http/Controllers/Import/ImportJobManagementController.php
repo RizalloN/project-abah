@@ -8,6 +8,7 @@ use App\Services\Import\ImportProgressService;
 use App\Services\Import\ActiveImportJobCounter;
 use App\Services\Import\QueueWorkerControlService;
 use App\Services\Import\QueueWorkerMonitorService;
+use App\Services\Import\SafeWorkerRestartService;
 use App\Support\ManagedReportSnapshotRebuildCoordinator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -175,6 +176,7 @@ class ImportJobManagementController extends Controller
             'queue_health' => $this->resolveQueueHealth(),
             'worker_status' => $workerControl->status(),
             'worker_monitor' => $this->resolveWorkerMonitor(),
+            'safe_restart' => $this->resolveSafeRestart(),
             'snapshot_jobs' => $snapshotJobs,
             'managed_delete_jobs' => $managedDeleteJobs,
             'managed_delete_summary' => [
@@ -234,28 +236,74 @@ class ImportJobManagementController extends Controller
         ]);
     }
 
-    public function restartWorker(Request $request, QueueWorkerControlService $workerControl)
+    public function restartWorker(Request $request, QueueWorkerControlService $workerControl, SafeWorkerRestartService $safeRestart)
     {
-        $status = $workerControl->restart(optional($request->user())->name);
-        $rejected = (string) ($status['restart_rejected'] ?? '');
-        if ($rejected !== '') {
+        $result = $safeRestart->request(optional($request->user())->name);
+        if ($result['outcome'] === 'rejected') {
             return response()->json([
                 'status' => 'error',
-                'message' => $rejected === 'disabled'
+                'message' => $result['reason'] === 'disabled'
                     ? 'Worker sedang dimatikan. Gunakan Aktifkan Worker untuk menjalankannya kembali.'
                     : 'Restart worker sedang diproses. Tunggu beberapa detik lalu periksa status.',
-                'worker_status' => $status,
+                'worker_status' => $workerControl->status(),
             ], 409);
         }
 
+        if ($result['outcome'] === 'blocked') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Restart ditahan karena ada file PHP yang tidak valid; worker tetap memakai kode lama agar tidak gagal boot: '
+                    .implode('; ', $result['errors']),
+                'worker_status' => $workerControl->status(),
+            ], 422);
+        }
+
+        if ($result['outcome'] === 'scheduled') {
+            return response()->json([
+                'status' => 'success',
+                'scheduled' => true,
+                'message' => 'Restart dijadwalkan. Worker akan direstart otomatis setelah semua proses selesai: '
+                    .implode('; ', array_column($result['busy'], 'label')).'.',
+                'worker_status' => $workerControl->status(),
+                'worker_monitor' => $this->resolveWorkerMonitor(),
+                'safe_restart' => $this->resolveSafeRestart(),
+            ], 202);
+        }
+
+        $status = $result['worker_status'];
+
         return response()->json([
             'status' => 'success',
+            'scheduled' => false,
             'message' => ($status['monitor_relaunched'] ?? false)
-                ? 'Restart dikirim dan monitor baru sudah aktif. Worker lama menyelesaikan job aktif lalu diganti otomatis.'
-                : 'Restart dikirim. Monitor lama sedang berhenti; monitor baru dijalankan otomatis oleh watchdog dalam ±1 menit.',
+                ? 'Tidak ada proses berjalan. Restart dikirim dan monitor baru sudah aktif.'
+                : 'Tidak ada proses berjalan. Restart dikirim; monitor baru dijalankan otomatis oleh watchdog dalam ±1 menit.',
             'worker_status' => $status,
             'worker_monitor' => $this->resolveWorkerMonitor(),
+            'safe_restart' => $this->resolveSafeRestart(),
         ]);
+    }
+
+    public function cancelWorkerRestart(SafeWorkerRestartService $safeRestart)
+    {
+        $cancelled = $safeRestart->cancel();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $cancelled ? 'Restart terjadwal dibatalkan.' : 'Tidak ada restart terjadwal.',
+            'safe_restart' => $this->resolveSafeRestart(),
+        ]);
+    }
+
+    private function resolveSafeRestart(): ?array
+    {
+        try {
+            return app(SafeWorkerRestartService::class)->summary();
+        } catch (\Throwable $e) {
+            Log::warning('Safe worker restart state unavailable.', ['message' => $e->getMessage()]);
+
+            return null;
+        }
     }
 
     private function resolveWorkerMonitor(): ?array

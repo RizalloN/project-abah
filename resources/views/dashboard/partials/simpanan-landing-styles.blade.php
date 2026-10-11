@@ -74,6 +74,10 @@
   border-color: #6ee7b7;
   box-shadow: 0 20px 36px -6px rgba(5, 150, 105, 0.16), 0 8px 16px -3px rgba(15, 23, 42, 0.06);
 }
+.area6-card-premium[data-metric="casa"]:hover {
+  border-color: #a5b4fc;
+  box-shadow: 0 20px 36px -6px rgba(79, 70, 229, 0.18), 0 8px 16px -3px rgba(15, 23, 42, 0.06);
+}
 .ap-week-toolbar {
   gap: 1rem;
   margin: 0 1.5rem 0.85rem;
@@ -177,6 +181,11 @@
   border-color: #a7f3d0;
   border-left-color: #059669;
   background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+}
+.area6-card-premium[data-metric="casa"] .ap-prognosa-strip {
+  border-color: #c7d2fe;
+  border-left-color: #4f46e5;
+  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
 }
 .ap-prognosa-item {
   min-width: 0;
@@ -1526,10 +1535,18 @@
   grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   justify-content: center;
 }
-.db-shell.landing-tablet .area6-panel .area6-card-grid.area6-card-grid--three {
+.db-shell .area6-panel .area6-card-grid.area6-card-grid--four {
+  width: 100%;
+  margin-inline: auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  justify-content: center;
+}
+.db-shell.landing-tablet .area6-panel .area6-card-grid.area6-card-grid--three,
+.db-shell.landing-tablet .area6-panel .area6-card-grid.area6-card-grid--four {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
 }
-.db-shell.landing-mobile .area6-panel .area6-card-grid.area6-card-grid--three {
+.db-shell.landing-mobile .area6-panel .area6-card-grid.area6-card-grid--three,
+.db-shell.landing-mobile .area6-panel .area6-card-grid.area6-card-grid--four {
   grid-template-columns: 1fr !important;
 }
 .db-shell .landing-scope-stage .area6-scope-toggle {

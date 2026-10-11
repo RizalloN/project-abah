@@ -73,6 +73,10 @@ return [
 
     'worker_max_time' => (int) env('QUEUE_WORKER_MAX_TIME', 3600),
 
+    // Restart workers (only once imports, snapshots and jobs are idle) when
+    // deployed code is newer than the running worker processes.
+    'auto_restart_on_code_change' => (bool) env('QUEUE_AUTO_RESTART_ON_CODE_CHANGE', true),
+
     /*
     |--------------------------------------------------------------------------
     | Queue Connections

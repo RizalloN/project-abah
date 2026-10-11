@@ -597,6 +597,23 @@ class PresentationPrognosaWeeklyService
             ];
         }
 
+        if (isset($metrics['tabungan'], $metrics['giro'])) {
+            $tabAvailable = (bool) ($metrics['tabungan']['available'] ?? false);
+            $giroAvailable = (bool) ($metrics['giro']['available'] ?? false);
+            $casaForecast = ($tabAvailable ? (float) ($metrics['tabungan']['value'] ?? 0.0) : 0.0)
+                + ($giroAvailable ? (float) ($metrics['giro']['value'] ?? 0.0) : 0.0);
+            $tabActualAvailable = $metrics['tabungan']['source_actual'] !== null;
+            $giroActualAvailable = $metrics['giro']['source_actual'] !== null;
+            $casaActual = ($tabActualAvailable ? (float) $metrics['tabungan']['source_actual'] : 0.0)
+                + ($giroActualAvailable ? (float) $metrics['giro']['source_actual'] : 0.0);
+
+            $metrics['casa'] = [
+                'available' => $tabAvailable || $giroAvailable,
+                'value' => ($tabAvailable || $giroAvailable) ? $casaForecast : null,
+                'source_actual' => ($tabActualAvailable || $giroActualAvailable) ? $casaActual : null,
+            ];
+        }
+
         return [
             'available' => collect($metrics)->contains(
                 static fn (array $metric): bool => (bool) ($metric['available'] ?? false)
@@ -1243,6 +1260,23 @@ class PresentationPrognosaWeeklyService
                 'available' => $forecast !== null,
                 'value' => $forecast === null ? null : $forecast * 1_000_000,
                 'source_actual' => $sourceActual === null ? null : $sourceActual * 1_000_000,
+            ];
+        }
+
+        if (isset($metrics['tabungan'], $metrics['giro'])) {
+            $tabAvailable = (bool) ($metrics['tabungan']['available'] ?? false);
+            $giroAvailable = (bool) ($metrics['giro']['available'] ?? false);
+            $casaForecast = ($tabAvailable ? (float) ($metrics['tabungan']['value'] ?? 0.0) : 0.0)
+                + ($giroAvailable ? (float) ($metrics['giro']['value'] ?? 0.0) : 0.0);
+            $tabActualAvailable = $metrics['tabungan']['source_actual'] !== null;
+            $giroActualAvailable = $metrics['giro']['source_actual'] !== null;
+            $casaActual = ($tabActualAvailable ? (float) $metrics['tabungan']['source_actual'] : 0.0)
+                + ($giroActualAvailable ? (float) $metrics['giro']['source_actual'] : 0.0);
+
+            $metrics['casa'] = [
+                'available' => $tabAvailable || $giroAvailable,
+                'value' => ($tabAvailable || $giroAvailable) ? $casaForecast : null,
+                'source_actual' => ($tabActualAvailable || $giroActualAvailable) ? $casaActual : null,
             ];
         }
 

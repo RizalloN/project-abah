@@ -763,7 +763,7 @@
 /* ── PREMIUM AREA 6 CARDS (IDENTIK DENGAN LANDING PINJAMAN) ── */
 .area6-card-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1.15rem;
   padding: 1.5rem;
 }
@@ -771,6 +771,13 @@
 .area6-card-grid--three {
   display: grid !important;
   grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 1.15rem;
+  padding: 1.5rem;
+}
+
+.area6-card-grid--four {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
   gap: 1.15rem;
   padding: 1.5rem;
 }
@@ -813,6 +820,11 @@
   box-shadow: 0 20px 36px -6px rgba(124, 58, 237, 0.16), 0 8px 16px -3px rgba(15, 23, 42, 0.06);
 }
 
+.area6-card-premium[data-metric="casa"]:hover {
+  border-color: #a5b4fc;
+  box-shadow: 0 20px 36px -6px rgba(79, 70, 229, 0.18), 0 8px 16px -3px rgba(15, 23, 42, 0.06);
+}
+
 /* Header Banner */
 .ap-header {
   position: relative;
@@ -844,6 +856,9 @@
 }
 .ap-header.bg-giro, .ap-badge.bg-giro {
   background: linear-gradient(135deg, #7c3aed 0%, #6366f1 100%) !important;
+}
+.ap-header.bg-casa, .ap-badge.bg-casa {
+  background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%) !important;
 }
 
 /* Floating Icon Badge (Identik dengan Pinjaman: top -14px, 46x46px, 3px white border) */
@@ -1497,6 +1512,13 @@
   }
 }
 
+@media (min-width: 992px) and (max-width: 1399.98px) {
+  .area6-card-grid,
+  .area6-card-grid--four {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
 @media (max-width: 991.98px) {
   .db-header {
     align-items: stretch;
@@ -1507,7 +1529,9 @@
   .kpi-strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .area6-card-grid--three {
+  .area6-card-grid,
+  .area6-card-grid--three,
+  .area6-card-grid--four {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
   .payroll-kpi-grid {
@@ -1525,7 +1549,9 @@
   .kpi-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .area6-card-grid--three {
+  .area6-card-grid,
+  .area6-card-grid--three,
+  .area6-card-grid--four {
     grid-template-columns: 1fr !important;
   }
   .area6-head {
@@ -1703,7 +1729,7 @@
     <div class="area6-head">
   <div>
     <h2 class="area6-title" id="simpanan-scope-title">Kinerja Simpanan {{ $landingBranchLabel ?? 'Area 6' }}</h2>
-    <div class="area6-sub" id="simpanan-scope-subtitle">Ringkasan posisi dan kinerja Tabungan, Deposito, dan Giro pada lingkup aktif.</div>
+    <div class="area6-sub" id="simpanan-scope-subtitle">Ringkasan posisi dan kinerja Tabungan, Deposito, Giro, dan CASA pada lingkup aktif.</div>
   </div>
   <div class="area6-head-actions">
     <div class="landing-scope-stage">
@@ -1729,7 +1755,7 @@
     </div>
     <div class="area6-periods">
       <span class="area6-pill"><i class="fas fa-calendar-day"></i> Posisi: {{ $periodLabel }}</span>
-      <span class="area6-pill"><i class="fas fa-university"></i> Produk: Tabungan, Deposito, Giro</span>
+      <span class="area6-pill"><i class="fas fa-university"></i> Produk: Tabungan, Deposito, Giro, CASA</span>
       <span class="area6-pill"><i class="fas fa-database"></i> Simpanan Harian</span>
     </div>
   </div>
@@ -1769,7 +1795,7 @@
       </div>
       @endif
 
-      <div class="area6-card-grid {{ count($contentCards) === 3 ? 'area6-card-grid--three' : '' }}">
+      <div class="area6-card-grid {{ count($contentCards) === 3 ? 'area6-card-grid--three' : (count($contentCards) === 4 ? 'area6-card-grid--four' : '') }}">
         @forelse($contentCards as $card)
           @php
             $key = data_get($card, 'key');

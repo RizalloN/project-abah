@@ -8,7 +8,7 @@ use Throwable;
 
 final class LandingPrognosaCardService
 {
-    private const CACHE_KEY = 'landing:prognosa:v2:'.PresentationPrognosaWeeklyService::SPREADSHEET_ID;
+    private const CACHE_KEY = 'landing:prognosa:v3:'.PresentationPrognosaWeeklyService::SPREADSHEET_ID;
 
     public function __construct(
         private readonly PresentationPrognosaWeeklyService $prognosaWeeklyService
@@ -201,8 +201,30 @@ final class LandingPrognosaCardService
             $forecast = data_get($metrics, $metricKey.'.value');
             $forecastAvailable = (bool) data_get($metrics, $metricKey.'.available', false)
                 && is_numeric($forecast);
+
+            if ($cardKey === 'casa' && ! $forecastAvailable) {
+                $tabKey = $scopeKey === 'area6' ? 'tabungan' : $scopeKey.'_tabungan';
+                $giroKey = $scopeKey === 'area6' ? 'giro' : $scopeKey.'_giro';
+                $tabVal = data_get($metrics, $tabKey.'.value');
+                $giroVal = data_get($metrics, $giroKey.'.value');
+                $tabAvail = (bool) data_get($metrics, $tabKey.'.available', false) && is_numeric($tabVal);
+                $giroAvail = (bool) data_get($metrics, $giroKey.'.available', false) && is_numeric($giroVal);
+                if ($tabAvail || $giroAvail) {
+                    $forecast = ($tabAvail ? (float) $tabVal : 0.0) + ($giroAvail ? (float) $giroVal : 0.0);
+                    $forecastAvailable = true;
+                }
+            }
+
             $actualPayload = $this->actualPayloadForWeek($scopePayload, $candidateWeek, $weekLabel);
             $actual = data_get($actualPayload, ['metrics', $cardKey]);
+
+            if ($cardKey === 'casa' && ! is_numeric($actual)) {
+                $tabActual = data_get($actualPayload, ['metrics', 'tabungan']);
+                $giroActual = data_get($actualPayload, ['metrics', 'giro']);
+                if (is_numeric($tabActual) || is_numeric($giroActual)) {
+                    $actual = ((float) ($tabActual ?? 0.0)) + ((float) ($giroActual ?? 0.0));
+                }
+            }
 
             if (! is_numeric($actual) && $candidateWeek === $weekLabel) {
                 $actual = is_numeric($card['realization_raw'] ?? null)

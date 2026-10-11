@@ -24,6 +24,8 @@ class QueueWorkerMonitorService
 
     private const FAILED_JOBS_SAMPLE = 200;
 
+    private const FAILED_JOBS_WINDOW_DAYS = 7;
+
     public function __construct(
         private readonly QueueWorkerControlService $workerControl,
         private readonly QueueSupervisorProcessRunner $processRunner
@@ -64,6 +66,37 @@ class QueueWorkerMonitorService
             'pools' => $pools,
             'failed_jobs' => $this->failedJobsSummary(),
         ];
+    }
+
+    /**
+     * Start time of the oldest live monitor/worker process, or null when the
+     * OS listing is unavailable (code-change detection then stays inactive).
+     */
+    public function oldestLiveProcessStartedAt(): ?int
+    {
+        $processes = $this->processTable();
+        if ($processes === null) {
+            return null;
+        }
+
+        $pids = [$this->workerControl->monitorHeartbeatPid()];
+        foreach ((array) config('queue.worker_pools', []) as $poolName => $pool) {
+            $hash = sha1((string) $poolName);
+            $pids = array_merge(
+                $pids,
+                array_keys($this->intMap(Cache::get('queue:worker-pool:pids:'.$hash, []))),
+                array_keys($this->intMap(Cache::get('queue:worker-pool:heartbeats:'.$hash, [])))
+            );
+        }
+
+        $startTimes = [];
+        foreach (array_unique($pids) as $pid) {
+            if ($pid > 0 && isset($processes[$pid]['started_at'])) {
+                $startTimes[] = (int) $processes[$pid]['started_at'];
+            }
+        }
+
+        return $startTimes !== [] ? min($startTimes) : null;
     }
 
     /**
@@ -290,9 +323,9 @@ class QueueWorkerMonitorService
     /** @return array<string, mixed> */
     private function failedJobsSummary(): array
     {
-        return Cache::remember('queue:worker-monitor:failed-jobs:v1', 30, function (): array {
+        return Cache::remember('queue:worker-monitor:failed-jobs:v2', 30, function (): array {
             if (!Schema::hasTable('failed_jobs')) {
-                return ['available' => false, 'last_hour' => 0, 'last_24h' => 0, 'last_24h_capped' => false, 'latest' => []];
+                return ['available' => false, 'last_hour' => 0, 'last_24h' => 0, 'last_7d' => 0, 'last_24h_capped' => false, 'latest' => [], 'groups' => [], 'last_failed_at' => null];
             }
 
             // failed_jobs has no failed_at index and large payloads; the newest
@@ -304,26 +337,42 @@ class QueueWorkerMonitorService
 
             $hourAgo = now()->subHour();
             $dayAgo = now()->subDay();
-            $inLastDay = $rows->filter(fn ($row): bool => $row->failed_at !== null && Carbon::parse($row->failed_at)->greaterThanOrEqualTo($dayAgo));
+            $weekAgo = now()->subDays(self::FAILED_JOBS_WINDOW_DAYS);
+            $failedSince = fn (Carbon $since) => $rows->filter(fn ($row): bool => $row->failed_at !== null && Carbon::parse($row->failed_at)->greaterThanOrEqualTo($since));
+            $inLastDay = $failedSince($dayAgo);
+            // Old failures are history, not current worker health.
+            $recent = $failedSince($weekAgo)->map(function ($row): array {
+                preg_match('/"displayName"\s*:\s*"([^"]+)"/', (string) $row->payload_head, $name);
+                $error = trim((string) strtok((string) $row->exception_head, "\n"));
+                $error = (string) preg_replace('/ in [A-Za-z]:[\\\\\/].*$| in \/.*$/', '', $error);
+
+                return [
+                    'id' => (int) $row->id,
+                    'queue' => (string) $row->queue,
+                    'job' => class_basename(stripslashes((string) ($name[1] ?? 'Job'))),
+                    'failed_at' => $row->failed_at !== null ? Carbon::parse($row->failed_at)->toIso8601String() : null,
+                    'error' => mb_strimwidth($error, 0, 220, '…'),
+                ];
+            })->values();
 
             return [
                 'available' => true,
-                'last_hour' => $rows->filter(fn ($row): bool => $row->failed_at !== null && Carbon::parse($row->failed_at)->greaterThanOrEqualTo($hourAgo))->count(),
+                'last_hour' => $failedSince($hourAgo)->count(),
                 'last_24h' => $inLastDay->count(),
+                'last_7d' => $recent->count(),
                 'last_24h_capped' => $inLastDay->count() >= self::FAILED_JOBS_SAMPLE,
-                'latest' => $rows->take(5)->map(function ($row): array {
-                    preg_match('/"displayName"\s*:\s*"([^"]+)"/', (string) $row->payload_head, $name);
-                    $error = trim((string) strtok((string) $row->exception_head, "\n"));
-                    $error = (string) preg_replace('/ in [A-Za-z]:[\\\\\/].*$| in \/.*$/', '', $error);
-
-                    return [
-                        'id' => (int) $row->id,
-                        'queue' => (string) $row->queue,
-                        'job' => class_basename(stripslashes((string) ($name[1] ?? 'Job'))),
-                        'failed_at' => $row->failed_at !== null ? Carbon::parse($row->failed_at)->toIso8601String() : null,
-                        'error' => mb_strimwidth($error, 0, 220, '…'),
-                    ];
-                })->values()->all(),
+                'window_days' => self::FAILED_JOBS_WINDOW_DAYS,
+                'last_failed_at' => $rows->first()?->failed_at !== null ? Carbon::parse($rows->first()->failed_at)->toIso8601String() : null,
+                'groups' => $recent->groupBy(fn (array $job): string => $job['job'].'|'.$job['queue'])
+                    ->map(fn ($jobs): array => [
+                        'job' => $jobs->first()['job'],
+                        'queue' => $jobs->first()['queue'],
+                        'count' => $jobs->count(),
+                        'last_failed_at' => $jobs->first()['failed_at'],
+                        'error' => $jobs->first()['error'],
+                    ])
+                    ->sortByDesc('count')->values()->all(),
+                'latest' => $recent->take(5)->all(),
             ];
         });
     }

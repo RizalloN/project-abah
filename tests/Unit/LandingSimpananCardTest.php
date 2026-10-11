@@ -29,9 +29,11 @@ class LandingSimpananCardTest extends TestCase
         $this->assertStringContainsString("@section('title', 'A-SIX | Dashboard Simpanan')", $view);
         $this->assertStringContainsString('class="kpi-strip"', $view);
         $this->assertStringContainsString('area6-card-grid--three', $view);
+        $this->assertStringContainsString('area6-card-grid--four', $view);
         $this->assertStringContainsString('bg-tabungan', $view);
         $this->assertStringContainsString('bg-deposito', $view);
         $this->assertStringContainsString('bg-giro', $view);
+        $this->assertStringContainsString('bg-casa', $view);
         $this->assertStringContainsString('class="ap-prognosa-strip"', $view);
         $this->assertStringContainsString('data-prognosa-week-select', $view);
         $this->assertStringContainsString('selectLandingPrognosaWeek', $view);
@@ -282,6 +284,96 @@ class LandingSimpananCardTest extends TestCase
         $this->assertSame('+8.000', $card['deltas']['mtd']['value']);
         $this->assertSame('+6.000', $card['deltas']['mom']['value']);
         $this->assertSame('+15.000', $card['deltas']['ytd']['value']);
+    }
+
+    public function test_build_simpanan_scope_card_calculates_casa_metrics_correctly(): void
+    {
+        $controller = app(DashboardSimpananController::class);
+        $method = new ReflectionMethod(DashboardSimpananController::class, 'buildSimpananScopeCard');
+
+        $rows = collect([
+            'tabungan_ritel' => [
+                'values' => ['current' => 60_000_000_000, 'rka' => 50_000_000_000],
+                'deltas' => ['dtd' => 1_000_000_000, 'mtd' => 5_000_000_000, 'mtm' => 4_000_000_000, 'ytd' => 10_000_000_000],
+            ],
+            'giro_ritel' => [
+                'values' => ['current' => 20_000_000_000, 'rka' => 25_000_000_000],
+                'deltas' => ['dtd' => 500_000_000, 'mtd' => 1_000_000_000, 'mtm' => 1_000_000_000, 'ytd' => 2_000_000_000],
+            ],
+        ]);
+
+        $card = $method->invoke(
+            $controller,
+            'casa',
+            'CASA (Giro + Tabungan)',
+            ['tabungan_ritel', 'giro_ritel'],
+            $rows,
+            '22 Agu 2026',
+            'Agustus 2026',
+            'indigo',
+            'fas fa-layer-group'
+        );
+
+        $this->assertSame('casa', $card['key']);
+        $this->assertSame('CASA (GIRO + TABUNGAN)', $card['header_title']);
+        $this->assertSame('80.000', $card['realization_value']);
+        $this->assertSame('75.000', $card['target_value']);
+        $this->assertSame('+5.000', $card['gap_value']);
+        $this->assertSame('green', $card['gap_color']);
+        $this->assertSame('indigo', $card['tone']);
+        $this->assertSame('fas fa-layer-group', $card['icon']);
+
+        // Check deltas: sum of tabungan + giro
+        $this->assertSame('+1.500', $card['deltas']['dtd']['value']);
+        $this->assertSame('+6.000', $card['deltas']['mtd']['value']);
+        $this->assertSame('+5.000', $card['deltas']['mom']['value']);
+        $this->assertSame('+12.000', $card['deltas']['ytd']['value']);
+    }
+
+    public function test_prognosa_service_decorates_casa_card_via_synthesis_if_not_explicit(): void
+    {
+        $prognosaService = app(LandingPrognosaCardService::class);
+        $method = new ReflectionMethod(LandingPrognosaCardService::class, 'decorateCard');
+
+        $card = [
+            'key' => 'casa',
+            'header_title' => 'CASA (GIRO + TABUNGAN)',
+            'realization_raw' => 15_000_000_000.0,
+            'realization_value' => '15.000',
+        ];
+
+        $scopePayload = [
+            'prognosa_actuals' => [
+                'W1' => ['metrics' => ['tabungan' => 10_000_000_000.0, 'giro' => 5_000_000_000.0]],
+            ],
+        ];
+
+        $forecastScope = [
+            'metrics' => [
+                'tabungan' => ['available' => true, 'value' => 10_000_000_000.0],
+                'giro' => ['available' => true, 'value' => 5_000_000_000.0],
+            ],
+        ];
+
+        $availableWeeks = ['W1'];
+        $weekLabel = 'W1';
+        $meta = ['available' => true, 'stale' => false];
+
+        $decoratedCard = $method->invoke(
+            $prognosaService,
+            $card,
+            'area6',
+            $scopePayload,
+            $forecastScope,
+            $availableWeeks,
+            $weekLabel,
+            $meta
+        );
+
+        $this->assertTrue((bool) data_get($decoratedCard, 'prognosa.available'));
+        $this->assertSame('15.000', data_get($decoratedCard, 'prognosa.value'));
+        $this->assertSame('15.000', data_get($decoratedCard, 'prognosa.actual_value'));
+        $this->assertSame('100,00%', data_get($decoratedCard, 'prognosa.achievement'));
     }
 
     public function test_build_simpanan_scope_card_handles_deficit_gap(): void

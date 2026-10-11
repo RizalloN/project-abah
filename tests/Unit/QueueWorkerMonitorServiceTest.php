@@ -36,6 +36,15 @@ class QueueWorkerMonitorServiceTest extends TestCase
         $this->app->instance(WindowsDetachedProcessLauncher::class, $launcher);
         $control = new QueueWorkerControlService();
         Cache::forever((new \ReflectionMethod($control, 'key'))->invoke($control, 'enabled'), true);
+        $this->app->bind(\App\Services\Import\SafeWorkerRestartService::class, function ($app) {
+            $service = Mockery::mock(\App\Services\Import\SafeWorkerRestartService::class, [$app->make(QueueWorkerControlService::class)])->makePartial();
+            $service->shouldReceive('syntaxErrors')->andReturn([]);
+            // The shared test database may hold other tests' import rows;
+            // the idle gate itself is covered by SafeWorkerRestartServiceTest.
+            $service->shouldReceive('busyReasons')->andReturn([]);
+
+            return $service;
+        });
 
         foreach (['jobs', 'failed_jobs'] as $table) {
             Schema::dropIfExists($table);

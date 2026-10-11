@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\Import\QueueWorkerControlService;
+use App\Services\Import\SafeWorkerRestartService;
 use Illuminate\Console\Command;
 
 class QueueWorkerWatchdog extends Command
@@ -11,8 +12,21 @@ class QueueWorkerWatchdog extends Command
 
     protected $description = 'Verify the persistent queue monitor and recover it with adaptive backoff';
 
-    public function handle(QueueWorkerControlService $workerControl): int
+    public function handle(QueueWorkerControlService $workerControl, SafeWorkerRestartService $safeRestart): int
     {
+        // Runs in a fresh process each minute, so a pending restart (or one
+        // for newly deployed code) is executed by current code once idle.
+        try {
+            $restart = $safeRestart->tick();
+            if (($restart['action'] ?? '') === 'restarted') {
+                $this->info('Restart aman dijalankan: tidak ada import, snapshot, atau job yang sedang berjalan.');
+            } elseif (($restart['action'] ?? '') === 'waiting') {
+                $this->line('Restart aman menunggu: '.implode('; ', array_column($restart['busy'] ?? [], 'label')));
+            }
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+
         $status = $workerControl->ensureMonitorRunning('scheduled-watchdog', (bool) $this->option('force'));
 
         if (!($status['enabled'] ?? false)) {

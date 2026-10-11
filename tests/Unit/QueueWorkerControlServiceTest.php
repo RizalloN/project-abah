@@ -207,7 +207,7 @@ class QueueWorkerControlServiceTest extends TestCase
                 return $this->activeChecks >= 2;
             }
 
-            protected function startDetachedMonitor(): bool
+            protected function startDetachedMonitor(bool $replacingCurrent = false): bool
             {
                 return true;
             }
@@ -235,7 +235,7 @@ class QueueWorkerControlServiceTest extends TestCase
                 return ['state' => 'starting'];
             }
 
-            protected function startDetachedMonitor(): bool
+            protected function startDetachedMonitor(bool $replacingCurrent = false): bool
             {
                 return true;
             }
@@ -264,7 +264,7 @@ class QueueWorkerControlServiceTest extends TestCase
                 return false;
             }
 
-            protected function startDetachedMonitor(): bool
+            protected function startDetachedMonitor(bool $replacingCurrent = false): bool
             {
                 $this->launchAttempts++;
 

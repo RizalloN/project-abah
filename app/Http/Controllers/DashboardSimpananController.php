@@ -57,7 +57,7 @@ class DashboardSimpananController extends Controller
     private const EXTERNAL_REPORT_LINK_TABLE = 'external_report_links';
     private const MARKET_SHARE_LINK_GROUP = 'market_share';
     private const MARKET_SHARE_MAPPING_LINK_KEY = 'mapping';
-    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v27_branch_monthly_h2';
+    private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v28_casa_portfolio_card';
     private const CACHE_LOCK_SECONDS = 20;
     private const SNAPSHOT_SUMMARY_TABLE = 'dashboard_simpanan_snapshots';
     private const SNAPSHOT_BRANCH_TABLE = 'dashboard_simpanan_branch_snapshots';
@@ -248,6 +248,7 @@ class DashboardSimpananController extends Controller
                 'tabungan' => ['tabungan_ritel', 'tabungan_mikro', 'tabungan_wholesale'],
                 'deposito' => ['deposito_ritel', 'deposito_mikro', 'deposito_wholesale'],
                 'giro' => ['giro_ritel', 'giro_mikro', 'giro_wholesale'],
+                'casa' => ['tabungan_ritel', 'tabungan_mikro', 'tabungan_wholesale', 'giro_ritel', 'giro_mikro', 'giro_wholesale'],
                 'total' => ['total_simpanan'],
             ],
             'ritel' => [
@@ -257,6 +258,7 @@ class DashboardSimpananController extends Controller
                 'tabungan' => ['tabungan_ritel'],
                 'deposito' => ['deposito_ritel'],
                 'giro' => ['giro_ritel'],
+                'casa' => ['tabungan_ritel', 'giro_ritel'],
                 'total' => ['simpanan_ritel'],
             ],
             'micro' => [
@@ -266,6 +268,7 @@ class DashboardSimpananController extends Controller
                 'tabungan' => ['tabungan_mikro'],
                 'deposito' => ['deposito_mikro'],
                 'giro' => ['giro_mikro'],
+                'casa' => ['tabungan_mikro', 'giro_mikro'],
                 'total' => ['simpanan_mikro'],
             ],
             'wholesale' => [
@@ -275,6 +278,7 @@ class DashboardSimpananController extends Controller
                 'tabungan' => ['tabungan_wholesale'],
                 'deposito' => ['deposito_wholesale'],
                 'giro' => ['giro_wholesale'],
+                'casa' => ['tabungan_wholesale', 'giro_wholesale'],
                 'total' => ['simpanan_wholesale'],
             ],
         ];
@@ -284,13 +288,14 @@ class DashboardSimpananController extends Controller
             $tabCard = $this->buildSimpananScopeCard('tabungan', 'Tabungan', $sDef['tabungan'], $rows, $periodFormat, $rkaMonthYear, 'blue', 'fas fa-piggy-bank');
             $depCard = $this->buildSimpananScopeCard('deposito', 'Deposito', $sDef['deposito'], $rows, $periodFormat, $rkaMonthYear, 'teal', 'fas fa-money-check-alt');
             $giroCard = $this->buildSimpananScopeCard('giro', 'Giro', $sDef['giro'], $rows, $periodFormat, $rkaMonthYear, 'purple', 'fas fa-file-invoice-dollar');
+            $casaCard = $this->buildSimpananScopeCard('casa', 'CASA (Giro + Tabungan)', $sDef['casa'], $rows, $periodFormat, $rkaMonthYear, 'indigo', 'fas fa-layer-group');
 
             $scopePayloads[$sKey] = [
                 'scope_key' => $sKey,
                 'label' => $sDef['label'],
                 'caption' => $sDef['caption'],
                 'description' => $sDef['description'],
-                'cards' => [$tabCard, $depCard, $giroCard],
+                'cards' => [$tabCard, $depCard, $giroCard, $casaCard],
             ];
         }
 
@@ -700,10 +705,13 @@ class DashboardSimpananController extends Controller
                     'state_label' => $week['state_label'],
                     'is_elapsed' => $week['is_elapsed'],
                     'metrics' => [
-                        'tabungan' => $metrics['tabungan'] ?? null,
-                        'deposito' => $metrics['deposito'] ?? null,
-                        'giro' => $metrics['giro'] ?? null,
-                        'simpanan' => $metrics['simpanan'] ?? null,
+                        'tabungan' => is_array($metrics) ? ($metrics['tabungan'] ?? null) : null,
+                        'deposito' => is_array($metrics) ? ($metrics['deposito'] ?? null) : null,
+                        'giro' => is_array($metrics) ? ($metrics['giro'] ?? null) : null,
+                        'casa' => is_array($metrics)
+                            ? ($metrics['casa'] ?? ((isset($metrics['tabungan']) || isset($metrics['giro'])) ? ((float) ($metrics['tabungan'] ?? 0.0) + (float) ($metrics['giro'] ?? 0.0)) : null))
+                            : null,
+                        'simpanan' => is_array($metrics) ? ($metrics['simpanan'] ?? null) : null,
                     ],
                 ];
             }
@@ -716,10 +724,13 @@ class DashboardSimpananController extends Controller
                 'state_label' => $latestActual['state_label'],
                 'is_elapsed' => $latestActual['is_elapsed'],
                 'metrics' => [
-                    'tabungan' => $metrics['tabungan'] ?? null,
-                    'deposito' => $metrics['deposito'] ?? null,
-                    'giro' => $metrics['giro'] ?? null,
-                    'simpanan' => $metrics['simpanan'] ?? null,
+                    'tabungan' => is_array($metrics) ? ($metrics['tabungan'] ?? null) : null,
+                    'deposito' => is_array($metrics) ? ($metrics['deposito'] ?? null) : null,
+                    'giro' => is_array($metrics) ? ($metrics['giro'] ?? null) : null,
+                    'casa' => is_array($metrics)
+                        ? ($metrics['casa'] ?? ((isset($metrics['tabungan']) || isset($metrics['giro'])) ? ((float) ($metrics['tabungan'] ?? 0.0) + (float) ($metrics['giro'] ?? 0.0)) : null))
+                        : null,
+                    'simpanan' => is_array($metrics) ? ($metrics['simpanan'] ?? null) : null,
                 ],
             ];
         }
@@ -2012,7 +2023,7 @@ class DashboardSimpananController extends Controller
     private function simpananScopeSnapshotMetrics(string $period, string $scopeKey = 'area6'): array
     {
         if ($period === '' || !Schema::hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
-            return ['tabungan' => 0.0, 'deposito' => 0.0, 'giro' => 0.0, 'simpanan' => 0.0];
+            return ['tabungan' => 0.0, 'deposito' => 0.0, 'giro' => 0.0, 'casa' => 0.0, 'simpanan' => 0.0];
         }
 
         $query = DB::table(self::HARIAN_SNAPSHOT_TABLE)
@@ -2035,40 +2046,54 @@ class DashboardSimpananController extends Controller
             ->first();
 
         if (!$row) {
-            return ['tabungan' => 0.0, 'deposito' => 0.0, 'giro' => 0.0, 'simpanan' => 0.0];
+            return ['tabungan' => 0.0, 'deposito' => 0.0, 'giro' => 0.0, 'casa' => 0.0, 'simpanan' => 0.0];
         }
 
         if ($scopeKey === 'ritel') {
+            $tab = (float) $row->tabungan_ritel;
+            $giro = (float) $row->giro_ritel;
             return [
-                'tabungan' => (float) $row->tabungan_ritel,
+                'tabungan' => $tab,
                 'deposito' => (float) $row->deposito_ritel,
-                'giro' => (float) $row->giro_ritel,
+                'giro' => $giro,
+                'casa' => (float) ($tab + $giro),
                 'simpanan' => (float) ($row->tabungan_ritel + $row->deposito_ritel + $row->giro_ritel),
             ];
         }
 
         if ($scopeKey === 'micro') {
+            $tab = (float) $row->tabungan_mikro;
+            $giro = (float) $row->giro_mikro;
             return [
-                'tabungan' => (float) $row->tabungan_mikro,
+                'tabungan' => $tab,
                 'deposito' => (float) $row->deposito_mikro,
-                'giro' => (float) $row->giro_mikro,
+                'giro' => $giro,
+                'casa' => (float) ($tab + $giro),
                 'simpanan' => (float) ($row->tabungan_mikro + $row->deposito_mikro + $row->giro_mikro),
             ];
         }
 
         if ($scopeKey === 'wholesale') {
+            $tab = (float) $row->tabungan_wholesale;
+            $giro = (float) $row->giro_wholesale;
             return [
-                'tabungan' => (float) $row->tabungan_wholesale,
+                'tabungan' => $tab,
                 'deposito' => (float) $row->deposito_wholesale,
-                'giro' => (float) $row->giro_wholesale,
+                'giro' => $giro,
+                'casa' => (float) ($tab + $giro),
                 'simpanan' => (float) ($row->tabungan_wholesale + $row->deposito_wholesale + $row->giro_wholesale),
             ];
         }
 
+        $tab = (float) ($row->tabungan_ritel + $row->tabungan_mikro + $row->tabungan_wholesale);
+        $dep = (float) ($row->deposito_ritel + $row->deposito_mikro + $row->deposito_wholesale);
+        $giro = (float) ($row->giro_ritel + $row->giro_mikro + $row->giro_wholesale);
+
         return [
-            'tabungan' => (float) ($row->tabungan_ritel + $row->tabungan_mikro + $row->tabungan_wholesale),
-            'deposito' => (float) ($row->deposito_ritel + $row->deposito_mikro + $row->deposito_wholesale),
-            'giro' => (float) ($row->giro_ritel + $row->giro_mikro + $row->giro_wholesale),
+            'tabungan' => $tab,
+            'deposito' => $dep,
+            'giro' => $giro,
+            'casa' => (float) ($tab + $giro),
             'simpanan' => (float) $row->total_simpanan,
         ];
     }

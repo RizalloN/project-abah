@@ -162,18 +162,26 @@ class QueueWorkerControlService
                 'previous_monitor_pid' => $previousMonitorPid,
             ], now()->addHours(12));
 
-            // The monitor checks the signal every second and releases its
-            // heartbeat on exit; launch the replacement once it has yielded.
-            $deadline = microtime(true) + self::RESTART_YIELD_TIMEOUT_SECONDS;
-            while ($previousMonitorPid > 0
-                && $this->monitorHeartbeatPid() === $previousMonitorPid
-                && microtime(true) < $deadline) {
-                usleep(250000);
-            }
+            if ($previousMonitorPid > 0 && $previousMonitorPid === getmypid()) {
+                // The monitor restarting itself cannot wait for its own exit:
+                // hand leadership over first, then let the caller's loop end.
+                Cache::forget($this->key('monitor-heartbeat'));
+                $launched = $this->startDetachedMonitor(true);
+                $relaunch = ['started' => $launched, 'startup_confirmed' => $launched];
+            } else {
+                // The monitor checks the signal every second and releases its
+                // heartbeat on exit; launch the replacement once it has yielded.
+                $deadline = microtime(true) + self::RESTART_YIELD_TIMEOUT_SECONDS;
+                while ($previousMonitorPid > 0
+                    && $this->monitorHeartbeatPid() === $previousMonitorPid
+                    && microtime(true) < $deadline) {
+                    usleep(250000);
+                }
 
-            $relaunch = $this->monitorHeartbeatPid() === $previousMonitorPid && $previousMonitorPid > 0
-                ? ['started' => false, 'startup_confirmed' => false]
-                : $this->ensureMonitorRunning('manual-restart', true);
+                $relaunch = $this->monitorHeartbeatPid() === $previousMonitorPid && $previousMonitorPid > 0
+                    ? ['started' => false, 'startup_confirmed' => false]
+                    : $this->ensureMonitorRunning('manual-restart', true);
+            }
 
             Log::warning('Queue workers restart requested from Job Management.', [
                 'requested_by' => $requestedBy,
@@ -365,7 +373,7 @@ class QueueWorkerControlService
         return max(count($pids), $this->workerProcessCount());
     }
 
-    protected function startDetachedMonitor(): bool
+    protected function startDetachedMonitor(bool $replacingCurrent = false): bool
     {
         $lock = Cache::lock($this->key('start-lock'), 15);
         if (!$lock->get()) {
@@ -373,12 +381,14 @@ class QueueWorkerControlService
         }
 
         try {
-            if ($this->isMonitorActive()) {
+            // A self-replacing monitor is itself the "active" process; only
+            // the duplicate-launch guards apply to ordinary recovery.
+            if (!$replacingCurrent && $this->isMonitorActive()) {
                 return true;
             }
 
             $launchRequestedAt = (int) Cache::get($this->key('launch-requested-at'), 0);
-            if ($launchRequestedAt > 0 && (time() - $launchRequestedAt) <= self::LAUNCH_REQUEST_GRACE_SECONDS) {
+            if (!$replacingCurrent && $launchRequestedAt > 0 && (time() - $launchRequestedAt) <= self::LAUNCH_REQUEST_GRACE_SECONDS) {
                 return true;
             }
 

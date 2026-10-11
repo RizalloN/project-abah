@@ -8,7 +8,9 @@ use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\QueueSupervisorProcessRunner;
 use App\Services\Import\QueueWorkerControlService;
+use App\Services\Import\SafeWorkerRestartService;
 use App\Services\Import\SnapshotQueuePauseService;
+use App\Services\JobHealthService;
 use App\Support\LatestSnapshotRecoveryService;
 use App\Support\StrictDateParser;
 use Illuminate\Console\Command;
@@ -25,6 +27,10 @@ class EnsureQueueWorkerRunning extends Command
 
     /** @var array<int, array{pool: string, started_at: float, stable: bool}> */
     private array $windowsWorkerStarts = [];
+
+    private const MAINTENANCE_INTERVAL_SECONDS = 60;
+
+    private int $lastMaintenanceAt = 0;
 
     protected $signature = 'queue:ensure-running
                           {--queues= : Queues to monitor}
@@ -123,6 +129,12 @@ class EnsureQueueWorkerRunning extends Command
                 }
                 $this->reapFinishedWindowsWorkers();
 
+                if ($this->runWorkerMaintenance()) {
+                    // Leadership was handed to a replacement monitor running
+                    // the current code; this process must not launch workers.
+                    break;
+                }
+
                 try {
                     $this->maintainMonitorHealth();
                     $this->recoverOrphanedImports();
@@ -188,6 +200,42 @@ class EnsureQueueWorkerRunning extends Command
         }
 
         return 0;
+    }
+
+    /**
+     * Queue maintenance that must not depend on the OS scheduler being up:
+     * stale-state recovery (the health sweep) and the idle-gated restart.
+     * Both are lock-protected, so a running scheduler can do the same work.
+     *
+     * @return bool true when this monitor started a restart and handed over
+     */
+    private function runWorkerMaintenance(): bool
+    {
+        if ((time() - $this->lastMaintenanceAt) < self::MAINTENANCE_INTERVAL_SECONDS) {
+            return false;
+        }
+        $this->lastMaintenanceAt = time();
+
+        try {
+            app(JobHealthService::class)->sweepIfDue();
+        } catch (\Throwable $e) {
+            Log::warning('Monitor job health sweep failed.', ['message' => $e->getMessage()]);
+        }
+
+        try {
+            $result = app(SafeWorkerRestartService::class)->tick();
+            if (($result['action'] ?? '') === 'restarted') {
+                if ($this->output) {
+                    $this->info('Restart aman dijalankan: semua proses selesai, monitor diganti dengan kode terbaru.');
+                }
+
+                return true;
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Monitor safe restart check failed.', ['message' => $e->getMessage()]);
+        }
+
+        return false;
     }
 
     private function monitorRestartRequested(mixed $initialSignal): bool

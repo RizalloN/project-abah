@@ -25,6 +25,7 @@
         data-worker-start-url="{{ route('job-management.worker.start') }}"
         data-worker-stop-url="{{ route('job-management.worker.stop') }}"
         data-worker-restart-url="{{ route('job-management.worker.restart') }}"
+        data-worker-restart-cancel-url="{{ route('job-management.worker.restart.cancel') }}"
         data-clear-url="{{ route('job-management.clear') }}"
         data-bulk-delete-url="{{ route('job-management.bulk-destroy') }}"
         data-destroy-url-template="{{ route('job-management.destroy', ['jobId' => '__JOB_ID__']) }}"
@@ -116,11 +117,12 @@
                     </div>
                     <div class="d-flex flex-wrap" style="gap: 8px;">
                         <button type="button" class="btn btn-sm btn-success" id="btn-worker-start"><i class="fas fa-play mr-1"></i>Aktifkan Worker</button>
-                        <button type="button" class="btn btn-sm btn-warning" id="btn-worker-restart" title="Muat ulang worker dengan kode terbaru tanpa memutus job yang sedang berjalan"><i class="fas fa-redo-alt mr-1"></i>Restart Worker</button>
+                        <button type="button" class="btn btn-sm btn-warning" id="btn-worker-restart" title="Restart worker setelah semua import, snapshot, dan job selesai"><i class="fas fa-redo-alt mr-1"></i>Restart Aman</button>
                         <button type="button" class="btn btn-sm btn-outline-danger" id="btn-worker-stop"><i class="fas fa-stop mr-1"></i>Matikan Worker</button>
                     </div>
                 </div>
                 <div class="worker-monitor border-top" id="worker-monitor">
+                    <div class="worker-restart-banner d-none" id="worker-safe-restart-banner"></div>
                     <div class="worker-restart-banner d-none" id="worker-restart-banner"></div>
                     <div class="worker-metrics" id="worker-metrics">
                         <div class="worker-metric"><div class="worker-metric__label">Monitor</div><div class="worker-metric__value">-</div></div>
@@ -394,16 +396,61 @@ document.addEventListener('DOMContentLoaded', function () {
                     + `<td><span class="job-status-badge job-status-badge--${escapeHtml(pool.tone || 'muted')}">${escapeHtml(pool.state_label || pool.state)}</span>${backoff}${staleReserved}</td></tr>${detail}`;
             }).join('');
 
-        const latest = failed.latest || [];
-        workerFailedJobs.innerHTML = latest.length === 0
-            ? '<div class="text-muted small">Tidak ada job gagal yang tercatat.</div>'
-            : latest.map((job) => `<div class="worker-failed-job"><div class="worker-failed-job__head"><strong>${escapeHtml(job.job)}</strong><span class="badge badge-light border ml-2">${escapeHtml(job.queue)}</span><span class="ml-auto text-muted">${formatClock(job.failed_at)}</span></div><div class="worker-failed-job__error">${escapeHtml(job.error || '-')}</div></div>`).join('');
+        const groups = failed.groups || [];
+        const windowDays = Number(failed.window_days || 7);
+        workerFailedJobs.innerHTML = groups.length === 0
+            ? `<div class="text-muted small">Tidak ada job gagal dalam ${windowDays} hari terakhir.${failed.last_failed_at ? ` Kegagalan terakhir: ${formatClock(failed.last_failed_at)}.` : ''}</div>`
+            : groups.map((group) => `<div class="worker-failed-job"><div class="worker-failed-job__head"><strong>${escapeHtml(group.job)}</strong><span class="badge badge-light border ml-2">${escapeHtml(group.queue)}</span><span class="badge badge-danger ml-2">${Number(group.count || 0)}×</span><span class="ml-auto text-muted">terakhir ${formatClock(group.last_failed_at)}</span></div><div class="worker-failed-job__error">${escapeHtml(group.error || '-')}</div></div>`).join('');
+    }
+    const workerSafeRestartBanner = document.getElementById('worker-safe-restart-banner');
+    function renderSafeRestart(payload) {
+        if (!payload) { workerSafeRestartBanner.classList.add('d-none'); return; }
+        if (payload.code_outdated) {
+            const codeMetric = Array.from(workerMetrics.querySelectorAll('.worker-metric')).find((metric) => metric.querySelector('.worker-metric__label')?.textContent === 'Versi Kode');
+            if (codeMetric) codeMetric.outerHTML = workerMetric('Versi Kode', 'Kode baru tersedia', `Diubah ${formatClock(payload.code_changed_at)}`, 'warning');
+        }
+        const pending = payload.pending;
+        const busy = payload.busy || [];
+        const busyList = busy.length ? `<ul class="worker-busy-list">${busy.map((item) => `<li>${escapeHtml(item.label)}</li>`).join('')}</ul>` : '';
+        if (pending && (pending.blocked_by || []).length && !busy.length) {
+            workerSafeRestartBanner.className = 'worker-restart-banner worker-restart-banner--warning';
+            workerSafeRestartBanner.innerHTML = `<div class="d-flex align-items-start flex-wrap" style="gap:8px;"><div class="flex-grow-1"><i class="fas fa-exclamation-triangle mr-2"></i>Restart ditahan: ada file PHP yang tidak valid. Worker tetap berjalan dengan kode lama sampai file diperbaiki.<ul class="worker-busy-list">${pending.blocked_by.map((error) => `<li>${escapeHtml(error)}</li>`).join('')}</ul></div><button type="button" class="btn btn-sm btn-outline-secondary" data-action="cancel-worker-restart"><i class="fas fa-times mr-1"></i>Batalkan</button></div>`;
+            return;
+        }
+        if (pending) {
+            const who = pending.reason === 'code_change' ? 'otomatis karena kode aplikasi berubah' : (pending.requested_by ? `oleh ${escapeHtml(pending.requested_by)}` : 'manual');
+            const headline = busy.length
+                ? `Restart dijadwalkan ${who}. Menunggu ${busy.length} proses selesai agar import dan snapshot tidak terganggu:`
+                : (pending.idle_since
+                    ? `Semua proses sudah selesai. Restart dijalankan setelah sistem tenang ±${Number(payload.quiet_seconds || 60)} detik.`
+                    : 'Semua proses sudah selesai. Restart dijalankan pada pemeriksaan watchdog berikutnya (≤ 1 menit).');
+            workerSafeRestartBanner.className = `worker-restart-banner worker-restart-banner--${busy.length ? 'warning' : 'info'}`;
+            workerSafeRestartBanner.innerHTML = `<div class="d-flex align-items-start flex-wrap" style="gap:8px;"><div class="flex-grow-1"><i class="fas fa-hourglass-half mr-2"></i>${headline}${busyList}<div class="worker-restart-banner__meta">Dijadwalkan ${formatClock(pending.requested_at)}</div></div><button type="button" class="btn btn-sm btn-outline-secondary" data-action="cancel-worker-restart"><i class="fas fa-times mr-1"></i>Batalkan</button></div>`;
+            return;
+        }
+        if (payload.code_outdated) {
+            workerSafeRestartBanner.className = 'worker-restart-banner worker-restart-banner--info';
+            workerSafeRestartBanner.innerHTML = `<i class="fas fa-code-branch mr-2"></i>Kode aplikasi diperbarui ${formatClock(payload.code_changed_at)} setelah worker dimulai. ${payload.auto_restart_on_code_change ? 'Restart aman akan dijadwalkan otomatis.' : 'Klik Restart Aman untuk memuat kode terbaru.'}`;
+            return;
+        }
+        workerSafeRestartBanner.classList.add('d-none');
+    }
+    async function cancelWorkerRestart() {
+        const response = await fetch(card.dataset.workerRestartCancelUrl, {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken },
+            body: JSON.stringify({})
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal membatalkan restart.');
+        renderSafeRestart(payload.safe_restart || null);
+        showNotice(payload.message || 'Restart terjadwal dibatalkan.', 'info');
     }
     async function restartWorkers() {
         const confirmation = await Swal.fire({
             icon: 'question',
-            title: 'Restart worker?',
-            html: 'Semua worker dimuat ulang dengan kode terbaru.<br><small class="text-muted">Job yang sedang berjalan diselesaikan dahulu, tidak ada yang diputus paksa. Worker yang menjalankan import panjang baru berganti setelah job-nya selesai.</small>',
+            title: 'Restart worker secara aman?',
+            html: 'Worker dimuat ulang dengan kode terbaru <strong>hanya setelah semua import, snapshot, delete, dan job selesai</strong>.<br><small class="text-muted">Jika masih ada proses berjalan, restart dijadwalkan otomatis dan bisa dibatalkan. Tidak ada proses yang diputus paksa.</small>',
             showCancelButton: true,
             confirmButtonText: 'Restart',
             cancelButtonText: 'Batal'
@@ -421,7 +468,8 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal merestart worker.');
             renderWorkerStatus(payload.worker_status || null);
             if (payload.worker_monitor) renderWorkerMonitor(payload.worker_monitor);
-            showNotice(payload.message || 'Restart worker dikirim.', 'info');
+            renderSafeRestart(payload.safe_restart || null);
+            showNotice(payload.message || 'Restart worker dikirim.', payload.scheduled ? 'warning' : 'info');
             // Follow the hand-over closely; the regular 10s refresh resumes after.
             workerRestartPollTimers.forEach((timer) => clearTimeout(timer));
             workerRestartPollTimers = [3000, 8000, 15000, 30000, 60000].map((delay) => window.setTimeout(() => fetchData(currentPage), delay));
@@ -458,7 +506,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderManagedDeleteJobs(items, summary = {}) { const activeCount = Number(summary.active_jobs || 0); managedDeleteJobCountLabel.textContent = `${activeCount.toLocaleString('id-ID')} job delete aktif`; if (!Array.isArray(items) || items.length === 0) { managedDeleteGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-trash-alt fa-2x mb-2 d-block text-muted opacity-50"></i>Belum ada progress delete yang sedang antre atau berjalan.</div></div>`; return; } managedDeleteGrid.innerHTML = items.map((job) => `<div class="col-xl-6 mb-3"><div class="job-active-card job-active-card--delete"><div class="job-active-card__header"><div><div class="job-active-card__title">#${escapeHtml(job.id)} • ${escapeHtml(job.report_name || 'Managed Delete')}</div><div class="job-active-card__sub">${escapeHtml(job.table_name || '-')} • ${escapeHtml(job.file_name || '-')}</div></div>${statusBadge(job)}</div><div class="job-active-card__body">${progressMarkup(job)}<div class="job-active-card__message">${escapeHtml(job.message || '-')}</div><div class="job-active-card__meta"><span><i class="fas fa-layer-group mr-1"></i>${escapeHtml(job.stage_label || job.phase || '-')}</span><span><i class="fas fa-stream mr-1"></i>${Number(job.scope_count || 0).toLocaleString('id-ID')} scope</span><span><i class="fas fa-history mr-1"></i>${escapeHtml(job.updated_at_label || '-')}</span><span><i class="far fa-clock mr-1"></i>${escapeHtml(job.duration_label || '-')}</span>${job.queue_name ? `<span><i class="fas fa-server mr-1"></i>${escapeHtml(job.queue_name)}${job.queue_job_id ? ' #' + escapeHtml(job.queue_job_id) : ''}</span>` : ''}</div></div><div class="job-active-card__footer">${job.can_cancel ? (job.termination_requested ? '<span class="job-active-card__hint">Force stop sudah dikirim.</span>' : '<span class="job-active-card__hint">Delete aktif dapat dibatalkan dengan aman.</span>') : '<span class="job-active-card__hint">Delete ini sudah selesai atau tidak aktif.</span>'}<div class="job-active-card__actions">${forceStopDeleteButton(job)}${cancelDeleteButton(job)}</div></div></div></div>`).join(''); }
     function renderTable(items) { currentJobs = Array.isArray(items) ? items : []; if (currentJobs.length === 0) { tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-5"><i class="fas fa-inbox fa-2x mb-2 d-block text-muted opacity-50"></i>Tidak ada data job untuk filter ini.</td></tr>'; syncSelectionState(); return; } tableBody.innerHTML = currentJobs.map((job) => `<tr><td class="text-center job-col-check">${rowCheckbox(job)}</td><td class="font-weight-bold" style="color: #0857c3;">#${job.id}</td><td><div class="job-table-primary">${escapeHtml(job.report_name)}</div><div class="job-table-secondary">${escapeHtml(job.table_name || '-')}</div></td><td><div class="job-table-primary">${escapeHtml(job.file_name)}</div><div class="job-table-secondary">By ${escapeHtml(job.created_by_name || 'System')}</div></td><td>${statusBadge(job)}</td><td>${progressMarkup(job)}<div class="job-table-secondary mt-1">${escapeHtml(job.message || '-')}</div></td><td><div class="job-table-primary">${escapeHtml(job.updated_at_label || '-')}</div><div class="job-table-secondary">Durasi ${escapeHtml(job.duration_label || '-')}</div></td><td class="text-center"><div class="job-table-actions">${forceStartButton(job, true)}${terminateButton(job, true)}${deleteButton(job, true)}</div></td></tr>`).join(''); syncSelectionState(); }
     function renderPagination(meta) { const total = Number(meta.total || 0); paginationMeta.textContent = `${total.toLocaleString('id-ID')} job`; if (!meta.last_page || meta.last_page <= 1) { pagination.classList.add('d-none'); pagination.innerHTML = ''; return; } const buttons = []; for (let page = 1; page <= meta.last_page; page++) { buttons.push(`<button type="button" class="job-page-btn ${page === meta.current_page ? 'is-active' : ''}" data-page="${page}">${page}</button>`); } pagination.innerHTML = `<div class="job-management-pagination__meta">Menampilkan ${meta.from || 0}-${meta.to || 0} dari ${total.toLocaleString('id-ID')} job</div><div class="job-management-pagination__actions">${buttons.join('')}</div>`; pagination.classList.remove('d-none'); }
-    async function fetchData(page = 1) { if (loading) { refreshRequestedWhileLoading = true; return; } loading = true; currentPage = page; try { const params = new URLSearchParams({ page: String(page), status: filterStatus.value || 'all', search: filterSearch.value || '', active_only: activeOnly.checked ? '1' : '0' }); const response = await fetch(`${card.dataset.fetchUrl}?${params.toString()}`, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } }); const payload = await response.json().catch(() => ({})); if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal memuat data job.'); hideNotice(); renderWorkerStatus(payload.worker_status || null); renderWorkerMonitor(payload.worker_monitor || null); renderQueueHealth(payload.queue_health || null); renderSummary(payload.summary || {}); renderSnapshotJobs(payload.snapshot_jobs || [], payload.snapshot_summary || {}); renderRawQueueJobs(payload.raw_queue_jobs || [], payload.raw_queue_summary || {}); renderManagedDeleteJobs(payload.managed_delete_jobs || [], payload.managed_delete_summary || {}); renderActiveJobs(payload.active_jobs || []); renderTable(payload.jobs || []); renderPagination(payload.pagination || {}); } catch (error) { showNotice(error.message || 'Gagal memuat data job.', 'warning'); } finally { loading = false; if (refreshRequestedWhileLoading && !document.hidden) { refreshRequestedWhileLoading = false; fetchData(currentPage); } } }
+    async function fetchData(page = 1) { if (loading) { refreshRequestedWhileLoading = true; return; } loading = true; currentPage = page; try { const params = new URLSearchParams({ page: String(page), status: filterStatus.value || 'all', search: filterSearch.value || '', active_only: activeOnly.checked ? '1' : '0' }); const response = await fetch(`${card.dataset.fetchUrl}?${params.toString()}`, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } }); const payload = await response.json().catch(() => ({})); if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal memuat data job.'); hideNotice(); renderWorkerStatus(payload.worker_status || null); renderWorkerMonitor(payload.worker_monitor || null); renderSafeRestart(payload.safe_restart || null); renderQueueHealth(payload.queue_health || null); renderSummary(payload.summary || {}); renderSnapshotJobs(payload.snapshot_jobs || [], payload.snapshot_summary || {}); renderRawQueueJobs(payload.raw_queue_jobs || [], payload.raw_queue_summary || {}); renderManagedDeleteJobs(payload.managed_delete_jobs || [], payload.managed_delete_summary || {}); renderActiveJobs(payload.active_jobs || []); renderTable(payload.jobs || []); renderPagination(payload.pagination || {}); } catch (error) { showNotice(error.message || 'Gagal memuat data job.', 'warning'); } finally { loading = false; if (refreshRequestedWhileLoading && !document.hidden) { refreshRequestedWhileLoading = false; fetchData(currentPage); } } }
     async function setWorkerState(action) {
         const isStart = action === 'start';
         const confirmation = await Swal.fire({
@@ -514,7 +562,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.addEventListener('visibilitychange', () => { if (document.hidden) stopAutoRefresh(); else { fetchData(currentPage); startAutoRefresh(); } });
     selectAll.addEventListener('change', function () { currentJobs.forEach((job) => { if (!job.can_delete) return; if (selectAll.checked) selectedJobIds.add(String(job.id)); else selectedJobIds.delete(String(job.id)); }); syncSelectionState(); tableBody.querySelectorAll('.job-row-check').forEach((checkbox) => { checkbox.checked = selectAll.checked; }); });
     document.addEventListener('change', function (event) { const checkbox = event.target.closest('.job-row-check'); if (!checkbox) return; const jobId = String(checkbox.dataset.jobId || ''); if (jobId === '') return; if (checkbox.checked) selectedJobIds.add(jobId); else selectedJobIds.delete(jobId); syncSelectionState(); });
-    document.addEventListener('click', async function (event) { const forceStartTarget = event.target.closest('[data-action="force-start"]'); if (forceStartTarget) { try { await forceStartJob(forceStartTarget.dataset.jobId); } catch (error) { Swal.fire({ icon: 'error', title: 'Force Start Gagal', text: error.message || 'Gagal force start job.' }); } return; } const forceStartSnapshotTarget = event.target.closest('[data-action="force-start-snapshot"]'); if (forceStartSnapshotTarget) { try { await forceStartSnapshot(forceStartSnapshotTarget.dataset.rebuildId); } catch (error) { Swal.fire({ icon: 'error', title: 'Force Start Gagal', text: error.message || 'Gagal force start snapshot.' }); } return; } const terminateTarget = event.target.closest('[data-action="terminate"]'); if (terminateTarget) { try { await terminateJob(terminateTarget.dataset.jobId); } catch (error) { Swal.fire({ icon: 'error', title: 'Terminate Gagal', text: error.message || 'Gagal terminate job.' }); } return; } const forceStopDeleteTarget = event.target.closest('[data-action="force-stop-delete"]'); if (forceStopDeleteTarget) { try { await forceStopManagedDelete(forceStopDeleteTarget.dataset.deleteId); } catch (error) { Swal.fire({ icon: 'error', title: 'Force Stop Gagal', text: error.message || 'Gagal force stop delete.' }); } return; } const cancelDeleteTarget = event.target.closest('[data-action="cancel-delete"]'); if (cancelDeleteTarget) { try { await cancelManagedDelete(cancelDeleteTarget.dataset.deleteId); } catch (error) { Swal.fire({ icon: 'error', title: 'Cancel Delete Gagal', text: error.message || 'Gagal cancel delete.' }); } return; } const deleteTarget = event.target.closest('[data-action="delete"]'); if (deleteTarget) { try { await deleteJob(deleteTarget.dataset.jobId); } catch (error) { Swal.fire({ icon: 'error', title: 'Delete Gagal', text: error.message || 'Gagal menghapus job.' }); } return; } const forceRunQueueJobTarget = event.target.closest('[data-action="force-run-queue-job"]'); if (forceRunQueueJobTarget) { try { await forceRunQueueJob(forceRunQueueJobTarget.dataset.queueJobId, forceRunQueueJobTarget.closest('tr')?.querySelector('.job-table-primary')?.textContent?.trim()); } catch (error) { Swal.fire({ icon: 'error', title: 'Force Run Gagal', text: error.message || 'Gagal force run queue job.' }); } return; } const deleteQueueJobTarget = event.target.closest('[data-action="delete-queue-job"]'); if (deleteQueueJobTarget) { try { await deleteQueueJob(deleteQueueJobTarget.dataset.queueJobId); } catch (error) { Swal.fire({ icon: 'error', title: 'Delete Queue Job Gagal', text: error.message || 'Gagal menghapus queue job.' }); } return; } const pageTarget = event.target.closest('[data-page]'); if (pageTarget) fetchData(Number(pageTarget.dataset.page || 1)); });
+    document.addEventListener('click', async function (event) { const cancelRestartTarget = event.target.closest('[data-action="cancel-worker-restart"]'); if (cancelRestartTarget) { try { await cancelWorkerRestart(); } catch (error) { Swal.fire({ icon: 'error', title: 'Batal Restart Gagal', text: error.message || 'Gagal membatalkan restart.' }); } return; } const forceStartTarget = event.target.closest('[data-action="force-start"]'); if (forceStartTarget) { try { await forceStartJob(forceStartTarget.dataset.jobId); } catch (error) { Swal.fire({ icon: 'error', title: 'Force Start Gagal', text: error.message || 'Gagal force start job.' }); } return; } const forceStartSnapshotTarget = event.target.closest('[data-action="force-start-snapshot"]'); if (forceStartSnapshotTarget) { try { await forceStartSnapshot(forceStartSnapshotTarget.dataset.rebuildId); } catch (error) { Swal.fire({ icon: 'error', title: 'Force Start Gagal', text: error.message || 'Gagal force start snapshot.' }); } return; } const terminateTarget = event.target.closest('[data-action="terminate"]'); if (terminateTarget) { try { await terminateJob(terminateTarget.dataset.jobId); } catch (error) { Swal.fire({ icon: 'error', title: 'Terminate Gagal', text: error.message || 'Gagal terminate job.' }); } return; } const forceStopDeleteTarget = event.target.closest('[data-action="force-stop-delete"]'); if (forceStopDeleteTarget) { try { await forceStopManagedDelete(forceStopDeleteTarget.dataset.deleteId); } catch (error) { Swal.fire({ icon: 'error', title: 'Force Stop Gagal', text: error.message || 'Gagal force stop delete.' }); } return; } const cancelDeleteTarget = event.target.closest('[data-action="cancel-delete"]'); if (cancelDeleteTarget) { try { await cancelManagedDelete(cancelDeleteTarget.dataset.deleteId); } catch (error) { Swal.fire({ icon: 'error', title: 'Cancel Delete Gagal', text: error.message || 'Gagal cancel delete.' }); } return; } const deleteTarget = event.target.closest('[data-action="delete"]'); if (deleteTarget) { try { await deleteJob(deleteTarget.dataset.jobId); } catch (error) { Swal.fire({ icon: 'error', title: 'Delete Gagal', text: error.message || 'Gagal menghapus job.' }); } return; } const forceRunQueueJobTarget = event.target.closest('[data-action="force-run-queue-job"]'); if (forceRunQueueJobTarget) { try { await forceRunQueueJob(forceRunQueueJobTarget.dataset.queueJobId, forceRunQueueJobTarget.closest('tr')?.querySelector('.job-table-primary')?.textContent?.trim()); } catch (error) { Swal.fire({ icon: 'error', title: 'Force Run Gagal', text: error.message || 'Gagal force run queue job.' }); } return; } const deleteQueueJobTarget = event.target.closest('[data-action="delete-queue-job"]'); if (deleteQueueJobTarget) { try { await deleteQueueJob(deleteQueueJobTarget.dataset.queueJobId); } catch (error) { Swal.fire({ icon: 'error', title: 'Delete Queue Job Gagal', text: error.message || 'Gagal menghapus queue job.' }); } return; } const pageTarget = event.target.closest('[data-page]'); if (pageTarget) fetchData(Number(pageTarget.dataset.page || 1)); });
 
     fetchData();
     startAutoRefresh();
@@ -839,6 +887,7 @@ document.addEventListener('DOMContentLoaded', function () {
 .worker-restart-banner--info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
 .worker-restart-banner--success { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
 .worker-restart-banner--warning { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
+.worker-busy-list { margin: 0.35rem 0 0 1.4rem; padding: 0; font-weight: 500; font-size: 0.8rem; }
 .worker-restart-banner__meta { font-size: 0.74rem; font-weight: 500; opacity: 0.8; margin-top: 2px; }
 .worker-pool-table td { vertical-align: middle; }
 .worker-pool-detail td { background: #f8fafc; border-top: 0 !important; padding-top: 0.25rem !important; }
